@@ -15,8 +15,8 @@ You're free to choose anything listed under "What's planned" in
 [`ROADMAP.md`](../ROADMAP.md) and implement it without asking first. You're
 authorized to:
 
-- Create a new branch for it (never push to `main` directly — see
-  "Committing and proposing changes" below).
+- Create a new branch for it, off `dev` (never push to `dev` or `main`
+  directly — see "Committing and proposing changes" below).
 - Implement the feature.
 - Write real unit tests for what you implement — not optional, this
   project holds every change to that standard (see "Verifying a change"
@@ -187,12 +187,14 @@ have worked well building parts of this project:
 
 ## Committing and proposing changes
 
-Never push directly to a protected branch (typically `main`) or merge your
-own change without review — open a pull request and let a human look at it,
-even if you're confident it's correct. See
-[`CONTRIBUTING.md`](../CONTRIBUTING.md) at the repo root for the actual
-workflow (branch naming, commit message conventions, what the gate expects
-before you open a PR).
+Never push directly to `dev` or `main`, or merge your own change without
+review — open a pull request against `dev` (the repository's default
+branch, and the one every PR targets) and let a human look at it, even if
+you're confident it's correct. `main` tracks production and is only ever
+updated by promoting `dev` into it; no feature branch targets `main`
+directly. See [`CONTRIBUTING.md`](../CONTRIBUTING.md) at the repo root for
+the actual workflow (branch naming, commit message conventions, what the
+gate expects before you open a PR).
 
 Don't add a tool attribution trailer or footer to a commit message or PR
 description in this repository — no `Co-Authored-By: <agent> ...` line, no

@@ -44,9 +44,11 @@ don't have one — you don't need Roblox assets on hand to contribute.
 
 ## Making a change
 
-1. **Every change gets its own branch off `main`** — a feature, a bug fix,
-   a docs tweak, all of it. Never commit straight to `main`, even for
-   something tiny. A short, descriptive name is enough:
+1. **Every change gets its own branch off `dev`** — a feature, a bug fix,
+   a docs tweak, all of it. `dev` is where every pull request targets;
+   `main` tracks production and only ever receives `dev` once it's ready
+   to release, never a feature branch directly. Never commit straight to
+   either. A short, descriptive name is enough:
    `fix/beam-texture-orientation`, `feat/surfacegui-text`,
    `docs/windows-build-steps`.
 2. Keep the change scoped to one thing. A bug fix doesn't need a

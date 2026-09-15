@@ -70,7 +70,7 @@ git branch -a | grep -i '<keyword from the roadmap item>'
   was closed without merging): say so in your eventual PR description if
   you pick up the same item on a fresh branch instead; don't silently
   duplicate work without acknowledging what came before.
-- **Nothing matches**: create a new branch off the current `main`, named
+- **Nothing matches**: create a new branch off the current `dev`, named
   after the convention in [`CONTRIBUTING.md`](../../CONTRIBUTING.md)
   (`feat/…`, `fix/…`, `docs/…`) — pick a name specific enough to the
   actual roadmap bullet that another agent's keyword search in this same
@@ -91,8 +91,8 @@ longer than it takes to push:
 
 ```sh
 git fetch origin
-git checkout main
-git pull --ff-only origin main
+git checkout dev
+git pull --ff-only origin dev
 git checkout -b feat/<short-description>
 git commit --allow-empty -m "Claim: <exact ROADMAP.md bullet you picked>"
 git push -u origin feat/<short-description>
@@ -120,10 +120,10 @@ fresh agent independently verify a hard-to-check claim before you trust
 it — see `agents/AGENTS.md`'s "Orchestration and subagents" section for
 when that's actually worth it versus overkill.
 
-## 4. Stay in sync — commit, fetch, and merge `main` regularly
+## 4. Stay in sync — commit, fetch, and merge `dev` regularly
 
 Working in isolation for a long stretch is how a branch drifts far enough
-from `main` that merging it back becomes painful, and how two agents
+from `dev` that merging it back becomes painful, and how two agents
 working the same area end up with an unresolvable conflict instead of a
 small one. Don't wait until the work is "done" to deal with this:
 
@@ -131,11 +131,11 @@ small one. Don't wait until the work is "done" to deal with this:
   end. Each commit should build and, ideally, pass the gate on its own —
   it's much easier to review, and much easier to bisect later, than one
   commit that changes forty files.
-- **Fetch and merge `main` periodically** — after each meaningful
+- **Fetch and merge `dev` periodically** — after each meaningful
   increment, or at least every 30–60 minutes of active work:
   ```sh
   git fetch origin
-  git merge origin/main
+  git merge origin/dev
   ```
   Resolve conflicts immediately, don't let them accumulate. Prefer `merge`
   over `rebase` here: this is a shared, potentially long-lived branch other
@@ -184,8 +184,8 @@ full, or flip it to `[x] 🚧` in place and say what's still open if only
 part of it did (see `agents/AGENTS.md`'s "Picking up work from the
 roadmap" section). Bundling it means the roadmap update gets reviewed
 alongside the code, never pushed unreviewed on its own — don't push a
-`ROADMAP.md` edit directly to `main` outside a PR unless the maintainer
-explicitly asks you to for a specific, already-merged item.
+`ROADMAP.md` edit directly to `dev` or `main` outside a PR unless the
+maintainer explicitly asks you to for a specific, already-merged item.
 
 **Also add a [`CHANGELOG.md`](../../CHANGELOG.md) entry in this same PR,
 crediting your GitHub username** — the identity `gh` is authenticated as
