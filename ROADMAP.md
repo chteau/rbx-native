@@ -105,6 +105,46 @@ Roblox's own engine.
   a single part's property change patches the GPU state directly instead
   of rebuilding the whole scene — editing stays interactive on large real
   places.
+- [x] **Interactive viewport gizmos — Select/Move/Scale/Rotate, matching
+  Studio's real toolbar and behaviour**, checked against
+  `Roblox/creator-docs` (`parts/index.md#transform-parts`,
+  `parts/models.md#select-models`) rather than assumed:
+  - **Select**: clicking an outlined object selects it, resolving to the
+    outermost enclosing model; `Alt`/`⌥`-click cycles through whatever's
+    under the cursor instead of just the nearest hit ("selection
+    cycling") — matching Studio's own mechanism rather than a
+    `Shift`-click-into-children behaviour it doesn't actually have.
+    `Shift`/`Ctrl`/`Cmd`-click adds another top-level object to the
+    selection instead of replacing it.
+  - **Move** (`2`), **Scale** (`3`), **Rotate** (`4`) — colored axis
+    draggers/handles/rings per axis; `Ctrl`/`Cmd`+`L` toggles world/local
+    orientation, with an `L` indicator when local is active. Move is also
+    draggable by the part's own body ("cursor dragging"), which rests the
+    part on whatever the cursor passes over — real geometry, not a
+    bounding box — falling back to sliding flat across the view only when
+    the cursor is over nothing.
+  - **Snapping**: move/scale snap in studs, rotate snap in degrees, each
+    with its own toolbar increment field and enable/disable checkbox;
+    holding `Shift` mid-drag inverts the current snap state for that one
+    drag. A free Move drag soft-snaps its grab point onto nearby
+    surfaces/edges when snapping is off. While cursor-dragging a part,
+    `T`/`R` tilt/rotate it 90° around the grab point.
+  - **Multi-select**: `Shift`/`Ctrl`/`Cmd`-click adds/removes a top-level
+    object; the Explorer, viewport outline and Properties panel all follow
+    the whole set. One Move gizmo appears, centred on the selection's
+    bounding box; dragging any handle, or any selected part's own body,
+    moves the whole group together by the same offset, so its layout
+    relative to itself never changes. Scale and Rotate still act on the
+    first-selected ("anchor") part alone — a group Scale/Rotate has no
+    agreed meaning yet.
+  - Clicking (and dragging) resolves against the shape actually drawn —
+    sphere, capped cylinder, wedge slope, a downloaded mesh's own
+    triangles — not the part's bounding box.
+  - **Placement**: directly under the File/Edit/Model/View menu bar and
+    above the viewport dock, matching the owner's reference screenshot.
+  - **Still open**: the 5th "Transform" toolbar button visible in Studio's
+    current toolbar, and group/ungroup operations (both under "What's
+    planned" → Renderer).
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -203,70 +243,33 @@ Roblox's own engine.
 - [ ] 📋 `Light.Shadows` for `PointLight` (needs 6-face shadow maps; done
   for `SpotLight`/`SurfaceLight`).
 - [ ] 📋 Neon/`ForceField` shimmer, `Glass` refraction — currently flat.
-- [x] 🚧 **Interactive viewport gizmos — Select/Move/Scale/Rotate(/Transform),
-  matching Studio's real toolbar and behaviour.** **Landed so far**: the
-  toolbar strip itself, in the placement described below; clicking in the
-  viewport to select (resolving to the outermost enclosing model) and
-  `Alt`/`⌥`-click selection cycling; the **Move** tool's coloured axis
-  draggers, dragging along an axis, cursor-dragging the part's own body, and
-  `Ctrl`/`Cmd`+`L`'s world/local toggle with its `L` indicator. **Still
-  open**: **Scale** and **Rotate** (their toolbar buttons are present but
-  disabled); the whole **Snapping** sub-bullet, including `Shift`-to-invert,
-  the increment fields and their checkboxes, pivot/cursor-drag soft-snapping
-  onto nearby surfaces, and `T`/`R`'s 90° tilts; the **5th "Transform"
-  button**, deliberately untouched for the reason its own sub-bullet gives;
-  `Shift`/`Ctrl`/`Cmd`-click multi-select, which needs the Explorer to hold
-  more than one selected instance first. Checked against
-  `Roblox/creator-docs` (`parts/index.md#transform-parts`,
-  `parts/models.md#select-models`) rather than assumed, including a
-  correction to the original ask:
-  - **Select**: clicking an outlined object selects it; `Shift`/`Ctrl`/`Cmd`
-    -click *adds another top-level object* to the selection — it does
-    **not** reach into a model's children. To select one specific child of
-    a model without leaving the viewport, real Studio uses **`Alt`-click
-    (`⌥`-click on Mac) to cycle through** whatever's under the cursor
-    ("selection cycling"), not `Shift`-click as originally assumed here —
-    worth matching that exact mechanism rather than inventing a
-    `Shift`-click-into-children behaviour Studio doesn't actually have.
-  - **Move** (shortcut `2`), **Scale** (`3`), **Rotate** (`4`) — colored
-    axis draggers/handles/rings per axis, each also editable by
-    cursor-dragging the object directly for Move. `Ctrl`/`Cmd`+`L` toggles
-    world vs. local orientation (an `L` indicator shows when local is
-    active — the axis gizmo itself re-orients to the object's own frame).
-  - **Snapping**: move/scale snap in studs, rotate snap in degrees, each
-    with its own toolbar increment field and an enable/disable checkbox
-    next to it (not just a fixed "clipping" flag) — held `Shift` while
-    dragging temporarily *inverts* the current snap state for that one
-    drag. `Move`-tool dragging by a part's pivot "soft-snaps" to nearby
-    surfaces/edges regardless of the snap setting. While cursor-dragging a
-    part, `T`/`R` tilt/rotate it 90° around the grab point.
-  - **A 5th "Transform" toolbar button** appears in Studio's current
-    toolbar (see the owner-provided screenshot) alongside Select/Move/
-    Scale/Rotate, but creator-docs' `parts/index.md` only documents
-    "Transform parts" as the *umbrella name* for Move+Scale+Rotate
-    together, not a distinct 5th interactive tool — could not confirm what
-    it does specifically from the docs alone. Needs confirming against a
-    real Studio instance (the "Studio fallback" Vinegar/Wine workaround
-    elsewhere in this roadmap is one way to do that) before implementing
-    it, rather than guessing.
-  - **Placement**: directly under the File/Edit/Model/View menu bar and
-    above the viewport dock, matching the owner's reference screenshot —
-    not tucked into an existing menu.
+- [ ] 📋 **A 5th "Transform" toolbar button** appears in Studio's current
+  toolbar (see the owner-provided screenshot) alongside the now-implemented
+  Select/Move/Scale/Rotate (see "What's been implemented" → Editor), but
+  creator-docs' `parts/index.md` only documents "Transform parts" as the
+  *umbrella name* for Move+Scale+Rotate together, not a distinct 5th
+  interactive tool — could not confirm what it does specifically from the
+  docs alone. Needs confirming against a real Studio instance (the "Studio
+  fallback" Vinegar/Wine workaround elsewhere in this roadmap is one way to
+  do that) before implementing it, rather than guessing.
 - [ ] 📋 **Align tool**, matching Studio's real Model-tab tool (checked
-  against `studio/align-tool.md` rather than assumed, not the gizmos
-  above). Aligns the selected objects' **Min**/**Center**/**Max** bounds
+  against `studio/align-tool.md` rather than assumed, not the transform
+  gizmos under "What's been implemented" → Editor). Aligns the selected
+  objects' **Min**/**Center**/**Max** bounds
   along independently-toggled **X**/**Y**/**Z** axes, in **World** or
   **Local** space, relative to either the **Selection Bounds** (the
   selection's collective bounding box) or the **Active Object** (the last
   -selected object in a multi-selection, which stays fixed while the rest
-  align to it) — meaningfully depends on multi-selection (below) existing
-  first, since aligning a single object to itself is a no-op. Self
-  -contained geometry math over whatever's already selected; no new
-  dependency.
+  align to it) — depended on multi-selection existing first, since aligning
+  a single object to itself is a no-op; multi-selection is now implemented
+  (see "What's been implemented" → Editor), so that dependency is
+  satisfied. Self-contained geometry math over whatever's already selected;
+  no new dependency.
 - [ ] 📋 **Pivot tools**, matching Studio's real Model-tab **Edit Pivot**/
   **Reset** tools (checked against `studio/pivot-tools.md`). Today's
-  gizmos (above) move/rotate/scale a part or model around its existing
-  pivot; nothing lets you *move the pivot itself*. Real Studio's Edit
+  transform gizmos (see "What's been implemented" → Editor) move/rotate/
+  scale a part or model around its existing pivot; nothing lets you *move
+  the pivot itself*. Real Studio's Edit
   Pivot tool repositions/reorients a part's or model's pivot independently
   of its geometry (rotation and scaling then happen around the new pivot),
   with **Snap**-to-hotspot behaviour (corners/edges/centers highlighted in
@@ -278,8 +281,10 @@ Roblox's own engine.
   `BasePart.PivotOffset` exposed to the Command Bar and scripts generally
   (today's Luau DataModel has no pivot-specific API at all), not just the
   interactive tool, since real Studio exposes both.
-- [ ] 📋 Multi-selection and group operations (select several instances at
-  once, group/ungroup) — today's selection is single-instance only.
+- [ ] 📋 **Group/ungroup operations** (wrap the selected instances into a
+  `Model`, or unwrap one back into its parent) — selecting several
+  instances at once is done (see "What's been implemented" → Editor);
+  grouping/ungrouping them is not.
 - [ ] 📋 **Full DOM editing from the Explorer**, beyond today's plain
   insert/delete:
   - A `+` icon on each row to insert a child instance directly, without
