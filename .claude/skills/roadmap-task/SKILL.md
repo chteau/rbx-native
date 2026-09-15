@@ -33,7 +33,12 @@ expectations).
    agent, a human) may already be on it. Continue that work instead of
    duplicating it if it's active; create a new branch off current `main`
    only if nothing matches, named per `CONTRIBUTING.md`'s convention
-   (`feat/…`, `fix/…`, `docs/…`).
+   (`feat/…`, `fix/…`, `docs/…`). Then **push it to `origin` immediately**,
+   before writing any implementation code — an empty claim commit naming
+   the roadmap bullet is enough (see `agents/workflows/roadmap-task.md`'s
+   step 2 for the exact commands). A branch that only exists locally is
+   invisible to this same check, so someone starting seconds later won't
+   see it.
 3. **Implement** following `GUIDELINES.md`/`SPECS.md`. Write real unit
    tests for the change — required, not optional. For anything visual
    (rendering, lighting, GUI), build the relevant binary and look at a

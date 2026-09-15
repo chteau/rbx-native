@@ -76,16 +76,32 @@ git branch -a | grep -i '<keyword from the roadmap item>'
   actual roadmap bullet that another agent's keyword search in this same
   step would find it (`feat/properties-cframe-orientation`, not
   `feat/properties`), and say which bullet you picked in your **first**
-  commit message on the branch, not only in the eventual PR — a branch
-  can be searched and checked out by another agent long before it has a
-  PR open.
+  commit message on the branch, not only in the eventual PR.
+
+**Push that first commit to `origin` immediately** — before writing any
+implementation code. The whole point of step 2 is to make your claim on
+this item visible to anyone else about to start the same search; a branch
+that only exists on your machine doesn't do that, and the gap between
+"I decided to pick this up" and "I got around to pushing" is exactly the
+window where two agents (or an agent and a human) starting on the same
+item seconds apart both end up believing they're first. `git branch -a`
+and `gh pr list` only ever see what's on `origin`, so an unpushed branch
+is invisible to step 2's own check — don't let it stay that way for
+longer than it takes to push:
 
 ```sh
 git fetch origin
 git checkout main
 git pull --ff-only origin main
 git checkout -b feat/<short-description>
+git commit --allow-empty -m "Claim: <exact ROADMAP.md bullet you picked>"
+git push -u origin feat/<short-description>
 ```
+
+An empty, message-only commit is fine and expected here — its only job is
+to give the branch something to push before any real work exists. It gets
+folded into the real history by the normal commits that follow in step 3
+(don't bother preserving it as its own line in the final PR).
 
 ## 3. Implement
 
