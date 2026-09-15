@@ -1,4 +1,4 @@
-use glam::{Mat3, Mat4, Vec3};
+use glam::{Mat3, Mat4, Quat, Vec3};
 use rbx_dom::Ref;
 
 use super::*;
@@ -6,6 +6,24 @@ use super::*;
 /// Looking down -Z from ten studs out, at a point on the z=0 plane.
 fn looking_at(x: f32, y: f32) -> Ray {
     Ray::new(Vec3::new(x, y, 10.0), Vec3::NEG_Z)
+}
+
+/// No grid and nothing to soft-snap onto: a drag that lands exactly where the
+/// cursor puts it.
+fn free() -> Landing<'static> {
+    Landing {
+        grid: 0.0,
+        neighbours: &[],
+        reach: 0.0,
+    }
+}
+
+/// A grid of `increment` studs and nothing to soft-snap onto.
+fn grid(increment: f32) -> Landing<'static> {
+    Landing {
+        grid: increment,
+        ..free()
+    }
 }
 
 #[test]
@@ -18,11 +36,11 @@ fn an_axis_drag_slides_by_how_far_the_cursor_moved_along_it() {
 
     // Grabbed at 2 studs along X, now pointing at 6.5: the part has travelled
     // 4.5, and not at all on the other two axes.
-    let moved = moved_to(drag, looking_at(6.5, 0.0)).expect("the axis is across the view");
+    let moved = moved_to(drag, looking_at(6.5, 0.0), free()).expect("the axis is across the view");
     assert!((moved - Vec3::new(4.5, 0.0, 0.0)).length() < 1e-4);
 
     // Back past where it started.
-    let moved = moved_to(drag, looking_at(-1.0, 0.0)).expect("the axis is across the view");
+    let moved = moved_to(drag, looking_at(-1.0, 0.0), free()).expect("the axis is across the view");
     assert!((moved - Vec3::new(-3.0, 0.0, 0.0)).length() < 1e-4);
 }
 
@@ -37,7 +55,7 @@ fn an_axis_drag_holds_still_at_the_point_it_was_grabbed() {
     let ray = Ray::new(Vec3::new(4.0, 4.0, 10.0), Vec3::NEG_Z);
 
     // The cursor has not moved since the grab, so neither has the part.
-    let moved = moved_to(drag, ray).expect("the axis is across the view");
+    let moved = moved_to(drag, ray, free()).expect("the axis is across the view");
     assert!((moved - Vec3::new(4.0, 1.0, -2.0)).length() < 1e-4);
 }
 
@@ -48,7 +66,7 @@ fn an_axis_sighted_end_on_has_no_answer_rather_than_a_wild_one() {
         axis: Vec3::Z,
         grabbed: 0.0,
     };
-    assert_eq!(moved_to(drag, looking_at(0.0, 0.0)), None);
+    assert_eq!(moved_to(drag, looking_at(0.0, 0.0), free()), None);
 }
 
 #[test]
@@ -61,7 +79,7 @@ fn a_plane_drag_keeps_the_part_where_it_was_under_the_cursor() {
         offset: Vec3::new(1.0, 1.0, 0.0),
     };
 
-    let moved = moved_to(drag, looking_at(3.0, 4.0)).expect("the ray crosses the plane");
+    let moved = moved_to(drag, looking_at(3.0, 4.0), free()).expect("the ray crosses the plane");
     assert!((moved - Vec3::new(4.0, 5.0, 0.0)).length() < 1e-4);
 }
 
@@ -76,7 +94,7 @@ fn a_plane_drag_stays_on_the_plane_it_started_on() {
     };
 
     let from_the_side = Ray::new(Vec3::new(-20.0, 0.0, 15.0), Vec3::new(1.0, 0.0, -1.0));
-    let moved = moved_to(drag, from_the_side).expect("the ray crosses the plane");
+    let moved = moved_to(drag, from_the_side, free()).expect("the ray crosses the plane");
     assert!((moved.z + 5.0).abs() < 1e-4, "left the plane at {moved}");
 }
 
@@ -89,7 +107,136 @@ fn a_ray_that_has_turned_along_the_drag_plane_has_no_answer() {
     };
     let along = Ray::new(Vec3::new(0.0, 0.0, 0.0), Vec3::X);
 
-    assert_eq!(moved_to(drag, along), None);
+    assert_eq!(moved_to(drag, along, free()), None);
+}
+
+#[test]
+fn a_snapped_axis_drag_lands_on_whole_increments_of_travel() {
+    let drag = Drag::Axis {
+        origin: Vec3::ZERO,
+        axis: Vec3::X,
+        grabbed: 2.0,
+    };
+
+    // 4.4 studs of travel rounds down to 4, 4.6 rounds up to 5.
+    let moved = moved_to(drag, looking_at(6.4, 0.0), grid(1.0)).expect("the axis is across");
+    assert!(
+        (moved - Vec3::new(4.0, 0.0, 0.0)).length() < 1e-4,
+        "{moved}"
+    );
+    let moved = moved_to(drag, looking_at(6.6, 0.0), grid(1.0)).expect("the axis is across");
+    assert!(
+        (moved - Vec3::new(5.0, 0.0, 0.0)).length() < 1e-4,
+        "{moved}"
+    );
+}
+
+#[test]
+fn a_snapped_drag_rounds_the_travel_not_the_world_position() {
+    // A part that already stood off-grid must not jump onto the grid the
+    // moment it is picked up: zero travel is zero travel, snapped or not.
+    let drag = Drag::Axis {
+        origin: Vec3::new(0.3, 0.0, 0.0),
+        axis: Vec3::X,
+        grabbed: 0.3,
+    };
+    let moved = moved_to(drag, looking_at(0.3, 0.0), grid(1.0)).expect("the axis is across");
+    assert!(
+        (moved - Vec3::new(0.3, 0.0, 0.0)).length() < 1e-4,
+        "{moved}"
+    );
+
+    // And a whole increment of travel keeps the same fractional offset.
+    let moved = moved_to(drag, looking_at(1.4, 0.0), grid(1.0)).expect("the axis is across");
+    assert!(
+        (moved - Vec3::new(1.3, 0.0, 0.0)).length() < 1e-4,
+        "{moved}"
+    );
+}
+
+#[test]
+fn a_snapped_free_drag_rounds_every_axis_of_its_travel() {
+    let drag = Drag::Plane {
+        point: Vec3::ZERO,
+        normal: Vec3::Z,
+        offset: Vec3::ZERO,
+    };
+    let moved = moved_to(drag, looking_at(3.4, 4.6), grid(1.0)).expect("the ray crosses");
+    assert!(
+        (moved - Vec3::new(3.0, 5.0, 0.0)).length() < 1e-4,
+        "{moved}"
+    );
+}
+
+#[test]
+fn a_free_drag_soft_snaps_its_grab_point_onto_a_nearby_surface() {
+    // A part filling y ∈ [-1, 1]: the cursor puts the grab point at 1.2, just
+    // above its top face, and it settles onto it.
+    let neighbour =
+        Mat4::from_scale_rotation_translation(Vec3::splat(2.0), Quat::IDENTITY, Vec3::ZERO);
+    let drag = Drag::Plane {
+        point: Vec3::new(0.0, 5.0, 0.0),
+        normal: Vec3::Z,
+        offset: Vec3::ZERO,
+    };
+    let landing = Landing {
+        grid: 0.0,
+        neighbours: &[neighbour],
+        reach: 0.5,
+    };
+
+    let moved = moved_to(drag, looking_at(0.0, 1.2), landing).expect("the ray crosses");
+    assert!(
+        (moved - Vec3::new(0.0, 1.0, 0.0)).length() < 1e-4,
+        "{moved}"
+    );
+}
+
+#[test]
+fn a_free_drag_out_of_reach_of_everything_lands_where_the_cursor_is() {
+    let neighbour =
+        Mat4::from_scale_rotation_translation(Vec3::splat(2.0), Quat::IDENTITY, Vec3::ZERO);
+    let drag = Drag::Plane {
+        point: Vec3::new(0.0, 5.0, 0.0),
+        normal: Vec3::Z,
+        offset: Vec3::ZERO,
+    };
+    let landing = Landing {
+        grid: 0.0,
+        neighbours: &[neighbour],
+        reach: 0.5,
+    };
+
+    let moved = moved_to(drag, looking_at(0.0, 4.0), landing).expect("the ray crosses");
+    assert!(
+        (moved - Vec3::new(0.0, 4.0, 0.0)).length() < 1e-4,
+        "{moved}"
+    );
+}
+
+#[test]
+fn a_grid_in_force_takes_the_place_of_soft_snapping_rather_than_stacking_on_it() {
+    // creator-docs gives the two as alternatives — soft snapping is what a
+    // cursor drag does "if snapping is disabled" — so a surface well within
+    // reach must not pull a snapped drag off its increment.
+    let neighbour =
+        Mat4::from_scale_rotation_translation(Vec3::splat(2.0), Quat::IDENTITY, Vec3::ZERO);
+    let drag = Drag::Plane {
+        point: Vec3::ZERO,
+        normal: Vec3::Z,
+        offset: Vec3::ZERO,
+    };
+    let landing = Landing {
+        grid: 1.0,
+        neighbours: &[neighbour],
+        reach: 5.0,
+    };
+
+    let moved = moved_to(drag, looking_at(0.0, 1.2), landing).expect("the ray crosses");
+    assert!(
+        (moved - Vec3::new(0.0, 1.0, 0.0)).length() < 1e-4,
+        "{moved}"
+    );
 }
 
 #[test]
@@ -124,8 +271,8 @@ fn an_axis_drag_never_settles() {
 
 /// Where one step of a drag puts the part's centre, for the gestures that only
 /// move it.
-fn moved_to(drag: Drag, ray: Ray) -> Option<Vec3> {
-    match advance(drag, ray)?.1 {
+fn moved_to(drag: Drag, ray: Ray, landing: Landing) -> Option<Vec3> {
+    match advance(drag, ray, landing)?.1 {
         Change::Position(position) => Some(position),
         other => panic!("expected a move, got {other:?}"),
     }
@@ -156,7 +303,7 @@ fn a_scale_drag_grows_the_part_by_how_far_the_face_was_pulled() {
     // Pulled out to 4 studs from the centre: the +X face moved 3, and the -X
     // face has to stay where it was, so the part is 3 studs wider and its
     // middle has shifted by half of that.
-    let change = advance(grabbed_x_face(), looking_at(4.0, 0.0))
+    let change = advance(grabbed_x_face(), looking_at(4.0, 0.0), free())
         .expect("the axis is across the view")
         .1;
 
@@ -177,7 +324,7 @@ fn a_scale_drag_grows_the_part_by_how_far_the_face_was_pulled() {
 
 #[test]
 fn a_scale_drag_pushed_inwards_shrinks_the_part() {
-    let change = advance(grabbed_x_face(), looking_at(0.25, 0.0))
+    let change = advance(grabbed_x_face(), looking_at(0.25, 0.0), free())
         .expect("the axis is across the view")
         .1;
 
@@ -192,7 +339,7 @@ fn a_scale_drag_pushed_inwards_shrinks_the_part() {
 
 #[test]
 fn a_scale_drag_touches_only_the_axis_it_was_grabbed_on() {
-    let Change::Size { size, position } = advance(grabbed_x_face(), looking_at(9.0, 0.0))
+    let Change::Size { size, position } = advance(grabbed_x_face(), looking_at(9.0, 0.0), free())
         .expect("the axis is across the view")
         .1
     else {
@@ -207,10 +354,10 @@ fn a_scale_drag_run_past_the_smallest_a_part_may_be_stops_there() {
     // Dragged far through the part and out the other side. `BasePart.Size`
     // bottoms out at 0.001, and a part that has stopped shrinking must stop
     // sliding too, or it would walk away under a cursor doing nothing.
-    let far = advance(grabbed_x_face(), looking_at(-50.0, 0.0))
+    let far = advance(grabbed_x_face(), looking_at(-50.0, 0.0), free())
         .expect("the axis is across the view")
         .1;
-    let further = advance(grabbed_x_face(), looking_at(-500.0, 0.0))
+    let further = advance(grabbed_x_face(), looking_at(-500.0, 0.0), free())
         .expect("the axis is across the view")
         .1;
 
@@ -234,7 +381,7 @@ fn a_scale_handle_on_the_far_face_grows_the_part_the_other_way() {
     };
 
     assert_eq!(
-        advance(drag, looking_at(-4.0, 0.0))
+        advance(drag, looking_at(-4.0, 0.0), free())
             .expect("the axis is across the view")
             .1,
         Change::Size {
@@ -256,7 +403,7 @@ fn a_rotate_drag_turns_by_the_angle_the_cursor_swept() {
         turned: 0.0,
     };
 
-    let (_, change) = advance(drag, looking_at(0.0, 5.0)).expect("the ray crosses the ring");
+    let (_, change) = advance(drag, looking_at(0.0, 5.0), free()).expect("the ray crosses the ring");
     let Change::Orientation(turned) = change else {
         panic!("expected a rotation, got {change:?}");
     };
@@ -275,7 +422,7 @@ fn a_rotate_drag_that_has_not_moved_leaves_the_part_alone() {
         turned: 0.0,
     };
 
-    let (_, change) = advance(drag, looking_at(5.0, 0.0)).expect("the ray crosses the ring");
+    let (_, change) = advance(drag, looking_at(5.0, 0.0), free()).expect("the ray crosses the ring");
     let Change::Orientation(turned) = change else {
         unreachable!()
     };
@@ -300,7 +447,7 @@ fn a_rotate_drag_can_be_carried_past_half_a_turn() {
     for eighth in 1..=7 {
         let angle = std::f32::consts::TAU * eighth as f32 / 8.0;
         let ray = looking_at(5.0 * angle.cos(), 5.0 * angle.sin());
-        let (next, _) = advance(drag, ray).expect("the ray crosses the ring");
+        let (next, _) = advance(drag, ray, free()).expect("the ray crosses the ring");
         drag = next;
         let Drag::Ring { turned: total, .. } = drag else {
             unreachable!()
@@ -325,7 +472,7 @@ fn a_ray_that_has_turned_along_a_ring_has_no_answer() {
     };
     let along = Ray::new(Vec3::new(0.0, 5.0, 0.0), Vec3::NEG_Y);
 
-    assert_eq!(advance(drag, along), None);
+    assert_eq!(advance(drag, along, free()), None);
 }
 
 #[test]

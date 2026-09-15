@@ -6,14 +6,15 @@
 //! undo stack but no idea where the cursor is. Everything in between travels
 //! as a [`ViewportAction`].
 
-use glam::{Mat3, Vec3};
+use glam::{Mat3, Mat4, Vec3};
 use gpui_kit::*;
-use rbx_dom::{Ref, WeakDom};
+use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
+use rbx_viewer::gizmo;
 use rbx_viewer::pick::{self, Ray};
 
 use crate::properties;
 use crate::settle::{self, Settle};
-use crate::transform::Target;
+use crate::transform::{self, Target};
 use crate::workspace_view::ViewportAction;
 
 use super::{selection, Shell};
@@ -31,6 +32,7 @@ impl Shell {
     pub(super) fn handle_viewport_action(
         &mut self,
         action: &ViewportAction,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match *action {
@@ -52,6 +54,17 @@ impl Shell {
                 orientation,
                 first,
             } => self.rotate_part(referent, orientation, first, cx),
+            ViewportAction::Turned {
+                referent,
+                pivot,
+                axis,
+                first,
+            } => self.turn_part(referent, pivot, axis, first, cx),
+            // The one toolbar action that moves the caret instead of changing
+            // state, which is why this path carries a `Window` at all.
+            ViewportAction::Tool(transform::Action::FocusIncrement(kind)) => {
+                self.snap_fields.focus(kind, window, cx);
+            }
             ViewportAction::Tool(action) => self.transform_action(action, cx),
         }
     }
@@ -184,6 +197,72 @@ impl Shell {
         true
     }
 
+    /// A `T`/`R` quarter turn mid-drag.
+    ///
+    /// Unlike a move, this cannot go through `properties::edit::commit`: a
+    /// `CFrame`'s rotation has no text syntax that path accepts (see
+    /// `properties::edit::parse`, which deliberately keeps the existing
+    /// rotation and reads only a position), so the new frame is written
+    /// straight onto the instance instead. It shares the drag's one undo step,
+    /// opening it if the turn is the first thing the gesture did.
+    fn turn_part(
+        &mut self,
+        referent: Ref,
+        pivot: Vec3,
+        axis: Vec3,
+        first: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(Variant::CFrame(frame)) = self
+            .dom
+            .get(referent)
+            .and_then(|instance| instance.properties().get(CFRAME_PROPERTY))
+        else {
+            return;
+        };
+
+        let r = frame.rotation;
+        // `CFrameData::rotation` is row-major; `Mat3::from_cols_array` is not.
+        let rotation = glam::Mat3::from_cols(
+            Vec3::new(r[0], r[3], r[6]),
+            Vec3::new(r[1], r[4], r[7]),
+            Vec3::new(r[2], r[5], r[8]),
+        );
+        let position = Vec3::new(frame.position.x, frame.position.y, frame.position.z);
+        let (rotation, position) =
+            gizmo::turned(rotation, position, pivot, gizmo::quarter_turn(axis));
+
+        let turned = Variant::CFrame(CFrameData {
+            position: Vector3Data {
+                x: position.x,
+                y: position.y,
+                z: position.z,
+            },
+            rotation: [
+                rotation.x_axis.x,
+                rotation.y_axis.x,
+                rotation.z_axis.x,
+                rotation.x_axis.y,
+                rotation.y_axis.y,
+                rotation.z_axis.y,
+                rotation.x_axis.z,
+                rotation.y_axis.z,
+                rotation.z_axis.z,
+            ],
+        });
+
+        if first {
+            self.push_history();
+        }
+        if let Err(err) = self.dom.set_property(referent, CFRAME_PROPERTY, turned) {
+            self.output.push_warning(&format!("viewport turn: {err}"));
+            return;
+        }
+
+        self.reflect_in_viewport(referent, CFRAME_PROPERTY, cx);
+        cx.notify();
+    }
+
     /// Tells the viewport where the selected part stands now, so its handles
     /// follow an edit that moved or resized it — a typed coordinate, an undo,
     /// or a Command Bar script.
@@ -195,6 +274,22 @@ impl Shell {
         let target = Target::read(&self.dom, Some(reference));
         self.viewport
             .update(cx, |viewport, _| viewport.set_target(target));
+    }
+
+    /// Hands the viewport the boxes a free drag can soft-snap onto: every
+    /// drawn part in the workspace except the one about to be dragged.
+    ///
+    /// Only on a selection change or after a script has rearranged the place,
+    /// never per mouse move — this walks the whole workspace, and during a
+    /// drag nothing but the dragged part is moving anyway.
+    pub(super) fn sync_snap_neighbours(&mut self, cx: &mut Context<Self>) {
+        let selected = self.selected();
+        let neighbours: Vec<Mat4> = pick::drawable_parts(&self.dom, &self.database)
+            .filter(|referent| Some(*referent) != selected)
+            .filter_map(|referent| pick::model_of(&self.dom, referent))
+            .collect();
+        self.viewport
+            .update(cx, |viewport, _| viewport.set_neighbours(neighbours));
     }
 }
 

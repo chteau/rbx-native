@@ -13,11 +13,14 @@ use gpui_kit::component::{h_flex, ActiveTheme, Selectable as _, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use crate::transform::{Action, Tool};
+use crate::transform::{Action, SnapKind, Tool};
 
 use super::Shell;
 
-/// `RBX_STUDIO_TOOL=rotate` / `scale,local` picks a tool at startup — a
+pub(crate) mod snap;
+
+/// `RBX_STUDIO_TOOL=rotate` / `scale,local` / `move,nosnap` picks a tool and
+/// its snapping at startup — a
 /// debugging aid for a screenshot of the draggers, since nothing else can
 /// click the toolbar or type its shortcut on the editor's behalf (see
 /// `AGENTS.md`'s safety rules), exactly as `RBX_STUDIO_SELECT` and
@@ -38,22 +41,40 @@ impl Shell {
                 "scale" => self.transform_action(Action::Use(Tool::Scale), cx),
                 "rotate" => self.transform_action(Action::Use(Tool::Rotate), cx),
                 "local" => self.transform_action(Action::ToggleLocal, cx),
+                "nosnap" => self.transform_action(Action::ToggleSnap(SnapKind::Translate), cx),
                 other => eprintln!("rbxstudio: {TOOL_VARIABLE}: no tool called {other:?}"),
             }
         }
     }
-    /// Applies a toolbar action, whether it came from a button here or from a
+    /// Applies a toolbar action, whether it came from a control here or from a
     /// shortcut typed over the 3D view.
+    ///
+    /// `FocusIncrement` is the one action that changes no state: it moves the
+    /// caret, which needs a `Window` this path does not have, so the shortcut
+    /// is handled where one is (see `Shell::focus_snap_increment`).
     pub(crate) fn transform_action(&mut self, action: Action, cx: &mut Context<Self>) {
         match action {
             Action::Use(tool) => self.transform.tool = tool,
             Action::ToggleLocal => self.transform.local = !self.transform.local,
+            Action::ToggleSnap(kind) => {
+                let snap = self.snap_mut(kind);
+                snap.enabled = !snap.enabled;
+            }
+            Action::SetIncrement(kind, increment) => self.snap_mut(kind).increment = increment,
+            Action::FocusIncrement(_) => {}
         }
 
         let transform = self.transform;
         self.viewport
             .update(cx, |viewport, _| viewport.set_transform(transform));
         cx.notify();
+    }
+
+    fn snap_mut(&mut self, kind: SnapKind) -> &mut crate::transform::Snap {
+        match kind {
+            SnapKind::Translate => &mut self.transform.translate,
+            SnapKind::Rotate => &mut self.transform.rotate,
+        }
     }
 
     /// The strip itself.
@@ -100,5 +121,9 @@ impl Shell {
                         .child("local"),
                 )
             })
+            // Studio's own toolbar puts the snap increments in the same strip,
+            // to the right of the transform tools they apply to.
+            .child(div().w(px(1.)).h(px(18.)).bg(cx.theme().border).mx_2())
+            .child(self.snap_controls(cx))
     }
 }

@@ -47,6 +47,27 @@
   nothing to say why. They are gathered into one value the renderer's
   constructor now *requires*, so a rebuild cannot start blank: there is no way
   to build one without saying what view it is for. — @chteau
+- **Snapping for the Move tool.** The transform toolbar now carries the snap
+  increments Studio's does: a move/scale field in studs and a rotate field in
+  degrees, each with its own enable/disable checkbox beside it rather than one
+  shared flag — two pairs and not three, because creator-docs gives Move and
+  Scale a single studs increment between them (`Shift`+`2` jumps to "the
+  move/scale increment input", `Alt`+`R` to "the rotate increment input"), and
+  the rotate pair is drawn disabled until there is a Rotate tool for it to act
+  on. Holding `Shift` mid-drag *inverts* whichever state the checkbox is in,
+  for that drag only, so it frees a snapped drag as readily as it snaps a free
+  one. What rounds is the travel since the handle was grabbed, not the part's
+  world position: the docs never say where a grid is anchored, and rounding
+  the travel is what stops a part that already stood off-grid from jumping the
+  moment it is picked up. With no grid in force, a drag by the part's own body
+  instead "soft snaps" its grab point onto the surfaces, edges and corners of
+  parts it passes near — the docs give the two as alternatives, not as things
+  that stack ("if snapping is **disabled**, the part will soft snap to
+  surfaces and edges of nearby parts"), and publish no threshold, so how near
+  "near" is scales with the draggers' own screen-relative size here. `T` and
+  `R` during such a drag turn the part 90° about the point it is held by: `T`
+  tilts it towards the camera, `R` turns it about the normal of the surface
+  under it. — @chteau
 
 - **Orthographic camera mode.** The viewport's free-flight camera can now
   switch between perspective and parallel projection — toggled from the

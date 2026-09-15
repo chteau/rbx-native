@@ -33,6 +33,7 @@ mod quality;
 mod renderer;
 mod scene;
 mod shapes;
+pub mod snap;
 mod textures;
 mod view;
 

@@ -45,9 +45,6 @@ fn a_digit_with_no_tool_behind_it_is_left_alone() {
 
 #[test]
 fn a_modified_digit_is_not_a_tool() {
-    // Studio gives Shift+2 to the move/scale snap increment field, which does
-    // not exist here yet: it must not quietly mean Move instead.
-    assert_eq!(action_for("2", shift()), None);
     assert_eq!(action_for("2", control()), None);
     assert_eq!(
         action_for(
@@ -59,6 +56,89 @@ fn a_modified_digit_is_not_a_tool() {
         ),
         None
     );
+}
+
+#[test]
+fn shift_two_jumps_to_the_move_scale_increment_field() {
+    // creator-docs: "To quickly jump to the move/scale increment input, press
+    // Shift+2" — so it must not quietly mean Move instead.
+    assert_eq!(
+        action_for("2", shift()),
+        Some(Action::FocusIncrement(SnapKind::Translate))
+    );
+}
+
+#[test]
+fn the_rotate_increment_shortcut_stays_unbound_while_rotate_does_not_exist() {
+    // Alt+R is the docs' jump to the rotate increment field; that field has no
+    // Rotate tool behind it yet, and a shortcut that does nothing visible is
+    // worse than one that visibly isn't there.
+    let alt = Modifiers {
+        alt: true,
+        ..Modifiers::none()
+    };
+    assert_eq!(action_for("r", alt), None);
+}
+
+#[test]
+fn shift_inverts_the_snap_state_rather_than_forcing_it_on() {
+    // "While transforming, you can temporarily toggle snapping by holding the
+    // Shift key" — both directions.
+    let on = Snap {
+        enabled: true,
+        increment: 2.0,
+    };
+    assert!(on.active(false));
+    assert!(!on.active(true));
+
+    let off = Snap {
+        enabled: false,
+        increment: 2.0,
+    };
+    assert!(!off.active(false));
+    assert!(off.active(true));
+}
+
+#[test]
+fn the_grid_is_the_increment_only_while_snapping_is_in_force() {
+    let on = Snap {
+        enabled: true,
+        increment: 2.0,
+    };
+    assert_eq!(on.grid(false), 2.0);
+    // Zero is what `rbx_viewer::snap::round_to` passes through untouched.
+    assert_eq!(on.grid(true), 0.0);
+
+    let off = Snap {
+        enabled: false,
+        increment: 2.0,
+    };
+    assert_eq!(off.grid(false), 0.0);
+    assert_eq!(off.grid(true), 2.0);
+}
+
+#[test]
+fn the_two_increments_are_independent_of_each_other() {
+    // One checkbox and one number each, not a single shared flag.
+    let mut transform = Transform::default();
+    transform.rotate.enabled = false;
+    assert!(transform.translate.enabled);
+    assert_eq!(transform.translate.increment, 1.0);
+    assert_eq!(transform.rotate.increment, 45.0);
+}
+
+#[test]
+fn an_increment_field_mid_edit_leaves_the_increment_alone() {
+    assert_eq!(parse_increment("0.5"), Some(0.5));
+    assert_eq!(parse_increment("  4 "), Some(4.0));
+    // A grid has no direction.
+    assert_eq!(parse_increment("-3"), Some(3.0));
+    // Everything a field passes through on its way to a number.
+    assert_eq!(parse_increment(""), None);
+    assert_eq!(parse_increment("1."), Some(1.0));
+    assert_eq!(parse_increment("-"), None);
+    assert_eq!(parse_increment("half"), None);
+    assert_eq!(parse_increment("inf"), None);
 }
 
 #[test]

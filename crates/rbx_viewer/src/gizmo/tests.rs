@@ -314,3 +314,72 @@ fn an_angle_step_always_goes_the_short_way_round() {
         assert!(step.abs() <= PI + 1e-4);
     }
 }
+
+#[test]
+fn a_quarter_turn_about_the_camera_right_vector_tilts_towards_the_camera() {
+    // A camera looking down -Z has +Z towards it and X to its right; tilting
+    // the part's top towards the camera therefore carries +Y to +Z.
+    let tilted = quarter_turn(Vec3::X) * Vec3::Y;
+    assert!((tilted - Vec3::Z).length() < 1e-5, "{tilted:?}");
+}
+
+#[test]
+fn a_quarter_turn_is_a_quarter_turn_whatever_the_axis_length() {
+    let unit = quarter_turn(Vec3::Y);
+    let long = quarter_turn(Vec3::Y * 17.0);
+    assert!((unit.x_axis - long.x_axis).length() < 1e-5);
+    assert!((unit.z_axis - long.z_axis).length() < 1e-5);
+}
+
+#[test]
+fn a_degenerate_turn_axis_falls_back_to_the_world_up() {
+    // Same defence as `basis`: a zero axis would otherwise produce a NaN
+    // rotation that silently destroys the part's `CFrame`.
+    let turn = quarter_turn(Vec3::ZERO);
+    assert!(turn.is_finite());
+    assert!((turn * Vec3::Z - Vec3::X).length() < 1e-5);
+}
+
+#[test]
+fn turning_about_a_pivot_leaves_the_pivot_itself_where_it_was() {
+    let pivot = Vec3::new(3.0, 1.0, -2.0);
+    let (_, position) = turned(Mat3::IDENTITY, pivot, pivot, quarter_turn(Vec3::Y));
+    assert!((position - pivot).length() < 1e-5, "{position:?}");
+}
+
+#[test]
+fn turning_carries_the_part_around_the_grab_point() {
+    // Grabbed at the origin, standing two studs along +X: a quarter turn about
+    // +Y carries it to -Z (right-handed), and its own axes turn with it.
+    let turn = quarter_turn(Vec3::Y);
+    let (linear, position) = turned(Mat3::IDENTITY, Vec3::X * 2.0, Vec3::ZERO, turn);
+    assert!(
+        (position - Vec3::NEG_Z * 2.0).length() < 1e-5,
+        "{position:?}"
+    );
+    assert!((linear.x_axis - Vec3::NEG_Z).length() < 1e-5, "{linear:?}");
+}
+
+#[test]
+fn turning_keeps_a_parts_size_in_its_columns() {
+    // The matrix the draggers are drawn from still carries `Size` in its
+    // column lengths; a turn has to rotate it without rescaling it.
+    let linear = Mat3::from_diagonal(Vec3::new(4.0, 1.0, 2.0));
+    let (spun, _) = turned(linear, Vec3::ZERO, Vec3::ZERO, quarter_turn(Vec3::Y));
+    assert!((spun.x_axis.length() - 4.0).abs() < 1e-5);
+    assert!((spun.y_axis.length() - 1.0).abs() < 1e-5);
+    assert!((spun.z_axis.length() - 2.0).abs() < 1e-5);
+}
+
+#[test]
+fn four_quarter_turns_come_back_to_where_they_started() {
+    let turn = quarter_turn(Vec3::new(1.0, 1.0, 0.0));
+    let start = (Mat3::IDENTITY, Vec3::new(5.0, 0.0, 0.0));
+    let pivot = Vec3::new(1.0, 2.0, 3.0);
+    let mut state = start;
+    for _ in 0..4 {
+        state = turned(state.0, state.1, pivot, turn);
+    }
+    assert!((state.1 - start.1).length() < 1e-4, "{:?}", state.1);
+    assert!((state.0.x_axis - Vec3::X).length() < 1e-4, "{:?}", state.0);
+}

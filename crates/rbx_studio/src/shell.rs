@@ -43,6 +43,7 @@ use crate::workspace_view::{AssetWarnings, PoseSynced, ViewportAction, Workspace
 use crate::Place;
 use quality::{quality_labels, quality_row};
 use selection::Selection;
+use toolbar::snap::SnapFields;
 
 const EXPLORER_WIDTH: f32 = 320.0;
 const PROPERTIES_HEIGHT: f32 = 200.0;
@@ -107,8 +108,10 @@ pub(crate) struct Shell {
     /// the toolbar renders from it; pushed down to the viewport, which
     /// hit-tests against it, whenever it changes.
     transform: Transform,
+    /// The two snap increment fields' live text — see `shell::toolbar::snap`.
+    snap_fields: SnapFields,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
-    _subscriptions: [Subscription; 7],
+    _subscriptions: [Subscription; 9],
 }
 
 impl Shell {
@@ -179,9 +182,15 @@ impl Shell {
         let camera_synced = cx.subscribe(&viewport, |shell, _, event: &PoseSynced, cx| {
             shell.sync_camera_pose(event.0, cx);
         });
-        let viewport_actions = cx.subscribe(&viewport, |shell, _, event: &ViewportAction, cx| {
-            shell.handle_viewport_action(event, cx);
-        });
+        // `subscribe_in` rather than `subscribe`: one viewport action (the
+        // snap increment shortcut) moves the caret, and focus needs a window.
+        let viewport_actions = cx.subscribe_in(
+            &viewport,
+            window,
+            |shell, _, event: &ViewportAction, window, cx| {
+                shell.handle_viewport_action(event, window, cx);
+            },
+        );
         let asset_warnings = cx.subscribe(&viewport, |shell, _, event: &AssetWarnings, cx| {
             for warning in &event.0 {
                 shell.output.push_warning(warning);
@@ -193,6 +202,9 @@ impl Shell {
         // over `cx.entity()`, so `Shell` must already be constructible (valid
         // as soon as `cx.new` starts building it, same as `dock_area` above).
         let menu_bar = crate::menu_bar::build(cx.entity(), cx);
+
+        let transform = Transform::default();
+        let (snap_fields, [translate_typed, rotate_typed]) = SnapFields::new(transform, window, cx);
 
         let initial_target = Target::read(&dom, selected);
         let mut shell = Shell {
@@ -222,7 +234,8 @@ impl Shell {
             output_scroll: ScrollHandle::new(),
             path,
             format,
-            transform: Transform::default(),
+            transform,
+            snap_fields,
             _subscriptions: [
                 picked,
                 clicked,
@@ -231,6 +244,8 @@ impl Shell {
                 camera_synced,
                 viewport_actions,
                 asset_warnings,
+                translate_typed,
+                rotate_typed,
             ],
         };
 
@@ -241,6 +256,7 @@ impl Shell {
         shell
             .viewport
             .update(cx, |viewport, _| viewport.set_target(initial_target));
+        shell.sync_snap_neighbours(cx);
 
         // `RBX_STUDIO_TOOL` (see `shell::toolbar`). Before the Command Bar
         // block below rather than after it: a script's reload rebuilds the
@@ -325,6 +341,10 @@ impl Shell {
                 viewport.set_selection(selected);
                 viewport.set_target(target);
             });
+            // The part that just stopped being selected becomes one of the
+            // neighbours a drag can settle against, and the one that just
+            // started stops being one.
+            self.sync_snap_neighbours(cx);
             cx.notify();
         }
     }

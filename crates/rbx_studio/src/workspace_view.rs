@@ -24,7 +24,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use glam::{Mat3, Vec3};
+use glam::{Mat3, Mat4, Vec3};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_dom::Ref;
@@ -108,6 +108,16 @@ pub(crate) enum ViewportAction {
         orientation: Mat3,
         first: bool,
     },
+    /// `T` or `R` during a cursor drag: a quarter turn about `pivot`, the
+    /// point the part is being held by. `first` marks the gesture's undo step,
+    /// exactly as `Moved` does — a drag that turns the part and then moves it
+    /// is still one drag.
+    Turned {
+        referent: Ref,
+        pivot: Vec3,
+        axis: Vec3,
+        first: bool,
+    },
     /// A transform-toolbar shortcut typed over the view.
     Tool(transform::Action),
 }
@@ -168,6 +178,11 @@ pub(crate) struct WorkspaceView {
     /// Where the selected part stands, so a click can be hit-tested against
     /// its draggers here rather than on the render thread.
     target: Option<Target>,
+    /// The boxes every other drawn part occupies, for a free drag to soft-snap
+    /// onto (see `gizmo::Landing`). Pushed down from `Shell` when the
+    /// selection changes rather than read per move: only the dragged part is
+    /// moving, so its neighbours stand still for the length of a gesture.
+    neighbours: Vec<Mat4>,
     /// The camera the last frame was drawn from — see `pump::Ready::view`.
     /// Everything screen-to-world unprojects against this, so a click resolves
     /// against the view it was aimed at.
@@ -261,6 +276,7 @@ impl WorkspaceView {
             orthographic,
             transform: Transform::default(),
             target: None,
+            neighbours: Vec::new(),
             view: None,
             meshes: Meshes::default(),
             drag: None,
@@ -444,6 +460,12 @@ impl WorkspaceView {
                 cx.emit(ViewportAction::Tool(action));
                 return;
             }
+            // Only while a part is actually held by its body, and only then:
+            // with nothing in hand these are ordinary keys, and swallowing
+            // them would take `r` away from whatever binds it next.
+            if self.turn_key(&keystroke.key, keystroke.modifiers, cx) {
+                return;
+            }
         }
 
         let layout = Layout::of(cx.keyboard_layout().name());
@@ -570,7 +592,7 @@ impl Render for WorkspaceView {
             .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, window, cx| {
                 if view.dragging() {
                     let scale = window.scale_factor();
-                    view.drag_to(event.position, scale, cx);
+                    view.drag_to(event.position, event.modifiers, scale, cx);
                     return;
                 }
                 view.mouse_moved(event.position);

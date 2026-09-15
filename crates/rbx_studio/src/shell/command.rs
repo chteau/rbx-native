@@ -146,6 +146,10 @@ impl Shell {
             viewport.reload(dom);
             viewport.set_target(target);
         });
+        // A reload is also the one case where parts other than the selected
+        // one may have moved, appeared or gone — so what a drag can soft-snap
+        // onto has to be read again too.
+        self.sync_snap_neighbours(cx);
     }
 }
 

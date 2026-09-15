@@ -132,8 +132,7 @@ pub fn parts_along(
     meshes: &Meshes,
     ray: Ray,
 ) -> Vec<Ref> {
-    let mut hits: Vec<(f32, Ref)> = workspace_descendants(dom, database)
-        .filter(|&referent| is_drawable(dom, database, referent))
+    let mut hits: Vec<(f32, Ref)> = drawable_parts(dom, database)
         .filter_map(|referent| Some((distance_to(dom, database, meshes, referent, ray)?, referent)))
         .collect();
     hits.sort_by(|(a, _), (b, _)| a.total_cmp(b));
@@ -168,6 +167,17 @@ fn distance_to(
     };
     let geometry = resolve_shape(dom, database, instance, Vec3::new(size.x, size.y, size.z));
     shape::hit(geometry.kind, geometry.model(cframe_matrix(cframe)), ray)
+}
+
+/// Everything in the scene a click or a drag can resolve against: `Workspace`'s
+/// own descendants, filtered by the same `is_drawable` test the scene builder
+/// uses, so what the editor can reach is exactly what is on screen.
+pub fn drawable_parts<'a>(
+    dom: &'a WeakDom,
+    database: &'a ReflectionDatabase,
+) -> impl Iterator<Item = Ref> + 'a {
+    workspace_descendants(dom, database)
+        .filter(move |&referent| is_drawable(dom, database, referent))
 }
 
 /// The matrix one `BasePart` in `dom` is drawn with, or `None` for anything

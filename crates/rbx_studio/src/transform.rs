@@ -62,12 +62,109 @@ impl Tool {
     }
 }
 
+/// Which of the toolbar's two snap increments a control belongs to.
+///
+/// Two, not three: `creator-docs` gives Move and Scale one field between them
+/// ("**snapping** increments are based on **studs** for moving/scaling or
+/// **degrees** for rotating"), and confirms it with the shortcuts — `Shift`+`2`
+/// jumps to "the **move/scale** increment input", `Alt`+`R` to "the **rotate**
+/// increment input".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SnapKind {
+    /// Studs, shared by Move and Scale.
+    Translate,
+    /// Degrees, Rotate's own.
+    Rotate,
+}
+
+impl SnapKind {
+    pub(crate) const ALL: [SnapKind; 2] = [SnapKind::Translate, SnapKind::Rotate];
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            SnapKind::Translate => "Move/Scale",
+            SnapKind::Rotate => "Rotate",
+        }
+    }
+
+    /// What the increment is measured in, for the field's own suffix.
+    pub(crate) fn unit(self) -> &'static str {
+        match self {
+            SnapKind::Translate => "studs",
+            SnapKind::Rotate => "degrees",
+        }
+    }
+}
+
+/// One snap increment and whether it is switched on — Studio's toolbar pairs a
+/// checkbox with a number, rather than carrying a single fixed flag.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Snap {
+    pub(crate) enabled: bool,
+    pub(crate) increment: f32,
+}
+
+impl Snap {
+    /// Whether this drag actually snaps, given whether `Shift` is held.
+    ///
+    /// `Shift` *inverts* rather than enables: "While transforming, you can
+    /// temporarily **toggle** snapping by holding the `Shift` key"
+    /// (`parts/index.md#transform-parts`) — so it snaps a free drag and frees
+    /// a snapped one, and either way only for as long as it is held.
+    pub(crate) fn active(self, shift: bool) -> bool {
+        self.enabled != shift
+    }
+
+    /// The increment this drag should round to, or `0.0` for no grid at all —
+    /// the value [`rbx_viewer::snap::round_to`] passes through untouched.
+    pub(crate) fn grid(self, shift: bool) -> f32 {
+        if self.active(shift) {
+            self.increment
+        } else {
+            0.0
+        }
+    }
+}
+
+impl Default for Snap {
+    /// Studio ships with snapping on. The docs publish no default increment,
+    /// so a whole stud is this editor's own choice (see [`Transform::default`]
+    /// for the rotate one).
+    fn default() -> Self {
+        Snap {
+            enabled: true,
+            increment: 1.0,
+        }
+    }
+}
+
 /// Everything the transform toolbar holds.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Transform {
     pub(crate) tool: Tool,
     /// Handles along the part's own axes rather than the world's.
     pub(crate) local: bool,
+    /// The move/scale increment, in studs.
+    pub(crate) translate: Snap,
+    /// The rotate increment, in degrees.
+    pub(crate) rotate: Snap,
+}
+
+impl Default for Transform {
+    /// The rotate increment starts at an eighth of a turn: the docs give no
+    /// default, and a degree increment that doesn't divide 90° evenly leaves a
+    /// part unable to come back to square.
+    fn default() -> Self {
+        Transform {
+            tool: Tool::default(),
+            local: false,
+            translate: Snap::default(),
+            rotate: Snap {
+                increment: 45.0,
+                ..Snap::default()
+            },
+        }
+    }
 }
 
 impl Transform {
@@ -86,10 +183,16 @@ impl Transform {
 }
 
 /// What a keystroke over the 3D view asks of the toolbar.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum Action {
     Use(Tool),
     ToggleLocal,
+    /// The checkbox beside one of the increment fields.
+    ToggleSnap(SnapKind),
+    /// A new increment, already parsed out of the field's text.
+    SetIncrement(SnapKind, f32),
+    /// Put the caret in one of the increment fields — Studio's `Shift`+`2`.
+    FocusIncrement(SnapKind),
 }
 
 /// Resolves a keystroke to a toolbar action, or `None` for anything else.
@@ -98,16 +201,22 @@ pub(crate) enum Action {
 /// `WorkspaceView::key`): a bare digit is a character everywhere else in the
 /// editor, and a tool shortcut that ate keystrokes out of the Command Bar or a
 /// property field would be a bug, not a feature. `Shift`+`2` is deliberately
-/// not Move either — Studio gives that chord to the snap increment field,
-/// which does not exist here yet.
+/// not Move either: creator-docs gives that chord to the move/scale increment
+/// field, so it jumps to the field instead.
+///
+/// `Alt`/`⌥`+`R`, the docs' shortcut for the *rotate* increment field, stays
+/// unbound while that field has no Rotate tool behind it — the same reason
+/// `3` and `4` are unbound.
 pub(crate) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
     let plain = !modifiers.control && !modifiers.alt && !modifiers.shift && !modifiers.platform;
+    let only_shift = modifiers.shift && !modifiers.control && !modifiers.alt && !modifiers.platform;
     match key {
         // `platform` is Cmd on a Mac, where creator-docs gives the toggle as
         // ⌘L rather than Ctrl+L.
         "l" if (modifiers.control || modifiers.platform) && !modifiers.shift => {
             Some(Action::ToggleLocal)
         }
+        "2" if only_shift => Some(Action::FocusIncrement(SnapKind::Translate)),
         _ if !plain => None,
         "1" => Some(Action::Use(Tool::Select)),
         "2" => Some(Action::Use(Tool::Move)),
@@ -115,6 +224,17 @@ pub(crate) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
         "4" => Some(Action::Use(Tool::Rotate)),
         _ => None,
     }
+}
+
+/// Reads an increment out of the toolbar's own field.
+///
+/// Anything unreadable leaves the increment alone rather than silently
+/// becoming zero — a field mid-edit passes through `""` and `"1."` on its way
+/// to a number, and neither should turn snapping off under the user.
+/// Negatives fold to their magnitude: a grid has no direction.
+pub(crate) fn parse_increment(text: &str) -> Option<f32> {
+    let value: f32 = text.trim().parse().ok()?;
+    value.is_finite().then(|| value.abs())
 }
 
 /// Where the handles stand: the selected part, and the matrix it is drawn
@@ -200,6 +320,20 @@ impl Target {
                 (orientation.x_axis * size.x).extend(0.0),
                 (orientation.y_axis * size.y).extend(0.0),
                 (orientation.z_axis * size.z).extend(0.0),
+                position.extend(1.0),
+            ),
+            ..self
+        }
+    }
+
+    /// The same part turned and standing somewhere else — what a `T`/`R`
+    /// quarter turn shows while `Shell` is still writing the new `CFrame`.
+    pub(crate) fn turned_to(self, rotation: glam::Mat3, position: glam::Vec3) -> Self {
+        Target {
+            model: Mat4::from_cols(
+                rotation.x_axis.extend(0.0),
+                rotation.y_axis.extend(0.0),
+                rotation.z_axis.extend(0.0),
                 position.extend(1.0),
             ),
             ..self
