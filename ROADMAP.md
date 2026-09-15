@@ -826,11 +826,94 @@ against `Roblox/creator-docs` rather than assumed:
   time constant, the quality-level bands) — every one of these was tuned
   empirically tonight against specific real captures, and a place with
   different lighting conditions may want to nudge them without a rebuild.
-- [ ] 📋 Adjustable free-camera mouse sensitivity as a real setting (today
-  it's a hidden CLI flag; the movement-smoothing pass explicitly left this
-  for later) — same settings-file effort as the constants above.
-- [ ] 📋 Version history / autosave — today's save is manual (`Ctrl+S`)
-  only; Open Cloud has the primitives for something more.
+  Everything this bullet and the next few settings-shaped items describe
+  needs an actual screen to live in — see **Studio Settings screen**
+  below, which is that screen.
+- [ ] 📋 **A Studio Settings screen**, matching real Studio's own
+  `File > Studio Settings` (`Alt`/`⌥`+`S`) rather than leaving every
+  preference above as a value nothing in the UI ever shows or changes.
+  Real Studio's dialog is organized into sections; this project's
+  equivalent doesn't need to match that organization exactly, but should
+  cover at least: free-camera mouse sensitivity (today a hidden CLI flag —
+  the movement-smoothing pass explicitly left this for later) and other
+  camera/control feel settings; the renderer calibration constants and
+  quality/service-visibility defaults from the settings-file item above;
+  and the Auto-Recovery interval from the autosave item below, which real
+  Studio's own docs place inside this exact dialog. **Keyboard shortcuts**
+  are real Studio's own separate `File > Customize Shortcuts` screen
+  (view and rebind any hotkey) — closely related, same File-menu
+  neighbourhood, but its own screen in real Studio rather than a tab of
+  Studio Settings, worth keeping distinct here too rather than merging
+  the two into one dialog Studio itself doesn't have.
+- [ ] 📋 **A "Beta Features" toggle**, matching real Studio's own
+  `File > Beta Features` (experimental features switched on individually,
+  applied after a restart). Directly useful for a fast-moving project like
+  this one: a real, in-app way to ship a half-finished feature switched
+  off by default instead of either blocking a merge on it being complete
+  or shipping it fully live before it's ready.
+- [ ] 📋 **Autosave and crash recovery**, matching real Studio's own
+  Auto-Recovery (`File > Studio Settings` → Studio tab → Auto-Recovery;
+  saves on an interval, typically every 5–10 minutes and configurable down
+  to 1–2; recovered files reachable afterwards via
+  `File > Advanced > Open Auto Saves`). Today's save is manual (`Ctrl+S`)
+  only, with nothing kept if the editor crashes or is killed first. Worth
+  deliberately avoiding real Studio's own known complaint here rather than
+  reproducing it: a recovered file there loses its place/universe link,
+  which this project could sidestep since a place here is just a local
+  file path to begin with, nothing tying it to a remote id the way a
+  crash-recovered copy would need to reconstruct. Distinct from, and a
+  local complement to, the **remote** Open Cloud place-version-history
+  item under "Save/Publish to Roblox from the editor UI" above — that one
+  is versions Roblox's servers already have; this one is unsaved local
+  work surviving a crash before anything was ever published at all.
+- [ ] 📋 **A Home/launcher screen**, replacing today's file-path-only
+  launch (`rbxstudio <file.rbxl>`) with something closer to real Studio's
+  own start screen. Real Studio's current one has three real, documented
+  areas: **New** (starter templates — Baseplate and Flat Terrain cover the
+  minimum useful set; real Studio's own list is much longer and keeps
+  growing, worth treating as a starting point rather than a fixed target),
+  **My Games**/experiences (a grid or list of places, with thumbnails),
+  and **Recent** (recently opened places). Sorting and grouping by
+  personal vs. group-owned experiences is real Studio behavior too, but
+  its exact current UI wasn't confirmed here — Roblox's own start screen
+  is itself reportedly mid-redesign — worth checking against a real
+  Studio instance rather than guessing at specifics not to be found in
+  today's docs. One thing **not** to copy: real Studio has no account
+  -switcher at all, a genuine, well-known pain point for anyone who
+  manages more than one Roblox account — if this project builds one, it's
+  an rbx-native improvement over Studio, not parity with it, and worth
+  being honest about which it is rather than presenting it as matching an
+  existing Studio feature. No existing open-source tool (Rojo included)
+  was found with a comparable multi-project launcher to learn from either
+  — this would be a genuinely original piece of UI design for this
+  project, not an adaptation of prior art.
+- [ ] 📋 **A first-run setup wizard for the Open Cloud API key** this
+  project already depends on for Save/Publish (see above) — rbx-native's
+  own onboarding need, not a Studio-parity item, since real Studio never
+  asks for one at all (it authenticates by an ordinary Roblox account
+  login this project has no way to perform, not being an authorized
+  first-party client). Walk the exact real steps rather than a bare
+  "paste your key" field: the Creator Dashboard's API Keys tab
+  (`create.roblox.com/dashboard/credentials?activeTab=ApiKeysTab`) →
+  Create API Key → name it → System = **Places API** → scope to one
+  specific experience (or knowingly leave it unrestricted) → choose which
+  read/write operations it grants → optional IP restriction and
+  expiration → Save & Generate — ending with the generated key pasted
+  into this project's own settings. A deep link straight to that
+  Dashboard URL, opened from inside the wizard, saves hunting for it.
+- [ ] 📋 **A Game Settings dialog**, matching real Studio's own (`Home` tab
+  → Game Settings, checked against `studio/experience-settings.md` rather
+  than assumed) rather than requiring every place-level setting to be
+  edited as a raw DOM property through the Properties panel or the
+  Command Bar. Real Studio's current tabs: **Basic Info** (name,
+  description, thumbnails), **Permissions** (who can access/edit),
+  **Monetization**, **Localization**, **Avatar** (scaling/clothing
+  overrides), and **Communication** (voice chat, camera-driven avatar
+  animation). Only the subset Open Cloud's own APIs actually expose
+  remotely can realistically read/write a live experience's real
+  settings; the rest would only ever apply to instance properties already
+  in the local place file, worth being clear about which is which rather
+  than implying the dialog reaches further than it can.
 - [ ] 📋 **A scriptable command-line interface for `rbxstudio` itself.**
   Real Studio has one (`studio/command-line-interface.md`): launch flags
   to open a specific place/version at a specific task
