@@ -377,17 +377,69 @@ fn with_orthographic_only_flips_the_projection_flag() {
 }
 
 #[test]
-fn orthographic_far_plane_is_none_until_orthographic_is_on() {
+fn orthographic_range_is_none_until_orthographic_is_on() {
     let camera = Camera::framing(&bounds_from(Vec3::ZERO, Vec3::splat(20.0)));
-    assert_eq!(camera.orthographic_far_plane(orbit(0.0)), None);
+    assert_eq!(camera.orthographic_range(orbit(0.0)), None);
 
     let half_height = camera.orthographic_half_height(orbit(0.0));
     assert_eq!(
         camera
             .with_orthographic(true)
-            .orthographic_far_plane(orbit(0.0)),
-        Some(orthographic_far(half_height))
+            .orthographic_range(orbit(0.0)),
+        Some(orthographic_range(half_height))
     );
+}
+
+// The eye's position has no optical meaning under a parallel projection, so
+// the view volume runs as far behind its plane as in front — see
+// `orthographic_range`'s doc comment for the reported bug otherwise.
+#[test]
+fn the_orthographic_range_is_symmetric_about_the_eye_plane() {
+    let range = orthographic_range(50.0);
+    assert!(range.far > 0.0);
+    assert_eq!(range.near, -range.far);
+}
+
+#[test]
+fn the_orthographic_range_scales_with_zoom_but_is_clamped_both_ways() {
+    assert_eq!(
+        orthographic_range(MIN_ORTHO_SCALE).far,
+        ORTHOGRAPHIC_MIN_FAR
+    );
+    assert_eq!(
+        orthographic_range(MAX_ORTHO_SCALE).far,
+        ORTHOGRAPHIC_MAX_FAR
+    );
+    let mid = orthographic_range(50.0).far;
+    assert!(
+        mid > ORTHOGRAPHIC_MIN_FAR && mid < ORTHOGRAPHIC_MAX_FAR,
+        "{mid}"
+    );
+    assert!(orthographic_range(100.0).far > mid);
+}
+
+// The reported bug in miniature: a point the free camera has flown past —
+// behind its plane, but well within the range — must still land inside the
+// clip volume (depth within [0, 1]) instead of being clipped away, and must
+// sort *nearer* than a point ahead of the eye, since the observer of a
+// parallel projection is effectively at infinity on the near side.
+#[test]
+fn geometry_behind_the_orthographic_eye_plane_is_drawn_not_clipped() {
+    let camera =
+        Camera::framing(&bounds_from(Vec3::ZERO, Vec3::splat(20.0))).with_orthographic(true);
+    let pose = look_at_pose(Vec3::new(0.0, 0.0, 100.0), Vec3::ZERO);
+    let view_projection = camera.view_projection(Viewpoint::Free(pose), 16.0 / 9.0);
+    let depth = |point: Vec3| {
+        let clip = view_projection * point.extend(1.0);
+        clip.z / clip.w
+    };
+
+    let behind = depth(pose.position + Vec3::Z * 30.0);
+    let ahead = depth(pose.position - Vec3::Z * 30.0);
+
+    assert!((0.0..=1.0).contains(&behind), "{behind}");
+    assert!((0.0..=1.0).contains(&ahead), "{ahead}");
+    assert!(behind > ahead, "{behind} vs {ahead}");
 }
 
 // The orbit camera has no zoom control of its own — its apparent scale must
@@ -533,33 +585,42 @@ fn orthographic_projection_does_not_foreshorten_with_distance() {
 }
 
 // The orthographic mirror of `the_near_plane_is_depth_one_and_the_horizon_is_depth_zero`:
-// linear rather than hyperbolic, and a finite far plane instead of an infinite one.
+// linear rather than hyperbolic, both ends finite, and the eye plane itself
+// exactly halfway since the range is symmetric about it.
 #[test]
 fn the_orthographic_near_plane_is_depth_one_and_the_far_plane_is_depth_zero() {
-    let far = 500.0;
-    assert!((orthographic_reversed_depth(NEAR_PLANE, NEAR_PLANE, far) - 1.0).abs() < 1e-6);
-    assert!(orthographic_reversed_depth(far, NEAR_PLANE, far).abs() < 1e-6);
+    let range = orthographic_range(50.0);
+    let depth = |studs| orthographic_reversed_depth(studs, range.near, range.far);
+    assert!((depth(range.near) - 1.0).abs() < 1e-6);
+    assert!(depth(range.far).abs() < 1e-6);
+    assert!((depth(0.0) - 0.5).abs() < 1e-6);
 }
 
-// The orthographic mirror of `a_depth_buffer_value_reconstructs_the_distance_it_was_written_from`.
+// The orthographic mirror of `a_depth_buffer_value_reconstructs_the_distance_it_was_written_from`,
+// on both sides of the eye plane. The tolerance is proportional to the range:
+// a linear depth map spreads float32 precision evenly across the whole span,
+// so a reconstruction can only ever be as fine as `span / 2^24` or so — the
+// very reason `orthographic_range` scales that span with zoom instead of
+// pinning it to something huge.
 #[test]
 fn an_orthographic_depth_buffer_value_reconstructs_the_distance_it_was_written_from() {
     let camera =
         Camera::framing(&bounds_from(Vec3::ZERO, Vec3::splat(20.0))).with_orthographic(true);
     let pose = look_at_pose(Vec3::new(0.0, 0.0, 100.0), Vec3::ZERO);
     let view_projection = camera.view_projection(Viewpoint::Free(pose), 16.0 / 9.0);
-    let far = camera
-        .orthographic_far_plane(Viewpoint::Free(pose))
+    let range = camera
+        .orthographic_range(Viewpoint::Free(pose))
         .expect("camera is orthographic");
+    let tolerance = (range.far - range.near) * 1e-6;
 
-    for studs in [NEAR_PLANE, 0.5, 1.0, 12.5, 100.0] {
+    for studs in [-100.0, -12.5, NEAR_PLANE, 0.5, 1.0, 12.5, 100.0] {
         let point = pose.position - Vec3::Z * studs;
         let clip = view_projection * point.extend(1.0);
         let depth = clip.z / clip.w;
-        let reconstructed = orthographic_view_distance(depth, NEAR_PLANE, far);
+        let reconstructed = orthographic_view_distance(depth, range.near, range.far);
 
         assert!(
-            (reconstructed - studs).abs() < studs.max(1.0) * 1e-3,
+            (reconstructed - studs).abs() < tolerance,
             "{studs} studs landed on depth {depth}, read back as {reconstructed}"
         );
     }
@@ -619,12 +680,19 @@ fn frustum_corners_places_the_far_corners_at_the_requested_distance_when_orthogr
     let corners = camera.frustum_corners(orbit(yaw), aspect, shadow_distance);
 
     // Indices 4..8 are the far corners (bit 2 set — see `frustum_corners`'s
-    // own `index & 0b100` check).
-    for corner in &corners[4..8] {
+    // own `index & 0b100` check); 0..4 the near ones, which orthographic puts
+    // the same distance *behind* the eye plane rather than at the near
+    // plane, so the shadow fit covers what the symmetric view volume draws
+    // without stretching over its whole far-behind extent.
+    for (corner, expected) in corners[4..8]
+        .iter()
+        .map(|corner| (corner, shadow_distance))
+        .chain(corners[..4].iter().map(|corner| (corner, -shadow_distance)))
+    {
         let along_view_axis = (*corner - eye).dot(forward);
         assert!(
-            (along_view_axis - shadow_distance).abs() < shadow_distance * 0.01,
-            "{corner} landed {along_view_axis} studs down the view axis, expected {shadow_distance}"
+            (along_view_axis - expected).abs() < shadow_distance * 0.01,
+            "{corner} landed {along_view_axis} studs down the view axis, expected {expected}"
         );
     }
 }

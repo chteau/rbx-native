@@ -35,8 +35,10 @@ struct PostUniform {
     // applies at all is misc.w, not a zero in here.
     depth_of_field: vec4<f32>,
     // x: 1 on an orthographic frame, 0 on a perspective one — which
-    // view_distance formula the depth buffer needs. y: the orthographic far
-    // plane in studs, meaningless when x is 0. z/w unused.
+    // view_distance formula the depth buffer needs. y/z: the orthographic far
+    // and near planes in studs (near is negative: the volume runs behind the
+    // eye plane too, see camera::orthographic_range), meaningless when x is
+    // 0. w unused.
     camera: vec4<f32>,
 }
 
@@ -188,9 +190,12 @@ fn view_distance(depth: f32) -> f32 {
     // Orthographic depth is linear in view-space Z (mirrors
     // camera.rs::orthographic_reversed_depth), not the hyperbolic perspective
     // mapping below — the two projections write depth by different formulas.
+    // Its near plane is its own (negative) one, not post.misc.z: the answer
+    // can legitimately come out negative for geometry behind the eye plane,
+    // which dof_blur_factor already treats as "nearer than the focus plane".
     if post.camera.x > 0.5 {
-        let near = post.misc.z;
         let far = post.camera.y;
+        let near = post.camera.z;
         return far - depth * (far - near);
     }
     return post.misc.z / depth;

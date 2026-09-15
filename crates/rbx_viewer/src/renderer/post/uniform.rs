@@ -10,7 +10,7 @@ use bytemuck::{Pod, Zeroable};
 use glam::Vec2;
 
 use super::Post;
-use crate::camera::NEAR_PLANE;
+use crate::camera::{DepthRange, NEAR_PLANE};
 use crate::lighting::Tonemap;
 
 /// The seven `vec4`s `PostUniform` declares, in order.
@@ -33,8 +33,9 @@ pub(super) struct PostRaw {
     depth_of_field: [f32; 4],
     /// x: 1 on an orthographic frame, 0 on a perspective one — which
     /// `view_distance` formula the depth buffer needs (see `camera.rs`'s
-    /// `reversed_depth`/`orthographic_reversed_depth`). y: the orthographic
-    /// far plane in studs, meaningless when x is 0. z/w unused.
+    /// `reversed_depth`/`orthographic_reversed_depth`). y/z: the orthographic
+    /// far and near planes in studs (near is negative — see
+    /// `camera::orthographic_range`), meaningless when x is 0. w unused.
     camera: [f32; 4],
 }
 
@@ -49,7 +50,7 @@ impl Post {
         &self,
         tent: f32,
         sun_screen: Option<Vec2>,
-        orthographic_far: Option<f32>,
+        orthographic: Option<DepthRange>,
     ) -> PostRaw {
         let correction = self
             .effects
@@ -93,9 +94,9 @@ impl Post {
                 ]
             }),
             camera: [
-                f32::from(u8::from(orthographic_far.is_some())),
-                orthographic_far.unwrap_or(0.0),
-                0.0,
+                f32::from(u8::from(orthographic.is_some())),
+                orthographic.map_or(0.0, |range| range.far),
+                orthographic.map_or(0.0, |range| range.near),
                 0.0,
             ],
         }

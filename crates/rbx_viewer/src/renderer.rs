@@ -427,10 +427,10 @@ impl Renderer {
         self.translucent.prepare(queue, eye, &cull);
         self.filemesh.prepare(queue, eye);
 
-        let orthographic_far = self.camera.orthographic_far_plane(from);
+        let orthographic = self.camera.orthographic_range(from);
         if self
             .post
-            .prepare(device, queue, size, sun_screen, orthographic_far)
+            .prepare(device, queue, size, sun_screen, orthographic)
             .is_none()
         {
             return;

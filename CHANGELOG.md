@@ -29,10 +29,16 @@
   Also threads the projection choice through shadow-map fitting
   (`Camera::frustum_corners`) and the depth-of-field pass's depth
   reconstruction (`post.wgsl`'s `view_distance`), both of which hardcoded the
-  perspective-specific formula before this, and scales the orthographic far
-  plane with the current zoom level rather than a fixed constant — a fixed
-  one large enough to never clip destroyed float32 depth precision for
-  close-up work, caught by a test rather than a screenshot. — @chteau
+  perspective-specific formula before this, and scales the orthographic
+  depth range with the current zoom level rather than a fixed constant — a
+  fixed one large enough to never clip destroyed float32 depth precision for
+  close-up work, caught by a test rather than a screenshot. That range runs
+  as far *behind* the eye plane as in front, the way other orthographic
+  -capable tools clip around the view's focus rather than at the camera:
+  the eye's position has no optical meaning under a parallel projection, and
+  clipping just in front of it sliced clean through anything the free camera
+  had flown into or alongside (a third real report against the same place:
+  a hillside cut flat where the camera stood inside its bounds). — @chteau
 - **A `Decal`/`Texture` now follows its part through the live-edit
   instance-patch path**, not just a full reload. The last of the three
   gaps the batch-move work surfaced: `Renderer::sync_instance` never
