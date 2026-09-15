@@ -1,6 +1,7 @@
-//! Persisted Studio preferences: the graphics quality dropdown and the
-//! Explorer's "show all services" checkbox, so a relaunch reopens where the
-//! user left off rather than always at the hardcoded defaults.
+//! Persisted Studio preferences: the graphics quality dropdown, the
+//! Explorer's "show all services" checkbox, and the Viewport's orthographic
+//! toggle, so a relaunch reopens where the user left off rather than always
+//! at the hardcoded defaults.
 //!
 //! Mirrors `rbx_assets::AssetCache`'s directory convention (`$XDG_CONFIG_HOME`,
 //! falling back to `~/.config` or, on Windows, `%APPDATA%`, all under an
@@ -17,6 +18,7 @@ use rbx_viewer::QualityLevel;
 pub(crate) struct Settings {
     pub(crate) quality: QualityLevel,
     pub(crate) show_all_services: bool,
+    pub(crate) orthographic: bool,
 }
 
 impl Default for Settings {
@@ -26,6 +28,7 @@ impl Default for Settings {
         Settings {
             quality: QualityLevel::Automatic,
             show_all_services: false,
+            orthographic: false,
         }
     }
 }
@@ -116,10 +119,15 @@ fn load_from(path: &Path) -> Settings {
         .get("show_all_services")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
+    let orthographic = value
+        .get("orthographic")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     Settings {
         quality,
         show_all_services,
+        orthographic,
     }
 }
 
@@ -127,6 +135,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
     let value = serde_json::json!({
         "quality": format_quality(settings.quality),
         "show_all_services": settings.show_all_services,
+        "orthographic": settings.orthographic,
     });
     // A two-field object always serializes; nothing here can fail.
     let bytes = serde_json::to_vec_pretty(&value).expect("settings JSON always serializes");
@@ -226,6 +235,7 @@ mod tests {
         let settings = Settings {
             quality: QualityLevel::Level(7),
             show_all_services: true,
+            orthographic: true,
         };
         save_to(&settings, &path).unwrap();
         assert_eq!(load_from(&path), settings);

@@ -9,6 +9,11 @@ fn pose(position: [f32; 3], yaw: f32, pitch: f32, fov_degrees: f32) -> Pose {
         yaw,
         pitch,
         fov_degrees,
+        // Irrelevant here: this module only reads/writes a `Pose`'s
+        // position/yaw/pitch/fov_degrees into `Workspace.CurrentCamera`,
+        // never its orthographic zoom (an editor-session setting, not a
+        // real Roblox property — see `Shell::orthographic`).
+        ortho_scale: 20.0,
     }
 }
 

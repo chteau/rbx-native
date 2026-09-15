@@ -139,29 +139,45 @@ impl ComponentPanel for SectionPanel {
 
     /// Explorer's "Show all services" toggle, moved off the search row and
     /// into the panel's own overflow menu (see `Shell::show_all_services` /
-    /// `Shell::set_show_all_services`).
+    /// `Shell::set_show_all_services`); Viewport's own "Orthographic" toggle
+    /// (see `Shell::orthographic` / `Shell::set_orthographic`) lives the same
+    /// way, next to the quality dropdown already in its title bar.
     fn dropdown_menu(
         &mut self,
         menu: PopupMenu,
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> PopupMenu {
-        if self.section != Section::Explorer {
-            return menu;
-        }
-
         let shell = self.shell.clone();
-        let checked = shell.read(cx).show_all_services();
-        menu.item(
-            PopupMenuItem::new("Show all services")
-                .checked(checked)
-                .on_click(move |_, _, cx| {
-                    shell.update(cx, |shell, cx| {
-                        let next = !shell.show_all_services();
-                        shell.set_show_all_services(next, cx);
-                    });
-                }),
-        )
+        match self.section {
+            Section::Explorer => {
+                let checked = shell.read(cx).show_all_services();
+                menu.item(
+                    PopupMenuItem::new("Show all services")
+                        .checked(checked)
+                        .on_click(move |_, _, cx| {
+                            shell.update(cx, |shell, cx| {
+                                let next = !shell.show_all_services();
+                                shell.set_show_all_services(next, cx);
+                            });
+                        }),
+                )
+            }
+            Section::Viewport => {
+                let checked = shell.read(cx).orthographic();
+                menu.item(
+                    PopupMenuItem::new("Orthographic")
+                        .checked(checked)
+                        .on_click(move |_, _, cx| {
+                            shell.update(cx, |shell, cx| {
+                                let next = !shell.orthographic();
+                                shell.set_orthographic(next, cx);
+                            });
+                        }),
+                )
+            }
+            _ => menu,
+        }
     }
 }
 

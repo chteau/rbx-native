@@ -27,6 +27,7 @@ use crate::scene::{Bounds, EffectKind, MeshPatch};
 pub struct Headless {
     offscreen: Offscreen,
     quality: QualityLevel,
+    orthographic: bool,
     bounds: Bounds,
     controller: Controller,
     input: Input,
@@ -84,6 +85,7 @@ impl Headless {
         Ok(Headless {
             offscreen: Offscreen::new(loaded.world(), &quality.profile())?,
             quality,
+            orthographic: false,
             bounds,
             controller: Controller::new(Start::Orbit, &bounds, None, DEFAULT_SENSITIVITY),
             input: Input::default(),
@@ -267,6 +269,28 @@ impl Headless {
         self.quality
     }
 
+    /// Swaps the viewport's main camera between perspective and orthographic
+    /// (parallel) projection, leaving its position/yaw/pitch and the
+    /// WASD/mouse-look controller untouched — see `Camera::with_orthographic`.
+    /// Resyncs the free camera's orthographic zoom to a reasonable starting
+    /// guess the moment orthographic switches on (see
+    /// `Controller::sync_ortho_scale`); the mouse wheel takes over from there.
+    pub fn set_orthographic(&mut self, orthographic: bool) {
+        if orthographic == self.orthographic {
+            return;
+        }
+        self.orthographic = orthographic;
+        if orthographic {
+            self.controller.sync_ortho_scale(&self.bounds);
+        }
+        self.offscreen.set_orthographic(orthographic);
+    }
+
+    /// The projection mode [`Headless::set_orthographic`] last set.
+    pub fn orthographic(&self) -> bool {
+        self.orthographic
+    }
+
     pub fn input(&mut self, event: CameraInput) {
         self.input.apply(event);
     }
@@ -288,9 +312,13 @@ impl Headless {
     /// which is the host's cue to draw a frame: a camera at rest returns `false`
     /// every tick, so an untouched view costs no render and no readback at all.
     pub fn tick(&mut self, dt: Duration) -> bool {
-        let from = self
-            .controller
-            .update(&mut self.input, dt, self.start.elapsed(), &self.bounds);
+        let from = self.controller.update(
+            &mut self.input,
+            dt,
+            self.start.elapsed(),
+            &self.bounds,
+            self.orthographic,
+        );
         let moved = from != self.from;
         self.from = from;
         moved

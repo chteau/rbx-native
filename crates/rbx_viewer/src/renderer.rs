@@ -283,6 +283,12 @@ impl Renderer {
         self.camera = self.camera.pitched(degrees);
     }
 
+    /// Swaps the main camera between perspective and orthographic projection —
+    /// see `Camera::with_orthographic`.
+    pub(crate) fn set_orthographic(&mut self, orthographic: bool) {
+        self.camera = self.camera.with_orthographic(orthographic);
+    }
+
     /// Replaces the outlined selection, rebuilding its tiny vertex buffer right
     /// away rather than waiting for the next `draw`.
     pub(crate) fn set_selection(&mut self, device: &wgpu::Device, referents: &[Ref]) {
@@ -421,7 +427,12 @@ impl Renderer {
         self.translucent.prepare(queue, eye, &cull);
         self.filemesh.prepare(queue, eye);
 
-        if self.post.prepare(device, queue, size, sun_screen).is_none() {
+        let orthographic = self.camera.orthographic_range(from);
+        if self
+            .post
+            .prepare(device, queue, size, sun_screen, orthographic)
+            .is_none()
+        {
             return;
         }
         let Some(targets) = self.post.targets() else {

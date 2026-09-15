@@ -61,6 +61,18 @@ Roblox's own engine.
   `SurfaceGui` — see [What's planned](#gui--full-guiobject-compatibility) for text.
 - [x] Free-flight camera (WASD + mouse look + wheel), exponentially-eased
   movement (mouse look itself stays unfiltered).
+- [x] Orthographic camera mode — toggled from the Viewport panel's overflow
+  menu (`rbxstudio`) or `rbxview --orthographic`. Flies with the same
+  WASD/mouse-look controller; the mouse wheel without the look button held
+  zooms the view volume directly (`Pose::ortho_scale`) instead of dollying
+  the eye, since dollying does nothing visible under a parallel projection
+  and risked flying through geometry with no size cue — independent of
+  camera position, so it works the same on any level regardless of layout.
+  The sky/star/sun background stays perspective regardless, by design (their
+  near-unit-magnitude geometry relies on the perspective divide to spread
+  across the screen at all; a parallel scene with a perspective background
+  is a deliberate decoupling, not an oversight — see `Camera::orthographic_projection`
+  and `Camera::view_rotation_projection`'s doc comments).
 - [x] Automatic render-quality scaling (Quality Level 1–21, frame-rate
   driven), live quality switching without a scene rebuild.
 - [x] Scoped strictly to `Workspace` — a place's other services
@@ -625,14 +637,6 @@ against `Roblox/creator-docs` rather than assumed:
   settings/metadata, not the saved place file, to avoid inventing a fake
   property that would confuse a real Studio session opening the same
   place).
-- [ ] 📋 **Orthographic camera mode.** A third devforum request from the
-  same category ("Create an orthographic view") — toggle the free-flight
-  camera between perspective and orthographic projection, useful for
-  precise alignment work the way a fixed-angle ortho view is in most other
-  3D tools. Self-contained: swap the projection matrix
-  `crates/rbx_viewer/src/camera.rs` builds, no new interaction model
-  needed since the
-  existing WASD/mouse-look controller still applies.
 - [ ] 📋 User settings file (service visibility defaults,
   default quality, sandbox naming for Play) beyond what's already
   persisted — and, worth folding into the same effort rather than treating

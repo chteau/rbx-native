@@ -1,4 +1,4 @@
-//! The single uniform every pass in `renderer::post` reads: the six `vec4`s
+//! The single uniform every pass in `renderer::post` reads: the seven `vec4`s
 //! `post.wgsl` declares `PostUniform` as, and how one frame's effects fold into
 //! them.
 //!
@@ -10,10 +10,10 @@ use bytemuck::{Pod, Zeroable};
 use glam::Vec2;
 
 use super::Post;
-use crate::camera::NEAR_PLANE;
+use crate::camera::{DepthRange, NEAR_PLANE};
 use crate::lighting::Tonemap;
 
-/// The six `vec4`s `PostUniform` declares, in order.
+/// The seven `vec4`s `PostUniform` declares, in order.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub(super) struct PostRaw {
@@ -31,6 +31,12 @@ pub(super) struct PostRaw {
     /// it applies at all is `misc.w`, not a zero in here — a place may legally
     /// enable the effect with both intensities at zero.
     depth_of_field: [f32; 4],
+    /// x: 1 on an orthographic frame, 0 on a perspective one — which
+    /// `view_distance` formula the depth buffer needs (see `camera.rs`'s
+    /// `reversed_depth`/`orthographic_reversed_depth`). y/z: the orthographic
+    /// far and near planes in studs (near is negative — see
+    /// `camera::orthographic_range`), meaningless when x is 0. w unused.
+    camera: [f32; 4],
 }
 
 impl Post {
@@ -40,7 +46,12 @@ impl Post {
     ///
     /// `sun_screen` is `None` on a frame where the rays must not draw at all (see
     /// [`Post::prepare`]), which zeroes the whole `sun_rays` block.
-    pub(super) fn raw(&self, tent: f32, sun_screen: Option<Vec2>) -> PostRaw {
+    pub(super) fn raw(
+        &self,
+        tent: f32,
+        sun_screen: Option<Vec2>,
+        orthographic: Option<DepthRange>,
+    ) -> PostRaw {
         let correction = self
             .effects
             .color_correction
@@ -82,6 +93,12 @@ impl Post {
                     dof.far_intensity,
                 ]
             }),
+            camera: [
+                f32::from(u8::from(orthographic.is_some())),
+                orthographic.map_or(0.0, |range| range.far),
+                orthographic.map_or(0.0, |range| range.near),
+                0.0,
+            ],
         }
     }
 }

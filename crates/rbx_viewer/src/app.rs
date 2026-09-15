@@ -174,9 +174,12 @@ impl Viewer<'_> {
         let motion_dt = self.motion_dt.sample(dt);
 
         let bounds = self.world.scene.bounds();
+        // The windowed interactive viewer has no orthographic toggle of its
+        // own (only the offscreen `--orthographic` screenshot path does —
+        // see `capture::write_png`), so the wheel always dollies here.
         let from = self
             .controller
-            .update(&mut self.input, motion_dt, elapsed, bounds);
+            .update(&mut self.input, motion_dt, elapsed, bounds, false);
         let title_update = self.next_title(now);
         // The whole frame, presentation included: what the window actually
         // delivered, which is the only thing the manager can measure here.

@@ -66,9 +66,12 @@ pub fn run(options: &Options) -> Result<(), String> {
                 &profile,
                 output,
                 options.size(),
-                options.yaw(),
-                options.pitch(),
-                eye_look_at,
+                capture::Framing {
+                    yaw: options.yaw(),
+                    pitch: options.pitch(),
+                    eye_look_at,
+                    orthographic: options.orthographic(),
+                },
             )
         }
         None => app::open_window(

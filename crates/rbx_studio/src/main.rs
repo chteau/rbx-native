@@ -81,6 +81,7 @@ fn main() {
     };
     let title = SharedString::from(file_name(&path));
     let show_all_services = settings.show_all_services;
+    let orthographic = settings.orthographic;
 
     // The full Lucide catalog: the explorer's class icons are well outside the
     // default bundle the components themselves use.
@@ -92,8 +93,17 @@ fn main() {
         cx.spawn(async move |cx| {
             let options = cx.update(|cx| window_options(&title, cx));
             cx.open_window(options, |window, cx| {
-                let shell =
-                    cx.new(|cx| Shell::new(title, place, quality, show_all_services, window, cx));
+                let shell = cx.new(|cx| {
+                    Shell::new(
+                        title,
+                        place,
+                        quality,
+                        show_all_services,
+                        orthographic,
+                        window,
+                        cx,
+                    )
+                });
                 cx.new(|cx| Root::new(shell, window, cx))
             })
             .expect("failed to open the main window");

@@ -66,6 +66,10 @@ pub(crate) struct Shell {
     /// The dropdown's current pick, kept alongside the `Select` entity itself
     /// so a settings write never has to reach into GPUI state to read it back.
     quality_choice: QualityLevel,
+    /// Whether the viewport's main camera is orthographic rather than
+    /// perspective. Persisted (see `settings`); every write goes through
+    /// [`Shell::save_settings`].
+    orthographic: bool,
     search: Entity<InputState>,
     filter: Entity<InputState>,
     properties: Properties,
@@ -105,6 +109,7 @@ impl Shell {
         place: Place,
         quality: QualityLevel,
         show_all_services: bool,
+        orthographic: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -160,8 +165,9 @@ impl Shell {
         // struct exists — valid as soon as `cx.new` starts building it.
         let dock_area = dock::build(cx.entity(), window, cx);
 
-        let viewport =
-            cx.new(|cx| WorkspaceView::new(viewer, camera, quality, selected, window, cx));
+        let viewport = cx.new(|cx| {
+            WorkspaceView::new(viewer, camera, quality, orthographic, selected, window, cx)
+        });
         let camera_synced = cx.subscribe(&viewport, |shell, _, event: &PoseSynced, cx| {
             shell.sync_camera_pose(event.0, cx);
         });
@@ -185,6 +191,7 @@ impl Shell {
             tree,
             show_all_services,
             quality_choice: quality,
+            orthographic,
             search: cx.new(|cx| InputState::new(window, cx).placeholder("Search")),
             filter,
             properties,
@@ -338,15 +345,37 @@ impl Shell {
         self.save_settings();
     }
 
-    /// Writes the current quality pick and Explorer visibility to disk. A
-    /// settings file is tiny, so this runs synchronously on every change
-    /// rather than debouncing; a write failure (e.g. no writable config
-    /// directory) is not fatal and is silently dropped — losing a preference
-    /// write is better than interrupting the editor over it.
+    /// Whether the viewport's main camera is orthographic, for the dock's
+    /// Viewport menu item (see `shell::dock`) to render its checked state.
+    pub(super) fn orthographic(&self) -> bool {
+        self.orthographic
+    }
+
+    /// Flips the viewport's main camera between perspective and orthographic
+    /// projection — see `WorkspaceView::set_orthographic`.
+    fn set_orthographic(&mut self, orthographic: bool, cx: &mut Context<Self>) {
+        if orthographic == self.orthographic {
+            return;
+        }
+
+        self.orthographic = orthographic;
+        self.viewport.update(cx, |viewport, cx| {
+            viewport.set_orthographic(orthographic, cx)
+        });
+        self.save_settings();
+    }
+
+    /// Writes the current quality pick, Explorer visibility and projection
+    /// mode to disk. A settings file is tiny, so this runs synchronously on
+    /// every change rather than debouncing; a write failure (e.g. no
+    /// writable config directory) is not fatal and is silently dropped —
+    /// losing a preference write is better than interrupting the editor
+    /// over it.
     fn save_settings(&self) {
         let settings = Settings {
             quality: self.quality_choice,
             show_all_services: self.show_all_services,
+            orthographic: self.orthographic,
         };
         let _ = settings.save();
     }

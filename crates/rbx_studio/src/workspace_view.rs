@@ -112,6 +112,9 @@ pub(crate) struct WorkspaceView {
     /// the choice, the level is what the frame rate allows.
     quality: QualityLevel,
     level: u8,
+    /// The projection mode the user last picked from the Viewport panel's
+    /// overflow menu (see `Shell::set_orthographic`).
+    orthographic: bool,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
     _subscriptions: [Subscription; 2],
 }
@@ -121,6 +124,7 @@ impl WorkspaceView {
         mut viewer: Headless,
         camera: Option<PlaceCamera>,
         quality: QualityLevel,
+        orthographic: bool,
         selected: Option<Ref>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -132,6 +136,7 @@ impl WorkspaceView {
             viewer.open_at(camera.eye, camera.look_at, camera.fov_degrees);
         }
         viewer.set_selection(&Vec::from_iter(selected));
+        viewer.set_orthographic(orthographic);
 
         let interval = pacing::frame_interval(display::refresh_hz());
         let speed = viewer.speed();
@@ -186,6 +191,7 @@ impl WorkspaceView {
             speed_shown_until: None,
             quality,
             level: QualityLevel::MAX,
+            orthographic,
             _subscriptions: [blur, deactivated],
         }
     }
@@ -353,6 +359,20 @@ impl WorkspaceView {
 
         self.quality = mode;
         self.pump.quality(mode);
+        cx.notify();
+    }
+
+    /// Swaps the main camera between perspective and orthographic (parallel)
+    /// projection at runtime, the same way `set_quality` above switches
+    /// levels: the render thread owns the viewer, so the switch happens
+    /// there, between two frames.
+    pub(crate) fn set_orthographic(&mut self, orthographic: bool, cx: &mut Context<Self>) {
+        if orthographic == self.orthographic {
+            return;
+        }
+
+        self.orthographic = orthographic;
+        self.pump.orthographic(orthographic);
         cx.notify();
     }
 
