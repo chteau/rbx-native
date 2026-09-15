@@ -14,6 +14,7 @@ mod trail;
 mod union;
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use glam::{Mat4, Vec3, Vec4};
 use rbx_assets::AssetRef;
@@ -29,7 +30,9 @@ pub(crate) use effects::EffectKind;
 #[cfg(test)]
 pub(crate) use beam::Curve;
 pub(crate) use bounds::{of_part, Bounds};
-pub(crate) use filemesh::{AlphaMode, Appearance, Resolved, ResolvedInstance};
+pub(crate) use filemesh::{
+    fit_of as file_mesh_fit, AlphaMode, Appearance, Resolved, ResolvedInstance,
+};
 pub(crate) use gui::{
     resolve as gui_layout, resolve_canvas as gui_canvas_layout, Anchor as GuiAnchor,
     Element as GuiElement, Rect as GuiRect, Screen as GuiScreen, SpaceGui,
@@ -42,7 +45,7 @@ pub(crate) use material::{Catalog, Kind, Slot};
 pub(crate) use particles::sequence::{eval_color, eval_number};
 pub(crate) use particles::{Emitter, Simulation};
 pub(crate) use patch::MeshPatch;
-pub(crate) use shape::ShapeKind;
+pub(crate) use shape::{resolve as resolve_shape, ShapeKind};
 pub(crate) use trail::{segments as trail_segments, Recorder as TrailRecorder, Trail};
 
 // Roblox's own "Medium stone grey", the default part color.
@@ -371,7 +374,12 @@ impl Scene {
         }
         self.parts.extend(resolution.parts);
         let resolved = &mut self.resolved_file_meshes;
-        resolved.meshes.extend(resolution.meshes);
+        resolved.meshes.extend(
+            resolution
+                .meshes
+                .into_iter()
+                .map(|(asset, mesh)| (asset, Arc::new(mesh))),
+        );
         resolved.instances.extend(resolution.instances);
     }
 
@@ -499,8 +507,7 @@ pub(super) fn assemble_part(
         _ => FALLBACK_COLOR,
     };
     let material = materials.slot_for(properties, database);
-    let transform =
-        cframe * Mat4::from_translation(geometry.offset) * Mat4::from_scale(geometry.size);
+    let transform = geometry.model(cframe);
 
     Part {
         kind: geometry.kind,

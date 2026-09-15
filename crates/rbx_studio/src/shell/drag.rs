@@ -45,7 +45,11 @@ impl Shell {
     /// selection when it resolves to nothing — clicking the sky deselects,
     /// the same as clicking empty space in the Explorer would.
     fn pick_in_viewport(&mut self, ray: Ray, cycling: bool, cx: &mut Context<Self>) {
-        let hits = pick::parts_along(&self.dom, &self.database, ray);
+        // The viewport holds a handle onto the render thread's own mesh data
+        // (see `WorkspaceView::meshes`): what keeps a `MeshPart`'s pick on the
+        // triangles actually drawn rather than the box around them.
+        let meshes = self.viewport.read(cx).meshes().clone();
+        let hits = pick::parts_along(&self.dom, &self.database, &meshes, ray);
         let picked =
             selection::from_click(&self.dom, &self.database, &hits, self.selected(), cycling);
 

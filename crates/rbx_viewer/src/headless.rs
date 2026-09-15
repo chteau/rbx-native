@@ -375,6 +375,17 @@ impl Headless {
         std::mem::take(&mut self.warnings)
     }
 
+    /// Every file mesh the current scene resolved, for a hit test against
+    /// the triangles actually drawn — see [`crate::pick::parts_along`]. A
+    /// handle onto the renderer's own copies rather than a duplicate of them,
+    /// so an embedder can pass it to another thread for the cost of a few
+    /// reference counts. Changes only when the scene is rebuilt
+    /// ([`Headless::load`]/[`Headless::reload`]): a single-instance patch
+    /// never downloads a mesh the scene did not already have.
+    pub fn pick_meshes(&self) -> crate::pick::Meshes {
+        crate::pick::Meshes::new(self.loaded.scene().resolved_file_meshes().meshes.clone())
+    }
+
     /// Draws the current view and returns the frame the *previous* call asked
     /// for: the GPU is left drawing this one while the host uploads that one.
     ///
