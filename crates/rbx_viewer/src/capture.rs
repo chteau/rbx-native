@@ -11,6 +11,7 @@ use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use crate::camera::{self, Camera, Viewpoint};
+use crate::gizmo::Gizmo;
 use crate::gpu;
 use crate::lighting::{Lighting, LocalLight};
 use crate::quality::QualityProfile;
@@ -77,6 +78,11 @@ impl Offscreen {
     /// buffer right away.
     pub(crate) fn set_selection(&mut self, referents: &[Ref]) {
         self.renderer.set_selection(&self.device, referents);
+    }
+
+    /// Shows or hides the transform tool's draggers over the selection.
+    pub(crate) fn set_gizmo(&mut self, gizmo: Option<Gizmo>) {
+        self.renderer.set_gizmo(gizmo);
     }
 
     /// Forwards to [`Renderer::update_lighting`] — see its doc comment for

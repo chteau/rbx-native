@@ -109,6 +109,30 @@ pub struct Pose {
     pub ortho_scale: f32,
 }
 
+impl Pose {
+    /// The matrix a frame flown from this pose is drawn with, at this aspect
+    /// ratio and projection mode.
+    ///
+    /// Public because the cursor and the camera live on different threads: an
+    /// embedder that hit-tests a click against the scene (`rbxstudio`'s
+    /// click-to-select and its transform gizmo) has to unproject against
+    /// exactly the matrix the frame under that cursor was drawn with, and
+    /// rebuilding one from the pose's own fields on the far side is how the
+    /// two quietly drift apart.
+    pub fn view_projection(&self, orthographic: bool, aspect: f32) -> Mat4 {
+        // Everything else `Camera` carries — the orbit target, distance and
+        // pitch — is read only on the `Viewpoint::Orbit` path, which a free
+        // pose never takes.
+        Camera {
+            target: Vec3::ZERO,
+            distance: 0.0,
+            pitch: 0.0,
+            orthographic,
+        }
+        .view_projection(Viewpoint::Free(*self), aspect)
+    }
+}
+
 /// What a single frame is drawn from.
 ///
 /// One or the other, never both: a free pose replaces the orbit framing
@@ -155,6 +179,13 @@ impl Camera {
             orthographic,
             ..self
         }
+    }
+
+    /// Whether this camera projects in parallel rather than in perspective —
+    /// what the gizmo's constant-on-screen sizing has to branch on, the two
+    /// having entirely different notions of how big a stud is on screen.
+    pub(crate) fn is_orthographic(&self) -> bool {
+        self.orthographic
     }
 
     /// The free-flight pose that lands exactly on the orbit camera at this yaw —

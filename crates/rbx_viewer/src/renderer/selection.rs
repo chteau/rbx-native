@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use bytemuck::{Pod, Zeroable};
-use glam::{Mat4, Vec3};
+use glam::{Mat3, Mat4, Vec3};
 use rbx_dom::Ref;
 use wgpu::util::DeviceExt;
 
@@ -174,6 +174,26 @@ impl Selection {
             let referents = std::mem::take(&mut self.referents);
             self.set(device, &referents);
         }
+    }
+
+    /// Where a transform gizmo belongs over this selection: the first
+    /// outlined part's centre, and the rotation its own local axes point
+    /// along (see `renderer::gizmo`). `None` when nothing with a placement is
+    /// selected.
+    ///
+    /// The *first*, not an aggregate of all of them, because the editor
+    /// selects one instance at a time; a multi-part selection would put the
+    /// gizmo on a bounding box this outline does not derive yet either.
+    pub(super) fn anchor(&self) -> Option<(Vec3, Mat3)> {
+        let model = self
+            .referents
+            .iter()
+            .find_map(|referent| self.placements.get(referent))?
+            .model;
+        // A part's model matrix folds its `Size` into the same columns its
+        // rotation lives in, so the basis vectors come out scaled; the gizmo
+        // normalizes them (see `gizmo::basis`).
+        Some((model.w_axis.truncate(), Mat3::from_mat4(model)))
     }
 
     /// Draws the outline, if any, reusing whichever camera bind group the rest

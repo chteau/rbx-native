@@ -11,6 +11,7 @@ use rbx_reflection::ReflectionDatabase;
 use crate::camera::{self, Pose, Viewpoint};
 use crate::capture::{Offscreen, Rendered};
 use crate::controller::{Controller, Start, DEFAULT_SENSITIVITY};
+use crate::gizmo::Gizmo;
 use crate::input::{CameraInput, Input};
 use crate::lighting::{self, Lighting};
 use crate::load::{Loaded, Toggles};
@@ -306,6 +307,19 @@ impl Headless {
     /// picture has.
     pub fn set_selection(&mut self, referents: &[Ref]) {
         self.offscreen.set_selection(referents);
+    }
+
+    /// Draws the transform tool's axis draggers over the selected part, or
+    /// hides them again with `None` — Studio's Select tool, where there is
+    /// nothing to drag.
+    ///
+    /// Where the handles land is worked out per frame from the selection and
+    /// the live camera (see `renderer::Renderer::handles`), so this only has
+    /// to be called when the tool or its world/local setting changes, not as
+    /// the camera moves. The embedder hit-tests the cursor against the same
+    /// geometry through [`crate::gizmo`].
+    pub fn set_gizmo(&mut self, gizmo: Option<Gizmo>) {
+        self.offscreen.set_gizmo(gizmo);
     }
 
     /// Advances the camera by `dt` and reports whether the view actually moved,

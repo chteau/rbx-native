@@ -97,5 +97,9 @@ impl Renderer {
         // Last, so the outline never gets drawn over by geometry it should
         // sit on top of.
         self.selection.draw(&mut pass, &self.frame.bind_group);
+        // After the outline, and with no depth test of its own: a dragger is
+        // a control rather than scenery, and one buried inside the part it
+        // moves would be impossible to grab.
+        self.draggers.draw(&mut pass, &self.frame.bind_group);
     }
 }
