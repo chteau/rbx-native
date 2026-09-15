@@ -339,6 +339,11 @@ impl Shell {
             }
             ViewportEdit::Full => self.reload_viewport(cx),
         }
+
+        // Whatever path the edit took, the draggers have to stand where the
+        // part does now — an edited `CFrame`/`size` moves them, and an
+        // instance that stopped being a part removes them.
+        self.sync_gizmo_target(reference, cx);
     }
 
     /// Brings the row that was just written into view. A property far down

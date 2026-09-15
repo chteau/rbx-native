@@ -11,6 +11,9 @@
 //! `RBX_STUDIO_RUN=<source>` runs one Luau chunk against the place right
 //! after the window opens, exactly as typing it into the Command Bar and
 //! pressing Enter would — the same aid, for the Command Bar itself.
+//! `RBX_STUDIO_TOOL=move[,local]` picks a transform tool (and its world/local
+//! orientation) at startup, the same aid for the transform toolbar and its
+//! viewport draggers (see `shell::toolbar`).
 //! Ctrl+S writes the place back to the file it was opened from, in the
 //! format it was opened in; `RBX_STUDIO_SAVE_AS=<path>` redirects one such
 //! save to a scratch path instead (see `save`).
@@ -29,6 +32,7 @@ mod render_image;
 mod save;
 mod settings;
 mod shell;
+mod transform;
 mod workspace_view;
 
 use std::path::{Path, PathBuf};

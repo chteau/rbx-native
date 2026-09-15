@@ -5,6 +5,7 @@
 
 mod command;
 mod dock;
+mod drag;
 mod edit;
 mod history;
 mod keys;
@@ -14,6 +15,7 @@ mod quality;
 mod rows;
 mod save;
 mod selection;
+mod toolbar;
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -36,7 +38,8 @@ use crate::history::{History, DEFAULT_CAP};
 use crate::properties::Properties;
 use crate::save::Format;
 use crate::settings::Settings;
-use crate::workspace_view::{AssetWarnings, PoseSynced, WorkspaceView};
+use crate::transform::{Target, Transform};
+use crate::workspace_view::{AssetWarnings, PoseSynced, ViewportAction, WorkspaceView};
 use crate::Place;
 use quality::{quality_labels, quality_row};
 use selection::Selection;
@@ -99,8 +102,13 @@ pub(crate) struct Shell {
     /// regardless of what the tree currently looks like.
     path: PathBuf,
     format: Format,
+    /// Which transform tool the toolbar has active, and whether its draggers
+    /// follow the part's own axes — see `crate::transform`. Owned here because
+    /// the toolbar renders from it; pushed down to the viewport, which
+    /// hit-tests against it, whenever it changes.
+    transform: Transform,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
-    _subscriptions: [Subscription; 6],
+    _subscriptions: [Subscription; 7],
 }
 
 impl Shell {
@@ -171,6 +179,9 @@ impl Shell {
         let camera_synced = cx.subscribe(&viewport, |shell, _, event: &PoseSynced, cx| {
             shell.sync_camera_pose(event.0, cx);
         });
+        let viewport_actions = cx.subscribe(&viewport, |shell, _, event: &ViewportAction, cx| {
+            shell.handle_viewport_action(event, cx);
+        });
         let asset_warnings = cx.subscribe(&viewport, |shell, _, event: &AssetWarnings, cx| {
             for warning in &event.0 {
                 shell.output.push_warning(warning);
@@ -210,12 +221,14 @@ impl Shell {
             output_scroll: ScrollHandle::new(),
             path,
             format,
+            transform: Transform::default(),
             _subscriptions: [
                 picked,
                 clicked,
                 filtered,
                 entered,
                 camera_synced,
+                viewport_actions,
                 asset_warnings,
             ],
         };
@@ -255,6 +268,10 @@ impl Shell {
         // mutated.
         shell.apply_debug_save(cx);
 
+        // `RBX_STUDIO_TOOL` (see `shell::toolbar`): after the selection is
+        // settled, so the draggers it turns on land on whatever is selected.
+        shell.apply_debug_tool(cx);
+
         shell
     }
 
@@ -291,8 +308,11 @@ impl Shell {
             // A different instance means a different row set; any open
             // editor belonged to the old one.
             self.edits.clear();
-            self.viewport
-                .update(cx, |viewport, _| viewport.set_selection(selected));
+            let target = Target::read(&self.dom, selected);
+            self.viewport.update(cx, |viewport, _| {
+                viewport.set_selection(selected);
+                viewport.set_target(target);
+            });
             cx.notify();
         }
     }
@@ -439,6 +459,7 @@ impl Render for Shell {
                 shell.handle_shell_key(&event.keystroke, cx);
             }))
             .child(crate::menu_bar::bar(&self.menu_bar, cx))
+            .child(self.toolbar(cx))
             .child(
                 div()
                     .flex_1()
