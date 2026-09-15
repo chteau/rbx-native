@@ -17,6 +17,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use rbx_dom::{Ref, WeakDom};
+use rbx_viewer::pick::Meshes;
 use rbx_viewer::{CameraInput, Gizmo, Headless, Pose, QualityLevel};
 
 use super::quality::Quality;
@@ -81,6 +82,11 @@ pub(super) struct Ready {
     /// ago, which is exactly the moment after flying the camera when a user is
     /// most likely to click.
     pub(super) view: Option<Pose>,
+    /// The file meshes the viewer's scene holds, on the first message and on
+    /// the one after every rebuild — see `Headless::pick_meshes`. `None` the
+    /// rest of the time: the geometry a click is tested against only changes
+    /// when the scene does, and a handle onto it is all the UI thread keeps.
+    pub(super) meshes: Option<Meshes>,
     /// Asset-fetch/decode warnings drained off the viewer since the previous
     /// tick — see `Headless::drain_warnings`. Empty on most ticks, same as
     /// `pose`, but unlike `pose` this is never throttled: a warning is worth
@@ -241,6 +247,9 @@ fn run(
     // zero input — see `due_pose`'s doc comment.
     let mut pose_due = Instant::now();
     let mut pose_sent = None;
+    // True to begin with: the scene the thread opened with is as new to the
+    // UI thread as any rebuilt one.
+    let mut rebuilt = true;
 
     loop {
         if !drain(
@@ -250,6 +259,7 @@ fn run(
                 quality: &mut quality,
                 size: &mut size,
                 visible: &mut visible,
+                rebuilt: &mut rebuilt,
             },
             idle,
         ) {
@@ -282,8 +292,9 @@ fn run(
         }
 
         let warnings = viewer.drain_warnings();
+        let meshes = std::mem::take(&mut rebuilt).then(|| viewer.pick_meshes());
 
-        if (frame.is_some() || told || pose.is_some() || !warnings.is_empty())
+        if (frame.is_some() || told || pose.is_some() || !warnings.is_empty() || meshes.is_some())
             && frames
                 .send(Ready {
                     pixels: frame.map(|frame| frame.pixels),
@@ -292,6 +303,7 @@ fn run(
                     level: shown,
                     pose,
                     view,
+                    meshes,
                     warnings,
                 })
                 .is_err()
@@ -419,6 +431,10 @@ struct Rendering<'a> {
     quality: &'a mut Quality,
     size: &'a mut (u32, u32),
     visible: &'a mut bool,
+    /// Set by any command that rebuilt the scene, so the tick that follows
+    /// reports the geometry the UI thread now has to pick against — see
+    /// [`Ready::meshes`].
+    rebuilt: &'a mut bool,
 }
 
 /// Applies everything the UI thread has asked for, blocking for the first order
@@ -457,29 +473,28 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::Orthographic(orthographic) => rendering.viewer.set_orthographic(orthographic),
         Command::Selection(referents) => rendering.viewer.set_selection(&referents),
         Command::Gizmo(gizmo) => rendering.viewer.set_gizmo(gizmo),
-        Command::Reload(dom) => {
-            if let Err(err) = rendering.viewer.reload(&dom) {
-                eprintln!("rbxstudio: command bar reload failed: {err}");
-            }
-        }
+        Command::Reload(dom) => match rendering.viewer.reload(&dom) {
+            Ok(()) => *rendering.rebuilt = true,
+            Err(err) => eprintln!("rbxstudio: command bar reload failed: {err}"),
+        },
         Command::Lighting(dom) => match rendering.viewer.update_lighting(&dom) {
             Ok(true) => {}
-            Ok(false) => fall_back_to_reload(rendering.viewer, &dom, "lighting edit"),
+            Ok(false) => fall_back_to_reload(rendering, &dom, "lighting edit"),
             Err(err) => eprintln!("rbxstudio: lighting edit failed: {err}"),
         },
         Command::Instance(dom, referent) => match rendering.viewer.patch_instance(&dom, referent) {
             Ok(true) => {}
-            Ok(false) => fall_back_to_reload(rendering.viewer, &dom, "instance edit"),
+            Ok(false) => fall_back_to_reload(rendering, &dom, "instance edit"),
             Err(err) => eprintln!("rbxstudio: instance edit failed: {err}"),
         },
         Command::Effect(dom, referent) => match rendering.viewer.patch_effect(&dom, referent) {
             Ok(true) => {}
-            Ok(false) => fall_back_to_reload(rendering.viewer, &dom, "effect edit"),
+            Ok(false) => fall_back_to_reload(rendering, &dom, "effect edit"),
             Err(err) => eprintln!("rbxstudio: effect edit failed: {err}"),
         },
         Command::Reparent(dom, referent) => match rendering.viewer.reparent(&dom, referent) {
             Ok(true) => {}
-            Ok(false) => fall_back_to_reload(rendering.viewer, &dom, "reparent"),
+            Ok(false) => fall_back_to_reload(rendering, &dom, "reparent"),
             Err(err) => eprintln!("rbxstudio: reparent failed: {err}"),
         },
         Command::Visible(new) => *rendering.visible = new,
@@ -493,9 +508,10 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
 /// take the shortcut (a bucket crossed, a material never uploaded, a local
 /// light added or removed underneath — see their own doc comments): the one
 /// thing guaranteed to draw the right picture regardless of why.
-fn fall_back_to_reload(viewer: &mut Headless, dom: &WeakDom, what: &str) {
-    if let Err(err) = viewer.reload(dom) {
-        eprintln!("rbxstudio: {what} fallback reload failed: {err}");
+fn fall_back_to_reload(rendering: &mut Rendering<'_>, dom: &WeakDom, what: &str) {
+    match rendering.viewer.reload(dom) {
+        Ok(()) => *rendering.rebuilt = true,
+        Err(err) => eprintln!("rbxstudio: {what} fallback reload failed: {err}"),
     }
 }
 

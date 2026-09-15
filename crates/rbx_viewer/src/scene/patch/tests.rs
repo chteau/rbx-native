@@ -209,7 +209,7 @@ fn patch_mesh_instance_follows_a_mesh_id_swap_only_to_a_downloaded_mesh() {
     scene
         .resolved_file_meshes
         .meshes
-        .insert(AssetRef::Id(2), fake_mesh());
+        .insert(AssetRef::Id(2), std::sync::Arc::new(fake_mesh()));
     let index = placed(&mut scene, &dom, mesh_part());
     assert_eq!(
         scene.resolved_file_meshes().instances[index].mesh,

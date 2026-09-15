@@ -1,5 +1,5 @@
 //! Turning a point on screen into a world-space ray, and testing that ray
-//! against the boxes parts are drawn as.
+//! against the surfaces parts are drawn with.
 //!
 //! Public because the picking happens in the *embedder*: `rbxstudio`'s
 //! viewport owns the cursor and the DOM, while the renderer runs on a thread
@@ -7,12 +7,25 @@
 //! rather than mirroring it there is what stops a click from resolving against
 //! a slightly different camera than the frame under it was drawn with — see
 //! [`Pose::view_projection`], which is the matrix both sides share.
+//!
+//! The same reasoning puts the hit tests here: [`parts_along`] resolves each
+//! part's shape through the very `scene` code that decides what the GPU draws
+//! (`scene::shape::resolve` for the procedural solids, `scene::filemesh` for
+//! a downloaded mesh), so what a click reaches is exactly the silhouette on
+//! screen — not a box around it.
+
+mod mesh;
+mod shape;
 
 use glam::{Mat4, Vec2, Vec3};
 use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
-use crate::scene::{cframe_matrix, is_drawable, workspace_descendants};
+use crate::scene::{
+    cframe_matrix, file_mesh_fit, is_drawable, resolve_shape, workspace_descendants, ShapeKind,
+};
+
+pub use mesh::Meshes;
 
 // Reversed-Z (see `camera::Camera::projection`) puts the near plane at depth 1
 // and the far end at 0, in both the perspective and the orthographic
@@ -88,52 +101,15 @@ pub fn part_model(cframe: &CFrameData, size: Vector3Data) -> Mat4 {
     cframe_matrix(cframe) * Mat4::from_scale(Vec3::new(size.x, size.y, size.z))
 }
 
-// A part scaled to nothing on some axis has a singular model matrix, which
-// cannot be inverted into box space at all. Rather than let the slab test
-// below produce NaNs and non-deterministic hits, such a part simply isn't
-// pickable — it has no visible surface to click on either.
-const SINGULAR: f32 = 1e-12;
-
 /// How far along `ray` it first meets the unit cube carried through `model`
-/// — the oriented box every `BasePart` is drawn inside, whatever shape fills
-/// it. `None` when the ray misses, or when the box is entirely behind the
-/// ray's origin.
+/// — the oriented box every `BasePart` occupies, whatever shape fills it.
+/// `None` when the ray misses, or when the box is entirely behind the ray's
+/// origin.
 ///
 /// A ray starting *inside* the box hits at distance 0 rather than missing, so
 /// clicking while the camera sits inside a part still selects it.
 pub fn ray_hits_box(ray: Ray, model: Mat4) -> Option<f32> {
-    if model.determinant().abs() < SINGULAR {
-        return None;
-    }
-
-    // The slab test wants the box axis-aligned, so the ray moves into the
-    // box's own space instead. An affine map carries the ray parameter
-    // through unchanged, so the distance that comes out is already the
-    // world-space one even though the direction there isn't unit length.
-    let inverse = model.inverse();
-    let origin = inverse.transform_point3(ray.origin);
-    let direction = inverse.transform_vector3(ray.direction);
-
-    let mut entry = f32::NEG_INFINITY;
-    let mut exit = f32::INFINITY;
-    for axis in 0..3 {
-        let (origin, direction) = (origin[axis], direction[axis]);
-        if direction.abs() < f32::EPSILON {
-            if !(-0.5..=0.5).contains(&origin) {
-                return None;
-            }
-            continue;
-        }
-        let first = (-0.5 - origin) / direction;
-        let second = (0.5 - origin) / direction;
-        entry = entry.max(first.min(second));
-        exit = exit.min(first.max(second));
-    }
-
-    if exit < entry.max(0.0) {
-        return None;
-    }
-    Some(entry.max(0.0))
+    shape::hit(ShapeKind::Box, model, ray)
 }
 
 /// Every drawn `BasePart` `ray` passes through, nearest first.
@@ -143,29 +119,61 @@ pub fn ray_hits_box(ray: Ray, model: Mat4) -> Option<f32> {
 /// exactly what is on screen — a `Part` staged in `ServerStorage` is neither
 /// drawn nor clickable.
 ///
-/// Every part is tested as the oriented box it occupies rather than against
-/// its real surface: a `Ball` or a `MeshPart` is therefore clickable slightly
-/// beyond its own silhouette, out to the corners of its bounding box. Studio
-/// picks against the actual geometry; matching that means the renderer's mesh
-/// data, which lives on the render thread and is not what this reads.
-pub fn parts_along(dom: &WeakDom, database: &ReflectionDatabase, ray: Ray) -> Vec<Ref> {
+/// Each part is tested against the surface it is drawn with: a `Ball` as a
+/// sphere, a `Cylinder` along its own axis, a wedge under its slope, and a
+/// `MeshPart` (or a `SpecialMesh` FileMesh) against the triangles of its
+/// downloaded mesh where `meshes` holds them — so clicking between a ball's
+/// silhouette and the corner of its bounding box hits whatever stands behind
+/// it, as it does in Studio. Everything else, a `MeshPart` whose download
+/// failed included, picks as the box it is drawn as.
+pub fn parts_along(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    meshes: &Meshes,
+    ray: Ray,
+) -> Vec<Ref> {
     let mut hits: Vec<(f32, Ref)> = workspace_descendants(dom, database)
         .filter(|&referent| is_drawable(dom, database, referent))
-        .filter_map(|referent| {
-            let model = model_of(dom, referent)?;
-            Some((ray_hits_box(ray, model)?, referent))
-        })
+        .filter_map(|referent| Some((distance_to(dom, database, meshes, referent, ray)?, referent)))
         .collect();
     hits.sort_by(|(a, _), (b, _)| a.total_cmp(b));
     hits.into_iter().map(|(_, referent)| referent).collect()
+}
+
+/// How far along `ray` one part's drawn surface lies, or `None` when the ray
+/// misses it (or the part has nothing to draw).
+fn distance_to(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    meshes: &Meshes,
+    referent: Ref,
+    ray: Ray,
+) -> Option<f32> {
+    if let Some((asset, fit)) = file_mesh_fit(dom, database, referent) {
+        if let Some(mesh) = meshes.get(&asset) {
+            return mesh::hit(mesh, fit.transform(mesh), ray);
+        }
+        // The mesh never downloaded: the part is drawn as its fallback box,
+        // which is exactly what the shape resolution below answers for it.
+    }
+
+    let instance = dom.get(referent)?;
+    let properties = instance.properties();
+    // Roblox's binary format spells `BasePart.Size` lowercase, which is the
+    // name the DOM keeps — see `scene::build_part`, which reads the same pair.
+    let (Variant::CFrame(cframe), Variant::Vector3(size)) =
+        (properties.get("CFrame")?, properties.get("size")?)
+    else {
+        return None;
+    };
+    let geometry = resolve_shape(dom, database, instance, Vec3::new(size.x, size.y, size.z));
+    shape::hit(geometry.kind, geometry.model(cframe_matrix(cframe)), ray)
 }
 
 /// The matrix one `BasePart` in `dom` is drawn with, or `None` for anything
 /// without both a `CFrame` and a `size` to build one from.
 pub fn model_of(dom: &WeakDom, referent: Ref) -> Option<Mat4> {
     let properties = dom.get(referent)?.properties();
-    // Roblox's binary format spells `BasePart.Size` lowercase, which is the
-    // name the DOM keeps — see `scene::build_part`, which reads the same pair.
     let (Variant::CFrame(cframe), Variant::Vector3(size)) =
         (properties.get("CFrame")?, properties.get("size")?)
     else {

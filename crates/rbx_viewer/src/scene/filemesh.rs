@@ -5,8 +5,10 @@
 //! GPU side.
 
 mod appearance;
+mod fit;
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use glam::{Mat4, Vec3};
 use rbx_assets::AssetRef;
@@ -17,56 +19,12 @@ use crate::assets::Image;
 use crate::textures::asset_uri;
 
 pub(crate) use appearance::{AlphaMode, Appearance};
+pub(crate) use fit::{of as fit_of, Fit};
 
 use super::material::{Catalog, Slot};
 
 const MESH_PART: &str = "MeshPart";
 const FILE_MESH: u32 = 5; // Enum.MeshType.FileMesh
-
-/// How to place a mesh asset's native geometry in the world, before the mesh
-/// itself is known.
-enum Fit {
-    /// `MeshPart`: native geometry is scaled componentwise so its own extent
-    /// matches `size` — `InitialSize` if the file carries it (undocumented but
-    /// still round-tripped by Studio), otherwise the mesh's own bounds.
-    Part {
-        cframe: Mat4,
-        size: Vec3,
-        initial_size: Option<Vec3>,
-    },
-    /// `SpecialMesh`: native geometry (studs as authored) is scaled by `Scale`
-    /// then translated by `Offset`, both in the parent part's own frame. The
-    /// part's `size` plays no part in this: unlike `MeshPart`, nothing here
-    /// asks the mesh to fit any particular extent.
-    Special {
-        cframe: Mat4,
-        scale: Vec3,
-        offset: Vec3,
-    },
-}
-
-impl Fit {
-    fn transform(&self, mesh: &rbx_mesh::Mesh) -> Mat4 {
-        match self {
-            Fit::Part {
-                cframe,
-                size,
-                initial_size,
-            } => {
-                let native = initial_size
-                    .filter(|v| v.min_element() > f32::EPSILON)
-                    .unwrap_or_else(|| Vec3::from(mesh.bounds.size()))
-                    .max(Vec3::splat(f32::EPSILON));
-                *cframe * Mat4::from_scale(*size / native)
-            }
-            Fit::Special {
-                cframe,
-                scale,
-                offset,
-            } => *cframe * Mat4::from_translation(*offset) * Mat4::from_scale(*scale),
-        }
-    }
-}
 
 /// One file-mesh-backed instance found in the DOM, before its assets exist.
 pub(super) struct Entry {
@@ -126,7 +84,10 @@ pub(crate) struct ResolvedInstance {
 /// can ride along to reach `renderer::filemesh`.
 #[derive(Default)]
 pub(crate) struct Resolved {
-    pub(crate) meshes: HashMap<AssetRef, rbx_mesh::Mesh>,
+    /// Behind `Arc`s so a hit test on another thread (see
+    /// `crate::pick::Meshes`) reads the very vertices the renderer uploads
+    /// rather than a copy of every mesh in the place.
+    pub(crate) meshes: HashMap<AssetRef, Arc<rbx_mesh::Mesh>>,
     pub(crate) images: HashMap<AssetRef, Image>,
     /// Every distinct `SurfaceAppearance` the scene resolved, deduplicated:
     /// a character's dozen limbs usually share one map set.
@@ -190,6 +151,10 @@ pub(crate) fn resolve(
     meshes: HashMap<AssetRef, rbx_mesh::Mesh>,
     images: HashMap<AssetRef, Image>,
 ) -> (Resolved, HashSet<Ref>) {
+    let meshes: HashMap<AssetRef, Arc<rbx_mesh::Mesh>> = meshes
+        .into_iter()
+        .map(|(asset, mesh)| (asset, Arc::new(mesh)))
+        .collect();
     let mut instances = Vec::new();
     let mut appearances: Vec<Appearance> = Vec::new();
     let mut hidden = HashSet::new();
@@ -251,12 +216,9 @@ fn from_mesh_part(
     materials: &mut Catalog,
 ) -> Option<Entry> {
     let instance = dom.get(referent)?;
-    if !database.is_subclass_of(instance.class(), MESH_PART) {
-        return None;
-    }
+    let (mesh, fit) = fit::mesh_part(database, instance)?;
     let properties = instance.properties();
 
-    let mesh = parsed_asset_ref(properties.get("MeshId")?)?;
     let appearance = appearance::of(dom, instance);
     // A SurfaceAppearance replaces the mesh's own texture, so reading both
     // would only queue a download nothing goes on to sample.
@@ -264,16 +226,6 @@ fn from_mesh_part(
         .get("TextureID")
         .filter(|_| appearance.is_none())
         .and_then(parsed_asset_ref);
-    let Some(&Variant::Vector3(size)) = properties.get("size") else {
-        return None;
-    };
-    let Some(Variant::CFrame(cframe)) = properties.get("CFrame") else {
-        return None;
-    };
-    let initial_size = match properties.get("InitialSize") {
-        Some(&Variant::Vector3(v)) => Some(Vec3::new(v.x, v.y, v.z)),
-        _ => None,
-    };
     let color = match properties.get("Color3uint8") {
         Some(&Variant::Color3uint8 { r, g, b }) => [r, g, b],
         _ => super::FALLBACK_COLOR,
@@ -285,11 +237,7 @@ fn from_mesh_part(
         mesh,
         texture,
         appearance,
-        fit: Fit::Part {
-            cframe: super::cframe_matrix(cframe),
-            size: Vec3::new(size.x, size.y, size.z),
-            initial_size,
-        },
+        fit,
         color: color.map(|channel| super::srgb_to_linear(f32::from(channel) / 255.0)),
         alpha: 1.0 - super::number(properties.get("Transparency")).clamp(0.0, 1.0),
         reflectance: super::number(properties.get("Reflectance")).clamp(0.0, 1.0),
@@ -308,27 +256,14 @@ fn from_special_mesh_child(
     materials: &mut Catalog,
 ) -> Option<Entry> {
     let part = dom.get(referent)?;
-    let Some(Variant::CFrame(cframe)) = part.properties().get("CFrame") else {
-        return None;
-    };
+    let (child, mesh, fit) = fit::special_mesh(dom, part)?;
     let part_color = match part.properties().get("Color3uint8") {
         Some(&Variant::Color3uint8 { r, g, b }) => [r, g, b],
         _ => super::FALLBACK_COLOR,
     };
 
-    let child = part.children().iter().find_map(|&child_ref| {
-        let child = dom.get(child_ref)?;
-        (child.class() == "SpecialMesh").then_some(child)
-    })?;
     let properties = child.properties();
-    if !matches!(properties.get("MeshType"), Some(&Variant::Enum(FILE_MESH))) {
-        return None;
-    }
-
-    let mesh = parsed_asset_ref(properties.get("MeshId")?)?;
     let texture = properties.get("TextureId").and_then(parsed_asset_ref);
-    let scale = vector3(properties.get("Scale"), Vec3::ONE);
-    let offset = vector3(properties.get("Offset"), Vec3::ZERO);
     let tint = vector3(properties.get("VertexColor"), Vec3::ONE);
 
     let color = std::array::from_fn(|axis| {
@@ -344,11 +279,7 @@ fn from_special_mesh_child(
         texture,
         // `SurfaceAppearance` is a MeshPart child; a SpecialMesh never has one.
         appearance: None,
-        fit: Fit::Special {
-            cframe: super::cframe_matrix(cframe),
-            scale,
-            offset,
-        },
+        fit,
         color,
         // A SpecialMesh has no Transparency of its own: the part it hangs under
         // owns both properties.

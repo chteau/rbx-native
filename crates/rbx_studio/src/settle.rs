@@ -22,7 +22,7 @@
 use glam::{Mat4, Vec3};
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
-use rbx_viewer::pick::{self, Ray};
+use rbx_viewer::pick::{self, Meshes, Ray};
 
 /// One step of a cursor drag, as the view describes it.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -50,11 +50,12 @@ pub(crate) struct Surface {
 pub(crate) fn settled(
     dom: &WeakDom,
     database: &ReflectionDatabase,
+    meshes: &Meshes,
     referent: Ref,
     settle: Settle,
 ) -> Option<Vec3> {
     let model = pick::model_of(dom, referent)?;
-    let surface = surface_under(dom, database, settle.cursor, referent)?;
+    let surface = surface_under(dom, database, meshes, settle.cursor, referent)?;
     Some(rest_on(settle, model, surface))
 }
 
@@ -66,10 +67,11 @@ pub(crate) fn settled(
 pub(crate) fn surface_under(
     dom: &WeakDom,
     database: &ReflectionDatabase,
+    meshes: &Meshes,
     ray: Ray,
     exclude: Ref,
 ) -> Option<Surface> {
-    let nearest = pick::parts_along(dom, database, ray)
+    let nearest = pick::parts_along(dom, database, meshes, ray)
         .into_iter()
         .find(|&referent| referent != exclude)?;
     face_hit(ray, pick::model_of(dom, nearest)?)

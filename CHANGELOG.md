@@ -112,6 +112,30 @@
   window: settling onto a raised part, falling back over open space, the
   self-exclusion, and a crossing between surfaces jumping by exactly the
   height difference. — @chteau
+- **Clicking in the viewport now picks against the shape that is actually
+  drawn, not the box around it.** `pick::parts_along` tested every part as
+  its oriented bounding box, so the empty corner beside a ball, the air
+  above a wedge's slope and the whole hollow of a rock-shaped `MeshPart`
+  all selected the part — and a thin slab standing just inside a ball's
+  box but outside its sphere lost the nearest-first ordering to the ball.
+  Each part now resolves through the same `scene::shape::resolve` the
+  renderer draws it with (so a `SpecialMesh` sphere is the same ellipsoid
+  on both sides): a `Ball` is a sphere, `Part.Cylinder` a capped cylinder
+  along X and `CylinderMesh` one along Y, `WedgePart`/`CornerWedgePart`
+  their slope half-spaces derived from `shapes::wedge`/`corner_wedge`'s own
+  vertices, and every convex solid shares one entry/exit-span test in the
+  part's local space. A `MeshPart`/`SpecialMesh` FileMesh is tested against
+  the triangles of its downloaded mesh through the same `Fit` the renderer
+  places it with: `Headless::pick_meshes` hands out a handle onto the
+  render thread's parsed meshes (behind `Arc`s, no copy), the pump reports
+  it once per scene build, and `Shell` picks with it. Whatever never
+  downloaded still picks as the fallback box it is drawn as; a `TrussPart`
+  deliberately stays its full box, and a `UnionOperation` too. The
+  per-shape tests include a sweep of a few thousand rays per solid, under
+  the identity and an arbitrary rotation+scale, checked against the actual
+  `shapes` meshes with a triangle test — which is what pins the slope
+  planes and cylinder axes to the geometry rather than to a reading of it.
+  — @chteau
 
 ## 2026-09-14 (night) — getting ready to go public
 

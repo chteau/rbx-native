@@ -1,5 +1,9 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use glam::{Mat4, Vec2, Vec3};
-use rbx_dom::{CFrameData, Vector3Data, WeakDom};
+use rbx_assets::AssetRef;
+use rbx_dom::{CFrameData, Instance, Ref, Variant, Vector3Data, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use super::*;
@@ -185,7 +189,7 @@ fn a_click_down_at_the_place_finds_its_parts_nearest_first() {
     let database = ReflectionDatabase::embedded();
     let down = Ray::new(Vec3::new(0.0, 200.0, 0.0), Vec3::NEG_Y);
 
-    let hits = parts_along(&dom, &database, down);
+    let hits = parts_along(&dom, &database, &Meshes::default(), down);
     assert_eq!(hits.len(), 2, "the spawn and the baseplate");
 
     let names: Vec<&str> = hits
@@ -202,7 +206,7 @@ fn a_click_off_the_edge_of_the_place_finds_nothing() {
     let database = ReflectionDatabase::embedded();
     let past = Ray::new(Vec3::new(5000.0, 200.0, 0.0), Vec3::NEG_Y);
 
-    assert!(parts_along(&dom, &database, past).is_empty());
+    assert!(parts_along(&dom, &database, &Meshes::default(), past).is_empty());
 }
 
 #[test]
@@ -210,7 +214,326 @@ fn an_empty_dom_is_clickable_without_panicking() {
     let database = ReflectionDatabase::embedded();
     let down = Ray::new(Vec3::new(0.0, 200.0, 0.0), Vec3::NEG_Y);
 
-    assert!(parts_along(&WeakDom::new(), &database, down).is_empty());
+    assert!(parts_along(&WeakDom::new(), &database, &Meshes::default(), down).is_empty());
+}
+
+// --- Real shapes through the DOM -------------------------------------------
+
+/// A `Workspace` holding whatever `add` puts under it: a scene small enough
+/// to reason about by hand.
+fn workspace_with(add: impl FnOnce(&mut WeakDom, Ref)) -> WeakDom {
+    let mut dom = WeakDom::new();
+    let workspace = Ref::new(9000);
+    dom.insert(Instance::new(workspace, "Workspace", "Workspace"));
+    dom.set_parent(workspace, None);
+    add(&mut dom, workspace);
+    dom
+}
+
+/// An axis-aligned `class` instance named `name`, centred at `position`.
+fn add_part(
+    dom: &mut WeakDom,
+    parent: Ref,
+    id: u32,
+    class: &str,
+    name: &str,
+    position: Vec3,
+    size: Vec3,
+) -> Ref {
+    let referent = Ref::new(id);
+    let mut instance = Instance::new(referent, class, name);
+    let properties = instance.properties_mut();
+    properties.insert(
+        "CFrame".to_string(),
+        Variant::CFrame(identity_cframe(position.x, position.y, position.z)),
+    );
+    properties.insert(
+        "size".to_string(),
+        Variant::Vector3(Vector3Data {
+            x: size.x,
+            y: size.y,
+            z: size.z,
+        }),
+    );
+    dom.insert(instance);
+    dom.set_parent(referent, Some(parent));
+    referent
+}
+
+/// `Enum.PartType`: Ball=0, Cylinder=2.
+const BALL: u32 = 0;
+const CYLINDER: u32 = 2;
+
+fn names(dom: &WeakDom, hits: &[Ref]) -> Vec<String> {
+    hits.iter()
+        .map(|&referent| {
+            dom.get(referent)
+                .expect("a hit resolves")
+                .name()
+                .to_string()
+        })
+        .collect()
+}
+
+/// The tetrahedron the plane `x + y + z = -0.5` cuts off the unit cube's
+/// (-, -, -) corner: a mesh whose bounding box is almost entirely empty, so
+/// a box test and a triangle test disagree nearly everywhere.
+pub(super) fn corner_tetrahedron() -> rbx_mesh::Mesh {
+    let vertex = |x: f32, y: f32, z: f32| rbx_mesh::Vertex {
+        position: [x, y, z],
+        normal: [0.0; 3],
+        uv: [0.0; 2],
+        color: [255; 4],
+    };
+    rbx_mesh::Mesh {
+        version: (4, 1),
+        vertices: vec![
+            vertex(-0.5, -0.5, -0.5),
+            vertex(0.5, -0.5, -0.5),
+            vertex(-0.5, 0.5, -0.5),
+            vertex(-0.5, -0.5, 0.5),
+        ],
+        indices: vec![0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3],
+        lods: Vec::new(),
+        // The full unit cube, deliberately: a `MeshPart` is fitted to its
+        // `size` by these bounds, so the empty corners stay empty.
+        bounds: rbx_mesh::Aabb {
+            min: [-0.5; 3],
+            max: [0.5; 3],
+        },
+    }
+}
+
+fn tetrahedron_meshes(asset: AssetRef) -> Meshes {
+    Meshes::new(HashMap::from([(asset, Arc::new(corner_tetrahedron()))]))
+}
+
+#[test]
+fn a_thin_slab_in_front_of_a_ball_is_hit_first() {
+    // A 4-stud ball and a slab standing at z = 1.5..1.7, inside the ball's
+    // bounding box but outside its sphere where x = 1.5 (the surface there
+    // is at z = sqrt(4 - 2.25) = 1.32). A box test would put the ball first.
+    let dom = workspace_with(|dom, workspace| {
+        let ball = add_part(
+            dom,
+            workspace,
+            1,
+            "Part",
+            "Ball",
+            Vec3::ZERO,
+            Vec3::splat(4.0),
+        );
+        dom.set_property(ball, "shape", Variant::Enum(BALL))
+            .expect("the ball exists");
+        add_part(
+            dom,
+            workspace,
+            2,
+            "Part",
+            "Slab",
+            Vec3::new(0.0, 0.0, 1.6),
+            Vec3::new(4.0, 4.0, 0.2),
+        );
+    });
+    let database = ReflectionDatabase::embedded();
+    let ray = Ray::new(Vec3::new(1.5, 0.0, 10.0), Vec3::NEG_Z);
+
+    let box_only = |referent: u32| {
+        ray_hits_box(ray, model_of(&dom, Ref::new(referent)).expect("a part")).expect("a box hit")
+    };
+    assert!(
+        box_only(1) < box_only(2),
+        "the boxes disagree with the shapes"
+    );
+
+    let hits = parts_along(&dom, &database, &Meshes::default(), ray);
+    assert_eq!(names(&dom, &hits), ["Slab", "Ball"]);
+}
+
+#[test]
+fn a_click_at_the_corner_of_a_balls_box_finds_nothing() {
+    let dom = workspace_with(|dom, workspace| {
+        let ball = add_part(
+            dom,
+            workspace,
+            1,
+            "Part",
+            "Ball",
+            Vec3::ZERO,
+            Vec3::splat(4.0),
+        );
+        dom.set_property(ball, "shape", Variant::Enum(BALL))
+            .expect("the ball exists");
+    });
+    let database = ReflectionDatabase::embedded();
+    let corner = Ray::new(Vec3::new(1.9, 1.9, 10.0), Vec3::NEG_Z);
+    assert!(ray_hits_box(corner, model_of(&dom, Ref::new(1)).expect("a part")).is_some());
+    assert!(parts_along(&dom, &database, &Meshes::default(), corner).is_empty());
+
+    let centre = Ray::new(Vec3::new(0.5, -0.5, 10.0), Vec3::NEG_Z);
+    assert_eq!(
+        names(
+            &dom,
+            &parts_along(&dom, &database, &Meshes::default(), centre)
+        ),
+        ["Ball"]
+    );
+}
+
+#[test]
+fn a_part_cylinder_is_picked_along_its_x_axis() {
+    // 8 studs long along X, 2 across. Down Y at z = 0.95 the curved side is
+    // there (radius 1); a cylinder standing along Y would be an ellipse 4 by
+    // 1 in that plane and miss this ray entirely.
+    let dom = workspace_with(|dom, workspace| {
+        let pipe = add_part(
+            dom,
+            workspace,
+            1,
+            "Part",
+            "Pipe",
+            Vec3::ZERO,
+            Vec3::new(8.0, 2.0, 2.0),
+        );
+        dom.set_property(pipe, "shape", Variant::Enum(CYLINDER))
+            .expect("the pipe exists");
+    });
+    let database = ReflectionDatabase::embedded();
+
+    let side = Ray::new(Vec3::new(3.5, 10.0, 0.95), Vec3::NEG_Y);
+    assert_eq!(
+        names(
+            &dom,
+            &parts_along(&dom, &database, &Meshes::default(), side)
+        ),
+        ["Pipe"]
+    );
+
+    // Along the axis at the corner of the end cap: box, not disc.
+    let cap_corner = Ray::new(Vec3::new(10.0, 0.9, 0.9), Vec3::NEG_X);
+    assert!(ray_hits_box(cap_corner, model_of(&dom, Ref::new(1)).expect("a part")).is_some());
+    assert!(parts_along(&dom, &database, &Meshes::default(), cap_corner).is_empty());
+}
+
+#[test]
+fn a_mesh_part_is_picked_against_its_downloaded_triangles() {
+    let asset = AssetRef::Id(7);
+    let dom = workspace_with(|dom, workspace| {
+        let rock = add_part(
+            dom,
+            workspace,
+            1,
+            "MeshPart",
+            "Rock",
+            Vec3::ZERO,
+            Vec3::splat(2.0),
+        );
+        dom.set_property(
+            rock,
+            "MeshId",
+            Variant::String("rbxassetid://7".to_string()),
+        )
+        .expect("the rock exists");
+    });
+    let database = ReflectionDatabase::embedded();
+    let meshes = tetrahedron_meshes(asset);
+
+    // Through the empty corner of the 2-stud box: nothing there.
+    let empty = Ray::new(Vec3::new(0.8, 0.8, 10.0), Vec3::NEG_Z);
+    assert!(parts_along(&dom, &database, &meshes, empty).is_empty());
+    // Where the tetrahedron actually is.
+    let solid = Ray::new(Vec3::new(-0.8, -0.8, 10.0), Vec3::NEG_Z);
+    assert_eq!(
+        names(&dom, &parts_along(&dom, &database, &meshes, solid)),
+        ["Rock"]
+    );
+}
+
+#[test]
+fn a_mesh_part_whose_mesh_never_downloaded_is_picked_as_its_box() {
+    // The same empty-corner ray as above, with no mesh to test against: the
+    // part is drawn as a box, so it is picked as one.
+    let dom = workspace_with(|dom, workspace| {
+        let rock = add_part(
+            dom,
+            workspace,
+            1,
+            "MeshPart",
+            "Rock",
+            Vec3::ZERO,
+            Vec3::splat(2.0),
+        );
+        dom.set_property(
+            rock,
+            "MeshId",
+            Variant::String("rbxassetid://7".to_string()),
+        )
+        .expect("the rock exists");
+    });
+    let database = ReflectionDatabase::embedded();
+    let empty = Ray::new(Vec3::new(0.8, 0.8, 10.0), Vec3::NEG_Z);
+    assert_eq!(
+        names(
+            &dom,
+            &parts_along(&dom, &database, &Meshes::default(), empty)
+        ),
+        ["Rock"]
+    );
+}
+
+#[test]
+fn a_special_mesh_file_mesh_is_picked_at_its_own_scale_not_the_parts_size() {
+    // A 10-stud part wearing a FileMesh scaled to 2 studs: the mesh, not the
+    // part's box, is what is on screen.
+    let asset = AssetRef::Id(7);
+    let dom = workspace_with(|dom, workspace| {
+        let host = add_part(
+            dom,
+            workspace,
+            1,
+            "Part",
+            "Host",
+            Vec3::ZERO,
+            Vec3::splat(10.0),
+        );
+        let mesh = Ref::new(2);
+        let mut child = Instance::new(mesh, "SpecialMesh", "Mesh");
+        let properties = child.properties_mut();
+        properties.insert("MeshType".to_string(), Variant::Enum(5));
+        properties.insert(
+            "MeshId".to_string(),
+            Variant::String("rbxassetid://7".to_string()),
+        );
+        properties.insert(
+            "Scale".to_string(),
+            Variant::Vector3(Vector3Data {
+                x: 2.0,
+                y: 2.0,
+                z: 2.0,
+            }),
+        );
+        dom.insert(child);
+        dom.set_parent(mesh, Some(host));
+    });
+    let database = ReflectionDatabase::embedded();
+    let meshes = tetrahedron_meshes(asset);
+
+    // Inside the part's 10-stud box, well outside the 2-stud mesh.
+    let outside = Ray::new(Vec3::new(3.0, 3.0, 10.0), Vec3::NEG_Z);
+    assert!(parts_along(&dom, &database, &meshes, outside).is_empty());
+    assert_eq!(
+        names(
+            &dom,
+            &parts_along(&dom, &database, &Meshes::default(), outside)
+        ),
+        ["Host"]
+    );
+
+    let inside = Ray::new(Vec3::new(-0.8, -0.8, 10.0), Vec3::NEG_Z);
+    assert_eq!(
+        names(&dom, &parts_along(&dom, &database, &meshes, inside)),
+        ["Host"]
+    );
 }
 
 #[test]

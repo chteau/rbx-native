@@ -28,7 +28,7 @@ use glam::Vec3;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_dom::Ref;
-use rbx_viewer::pick::Ray;
+use rbx_viewer::pick::{Meshes, Ray};
 use rbx_viewer::{CameraInput, Headless, Pose, QualityLevel};
 
 use crate::camera::PlaceCamera;
@@ -156,6 +156,12 @@ pub(crate) struct WorkspaceView {
     /// Everything screen-to-world unprojects against this, so a click resolves
     /// against the view it was aimed at.
     view: Option<Pose>,
+    /// The file meshes resident on the render thread, as of the last scene it
+    /// built — see `pump::Ready::meshes`. What `Shell` picks a `MeshPart`
+    /// against, so a click resolves against the triangles on screen rather
+    /// than a box around them; a handle onto the renderer's own data, not a
+    /// copy of it.
+    meshes: Meshes,
     drag: Option<Drag>,
     /// Whether the drag in progress has actually moved the part yet, which is
     /// what tells `Shell` which move opens the gesture's one undo step.
@@ -240,10 +246,18 @@ impl WorkspaceView {
             transform: Transform::default(),
             target: None,
             view: None,
+            meshes: Meshes::default(),
             drag: None,
             dragged: false,
             _subscriptions: [blur, deactivated],
         }
+    }
+
+    /// The file meshes the render thread last reported drawing — see the
+    /// field. `Shell` reads this when it resolves a click, since the DOM it
+    /// picks against lives there and the geometry lives here.
+    pub(crate) fn meshes(&self) -> &Meshes {
+        &self.meshes
     }
 
     /// Puts whatever the render thread has finished on screen, and returns how
@@ -304,6 +318,9 @@ impl WorkspaceView {
             // the cursor a fifth of a second ago.
             if ready.view.is_some() {
                 self.view = ready.view;
+            }
+            if let Some(meshes) = ready.meshes {
+                self.meshes = meshes;
             }
             warnings.extend(ready.warnings);
         }

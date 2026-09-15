@@ -8,7 +8,7 @@
 //! capital belongs to `ParticleEmitter`, a different property entirely);
 //! otherwise it is a plain box.
 
-use glam::Vec3;
+use glam::{Mat4, Vec3};
 use rbx_dom::{Instance, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
@@ -49,6 +49,14 @@ pub(crate) struct Geometry {
     pub(crate) kind: ShapeKind,
     pub(crate) size: Vec3,
     pub(crate) offset: Vec3,
+}
+
+impl Geometry {
+    /// The matrix the unit mesh is drawn through: the part's CFrame, then the
+    /// shape's offset in the part's own frame, then its size as a scale.
+    pub(crate) fn model(&self, cframe: Mat4) -> Mat4 {
+        cframe * Mat4::from_translation(self.offset) * Mat4::from_scale(self.size)
+    }
 }
 
 /// Resolves one part's geometry from its mesh children, class, and `shape`
