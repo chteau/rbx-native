@@ -40,6 +40,7 @@ enum Command {
     Input(CameraInput),
     Size((u32, u32)),
     Quality(QualityLevel),
+    Orthographic(bool),
     Selection(Vec<Ref>),
     Reload(WeakDom),
     /// A `Lighting`/`Atmosphere`/`Clouds`/`PostEffect`/`Light` edit — see
@@ -128,6 +129,11 @@ impl Pump {
     /// Switches the graphics quality mode, `Automatic` included.
     pub(super) fn quality(&self, mode: QualityLevel) {
         let _ = self.commands.send(Command::Quality(mode));
+    }
+
+    /// Swaps the main camera between perspective and orthographic projection.
+    pub(super) fn orthographic(&self, orthographic: bool) {
+        let _ = self.commands.send(Command::Orthographic(orthographic));
     }
 
     /// Outlines `referents` in the viewport.
@@ -431,6 +437,7 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::Input(event) => rendering.viewer.input(event),
         Command::Size(new) => *rendering.size = new,
         Command::Quality(mode) => rendering.quality.set(mode, rendering.viewer),
+        Command::Orthographic(orthographic) => rendering.viewer.set_orthographic(orthographic),
         Command::Selection(referents) => rendering.viewer.set_selection(&referents),
         Command::Reload(dom) => {
             if let Err(err) = rendering.viewer.reload(&dom) {
