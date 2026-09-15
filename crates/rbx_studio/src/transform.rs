@@ -1,39 +1,42 @@
 //! The viewport's transform toolbar: which of Studio's tools is active,
-//! whether its draggers follow the world's axes or the part's own, and the
+//! whether its handles follow the world's axes or the part's own, and the
 //! keystrokes that change either.
 //!
 //! The state lives in [`crate::shell::Shell`] — the toolbar renders from it —
 //! and is pushed down to [`crate::workspace_view::WorkspaceView`], which
-//! hit-tests the cursor against the draggers, and on to the render thread,
+//! hit-tests the cursor against the handles, and on to the render thread,
 //! which draws them.
 //!
 //! Shortcuts and behaviour follow `creator-docs`
-//! (`parts/index.md#transform-parts`): `2` for Move, `Ctrl`/`Cmd`+`L` for
-//! local orientation. Scale (`3`) and Rotate (`4`) are not implemented yet and
-//! are deliberately not bound — a shortcut that silently does nothing is worse
-//! than one that visibly isn't there.
+//! (`parts/index.md#transform-parts`): `2` for Move, `3` for Scale, `4` for
+//! Rotate, `Ctrl`/`Cmd`+`L` for local orientation.
 
-use glam::Mat4;
+use glam::{Mat3, Mat4, Vec3};
 use gpui_kit::Modifiers;
 use rbx_dom::{Ref, WeakDom};
+use rbx_viewer::gizmo::{self, Kind};
 use rbx_viewer::Gizmo;
 
-/// A transform tool the viewport can actually carry out.
+/// A transform tool the viewport can carry out.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum Tool {
     /// Click to select, and nothing else — Studio's own default.
     #[default]
     Select,
     Move,
+    Scale,
+    Rotate,
 }
 
 impl Tool {
-    pub(crate) const ALL: [Tool; 2] = [Tool::Select, Tool::Move];
+    pub(crate) const ALL: [Tool; 4] = [Tool::Select, Tool::Move, Tool::Scale, Tool::Rotate];
 
     pub(crate) fn label(self) -> &'static str {
         match self {
             Tool::Select => "Select",
             Tool::Move => "Move",
+            Tool::Scale => "Scale",
+            Tool::Rotate => "Rotate",
         }
     }
 
@@ -42,6 +45,19 @@ impl Tool {
         match self {
             Tool::Select => "1",
             Tool::Move => "2",
+            Tool::Scale => "3",
+            Tool::Rotate => "4",
+        }
+    }
+
+    /// Which handles this tool puts over the selection, or `None` for Select,
+    /// which has none of its own.
+    pub(crate) fn kind(self) -> Option<Kind> {
+        match self {
+            Tool::Select => None,
+            Tool::Move => Some(Kind::Move),
+            Tool::Scale => Some(Kind::Scale),
+            Tool::Rotate => Some(Kind::Rotate),
         }
     }
 }
@@ -50,20 +66,22 @@ impl Tool {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct Transform {
     pub(crate) tool: Tool,
-    /// Draggers along the part's own axes rather than the world's.
+    /// Handles along the part's own axes rather than the world's.
     pub(crate) local: bool,
 }
 
 impl Transform {
-    /// What the renderer should draw over the selection, if anything — the
-    /// Select tool has no draggers of its own.
+    /// What the renderer should draw over the selection, if anything.
     pub(crate) fn gizmo(self) -> Option<Gizmo> {
-        matches!(self.tool, Tool::Move).then_some(Gizmo { local: self.local })
+        self.tool.kind().map(|kind| Gizmo {
+            kind,
+            local: self.local,
+        })
     }
 
-    /// Whether dragging in the viewport moves the selected part at all.
+    /// Whether dragging in the viewport transforms the selected part at all.
     pub(crate) fn drags(self) -> bool {
-        matches!(self.tool, Tool::Move)
+        self.tool.kind().is_some()
     }
 }
 
@@ -93,11 +111,13 @@ pub(crate) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
         _ if !plain => None,
         "1" => Some(Action::Use(Tool::Select)),
         "2" => Some(Action::Use(Tool::Move)),
+        "3" => Some(Action::Use(Tool::Scale)),
+        "4" => Some(Action::Use(Tool::Rotate)),
         _ => None,
     }
 }
 
-/// Where the draggers stand: the selected part, and the matrix it is drawn
+/// Where the handles stand: the selected part, and the matrix it is drawn
 /// with.
 ///
 /// Carried on the UI thread so a click can be hit-tested against the handles
@@ -121,13 +141,36 @@ impl Target {
         })
     }
 
-    pub(crate) fn position(&self) -> glam::Vec3 {
+    pub(crate) fn position(&self) -> Vec3 {
         self.model.w_axis.truncate()
+    }
+
+    /// The part's own axes, still carrying its `Size` in their lengths —
+    /// `rbx_viewer::gizmo::basis` normalizes them.
+    pub(crate) fn rotation(&self) -> Mat3 {
+        Mat3::from_mat4(self.model)
+    }
+
+    /// The part's `Size`, which is exactly what `pick::part_model` folded into
+    /// the lengths of those columns.
+    pub(crate) fn size(&self) -> Vec3 {
+        Vec3::new(
+            self.model.x_axis.length(),
+            self.model.y_axis.length(),
+            self.model.z_axis.length(),
+        )
+    }
+
+    /// The part's own orientation with its `Size` divided back out — the
+    /// rotation a `CFrame` carries.
+    pub(crate) fn orientation(&self) -> Mat3 {
+        let [x, y, z] = gizmo::basis(Some(self.rotation()));
+        Mat3::from_cols(x, y, z)
     }
 
     /// The same part standing somewhere else — what a drag in progress shows
     /// while `Shell` is still writing the move into the DOM.
-    pub(crate) fn moved_to(self, position: glam::Vec3) -> Self {
+    pub(crate) fn moved_to(self, position: Vec3) -> Self {
         Target {
             model: Mat4::from_cols(
                 self.model.x_axis,
@@ -139,10 +182,28 @@ impl Target {
         }
     }
 
-    /// The part's own axes, still carrying its `Size` in their lengths —
-    /// `rbx_viewer::gizmo::basis` normalizes them.
-    pub(crate) fn rotation(&self) -> glam::Mat3 {
-        glam::Mat3::from_mat4(self.model)
+    /// The same part at a new `Size`, standing where the drag put it.
+    pub(crate) fn resized_to(self, size: Vec3, position: Vec3) -> Self {
+        self.placed(self.orientation(), size, position)
+    }
+
+    /// The same part turned, keeping its size and where it stands.
+    pub(crate) fn rotated_to(self, orientation: Mat3) -> Self {
+        self.placed(orientation, self.size(), self.position())
+    }
+
+    /// Rebuilds the model matrix the way `pick::part_model` does: the
+    /// orientation's columns scaled by the size, and the centre in the last.
+    fn placed(self, orientation: Mat3, size: Vec3, position: Vec3) -> Self {
+        Target {
+            model: Mat4::from_cols(
+                (orientation.x_axis * size.x).extend(0.0),
+                (orientation.y_axis * size.y).extend(0.0),
+                (orientation.z_axis * size.z).extend(0.0),
+                position.extend(1.0),
+            ),
+            ..self
+        }
     }
 }
 

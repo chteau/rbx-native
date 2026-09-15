@@ -1,12 +1,12 @@
 //! What the left mouse button in the 3D view asks of the editor: resolve a
-//! click against the DOM, or move a part a drag is carrying.
+//! click against the DOM, or move, resize or turn the part a drag is carrying.
 //!
 //! The split is deliberate. `WorkspaceView` has the cursor, the camera and the
-//! draggers' geometry but no DOM; `Shell` has the DOM, the Explorer and the
+//! handles' geometry but no DOM; `Shell` has the DOM, the Explorer and the
 //! undo stack but no idea where the cursor is. Everything in between travels
 //! as a [`ViewportAction`].
 
-use glam::Vec3;
+use glam::{Mat3, Vec3};
 use gpui_kit::*;
 use rbx_dom::{Ref, WeakDom};
 use rbx_viewer::pick::{self, Ray};
@@ -18,10 +18,14 @@ use crate::workspace_view::ViewportAction;
 
 use super::{selection, Shell};
 
-/// The property a viewport move writes. Only its position changes — the
-/// rotation `properties::edit::commit` carries through untouched is what keeps
-/// a dragged part facing the way it was.
+/// The property a viewport move or rotation writes. A move gives it three
+/// numbers and a rotation nine, and `properties::edit::commit` carries the
+/// half that was left out through untouched — which is what keeps a dragged
+/// part facing the way it was, and a turned one standing where it was.
 const CFRAME_PROPERTY: &str = "CFrame";
+/// Roblox's binary format spells `BasePart.Size` lowercase, which is the name
+/// the DOM keeps — see `rbx_viewer::pick::model_of`, which reads the same pair.
+const SIZE_PROPERTY: &str = "size";
 
 impl Shell {
     pub(super) fn handle_viewport_action(
@@ -37,6 +41,17 @@ impl Shell {
                 first,
                 settle,
             } => self.move_part(referent, position, first, settle, cx),
+            ViewportAction::Resized {
+                referent,
+                size,
+                position,
+                first,
+            } => self.resize_part(referent, size, position, first, cx),
+            ViewportAction::Rotated {
+                referent,
+                orientation,
+                first,
+            } => self.rotate_part(referent, orientation, first, cx),
             ViewportAction::Tool(action) => self.transform_action(action, cx),
         }
     }
@@ -59,14 +74,7 @@ impl Shell {
         }
     }
 
-    /// One step of a drag.
-    ///
-    /// History is pushed once, on `first`: a snapshot is a whole `WeakDom`
-    /// clone (see `crate::history`), so one per mouse move would both cost
-    /// a copy of the place per frame and flush every earlier undo step out of
-    /// a fifty-deep stack in under a second. The write itself goes through the
-    /// same `properties::edit::commit` the Properties panel uses, so a drag
-    /// and a typed coordinate cannot disagree about what moving a part means.
+    /// One step of a Move drag.
     ///
     /// A cursor drag asks, through `settle`, to rest the part on whatever the
     /// cursor is over. Only the DOM can answer that, so it is answered here,
@@ -80,10 +88,6 @@ impl Shell {
         settle: Option<Settle>,
         cx: &mut Context<Self>,
     ) {
-        if first {
-            self.push_history();
-        }
-
         // Same render-thread mesh handle `pick_in_viewport` reads — a settle's
         // own surface search needs to agree with what a click would have hit.
         let meshes = self.viewport.read(cx).meshes().clone();
@@ -92,26 +96,95 @@ impl Shell {
         });
         let position = settled.unwrap_or(position);
 
-        let text = format!("{}, {}, {}", position.x, position.y, position.z);
+        let text = vector(position);
+        let written = self.write_drag(referent, first, &[(CFRAME_PROPERTY, &text)], cx);
+        if written && settled.is_some() {
+            self.viewport
+                .update(cx, |viewport, _| viewport.settle_at(position));
+        }
+    }
+
+    /// One step of a Scale drag. Two properties, because Studio's Scale tool
+    /// holds the face opposite the grabbed one still: the part's `Size` grows
+    /// and its `CFrame` shifts by half of that growth, and either one written
+    /// without the other would show the part jumping.
+    fn resize_part(
+        &mut self,
+        referent: Ref,
+        size: Vec3,
+        position: Vec3,
+        first: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let (size, position) = (vector(size), vector(position));
+        self.write_drag(
+            referent,
+            first,
+            &[(SIZE_PROPERTY, &size), (CFRAME_PROPERTY, &position)],
+            cx,
+        );
+    }
+
+    /// One step of a Rotate drag. The rings stand on the part's centre, so
+    /// only the `CFrame`'s rotation changes — written as the nine numbers
+    /// Roblox's own `CFrame.new(x, y, z, R00 … R22)` takes them in, row by row
+    /// (`creator-docs`, `reference/engine/datatypes/CFrame.yaml`).
+    fn rotate_part(
+        &mut self,
+        referent: Ref,
+        orientation: Mat3,
+        first: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let rows = (0..3).flat_map(|row| (0..3).map(move |column| orientation.col(column)[row]));
+        let text = rows
+            .map(|term| term.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.write_drag(referent, first, &[(CFRAME_PROPERTY, &text)], cx);
+    }
+
+    /// Writes one step of a drag into the DOM, reporting whether it
+    /// succeeded — `move_part` uses that to decide whether a settled
+    /// position actually landed before telling the view to follow it.
+    ///
+    /// History is pushed once, on `first`: a snapshot is a whole `WeakDom`
+    /// clone (see `crate::history`), so one per mouse move would both cost
+    /// a copy of the place per frame and flush every earlier undo step out of
+    /// a fifty-deep stack in under a second. The writes themselves go through
+    /// the same `properties::edit::commit` the Properties panel uses, so a
+    /// drag and a typed value cannot disagree about what transforming a part
+    /// means.
+    fn write_drag(
+        &mut self,
+        referent: Ref,
+        first: bool,
+        properties: &[(&str, &str)],
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if first {
+            self.push_history();
+        }
+
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
-        let written =
-            properties::edit::commit(&mut dom, &self.database, referent, CFRAME_PROPERTY, &text);
+        let written = properties.iter().try_for_each(|(name, text)| {
+            properties::edit::commit(&mut dom, &self.database, referent, name, text).map(|_| ())
+        });
         self.dom = dom;
 
         if let Err(err) = written {
             self.output.push_warning(&format!("viewport drag: {err}"));
-            return;
+            return false;
         }
 
-        self.reflect_in_viewport(referent, CFRAME_PROPERTY, cx);
-        if settled.is_some() {
-            self.viewport
-                .update(cx, |viewport, _| viewport.settle_at(position));
+        for (name, _) in properties {
+            self.reflect_in_viewport(referent, name, cx);
         }
         cx.notify();
+        true
     }
 
-    /// Tells the viewport where the selected part stands now, so its draggers
+    /// Tells the viewport where the selected part stands now, so its handles
     /// follow an edit that moved or resized it — a typed coordinate, an undo,
     /// or a Command Bar script.
     pub(super) fn sync_gizmo_target(&mut self, reference: Ref, cx: &mut Context<Self>) {
@@ -123,4 +196,10 @@ impl Shell {
         self.viewport
             .update(cx, |viewport, _| viewport.set_target(target));
     }
+}
+
+/// The three-number text `properties::edit::parse` reads a `Vector3` — or a
+/// `CFrame`'s position — back out of.
+fn vector(value: Vec3) -> String {
+    format!("{}, {}, {}", value.x, value.y, value.z)
 }

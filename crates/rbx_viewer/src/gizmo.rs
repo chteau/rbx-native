@@ -1,17 +1,17 @@
 //! The viewport's transform draggers: where each axis handle sits in the
-//! world, which one a ray is pointing at, and how far along it a drag has
-//! travelled.
+//! world, which one a ray is pointing at, and how far along it — or how far
+//! around it — a drag has travelled.
 //!
 //! Pure geometry, no GPU and no DOM. Both halves of the editor read it: the
-//! renderer builds the arrows' triangles from [`Handles`] (see
-//! `renderer::gizmo`), and `rbxstudio`'s viewport hit-tests the very same
+//! renderer builds the arrows, handles and rings' triangles from [`Handles`]
+//! (see `renderer::gizmo`), and `rbxstudio`'s viewport hit-tests the very same
 //! [`Handles`] against the cursor ray. One definition, so what you can grab is
 //! exactly what you can see.
 //!
-//! Matches Studio's documented Move tool (`creator-docs`
-//! `parts/index.md#transform-parts`): one arrow per axis, coloured red/green/
-//! blue for X/Y/Z, drawn in world orientation or — with the local toggle on —
-//! in the part's own frame.
+//! Matches Studio's documented transform tools (`creator-docs`
+//! `parts/index.md#transform-parts`): Move's arrow per axis, Scale's handle per
+//! axis, Rotate's ring per axis, coloured red/green/blue for X/Y/Z and drawn in
+//! world orientation or — with the local toggle on — in the part's own frame.
 
 use glam::{Mat3, Vec3};
 
@@ -31,16 +31,34 @@ pub(crate) const HEAD_START: f32 = 0.72;
 /// The shaft's and the arrowhead's radii, in arm lengths.
 pub(crate) const SHAFT_RADIUS: f32 = 0.03;
 pub(crate) const HEAD_RADIUS: f32 = 0.105;
+/// Half the edge of a Scale handle's block, in arm lengths. Studio puts a
+/// small block on the end of each arm where Move puts an arrowhead; this is
+/// sized to read as the same weight as that head rather than as a bead.
+pub(crate) const HANDLE_RADIUS: f32 = 0.085;
 /// How far off a dragger's centre line a ray still counts as grabbing it, in
 /// arm lengths. Wider than the arrowhead on purpose: a handle that can only
 /// be grabbed by its exact silhouette is one the user misses repeatedly.
 const PICK_RADIUS: f32 = 0.15;
+/// A rotation ring's radius, in arm lengths — the same reach a Move arrow has,
+/// so switching tools does not change how far out the user has to aim.
+pub(crate) const RING_RADIUS: f32 = 1.0;
+/// Half the thickness of a ring's drawn tube, in arm lengths.
+pub(crate) const RING_THICKNESS: f32 = 0.024;
+/// How far off a ring's own circle a ray still counts as grabbing it, in arm
+/// lengths — wider than the tube, for the same reason [`PICK_RADIUS`] is.
+const RING_PICK: f32 = 0.09;
+/// Below this, a ray runs so nearly along a ring's plane that the crossing it
+/// would report is numerical noise. Deliberately tiny rather than a
+/// comfortable margin: the radius test alongside it already rejects a crossing
+/// that landed nowhere near the circle, so this only has to keep the division
+/// itself meaningful.
+const RING_EDGE_ON: f32 = 1e-6;
 /// A part sitting practically on top of the camera would otherwise scale its
 /// gizmo to nothing; a perspective dragger never shrinks below the size it
 /// has at this distance.
 const MIN_DISTANCE: f32 = 1.0;
 
-/// Which axis a dragger acts along.
+/// Which axis a dragger acts along, or — for Rotate — turns about.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Axis {
     X,
@@ -64,15 +82,36 @@ impl Axis {
             Axis::Z => [0.033, 0.106, 0.890],
         }
     }
+
+    /// The next axis round the cycle X → Y → Z → X, which is where a ring
+    /// takes its own zero angle from (see [`Handles::ring_frame`]).
+    fn next(self) -> Axis {
+        match self {
+            Axis::X => Axis::Y,
+            Axis::Y => Axis::Z,
+            Axis::Z => Axis::X,
+        }
+    }
+}
+
+/// Which transform tool's handles the viewport is showing.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Kind {
+    /// An arrow along each axis; dragging one slides the part along it.
+    #[default]
+    Move,
+    /// A block on the end of each arm; dragging one resizes the part along
+    /// that axis.
+    Scale,
+    /// A ring around each axis; dragging one turns the part about it.
+    Rotate,
 }
 
 /// What the viewport draws over the selection, and in which frame of
 /// reference.
-///
-/// Only the Move draggers exist so far; Scale's handles and Rotate's rings add
-/// a second field here rather than a second type when they land.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Gizmo {
+    pub kind: Kind,
     /// The part's own orientation rather than the world's — Studio's
     /// `Ctrl`/`Cmd`+`L` toggle.
     pub local: bool,
@@ -107,12 +146,15 @@ impl Handles {
         self.arm
     }
 
-    /// Which dragger `ray` is pointing at, if any — the nearest one, so an
-    /// axis pointing at the camera never loses to the one behind it.
+    /// Which dragger `ray` is pointing at and which end of it — the nearest
+    /// one, so an axis pointing at the camera never loses to the one behind
+    /// it. The sign is `+1` on the arm running along the axis and `-1` on the
+    /// one opposite it, which is what tells Scale which face of the part the
+    /// cursor has hold of.
     ///
     /// Both directions of each axis count: Studio's Move gizmo puts an arrow
     /// on each end, and grabbing either drags along the same line.
-    pub fn grab(&self, ray: Ray) -> Option<Axis> {
+    pub fn grab_arm(&self, ray: Ray) -> Option<(Axis, f32)> {
         let reach = PICK_RADIUS * self.arm;
         Axis::ALL
             .into_iter()
@@ -125,11 +167,84 @@ impl Handles {
                 let sign = if along < 0.0 { -1.0 } else { 1.0 };
                 let clamped = along.abs().clamp(SHAFT_START * self.arm, self.arm) * sign;
                 let (distance, offset) = ray.nearest(self.origin + direction * clamped);
-                (offset <= reach && distance > 0.0).then_some((axis, distance))
+                (offset <= reach && distance > 0.0).then_some((axis, sign, distance))
+            })
+            .min_by(|(.., a), (.., b)| a.total_cmp(b))
+            .map(|(axis, sign, _)| (axis, sign))
+    }
+
+    /// Which dragger `ray` is pointing at, if any — [`Handles::grab_arm`]
+    /// without the end it was grabbed by, which is all the Move tool needs.
+    pub fn grab(&self, ray: Ray) -> Option<Axis> {
+        self.grab_arm(ray).map(|(axis, _)| axis)
+    }
+
+    /// The frame one rotation ring lives in: the axis it turns about, then two
+    /// perpendicular directions spanning the ring's own plane, the first of
+    /// them standing at the ring's zero angle.
+    ///
+    /// Built from the gizmo's own basis rather than from an arbitrary
+    /// perpendicular so that turning from the first towards the second is a
+    /// *positive* rotation about the axis by the right-hand rule — which is
+    /// what lets the angle this measures be handed straight to
+    /// `Mat3::from_axis_angle`.
+    pub fn ring_frame(&self, axis: Axis) -> (Vec3, Vec3, Vec3) {
+        let normal = self.direction(axis);
+        let reference = self.direction(axis.next());
+        // A degenerate basis (see [`basis`]) can leave those two parallel; any
+        // perpendicular will do then, since there is no part frame left to
+        // agree with anyway.
+        let across = normal
+            .cross(reference)
+            .normalize_or(normal.any_orthonormal_vector());
+        (normal, across.cross(normal), across)
+    }
+
+    /// Which rotation ring `ray` is pointing at, if any — the nearest, so the
+    /// ring in front of the part never loses to the one crossing behind it.
+    pub fn grab_ring(&self, ray: Ray) -> Option<Axis> {
+        let reach = RING_PICK * self.arm;
+        let radius = RING_RADIUS * self.arm;
+        Axis::ALL
+            .into_iter()
+            .filter_map(|axis| {
+                let (_, out, distance) = ring_crossing(self.origin, self.ring_frame(axis), ray)?;
+                ((out - radius).abs() <= reach).then_some((axis, distance))
             })
             .min_by(|(_, a), (_, b)| a.total_cmp(b))
             .map(|(axis, _)| axis)
     }
+}
+
+/// Where `ray` crosses the plane through `origin` that a ring frame spans (see
+/// [`Handles::ring_frame`]): the angle round the ring, how far out from the
+/// centre the crossing landed, and how far along the ray it is. `None` when
+/// the ray runs along that plane, where every angle is equally close to being
+/// the answer.
+///
+/// The angle is the whole of a rotate drag: sample it once when the ring is
+/// grabbed and again on every move, and the steps between those samples (see
+/// [`angle_step`]) are how far the part has turned. A drag measures against
+/// the frame it *started* in rather than against a live [`Handles`] — in local
+/// orientation the handles turn with the part as it goes, and measuring
+/// against those would cancel out the very rotation being applied.
+pub fn ring_crossing(
+    origin: Vec3,
+    (normal, zero, quarter): (Vec3, Vec3, Vec3),
+    ray: Ray,
+) -> Option<(f32, f32, f32)> {
+    let slope = ray.direction.dot(normal);
+    if slope.abs() < RING_EDGE_ON {
+        return None;
+    }
+    let distance = (origin - ray.origin).dot(normal) / slope;
+    if distance <= 0.0 {
+        return None;
+    }
+
+    let offset = ray.at(distance) - origin;
+    let (x, y) = (offset.dot(zero), offset.dot(quarter));
+    Some((y.atan2(x), x.hypot(y), distance))
 }
 
 /// How far along the line through `origin` in direction `axis` the point
@@ -148,6 +263,17 @@ pub fn along_axis(origin: Vec3, axis: Vec3, ray: Ray) -> Option<f32> {
         return None;
     }
     Some((projection * between.dot(ray.direction) - between.dot(axis)) / denominator)
+}
+
+/// The shortest way round from one ring angle to another, in radians.
+///
+/// A ring angle is only defined up to a full turn, so a drag that walks across
+/// the seam reads as nearly a whole turn *backwards* unless each step is taken
+/// the short way. Measuring every mouse move against the previous one and
+/// summing these is what lets a drag pass 180° and keep going.
+pub fn angle_step(from: f32, to: f32) -> f32 {
+    use std::f32::consts::{PI, TAU};
+    (to - from + PI).rem_euclid(TAU) - PI
 }
 
 /// The world-space directions the three draggers point along: the world axes,

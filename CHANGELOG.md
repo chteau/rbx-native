@@ -136,6 +136,29 @@
   `shapes` meshes with a triangle test — which is what pins the slope
   planes and cylinder axes to the geometry rather than to a reading of it.
   — @chteau
+- **Scale and Rotate gizmos.** The two toolbar buttons PR #8 left disabled are
+  live, on their documented shortcuts `3` and `4`. **Scale** puts a block on
+  the end of each axis arm; dragging one resizes the part along that axis with
+  the opposite face held still, so the grabbed face tracks the cursor and the
+  centre travels by half the growth — written as a `Size` and a `CFrame` edit
+  together, clamped to the 0.001–2048 range `BasePart.Size` documents.
+  **Rotate** draws a ring per axis that turns the part about its centre;
+  because a ring angle only exists up to a full turn, the drag sums the step
+  between successive samples rather than measuring back to the grab, which is
+  what lets it be carried past 180° without snapping round the other way. Both
+  obey `Ctrl`/`Cmd`+`L` the way Move already did, and both measure against the
+  frame the gesture *started* in — in local orientation the handles turn with
+  the part as it goes, and measuring against those live would cancel out the
+  very rotation being applied. `rbx_viewer`'s `Handles` gained the ring
+  geometry beside the arm geometry it already had, so all three tools are hit
+  tested and drawn from one definition, and `Gizmo` now carries which tool it
+  is rather than implying Move. Writing a rotation needed a `CFrame` the
+  Properties panel's parser could express: it now reads nine numbers as a
+  rotation and twelve as a whole placement, in the order Roblox's own
+  `CFrame.new(x, y, z, R00 … R22)` takes them, alongside the three it already
+  read as a position — so a viewport drag and a typed value still go through
+  exactly one write path. Snapping is still open for all three tools.
+  — @chteau
 
 ## 2026-09-14 (night) — getting ready to go public
 

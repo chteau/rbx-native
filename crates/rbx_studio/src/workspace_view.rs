@@ -24,7 +24,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use glam::Vec3;
+use glam::{Mat3, Vec3};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_dom::Ref;
@@ -91,6 +91,22 @@ pub(crate) enum ViewportAction {
         position: Vec3,
         first: bool,
         settle: Option<Settle>,
+    },
+    /// A Scale drag resized the part. The centre travels with it: the face
+    /// opposite the grabbed one holds still, so growing the part by a stud
+    /// moves its middle by half of one.
+    Resized {
+        referent: Ref,
+        size: Vec3,
+        position: Vec3,
+        first: bool,
+    },
+    /// A Rotate drag turned the part about its centre, which is where the
+    /// rings stand. Only the `CFrame`'s rotation changes.
+    Rotated {
+        referent: Ref,
+        orientation: Mat3,
+        first: bool,
     },
     /// A transform-toolbar shortcut typed over the view.
     Tool(transform::Action),

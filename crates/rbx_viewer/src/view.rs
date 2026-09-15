@@ -53,6 +53,7 @@ impl View {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::gizmo::Kind;
 
     #[test]
     fn a_fresh_view_outlines_nothing_and_draws_no_draggers() {
@@ -94,15 +95,27 @@ mod tests {
         let mut view = View::default();
         view.set_orthographic(true);
         view.select(&[Ref::new(9)]);
-        view.set_gizmo(Some(Gizmo { local: true }));
+        view.set_gizmo(Some(Gizmo {
+            kind: Kind::Rotate,
+            local: true,
+        }));
 
         // A tool switched away and back, and the local toggle flipped: what a
         // rebuild gets is the latest of each, not the first.
         view.set_gizmo(None);
-        view.set_gizmo(Some(Gizmo { local: false }));
+        view.set_gizmo(Some(Gizmo {
+            kind: Kind::Move,
+            local: false,
+        }));
 
         assert!(view.orthographic);
         assert_eq!(view.selected, [Ref::new(9)]);
-        assert_eq!(view.gizmo, Some(Gizmo { local: false }));
+        assert_eq!(
+            view.gizmo,
+            Some(Gizmo {
+                kind: Kind::Move,
+                local: false,
+            })
+        );
     }
 }
