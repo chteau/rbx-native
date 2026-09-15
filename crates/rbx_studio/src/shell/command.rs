@@ -24,36 +24,62 @@ impl Shell {
         self.select(reference, cx);
     }
 
-    /// Selects `reference` in the Explorer the way clicking its row would,
-    /// expanding whatever ancestors were collapsed. Shared with `shell::keys`,
-    /// which selects a freshly inserted instance the same way.
+    /// Selects `reference` alone in the Explorer the way clicking its row
+    /// would, expanding whatever ancestors were collapsed and replacing
+    /// whatever else was selected. Shared with `shell::keys`, which selects a
+    /// freshly inserted instance the same way.
     pub(super) fn select(&mut self, reference: Ref, cx: &mut Context<Self>) {
         let Some(item) = self.explorer.item(reference) else {
             return;
         };
-        // `set_selected_item` notifies the `clicked` observer, but only once
+        // `set_selected_item` notifies the tree-change observer that mirrors
+        // it into `self.selection` (`Shell::sync_selection`), but only once
         // GPUI gets around to flushing it — soon enough after a real click,
         // but never before this same call chain returns when it runs here,
-        // synchronously, from a debug var applied during `Shell::new`. Calling
-        // `sync_selection` directly is what makes `self.selection`, the
-        // Properties panel and the viewport outline agree with the row
-        // immediately, exactly as they will again once the deferred observer
-        // eventually runs (a no-op by then, the selection already matching).
+        // synchronously, from a debug var applied during `Shell::new`.
+        // Setting `self.selection` directly below, rather than waiting for
+        // that observer, is what makes it, the Properties panel and the
+        // viewport outline agree with the row immediately; by the time the
+        // observer does eventually run, they already match, so it is a
+        // deliberate no-op there.
         let tree = self.tree.clone();
         tree.update(cx, |tree, cx| {
             tree.set_selected_item(Some(&item), cx);
             tree.reveal_item(&item.id, ScrollStrategy::Center, cx);
         });
-        self.sync_selection(&tree, cx);
+        if self.selection.set(Some(reference)) {
+            self.selection_changed(cx);
+        }
     }
 
-    /// Clears the Explorer selection, synchronously (see [`Shell::select`]'s
-    /// doc comment) — `shell::keys`' delete key, once the row it removed was
-    /// the whole selection, leaves nothing behind to keep selected.
+    /// Clears the whole selection, synchronously (see [`Shell::select`]'s doc
+    /// comment) — `shell::keys`' delete key, once the row it removed was the
+    /// whole selection, leaves nothing behind to keep selected.
     pub(super) fn deselect(&mut self, cx: &mut Context<Self>) {
         let tree = self.tree.clone();
         tree.update(cx, |tree, cx| tree.set_selected_item(None, cx));
-        self.sync_selection(&tree, cx);
+        if self.selection.set(None) {
+            self.selection_changed(cx);
+        }
+    }
+
+    /// `Shift`/`Ctrl`/`Cmd`-click in the viewport: toggles one more top-level
+    /// object into or out of the selection instead of replacing it the way
+    /// [`Shell::select`] does. The Explorer's `TreeState` can track only one
+    /// selected row, so rather than fight it this points that one row at
+    /// whatever the toggle leaves as the anchor (see `shell::selection`) and
+    /// leaves the rest of the set for `self.selection` alone to remember —
+    /// the outline, the gizmo and the Explorer's own highlight (see
+    /// `shell::panels::instance_tree`) all read that directly rather than the
+    /// tree's idea of "selected".
+    pub(super) fn extend_selection(&mut self, reference: Ref, cx: &mut Context<Self>) {
+        self.selection.toggle(reference);
+
+        let anchor = self.selection.get().and_then(|r| self.explorer.item(r));
+        let tree = self.tree.clone();
+        tree.update(cx, |tree, cx| tree.set_selected_item(anchor.as_ref(), cx));
+
+        self.selection_changed(cx);
     }
 
     /// Enter in the Command Bar: reads the input's current text and runs it.
@@ -137,14 +163,14 @@ impl Shell {
     /// single-property change needs too.
     pub(super) fn reload_viewport(&mut self, cx: &mut Context<Self>) {
         let dom = self.dom.clone();
-        // The draggers are placed from a copy of the selected part's
-        // transform held on this side (see `transform::Target`), and a reload
-        // is exactly the case where whatever moved it was not one of the
-        // edits `reflect_in_viewport` refreshes that copy for.
-        let target = crate::transform::Target::read(&self.dom, self.selected());
+        // The draggers are placed from a copy of every selected part's
+        // transform held on this side (see `transform::Targets`), and a
+        // reload is exactly the case where whatever moved one of them was not
+        // one of the edits `reflect_in_viewport` refreshes that copy for.
+        let targets = crate::transform::Targets::read(&self.dom, self.selected_all());
         self.viewport.update(cx, |viewport, _| {
             viewport.reload(dom);
-            viewport.set_target(target);
+            viewport.set_targets(targets);
         });
         // A reload is also the one case where parts other than the selected
         // one may have moved, appeared or gone — so what a drag can soft-snap

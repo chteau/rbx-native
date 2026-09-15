@@ -23,10 +23,9 @@ use crate::gizmo::Gizmo;
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct View {
     pub(crate) orthographic: bool,
-    /// Outlined in the viewport. At most one instance today — `rbxstudio`
-    /// selects one at a time — but kept as a list because the outline pass
-    /// already takes one, and a multi-select would otherwise have to change
-    /// this too.
+    /// Outlined in the viewport — every instance in the selection, not just
+    /// one: `rbxstudio`'s `Shift`/`Ctrl`/`Cmd`-click adds another top-level
+    /// object rather than replacing it.
     pub(crate) selected: Vec<Ref>,
     /// `None` whenever no transform tool is active, which is every `rbxview`
     /// frame: the standalone viewer edits nothing.

@@ -8,8 +8,8 @@ use super::WorkspaceView;
 
 impl WorkspaceView {
     /// Forwards the Explorer's selection, forcing one frame even at rest.
-    pub(crate) fn set_selection(&mut self, referent: Option<Ref>) {
-        self.pump.select(Vec::from_iter(referent));
+    pub(crate) fn set_selection(&mut self, referents: &[Ref]) {
+        self.pump.select(referents.to_vec());
     }
 
     /// Rebuilds the render thread's scene from a mutated DOM, forcing one

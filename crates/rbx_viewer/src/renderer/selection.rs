@@ -102,6 +102,22 @@ fn vertices_for(placements: &HashMap<Ref, Placement>, referents: &[Ref]) -> Vec<
         .collect()
 }
 
+/// Where the transform gizmo goes for a selection of any size: the first
+/// referent (in selection order) that actually has a placement, so a `Model`
+/// or a `Folder` selected ahead of a real part is skipped rather than
+/// silently hiding the gizmo. `None` when nothing selected has a placement at
+/// all — an all-`Folder` selection, or none.
+fn anchor_of(placements: &HashMap<Ref, Placement>, referents: &[Ref]) -> Option<(Vec3, Mat3)> {
+    let model = referents
+        .iter()
+        .find_map(|referent| placements.get(referent))?
+        .model;
+    // A part's model matrix folds its `Size` into the same columns its
+    // rotation lives in, so the basis vectors come out scaled; the gizmo
+    // normalizes them (see `gizmo::basis`).
+    Some((model.w_axis.truncate(), Mat3::from_mat4(model)))
+}
+
 /// The selection outline's GPU state: a `LineList` pipeline sharing the
 /// renderer's own camera bind group, and the tiny vertex buffer rebuilt each
 /// time the selection changes.
@@ -181,19 +197,16 @@ impl Selection {
     /// along (see `renderer::gizmo`). `None` when nothing with a placement is
     /// selected.
     ///
-    /// The *first*, not an aggregate of all of them, because the editor
-    /// selects one instance at a time; a multi-part selection would put the
-    /// gizmo on a bounding box this outline does not derive yet either.
+    /// The *first*, not an aggregate of all of them, even when several
+    /// instances are selected at once: one gizmo per selection, not one per
+    /// part, and a multi-part selection has no aggregate bounding box this
+    /// outline derives yet either. `rbxstudio`'s own group drag (see
+    /// `workspace_view::gizmo`) reads this same anchor and moves every other
+    /// selected part by the same offset, so the choice of *which* part
+    /// anchors the gizmo only changes where it is drawn, not how the group
+    /// moves together.
     pub(super) fn anchor(&self) -> Option<(Vec3, Mat3)> {
-        let model = self
-            .referents
-            .iter()
-            .find_map(|referent| self.placements.get(referent))?
-            .model;
-        // A part's model matrix folds its `Size` into the same columns its
-        // rotation lives in, so the basis vectors come out scaled; the gizmo
-        // normalizes them (see `gizmo::basis`).
-        Some((model.w_axis.truncate(), Mat3::from_mat4(model)))
+        anchor_of(&self.placements, &self.referents)
     }
 
     /// Draws the outline, if any, reusing whichever camera bind group the rest
@@ -270,5 +283,53 @@ mod tests {
         let placements = HashMap::new();
         let vertices = vertices_for(&placements, &[]);
         assert!(vertices.is_empty());
+    }
+
+    #[test]
+    fn nothing_selected_anchors_nothing() {
+        let placements = HashMap::new();
+        assert_eq!(anchor_of(&placements, &[]), None);
+    }
+
+    #[test]
+    fn a_single_parts_anchor_is_its_own_centre_and_rotation() {
+        let model = Mat4::from_translation(Vec3::new(1.0, 2.0, 3.0));
+        let mut placements = HashMap::new();
+        placements.insert(Ref::new(1), placement(model));
+
+        let (origin, rotation) = anchor_of(&placements, &[Ref::new(1)]).unwrap();
+        assert_eq!(origin, Vec3::new(1.0, 2.0, 3.0));
+        assert_eq!(rotation, Mat3::from_mat4(model));
+    }
+
+    /// The whole point of an anchor at all: several parts selected together
+    /// still get exactly one gizmo, at the first one in selection order.
+    #[test]
+    fn several_parts_anchor_at_the_first_one_in_selection_order() {
+        let mut placements = HashMap::new();
+        placements.insert(Ref::new(1), placement(Mat4::from_translation(Vec3::X)));
+        placements.insert(Ref::new(2), placement(Mat4::from_translation(Vec3::Y)));
+        placements.insert(Ref::new(3), placement(Mat4::from_translation(Vec3::Z)));
+
+        let (origin, _) = anchor_of(&placements, &[Ref::new(2), Ref::new(1), Ref::new(3)]).unwrap();
+        assert_eq!(origin, Vec3::Y);
+    }
+
+    /// A `Model`/`Folder` selected ahead of a real part (no placement of its
+    /// own) must not hide the gizmo — the search skips it for the next
+    /// referent that actually has one.
+    #[test]
+    fn a_referent_with_no_placement_is_skipped_rather_than_hiding_the_gizmo() {
+        let mut placements = HashMap::new();
+        placements.insert(Ref::new(2), placement(Mat4::from_translation(Vec3::X)));
+
+        let (origin, _) = anchor_of(&placements, &[Ref::new(1), Ref::new(2)]).unwrap();
+        assert_eq!(origin, Vec3::X);
+    }
+
+    #[test]
+    fn a_selection_with_no_placement_at_all_anchors_nothing() {
+        let placements = HashMap::new();
+        assert_eq!(anchor_of(&placements, &[Ref::new(1), Ref::new(2)]), None);
     }
 }

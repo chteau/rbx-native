@@ -10,7 +10,9 @@ use gpui_kit::component::input::Input;
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{v_flex, ActiveTheme, Sizable};
 use gpui_kit::*;
+use rbx_dom::Ref;
 
+use crate::explorer;
 use crate::properties::{group_by_category, EditKind};
 
 use super::rows::{property_row, property_row_control, render_editor, row};
@@ -29,6 +31,11 @@ impl Shell {
     pub(super) fn instance_tree(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let explorer = self.explorer.clone();
         let scroll_handle = self.tree.read(cx).scroll_handle().clone();
+        // Highlighting reads `self.selection`'s own full set rather than the
+        // `TreeState`'s `state.is_selected()`: the tree can track only one
+        // selected row, so a `Shift`/`Ctrl`/`Cmd`-click multi-selection would
+        // otherwise light up just the anchor.
+        let selected: Vec<Ref> = self.selected_all().to_vec();
 
         div()
             .id("explorer-tree")
@@ -38,9 +45,11 @@ impl Shell {
             }))
             .child(
                 base::Tree::new(&self.tree)
-                    .item(move |index, entry, state, _, _| {
+                    .item(move |index, entry, _, _, _| {
                         let icon = explorer.icon(&entry.item().id);
-                        row(index, entry, state.is_selected(), icon).into_any_element()
+                        let highlighted = explorer::item_ref(&entry.item().id)
+                            .is_some_and(|referent| selected.contains(&referent));
+                        row(index, entry, highlighted, icon).into_any_element()
                     })
                     .list_style(StyleRefinement::default().flex_grow_1().size_full())
                     .relative()

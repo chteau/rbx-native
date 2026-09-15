@@ -341,6 +341,71 @@ impl Target {
     }
 }
 
+/// Where every selected part stands, in selection order. The transform
+/// gizmo goes on the [`anchor`](Targets::anchor) — the first entry that
+/// actually has a placement, exactly the way
+/// `rbx_viewer::renderer::selection::Selection::anchor` picks which part to
+/// draw the on-screen gizmo over — so the two never disagree about where it
+/// sits. [`Targets::translate`] is what a group drag uses to move every
+/// other part by the same offset, which is what keeps the whole selection's
+/// relative arrangement intact while only the anchor's own drag is measured.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct Targets(Vec<Target>);
+
+impl Targets {
+    /// Reads every selected referent's placement out of the DOM, in the same
+    /// order `referents` lists them. A referent with nothing to drag (a
+    /// `Folder`, a service, a `Model`) is silently dropped rather than
+    /// stopping the whole selection from having any target at all.
+    pub(crate) fn read(dom: &WeakDom, referents: &[Ref]) -> Self {
+        Targets(
+            referents
+                .iter()
+                .filter_map(|&referent| Target::read(dom, Some(referent)))
+                .collect(),
+        )
+    }
+
+    /// The first part with a placement — see this type's own doc comment for
+    /// why it, and not some aggregate of the whole selection, is where the
+    /// gizmo goes.
+    pub(crate) fn anchor(&self) -> Option<Target> {
+        self.0.first().copied()
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &Target> {
+        self.0.iter()
+    }
+
+    /// Moves every target by the same offset, which is what keeps a group
+    /// drag from rearranging the selection relative to itself — every part
+    /// travels exactly as far as the anchor's own gizmo drag did, no more and
+    /// no less. Returns each referent's new absolute position (what `Shell`
+    /// writes into the DOM) and updates this value in place so the next call
+    /// in the same gesture measures from where the parts stand now.
+    pub(crate) fn translate(&mut self, delta: glam::Vec3) -> Vec<(Ref, glam::Vec3)> {
+        let moves: Vec<(Ref, glam::Vec3)> = self
+            .0
+            .iter()
+            .map(|target| (target.referent, target.position() + delta))
+            .collect();
+        for target in &mut self.0 {
+            *target = target.moved_to(target.position() + delta);
+        }
+        moves
+    }
+
+    /// Replaces the anchor's own placement — what a Scale or Rotate drag
+    /// updates as it goes, since only the anchor ever carries their gizmo
+    /// (a multi-part selection's Size and Orientation have no group meaning
+    /// the way a Move's position offset does).
+    pub(crate) fn set_anchor(&mut self, target: Target) {
+        if let Some(anchor) = self.0.first_mut() {
+            *anchor = target;
+        }
+    }
+}
+
 #[cfg(test)]
 #[path = "transform/tests.rs"]
 mod tests;
