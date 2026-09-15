@@ -25,7 +25,9 @@ const PITCH_DEGREES: f32 = 25.0;
 const SCREENSHOT_YAW_DEGREES: f32 = 45.0;
 const SECONDS_PER_TURN: f32 = 8.0;
 // A single 0.3-stud part has a sub-stud radius; without a floor the camera would sit
-// inside its own near plane.
+// inside its own near plane. Reused by `Camera::orthographic_distance` for the same
+// reason on a free pose: flying straight through its target must not collapse the
+// orthographic view volume to zero size either.
 const MIN_DISTANCE: f32 = 4.0;
 // Reversed-Z with an infinite far plane (see `projection`) needs no scene-scaled far
 // plane and tolerates a near plane this small without shredding depth precision, so
@@ -153,7 +155,40 @@ impl Camera {
             }
             Viewpoint::Orbit(yaw) => look_at_mat4(self.eye(yaw), self.target, Vec3::Y),
         };
-        self.projection(aspect, fov_degrees(from)) * view
+        self.projection(aspect, fov_degrees(from), self.orthographic_distance(from)) * view
+    }
+
+    /// How far "the scene" currently is from the eye — orthographic mode's
+    /// whole notion of zoom (see `orthographic_projection`) is derived from
+    /// this, recomputed every frame, so flying the free camera closer to
+    /// something actually makes it look bigger instead of the view staying
+    /// at whatever scale the level happened to frame at on load. Ignored by
+    /// the perspective path, which gets that for free from the projection's
+    /// own divide.
+    ///
+    /// The orbit camera already has an exact answer (`self.distance`, fixed
+    /// by construction — see `Camera::framing`). A free pose has no orbit
+    /// target of its own to measure against, so this falls back to its
+    /// distance from the scene's own framing centre (`self.target`) instead,
+    /// floored the same way `Camera::framing` floors orbit distance so the
+    /// view can't collapse to zero size passing through it. Imperfect for a
+    /// pose that has wandered far to one side of a large level (that
+    /// distance-to-centre stays large even right up against something at the
+    /// edge), but far better than never updating at all — the bug this
+    /// fixes: without it, an unchanging, whole-scene-framed orthographic
+    /// view gives no visual cue for how close the free camera actually is to
+    /// anything, so a user "zooming in" by flying forward has no feedback
+    /// telling them they're about to end up *inside* a part, whose
+    /// backface-culled interior then shows as a hole where the part should
+    /// be — not unique to orthographic in principle, but orthographic's own
+    /// missing zoom feedback (see above) is what makes it easy to do by
+    /// accident, where perspective's natural dolly-zoom warns well before it
+    /// happens.
+    fn orthographic_distance(&self, from: Viewpoint) -> f32 {
+        match from {
+            Viewpoint::Orbit(_) => self.distance,
+            Viewpoint::Free(pose) => (pose.position - self.target).length().max(MIN_DISTANCE),
+        }
     }
 
     /// The same view with the eye pinned at the origin.
@@ -208,7 +243,8 @@ impl Camera {
         // corners unproject to the wrong world depth: perspective's depth map
         // is hyperbolic, orthographic's is linear (see `orthographic_projection`).
         let far_depth = if self.orthographic {
-            orthographic_reversed_depth(capped_distance, NEAR_PLANE, self.orthographic_far())
+            let far = orthographic_far(self.orthographic_distance(from));
+            orthographic_reversed_depth(capped_distance, NEAR_PLANE, far)
         } else {
             reversed_depth(capped_distance)
         };
@@ -221,7 +257,7 @@ impl Camera {
         })
     }
 
-    fn projection(&self, aspect: f32, fov_degrees: f32) -> Mat4 {
+    fn projection(&self, aspect: f32, fov_degrees: f32, distance: f32) -> Mat4 {
         // Degenerate surfaces (a window collapsed to zero width) would make the
         // projection non-invertible; a square frame keeps the frame renderable.
         let aspect = if aspect.is_finite() && aspect > 0.0 {
@@ -231,7 +267,7 @@ impl Camera {
         };
 
         if self.orthographic {
-            return self.orthographic_projection(aspect, fov_degrees);
+            return orthographic_projection(aspect, fov_degrees, distance);
         }
 
         // The DirectX flavour is the WebGPU one: Z in [0, 1] with Y up. The infinite
@@ -242,56 +278,13 @@ impl Camera {
         perspective_infinite_reverse(fov_degrees.to_radians(), aspect, NEAR_PLANE)
     }
 
-    /// The parallel-projection counterpart of the branch above: same DirectX
-    /// convention (Z in `[0, 1]`, Y up), same reversed-Z direction (near maps
-    /// to depth 1, far to depth 0 — see `orthographic_reversed_depth`), but a
-    /// linear map instead of a hyperbolic one, since an orthographic `w` never
-    /// varies with distance the way a perspective one does.
-    ///
-    /// Framed at `fov_degrees`/`self.distance`'s own apparent size at the
-    /// target, so toggling orthographic mid-session doesn't visibly jump the
-    /// scene's scale on screen — the same distance the perspective path would
-    /// have used to frame this same view. `glam`'s builder takes
-    /// `(near, far)`; passed here as `(far, near)` to flip its default
-    /// near-to-0/far-to-1 mapping to the reversed convention every other pass
-    /// in this renderer assumes (see `NEAR_PLANE`'s doc comment and
-    /// `renderer.rs`'s depth clear value/`CompareFunction`).
-    fn orthographic_projection(&self, aspect: f32, fov_degrees: f32) -> Mat4 {
-        let (half_width, half_height) = self.orthographic_half_extents(aspect, fov_degrees);
-        let far = self.orthographic_far();
-        orthographic(
-            -half_width,
-            half_width,
-            -half_height,
-            half_height,
-            far,
-            NEAR_PLANE,
-        )
-    }
-
-    /// Half the width/height of the orthographic view volume at the target,
-    /// in studs — shared by [`Camera::orthographic_projection`] (the clip
-    /// volume itself) and [`Camera::view_rotation_projection`] (how far out
-    /// to scale the sky/star/sun geometry so it still spans the screen; see
-    /// that method's own doc comment for why orthographic needs this at all).
-    fn orthographic_half_extents(&self, aspect: f32, fov_degrees: f32) -> (f32, f32) {
-        let half_height = self.distance * (fov_degrees * 0.5).to_radians().tan();
-        (half_height * aspect, half_height)
-    }
-
-    /// Orthographic mode's finite far plane, in studs — see
-    /// [`ORTHOGRAPHIC_FAR_MULTIPLIER`] for why it has to be finite at all and
-    /// why it's scaled off the framing distance rather than fixed.
-    fn orthographic_far(&self) -> f32 {
-        self.distance * ORTHOGRAPHIC_FAR_MULTIPLIER
-    }
-
     /// `Some(far plane)` when this camera is orthographic, `None` for the
     /// ordinary perspective path (whose far plane is infinite and needs no
     /// value passed anywhere). What `Post::prepare` needs to pick the right
     /// depth-reconstruction formula in `post.wgsl`'s `view_distance`.
-    pub(crate) fn orthographic_far_plane(&self) -> Option<f32> {
-        self.orthographic.then(|| self.orthographic_far())
+    pub(crate) fn orthographic_far_plane(&self, from: Viewpoint) -> Option<f32> {
+        self.orthographic
+            .then(|| orthographic_far(self.orthographic_distance(from)))
     }
 
     /// Yaw a single offscreen frame is taken at, unless the caller picked one.
@@ -320,6 +313,47 @@ impl Camera {
 /// it.
 #[cfg(test)]
 pub(crate) const BACKGROUND_DISTANCE: f32 = 1.0e9;
+
+/// The parallel-projection counterpart of `perspective_infinite_reverse` (see
+/// [`Camera::projection`]): same DirectX convention (Z in `[0, 1]`, Y up),
+/// same reversed-Z direction (near maps to depth 1, far to depth 0 — see
+/// [`orthographic_reversed_depth`]), but a linear map instead of a
+/// hyperbolic one, since an orthographic `w` never varies with distance the
+/// way a perspective one does.
+///
+/// Framed at `fov_degrees`'s own apparent size `distance` studs out — see
+/// [`Camera::orthographic_distance`] for what `distance` actually is and why
+/// it has to be recomputed every frame rather than read off a fixed field.
+/// `glam`'s builder takes `(near, far)`; passed here as `(far, near)` to flip
+/// its default near-to-0/far-to-1 mapping to the reversed convention every
+/// other pass in this renderer assumes (see `NEAR_PLANE`'s doc comment and
+/// `renderer.rs`'s depth clear value/`CompareFunction`).
+fn orthographic_projection(aspect: f32, fov_degrees: f32, distance: f32) -> Mat4 {
+    let (half_width, half_height) = orthographic_half_extents(distance, aspect, fov_degrees);
+    let far = orthographic_far(distance);
+    orthographic(
+        -half_width,
+        half_width,
+        -half_height,
+        half_height,
+        far,
+        NEAR_PLANE,
+    )
+}
+
+/// Half the width/height of the orthographic view volume, in studs, at
+/// `distance` studs out — the clip volume [`orthographic_projection`] builds.
+fn orthographic_half_extents(distance: f32, aspect: f32, fov_degrees: f32) -> (f32, f32) {
+    let half_height = distance * (fov_degrees * 0.5).to_radians().tan();
+    (half_height * aspect, half_height)
+}
+
+/// Orthographic mode's finite far plane, in studs, at `distance` studs out —
+/// see [`ORTHOGRAPHIC_FAR_MULTIPLIER`] for why it has to be finite at all and
+/// why it's scaled off the current framing distance rather than fixed.
+fn orthographic_far(distance: f32) -> f32 {
+    distance * ORTHOGRAPHIC_FAR_MULTIPLIER
+}
 
 /// The reversed-Z depth buffer value a point `studs` down the view axis lands on.
 ///

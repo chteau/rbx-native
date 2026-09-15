@@ -272,12 +272,15 @@ fn a_free_pose_field_of_view_changes_the_projection_but_the_default_does_not() {
     assert_ne!(default_matrix, narrow_matrix);
     assert_eq!(
         default_matrix,
-        camera.projection(aspect, FIELD_OF_VIEW_DEGREES)
-            * look_to_mat4(
-                default_pose.position,
-                direction(default_pose.yaw, default_pose.pitch),
-                Vec3::Y
-            )
+        camera.projection(
+            aspect,
+            FIELD_OF_VIEW_DEGREES,
+            camera.orthographic_distance(Viewpoint::Free(default_pose)),
+        ) * look_to_mat4(
+            default_pose.position,
+            direction(default_pose.yaw, default_pose.pitch),
+            Vec3::Y
+        )
     );
 }
 
@@ -374,13 +377,121 @@ fn with_orthographic_only_flips_the_projection_flag() {
 #[test]
 fn orthographic_far_plane_is_none_until_orthographic_is_on() {
     let camera = Camera::framing(&bounds_from(Vec3::ZERO, Vec3::splat(20.0)));
-    assert_eq!(camera.orthographic_far_plane(), None);
+    assert_eq!(camera.orthographic_far_plane(orbit(0.0)), None);
 
     let far = camera
         .with_orthographic(true)
-        .orthographic_far_plane()
+        .orthographic_far_plane(orbit(0.0))
         .expect("an orthographic camera reports a finite far plane");
     assert!((far - camera.distance * ORTHOGRAPHIC_FAR_MULTIPLIER).abs() < 1e-3);
+}
+
+// The orbit camera already has an exact distance to its own target by
+// construction — `orthographic_distance` must reuse it verbatim rather than
+// deriving a second, possibly-different number.
+#[test]
+fn orthographic_distance_for_orbit_is_exactly_the_framing_distance() {
+    let camera = Camera::framing(&bounds_from(Vec3::ZERO, Vec3::splat(20.0)));
+    assert_eq!(camera.orthographic_distance(orbit(0.5)), camera.distance);
+}
+
+// A real regression: `orthographic_distance` used to read a fixed field
+// (`self.distance`, set once from the whole scene's bounding sphere at load
+// time) regardless of a free pose's actual position, so orthographic mode's
+// apparent scale never changed as the free camera flew closer to or farther
+// from anything — the root cause behind both "the view is kinda far" and
+// "flying closer cuts through parts with no warning" (see this method's own
+// doc comment). A free pose must instead track its own current distance from
+// the scene's framing centre.
+#[test]
+fn orthographic_distance_tracks_the_free_camera_not_the_scenes_framing_distance() {
+    let bounds = bounds_from(Vec3::splat(-500.0), Vec3::splat(500.0));
+    let camera = Camera::framing(&bounds);
+    let base_pose = Pose {
+        position: bounds.center(),
+        yaw: 0.0,
+        pitch: 0.0,
+        fov_degrees: FIELD_OF_VIEW_DEGREES,
+    };
+
+    let close = Pose {
+        position: bounds.center() + Vec3::new(0.0, 0.0, 12.0),
+        ..base_pose
+    };
+    let far = Pose {
+        position: bounds.center() + Vec3::new(0.0, 0.0, 300.0),
+        ..base_pose
+    };
+
+    let close_distance = camera.orthographic_distance(Viewpoint::Free(close));
+    let far_distance = camera.orthographic_distance(Viewpoint::Free(far));
+
+    assert!((close_distance - 12.0).abs() < 1e-3, "{close_distance}");
+    assert!((far_distance - 300.0).abs() < 1e-3, "{far_distance}");
+    // Neither matches the scene's own framing distance, which a stale
+    // implementation would have returned for both regardless of pose.
+    assert_ne!(close_distance, camera.distance);
+    assert_ne!(far_distance, camera.distance);
+}
+
+// Same floor the orbit camera already applies to its own distance (see
+// `MIN_DISTANCE`'s doc comment): a free pose sitting exactly on the framing
+// centre must not collapse the orthographic view volume to zero size.
+#[test]
+fn orthographic_distance_floors_at_min_distance_for_a_free_pose_on_the_target() {
+    let camera = Camera::framing(&bounds_from(Vec3::ZERO, Vec3::splat(20.0)));
+    let at_target = Pose {
+        position: camera.target,
+        yaw: 0.0,
+        pitch: 0.0,
+        fov_degrees: FIELD_OF_VIEW_DEGREES,
+    };
+
+    assert_eq!(
+        camera.orthographic_distance(Viewpoint::Free(at_target)),
+        MIN_DISTANCE
+    );
+}
+
+// The end-to-end promise `orthographic_distance` exists to keep: a fixed
+// world-space offset from the scene's centre must cover a very different
+// fraction of the frame depending on whether the free camera is actually
+// close to it or far away — not the same fraction either way, which is what
+// a stale, scene-wide framing distance would have produced regardless of
+// where the camera flew.
+#[test]
+fn the_orthographic_view_volume_shrinks_as_the_free_camera_flies_closer() {
+    let bounds = bounds_from(Vec3::splat(-500.0), Vec3::splat(500.0));
+    let camera = Camera::framing(&bounds).with_orthographic(true);
+    let aspect = 16.0 / 9.0;
+    let base_pose = Pose {
+        position: bounds.center(),
+        yaw: 0.0,
+        pitch: 0.0,
+        fov_degrees: FIELD_OF_VIEW_DEGREES,
+    };
+
+    let near_pose = Pose {
+        position: bounds.center() + Vec3::new(0.0, 0.0, 10.0),
+        ..base_pose
+    };
+    let far_pose = Pose {
+        position: bounds.center() + Vec3::new(0.0, 0.0, 200.0),
+        ..base_pose
+    };
+
+    let probe = bounds.center() + Vec3::new(5.0, 0.0, 0.0);
+    let ndc_x = |pose: Pose| {
+        let clip = camera.view_projection(Viewpoint::Free(pose), aspect) * probe.extend(1.0);
+        (clip.x / clip.w).abs()
+    };
+
+    let near_ndc = ndc_x(near_pose);
+    let far_ndc = ndc_x(far_pose);
+    assert!(
+        near_ndc > far_ndc * 5.0,
+        "close: {near_ndc}, far: {far_ndc}"
+    );
 }
 
 // Parallel projection's whole point: a lateral offset maps to the same NDC
@@ -425,7 +536,7 @@ fn an_orthographic_depth_buffer_value_reconstructs_the_distance_it_was_written_f
     let pose = look_at_pose(Vec3::new(0.0, 0.0, 100.0), Vec3::ZERO);
     let view_projection = camera.view_projection(Viewpoint::Free(pose), 16.0 / 9.0);
     let far = camera
-        .orthographic_far_plane()
+        .orthographic_far_plane(Viewpoint::Free(pose))
         .expect("camera is orthographic");
 
     for studs in [NEAR_PLANE, 0.5, 1.0, 12.5, 100.0] {
