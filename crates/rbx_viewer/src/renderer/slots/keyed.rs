@@ -62,6 +62,15 @@ impl<K: PartialEq, G, T: Pod, S: Copy> Keyed<K, G, T, S> {
         &self.groups
     }
 
+    /// The key of whichever batch currently holds `referent`, for a caller
+    /// that has to rebuild a record's key (a new image slot, say) around
+    /// whichever part of it did not change — `None` for a referent no batch
+    /// holds.
+    pub(in crate::renderer) fn key_of(&self, referent: Ref) -> Option<&K> {
+        let &(position, _) = self.index.get(&referent)?;
+        Some(&self.groups[position].key)
+    }
+
     /// Brings this pass in line with one instance's new state: `wanted` is
     /// the batch it belongs in now and the record to hold there, or `None`
     /// when it no longer belongs in this pass at all. Whichever batch held

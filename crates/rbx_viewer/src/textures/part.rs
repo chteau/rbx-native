@@ -96,6 +96,7 @@ fn painted(
     Some((
         reference,
         FaceInstance {
+            referent,
             kind: placement.kind,
             model: placement.model,
             // The part's own extent, not the raw `size` property: a mesh child's

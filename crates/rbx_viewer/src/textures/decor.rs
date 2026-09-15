@@ -131,6 +131,7 @@ mod tests {
 
     fn instance(alpha: f32) -> FaceInstance {
         FaceInstance {
+            referent: rbx_dom::Ref::new(1),
             kind: ShapeKind::CylinderY,
             model: Mat4::IDENTITY,
             projection: face::projection(

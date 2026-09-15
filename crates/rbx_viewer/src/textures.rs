@@ -44,6 +44,12 @@ pub(crate) struct Quad {
 /// lands on it ([`Projection`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct FaceInstance {
+    /// The `Decal`/`Texture` instance this was built from — not read when
+    /// drawing, only so a Properties-panel edit to its part can find and
+    /// rewrite this one instance's GPU record again (see
+    /// `renderer::textured::Textured::sync`) instead of only ever getting it
+    /// right on a full reload.
+    pub(crate) referent: Ref,
     pub(crate) kind: ShapeKind,
     pub(crate) model: Mat4,
     pub(crate) projection: Projection,
@@ -112,6 +118,19 @@ pub(crate) fn plan(
             .unwrap_or_default(),
         stars: sky.map_or(0, |referent| sky::star_count(dom, referent)),
     }
+}
+
+/// Re-derives one part's face instances against a freshly patched
+/// [`Placement`] — the Properties-panel fast path's decal counterpart to
+/// [`plan`], called for exactly the one part `Scene::patch_part` just
+/// recomputed rather than walking the whole DOM again.
+pub(crate) fn faces(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    referent: Ref,
+    placement: &Placement,
+) -> Vec<(AssetRef, FaceInstance)> {
+    part::faces(dom, database, referent, placement)
 }
 
 fn is_sky(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> bool {
@@ -271,6 +290,49 @@ mod tests {
             face.model.transform_point3(Vec3::new(0.5, 0.5, 0.5)),
             Vec3::new(1.0, 3.0, 1.0)
         );
+    }
+
+    // The Properties-panel fast path's own re-derivation: `Scene::patch_part`
+    // hands `faces` the part's new `Placement`, not a fresh DOM walk, and the
+    // renderer finds the instance to rewrite again by this same referent (see
+    // `renderer::textured::Textured::sync`) — so a patch that moved the part
+    // has to keep naming the same Decal, not a fresh one.
+    #[test]
+    fn faces_re_derives_the_same_decal_against_a_patched_placement() {
+        let dom = dom_with([2.0, 6.0, 2.0], &[("Decal", "rbxassetid://5", 1, None)]);
+        let original = planned(&dom).faces[0].1;
+
+        let moved = Placement {
+            kind: ShapeKind::Box,
+            model: Mat4::from_translation(Vec3::new(10.0, 0.0, 0.0)) * original.model,
+            size: Vec3::new(2.0, 6.0, 2.0),
+        };
+        let patched = faces(&dom, &database(), Ref::new(1), &moved);
+
+        assert_eq!(patched.len(), 1);
+        let face = patched[0].1;
+        assert_eq!(face.referent, original.referent);
+        assert_eq!(
+            face.model.transform_point3(Vec3::new(0.5, 0.5, 0.5)),
+            Vec3::new(11.0, 3.0, 1.0)
+        );
+    }
+
+    // A `Shape` edit is one of the three the live-edit patch path has to
+    // carry a decal through (`CFrame`/`Size`/`Shape`) — the new unit mesh has
+    // to follow too, not just the matrix.
+    #[test]
+    fn faces_re_derives_a_patched_shape_change_too() {
+        let dom = dom_with([4.0, 4.0, 4.0], &[("Decal", "rbxassetid://5", 0, None)]);
+
+        let ball = Placement {
+            kind: ShapeKind::Ball,
+            model: Mat4::IDENTITY,
+            size: Vec3::splat(4.0),
+        };
+        let patched = faces(&dom, &database(), Ref::new(1), &ball);
+
+        assert_eq!(patched[0].1.kind, ShapeKind::Ball);
     }
 
     // The rule that keeps a resolved MeshPart's decal from hanging in the air

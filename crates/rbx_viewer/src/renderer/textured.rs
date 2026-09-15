@@ -2,15 +2,19 @@
 //! surfaces they are pinned to, one instanced draw per (image, shape) pair.
 
 use bytemuck::{Pod, Zeroable};
-use wgpu::util::DeviceExt;
+use rbx_dom::Ref;
 
 use super::geometry::Meshes;
 use super::mesh::Vertex;
 use super::pipeline::{self, Surface, Target, DECAL_SHADER};
+use super::slots::keyed::Keyed;
+use super::slots::Roster;
 use super::texture;
 use crate::quality::QualityProfile;
 use crate::scene::ShapeKind;
 use crate::textures::{FaceInstance, Group};
+
+const INSTANCES_LABEL: &str = "rbxview decal instances";
 
 const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 10] = wgpu::vertex_attr_array![
     2 => Float32x4,
@@ -84,14 +88,10 @@ impl DecalRaw {
     }
 }
 
-/// One draw call: every face instance in a scene sharing an image, a shape and a
-/// pass.
-struct Batch {
-    image: usize,
-    kind: ShapeKind,
-    instances: wgpu::Buffer,
-    instance_count: u32,
-}
+/// One pass's batches, keyed by (image slot, shape) — the same key a
+/// [`DecalRaw`] instance is grouped by in [`add_batches`] — with the
+/// referent index [`Textured::sync`] moves a single edited instance through.
+type Batches = Keyed<(usize, ShapeKind), (), DecalRaw, ()>;
 
 /// Both textured passes and the GPU state they draw from.
 pub(super) struct Textured {
@@ -103,8 +103,14 @@ pub(super) struct Textured {
     uploads: Vec<texture::Uploaded>,
     image_layout: wgpu::BindGroupLayout,
     images: Vec<wgpu::BindGroup>,
-    opaque: Vec<Batch>,
-    blended: Vec<Batch>,
+    /// Whether each image (by the same slot as `images`) carries any
+    /// transparent pixels at all — [`Textured::sync`]'s own copy of the test
+    /// [`Group`]'s own image answered once at load time, so a patched
+    /// instance sorts into the same pass a full reload would put it in
+    /// without needing the decoded image kept around just to ask again.
+    image_alpha: Vec<bool>,
+    opaque: Batches,
+    blended: Batches,
 }
 
 impl Textured {
@@ -122,15 +128,17 @@ impl Textured {
 
         let mut uploads = Vec::with_capacity(groups.len());
         let mut images = Vec::with_capacity(groups.len());
-        let mut opaque = Vec::new();
-        let mut blended = Vec::new();
+        let mut image_alpha = Vec::with_capacity(groups.len());
+        let mut opaque = Keyed::new(INSTANCES_LABEL);
+        let mut blended = Keyed::new(INSTANCES_LABEL);
         for group in groups {
             let slot = images.len();
             let upload = texture::Uploaded::color(device, queue, &group.image);
             images.push(upload.bind(device, &image_layout, &sampler, quality.texture_max_size));
+            image_alpha.push(group.image.has_alpha());
             uploads.push(upload);
-            opaque.extend(batches(device, slot, &group.opaque));
-            blended.extend(batches(device, slot, &group.blended));
+            add_batches(device, &mut opaque, slot, &group.opaque);
+            add_batches(device, &mut blended, slot, &group.blended);
         }
 
         let layouts = [Some(view_projection), Some(&image_layout)];
@@ -140,8 +148,50 @@ impl Textured {
             uploads,
             image_layout,
             images,
+            image_alpha,
             opaque,
             blended,
+        }
+    }
+
+    /// Brings both passes in line with one `Decal`/`Texture` instance whose
+    /// part was just patched (see `Scene::patch_part`): rewritten in place
+    /// if its (image, shape) batch is unchanged, otherwise moved to the one
+    /// it belongs in now. Its image slot is looked up from whichever batch
+    /// already holds it rather than resolved from `face`'s asset again,
+    /// since a `CFrame`/`Size`/`Shape` edit never changes which `Texture` an
+    /// instance points at — so `false` here means this renderer never drew
+    /// this referent in the first place (its image never downloaded), not
+    /// that the edit itself failed; there is nothing to catch up on.
+    pub(super) fn sync(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        face: &FaceInstance,
+    ) -> bool {
+        let Some(image) = self
+            .opaque
+            .key_of(face.referent)
+            .or_else(|| self.blended.key_of(face.referent))
+            .map(|&(image, _)| image)
+        else {
+            return false;
+        };
+
+        let key = (image, face.kind);
+        let raw = DecalRaw::new(face);
+        if face.alpha >= 1.0 && !self.image_alpha[image] {
+            self.blended.remove(queue, face.referent);
+            self.opaque
+                .sync(device, queue, face.referent, Some((key, raw, ())), |_| {
+                    Some(())
+                })
+        } else {
+            self.opaque.remove(queue, face.referent);
+            self.blended
+                .sync(device, queue, face.referent, Some((key, raw, ())), |_| {
+                    Some(())
+                })
         }
     }
 
@@ -177,7 +227,7 @@ impl Textured {
     }
 
     pub(super) fn is_empty(&self) -> bool {
-        self.opaque.is_empty() && self.blended.is_empty()
+        !has_instances(&self.opaque) && !has_instances(&self.blended)
     }
 
     /// Draws the opaque face instances; call before anything translucent in the
@@ -197,49 +247,56 @@ impl Textured {
         pass: &mut wgpu::RenderPass<'_>,
         meshes: &Meshes,
         pipeline: &wgpu::RenderPipeline,
-        batches: &[Batch],
+        batches: &Batches,
     ) {
-        if batches.is_empty() {
+        if !has_instances(batches) {
             return;
         }
 
         pass.set_pipeline(pipeline);
-        for batch in batches {
-            let Some(mesh) = meshes.get(batch.kind) else {
+        for group in batches.groups() {
+            let count = group.slots.count();
+            if count == 0 {
+                continue;
+            }
+            let (image, kind) = group.key;
+            let Some(mesh) = meshes.get(kind) else {
                 continue;
             };
-            pass.set_bind_group(1, &self.images[batch.image], &[]);
-            pass.set_vertex_buffer(1, batch.instances.slice(..));
-            mesh.draw(pass, batch.instance_count);
+            pass.set_bind_group(1, &self.images[image], &[]);
+            pass.set_vertex_buffer(1, group.slots.buffer().slice(..));
+            mesh.draw(pass, count);
         }
     }
 }
 
+/// A batch an edit emptied is kept rather than dropped (see [`Keyed`]'s own
+/// doc comment), so whether a pass has anything to draw at all needs a real
+/// scan rather than `groups().is_empty()`.
+fn has_instances(batches: &Batches) -> bool {
+    batches.groups().iter().any(|group| group.slots.count() > 0)
+}
+
 /// Splits the face instances sharing one image into one batch per shape kind,
 /// since each kind is a different mesh to instance.
-fn batches(device: &wgpu::Device, image: usize, faces: &[FaceInstance]) -> Vec<Batch> {
-    let mut grouped: Vec<(ShapeKind, Vec<DecalRaw>)> = Vec::new();
+fn add_batches(device: &wgpu::Device, batches: &mut Batches, image: usize, faces: &[FaceInstance]) {
+    let mut grouped: Vec<(ShapeKind, Vec<(Ref, DecalRaw)>)> = Vec::new();
     for face in faces {
-        let raw = DecalRaw::new(face);
+        let entry = (face.referent, DecalRaw::new(face));
         match grouped.iter_mut().find(|(kind, _)| *kind == face.kind) {
-            Some((_, instances)) => instances.push(raw),
-            None => grouped.push((face.kind, vec![raw])),
+            Some((_, instances)) => instances.push(entry),
+            None => grouped.push((face.kind, vec![entry])),
         }
     }
 
-    grouped
-        .into_iter()
-        .map(|(kind, instances)| Batch {
-            image,
-            kind,
-            instance_count: instances.len() as u32,
-            instances: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("rbxview decal instances"),
-                contents: bytemuck::cast_slice(&instances),
-                usage: wgpu::BufferUsages::VERTEX,
-            }),
-        })
-        .collect()
+    for (kind, instances) in grouped {
+        let roster = Roster::from_iter(
+            instances
+                .into_iter()
+                .map(|(referent, raw)| (referent, raw, ())),
+        );
+        batches.add_group(device, (image, kind), (), roster);
+    }
 }
 
 fn create(

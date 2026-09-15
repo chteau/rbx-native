@@ -29,7 +29,8 @@ mod textured;
 mod trail;
 mod translucent;
 
-use rbx_dom::Ref;
+use rbx_dom::{Ref, WeakDom};
+use rbx_reflection::ReflectionDatabase;
 
 use crate::camera::{Camera, Frustum, Viewpoint};
 use crate::lighting::{Lighting, LocalLight};
@@ -323,11 +324,17 @@ impl Renderer {
     /// (a new shape, a `Transparency` that crossed 0, a `CastShadow` toggle),
     /// added, or dropped — whichever the part's new state calls for — and the
     /// selection outline follows its placement. A shape the place never used
-    /// before gets its unit mesh built here (see `Meshes::ensure`).
+    /// before gets its unit mesh built here (see `Meshes::ensure`). Every
+    /// `Decal`/`Texture` child follows along too, re-projected onto the
+    /// part's new placement (see `crate::textures::faces` and
+    /// `textured::Textured::sync`) instead of staying drawn at the old one
+    /// until the next full reload.
     pub(crate) fn sync_instance(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        dom: &WeakDom,
+        database: &ReflectionDatabase,
         part: &Part,
     ) {
         self.meshes.ensure(device, part.kind);
@@ -336,6 +343,9 @@ impl Renderer {
         self.shadows.sync_caster(device, queue, part);
         self.selection
             .place(device, part.referent, part.placement());
+        for (_, face) in crate::textures::faces(dom, database, part.referent, &part.placement()) {
+            self.textured.sync(device, queue, &face);
+        }
     }
 
     pub(crate) fn draw(

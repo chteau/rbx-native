@@ -7,7 +7,8 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use glam::Vec3;
-use rbx_dom::Ref;
+use rbx_dom::{Ref, WeakDom};
+use rbx_reflection::ReflectionDatabase;
 
 use crate::camera::{self, Camera, Viewpoint};
 use crate::gpu;
@@ -80,8 +81,14 @@ impl Offscreen {
     }
 
     /// Forwards to [`Renderer::sync_instance`].
-    pub(crate) fn sync_instance(&mut self, part: &Part) {
-        self.renderer.sync_instance(&self.device, &self.queue, part);
+    pub(crate) fn sync_instance(
+        &mut self,
+        dom: &WeakDom,
+        database: &ReflectionDatabase,
+        part: &Part,
+    ) {
+        self.renderer
+            .sync_instance(&self.device, &self.queue, dom, database, part);
     }
 
     /// Forwards to [`Renderer::sync_mesh_instance`].
