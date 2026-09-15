@@ -36,6 +36,7 @@ pub struct Options {
     sensitivity: f32,
     clock_time: Option<f32>,
     quality: QualityLevel,
+    orthographic: bool,
 }
 
 impl Options {
@@ -59,6 +60,7 @@ impl Options {
         let mut sensitivity = DEFAULT_SENSITIVITY;
         let mut clock_time = None;
         let mut quality = QualityLevel::default();
+        let mut orthographic = false;
 
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
@@ -81,6 +83,7 @@ impl Options {
                 "--sensitivity" => sensitivity = parse_positive(&value(&mut args, &arg)?)?,
                 "--clock-time" => clock_time = Some(parse_hours(&value(&mut args, &arg)?)?),
                 "--quality" => quality = value(&mut args, &arg)?.parse()?,
+                "--orthographic" => orthographic = true,
                 flag if flag.starts_with('-') => return Err(format!("unknown option '{flag}'")),
                 positional if path.is_none() => path = Some(PathBuf::from(positional)),
                 extra => return Err(format!("unexpected extra argument '{extra}'")),
@@ -111,6 +114,7 @@ impl Options {
             sensitivity,
             clock_time,
             quality,
+            orthographic,
         })
     }
 
@@ -123,6 +127,7 @@ impl Options {
              \x20              [--no-gui]\n\
              \x20              [--orbit] [--speed <studs/s>] [--sensitivity <deg/px>]\n\
              \x20              [--clock-time <hours>] [--quality <auto|1..21>]\n\
+             \x20              [--orthographic]\n\
              \x20 --screenshot  render a single frame offscreen to a PNG and exit\n\
              \x20 --size        pixel size of that frame (default {}x{})\n\
              \x20 --yaw         angle to look from, in degrees (screenshots only)\n\
@@ -152,7 +157,9 @@ impl Options {
              \x20               (default {}): lower levels drop shadows, post effects,\n\
              \x20               local lights, reflections, texture detail and view\n\
              \x20               distance, in that rough order. 'auto' lowers the level\n\
-             \x20               itself while the window is missing its frame budget",
+             \x20               itself while the window is missing its frame budget\n\
+             \x20 --orthographic draw with a parallel projection instead of perspective,\n\
+             \x20               framed at the same apparent scale (screenshots only)",
             DEFAULT_SIZE.0,
             DEFAULT_SIZE.1,
             DEFAULT_SPEED,
@@ -246,6 +253,10 @@ impl Options {
 
     pub(crate) fn quality(&self) -> QualityLevel {
         self.quality
+    }
+
+    pub(crate) fn orthographic(&self) -> bool {
+        self.orthographic
     }
 
     pub(crate) fn title(&self) -> String {

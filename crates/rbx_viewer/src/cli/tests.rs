@@ -25,6 +25,13 @@ fn a_lone_path_defaults_to_windowed_mode() {
     // The top level by default: a screenshot must not change because a machine
     // is slower than the one the fixture was taken on.
     assert_eq!(options.quality(), QualityLevel::Level(QualityLevel::MAX));
+    assert!(!options.orthographic());
+}
+
+#[test]
+fn orthographic_is_a_plain_flag() {
+    let options = parse(&["a.rbxl", "--orthographic"]).unwrap();
+    assert!(options.orthographic());
 }
 
 #[test]

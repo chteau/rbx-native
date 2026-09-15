@@ -77,6 +77,49 @@ fn the_rotation_only_view_ignores_where_the_camera_stands() {
     assert!(!screen(a).abs_diff_eq(screen(turned), 1e-3));
 }
 
+// A real regression this once was: sky/star/sun geometry (`renderer::sky`/
+// `stars.wgsl`/`sun.wgsl`) is built at near-unit magnitude, relying on the
+// perspective divide to spread it across the screen regardless of its actual
+// size. `view_rotation_projection` staying perspective even when the main
+// camera has gone orthographic (see its own doc comment) is what keeps that
+// working — an earlier version branched on `self.orthographic` here too and
+// collapsed every unit-magnitude vertex to a single point at screen centre,
+// leaving the sky a solid black void.
+#[test]
+fn orthographic_rotation_only_view_still_spreads_unit_geometry_across_the_screen() {
+    let camera =
+        Camera::framing(&bounds_from(Vec3::ZERO, Vec3::splat(20.0))).with_orthographic(true);
+    let aspect = 16.0 / 9.0;
+    let view_projection = camera.view_rotation_projection(orbit(0.0), aspect);
+
+    // A corner of the unit "sky cube" (see `textures::sky::quad`) — the point
+    // being tested is that this reaches *somewhere* well off centre, not that
+    // any one particular direction does.
+    let corner = Vec3::new(1.0, 1.0, 1.0);
+    let clip = view_projection * corner.extend(1.0);
+    let ndc = clip.truncate() / clip.w;
+
+    assert!(
+        ndc.x.abs() > 0.1 || ndc.y.abs() > 0.1,
+        "a unit-magnitude vertex collapsed to near screen centre: {ndc}"
+    );
+}
+
+// `view_rotation_projection` must ignore the main camera's orthographic flag
+// entirely — it always matches what an ordinary perspective camera at this
+// yaw/pitch would produce, main camera notwithstanding.
+#[test]
+fn orthographic_rotation_only_view_matches_the_ordinary_perspective_one() {
+    let perspective = Camera::framing(&bounds_from(Vec3::ZERO, Vec3::splat(20.0)));
+    let orthographic = perspective.with_orthographic(true);
+    let aspect = 16.0 / 9.0;
+
+    assert_eq!(
+        perspective.view_rotation_projection(orbit(0.6), aspect),
+        orthographic.view_rotation_projection(orbit(0.6), aspect)
+    );
+}
+
 // The whole point of reversed-Z: depth must grow, not shrink, as a point gets
 // closer to the eye, so a small fixed near plane never runs out of precision.
 #[test]

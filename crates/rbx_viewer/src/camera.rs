@@ -158,8 +158,20 @@ impl Camera {
 
     /// The same view with the eye pinned at the origin.
     ///
-    /// What the skybox draws with: it must turn with the camera but never
-    /// translate with it, or the sky would slide past as the camera orbits or flies.
+    /// What the skybox/stars/sun draw with: it must turn with the camera but
+    /// never translate with it, or the sky would slide past as the camera
+    /// orbits or flies. Always perspective, even when the main camera itself
+    /// is orthographic (see `orthographic_projection`): their geometry
+    /// (`renderer::sky`/`stars.wgsl`/`sun.wgsl`) is built at near-unit
+    /// magnitude and relies on the perspective divide by `clip.w` to spread
+    /// across the screen regardless of a vertex's actual distance from the
+    /// origin — an orthographic `w`, fixed at 1, cannot do that (an earlier
+    /// version of this method tried compensating with a scale instead, which
+    /// visibly seamed at the sky cube's own face boundaries: a linear map has
+    /// no per-pixel angular spread to hide them the way a perspective one
+    /// does). A parallel *scene* with a perspective *background* is a
+    /// deliberate, common decoupling other orthographic-capable 3D tools make
+    /// too, not an oversight.
     pub(crate) fn view_rotation_projection(&self, from: Viewpoint, aspect: f32) -> Mat4 {
         let view = match from {
             Viewpoint::Free(pose) => {
@@ -167,7 +179,7 @@ impl Camera {
             }
             Viewpoint::Orbit(yaw) => look_at_mat4(Vec3::ZERO, self.target - self.eye(yaw), Vec3::Y),
         };
-        self.projection(aspect, fov_degrees(from)) * view
+        perspective_infinite_reverse(fov_degrees(from).to_radians(), aspect, NEAR_PLANE) * view
     }
 
     /// Where the eye actually is this frame, free pose included.
@@ -245,8 +257,7 @@ impl Camera {
     /// in this renderer assumes (see `NEAR_PLANE`'s doc comment and
     /// `renderer.rs`'s depth clear value/`CompareFunction`).
     fn orthographic_projection(&self, aspect: f32, fov_degrees: f32) -> Mat4 {
-        let half_height = self.distance * (fov_degrees * 0.5).to_radians().tan();
-        let half_width = half_height * aspect;
+        let (half_width, half_height) = self.orthographic_half_extents(aspect, fov_degrees);
         let far = self.orthographic_far();
         orthographic(
             -half_width,
@@ -256,6 +267,16 @@ impl Camera {
             far,
             NEAR_PLANE,
         )
+    }
+
+    /// Half the width/height of the orthographic view volume at the target,
+    /// in studs — shared by [`Camera::orthographic_projection`] (the clip
+    /// volume itself) and [`Camera::view_rotation_projection`] (how far out
+    /// to scale the sky/star/sun geometry so it still spans the screen; see
+    /// that method's own doc comment for why orthographic needs this at all).
+    fn orthographic_half_extents(&self, aspect: f32, fov_degrees: f32) -> (f32, f32) {
+        let half_height = self.distance * (fov_degrees * 0.5).to_radians().tan();
+        (half_height * aspect, half_height)
     }
 
     /// Orthographic mode's finite far plane, in studs — see

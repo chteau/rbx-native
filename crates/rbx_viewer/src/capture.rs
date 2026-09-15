@@ -198,30 +198,43 @@ impl Offscreen {
     }
 }
 
+/// How `write_png` frames its single offscreen frame — every `--yaw`/
+/// `--pitch`/`--eye`/`--look-at`/`--orthographic` option `rbxview`'s CLI
+/// takes, bundled together so the function they configure stays under
+/// clippy's argument-count lint rather than growing a ninth positional `bool`.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct Framing {
+    pub(crate) yaw: Option<f32>,
+    pub(crate) pitch: Option<f32>,
+    /// When given, places the camera directly instead of framing the scene's
+    /// bounds — the only way to get close enough to examine a small prop in a
+    /// huge map — and takes over from `yaw`/`pitch` entirely, matching how
+    /// the free camera's pose already overrides the orbit camera in the
+    /// windowed path.
+    pub(crate) eye_look_at: Option<(Vec3, Vec3)>,
+    pub(crate) orthographic: bool,
+}
+
 /// Renders a single frame offscreen and writes it as PNG.
-///
-/// `eye_look_at`, when given, places the camera directly instead of framing the
-/// scene's bounds — the only way to get close enough to examine a small prop in a
-/// huge map — and takes over from `yaw`/`pitch` entirely, matching how the free
-/// camera's pose already overrides the orbit camera in the windowed path.
 pub(crate) fn write_png(
     world: World<'_>,
     quality: &QualityProfile,
     output: &Path,
     size: (u32, u32),
-    yaw: Option<f32>,
-    pitch: Option<f32>,
-    eye_look_at: Option<(Vec3, Vec3)>,
+    framing: Framing,
 ) -> Result<(), String> {
     let mut offscreen = Offscreen::new(world, quality)?;
 
-    if let Some(degrees) = pitch {
+    if let Some(degrees) = framing.pitch {
         offscreen.pitch(degrees);
     }
+    if framing.orthographic {
+        offscreen.set_orthographic(true);
+    }
 
-    let from = match eye_look_at {
+    let from = match framing.eye_look_at {
         Some((eye, look_at)) => Viewpoint::Free(camera::look_at_pose(eye, look_at)),
-        None => Viewpoint::Orbit(Camera::screenshot_yaw(yaw)),
+        None => Viewpoint::Orbit(Camera::screenshot_yaw(framing.yaw)),
     };
     let pixels = offscreen.frame(size, from)?;
     encode(output, &pixels, size)
