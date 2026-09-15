@@ -146,7 +146,6 @@ impl Sober {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::PermissionsExt;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -193,8 +192,16 @@ mod tests {
 
     /// Exercises the output-parsing branch against a fake script instead of
     /// the real `flatpak` binary.
+    ///
+    /// Unix-only: a `#!/bin/sh` script and its executable bit are a POSIX
+    /// concept `std::fs::Permissions::from_mode` only exists to set: Sober
+    /// itself is Linux-only (see this module's doc comment), so there is no
+    /// real-world case to cover on Windows.
+    #[cfg(unix)]
     #[test]
     fn is_installed_via_parses_a_matching_application_line() {
+        use std::os::unix::fs::PermissionsExt;
+
         let dir = temp_dir();
         std::fs::create_dir_all(&dir).unwrap();
         let fake_flatpak = dir.join("flatpak");

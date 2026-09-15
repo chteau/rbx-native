@@ -22,7 +22,9 @@ pub(crate) fn number_range(text: &str) -> Variant {
 
 pub(crate) fn number_sequence(text: &str) -> Variant {
     let keypoints = floats(text)
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .map(|chunk| NumberSequenceKeypoint {
             time: chunk[0],
             value: chunk[1],
@@ -34,7 +36,9 @@ pub(crate) fn number_sequence(text: &str) -> Variant {
 
 pub(crate) fn color_sequence(text: &str) -> Variant {
     let keypoints = floats(text)
-        .chunks_exact(5)
+        .as_chunks::<5>()
+        .0
+        .iter()
         .map(|chunk| ColorSequenceKeypoint {
             time: chunk[0],
             color: Color3Data {
