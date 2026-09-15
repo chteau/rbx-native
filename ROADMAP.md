@@ -45,7 +45,9 @@ Roblox's own engine.
   `ColorGradingEffect`/`BlurEffect`/`SunRaysEffect`/`DepthOfFieldEffect`.
 - [x] 43 official Roblox materials (`rbx_materials`) with real texture
   packs, `MaterialVariant`, `SurfaceAppearance`.
-- [x] Decals/textures projected on real geometry (not just boxes).
+- [x] Decals/textures projected on real geometry (not just boxes), and
+  patched in place — not just redrawn on a full reload — when the
+  `CFrame`, size or shape of the part they're pinned to is edited live.
 - [x] Sky: 6-face skybox, environment cubemap, stars, night sky, Roblox's
   own default sky (DDS BC1/2/3 decoder), procedural `Clouds`.
 - [x] Shapes: `Part`/`MeshPart`, Ball/Cylinder/Wedge/CornerWedge,
@@ -186,12 +188,6 @@ Roblox's own engine.
   above existing first regardless of which direction it takes.
 
 ### Renderer
-- [ ] 📋 **A `Decal`/`Texture` doesn't follow its part when the edit is
-  handled by the live-edit instance-patch/batch-move path** (see
-  `renderer::patch`, `renderer::slots`) instead of a full reload — a
-  `CFrame`, size, or shape edit moves the part but leaves its decal drawn
-  at the old placement, since the decal pass isn't wired into that patch
-  path yet. Only a full scene reload currently redraws a decal correctly.
 - [ ] 📋 `Light.Shadows` for `PointLight` (needs 6-face shadow maps; done
   for `SpotLight`/`SurfaceLight`).
 - [ ] 📋 Neon/`ForceField` shimmer, `Glass` refraction — currently flat.

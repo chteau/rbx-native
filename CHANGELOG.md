@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-15
+
+- **A `Decal`/`Texture` now follows its part through the live-edit
+  instance-patch path**, not just a full reload. The last of the three
+  gaps the batch-move work surfaced: `Renderer::sync_instance` never
+  touched the decal pass at all, and the decal pass itself had nowhere to
+  touch — `FaceInstance` carried no referent, and `Textured` stored its
+  batches as plain static buffers with no per-instance index. Gave it a
+  `Keyed` index the same shape `filemesh` already uses, so a `CFrame`/
+  `Size`/`Shape` edit re-derives and rewrites the part's Decal/Texture
+  children in place instead of leaving them drawn at the old placement
+  until the next reload. — @chteau
+
 ## 2026-09-14 (night) — getting ready to go public
 
 - **Triplanar material projection.** Legacy `UnionOperation`/`NegateOperation`
