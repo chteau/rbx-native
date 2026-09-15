@@ -114,6 +114,16 @@ Roblox's own engine.
     under the cursor instead of just the nearest hit ("selection
     cycling") — matching Studio's own mechanism rather than a
     `Shift`-click-into-children behaviour it doesn't actually have.
+    Cycling is a plain geometric raycast against every part the ray
+    crosses (`rbx_viewer::pick::parts_along`), sorted nearest first, not a
+    depth-buffer occlusion test — so it already reaches a part fully
+    nested inside another (an invisible hitbox sitting inside a visible
+    part, say) or buried several levels into a `Model`, one `Alt`-click at
+    a time, without ever needing to select the enclosing part or model
+    first; whatever it lands on gets a gizmo exactly as any other
+    selected `BasePart` does, since cycling deliberately never resolves up
+    to a `Model` the way a plain click does (see "Still open" below for
+    the one related case that doesn't yet have a gizmo of its own).
     `Shift`/`Ctrl`/`Cmd`-click adds another top-level object to the
     selection instead of replacing it.
   - **Move** (`2`), **Scale** (`3`), **Rotate** (`4`) — colored axis
@@ -143,8 +153,10 @@ Roblox's own engine.
   - **Placement**: directly under the File/Edit/Model/View menu bar and
     above the viewport dock, matching the owner's reference screenshot.
   - **Still open**: the 5th "Transform" toolbar button visible in Studio's
-    current toolbar, and group/ungroup operations (both under "What's
-    planned" → Renderer).
+    current toolbar; group/ungroup operations; and a plain click landing
+    on a `Model` — unlike cycling's raw parts, a `Model` has no `CFrame`/
+    `Size` of its own for the gizmo to read, so it draws neither an
+    outline nor a gizmo today (all under "What's planned" → Renderer).
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -252,6 +264,80 @@ Roblox's own engine.
   docs alone. Needs confirming against a real Studio instance (the "Studio
   fallback" Vinegar/Wine workaround elsewhere in this roadmap is one way to
   do that) before implementing it, rather than guessing.
+- [ ] 📋 **A `Model`'s aggregate bounding box**, so a plain click that
+  resolves to one (see "What's been implemented" → Editor's Select
+  bullet) actually shows something instead of silently selecting an
+  instance with nothing to draw. Every part inside already carries its
+  own `CFrame`/`Size`; the box is the union of all of them, matching what
+  the Align tool's "Selection Bounds" mode below and real Studio's own
+  `PVInstance:GetPivot()`-adjacent bounding-box concept describe.
+  `renderer::selection`'s own doc comment already flags this ("a Model's
+  aggregate bounds are a TODO: nothing here derives one yet") — worth
+  wiring up rather than leaving as a silent no-op, and a natural fit for
+  the Move-only group-gizmo machinery `transform::Targets` already has
+  from multi-select (see "What's been implemented" → Editor), since
+  moving a `Model` is exactly "move every part inside it by the same
+  offset." `Alt`/`⌥`-click cycling remains the way to reach and gizmo one
+  specific part inside the model instead of the whole thing, exactly as
+  it does today.
+- [ ] 📋 **Gizmo papercuts and third-party-tool parity requests**, from
+  real use of the Move/Scale/Rotate gizmos above. Checked against
+  `Roblox/creator-docs` (`parts.md`'s Transform Parts section) and, where
+  noted, **Building Tools by F3X** — a widely-used third-party Studio
+  plugin, not native Studio — since some of what was asked for turns out
+  to be F3X's own convention rather than something Studio itself does:
+  - **Scale handles that lock a Ball/Cylinder to a round cross-section**:
+    dragging any Scale handle on a Ball currently grows only the one axis
+    grabbed, same as any other part, which turns a sphere oval. Native
+    Studio's own docs give Scale no shape-specific behavior at all —
+    `BasePart.Size` is three independent numbers regardless of `Shape` —
+    so this isn't a Studio-parity gap so much as a genuinely useful
+    addition modeled on F3X's real, open-source `Resize.lua`: grabbing a
+    Ball's handle grows all three axes together (`Size + (d,d,d)`, keeping
+    it a sphere); on a `Cylinder`, only the two axes forming its circular
+    cross-section grow together while the length axis scales alone.
+    Wedge/CornerWedge weren't confirmed to have their own case in F3X's
+    source and need a closer read before assuming one; plain `Part`s and
+    `MeshPart`s keep today's per-axis behavior either way. Requested as a
+    `Shift`-held modifier during Scale — note this collides with `Shift`'s
+    existing meaning (invert the current snap state) on every other tool,
+    so it needs its own resolution, not a blind rebind. — see
+    `F3XTeam/RBX-Building-Tools`'s `Tools/Resize.lua`.
+  - **A live stud-count readout while a Move/Scale drag is in progress**
+    (e.g. a floating "12" near the handle showing studs moved/grown so
+    far) — genuinely useful, not documented as a specific Studio feature
+    either way; would need its own small on-screen label wired to the
+    drag's own already-known delta.
+  - **`Tab` to "summon" the gizmo's handles to the cursor** — this one
+    *is* real, current native Studio behavior (2021 "Pivot Points" beta
+    update): holding `Tab` moves the active tool's handles to the cursor's
+    location, including Scale's, which stay "within the bounds of [the]
+    selected object" rather than sitting on its actual surface. Worth
+    implementing as described in Roblox's own DevForum announcement, not
+    guessed at.
+  - **A small free-drag handle at the gizmo's own origin**, independent of
+    clicking the part's body directly — useful in particular once
+    `Tab`-summoning (above) can put the handles somewhere that isn't
+    sitting on the part's own mesh anymore. Functionally close to what
+    Move's existing cursor-drag-and-settle already does (see "What's been
+    implemented" → Editor) when clicking the part's body directly; this
+    would be the same gesture from a fixed point on the gizmo instead.
+  - The requested `Shift+X`/`Shift+C` snap-toggle chord and the `H`
+    hotkey-help overlay are also F3X conventions, not native Studio's
+    (F3X's own `C` rotate-tool binding is documented to conflict with
+    Studio's native `C` = Toggle Comment Cursor) — worth checking against
+    a real Studio instance before adopting either verbatim.
+  - **Selection outline shape and thickness**: today's outline (see
+    `rbx_viewer::renderer::selection`) is a plain wireframe box around
+    every part's oriented bounding box, drawn as raw GPU lines with no
+    width control at all — a `Ball`, `Cylinder` or wedge outlines as its
+    box, not its own silhouette, and the line itself is about as thin as a
+    line can be. Real Studio's own selection highlight is documented
+    (`parts/models.md`) only as a light-blue outline around the selected
+    object(s), with no thickness or shape-conformance spec published —
+    needs checking against a real Studio instance to know how closely to
+    match the actual silhouette versus how thick the line really is,
+    rather than guessing either number.
 - [ ] 📋 **Align tool**, matching Studio's real Model-tab tool (checked
   against `studio/align-tool.md` rather than assumed, not the transform
   gizmos under "What's been implemented" → Editor). Aligns the selected
@@ -554,6 +640,27 @@ against `Roblox/creator-docs` rather than assumed:
   interactive use (a human editing live) hits the same thing; needs its
   own investigation of the render thread's state right after
   `Headless::reload`.
+- [ ] 📋 **`Ctrl+Z`/`Ctrl+Y` lag on real places, from a full scene
+  reload on every undo/redo regardless of how small the reverted edit
+  was.** Reported directly from real use, and confirmed in the code: a
+  single property edit already goes through
+  `Shell::reflect_in_viewport`/`classify_edit`, which picks a cheap
+  in-place GPU patch (`patch_instance`/`patch_effect`/`update_lighting`)
+  for the common case and only falls back to a full `Headless::reload`
+  when it has to (this is the "Fast-path scene updates" entry under
+  "What's been implemented" → Renderer) — but `Shell::undo`/`redo`
+  (`shell/history.rs`) never goes through that classification at all,
+  calling `reload_viewport` unconditionally every time, so undoing a
+  single `Transparency` change costs exactly as much as undoing an
+  instance delete. A script run already builds a `Change` log, and
+  `shell::command`'s own `single_change` already knows how to read one to
+  tell "exactly one property write or reparent" apart from anything
+  bigger; today's `history` module keeps only whole-`WeakDom` snapshots
+  with no log alongside them, so undo/redo has nothing to classify.
+  Recording a `Change` log per pushed snapshot (or diffing the two DOM
+  trees directly on undo/redo) and running it through that same
+  classifier is the obvious way to give undo/redo the fast path property
+  edits already have, rather than a bespoke mechanism of its own.
 - [ ] 📋 Attributes editor (custom `Instance` attributes, distinct from
   built-in properties) — a real, commonly-used modern Studio feature, not
   currently scoped anywhere.
@@ -744,16 +851,35 @@ against `Roblox/creator-docs` rather than assumed:
   re-resolving the same bad texture from spamming the log); no dedicated
   "Warnings" `OutputFilter` bucket; no distinct visual marker for a
   warning row versus a successful Command Bar run.
-- [ ] 📋 **Output window: real Studio's filter/display feature set**, once
-  the sandbox above exists to actually populate it — checked against
-  `studio/output.md` rather than assumed. Today's Output dock (see "What's
-  been implemented") already has a type/success-error filter; real
-  Studio's also filters by **context** (`Client`/`Server`/`User Plugin` —
-  directly useful once the sandbox's client/server split above exists)
-  and by free-text search, plus per-message display toggles (timestamp,
-  context, source script + line number, and whether logged tables show
-  expanded by default). Worth matching the toggle set exactly rather than
-  guessing which ones matter.
+- [ ] 📋 **Output window: real Studio's filter/display feature set**,
+  checked against `studio/output.md` rather than assumed. Only part of
+  this depends on the sandbox above — the rest is buildable against what
+  the Command Bar and app warnings already put in the dock today:
+  - **Not sandbox-dependent, reported directly from real use**: every
+    Command Bar run's own immediate feedback shows twice today — once in
+    the small label `command_bar::Feedback` renders above the input box,
+    and again as a permanent row in the Output dock once
+    `shell::command::run_command` logs it — instead of the dock being the
+    one place to look, the way Studio's own Output window is. Rows also
+    carry no timestamp, and only distinguish error from everything else
+    (a plain `✕`/`✓` marker, `danger` color on error only) even though
+    `command_bar::Feedback` already has a distinct `Warning` variant
+    (`OutputEntry`/`Feedback`, `shell/output.rs`) — a pushed warning renders
+    identically to a successful run. Real Studio's Output window docs
+    confirm both gaps are real, specific features to match rather than
+    invent: a **Show Timestamp** toggle prints a per-row timestamp in
+    `HH:MM:SS.SSS`, and its four message kinds each get their own color —
+    `print` in the default/black text color, `warn` in orange, `error` in
+    red, and `TestService.Message` in blue (this last one has no
+    equivalent here yet) — each pairing naturally with its own icon
+    (error/warning/info/output) rather than the current binary marker.
+  - **Sandbox-dependent**: filtering by **context** (`Client`/`Server`/
+    `User Plugin`) only means something once the sandbox's client/server
+    split exists to produce it; **Show Context** and **Show Source**
+    (script name + line number) toggles are the same story, since neither
+    a Command Bar run nor an app warning carries a script/line origin
+    today. Free-text search over the log, and whether logged tables show
+    expanded by default, apply to both halves equally.
 - [ ] ⚠️ **Device Simulator equivalent** — real Studio's tool
   (`studio/device-simulator.md`, itself currently in beta on Roblox's
   side) previews an experience's UI at a chosen phone/desktop/console/
