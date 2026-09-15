@@ -78,6 +78,18 @@ Roblox's own engine.
 - [x] Scoped strictly to `Workspace` — a place's other services
   (`ReplicatedStorage`, `ServerStorage`, …) never leak into the render even
   if they happen to hold `BasePart`s.
+- [x] **Downloaded assets are cached on disk, keyed by asset id, and never
+  re-fetched from Roblox's CDN once they've landed once.** Reported as
+  missing from real use — it isn't; `rbx_assets::AssetCache` writes every
+  resolved `rbxassetid://` and Studio content-package fetch to
+  `$XDG_CACHE_HOME/rbx-native/assets/` (`%LOCALAPPDATA%` on Windows),
+  atomically (temp file + rename, so a crash mid-write can't corrupt an
+  entry), and `AssetResolver::resolve_id`/`resolve_native` check it before
+  ever calling the network fetcher — a second place, or a second reload of
+  the same one, hits disk, not the CDN. Persists across process restarts,
+  not just within one session. Still open: no size cap or eviction, so the
+  directory only grows; low priority in practice, since Roblox's own
+  asset ids are immutable content and the bytes never need invalidating.
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: real Roblox class icons (fetched at runtime, never
@@ -255,6 +267,34 @@ Roblox's own engine.
 - [ ] 📋 `Light.Shadows` for `PointLight` (needs 6-face shadow maps; done
   for `SpotLight`/`SurfaceLight`).
 - [ ] 📋 Neon/`ForceField` shimmer, `Glass` refraction — currently flat.
+- [ ] 📋 **Loading a real place spikes CPU (and, on a laptop, the fans)
+  hard enough to be reported directly from use.** Not yet root-caused to
+  one specific bug the way the undo/redo item under "What's planned" →
+  Editor was — the load path itself is already somewhat conservative
+  (`crates/rbx_viewer/src/assets.rs` bounds texture/mesh downloads and
+  decoding to a fixed 6-thread pool, sized to Roblox's own request-rate
+  limit rather than core count, and the render loop is capped to the
+  display's refresh rate even during load) — but two real candidates
+  stand out from reading the load path: the legacy `UnionOperation`/
+  `NegateOperation` CSG boolean (a real, from-scratch BSP implementation —
+  see "What's been implemented" above) runs single-threaded with no
+  parallelism at all, one operation after another, however many a place
+  has; and every downloaded texture is decoded and uploaded to the GPU in
+  one uninterrupted burst rather than spread across frames. Needs an
+  actual profile of a real, CSG-heavy place to confirm which (if either)
+  dominates before picking a fix — parallelizing CSG across the same
+  bounded-worker-pool pattern `assets.rs` already established is the
+  obvious first thing to try if it's that.
+- [ ] 📋 **An FPS/frame-time readout**, matching real Studio's own
+  performance-debugging surface rather than inventing a new one: Studio's
+  `Window > Performance > Stats` toggles a debug stats overlay, and
+  `Ctrl`+`F6` opens the MicroProfiler directly for a per-system frame-time
+  breakdown. Today's viewport corner label (`rbxstudio`) and title bar
+  (`rbxview`) show quality level and flight speed but no frame rate or
+  frame time at all, even though the render thread already measures frame
+  timing internally to drive automatic quality scaling (see "What's been
+  implemented" above) — the number already exists, it just isn't shown
+  anywhere yet.
 - [ ] 📋 **A 5th "Transform" toolbar button** appears in Studio's current
   toolbar (see the owner-provided screenshot) alongside the now-implemented
   Select/Move/Scale/Rotate (see "What's been implemented" → Editor), but
@@ -419,7 +459,13 @@ Roblox's own engine.
   "Save" vs. "Publish" as separate actions once a place is linked to one,
   and "publish as a new version" being the natural behaviour once a place
   already has an associated `placeId` — no new API work, this is an editor
-  -UI task on top of an existing, working client.
+  -UI task on top of an existing, working client. **Version history**
+  (browsing and restoring an older saved/published version, not just
+  writing a new one) is a separate, real Open Cloud surface —
+  `GET /place-version-history-api/v1/{placeId}/history` and
+  `.../contributors` — distinct from the publish endpoint above and not
+  yet wired into `rbx_cloud` at all; worth treating as its own follow-up
+  rather than assuming the existing client already covers it.
 - [ ] 📋 **An orientation/axis indicator in the corner of the viewport**
   (top-right, per the owner's reference) — a small `Front`/`Back`/`Left`/
   `Right`/`Top`/`Bottom` cube or similar, colour-coded per axis, toggleable
@@ -931,6 +977,25 @@ against `Roblox/creator-docs` rather than assumed:
   `HttpService:RequestAsync`) for plugins that don't need Roblox's own UI
   system — see [Explicitly impossible](#explicitly-impossible-without-robloxs-engine)
   for what a plugin fundamentally can't do here.
+- [ ] 📋 **The `Handles`/`*HandleAdornment`/`Selection*` Instance family**
+  (`Handles`, `ArcHandles`, `BoxHandleAdornment`, `SphereHandleAdornment`
+  and siblings, `SelectionBox`, `SelectionSphere`) — real, current,
+  documented classes a script or plugin instantiates to draw interactive
+  3D handles and outlines directly in the viewport, independent of this
+  project's own Move/Scale/Rotate gizmo. Worth building since it's a
+  real, general plugin capability (checked directly against
+  `reference/engine/classes/Handles`/`BoxHandleAdornment`/
+  `SphereHandleAdornment`/`SelectionBox` rather than assumed), **not**
+  because it's how **Building Tools by F3X** draws its own tools — it
+  isn't: F3X's actual source
+  (`F3XTeam/RBX-Building-Tools`, `Libraries/Handles.lua`) renders plain 2D
+  `ImageButton`s inside a `ScreenGui`, hand-projected from 3D to screen
+  space, the same ordinary GUI machinery this project already renders
+  (see "What's been implemented" → Renderer's GUI containers) — worth not
+  conflating the two mechanisms just because both are called "handles."
+  `SelectionBox` in particular carries its own `LineThickness` property,
+  directly relevant to the selection-outline thickness question raised
+  under "What's planned" → Renderer's gizmo papercuts item.
 - [ ] 📋 **A floating, non-dockable plugin widget surface.** A real,
   well-read devforum request
   ([`allow-floating-non-resizeable-widgets`](https://devforum.roblox.com/t/allow-floating-non-resizeable-widgets/4193893),
@@ -1028,7 +1093,16 @@ Roblox place and puppet it from the editor:
    place after injecting a probe (implemented client, never yet exercised
    for real).
 2. Launch the real client — Sober (Flatpak) on Linux, `RobloxPlayerBeta.exe`
-   on Windows, both via the `roblox://placeId=…` protocol.
+   on Windows, both via the `roblox://placeId=…` protocol. Launched as an
+   ordinary top-level window today; embedding it borderless inside
+   `rbxstudio`'s own dock, the way real Studio's own "Play" runs the
+   client inside the editor window rather than a separate one, is a real,
+   separate follow-up — X11 supports reparenting another process's window
+   into one of this app's own (the same mechanism a panel-embedding
+   taskbar or a browser's PiP window uses), but Windows would need its own
+   platform-specific approach, and neither has been investigated yet.
+   Genuinely optional: everything else in this plan works the same with
+   the client in its own window.
 3. Before publishing, inject into the in-memory DOM only (never the real
    saved file): `HttpService.HttpEnabled = true`,
    `ServerScriptService.LoadStringEnabled = true`, a probe `Script`, and a
@@ -1126,10 +1200,17 @@ engine, just as an escape hatch.
 
 Two rbx-native instances editing the same place concurrently (CRDT/OT over
 the DOM — a real, unbuilt project of its own) covers Linux-to-Linux
-collaboration; an official Studio-side plugin syncing the DOM over
-`localhost` (the same trick Rojo/Argon already use) covers rbx-native ↔ real
-Studio. Neither replaces Team Create; the sandbox above covers testing as a
-team instead.
+collaboration, i.e. **collaborators** in this project's own editor.
+**Reflecting live edits between this editor and real Roblox Studio** — a
+separate ask — is the other half: an official Studio-side plugin, in the
+two-way-sync mode real Rojo's own plugin already offers
+([`rojo-rbx/rojo`](https://github.com/rojo-rbx/rojo)), talking to a small
+local server this project would run, the same shape Rojo/Argon already use
+to keep an external editor and Studio's own DOM in sync. Neither replaces
+**Team Create**, Roblox's actual real-time multi-user editing — that stays
+proprietary with no public protocol to build against (see
+[Explicitly impossible](#explicitly-impossible-without-robloxs-engine)) —
+the sandbox above covers testing as a team instead of editing as one.
 
 ---
 
