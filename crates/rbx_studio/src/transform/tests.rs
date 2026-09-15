@@ -172,7 +172,11 @@ fn every_tool_but_select_shows_handles_and_drags() {
         (Tool::Scale, Kind::Scale),
         (Tool::Rotate, Kind::Rotate),
     ] {
-        let transform = Transform { tool, local: false };
+        let transform = Transform {
+            tool,
+            local: false,
+            ..Transform::default()
+        };
         assert_eq!(
             transform.gizmo(),
             Some(Gizmo { kind, local: false }),
@@ -189,7 +193,11 @@ fn the_local_toggle_reaches_the_renderer_for_every_tool() {
     // describes it: "you can move, scale, or rotate parts in either world
     // orientation or local orientation".
     for tool in [Tool::Move, Tool::Scale, Tool::Rotate] {
-        let local = Transform { tool, local: true };
+        let local = Transform {
+            tool,
+            local: true,
+            ..Transform::default()
+        };
         assert_eq!(
             local.gizmo().map(|gizmo| gizmo.local),
             Some(true),

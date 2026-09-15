@@ -403,7 +403,8 @@ fn a_rotate_drag_turns_by_the_angle_the_cursor_swept() {
         turned: 0.0,
     };
 
-    let (_, change) = advance(drag, looking_at(0.0, 5.0), free()).expect("the ray crosses the ring");
+    let (_, change) =
+        advance(drag, looking_at(0.0, 5.0), free()).expect("the ray crosses the ring");
     let Change::Orientation(turned) = change else {
         panic!("expected a rotation, got {change:?}");
     };
@@ -422,7 +423,8 @@ fn a_rotate_drag_that_has_not_moved_leaves_the_part_alone() {
         turned: 0.0,
     };
 
-    let (_, change) = advance(drag, looking_at(5.0, 0.0), free()).expect("the ray crosses the ring");
+    let (_, change) =
+        advance(drag, looking_at(5.0, 0.0), free()).expect("the ray crosses the ring");
     let Change::Orientation(turned) = change else {
         unreachable!()
     };

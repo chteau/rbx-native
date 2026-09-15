@@ -501,7 +501,10 @@ pub(super) fn advance(drag: Drag, ray: Ray, landing: Landing) -> Option<(Drag, C
             offset,
         } => {
             let hit = pick::ray_hits_plane(ray, point, normal)?;
-            Some((drag, Change::Position(grabbed_at(hit, point, landing) + offset)))
+            Some((
+                drag,
+                Change::Position(grabbed_at(hit, point, landing) + offset),
+            ))
         }
         Drag::Size {
             origin,
