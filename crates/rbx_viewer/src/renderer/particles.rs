@@ -118,7 +118,9 @@ impl Particles {
         }
 
         let references = texture_refs(emitters);
-        let images = assets::load(&references);
+        // Live-effect asset warnings aren't wired to the Output dock yet — see
+        // `assets::load`'s doc comment; only scene-load-time warnings are.
+        let (images, _warnings) = assets::load(&references);
         let sampler = texture::sampler(device, wgpu::AddressMode::ClampToEdge, quality.anisotropy);
 
         let mut textures = Vec::new();

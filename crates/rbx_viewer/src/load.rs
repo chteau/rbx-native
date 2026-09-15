@@ -48,6 +48,10 @@ pub(crate) struct Loaded {
     decor: Decor,
     lighting: Lighting,
     lights: Vec<LocalLight>,
+    /// Asset-fetch/decode warnings collected while building this `Loaded`,
+    /// still empty until [`Loaded::take_warnings`] drains them — see
+    /// `Headless`, which accumulates them across reloads for the Output dock.
+    warnings: Vec<String>,
 }
 
 impl Loaded {
@@ -78,15 +82,17 @@ impl Loaded {
         toggles: Toggles,
     ) -> Result<Self, String> {
         let mut scene = Scene::from_dom(dom, database).map_err(|err| err.to_string())?;
+        let mut warnings = Vec::new();
         // File meshes first: a MeshPart that gets real geometry stops drawing the
         // box its decals would otherwise be projected onto.
-        resolve_file_meshes(&mut scene, toggles.textures);
+        warnings.extend(resolve_file_meshes(&mut scene, toggles.textures));
         // Unions next, for the same reason: a recovered pre-CSG part replaces
         // the union's box before materials are joined to every part at once.
-        resolve_unions(&mut scene);
-        resolve_materials(&mut scene, toggles.materials);
+        warnings.extend(resolve_unions(&mut scene));
+        warnings.extend(resolve_materials(&mut scene, toggles.materials));
 
-        let decor = decor(dom, database, &scene, toggles.textures);
+        let (decor, decor_warnings) = decor(dom, database, &scene, toggles.textures);
+        warnings.extend(decor_warnings);
         let lighting = Lighting::from_dom(dom, database, toggles.clock_time);
         let lights = local_lights(dom, database, &scene, toggles.lights);
 
@@ -95,7 +101,16 @@ impl Loaded {
             decor,
             lighting,
             lights,
+            warnings,
         })
+    }
+
+    /// Drains the asset warnings this `Loaded` collected while it was built —
+    /// see the struct's `warnings` field. Left empty by a second call: a
+    /// caller that keeps several `Loaded`s alive (`Headless::reload` replaces
+    /// its own) takes each exactly once.
+    pub(crate) fn take_warnings(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.warnings)
     }
 
     /// The parts a single-instance Properties-panel edit patches in place —
@@ -148,13 +163,15 @@ fn local_lights(
 /// Runs after [`resolve_file_meshes`], whose resolved instances carry a material
 /// of their own. Nothing here can fail the run: with `--no-materials` or with no
 /// network, a part keeps its colour and is drawn as plain plastic.
-fn resolve_materials(scene: &mut Scene, enabled: bool) {
+fn resolve_materials(scene: &mut Scene, enabled: bool) -> Vec<String> {
     let references = if enabled {
         scene.material_assets()
     } else {
         Vec::new()
     };
-    scene.resolve_materials(assets::load(&references));
+    let (images, warnings) = assets::load(&references);
+    scene.resolve_materials(images);
+    warnings
 }
 
 /// Works out what the DOM wants painted, then downloads it.
@@ -167,18 +184,19 @@ fn decor(
     database: &rbx_reflection::ReflectionDatabase,
     scene: &Scene,
     enabled: bool,
-) -> Decor {
+) -> (Decor, Vec<String>) {
     if !enabled {
-        return Decor::default();
+        return (Decor::default(), Vec::new());
     }
 
     let plan = textures::plan(dom, database, &scene.placements());
     let references = plan.references();
     if references.is_empty() {
-        return Decor::default();
+        return (Decor::default(), Vec::new());
     }
 
-    Decor::assemble(plan, &assets::load(&references))
+    let (images, warnings) = assets::load(&references);
+    (Decor::assemble(plan, &images), warnings)
 }
 
 /// Downloads the geometry (and, unless `--no-textures`, the textures) every
@@ -188,32 +206,112 @@ fn decor(
 /// instance simply keeps drawing the box `Scene::from_dom` already gave it.
 /// Downloads the legacy union assets and swaps each union's box for the
 /// original parts found inside. Nothing here can fail the run either.
-fn resolve_unions(scene: &mut Scene) {
+fn resolve_unions(scene: &mut Scene) -> Vec<String> {
     let references: Vec<AssetRef> = scene
         .union_assets()
         .into_iter()
         .map(|(_, reference)| reference)
         .collect();
     if references.is_empty() {
-        return;
+        return Vec::new();
     }
-    scene.resolve_unions(assets::load_bytes(&references));
+    let (bytes, warnings) = assets::load_bytes(&references);
+    scene.resolve_unions(bytes);
+    warnings
 }
 
-fn resolve_file_meshes(scene: &mut Scene, textures_enabled: bool) {
+fn resolve_file_meshes(scene: &mut Scene, textures_enabled: bool) -> Vec<String> {
     let (mesh_refs, texture_refs) = scene.file_mesh_assets();
-    let meshes = assets::load_meshes(&mesh_refs);
+    let (meshes, mut warnings) = assets::load_meshes(&mesh_refs);
     let images = if textures_enabled {
-        assets::load(&texture_refs)
+        let (images, texture_warnings) = assets::load(&texture_refs);
+        warnings.extend(texture_warnings);
+        images
     } else {
         std::collections::HashMap::new()
     };
     scene.resolve_file_meshes(meshes, images);
+    warnings
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rbx_dom::{CFrameData, Instance, Ref, Variant, Vector3Data};
+
+    /// A `Workspace` with one `Part` carrying a `Decal` whose `Texture` names a
+    /// package `rbxasset://` never groups its content under — resolving it
+    /// fails locally (`AssetError::UnknownNativePackage`, see
+    /// `rbx_assets::native::package_candidates_for_path`) before any network
+    /// call would be attempted, which is what keeps this test offline-safe.
+    fn dom_with_unresolvable_decal() -> WeakDom {
+        let mut dom = WeakDom::new();
+        let workspace = Ref::new(9100);
+        dom.insert(Instance::new(workspace, "Workspace", "Workspace"));
+        dom.set_parent(workspace, None);
+
+        let part_ref = Ref::new(9101);
+        let mut part = Instance::new(part_ref, "Part", "Part");
+        part.properties_mut().insert(
+            "size".to_string(),
+            Variant::Vector3(Vector3Data {
+                x: 4.0,
+                y: 4.0,
+                z: 4.0,
+            }),
+        );
+        part.properties_mut().insert(
+            "CFrame".to_string(),
+            Variant::CFrame(CFrameData {
+                position: Vector3Data {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+            }),
+        );
+        dom.insert(part);
+        dom.set_parent(part_ref, Some(workspace));
+
+        let decal_ref = Ref::new(9102);
+        let mut decal = Instance::new(decal_ref, "Decal", "Decal");
+        let properties = decal.properties_mut();
+        properties.insert(
+            "Texture".to_string(),
+            Variant::String("rbxasset://unknown-native-package/none.png".to_string()),
+        );
+        properties.insert("Face".to_string(), Variant::Enum(0));
+        dom.insert(decal);
+        dom.set_parent(decal_ref, Some(part_ref));
+
+        dom
+    }
+
+    #[test]
+    fn from_dom_surfaces_a_warning_for_a_decal_that_cannot_resolve() {
+        let database = ReflectionDatabase::embedded();
+        let dom = dom_with_unresolvable_decal();
+        let toggles = Toggles {
+            textures: true,
+            materials: false,
+            lights: false,
+            clock_time: None,
+        };
+
+        let mut loaded =
+            Loaded::from_dom(&dom, &database, toggles).expect("scene should still load");
+        let warnings = loaded.take_warnings();
+
+        assert!(
+            warnings
+                .iter()
+                .any(|warning| warning.contains("unknown-native-package")),
+            "expected a warning naming the failed asset, got {warnings:?}"
+        );
+        // A second drain finds nothing: a `Loaded` yields its warnings once.
+        assert!(loaded.take_warnings().is_empty());
+    }
 
     #[test]
     fn read_place_sniffs_xml_and_builds_a_part() {

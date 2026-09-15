@@ -53,7 +53,9 @@ impl AssetFetcher for CloudFetcher {
 ///
 /// Failures are warnings, not errors: a texture that will not download leaves
 /// its face bare, which is a far better outcome than refusing to open the file.
-pub(crate) fn load(references: &[AssetRef]) -> HashMap<AssetRef, Image> {
+/// Returned alongside the map so a caller with somewhere to show them (the
+/// Output dock) can, without changing what already goes to stderr.
+pub(crate) fn load(references: &[AssetRef]) -> (HashMap<AssetRef, Image>, Vec<String>) {
     load_with("textures", references, fetch_image)
 }
 
@@ -62,13 +64,15 @@ pub(crate) fn load(references: &[AssetRef]) -> HashMap<AssetRef, Image> {
 ///
 /// Failures are warnings, not errors: `Scene::resolve_file_meshes` leaves the
 /// affected `MeshPart`/`SpecialMesh` drawing its fallback box.
-pub(crate) fn load_meshes(references: &[AssetRef]) -> HashMap<AssetRef, rbx_mesh::Mesh> {
+pub(crate) fn load_meshes(
+    references: &[AssetRef],
+) -> (HashMap<AssetRef, rbx_mesh::Mesh>, Vec<String>) {
     load_with("meshes", references, fetch_mesh)
 }
 
 /// Resolves every reference to its raw bytes, for assets whose format the
 /// scene decodes itself (legacy union assets are `.rbxm` files).
-pub(crate) fn load_bytes(references: &[AssetRef]) -> HashMap<AssetRef, Vec<u8>> {
+pub(crate) fn load_bytes(references: &[AssetRef]) -> (HashMap<AssetRef, Vec<u8>>, Vec<String>) {
     load_with("unions", references, |resolver, reference| {
         resolver
             .resolve(reference)
@@ -81,20 +85,26 @@ pub(crate) fn load_bytes(references: &[AssetRef]) -> HashMap<AssetRef, Vec<u8>> 
 /// [`load_bytes`]: same
 /// bounded concurrency, same disk cache, same warn-and-skip failure handling —
 /// only what a resolved [`Asset`](rbx_assets::Asset) turns into differs.
+///
+/// The `Vec<String>` returned alongside the map is the same text already
+/// `eprintln!`'d, for a caller (`Loaded::from_dom`, ultimately the Output
+/// dock) that wants to show it somewhere besides stderr; the CLI's stderr
+/// output is unchanged either way.
 fn load_with<T: Send>(
     label: &str,
     references: &[AssetRef],
     decode: impl Fn(&AssetResolver, &AssetRef) -> Result<T, String> + Sync,
-) -> HashMap<AssetRef, T> {
+) -> (HashMap<AssetRef, T>, Vec<String>) {
     if references.is_empty() {
-        return HashMap::new();
+        return (HashMap::new(), Vec::new());
     }
 
     let resolver = match resolver() {
         Ok(resolver) => resolver,
         Err(err) => {
-            eprintln!("rbxview: no {label} ({err})");
-            return HashMap::new();
+            let message = format!("rbxview: no {label} ({err})");
+            eprintln!("{message}");
+            return (HashMap::new(), vec![message]);
         }
     };
 
@@ -132,10 +142,14 @@ fn load_with<T: Send>(
     });
     eprintln!();
 
-    for warning in warnings.into_inner().unwrap_or_else(|e| e.into_inner()) {
+    let warnings = warnings.into_inner().unwrap_or_else(|e| e.into_inner());
+    for warning in &warnings {
         eprintln!("warning: {warning}");
     }
-    results.into_inner().unwrap_or_else(|e| e.into_inner())
+    (
+        results.into_inner().unwrap_or_else(|e| e.into_inner()),
+        warnings,
+    )
 }
 
 fn resolver() -> Result<AssetResolver, String> {
@@ -227,6 +241,33 @@ mod tests {
 
     #[test]
     fn an_empty_reference_list_needs_no_cache_and_no_network() {
-        assert!(load(&[]).is_empty());
+        let (images, warnings) = load(&[]);
+        assert!(images.is_empty());
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn load_with_collects_warnings_instead_of_only_printing_them() {
+        let references = vec![AssetRef::Id(1), AssetRef::Id(2)];
+        let (results, warnings) =
+            load_with(
+                "things",
+                &references,
+                |_resolver, reference| match reference {
+                    AssetRef::Id(1) => Ok(1u32),
+                    _ => Err(format!("{}: boom", describe(reference))),
+                },
+            );
+
+        assert_eq!(results.get(&AssetRef::Id(1)), Some(&1));
+        assert_eq!(results.len(), 1);
+        assert_eq!(warnings, vec!["asset 2: boom".to_string()]);
+    }
+
+    #[test]
+    fn load_with_returns_nothing_for_an_empty_reference_list() {
+        let (results, warnings) = load_with::<u32>("things", &[], |_resolver, _reference| Ok(0));
+        assert!(results.is_empty());
+        assert!(warnings.is_empty());
     }
 }

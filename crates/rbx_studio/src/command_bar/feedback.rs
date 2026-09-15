@@ -15,6 +15,11 @@ pub(crate) enum Feedback {
     Idle,
     Output(String),
     Error(String),
+    /// A warning pushed by something other than a Command Bar run — see
+    /// `shell::output::OutputLog::push_warning`. Never produced by
+    /// [`Feedback::from_run`]: nothing about a script's own result is a
+    /// warning today, only what the Output dock's other callers push.
+    Warning(String),
 }
 
 impl Feedback {
@@ -40,6 +45,7 @@ impl Feedback {
             Feedback::Output(text) if text.is_empty() => SharedString::from("(no output)"),
             Feedback::Output(text) => truncate(text),
             Feedback::Error(text) => truncate(&format!("Error: {text}")),
+            Feedback::Warning(text) => truncate(&format!("Warning: {text}")),
         }
     }
 }
@@ -90,5 +96,17 @@ mod tests {
         let label = feedback.label();
         assert_eq!(label.chars().count(), MAX_LEN + 1);
         assert!(label.ends_with('…'));
+    }
+
+    #[test]
+    fn a_warning_is_not_flagged_as_an_error() {
+        let feedback = Feedback::Warning("texture fell back to default".to_string());
+        assert!(!feedback.is_error());
+    }
+
+    #[test]
+    fn a_warning_is_labeled_and_prefixed() {
+        let feedback = Feedback::Warning("boom".to_string());
+        assert_eq!(feedback.label(), SharedString::from("Warning: boom"));
     }
 }

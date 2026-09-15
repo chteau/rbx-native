@@ -64,6 +64,11 @@ pub(super) struct Ready {
     pub(super) speed: f32,
     pub(super) level: u8,
     pub(super) pose: Option<Pose>,
+    /// Asset-fetch/decode warnings drained off the viewer since the previous
+    /// tick — see `Headless::drain_warnings`. Empty on most ticks, same as
+    /// `pose`, but unlike `pose` this is never throttled: a warning is worth
+    /// showing the moment it exists, not on a sampled interval.
+    pub(super) warnings: Vec<String>,
 }
 
 pub(super) struct Pump {
@@ -238,7 +243,9 @@ fn run(
             pose_due = now + POSE_SYNC_INTERVAL;
         }
 
-        if (frame.is_some() || told || pose.is_some())
+        let warnings = viewer.drain_warnings();
+
+        if (frame.is_some() || told || pose.is_some() || !warnings.is_empty())
             && frames
                 .send(Ready {
                     pixels: frame.map(|frame| frame.pixels),
@@ -246,6 +253,7 @@ fn run(
                     speed,
                     level: shown,
                     pose,
+                    warnings,
                 })
                 .is_err()
         {

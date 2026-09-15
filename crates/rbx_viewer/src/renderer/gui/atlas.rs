@@ -58,7 +58,9 @@ impl Atlas {
         };
         atlas.push(device, queue, &sampler, &white, quality);
 
-        let images = assets::load(references);
+        // Live-effect asset warnings aren't wired to the Output dock yet — see
+        // `assets::load`'s doc comment; only scene-load-time warnings are.
+        let (images, _warnings) = assets::load(references);
         for reference in references {
             let Some(image) = images.get(reference) else {
                 continue;
