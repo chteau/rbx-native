@@ -186,6 +186,12 @@ Roblox's own engine.
   above existing first regardless of which direction it takes.
 
 ### Renderer
+- [ ] 📋 **A `Decal`/`Texture` doesn't follow its part when the edit is
+  handled by the live-edit instance-patch/batch-move path** (see
+  `renderer::patch`, `renderer::slots`) instead of a full reload — a
+  `CFrame`, size, or shape edit moves the part but leaves its decal drawn
+  at the old placement, since the decal pass isn't wired into that patch
+  path yet. Only a full scene reload currently redraws a decal correctly.
 - [ ] 📋 `Light.Shadows` for `PointLight` (needs 6-face shadow maps; done
   for `SpotLight`/`SurfaceLight`).
 - [ ] 📋 Neon/`ForceField` shimmer, `Glass` refraction — currently flat.
@@ -472,6 +478,13 @@ against `Roblox/creator-docs` rather than assumed:
 #### CSG
 - [x] 🚧 Legacy union/negate parts reconstruct the real constituent
   geometry via a from-scratch CSG boolean.
+- [ ] 📋 **Give each of a failed-CSG union's recovered fallback pieces its
+  own referent.** Today they all share the union's own referent
+  (`Scene::resolve_unions`), so an edit meant for one specific fallback
+  piece can't be fast-pathed to just that piece — `Scene::patch_part`
+  correctly refuses to patch any of them and falls back to a full reload
+  rather than risking patching the wrong one, but that reload is still
+  more than the edit needs.
 - [ ] 📋 `MeshData`/CSGMDL (Roblox's own baked union result format) — see
   [Explicitly impossible](#explicitly-impossible-without-robloxs-engine),
   deliberately not attempted; the from-scratch boolean above is the
@@ -498,6 +511,14 @@ against `Roblox/creator-docs` rather than assumed:
     specifically, not just available for `BasePart.Material`.
 
 ### Editor
+- [ ] 📋 **The viewport goes black, and the render thread's stats stop
+  updating, after a full scene reload triggered by a non-interactive,
+  scripted run** (`RBX_STUDIO_RUN`/`RBX_STUDIO_EDIT`-driven screenshot
+  automation) — reproduced on a plain, unmodified build too, so no
+  particular fast-path change caused it. Not yet confirmed whether real
+  interactive use (a human editing live) hits the same thing; needs its
+  own investigation of the render thread's state right after
+  `Headless::reload`.
 - [ ] 📋 Attributes editor (custom `Instance` attributes, distinct from
   built-in properties) — a real, commonly-used modern Studio feature, not
   currently scoped anywhere.
