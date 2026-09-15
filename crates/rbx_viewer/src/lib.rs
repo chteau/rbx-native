@@ -34,6 +34,7 @@ mod renderer;
 mod scene;
 mod shapes;
 mod textures;
+mod view;
 
 pub use camera::Pose;
 pub use capture::Rendered;

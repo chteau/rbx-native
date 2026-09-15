@@ -27,6 +27,26 @@
   nothing, the same convention the menu bar already uses. Studio's fifth
   "Transform" button stays out until what it actually does can be confirmed
   against a real Studio rather than guessed. — @chteau
+- **The viewport no longer goes blank after a Command Bar script.** Whether
+  the 3D view is still on screen was inferred from whether GPUI had repainted
+  it since the last tick, which is only sound while something keeps causing
+  repaints — and the only thing that ordinarily does is a finished frame
+  landing. A scene rebuild takes seconds, during which no frames land, so the
+  panel looked exactly like a dock tab switched away: it was declared hidden,
+  the render thread was told to stop drawing, and that stopped the very frames
+  whose absence was the sole evidence for it. The state sustained itself, and
+  the view stayed blank until some unrelated notification happened to repaint
+  the window. The tick that would have given up now asks for one repaint
+  instead of concluding anything: a mounted panel answers and stays visible, a
+  genuinely hidden one cannot and is dropped on the next tick exactly as
+  before. — @chteau
+- **Renderer state survives a rebuild.** `Headless::reload` builds a whole new
+  renderer from the new DOM, and everything the editor had asked for rather
+  than the file — the projection mode, the selection outline, the transform
+  gizmo — went with the old one, leaving the viewport visibly wrong with
+  nothing to say why. They are gathered into one value the renderer's
+  constructor now *requires*, so a rebuild cannot start blank: there is no way
+  to build one without saying what view it is for. — @chteau
 
 - **Orthographic camera mode.** The viewport's free-flight camera can now
   switch between perspective and parallel projection — toggled from the

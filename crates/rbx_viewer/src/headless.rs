@@ -17,6 +17,7 @@ use crate::lighting::{self, Lighting};
 use crate::load::{Loaded, Toggles};
 use crate::quality::QualityLevel;
 use crate::scene::{Bounds, EffectKind, MeshPatch};
+use crate::view::View;
 
 /// A loaded place that renders frames on demand, flown with the very same
 /// free-flight camera as the windowed viewer.
@@ -28,7 +29,11 @@ use crate::scene::{Bounds, EffectKind, MeshPatch};
 pub struct Headless {
     offscreen: Offscreen,
     quality: QualityLevel,
-    orthographic: bool,
+    /// What the embedder asked the renderer to show that the place itself does
+    /// not say: the projection mode, the outlined selection and the transform
+    /// gizmo. Kept here rather than only inside the renderer because a rebuild
+    /// throws that one away — see [`View`].
+    view: View,
     bounds: Bounds,
     controller: Controller,
     input: Input,
@@ -84,9 +89,9 @@ impl Headless {
         let bounds = *loaded.world().scene.bounds();
         let quality = QualityLevel::default();
         Ok(Headless {
-            offscreen: Offscreen::new(loaded.world(), &quality.profile())?,
+            offscreen: Offscreen::new(loaded.world(), &quality.profile(), &View::default())?,
             quality,
-            orthographic: false,
+            view: View::default(),
             bounds,
             controller: Controller::new(Start::Orbit, &bounds, None, DEFAULT_SENSITIVITY),
             input: Input::default(),
@@ -115,7 +120,10 @@ impl Headless {
             Viewpoint::Orbit(_) => Start::Orbit,
             Viewpoint::Free(pose) => Start::Pose(pose),
         };
-        self.offscreen = Offscreen::new(loaded.world(), &self.quality.profile())?;
+        // `self.view`, not a fresh one: the renderer being replaced here is
+        // the only thing that held the selection outline, the gizmo and the
+        // projection mode, and none of them are rebuilt from the DOM.
+        self.offscreen = Offscreen::new(loaded.world(), &self.quality.profile(), &self.view)?;
         self.controller = Controller::new(
             start,
             &bounds,
@@ -277,10 +285,10 @@ impl Headless {
     /// guess the moment orthographic switches on (see
     /// `Controller::sync_ortho_scale`); the mouse wheel takes over from there.
     pub fn set_orthographic(&mut self, orthographic: bool) {
-        if orthographic == self.orthographic {
+        if orthographic == self.view.orthographic {
             return;
         }
-        self.orthographic = orthographic;
+        self.view.set_orthographic(orthographic);
         if orthographic {
             self.controller.sync_ortho_scale(&self.bounds);
         }
@@ -289,7 +297,7 @@ impl Headless {
 
     /// The projection mode [`Headless::set_orthographic`] last set.
     pub fn orthographic(&self) -> bool {
-        self.orthographic
+        self.view.orthographic
     }
 
     pub fn input(&mut self, event: CameraInput) {
@@ -306,6 +314,7 @@ impl Headless {
     /// has to force one frame after this: the camera has not moved, but the
     /// picture has.
     pub fn set_selection(&mut self, referents: &[Ref]) {
+        self.view.select(referents);
         self.offscreen.set_selection(referents);
     }
 
@@ -319,6 +328,7 @@ impl Headless {
     /// the camera moves. The embedder hit-tests the cursor against the same
     /// geometry through [`crate::gizmo`].
     pub fn set_gizmo(&mut self, gizmo: Option<Gizmo>) {
+        self.view.set_gizmo(gizmo);
         self.offscreen.set_gizmo(gizmo);
     }
 
@@ -331,7 +341,7 @@ impl Headless {
             dt,
             self.start.elapsed(),
             &self.bounds,
-            self.orthographic,
+            self.view.orthographic,
         );
         let moved = from != self.from;
         self.from = from;

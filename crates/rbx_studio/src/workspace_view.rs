@@ -13,6 +13,7 @@ mod frame;
 mod gizmo;
 mod input;
 mod label;
+mod presence;
 mod pump;
 mod quality;
 mod reload;
@@ -46,12 +47,6 @@ const SPEED_LABEL: Duration = Duration::from_millis(1500);
 // loops running at the same rate beat against each other, and every beat is a
 // frame shown a whole budget late; waking twice as often costs one `try_recv`.
 const POLLS_PER_FRAME: u32 = 2;
-// How many consecutive `advance` ticks may go by with `render` not called
-// before the panel is declared hidden. One frame budget's worth of misses:
-// enough to absorb the ordinary gap between a frame landing and GPUI actually
-// repainting for it, short enough that switching tabs away stops the render
-// thread within about a frame.
-const HIDDEN_AFTER_MISSES: u32 = POLLS_PER_FRAME;
 
 /// The render thread's latest free-flight pose, throttled and deduplicated
 /// already (see `pump::due_pose`) — emitted at most a few times a second while
@@ -128,7 +123,7 @@ pub(crate) struct WorkspaceView {
     painted: Rc<Cell<bool>>,
     /// Whether the render thread was last told the panel is visible, and how
     /// many `advance` ticks in a row have found `painted` unset since. See
-    /// [`HIDDEN_AFTER_MISSES`].
+    /// [`presence`].
     visible: bool,
     missed_paints: u32,
     frame: Option<Arc<RenderImage>>,
@@ -249,22 +244,26 @@ impl WorkspaceView {
     fn advance(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Duration {
         let now = Instant::now();
 
-        // `render` not having run since the last tick means the dock switched
-        // away to another tab: `viewport`'s size would otherwise sit stale at
-        // whatever it last was, so this is the only way to catch it. A single
-        // miss is not enough on its own — see `HIDDEN_AFTER_MISSES`.
-        if self.painted.replace(false) {
-            self.missed_paints = 0;
-            if !self.visible {
-                self.visible = true;
-                self.pump.set_visible(true);
-            }
-        } else {
-            self.missed_paints += 1;
-            if self.visible && self.missed_paints > HIDDEN_AFTER_MISSES {
-                self.visible = false;
-                self.pump.set_visible(false);
-            }
+        // `render` not having run since the last tick may mean the dock
+        // switched away to another tab: `viewport`'s size would otherwise sit
+        // stale at whatever it last was, so this is the only way to catch it.
+        // A single miss is not enough on its own, and a run of them is not
+        // conclusive either — see `presence`.
+        let presence = presence::presence(
+            self.painted.replace(false),
+            self.missed_paints,
+            self.visible,
+        );
+        self.missed_paints = presence.missed;
+        if presence.visible != self.visible {
+            self.visible = presence.visible;
+            self.pump.set_visible(presence.visible);
+        }
+        if presence.probe {
+            // Nothing else will repaint this panel while the render thread is
+            // stalled, and its own silence is the only evidence that it might
+            // be hidden — see `presence`.
+            cx.notify();
         }
 
         let size = self.viewport.get().size;

@@ -194,6 +194,7 @@ impl Shell {
         // as soon as `cx.new` starts building it, same as `dock_area` above).
         let menu_bar = crate::menu_bar::build(cx.entity(), cx);
 
+        let initial_target = Target::read(&dom, selected);
         let mut shell = Shell {
             menu_bar,
             title: title.into(),
@@ -233,6 +234,21 @@ impl Shell {
             ],
         };
 
+        // Where the draggers go for whatever the place opened with selected.
+        // `sync_selection` only runs on a selection *change*, so without this
+        // an instance selected before the first frame would be outlined and
+        // gizmoed but not draggable until it was selected again.
+        shell
+            .viewport
+            .update(cx, |viewport, _| viewport.set_target(initial_target));
+
+        // `RBX_STUDIO_TOOL` (see `shell::toolbar`). Before the Command Bar
+        // block below rather than after it: a script's reload rebuilds the
+        // renderer, so setting the tool first is what makes a screenshot
+        // taken afterwards prove the rebuild *kept* it (see
+        // `rbx_viewer::view::View`) instead of only proving it was set last.
+        shell.apply_debug_tool(cx);
+
         // A debugging aid for a screenshot that proves the bar works without
         // sending it synthetic input (see `AGENTS.md`'s safety rules): runs
         // exactly the pipeline Enter would, once, before the first frame.
@@ -267,10 +283,6 @@ impl Shell {
         // script can prove Ctrl+S round-trips whatever every block above just
         // mutated.
         shell.apply_debug_save(cx);
-
-        // `RBX_STUDIO_TOOL` (see `shell::toolbar`): after the selection is
-        // settled, so the draggers it turns on land on whatever is selected.
-        shell.apply_debug_tool(cx);
 
         shell
     }
