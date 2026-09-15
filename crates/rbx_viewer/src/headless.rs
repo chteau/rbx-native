@@ -173,7 +173,7 @@ impl Headless {
                 .patch_part(dom, &self.database, referent, known_material_layers)
         {
             let part = self.loaded.scene().parts()[index];
-            self.offscreen.sync_instance(&part);
+            self.offscreen.sync_instance(dom, &self.database, &part);
             return Ok(true);
         }
         match self.loaded.scene_mut().patch_mesh_instance(
