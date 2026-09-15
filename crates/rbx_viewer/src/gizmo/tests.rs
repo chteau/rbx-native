@@ -183,3 +183,134 @@ fn each_axis_keeps_its_own_colour() {
     assert!(green[1] > green[0] && green[1] > green[2]);
     assert!(blue[2] > blue[0] && blue[2] > blue[1]);
 }
+
+#[test]
+fn a_grabbed_arm_reports_which_end_of_the_axis_it_is() {
+    let handles = handles();
+    let ray = Ray::new(Vec3::new(0.5, 0.0, 10.0), Vec3::NEG_Z);
+    assert_eq!(handles.grab_arm(ray), Some((Axis::X, 1.0)));
+
+    // The arm on the far side of the origin is the same axis, other end —
+    // which is the face a Scale drag grows.
+    let back = Ray::new(Vec3::new(-0.5, 0.0, 10.0), Vec3::NEG_Z);
+    assert_eq!(handles.grab_arm(back), Some((Axis::X, -1.0)));
+}
+
+#[test]
+fn a_rings_frame_turns_the_right_way_about_its_own_axis() {
+    let handles = handles();
+    for axis in Axis::ALL {
+        let (normal, zero, quarter) = handles.ring_frame(axis);
+
+        assert!((normal - handles.direction(axis)).length() < 1e-4);
+        assert!(zero.dot(normal).abs() < 1e-4, "the zero left the plane");
+        assert!(quarter.dot(normal).abs() < 1e-4, "the quarter left it");
+        // Walking a quarter turn the way this frame measures has to be a
+        // *positive* rotation about the axis, or every drag would turn the
+        // part backwards.
+        let turned = Mat3::from_axis_angle(normal, std::f32::consts::FRAC_PI_2) * zero;
+        assert!((turned - quarter).length() < 1e-4);
+    }
+}
+
+#[test]
+fn a_ray_crossing_a_ring_reports_where_round_it_landed() {
+    let handles = handles();
+    let frame = handles.ring_frame(Axis::Z);
+    // The Z ring lies in the world's XY plane, with its zero on X.
+    let (angle, radius, distance) = ring_crossing(
+        Vec3::ZERO,
+        frame,
+        Ray::new(Vec3::new(3.0, 0.0, 10.0), Vec3::NEG_Z),
+    )
+    .expect("the ray crosses the ring's plane");
+    assert!(angle.abs() < 1e-4, "{angle} is not the ring's zero");
+    assert!((radius - 3.0).abs() < 1e-4);
+    assert!((distance - 10.0).abs() < 1e-4);
+
+    // A quarter of the way round, which is the frame's second direction.
+    let (angle, ..) = ring_crossing(
+        Vec3::ZERO,
+        frame,
+        Ray::new(Vec3::new(0.0, 3.0, 10.0), Vec3::NEG_Z),
+    )
+    .expect("the ray crosses the ring's plane");
+    assert!((angle - std::f32::consts::FRAC_PI_2).abs() < 1e-4);
+}
+
+#[test]
+fn a_ray_along_a_rings_plane_has_no_angle_rather_than_a_wild_one() {
+    let handles = handles();
+    let along = Ray::new(Vec3::new(0.0, 0.0, 10.0), Vec3::NEG_Y);
+    assert_eq!(
+        ring_crossing(Vec3::ZERO, handles.ring_frame(Axis::Y), along),
+        None
+    );
+}
+
+#[test]
+fn pointing_at_a_ring_grabs_that_axis() {
+    let handles = handles();
+    // Straight down -Z at a point on the Z ring's own circle, one arm out.
+    assert_eq!(
+        handles.grab_ring(Ray::new(Vec3::new(1.0, 0.0, 10.0), Vec3::NEG_Z)),
+        Some(Axis::Z)
+    );
+    // And the same ring from the other side of the circle.
+    assert_eq!(
+        handles.grab_ring(Ray::new(Vec3::new(0.0, -1.0, 10.0), Vec3::NEG_Z)),
+        Some(Axis::Z)
+    );
+}
+
+#[test]
+fn the_middle_of_a_ring_and_the_space_outside_it_grab_nothing() {
+    let handles = handles();
+    // Dead centre: inside every ring, on none of them. The X and Y rings are
+    // edge-on to this ray and so have no crossing at all.
+    assert_eq!(
+        handles.grab_ring(Ray::new(Vec3::new(0.0, 0.0, 10.0), Vec3::NEG_Z)),
+        None
+    );
+    assert_eq!(
+        handles.grab_ring(Ray::new(Vec3::new(1.4, 0.0, 10.0), Vec3::NEG_Z)),
+        None
+    );
+}
+
+#[test]
+fn a_ring_behind_the_camera_is_not_grabbable() {
+    let handles = handles();
+    let away = Ray::new(Vec3::new(1.0, 0.0, -10.0), Vec3::NEG_Z);
+    assert_eq!(handles.grab_ring(away), None);
+}
+
+#[test]
+fn local_rings_are_grabbed_where_the_part_actually_faces() {
+    // A part turned a quarter turn about Y: its own Z axis now lies on world
+    // X, so its Z ring stands in the world's YZ plane.
+    let rotation = Mat3::from_rotation_y(std::f32::consts::FRAC_PI_2);
+    let handles = Handles::new(Vec3::ZERO, basis(Some(rotation)), 1.0);
+
+    let ray = Ray::new(Vec3::new(10.0, 1.0, 0.0), Vec3::NEG_X);
+    assert_eq!(handles.grab_ring(ray), Some(Axis::Z));
+    assert!((handles.direction(Axis::Z) - Vec3::X).length() < 1e-4);
+}
+
+#[test]
+fn an_angle_step_always_goes_the_short_way_round() {
+    use std::f32::consts::{PI, TAU};
+
+    assert!((angle_step(0.1, 0.4) - 0.3).abs() < 1e-5);
+    assert!((angle_step(0.4, 0.1) + 0.3).abs() < 1e-5);
+    // Across the seam at ±π: a hair over, not a whole turn back.
+    let step = angle_step(PI - 0.05, -PI + 0.05);
+    assert!((step - 0.1).abs() < 1e-4, "{step} the long way round");
+    let back = angle_step(-PI + 0.05, PI - 0.05);
+    assert!((back + 0.1).abs() < 1e-4, "{back} the long way round");
+    // And never outside one half turn, whatever it is handed.
+    for turns in -4..=4 {
+        let step = angle_step(0.0, 0.3 + TAU * turns as f32);
+        assert!(step.abs() <= PI + 1e-4);
+    }
+}

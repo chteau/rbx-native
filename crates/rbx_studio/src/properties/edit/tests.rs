@@ -368,3 +368,69 @@ fn committing_to_an_unknown_referent_is_an_error() {
 
     assert!(result.is_err());
 }
+
+/// What the viewport's Rotate drag writes through: the rotation alone, leaving
+/// the part standing where it was. Nine terms row by row, the order Roblox's
+/// own `CFrame.new(x, y, z, R00 … R22)` takes them in.
+#[test]
+fn cframe_takes_nine_numbers_as_a_rotation_and_keeps_the_position() {
+    let position = Vector3Data {
+        x: 7.0,
+        y: 8.0,
+        z: 9.0,
+    };
+    let current = Variant::CFrame(CFrameData {
+        position,
+        rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+    });
+    // A quarter turn about Y.
+    let turned = [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0];
+
+    assert_eq!(
+        parse_as(&current, "0, 0, 1, 0, 1, 0, -1, 0, 0"),
+        Ok(Variant::CFrame(CFrameData {
+            position,
+            rotation: turned,
+        }))
+    );
+}
+
+#[test]
+fn cframe_takes_twelve_numbers_as_a_whole_placement() {
+    let current = Variant::CFrame(CFrameData {
+        position: Vector3Data {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        },
+        rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+    });
+
+    assert_eq!(
+        parse_as(&current, "1, 2, 3, 0, 0, 1, 0, 1, 0, -1, 0, 0"),
+        Ok(Variant::CFrame(CFrameData {
+            position: Vector3Data {
+                x: 1.0,
+                y: 2.0,
+                z: 3.0
+            },
+            rotation: [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0],
+        }))
+    );
+}
+
+#[test]
+fn a_cframe_of_no_recognised_length_is_rejected() {
+    let current = Variant::CFrame(CFrameData {
+        position: Vector3Data {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        },
+        rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+    });
+
+    assert!(parse_as(&current, "1, 2").is_err());
+    assert!(parse_as(&current, "1, 2, 3, 4").is_err());
+    assert!(parse_as(&current, "0, 0, 1, 0, 1, 0, -1, 0").is_err());
+}

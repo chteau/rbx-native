@@ -34,7 +34,7 @@ use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use crate::camera::{Camera, Frustum, Viewpoint};
-use crate::gizmo::{arm_length, basis, Gizmo, Handles};
+use crate::gizmo::{arm_length, basis, Gizmo, Handles, Kind};
 use crate::lighting::{Lighting, LocalLight};
 use crate::quality::QualityProfile;
 use crate::scene::{Bounds, Part, Scene};
@@ -320,16 +320,19 @@ impl Renderer {
     /// on its automatic orbit — which only happens in a file with no saved
     /// camera of its own, before the first input, where there is nothing to
     /// drag with yet either.
-    fn handles(&self, from: Viewpoint) -> Option<Handles> {
+    fn handles(&self, from: Viewpoint) -> Option<(Kind, Handles)> {
         let gizmo = self.gizmo?;
         let Viewpoint::Free(pose) = from else {
             return None;
         };
         let (origin, rotation) = self.selection.anchor()?;
-        Some(Handles::new(
-            origin,
-            basis(gizmo.local.then_some(rotation)),
-            arm_length(origin, pose, self.camera.is_orthographic()),
+        Some((
+            gizmo.kind,
+            Handles::new(
+                origin,
+                basis(gizmo.local.then_some(rotation)),
+                arm_length(origin, pose, self.camera.is_orthographic()),
+            ),
         ))
     }
 

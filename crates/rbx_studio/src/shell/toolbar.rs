@@ -1,11 +1,7 @@
 //! The transform toolbar: the strip of tool buttons directly under the menu
 //! bar and above the dock, where Studio's own is (see `Render for Shell`).
 //!
-//! Select and Move are live. Scale and Rotate are drawn as visibly disabled
-//! buttons rather than left out: they belong in the row Studio shows, and the
-//! same convention already covers every command the menu bar cannot carry out
-//! yet (see `crate::menu_bar`) — a disabled control says "not yet", a missing
-//! one says "never", and a live-looking one that does nothing says neither.
+//! Select, Move, Scale and Rotate are all live.
 //!
 //! Studio's fifth **Transform** button is deliberately absent. `creator-docs`
 //! only uses "transform" as the umbrella name for Move+Scale+Rotate together
@@ -13,7 +9,7 @@
 //! implement against yet.
 
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::{h_flex, ActiveTheme, Disableable as _, Selectable as _, Sizable as _};
+use gpui_kit::component::{h_flex, ActiveTheme, Selectable as _, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
@@ -21,11 +17,7 @@ use crate::transform::{Action, Tool};
 
 use super::Shell;
 
-/// The tools with no draggers behind them yet, in the order Studio lists them
-/// after Move.
-const UNIMPLEMENTED: [&str; 2] = ["Scale", "Rotate"];
-
-/// `RBX_STUDIO_TOOL=move` / `move,local` picks a tool at startup — a
+/// `RBX_STUDIO_TOOL=rotate` / `scale,local` picks a tool at startup — a
 /// debugging aid for a screenshot of the draggers, since nothing else can
 /// click the toolbar or type its shortcut on the editor's behalf (see
 /// `AGENTS.md`'s safety rules), exactly as `RBX_STUDIO_SELECT` and
@@ -43,6 +35,8 @@ impl Shell {
             match word.to_ascii_lowercase().as_str() {
                 "select" => self.transform_action(Action::Use(Tool::Select), cx),
                 "move" => self.transform_action(Action::Use(Tool::Move), cx),
+                "scale" => self.transform_action(Action::Use(Tool::Scale), cx),
+                "rotate" => self.transform_action(Action::Use(Tool::Rotate), cx),
                 "local" => self.transform_action(Action::ToggleLocal, cx),
                 other => eprintln!("rbxstudio: {TOOL_VARIABLE}: no tool called {other:?}"),
             }
@@ -84,12 +78,6 @@ impl Shell {
                     .on_click(cx.listener(move |shell, _, _, cx| {
                         shell.transform_action(Action::Use(tool), cx);
                     }))
-            }))
-            .children(UNIMPLEMENTED.iter().enumerate().map(|(index, label)| {
-                Button::new(("transform-unimplemented", index))
-                    .label(*label)
-                    .xsmall()
-                    .disabled(true)
             }))
             .child(
                 Button::new("transform-local")

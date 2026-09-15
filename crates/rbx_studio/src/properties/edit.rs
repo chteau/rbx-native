@@ -17,9 +17,12 @@ pub(crate) const NAME_PROPERTY: &str = "Name";
 /// The text an editable row's `Input` starts with: always round-trips through
 /// [`parse`], which is why it can differ from the read-only column's
 /// rbxdump-style text (that one must match the dump byte for byte; this one
-/// only has to be typeable). `CFrame` in particular loses its rotation here —
-/// there is no accepted syntax for it, so only the position is ever shown or
-/// written back; the rotation is carried through unchanged by [`parse`].
+/// only has to be typeable). `CFrame` in particular shows only its position
+/// here — a nine-term rotation matrix in a one-line field is not something
+/// anyone edits by hand — and [`parse`] carries the rotation through unchanged
+/// when it is given three numbers, so the row still round-trips. The longer
+/// forms it also accepts (see [`parse_cframe`]) are what the viewport's Rotate
+/// drag writes through.
 ///
 /// `None` means the type is not one [`parse`] understands, which keeps the
 /// row read-only.
@@ -150,19 +153,7 @@ fn parse(
         Variant::Enum(_) => parse_enum(db, class, prop_name, text),
         Variant::UDim(_) => parse_udim(text).map(Variant::UDim),
         Variant::UDim2(_) => parse_udim2(text).map(Variant::UDim2),
-        // Position only; the rotation matrix has no accepted syntax here, so
-        // whatever `current` was carrying is kept as-is (see `edit_text`).
-        Variant::CFrame(frame) => {
-            let n = parse_numbers(text, 3)?;
-            Ok(Variant::CFrame(CFrameData {
-                position: Vector3Data {
-                    x: n[0],
-                    y: n[1],
-                    z: n[2],
-                },
-                rotation: frame.rotation,
-            }))
-        }
+        Variant::CFrame(frame) => parse_cframe(frame, text).map(Variant::CFrame),
         Variant::NumberRange(_) => {
             let n = parse_numbers(text, 2)?;
             Ok(Variant::NumberRange(NumberRange {
@@ -206,6 +197,42 @@ fn parse_numbers(text: &str, count: usize) -> Result<Vec<f32>, String> {
         .iter()
         .map(|part| part.parse::<f32>().map_err(|_| not_a_number(part)))
         .collect()
+}
+
+/// A `CFrame`, in as much of it as the text gives: three numbers are a
+/// position, nine are a rotation and twelve are both, in the order Roblox's
+/// own `CFrame.new(x, y, z, R00, R01, R02, R10, R11, R12, R20, R21, R22)`
+/// takes them — row by row (`creator-docs`,
+/// `reference/engine/datatypes/CFrame.yaml`). Whichever half is left out is
+/// carried through from `current` untouched, so typing a position into the
+/// Properties panel never loses a part's facing and a viewport rotate never
+/// moves it.
+fn parse_cframe(current: &CFrameData, text: &str) -> Result<CFrameData, String> {
+    let (position, rotation) = match count_numbers(text) {
+        3 => (Some(parse_numbers(text, 3)?), None),
+        9 => (None, Some(parse_numbers(text, 9)?)),
+        _ => {
+            let n = parse_numbers(text, 12)?;
+            (Some(n[..3].to_vec()), Some(n[3..].to_vec()))
+        }
+    };
+
+    Ok(CFrameData {
+        position: position.map_or(current.position, |n| Vector3Data {
+            x: n[0],
+            y: n[1],
+            z: n[2],
+        }),
+        rotation: rotation.map_or(current.rotation, |n| std::array::from_fn(|term| n[term])),
+    })
+}
+
+/// How many comma-separated terms `text` holds, which is what picks between
+/// [`parse_cframe`]'s three shapes. Counting rather than trying each in turn
+/// keeps the error a mistyped value produces pointed at the length the user
+/// clearly meant.
+fn count_numbers(text: &str) -> usize {
+    text.split(',').count()
 }
 
 /// 0–255 like Studio's own display, or 0–1 floats: a value over 1 in any
