@@ -70,6 +70,11 @@ offscreen frame are both too slow to use otherwise — don't be surprised that
 ./scripts/check.sh
 ```
 
+On Windows, without WSL or Git Bash: `.\scripts\check.ps1` from PowerShell —
+the same gate, native to the platform (untested on a real Windows machine,
+like the rest of this project's Windows story; see
+[Platform support](#platform-support)).
+
 Runs the full gate this project holds every change to: `cargo fmt --check`,
 `cargo clippy --workspace --all-targets -- -D warnings`, and
 `cargo test --workspace`, then prints a `TOTAL PASSED: N` summary. This is
