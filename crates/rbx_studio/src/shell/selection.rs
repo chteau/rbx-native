@@ -1,4 +1,4 @@
-//! The editor's selection: at most one instance, in DOM terms.
+//! The editor's selection: zero or more instances, in DOM terms.
 
 use gpui_kit::component::tree::TreeItem;
 use rbx_dom::{Ref, WeakDom};
@@ -13,27 +13,59 @@ use crate::explorer;
 const WORKSPACE_CLASS: &str = "Workspace";
 const MODEL_CLASS: &str = "Model";
 
-/// Single selection. Kept apart from the tree's own selected row because the
-/// tree forgets it whenever its rows are replaced, and because the viewport
-/// and Properties panel want a referent, not a row index.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(super) struct Selection(Option<Ref>);
+/// The selection, in the order instances were added to it. Kept apart from
+/// the tree's own selected row because the tree can track only one of them,
+/// forgets even that one whenever its rows are replaced, and because the
+/// viewport and Properties panel want referents, not a row index.
+///
+/// The first entry is the *anchor*: what the transform gizmo goes on (see
+/// `crate::transform::Targets::anchor`, which picks the same way) and what
+/// the Properties panel shows, exactly as if it were still the only thing
+/// selected. `Shift`/`Ctrl`/`Cmd`-click ([`Selection::toggle`]) only ever
+/// appends or removes from the end of this list; nothing here reorders it.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(super) struct Selection(Vec<Ref>);
 
 impl Selection {
-    pub(super) fn new(selected: Option<Ref>) -> Self {
-        Selection(selected)
+    pub(super) fn new(selected: impl IntoIterator<Item = Ref>) -> Self {
+        Selection(selected.into_iter().collect())
     }
 
-    pub(super) fn get(self) -> Option<Ref> {
-        self.0
+    /// The anchor — see this type's own doc comment — or `None` with nothing
+    /// selected.
+    pub(super) fn get(&self) -> Option<Ref> {
+        self.0.first().copied()
     }
 
-    /// Replaces the selection, reporting whether anything changed so a caller
-    /// redrawing on every tree update can stay quiet when it did not.
+    /// Every selected instance, anchor first.
+    pub(super) fn all(&self) -> &[Ref] {
+        &self.0
+    }
+
+    /// Replaces the whole selection with at most one instance — a plain
+    /// click, in the viewport or the Explorer, always replaces rather than
+    /// extends. Reports whether anything changed so a caller redrawing on
+    /// every tree update can stay quiet when it did not.
     pub(super) fn set(&mut self, selected: Option<Ref>) -> bool {
+        let selected = Vec::from_iter(selected);
         let changed = self.0 != selected;
         self.0 = selected;
         changed
+    }
+
+    /// `Shift`/`Ctrl`/`Cmd`-click: adds `reference` to the selection if it
+    /// was not already in it, or drops it if it was — the standard
+    /// multi-select toggle. `creator-docs` (`studio/ui-overview.md`) only
+    /// documents the "adds another object" half; toggling back off on a
+    /// second click of the same object is not spelled out there, but is
+    /// standard multi-select behaviour and what Studio itself does.
+    pub(super) fn toggle(&mut self, reference: Ref) {
+        match self.0.iter().position(|&selected| selected == reference) {
+            Some(index) => {
+                self.0.remove(index);
+            }
+            None => self.0.push(reference),
+        }
     }
 
     /// The tree's selected row, read back as a referent.
@@ -133,6 +165,56 @@ mod tests {
         assert!(selection.set(None));
         assert_eq!(selection.get(), None);
         assert!(!selection.set(None));
+    }
+
+    #[test]
+    fn toggling_adds_and_then_removes_an_instance() {
+        let a = Ref::new(1);
+        let b = Ref::new(2);
+        let mut selection = Selection::new([a]);
+
+        // Adds `b` alongside `a` rather than replacing it — this is the
+        // `Shift`/`Ctrl`/`Cmd`-click path, not a plain click.
+        selection.toggle(b);
+        assert_eq!(selection.all(), [a, b]);
+        assert_eq!(
+            selection.get(),
+            Some(a),
+            "the anchor stays the first one added"
+        );
+
+        // Clicking the same object again with the modifier held drops it.
+        selection.toggle(b);
+        assert_eq!(selection.all(), [a]);
+
+        // Toggling the anchor itself off promotes whatever is left.
+        selection.toggle(a);
+        assert!(selection.all().is_empty());
+        assert_eq!(selection.get(), None);
+    }
+
+    #[test]
+    fn toggling_off_the_anchor_promotes_the_next_instance() {
+        let a = Ref::new(1);
+        let b = Ref::new(2);
+        let c = Ref::new(3);
+        let mut selection = Selection::new([a]);
+        selection.toggle(b);
+        selection.toggle(c);
+        assert_eq!(selection.all(), [a, b, c]);
+
+        selection.toggle(a);
+        assert_eq!(selection.all(), [b, c]);
+        assert_eq!(selection.get(), Some(b));
+    }
+
+    #[test]
+    fn a_fresh_selection_can_start_with_several_instances() {
+        let a = Ref::new(1);
+        let b = Ref::new(2);
+        let selection = Selection::new([a, b]);
+        assert_eq!(selection.all(), [a, b]);
+        assert_eq!(selection.get(), Some(a));
     }
 
     #[test]

@@ -38,7 +38,7 @@ use crate::history::{History, DEFAULT_CAP};
 use crate::properties::Properties;
 use crate::save::Format;
 use crate::settings::Settings;
-use crate::transform::{Target, Transform};
+use crate::transform::{Targets, Transform};
 use crate::workspace_view::{AssetWarnings, PoseSynced, ViewportAction, WorkspaceView};
 use crate::Place;
 use quality::{quality_labels, quality_row};
@@ -206,7 +206,7 @@ impl Shell {
         let transform = Transform::default();
         let (snap_fields, [translate_typed, rotate_typed]) = SnapFields::new(transform, window, cx);
 
-        let initial_target = Target::read(&dom, selected);
+        let initial_targets = Targets::read(&dom, &Vec::from_iter(selected));
         let mut shell = Shell {
             menu_bar,
             title: title.into(),
@@ -255,7 +255,7 @@ impl Shell {
         // gizmoed but not draggable until it was selected again.
         shell
             .viewport
-            .update(cx, |viewport, _| viewport.set_target(initial_target));
+            .update(cx, |viewport, _| viewport.set_targets(initial_targets));
         shell.sync_snap_neighbours(cx);
 
         // `RBX_STUDIO_TOOL` (see `shell::toolbar`). Before the Command Bar
@@ -265,17 +265,34 @@ impl Shell {
         // `rbx_viewer::view::View`) instead of only proving it was set last.
         shell.apply_debug_tool(cx);
 
+        // `RBX_STUDIO_SELECT=<name>[,<name>...]`: `main::load` already
+        // resolved a single name into the initial `Place.selected` before
+        // the window opened (too early for a comma list — it looks up one
+        // literal name and finds nothing for a name containing a comma), so
+        // this is what actually applies a multi-instance selection — a
+        // debugging aid for a screenshot of the outline/gizmo over more than
+        // one part, since nothing else can send the viewport a
+        // `Shift`/`Ctrl`/`Cmd`-click on the editor's behalf.
+        if let Ok(spec) = std::env::var(crate::SELECT_VARIABLE) {
+            shell.apply_debug_select(&spec, cx);
+        }
+
+        // `RBX_STUDIO_DRAG` (see `shell::drag`): applied right after
+        // selection, so it moves whatever the file itself or
+        // `RBX_STUDIO_SELECT` just selected — a screenshot aid for a group
+        // drag.
+        shell.apply_debug_drag(cx);
+
         // A debugging aid for a screenshot that proves the bar works without
         // sending it synthetic input (see `AGENTS.md`'s safety rules): runs
         // exactly the pipeline Enter would, once, before the first frame.
         if let Ok(source) = std::env::var(command_bar::RUN_VARIABLE) {
             shell.run_command(&source, cx);
-            // `RBX_STUDIO_SELECT` was already tried once, on the pristine DOM,
-            // in `main::load` — too early to name anything the script just
+            // Re-applied: too early above to name anything the script just
             // created. Trying it again here is what lets a screenshot show
             // that without a click nothing else can send.
-            if let Ok(name) = std::env::var(crate::SELECT_VARIABLE) {
-                shell.select_by_name(&name, cx);
+            if let Ok(spec) = std::env::var(crate::SELECT_VARIABLE) {
+                shell.apply_debug_select(&spec, cx);
             }
         }
 
@@ -303,9 +320,17 @@ impl Shell {
         shell
     }
 
-    /// The selected instance, for whatever else wants to highlight it.
+    /// The selection's anchor — see `shell::selection::Selection`'s own doc
+    /// comment — for whatever still only understands one instance at a time
+    /// (the Properties panel, a typed Command Bar `select`).
     pub(crate) fn selected(&self) -> Option<Ref> {
         self.selection.get()
+    }
+
+    /// Every selected instance, anchor first — what the Explorer highlights
+    /// and the viewport outlines.
+    pub(super) fn selected_all(&self) -> &[Ref] {
+        self.selection.all()
     }
 
     /// Mirrors the render thread's latest free-camera pose into
@@ -329,24 +354,40 @@ impl Shell {
     }
 
     /// Reads the tree's selected row back into DOM terms. Called whenever the
-    /// tree redraws, so it must stay quiet when nothing actually changed.
+    /// tree redraws, so it must stay quiet when nothing actually changed —
+    /// including a redraw that leaves the anchor exactly where it was (a
+    /// Command Bar script's own rebuild re-asserting the same row, say),
+    /// which must not collapse a `Shift`/`Ctrl`/`Cmd`-click multi-selection
+    /// down to just that one instance: nothing about the tree changing back
+    /// to what it already showed means the user picked something else.
     fn sync_selection(&mut self, tree: &Entity<TreeState>, cx: &mut Context<Self>) {
         let selected = Selection::of_item(tree.read(cx).selected_item());
-        if self.selection.set(selected) {
-            // A different instance means a different row set; any open
-            // editor belonged to the old one.
-            self.edits.clear();
-            let target = Target::read(&self.dom, selected);
-            self.viewport.update(cx, |viewport, _| {
-                viewport.set_selection(selected);
-                viewport.set_target(target);
-            });
-            // The part that just stopped being selected becomes one of the
-            // neighbours a drag can settle against, and the one that just
-            // started stops being one.
-            self.sync_snap_neighbours(cx);
-            cx.notify();
+        if selected == self.selection.get() {
+            return;
         }
+        if self.selection.set(selected) {
+            self.selection_changed(cx);
+        }
+    }
+
+    /// Everything that has to stay in step with `self.selection` after it
+    /// changes, whichever of `sync_selection`/`Shell::select`/
+    /// `Shell::deselect`/`Shell::extend_selection` changed it: any open
+    /// Properties editor belonged to the old selection, and the viewport's
+    /// outline and draggers have to move to the new one.
+    fn selection_changed(&mut self, cx: &mut Context<Self>) {
+        self.edits.clear();
+        let referents = self.selection.all().to_vec();
+        let targets = Targets::read(&self.dom, &referents);
+        self.viewport.update(cx, |viewport, _| {
+            viewport.set_selection(&referents);
+            viewport.set_targets(targets);
+        });
+        // Whatever just stopped being selected becomes one of the neighbours
+        // a drag can settle against, and whatever just started stops being
+        // one.
+        self.sync_snap_neighbours(cx);
+        cx.notify();
     }
 
     /// Applies a pick from the dropdown. The labels are Roblox's own enum

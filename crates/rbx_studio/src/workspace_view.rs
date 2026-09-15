@@ -34,7 +34,7 @@ use rbx_viewer::{CameraInput, Headless, Pose, QualityLevel};
 use crate::camera::PlaceCamera;
 use crate::pointer_lock::{self, PointerLock};
 use crate::settle::Settle;
-use crate::transform::{self, Target, Transform};
+use crate::transform::{self, Targets, Transform};
 use crate::{display, pacing};
 use frame::{device_pixels, render_image, Viewport};
 use gizmo::Drag;
@@ -75,20 +75,29 @@ impl EventEmitter<AssetWarnings> for WorkspaceView {}
 /// arrives here rather than being carried out on the spot.
 pub(crate) enum ViewportAction {
     /// A click, as the world ray under it — `Shell` resolves what that ray
-    /// actually hits (see `shell::selection::from_click`).
-    Pick { ray: Ray, cycling: bool },
-    /// A drag moved the part to a new position. `first` marks the move that
-    /// began the gesture, which is the single undo step the whole drag gets:
-    /// pushing one per mouse move would bury the rest of the history in a
-    /// fraction of a second.
+    /// actually hits (see `shell::selection::from_click`). `extend` is
+    /// `Shift`/`Ctrl`/`Cmd` held: add the hit to the selection (or drop it, if
+    /// it was already in) rather than replacing the selection with it.
+    Pick {
+        ray: Ray,
+        cycling: bool,
+        extend: bool,
+    },
+    /// A drag moved every part it carries to a new position — more than one
+    /// when the gesture grabbed a multi-part selection's gizmo, each keeping
+    /// its offset from the others (see `transform::Targets::translate`).
+    /// `first` marks the move that began the gesture, which is the single
+    /// undo step the whole drag gets: pushing one per mouse move would bury
+    /// the rest of the history in a fraction of a second.
     ///
-    /// `position` is the view's own answer, worked out with no DOM in reach.
-    /// A cursor drag also carries a [`Settle`], asking `Shell` to rest the
-    /// part on whatever the cursor is over instead — `position` is then only
-    /// the fallback for a cursor over nothing.
+    /// A cursor drag on a single part also carries a [`Settle`], asking
+    /// `Shell` to rest it on whatever the cursor is over instead — the move
+    /// already computed is then only the fallback for a cursor over nothing.
+    /// A group drag never settles: cursor dragging is Move's own one-part
+    /// body-grab gesture (see `gizmo::Drag::Plane`), and a multi-part
+    /// selection's gizmo only ever grabs a handle.
     Moved {
-        referent: Ref,
-        position: Vec3,
+        moves: Vec<(Ref, Vec3)>,
         first: bool,
         settle: Option<Settle>,
     },
@@ -175,9 +184,10 @@ pub(crate) struct WorkspaceView {
     /// The transform toolbar's state, pushed down from `Shell` (see
     /// [`WorkspaceView::set_transform`]).
     transform: Transform,
-    /// Where the selected part stands, so a click can be hit-tested against
-    /// its draggers here rather than on the render thread.
-    target: Option<Target>,
+    /// Where every selected part stands, so a click can be hit-tested against
+    /// the draggers here rather than on the render thread, and a drag can
+    /// move the whole selection together (see `transform::Targets`).
+    targets: Targets,
     /// The boxes every other drawn part occupies, for a free drag to soft-snap
     /// onto (see `gizmo::Landing`). Pushed down from `Shell` when the
     /// selection changes rather than read per move: only the dragged part is
@@ -275,7 +285,7 @@ impl WorkspaceView {
             level: QualityLevel::MAX,
             orthographic,
             transform: Transform::default(),
-            target: None,
+            targets: Targets::default(),
             neighbours: Vec::new(),
             view: None,
             meshes: Meshes::default(),
@@ -486,14 +496,14 @@ impl WorkspaceView {
         self.pump.gizmo(transform.gizmo());
     }
 
-    /// Where the selected part stands now: after a selection change, and after
-    /// any edit that moved or resized it.
-    pub(crate) fn set_target(&mut self, target: Option<Target>) {
+    /// Where every selected part stands now: after a selection change, and
+    /// after any edit that moved or resized one of them.
+    pub(crate) fn set_targets(&mut self, targets: Targets) {
         // Never mid-gesture: the drag's own running answer is ahead of
         // whatever round trip through the DOM is landing now, and taking this
-        // one would snap the part back a frame.
+        // one would snap the parts back a frame.
         if self.drag.is_none() {
-            self.target = target;
+            self.targets = targets;
         }
     }
 

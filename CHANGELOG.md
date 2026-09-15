@@ -180,6 +180,25 @@
   read as a position — so a viewport drag and a typed value still go through
   exactly one write path. Snapping is still open for all three tools.
   — @chteau
+- **Viewport multi-select.** `Shift`/`Ctrl`/`Cmd`-click in the 3D view now
+  adds another top-level object to the selection instead of replacing it —
+  `Alt`/`⌥`-click's own selection cycling is untouched. The selection went
+  from at most one instance to an ordered set: the Explorer highlights
+  every selected row, the outline draws around all of them, and the Move
+  gizmo still appears exactly once, on the first ("anchor") selected part —
+  the same part `rbx_viewer::renderer::selection::Selection::anchor`
+  already picked for a lone selection, now just reused rather than
+  reinvented for a group. Dragging any handle, or any selected part's own
+  body, moves every selected part together by the gizmo's own measured
+  offset, so the group's layout relative to itself never changes; the
+  whole drag is still the one undo step it always was. Group/ungroup
+  operations remain their own separate, unimplemented roadmap item.
+  `RBX_STUDIO_SELECT` now takes a comma-separated name list (a single name
+  behaves exactly as before) and a new `RBX_STUDIO_DRAG=<dx>,<dy>,<dz>`
+  moves the current selection by that offset — debugging aids for
+  screenshotting the outline/gizmo over a group and a group drag, since
+  neither a modified click nor a mouse drag can be sent to the editor on
+  its own behalf. — @chteau
 
 ## 2026-09-14 (night) — getting ready to go public
 

@@ -315,3 +315,86 @@ fn rotating_a_target_keeps_its_size_and_where_it_stands() {
     assert!((turned.position() - Vec3::new(3.0, 4.0, -5.0)).length() < 1e-4);
     assert!((turned.orientation().x_axis - Vec3::X).length() < 1e-4);
 }
+
+/// A place holding three parts at distinct positions, returned as `(dom, a,
+/// b, c)`.
+fn three_parts() -> (WeakDom, Ref, Ref, Ref) {
+    let mut dom = WeakDom::new();
+    let mut at = |x: f32, y: f32, z: f32| {
+        let part = dom.new_instance("Part", "Part", None);
+        let _ = dom.set_property(
+            part,
+            "CFrame",
+            Variant::CFrame(CFrameData {
+                position: Vector3Data { x, y, z },
+                rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+            }),
+        );
+        // `Target::read` (via `pick::model_of`) needs both `CFrame` and
+        // `size` before it will call this a target at all.
+        let _ = dom.set_property(
+            part,
+            "size",
+            Variant::Vector3(Vector3Data {
+                x: 1.0,
+                y: 1.0,
+                z: 1.0,
+            }),
+        );
+        part
+    };
+    let a = at(0.0, 0.0, 0.0);
+    let b = at(5.0, 0.0, 0.0);
+    let c = at(0.0, 0.0, 5.0);
+    (dom, a, b, c)
+}
+
+#[test]
+fn targets_anchor_at_the_first_referent_with_a_placement() {
+    let (mut dom, a, b, _) = three_parts();
+    let folder = dom.new_instance("Folder", "Folder", None);
+
+    // A `Folder` ahead of `a` in selection order has no placement of its
+    // own, so the anchor skips it rather than coming up empty.
+    let targets = Targets::read(&dom, &[folder, a, b]);
+    assert_eq!(targets.anchor().map(|t| t.referent), Some(a));
+}
+
+#[test]
+fn an_empty_selection_has_no_anchor() {
+    let (dom, ..) = three_parts();
+    let targets = Targets::read(&dom, &[]);
+    assert_eq!(targets.anchor(), None);
+}
+
+/// The whole point of `Targets::translate`: every part in a group drag moves
+/// by the exact same offset, so their positions relative to each other —
+/// and to the anchor — never change.
+#[test]
+fn translating_moves_every_target_by_the_same_offset_and_preserves_their_layout() {
+    let (dom, a, b, c) = three_parts();
+    let mut targets = Targets::read(&dom, &[a, b, c]);
+    let before: Vec<Vec3> = targets.iter().map(Target::position).collect();
+
+    let delta = Vec3::new(1.0, 2.0, 3.0);
+    let moves = targets.translate(delta);
+
+    assert_eq!(moves.len(), 3);
+    for (&(_, position), original) in moves.iter().zip(&before) {
+        assert!((position - (*original + delta)).length() < 1e-4);
+    }
+
+    // The relative offsets between the three parts are exactly what they
+    // were before the drag — nothing rearranged itself.
+    let after: Vec<Vec3> = targets.iter().map(Target::position).collect();
+    assert!(((after[1] - after[0]) - (before[1] - before[0])).length() < 1e-4);
+    assert!(((after[2] - after[0]) - (before[2] - before[0])).length() < 1e-4);
+
+    // And a second call keeps moving from where the parts now stand, not
+    // from where they started — exactly what a drag gesture's repeated
+    // `drag_to` calls need.
+    let more = targets.translate(delta);
+    for (&(_, position), original) in more.iter().zip(&after) {
+        assert!((position - (*original + delta)).length() < 1e-4);
+    }
+}

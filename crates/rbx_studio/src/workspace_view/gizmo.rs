@@ -1,5 +1,7 @@
-//! The left mouse button over the 3D view: clicking to select, and dragging a
-//! part by a transform tool's handles or by its own body.
+//! The left mouse button over the 3D view: clicking to select (plain,
+//! `Shift`/`Ctrl`/`Cmd` to add to or remove from the selection), and dragging
+//! the whole selection by a transform tool's handles or by any selected
+//! part's own body.
 //!
 //! All of it happens here on the UI thread, against `rbx_viewer`'s own
 //! geometry ([`rbx_viewer::pick`], [`rbx_viewer::gizmo`]) and the camera the
@@ -41,6 +43,14 @@ const MAX_SIZE: f32 = 2048.0;
 /// fraction is this editor's own.
 const SOFT_SNAP_REACH: f32 = 0.35;
 
+/// Whether a click's modifiers mean "add to (or drop from) the selection"
+/// rather than "replace it" — `Shift`, `Ctrl`, or `Cmd` (`platform`), per
+/// `creator-docs` (`studio/ui-overview.md#object-selection`), which lists all
+/// three as equivalent.
+fn extends_selection(modifiers: Modifiers) -> bool {
+    modifiers.shift || modifiers.control || modifiers.platform
+}
+
 /// A left-button drag in progress.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) enum Drag {
@@ -51,11 +61,13 @@ pub(super) enum Drag {
         axis: Vec3,
         grabbed: f32,
     },
-    /// The part's own body is held — Studio's "cursor dragging". The part
-    /// comes to rest on whatever the cursor is over (see [`crate::settle`]);
-    /// with nothing under the cursor it travels instead in the plane that
-    /// faced the camera through the grab point, keeping the part where it was
-    /// relative to the cursor.
+    /// Any selected part's own body is held — Studio's "cursor dragging". The
+    /// gizmo's anchor comes to rest on whatever the cursor is over (see
+    /// [`crate::settle`]); with nothing under the cursor it travels instead
+    /// in the plane that faced the camera through the grab point, keeping the
+    /// anchor where it was relative to the cursor regardless of which
+    /// selected part was actually grabbed — the offset is always measured
+    /// from the anchor, so the whole group tracks the cursor together.
     ///
     /// The plane is fixed in the world at the moment of the grab rather than
     /// recomputed from the live camera: a plane that turned with the view
@@ -166,15 +178,18 @@ impl WorkspaceView {
         Some(pick::ray_through(projection, pick::ndc_of(pixel, extent)))
     }
 
-    /// Where the handles stand this frame, built the same way
-    /// `rbx_viewer::renderer` builds the ones on screen.
+    /// Where the handles stand this frame, anchored on the same part
+    /// `rbx_viewer::renderer::selection::Selection::anchor` draws them on —
+    /// the first selected part with a placement, whether or not it is alone —
+    /// and built the same way `rbx_viewer::renderer` builds the ones on
+    /// screen.
     fn handles(&self) -> Option<Handles> {
-        let target = self.target?;
+        let anchor = self.targets.anchor()?;
         let pose = self.view?;
-        let origin = target.position();
+        let origin = anchor.position();
         Some(Handles::new(
             origin,
-            gizmo::basis(self.transform.local.then(|| target.rotation())),
+            gizmo::basis(self.transform.local.then(|| anchor.rotation())),
             gizmo::arm_length(origin, pose, self.orthographic),
         ))
     }
@@ -206,29 +221,38 @@ impl WorkspaceView {
             // Studio's selection cycling: `Alt`/`⌥`-click steps to the next
             // object behind the current one instead of selecting a model.
             cycling: modifiers.alt,
+            extend: extends_selection(modifiers),
         });
     }
 
-    /// What this ray grabs on the current selection, if anything.
+    /// What this ray grabs on the current selection, if anything: a handle on
+    /// the gizmo's anchor first, then — for Move alone — any selected part's
+    /// own body, which starts a group drag of the whole selection (see
+    /// [`WorkspaceView::drag_to`]).
     fn grab(&self, ray: Ray) -> Option<Drag> {
         let handles = self.handles()?;
-        let target = self.target?;
+        let anchor = self.targets.anchor()?;
         match self.transform.tool {
             Tool::Select => None,
-            // Only Move falls back to the part's own body: `creator-docs`
+            // Only Move falls back to a part's own body: `creator-docs`
             // documents cursor dragging under Move alone.
             Tool::Move => self.grab_axis(&handles, ray).or_else(|| {
-                let point = ray.at(pick::ray_hits_box(ray, target.model)?);
+                let distance = self
+                    .targets
+                    .iter()
+                    .filter_map(|target| pick::ray_hits_box(ray, target.model))
+                    .min_by(|a, b| a.total_cmp(b))?;
+                let point = ray.at(distance);
                 Some(Drag::Plane {
                     point,
                     // Square to the view at the moment of the grab, which is
                     // the one orientation every cursor position on screen has
                     // an answer in.
                     normal: -ray.direction,
-                    offset: target.position() - point,
+                    offset: anchor.position() - point,
                 })
             }),
-            Tool::Scale => grab_face(&handles, target, ray),
+            Tool::Scale => grab_face(&handles, anchor, ray),
             Tool::Rotate => {
                 let axis = handles.grab_ring(ray)?;
                 let frame = handles.ring_frame(axis);
@@ -236,7 +260,7 @@ impl WorkspaceView {
                 Some(Drag::Ring {
                     origin: handles.origin(),
                     frame,
-                    orientation: target.orientation(),
+                    orientation: anchor.orientation(),
                     last: angle,
                     turned: 0.0,
                 })
@@ -268,14 +292,16 @@ impl WorkspaceView {
     /// One dragger arm in studs, the screen-relative length everything the
     /// gizmo measures in the world is scaled by.
     fn arm(&self) -> f32 {
-        let (Some(target), Some(pose)) = (self.target, self.view) else {
+        let (Some(anchor), Some(pose)) = (self.targets.anchor(), self.view) else {
             return 0.0;
         };
-        gizmo::arm_length(target.position(), pose, self.orthographic)
+        gizmo::arm_length(anchor.position(), pose, self.orthographic)
     }
 
-    /// The cursor moving with a drag held: works out where the part stands
-    /// now and tells `Shell`, which is what writes it into the DOM.
+    /// The cursor moving with a drag held: works out what this step does to
+    /// the gizmo's anchor, carries every other selected part by the same
+    /// offset when it is a Move (see `transform::Targets::translate`), and
+    /// tells `Shell`, which is what writes the whole group into the DOM.
     pub(super) fn drag_to(
         &mut self,
         position: Point<Pixels>,
@@ -283,9 +309,10 @@ impl WorkspaceView {
         scale: f32,
         cx: &mut gpui_kit::Context<Self>,
     ) {
-        let (Some(drag), Some(target), Some(ray)) =
-            (self.drag, self.target, self.cursor_ray(position, scale))
-        else {
+        let (Some(drag), Some(ray)) = (self.drag, self.cursor_ray(position, scale)) else {
+            return;
+        };
+        let Some(anchor) = self.targets.anchor() else {
             return;
         };
         // Read per move rather than latched at the grab: Studio's Shift is
@@ -298,45 +325,66 @@ impl WorkspaceView {
         // nowhere still has to be the one the next step is measured from.
         self.drag = Some(drag);
 
-        // Kept here as well as written into the DOM: the handles have to
-        // follow the cursor within this same gesture, and the DOM's answer
-        // only comes back through `set_target` once `Shell` has applied it.
-        let Some(moved) = applied(target, change) else {
-            return;
-        };
-        self.target = Some(moved);
-
         let first = !std::mem::replace(&mut self.dragged, true);
-        let referent = target.referent;
-        cx.emit(match change {
-            Change::Position(position) => ViewportAction::Moved {
-                referent,
-                position,
-                first,
-                settle: drag.settle(ray),
-            },
-            Change::Size { size, position } => ViewportAction::Resized {
-                referent,
-                size,
-                position,
-                first,
-            },
-            Change::Orientation(orientation) => ViewportAction::Rotated {
-                referent,
-                orientation,
-                first,
-            },
-        });
+        let referent = anchor.referent;
+        match change {
+            Change::Position(position) => {
+                if position == anchor.position() {
+                    return;
+                }
+                // Applied to every selected part below, not just the anchor:
+                // this is what keeps the group's relative layout intact while
+                // only the anchor's own gizmo drag is ever actually measured
+                // against the ray. Kept here as well as written into the DOM:
+                // the handles have to follow the cursor within this same
+                // gesture, and the DOM's answer only comes back through
+                // `set_targets` once `Shell` has applied it.
+                let moves = self.targets.translate(position - anchor.position());
+                cx.emit(ViewportAction::Moved {
+                    moves,
+                    first,
+                    settle: drag.settle(ray),
+                });
+            }
+            // Scale and Rotate have no group meaning yet — see
+            // `transform::Targets::set_anchor` — so only the anchor itself
+            // moves, exactly as it did before there was more than one part to
+            // select.
+            _ => {
+                let Some(moved) = applied(anchor, change) else {
+                    return;
+                };
+                self.targets.set_anchor(moved);
+                cx.emit(match change {
+                    Change::Size { size, position } => ViewportAction::Resized {
+                        referent,
+                        size,
+                        position,
+                        first,
+                    },
+                    Change::Orientation(orientation) => ViewportAction::Rotated {
+                        referent,
+                        orientation,
+                        first,
+                    },
+                    Change::Position(_) => unreachable!("handled above"),
+                });
+            }
+        }
     }
 
-    /// Where `Shell` actually put the part for the move this gesture just
-    /// asked for, when it rested it on a surface the view itself cannot see.
-    /// Unlike [`WorkspaceView::set_target`] this is taken mid-gesture: it is
-    /// the drag's own answer, finished with the DOM, not a round trip that
-    /// could land a frame late.
-    pub(crate) fn settle_at(&mut self, position: Vec3) {
+    /// The correction `Shell` made to the anchor's own move for this gesture,
+    /// when it rested the anchor on a surface the view itself cannot see —
+    /// the difference between where the anchor actually landed and the flat
+    /// guess `drag_to` already applied. Unlike [`WorkspaceView::set_targets`]
+    /// this is taken mid-gesture: it is the drag's own answer, finished with
+    /// the DOM, not a round trip that could land a frame late. Applied to
+    /// every selected part by the same offset, exactly as `drag_to`'s own
+    /// `Targets::translate` call is, so a settle never rearranges the group
+    /// relative to itself.
+    pub(crate) fn settle_at(&mut self, delta: Vec3) {
         if self.drag.is_some() {
-            self.target = self.target.map(|target| target.moved_to(position));
+            self.targets.translate(delta);
         }
     }
 
@@ -382,9 +430,13 @@ impl WorkspaceView {
     /// the hovered surface."
     ///
     /// Only for a body drag: an axis dragger is a slide along one line, and
-    /// the docs give these two keys to cursor dragging alone.
+    /// the docs give these two keys to cursor dragging alone. Turns the
+    /// gizmo's anchor alone rather than the whole group — the docs describe
+    /// this for one part being cursor-dragged, and a multi-part turn about a
+    /// point that is not every part's own centre has no agreed meaning yet.
     pub(super) fn turn(&mut self, tilt: bool, cx: &mut gpui_kit::Context<Self>) -> bool {
-        let (Some(Drag::Plane { point, normal, .. }), Some(target)) = (self.drag, self.target)
+        let (Some(Drag::Plane { point, normal, .. }), Some(target)) =
+            (self.drag, self.targets.anchor())
         else {
             return false;
         };
@@ -410,7 +462,7 @@ impl WorkspaceView {
 
         let turn = gizmo::quarter_turn(axis);
         let (linear, position) = gizmo::turned(target.rotation(), target.position(), point, turn);
-        self.target = Some(target.turned_to(linear, position));
+        self.targets.set_anchor(target.turned_to(linear, position));
         // The part turned about the grab point, so the cursor now holds it by
         // a different part of itself; the offset has to turn with it or the
         // next move would snap it back.

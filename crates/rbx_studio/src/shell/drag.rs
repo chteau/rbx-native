@@ -14,7 +14,7 @@ use rbx_viewer::pick::{self, Ray};
 
 use crate::properties;
 use crate::settle::{self, Settle};
-use crate::transform::{self, Target};
+use crate::transform::{self, Targets};
 use crate::workspace_view::ViewportAction;
 
 use super::{selection, Shell};
@@ -28,6 +28,15 @@ const CFRAME_PROPERTY: &str = "CFrame";
 /// the DOM keeps — see `rbx_viewer::pick::model_of`, which reads the same pair.
 const SIZE_PROPERTY: &str = "size";
 
+/// `RBX_STUDIO_DRAG=<dx>,<dy>,<dz>`: moves every selected part by this
+/// world-space offset, preserving their layout relative to each other and to
+/// the gizmo's anchor, through the exact same [`Targets::translate`] and
+/// [`Shell::move_parts`] a real gizmo or cursor drag ends a mouse gesture
+/// with — a debugging aid for a screenshot of a group drag, since nothing can
+/// send the viewport a real mouse drag on the editor's behalf (see
+/// `AGENTS.md`'s safety rules).
+pub(super) const DRAG_VARIABLE: &str = "RBX_STUDIO_DRAG";
+
 impl Shell {
     pub(super) fn handle_viewport_action(
         &mut self,
@@ -35,44 +44,51 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        match *action {
-            ViewportAction::Pick { ray, cycling } => self.pick_in_viewport(ray, cycling, cx),
+        match action {
+            ViewportAction::Pick {
+                ray,
+                cycling,
+                extend,
+            } => self.pick_in_viewport(*ray, *cycling, *extend, cx),
             ViewportAction::Moved {
-                referent,
-                position,
+                moves,
                 first,
                 settle,
-            } => self.move_part(referent, position, first, settle, cx),
+            } => self.move_parts(moves, *first, *settle, cx),
             ViewportAction::Resized {
                 referent,
                 size,
                 position,
                 first,
-            } => self.resize_part(referent, size, position, first, cx),
+            } => self.resize_part(*referent, *size, *position, *first, cx),
             ViewportAction::Rotated {
                 referent,
                 orientation,
                 first,
-            } => self.rotate_part(referent, orientation, first, cx),
+            } => self.rotate_part(*referent, *orientation, *first, cx),
             ViewportAction::Turned {
                 referent,
                 pivot,
                 axis,
                 first,
-            } => self.turn_part(referent, pivot, axis, first, cx),
+            } => self.turn_part(*referent, *pivot, *axis, *first, cx),
             // The one toolbar action that moves the caret instead of changing
             // state, which is why this path carries a `Window` at all.
             ViewportAction::Tool(transform::Action::FocusIncrement(kind)) => {
-                self.snap_fields.focus(kind, window, cx);
+                self.snap_fields.focus(*kind, window, cx);
             }
-            ViewportAction::Tool(action) => self.transform_action(action, cx),
+            ViewportAction::Tool(action) => self.transform_action(*action, cx),
         }
     }
 
-    /// A click in the 3D view: select whatever it resolves to, or clear the
-    /// selection when it resolves to nothing — clicking the sky deselects,
-    /// the same as clicking empty space in the Explorer would.
-    fn pick_in_viewport(&mut self, ray: Ray, cycling: bool, cx: &mut Context<Self>) {
+    /// A click in the 3D view: select whatever it resolves to, clear the
+    /// selection when it resolves to nothing (clicking the sky deselects, the
+    /// same as clicking empty space in the Explorer would), or — with
+    /// `extend` (`Shift`/`Ctrl`/`Cmd` held) — add it to or remove it from the
+    /// selection instead, leaving an empty-space click with the modifier held
+    /// alone rather than clearing everything a Studio user did not ask to
+    /// drop.
+    fn pick_in_viewport(&mut self, ray: Ray, cycling: bool, extend: bool, cx: &mut Context<Self>) {
         // The viewport holds a handle onto the render thread's own mesh data
         // (see `WorkspaceView::meshes`): what keeps a `MeshPart`'s pick on the
         // triangles actually drawn rather than the box around them.
@@ -81,40 +97,80 @@ impl Shell {
         let picked =
             selection::from_click(&self.dom, &self.database, &hits, self.selected(), cycling);
 
-        match picked {
-            Some(referent) => self.select(referent, cx),
-            None => self.deselect(cx),
+        match (picked, extend) {
+            (Some(referent), true) => self.extend_selection(referent, cx),
+            (Some(referent), false) => self.select(referent, cx),
+            (None, true) => {}
+            (None, false) => self.deselect(cx),
         }
     }
 
-    /// One step of a Move drag.
+    /// One step of a drag, whether it carries one selected part or a whole
+    /// group of them.
     ///
-    /// A cursor drag asks, through `settle`, to rest the part on whatever the
-    /// cursor is over. Only the DOM can answer that, so it is answered here,
-    /// and the answer is handed back to the view: its draggers are following
-    /// its own flat-plane guess until told otherwise.
-    fn move_part(
+    /// A cursor drag asks, through `settle`, to rest the anchor on whatever
+    /// the cursor is over. Only the DOM can answer that, so it is answered
+    /// here: `delta` corrects the anchor's own move from the view's flat
+    /// guess to where it actually landed, and is applied to every part in
+    /// `moves` before any of them are written, so the group's relative
+    /// layout survives the settle intact. The answer is handed back to the
+    /// view too (`WorkspaceView::settle_at`): its draggers are following
+    /// their own flat-plane guess until told otherwise.
+    ///
+    /// History is pushed once, on `first`, for every part the drag carries
+    /// together: a snapshot is a whole `WeakDom` clone (see
+    /// `crate::history`), so one per mouse move — let alone one per part per
+    /// mouse move — would both cost a copy of the place per frame and flush
+    /// every earlier undo step out of a fifty-deep stack in under a second.
+    /// Each write goes through the same `properties::edit::commit` the
+    /// Properties panel uses, so a drag and a typed coordinate cannot
+    /// disagree about what moving a part means.
+    fn move_parts(
         &mut self,
-        referent: Ref,
-        position: Vec3,
+        moves: &[(Ref, Vec3)],
         first: bool,
         settle: Option<Settle>,
         cx: &mut Context<Self>,
     ) {
-        // Same render-thread mesh handle `pick_in_viewport` reads — a settle's
-        // own surface search needs to agree with what a click would have hit.
-        let meshes = self.viewport.read(cx).meshes().clone();
-        let settled = settle.and_then(|settle| {
-            settle::settled(&self.dom, &self.database, &meshes, referent, settle)
+        let delta = settle.and_then(|settle| {
+            let &(anchor, fallback) = moves.first()?;
+            // Same render-thread mesh handle `pick_in_viewport` reads — a
+            // settle's own surface search needs to agree with what a click
+            // would have hit.
+            let meshes = self.viewport.read(cx).meshes().clone();
+            let settled = settle::settled(&self.dom, &self.database, &meshes, anchor, settle)?;
+            Some(settled - fallback)
         });
-        let position = settled.unwrap_or(position);
 
-        let text = vector(position);
-        let written = self.write_drag(referent, first, &[(CFRAME_PROPERTY, &text)], cx);
-        if written && settled.is_some() {
-            self.viewport
-                .update(cx, |viewport, _| viewport.settle_at(position));
+        if first {
+            self.push_history();
         }
+
+        let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
+        for &(referent, position) in moves {
+            let position = position + delta.unwrap_or(Vec3::ZERO);
+            let text = vector(position);
+            let written = properties::edit::commit(
+                &mut dom,
+                &self.database,
+                referent,
+                CFRAME_PROPERTY,
+                &text,
+            );
+            if let Err(err) = written {
+                self.output.push_warning(&format!("viewport drag: {err}"));
+            }
+        }
+        self.dom = dom;
+
+        for &(referent, _) in moves {
+            self.reflect_in_viewport(referent, CFRAME_PROPERTY, cx);
+        }
+        if let Some(delta) = delta {
+            self.viewport
+                .update(cx, |viewport, _| viewport.settle_at(delta));
+        }
+        cx.notify();
     }
 
     /// One step of a Scale drag. Two properties, because Studio's Scale tool
@@ -157,9 +213,8 @@ impl Shell {
         self.write_drag(referent, first, &[(CFRAME_PROPERTY, &text)], cx);
     }
 
-    /// Writes one step of a drag into the DOM, reporting whether it
-    /// succeeded — `move_part` uses that to decide whether a settled
-    /// position actually landed before telling the view to follow it.
+    /// Writes one step of a Scale or Rotate drag into the DOM, reporting
+    /// whether it succeeded.
     ///
     /// History is pushed once, on `first`: a snapshot is a whole `WeakDom`
     /// clone (see `crate::history`), so one per mouse move would both cost
@@ -263,33 +318,53 @@ impl Shell {
         cx.notify();
     }
 
-    /// Tells the viewport where the selected part stands now, so its handles
-    /// follow an edit that moved or resized it — a typed coordinate, an undo,
-    /// or a Command Bar script.
+    /// Tells the viewport where every selected part stands now, so its
+    /// draggers follow an edit that moved or resized one of them — a typed
+    /// coordinate, an undo, or a Command Bar script.
     pub(super) fn sync_gizmo_target(&mut self, reference: Ref, cx: &mut Context<Self>) {
-        if self.selected() != Some(reference) {
+        if !self.selected_all().contains(&reference) {
             return;
         }
 
-        let target = Target::read(&self.dom, Some(reference));
+        let targets = Targets::read(&self.dom, self.selected_all());
         self.viewport
-            .update(cx, |viewport, _| viewport.set_target(target));
+            .update(cx, |viewport, _| viewport.set_targets(targets));
     }
 
     /// Hands the viewport the boxes a free drag can soft-snap onto: every
-    /// drawn part in the workspace except the one about to be dragged.
+    /// drawn part in the workspace except whichever are selected — a group
+    /// drag carries all of them together, so none should pull the others.
     ///
     /// Only on a selection change or after a script has rearranged the place,
     /// never per mouse move — this walks the whole workspace, and during a
-    /// drag nothing but the dragged part is moving anyway.
+    /// drag nothing but the dragged parts is moving anyway.
     pub(super) fn sync_snap_neighbours(&mut self, cx: &mut Context<Self>) {
-        let selected = self.selected();
+        let selected = self.selected_all();
         let neighbours: Vec<Mat4> = pick::drawable_parts(&self.dom, &self.database)
-            .filter(|referent| Some(*referent) != selected)
+            .filter(|referent| !selected.contains(referent))
             .filter_map(|referent| pick::model_of(&self.dom, referent))
             .collect();
         self.viewport
             .update(cx, |viewport, _| viewport.set_neighbours(neighbours));
+    }
+
+    /// [`DRAG_VARIABLE`]: documented on its own doc comment. A no-op with
+    /// nothing selected, or a target-less selection (a `Folder`, a `Model` —
+    /// nothing with a placement to move).
+    pub(super) fn apply_debug_drag(&mut self, cx: &mut Context<Self>) {
+        let Ok(spec) = std::env::var(DRAG_VARIABLE) else {
+            return;
+        };
+        let Some(delta) = parse_delta(&spec) else {
+            eprintln!("rbxstudio: {DRAG_VARIABLE}: expected <dx>,<dy>,<dz>, got {spec:?}");
+            return;
+        };
+
+        let mut targets = Targets::read(&self.dom, self.selected_all());
+        let moves = targets.translate(delta);
+        if !moves.is_empty() {
+            self.move_parts(&moves, true, None, cx);
+        }
     }
 }
 
@@ -297,4 +372,38 @@ impl Shell {
 /// `CFrame`'s position — back out of.
 fn vector(value: Vec3) -> String {
     format!("{}, {}, {}", value.x, value.y, value.z)
+}
+
+/// Parses `"<x>,<y>,<z>"` into a world-space offset, or `None` for anything
+/// else — [`DRAG_VARIABLE`]'s only format.
+fn parse_delta(spec: &str) -> Option<Vec3> {
+    let mut fields = spec.split(',').map(str::trim);
+    let x = fields.next()?.parse().ok()?;
+    let y = fields.next()?.parse().ok()?;
+    let z = fields.next()?.parse().ok()?;
+    fields.next().is_none().then_some(Vec3::new(x, y, z))
+}
+
+#[cfg(test)]
+mod tests {
+    // Not `use super::*`: this file's own `use gpui_kit::*` glob, re-imported
+    // through it, sends `#[test]`'s name resolution into a search space deep
+    // enough to blow the macro recursion limit — naming exactly what these
+    // tests need avoids it.
+    use glam::Vec3;
+
+    use super::parse_delta;
+
+    #[test]
+    fn three_comma_separated_numbers_parse_as_an_offset() {
+        assert_eq!(parse_delta("1, -2.5, 0"), Some(Vec3::new(1.0, -2.5, 0.0)));
+    }
+
+    #[test]
+    fn anything_else_is_rejected_rather_than_guessed_at() {
+        assert_eq!(parse_delta(""), None);
+        assert_eq!(parse_delta("1,2"), None, "too few fields");
+        assert_eq!(parse_delta("1,2,3,4"), None, "too many fields");
+        assert_eq!(parse_delta("x,2,3"), None, "not a number");
+    }
 }
