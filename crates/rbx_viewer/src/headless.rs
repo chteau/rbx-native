@@ -48,6 +48,12 @@ pub struct Headless {
     /// [`Headless::update_lighting`]/[`Headless::patch_instance`] can
     /// recompute their own small piece of it instead of the whole place.
     loaded: Loaded,
+    /// Asset-fetch/decode warnings from every [`Headless::load`]/
+    /// [`Headless::reload`] so far, not yet claimed by
+    /// [`Headless::drain_warnings`] — an embedder (`rbxstudio`'s render
+    /// thread) polls this instead of scraping stderr to surface them in its
+    /// own UI.
+    warnings: Vec<String>,
 }
 
 impl Headless {
@@ -69,8 +75,9 @@ impl Headless {
         };
         let database = ReflectionDatabase::embedded();
         let dom = crate::load::read_place(path)?;
-        let loaded = Loaded::from_dom(&dom, &database, toggles)
+        let mut loaded = Loaded::from_dom(&dom, &database, toggles)
             .map_err(|err| format!("nothing to show in {path:?}: {err}"))?;
+        let warnings = loaded.take_warnings();
 
         let bounds = *loaded.world().scene.bounds();
         let quality = QualityLevel::default();
@@ -85,6 +92,7 @@ impl Headless {
             toggles,
             database,
             loaded,
+            warnings,
         })
     }
 
@@ -96,7 +104,8 @@ impl Headless {
     /// anything the place already showed, so a small edit reloads fast even
     /// though this rebuilds the whole scene rather than patching it in place.
     pub fn reload(&mut self, dom: &WeakDom) -> Result<(), String> {
-        let loaded = Loaded::from_dom(dom, &self.database, self.toggles)?;
+        let mut loaded = Loaded::from_dom(dom, &self.database, self.toggles)?;
+        self.warnings.extend(loaded.take_warnings());
         let bounds = *loaded.world().scene.bounds();
 
         let start = match self.from {
@@ -240,6 +249,16 @@ impl Headless {
             Viewpoint::Free(pose) => Some(pose),
             Viewpoint::Orbit(_) => None,
         }
+    }
+
+    /// Returns and clears every asset-fetch/decode warning collected by
+    /// [`Headless::load`]/[`Headless::reload`] since the last call — an
+    /// embedder with nowhere better to look than the return value polls this
+    /// instead of scraping stderr. Empty most of the time (nothing failed, or
+    /// nothing failed since the last poll), which costs nothing beyond an
+    /// empty `Vec`'s allocation-free drop.
+    pub fn drain_warnings(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.warnings)
     }
 
     /// Draws the current view and returns the frame the *previous* call asked

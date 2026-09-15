@@ -121,7 +121,9 @@ impl Beams {
 
         let mut textures = vec![white_slot(device, queue, &image_layout, &sampler, quality)];
         let references = texture_refs(beams);
-        let images = assets::load(&references);
+        // Live-effect asset warnings aren't wired to the Output dock yet — see
+        // `assets::load`'s doc comment; only scene-load-time warnings are.
+        let (images, _warnings) = assets::load(&references);
         let mut slot_of: Vec<usize> = Vec::with_capacity(references.len());
         for reference in &references {
             let slot = match images.get(reference) {
