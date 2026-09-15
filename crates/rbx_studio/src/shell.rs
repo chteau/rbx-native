@@ -36,7 +36,7 @@ use crate::history::{History, DEFAULT_CAP};
 use crate::properties::Properties;
 use crate::save::Format;
 use crate::settings::Settings;
-use crate::workspace_view::{PoseSynced, WorkspaceView};
+use crate::workspace_view::{AssetWarnings, PoseSynced, WorkspaceView};
 use crate::Place;
 use quality::{quality_labels, quality_row};
 use selection::Selection;
@@ -96,7 +96,7 @@ pub(crate) struct Shell {
     path: PathBuf,
     format: Format,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
-    _subscriptions: [Subscription; 5],
+    _subscriptions: [Subscription; 6],
 }
 
 impl Shell {
@@ -165,6 +165,12 @@ impl Shell {
         let camera_synced = cx.subscribe(&viewport, |shell, _, event: &PoseSynced, cx| {
             shell.sync_camera_pose(event.0, cx);
         });
+        let asset_warnings = cx.subscribe(&viewport, |shell, _, event: &AssetWarnings, cx| {
+            for warning in &event.0 {
+                shell.output.push_warning(warning);
+            }
+            cx.notify();
+        });
 
         // Built last of Shell::new's entities: its `Action` handlers close
         // over `cx.entity()`, so `Shell` must already be constructible (valid
@@ -197,7 +203,14 @@ impl Shell {
             output_scroll: ScrollHandle::new(),
             path,
             format,
-            _subscriptions: [picked, clicked, filtered, entered, camera_synced],
+            _subscriptions: [
+                picked,
+                clicked,
+                filtered,
+                entered,
+                camera_synced,
+                asset_warnings,
+            ],
         };
 
         // A debugging aid for a screenshot that proves the bar works without

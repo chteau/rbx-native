@@ -36,6 +36,11 @@ pub(crate) const CAP: usize = 200;
 /// is a supporting label next to the result, not the thing being read.
 const SOURCE_MAX_LEN: usize = 80;
 
+/// The `source` every [`OutputLog::push_warning`] entry carries — there is no
+/// command behind a warning the way there is behind a Command Bar run, so
+/// this is what shows in the row's source column instead.
+const WARNING_SOURCE: &str = "warning";
+
 /// One run's worth of history: what was typed and what it did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct OutputEntry {
@@ -122,6 +127,16 @@ impl OutputLog {
             self.entries.remove(0);
         }
         self.entries.push(OutputEntry::new(source, feedback));
+    }
+
+    /// Appends one warning from somewhere other than a Command Bar run (an
+    /// asset-fetch/decode failure, a texture that fell back to a default) —
+    /// same drop-oldest-at-[`CAP`] shape as [`OutputLog::push`], which this
+    /// is not: `OutputFilter::Errors` never catches it (see
+    /// `Feedback::Warning::is_error`), so it stays visible under "All" and
+    /// "Output" instead of quietly vanishing into a filtered view.
+    pub(crate) fn push_warning(&mut self, message: &str) {
+        self.push(WARNING_SOURCE, Feedback::Warning(message.to_string()));
     }
 
     pub(crate) fn clear(&mut self) {
@@ -388,5 +403,34 @@ mod tests {
     #[test]
     fn filter_default_is_all() {
         assert_eq!(OutputFilter::default(), OutputFilter::All);
+    }
+
+    #[test]
+    fn a_pushed_warning_is_not_treated_as_an_error() {
+        let mut log = OutputLog::default();
+        log.push_warning("asset 1: fetching asset 1 failed");
+
+        let entry = log.filtered(OutputFilter::All).next().unwrap();
+        assert!(!entry.is_error());
+    }
+
+    #[test]
+    fn a_warning_shows_under_all_and_output_but_never_errors() {
+        let mut log = OutputLog::default();
+        log.push_warning("boom");
+
+        assert_eq!(log.filtered(OutputFilter::All).count(), 1);
+        assert_eq!(log.filtered(OutputFilter::Output).count(), 1);
+        assert_eq!(log.filtered(OutputFilter::Errors).count(), 0);
+    }
+
+    #[test]
+    fn pushing_warnings_past_the_cap_drops_the_oldest() {
+        let mut log = OutputLog::default();
+        for i in 0..CAP + 5 {
+            log.push_warning(&format!("warning {i}"));
+        }
+
+        assert_eq!(log.len(), CAP);
     }
 }

@@ -59,6 +59,14 @@ pub(crate) struct PoseSynced(pub(crate) Pose);
 
 impl EventEmitter<PoseSynced> for WorkspaceView {}
 
+/// Asset-fetch/decode warnings drained off the render thread this tick,
+/// oldest first — see `pump::Ready::warnings`. `Shell` subscribes to append
+/// each one to the Output dock (`shell::output::OutputLog::push_warning`),
+/// the same way it mirrors `PoseSynced` into the camera.
+pub(crate) struct AssetWarnings(pub(crate) Vec<String>);
+
+impl EventEmitter<AssetWarnings> for WorkspaceView {}
+
 pub(crate) struct WorkspaceView {
     /// The render thread. It owns the viewer, which is why no camera state is
     /// readable from here — only what it reports back with each frame.
@@ -218,6 +226,7 @@ impl WorkspaceView {
         let mut level = None;
         let mut latest = None;
         let mut pose = None;
+        let mut warnings = Vec::new();
         while let Some(ready) = self.pump.poll() {
             speed = Some(ready.speed);
             level = Some(ready.level);
@@ -230,6 +239,7 @@ impl WorkspaceView {
             if ready.pose.is_some() {
                 pose = ready.pose;
             }
+            warnings.extend(ready.warnings);
         }
 
         self.show_speed(speed, now, cx);
@@ -242,6 +252,9 @@ impl WorkspaceView {
         }
         if let Some(pose) = pose {
             cx.emit(PoseSynced(pose));
+        }
+        if !warnings.is_empty() {
+            cx.emit(AssetWarnings(warnings));
         }
 
         (self.interval / POLLS_PER_FRAME).saturating_sub(now.elapsed())
