@@ -245,6 +245,7 @@ mod tests {
             z_offset: 0.0,
             cap: super::super::emitter::PER_EMITTER_CAP,
             seed: 1,
+            referent: rbx_dom::Ref::new(1),
             volume: Mat4::IDENTITY,
         }
     }

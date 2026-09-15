@@ -16,6 +16,7 @@
 
 mod appearance;
 mod images;
+mod patch;
 mod pipelines;
 mod vertex;
 
@@ -23,6 +24,7 @@ use std::collections::HashMap;
 
 use glam::Vec3;
 use rbx_assets::AssetRef;
+use rbx_dom::Ref;
 use wgpu::util::DeviceExt;
 
 use super::instance::InstanceRaw;
@@ -51,7 +53,10 @@ struct Batch {
 /// themselves are re-sorted every frame.
 struct Blended {
     batch: Batch,
-    items: Vec<(Vec3, InstanceRaw)>,
+    /// Each instance's referent, world-space centre and GPU record, in the
+    /// order [`FileMeshes::prepare`] last sorted them — the referent is what
+    /// [`FileMeshes::patch`] finds an item by, since that order changes.
+    items: Vec<(Ref, Vec3, InstanceRaw)>,
     /// This frame's distance to the furthest instance in the batch.
     depth: f32,
 }
@@ -67,6 +72,12 @@ pub(super) struct FileMeshes {
     appearances: appearance::Sets,
     opaque: Vec<Batch>,
     blended: Vec<Blended>,
+    /// Where each opaque instance sits — its batch in `opaque` and its offset
+    /// within it — so a single-instance edit (see [`FileMeshes::patch`]) can
+    /// write straight into the buffer instead of rebuilding it, and which
+    /// `blended` batch holds each translucent one.
+    opaque_index: HashMap<Ref, (usize, u32)>,
+    blended_index: HashMap<Ref, usize>,
     order: Vec<usize>,
 }
 
@@ -82,6 +93,8 @@ impl FileMeshes {
     ) -> Self {
         let mut opaque = Vec::new();
         let mut blended = Vec::new();
+        let mut opaque_index = HashMap::new();
+        let mut blended_index = HashMap::new();
         let image_layout = texture::layout(device);
         let appearance_layout = appearance::layout(device);
         // Clamped, not repeated: a mesh's UVs are an authored atlas, not a
@@ -112,12 +125,21 @@ impl FileMeshes {
                 .into_iter()
                 .partition(|instance| blends || instance.alpha < 1.0);
             if !still.is_empty() {
-                opaque.push(build(device, mesh, skin, &still, false));
+                for (offset, instance) in still.iter().enumerate() {
+                    opaque_index.insert(instance.referent, (opaque.len(), offset as u32));
+                }
+                opaque.push(build(device, mesh, skin, &still));
             }
             if !see_through.is_empty() {
+                for instance in &see_through {
+                    blended_index.insert(instance.referent, blended.len());
+                }
                 blended.push(Blended {
-                    batch: build(device, mesh, skin, &see_through, true),
-                    items: see_through.iter().map(|i| (center(i), raw(i))).collect(),
+                    batch: build(device, mesh, skin, &see_through),
+                    items: see_through
+                        .iter()
+                        .map(|i| (i.referent, center(i), raw(i)))
+                        .collect(),
                     depth: 0.0,
                 });
             }
@@ -147,6 +169,8 @@ impl FileMeshes {
             images,
             opaque,
             blended,
+            opaque_index,
+            blended_index,
             order: Vec::new(),
         }
     }
@@ -202,13 +226,14 @@ impl FileMeshes {
         for blended in &mut self.blended {
             blended
                 .items
-                .sort_by(|left, right| distance(right.0, eye).total_cmp(&distance(left.0, eye)));
+                .sort_by(|left, right| distance(right.1, eye).total_cmp(&distance(left.1, eye)));
             blended.depth = blended
                 .items
                 .first()
-                .map_or(0.0, |(center, _)| distance(*center, eye));
+                .map_or(0.0, |(_, center, _)| distance(*center, eye));
 
-            let instances: Vec<InstanceRaw> = blended.items.iter().map(|(_, raw)| *raw).collect();
+            let instances: Vec<InstanceRaw> =
+                blended.items.iter().map(|(_, _, raw)| *raw).collect();
             queue.write_buffer(
                 &blended.batch.instances,
                 0,
@@ -336,7 +361,6 @@ fn build(
     mesh: &rbx_mesh::Mesh,
     skin: Skin,
     group: &[&ResolvedInstance],
-    rewritable: bool,
 ) -> Batch {
     let vertices: Vec<u8> = match skin {
         Skin::Plain => bytemuck::cast_slice(
@@ -352,13 +376,9 @@ fn build(
     };
     let indices = mesh.lod0();
     let instances: Vec<InstanceRaw> = group.iter().copied().map(raw).collect();
-    // Only the blended batches are rewritten, so only they pay for a buffer the
-    // CPU can still reach.
-    let usage = if rewritable {
-        wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
-    } else {
-        wgpu::BufferUsages::VERTEX
-    };
+    // Written afterwards by `FileMeshes::prepare` (a blended batch, every
+    // frame) and `FileMeshes::patch` (either kind, one instance at a time).
+    let usage = wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST;
 
     Batch {
         vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {

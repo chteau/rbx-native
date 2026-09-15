@@ -1,13 +1,14 @@
 use super::*;
 use glam::Mat4;
-use rbx_dom::{ColorSequence, ColorSequenceKeypoint, NumberSequence, NumberSequenceKeypoint};
+use rbx_dom::{ColorSequence, ColorSequenceKeypoint, NumberSequence, NumberSequenceKeypoint, Ref};
 
 fn texture(id: u64) -> rbx_assets::AssetRef {
     rbx_assets::AssetRef::Id(id)
 }
 
-// A minimal emitter for a wiring test that only cares about `texture`.
-fn emitter(texture: rbx_assets::AssetRef) -> Emitter {
+// A minimal emitter for a wiring test that only cares about `texture`
+// (and, in `super::patch`'s tests, `referent`).
+pub(super) fn emitter(texture: rbx_assets::AssetRef) -> Emitter {
     let flat = NumberSequence {
         keypoints: vec![NumberSequenceKeypoint {
             time: 0.0,
@@ -43,6 +44,7 @@ fn emitter(texture: rbx_assets::AssetRef) -> Emitter {
         z_offset: 0.0,
         cap: 0,
         seed: 1,
+        referent: Ref::new(1),
         volume: Mat4::IDENTITY,
     }
 }

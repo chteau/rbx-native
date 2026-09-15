@@ -59,6 +59,9 @@ pub(crate) struct Trail {
     pub(crate) texture: AssetRef,
     pub(crate) texture_length: f32,
     pub(crate) light_emission: f32,
+    /// The `Trail` instance this was read from — see `scene::particles::Emitter`'s
+    /// identical field.
+    pub(crate) referent: Ref,
 }
 
 /// Every placeable `Trail` in the DOM: both `Attachment0`/`Attachment1`
@@ -79,13 +82,14 @@ pub(crate) fn plan(dom: &WeakDom, database: &ReflectionDatabase) -> Vec<Trail> {
             dom.get(referent)
                 .is_some_and(|instance| database.is_subclass_of(instance.class(), CLASS))
         })
-        .filter_map(|referent| build(dom, &parents, dom.get(referent)?.properties()))
+        .filter_map(|referent| build(dom, &parents, referent, dom.get(referent)?.properties()))
         .collect()
 }
 
 fn build(
     dom: &WeakDom,
     parents: &ParentMap,
+    referent: Ref,
     properties: &BTreeMap<String, Variant>,
 ) -> Option<Trail> {
     let attachment0 = ref_or(properties, "Attachment0")?;
@@ -109,6 +113,7 @@ fn build(
         texture: texture_ref(properties),
         texture_length: float_or(properties, "TextureLength", DEFAULT_TEXTURE_LENGTH).max(1e-3),
         light_emission: float_or(properties, "LightEmission", 0.0).clamp(0.0, 1.0),
+        referent,
     })
 }
 

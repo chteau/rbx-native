@@ -13,6 +13,7 @@ mod material;
 mod mesh;
 mod particles;
 mod pass;
+mod patch;
 mod pipeline;
 mod post;
 mod selection;

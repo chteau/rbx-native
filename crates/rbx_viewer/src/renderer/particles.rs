@@ -5,11 +5,14 @@
 //! The pipeline, shader and vertex layouts live in [`pipeline`]; this file is
 //! the emitter bookkeeping and the per-frame simulate/sort/upload/draw.
 
+mod patch;
 mod pipeline;
 
+use std::collections::HashMap;
 use std::time::Instant;
 
 use glam::{Mat4, Vec3};
+use rbx_assets::AssetRef;
 use wgpu::util::DeviceExt;
 
 use super::pipeline::Target;
@@ -52,6 +55,14 @@ pub(super) struct Particles {
     image_layout: wgpu::BindGroupLayout,
     textures: Vec<Slot>,
     live: Vec<Live>,
+    /// Whether the quality profile draws particles at all — `false` keeps
+    /// `live` empty for the whole run, [`Particles::replace`] included.
+    enabled: bool,
+    /// What [`Particles::new`] learned about every texture it was asked for:
+    /// `Some(slot)` uploaded into `textures`, `None` tried and failed. A
+    /// reference missing here was never attempted, which is the one case
+    /// [`Particles::replace`] cannot serve without a download.
+    slots: HashMap<AssetRef, Option<usize>>,
     quad: wgpu::Buffer,
     /// Grown, never shrunk: a place whose emitters settle at a smaller steady
     /// state after a burst does not need the buffer downsized again.
@@ -110,6 +121,8 @@ impl Particles {
                 image_layout,
                 textures: Vec::new(),
                 live: Vec::new(),
+                enabled: quality.particles,
+                slots: HashMap::new(),
                 quad,
                 instances: None,
                 instance_capacity: 0,
@@ -124,9 +137,9 @@ impl Particles {
         let sampler = texture::sampler(device, wgpu::AddressMode::ClampToEdge, quality.anisotropy);
 
         let mut textures = Vec::new();
-        let mut slot_of: Vec<Option<usize>> = Vec::with_capacity(references.len());
-        for reference in &references {
-            slot_of.push(images.get(reference).map(|image| {
+        let mut slots = HashMap::new();
+        for reference in references {
+            let slot = images.get(&reference).map(|image| {
                 let uploaded = texture::Uploaded::color(device, queue, image);
                 let bind_group =
                     uploaded.bind(device, &image_layout, &sampler, quality.texture_max_size);
@@ -135,14 +148,14 @@ impl Particles {
                     uploaded,
                 });
                 textures.len() - 1
-            }));
+            });
+            slots.insert(reference, slot);
         }
 
         let live: Vec<Live> = emitters
             .iter()
             .filter_map(|emitter| {
-                let index = references.iter().position(|r| *r == emitter.texture)?;
-                let texture = slot_of[index]?;
+                let texture = slots.get(&emitter.texture).copied().flatten()?;
                 let mut simulation = Simulation::new(emitter.seed);
                 simulation.prewarm(emitter);
                 Some(Live {
@@ -161,6 +174,8 @@ impl Particles {
             image_layout,
             textures,
             live,
+            enabled: true,
+            slots,
             quad,
             instances: None,
             instance_capacity: 0,
@@ -335,7 +350,7 @@ impl Particles {
 
 /// Every distinct texture the given emitters need, in first-seen order — kept
 /// stable so re-running the same file draws the same texture-to-slot mapping.
-fn texture_refs(emitters: &[Emitter]) -> Vec<rbx_assets::AssetRef> {
+fn texture_refs(emitters: &[Emitter]) -> Vec<AssetRef> {
     let mut seen = Vec::new();
     for emitter in emitters {
         if !seen.contains(&emitter.texture) {

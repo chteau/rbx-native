@@ -15,7 +15,7 @@ use crate::input::{CameraInput, Input};
 use crate::lighting::{self, Lighting};
 use crate::load::{Loaded, Toggles};
 use crate::quality::QualityLevel;
-use crate::scene::Bounds;
+use crate::scene::{Bounds, EffectKind};
 
 /// A loaded place that renders frames on demand, flown with the very same
 /// free-flight camera as the windowed viewer.
@@ -154,14 +154,25 @@ impl Headless {
     /// Patches one `BasePart`'s transform/colour/material/transparency/
     /// reflectance in place, for a Properties-panel edit that touches nothing
     /// but that one instance — see `crate::scene::Scene::patch_part` for
-    /// exactly what is and is not safe to patch this way.
+    /// exactly what is and is not safe to patch this way, and
+    /// `Scene::patch_mesh_instance` for the same on a part whose box a
+    /// resolved `MeshPart`/`SpecialMesh`/union mesh has replaced.
     ///
     /// `Ok(false)` means the edit crossed a GPU bucket (shape, drawn/
-    /// translucent, shadow caster, or landed on a material layer never
-    /// uploaded); the caller falls back to [`Headless::reload`].
+    /// translucent, shadow caster, the mesh or map set a resolved mesh draws
+    /// through, or landed on a material layer never uploaded); the caller
+    /// falls back to [`Headless::reload`].
     pub fn patch_instance(&mut self, dom: &WeakDom, referent: Ref) -> Result<bool, String> {
         let known_material_layers = self.loaded.scene().materials().layers();
-        let Some(index) = self.loaded.scene_mut().patch_part(
+        if let Some(index) =
+            self.loaded
+                .scene_mut()
+                .patch_part(dom, &self.database, referent, known_material_layers)
+        {
+            let part = self.loaded.scene().parts()[index];
+            return Ok(self.offscreen.patch_instance(&part));
+        }
+        let Some(index) = self.loaded.scene_mut().patch_mesh_instance(
             dom,
             &self.database,
             referent,
@@ -169,8 +180,30 @@ impl Headless {
         ) else {
             return Ok(false);
         };
-        let part = self.loaded.scene().parts()[index];
-        Ok(self.offscreen.patch_instance(&part))
+        let instance = &self.loaded.scene().resolved_file_meshes().instances[index];
+        Ok(self.offscreen.patch_mesh_instance(instance))
+    }
+
+    /// Re-plans the `ParticleEmitter`/`Beam`/`Trail` list `referent`'s class
+    /// belongs to from `dom` and hands it to the renderer in place — no scene
+    /// rebuild, no texture re-upload, no restarted simulation. See
+    /// `crate::scene::Scene::replan_effect` for why the whole list and
+    /// `crate::renderer::Renderer::patch_effect` for what survives.
+    ///
+    /// `Ok(false)` when `referent` is none of those three classes, or its
+    /// edit named a texture never downloaded; the caller falls back to
+    /// [`Headless::reload`].
+    pub fn patch_effect(&mut self, dom: &WeakDom, referent: Ref) -> Result<bool, String> {
+        let Some(kind) = dom
+            .get(referent)
+            .and_then(|instance| EffectKind::of(&self.database, instance.class()))
+        else {
+            return Ok(false);
+        };
+        self.loaded
+            .scene_mut()
+            .replan_effect(dom, &self.database, kind);
+        Ok(self.offscreen.patch_effect(kind, self.loaded.scene()))
     }
 
     /// Opens the view standing at `eye` and looking toward `look_at`, both in

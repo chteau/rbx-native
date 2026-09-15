@@ -342,3 +342,38 @@ fn fixture_bytes() -> Vec<u8> {
         .expect("asset 394314025 must download")
         .bytes
 }
+
+// `Scene::patch_mesh_instance` re-plans a union through `replan`/`patched`;
+// the one thing a fresh plan cannot recover without the operation tree is a
+// colour that comes from the pieces (`UsePartColor` off), so that must refuse.
+#[test]
+fn a_replanned_union_patches_only_when_it_paints_its_own_colour() {
+    let database = database();
+    let mut instance = operation(Ref::new(1), "UnionOperation", Some("rbxassetid://42"));
+    instance.properties_mut().insert(
+        "Color3uint8".to_string(),
+        Variant::Color3uint8 { r: 255, g: 0, b: 0 },
+    );
+    instance
+        .properties_mut()
+        .insert("UsePartColor".to_string(), Variant::Bool(true));
+    let mut dom = dom_with(instance);
+    let mut materials = Catalog::new(&dom, &database);
+
+    let entry = replan(&dom, &database, Ref::new(1), &mut materials).expect("a union re-plans");
+    let patched = entry
+        .patched()
+        .expect("UsePartColor on: the union's own colour");
+    assert_eq!(patched.referent, Ref::new(1));
+    assert_eq!(patched.mesh, AssetRef::Id(42));
+    assert_eq!(patched.color, [super::super::srgb_to_linear(1.0), 0.0, 0.0]);
+    assert!(patched
+        .model
+        .transform_point3(glam::Vec3::ZERO)
+        .abs_diff_eq(glam::Vec3::new(1.0, 2.0, 3.0), 1e-5));
+
+    dom.set_property(Ref::new(1), "UsePartColor", Variant::Bool(false))
+        .unwrap();
+    let entry = replan(&dom, &database, Ref::new(1), &mut materials).unwrap();
+    assert!(entry.patched().is_none());
+}

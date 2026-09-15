@@ -1,6 +1,6 @@
 use rbx_assets::AssetRef;
 use rbx_dom::{
-    Color3Data, ColorSequence, ColorSequenceKeypoint, NumberSequence, NumberSequenceKeypoint,
+    Color3Data, ColorSequence, ColorSequenceKeypoint, NumberSequence, NumberSequenceKeypoint, Ref,
 };
 
 use super::*;
@@ -53,6 +53,7 @@ fn trail() -> Trail {
         texture: AssetRef::Empty,
         texture_length: 1.0,
         light_emission: 0.0,
+        referent: Ref::new(1),
     }
 }
 

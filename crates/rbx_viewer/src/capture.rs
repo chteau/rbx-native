@@ -14,7 +14,7 @@ use crate::gpu;
 use crate::lighting::{Lighting, LocalLight};
 use crate::quality::QualityProfile;
 use crate::renderer::{Renderer, World};
-use crate::scene::Part;
+use crate::scene::{EffectKind, Part, ResolvedInstance, Scene};
 use readback::{Pending, Target, FORMAT};
 
 /// A finished frame and where its time went.
@@ -82,6 +82,16 @@ impl Offscreen {
     /// Forwards to [`Renderer::patch_instance`].
     pub(crate) fn patch_instance(&mut self, part: &Part) -> bool {
         self.renderer.patch_instance(&self.queue, part)
+    }
+
+    /// Forwards to [`Renderer::patch_mesh_instance`].
+    pub(crate) fn patch_mesh_instance(&mut self, instance: &ResolvedInstance) -> bool {
+        self.renderer.patch_mesh_instance(&self.queue, instance)
+    }
+
+    /// Forwards to [`Renderer::patch_effect`].
+    pub(crate) fn patch_effect(&mut self, kind: EffectKind, scene: &Scene) -> bool {
+        self.renderer.patch_effect(kind, scene)
     }
 
     /// Draws one frame and waits for it, for a caller that wants this very view

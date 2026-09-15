@@ -69,7 +69,7 @@ impl Fit {
 }
 
 /// One file-mesh-backed instance found in the DOM, before its assets exist.
-struct Entry {
+pub(super) struct Entry {
     material: Slot,
     /// The drawn `Part` this entry stands in for: the `MeshPart` itself, or
     /// the parent of a `SpecialMesh` child. Used to find and hide that part's
@@ -97,6 +97,10 @@ pub(crate) struct Plan {
 /// One instance ready for the renderer: which downloaded mesh/texture it
 /// draws, its model matrix, and its tint.
 pub(crate) struct ResolvedInstance {
+    /// The part this instance draws in place of (see [`Entry::referent`]), so
+    /// the renderer's per-instance patch maps and `Scene::patch_mesh_instance`
+    /// can find it by the same id the Properties panel edits.
+    pub(crate) referent: Ref,
     pub(crate) mesh: AssetRef,
     /// Re-read by [`super::Scene::resolve_materials`] once the packs are in.
     pub(crate) material: Slot,
@@ -216,6 +220,7 @@ pub(crate) fn resolve(
             }
         });
         instances.push(ResolvedInstance {
+            referent: entry.referent,
             mesh: entry.mesh.clone(),
             material: entry.material,
             texture,
@@ -368,6 +373,9 @@ fn parsed_asset_ref(value: &Variant) -> Option<AssetRef> {
         reference => Some(reference),
     }
 }
+
+mod patch;
+pub(super) use patch::replan;
 
 #[cfg(test)]
 #[path = "filemesh/tests.rs"]

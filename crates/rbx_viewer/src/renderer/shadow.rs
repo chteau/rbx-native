@@ -25,7 +25,8 @@ use super::mesh::Vertex;
 use crate::quality::QualityProfile;
 use crate::scene::Scene;
 use casters::{
-    CasterIndex, CasterRaw, MeshBatch, ShapeBatch, CASTER_ATTRIBUTES, POSITION_ATTRIBUTE,
+    CasterIndex, CasterRaw, MeshBatch, MeshCasterIndex, ShapeBatch, CASTER_ATTRIBUTES,
+    POSITION_ATTRIBUTE,
 };
 
 pub(super) use fit::{fit, Fit};
@@ -75,6 +76,9 @@ pub(super) struct Shadows {
     /// Where each caster sits in `shape_batches`, for [`Shadows::patch_caster`].
     caster_index: CasterIndex,
     mesh_batches: Vec<MeshBatch>,
+    /// Where each file-mesh caster sits in `mesh_batches`, for
+    /// [`Shadows::patch_mesh_caster`].
+    mesh_caster_index: MeshCasterIndex,
     /// Kept only so [`Shadows::set_quality`] can rebuild [`Shadows::local_bind_groups`]
     /// around a fresh set of per-light buffers: the layout itself never changes.
     light_layout: wgpu::BindGroupLayout,
@@ -118,6 +122,8 @@ impl Shadows {
         let local_buffers = local_buffers(device, quality.local_shadow_lights_max);
         let local_bind_groups = local_bind_groups(device, &layout, &local_buffers);
         let (shape_batches, caster_index) = casters::shape_batches(device, scene);
+        let (mesh_batches, mesh_caster_index) =
+            casters::mesh_batches(device, scene.resolved_file_meshes());
 
         Shadows {
             view: map(device, quality.shadow_map_size),
@@ -145,7 +151,8 @@ impl Shadows {
             meshes: pipeline(device, &layout, std::mem::size_of::<[f32; 3]>() as _),
             shape_batches,
             caster_index,
-            mesh_batches: casters::mesh_batches(device, scene.resolved_file_meshes()),
+            mesh_batches,
+            mesh_caster_index,
             light,
             local_view,
             local_layers,
@@ -188,6 +195,23 @@ impl Shadows {
             &self.caster_index,
             referent,
             kind,
+            model.to_cols_array_2d(),
+        )
+    }
+
+    /// [`Shadows::patch_caster`] for a part drawn as a resolved file mesh —
+    /// the shadow-map half of `Renderer::patch_mesh_instance`.
+    pub(super) fn patch_mesh_caster(
+        &mut self,
+        queue: &wgpu::Queue,
+        referent: rbx_dom::Ref,
+        model: glam::Mat4,
+    ) -> bool {
+        casters::patch_mesh(
+            queue,
+            &self.mesh_batches,
+            &self.mesh_caster_index,
+            referent,
             model.to_cols_array_2d(),
         )
     }

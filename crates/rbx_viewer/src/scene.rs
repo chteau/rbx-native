@@ -2,10 +2,12 @@
 
 mod beam;
 mod bounds;
+mod effects;
 mod filemesh;
 mod gui;
 mod material;
 mod particles;
+mod patch;
 mod shape;
 mod trail;
 mod union;
@@ -20,6 +22,7 @@ use rbx_reflection::ReflectionDatabase;
 pub(crate) use beam::{Beam, TextureMode};
 #[cfg(test)]
 pub(crate) use bounds::tests_support;
+pub(crate) use effects::EffectKind;
 // Only a test (`renderer::beam::ribbon`'s) constructs a `Curve` directly —
 // everything else reaches one through `Beam::curve`.
 #[cfg(test)]
@@ -382,6 +385,9 @@ impl Scene {
     ///
     /// `Some(index)` means `self.parts[index]` already holds the patched part;
     /// the caller reads it back out to build the GPU instance it writes.
+    ///
+    /// A part whose box a resolved mesh has replaced is suppressed and so
+    /// refused here; [`Scene::patch_mesh_instance`] is its counterpart.
     pub(crate) fn patch_part(
         &mut self,
         dom: &WeakDom,

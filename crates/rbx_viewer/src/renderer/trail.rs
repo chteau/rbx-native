@@ -18,9 +18,11 @@
 //! vertex build lives in [`ribbon`]; this file is the texture bookkeeping,
 //! the running recorders and the per-frame build/upload/draw.
 
+mod patch;
 mod pipeline;
 mod ribbon;
 
+use std::collections::HashMap;
 use std::ops::Range;
 use std::time::Instant;
 
@@ -63,6 +65,13 @@ pub(super) struct Trails {
     /// only `Trails` (not `crate::scene::Scene`) has any business owning —
     /// see this module's doc.
     live: Vec<(Trail, TrailRecorder, usize)>,
+    /// Whether the quality profile draws trails at all — `false` keeps `live`
+    /// empty for the whole run, [`Trails::replace`] included.
+    enabled: bool,
+    /// The slot in `textures` every reference [`Trails::new`] tried resolved
+    /// to (0 where the download failed); a reference missing here was never
+    /// attempted — see [`Trails::replace`].
+    slots: HashMap<AssetRef, usize>,
     vertices: Option<wgpu::Buffer>,
     /// Grown, never shrunk — same reasoning as `renderer::beam::Beams::vertex_capacity`.
     vertex_capacity: usize,
@@ -110,6 +119,8 @@ impl Trails {
                 image_layout,
                 textures: Vec::new(),
                 live: Vec::new(),
+                enabled: quality.trails,
+                slots: HashMap::new(),
                 vertices: None,
                 vertex_capacity: 0,
                 last_tick: None,
@@ -136,9 +147,9 @@ impl Trails {
         // Live-effect asset warnings aren't wired to the Output dock yet — see
         // `assets::load`'s doc comment; only scene-load-time warnings are.
         let (images, _warnings) = assets::load(&references);
-        let mut slot_of: Vec<usize> = Vec::with_capacity(references.len());
-        for reference in &references {
-            let slot = match images.get(reference) {
+        let mut slots = HashMap::new();
+        for reference in references {
+            let slot = match images.get(&reference) {
                 Some(image) => {
                     let uploaded = texture::Uploaded::color(device, queue, image);
                     let bind_group =
@@ -153,21 +164,13 @@ impl Trails {
                 // back to a solid plane here (see `Trail.Texture`'s docs).
                 None => 0,
             };
-            slot_of.push(slot);
+            slots.insert(reference, slot);
         }
 
         let live: Vec<(Trail, TrailRecorder, usize)> = trails
             .iter()
             .map(|trail| {
-                let texture = if trail.texture == AssetRef::Empty {
-                    0
-                } else {
-                    references
-                        .iter()
-                        .position(|reference| *reference == trail.texture)
-                        .map(|index| slot_of[index])
-                        .unwrap_or(0)
-                };
+                let texture = patch::slot_of(&slots, &trail.texture).unwrap_or(0);
                 (trail.clone(), TrailRecorder::new(), texture)
             })
             .collect();
@@ -180,6 +183,8 @@ impl Trails {
             image_layout,
             textures,
             live,
+            enabled: true,
+            slots,
             vertices: None,
             vertex_capacity: 0,
             last_tick: None,
