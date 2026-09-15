@@ -679,20 +679,23 @@ against `Roblox/creator-docs` rather than assumed:
 - [ ] 📋 Wiring the Output dock to real script `print`/`warn`/`error` and
   session events (join/leave messages and the like) once a sandbox session
   is running — depends on the sandbox above existing first.
-- [ ] 📋 **Routing app-level warnings into the Output dock, independent of
-  Play** — reachable right now, no dependency on the sandbox. Confirmed
-  gap: asset-fetch failures (`asset <id>: fetching asset <id> failed:
-  ... requires authentication and no API key is configured`, e.g.) print
-  to stderr only (`crates/rbx_viewer/src/assets.rs`'s `eprintln!`) and
-  never reach `OutputLog`, whose only entry point today
-  (`OutputLog::push`) is scoped to Command Bar run results specifically.
-  Needs a generic `OutputLog::push_warning`-shaped path any part of the
-  app can call, not just the Command Bar. A second concrete case for the
-  same mechanism: a texture that fails to load and silently falls back to
-  a Roblox base/default texture currently does so without a trace anywhere
-  in the UI — should surface as a warning too, and `Ctrl+S` is the natural
-  moment to also flush any such warnings accumulated since the last save,
-  so a place with broken asset references doesn't look silently fine.
+- [x] 🚧 **Routing app-level warnings into the Output dock, independent of
+  Play.** `OutputLog::push_warning`/`Feedback::Warning` exist now, and
+  asset-fetch/decode failures reach the Output dock from a place's initial
+  load and every reload — both the plain fetch-failure case and the
+  silent-fallback-to-default-texture case, since both already produced the
+  same warning string inside `crates/rbx_viewer/src/assets.rs`'s worker
+  pool. The path: `Headless::drain_warnings` → the render thread's
+  `Ready.warnings` → `WorkspaceView`'s `AssetWarnings` event → `Shell`.
+  Warnings surface continuously (every render-thread tick), which
+  supersedes the original ask for an explicit `Ctrl+S`-triggered flush —
+  nothing is ever left pending by the time a save happens. Still open: the
+  four live-render call sites (`renderer::particles`/`trail`/`beam`/
+  `gui::atlas`) discard their warnings instead of routing them too (would
+  need per-frame dedup/rate-limiting first, to stop an animated emitter
+  re-resolving the same bad texture from spamming the log); no dedicated
+  "Warnings" `OutputFilter` bucket; no distinct visual marker for a
+  warning row versus a successful Command Bar run.
 - [ ] 📋 **Output window: real Studio's filter/display feature set**, once
   the sandbox above exists to actually populate it — checked against
   `studio/output.md` rather than assumed. Today's Output dock (see "What's

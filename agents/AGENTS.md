@@ -24,10 +24,17 @@ authorized to:
 - Open a pull request using the repository's template
   (`.github/PULL_REQUEST_TEMPLATE.md`).
 
-**Never edit `ROADMAP.md` itself.** Roadmap direction is the maintainer's
-call only — even marking your own item done isn't yours to do by editing
-the file; that happens when your PR is reviewed and merged. Say what you
-finished in the PR description instead.
+**You may edit `ROADMAP.md`, but only to check off the exact item your own
+merged PR addressed.** Once your PR is merged, update the file yourself:
+move the bullet from "What's planned" into "What's been implemented" if it
+shipped in full, or flip its marker to `[x] 🚧` in place (per the file's own
+"in progress / partial" legend) if it shipped only part of what the bullet
+described — say plainly, in the bullet itself, what landed versus what's
+still open. Prefer doing this as part of the same PR that implements the
+item (reviewed and merged together, so the roadmap update is never
+unreviewed) over a separate follow-up edit. Roadmap *direction* is still
+the maintainer's call only: never add, remove, reprioritize, or reword any
+bullet other than the one you just shipped.
 
 For the full step-by-step procedure — including how to check whether a
 branch for the item already exists, and how to stay synced with `main`

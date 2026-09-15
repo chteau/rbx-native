@@ -26,8 +26,8 @@ expectations).
 ## The loop
 
 1. **Pick one item** from `ROADMAP.md`'s "What's planned" — one coherent,
-   scoped piece of work. Never edit `ROADMAP.md` itself, not even to mark
-   the chosen item as taken; that file is the maintainer's alone.
+   scoped piece of work. Don't edit `ROADMAP.md` yet to reflect this pick —
+   that comes in step 6, once your own PR ships it.
 2. **Check for an existing branch first.** `git fetch origin` and look for
    a branch matching the item before creating a new one — someone (another
    agent, a human) may already be on it. Continue that work instead of
@@ -50,8 +50,11 @@ expectations).
 6. **Open a pull request** (`gh pr create`), filling in
    `.github/PULL_REQUEST_TEMPLATE.md` for real: what changed and why, how
    it was verified, what's left undone, which roadmap item this addresses.
-   Never merge it — land the work by opening the PR and stopping there; a
-   human reviews and merges.
+   Include the `ROADMAP.md` checkoff for that item in this same PR (move it
+   to "What's been implemented", or flip it to `[x] 🚧` in place if only
+   part of it shipped — see `agents/AGENTS.md`) so it's reviewed alongside
+   the code rather than pushed on its own. Never merge it — land the work
+   by opening the PR and stopping there; a human reviews and merges.
 
 ## Additional Resources
 

@@ -39,8 +39,13 @@ Read [`ROADMAP.md`](../../ROADMAP.md)'s "What's planned" section. Pick one
 Prefer an item whose sub-bullets are already concrete over a vague category
 header.
 
-Never edit `ROADMAP.md` to reflect this choice or to mark anything done —
-that file is the maintainer's alone (see `agents/AGENTS.md`).
+Don't edit `ROADMAP.md` yet to reflect this choice — wait until step 6,
+once your PR for it is actually merged, then check it off yourself (see
+`agents/AGENTS.md`'s "Picking up work from the roadmap" section for the
+exact shape: full item shipped → move it to "What's been implemented";
+only part of it shipped → flip it to `[x] 🚧` in place and say what's
+still open). Roadmap direction otherwise stays the maintainer's call —
+don't touch any bullet but the one you shipped.
 
 ## 2. Check for an existing branch or PR before creating one
 
@@ -153,9 +158,18 @@ how it was verified (test output; a screenshot or short screen recording
 for anything with a visible effect, per the template's own checklist), and
 what's left undone if anything. **Quote the exact `ROADMAP.md` bullet**
 this PR addresses in the "Related" section, verbatim — not a paraphrase —
-since the file itself is never edited to reference back, and an exact
-quote is what makes the `gh pr list --search` step above actually find
-this PR later.
+an exact quote is what makes the `gh pr list --search` step above actually
+find this PR later, and it's the easiest way for a reviewer to check your
+roadmap edit (below) against the bullet it's supposed to reflect.
+
+**Include the `ROADMAP.md` checkoff in this same PR**, not a separate
+follow-up: move the bullet to "What's been implemented" if it shipped in
+full, or flip it to `[x] 🚧` in place and say what's still open if only
+part of it did (see `agents/AGENTS.md`'s "Picking up work from the
+roadmap" section). Bundling it means the roadmap update gets reviewed
+alongside the code, never pushed unreviewed on its own — don't push a
+`ROADMAP.md` edit directly to `main` outside a PR unless the maintainer
+explicitly asks you to for a specific, already-merged item.
 
 Never merge your own pull request. Land the work by opening it and letting
 a human review it — that's the whole point of the PR step.
