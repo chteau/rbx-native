@@ -57,7 +57,17 @@ impl Meshes {
         Meshes { entries }
     }
 
-    /// `None` only for a kind that was not among the ones handed to [`new`].
+    /// Builds `kind`'s mesh if no part instanced it when the scene loaded —
+    /// what a `Part` edited from a box into the place's first ball needs
+    /// before any batch can draw it. Nothing to do for a kind already here.
+    pub(super) fn ensure(&mut self, device: &wgpu::Device, kind: ShapeKind) {
+        if self.get(kind).is_none() {
+            self.entries.push((kind, build(device, kind)));
+        }
+    }
+
+    /// `None` only for a kind that was not among the ones handed to [`new`]
+    /// or [`Meshes::ensure`].
     pub(super) fn get(&self, kind: ShapeKind) -> Option<&Mesh> {
         self.entries
             .iter()

@@ -217,22 +217,91 @@ fn patch_part_updates_a_simple_edit_in_place() {
     );
 }
 
+/// `patch_part` on `referent` after `dom` changed, asserting it stayed a
+/// single-instance patch, and the part as recomputed.
+fn patched(scene: &mut Scene, dom: &WeakDom, referent: Ref) -> Part {
+    let database = ReflectionDatabase::embedded();
+    let known = scene.materials().layers();
+    let index = scene
+        .patch_part(dom, &database, referent, known)
+        .expect("the edit must stay a single-instance patch");
+    scene.parts()[index]
+}
+
 // Crossing from fully opaque to the blended pass moves the part to a
 // different GPU batch (`renderer::translucent` instead of `renderer::shaped`)
-// — a case `Scene::patch_part`'s caller cannot write into without rebuilding.
+// — which is the renderer's business to do one instance at a time; the
+// scene still has exactly one part to hand it, in the same slot.
 #[test]
-fn patch_part_falls_back_when_transparency_crosses_into_translucent() {
-    let dom = test_place();
-    let database = ReflectionDatabase::embedded();
-    let mut scene = Scene::from_dom(&dom, &database).unwrap();
-    let known = scene.materials().layers();
+fn patch_part_keeps_a_transparency_crossing_in_place() {
+    let mut dom = test_place();
+    let mut scene = Scene::from_dom(&dom, &ReflectionDatabase::embedded()).unwrap();
     let referent = scene.parts()[0].referent;
+    assert!(!scene.parts()[0].is_translucent());
 
-    let mut dom = dom;
     dom.set_property(referent, "Transparency", Variant::Float32(0.5))
         .unwrap();
+    let part = patched(&mut scene, &dom, referent);
 
-    assert!(scene.patch_part(&dom, &database, referent, known).is_none());
+    assert!(part.is_drawn());
+    assert!(part.is_translucent());
+    assert_eq!(scene.parts().len(), 2);
+    assert_eq!(scene.parts()[0].referent, referent);
+}
+
+// Invisible is a bucket too — no batch holds the part — and it has to be
+// able to come back, since `Transparency` 1 is how a builder hides a part
+// for a moment rather than deletes it.
+#[test]
+fn patch_part_keeps_a_part_turning_invisible_and_back() {
+    let mut dom = test_place();
+    let mut scene = Scene::from_dom(&dom, &ReflectionDatabase::embedded()).unwrap();
+    let referent = scene.parts()[0].referent;
+
+    dom.set_property(referent, "Transparency", Variant::Float32(1.0))
+        .unwrap();
+    assert!(!patched(&mut scene, &dom, referent).is_drawn());
+    // Still placed: a `Decal` on it keeps showing.
+    assert!(scene.placements().contains_key(&referent));
+
+    dom.set_property(referent, "Transparency", Variant::Float32(0.0))
+        .unwrap();
+    let part = patched(&mut scene, &dom, referent);
+    assert!(part.is_drawn() && !part.is_translucent());
+}
+
+#[test]
+fn patch_part_keeps_a_cast_shadow_toggle_in_place() {
+    let mut dom = test_place();
+    let mut scene = Scene::from_dom(&dom, &ReflectionDatabase::embedded()).unwrap();
+    let referent = scene.parts()[0].referent;
+    assert!(scene.parts()[0].casts_shadow());
+
+    dom.set_property(referent, "CastShadow", Variant::Bool(false))
+        .unwrap();
+    let part = patched(&mut scene, &dom, referent);
+
+    assert!(part.is_drawn());
+    assert!(!part.casts_shadow());
+}
+
+// A new `Shape` is a new unit mesh, i.e. a different batch in every pass —
+// and possibly a mesh the place never instanced before, which
+// `Renderer::sync_instance` builds on demand rather than reloading for.
+#[test]
+fn patch_part_keeps_a_shape_change_in_place() {
+    let mut dom = test_place();
+    let mut scene = Scene::from_dom(&dom, &ReflectionDatabase::embedded()).unwrap();
+    let referent = scene.parts()[0].referent;
+    assert_eq!(scene.parts()[0].kind, ShapeKind::Box);
+
+    // Enum.PartType.Ball
+    dom.set_property(referent, "shape", Variant::Enum(0))
+        .unwrap();
+    let part = patched(&mut scene, &dom, referent);
+
+    assert_eq!(part.kind, ShapeKind::Ball);
+    assert_eq!(part.placement().kind, ShapeKind::Ball);
 }
 
 // A referent this scene never built a part for (wrong class, or simply not

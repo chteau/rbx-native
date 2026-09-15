@@ -14,7 +14,7 @@ use crate::gpu;
 use crate::lighting::{Lighting, LocalLight};
 use crate::quality::QualityProfile;
 use crate::renderer::{Renderer, World};
-use crate::scene::{EffectKind, Part, ResolvedInstance, Scene};
+use crate::scene::{EffectKind, Part, Resolved, ResolvedInstance, Scene};
 use readback::{Pending, Target, FORMAT};
 
 /// A finished frame and where its time went.
@@ -79,14 +79,24 @@ impl Offscreen {
         self.renderer.update_lighting(&self.queue, lighting, lights)
     }
 
-    /// Forwards to [`Renderer::patch_instance`].
-    pub(crate) fn patch_instance(&mut self, part: &Part) -> bool {
-        self.renderer.patch_instance(&self.queue, part)
+    /// Forwards to [`Renderer::sync_instance`].
+    pub(crate) fn sync_instance(&mut self, part: &Part) {
+        self.renderer.sync_instance(&self.device, &self.queue, part);
     }
 
-    /// Forwards to [`Renderer::patch_mesh_instance`].
-    pub(crate) fn patch_mesh_instance(&mut self, instance: &ResolvedInstance) -> bool {
-        self.renderer.patch_mesh_instance(&self.queue, instance)
+    /// Forwards to [`Renderer::sync_mesh_instance`].
+    pub(crate) fn sync_mesh_instance(
+        &mut self,
+        resolved: &Resolved,
+        instance: &ResolvedInstance,
+    ) -> bool {
+        self.renderer
+            .sync_mesh_instance(&self.device, &self.queue, resolved, instance)
+    }
+
+    /// Forwards to [`Renderer::remove_mesh_instance`].
+    pub(crate) fn remove_mesh_instance(&mut self, referent: Ref) {
+        self.renderer.remove_mesh_instance(&self.queue, referent);
     }
 
     /// Forwards to [`Renderer::patch_effect`].

@@ -8,6 +8,7 @@ mod gui;
 mod material;
 mod particles;
 mod patch;
+mod reparent;
 mod shape;
 mod trail;
 mod union;
@@ -27,7 +28,7 @@ pub(crate) use effects::EffectKind;
 // everything else reaches one through `Beam::curve`.
 #[cfg(test)]
 pub(crate) use beam::Curve;
-pub(crate) use bounds::{of_part, of_transform, Bounds};
+pub(crate) use bounds::{of_part, Bounds};
 pub(crate) use filemesh::{AlphaMode, Appearance, Resolved, ResolvedInstance};
 pub(crate) use gui::{
     resolve as gui_layout, resolve_canvas as gui_canvas_layout, Anchor as GuiAnchor,
@@ -40,6 +41,7 @@ pub(crate) use gui::Painted;
 pub(crate) use material::{Catalog, Kind, Slot};
 pub(crate) use particles::sequence::{eval_color, eval_number};
 pub(crate) use particles::{Emitter, Simulation};
+pub(crate) use patch::MeshPatch;
 pub(crate) use shape::ShapeKind;
 pub(crate) use trail::{segments as trail_segments, Recorder as TrailRecorder, Trail};
 
@@ -128,6 +130,17 @@ impl Part {
     /// opaque geometry.
     pub(crate) fn is_translucent(&self) -> bool {
         self.alpha < 1.0
+    }
+
+    /// Where this box is drawn — the entry [`Scene::placements`] would hold
+    /// for it, for a renderer keeping its own copy of that map in step with
+    /// a single edit.
+    pub(crate) fn placement(&self) -> Placement {
+        Placement {
+            kind: self.kind,
+            model: self.transform,
+            size: self.size,
+        }
     }
 }
 
@@ -292,16 +305,7 @@ impl Scene {
         self.parts
             .iter()
             .filter(|part| !part.suppressed)
-            .map(|part| {
-                (
-                    part.referent,
-                    Placement {
-                        kind: part.kind,
-                        model: part.transform,
-                        size: part.size,
-                    },
-                )
-            })
+            .map(|part| (part.referent, part.placement()))
             .collect()
     }
 
@@ -371,23 +375,28 @@ impl Scene {
         resolved.instances.extend(resolution.instances);
     }
 
-    /// Recomputes one drawn, non-suppressed part from `dom` in place — a
-    /// single Properties-row edit, never a structural change — and reports
-    /// whether the result can still be patched straight into the renderer's
-    /// existing GPU buffers rather than forcing a full scene rebuild.
+    /// Recomputes one non-suppressed part from `dom` in place — a single
+    /// Properties-row edit, never a structural change — and reports whether
+    /// the result can be handed to the renderer as a single-instance update
+    /// rather than forcing a full scene rebuild.
+    ///
+    /// `Some(index)` means `self.parts[index]` already holds the patched
+    /// part, whatever the edit did to it: a part that changed shape, crossed
+    /// into or out of the blended pass, stopped or started casting a shadow,
+    /// or turned invisible is still one instance, and moving it between the
+    /// renderer's batches is `Renderer::sync_instance`'s job.
     ///
     /// `known_material_layers` is `self.materials().layers()` as of the last
     /// full build: a `Material`/`MaterialVariantSerialized` edit landing on a
     /// layer at or past that count would need its maps downloaded and
-    /// uploaded, which only a full reload does, so that (like a shape, a
-    /// drawn/translucent/shadow-caster bucket, or a `size`/`CFrame` gone
-    /// missing) reports `None` instead of mutating anything visible.
-    ///
-    /// `Some(index)` means `self.parts[index]` already holds the patched part;
-    /// the caller reads it back out to build the GPU instance it writes.
+    /// uploaded, which only a full reload does, so that (like a `size`/
+    /// `CFrame` gone missing) reports `None` instead of mutating anything.
     ///
     /// A part whose box a resolved mesh has replaced is suppressed and so
-    /// refused here; [`Scene::patch_mesh_instance`] is its counterpart.
+    /// refused here; [`Scene::patch_mesh_instance`] is its counterpart. So
+    /// is a union whose boolean failed: its recovered pieces all answer to
+    /// the union's own referent (see `union::tree`), and no single box
+    /// recomputed from the union's own properties stands for the lot.
     pub(crate) fn patch_part(
         &mut self,
         dom: &WeakDom,
@@ -395,10 +404,16 @@ impl Scene {
         referent: Ref,
         known_material_layers: usize,
     ) -> Option<usize> {
-        let index = self
+        let mut standing_in = self
             .parts
             .iter()
-            .position(|part| part.referent == referent && !part.suppressed)?;
+            .enumerate()
+            .filter(|(_, part)| part.referent == referent && !part.suppressed)
+            .map(|(index, _)| index);
+        let index = standing_in.next()?;
+        if standing_in.next().is_some() {
+            return None;
+        }
         let instance = dom.get(referent)?;
         let properties = instance.properties();
 
@@ -410,7 +425,6 @@ impl Scene {
         };
         let size = Vec3::new(size.x, size.y, size.z);
         let geometry = shape::resolve(dom, database, instance, size);
-        let before = bucket(&self.parts[index]);
 
         let patched = assemble_part(
             properties,
@@ -420,28 +434,20 @@ impl Scene {
             cframe_matrix(cframe),
             referent,
         );
-        if patched.material.layer as usize >= known_material_layers || bucket(&patched) != before {
+        if patched.material.layer as usize >= known_material_layers {
             return None;
         }
 
         self.parts[index] = patched;
         Some(index)
     }
-}
 
-/// What a part's edit is not allowed to change without a full reload: which
-/// unit mesh it instances, whether it draws at all, whether it goes through
-/// the blended pass, and whether the shadow map casts it — each is a
-/// different GPU-side batch (see `renderer::shaped`, `renderer::translucent`
-/// and `renderer::shadow::casters`), and a part that crossed from one to
-/// another has left the slot [`Scene::patch_part`]'s caller would write into.
-fn bucket(part: &Part) -> (ShapeKind, bool, bool, bool) {
-    (
-        part.kind,
-        part.is_drawn(),
-        part.is_translucent(),
-        part.casts_shadow(),
-    )
+    /// Whether `referent` (a suppressed box, a resolved mesh, or a union's
+    /// recovered pieces) is something this scene built — see
+    /// [`Scene::already_draws`].
+    pub(super) fn knows(&self, referent: Ref) -> bool {
+        self.parts.iter().any(|part| part.referent == referent)
+    }
 }
 
 /// Builds the model matrix of a part: its CFrame, then its shape's offset (if
@@ -580,8 +586,15 @@ pub(crate) fn is_drawable(dom: &WeakDom, database: &ReflectionDatabase, referent
 }
 
 pub(crate) fn descendants(dom: &WeakDom) -> impl Iterator<Item = Ref> + '_ {
-    let mut pending: Vec<Ref> = dom.root_refs().to_vec();
+    walk(dom, dom.root_refs().to_vec())
+}
 
+/// `root` and everything under it, in the same pre-order as [`descendants`].
+pub(crate) fn descendants_of(dom: &WeakDom, root: Ref) -> impl Iterator<Item = Ref> + '_ {
+    walk(dom, vec![root])
+}
+
+fn walk(dom: &WeakDom, mut pending: Vec<Ref>) -> impl Iterator<Item = Ref> + '_ {
     std::iter::from_fn(move || {
         let referent = pending.pop()?;
         if let Some(instance) = dom.get(referent) {
@@ -612,15 +625,7 @@ pub(crate) fn workspace_descendants<'a>(
             .is_some_and(|instance| database.is_subclass_of(instance.class(), WORKSPACE_CLASS))
     });
 
-    let mut pending: Vec<Ref> = root.into_iter().collect();
-
-    std::iter::from_fn(move || {
-        let referent = pending.pop()?;
-        if let Some(instance) = dom.get(referent) {
-            pending.extend_from_slice(instance.children());
-        }
-        Some(referent)
-    })
+    walk(dom, root.into_iter().collect())
 }
 
 #[cfg(test)]

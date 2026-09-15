@@ -1,32 +1,42 @@
-//! The Properties-panel fast paths `Renderer::patch_instance` cannot serve: a
+//! The Properties-panel fast paths `Renderer::sync_instance` cannot serve: a
 //! part drawn as a resolved file mesh rather than as a boxed instance, and
 //! the effects (`ParticleEmitter`/`Beam`/`Trail`) drawn from static
 //! definitions rather than from any instance buffer at all.
 
+use rbx_dom::Ref;
+
 use super::Renderer;
-use crate::scene::{EffectKind, ResolvedInstance, Scene};
+use crate::scene::{EffectKind, Resolved, ResolvedInstance, Scene};
 
 impl Renderer {
-    /// [`Renderer::patch_instance`] for a [`ResolvedInstance`]: its colour-pass
-    /// copy, and its shadow caster if it has one (see
-    /// `crate::scene::Scene::patch_mesh_instance`, which already refused
-    /// anything that would cross a batch).
+    /// [`Renderer::sync_instance`] for a [`ResolvedInstance`]: its colour-pass
+    /// copy, opaque or blended, and its shadow caster if it has one — each
+    /// moved between batches if the edit crossed one (see
+    /// `crate::scene::Scene::patch_mesh_instance` for which edits get here).
     ///
-    /// `false` means `instance.referent` was not found where the scene's own
-    /// batch check said it would be — the same defensive fallback as
-    /// `patch_instance`'s, not a case a caller needs to reason about.
-    pub(crate) fn patch_mesh_instance(
+    /// `false` means a batch the instance now belongs in would need a mesh
+    /// or texture `resolved` never downloaded — the scene's own check already
+    /// refused that, so this is a defensive fallback rather than a case a
+    /// caller needs to reason about.
+    pub(crate) fn sync_mesh_instance(
         &mut self,
+        device: &wgpu::Device,
         queue: &wgpu::Queue,
+        resolved: &Resolved,
         instance: &ResolvedInstance,
     ) -> bool {
-        if !self.filemesh.patch(queue, instance) {
-            return false;
-        }
-        !instance.casts_shadow
-            || self
+        self.filemesh.sync(device, queue, resolved, instance)
+            && self
                 .shadows
-                .patch_mesh_caster(queue, instance.referent, instance.model)
+                .sync_mesh_caster(device, queue, resolved, instance)
+    }
+
+    /// Drops a resolved mesh instance the scene stopped drawing — its part
+    /// turned fully transparent (see `Scene::patch_mesh_instance`'s
+    /// `MeshPatch::Removed`). A no-op for a referent no batch holds.
+    pub(crate) fn remove_mesh_instance(&mut self, queue: &wgpu::Queue, referent: Ref) {
+        self.filemesh.remove(queue, referent);
+        self.shadows.remove_mesh_caster(queue, referent);
     }
 
     /// Hands the renderer `scene`'s freshly re-planned effects of `kind` (see

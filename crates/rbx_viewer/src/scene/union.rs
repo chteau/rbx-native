@@ -75,6 +75,12 @@ impl Entry {
         }
     }
 
+    /// Whether a fresh [`resolve`] would drop this entry as fully transparent
+    /// — see `filemesh::Entry::is_invisible`.
+    pub(super) fn is_invisible(&self) -> bool {
+        self.alpha <= 0.0
+    }
+
     /// The instance [`resolve`] would build for this entry, assuming its
     /// boolean geometry already computed — `None` where a fresh resolution
     /// would drop it (fully transparent), or where its colour would have to

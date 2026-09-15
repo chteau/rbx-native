@@ -23,6 +23,13 @@ pub(crate) fn replan(
 }
 
 impl Entry {
+    /// Whether a fresh [`super::resolve`] would drop this entry as fully
+    /// transparent — told apart from [`Entry::patched`]'s other `None`s, since
+    /// an invisible instance is removed in place while the rest need a reload.
+    pub(crate) fn is_invisible(&self) -> bool {
+        self.alpha <= 0.0
+    }
+
     /// The instance [`super::resolve`] would build for this entry against
     /// `resolved`'s already-downloaded assets — `None` wherever a fresh
     /// resolution would drop it (its mesh never downloaded, or it is now

@@ -41,4 +41,12 @@ impl WorkspaceView {
     pub(crate) fn patch_effect(&mut self, dom: WeakDom, referent: Ref) {
         self.pump.patch_effect(dom, referent);
     }
+
+    /// The fast path for a `Parent` change (see
+    /// `shell::edit::ViewportEdit::Reparent`): checks on the render thread
+    /// that the move stayed inside `Workspace`, and redraws nothing if so,
+    /// falling back the same way if not.
+    pub(crate) fn reparent(&mut self, dom: WeakDom, referent: Ref) {
+        self.pump.reparent(dom, referent);
+    }
 }

@@ -4,15 +4,14 @@
 //! a quality level never touches: the map's size changes with the level, the
 //! casters in it do not.
 
-use std::collections::HashMap;
-
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3};
 use rbx_assets::AssetRef;
-use rbx_dom::Ref;
 use wgpu::util::DeviceExt;
 
-use crate::scene::{of_part, of_transform, Part, Resolved, Scene, ShapeKind};
+use super::super::slots::keyed::Keyed;
+use super::super::slots::Roster;
+use crate::scene::{of_part, Part, Resolved, ResolvedInstance, Scene, ShapeKind};
 
 pub(super) const POSITION_ATTRIBUTE: [wgpu::VertexAttribute; 1] =
     wgpu::vertex_attr_array![0 => Float32x3];
@@ -30,199 +29,132 @@ pub(super) struct CasterRaw {
     model: [[f32; 4]; 4],
 }
 
-/// Every caster of one unit shape, drawn against [`Meshes`]' own buffers.
-pub(super) struct ShapeBatch {
-    pub(super) kind: ShapeKind,
-    pub(super) instances: wgpu::Buffer,
-    pub(super) count: u32,
-    /// One world-space bounding sphere per caster, parallel to `instances` —
-    /// what the sun pass's own, deliberately wider visibility test
-    /// (`Fit::visible`) checks each one against; see `Shadows::draw_casters`.
-    pub(super) bounds: Vec<(Vec3, f32)>,
-}
+/// One world-space bounding sphere per caster, beside its record — what the
+/// sun pass's own, deliberately wider visibility test (`Fit::visible`) checks
+/// each one against; see `Shadows::draw_casters`.
+pub(super) type Sphere = (Vec3, f32);
 
-/// Every caster of one file mesh, with that mesh's positions and indices.
-pub(super) struct MeshBatch {
+/// The casters of every unit shape, drawn against [`super::Meshes`]' own
+/// buffers. Indexed separately from `Shaped`'s own batches: a caster batch
+/// is filtered by `casts_shadow()` alone, not by drawn/translucent too, so
+/// the same part lands at a different slot in each.
+pub(super) type ShapeBatches = Keyed<ShapeKind, (), CasterRaw, Sphere>;
+
+/// A file mesh's positions and indices, the payload of one [`MeshBatches`]
+/// group. A mesh's skin is irrelevant to a depth pass, so the (mesh, skin)
+/// split the colour pass batches by collapses back to one batch per mesh.
+pub(super) struct MeshGeometry {
     pub(super) vertices: wgpu::Buffer,
     pub(super) indices: wgpu::Buffer,
     pub(super) index_count: u32,
-    pub(super) instances: wgpu::Buffer,
-    pub(super) count: u32,
 }
 
-/// Where a caster's instance sits — its batch and its offset within it — for
-/// a single-instance edit (see [`patch`]) to write straight into the buffer
-/// instead of rebuilding it. Keyed separately from `Shaped`'s own index: a
-/// caster batch is filtered by `casts_shadow()` alone, not by
-/// drawn/translucent too, so the same part can land at a different offset in
-/// each.
-pub(super) type CasterIndex = HashMap<Ref, (ShapeKind, u32)>;
-
-/// [`CasterIndex`]'s counterpart for [`mesh_batches`]: which batch (by
-/// position) and offset each resolved instance's caster sits at, for
-/// [`patch_mesh`].
-pub(super) type MeshCasterIndex = HashMap<Ref, (usize, u32)>;
+pub(super) type MeshBatches = Keyed<AssetRef, MeshGeometry, CasterRaw, ()>;
 
 /// The casters among the scene's parts, grouped by unit shape. Translucent
 /// parts are in: Roblox casts a full shadow from anything below `Transparency`
 /// 1, which is why the reference capture's 0.7-transparent slab still has one.
-pub(super) fn shape_batches(
-    device: &wgpu::Device,
-    scene: &Scene,
-) -> (Vec<ShapeBatch>, CasterIndex) {
-    let mut batches: Vec<ShapeBatch> = Vec::new();
-    let mut index = CasterIndex::new();
+pub(super) fn shape_batches(device: &wgpu::Device, scene: &Scene) -> ShapeBatches {
+    let mut batches = Keyed::new("rbxview shadow casters");
     for kind in super::super::shaped::kinds(scene.parts()) {
-        let members: Vec<&Part> = scene
-            .parts()
-            .iter()
-            .filter(|part| part.kind == kind && part.casts_shadow())
-            .collect();
-        if members.is_empty() {
-            continue;
+        let roster = Roster::from_iter(
+            scene
+                .parts()
+                .iter()
+                .filter(|part| part.kind == kind && part.casts_shadow())
+                .map(|part| (part.referent, raw(part.transform), sphere(part))),
+        );
+        if roster.len() > 0 {
+            batches.add_group(device, kind, (), roster);
         }
-        for (offset, part) in members.iter().enumerate() {
-            index.insert(part.referent, (kind, offset as u32));
-        }
-        let instances: Vec<CasterRaw> = members
-            .iter()
-            .map(|part| CasterRaw {
-                model: part.transform.to_cols_array_2d(),
-            })
-            .collect();
-        let bounds = members
-            .iter()
-            .map(|part| {
-                let extent = of_part(part);
-                (extent.center(), extent.radius())
-            })
-            .collect();
-
-        batches.push(ShapeBatch {
-            kind,
-            count: instances.len() as u32,
-            bounds,
-            instances: buffer(device, bytemuck::cast_slice(&instances)),
-        });
     }
-    (batches, index)
+    batches
 }
 
-/// Rewrites one caster's transform in place. `false` when `referent` is not
-/// among `batches`' own casters, or landed in a different shape's batch than
-/// `index` says — either is the caller's cue to fall back to a full reload.
-pub(super) fn patch(
-    queue: &wgpu::Queue,
-    batches: &mut [ShapeBatch],
-    index: &CasterIndex,
-    referent: Ref,
-    kind: ShapeKind,
-    model: [[f32; 4]; 4],
-) -> bool {
-    let Some(&(found_kind, offset)) = index.get(&referent) else {
-        return false;
-    };
-    if found_kind != kind {
-        return false;
-    }
-    let Some(batch) = batches.iter_mut().find(|batch| batch.kind == kind) else {
-        return false;
-    };
-
-    let stride = std::mem::size_of::<CasterRaw>() as wgpu::BufferAddress;
-    queue.write_buffer(
-        &batch.instances,
-        u64::from(offset) * stride,
-        bytemuck::bytes_of(&CasterRaw { model }),
-    );
-    let extent = of_transform(Mat4::from_cols_array_2d(&model));
-    batch.bounds[offset as usize] = (extent.center(), extent.radius());
-    true
-}
-
-/// The casters among the resolved file meshes, one batch per mesh asset. A
-/// mesh's skin is irrelevant to a depth pass, so the (mesh, skin) split the
-/// colour pass batches by collapses back to one batch here.
-pub(super) fn mesh_batches(
+/// Brings the shape casters in line with one edited part — see
+/// `renderer::shaped::Shaped::sync` for the same four outcomes.
+pub(super) fn sync_shape(
     device: &wgpu::Device,
-    resolved: &Resolved,
-) -> (Vec<MeshBatch>, MeshCasterIndex) {
-    let mut order: Vec<AssetRef> = Vec::new();
-    let mut grouped: HashMap<AssetRef, Vec<(Ref, CasterRaw)>> = HashMap::new();
-    for instance in resolved.instances.iter().filter(|i| i.casts_shadow) {
-        let casters = grouped.entry(instance.mesh.clone()).or_insert_with(|| {
-            order.push(instance.mesh.clone());
-            Vec::new()
-        });
-        casters.push((
-            instance.referent,
-            CasterRaw {
-                model: instance.model.to_cols_array_2d(),
-            },
-        ));
-    }
+    queue: &wgpu::Queue,
+    batches: &mut ShapeBatches,
+    part: &Part,
+) {
+    let wanted = part
+        .casts_shadow()
+        .then(|| (part.kind, raw(part.transform), sphere(part)));
+    batches.sync(device, queue, part.referent, wanted, |_| Some(()));
+}
 
-    let mut batches = Vec::new();
-    let mut index = MeshCasterIndex::new();
+/// The casters among the resolved file meshes, one batch per mesh asset.
+pub(super) fn mesh_batches(device: &wgpu::Device, resolved: &Resolved) -> MeshBatches {
+    let mut batches = Keyed::new("rbxview shadow casters");
+    let mut order: Vec<AssetRef> = Vec::new();
+    for instance in resolved.instances.iter().filter(|i| i.casts_shadow) {
+        if !order.contains(&instance.mesh) {
+            order.push(instance.mesh.clone());
+        }
+    }
     for reference in order {
-        let (Some(mesh), Some(casters)) =
-            (resolved.meshes.get(&reference), grouped.get(&reference))
-        else {
+        let Some(geometry) = geometry(device, resolved, &reference) else {
             continue;
         };
-        let positions: Vec<[f32; 3]> = mesh.vertices.iter().map(|vertex| vertex.position).collect();
-        let indices = mesh.lod0();
-        let instances: Vec<CasterRaw> = casters.iter().map(|(_, raw)| *raw).collect();
-        for (offset, (referent, _)) in casters.iter().enumerate() {
-            index.insert(*referent, (batches.len(), offset as u32));
-        }
-
-        batches.push(MeshBatch {
-            vertices: buffer(device, bytemuck::cast_slice(&positions)),
-            indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("rbxview shadow indices"),
-                contents: bytemuck::cast_slice(indices),
-                usage: wgpu::BufferUsages::INDEX,
-            }),
-            index_count: indices.len() as u32,
-            instances: buffer(device, bytemuck::cast_slice(&instances)),
-            count: instances.len() as u32,
-        });
+        let roster = Roster::from_iter(
+            resolved
+                .instances
+                .iter()
+                .filter(|i| i.casts_shadow && i.mesh == reference)
+                .map(|i| (i.referent, raw(i.model), ())),
+        );
+        batches.add_group(device, reference, geometry, roster);
     }
-    (batches, index)
+    batches
 }
 
-/// [`patch`] for a file-mesh caster: rewrites its transform in place. `false`
-/// when `referent` casts no shadow here — the caller's cue to fall back to a
-/// full reload.
-pub(super) fn patch_mesh(
+/// [`sync_shape`] for a resolved file mesh. `false` when the instance now
+/// casts through a mesh `resolved` never downloaded — which
+/// `Scene::patch_mesh_instance` already refuses, so this is a defensive
+/// answer rather than a documented case.
+pub(super) fn sync_mesh(
+    device: &wgpu::Device,
     queue: &wgpu::Queue,
-    batches: &[MeshBatch],
-    index: &MeshCasterIndex,
-    referent: Ref,
-    model: [[f32; 4]; 4],
+    batches: &mut MeshBatches,
+    resolved: &Resolved,
+    instance: &ResolvedInstance,
 ) -> bool {
-    let Some(&(batch, offset)) = index.get(&referent) else {
-        return false;
-    };
-    let Some(batch) = batches.get(batch) else {
-        return false;
-    };
-
-    let stride = std::mem::size_of::<CasterRaw>() as wgpu::BufferAddress;
-    queue.write_buffer(
-        &batch.instances,
-        u64::from(offset) * stride,
-        bytemuck::bytes_of(&CasterRaw { model }),
-    );
-    true
+    let wanted = instance
+        .casts_shadow
+        .then(|| (instance.mesh.clone(), raw(instance.model), ()));
+    batches.sync(device, queue, instance.referent, wanted, |mesh| {
+        geometry(device, resolved, mesh)
+    })
 }
 
-fn buffer(device: &wgpu::Device, contents: &[u8]) -> wgpu::Buffer {
-    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("rbxview shadow casters"),
-        contents,
-        // Written afterwards only by `patch`, one instance at a time.
-        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+fn geometry(device: &wgpu::Device, resolved: &Resolved, mesh: &AssetRef) -> Option<MeshGeometry> {
+    let mesh = resolved.meshes.get(mesh)?;
+    let positions: Vec<[f32; 3]> = mesh.vertices.iter().map(|vertex| vertex.position).collect();
+    let indices = mesh.lod0();
+    Some(MeshGeometry {
+        vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("rbxview shadow vertices"),
+            contents: bytemuck::cast_slice(&positions),
+            usage: wgpu::BufferUsages::VERTEX,
+        }),
+        indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("rbxview shadow indices"),
+            contents: bytemuck::cast_slice(indices),
+            usage: wgpu::BufferUsages::INDEX,
+        }),
+        index_count: indices.len() as u32,
     })
+}
+
+fn raw(model: Mat4) -> CasterRaw {
+    CasterRaw {
+        model: model.to_cols_array_2d(),
+    }
+}
+
+fn sphere(part: &Part) -> Sphere {
+    let extent = of_part(part);
+    (extent.center(), extent.radius())
 }

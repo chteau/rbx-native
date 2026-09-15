@@ -52,6 +52,9 @@ enum Command {
     /// A single `ParticleEmitter`/`Beam`/`Trail` edit — see
     /// `Headless::patch_effect`. Falls back the same way.
     Effect(WeakDom, Ref),
+    /// A `Parent` change on a part or container — see `Headless::reparent`.
+    /// Falls back the same way.
+    Reparent(WeakDom, Ref),
     Visible(bool),
     Stop,
 }
@@ -152,6 +155,11 @@ impl Pump {
     /// Re-plans one effect list from a mutated DOM — see [`Command::Effect`].
     pub(super) fn patch_effect(&self, dom: WeakDom, referent: Ref) {
         let _ = self.commands.send(Command::Effect(dom, referent));
+    }
+
+    /// Checks one reparent against a mutated DOM — see [`Command::Reparent`].
+    pub(super) fn reparent(&self, dom: WeakDom, referent: Ref) {
+        let _ = self.commands.send(Command::Reparent(dom, referent));
     }
 
     /// Tells the render thread whether the panel is actually on screen — the
@@ -443,6 +451,11 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
             Ok(true) => {}
             Ok(false) => fall_back_to_reload(rendering.viewer, &dom, "effect edit"),
             Err(err) => eprintln!("rbxstudio: effect edit failed: {err}"),
+        },
+        Command::Reparent(dom, referent) => match rendering.viewer.reparent(&dom, referent) {
+            Ok(true) => {}
+            Ok(false) => fall_back_to_reload(rendering.viewer, &dom, "reparent"),
+            Err(err) => eprintln!("rbxstudio: reparent failed: {err}"),
         },
         Command::Visible(new) => *rendering.visible = new,
         Command::Stop => return false,

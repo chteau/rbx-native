@@ -24,10 +24,7 @@ use super::geometry::Meshes;
 use super::mesh::Vertex;
 use crate::quality::QualityProfile;
 use crate::scene::Scene;
-use casters::{
-    CasterIndex, CasterRaw, MeshBatch, MeshCasterIndex, ShapeBatch, CASTER_ATTRIBUTES,
-    POSITION_ATTRIBUTE,
-};
+use casters::{CasterRaw, MeshBatches, ShapeBatches, CASTER_ATTRIBUTES, POSITION_ATTRIBUTE};
 
 pub(super) use fit::{fit, Fit};
 
@@ -72,13 +69,12 @@ pub(super) struct Shadows {
     bind_group: wgpu::BindGroup,
     shapes: wgpu::RenderPipeline,
     meshes: wgpu::RenderPipeline,
-    shape_batches: Vec<ShapeBatch>,
-    /// Where each caster sits in `shape_batches`, for [`Shadows::patch_caster`].
-    caster_index: CasterIndex,
-    mesh_batches: Vec<MeshBatch>,
-    /// Where each file-mesh caster sits in `mesh_batches`, for
-    /// [`Shadows::patch_mesh_caster`].
-    mesh_caster_index: MeshCasterIndex,
+    /// The unit-shape casters, then the file-mesh ones — each keyed the way
+    /// its colour pass is, with their own referent index so
+    /// [`Shadows::sync_caster`]/[`Shadows::sync_mesh_caster`] can move one
+    /// between batches.
+    shape_batches: ShapeBatches,
+    mesh_batches: MeshBatches,
     /// Kept only so [`Shadows::set_quality`] can rebuild [`Shadows::local_bind_groups`]
     /// around a fresh set of per-light buffers: the layout itself never changes.
     light_layout: wgpu::BindGroupLayout,
@@ -121,9 +117,8 @@ impl Shadows {
         let (local_view, local_layers) = local_map(device, quality.local_shadow_lights_max);
         let local_buffers = local_buffers(device, quality.local_shadow_lights_max);
         let local_bind_groups = local_bind_groups(device, &layout, &local_buffers);
-        let (shape_batches, caster_index) = casters::shape_batches(device, scene);
-        let (mesh_batches, mesh_caster_index) =
-            casters::mesh_batches(device, scene.resolved_file_meshes());
+        let shape_batches = casters::shape_batches(device, scene);
+        let mesh_batches = casters::mesh_batches(device, scene.resolved_file_meshes());
 
         Shadows {
             view: map(device, quality.shadow_map_size),
@@ -150,9 +145,7 @@ impl Shadows {
             shapes: pipeline(device, &layout, std::mem::size_of::<Vertex>() as _),
             meshes: pipeline(device, &layout, std::mem::size_of::<[f32; 3]>() as _),
             shape_batches,
-            caster_index,
             mesh_batches,
-            mesh_caster_index,
             light,
             local_view,
             local_layers,
@@ -178,42 +171,36 @@ impl Shadows {
         self.local_bind_groups = local_bind_groups(device, &self.light_layout, &self.local_buffers);
     }
 
-    /// Rewrites one caster's transform in place — the shadow-map half of a
-    /// single-instance edit (see `Renderer::patch_instance`). `false` when
-    /// `referent` casts no shadow here, the caller's cue to fall back to a
-    /// full reload.
-    pub(super) fn patch_caster(
+    /// The shadow-map half of a single-instance edit (see
+    /// `Renderer::sync_instance`): rewrites the part's caster in place, moves
+    /// it to its new shape's batch, drops it if it stopped casting, or adds
+    /// it if it just started.
+    pub(super) fn sync_caster(
         &mut self,
+        device: &wgpu::Device,
         queue: &wgpu::Queue,
-        referent: rbx_dom::Ref,
-        kind: crate::scene::ShapeKind,
-        model: glam::Mat4,
-    ) -> bool {
-        casters::patch(
-            queue,
-            &mut self.shape_batches,
-            &self.caster_index,
-            referent,
-            kind,
-            model.to_cols_array_2d(),
-        )
+        part: &crate::scene::Part,
+    ) {
+        casters::sync_shape(device, queue, &mut self.shape_batches, part);
     }
 
-    /// [`Shadows::patch_caster`] for a part drawn as a resolved file mesh —
-    /// the shadow-map half of `Renderer::patch_mesh_instance`.
-    pub(super) fn patch_mesh_caster(
+    /// [`Shadows::sync_caster`] for a part drawn as a resolved file mesh —
+    /// the shadow-map half of `Renderer::sync_mesh_instance`. `false` only
+    /// when a new batch would need a mesh `resolved` never downloaded.
+    pub(super) fn sync_mesh_caster(
         &mut self,
+        device: &wgpu::Device,
         queue: &wgpu::Queue,
-        referent: rbx_dom::Ref,
-        model: glam::Mat4,
+        resolved: &crate::scene::Resolved,
+        instance: &crate::scene::ResolvedInstance,
     ) -> bool {
-        casters::patch_mesh(
-            queue,
-            &self.mesh_batches,
-            &self.mesh_caster_index,
-            referent,
-            model.to_cols_array_2d(),
-        )
+        casters::sync_mesh(device, queue, &mut self.mesh_batches, resolved, instance)
+    }
+
+    /// Drops a file-mesh caster whose instance the scene no longer draws at
+    /// all (see `Renderer::remove_mesh_instance`); a no-op if it never cast.
+    pub(super) fn remove_mesh_caster(&mut self, queue: &wgpu::Queue, referent: rbx_dom::Ref) {
+        self.mesh_batches.remove(queue, referent);
     }
 
     pub(super) fn view(&self) -> &wgpu::TextureView {
@@ -324,38 +311,50 @@ impl Shadows {
     ) {
         pass.set_pipeline(&self.shapes);
         pass.set_bind_group(0, bind_group, &[]);
-        for batch in &self.shape_batches {
-            let Some(mesh) = meshes.get(batch.kind) else {
+        // A batch an edit emptied keeps its buffer but has nothing to draw.
+        for batch in self
+            .shape_batches
+            .groups()
+            .iter()
+            .filter(|batch| batch.slots.count() > 0)
+        {
+            let Some(mesh) = meshes.get(batch.key) else {
                 continue;
             };
             match cull {
                 Some(fit) => {
-                    let runs = cull::visible_runs(batch.count, |index| {
-                        let (center, radius) = batch.bounds[index as usize];
+                    let runs = cull::visible_runs(batch.slots.count(), |index| {
+                        let (center, radius) = batch.slots.side(index);
                         fit.visible(center, radius)
                     });
                     if runs.is_empty() {
                         continue;
                     }
-                    pass.set_vertex_buffer(1, batch.instances.slice(..));
+                    pass.set_vertex_buffer(1, batch.slots.buffer().slice(..));
                     for run in runs {
                         mesh.draw_range(pass, run);
                     }
                 }
                 None => {
-                    pass.set_vertex_buffer(1, batch.instances.slice(..));
-                    mesh.draw(pass, batch.count);
+                    pass.set_vertex_buffer(1, batch.slots.buffer().slice(..));
+                    mesh.draw(pass, batch.slots.count());
                 }
             }
         }
 
         pass.set_pipeline(&self.meshes);
         pass.set_bind_group(0, bind_group, &[]);
-        for batch in &self.mesh_batches {
-            pass.set_vertex_buffer(0, batch.vertices.slice(..));
-            pass.set_vertex_buffer(1, batch.instances.slice(..));
-            pass.set_index_buffer(batch.indices.slice(..), wgpu::IndexFormat::Uint32);
-            pass.draw_indexed(0..batch.index_count, 0, 0..batch.count);
+        for batch in self
+            .mesh_batches
+            .groups()
+            .iter()
+            .filter(|batch| batch.slots.count() > 0)
+        {
+            let geometry = &batch.extra;
+            pass.set_vertex_buffer(0, geometry.vertices.slice(..));
+            pass.set_vertex_buffer(1, batch.slots.buffer().slice(..));
+            pass.set_index_buffer(geometry.indices.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..geometry.index_count, 0, 0..batch.slots.count());
         }
     }
 }
