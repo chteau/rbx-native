@@ -330,6 +330,17 @@ fn three_parts() -> (WeakDom, Ref, Ref, Ref) {
                 rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
             }),
         );
+        // `Target::read` (via `pick::model_of`) needs both `CFrame` and
+        // `size` before it will call this a target at all.
+        let _ = dom.set_property(
+            part,
+            "size",
+            Variant::Vector3(Vector3Data {
+                x: 1.0,
+                y: 1.0,
+                z: 1.0,
+            }),
+        );
         part
     };
     let a = at(0.0, 0.0, 0.0);
