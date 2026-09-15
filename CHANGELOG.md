@@ -95,6 +95,23 @@
   `Size`/`Shape` edit re-derives and rewrites the part's Decal/Texture
   children in place instead of leaving them drawn at the old placement
   until the next reload. — @chteau
+- **A cursor-dragged part now rests on whatever the cursor passes over.**
+  Dragging a selected part by its body slid it along one flat plane, fixed
+  through the grab point for the whole gesture, so dragging it over a
+  platform kept it at its original height. Each move now casts the cursor
+  ray against the rest of the scene and rests the part on the face it
+  meets — on top of a platform, against the side of a wall — falling back
+  to the flat plane only when the cursor is over nothing, which is the
+  surface half of the soft-snapping `creator-docs` describes for cursor
+  dragging (the edge half is still open). The part being dragged is left
+  out of its own raycast, or it would climb onto itself a stud per frame;
+  and every answer is a function of the cursor alone, with the part's last
+  position never fed back in, so a cursor held still on the edge between
+  two surfaces gives one answer rather than flickering between two. The
+  geometry lives in a new `settle` module in `rbx_studio`, tested without a
+  window: settling onto a raised part, falling back over open space, the
+  self-exclusion, and a crossing between surfaces jumping by exactly the
+  height difference. — @chteau
 
 ## 2026-09-14 (night) — getting ready to go public
 
