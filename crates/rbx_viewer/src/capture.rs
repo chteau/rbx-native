@@ -68,6 +68,11 @@ impl Offscreen {
         self.renderer.pitch(degrees);
     }
 
+    /// Swaps the main camera between perspective and orthographic projection.
+    pub(crate) fn set_orthographic(&mut self, orthographic: bool) {
+        self.renderer.set_orthographic(orthographic);
+    }
+
     /// Replaces the outlined selection box(es), rebuilding their tiny vertex
     /// buffer right away.
     pub(crate) fn set_selection(&mut self, referents: &[Ref]) {

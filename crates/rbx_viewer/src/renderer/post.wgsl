@@ -34,6 +34,10 @@ struct PostUniform {
     // z: NearIntensity and w: FarIntensity, both 0-1 mixes. Whether any of it
     // applies at all is misc.w, not a zero in here.
     depth_of_field: vec4<f32>,
+    // x: 1 on an orthographic frame, 0 on a perspective one — which
+    // view_distance formula the depth buffer needs. y: the orthographic far
+    // plane in studs, meaningless when x is 0. z/w unused.
+    camera: vec4<f32>,
 }
 
 // Rec. 709 luma, which the saturation term rotates around. Mirrors `LUMA` in
@@ -180,6 +184,14 @@ fn view_distance(depth: f32) -> f32 {
     // blur it as if it were in front of the focus plane.
     if depth <= 0.0 {
         return BACKGROUND_DISTANCE;
+    }
+    // Orthographic depth is linear in view-space Z (mirrors
+    // camera.rs::orthographic_reversed_depth), not the hyperbolic perspective
+    // mapping below — the two projections write depth by different formulas.
+    if post.camera.x > 0.5 {
+        let near = post.misc.z;
+        let far = post.camera.y;
+        return far - depth * (far - near);
     }
     return post.misc.z / depth;
 }

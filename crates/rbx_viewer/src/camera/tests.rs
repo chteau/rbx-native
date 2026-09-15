@@ -312,3 +312,152 @@ fn a_cleared_pixel_reads_as_maximally_far_rather_than_as_touching_the_eye() {
     assert_eq!(view_distance(-1.0), BACKGROUND_DISTANCE);
     assert!(view_distance(1e-7) > 100_000.0);
 }
+
+#[test]
+fn with_orthographic_only_flips_the_projection_flag() {
+    let camera = Camera::framing(&bounds_from(Vec3::ZERO, Vec3::splat(20.0)));
+    assert!(!camera.orthographic);
+
+    let toggled = camera.with_orthographic(true);
+    assert!(toggled.orthographic);
+    // The framing itself (what the orbit/free controllers actually fly
+    // around) must survive the toggle untouched — the whole point of reusing
+    // it rather than inventing a second, ortho-specific notion of zoom.
+    assert_eq!(toggled.target, camera.target);
+    assert_eq!(toggled.distance, camera.distance);
+    assert_eq!(toggled.pitch, camera.pitch);
+}
+
+#[test]
+fn orthographic_far_plane_is_none_until_orthographic_is_on() {
+    let camera = Camera::framing(&bounds_from(Vec3::ZERO, Vec3::splat(20.0)));
+    assert_eq!(camera.orthographic_far_plane(), None);
+
+    let far = camera
+        .with_orthographic(true)
+        .orthographic_far_plane()
+        .expect("an orthographic camera reports a finite far plane");
+    assert!((far - camera.distance * ORTHOGRAPHIC_FAR_MULTIPLIER).abs() < 1e-3);
+}
+
+// Parallel projection's whole point: a lateral offset maps to the same NDC
+// position however far down the view axis it sits, unlike perspective's
+// foreshortening. `w` staying fixed at 1 (no perspective divide) is what
+// makes that true.
+#[test]
+fn orthographic_projection_does_not_foreshorten_with_distance() {
+    let camera =
+        Camera::framing(&bounds_from(Vec3::ZERO, Vec3::splat(20.0))).with_orthographic(true);
+    let pose = look_at_pose(Vec3::new(0.0, 0.0, 100.0), Vec3::ZERO);
+    let view_projection = camera.view_projection(Viewpoint::Free(pose), 16.0 / 9.0);
+
+    let near_point = Vec3::new(5.0, 0.0, 90.0);
+    let far_point = Vec3::new(5.0, 0.0, 0.0);
+
+    let near_clip = view_projection * near_point.extend(1.0);
+    let far_clip = view_projection * far_point.extend(1.0);
+
+    assert!((near_clip.w - 1.0).abs() < 1e-5, "{near_clip}");
+    assert!((far_clip.w - 1.0).abs() < 1e-5, "{far_clip}");
+    assert!(
+        ((near_clip.x / near_clip.w) - (far_clip.x / far_clip.w)).abs() < 1e-4,
+        "{near_clip} vs {far_clip}"
+    );
+}
+
+// The orthographic mirror of `the_near_plane_is_depth_one_and_the_horizon_is_depth_zero`:
+// linear rather than hyperbolic, and a finite far plane instead of an infinite one.
+#[test]
+fn the_orthographic_near_plane_is_depth_one_and_the_far_plane_is_depth_zero() {
+    let far = 500.0;
+    assert!((orthographic_reversed_depth(NEAR_PLANE, NEAR_PLANE, far) - 1.0).abs() < 1e-6);
+    assert!(orthographic_reversed_depth(far, NEAR_PLANE, far).abs() < 1e-6);
+}
+
+// The orthographic mirror of `a_depth_buffer_value_reconstructs_the_distance_it_was_written_from`.
+#[test]
+fn an_orthographic_depth_buffer_value_reconstructs_the_distance_it_was_written_from() {
+    let camera =
+        Camera::framing(&bounds_from(Vec3::ZERO, Vec3::splat(20.0))).with_orthographic(true);
+    let pose = look_at_pose(Vec3::new(0.0, 0.0, 100.0), Vec3::ZERO);
+    let view_projection = camera.view_projection(Viewpoint::Free(pose), 16.0 / 9.0);
+    let far = camera
+        .orthographic_far_plane()
+        .expect("camera is orthographic");
+
+    for studs in [NEAR_PLANE, 0.5, 1.0, 12.5, 100.0] {
+        let point = pose.position - Vec3::Z * studs;
+        let clip = view_projection * point.extend(1.0);
+        let depth = clip.z / clip.w;
+        let reconstructed = orthographic_view_distance(depth, NEAR_PLANE, far);
+
+        assert!(
+            (reconstructed - studs).abs() < studs.max(1.0) * 1e-3,
+            "{studs} studs landed on depth {depth}, read back as {reconstructed}"
+        );
+    }
+}
+
+// The orthographic mirror of `every_corner_stays_inside_the_frustum`: the same
+// framing must still keep a wide, flat scene entirely on screen once the
+// projection becomes parallel instead of converging.
+#[test]
+fn every_corner_stays_inside_the_orthographic_frustum() {
+    let (min, max) = (
+        Vec3::new(-1024.0, -16.0, -1024.0),
+        Vec3::new(1024.0, 1.0, 1024.0),
+    );
+    let camera = Camera::framing(&bounds_from(min, max)).with_orthographic(true);
+
+    for step in 0..8 {
+        let yaw = Camera::orbit_yaw(Duration::from_secs(step));
+        let view_projection = camera.view_projection(orbit(yaw), 16.0 / 9.0);
+
+        for corner in [min, max] {
+            let clip = view_projection * corner.extend(1.0);
+            assert!(
+                (clip.w - 1.0).abs() < 1e-4,
+                "orthographic w must stay fixed at 1, got {} at step {step}",
+                clip.w
+            );
+
+            let ndc = clip.truncate();
+            assert!(
+                ndc.x.abs() <= 1.001 && ndc.y.abs() <= 1.001,
+                "{ndc} at {step}"
+            );
+            assert!((0.0..=1.0).contains(&ndc.z), "{ndc} at {step}");
+        }
+    }
+}
+
+// `frustum_corners` must pick the projection-matching depth formula for its far
+// corners (see its own doc comment) — an orthographic main camera's shadow
+// fitting would otherwise unproject them to the wrong world position. Checked
+// against the actual requested distance down the view axis, not just against
+// the matrix's own self-consistency: plugging the wrong (perspective) depth
+// into the right inverse matrix still unprojects to *a* point, just not the
+// one `distance` asked for, which reprojecting through the same matrix could
+// never catch.
+#[test]
+fn frustum_corners_places_the_far_corners_at_the_requested_distance_when_orthographic() {
+    let camera =
+        Camera::framing(&bounds_from(Vec3::ZERO, Vec3::splat(20.0))).with_orthographic(true);
+    let aspect = 16.0 / 9.0;
+    let yaw = 0.4;
+    let shadow_distance = 50.0;
+    let eye = camera.eye_position(orbit(yaw));
+    let forward = direction(yaw, camera.pitch);
+
+    let corners = camera.frustum_corners(orbit(yaw), aspect, shadow_distance);
+
+    // Indices 4..8 are the far corners (bit 2 set — see `frustum_corners`'s
+    // own `index & 0b100` check).
+    for corner in &corners[4..8] {
+        let along_view_axis = (*corner - eye).dot(forward);
+        assert!(
+            (along_view_axis - shadow_distance).abs() < shadow_distance * 0.01,
+            "{corner} landed {along_view_axis} studs down the view axis, expected {shadow_distance}"
+        );
+    }
+}

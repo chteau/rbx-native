@@ -259,12 +259,20 @@ impl Post {
     /// outright regardless of what the place's own `Intensity` says, which is
     /// how a place with the effect enabled still draws nothing on a frame
     /// where the moon is out or the sun is off-screen.
+    ///
+    /// `orthographic_far` is `Camera::orthographic_far_plane`'s own answer:
+    /// `Some(far plane)` on an orthographic frame, `None` on a perspective
+    /// one — `post.wgsl`'s `view_distance` needs it to pick the right
+    /// depth-of-field distance reconstruction, since the two projections
+    /// write depth by different formulas (see `camera.rs`'s
+    /// `reversed_depth`/`orthographic_reversed_depth`).
     pub(super) fn prepare(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         size: (u32, u32),
         sun_screen: Option<Vec2>,
+        orthographic_far: Option<f32>,
     ) -> Option<&Targets> {
         if size.0 == 0 || size.1 == 0 {
             return None;
@@ -290,7 +298,7 @@ impl Post {
         queue.write_buffer(
             &self.uniform,
             0,
-            bytemuck::bytes_of(&self.raw(bloom_blur.tent, sun_screen)),
+            bytemuck::bytes_of(&self.raw(bloom_blur.tent, sun_screen, orthographic_far)),
         );
 
         self.targets.as_ref()
