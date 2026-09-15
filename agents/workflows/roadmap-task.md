@@ -187,5 +187,20 @@ alongside the code, never pushed unreviewed on its own — don't push a
 `ROADMAP.md` edit directly to `main` outside a PR unless the maintainer
 explicitly asks you to for a specific, already-merged item.
 
+**Also add a [`CHANGELOG.md`](../../CHANGELOG.md) entry in this same PR,
+crediting your GitHub username** — the identity `gh` is authenticated as
+for this PR, not whatever the local `git` author identity says (they can
+differ):
+
+```sh
+gh api user --jq .login
+```
+
+Append a bullet under today's date heading (`## YYYY-MM-DD` — add the
+heading if today doesn't have one yet; don't touch any other date's
+entries) written in the file's existing voice — a bolded short title, then
+what changed and briefly why, the way every existing entry already reads —
+ending the bullet with `— @<that username>`.
+
 Never merge your own pull request. Land the work by opening it and letting
 a human review it — that's the whole point of the PR step.

@@ -36,6 +36,13 @@ unreviewed) over a separate follow-up edit. Roadmap *direction* is still
 the maintainer's call only: never add, remove, reprioritize, or reword any
 bullet other than the one you just shipped.
 
+**Add a [`CHANGELOG.md`](../CHANGELOG.md) entry in that same PR, crediting
+your GitHub username.** Append a bullet under today's date heading (create
+one, `## YYYY-MM-DD`, if none exists yet) in the file's existing voice —
+what changed and, briefly, why — ending the bullet with `— @<your GitHub
+username>` (get it with `gh api user --jq .login`, don't guess it from the
+git author identity, which may not match). Don't edit any other entry.
+
 For the full step-by-step procedure — including how to check whether a
 branch for the item already exists, and how to stay synced with `main`
 (commit cadence, when to merge, when never to force-push) while you work —

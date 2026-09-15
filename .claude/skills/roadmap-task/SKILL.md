@@ -58,8 +58,12 @@ expectations).
    Include the `ROADMAP.md` checkoff for that item in this same PR (move it
    to "What's been implemented", or flip it to `[x] 🚧` in place if only
    part of it shipped — see `agents/AGENTS.md`) so it's reviewed alongside
-   the code rather than pushed on its own. Never merge it — land the work
-   by opening the PR and stopping there; a human reviews and merges.
+   the code rather than pushed on its own. Also add a `CHANGELOG.md` bullet
+   under today's date heading, in the file's existing voice, ending it with
+   `— @<GitHub username>` (`gh api user --jq .login`, not the local git
+   author identity — see `agents/workflows/roadmap-task.md`'s step 6 for
+   the exact convention). Never merge it — land the work by opening the PR
+   and stopping there; a human reviews and merges.
 
 ## Additional Resources
 
