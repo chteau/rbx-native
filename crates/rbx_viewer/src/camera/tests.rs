@@ -242,6 +242,7 @@ fn a_free_viewpoint_puts_the_eye_at_its_own_position() {
         yaw: 0.4,
         pitch: 0.1,
         fov_degrees: 70.0,
+        ortho_scale: 20.0,
     };
 
     assert_eq!(camera.eye_position(Viewpoint::Free(pose)), pose.position);
@@ -260,6 +261,7 @@ fn a_free_pose_field_of_view_changes_the_projection_but_the_default_does_not() {
         yaw: 0.2,
         pitch: 0.1,
         fov_degrees: FIELD_OF_VIEW_DEGREES,
+        ortho_scale: 20.0,
     };
     let narrow_pose = Pose {
         fov_degrees: 40.0,
@@ -275,7 +277,7 @@ fn a_free_pose_field_of_view_changes_the_projection_but_the_default_does_not() {
         camera.projection(
             aspect,
             FIELD_OF_VIEW_DEGREES,
-            camera.orthographic_distance(Viewpoint::Free(default_pose)),
+            camera.orthographic_half_height(Viewpoint::Free(default_pose)),
         ) * look_to_mat4(
             default_pose.position,
             direction(default_pose.yaw, default_pose.pitch),
@@ -379,119 +381,130 @@ fn orthographic_far_plane_is_none_until_orthographic_is_on() {
     let camera = Camera::framing(&bounds_from(Vec3::ZERO, Vec3::splat(20.0)));
     assert_eq!(camera.orthographic_far_plane(orbit(0.0)), None);
 
-    let far = camera
-        .with_orthographic(true)
-        .orthographic_far_plane(orbit(0.0))
-        .expect("an orthographic camera reports a finite far plane");
-    assert!((far - camera.distance * ORTHOGRAPHIC_FAR_MULTIPLIER).abs() < 1e-3);
-}
-
-// The orbit camera already has an exact distance to its own target by
-// construction — `orthographic_distance` must reuse it verbatim rather than
-// deriving a second, possibly-different number.
-#[test]
-fn orthographic_distance_for_orbit_is_exactly_the_framing_distance() {
-    let camera = Camera::framing(&bounds_from(Vec3::ZERO, Vec3::splat(20.0)));
-    assert_eq!(camera.orthographic_distance(orbit(0.5)), camera.distance);
-}
-
-// A real regression: `orthographic_distance` used to read a fixed field
-// (`self.distance`, set once from the whole scene's bounding sphere at load
-// time) regardless of a free pose's actual position, so orthographic mode's
-// apparent scale never changed as the free camera flew closer to or farther
-// from anything — the root cause behind both "the view is kinda far" and
-// "flying closer cuts through parts with no warning" (see this method's own
-// doc comment). A free pose must instead track its own current distance from
-// the scene's framing centre.
-#[test]
-fn orthographic_distance_tracks_the_free_camera_not_the_scenes_framing_distance() {
-    let bounds = bounds_from(Vec3::splat(-500.0), Vec3::splat(500.0));
-    let camera = Camera::framing(&bounds);
-    let base_pose = Pose {
-        position: bounds.center(),
-        yaw: 0.0,
-        pitch: 0.0,
-        fov_degrees: FIELD_OF_VIEW_DEGREES,
-    };
-
-    let close = Pose {
-        position: bounds.center() + Vec3::new(0.0, 0.0, 12.0),
-        ..base_pose
-    };
-    let far = Pose {
-        position: bounds.center() + Vec3::new(0.0, 0.0, 300.0),
-        ..base_pose
-    };
-
-    let close_distance = camera.orthographic_distance(Viewpoint::Free(close));
-    let far_distance = camera.orthographic_distance(Viewpoint::Free(far));
-
-    assert!((close_distance - 12.0).abs() < 1e-3, "{close_distance}");
-    assert!((far_distance - 300.0).abs() < 1e-3, "{far_distance}");
-    // Neither matches the scene's own framing distance, which a stale
-    // implementation would have returned for both regardless of pose.
-    assert_ne!(close_distance, camera.distance);
-    assert_ne!(far_distance, camera.distance);
-}
-
-// Same floor the orbit camera already applies to its own distance (see
-// `MIN_DISTANCE`'s doc comment): a free pose sitting exactly on the framing
-// centre must not collapse the orthographic view volume to zero size.
-#[test]
-fn orthographic_distance_floors_at_min_distance_for_a_free_pose_on_the_target() {
-    let camera = Camera::framing(&bounds_from(Vec3::ZERO, Vec3::splat(20.0)));
-    let at_target = Pose {
-        position: camera.target,
-        yaw: 0.0,
-        pitch: 0.0,
-        fov_degrees: FIELD_OF_VIEW_DEGREES,
-    };
-
+    let half_height = camera.orthographic_half_height(orbit(0.0));
     assert_eq!(
-        camera.orthographic_distance(Viewpoint::Free(at_target)),
-        MIN_DISTANCE
+        camera
+            .with_orthographic(true)
+            .orthographic_far_plane(orbit(0.0)),
+        Some(orthographic_far(half_height))
     );
 }
 
-// The end-to-end promise `orthographic_distance` exists to keep: a fixed
-// world-space offset from the scene's centre must cover a very different
-// fraction of the frame depending on whether the free camera is actually
-// close to it or far away — not the same fraction either way, which is what
-// a stale, scene-wide framing distance would have produced regardless of
-// where the camera flew.
+// The orbit camera has no zoom control of its own — its apparent scale must
+// match perspective's own framing at the same distance/FOV exactly, the same
+// promise a free pose's own `ortho_scale` makes below.
 #[test]
-fn the_orthographic_view_volume_shrinks_as_the_free_camera_flies_closer() {
-    let bounds = bounds_from(Vec3::splat(-500.0), Vec3::splat(500.0));
-    let camera = Camera::framing(&bounds).with_orthographic(true);
-    let aspect = 16.0 / 9.0;
-    let base_pose = Pose {
-        position: bounds.center(),
+fn orthographic_half_height_for_orbit_matches_its_own_framing_distance_and_fov() {
+    let camera = Camera::framing(&bounds_from(Vec3::ZERO, Vec3::splat(20.0)));
+    let expected = camera.distance * (FIELD_OF_VIEW_DEGREES * 0.5).to_radians().tan();
+
+    assert!((camera.orthographic_half_height(orbit(0.5)) - expected).abs() < 1e-3);
+}
+
+// A free pose's zoom is exactly whatever it's carrying — `orthographic_half_height`
+// must read `Pose::ortho_scale` back verbatim, not derive a second, possibly
+// different number from anything else about the pose.
+#[test]
+fn orthographic_half_height_for_a_free_pose_is_exactly_its_own_ortho_scale() {
+    let camera =
+        Camera::framing(&bounds_from(Vec3::ZERO, Vec3::splat(20.0))).with_orthographic(true);
+    let pose = Pose {
+        position: Vec3::new(500.0, 500.0, 500.0),
         yaw: 0.0,
         pitch: 0.0,
         fov_degrees: FIELD_OF_VIEW_DEGREES,
+        ortho_scale: 42.0,
     };
 
-    let near_pose = Pose {
-        position: bounds.center() + Vec3::new(0.0, 0.0, 10.0),
-        ..base_pose
+    assert_eq!(camera.orthographic_half_height(Viewpoint::Free(pose)), 42.0);
+}
+
+// The regression this whole design replaced: a free pose's apparent zoom must
+// depend only on its own `ortho_scale`, never on its position. An earlier
+// version derived it instead from "distance from the pose to the scene's
+// framing centre", which broke down completely on a level with several
+// spread-out clusters of geometry (a real report: floating islands scattered
+// across a big map) — depending on where in the level the free camera was,
+// the view could stay too zoomed out or clip straight through nearby
+// geometry, with no way for the user to correct it (see `Pose::ortho_scale`'s
+// own doc comment for the full story).
+#[test]
+fn moving_a_free_pose_does_not_change_its_orthographic_zoom() {
+    let camera =
+        Camera::framing(&bounds_from(Vec3::ZERO, Vec3::splat(20.0))).with_orthographic(true);
+    let base_pose = Pose {
+        position: Vec3::ZERO,
+        yaw: 0.0,
+        pitch: 0.0,
+        fov_degrees: FIELD_OF_VIEW_DEGREES,
+        ortho_scale: 42.0,
     };
-    let far_pose = Pose {
-        position: bounds.center() + Vec3::new(0.0, 0.0, 200.0),
+    let moved_pose = Pose {
+        position: Vec3::new(5000.0, -5000.0, 5000.0),
         ..base_pose
     };
 
-    let probe = bounds.center() + Vec3::new(5.0, 0.0, 0.0);
+    assert_eq!(
+        camera.orthographic_half_height(Viewpoint::Free(base_pose)),
+        camera.orthographic_half_height(Viewpoint::Free(moved_pose))
+    );
+}
+
+// The flip side of the test above: `ortho_scale` itself is what actually
+// controls apparent size — the mouse wheel's own effect while orthographic is
+// on (see `controller::free_update`) — verified here at the pure
+// projection-matrix level.
+#[test]
+fn a_smaller_ortho_scale_makes_a_fixed_point_cover_more_of_the_frame() {
+    let camera =
+        Camera::framing(&bounds_from(Vec3::ZERO, Vec3::splat(20.0))).with_orthographic(true);
+    let aspect = 16.0 / 9.0;
+    let base_pose = Pose {
+        position: Vec3::ZERO,
+        yaw: 0.0,
+        pitch: 0.0,
+        fov_degrees: FIELD_OF_VIEW_DEGREES,
+        ortho_scale: 100.0,
+    };
+    let zoomed_in = Pose {
+        ortho_scale: 10.0,
+        ..base_pose
+    };
+
+    let probe = Vec3::new(5.0, 0.0, -50.0);
     let ndc_x = |pose: Pose| {
         let clip = camera.view_projection(Viewpoint::Free(pose), aspect) * probe.extend(1.0);
         (clip.x / clip.w).abs()
     };
 
-    let near_ndc = ndc_x(near_pose);
-    let far_ndc = ndc_x(far_pose);
+    let zoomed_ndc = ndc_x(zoomed_in);
+    let base_ndc = ndc_x(base_pose);
     assert!(
-        near_ndc > far_ndc * 5.0,
-        "close: {near_ndc}, far: {far_ndc}"
+        zoomed_ndc > base_ndc * 5.0,
+        "zoomed in: {zoomed_ndc}, base: {base_ndc}"
     );
+}
+
+// `initial_ortho_scale`'s own floor — the same one `Camera::framing` applies
+// to orbit distance — so a pose created (or resynced, see
+// `Controller::sync_ortho_scale`) right on top of whatever it's measuring
+// from doesn't collapse the view volume to zero size.
+#[test]
+fn initial_ortho_scale_floors_at_min_distance() {
+    assert_eq!(
+        initial_ortho_scale(0.0, FIELD_OF_VIEW_DEGREES),
+        MIN_DISTANCE * (FIELD_OF_VIEW_DEGREES * 0.5).to_radians().tan()
+    );
+}
+
+// The apparent-size promise: `initial_ortho_scale` must give a free pose the
+// same perspective-equivalent framing a plain distance/FOV pair would.
+#[test]
+fn initial_ortho_scale_matches_the_perspective_apparent_size_at_that_distance() {
+    let distance = 200.0;
+    let expected = distance * (FIELD_OF_VIEW_DEGREES * 0.5).to_radians().tan();
+
+    assert!((initial_ortho_scale(distance, FIELD_OF_VIEW_DEGREES) - expected).abs() < 1e-3);
 }
 
 // Parallel projection's whole point: a lateral offset maps to the same NDC

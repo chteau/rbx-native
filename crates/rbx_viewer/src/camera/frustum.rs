@@ -104,6 +104,7 @@ mod tests {
             yaw: 0.0,
             pitch: 0.0,
             fov_degrees: 70.0,
+            ortho_scale: 20.0,
         };
         Frustum::new(&camera, Viewpoint::Free(pose), 1.0)
     }

@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use glam::Vec3;
 
-use crate::camera::{Camera, Pose, Viewpoint};
+use crate::camera::{self, Camera, Pose, Viewpoint, MAX_ORTHO_SCALE, MIN_ORTHO_SCALE};
 use crate::input::Input;
 use crate::scene::Bounds;
 
@@ -114,16 +114,35 @@ impl Controller {
         self.motion = Motion::default();
     }
 
+    /// Resyncs the free pose's orthographic view volume to its current
+    /// distance from the scene, the moment orthographic mode switches on —
+    /// see `Pose::ortho_scale`'s own doc comment for why this is only ever a
+    /// reasonable starting guess (the mouse wheel is what actually corrects
+    /// it from there, in `free_update` below), not a claim that this
+    /// distance means anything in particular. A no-op while still orbiting:
+    /// nothing to resync until the first input hands off to a free pose,
+    /// which seeds its own `ortho_scale` the same way `Camera::orbit_pose`
+    /// always has.
+    pub(crate) fn sync_ortho_scale(&mut self, bounds: &Bounds) {
+        if let Mode::Free(pose) = &mut self.mode {
+            let distance = (pose.position - bounds.center()).length();
+            pose.ortho_scale = camera::initial_ortho_scale(distance, pose.fov_degrees);
+        }
+    }
+
     /// Advances the camera by `dt` and returns what this frame draws from.
     ///
     /// `elapsed` is only read while still orbiting: the orbit is driven by wall
     /// time, so it turns at the same rate however many frames were drawn.
+    /// `orthographic` changes what the mouse wheel does without the look
+    /// button held — see `free_update`.
     pub(crate) fn update(
         &mut self,
         input: &mut Input,
         dt: Duration,
         elapsed: Duration,
         bounds: &Bounds,
+        orthographic: bool,
     ) -> Viewpoint {
         if matches!(self.mode, Mode::Orbit) && input.requests_free_flight() {
             let yaw = Camera::orbit_yaw(elapsed);
@@ -140,6 +159,7 @@ impl Controller {
                     self.speed,
                     self.sensitivity,
                     &mut self.motion,
+                    orthographic,
                 );
                 Viewpoint::Free(*pose)
             }
@@ -159,8 +179,10 @@ fn default_speed(bounds: &Bounds) -> f32 {
 }
 
 /// The free-flight step proper: mouse-look, keyboard movement, and the wheel's
-/// dual role (speed with the look button held, zoom without it). Kept
-/// free of `self` so it's trivially callable from a pure unit test.
+/// roles (speed with the look button held; a dolly hop without it in
+/// perspective, or the orthographic view volume's own zoom without it in
+/// orthographic — see the wheel-handling block below). Kept free of `self`
+/// so it's trivially callable from a pure unit test.
 fn free_update(
     pose: &mut Pose,
     input: &mut Input,
@@ -168,6 +190,7 @@ fn free_update(
     speed: f32,
     sensitivity: f32,
     motion: &mut Motion,
+    orthographic: bool,
 ) -> f32 {
     let (dx, dy) = input.take_mouse_delta();
     if input.look_button_down() {
@@ -191,6 +214,17 @@ fn free_update(
     if notches != 0.0 {
         if input.look_button_down() {
             speed = (speed * SPEED_STEP.powf(notches)).clamp(MIN_SPEED, MAX_SPEED);
+        } else if orthographic {
+            // A parallel projection has no perspective divide to make
+            // dollying the eye change apparent size — moving `pose.position`
+            // here would do nothing visible and risk flying the eye straight
+            // through geometry with no size cue at all (see
+            // `Pose::ortho_scale`'s doc comment for why that's a real,
+            // previously-reported bug). The wheel instead zooms the view
+            // volume directly, using the same notch-to-factor feel
+            // `SPEED_STEP` already gives perspective's own dolly.
+            pose.ortho_scale = (pose.ortho_scale / SPEED_STEP.powf(notches))
+                .clamp(MIN_ORTHO_SCALE, MAX_ORTHO_SCALE);
         } else {
             motion.dolly_remaining += forward * speed * ZOOM_SECONDS_PER_NOTCH * notches;
         }

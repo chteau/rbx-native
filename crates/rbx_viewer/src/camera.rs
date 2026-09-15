@@ -25,9 +25,10 @@ const PITCH_DEGREES: f32 = 25.0;
 const SCREENSHOT_YAW_DEGREES: f32 = 45.0;
 const SECONDS_PER_TURN: f32 = 8.0;
 // A single 0.3-stud part has a sub-stud radius; without a floor the camera would sit
-// inside its own near plane. Reused by `Camera::orthographic_distance` for the same
-// reason on a free pose: flying straight through its target must not collapse the
-// orthographic view volume to zero size either.
+// inside its own near plane. Reused by `initial_ortho_scale` for the same reason on a
+// free pose: starting (or resyncing — see `Controller::sync_ortho_scale`) right on top
+// of whatever it's measuring from must not collapse the orthographic view volume to
+// zero size either.
 const MIN_DISTANCE: f32 = 4.0;
 // Reversed-Z with an infinite far plane (see `projection`) needs no scene-scaled far
 // plane and tolerates a near plane this small without shredding depth precision, so
@@ -42,11 +43,30 @@ const MIN_SPAWN_ELEVATION: f32 = 5.0;
 // Orthographic mode has no infinite-far equivalent of `perspective_infinite_reverse`
 // — its depth map is linear in view-space Z (see `orthographic_reversed_depth`), so
 // unlike the hyperbolic perspective one it needs both ends finite or the matrix is
-// singular. Scaled off the framing distance (see `Camera::orthographic_far`) rather
-// than a flat constant, so a huge place still gets a far plane well past anything the
-// free camera would fly through, and a tiny one doesn't spread the depth buffer's
-// precision across a needlessly large range.
-const ORTHOGRAPHIC_FAR_MULTIPLIER: f32 = 100.0;
+// singular. Scaled off the current zoom level (`Camera::orthographic_half_height`)
+// rather than a flat constant: a first attempt used one fixed, generous constant
+// (comfortably larger than any real Roblox build) regardless of zoom, on the theory
+// that "as long as it never clips, the exact value doesn't matter" — but a near/far
+// span that wide demonstrably wrecks float32 depth precision for tight, near-camera
+// work (a 0.05-stud `NEAR_PLANE` next to a several-hundred-thousand-stud far plane
+// leaves too few significant digits to place a depth-of-field focus plane or fit a
+// shadow frustum with — this was caught by a test, not a screenshot). Scaling with
+// zoom instead keeps the near/far span proportionate to what's actually on screen:
+// tight and precise zoomed in for detail work, generous (and precision no longer
+// matters at that scale) zoomed out — clamped both ways rather than left pure
+// proportional, so an extreme zoom-in still leaves room for ordinary background
+// depth, and an extreme zoom-out doesn't have the far plane run away unboundedly.
+const ORTHOGRAPHIC_FAR_MULTIPLIER: f32 = 200.0;
+const ORTHOGRAPHIC_MIN_FAR: f32 = 500.0;
+const ORTHOGRAPHIC_MAX_FAR: f32 = 200_000.0;
+// The orthographic view volume's usable half-height range, in studs (see
+// `Pose::ortho_scale`) — what the mouse wheel's zoom clamps to while orthographic is
+// on (`controller::free_update`). Floored well above zero so the matrix never goes
+// singular and a still-explorable macro view stays reachable; ceilinged high enough
+// that "zoom out" is indefinite in practice for any real build, without letting the
+// wheel drive the view volume to an unusable, precision-losing extreme.
+pub(crate) const MIN_ORTHO_SCALE: f32 = 0.5;
+pub(crate) const MAX_ORTHO_SCALE: f32 = 1_000_000.0;
 
 /// A camera pose with no orbit target: where the eye is, and which way it looks.
 /// What `FreeController` accumulates frame to frame.
@@ -63,6 +83,29 @@ pub struct Pose {
     /// for (position/yaw/pitch only), so a viewpoint read from a place's own
     /// `Camera` keeps that field of view for the whole free-flight session.
     pub fov_degrees: f32,
+    /// Half the height of the orthographic view volume, in studs — the free
+    /// pose's whole notion of "zoom" while orthographic mode is on (see
+    /// `Camera::orthographic_half_height`), meaningless and unused otherwise.
+    ///
+    /// Given an initial value at construction (`initial_ortho_scale`, from
+    /// whatever "distance to the scene" makes sense for the pose in
+    /// question), then carried frame to frame and answered directly to the
+    /// mouse wheel while orthographic is on (`controller::free_update`) —
+    /// deliberately *not* recomputed from the pose's current position every
+    /// frame the way an earlier version of this whole feature tried. That
+    /// approach read as "zoom", panning closer to *something* made it look
+    /// bigger, but it derived the view volume from the free pose's distance
+    /// to the scene's single, fixed framing centre — on a level with several
+    /// spread-out clusters of geometry (a real report: floating islands
+    /// scattered across a big map), that number has nothing to do with how
+    /// close the camera actually is to whatever it's currently looking at,
+    /// so depending on where in the level you were, the view could still
+    /// stay too zoomed out, or clip straight through nearby geometry. An
+    /// explicit, user-driven value sidesteps needing to know "what am I
+    /// looking at" at all: the wheel can zoom in or out indefinitely from
+    /// wherever the camera happens to be, and nothing about it depends on
+    /// the rest of the level's layout.
+    pub ortho_scale: f32,
 }
 
 /// What a single frame is drawn from.
@@ -96,7 +139,7 @@ impl Camera {
     pub(crate) fn framing(bounds: &Bounds) -> Self {
         Camera {
             target: bounds.center(),
-            distance: (bounds.radius() * DISTANCE_IN_RADII).max(MIN_DISTANCE),
+            distance: framing_distance(bounds),
             pitch: PITCH_DEGREES.to_radians(),
             orthographic: false,
         }
@@ -123,6 +166,7 @@ impl Camera {
             yaw,
             pitch: camera.pitch,
             fov_degrees: FIELD_OF_VIEW_DEGREES,
+            ortho_scale: initial_ortho_scale(camera.distance, FIELD_OF_VIEW_DEGREES),
         }
     }
 
@@ -136,6 +180,7 @@ impl Camera {
             yaw: 0.0,
             pitch: 0.0,
             fov_degrees: FIELD_OF_VIEW_DEGREES,
+            ortho_scale: initial_ortho_scale(framing_distance(bounds), FIELD_OF_VIEW_DEGREES),
         }
     }
 
@@ -155,39 +200,27 @@ impl Camera {
             }
             Viewpoint::Orbit(yaw) => look_at_mat4(self.eye(yaw), self.target, Vec3::Y),
         };
-        self.projection(aspect, fov_degrees(from), self.orthographic_distance(from)) * view
+        self.projection(
+            aspect,
+            fov_degrees(from),
+            self.orthographic_half_height(from),
+        ) * view
     }
 
-    /// How far "the scene" currently is from the eye — orthographic mode's
-    /// whole notion of zoom (see `orthographic_projection`) is derived from
-    /// this, recomputed every frame, so flying the free camera closer to
-    /// something actually makes it look bigger instead of the view staying
-    /// at whatever scale the level happened to frame at on load. Ignored by
-    /// the perspective path, which gets that for free from the projection's
-    /// own divide.
+    /// Orthographic mode's whole notion of zoom (see `orthographic_projection`):
+    /// half the height of the view volume, in studs.
     ///
-    /// The orbit camera already has an exact answer (`self.distance`, fixed
-    /// by construction — see `Camera::framing`). A free pose has no orbit
-    /// target of its own to measure against, so this falls back to its
-    /// distance from the scene's own framing centre (`self.target`) instead,
-    /// floored the same way `Camera::framing` floors orbit distance so the
-    /// view can't collapse to zero size passing through it. Imperfect for a
-    /// pose that has wandered far to one side of a large level (that
-    /// distance-to-centre stays large even right up against something at the
-    /// edge), but far better than never updating at all — the bug this
-    /// fixes: without it, an unchanging, whole-scene-framed orthographic
-    /// view gives no visual cue for how close the free camera actually is to
-    /// anything, so a user "zooming in" by flying forward has no feedback
-    /// telling them they're about to end up *inside* a part, whose
-    /// backface-culled interior then shows as a hole where the part should
-    /// be — not unique to orthographic in principle, but orthographic's own
-    /// missing zoom feedback (see above) is what makes it easy to do by
-    /// accident, where perspective's natural dolly-zoom warns well before it
-    /// happens.
-    fn orthographic_distance(&self, from: Viewpoint) -> f32 {
+    /// The orbit camera has no zoom control of its own — it derives this
+    /// fresh from its own fixed framing distance and FOV every call, the same
+    /// apparent size perspective would frame it at. A free pose instead
+    /// carries its own value (`Pose::ortho_scale`) that persists frame to
+    /// frame and answers directly to the mouse wheel while orthographic is on
+    /// (see `controller::free_update`) — see that field's own doc comment for
+    /// why this is read verbatim rather than recomputed from the pose here.
+    fn orthographic_half_height(&self, from: Viewpoint) -> f32 {
         match from {
-            Viewpoint::Orbit(_) => self.distance,
-            Viewpoint::Free(pose) => (pose.position - self.target).length().max(MIN_DISTANCE),
+            Viewpoint::Orbit(_) => self.distance * (FIELD_OF_VIEW_DEGREES * 0.5).to_radians().tan(),
+            Viewpoint::Free(pose) => pose.ortho_scale,
         }
     }
 
@@ -243,7 +276,7 @@ impl Camera {
         // corners unproject to the wrong world depth: perspective's depth map
         // is hyperbolic, orthographic's is linear (see `orthographic_projection`).
         let far_depth = if self.orthographic {
-            let far = orthographic_far(self.orthographic_distance(from));
+            let far = orthographic_far(self.orthographic_half_height(from));
             orthographic_reversed_depth(capped_distance, NEAR_PLANE, far)
         } else {
             reversed_depth(capped_distance)
@@ -257,7 +290,7 @@ impl Camera {
         })
     }
 
-    fn projection(&self, aspect: f32, fov_degrees: f32, distance: f32) -> Mat4 {
+    fn projection(&self, aspect: f32, fov_degrees: f32, half_height: f32) -> Mat4 {
         // Degenerate surfaces (a window collapsed to zero width) would make the
         // projection non-invertible; a square frame keeps the frame renderable.
         let aspect = if aspect.is_finite() && aspect > 0.0 {
@@ -267,7 +300,7 @@ impl Camera {
         };
 
         if self.orthographic {
-            return orthographic_projection(aspect, fov_degrees, distance);
+            return orthographic_projection(aspect, half_height);
         }
 
         // The DirectX flavour is the WebGPU one: Z in [0, 1] with Y up. The infinite
@@ -284,7 +317,7 @@ impl Camera {
     /// depth-reconstruction formula in `post.wgsl`'s `view_distance`.
     pub(crate) fn orthographic_far_plane(&self, from: Viewpoint) -> Option<f32> {
         self.orthographic
-            .then(|| orthographic_far(self.orthographic_distance(from)))
+            .then(|| orthographic_far(self.orthographic_half_height(from)))
     }
 
     /// Yaw a single offscreen frame is taken at, unless the caller picked one.
@@ -321,38 +354,50 @@ pub(crate) const BACKGROUND_DISTANCE: f32 = 1.0e9;
 /// hyperbolic one, since an orthographic `w` never varies with distance the
 /// way a perspective one does.
 ///
-/// Framed at `fov_degrees`'s own apparent size `distance` studs out — see
-/// [`Camera::orthographic_distance`] for what `distance` actually is and why
-/// it has to be recomputed every frame rather than read off a fixed field.
-/// `glam`'s builder takes `(near, far)`; passed here as `(far, near)` to flip
-/// its default near-to-0/far-to-1 mapping to the reversed convention every
-/// other pass in this renderer assumes (see `NEAR_PLANE`'s doc comment and
-/// `renderer.rs`'s depth clear value/`CompareFunction`).
-fn orthographic_projection(aspect: f32, fov_degrees: f32, distance: f32) -> Mat4 {
-    let (half_width, half_height) = orthographic_half_extents(distance, aspect, fov_degrees);
-    let far = orthographic_far(distance);
+/// `half_height` is [`Camera::orthographic_half_height`]'s answer — the
+/// view volume's actual current zoom. `glam`'s builder takes `(near, far)`;
+/// passed here as `(far, near)` to flip its default near-to-0/far-to-1
+/// mapping to the reversed convention every other pass in this renderer
+/// assumes (see `NEAR_PLANE`'s doc comment and `renderer.rs`'s depth clear
+/// value/`CompareFunction`).
+fn orthographic_projection(aspect: f32, half_height: f32) -> Mat4 {
+    let half_width = half_height * aspect;
     orthographic(
         -half_width,
         half_width,
         -half_height,
         half_height,
-        far,
+        orthographic_far(half_height),
         NEAR_PLANE,
     )
 }
 
-/// Half the width/height of the orthographic view volume, in studs, at
-/// `distance` studs out — the clip volume [`orthographic_projection`] builds.
-fn orthographic_half_extents(distance: f32, aspect: f32, fov_degrees: f32) -> (f32, f32) {
-    let half_height = distance * (fov_degrees * 0.5).to_radians().tan();
-    (half_height * aspect, half_height)
+/// Orthographic mode's finite far plane, in studs, for a view volume of this
+/// `half_height` — see [`ORTHOGRAPHIC_FAR_MULTIPLIER`] for why it's scaled
+/// off the current zoom level rather than fixed.
+fn orthographic_far(half_height: f32) -> f32 {
+    (half_height * ORTHOGRAPHIC_FAR_MULTIPLIER).clamp(ORTHOGRAPHIC_MIN_FAR, ORTHOGRAPHIC_MAX_FAR)
 }
 
-/// Orthographic mode's finite far plane, in studs, at `distance` studs out —
-/// see [`ORTHOGRAPHIC_FAR_MULTIPLIER`] for why it has to be finite at all and
-/// why it's scaled off the current framing distance rather than fixed.
-fn orthographic_far(distance: f32) -> f32 {
-    distance * ORTHOGRAPHIC_FAR_MULTIPLIER
+/// The framing distance [`Camera::framing`]'s orbit camera uses, factored out
+/// so [`Camera::spawn_pose`] can seed a free pose's own
+/// [`Pose::ortho_scale`] with the same apparent scale an orbit camera over
+/// the same bounds would frame at, without constructing a whole `Camera`
+/// just to read one field back out of it.
+fn framing_distance(bounds: &Bounds) -> f32 {
+    (bounds.radius() * DISTANCE_IN_RADII).max(MIN_DISTANCE)
+}
+
+/// [`Pose::ortho_scale`]'s starting value: the apparent half-height,
+/// `fov_degrees` wide, of something `distance` studs away — the same
+/// perspective-equivalent framing every free pose used to derive orthographic
+/// zoom from every frame before this was a persistent, wheel-driven value.
+/// Floored the same way [`Camera::framing`] floors orbit distance, so a pose
+/// created (or resynced — see `Controller::sync_ortho_scale`) right on top of
+/// whatever `distance` was measured from doesn't collapse the view volume to
+/// zero size.
+pub(crate) fn initial_ortho_scale(distance: f32, fov_degrees: f32) -> f32 {
+    distance.max(MIN_DISTANCE) * (fov_degrees * 0.5).to_radians().tan()
 }
 
 /// The reversed-Z depth buffer value a point `studs` down the view axis lands on.
@@ -414,6 +459,7 @@ pub(crate) fn look_at_pose(eye: Vec3, look_at: Vec3) -> Pose {
         yaw: (-forward.x).atan2(-forward.z),
         pitch: (-forward.y).clamp(-1.0, 1.0).asin(),
         fov_degrees: FIELD_OF_VIEW_DEGREES,
+        ortho_scale: initial_ortho_scale((look_at - eye).length(), FIELD_OF_VIEW_DEGREES),
     }
 }
 

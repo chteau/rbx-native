@@ -44,7 +44,14 @@ fn pose(from: Viewpoint) -> Pose {
 }
 
 fn step(controller: &mut Controller, input: &mut Input, dt: Duration) -> Viewpoint {
-    controller.update(input, dt, Duration::ZERO, &bounds())
+    controller.update(input, dt, Duration::ZERO, &bounds(), false)
+}
+
+/// Like [`step`], but with orthographic mode on — for the wheel's other role
+/// (zooming `Pose::ortho_scale` instead of dollying), see
+/// `orthographic_wheel_zooms_ortho_scale_instead_of_translating` and friends.
+fn step_orthographic(controller: &mut Controller, input: &mut Input, dt: Duration) -> Viewpoint {
+    controller.update(input, dt, Duration::ZERO, &bounds(), true)
 }
 
 #[test]
@@ -56,6 +63,7 @@ fn orbit_mode_ignores_input_until_the_first_trigger() {
         Duration::from_millis(16),
         Duration::from_secs(2),
         &bounds(),
+        false,
     );
     assert_eq!(
         from,
@@ -71,7 +79,7 @@ fn a_movement_key_switches_to_free_mode_without_a_jump() {
 
     let elapsed = Duration::from_millis(2500);
     let before = Camera::orbit_pose(&bounds, Camera::orbit_yaw(elapsed));
-    let after = pose(controller.update(&mut input, Duration::ZERO, elapsed, &bounds));
+    let after = pose(controller.update(&mut input, Duration::ZERO, elapsed, &bounds, false));
 
     assert_eq!(after, before);
 }
@@ -83,6 +91,7 @@ fn the_default_mode_starts_free_at_the_spawn_pose() {
         Duration::ZERO,
         Duration::ZERO,
         &bounds(),
+        false,
     );
 
     assert_eq!(from, Viewpoint::Free(Camera::spawn_pose(&bounds())));
@@ -97,6 +106,7 @@ fn a_starting_pose_is_flown_from_as_given() {
         yaw: 0.7,
         pitch: -0.2,
         fov_degrees: 55.0,
+        ortho_scale: 30.0,
     };
     let mut controller = Controller::new(Start::Pose(start), &bounds(), Some(30.0), 0.2);
 
@@ -314,6 +324,147 @@ fn wheel_translation_scales_with_the_number_of_notches() {
     assert!((distance(3.0) - 3.0 * distance(1.0)).abs() < 1e-3);
 }
 
+// Orthographic mode's whole point: the wheel without the look button held
+// must zoom (change `Pose::ortho_scale`) instead of dollying the eye — a
+// parallel projection has no divide to make dollying visible anyway, and
+// doing it regardless risks flying the eye through geometry with no size cue
+// (the bug `Pose::ortho_scale` itself exists to fix).
+#[test]
+fn orthographic_wheel_zooms_ortho_scale_instead_of_translating() {
+    let mut controller = spawned();
+    let start = Camera::spawn_pose(&bounds());
+
+    let moved = pose(step_orthographic(
+        &mut controller,
+        &mut wheeled(1.0, false),
+        Duration::from_secs(1),
+    ));
+
+    assert_eq!(moved.position, start.position);
+    assert_ne!(moved.ortho_scale, start.ortho_scale);
+}
+
+// Scrolling "in" (positive notches, matching the perspective dolly's own
+// forward-is-positive convention) must shrink the view volume — zoom in,
+// things look bigger — and scrolling "out" must grow it back.
+#[test]
+fn orthographic_wheel_direction_matches_zoom_in_and_out() {
+    let mut controller = spawned();
+    let start = pose(step_orthographic(
+        &mut controller,
+        &mut Input::default(),
+        Duration::ZERO,
+    ))
+    .ortho_scale;
+
+    let zoomed_in = pose(step_orthographic(
+        &mut controller,
+        &mut wheeled(1.0, false),
+        Duration::ZERO,
+    ))
+    .ortho_scale;
+    assert!(zoomed_in < start, "{zoomed_in} vs {start}");
+
+    let zoomed_out = pose(step_orthographic(
+        &mut controller,
+        &mut wheeled(-2.0, false),
+        Duration::ZERO,
+    ))
+    .ortho_scale;
+    assert!(zoomed_out > zoomed_in, "{zoomed_out} vs {zoomed_in}");
+}
+
+// The clamp exists so the wheel can't drive the view volume to a singular or
+// unusably huge extreme — "zoom indefinitely" still means "within a sane
+// range", not "without bound".
+#[test]
+fn orthographic_wheel_zoom_is_clamped_both_ways() {
+    let mut controller = spawned();
+
+    for _ in 0..500 {
+        step_orthographic(&mut controller, &mut wheeled(1.0, false), Duration::ZERO);
+    }
+    let zoomed_in = pose(step_orthographic(
+        &mut controller,
+        &mut Input::default(),
+        Duration::ZERO,
+    ))
+    .ortho_scale;
+    assert!((zoomed_in - MIN_ORTHO_SCALE).abs() < 1e-3, "{zoomed_in}");
+
+    for _ in 0..500 {
+        step_orthographic(&mut controller, &mut wheeled(-1.0, false), Duration::ZERO);
+    }
+    let zoomed_out = pose(step_orthographic(
+        &mut controller,
+        &mut Input::default(),
+        Duration::ZERO,
+    ))
+    .ortho_scale;
+    assert!((zoomed_out - MAX_ORTHO_SCALE).abs() < 1e-3, "{zoomed_out}");
+}
+
+// The look button held still means "adjust flight speed", exactly as it does
+// in perspective — orthographic only changes the wheel's *other* role.
+#[test]
+fn orthographic_wheel_with_the_look_button_still_changes_speed() {
+    let mut controller = spawned();
+
+    step_orthographic(
+        &mut controller,
+        &mut wheeled(1.0, true),
+        Duration::from_millis(16),
+    );
+
+    assert!((controller.speed() - 30.0 * SPEED_STEP).abs() < 1e-3);
+}
+
+// `Controller::sync_ortho_scale`: a one-time resync the moment orthographic
+// switches on, not a per-frame recompute (see `Pose::ortho_scale`'s doc
+// comment for why the latter was the actual bug) — flying the free pose away
+// from the scene's centre first, then syncing, must produce a value derived
+// from *that* distance, not whatever it started at.
+#[test]
+fn sync_ortho_scale_resyncs_from_the_frees_current_position() {
+    let bounds = bounds();
+    let mut controller = spawned();
+    step(
+        &mut controller,
+        &mut held(&[CameraKey::Forward]),
+        Duration::from_secs(5),
+    );
+    let before = pose(step(&mut controller, &mut Input::default(), Duration::ZERO));
+
+    controller.sync_ortho_scale(&bounds);
+
+    let after = pose(step(&mut controller, &mut Input::default(), Duration::ZERO));
+    assert_eq!(after.position, before.position);
+    let expected = crate::camera::initial_ortho_scale(
+        (after.position - bounds.center()).length(),
+        after.fov_degrees,
+    );
+    assert!((after.ortho_scale - expected).abs() < 1e-3);
+}
+
+// A no-op while still orbiting: there is no free pose yet to resync, and
+// orbiting itself never uses `ortho_scale` at all.
+#[test]
+fn sync_ortho_scale_does_nothing_while_still_orbiting() {
+    let bounds = bounds();
+    let mut controller = Controller::new(Start::Orbit, &bounds, Some(30.0), 0.2);
+
+    controller.sync_ortho_scale(&bounds);
+
+    let from = controller.update(
+        &mut Input::default(),
+        Duration::ZERO,
+        Duration::ZERO,
+        &bounds,
+        true,
+    );
+    assert!(matches!(from, Viewpoint::Orbit(_)));
+}
+
 #[test]
 fn recentre_restores_the_spawn_view_while_staying_free() {
     let mut controller = spawned();
@@ -338,6 +489,7 @@ fn recentre_restores_the_initial_orbit_view_for_the_legacy_orbit_flag() {
         Duration::from_secs(1),
         Duration::ZERO,
         &bounds,
+        false,
     );
 
     controller.recentre(&bounds);

@@ -5,17 +5,34 @@
 - **Orthographic camera mode.** The viewport's free-flight camera can now
   switch between perspective and parallel projection — toggled from the
   Viewport panel's overflow menu in `rbxstudio`, or `rbxview --orthographic`
-  on the standalone viewer — reusing the existing WASD/mouse-look controller
-  rather than a new interaction model. Building it surfaced a real bug along
-  the way: the sky/star/sun background is drawn as near-unit-magnitude
-  geometry that relies on the perspective divide to spread across the screen,
-  which orthographic's constant `w` collapsed to a single point at screen
-  centre, leaving pure black. Fixed by keeping the sky/star/sun background
-  always perspective, decoupled from the main camera's own projection mode.
+  on the standalone viewer. Two real bugs surfaced testing this against an
+  actual place file before it shipped, both fixed along the way rather than
+  left for later:
+  - The sky/star/sun background is drawn as near-unit-magnitude geometry
+    that relies on the perspective divide to spread across the screen, which
+    orthographic's constant `w` collapsed to a single point at screen
+    centre, leaving pure black. Fixed by keeping the sky/star/sun background
+    always perspective, decoupled from the main camera's own projection
+    mode.
+  - The view volume's zoom was first derived from the free camera's distance
+    to the scene, recomputed every frame — better than a one-time snapshot,
+    but still broke down on a level with several spread-out clusters of
+    geometry (a real report: floating islands scattered across a big map),
+    where "distance to the scene" has no relation to how close the camera
+    actually is to whatever it's looking at. Replaced with an explicit
+    `Pose::ortho_scale` the mouse wheel controls directly while orthographic
+    is on (dollying the eye instead, perspective's own role for that wheel
+    gesture, does nothing visible under a parallel projection) — zoom is now
+    independent of camera position entirely, so it neither depends on the
+    rest of the level's layout nor risks flying the eye through geometry
+    with no size cue.
   Also threads the projection choice through shadow-map fitting
   (`Camera::frustum_corners`) and the depth-of-field pass's depth
   reconstruction (`post.wgsl`'s `view_distance`), both of which hardcoded the
-  perspective-specific formula before this. — @chteau
+  perspective-specific formula before this, and scales the orthographic far
+  plane with the current zoom level rather than a fixed constant — a fixed
+  one large enough to never clip destroyed float32 depth precision for
+  close-up work, caught by a test rather than a screenshot. — @chteau
 - **A `Decal`/`Texture` now follows its part through the live-edit
   instance-patch path**, not just a full reload. The last of the three
   gaps the batch-move work surfaced: `Renderer::sync_instance` never

@@ -62,9 +62,13 @@ Roblox's own engine.
 - [x] Free-flight camera (WASD + mouse look + wheel), exponentially-eased
   movement (mouse look itself stays unfiltered).
 - [x] Orthographic camera mode — toggled from the Viewport panel's overflow
-  menu (`rbxstudio`) or `rbxview --orthographic`, reusing the same
-  WASD/mouse-look controller rather than a new interaction model. The
-  sky/star/sun background stays perspective regardless, by design (their
+  menu (`rbxstudio`) or `rbxview --orthographic`. Flies with the same
+  WASD/mouse-look controller; the mouse wheel without the look button held
+  zooms the view volume directly (`Pose::ortho_scale`) instead of dollying
+  the eye, since dollying does nothing visible under a parallel projection
+  and risked flying through geometry with no size cue — independent of
+  camera position, so it works the same on any level regardless of layout.
+  The sky/star/sun background stays perspective regardless, by design (their
   near-unit-magnitude geometry relies on the perspective divide to spread
   across the screen at all; a parallel scene with a perspective background
   is a deliberate decoupling, not an oversight — see `Camera::orthographic_projection`
