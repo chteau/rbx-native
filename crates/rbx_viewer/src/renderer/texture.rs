@@ -1,6 +1,7 @@
 //! Uploading a decoded image as a mipmapped GPU texture.
 
 use crate::assets::Image;
+use crate::quality::MAX_TEXTURE_SIZE;
 
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 const CHANNELS: usize = 4;
@@ -84,6 +85,8 @@ impl Uploaded {
         image: &Image,
         format: wgpu::TextureFormat,
     ) -> Self {
+        let capped = capped(image, MAX_TEXTURE_SIZE);
+        let image = &capped;
         let levels = mip_chain(image);
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("rbxview image"),
@@ -154,6 +157,22 @@ impl Uploaded {
             ],
         })
     }
+}
+
+/// Downscales `image` until neither side exceeds `max_side`, halving (the same
+/// box filter [`mip_chain`] itself uses) as many times as it takes.
+///
+/// No quality level ever asks to *view* a texture above
+/// [`crate::quality::MAX_TEXTURE_SIZE`] — a level's own cap only moves the view
+/// down the already-uploaded mip chain (see [`skipped`]) — so uploading
+/// anything larger than that in the first place would just be VRAM no level
+/// ever reads. An asset already at or under `max_side` is untouched.
+fn capped(image: &Image, max_side: u32) -> Image {
+    let mut current = image.clone();
+    while current.width.max(current.height) > max_side {
+        current = halve(&current);
+    }
+    current
 }
 
 /// Halves the image down to 1x1, box-filtering as it goes.
@@ -245,6 +264,27 @@ mod tests {
             height,
             pixels: vec![value; (width * height) as usize * CHANNELS],
         }
+    }
+
+    #[test]
+    fn a_texture_past_the_cap_is_halved_down_to_it() {
+        // 2048 halves once to 1024, which already fits a cap of 1024.
+        let image = capped(&solid(2048, 2048, 9), 1024);
+        assert_eq!((image.width, image.height), (1024, 1024));
+    }
+
+    #[test]
+    fn a_texture_already_inside_the_cap_is_left_alone() {
+        let image = solid(300, 200, 9);
+        assert_eq!(capped(&image, 1024), image);
+    }
+
+    #[test]
+    fn a_non_square_texture_is_capped_on_its_longest_side() {
+        // 4096x1024 halves to 2048x512, then to 1024x256, which is the first
+        // level whose longest side fits a cap of 1024.
+        let image = capped(&solid(4096, 1024, 9), 1024);
+        assert_eq!((image.width, image.height), (1024, 256));
     }
 
     #[test]

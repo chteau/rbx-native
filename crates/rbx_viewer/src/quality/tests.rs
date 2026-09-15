@@ -204,3 +204,12 @@ fn multisampling_starts_at_the_top_band() {
 fn decals_survive_every_level() {
     assert!(profiles().iter().all(|profile| profile.decals));
 }
+
+// `renderer::texture` uploads to `table::MAX_TEXTURE_SIZE` and relies on no
+// band ever viewing past it — a band that did would be silently cropped.
+#[test]
+fn no_band_asks_to_view_past_the_upload_cap() {
+    assert!(profiles()
+        .iter()
+        .all(|profile| profile.texture_max_size <= table::MAX_TEXTURE_SIZE));
+}

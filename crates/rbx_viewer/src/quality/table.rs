@@ -206,6 +206,14 @@ const BANDS: [(u8, QualityProfile); 8] = [
     ),
 ];
 
+/// The highest `texture_max_size` any band above asks for.
+///
+/// `renderer::texture` uploads every image capped to this, since a level's own
+/// cap (`QualityProfile::texture_max_size`) only ever moves the *view* down the
+/// mip chain (see `texture::skipped`) — uploading a texel no band can ever view
+/// would just be VRAM nothing reads. Bump this if a band above ever needs more.
+pub(crate) const MAX_TEXTURE_SIZE: u32 = 1024;
+
 /// View distances, in studs. Roblox streams and culls instead of fading, so
 /// these are a stand-in for that (see `render_distance_visible` in
 /// lighting.wgsl); the top band never fades at all, which is what keeps a
