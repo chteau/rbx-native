@@ -1,0 +1,27 @@
+[package]
+name = "rbx_viewer"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "rbxview"
+path = "src/main.rs"
+
+[dependencies]
+rbx_dom = { path = "../rbx_dom" }
+rbx_binary = { path = "../rbx_binary" }
+# Sniffed alongside rbx_binary in load::read_place: a place file may be either
+# format, and this is the one shared spot that tells them apart.
+rbx_xml = { path = "../rbx_xml" }
+rbx_reflection = { path = "../rbx_reflection", features = ["embedded-dump"] }
+rbx_assets = { path = "../rbx_assets" }
+rbx_cloud = { path = "../rbx_cloud" }
+rbx_materials = { path = "../rbx_materials" }
+rbx_mesh = { path = "../rbx_mesh" }
+wgpu = "30.0"
+winit = "0.30"
+glam = "0.33"
+bytemuck = { version = "1.25", features = ["derive"] }
+pollster = "1.0"
+png = "0.18"

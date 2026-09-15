@@ -1,0 +1,57 @@
+name: CI
+
+# No branch filter on `push`: every branch is checked, not just main/PRs —
+# a broken branch should be visible before it becomes a PR, not after.
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux:
+    name: Gate (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        # rbx_studio (GPUI Kit) needs these for window/input handling on X11.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-x11-dev libx11-xcb-dev libssl-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo test
+        run: cargo test --workspace
+
+  windows:
+    name: Build & test (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # fmt/clippy are lint-only and OS-agnostic — the Linux job already
+      # covers them; this job exists to answer one question specifically:
+      # does the workspace actually build and pass its tests on Windows.
+      - name: cargo build
+        run: cargo build --workspace --all-targets
+
+      - name: cargo test
+        run: cargo test --workspace

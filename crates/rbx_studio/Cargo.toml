@@ -1,0 +1,50 @@
+[package]
+name = "rbx_studio"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "rbxstudio"
+path = "src/main.rs"
+
+[dependencies]
+gpui-kit = "0.6"
+# GPUI's own version: a RenderImage is built from its `image::Frame`s, so a
+# second copy of the crate would not typecheck.
+image = "0.25.10"
+rbx_assets = { path = "../rbx_assets" }
+# Ctrl+S serializes with the same encoder `rbx_viewer::read_place` already
+# pulls in transitively; declared directly since `save` calls it by name.
+rbx_binary = { path = "../rbx_binary" }
+rbx_dom = { path = "../rbx_dom" }
+# The command bar's own Luau VM: already built for `rbx_parser_cli`, so this
+# adds no new dependency version to the tree.
+rbx_lua = { path = "../rbx_lua" }
+# Enum ordinals only mean something to a reader once named (`256 (Plastic)`);
+# the viewer already pulls the embedded dump in, so this costs no new build.
+rbx_reflection = { path = "../rbx_reflection", features = ["embedded-dump"] }
+rbx_viewer = { path = "../rbx_viewer" }
+# Same reasoning as `rbx_binary` above: `save` sniffs and writes XML place
+# files with this crate's already-tested `is_xml`/`serialize`.
+rbx_xml = { path = "../rbx_xml" }
+# Parses (and re-serializes for the on-disk cache) the `ClassName ->
+# ExplorerImageIndex` table scanned out of ReflectionMetadata.xml at runtime.
+serde_json = "1"
+# Own HTTP GET for ReflectionMetadata.xml: a plain GitHub raw URL, not a
+# `rbxasset://` reference AssetResolver knows how to resolve. Same version
+# rbx_assets already pins, so this adds no new dependency version to the tree.
+ureq = "3"
+# GPUI's own handle type: the X11 window id the pointer lock warps in comes out
+# of it, so a second copy of the crate would not typecheck.
+raw-window-handle = "0.6"
+# Already in the tree under GPUI's X11 backend; `xfixes` hides the cursor and
+# `randr` is where the display's refresh rate comes from.
+x11rb = { version = "0.13", features = ["randr", "xfixes"] }
+
+[dev-dependencies]
+# `rbx_viewer::Pose::position` is a `glam::Vec3`; only `camera`'s tests need to
+# build one directly (production code only ever reads the fields back out of a
+# `Pose` the render thread already built). Same version `rbx_viewer` pins, so
+# this adds no new dependency version to the tree.
+glam = "0.33"

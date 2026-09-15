@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+
+# GPUI Kit's own recommendation: the toolkit and its text/layout stack are far
+# too slow unoptimised, even for a debug build of the editor.
+[profile.dev.package]
+gpui-pre = { opt-level = 3 }
+gpui-component = { opt-level = 3 }
+gpui-kit = { opt-level = 3 }
+gpui-kit-assets = { opt-level = 3 }
+gpui-pre-macros = { opt-level = 3 }
+gpui-pre-platform = { opt-level = 3 }
+rustybuzz = { opt-level = 3 }
+# Same reason on the editor's own side: an unoptimised offscreen frame (draw,
+# read back, swap to BGRA) costs over 100 ms, which no amount of debug symbols
+# is worth in a view that redraws continuously.
+rbx_studio = { opt-level = 3 }
+rbx_viewer = { opt-level = 3 }
+taffy = { opt-level = 3 }
+ttf-parser = { opt-level = 3 }

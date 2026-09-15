@@ -1,0 +1,62 @@
+name: Bug report
+description: Something doesn't work, or doesn't match real Roblox Studio.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. "It looks wrong" is much harder to act on than
+        a specific delta against a specific file — the more concrete you can
+        be, the faster this gets fixed.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what happened instead.
+      placeholder: |
+        I opened <place>, selected <instance>, and <action>...
+        Expected: ...
+        Actual: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce it
+      description: >-
+        The exact steps, and if it's a rendering/lighting/material issue,
+        the camera position and the place/instance involved (a screenshot's
+        camera CFrame if you have one, or just "orbiting `Workspace.Part`").
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: >-
+        Strongly preferred for anything visual — ideally a real Roblox
+        Studio screenshot of the same view next to rbx-native's, the same
+        way this project's own `CHANGELOG.md` documents fixes.
+    validations:
+      required: false
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: e.g. Linux (X11) / Windows / distro and GPU if relevant
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: >-
+        Relevant `ROADMAP.md` line, a suspicion about the cause, whatever
+        else seems useful.
+    validations:
+      required: false

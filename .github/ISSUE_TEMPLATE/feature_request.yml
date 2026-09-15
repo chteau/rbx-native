@@ -1,0 +1,52 @@
+name: Feature request
+description: Something that isn't implemented yet.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check [`ROADMAP.md`](../../ROADMAP.md) first — it may already be
+        planned, explicitly deferred, or listed as impossible without
+        Roblox's own engine, with the reasoning behind that call. If your
+        request is already there, a comment/reaction on that instead of a
+        new issue keeps things easier to track.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What's missing
+      description: What you want to be able to do that you currently can't.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it matters
+      description: >-
+        What it blocks or how it gets you closer to a viable Roblox Studio
+        replacement — this is what actually gets something prioritized.
+    validations:
+      required: true
+
+  - type: textarea
+    id: roadmap
+    attributes:
+      label: Relevant ROADMAP.md section
+      description: >-
+        Link or quote the closest existing category if there is one
+        (renderer / editor / scripting / play-test / platform / ...).
+    validations:
+      required: false
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Implementation notes
+      description: >-
+        If you've already looked at how Roblox does this (official docs,
+        a decompiled shader, a known file format) and have a source, include
+        it — this project treats "verified against a primary source" very
+        differently from "I think this is how it works."
+    validations:
+      required: false

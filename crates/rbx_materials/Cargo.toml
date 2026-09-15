@@ -1,0 +1,11 @@
+[package]
+name = "rbx_materials"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+
+# Only the coverage test needs the API dump; the table itself is plain data.
+[dev-dependencies]
+rbx_reflection = { path = "../rbx_reflection", features = ["embedded-dump"] }

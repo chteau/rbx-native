@@ -1,0 +1,527 @@
+//! The sun's shadow map: one orthographic depth pass over every caster in the
+//! scene, sampled back by `lighting.wgsl` through a comparison sampler.
+//!
+//! The casters are the pass's own (see [`casters`]) rather than borrowed from the
+//! colour passes: a depth pass needs positions and a model matrix and nothing
+//! else, so the unit shapes are re-instanced against the meshes
+//! [`super::geometry`] already holds, and a file mesh gets a position-only copy
+//! of its vertices — smaller than the textured copy it is drawn from, and it
+//! spares every colour-pass batch a caster-only instance buffer of its own.
+//!
+//! Acne is kept off with a slope-scaled depth bias rather than by culling front
+//! faces: downloaded meshes do not all agree on their winding (see
+//! `renderer::filemesh`), so "front" is not a face this renderer can name.
+//! The receiving side adds a normal offset — see `lamp_visibility` in
+//! `lighting.wgsl` — which is what keeps the PCF kernel from shadowing the very
+//! surface it is filtering.
+
+mod casters;
+mod fit;
+pub(super) mod local;
+
+use super::cull;
+use super::geometry::Meshes;
+use super::mesh::Vertex;
+use crate::quality::QualityProfile;
+use crate::scene::Scene;
+use casters::{
+    CasterIndex, CasterRaw, MeshBatch, ShapeBatch, CASTER_ATTRIBUTES, POSITION_ATTRIBUTE,
+};
+
+pub(super) use fit::{fit, Fit};
+
+const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
+/// Side of one `SpotLight`/`SurfaceLight`'s own map. Fixed rather than a
+/// quality knob: the cap on how many lights get one already trades quality for
+/// cost (see `QualityProfile::local_shadow_lights_max`), and a lantern close up
+/// is a small enough thing on screen that one map size covers every level.
+const LOCAL_SIZE: u32 = 1024;
+
+/// Exactly one texel's worth of slope, which is how much depth a caster tilted
+/// away from the lamp can gain across the texel it is quantized into; the
+/// constant term only covers the last float rounding. Both stay deliberately
+/// small, the receiver's normal offset picking up what the PCF kernel adds on
+/// top: this bias is measured in depth-buffer units, so on a place whose bounds
+/// span thousands of studs one extra unit of `slope_scale` is worth a foot of
+/// world — enough to eat the whole shadow of a one-stud-thick spawn pad.
+const DEPTH_BIAS: wgpu::DepthBiasState = wgpu::DepthBiasState {
+    constant: 2,
+    slope_scale: 1.0,
+    clamp: 0.0,
+};
+
+/// Standard depth, not the reversed-Z the colour passes use: an orthographic
+/// projection is linear in depth, so reversing it buys none of the precision it
+/// buys a perspective one, and a plain `Less` keeps the comparison sampler's
+/// `LessEqual` reading the right way round.
+const CLEAR_DEPTH: f32 = 1.0;
+
+const MATRIX_SIZE: wgpu::BufferAddress = std::mem::size_of::<[[f32; 4]; 4]>() as _;
+
+/// The depth map, its pipelines and the scene's casters.
+///
+/// Built once: the map's size comes from the quality level rather than from the
+/// window, so a resize never touches it and the bind group the colour passes
+/// sample it through stays valid for the whole run.
+pub(super) struct Shadows {
+    view: wgpu::TextureView,
+    sampler: wgpu::Sampler,
+    light: wgpu::Buffer,
+    bind_group: wgpu::BindGroup,
+    shapes: wgpu::RenderPipeline,
+    meshes: wgpu::RenderPipeline,
+    shape_batches: Vec<ShapeBatch>,
+    /// Where each caster sits in `shape_batches`, for [`Shadows::patch_caster`].
+    caster_index: CasterIndex,
+    mesh_batches: Vec<MeshBatch>,
+    /// Kept only so [`Shadows::set_quality`] can rebuild [`Shadows::local_bind_groups`]
+    /// around a fresh set of per-light buffers: the layout itself never changes.
+    light_layout: wgpu::BindGroupLayout,
+    /// The whole array, for the comparison sampling every surface pass does
+    /// (see `lights.wgsl`'s `local_shadow_map`).
+    local_view: wgpu::TextureView,
+    /// One single-layer view per array slot, for `render_local` to draw into.
+    /// Empty layers past what [`local::select`] filled this frame are simply
+    /// never read: [`local::pack`] marks them unshadowed on the CPU side.
+    local_layers: Vec<wgpu::TextureView>,
+    /// One small uniform per slot rather than one reused buffer: every slot is
+    /// written and drawn from in the same command encoder before it is
+    /// submitted, and a buffer wgpu has not yet flushed to the GPU may not be
+    /// written a second time and still have both passes see their own value.
+    local_buffers: Vec<wgpu::Buffer>,
+    local_bind_groups: Vec<wgpu::BindGroup>,
+}
+
+impl Shadows {
+    pub(super) fn new(device: &wgpu::Device, scene: &Scene, quality: &QualityProfile) -> Self {
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("rbxview shadow light"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let light = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rbxview shadow light"),
+            size: MATRIX_SIZE,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let (local_view, local_layers) = local_map(device, quality.local_shadow_lights_max);
+        let local_buffers = local_buffers(device, quality.local_shadow_lights_max);
+        let local_bind_groups = local_bind_groups(device, &layout, &local_buffers);
+        let (shape_batches, caster_index) = casters::shape_batches(device, scene);
+
+        Shadows {
+            view: map(device, quality.shadow_map_size),
+            // Linear filtering on a comparison sampler is the hardware's own
+            // 2x2 PCF: every tap of the kernel already comes back partly lit.
+            sampler: device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("rbxview shadow"),
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                compare: Some(wgpu::CompareFunction::LessEqual),
+                ..Default::default()
+            }),
+            bind_group: device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("rbxview shadow light"),
+                layout: &layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: light.as_entire_binding(),
+                }],
+            }),
+            shapes: pipeline(device, &layout, std::mem::size_of::<Vertex>() as _),
+            meshes: pipeline(device, &layout, std::mem::size_of::<[f32; 3]>() as _),
+            shape_batches,
+            caster_index,
+            mesh_batches: casters::mesh_batches(device, scene.resolved_file_meshes()),
+            light,
+            local_view,
+            local_layers,
+            local_buffers,
+            local_bind_groups,
+            light_layout: layout,
+        }
+    }
+
+    /// Reallocates the sun's map and the local one at the level's own size.
+    /// Only textures and buffers: the casters, the pipelines and the layouts
+    /// are all size-agnostic, and the PCF radius and the reach live in the
+    /// lighting uniform instead.
+    ///
+    /// The caller must rebind every bind group holding the old views or the old
+    /// [`Shadows::local_view`]/light buffer.
+    pub(super) fn set_quality(&mut self, device: &wgpu::Device, quality: &QualityProfile) {
+        self.view = map(device, quality.shadow_map_size);
+        let (view, layers) = local_map(device, quality.local_shadow_lights_max);
+        self.local_view = view;
+        self.local_layers = layers;
+        self.local_buffers = local_buffers(device, quality.local_shadow_lights_max);
+        self.local_bind_groups = local_bind_groups(device, &self.light_layout, &self.local_buffers);
+    }
+
+    /// Rewrites one caster's transform in place — the shadow-map half of a
+    /// single-instance edit (see `Renderer::patch_instance`). `false` when
+    /// `referent` casts no shadow here, the caller's cue to fall back to a
+    /// full reload.
+    pub(super) fn patch_caster(
+        &mut self,
+        queue: &wgpu::Queue,
+        referent: rbx_dom::Ref,
+        kind: crate::scene::ShapeKind,
+        model: glam::Mat4,
+    ) -> bool {
+        casters::patch(
+            queue,
+            &mut self.shape_batches,
+            &self.caster_index,
+            referent,
+            kind,
+            model.to_cols_array_2d(),
+        )
+    }
+
+    pub(super) fn view(&self) -> &wgpu::TextureView {
+        &self.view
+    }
+
+    pub(super) fn sampler(&self) -> &wgpu::Sampler {
+        &self.sampler
+    }
+
+    /// The whole local shadow array, for `lights.wgsl`'s comparison sampling —
+    /// read through the very same [`Shadows::sampler`] the sun map is.
+    pub(super) fn local_view(&self) -> &wgpu::TextureView {
+        &self.local_view
+    }
+
+    /// How many `SpotLight`/`SurfaceLight`s can cast a shadow this frame — the
+    /// array's own layer count, and so the cap `local::select` must be given.
+    pub(super) fn local_cap(&self) -> usize {
+        self.local_layers.len()
+    }
+
+    /// Redraws the whole map for this frame's fit. Cheap enough to do every
+    /// frame — the fit is snapped to texels, so a still camera redraws the same
+    /// depths rather than subtly different ones.
+    pub(super) fn render(
+        &self,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        meshes: &Meshes,
+        fit: &Fit,
+    ) {
+        queue.write_buffer(
+            &self.light,
+            0,
+            bytemuck::cast_slice(&fit.view_projection.to_cols_array()),
+        );
+        let mut pass = self.begin(encoder, &self.view);
+        self.draw_casters(&mut pass, meshes, &self.bind_group, Some(fit));
+    }
+
+    /// Redraws every selected local light's own map into its assigned array
+    /// layer, sharing the very same depth-only pipelines and casters the sun
+    /// pass draws with (see [`Shadows::draw_casters`]).
+    ///
+    /// `selected` must not hold more entries than [`Shadows::local_cap`] — the
+    /// caller gets that cap from here in the first place (see
+    /// `Renderer::draw`), so a mismatch would be this module's own bug rather
+    /// than a place file's.
+    pub(super) fn render_local(
+        &self,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        meshes: &Meshes,
+        selected: &[local::Selected],
+    ) {
+        debug_assert!(selected.len() <= self.local_cap());
+        for (layer, light) in selected.iter().enumerate() {
+            queue.write_buffer(
+                &self.local_buffers[layer],
+                0,
+                bytemuck::cast_slice(&light.view_projection.to_cols_array()),
+            );
+            let mut pass = self.begin(encoder, &self.local_layers[layer]);
+            self.draw_casters(&mut pass, meshes, &self.local_bind_groups[layer], None);
+        }
+    }
+
+    /// One depth-only pass over `view`, cleared and ready for casters.
+    fn begin<'e>(
+        &self,
+        encoder: &'e mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+    ) -> wgpu::RenderPass<'e> {
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("rbxview shadow map"),
+            color_attachments: &[],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(CLEAR_DEPTH),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        })
+    }
+
+    /// Every caster in the scene, from whichever light `bind_group`'s own
+    /// buffer currently holds the view-projection of — the sun's or one local
+    /// light's, the pass and the geometry being identical either way.
+    ///
+    /// `cull` is `Some` only for the sun pass, whose own map can cover a huge
+    /// area: it skips shape casters [`Fit::visible`] says cannot land in it,
+    /// same as `shaped::Shaped::draw` does for the main pass but against a
+    /// deliberately wider test. A local light's own map is small and close by
+    /// construction, so its casters are drawn unfiltered (`None`) — see
+    /// `Renderer::draw`'s call to [`Shadows::render_local`].
+    fn draw_casters<'p>(
+        &'p self,
+        pass: &mut wgpu::RenderPass<'p>,
+        meshes: &Meshes,
+        bind_group: &'p wgpu::BindGroup,
+        cull: Option<&Fit>,
+    ) {
+        pass.set_pipeline(&self.shapes);
+        pass.set_bind_group(0, bind_group, &[]);
+        for batch in &self.shape_batches {
+            let Some(mesh) = meshes.get(batch.kind) else {
+                continue;
+            };
+            match cull {
+                Some(fit) => {
+                    let runs = cull::visible_runs(batch.count, |index| {
+                        let (center, radius) = batch.bounds[index as usize];
+                        fit.visible(center, radius)
+                    });
+                    if runs.is_empty() {
+                        continue;
+                    }
+                    pass.set_vertex_buffer(1, batch.instances.slice(..));
+                    for run in runs {
+                        mesh.draw_range(pass, run);
+                    }
+                }
+                None => {
+                    pass.set_vertex_buffer(1, batch.instances.slice(..));
+                    mesh.draw(pass, batch.count);
+                }
+            }
+        }
+
+        pass.set_pipeline(&self.meshes);
+        pass.set_bind_group(0, bind_group, &[]);
+        for batch in &self.mesh_batches {
+            pass.set_vertex_buffer(0, batch.vertices.slice(..));
+            pass.set_vertex_buffer(1, batch.instances.slice(..));
+            pass.set_index_buffer(batch.indices.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..batch.index_count, 0, 0..batch.count);
+        }
+    }
+}
+
+/// The depth map itself.
+///
+/// Allocated even where the level casts no shadows: the bind group is shared by
+/// every surface pipeline, and a missing texture would mean a second layout
+/// rather than one unread kilobyte of depth.
+fn map(device: &wgpu::Device, side: u32) -> wgpu::TextureView {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("rbxview shadow map"),
+        size: wgpu::Extent3d {
+            width: side,
+            height: side,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+
+    texture.create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+/// The local shadow texture array — one whole-array view for sampling, and one
+/// single-layer view per slot for `render_local` to draw into.
+///
+/// Allocated at `cap.max(1)` layers even when `cap` is 0, for the reason
+/// [`map`] gives for the sun's own map: bind group 0 is shared by every
+/// surface pipeline whatever the level allows.
+fn local_map(device: &wgpu::Device, cap: usize) -> (wgpu::TextureView, Vec<wgpu::TextureView>) {
+    let layers = cap.max(1) as u32;
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("rbxview local shadow map"),
+        size: wgpu::Extent3d {
+            width: LOCAL_SIZE,
+            height: LOCAL_SIZE,
+            depth_or_array_layers: layers,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+
+    let array_view = texture.create_view(&wgpu::TextureViewDescriptor {
+        label: Some("rbxview local shadow map (array)"),
+        dimension: Some(wgpu::TextureViewDimension::D2Array),
+        ..Default::default()
+    });
+    let layer_views = (0..layers)
+        .map(|layer| {
+            texture.create_view(&wgpu::TextureViewDescriptor {
+                label: Some("rbxview local shadow map (layer)"),
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                base_array_layer: layer,
+                array_layer_count: Some(1),
+                ..Default::default()
+            })
+        })
+        .collect();
+
+    (array_view, layer_views)
+}
+
+/// One small view-projection uniform per array slot: every slot is written and
+/// drawn from within the same command encoder before it is submitted, and a
+/// single reused buffer would let a later write race the earlier pass that
+/// reads it (see [`Shadows::render_local`]).
+fn local_buffers(device: &wgpu::Device, cap: usize) -> Vec<wgpu::Buffer> {
+    (0..cap.max(1))
+        .map(|_| {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("rbxview local shadow light"),
+                size: MATRIX_SIZE,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })
+        })
+        .collect()
+}
+
+fn local_bind_groups(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    buffers: &[wgpu::Buffer],
+) -> Vec<wgpu::BindGroup> {
+    buffers
+        .iter()
+        .map(|buffer| {
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("rbxview local shadow light"),
+                layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.as_entire_binding(),
+                }],
+            })
+        })
+        .collect()
+}
+
+/// One depth-only pipeline. `stride` is the only thing the two differ by: both
+/// read a `vec3` position out of slot 0, out of buffers packed for different
+/// colour passes.
+fn pipeline(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    stride: wgpu::BufferAddress,
+) -> wgpu::RenderPipeline {
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("rbxview shadow"),
+        source: wgpu::ShaderSource::Wgsl(include_str!("shadow.wgsl").into()),
+    });
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("rbxview shadow"),
+        bind_group_layouts: &[Some(layout)],
+        immediate_size: 0,
+    });
+
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("rbxview shadow"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            buffers: &[
+                Some(wgpu::VertexBufferLayout {
+                    array_stride: stride,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &POSITION_ATTRIBUTE,
+                }),
+                Some(wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<CasterRaw>() as _,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &CASTER_ATTRIBUTES,
+                }),
+            ],
+        },
+        primitive: wgpu::PrimitiveState {
+            // See the module doc: winding is not dependable here, so neither
+            // face may be dropped.
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: FORMAT,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::Less),
+            stencil: wgpu::StencilState::default(),
+            bias: DEPTH_BIAS,
+        }),
+        multisample: wgpu::MultisampleState::default(),
+        fragment: None,
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
+/// Which lamp `lighting.wgsl` has to darken, and whether there is one at all.
+///
+/// Roblox keeps one directional lamp above the horizon at a time: the sun by
+/// day, the moon — which this renderer draws as the fill lamp at `-L`, see
+/// `crate::lighting` — once it has set. Whichever is up is the one that casts.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) enum Lamp {
+    None,
+    Sun,
+    Fill,
+}
+
+impl Lamp {
+    /// `0` off, `+1` the sun term, `-1` the fill term: what the uniform carries
+    /// and what `shade` selects on.
+    pub(super) fn marker(self) -> f32 {
+        match self {
+            Lamp::None => 0.0,
+            Lamp::Sun => 1.0,
+            Lamp::Fill => -1.0,
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "shadow/tests.rs"]
+mod tests;

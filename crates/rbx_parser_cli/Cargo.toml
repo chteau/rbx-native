@@ -1,0 +1,27 @@
+[package]
+name = "rbx_parser_cli"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "rbxdump"
+path = "src/main.rs"
+
+[[bin]]
+name = "rbxlua"
+path = "src/lua/main.rs"
+
+[dependencies]
+rbx_dom = { path = "../rbx_dom" }
+rbx_binary = { path = "../rbx_binary" }
+# Sniffed alongside rbx_binary: rbxdump also reads .rbxlx/.rbxmx place files.
+rbx_xml = { path = "../rbx_xml" }
+rbx_reflection = { path = "../rbx_reflection", features = ["embedded-dump"] }
+# rbxlua only: runs a Luau script against the loaded DOM.
+rbx_lua = { path = "../rbx_lua" }
+
+[dev-dependencies]
+# rbxlua's integration tests write scripts and `--out` targets to disk;
+# already resolved in the lockfile via another crate's dev-dependencies.
+tempfile = "3"

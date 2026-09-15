@@ -1,0 +1,20 @@
+[package]
+name = "rbx_xml"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rbx_dom = { path = "../rbx_dom" }
+thiserror = "2"
+# Standard streaming XML reader for the ecosystem; already resolved in
+# Cargo.lock (pulled in transitively via wayland-scanner) so this adds no new
+# dependency version to the lock, just a new direct edge to it.
+quick-xml = "0.41"
+# Decodes BinaryString/SharedString payloads (RFC 2045 Base64), as the xml.md
+# spec requires; already resolved in Cargo.lock.
+base64 = "0.22"
+
+[dev-dependencies]
+# Cross-checks decoded Variant shapes against the binary parser's own fixtures.
+rbx_binary = { path = "../rbx_binary" }

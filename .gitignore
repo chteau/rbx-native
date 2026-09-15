@@ -1,0 +1,20 @@
+/target
+shots/
+
+# Claude Code's own local, session-specific state — machine/session
+# metadata (PIDs, timestamps, local permission grants) that must never be
+# shared between contributors. `.claude/skills/` is real project tooling
+# (see README.md) and stays tracked; only these local-state files are
+# ignored.
+/.claude/settings.local.json
+/.claude/scheduled_tasks.lock
+
+# A Roblox Open Cloud API key must never be committed — see README.md for
+# where it actually belongs (an env var, or one of these files, outside the
+# repo). Ignored here only as a safety net in case one ends up in the tree
+# by habit or mistake.
+api_key
+roblox.key
+*.key
+.env
+.env.*

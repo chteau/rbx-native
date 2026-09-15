@@ -1,0 +1,600 @@
+use rbx_dom::{
+    Axes, CFrameData, Color3Data, Content, Faces, Font, FontStyle, Instance, NumberRange,
+    NumberSequence, NumberSequenceKeypoint, PhysicalProperties, UDim, UDim2, UniqueId, Vector2Data,
+    Vector3Data,
+};
+
+use super::*;
+
+fn part() -> Ref {
+    Ref::new(2)
+}
+
+fn workspace() -> Ref {
+    Ref::new(1)
+}
+
+/// A tree and the panel reading it, paired the way `Shell` holds them: the
+/// panel borrows the DOM on every call, so a test asks the pair rather than
+/// the panel alone.
+struct Fixture {
+    dom: WeakDom,
+    properties: Properties,
+}
+
+impl Fixture {
+    fn rows(&self, reference: Ref) -> Vec<PropertyRow> {
+        self.properties.rows(&self.dom, reference)
+    }
+
+    fn title(&self, reference: Ref) -> Option<String> {
+        self.properties.title(&self.dom, reference)
+    }
+
+    fn rows_matching(&self, reference: Ref, filter: &str) -> Vec<PropertyRow> {
+        self.properties.rows_matching(&self.dom, reference, filter)
+    }
+}
+
+/// A Workspace holding one Part carrying `properties`, wrapped with the real
+/// reflection dump so enum names resolve the way they do in the editor.
+fn properties(values: &[(&str, Variant)]) -> Fixture {
+    let mut dom = WeakDom::new();
+    dom.insert(Instance::new(workspace(), "Workspace", "Workspace"));
+    let mut instance = Instance::new(part(), "Part", "Baseplate");
+    for (name, value) in values {
+        instance
+            .properties_mut()
+            .insert((*name).to_owned(), value.clone());
+    }
+    dom.insert(instance);
+    dom.set_parent(part(), Some(workspace()));
+
+    Fixture {
+        dom,
+        properties: Properties::new(ReflectionDatabase::embedded()),
+    }
+}
+
+/// The row for `name` specifically: `rows()` also carries a synthesized
+/// `Name` row (see `Properties::rows`), which is irrelevant to a test only
+/// checking one property's formatting.
+fn formatted(name: &str, value: Variant) -> String {
+    properties(&[(name, value)])
+        .rows(part())
+        .into_iter()
+        .find(|row| row.name == name)
+        .expect("the row for the property under test")
+        .value
+}
+
+fn vector3(x: f32, y: f32, z: f32) -> Vector3Data {
+    Vector3Data { x, y, z }
+}
+
+/// The row for `name`'s [`EditKind`].
+fn edit_kind(name: &str, value: Variant) -> Option<EditKind> {
+    properties(&[(name, value)])
+        .rows(part())
+        .into_iter()
+        .find(|row| row.name == name)
+        .expect("the row for the property under test")
+        .edit
+}
+
+/// The row for `name`'s resolved category.
+fn category(name: &str, value: Variant) -> String {
+    properties(&[(name, value)])
+        .rows(part())
+        .into_iter()
+        .find(|row| row.name == name)
+        .expect("the row for the property under test")
+        .category
+}
+
+#[test]
+fn the_title_is_the_class_and_the_quoted_name() {
+    let properties = properties(&[]);
+
+    assert_eq!(
+        properties.title(part()).as_deref(),
+        Some("Part \"Baseplate\"")
+    );
+    assert_eq!(properties.title(Ref::new(99)), None);
+}
+
+#[test]
+fn rows_come_sorted_by_name() {
+    let rows = properties(&[
+        ("Transparency", Variant::Float32(0.5)),
+        ("Anchored", Variant::Bool(true)),
+        ("Name", Variant::String("Baseplate".into())),
+    ])
+    .rows(part());
+
+    let names: Vec<&str> = rows.iter().map(|row| row.name.as_str()).collect();
+    assert_eq!(names, ["Anchored", "Name", "Transparency"]);
+}
+
+#[test]
+fn a_missing_instance_has_no_rows() {
+    assert!(properties(&[]).rows(Ref::new(99)).is_empty());
+}
+
+#[test]
+fn scalars_print_plainly_and_strings_quoted() {
+    assert_eq!(formatted("Anchored", Variant::Bool(true)), "true");
+    assert_eq!(formatted("Count", Variant::Int32(-3)), "-3");
+    assert_eq!(formatted("Big", Variant::Int64(1 << 40)), "1099511627776");
+    assert_eq!(formatted("Reflectance", Variant::Float32(0.0)), "0");
+    assert_eq!(formatted("BackParamA", Variant::Float32(-0.5)), "-0.5");
+    assert_eq!(formatted("Precise", Variant::Float64(2.5)), "2.5");
+    assert_eq!(
+        formatted("CollisionGroup", Variant::String("Default".into())),
+        "\"Default\""
+    );
+}
+
+#[test]
+fn long_and_binary_values_show_their_size_only() {
+    let long = "x".repeat(MAX_STRING_LEN + 1);
+    assert_eq!(
+        formatted("Source", Variant::String(long)),
+        format!("<{} bytes>", MAX_STRING_LEN + 1)
+    );
+    assert_eq!(
+        formatted(
+            "Mystery",
+            Variant::Unknown {
+                type_id: 0x7f,
+                raw: vec![0; 12],
+            }
+        ),
+        "<12 bytes>"
+    );
+    // Exactly at the limit still reads as text.
+    let fits = "y".repeat(MAX_STRING_LEN);
+    assert_eq!(
+        formatted("Fits", Variant::String(fits.clone())),
+        format!("{fits:?}")
+    );
+}
+
+#[test]
+fn vectors_are_parenthesized_triplets() {
+    assert_eq!(
+        formatted("Size", Variant::Vector3(vector3(512.0, 20.0, 512.0))),
+        "(512, 20, 512)"
+    );
+    assert_eq!(
+        formatted("Offset", Variant::Vector2(Vector2Data { x: 1.5, y: -2.0 })),
+        "(1.5, -2)"
+    );
+    assert_eq!(
+        formatted("Cell", Variant::Vector3int16 { x: 1, y: 2, z: 3 }),
+        "(1, 2, 3)"
+    );
+}
+
+#[test]
+fn a_cframe_shows_position_then_rotation() {
+    let frame = CFrameData {
+        position: vector3(0.0, -8.0, 0.0),
+        rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+    };
+
+    assert_eq!(
+        formatted("CFrame", Variant::CFrame(frame)),
+        "pos=(0, -8, 0) rot=[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]"
+    );
+    assert_eq!(
+        formatted("PivotOffset", Variant::OptionalCFrame(Some(frame))),
+        "pos=(0, -8, 0) rot=[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]"
+    );
+    assert_eq!(
+        formatted("PivotOffset", Variant::OptionalCFrame(None)),
+        "none"
+    );
+}
+
+#[test]
+fn colors_are_byte_triplets_whichever_way_they_were_stored() {
+    let color = Color3Data {
+        r: 0.0,
+        g: 0.5,
+        b: 1.0,
+    };
+
+    assert_eq!(formatted("Color", Variant::Color3(color)), "(0, 128, 255)");
+    assert_eq!(
+        formatted(
+            "Color3uint8",
+            Variant::Color3uint8 {
+                r: 91,
+                g: 91,
+                b: 91
+            }
+        ),
+        "(91, 91, 91)"
+    );
+    assert_eq!(
+        formatted("BrickColor", Variant::BrickColor(194)),
+        "BrickColor(194)"
+    );
+}
+
+#[test]
+fn enums_resolve_to_their_name_through_the_reflection_dump() {
+    assert_eq!(formatted("Material", Variant::Enum(256)), "256 (Plastic)");
+    assert_eq!(formatted("BackSurface", Variant::Enum(0)), "0 (Smooth)");
+}
+
+#[test]
+fn an_unknown_enum_stays_a_bare_ordinal() {
+    // A value the dump has no name for, and a property it has never heard of.
+    assert_eq!(formatted("Material", Variant::Enum(999_999)), "999999");
+    assert_eq!(formatted("MadeUp", Variant::Enum(7)), "7");
+}
+
+#[test]
+fn refs_read_as_the_target_name() {
+    assert_eq!(formatted("Parent", Variant::Ref(workspace())), "Workspace");
+    assert_eq!(formatted("Dangling", Variant::Ref(Ref::new(99))), "nil");
+    assert_eq!(
+        formatted("Mesh", Variant::Content(Content::Object(workspace()))),
+        "Workspace"
+    );
+}
+
+#[test]
+fn content_variants_keep_their_kind_visible() {
+    assert_eq!(
+        formatted("Texture", Variant::Content(Content::None)),
+        "Content(none)"
+    );
+    assert_eq!(
+        formatted(
+            "Texture",
+            Variant::Content(Content::Uri("rbxassetid://1".into()))
+        ),
+        "Content(\"rbxassetid://1\")"
+    );
+}
+
+#[test]
+fn bit_flags_list_the_set_names_in_wire_order() {
+    assert_eq!(
+        formatted("Faces", Variant::Faces(Faces::from_bits(0b01_0001))),
+        "Faces(Front|Top)"
+    );
+    assert_eq!(
+        formatted("Faces", Variant::Faces(Faces::default())),
+        "Faces()"
+    );
+    assert_eq!(
+        formatted("Axes", Variant::Axes(Axes::from_bits(0b101))),
+        "Axes(X|Z)"
+    );
+}
+
+#[test]
+fn compound_values_match_the_text_dump() {
+    assert_eq!(
+        formatted(
+            "Ray",
+            Variant::Ray {
+                origin: vector3(0.0, 1.0, 0.0),
+                direction: vector3(0.0, -1.0, 0.0),
+            }
+        ),
+        "Ray { origin: (0, 1, 0), direction: (0, -1, 0) }"
+    );
+    assert_eq!(
+        formatted(
+            "Range",
+            Variant::NumberRange(NumberRange { min: 1.0, max: 2.5 })
+        ),
+        "[1, 2.5]"
+    );
+    assert_eq!(
+        formatted(
+            "Rect",
+            Variant::Rect(rbx_dom::Rect {
+                min: Vector2Data { x: 0.0, y: 0.0 },
+                max: Vector2Data { x: 4.0, y: 2.0 },
+            })
+        ),
+        "{(0, 0), (4, 2)}"
+    );
+    assert_eq!(
+        formatted(
+            "Curve",
+            Variant::NumberSequence(NumberSequence {
+                keypoints: vec![NumberSequenceKeypoint {
+                    time: 0.0,
+                    value: 1.0,
+                    envelope: 0.0,
+                }],
+            })
+        ),
+        "NumberSequence[0: 1 ±0]"
+    );
+    assert_eq!(
+        formatted(
+            "Physics",
+            Variant::PhysicalProperties(PhysicalProperties::Default)
+        ),
+        "Default"
+    );
+}
+
+#[test]
+fn ui_dimensions_use_roblox_brace_notation() {
+    assert_eq!(
+        formatted(
+            "Size",
+            Variant::UDim(UDim {
+                scale: 0.5,
+                offset: 10
+            })
+        ),
+        "{0.5, 10}"
+    );
+    assert_eq!(
+        formatted(
+            "Position",
+            Variant::UDim2(UDim2 {
+                x: UDim {
+                    scale: 0.0,
+                    offset: 4
+                },
+                y: UDim {
+                    scale: 1.0,
+                    offset: -4
+                },
+            })
+        ),
+        "{{0, 4}, {1, -4}}"
+    );
+}
+
+#[test]
+fn identity_and_asset_values_keep_the_dump_spelling() {
+    assert_eq!(
+        formatted(
+            "UniqueId",
+            Variant::UniqueId(UniqueId {
+                index: 1,
+                time: 2,
+                random: 3,
+            })
+        ),
+        "00000001000000020000000000000003"
+    );
+    assert_eq!(
+        formatted(
+            "FontFace",
+            Variant::Font(Font {
+                family: "rbxasset://fonts/families/Arial.json".into(),
+                weight: 400,
+                style: FontStyle::Normal,
+                cached_face_id: None,
+            })
+        ),
+        "Font { family: \"rbxasset://fonts/families/Arial.json\", weight: 400, style: Normal }"
+    );
+    assert_eq!(
+        formatted("Capabilities", Variant::SecurityCapabilities(0x10)),
+        "SecurityCapabilities(0x10)"
+    );
+    assert_eq!(
+        formatted("Tags", Variant::SharedString(3)),
+        "SharedString(3)"
+    );
+}
+
+#[test]
+fn the_filter_is_a_case_insensitive_substring_of_the_name() {
+    assert!(matches("CanCollide", "collide"));
+    assert!(matches("CanCollide", "CANC"));
+    assert!(matches("CanCollide", ""));
+    assert!(matches("CanCollide", "  "));
+    assert!(!matches("CanCollide", "anchor"));
+    assert!(!matches("CanCollide", "Collide Can"));
+}
+
+#[test]
+fn filtered_rows_keep_only_matching_names_in_order() {
+    let properties = properties(&[
+        ("CanTouch", Variant::Bool(true)),
+        ("Anchored", Variant::Bool(true)),
+        ("CanCollide", Variant::Bool(false)),
+    ]);
+
+    let names = |filter: &str| -> Vec<String> {
+        properties
+            .rows_matching(part(), filter)
+            .into_iter()
+            .map(|row| row.name)
+            .collect()
+    };
+    assert_eq!(names("can"), ["CanCollide", "CanTouch"]);
+    // `Name` is synthesized for every instance (see `Properties::rows`), not
+    // just the properties this fixture inserted.
+    assert_eq!(names(""), ["Anchored", "CanCollide", "CanTouch", "Name"]);
+    assert!(names("zzz").is_empty());
+}
+
+#[test]
+fn category_comes_from_the_reflection_dump() {
+    assert_eq!(category("Anchored", Variant::Bool(true)), "Part");
+    assert_eq!(category("CanCollide", Variant::Bool(true)), "Collision");
+    assert_eq!(
+        category(
+            "Color",
+            Variant::Color3(Color3Data {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0
+            })
+        ),
+        "Appearance"
+    );
+}
+
+#[test]
+fn an_unreflected_property_falls_back_to_the_other_category() {
+    assert_eq!(category("MadeUp", Variant::Bool(true)), "Other");
+}
+
+#[test]
+fn bool_edits_as_a_checkbox() {
+    assert_eq!(
+        edit_kind("Anchored", Variant::Bool(true)),
+        Some(EditKind::Bool(true))
+    );
+}
+
+#[test]
+fn color3_edits_as_0_255_channels_matching_the_read_only_display() {
+    let color = Color3Data {
+        r: 0.0,
+        g: 0.5,
+        b: 1.0,
+    };
+    assert_eq!(
+        edit_kind("Color", Variant::Color3(color)),
+        Some(EditKind::Color {
+            r: 0,
+            g: 128,
+            b: 255
+        })
+    );
+}
+
+#[test]
+fn color3uint8_edits_its_stored_bytes_directly() {
+    assert_eq!(
+        edit_kind(
+            "Color3uint8Test",
+            Variant::Color3uint8 {
+                r: 10,
+                g: 20,
+                b: 30
+            }
+        ),
+        Some(EditKind::Color {
+            r: 10,
+            g: 20,
+            b: 30
+        })
+    );
+}
+
+#[test]
+fn brick_color_stays_a_text_field_with_no_bundled_palette() {
+    assert_eq!(
+        edit_kind("BrickColor", Variant::BrickColor(194)),
+        Some(EditKind::Text("194".to_owned()))
+    );
+}
+
+#[test]
+fn enum_edits_as_a_dropdown_of_every_resolved_member() {
+    let Some(EditKind::Enum { current, items }) = edit_kind("Material", Variant::Enum(256)) else {
+        panic!("Material should resolve to a dropdown");
+    };
+    assert_eq!(current, "Plastic");
+    assert!(items.iter().any(|item| item == "Plastic"));
+    assert!(items.len() > 1);
+}
+
+#[test]
+fn an_unresolved_enum_falls_back_to_its_raw_ordinal_as_text() {
+    assert_eq!(
+        edit_kind("MadeUp", Variant::Enum(7)),
+        Some(EditKind::Text("7".to_owned()))
+    );
+}
+
+#[test]
+fn vector3_and_cframe_edit_as_three_labeled_fields() {
+    let vector = vector3(1.0, 2.0, 3.0);
+    let expected = Some(EditKind::Fields {
+        labels: &["X", "Y", "Z"],
+        values: vec!["1".to_owned(), "2".to_owned(), "3".to_owned()],
+    });
+
+    assert_eq!(edit_kind("Size", Variant::Vector3(vector)), expected);
+
+    let frame = CFrameData {
+        position: vector,
+        rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+    };
+    // Position only — a `CFrame`'s rotation has no field row (see
+    // `edit::edit_text`).
+    assert_eq!(edit_kind("CFrame", Variant::CFrame(frame)), expected);
+}
+
+#[test]
+fn vector2_edits_as_two_labeled_fields() {
+    assert_eq!(
+        edit_kind("Offset", Variant::Vector2(Vector2Data { x: 1.5, y: -2.0 })),
+        Some(EditKind::Fields {
+            labels: &["X", "Y"],
+            values: vec!["1.5".to_owned(), "-2".to_owned()],
+        })
+    );
+}
+
+#[test]
+fn udim2_edits_as_four_labeled_fields() {
+    let position = UDim2 {
+        x: UDim {
+            scale: 0.0,
+            offset: 4,
+        },
+        y: UDim {
+            scale: 1.0,
+            offset: -4,
+        },
+    };
+    assert_eq!(
+        edit_kind("Position", Variant::UDim2(position)),
+        Some(EditKind::Fields {
+            labels: &["X Scale", "X Offset", "Y Scale", "Y Offset"],
+            values: vec![
+                "0".to_owned(),
+                "4".to_owned(),
+                "1".to_owned(),
+                "-4".to_owned()
+            ],
+        })
+    );
+}
+
+#[test]
+fn rows_group_by_category_in_alphabetical_order_with_no_empty_groups() {
+    let rows = properties(&[
+        ("Anchored", Variant::Bool(true)),
+        (
+            "Color",
+            Variant::Color3(Color3Data {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+            }),
+        ),
+        ("CanCollide", Variant::Bool(true)),
+    ])
+    .rows(part());
+
+    let groups = group_by_category(rows);
+    let categories: Vec<&str> = groups
+        .iter()
+        .map(|(category, _)| category.as_str())
+        .collect();
+    // `Data` comes from the synthesized `Name` row every instance carries.
+    assert_eq!(categories, ["Appearance", "Collision", "Data", "Part"]);
+    assert!(groups.iter().all(|(_, rows)| !rows.is_empty()));
+}
