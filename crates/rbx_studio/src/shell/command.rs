@@ -24,6 +24,33 @@ impl Shell {
         self.select(reference, cx);
     }
 
+    /// Adds `name`'s first match to the selection exactly as a
+    /// `Shift`/`Ctrl`/`Cmd`-click on it would (see [`Shell::extend_selection`]),
+    /// rather than replacing it the way [`Shell::select_by_name`] does. A
+    /// no-op if nothing resolves.
+    pub(super) fn extend_by_name(&mut self, name: &str, cx: &mut Context<Self>) {
+        let Some(reference) = explorer::find_by_name(&self.dom, name) else {
+            return;
+        };
+        self.extend_selection(reference, cx);
+    }
+
+    /// `RBX_STUDIO_SELECT=<name>[,<name>...]`: selects the first name, then
+    /// adds each further one the way `Shift`/`Ctrl`/`Cmd`-click would —
+    /// documented on its call sites in `Shell::new`.
+    pub(super) fn apply_debug_select(&mut self, spec: &str, cx: &mut Context<Self>) {
+        let mut names = spec
+            .split(',')
+            .map(str::trim)
+            .filter(|name| !name.is_empty());
+        if let Some(first) = names.next() {
+            self.select_by_name(first, cx);
+        }
+        for name in names {
+            self.extend_by_name(name, cx);
+        }
+    }
+
     /// Selects `reference` alone in the Explorer the way clicking its row
     /// would, expanding whatever ancestors were collapsed and replacing
     /// whatever else was selected. Shared with `shell::keys`, which selects a

@@ -265,17 +265,34 @@ impl Shell {
         // `rbx_viewer::view::View`) instead of only proving it was set last.
         shell.apply_debug_tool(cx);
 
+        // `RBX_STUDIO_SELECT=<name>[,<name>...]`: `main::load` already
+        // resolved a single name into the initial `Place.selected` before
+        // the window opened (too early for a comma list — it looks up one
+        // literal name and finds nothing for a name containing a comma), so
+        // this is what actually applies a multi-instance selection — a
+        // debugging aid for a screenshot of the outline/gizmo over more than
+        // one part, since nothing else can send the viewport a
+        // `Shift`/`Ctrl`/`Cmd`-click on the editor's behalf.
+        if let Ok(spec) = std::env::var(crate::SELECT_VARIABLE) {
+            shell.apply_debug_select(&spec, cx);
+        }
+
+        // `RBX_STUDIO_DRAG` (see `shell::drag`): applied right after
+        // selection, so it moves whatever the file itself or
+        // `RBX_STUDIO_SELECT` just selected — a screenshot aid for a group
+        // drag.
+        shell.apply_debug_drag(cx);
+
         // A debugging aid for a screenshot that proves the bar works without
         // sending it synthetic input (see `AGENTS.md`'s safety rules): runs
         // exactly the pipeline Enter would, once, before the first frame.
         if let Ok(source) = std::env::var(command_bar::RUN_VARIABLE) {
             shell.run_command(&source, cx);
-            // `RBX_STUDIO_SELECT` was already tried once, on the pristine DOM,
-            // in `main::load` — too early to name anything the script just
+            // Re-applied: too early above to name anything the script just
             // created. Trying it again here is what lets a screenshot show
             // that without a click nothing else can send.
-            if let Ok(name) = std::env::var(crate::SELECT_VARIABLE) {
-                shell.select_by_name(&name, cx);
+            if let Ok(spec) = std::env::var(crate::SELECT_VARIABLE) {
+                shell.apply_debug_select(&spec, cx);
             }
         }
 

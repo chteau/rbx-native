@@ -3,18 +3,23 @@
 //! Command Bar (see `command_bar`).
 //!
 //! One place per process: `rbxstudio [--quality <auto|1..21>]
-//! <file.rbxl|.rbxm|.rbxlx|.rbxmx>`. `RBX_STUDIO_SELECT=<instance name>`
-//! pre-selects the first instance of that name at startup — a debugging aid
-//! for scripted screenshots of the Properties panel, since nothing else can
-//! click the tree on the editor's behalf; re-applied after `RBX_STUDIO_RUN`
-//! too, so a screenshot can show what a script just created without a click.
+//! <file.rbxl|.rbxm|.rbxlx|.rbxmx>`. `RBX_STUDIO_SELECT=<name>[,<name>...]`
+//! pre-selects the first instance of that name at startup, then adds each
+//! further comma-separated name to the selection exactly as a
+//! `Shift`/`Ctrl`/`Cmd`-click would — a debugging aid for scripted
+//! screenshots of the Properties panel and the viewport's multi-selection
+//! outline/gizmo, since nothing else can click the tree or the viewport on
+//! the editor's behalf; re-applied after `RBX_STUDIO_RUN` too, so a
+//! screenshot can show what a script just created without a click.
 //! `RBX_STUDIO_RUN=<source>` runs one Luau chunk against the place right
 //! after the window opens, exactly as typing it into the Command Bar and
 //! pressing Enter would — the same aid, for the Command Bar itself.
 //! `RBX_STUDIO_TOOL=move[,local][,nosnap]` picks a transform tool (and its
 //! world/local orientation, and whether the move/scale snap starts switched
 //! on) at startup, the same aid for the transform toolbar and its viewport
-//! draggers (see `shell::toolbar`).
+//! draggers (see `shell::toolbar`). `RBX_STUDIO_DRAG=<dx>,<dy>,<dz>` moves the
+//! selection by that offset through the same path a real gizmo or cursor drag
+//! ends with, the same aid for a group drag (see `shell::drag`).
 //! Ctrl+S writes the place back to the file it was opened from, in the
 //! format it was opened in; `RBX_STUDIO_SAVE_AS=<path>` redirects one such
 //! save to a scratch path instead (see `save`).
@@ -53,8 +58,10 @@ use save::Format;
 use settings::Settings;
 use shell::Shell;
 
-// `pub(crate)`: `shell` re-reads it after `RBX_STUDIO_RUN`, to select whatever
-// the script just created (see `Shell::select_by_name`).
+// `pub(crate)`: `shell` re-reads it — as the full comma list, not just the
+// one name resolved above — both up front and again after `RBX_STUDIO_RUN`,
+// to select whatever the script just created (see
+// `Shell::apply_debug_select`).
 pub(crate) const SELECT_VARIABLE: &str = "RBX_STUDIO_SELECT";
 
 const USAGE: &str = "usage: rbxstudio [--quality <auto|1..21>] <file.rbxl|.rbxm|.rbxlx|.rbxmx>";

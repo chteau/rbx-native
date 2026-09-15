@@ -28,6 +28,15 @@ const CFRAME_PROPERTY: &str = "CFrame";
 /// the DOM keeps — see `rbx_viewer::pick::model_of`, which reads the same pair.
 const SIZE_PROPERTY: &str = "size";
 
+/// `RBX_STUDIO_DRAG=<dx>,<dy>,<dz>`: moves every selected part by this
+/// world-space offset, preserving their layout relative to each other and to
+/// the gizmo's anchor, through the exact same [`Targets::translate`] and
+/// [`Shell::move_parts`] a real gizmo or cursor drag ends a mouse gesture
+/// with — a debugging aid for a screenshot of a group drag, since nothing can
+/// send the viewport a real mouse drag on the editor's behalf (see
+/// `AGENTS.md`'s safety rules).
+pub(super) const DRAG_VARIABLE: &str = "RBX_STUDIO_DRAG";
+
 impl Shell {
     pub(super) fn handle_viewport_action(
         &mut self,
@@ -338,10 +347,63 @@ impl Shell {
         self.viewport
             .update(cx, |viewport, _| viewport.set_neighbours(neighbours));
     }
+
+    /// [`DRAG_VARIABLE`]: documented on its own doc comment. A no-op with
+    /// nothing selected, or a target-less selection (a `Folder`, a `Model` —
+    /// nothing with a placement to move).
+    pub(super) fn apply_debug_drag(&mut self, cx: &mut Context<Self>) {
+        let Ok(spec) = std::env::var(DRAG_VARIABLE) else {
+            return;
+        };
+        let Some(delta) = parse_delta(&spec) else {
+            eprintln!("rbxstudio: {DRAG_VARIABLE}: expected <dx>,<dy>,<dz>, got {spec:?}");
+            return;
+        };
+
+        let mut targets = Targets::read(&self.dom, self.selected_all());
+        let moves = targets.translate(delta);
+        if !moves.is_empty() {
+            self.move_parts(&moves, true, None, cx);
+        }
+    }
 }
 
 /// The three-number text `properties::edit::parse` reads a `Vector3` — or a
 /// `CFrame`'s position — back out of.
 fn vector(value: Vec3) -> String {
     format!("{}, {}, {}", value.x, value.y, value.z)
+}
+
+/// Parses `"<x>,<y>,<z>"` into a world-space offset, or `None` for anything
+/// else — [`DRAG_VARIABLE`]'s only format.
+fn parse_delta(spec: &str) -> Option<Vec3> {
+    let mut fields = spec.split(',').map(str::trim);
+    let x = fields.next()?.parse().ok()?;
+    let y = fields.next()?.parse().ok()?;
+    let z = fields.next()?.parse().ok()?;
+    fields.next().is_none().then_some(Vec3::new(x, y, z))
+}
+
+#[cfg(test)]
+mod tests {
+    // Not `use super::*`: this file's own `use gpui_kit::*` glob, re-imported
+    // through it, sends `#[test]`'s name resolution into a search space deep
+    // enough to blow the macro recursion limit — naming exactly what these
+    // tests need avoids it.
+    use glam::Vec3;
+
+    use super::parse_delta;
+
+    #[test]
+    fn three_comma_separated_numbers_parse_as_an_offset() {
+        assert_eq!(parse_delta("1, -2.5, 0"), Some(Vec3::new(1.0, -2.5, 0.0)));
+    }
+
+    #[test]
+    fn anything_else_is_rejected_rather_than_guessed_at() {
+        assert_eq!(parse_delta(""), None);
+        assert_eq!(parse_delta("1,2"), None, "too few fields");
+        assert_eq!(parse_delta("1,2,3,4"), None, "too many fields");
+        assert_eq!(parse_delta("x,2,3"), None, "not a number");
+    }
 }
