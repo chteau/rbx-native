@@ -1,5 +1,6 @@
 use glam::{Mat4, Vec3};
 use rbx_dom::{CFrameData, Variant, Vector3Data, WeakDom};
+use rbx_viewer::pick::Meshes;
 
 use super::*;
 
@@ -86,6 +87,7 @@ fn a_drag_over_a_raised_part_settles_on_top_of_it() {
     let rested = settled(
         &dom,
         &database,
+        &Meshes::default(),
         dragged,
         grabbed_from_above(down_at(20.0, 0.0)),
     )
@@ -109,6 +111,7 @@ fn a_drag_over_open_space_has_no_surface_to_settle_on() {
         settled(
             &dom,
             &database,
+            &Meshes::default(),
             dragged,
             grabbed_from_above(down_at(5000.0, 0.0))
         ),
@@ -125,12 +128,19 @@ fn the_dragged_part_is_never_the_surface_it_settles_on() {
     // *is* the crate. Settling onto it would stack the crate on its own top,
     // a stud higher on every mouse move.
     let cursor = down_at(0.0, 0.0);
-    let surface = surface_under(&dom, &database, cursor, dragged).expect("the ground is below");
+    let surface = surface_under(&dom, &database, &Meshes::default(), cursor, dragged)
+        .expect("the ground is below");
     assert!(close(surface.point, Vec3::ZERO), "hit {surface:?}");
     assert!(close(surface.normal, Vec3::Y));
 
-    let rested =
-        settled(&dom, &database, dragged, grabbed_from_above(cursor)).expect("the ground is below");
+    let rested = settled(
+        &dom,
+        &database,
+        &Meshes::default(),
+        dragged,
+        grabbed_from_above(cursor),
+    )
+    .expect("the ground is below");
     assert!(close(rested, CRATE_CENTRE), "climbed to {rested}");
 }
 
@@ -148,7 +158,8 @@ fn a_part_already_resting_holds_still_until_the_cursor_moves() {
         centre: CRATE_CENTRE,
     };
 
-    let rested = settled(&dom, &database, dragged, settle).expect("the ground is behind");
+    let rested = settled(&dom, &database, &Meshes::default(), dragged, settle)
+        .expect("the ground is behind");
     assert!(
         close(rested, CRATE_CENTRE),
         "jumped to {rested} on a still cursor"
@@ -167,7 +178,8 @@ fn a_part_grabbed_off_centre_keeps_that_offset_from_the_cursor() {
         centre: CRATE_CENTRE,
     };
 
-    let rested = settled(&dom, &database, dragged, settle).expect("the ground is below");
+    let rested =
+        settled(&dom, &database, &Meshes::default(), dragged, settle).expect("the ground is below");
     assert!(
         close(rested, Vec3::new(9.5, 1.0, -0.5)),
         "rested at {rested}"
@@ -183,6 +195,7 @@ fn crossing_onto_a_raised_part_jumps_by_its_height_and_nothing_else() {
     let before = settled(
         &dom,
         &database,
+        &Meshes::default(),
         dragged,
         grabbed_from_above(down_at(17.9, 0.0)),
     )
@@ -190,6 +203,7 @@ fn crossing_onto_a_raised_part_jumps_by_its_height_and_nothing_else() {
     let after = settled(
         &dom,
         &database,
+        &Meshes::default(),
         dragged,
         grabbed_from_above(down_at(18.1, 0.0)),
     )
@@ -213,7 +227,8 @@ fn a_floating_part_drops_onto_the_surface_under_the_cursor() {
         centre: Vec3::new(0.0, 4.0, 0.0),
     };
 
-    let rested = settled(&dom, &database, dragged, settle).expect("the ground is below");
+    let rested =
+        settled(&dom, &database, &Meshes::default(), dragged, settle).expect("the ground is below");
     assert!(
         close(rested, Vec3::new(10.0, 1.0, 0.0)),
         "rested at {rested}"
@@ -227,13 +242,20 @@ fn the_side_of_a_part_is_rested_against_rather_than_on() {
 
     // Looking along +X at the block's x=18 face, two studs up it.
     let cursor = Ray::new(Vec3::new(10.0, 2.0, 0.0), Vec3::X);
-    let surface = surface_under(&dom, &database, cursor, dragged).expect("the block's side");
+    let surface = surface_under(&dom, &database, &Meshes::default(), cursor, dragged)
+        .expect("the block's side");
     assert!(close(surface.normal, Vec3::NEG_X), "hit {surface:?}");
 
     // Grabbed from above, so the grab ray runs along the crate's own +X face
     // plane and the grab point is dropped onto it instead.
-    let rested =
-        settled(&dom, &database, dragged, grabbed_from_above(cursor)).expect("the block's side");
+    let rested = settled(
+        &dom,
+        &database,
+        &Meshes::default(),
+        dragged,
+        grabbed_from_above(cursor),
+    )
+    .expect("the block's side");
     // Its +X face flush with the block's -X face at x=18, and the grab point
     // — its top, a stud above its centre — level with where the cursor met
     // the wall, exactly as it stood relative to the cursor when grabbed.

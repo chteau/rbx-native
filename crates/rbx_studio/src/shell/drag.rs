@@ -84,8 +84,12 @@ impl Shell {
             self.push_history();
         }
 
-        let settled =
-            settle.and_then(|settle| settle::settled(&self.dom, &self.database, referent, settle));
+        // Same render-thread mesh handle `pick_in_viewport` reads — a settle's
+        // own surface search needs to agree with what a click would have hit.
+        let meshes = self.viewport.read(cx).meshes().clone();
+        let settled = settle.and_then(|settle| {
+            settle::settled(&self.dom, &self.database, &meshes, referent, settle)
+        });
         let position = settled.unwrap_or(position);
 
         let text = format!("{}, {}, {}", position.x, position.y, position.z);
