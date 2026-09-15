@@ -13,6 +13,7 @@ use glam::{Mat3, Mat4, Vec3};
 use rbx_dom::Ref;
 use wgpu::util::DeviceExt;
 
+use crate::gizmo;
 use crate::scene::Placement;
 
 use super::pipeline::{self, Surface, Target};
@@ -102,11 +103,11 @@ fn vertices_for(placements: &HashMap<Ref, Placement>, referents: &[Ref]) -> Vec<
         .collect()
 }
 
-/// Where the transform gizmo goes for a selection of any size: the first
-/// referent (in selection order) that actually has a placement, so a `Model`
-/// or a `Folder` selected ahead of a real part is skipped rather than
-/// silently hiding the gizmo. `None` when nothing selected has a placement at
-/// all — an all-`Folder` selection, or none.
+/// Where the transform gizmo takes its frame of reference: the first referent
+/// (in selection order) that actually has a placement, so a `Model` or a
+/// `Folder` selected ahead of a real part is skipped rather than silently
+/// hiding the gizmo. `None` when nothing selected has a placement at all — an
+/// all-`Folder` selection, or none.
 fn anchor_of(placements: &HashMap<Ref, Placement>, referents: &[Ref]) -> Option<(Vec3, Mat3)> {
     let model = referents
         .iter()
@@ -192,21 +193,32 @@ impl Selection {
         }
     }
 
-    /// Where a transform gizmo belongs over this selection: the first
-    /// outlined part's centre, and the rotation its own local axes point
-    /// along (see `renderer::gizmo`). `None` when nothing with a placement is
-    /// selected.
+    /// The first outlined part's centre and the rotation its own local axes
+    /// point along (see `renderer::gizmo`) — the part Scale and Rotate
+    /// transform, and whose frame the local-orientation toggle takes. `None`
+    /// when nothing with a placement is selected.
     ///
-    /// The *first*, not an aggregate of all of them, even when several
-    /// instances are selected at once: one gizmo per selection, not one per
-    /// part, and a multi-part selection has no aggregate bounding box this
-    /// outline derives yet either. `rbxstudio`'s own group drag (see
-    /// `workspace_view::gizmo`) reads this same anchor and moves every other
-    /// selected part by the same offset, so the choice of *which* part
-    /// anchors the gizmo only changes where it is drawn, not how the group
-    /// moves together.
+    /// Where the Move gizmo is *drawn* is [`Selection::centre`] instead: it
+    /// drags the whole selection as a group, so it belongs at the middle of
+    /// it rather than hanging off whichever part happens to be first.
     pub(super) fn anchor(&self) -> Option<(Vec3, Mat3)> {
         anchor_of(&self.placements, &self.referents)
+    }
+
+    /// The centre of the world-axis-aligned box containing every outlined
+    /// part — where one gizmo for a whole selection belongs. For a single
+    /// part this is simply that part's own centre.
+    ///
+    /// `rbxstudio` places the handles it hit-tests from the very same
+    /// `gizmo::centre_of` (see `transform::Targets::centre`), so what the user
+    /// can grab and what they can see cannot drift apart.
+    pub(super) fn centre(&self) -> Option<Vec3> {
+        gizmo::centre_of(
+            self.referents
+                .iter()
+                .filter_map(|referent| self.placements.get(referent))
+                .map(|placement| placement.model),
+        )
     }
 
     /// Draws the outline, if any, reusing whichever camera bind group the rest

@@ -341,14 +341,19 @@ impl Target {
     }
 }
 
-/// Where every selected part stands, in selection order. The transform
-/// gizmo goes on the [`anchor`](Targets::anchor) — the first entry that
-/// actually has a placement, exactly the way
-/// `rbx_viewer::renderer::selection::Selection::anchor` picks which part to
-/// draw the on-screen gizmo over — so the two never disagree about where it
-/// sits. [`Targets::translate`] is what a group drag uses to move every
-/// other part by the same offset, which is what keeps the whole selection's
-/// relative arrangement intact while only the anchor's own drag is measured.
+/// Where every selected part stands, in selection order.
+///
+/// The transform gizmo stands at the [`centre`](Targets::centre) of the whole
+/// selection's bounds, exactly the way
+/// `rbx_viewer::renderer::selection::Selection::anchor` places the one it
+/// draws — both call `rbx_viewer::gizmo::centre_of`, so the handles the user
+/// can grab and the handles they can see cannot disagree about where they
+/// are. The [`anchor`](Targets::anchor) is a different question: it is the
+/// first entry with a placement, and it is what Scale and Rotate actually
+/// transform, and whose own frame the local-orientation toggle takes.
+/// [`Targets::translate`] is what a group drag uses to move every other part
+/// by the same offset, which is what keeps the whole selection's relative
+/// arrangement intact while only the gizmo's own travel is measured.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct Targets(Vec<Target>);
 
@@ -366,11 +371,24 @@ impl Targets {
         )
     }
 
-    /// The first part with a placement — see this type's own doc comment for
-    /// why it, and not some aggregate of the whole selection, is where the
-    /// gizmo goes.
+    /// The first part with a placement: what Scale and Rotate transform, and
+    /// whose own frame the local-orientation toggle takes. Where the gizmo
+    /// *sits* is [`Targets::centre`] instead — see this type's own doc
+    /// comment for why the two are separate questions.
     pub(crate) fn anchor(&self) -> Option<Target> {
         self.0.first().copied()
+    }
+
+    /// Where the gizmo stands: the centre of the world-axis-aligned box
+    /// containing every selected part, which for a single part is simply that
+    /// part's own centre.
+    ///
+    /// Shared with the renderer through `rbx_viewer::gizmo::centre_of` rather
+    /// than worked out again here, for the same reason the handle geometry
+    /// itself is shared — two derivations of "where the gizmo is" are two
+    /// things that can drift apart.
+    pub(crate) fn centre(&self) -> Option<Vec3> {
+        gizmo::centre_of(self.0.iter().map(|target| target.model))
     }
 
     pub(crate) fn iter(&self) -> impl Iterator<Item = &Target> {

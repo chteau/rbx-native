@@ -365,6 +365,52 @@ fn an_empty_selection_has_no_anchor() {
     let (dom, ..) = three_parts();
     let targets = Targets::read(&dom, &[]);
     assert_eq!(targets.anchor(), None);
+    assert_eq!(targets.centre(), None);
+}
+
+#[test]
+fn one_selected_part_centres_the_gizmo_on_it() {
+    let (dom, _, b, _) = three_parts();
+    let targets = Targets::read(&dom, &[b]);
+    let centre = targets.centre().expect("one part");
+    assert!(
+        (centre - Vec3::new(5.0, 0.0, 0.0)).length() < 1e-4,
+        "{centre}"
+    );
+}
+
+/// The fix this pair of methods exists for: with several parts selected the
+/// gizmo belongs in the middle of them, not on whichever one happens to be
+/// first in selection order.
+#[test]
+fn several_selected_parts_centre_the_gizmo_between_them_not_on_the_anchor() {
+    let (dom, a, b, c) = three_parts();
+    let targets = Targets::read(&dom, &[a, b, c]);
+
+    // Unit cubes at (0,0,0), (5,0,0) and (0,0,5): the bounds run -0.5..5.5 on
+    // both X and Z, so the centre is (2.5, 0, 2.5).
+    let centre = targets.centre().expect("three parts");
+    assert!(
+        (centre - Vec3::new(2.5, 0.0, 2.5)).length() < 1e-4,
+        "{centre}"
+    );
+
+    // And it is deliberately *not* the anchor, which is still `a` — the two
+    // answer different questions (see `Targets`' own doc comment).
+    let anchor = targets.anchor().expect("three parts");
+    assert_eq!(anchor.referent, a);
+    assert!((anchor.position() - centre).length() > 1.0);
+}
+
+#[test]
+fn the_centre_does_not_depend_on_selection_order() {
+    // Selection order decides the anchor; it must not decide where the gizmo
+    // sits, or clicking the same three parts in a different order would put
+    // the handles somewhere else.
+    let (dom, a, b, c) = three_parts();
+    let one = Targets::read(&dom, &[a, b, c]).centre().expect("three");
+    let other = Targets::read(&dom, &[c, a, b]).centre().expect("three");
+    assert!((one - other).length() < 1e-4, "{one} vs {other}");
 }
 
 /// The whole point of `Targets::translate`: every part in a group drag moves

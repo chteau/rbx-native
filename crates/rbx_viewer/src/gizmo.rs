@@ -13,7 +13,7 @@
 //! axis, Rotate's ring per axis, coloured red/green/blue for X/Y/Z and drawn in
 //! world orientation or — with the local toggle on — in the part's own frame.
 
-use glam::{Mat3, Vec3};
+use glam::{Mat3, Mat4, Vec3};
 
 use crate::pick::Ray;
 use crate::Pose;
@@ -274,6 +274,42 @@ pub fn along_axis(origin: Vec3, axis: Vec3, ray: Ray) -> Option<f32> {
 pub fn angle_step(from: f32, to: f32) -> f32 {
     use std::f32::consts::{PI, TAU};
     (to - from + PI).rem_euclid(TAU) - PI
+}
+
+/// Where one gizmo goes for a whole selection: the centre of the world-axis
+/// -aligned box that contains every one of `models`, the oriented boxes its
+/// parts occupy. `None` for an empty selection.
+///
+/// The centre of the *bounds*, not the mean of the parts' own centres — those
+/// differ as soon as the selection is lopsided (three small parts at one end
+/// and one large at the other), and the bounds are what the user sees the
+/// selection occupying. `creator-docs` never states where the gizmo sits for a
+/// multi-object selection, but it is explicit that this is what Studio means
+/// by the centre of an aggregate: the pivot tool's **Reset** "moves the pivot
+/// point to the **center** of an object or model's bounding box"
+/// (`studio/pivot-tools.md`).
+///
+/// One part is the same answer as before — its own bounding box is centred on
+/// it — so this needs no special case for a single selection.
+pub fn centre_of(models: impl IntoIterator<Item = Mat4>) -> Option<Vec3> {
+    let mut bounds: Option<(Vec3, Vec3)> = None;
+    for model in models {
+        let centre = model.w_axis.truncate();
+        // A box turned off the world axes still has to be contained by them:
+        // each world-axis half-extent is the sum of the absolute projections
+        // of the three (already `Size`-scaled) columns onto that axis.
+        let half = 0.5
+            * Vec3::new(
+                model.x_axis.x.abs() + model.y_axis.x.abs() + model.z_axis.x.abs(),
+                model.x_axis.y.abs() + model.y_axis.y.abs() + model.z_axis.y.abs(),
+                model.x_axis.z.abs() + model.y_axis.z.abs() + model.z_axis.z.abs(),
+            );
+        bounds = Some(match bounds {
+            None => (centre - half, centre + half),
+            Some((min, max)) => (min.min(centre - half), max.max(centre + half)),
+        });
+    }
+    bounds.map(|(min, max)| (min + max) * 0.5)
 }
 
 /// The world-space directions the three draggers point along: the world axes,
