@@ -15,7 +15,9 @@
 //! which need a camera-dependent draw order — see [`FileMeshes::prepare`].
 
 mod appearance;
+mod blended;
 mod images;
+mod patch;
 mod pipelines;
 mod vertex;
 
@@ -23,38 +25,42 @@ use std::collections::HashMap;
 
 use glam::Vec3;
 use rbx_assets::AssetRef;
+use rbx_dom::Ref;
 use wgpu::util::DeviceExt;
 
 use super::instance::InstanceRaw;
 use super::mesh::Vertex as BoxVertex;
 use super::pipeline::{Bindings, Target};
+use super::slots::keyed::Keyed;
+use super::slots::Roster;
 use super::texture;
 use crate::quality::QualityProfile;
 use crate::scene::{Resolved, ResolvedInstance};
+use blended::{blends, Blended};
 use images::{Binding, Images};
 use pipelines::{Layouts, Pipelines, Skin};
 use vertex::{AppearanceVertex, TexturedVertex};
 
-/// One draw call's worth of geometry: a mesh, the instances of it, and what
-/// skins them.
-struct Batch {
+/// One batch's mesh, converted for the vertex format its skin reads, and
+/// the skin itself — the payload of one opaque group, or one [`Blended`].
+struct Geometry {
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
     index_count: u32,
-    instances: wgpu::Buffer,
-    instance_count: u32,
     skin: Skin,
 }
 
-/// A translucent batch keeps its instances on the CPU as well: blending is
-/// order-dependent, so both the instances within a batch and the batches
-/// themselves are re-sorted every frame.
-struct Blended {
-    batch: Batch,
-    items: Vec<(Vec3, InstanceRaw)>,
-    /// This frame's distance to the furthest instance in the batch.
-    depth: f32,
+/// One draw call: a batch's geometry and however many of its instances are
+/// live.
+struct Draw<'a> {
+    geometry: &'a Geometry,
+    instances: &'a wgpu::Buffer,
+    count: u32,
 }
+
+/// The opaque batches, one per (mesh, skin), with the referent index a
+/// single-instance edit moves an instance between them by.
+type Opaque = Keyed<GroupKey, Geometry, InstanceRaw, ()>;
 
 /// GPU state for every real mesh in a scene: two pipeline sets (opaque and
 /// blended, each with its three skins) and the batches drawn through them.
@@ -63,10 +69,16 @@ pub(super) struct FileMeshes {
     blended_pipelines: Pipelines,
     image_layout: wgpu::BindGroupLayout,
     appearance_layout: wgpu::BindGroupLayout,
+    /// What every batch's texture was bound with, kept so a batch an edit
+    /// creates later (see [`FileMeshes::sync`]) binds its own the same way.
+    sampler: wgpu::Sampler,
+    texture_max_size: u32,
     images: Images,
     appearances: appearance::Sets,
-    opaque: Vec<Batch>,
+    opaque: Opaque,
     blended: Vec<Blended>,
+    /// Which `blended` batch holds each translucent instance.
+    blended_index: HashMap<Ref, usize>,
     order: Vec<usize>,
 }
 
@@ -80,8 +92,9 @@ impl FileMeshes {
         resolved: &Resolved,
         quality: &QualityProfile,
     ) -> Self {
-        let mut opaque = Vec::new();
+        let mut opaque = Keyed::new("rbxview filemesh instances");
         let mut blended = Vec::new();
+        let mut blended_index = HashMap::new();
         let image_layout = texture::layout(device);
         let appearance_layout = appearance::layout(device);
         // Clamped, not repeated: a mesh's UVs are an authored atlas, not a
@@ -102,24 +115,23 @@ impl FileMeshes {
                 continue;
             };
 
-            // Scanning the colour map for alpha is a whole-image pass, so it
-            // happens once per batch rather than once per instance.
-            let blends = key
-                .appearance
-                .and_then(|index| resolved.appearances.get(index))
-                .is_some_and(|set| set.is_translucent(&resolved.images));
+            let blends = blends(resolved, &key);
             let (see_through, still): (Vec<_>, Vec<_>) = group
                 .into_iter()
                 .partition(|instance| blends || instance.alpha < 1.0);
             if !still.is_empty() {
-                opaque.push(build(device, mesh, skin, &still, false));
+                let roster = Roster::from_iter(still.iter().map(|i| (i.referent, raw(i), ())));
+                opaque.add_group(device, key.clone(), build(device, mesh, skin), roster);
             }
             if !see_through.is_empty() {
-                blended.push(Blended {
-                    batch: build(device, mesh, skin, &see_through, true),
-                    items: see_through.iter().map(|i| (center(i), raw(i))).collect(),
-                    depth: 0.0,
-                });
+                for instance in &see_through {
+                    blended_index.insert(instance.referent, blended.len());
+                }
+                let items: Vec<_> = see_through
+                    .iter()
+                    .map(|i| (i.referent, center(i), raw(i)))
+                    .collect();
+                blended.push(Blended::new(device, key, build(device, mesh, skin), items));
             }
         }
 
@@ -144,9 +156,12 @@ impl FileMeshes {
             ),
             image_layout,
             appearance_layout,
+            texture_max_size: quality.texture_max_size,
+            sampler,
             images,
             opaque,
             blended,
+            blended_index,
             order: Vec::new(),
         }
     }
@@ -154,12 +169,13 @@ impl FileMeshes {
     /// Re-views every mesh texture and `SurfaceAppearance` map at the new cap and
     /// anisotropy. Nothing is decoded, uploaded or re-batched.
     pub(super) fn set_quality(&mut self, device: &wgpu::Device, quality: &QualityProfile) {
-        let sampler = texture::sampler(device, wgpu::AddressMode::ClampToEdge, quality.anisotropy);
+        self.sampler = texture::sampler(device, wgpu::AddressMode::ClampToEdge, quality.anisotropy);
+        self.texture_max_size = quality.texture_max_size;
         self.images.rebind(
             device,
             Binding {
                 layout: &self.image_layout,
-                sampler: &sampler,
+                sampler: &self.sampler,
                 max_size: quality.texture_max_size,
             },
         );
@@ -167,7 +183,7 @@ impl FileMeshes {
             device,
             Binding {
                 layout: &self.appearance_layout,
-                sampler: &sampler,
+                sampler: &self.sampler,
                 max_size: quality.texture_max_size,
             },
         );
@@ -202,18 +218,15 @@ impl FileMeshes {
         for blended in &mut self.blended {
             blended
                 .items
-                .sort_by(|left, right| distance(right.0, eye).total_cmp(&distance(left.0, eye)));
+                .sort_by(|left, right| distance(right.1, eye).total_cmp(&distance(left.1, eye)));
             blended.depth = blended
                 .items
                 .first()
-                .map_or(0.0, |(center, _)| distance(*center, eye));
+                .map_or(0.0, |(_, center, _)| distance(*center, eye));
 
-            let instances: Vec<InstanceRaw> = blended.items.iter().map(|(_, raw)| *raw).collect();
-            queue.write_buffer(
-                &blended.batch.instances,
-                0,
-                bytemuck::cast_slice(&instances),
-            );
+            let instances: Vec<InstanceRaw> =
+                blended.items.iter().map(|(_, _, raw)| *raw).collect();
+            queue.write_buffer(&blended.instances, 0, bytemuck::cast_slice(&instances));
         }
 
         self.order.clear();
@@ -227,13 +240,25 @@ impl FileMeshes {
     /// at group 0; this switches pipelines itself (unlike `Shaped`, which
     /// piggybacks on the shape pass's already-bound one).
     pub(super) fn draw_opaque(&self, pass: &mut wgpu::RenderPass<'_>, bindings: Bindings<'_>) {
-        self.run(pass, bindings, &self.opaque_pipelines, self.opaque.iter());
+        let batches = self.opaque.groups().iter().map(|group| Draw {
+            geometry: &group.extra,
+            instances: group.slots.buffer(),
+            count: group.slots.count(),
+        });
+        self.run(pass, bindings, &self.opaque_pipelines, batches);
     }
 
     /// Draws the translucent meshes in the order [`FileMeshes::prepare`] worked
     /// out, after everything opaque in the frame.
     pub(super) fn draw_blended(&self, pass: &mut wgpu::RenderPass<'_>, bindings: Bindings<'_>) {
-        let batches = self.order.iter().map(|&index| &self.blended[index].batch);
+        let batches = self.order.iter().map(|&index| {
+            let blended = &self.blended[index];
+            Draw {
+                geometry: &blended.geometry,
+                instances: &blended.instances,
+                count: blended.items.len() as u32,
+            }
+        });
         self.run(pass, bindings, &self.blended_pipelines, batches);
     }
 
@@ -242,18 +267,21 @@ impl FileMeshes {
         pass: &mut wgpu::RenderPass<'_>,
         bindings: Bindings<'_>,
         pipelines: &Pipelines,
-        batches: impl Iterator<Item = &'a Batch>,
+        batches: impl Iterator<Item = Draw<'a>>,
     ) {
         let mut bound: Option<&wgpu::RenderPipeline> = None;
-        for batch in batches {
-            let pipeline = pipelines.get(batch.skin);
+        // A batch an edit emptied (see `FileMeshes::sync`) keeps its buffers
+        // but has nothing to draw, and no reason to bind them.
+        for batch in batches.filter(|batch| batch.count > 0) {
+            let geometry = batch.geometry;
+            let pipeline = pipelines.get(geometry.skin);
             if !bound.is_some_and(|previous| std::ptr::eq(previous, pipeline)) {
                 pass.set_pipeline(pipeline);
                 pass.set_bind_group(0, bindings.frame, &[]);
                 pass.set_bind_group(1, bindings.materials, &[]);
                 bound = Some(pipeline);
             }
-            match batch.skin {
+            match geometry.skin {
                 Skin::Plain => {}
                 Skin::Image(slot) => {
                     pass.set_bind_group(2, &self.images.bind_groups[slot], &[]);
@@ -263,13 +291,13 @@ impl FileMeshes {
                 }
             }
 
-            pass.set_vertex_buffer(0, batch.vertices.slice(..));
+            pass.set_vertex_buffer(0, geometry.vertices.slice(..));
             pass.set_vertex_buffer(1, batch.instances.slice(..));
             // File mesh vertex counts aren't bounded the way the procedural
             // shapes are, so indices stay 32-bit rather than risking silent
             // truncation.
-            pass.set_index_buffer(batch.indices.slice(..), wgpu::IndexFormat::Uint32);
-            pass.draw_indexed(0..batch.index_count, 0, 0..batch.instance_count);
+            pass.set_index_buffer(geometry.indices.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..geometry.index_count, 0, 0..batch.count);
         }
     }
 }
@@ -299,6 +327,16 @@ pub(super) struct GroupKey {
     pub(super) appearance: Option<usize>,
 }
 
+impl GroupKey {
+    fn of(instance: &ResolvedInstance) -> Self {
+        GroupKey {
+            mesh: instance.mesh.clone(),
+            texture: instance.texture.clone(),
+            appearance: instance.appearance,
+        }
+    }
+}
+
 /// Groups resolved instances by (mesh, skin), preserving first-seen order so
 /// batch construction is deterministic run to run.
 fn group_by_mesh_and_skin(resolved: &Resolved) -> Vec<(GroupKey, Vec<&ResolvedInstance>)> {
@@ -306,11 +344,7 @@ fn group_by_mesh_and_skin(resolved: &Resolved) -> Vec<(GroupKey, Vec<&ResolvedIn
     let mut groups: HashMap<GroupKey, Vec<&ResolvedInstance>> = HashMap::new();
 
     for instance in &resolved.instances {
-        let key = GroupKey {
-            mesh: instance.mesh.clone(),
-            texture: instance.texture.clone(),
-            appearance: instance.appearance,
-        };
+        let key = GroupKey::of(instance);
         if !groups.contains_key(&key) {
             order.push(key.clone());
         }
@@ -331,13 +365,7 @@ fn group_by_mesh_and_skin(resolved: &Resolved) -> Vec<(GroupKey, Vec<&ResolvedIn
 ///
 /// A mesh drawn under two skins is converted twice; that is a handful of meshes
 /// per scene, against a per-batch cache that would have to outlive the loop.
-fn build(
-    device: &wgpu::Device,
-    mesh: &rbx_mesh::Mesh,
-    skin: Skin,
-    group: &[&ResolvedInstance],
-    rewritable: bool,
-) -> Batch {
+fn build(device: &wgpu::Device, mesh: &rbx_mesh::Mesh, skin: Skin) -> Geometry {
     let vertices: Vec<u8> = match skin {
         Skin::Plain => bytemuck::cast_slice(
             &mesh
@@ -351,16 +379,8 @@ fn build(
         Skin::Appearance(_) => bytemuck::cast_slice(&AppearanceVertex::build(mesh)).to_vec(),
     };
     let indices = mesh.lod0();
-    let instances: Vec<InstanceRaw> = group.iter().copied().map(raw).collect();
-    // Only the blended batches are rewritten, so only they pay for a buffer the
-    // CPU can still reach.
-    let usage = if rewritable {
-        wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
-    } else {
-        wgpu::BufferUsages::VERTEX
-    };
 
-    Batch {
+    Geometry {
         vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("rbxview filemesh vertices"),
             contents: &vertices,
@@ -372,12 +392,6 @@ fn build(
             usage: wgpu::BufferUsages::INDEX,
         }),
         index_count: indices.len() as u32,
-        instances: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("rbxview filemesh instances"),
-            contents: bytemuck::cast_slice(&instances),
-            usage,
-        }),
-        instance_count: instances.len() as u32,
         skin,
     }
 }

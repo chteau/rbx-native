@@ -108,9 +108,12 @@ fn vertices_for(placements: &HashMap<Ref, Placement>, referents: &[Ref]) -> Vec<
 pub(super) struct Selection {
     pipeline: wgpu::RenderPipeline,
     /// Every drawable part's placement, read once from the scene at
-    /// construction: nothing in it moves after the scene is built, so there is
-    /// no reason to walk the scene again on every selection change.
+    /// construction and kept in step by [`Selection::place`] afterwards, so
+    /// there is no reason to walk the scene again on every selection change.
     placements: HashMap<Ref, Placement>,
+    /// What [`Selection::set`] last outlined, so a placement that moves
+    /// under the outline (see [`Selection::place`]) can redraw it.
+    referents: Vec<Ref>,
     vertices: Option<wgpu::Buffer>,
     count: u32,
 }
@@ -141,6 +144,7 @@ impl Selection {
         Selection {
             pipeline,
             placements,
+            referents: Vec::new(),
             vertices: None,
             count: 0,
         }
@@ -149,6 +153,7 @@ impl Selection {
     /// Rebuilds the outline around whatever `referents` names now, replacing
     /// whatever the previous selection drew.
     pub(super) fn set(&mut self, device: &wgpu::Device, referents: &[Ref]) {
+        self.referents = referents.to_vec();
         let vertices = vertices_for(&self.placements, referents);
         self.count = vertices.len() as u32;
         self.vertices = (!vertices.is_empty()).then(|| {
@@ -158,6 +163,17 @@ impl Selection {
                 usage: wgpu::BufferUsages::VERTEX,
             })
         });
+    }
+
+    /// Records where one part is drawn now — a Properties-panel edit moved,
+    /// resized or reshaped it — and redraws the outline if that part is in
+    /// it: the edited instance is nearly always the selected one.
+    pub(super) fn place(&mut self, device: &wgpu::Device, referent: Ref, placement: Placement) {
+        self.placements.insert(referent, placement);
+        if self.referents.contains(&referent) {
+            let referents = std::mem::take(&mut self.referents);
+            self.set(device, &referents);
+        }
     }
 
     /// Draws the outline, if any, reusing whichever camera bind group the rest

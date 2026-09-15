@@ -13,12 +13,14 @@ mod material;
 mod mesh;
 mod particles;
 mod pass;
+mod patch;
 mod pipeline;
 mod post;
 mod selection;
 mod shadow;
 mod shaped;
 mod skybox;
+mod slots;
 mod stars;
 mod sun;
 mod switch;
@@ -211,9 +213,10 @@ impl Renderer {
             quality,
         );
         let stars = Stars::new(device, target, &layout, shared, &decor.stars);
-        // Read once here rather than kept as a whole `Scene`: nothing in a
-        // built scene's placements changes afterwards, and `Renderer::new` has
-        // no other reason to hold on to it.
+        // Read once here rather than kept as a whole `Scene`: an edit keeps
+        // the copy in step one placement at a time (see
+        // `Renderer::sync_instance`), and `Renderer::new` has no other reason
+        // to hold on to the scene itself.
         let selection = Selection::new(device, target, &layout, scene.placements());
 
         Renderer {
@@ -314,32 +317,25 @@ impl Renderer {
         true
     }
 
-    /// Patches one `BasePart`'s GPU instance — the opaque or translucent copy,
-    /// and its shadow caster if it has one — for a Properties-panel edit that
-    /// touched only that instance (see `crate::scene::Scene::patch_part`,
-    /// which already refused anything that would cross a GPU bucket).
-    ///
-    /// `false` means `part.referent` was not found exactly where the scene's
-    /// own bucket check said it would be — a defensive fallback that should
-    /// never actually trigger, not a documented case a caller needs to reason
-    /// about.
-    pub(crate) fn patch_instance(&mut self, queue: &wgpu::Queue, part: &Part) -> bool {
-        let drawn = if part.is_translucent() {
-            self.translucent.patch(part)
-        } else {
-            self.shaped.patch(queue, part)
-        };
-        if !drawn {
-            return false;
-        }
-        if part.casts_shadow()
-            && !self
-                .shadows
-                .patch_caster(queue, part.referent, part.kind, part.transform)
-        {
-            return false;
-        }
-        true
+    /// Brings every pass in line with one edited `BasePart` (see
+    /// `crate::scene::Scene::patch_part`): its opaque or blended instance and
+    /// its shadow caster are each rewritten in place, moved to another batch
+    /// (a new shape, a `Transparency` that crossed 0, a `CastShadow` toggle),
+    /// added, or dropped — whichever the part's new state calls for — and the
+    /// selection outline follows its placement. A shape the place never used
+    /// before gets its unit mesh built here (see `Meshes::ensure`).
+    pub(crate) fn sync_instance(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        part: &Part,
+    ) {
+        self.meshes.ensure(device, part.kind);
+        self.shaped.sync(device, queue, part);
+        self.translucent.sync(device, part);
+        self.shadows.sync_caster(device, queue, part);
+        self.selection
+            .place(device, part.referent, part.placement());
     }
 
     pub(crate) fn draw(

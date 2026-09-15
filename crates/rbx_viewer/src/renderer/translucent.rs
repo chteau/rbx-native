@@ -41,31 +41,26 @@ pub(super) struct Translucent {
     items: Vec<Item>,
     /// Where each referent's `Item` sits in `items` — flat, not grouped by
     /// shape (unlike `renderer::shaped::Shaped`), since [`Translucent::prepare`]
-    /// already re-sorts and re-uploads the whole buffer every frame; a patch
+    /// already re-sorts and re-uploads the whole buffer every frame; an edit
     /// here only has to update the CPU-side item, not write the GPU directly.
     part_index: HashMap<Ref, usize>,
     /// Rebuilt every frame; kept around so the sort allocates nothing.
     order: Vec<usize>,
     uploaded: Vec<InstanceRaw>,
     runs: Vec<Run>,
+    /// Sized for `capacity` items, which is at least `items.len()`: an item
+    /// added past it (see [`Translucent::sync`]) reallocates rather than
+    /// overrunning the next `prepare`'s upload.
     instances: Option<wgpu::Buffer>,
+    capacity: usize,
 }
 
 impl Translucent {
     pub(super) fn new(device: &wgpu::Device, parts: &[Part]) -> Self {
         let items: Vec<Item> = parts
             .iter()
-            .filter(|part| part.is_drawn() && part.is_translucent())
-            .map(|part| {
-                let instance = InstanceRaw::from_part(part);
-                Item {
-                    referent: part.referent,
-                    kind: part.kind,
-                    center: instance.center(),
-                    radius: of_part(part).radius(),
-                    instance,
-                }
-            })
+            .filter(|part| belongs(part))
+            .map(Item::of)
             .collect();
         let part_index = items
             .iter()
@@ -87,6 +82,7 @@ impl Translucent {
             order: Vec::with_capacity(items.len()),
             uploaded: Vec::with_capacity(items.len()),
             runs: Vec::new(),
+            capacity: items.len(),
             items,
             part_index,
             instances,
@@ -97,23 +93,44 @@ impl Translucent {
         self.items.is_empty()
     }
 
-    /// Updates one item's CPU-side record in place — the next [`Translucent::prepare`]
-    /// picks it up when it re-sorts and re-uploads, so this writes no GPU
-    /// buffer itself. `false` when `referent` was never a translucent
-    /// instance, the caller's cue to fall back to a full reload.
-    pub(super) fn patch(&mut self, part: &Part) -> bool {
-        let Some(&index) = self.part_index.get(&part.referent) else {
-            return false;
-        };
-        let instance = InstanceRaw::from_part(part);
-        self.items[index] = Item {
-            referent: part.referent,
-            kind: part.kind,
-            center: instance.center(),
-            radius: of_part(part).radius(),
-            instance,
-        };
-        true
+    /// Brings this pass in line with one edited part: its item rewritten,
+    /// added or dropped on the CPU side (see [`Translucent::place`]), and the
+    /// buffer the next [`Translucent::prepare`] uploads into grown if the
+    /// item is one more than it can hold.
+    pub(super) fn sync(&mut self, device: &wgpu::Device, part: &Part) {
+        self.place(part);
+        if self.items.len() <= self.capacity {
+            return;
+        }
+        self.capacity = (self.capacity * 2).max(self.items.len());
+        self.instances = Some(device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("rbxview translucent instances"),
+            size: (self.capacity * std::mem::size_of::<InstanceRaw>()) as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        }));
+    }
+
+    /// The CPU half of [`Translucent::sync`], which touches no buffer: the
+    /// next `prepare` re-sorts and re-uploads every item anyway, so all an
+    /// edit has to keep straight is `items` and the index into it. A removal
+    /// is a swap-remove, re-indexing whichever item dropped into the hole.
+    fn place(&mut self, part: &Part) {
+        match (self.part_index.get(&part.referent).copied(), belongs(part)) {
+            (Some(index), true) => self.items[index] = Item::of(part),
+            (Some(index), false) => {
+                self.part_index.remove(&part.referent);
+                self.items.swap_remove(index);
+                if let Some(moved) = self.items.get(index) {
+                    self.part_index.insert(moved.referent, index);
+                }
+            }
+            (None, true) => {
+                self.items.push(Item::of(part));
+                self.part_index.insert(part.referent, self.items.len() - 1);
+            }
+            (None, false) => {}
+        }
     }
 
     /// Re-sorts and re-uploads for this frame's camera. Must run before
@@ -155,6 +172,23 @@ impl Translucent {
             }
         }
     }
+}
+
+impl Item {
+    fn of(part: &Part) -> Self {
+        let instance = InstanceRaw::from_part(part);
+        Item {
+            referent: part.referent,
+            kind: part.kind,
+            center: instance.center(),
+            radius: of_part(part).radius(),
+            instance,
+        }
+    }
+}
+
+fn belongs(part: &Part) -> bool {
+    part.is_drawn() && part.is_translucent()
 }
 
 /// Orders the visible items furthest first, so nearer surfaces blend over what
@@ -201,106 +235,5 @@ fn runs(items: &[Item], order: &[usize]) -> Vec<Run> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn plastic() -> crate::scene::Slot {
-        crate::scene::Slot {
-            layer: 0,
-            kind: crate::scene::Kind::Plastic,
-            studs_per_tile: 10.0,
-        }
-    }
-
-    fn item(kind: ShapeKind, center: Vec3) -> Item {
-        let mut model = [[0.0; 4]; 4];
-        model[3] = [center.x, center.y, center.z, 1.0];
-        Item {
-            referent: Ref::new(0),
-            kind,
-            center,
-            radius: 1.0,
-            instance: InstanceRaw::new(model, [1.0; 3], 0.5, 0.0, plastic()),
-        }
-    }
-
-    fn order_of(items: &[Item], eye: Vec3) -> Vec<usize> {
-        let mut order = Vec::new();
-        back_to_front(items, eye, |_| true, &mut order);
-        order
-    }
-
-    #[test]
-    fn instances_are_ordered_back_to_front() {
-        let items = [
-            item(ShapeKind::Box, Vec3::new(0.0, 0.0, 10.0)),
-            item(ShapeKind::Box, Vec3::new(0.0, 0.0, 100.0)),
-            item(ShapeKind::Box, Vec3::new(0.0, 0.0, 50.0)),
-        ];
-
-        assert_eq!(order_of(&items, Vec3::ZERO), vec![1, 2, 0]);
-        // Fly past all three and the order reverses.
-        assert_eq!(order_of(&items, Vec3::new(0.0, 0.0, 200.0)), vec![0, 2, 1]);
-    }
-
-    #[test]
-    fn instances_at_the_same_distance_keep_the_order_the_dom_gave_them() {
-        let items = [
-            item(ShapeKind::Box, Vec3::X),
-            item(ShapeKind::Box, -Vec3::X),
-            item(ShapeKind::Box, Vec3::Z),
-        ];
-
-        assert_eq!(order_of(&items, Vec3::ZERO), vec![0, 1, 2]);
-    }
-
-    // The sort wins over batching: a run breaks wherever the shape changes,
-    // however many draw calls that costs.
-    #[test]
-    fn runs_cover_the_sorted_order_without_reordering_it() {
-        let items = [
-            item(ShapeKind::Box, Vec3::new(0.0, 0.0, 30.0)),
-            item(ShapeKind::Ball, Vec3::new(0.0, 0.0, 20.0)),
-            item(ShapeKind::Box, Vec3::new(0.0, 0.0, 10.0)),
-            item(ShapeKind::Box, Vec3::new(0.0, 0.0, 40.0)),
-        ];
-
-        let order = order_of(&items, Vec3::ZERO);
-        let runs = runs(&items, &order);
-
-        assert_eq!(order, vec![3, 0, 1, 2]);
-        let spans: Vec<(ShapeKind, u32, u32)> = runs
-            .iter()
-            .map(|run| (run.kind, run.instances.start, run.instances.end))
-            .collect();
-        assert_eq!(
-            spans,
-            vec![
-                (ShapeKind::Box, 0, 2),
-                (ShapeKind::Ball, 2, 3),
-                (ShapeKind::Box, 3, 4),
-            ]
-        );
-    }
-
-    #[test]
-    fn nothing_translucent_means_no_runs_at_all() {
-        assert!(runs(&[], &[]).is_empty());
-    }
-
-    // The cull test is applied before the sort, not after: an item it rejects
-    // must never occupy a slot in `order` at all.
-    #[test]
-    fn items_the_visibility_test_rejects_never_enter_the_order() {
-        let items = [
-            item(ShapeKind::Box, Vec3::new(0.0, 0.0, 10.0)),
-            item(ShapeKind::Box, Vec3::new(0.0, 0.0, 100.0)),
-            item(ShapeKind::Box, Vec3::new(0.0, 0.0, 50.0)),
-        ];
-        let mut order = Vec::new();
-
-        back_to_front(&items, Vec3::ZERO, |item| item.center.z < 60.0, &mut order);
-
-        assert_eq!(order, vec![2, 0]);
-    }
-}
+#[path = "translucent/tests.rs"]
+mod tests;

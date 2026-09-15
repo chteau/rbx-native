@@ -8,9 +8,11 @@
 //! vertex build lives in [`ribbon`]; this file is the texture bookkeeping and
 //! the per-frame build/upload/draw.
 
+mod patch;
 mod pipeline;
 mod ribbon;
 
+use std::collections::HashMap;
 use std::ops::Range;
 use std::time::Instant;
 
@@ -50,6 +52,13 @@ pub(super) struct Beams {
     /// Roblox itself falls back to a solid line in both cases.
     textures: Vec<Slot>,
     live: Vec<(Beam, usize)>,
+    /// Whether the quality profile draws beams at all — `false` keeps `live`
+    /// empty for the whole run, [`Beams::replace`] included.
+    enabled: bool,
+    /// The slot in `textures` every reference [`Beams::new`] tried resolved
+    /// to (0 where the download failed); a reference missing here was never
+    /// attempted — see [`Beams::replace`].
+    slots: HashMap<AssetRef, usize>,
     vertices: Option<wgpu::Buffer>,
     /// Grown, never shrunk — same reasoning as `renderer::particles::Particles::instances`.
     vertex_capacity: usize,
@@ -96,6 +105,8 @@ impl Beams {
                 image_layout,
                 textures: Vec::new(),
                 live: Vec::new(),
+                enabled: quality.beams,
+                slots: HashMap::new(),
                 vertices: None,
                 vertex_capacity: 0,
                 last_tick: None,
@@ -124,9 +135,9 @@ impl Beams {
         // Live-effect asset warnings aren't wired to the Output dock yet — see
         // `assets::load`'s doc comment; only scene-load-time warnings are.
         let (images, _warnings) = assets::load(&references);
-        let mut slot_of: Vec<usize> = Vec::with_capacity(references.len());
-        for reference in &references {
-            let slot = match images.get(reference) {
+        let mut slots = HashMap::new();
+        for reference in references {
+            let slot = match images.get(&reference) {
                 Some(image) => {
                     let uploaded = texture::Uploaded::color(device, queue, image);
                     let bind_group =
@@ -141,21 +152,13 @@ impl Beams {
                 // back to a solid line here (see `Beam.Texture`'s docs).
                 None => 0,
             };
-            slot_of.push(slot);
+            slots.insert(reference, slot);
         }
 
         let live: Vec<(Beam, usize)> = beams
             .iter()
             .map(|beam| {
-                let texture = if beam.texture == AssetRef::Empty {
-                    0
-                } else {
-                    references
-                        .iter()
-                        .position(|reference| *reference == beam.texture)
-                        .map(|index| slot_of[index])
-                        .unwrap_or(0)
-                };
+                let texture = patch::slot_of(&slots, &beam.texture).unwrap_or(0);
                 (beam.clone(), texture)
             })
             .collect();
@@ -168,6 +171,8 @@ impl Beams {
             image_layout,
             textures,
             live,
+            enabled: true,
+            slots,
             vertices: None,
             vertex_capacity: 0,
             last_tick: None,

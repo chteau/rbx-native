@@ -15,7 +15,7 @@ use crate::input::{CameraInput, Input};
 use crate::lighting::{self, Lighting};
 use crate::load::{Loaded, Toggles};
 use crate::quality::QualityLevel;
-use crate::scene::Bounds;
+use crate::scene::{Bounds, EffectKind, MeshPatch};
 
 /// A loaded place that renders frames on demand, flown with the very same
 /// free-flight camera as the windowed viewer.
@@ -151,26 +151,88 @@ impl Headless {
         Ok(applied)
     }
 
-    /// Patches one `BasePart`'s transform/colour/material/transparency/
-    /// reflectance in place, for a Properties-panel edit that touches nothing
-    /// but that one instance — see `crate::scene::Scene::patch_part` for
-    /// exactly what is and is not safe to patch this way.
+    /// Patches one `BasePart` in place for a Properties-panel edit that
+    /// touches nothing but that one instance — its transform, colour,
+    /// material, transparency, reflectance, shape or shadow flag — see
+    /// `crate::scene::Scene::patch_part` for what is and is not safe to
+    /// patch this way, and `Scene::patch_mesh_instance` for the same on a
+    /// part whose box a resolved `MeshPart`/`SpecialMesh`/union mesh has
+    /// replaced. An edit that moves the instance between GPU batches (a
+    /// `Transparency` crossing 0, a `CastShadow` toggle, a new `Shape`) is
+    /// still a single-instance operation: see `Renderer::sync_instance`.
     ///
-    /// `Ok(false)` means the edit crossed a GPU bucket (shape, drawn/
-    /// translucent, shadow caster, or landed on a material layer never
-    /// uploaded); the caller falls back to [`Headless::reload`].
+    /// `Ok(false)` means only a full reload draws the right picture — a
+    /// material layer, mesh or texture never uploaded, a union repainted
+    /// from its operation tree, a referent the scene never built — and the
+    /// caller falls back to [`Headless::reload`].
     pub fn patch_instance(&mut self, dom: &WeakDom, referent: Ref) -> Result<bool, String> {
         let known_material_layers = self.loaded.scene().materials().layers();
-        let Some(index) = self.loaded.scene_mut().patch_part(
+        if let Some(index) =
+            self.loaded
+                .scene_mut()
+                .patch_part(dom, &self.database, referent, known_material_layers)
+        {
+            let part = self.loaded.scene().parts()[index];
+            self.offscreen.sync_instance(&part);
+            return Ok(true);
+        }
+        match self.loaded.scene_mut().patch_mesh_instance(
             dom,
             &self.database,
             referent,
             known_material_layers,
-        ) else {
+        ) {
+            Some(MeshPatch::Placed(index)) => {
+                let resolved = self.loaded.scene().resolved_file_meshes();
+                Ok(self
+                    .offscreen
+                    .sync_mesh_instance(resolved, &resolved.instances[index]))
+            }
+            Some(MeshPatch::Removed) => {
+                self.offscreen.remove_mesh_instance(referent);
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+
+    /// Reflects a `Parent` change that kept `referent` (and everything under
+    /// it) inside `Workspace`: nothing visible moves — a part's `CFrame` is
+    /// world-space, and every decal, light and effect under it stays under
+    /// it — so there is nothing to redraw, and `Ok(true)` says so. See
+    /// `crate::scene::Scene::already_draws` for exactly what is checked.
+    ///
+    /// `Ok(false)` when the subtree crossed the `Workspace` boundary in
+    /// either direction (or was never built at all): what to draw changed,
+    /// and only a full reload works that out — the caller falls back to
+    /// [`Headless::reload`].
+    pub fn reparent(&mut self, dom: &WeakDom, referent: Ref) -> Result<bool, String> {
+        Ok(self
+            .loaded
+            .scene()
+            .already_draws(dom, &self.database, referent))
+    }
+
+    /// Re-plans the `ParticleEmitter`/`Beam`/`Trail` list `referent`'s class
+    /// belongs to from `dom` and hands it to the renderer in place — no scene
+    /// rebuild, no texture re-upload, no restarted simulation. See
+    /// `crate::scene::Scene::replan_effect` for why the whole list and
+    /// `crate::renderer::Renderer::patch_effect` for what survives.
+    ///
+    /// `Ok(false)` when `referent` is none of those three classes, or its
+    /// edit named a texture never downloaded; the caller falls back to
+    /// [`Headless::reload`].
+    pub fn patch_effect(&mut self, dom: &WeakDom, referent: Ref) -> Result<bool, String> {
+        let Some(kind) = dom
+            .get(referent)
+            .and_then(|instance| EffectKind::of(&self.database, instance.class()))
+        else {
             return Ok(false);
         };
-        let part = self.loaded.scene().parts()[index];
-        Ok(self.offscreen.patch_instance(&part))
+        self.loaded
+            .scene_mut()
+            .replan_effect(dom, &self.database, kind);
+        Ok(self.offscreen.patch_effect(kind, self.loaded.scene()))
     }
 
     /// Opens the view standing at `eye` and looking toward `look_at`, both in

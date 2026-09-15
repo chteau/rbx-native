@@ -5,7 +5,7 @@
 use std::rc::Rc;
 
 use gpui_kit::{Context, ScrollStrategy};
-use rbx_dom::{Ref, WeakDom};
+use rbx_dom::{Change, Ref, WeakDom};
 
 use crate::command_bar::{self, Feedback};
 use crate::explorer::{self, Explorer};
@@ -70,6 +70,10 @@ impl Shell {
         // Snapshotted before the swap below, whether or not the script ends
         // up mutating anything — see `shell::history`.
         self.push_history();
+        // Everything logged so far was reflected as it happened (a Properties
+        // panel commit, say); only what this script does is of interest to
+        // `rebuild_after_script`.
+        self.dom.take_changes();
         // `WeakDom::new()` is only ever seen back if `run` itself could not be
         // built (an engine fault, not a script one) — see `command_bar::run`.
         let dom = std::mem::replace(&mut self.dom, WeakDom::new());
@@ -92,9 +96,19 @@ impl Shell {
     /// Reflects a successful script in everything that was built from the old
     /// DOM: the Explorer's rows and the viewport's scene. The Properties panel
     /// reads `self.dom` itself, so the re-render is all it needs.
+    ///
+    /// A script that wrote exactly one property or moved exactly one instance
+    /// (`workspace.Part.Transparency = 0.5`, `part.Parent = model` — the
+    /// bulk of what gets typed into the bar) takes the same viewport path a
+    /// Properties-panel commit of that edit would (see `shell::edit`); any
+    /// other run rebuilds the whole scene, the one answer that is right
+    /// whatever the script did.
     fn rebuild_after_script(&mut self, cx: &mut Context<Self>) {
         self.rebuild_explorer(cx);
-        self.reload_viewport(cx);
+        match single_change(&self.dom.take_changes()) {
+            Some((reference, name)) => self.reflect_in_viewport(reference, &name, cx),
+            None => self.reload_viewport(cx),
+        }
     }
 
     /// Rebuilds the Explorer's rows from the current `self.dom`, keeping the
@@ -124,5 +138,67 @@ impl Shell {
     pub(super) fn reload_viewport(&mut self, cx: &mut Context<Self>) {
         let dom = self.dom.clone();
         self.viewport.update(cx, |viewport, _| viewport.reload(dom));
+    }
+}
+
+/// The one edit a script's change log amounts to, as the `(instance,
+/// property)` pair `Shell::reflect_in_viewport` classifies — `None` for any
+/// log that is not exactly one property write or one reparent.
+fn single_change(changes: &[Change]) -> Option<(Ref, String)> {
+    match changes {
+        [Change::Property { referent, name }] => Some((*referent, name.clone())),
+        [Change::Parent { referent, .. }] => Some((*referent, "Parent".to_string())),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rbx_dom::{Change, Ref};
+
+    use super::single_change;
+
+    #[test]
+    fn one_property_write_is_the_edit_it_names() {
+        let changes = [Change::Property {
+            referent: Ref::new(7),
+            name: "Transparency".to_string(),
+        }];
+
+        assert_eq!(
+            single_change(&changes),
+            Some((Ref::new(7), "Transparency".to_string()))
+        );
+    }
+
+    // A reparent is logged under its own variant, but classifies exactly as
+    // a `Parent` property write would.
+    #[test]
+    fn one_reparent_is_a_parent_edit() {
+        let changes = [Change::Parent {
+            referent: Ref::new(7),
+            old: Some(Ref::new(1)),
+            new: Some(Ref::new(2)),
+        }];
+
+        assert_eq!(
+            single_change(&changes),
+            Some((Ref::new(7), "Parent".to_string()))
+        );
+    }
+
+    // Anything else — nothing, several writes, an instance added or removed
+    // — has no single edit to classify, so the caller rebuilds.
+    #[test]
+    fn anything_else_is_not_a_single_edit() {
+        let write = |id: u32| Change::Property {
+            referent: Ref::new(id),
+            name: "Name".to_string(),
+        };
+
+        assert_eq!(single_change(&[]), None);
+        assert_eq!(single_change(&[write(1), write(2)]), None);
+        assert_eq!(single_change(&[Change::Added(Ref::new(1))]), None);
+        assert_eq!(single_change(&[Change::Removed(Ref::new(1))]), None);
     }
 }

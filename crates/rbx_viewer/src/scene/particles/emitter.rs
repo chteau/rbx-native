@@ -53,6 +53,10 @@ pub(crate) struct Emitter {
     /// Seeds this emitter's own [`super::rng::Rng`], derived from its referent so
     /// two runs over the same file always draw the same particles.
     pub(crate) seed: u64,
+    /// The `ParticleEmitter` instance this was read from, which is how a
+    /// re-planned list (see `Scene::replan_effect`) is matched back to the
+    /// renderer's running simulations — `seed` alone is not reversible.
+    pub(crate) referent: Ref,
     /// The parent part's placement, unit-cube-to-world: sampling a spawn point
     /// only needs `volume.transform_point3` on a `[-0.5, 0.5]^3` local point.
     pub(crate) volume: Mat4,
@@ -148,6 +152,7 @@ fn build(
         z_offset: float_or(properties, "ZOffset", 0.0),
         cap,
         seed: seed_of(referent.value()),
+        referent,
         volume,
     })
 }

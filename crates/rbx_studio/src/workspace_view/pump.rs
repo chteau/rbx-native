@@ -49,6 +49,12 @@ enum Command {
     /// A single `BasePart` edit — see `Headless::patch_instance`. Falls back
     /// the same way.
     Instance(WeakDom, Ref),
+    /// A single `ParticleEmitter`/`Beam`/`Trail` edit — see
+    /// `Headless::patch_effect`. Falls back the same way.
+    Effect(WeakDom, Ref),
+    /// A `Parent` change on a part or container — see `Headless::reparent`.
+    /// Falls back the same way.
+    Reparent(WeakDom, Ref),
     Visible(bool),
     Stop,
 }
@@ -144,6 +150,16 @@ impl Pump {
     /// [`Command::Instance`].
     pub(super) fn patch_instance(&self, dom: WeakDom, referent: Ref) {
         let _ = self.commands.send(Command::Instance(dom, referent));
+    }
+
+    /// Re-plans one effect list from a mutated DOM — see [`Command::Effect`].
+    pub(super) fn patch_effect(&self, dom: WeakDom, referent: Ref) {
+        let _ = self.commands.send(Command::Effect(dom, referent));
+    }
+
+    /// Checks one reparent against a mutated DOM — see [`Command::Reparent`].
+    pub(super) fn reparent(&self, dom: WeakDom, referent: Ref) {
+        let _ = self.commands.send(Command::Reparent(dom, referent));
     }
 
     /// Tells the render thread whether the panel is actually on screen — the
@@ -431,6 +447,16 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
             Ok(false) => fall_back_to_reload(rendering.viewer, &dom, "instance edit"),
             Err(err) => eprintln!("rbxstudio: instance edit failed: {err}"),
         },
+        Command::Effect(dom, referent) => match rendering.viewer.patch_effect(&dom, referent) {
+            Ok(true) => {}
+            Ok(false) => fall_back_to_reload(rendering.viewer, &dom, "effect edit"),
+            Err(err) => eprintln!("rbxstudio: effect edit failed: {err}"),
+        },
+        Command::Reparent(dom, referent) => match rendering.viewer.reparent(&dom, referent) {
+            Ok(true) => {}
+            Ok(false) => fall_back_to_reload(rendering.viewer, &dom, "reparent"),
+            Err(err) => eprintln!("rbxstudio: reparent failed: {err}"),
+        },
         Command::Visible(new) => *rendering.visible = new,
         Command::Stop => return false,
     }
@@ -438,7 +464,7 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
     true
 }
 
-/// What both fast-path commands do when `Headless` itself reports it cannot
+/// What every fast-path command does when `Headless` itself reports it cannot
 /// take the shortcut (a bucket crossed, a material never uploaded, a local
 /// light added or removed underneath — see their own doc comments): the one
 /// thing guaranteed to draw the right picture regardless of why.

@@ -299,11 +299,18 @@ impl Shell {
     }
 
     /// Reflects one committed edit in the 3D view, through whichever of
-    /// [`ViewportEdit`]'s three paths `name`/the edited instance's class say
-    /// is safe — see its doc comment. A referent that stopped resolving
+    /// [`ViewportEdit`]'s paths `name`/the edited instance's class say is
+    /// safe — see its doc comment. A referent that stopped resolving
     /// (should not happen right after a successful commit, but a fallback
-    /// costs nothing) gets the always-correct full reload too.
-    fn reflect_in_viewport(&mut self, reference: Ref, name: &str, cx: &mut Context<Self>) {
+    /// costs nothing) gets the always-correct full reload too. `pub(super)`:
+    /// also where a Command Bar script's single edit lands (see
+    /// `shell::command`), so the two never disagree on what is safe.
+    pub(super) fn reflect_in_viewport(
+        &mut self,
+        reference: Ref,
+        name: &str,
+        cx: &mut Context<Self>,
+    ) {
         let class = self.dom.get(reference).map(|instance| instance.class());
         let edit = class.map_or(ViewportEdit::Full, |class| {
             classify_edit(&self.database, class, name)
@@ -319,6 +326,16 @@ impl Shell {
                 let dom = self.dom.clone();
                 self.viewport
                     .update(cx, |viewport, _| viewport.patch_instance(dom, reference));
+            }
+            ViewportEdit::Effect => {
+                let dom = self.dom.clone();
+                self.viewport
+                    .update(cx, |viewport, _| viewport.patch_effect(dom, reference));
+            }
+            ViewportEdit::Reparent => {
+                let dom = self.dom.clone();
+                self.viewport
+                    .update(cx, |viewport, _| viewport.reparent(dom, reference));
             }
             ViewportEdit::Full => self.reload_viewport(cx),
         }
@@ -409,13 +426,26 @@ pub(super) enum ViewportEdit {
     /// (`Point`/`Spot`/`Surface`): recompute the lighting uniform and the
     /// local-light buffer in place.
     Lighting,
-    /// A `BasePart` (or descendant): try to patch its one GPU instance,
-    /// falling back to a full reload if the edit turns out to cross a GPU
-    /// bucket (see `rbx_viewer::scene::Scene::patch_part`).
+    /// A `BasePart` (or descendant): patch its one GPU instance, moving it
+    /// between batches if the edit changed its shape, transparency bucket
+    /// or shadow flag, and falling back to a full reload only for what was
+    /// never uploaded — a material layer, mesh or texture (see
+    /// `rbx_viewer::scene::Scene::patch_part`, and `Scene::patch_mesh_instance`
+    /// for a part drawn as a resolved mesh).
     Instance,
-    /// Anything else — including every `Sky` edit (see below) and a `Parent`
-    /// change on any class — where a full rebuild is the only thing
-    /// guaranteed to draw the right picture.
+    /// A `ParticleEmitter`, `Beam` or `Trail`: re-read that one effect list
+    /// from the DOM and hand it to the renderer, which keeps its textures and
+    /// running simulations (see `rbx_viewer::Headless::patch_effect`),
+    /// falling back to a full reload only for a texture never downloaded.
+    Effect,
+    /// A `Parent` change on a `BasePart`, `Model` or `Folder`: nothing to
+    /// redraw as long as the subtree stayed inside `Workspace` (see
+    /// `rbx_viewer::Headless::reparent`), which the render thread checks
+    /// against the new DOM, falling back to a full reload if it did not.
+    Reparent,
+    /// Anything else — including every `Sky` edit and a `Parent` change on
+    /// any other class (see [`classify_edit`]) — where a full rebuild is the
+    /// only thing guaranteed to draw the right picture.
     Full,
 }
 
@@ -424,25 +454,48 @@ pub(super) enum ViewportEdit {
 /// `SpotLight`/`SurfaceLight` all match without naming each one.
 const LIGHTING_LIKE: [&str; 5] = ["Lighting", "Atmosphere", "Clouds", "PostEffect", "Light"];
 
+/// Every class classified [`ViewportEdit::Effect`]. `Attachment` is
+/// deliberately absent even though moving one moves a beam's or trail's
+/// endpoint: one attachment can anchor any number of either, and only a full
+/// reload re-reads them all.
+const EFFECT_LIKE: [&str; 3] = ["ParticleEmitter", "Beam", "Trail"];
+
+/// Every class whose `Parent` edit is [`ViewportEdit::Reparent`]: the ones
+/// with no visual of their own that depends on *what* they are parented
+/// to. A `Decal`, `SpecialMesh`, `Light`, `Attachment` or effect is drawn
+/// on, as, at or from its parent part, so moving one of those is a visual
+/// change only a full reload re-reads.
+const REPARENTABLE: [&str; 3] = ["BasePart", "Model", "Folder"];
+
 /// Classifies a committed edit by the class of the instance it touched and by
 /// `name`.
 ///
-/// `Parent` always forces [`ViewportEdit::Full`], even on a `BasePart`:
-/// reparenting can move an instance in or out of `Workspace` (see
-/// `rbx_viewer::scene::workspace_descendants`), which neither fast path
-/// accounts for. `Sky` is deliberately never [`ViewportEdit::Lighting`]
-/// either, unlike the rest of that class list: its skybox panels, prefiltered
-/// environment probe, sun/moon discs and star field are all GPU state built
-/// once when the scene loads (see `rbx_viewer::renderer::Renderer::new`), and
-/// making every one of those live is future work — a full reload is the
-/// documented fallback for now, not a missed case.
+/// `Parent` on a [`REPARENTABLE`] class is [`ViewportEdit::Reparent`]: a
+/// move that stays inside `Workspace` changes nothing on screen, and the
+/// render thread — which has the new DOM and the scene — is what checks it
+/// did (see `rbx_viewer::Headless::reparent`); a move across the `Workspace`
+/// boundary (see `rbx_viewer::scene::workspace_descendants`) still falls back
+/// to a full reload there. `Sky` is deliberately never
+/// [`ViewportEdit::Lighting`], unlike the rest of that class list: its skybox
+/// panels, prefiltered environment probe, sun/moon discs and star field are
+/// all GPU state built once when the scene loads (see
+/// `rbx_viewer::renderer::Renderer::new`), and making every one of those live
+/// is future work — a full reload is the documented fallback for now, not a
+/// missed case.
 pub(super) fn classify_edit(
     database: &ReflectionDatabase,
     class: &str,
     name: &str,
 ) -> ViewportEdit {
     if name == "Parent" {
-        return ViewportEdit::Full;
+        return if REPARENTABLE
+            .iter()
+            .any(|ancestor| database.is_subclass_of(class, ancestor))
+        {
+            ViewportEdit::Reparent
+        } else {
+            ViewportEdit::Full
+        };
     }
     if database.is_subclass_of(class, "Sky") {
         return ViewportEdit::Full;
@@ -455,6 +508,12 @@ pub(super) fn classify_edit(
     }
     if database.is_subclass_of(class, "BasePart") {
         return ViewportEdit::Instance;
+    }
+    if EFFECT_LIKE
+        .iter()
+        .any(|ancestor| database.is_subclass_of(class, ancestor))
+    {
+        return ViewportEdit::Effect;
     }
     ViewportEdit::Full
 }
@@ -531,16 +590,68 @@ mod tests {
         }
     }
 
-    // Reparenting can move an instance in or out of `Workspace`, which
-    // neither fast path accounts for — a `BasePart` edit of exactly this one
-    // property must still force a full reload.
     #[test]
-    fn a_parent_change_always_forces_a_full_reload() {
+    fn effect_classes_take_the_effect_fast_path() {
+        let database = ReflectionDatabase::embedded();
+        for (class, name) in [
+            ("ParticleEmitter", "Enabled"),
+            ("ParticleEmitter", "Rate"),
+            ("Beam", "Width0"),
+            ("Trail", "Lifetime"),
+        ] {
+            assert_eq!(
+                classify_edit(&database, class, name),
+                ViewportEdit::Effect,
+                "{class}.{name}"
+            );
+        }
+    }
+
+    // An `Attachment` anchors any number of beams and trails at once, so its
+    // edits stay on the one path that re-reads every one of them.
+    #[test]
+    fn an_attachment_edit_falls_back_to_a_full_reload() {
         let database = ReflectionDatabase::embedded();
         assert_eq!(
-            classify_edit(&database, "Part", "Parent"),
+            classify_edit(&database, "Attachment", "CFrame"),
             ViewportEdit::Full
         );
+    }
+
+    // A part, model or folder moved within `Workspace` draws exactly as it
+    // did; whether it *stayed* within is the render thread's check, not
+    // this one's.
+    #[test]
+    fn a_parent_change_on_a_container_or_part_is_a_reparent() {
+        let database = ReflectionDatabase::embedded();
+        for class in ["Part", "MeshPart", "Model", "Folder"] {
+            assert_eq!(
+                classify_edit(&database, class, "Parent"),
+                ViewportEdit::Reparent,
+                "{class}"
+            );
+        }
+    }
+
+    // Anything drawn on, at or from its parent part changes on screen when
+    // reparented, and only a full reload re-reads where it landed.
+    #[test]
+    fn a_parent_change_on_anything_drawn_off_its_parent_forces_a_full_reload() {
+        let database = ReflectionDatabase::embedded();
+        for class in [
+            "ParticleEmitter",
+            "PointLight",
+            "Decal",
+            "SpecialMesh",
+            "Attachment",
+            "Sky",
+        ] {
+            assert_eq!(
+                classify_edit(&database, class, "Parent"),
+                ViewportEdit::Full,
+                "{class}"
+            );
+        }
     }
 
     #[test]

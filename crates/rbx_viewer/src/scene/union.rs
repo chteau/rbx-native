@@ -26,7 +26,7 @@ use super::{Part, ResolvedInstance};
 const PART_OPERATION: &str = "PartOperation";
 
 /// One legacy union/negate found in the DOM, before its asset exists.
-struct Entry {
+pub(super) struct Entry {
     /// The real DOM instance this entry stands for, so its fallback box can be
     /// hidden once real geometry resolves — see `Scene::resolve_unions`.
     referent: Ref,
@@ -56,6 +56,53 @@ impl Entry {
     fn placement(&self) -> Mat4 {
         self.cframe * Mat4::from_scale(self.size / self.initial_size)
     }
+
+    /// The renderer's instance for this union's computed mesh, painted
+    /// `color` (linear). Shared by [`resolve`] and [`Entry::patched`] so the
+    /// two can never disagree on what a union instance carries.
+    fn instance(&self, color: [f32; 3]) -> ResolvedInstance {
+        ResolvedInstance {
+            referent: self.referent,
+            mesh: self.asset.clone(),
+            material: self.material,
+            texture: None,
+            appearance: None,
+            model: self.placement(),
+            color,
+            alpha: self.alpha,
+            reflectance: self.reflectance,
+            casts_shadow: self.casts_shadow,
+        }
+    }
+
+    /// Whether a fresh [`resolve`] would drop this entry as fully transparent
+    /// — see `filemesh::Entry::is_invisible`.
+    pub(super) fn is_invisible(&self) -> bool {
+        self.alpha <= 0.0
+    }
+
+    /// The instance [`resolve`] would build for this entry, assuming its
+    /// boolean geometry already computed — `None` where a fresh resolution
+    /// would drop it (fully transparent), or where its colour would have to
+    /// come from the operation tree (`UsePartColor` off — see [`resolve`]),
+    /// which only exists while that tree is being evaluated.
+    pub(super) fn patched(&self) -> Option<ResolvedInstance> {
+        if self.alpha <= 0.0 {
+            return None;
+        }
+        let color = self.color?;
+        Some(self.instance(color.map(|channel| super::srgb_to_linear(f32::from(channel) / 255.0))))
+    }
+}
+
+/// The single-instance counterpart of [`plan`] — see `filemesh::replan`.
+pub(super) fn replan(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    referent: Ref,
+    materials: &mut Catalog,
+) -> Option<Entry> {
+    from_operation(dom, database, referent, materials)
 }
 
 /// Every legacy union/negate in a DOM, extracted once and reused both to list
@@ -206,17 +253,9 @@ pub(crate) fn resolve(
             .color
             .or_else(|| csg::largest_additive_color(tree))
             .unwrap_or(super::FALLBACK_COLOR);
-        resolution.instances.push(ResolvedInstance {
-            mesh: entry.asset.clone(),
-            material: entry.material,
-            texture: None,
-            appearance: None,
-            model: entry.placement(),
-            color: color.map(|channel| super::srgb_to_linear(f32::from(channel) / 255.0)),
-            alpha: entry.alpha,
-            reflectance: entry.reflectance,
-            casts_shadow: entry.casts_shadow,
-        });
+        resolution.instances.push(
+            entry.instance(color.map(|channel| super::srgb_to_linear(f32::from(channel) / 255.0))),
+        );
     }
 
     resolution.meshes = evaluated
