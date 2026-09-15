@@ -75,8 +75,10 @@ impl<'a> Reader<'a> {
     pub(crate) fn u32_array(&mut self, count: usize) -> Result<Vec<u32>, MeshError> {
         let payload = self.take_records(count, 4)?;
         Ok(payload
-            .chunks_exact(4)
-            .map(|word| u32::from_le_bytes(word.try_into().unwrap()))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|word| u32::from_le_bytes(*word))
             .collect())
     }
 }

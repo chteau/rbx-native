@@ -48,7 +48,9 @@ pub(crate) fn parse(version: (u8, u8), body: &[u8]) -> Result<Mesh, MeshError> {
     }
 
     let vertices: Vec<Vertex> = vectors
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .map(|triplet| Vertex {
             position: triplet[0].map(|axis| axis * scale),
             normal: triplet[1],
