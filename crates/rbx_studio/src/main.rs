@@ -31,6 +31,7 @@ mod properties;
 mod render_image;
 mod save;
 mod settings;
+mod settle;
 mod shell;
 mod transform;
 mod workspace_view;

@@ -33,6 +33,7 @@ use rbx_viewer::{CameraInput, Headless, Pose, QualityLevel};
 
 use crate::camera::PlaceCamera;
 use crate::pointer_lock::{self, PointerLock};
+use crate::settle::Settle;
 use crate::transform::{self, Target, Transform};
 use crate::{display, pacing};
 use frame::{device_pixels, render_image, Viewport};
@@ -80,10 +81,16 @@ pub(crate) enum ViewportAction {
     /// began the gesture, which is the single undo step the whole drag gets:
     /// pushing one per mouse move would bury the rest of the history in a
     /// fraction of a second.
+    ///
+    /// `position` is the view's own answer, worked out with no DOM in reach.
+    /// A cursor drag also carries a [`Settle`], asking `Shell` to rest the
+    /// part on whatever the cursor is over instead — `position` is then only
+    /// the fallback for a cursor over nothing.
     Moved {
         referent: Ref,
         position: Vec3,
         first: bool,
+        settle: Option<Settle>,
     },
     /// A transform-toolbar shortcut typed over the view.
     Tool(transform::Action),

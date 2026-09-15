@@ -18,6 +18,7 @@ use rbx_viewer::gizmo::{self, Handles};
 use rbx_viewer::pick::{self, Ray};
 
 use super::{ViewportAction, WorkspaceView};
+use crate::settle::Settle;
 
 /// A left-button drag in progress.
 #[derive(Debug, Clone, Copy)]
@@ -29,23 +30,45 @@ pub(super) enum Drag {
         axis: Vec3,
         grabbed: f32,
     },
-    /// The part's own body is held — Studio's "cursor dragging". It travels in
-    /// the plane that faced the camera through the grab point, keeping the
-    /// part where it was relative to the cursor.
+    /// The part's own body is held — Studio's "cursor dragging". The part
+    /// comes to rest on whatever the cursor is over (see [`crate::settle`]);
+    /// with nothing under the cursor it travels instead in the plane that
+    /// faced the camera through the grab point, keeping the part where it was
+    /// relative to the cursor.
     ///
     /// The plane is fixed in the world at the moment of the grab rather than
     /// recomputed from the live camera: a plane that turned with the view
     /// would slide the part every time the camera did, which is not what
     /// holding it still means.
     ///
-    /// Studio additionally soft-snaps the dragged part onto nearby surfaces
-    /// and edges; nothing here does, so a free drag slides flat across the
-    /// view instead of settling onto what it passes over.
+    /// Studio additionally soft-snaps onto nearby *edges*; nothing here does.
     Plane {
         point: Vec3,
         normal: Vec3,
         offset: Vec3,
     },
+}
+
+impl Drag {
+    /// What `Shell` needs to rest the part on the scene for this cursor ray:
+    /// the grab, as the ray that made it, and where the part stood then. An
+    /// axis drag is pinned to its line and never settles.
+    pub(super) fn settle(self, cursor: Ray) -> Option<Settle> {
+        match self {
+            Drag::Axis { .. } => None,
+            Drag::Plane {
+                point,
+                normal,
+                offset,
+            } => Some(Settle {
+                cursor,
+                // The plane faces back along the grab ray, so the ray itself
+                // is the plane's normal reversed, starting where it hit.
+                grab: Ray::new(point, -normal),
+                centre: point + offset,
+            }),
+        }
+    }
 }
 
 impl WorkspaceView {
@@ -168,7 +191,19 @@ impl WorkspaceView {
             referent: target.referent,
             position,
             first,
+            settle: drag.settle(ray),
         });
+    }
+
+    /// Where `Shell` actually put the part for the move this gesture just
+    /// asked for, when it rested it on a surface the view itself cannot see.
+    /// Unlike [`WorkspaceView::set_target`] this is taken mid-gesture: it is
+    /// the drag's own answer, finished with the DOM, not a round trip that
+    /// could land a frame late.
+    pub(crate) fn settle_at(&mut self, position: Vec3) {
+        if self.drag.is_some() {
+            self.target = self.target.map(|target| target.moved_to(position));
+        }
     }
 
     /// Whether a drag is under way, which is what keeps a moving cursor from

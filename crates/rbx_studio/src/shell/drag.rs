@@ -12,6 +12,7 @@ use rbx_dom::{Ref, WeakDom};
 use rbx_viewer::pick::{self, Ray};
 
 use crate::properties;
+use crate::settle::{self, Settle};
 use crate::transform::Target;
 use crate::workspace_view::ViewportAction;
 
@@ -34,7 +35,8 @@ impl Shell {
                 referent,
                 position,
                 first,
-            } => self.move_part(referent, position, first, cx),
+                settle,
+            } => self.move_part(referent, position, first, settle, cx),
             ViewportAction::Tool(action) => self.transform_action(action, cx),
         }
     }
@@ -61,10 +63,26 @@ impl Shell {
     /// a fifty-deep stack in under a second. The write itself goes through the
     /// same `properties::edit::commit` the Properties panel uses, so a drag
     /// and a typed coordinate cannot disagree about what moving a part means.
-    fn move_part(&mut self, referent: Ref, position: Vec3, first: bool, cx: &mut Context<Self>) {
+    ///
+    /// A cursor drag asks, through `settle`, to rest the part on whatever the
+    /// cursor is over. Only the DOM can answer that, so it is answered here,
+    /// and the answer is handed back to the view: its draggers are following
+    /// its own flat-plane guess until told otherwise.
+    fn move_part(
+        &mut self,
+        referent: Ref,
+        position: Vec3,
+        first: bool,
+        settle: Option<Settle>,
+        cx: &mut Context<Self>,
+    ) {
         if first {
             self.push_history();
         }
+
+        let settled =
+            settle.and_then(|settle| settle::settled(&self.dom, &self.database, referent, settle));
+        let position = settled.unwrap_or(position);
 
         let text = format!("{}, {}, {}", position.x, position.y, position.z);
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
@@ -78,6 +96,10 @@ impl Shell {
         }
 
         self.reflect_in_viewport(referent, CFRAME_PROPERTY, cx);
+        if settled.is_some() {
+            self.viewport
+                .update(cx, |viewport, _| viewport.settle_at(position));
+        }
         cx.notify();
     }
 

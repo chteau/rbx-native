@@ -90,3 +90,33 @@ fn a_ray_that_has_turned_along_the_drag_plane_has_no_answer() {
 
     assert_eq!(moved_to(drag, along), None);
 }
+
+#[test]
+fn a_plane_drag_asks_to_settle_along_the_ray_that_grabbed_it() {
+    // Grabbed looking down -Z at a point on the part, with the centre a stud
+    // behind and above it.
+    let drag = Drag::Plane {
+        point: Vec3::new(2.0, 3.0, 4.0),
+        normal: Vec3::Z,
+        offset: Vec3::new(0.0, 1.0, -1.0),
+    };
+    let cursor = looking_at(5.0, 6.0);
+
+    let settle = drag.settle(cursor).expect("a cursor drag settles");
+    assert_eq!(settle.cursor, cursor);
+    // The grab ray starts where the grab landed and runs into the part, the
+    // way the click did — the reverse of the plane's normal.
+    assert_eq!(settle.grab.origin, Vec3::new(2.0, 3.0, 4.0));
+    assert!((settle.grab.direction - Vec3::NEG_Z).length() < 1e-6);
+    assert_eq!(settle.centre, Vec3::new(2.0, 4.0, 3.0));
+}
+
+#[test]
+fn an_axis_drag_never_settles() {
+    let drag = Drag::Axis {
+        origin: Vec3::ZERO,
+        axis: Vec3::X,
+        grabbed: 2.0,
+    };
+    assert_eq!(drag.settle(looking_at(6.5, 0.0)), None);
+}
