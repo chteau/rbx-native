@@ -9,6 +9,11 @@ name = "rbxstudio"
 path = "src/main.rs"
 
 [dependencies]
+# The vector/matrix types `rbx_viewer`'s picking and gizmo geometry are
+# expressed in (`Ray`, `Handles`, `Pose::position`): the viewport hit-tests the
+# cursor against them on this side of the thread boundary. Same version
+# `rbx_viewer` pins, so this adds no new dependency version to the tree.
+glam = "0.33"
 gpui-kit = "0.6"
 # GPUI's own version: a RenderImage is built from its `image::Frame`s, so a
 # second copy of the crate would not typecheck.
@@ -42,9 +47,3 @@ raw-window-handle = "0.6"
 # `randr` is where the display's refresh rate comes from.
 x11rb = { version = "0.13", features = ["randr", "xfixes"] }
 
-[dev-dependencies]
-# `rbx_viewer::Pose::position` is a `glam::Vec3`; only `camera`'s tests need to
-# build one directly (production code only ever reads the fields back out of a
-# `Pose` the render thread already built). Same version `rbx_viewer` pins, so
-# this adds no new dependency version to the tree.
-glam = "0.33"

@@ -203,9 +203,20 @@ Roblox's own engine.
 - [ ] 📋 `Light.Shadows` for `PointLight` (needs 6-face shadow maps; done
   for `SpotLight`/`SurfaceLight`).
 - [ ] 📋 Neon/`ForceField` shimmer, `Glass` refraction — currently flat.
-- [ ] 📋 **Interactive viewport gizmos — Select/Move/Scale/Rotate(/Transform),
-  matching Studio's real toolbar and behaviour.** Selection itself is done;
-  dragging a selected part in the viewport isn't. Checked against
+- [x] 🚧 **Interactive viewport gizmos — Select/Move/Scale/Rotate(/Transform),
+  matching Studio's real toolbar and behaviour.** **Landed so far**: the
+  toolbar strip itself, in the placement described below; clicking in the
+  viewport to select (resolving to the outermost enclosing model) and
+  `Alt`/`⌥`-click selection cycling; the **Move** tool's coloured axis
+  draggers, dragging along an axis, cursor-dragging the part's own body, and
+  `Ctrl`/`Cmd`+`L`'s world/local toggle with its `L` indicator. **Still
+  open**: **Scale** and **Rotate** (their toolbar buttons are present but
+  disabled); the whole **Snapping** sub-bullet, including `Shift`-to-invert,
+  the increment fields and their checkboxes, pivot/cursor-drag soft-snapping
+  onto nearby surfaces, and `T`/`R`'s 90° tilts; the **5th "Transform"
+  button**, deliberately untouched for the reason its own sub-bullet gives;
+  `Shift`/`Ctrl`/`Cmd`-click multi-select, which needs the Explorer to hold
+  more than one selected instance first. Checked against
   `Roblox/creator-docs` (`parts/index.md#transform-parts`,
   `parts/models.md#select-models`) rather than assumed, including a
   correction to the original ask:

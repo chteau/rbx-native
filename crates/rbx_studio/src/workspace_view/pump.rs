@@ -17,7 +17,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use rbx_dom::{Ref, WeakDom};
-use rbx_viewer::{CameraInput, Headless, Pose, QualityLevel};
+use rbx_viewer::{CameraInput, Gizmo, Headless, Pose, QualityLevel};
 
 use super::quality::Quality;
 use super::stats::Stats;
@@ -42,6 +42,9 @@ enum Command {
     Quality(QualityLevel),
     Orthographic(bool),
     Selection(Vec<Ref>),
+    /// Which transform tool's draggers to draw over the selection, if any —
+    /// see `Headless::set_gizmo`.
+    Gizmo(Option<Gizmo>),
     Reload(WeakDom),
     /// A `Lighting`/`Atmosphere`/`Clouds`/`PostEffect`/`Light` edit — see
     /// `Headless::update_lighting`. Falls back to a full [`Command::Reload`]
@@ -71,6 +74,13 @@ pub(super) struct Ready {
     pub(super) speed: f32,
     pub(super) level: u8,
     pub(super) pose: Option<Pose>,
+    /// The camera this frame was actually drawn from, on every message rather
+    /// than on the throttled tick `pose` uses. What the viewport unprojects a
+    /// click with: a pick resolved against a pose up to `POSE_SYNC_INTERVAL`
+    /// stale would select whatever was under the cursor a fifth of a second
+    /// ago, which is exactly the moment after flying the camera when a user is
+    /// most likely to click.
+    pub(super) view: Option<Pose>,
     /// Asset-fetch/decode warnings drained off the viewer since the previous
     /// tick — see `Headless::drain_warnings`. Empty on most ticks, same as
     /// `pose`, but unlike `pose` this is never throttled: a warning is worth
@@ -139,6 +149,11 @@ impl Pump {
     /// Outlines `referents` in the viewport.
     pub(super) fn select(&self, referents: Vec<Ref>) {
         let _ = self.commands.send(Command::Selection(referents));
+    }
+
+    /// Shows or hides the transform tool's draggers over the selection.
+    pub(super) fn gizmo(&self, gizmo: Option<Gizmo>) {
+        let _ = self.commands.send(Command::Gizmo(gizmo));
     }
 
     /// Rebuilds the viewer's scene from a mutated DOM.
@@ -259,7 +274,8 @@ fn run(
             shown = frame.level;
         }
 
-        let pose = due_pose(viewer.pose(), pose_sent, now >= pose_due);
+        let view = viewer.pose();
+        let pose = due_pose(view, pose_sent, now >= pose_due);
         if let Some(pose) = pose {
             pose_sent = Some(pose);
             pose_due = now + POSE_SYNC_INTERVAL;
@@ -275,6 +291,7 @@ fn run(
                     speed,
                     level: shown,
                     pose,
+                    view,
                     warnings,
                 })
                 .is_err()
@@ -439,6 +456,7 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::Quality(mode) => rendering.quality.set(mode, rendering.viewer),
         Command::Orthographic(orthographic) => rendering.viewer.set_orthographic(orthographic),
         Command::Selection(referents) => rendering.viewer.set_selection(&referents),
+        Command::Gizmo(gizmo) => rendering.viewer.set_gizmo(gizmo),
         Command::Reload(dom) => {
             if let Err(err) = rendering.viewer.reload(&dom) {
                 eprintln!("rbxstudio: command bar reload failed: {err}");

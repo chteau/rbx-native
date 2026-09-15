@@ -1,9 +1,17 @@
 //! The editor's selection: at most one instance, in DOM terms.
 
 use gpui_kit::component::tree::TreeItem;
-use rbx_dom::Ref;
+use rbx_dom::{Ref, WeakDom};
+use rbx_reflection::ReflectionDatabase;
 
 use crate::explorer;
+
+/// The service a viewport click's search for a `Model` ancestor stops at.
+/// `Workspace` is itself a `Model` subclass in Roblox's own class hierarchy,
+/// so without naming it here every click would "select the model" and land on
+/// the whole workspace.
+const WORKSPACE_CLASS: &str = "Workspace";
+const MODEL_CLASS: &str = "Model";
 
 /// Single selection. Kept apart from the tree's own selected row because the
 /// tree forgets it whenever its rows are replaced, and because the viewport
@@ -32,6 +40,74 @@ impl Selection {
     pub(super) fn of_item(item: Option<&TreeItem>) -> Option<Ref> {
         item.and_then(|item| explorer::item_ref(&item.id))
     }
+}
+
+/// What a click in the 3D view selects, given everything under the cursor
+/// (`hits`, nearest first — see `rbx_viewer::pick::parts_along`) and whatever
+/// is selected now.
+///
+/// Two behaviours, both taken from `creator-docs`
+/// (`parts/models.md#select-models`, `studio/ui-overview.md#selection-cycling`):
+///
+/// - A plain click takes the nearest hit and selects the **outermost model**
+///   it belongs to, which is what makes clicking any wall of a house select
+///   the house.
+/// - `cycling` — Studio's `Alt`/`⌥`-click — steps to "the next further object
+///   behind the currently selected object" instead, one raw part at a time and
+///   without reaching for a model, which is how a child buried inside one is
+///   reached without leaving the viewport. It wraps back to the nearest hit at
+///   the end, so holding `Alt` and clicking repeatedly goes round rather than
+///   sticking on the last one.
+pub(super) fn from_click(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    hits: &[Ref],
+    current: Option<Ref>,
+    cycling: bool,
+) -> Option<Ref> {
+    let &nearest = hits.first()?;
+    if !cycling {
+        return Some(outermost_model(dom, database, nearest));
+    }
+
+    // A selection that is not itself under the cursor — nothing selected, a
+    // model picked by an earlier plain click, or a part elsewhere entirely —
+    // has no "next" to step past, so cycling starts over at the front.
+    let position = current.and_then(|current| hits.iter().position(|&hit| hit == current));
+    Some(match position {
+        Some(position) => hits[(position + 1) % hits.len()],
+        None => nearest,
+    })
+}
+
+/// The highest `Model` `referent` sits inside, or `referent` itself when it
+/// sits in none.
+///
+/// Walks down from the roots rather than up from the hit: an `Instance` here
+/// knows its children but not its parent, and carrying the enclosing model
+/// down the descent answers the question in one pass without building a
+/// parent map for the whole DOM on every click.
+fn outermost_model(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> Ref {
+    let mut pending: Vec<(Ref, Option<Ref>)> =
+        dom.root_refs().iter().map(|&root| (root, None)).collect();
+
+    while let Some((current, model)) = pending.pop() {
+        if current == referent {
+            return model.unwrap_or(referent);
+        }
+        let Some(instance) = dom.get(current) else {
+            continue;
+        };
+        // `or` rather than a replacement: the *outermost* model wins, so a
+        // model nested inside another never overrides it.
+        let model = model.or_else(|| {
+            let class = instance.class();
+            (class != WORKSPACE_CLASS && database.is_subclass_of(class, MODEL_CLASS))
+                .then_some(current)
+        });
+        pending.extend(instance.children().iter().map(|&child| (child, model)));
+    }
+    referent
 }
 
 #[cfg(test)]
@@ -69,5 +145,103 @@ mod tests {
         // know that) must never turn into a bogus selection.
         let stray = TreeItem::new("not-a-ref", "?");
         assert_eq!(Selection::of_item(Some(&stray)), None);
+    }
+
+    /// A workspace holding a loose part and a two-level model, returned as
+    /// `(dom, loose part, outer model, inner model, deep part)`.
+    fn nested_place() -> (WeakDom, Ref, Ref, Ref, Ref) {
+        let mut dom = WeakDom::new();
+        let workspace = dom.new_instance("Workspace", "Workspace", None);
+        let loose = dom.new_instance("Part", "Baseplate", Some(workspace));
+        let outer = dom.new_instance("Model", "House", Some(workspace));
+        let inner = dom.new_instance("Model", "Door", Some(outer));
+        let deep = dom.new_instance("Part", "Handle", Some(inner));
+        (dom, loose, outer, inner, deep)
+    }
+
+    #[test]
+    fn a_plain_click_selects_the_outermost_model_the_part_belongs_to() {
+        let (dom, _, outer, _, deep) = nested_place();
+        let database = ReflectionDatabase::embedded();
+
+        assert_eq!(
+            from_click(&dom, &database, &[deep], None, false),
+            Some(outer),
+            "clicking a door handle selects the whole house, not the door"
+        );
+    }
+
+    #[test]
+    fn a_part_in_no_model_is_selected_as_itself() {
+        let (dom, loose, ..) = nested_place();
+        let database = ReflectionDatabase::embedded();
+
+        assert_eq!(
+            from_click(&dom, &database, &[loose], None, false),
+            Some(loose)
+        );
+    }
+
+    #[test]
+    fn the_workspace_itself_is_never_what_a_click_selects() {
+        // `Workspace` is a `Model` subclass in Roblox's class hierarchy, so
+        // a naive search upwards would answer every click with it.
+        let (dom, loose, ..) = nested_place();
+        let database = ReflectionDatabase::embedded();
+        let selected = from_click(&dom, &database, &[loose], None, false);
+
+        let class = selected
+            .and_then(|referent| dom.get(referent))
+            .map(|i| i.class());
+        assert_eq!(class, Some("Part"));
+    }
+
+    #[test]
+    fn clicking_nothing_selects_nothing() {
+        let (dom, ..) = nested_place();
+        let database = ReflectionDatabase::embedded();
+
+        assert_eq!(from_click(&dom, &database, &[], None, false), None);
+        assert_eq!(
+            from_click(&dom, &database, &[], Some(Ref::new(1)), true),
+            None
+        );
+    }
+
+    #[test]
+    fn alt_click_cycles_through_what_is_under_the_cursor() {
+        let (dom, loose, outer, _, deep) = nested_place();
+        let database = ReflectionDatabase::embedded();
+        let hits = [deep, loose];
+
+        // Nothing under the cursor selected yet — start at the nearest, and
+        // stay on the raw part rather than reaching for its model.
+        assert_eq!(from_click(&dom, &database, &hits, None, true), Some(deep));
+        // A model picked by an earlier plain click is not itself a hit, so
+        // cycling starts over rather than having nowhere to go.
+        assert_eq!(
+            from_click(&dom, &database, &hits, Some(outer), true),
+            Some(deep)
+        );
+        // Then step behind it, and wrap round at the end.
+        assert_eq!(
+            from_click(&dom, &database, &hits, Some(deep), true),
+            Some(loose)
+        );
+        assert_eq!(
+            from_click(&dom, &database, &hits, Some(loose), true),
+            Some(deep)
+        );
+    }
+
+    #[test]
+    fn alt_click_with_one_thing_under_the_cursor_stays_on_it() {
+        let (dom, loose, ..) = nested_place();
+        let database = ReflectionDatabase::embedded();
+
+        assert_eq!(
+            from_click(&dom, &database, &[loose], Some(loose), true),
+            Some(loose)
+        );
     }
 }

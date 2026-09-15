@@ -2,6 +2,52 @@
 
 ## 2026-09-15
 
+- **Viewport selection and a Move gizmo.** Clicking in the 3D view now
+  selects, and a transform toolbar sits under the menu bar where Studio's
+  does. A plain click picks the nearest drawn part under the cursor and
+  selects the outermost model it belongs to (so clicking one wall of a house
+  selects the house); `Alt`/`⌥`-click performs creator-docs' own *selection
+  cycling* instead, stepping one raw part at a time to whatever stands
+  behind the current one — the mechanism real Studio uses to reach a child
+  of a model without leaving the viewport. With the Move tool active
+  (shortcut `2`), a part is dragged either by a coloured axis arrow or by
+  its own body, and `Ctrl`/`Cmd`+`L` re-orients the draggers between world
+  and the part's own frame, with an `L` indicator while local is on. The
+  whole gesture is one undo step: a history snapshot clones the entire DOM,
+  so pushing one per mouse move would empty a fifty-deep stack in under a
+  second.
+  The geometry behind it lives in `rbx_viewer` (`pick`, `gizmo`) so both
+  halves read the same definition — the renderer builds the arrows the user
+  sees from exactly the functions the editor hit-tests the cursor against,
+  which is what stops "what you can grab" and "what you can see" from
+  drifting apart across the thread boundary between them. Scale, Rotate and
+  the whole snapping story (increment fields, `Shift`-to-invert, soft-snap
+  onto nearby surfaces, `T`/`R`'s 90° tilts) are still open; Scale and
+  Rotate are shown as disabled toolbar buttons rather than live ones that do
+  nothing, the same convention the menu bar already uses. Studio's fifth
+  "Transform" button stays out until what it actually does can be confirmed
+  against a real Studio rather than guessed. — @chteau
+- **The viewport no longer goes blank after a Command Bar script.** Whether
+  the 3D view is still on screen was inferred from whether GPUI had repainted
+  it since the last tick, which is only sound while something keeps causing
+  repaints — and the only thing that ordinarily does is a finished frame
+  landing. A scene rebuild takes seconds, during which no frames land, so the
+  panel looked exactly like a dock tab switched away: it was declared hidden,
+  the render thread was told to stop drawing, and that stopped the very frames
+  whose absence was the sole evidence for it. The state sustained itself, and
+  the view stayed blank until some unrelated notification happened to repaint
+  the window. The tick that would have given up now asks for one repaint
+  instead of concluding anything: a mounted panel answers and stays visible, a
+  genuinely hidden one cannot and is dropped on the next tick exactly as
+  before. — @chteau
+- **Renderer state survives a rebuild.** `Headless::reload` builds a whole new
+  renderer from the new DOM, and everything the editor had asked for rather
+  than the file — the projection mode, the selection outline, the transform
+  gizmo — went with the old one, leaving the viewport visibly wrong with
+  nothing to say why. They are gathered into one value the renderer's
+  constructor now *requires*, so a rebuild cannot start blank: there is no way
+  to build one without saying what view it is for. — @chteau
+
 - **Orthographic camera mode.** The viewport's free-flight camera can now
   switch between perspective and parallel projection — toggled from the
   Viewport panel's overflow menu in `rbxstudio`, or `rbxview --orthographic`
@@ -49,6 +95,23 @@
   `Size`/`Shape` edit re-derives and rewrites the part's Decal/Texture
   children in place instead of leaving them drawn at the old placement
   until the next reload. — @chteau
+- **A cursor-dragged part now rests on whatever the cursor passes over.**
+  Dragging a selected part by its body slid it along one flat plane, fixed
+  through the grab point for the whole gesture, so dragging it over a
+  platform kept it at its original height. Each move now casts the cursor
+  ray against the rest of the scene and rests the part on the face it
+  meets — on top of a platform, against the side of a wall — falling back
+  to the flat plane only when the cursor is over nothing, which is the
+  surface half of the soft-snapping `creator-docs` describes for cursor
+  dragging (the edge half is still open). The part being dragged is left
+  out of its own raycast, or it would climb onto itself a stud per frame;
+  and every answer is a function of the cursor alone, with the part's last
+  position never fed back in, so a cursor held still on the edge between
+  two surfaces gives one answer rather than flickering between two. The
+  geometry lives in a new `settle` module in `rbx_studio`, tested without a
+  window: settling onto a raised part, falling back over open space, the
+  self-exclusion, and a crossing between surfaces jumping by exactly the
+  height difference. — @chteau
 
 ## 2026-09-14 (night) — getting ready to go public
 

@@ -11,11 +11,13 @@ use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use crate::camera::{self, Camera, Viewpoint};
+use crate::gizmo::Gizmo;
 use crate::gpu;
 use crate::lighting::{Lighting, LocalLight};
 use crate::quality::QualityProfile;
 use crate::renderer::{Renderer, World};
 use crate::scene::{EffectKind, Part, Resolved, ResolvedInstance, Scene};
+use crate::view::View;
 use readback::{Pending, Target, FORMAT};
 
 /// A finished frame and where its time went.
@@ -42,19 +44,33 @@ pub(crate) struct Offscreen {
 }
 
 impl Offscreen {
-    pub(crate) fn new(world: World<'_>, quality: &QualityProfile) -> Result<Self, String> {
+    /// Builds a renderer for `world` and puts it straight into `view`.
+    ///
+    /// `view` is not optional on purpose: a rebuild (see
+    /// [`crate::Headless::reload`]) discards the old renderer wholesale, and
+    /// requiring the state that does not come from the place is what stops one
+    /// from silently starting blank — see [`View`].
+    pub(crate) fn new(
+        world: World<'_>,
+        quality: &QualityProfile,
+        view: &View,
+    ) -> Result<Self, String> {
         let instance = gpu::instance();
         let adapter = gpu::adapter(&instance, None)?;
         let (device, queue) = gpu::device(&adapter)?;
         let renderer = Renderer::new(&device, &queue, FORMAT, world, quality);
 
-        Ok(Offscreen {
+        let mut offscreen = Offscreen {
             device,
             queue,
             renderer,
             target: None,
             pending: None,
-        })
+        };
+        offscreen.set_orthographic(view.orthographic);
+        offscreen.set_selection(&view.selected);
+        offscreen.set_gizmo(view.gizmo);
+        Ok(offscreen)
     }
 
     /// Moves the renderer to another graphics quality level, in place: see
@@ -77,6 +93,11 @@ impl Offscreen {
     /// buffer right away.
     pub(crate) fn set_selection(&mut self, referents: &[Ref]) {
         self.renderer.set_selection(&self.device, referents);
+    }
+
+    /// Shows or hides the transform tool's draggers over the selection.
+    pub(crate) fn set_gizmo(&mut self, gizmo: Option<Gizmo>) {
+        self.renderer.set_gizmo(gizmo);
     }
 
     /// Forwards to [`Renderer::update_lighting`] — see its doc comment for
@@ -223,13 +244,16 @@ pub(crate) fn write_png(
     size: (u32, u32),
     framing: Framing,
 ) -> Result<(), String> {
-    let mut offscreen = Offscreen::new(world, quality)?;
+    // A single capture outlines nothing and has no tool active; only the
+    // projection mode is ever asked for from the command line.
+    let view = View {
+        orthographic: framing.orthographic,
+        ..View::default()
+    };
+    let mut offscreen = Offscreen::new(world, quality, &view)?;
 
     if let Some(degrees) = framing.pitch {
         offscreen.pitch(degrees);
-    }
-    if framing.orthographic {
-        offscreen.set_orthographic(true);
     }
 
     let from = match framing.eye_look_at {

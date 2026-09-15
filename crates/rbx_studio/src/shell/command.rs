@@ -137,7 +137,15 @@ impl Shell {
     /// single-property change needs too.
     pub(super) fn reload_viewport(&mut self, cx: &mut Context<Self>) {
         let dom = self.dom.clone();
-        self.viewport.update(cx, |viewport, _| viewport.reload(dom));
+        // The draggers are placed from a copy of the selected part's
+        // transform held on this side (see `transform::Target`), and a reload
+        // is exactly the case where whatever moved it was not one of the
+        // edits `reflect_in_viewport` refreshes that copy for.
+        let target = crate::transform::Target::read(&self.dom, self.selected());
+        self.viewport.update(cx, |viewport, _| {
+            viewport.reload(dom);
+            viewport.set_target(target);
+        });
     }
 }
 

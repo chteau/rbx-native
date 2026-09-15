@@ -6,6 +6,7 @@ mod cull;
 mod envmap;
 mod filemesh;
 mod geometry;
+mod gizmo;
 mod gui;
 mod instance;
 mod lighting;
@@ -33,6 +34,7 @@ use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use crate::camera::{Camera, Frustum, Viewpoint};
+use crate::gizmo::{arm_length, basis, Gizmo, Handles};
 use crate::lighting::{Lighting, LocalLight};
 use crate::quality::QualityProfile;
 use crate::scene::{Bounds, Part, Scene};
@@ -41,6 +43,7 @@ use beam::Beams;
 use cull::MainCull;
 use envmap::EnvMap;
 use geometry::Meshes;
+use gizmo::Draggers;
 use gui::Gui;
 use lighting::LightingRaw;
 use material::Materials;
@@ -124,6 +127,12 @@ pub(crate) struct Renderer {
     /// The Explorer's selection outline. Reads `self.frame`'s bind group at
     /// draw time, so it needs no camera state of its own.
     selection: Selection,
+    /// The transform tool's axis draggers, drawn over the selection outline.
+    draggers: Draggers,
+    /// Which transform tool the editor has active, if any — `None` while the
+    /// Select tool is, which is also every `rbxview` frame (the standalone
+    /// viewer edits nothing).
+    gizmo: Option<Gizmo>,
     /// The place's GUI containers: the `ScreenGui` overlay, drawn last of all
     /// straight onto the display target so no post effect touches it, and the
     /// `BillboardGui`/`SurfaceGui` canvases, drawn inside the scene.
@@ -219,6 +228,7 @@ impl Renderer {
         // `Renderer::sync_instance`), and `Renderer::new` has no other reason
         // to hold on to the scene itself.
         let selection = Selection::new(device, target, &layout, scene.placements());
+        let draggers = Draggers::new(device, target, &layout);
 
         Renderer {
             opaque,
@@ -257,6 +267,8 @@ impl Renderer {
             trails: Trails::new(device, queue, target, scene.trails(), quality),
             particles: Particles::new(device, queue, target, scene.particle_emitters(), quality),
             selection,
+            draggers,
+            gizmo: None,
             gui: Gui::new(
                 device,
                 queue,
@@ -293,6 +305,32 @@ impl Renderer {
     /// away rather than waiting for the next `draw`.
     pub(crate) fn set_selection(&mut self, device: &wgpu::Device, referents: &[Ref]) {
         self.selection.set(device, referents);
+    }
+
+    /// Shows or hides the transform tool's draggers over whatever is
+    /// selected. Their geometry is rebuilt inside [`Renderer::draw`] rather
+    /// than here: the arms are scaled to hold a constant size on screen, so
+    /// they change with every camera move, not only when the tool does.
+    pub(crate) fn set_gizmo(&mut self, gizmo: Option<Gizmo>) {
+        self.gizmo = gizmo;
+    }
+
+    /// Where this frame's draggers sit, or `None` when no transform tool is
+    /// active, nothing with a placement is selected, or the camera is still
+    /// on its automatic orbit — which only happens in a file with no saved
+    /// camera of its own, before the first input, where there is nothing to
+    /// drag with yet either.
+    fn handles(&self, from: Viewpoint) -> Option<Handles> {
+        let gizmo = self.gizmo?;
+        let Viewpoint::Free(pose) = from else {
+            return None;
+        };
+        let (origin, rotation) = self.selection.anchor()?;
+        Some(Handles::new(
+            origin,
+            basis(gizmo.local.then_some(rotation)),
+            arm_length(origin, pose, self.camera.is_orthographic()),
+        ))
     }
 
     /// Applies a `Lighting`/`Atmosphere`/`Clouds`/`PostEffect`/`Light` edit
@@ -375,6 +413,7 @@ impl Renderer {
         // and this level's render distance. The shadow pass below never uses
         // this — see `Fit::visible` — so a caster it culls can still land a
         // shadow inside the frame.
+        self.draggers.update(queue, self.handles(from), eye);
         let frustum = Frustum::new(&self.camera, from, aspect);
         let cull = MainCull::new(&frustum, eye, self.quality.render_distance);
         let (lamp, fit) = self.sun_shadow(from, aspect);

@@ -10,8 +10,10 @@
 //! module is the UI half — events in, finished frames out.
 
 mod frame;
+mod gizmo;
 mod input;
 mod label;
+mod presence;
 mod pump;
 mod quality;
 mod reload;
@@ -22,15 +24,20 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use glam::Vec3;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_dom::Ref;
+use rbx_viewer::pick::Ray;
 use rbx_viewer::{CameraInput, Headless, Pose, QualityLevel};
 
 use crate::camera::PlaceCamera;
 use crate::pointer_lock::{self, PointerLock};
+use crate::settle::Settle;
+use crate::transform::{self, Target, Transform};
 use crate::{display, pacing};
 use frame::{device_pixels, render_image, Viewport};
+use gizmo::Drag;
 use input::{camera_key, wheel_notches, Layout};
 use pump::Pump;
 
@@ -41,12 +48,6 @@ const SPEED_LABEL: Duration = Duration::from_millis(1500);
 // loops running at the same rate beat against each other, and every beat is a
 // frame shown a whole budget late; waking twice as often costs one `try_recv`.
 const POLLS_PER_FRAME: u32 = 2;
-// How many consecutive `advance` ticks may go by with `render` not called
-// before the panel is declared hidden. One frame budget's worth of misses:
-// enough to absorb the ordinary gap between a frame landing and GPUI actually
-// repainting for it, short enough that switching tabs away stops the render
-// thread within about a frame.
-const HIDDEN_AFTER_MISSES: u32 = POLLS_PER_FRAME;
 
 /// The render thread's latest free-flight pose, throttled and deduplicated
 /// already (see `pump::due_pose`) — emitted at most a few times a second while
@@ -66,6 +67,36 @@ impl EventEmitter<PoseSynced> for WorkspaceView {}
 pub(crate) struct AssetWarnings(pub(crate) Vec<String>);
 
 impl EventEmitter<AssetWarnings> for WorkspaceView {}
+
+/// Something the 3D view asks of the editor.
+///
+/// The view owns the cursor and knows the camera; `Shell` owns the DOM and the
+/// undo stack. Everything the left mouse button does in the viewport therefore
+/// arrives here rather than being carried out on the spot.
+pub(crate) enum ViewportAction {
+    /// A click, as the world ray under it — `Shell` resolves what that ray
+    /// actually hits (see `shell::selection::from_click`).
+    Pick { ray: Ray, cycling: bool },
+    /// A drag moved the part to a new position. `first` marks the move that
+    /// began the gesture, which is the single undo step the whole drag gets:
+    /// pushing one per mouse move would bury the rest of the history in a
+    /// fraction of a second.
+    ///
+    /// `position` is the view's own answer, worked out with no DOM in reach.
+    /// A cursor drag also carries a [`Settle`], asking `Shell` to rest the
+    /// part on whatever the cursor is over instead — `position` is then only
+    /// the fallback for a cursor over nothing.
+    Moved {
+        referent: Ref,
+        position: Vec3,
+        first: bool,
+        settle: Option<Settle>,
+    },
+    /// A transform-toolbar shortcut typed over the view.
+    Tool(transform::Action),
+}
+
+impl EventEmitter<ViewportAction> for WorkspaceView {}
 
 pub(crate) struct WorkspaceView {
     /// The render thread. It owns the viewer, which is why no camera state is
@@ -99,7 +130,7 @@ pub(crate) struct WorkspaceView {
     painted: Rc<Cell<bool>>,
     /// Whether the render thread was last told the panel is visible, and how
     /// many `advance` ticks in a row have found `painted` unset since. See
-    /// [`HIDDEN_AFTER_MISSES`].
+    /// [`presence`].
     visible: bool,
     missed_paints: u32,
     frame: Option<Arc<RenderImage>>,
@@ -115,6 +146,20 @@ pub(crate) struct WorkspaceView {
     /// The projection mode the user last picked from the Viewport panel's
     /// overflow menu (see `Shell::set_orthographic`).
     orthographic: bool,
+    /// The transform toolbar's state, pushed down from `Shell` (see
+    /// [`WorkspaceView::set_transform`]).
+    transform: Transform,
+    /// Where the selected part stands, so a click can be hit-tested against
+    /// its draggers here rather than on the render thread.
+    target: Option<Target>,
+    /// The camera the last frame was drawn from — see `pump::Ready::view`.
+    /// Everything screen-to-world unprojects against this, so a click resolves
+    /// against the view it was aimed at.
+    view: Option<Pose>,
+    drag: Option<Drag>,
+    /// Whether the drag in progress has actually moved the part yet, which is
+    /// what tells `Shell` which move opens the gesture's one undo step.
+    dragged: bool,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
     _subscriptions: [Subscription; 2],
 }
@@ -192,6 +237,11 @@ impl WorkspaceView {
             quality,
             level: QualityLevel::MAX,
             orthographic,
+            transform: Transform::default(),
+            target: None,
+            view: None,
+            drag: None,
+            dragged: false,
             _subscriptions: [blur, deactivated],
         }
     }
@@ -201,22 +251,26 @@ impl WorkspaceView {
     fn advance(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Duration {
         let now = Instant::now();
 
-        // `render` not having run since the last tick means the dock switched
-        // away to another tab: `viewport`'s size would otherwise sit stale at
-        // whatever it last was, so this is the only way to catch it. A single
-        // miss is not enough on its own — see `HIDDEN_AFTER_MISSES`.
-        if self.painted.replace(false) {
-            self.missed_paints = 0;
-            if !self.visible {
-                self.visible = true;
-                self.pump.set_visible(true);
-            }
-        } else {
-            self.missed_paints += 1;
-            if self.visible && self.missed_paints > HIDDEN_AFTER_MISSES {
-                self.visible = false;
-                self.pump.set_visible(false);
-            }
+        // `render` not having run since the last tick may mean the dock
+        // switched away to another tab: `viewport`'s size would otherwise sit
+        // stale at whatever it last was, so this is the only way to catch it.
+        // A single miss is not enough on its own, and a run of them is not
+        // conclusive either — see `presence`.
+        let presence = presence::presence(
+            self.painted.replace(false),
+            self.missed_paints,
+            self.visible,
+        );
+        self.missed_paints = presence.missed;
+        if presence.visible != self.visible {
+            self.visible = presence.visible;
+            self.pump.set_visible(presence.visible);
+        }
+        if presence.probe {
+            // Nothing else will repaint this panel while the render thread is
+            // stalled, and its own silence is the only evidence that it might
+            // be hidden — see `presence`.
+            cx.notify();
         }
 
         let size = self.viewport.get().size;
@@ -244,6 +298,12 @@ impl WorkspaceView {
             // messages carries one is the one worth keeping.
             if ready.pose.is_some() {
                 pose = ready.pose;
+            }
+            // Unthrottled, unlike `pose` above: this is what a click
+            // unprojects against, and a stale camera picks whatever was under
+            // the cursor a fifth of a second ago.
+            if ready.view.is_some() {
+                self.view = ready.view;
             }
             warnings.extend(ready.warnings);
         }
@@ -343,10 +403,42 @@ impl WorkspaceView {
         });
     }
 
-    fn key(&mut self, keystroke: &Keystroke, pressed: bool, cx: &App) {
+    fn key(&mut self, keystroke: &Keystroke, pressed: bool, cx: &mut Context<Self>) {
+        // Only on the press: a tool switch is an edge, not a state the way the
+        // camera's own movement keys are.
+        if pressed {
+            if let Some(action) = transform::action_for(&keystroke.key, keystroke.modifiers) {
+                cx.emit(ViewportAction::Tool(action));
+                return;
+            }
+        }
+
         let layout = Layout::of(cx.keyboard_layout().name());
         if let Some(key) = camera_key(&keystroke.key, layout) {
             self.pump.input(CameraInput::Key { key, pressed });
+        }
+    }
+
+    /// Switches transform tool, or its world/local orientation — pushed down
+    /// from the toolbar, which owns the choice.
+    pub(crate) fn set_transform(&mut self, transform: Transform) {
+        if transform == self.transform {
+            return;
+        }
+
+        self.transform = transform;
+        self.drag = None;
+        self.pump.gizmo(transform.gizmo());
+    }
+
+    /// Where the selected part stands now: after a selection change, and after
+    /// any edit that moved or resized it.
+    pub(crate) fn set_target(&mut self, target: Option<Target>) {
+        // Never mid-gesture: the drag's own running answer is ahead of
+        // whatever round trip through the DOM is landing now, and taking this
+        // one would snap the part back a frame.
+        if self.drag.is_none() {
+            self.target = target;
         }
     }
 
@@ -406,7 +498,21 @@ impl Render for WorkspaceView {
             .bg(rgb(0x1c1d20))
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|view, _: &MouseDownEvent, window, cx| window.focus(&view.focus, cx)),
+                cx.listener(|view, event: &MouseDownEvent, window, cx| {
+                    window.focus(&view.focus, cx);
+                    let scale = window.scale_factor();
+                    view.press(event.position, event.modifiers, scale, cx);
+                }),
+            )
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|view, _: &MouseUpEvent, _, _| view.end_drag()),
+            )
+            // A drag released off the panel still ends it, or the part would
+            // keep following the cursor with nothing to let go of it.
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|view, _: &MouseUpEvent, _, _| view.end_drag()),
             )
             .on_mouse_down(
                 MouseButton::Right,
@@ -428,7 +534,12 @@ impl Render for WorkspaceView {
                     view.end_look();
                 }),
             )
-            .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, _, _| {
+            .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, window, cx| {
+                if view.dragging() {
+                    let scale = window.scale_factor();
+                    view.drag_to(event.position, scale, cx);
+                    return;
+                }
                 view.mouse_moved(event.position);
             }))
             .on_scroll_wheel(cx.listener(|view, event: &ScrollWheelEvent, _, _| {
