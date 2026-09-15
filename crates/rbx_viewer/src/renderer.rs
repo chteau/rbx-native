@@ -325,7 +325,17 @@ impl Renderer {
         let Viewpoint::Free(pose) = from else {
             return None;
         };
-        let (origin, rotation) = self.selection.anchor()?;
+        let (anchor, rotation) = self.selection.anchor()?;
+        // Move drags every selected part by one offset, so its gizmo belongs
+        // at the middle of the whole selection rather than hanging off
+        // whichever part happens to be first. Scale and Rotate still transform
+        // the anchor part alone, and their handles stay on it: a scale block
+        // floating in the gap between two parts would resize one the user is
+        // not pointing at.
+        let origin = match gizmo.kind {
+            Kind::Move => self.selection.centre().unwrap_or(anchor),
+            Kind::Scale | Kind::Rotate => anchor,
+        };
         Some((
             gizmo.kind,
             Handles::new(

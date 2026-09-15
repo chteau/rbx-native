@@ -186,7 +186,16 @@ impl WorkspaceView {
     fn handles(&self) -> Option<Handles> {
         let anchor = self.targets.anchor()?;
         let pose = self.view?;
-        let origin = anchor.position();
+        // Move drags the whole selection by one offset, so its handles sit at
+        // the middle of it; Scale and Rotate transform the anchor part alone
+        // and stay on it. The renderer picks the same origin the same way (see
+        // `renderer::Renderer::handles`), both from `gizmo::centre_of`, so
+        // what can be grabbed is what is drawn. The *basis* always comes from
+        // the anchor — a selection has no aggregate rotation to take.
+        let origin = match self.transform.tool {
+            Tool::Move => self.targets.centre()?,
+            _ => anchor.position(),
+        };
         Some(Handles::new(
             origin,
             gizmo::basis(self.transform.local.then(|| anchor.rotation())),
@@ -270,7 +279,15 @@ impl WorkspaceView {
 
     fn grab_axis(&self, handles: &Handles, ray: Ray) -> Option<Drag> {
         let axis = handles.direction(handles.grab(ray)?);
-        let origin = handles.origin();
+        // Which arm was grabbed comes from the handles, where the user is
+        // actually pointing; where the drag is measured *from* is the anchor's
+        // own position, because `Change::Position` is the anchor's new place
+        // and every other selected part follows it by the same offset (see
+        // `transform::Targets::translate`). The two differ by a constant once
+        // more than one part is selected, and a drag only ever reads the
+        // difference between two samples, so the travel is identical either
+        // way — but the position built from it has to start where the part is.
+        let origin = self.targets.anchor()?.position();
         Some(Drag::Axis {
             origin,
             axis,

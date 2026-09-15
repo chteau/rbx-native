@@ -315,6 +315,88 @@ fn an_angle_step_always_goes_the_short_way_round() {
     }
 }
 
+/// A part of `size` studs standing at `centre`, axis-aligned — the matrix
+/// `pick::model_of` builds for one.
+fn part(centre: Vec3, size: Vec3) -> glam::Mat4 {
+    glam::Mat4::from_scale_rotation_translation(size, glam::Quat::IDENTITY, centre)
+}
+
+#[test]
+fn one_part_centres_the_gizmo_on_that_part() {
+    // A single selection has to give the same answer it always did, so this
+    // needs no special case anywhere above it.
+    let at = Vec3::new(3.0, -1.0, 7.0);
+    let centre = centre_of([part(at, Vec3::new(4.0, 2.0, 6.0))]).expect("one part");
+    assert!((centre - at).length() < 1e-4, "{centre:?}");
+}
+
+#[test]
+fn an_empty_selection_has_no_centre() {
+    assert_eq!(centre_of([]), None);
+}
+
+#[test]
+fn two_parts_put_the_gizmo_between_them() {
+    let centre = centre_of([
+        part(Vec3::new(-10.0, 0.0, 0.0), Vec3::ONE),
+        part(Vec3::new(10.0, 0.0, 0.0), Vec3::ONE),
+    ])
+    .expect("two parts");
+    assert!((centre - Vec3::ZERO).length() < 1e-4, "{centre:?}");
+}
+
+#[test]
+fn the_centre_is_of_the_bounds_not_the_mean_of_the_parts() {
+    // Three small parts bunched at one end and one large at the other: the
+    // mean of the centres would sit among the bunch, the centre of the bounds
+    // sits where the selection actually looks centred.
+    let models = [
+        part(Vec3::new(0.0, 0.0, 0.0), Vec3::ONE),
+        part(Vec3::new(1.0, 0.0, 0.0), Vec3::ONE),
+        part(Vec3::new(2.0, 0.0, 0.0), Vec3::ONE),
+        part(Vec3::new(20.0, 0.0, 0.0), Vec3::ONE),
+    ];
+    let mean = (0.0 + 1.0 + 2.0 + 20.0) / 4.0;
+    let centre = centre_of(models).expect("four parts");
+    // Bounds run -0.5 .. 20.5, so the centre is 10.
+    assert!((centre.x - 10.0).abs() < 1e-4, "{centre:?}");
+    assert!(
+        (centre.x - mean).abs() > 1.0,
+        "the two must not coincide here"
+    );
+}
+
+#[test]
+fn a_parts_own_size_counts_towards_the_bounds() {
+    // Both centred on the origin's line, but the wide one reaches further, so
+    // the centre is pulled towards its far face rather than sitting between
+    // the two centres.
+    let centre = centre_of([
+        part(Vec3::new(0.0, 0.0, 0.0), Vec3::ONE),
+        part(Vec3::new(10.0, 0.0, 0.0), Vec3::new(20.0, 1.0, 1.0)),
+    ])
+    .expect("two parts");
+    // Bounds run -0.5 .. 20.0, so the centre is 9.75.
+    assert!((centre.x - 9.75).abs() < 1e-4, "{centre:?}");
+}
+
+#[test]
+fn a_turned_part_is_contained_by_the_world_axes_it_actually_spans() {
+    // A 2×2×2 cube turned 45° about Y reaches 2·√2/2 ≈ 1.414 along world X and
+    // Z, not 1: clamping to its own axes would under-measure the bounds and
+    // put the gizmo off-centre.
+    let turned = glam::Mat4::from_scale_rotation_translation(
+        Vec3::splat(2.0),
+        glam::Quat::from_rotation_y(std::f32::consts::FRAC_PI_4),
+        Vec3::ZERO,
+    );
+    let flat = part(Vec3::new(10.0, 0.0, 0.0), Vec3::ONE);
+    let centre = centre_of([turned, flat]).expect("two parts");
+    // Bounds run -√2 .. 10.5 on X.
+    let expected = (-std::f32::consts::SQRT_2 + 10.5) * 0.5;
+    assert!((centre.x - expected).abs() < 1e-3, "{centre:?}");
+}
+
 #[test]
 fn a_quarter_turn_about_the_camera_right_vector_tilts_towards_the_camera() {
     // A camera looking down -Z has +Z towards it and X to its right; tilting
