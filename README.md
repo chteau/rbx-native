@@ -39,7 +39,7 @@ please open an issue or a PR against this file:
 
 ```sh
 # Debian/Ubuntu
-sudo apt install libxkbcommon-x11-dev libx11-xcb-dev libssl-dev
+sudo apt install libxkbcommon-x11-dev libx11-xcb-dev libssl-dev libfontconfig1-dev
 ```
 
 Then, from the repository root:
