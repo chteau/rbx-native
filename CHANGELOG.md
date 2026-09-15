@@ -2,6 +2,20 @@
 
 ## 2026-09-15
 
+- **Orthographic camera mode.** The viewport's free-flight camera can now
+  switch between perspective and parallel projection — toggled from the
+  Viewport panel's overflow menu in `rbxstudio`, or `rbxview --orthographic`
+  on the standalone viewer — reusing the existing WASD/mouse-look controller
+  rather than a new interaction model. Building it surfaced a real bug along
+  the way: the sky/star/sun background is drawn as near-unit-magnitude
+  geometry that relies on the perspective divide to spread across the screen,
+  which orthographic's constant `w` collapsed to a single point at screen
+  centre, leaving pure black. Fixed by keeping the sky/star/sun background
+  always perspective, decoupled from the main camera's own projection mode.
+  Also threads the projection choice through shadow-map fitting
+  (`Camera::frustum_corners`) and the depth-of-field pass's depth
+  reconstruction (`post.wgsl`'s `view_distance`), both of which hardcoded the
+  perspective-specific formula before this. — @chteau
 - **A `Decal`/`Texture` now follows its part through the live-edit
   instance-patch path**, not just a full reload. The last of the three
   gaps the batch-move work surfaced: `Renderer::sync_instance` never
