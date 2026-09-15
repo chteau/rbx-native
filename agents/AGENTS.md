@@ -180,6 +180,12 @@ even if you're confident it's correct. See
 workflow (branch naming, commit message conventions, what the gate expects
 before you open a PR).
 
+Don't add a tool attribution trailer or footer to a commit message or PR
+description in this repository — no `Co-Authored-By: <agent> ...` line, no
+"Generated with <tool>" footer, no session link, whatever your own tool's
+default convention is. Commits and PRs should read as if written by the
+maintainer.
+
 ## Report
 
 When you finish a task, say plainly: what changed (files, not prose
