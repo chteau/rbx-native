@@ -378,6 +378,17 @@ real Studio UI needs. All classes below checked against
   selector strings in the Properties panel.
 
 #### Properties panel — remaining type editors
+- [ ] 📋 **Layout/UX pass on the panel itself**, separate from the
+  per-type editor work below. Reported directly from real use, not yet
+  checked against creator-docs or a real Studio instance the way this
+  roadmap's other Studio-parity claims are (worth doing before assuming
+  what "logical" ordering actually means there — the "Studio fallback"
+  Vinegar/Wine workaround elsewhere in this document is one way to check):
+  category ordering doesn't read as sensibly grouped as real Studio's own
+  panel does. A few smaller, self-contained papercuts worth folding into
+  the same pass rather than filing separately: rows feel visually tight
+  (more padding would help), and a numeric field's own value can get
+  clipped by the input's own width instead of staying fully legible.
 - [ ] 📋 `NumberSequence`/`ColorSequence` — a real curve/gradient editor
   widget (keypoints along a timeline, draggable), not just the read-only
   text these currently fall back to. The most valuable of the types
