@@ -2,6 +2,32 @@
 
 ## 2026-09-15
 
+- **Viewport selection and a Move gizmo.** Clicking in the 3D view now
+  selects, and a transform toolbar sits under the menu bar where Studio's
+  does. A plain click picks the nearest drawn part under the cursor and
+  selects the outermost model it belongs to (so clicking one wall of a house
+  selects the house); `Alt`/`⌥`-click performs creator-docs' own *selection
+  cycling* instead, stepping one raw part at a time to whatever stands
+  behind the current one — the mechanism real Studio uses to reach a child
+  of a model without leaving the viewport. With the Move tool active
+  (shortcut `2`), a part is dragged either by a coloured axis arrow or by
+  its own body, and `Ctrl`/`Cmd`+`L` re-orients the draggers between world
+  and the part's own frame, with an `L` indicator while local is on. The
+  whole gesture is one undo step: a history snapshot clones the entire DOM,
+  so pushing one per mouse move would empty a fifty-deep stack in under a
+  second.
+  The geometry behind it lives in `rbx_viewer` (`pick`, `gizmo`) so both
+  halves read the same definition — the renderer builds the arrows the user
+  sees from exactly the functions the editor hit-tests the cursor against,
+  which is what stops "what you can grab" and "what you can see" from
+  drifting apart across the thread boundary between them. Scale, Rotate and
+  the whole snapping story (increment fields, `Shift`-to-invert, soft-snap
+  onto nearby surfaces, `T`/`R`'s 90° tilts) are still open; Scale and
+  Rotate are shown as disabled toolbar buttons rather than live ones that do
+  nothing, the same convention the menu bar already uses. Studio's fifth
+  "Transform" button stays out until what it actually does can be confirmed
+  against a real Studio rather than guessed. — @chteau
+
 - **Orthographic camera mode.** The viewport's free-flight camera can now
   switch between perspective and parallel projection — toggled from the
   Viewport panel's overflow menu in `rbxstudio`, or `rbxview --orthographic`

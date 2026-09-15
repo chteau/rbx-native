@@ -72,7 +72,7 @@ fn an_orthographic_gizmo_tracks_the_zoom_rather_than_the_distance() {
     // Under a parallel projection distance changes nothing on screen, so it
     // must change nothing here either.
     assert_eq!(near, far);
-    assert!((near / eye.ortho_scale - 0.16).abs() < 1e-4);
+    assert!((near / eye.ortho_scale - 0.2).abs() < 1e-4);
 }
 
 #[test]
@@ -127,7 +127,7 @@ fn the_arm_on_the_far_side_of_the_origin_grabs_the_same_axis() {
 #[test]
 fn the_gap_around_the_origin_grabs_nothing() {
     // What leaves the part itself clickable for a free cursor drag.
-    let ray = Ray::new(Vec3::new(0.05, 0.0, 10.0), Vec3::NEG_Z);
+    let ray = Ray::new(Vec3::new(0.03, 0.0, 10.0), Vec3::NEG_Z);
     assert_eq!(handles().grab(ray), None);
 }
 

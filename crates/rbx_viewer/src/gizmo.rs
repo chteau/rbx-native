@@ -22,19 +22,19 @@ use crate::Pose;
 /// so the gizmo keeps the same size on screen however far away the part is.
 /// Chosen to read like Studio's: comfortably grabbable without burying a
 /// small part inside its own handles.
-const SCREEN_FRACTION: f32 = 0.16;
+const SCREEN_FRACTION: f32 = 0.2;
 /// Where a dragger's shaft starts, in arm lengths. The gap around the origin
 /// is what leaves the part itself clickable for a free cursor drag.
-pub(crate) const SHAFT_START: f32 = 0.18;
+pub(crate) const SHAFT_START: f32 = 0.24;
 /// Where the shaft ends and the arrowhead begins, in arm lengths.
-pub(crate) const HEAD_START: f32 = 0.78;
+pub(crate) const HEAD_START: f32 = 0.72;
 /// The shaft's and the arrowhead's radii, in arm lengths.
-pub(crate) const SHAFT_RADIUS: f32 = 0.018;
-pub(crate) const HEAD_RADIUS: f32 = 0.06;
+pub(crate) const SHAFT_RADIUS: f32 = 0.03;
+pub(crate) const HEAD_RADIUS: f32 = 0.105;
 /// How far off a dragger's centre line a ray still counts as grabbing it, in
 /// arm lengths. Wider than the arrowhead on purpose: a handle that can only
 /// be grabbed by its exact silhouette is one the user misses repeatedly.
-const PICK_RADIUS: f32 = 0.085;
+const PICK_RADIUS: f32 = 0.15;
 /// A part sitting practically on top of the camera would otherwise scale its
 /// gizmo to nothing; a perspective dragger never shrinks below the size it
 /// has at this distance.
