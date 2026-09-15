@@ -12,10 +12,11 @@
 //! button (see `WorkspaceView::begin_look`), so a left-button drag never
 //! competes with them.
 
-use glam::{Mat3, Vec2, Vec3};
+use glam::{Mat3, Mat4, Vec2, Vec3};
 use gpui_kit::{Modifiers, Pixels, Point};
 use rbx_viewer::gizmo::{self, Handles};
 use rbx_viewer::pick::{self, Ray};
+use rbx_viewer::snap;
 
 use crate::transform::{Target, Tool};
 
@@ -28,6 +29,17 @@ use crate::settle::Settle;
 /// past either end would write a value the engine rejects.
 const MIN_SIZE: f32 = 0.001;
 const MAX_SIZE: f32 = 2048.0;
+
+/// How near a part's surface a free drag's grab point has to pass before it
+/// soft-snaps onto it, as a fraction of a dragger arm.
+///
+/// A fraction of the arm rather than a fixed number of studs because the arm
+/// is itself screen-relative (see `gizmo::arm_length`): the pull then reaches
+/// the same distance on screen whether the camera is on top of the part or
+/// across the map from it, which is how it behaves in Studio. The docs
+/// describe soft snapping and illustrate it but publish no threshold, so the
+/// fraction is this editor's own.
+const SOFT_SNAP_REACH: f32 = 0.35;
 
 /// A left-button drag in progress.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -50,7 +62,10 @@ pub(super) enum Drag {
     /// would slide the part every time the camera did, which is not what
     /// holding it still means.
     ///
-    /// Studio additionally soft-snaps onto nearby *edges*; nothing here does.
+    /// With snapping off, the grab point soft-snaps onto the surfaces and
+    /// edges of parts it passes near (see [`Landing`]), which is what settles
+    /// a part against its neighbours instead of sliding it flat across the
+    /// view.
     Plane {
         point: Vec3,
         normal: Vec3,
@@ -117,6 +132,16 @@ impl Drag {
             }),
         }
     }
+}
+
+/// What a drag is allowed to land on for this one mouse move: the grid its
+/// travel rounds to (`0.0` for no grid), and the parts its grab point can
+/// soft-snap onto.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Landing<'a> {
+    pub(super) grid: f32,
+    pub(super) neighbours: &'a [Mat4],
+    pub(super) reach: f32,
 }
 
 impl WorkspaceView {
@@ -229,11 +254,32 @@ impl WorkspaceView {
         })
     }
 
-    /// The cursor moving with a drag held: works out what the part looks like
+    /// What this move is allowed to land on: the grid in force — with `Shift`
+    /// already inverting the toolbar's checkbox for the length of the drag —
+    /// and the neighbours a free drag can soft-snap onto.
+    fn landing(&self, shift: bool) -> Landing<'_> {
+        Landing {
+            grid: self.transform.translate.grid(shift),
+            neighbours: &self.neighbours,
+            reach: self.arm() * SOFT_SNAP_REACH,
+        }
+    }
+
+    /// One dragger arm in studs, the screen-relative length everything the
+    /// gizmo measures in the world is scaled by.
+    fn arm(&self) -> f32 {
+        let (Some(target), Some(pose)) = (self.target, self.view) else {
+            return 0.0;
+        };
+        gizmo::arm_length(target.position(), pose, self.orthographic)
+    }
+
+    /// The cursor moving with a drag held: works out where the part stands
     /// now and tells `Shell`, which is what writes it into the DOM.
     pub(super) fn drag_to(
         &mut self,
         position: Point<Pixels>,
+        modifiers: Modifiers,
         scale: f32,
         cx: &mut gpui_kit::Context<Self>,
     ) {
@@ -242,7 +288,9 @@ impl WorkspaceView {
         else {
             return;
         };
-        let Some((drag, change)) = advance(drag, ray) else {
+        // Read per move rather than latched at the grab: Studio's Shift is
+        // held and released mid-drag, and the part follows it either way.
+        let Some((drag, change)) = advance(drag, ray, self.landing(modifiers.shift)) else {
             return;
         };
         // Kept even when nothing below changes: a rotate drag measures each
@@ -301,6 +349,91 @@ impl WorkspaceView {
     pub(super) fn end_drag(&mut self) {
         self.drag = None;
     }
+
+    /// `t`/`r` typed with a part held by its body, reporting whether it was
+    /// one of the two and was actually carried out — the caller stops there
+    /// only then, so a `t` typed with nothing in hand stays an ordinary key.
+    pub(super) fn turn_key(
+        &mut self,
+        key: &str,
+        modifiers: Modifiers,
+        cx: &mut gpui_kit::Context<Self>,
+    ) -> bool {
+        // Unmodified: Ctrl+T and Ctrl+R are creator-docs' *other* quarter
+        // turns, the ones that act on the selection with no drag at all, and
+        // neither belongs to this gesture.
+        if modifiers.control || modifiers.alt || modifiers.platform || modifiers.shift {
+            return false;
+        }
+        match key {
+            "t" => self.turn(true, cx),
+            "r" => self.turn(false, cx),
+            _ => false,
+        }
+    }
+
+    /// `T` or `R` with a part held by its body: a quarter turn about the point
+    /// it was picked up by.
+    ///
+    /// `creator-docs` (`parts/index.md#transform-parts`): "While cursor
+    /// dragging, `T` and `R` can be used to quickly rotate the part in 90°
+    /// increments around the point you picked it up by. `T` tilts the part 90°
+    /// towards the camera, while `R` rotates the part 90° around the normal of
+    /// the hovered surface."
+    ///
+    /// Only for a body drag: an axis dragger is a slide along one line, and
+    /// the docs give these two keys to cursor dragging alone.
+    pub(super) fn turn(&mut self, tilt: bool, cx: &mut gpui_kit::Context<Self>) -> bool {
+        let (Some(Drag::Plane { point, normal, .. }), Some(target)) = (self.drag, self.target)
+        else {
+            return false;
+        };
+        let axis = if tilt {
+            // The plane's normal was fixed at the grab as `-ray.direction`, so
+            // the view direction is its opposite, and `forward × up` is the
+            // camera's right — the axis a tilt "towards the camera" turns
+            // about. A camera looking straight down has no such axis and the
+            // tilt has no meaning, so nothing happens.
+            (-normal).cross(Vec3::Y).try_normalize()
+        } else {
+            // "The hovered surface": the same nearby surface a free drag would
+            // soft-snap the grab point onto. With none in reach there is
+            // nothing being hovered, and the world's own up stands in for it.
+            Some(
+                snap::nearest_surface(point, &self.neighbours, self.arm() * SOFT_SNAP_REACH)
+                    .map_or(Vec3::Y, |surface| surface.normal),
+            )
+        };
+        let Some(axis) = axis else {
+            return false;
+        };
+
+        let turn = gizmo::quarter_turn(axis);
+        let (linear, position) = gizmo::turned(target.rotation(), target.position(), point, turn);
+        self.target = Some(target.turned_to(linear, position));
+        // The part turned about the grab point, so the cursor now holds it by
+        // a different part of itself; the offset has to turn with it or the
+        // next move would snap it back.
+        if let Some(Drag::Plane { offset, .. }) = &mut self.drag {
+            *offset = turn * *offset;
+        }
+
+        let first = !std::mem::replace(&mut self.dragged, true);
+        cx.emit(ViewportAction::Turned {
+            referent: target.referent,
+            pivot: point,
+            axis,
+            first,
+        });
+        true
+    }
+
+    /// The boxes a free drag can soft-snap onto: every drawn part in the
+    /// workspace but the selected one, pushed down from `Shell`, which is the
+    /// only side with a DOM to read them out of.
+    pub(crate) fn set_neighbours(&mut self, neighbours: Vec<Mat4>) {
+        self.neighbours = neighbours;
+    }
 }
 
 /// Which of the part's own faces a Scale handle stands on, and the drag that
@@ -342,24 +475,37 @@ fn grab_face(handles: &Handles, target: Target, ray: Ray) -> Option<Drag> {
 ///
 /// Pure, and the whole of what a drag computes: [`Drag`] is a grab's worth of
 /// geometry, and this turns it plus a ray into the part's new placement.
-pub(super) fn advance(drag: Drag, ray: Ray) -> Option<(Drag, Change)> {
+///
+/// `landing` only bears on the Move tool's two gestures (`Axis`, `Plane`) —
+/// Scale and Rotate have no grid or soft-snap surface of their own to land on.
+/// What it rounds is the *travel* since the handle was grabbed, not the part's
+/// world position. The docs say only that increments are "based on studs" and
+/// never where the grid is anchored; rounding the travel is what keeps a part
+/// that already stood off-grid from jumping the moment it is picked up, and it
+/// is the one reading that means the same thing for a dragger along a local
+/// axis as for one along a world axis.
+pub(super) fn advance(drag: Drag, ray: Ray, landing: Landing) -> Option<(Drag, Change)> {
     match drag {
         Drag::Axis {
             origin,
             axis,
             grabbed,
         } => {
-            let travelled = gizmo::along_axis(origin, axis, ray)? - grabbed;
-            Some((drag, Change::Position(origin + axis * travelled)))
+            let travel = gizmo::along_axis(origin, axis, ray)? - grabbed;
+            let travel = snap::round_to(travel, landing.grid);
+            Some((drag, Change::Position(origin + axis * travel)))
         }
         Drag::Plane {
             point,
             normal,
             offset,
-        } => Some((
-            drag,
-            Change::Position(pick::ray_hits_plane(ray, point, normal)? + offset),
-        )),
+        } => {
+            let hit = pick::ray_hits_plane(ray, point, normal)?;
+            Some((
+                drag,
+                Change::Position(grabbed_at(hit, point, landing) + offset),
+            ))
+        }
         Drag::Size {
             origin,
             axis,
@@ -422,6 +568,26 @@ pub(super) fn applied(target: Target, change: Change) -> Option<Target> {
             (orientation != target.orientation()).then(|| target.rotated_to(orientation))
         }
     }
+}
+
+/// Where a free drag's grab point actually settles: on the grid, or — with no
+/// grid in force — soft-snapped onto whatever surface or edge it is passing.
+///
+/// The two are alternatives rather than both, which is what `creator-docs`
+/// describes for cursor dragging: with snapping enabled a ruler shows the
+/// alignment instead, and "if snapping is **disabled**, the part will
+/// 'soft&nbsp;snap' to surfaces and edges of nearby parts"
+/// (`parts/index.md#transform-parts`). The docs' other soft-snap sentence —
+/// dragging a part *by its pivot* under the Move tool — places no condition on
+/// the snap setting at all, but this editor has no pivot handle to drag
+/// separately from the part's body, so there is nothing yet to treat
+/// differently.
+fn grabbed_at(hit: Vec3, grabbed: Vec3, landing: Landing) -> Vec3 {
+    if landing.grid > 0.0 {
+        return grabbed + snap::round_point(hit - grabbed, landing.grid);
+    }
+    snap::nearest_surface(hit, landing.neighbours, landing.reach)
+        .map_or(hit, |surface| surface.point)
 }
 
 #[cfg(test)]

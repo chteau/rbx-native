@@ -308,6 +308,30 @@ pub fn arm_length(origin: Vec3, pose: Pose, orthographic: bool) -> f32 {
     distance * (pose.fov_degrees * 0.5).to_radians().tan() * SCREEN_FRACTION
 }
 
+/// A quarter turn about `axis`, the rotation `T` and `R` apply to a part
+/// being cursor-dragged (`creator-docs` `parts/index.md#transform-parts`:
+/// "`T` and `R` can be used to quickly rotate the part in 90&deg; increments
+/// around the point you picked it up by").
+///
+/// Positive by the right-hand rule, which is what makes a turn about the
+/// camera's right vector tilt the part's top *towards* the camera rather than
+/// away from it.
+pub fn quarter_turn(axis: Vec3) -> Mat3 {
+    Mat3::from_axis_angle(axis.normalize_or(Vec3::Y), std::f32::consts::FRAC_PI_2)
+}
+
+/// A placement carried through `turn` about `pivot`: its linear part (a
+/// rotation, possibly still carrying a part's `Size` in its column lengths)
+/// and where it stands.
+///
+/// Shared by the two halves of a `T`/`R` turn — the viewport rotates the
+/// matrix its draggers are drawn from, the editor rotates the `CFrame` it
+/// writes into the DOM — so the handles cannot end up describing a different
+/// rotation than the one that was saved.
+pub fn turned(linear: Mat3, position: Vec3, pivot: Vec3, turn: Mat3) -> (Mat3, Vec3) {
+    (turn * linear, pivot + turn * (position - pivot))
+}
+
 #[cfg(test)]
 #[path = "gizmo/tests.rs"]
 mod tests;
