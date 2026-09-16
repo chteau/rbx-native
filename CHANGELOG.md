@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-09-16
+
+- **Drag-and-drop reparenting in the Explorer.** Dragging a row onto another
+  moves the instance under it, which is the whole of what Studio offers here —
+  creator-docs' Explorer page says only "to change the parent of one or more
+  children (reparent), simply drag and drop them onto the new parent", and
+  there is nothing to drop *between* two rows because a place has no
+  user-orderable sibling order to rearrange in the first place. A ghost follows
+  the cursor, the row under it lights up only while the drop is actually legal,
+  and the new parent is expanded and scrolled into view afterwards so a drop
+  into a collapsed branch does not read as a delete.
+  `WeakDom::set_parent` validates nothing, and parenting an instance under its
+  own descendant would cut that whole subtree loose from every root while
+  leaving the cycle intact — nothing would ever draw it again. So the rules are
+  the feature: a drop is refused onto the dragged instance itself, into its own
+  subtree, onto the parent it already has, and for a service (Roblox creates
+  one of each under the DataModel and Studio will not move them). One rule
+  answers both the highlight and the drop, so an illegal target never lights up
+  and nothing slips past the one that does. One drag is one `Ctrl+Z` however
+  many instances it carried, and a single instance takes the cheap viewport
+  path a script's `part.Parent = model` already uses rather than a scene
+  rebuild. `WeakDom` grew a `parent` accessor for it: the reverse edge was
+  already maintained and simply unreadable, and walking a chain by depth is
+  what makes the ancestor check cheap enough to run per row per frame.
+  Dragging a row that is *not* in the current selection collapses the selection
+  to that row before the drag begins, so a multi-instance drag carries the
+  whole selection only when grabbed by its anchor — the tree widget tracks one
+  selected row and already behaves that way for a plain click; untangling it
+  belongs with the fuller Explorer editing work. — @chteau
+
 ## 2026-09-15
 
 - **Viewport selection and a Move gizmo.** Clicking in the 3D view now
