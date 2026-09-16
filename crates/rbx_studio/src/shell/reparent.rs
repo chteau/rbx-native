@@ -153,6 +153,12 @@ impl Shell {
         for reference in &moving {
             self.dom.set_parent(*reference, Some(target));
         }
+        // One `Change::Parent` per moved reference — `single_change` reads a
+        // one-instance drag as classifiable and anything wider the same way
+        // `moving[..]`'s own match below already does, so undoing this drag
+        // takes exactly the same fast/full split a redo of it would.
+        let changes = self.dom.take_changes();
+        self.record_history_change(changes);
 
         self.rebuild_explorer(cx);
         self.reveal_moved(&moving, cx);

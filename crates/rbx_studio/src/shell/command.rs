@@ -121,12 +121,11 @@ impl Shell {
     /// returns.
     pub(super) fn run_command(&mut self, source: &str, cx: &mut Context<Self>) {
         // Snapshotted before the swap below, whether or not the script ends
-        // up mutating anything — see `shell::history`.
+        // up mutating anything — see `shell::history`. Also drains the
+        // change log: everything logged so far was already reflected as it
+        // happened (a Properties panel commit, say), so only what this
+        // script itself does is of interest to `rebuild_after_script`.
         self.push_history();
-        // Everything logged so far was reflected as it happened (a Properties
-        // panel commit, say); only what this script does is of interest to
-        // `rebuild_after_script`.
-        self.dom.take_changes();
         // `WeakDom::new()` is only ever seen back if `run` itself could not be
         // built (an engine fault, not a script one) — see `command_bar::run`.
         let dom = std::mem::replace(&mut self.dom, WeakDom::new());
@@ -158,10 +157,15 @@ impl Shell {
     /// whatever the script did.
     fn rebuild_after_script(&mut self, cx: &mut Context<Self>) {
         self.rebuild_explorer(cx);
-        match single_change(&self.dom.take_changes()) {
+        let changes = self.dom.take_changes();
+        match single_change(&changes) {
             Some((reference, name)) => self.reflect_in_viewport(reference, &name, cx),
             None => self.reload_viewport(cx),
         }
+        // See `shell::history`: pairs this run's log with the snapshot
+        // `push_history` took before it, so undoing it can be classified the
+        // same way redoing it just was, above.
+        self.record_history_change(changes);
     }
 
     /// Rebuilds the Explorer's rows from the current `self.dom`, keeping the
@@ -208,8 +212,10 @@ impl Shell {
 
 /// The one edit a script's change log amounts to, as the `(instance,
 /// property)` pair `Shell::reflect_in_viewport` classifies — `None` for any
-/// log that is not exactly one property write or one reparent.
-fn single_change(changes: &[Change]) -> Option<(Ref, String)> {
+/// log that is not exactly one property write or one reparent. `pub(super)`:
+/// also `shell::history`'s classifier for undo/redo, reused rather than
+/// duplicated (see that module's doc comment).
+pub(super) fn single_change(changes: &[Change]) -> Option<(Ref, String)> {
     match changes {
         [Change::Property { referent, name }] => Some((*referent, name.clone())),
         [Change::Parent { referent, .. }] => Some((*referent, "Parent".to_string())),

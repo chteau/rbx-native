@@ -118,6 +118,14 @@ Roblox's own engine.
   a single part's property change patches the GPU state directly instead
   of rebuilding the whole scene — editing stays interactive on large real
   places.
+- [x] Undo/redo takes that same fast path: `shell/history.rs` pairs each
+  pushed snapshot with the `Change` log the mutation right after it
+  produced and reads it back through `shell::command`'s own `single_change`
+  classifier — the same one a Command Bar script's viewport reflection
+  already uses — so undoing or redoing a single property write or reparent
+  patches the GPU state in place instead of paying for a full scene
+  reload; an instance create/delete, a multi-instance drag, or anything
+  else `single_change` can't classify still reloads, correctly.
 - [x] **Interactive viewport gizmos — Select/Move/Scale/Rotate, matching
   Studio's real toolbar and behaviour**, checked against
   `Roblox/creator-docs` (`parts/index.md#transform-parts`,
@@ -709,27 +717,6 @@ against `Roblox/creator-docs` rather than assumed:
   interactive use (a human editing live) hits the same thing; needs its
   own investigation of the render thread's state right after
   `Headless::reload`.
-- [ ] 📋 **`Ctrl+Z`/`Ctrl+Y` lag on real places, from a full scene
-  reload on every undo/redo regardless of how small the reverted edit
-  was.** Reported directly from real use, and confirmed in the code: a
-  single property edit already goes through
-  `Shell::reflect_in_viewport`/`classify_edit`, which picks a cheap
-  in-place GPU patch (`patch_instance`/`patch_effect`/`update_lighting`)
-  for the common case and only falls back to a full `Headless::reload`
-  when it has to (this is the "Fast-path scene updates" entry under
-  "What's been implemented" → Renderer) — but `Shell::undo`/`redo`
-  (`shell/history.rs`) never goes through that classification at all,
-  calling `reload_viewport` unconditionally every time, so undoing a
-  single `Transparency` change costs exactly as much as undoing an
-  instance delete. A script run already builds a `Change` log, and
-  `shell::command`'s own `single_change` already knows how to read one to
-  tell "exactly one property write or reparent" apart from anything
-  bigger; today's `history` module keeps only whole-`WeakDom` snapshots
-  with no log alongside them, so undo/redo has nothing to classify.
-  Recording a `Change` log per pushed snapshot (or diffing the two DOM
-  trees directly on undo/redo) and running it through that same
-  classifier is the obvious way to give undo/redo the fast path property
-  edits already have, rather than a bespoke mechanism of its own.
 - [ ] 📋 Attributes editor (custom `Instance` attributes, distinct from
   built-in properties) — a real, commonly-used modern Studio feature, not
   currently scoped anywhere.
