@@ -86,6 +86,22 @@ automatically; other tools should follow the same document directly.
   test and still produced a visibly wrong render (winding inverted, colours
   swapped, a shape rendered inside-out) — screenshots caught what unit tests
   structurally can't.
+- **Attaching that screenshot/recording to the PR itself** (the template
+  requires it, not just that you looked at one): this repo's own
+  `./scripts/publish-screenshot.sh path/to.png [more.png...]`
+  (`publish-screenshot.ps1` on Windows) is the supported way — it prints
+  ready-to-paste `![...](...)` Markdown for the PR body. Use it rather
+  than reinventing the upload by hand (see its header comment for why a
+  plain `gh gist create` doesn't work directly on images). This publishes
+  the image to a secret (unlisted, not private) gist, so treat it the same
+  as any other action that shares data outside the repo: fine for an
+  ordinary screenshot, and something you should only do when you actually
+  have the standing permissions for it in your current environment. If you
+  don't — the tool call is refused or requires an approval you can't
+  give — don't retry it a different way; leave the file at a clearly
+  stated local path, describe in the PR exactly what it shows, and say
+  plainly that the image still needs attaching by whoever has permission
+  to.
 - Don't trust a claim about official Roblox behaviour from memory or a
   general web search — Roblox's own docs are fetchable directly:
   `gh api repos/Roblox/creator-docs/contents/content/en-us/reference/engine/classes/<Class>.yaml --jq .content | base64 -d`
