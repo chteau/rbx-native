@@ -5,6 +5,7 @@
 
 mod command;
 mod dock;
+mod dock_layout;
 mod drag;
 mod edit;
 mod history;
@@ -84,6 +85,10 @@ pub(crate) struct Shell {
     selection: Selection,
     properties_scroll: ScrollHandle,
     dock_area: Entity<DockArea>,
+    /// The current dock layout state, persisted across restarts (see `shell::dock_layout`).
+    /// Saved whenever settings change; kept in sync with the actual DockArea by
+    /// the Render pass and settings write.
+    dock_layout: dock_layout::DockLayoutState,
     quality: Entity<SelectState<QualityOptions>>,
     /// The canonical, mutable tree a Command Bar script runs against; see
     /// `Place::dom`.
@@ -207,6 +212,7 @@ impl Shell {
         let (snap_fields, [translate_typed, rotate_typed]) = SnapFields::new(transform, window, cx);
 
         let initial_targets = Targets::read(&dom, &Vec::from_iter(selected));
+        let dock_layout = dock_layout::DockLayoutState::load();
         let mut shell = Shell {
             menu_bar,
             title: title.into(),
@@ -223,6 +229,7 @@ impl Shell {
             selection: Selection::new(selected),
             properties_scroll: ScrollHandle::new(),
             dock_area,
+            dock_layout,
             quality: selector,
             dom,
             history: History::new(DEFAULT_CAP),
@@ -458,12 +465,12 @@ impl Shell {
         self.save_settings();
     }
 
-    /// Writes the current quality pick, Explorer visibility and projection
-    /// mode to disk. A settings file is tiny, so this runs synchronously on
-    /// every change rather than debouncing; a write failure (e.g. no
-    /// writable config directory) is not fatal and is silently dropped —
-    /// losing a preference write is better than interrupting the editor
-    /// over it.
+    /// Writes the current quality pick, Explorer visibility, projection mode,
+    /// and dock layout to disk. A settings file is tiny, so this runs
+    /// synchronously on every change rather than debouncing; a write failure
+    /// (e.g. no writable config directory) is not fatal and is silently
+    /// dropped — losing a preference write is better than interrupting the
+    /// editor over it.
     fn save_settings(&self) {
         let settings = Settings {
             quality: self.quality_choice,
@@ -471,6 +478,7 @@ impl Shell {
             orthographic: self.orthographic,
         };
         let _ = settings.save();
+        let _ = self.dock_layout.save();
     }
 
     /// The place file's name, shown as the dock's own Viewport tab title

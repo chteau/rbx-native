@@ -47,3 +47,5 @@ raw-window-handle = "0.6"
 # `randr` is where the display's refresh rate comes from.
 x11rb = { version = "0.13", features = ["randr", "xfixes"] }
 
+# Dock layout state serialization — uses same version serde_json brings in.
+serde = { version = "1", features = ["derive"] }
