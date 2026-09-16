@@ -3,20 +3,26 @@
 //! around it — a drag has travelled.
 //!
 //! Pure geometry, no GPU and no DOM. Both halves of the editor read it: the
-//! renderer builds the arrows, handles and rings' triangles from [`Handles`]
-//! (see `renderer::gizmo`), and `rbxstudio`'s viewport hit-tests the very same
-//! [`Handles`] against the cursor ray. One definition, so what you can grab is
-//! exactly what you can see.
+//! renderer builds the arrows, balls and rings' triangles from [`Handles`] and
+//! [`Faces`] (see `renderer::gizmo`), and `rbxstudio`'s viewport hit-tests the
+//! very same two against the cursor ray. One definition, so what you can grab
+//! is exactly what you can see.
 //!
 //! Matches Studio's documented transform tools (`creator-docs`
-//! `parts/index.md#transform-parts`): Move's arrow per axis, Scale's handle per
-//! axis, Rotate's ring per axis, coloured red/green/blue for X/Y/Z and drawn in
+//! `parts/index.md#transform-parts`): Move's arrow per axis and Rotate's ring
+//! per axis, both reaching a constant distance on screen out of the
+//! selection's pivot ([`Handles`]), and Scale's ball on each face of the
+//! part's own box ([`Faces`]). Coloured red/green/blue for X/Y/Z, and drawn in
 //! world orientation or — with the local toggle on — in the part's own frame.
 
 use glam::{Mat3, Mat4, Vec3};
 
 use crate::pick::Ray;
 use crate::Pose;
+
+mod faces;
+
+pub use faces::Faces;
 
 /// The arm length of one dragger as a fraction of the viewport's half-height,
 /// so the gizmo keeps the same size on screen however far away the part is.
@@ -31,10 +37,6 @@ pub(crate) const HEAD_START: f32 = 0.72;
 /// The shaft's and the arrowhead's radii, in arm lengths.
 pub(crate) const SHAFT_RADIUS: f32 = 0.03;
 pub(crate) const HEAD_RADIUS: f32 = 0.105;
-/// Half the edge of a Scale handle's block, in arm lengths. Studio puts a
-/// small block on the end of each arm where Move puts an arrowhead; this is
-/// sized to read as the same weight as that head rather than as a bead.
-pub(crate) const HANDLE_RADIUS: f32 = 0.085;
 /// How far off a dragger's centre line a ray still counts as grabbing it, in
 /// arm lengths. Wider than the arrowhead on purpose: a handle that can only
 /// be grabbed by its exact silhouette is one the user misses repeatedly.
@@ -100,8 +102,8 @@ pub enum Kind {
     /// An arrow along each axis; dragging one slides the part along it.
     #[default]
     Move,
-    /// A block on the end of each arm; dragging one resizes the part along
-    /// that axis.
+    /// A ball on the middle of each face of the part's own box; dragging one
+    /// resizes the part along that face's axis.
     Scale,
     /// A ring around each axis; dragging one turns the part about it.
     Rotate,
@@ -117,9 +119,12 @@ pub struct Gizmo {
     pub local: bool,
 }
 
-/// One part's draggers, placed in the world: where they meet, which way each
-/// axis points, and how long an arm is in studs at the current camera
-/// distance.
+/// The Move and Rotate tools' draggers, placed in the world: where they meet,
+/// which way each axis points, and how long an arm is in studs at the current
+/// camera distance.
+///
+/// Scale's handles are [`Faces`] instead: they are pinned to the part's own
+/// surface rather than reaching a fixed distance on screen out of the pivot.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Handles {
     origin: Vec3,
@@ -149,12 +154,11 @@ impl Handles {
     /// Which dragger `ray` is pointing at and which end of it — the nearest
     /// one, so an axis pointing at the camera never loses to the one behind
     /// it. The sign is `+1` on the arm running along the axis and `-1` on the
-    /// one opposite it, which is what tells Scale which face of the part the
-    /// cursor has hold of.
+    /// one opposite it.
     ///
     /// Both directions of each axis count: Studio's Move gizmo puts an arrow
     /// on each end, and grabbing either drags along the same line.
-    pub fn grab_arm(&self, ray: Ray) -> Option<(Axis, f32)> {
+    fn grab_arm(&self, ray: Ray) -> Option<(Axis, f32)> {
         let reach = PICK_RADIUS * self.arm;
         Axis::ALL
             .into_iter()
@@ -366,6 +370,19 @@ pub fn quarter_turn(axis: Vec3) -> Mat3 {
 /// rotation than the one that was saved.
 pub fn turned(linear: Mat3, position: Vec3, pivot: Vec3, turn: Mat3) -> (Mat3, Vec3) {
     (turn * linear, pivot + turn * (position - pivot))
+}
+
+/// One frame's gizmo, as the geometry it is drawn and grabbed from.
+///
+/// Move and Rotate share [`Handles`]; Scale's [`Faces`] are a different shape
+/// entirely, so there is no one type both halves of the editor can pass around
+/// — this is it, and it is what keeps the renderer and the hit-test from being
+/// handed different geometry for the same tool.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Shape {
+    Move(Handles),
+    Scale(Faces),
+    Rotate(Handles),
 }
 
 #[cfg(test)]

@@ -16,7 +16,7 @@
 
 use glam::{Mat3, Mat4, Vec2, Vec3};
 use gpui_kit::{Modifiers, Pixels, Point};
-use rbx_viewer::gizmo::{self, Handles};
+use rbx_viewer::gizmo::{self, Faces, Handles};
 use rbx_viewer::pick::{self, Ray};
 use rbx_viewer::snap;
 
@@ -83,7 +83,7 @@ pub(super) enum Drag {
         normal: Vec3,
         offset: Vec3,
     },
-    /// One of the Scale tool's blocks is held: the part's own axis the grabbed
+    /// One of the Scale tool's balls is held: the part's own axis the grabbed
     /// face sits on (pointing *out* through that face), where the cursor stood
     /// along it, and the placement the drag started from.
     Size {
@@ -178,17 +178,17 @@ impl WorkspaceView {
         Some(pick::ray_through(projection, pick::ndc_of(pixel, extent)))
     }
 
-    /// Where the handles stand this frame, anchored on the same part
-    /// `rbx_viewer::renderer::selection::Selection::anchor` draws them on —
-    /// the first selected part with a placement, whether or not it is alone —
-    /// and built the same way `rbx_viewer::renderer` builds the ones on
-    /// screen.
+    /// Where the Move and Rotate arms stand this frame, anchored on the same
+    /// part `rbx_viewer::renderer::selection::Selection::anchor` draws them
+    /// on — the first selected part with a placement, whether or not it is
+    /// alone — and built the same way `rbx_viewer::renderer` builds the ones
+    /// on screen. Scale's own handles are [`WorkspaceView::faces`].
     fn handles(&self) -> Option<Handles> {
         let anchor = self.targets.anchor()?;
         let pose = self.view?;
         // Move drags the whole selection by one offset, so its handles sit at
-        // the middle of it; Scale and Rotate transform the anchor part alone
-        // and stay on it. The renderer picks the same origin the same way (see
+        // the middle of it; Rotate turns the anchor part alone and stays on
+        // it. The renderer picks the same origin the same way (see
         // `renderer::Renderer::handles`), both from `gizmo::centre_of`, so
         // what can be grabbed is what is drawn. The *basis* always comes from
         // the anchor — a selection has no aggregate rotation to take.
@@ -200,6 +200,19 @@ impl WorkspaceView {
             origin,
             gizmo::basis(self.transform.local.then(|| anchor.rotation())),
             gizmo::arm_length(origin, pose, self.orthographic),
+        ))
+    }
+
+    /// Where the Scale tool's balls stand this frame: on the faces of the
+    /// anchor part's own box, which is the part a Scale drag resizes. Built
+    /// from the same placement and the same camera the renderer builds the
+    /// drawn ones from (see `rbx_viewer::renderer::Renderer::handles`), so
+    /// what can be grabbed is what is on screen.
+    fn faces(&self) -> Option<Faces> {
+        Some(Faces::new(
+            self.targets.anchor()?.model,
+            self.view?,
+            self.orthographic,
         ))
     }
 
@@ -261,7 +274,7 @@ impl WorkspaceView {
                     offset: anchor.position() - point,
                 })
             }),
-            Tool::Scale => grab_face(&handles, anchor, ray),
+            Tool::Scale => grab_face(&self.faces()?, anchor, ray),
             Tool::Rotate => {
                 let axis = handles.grab_ring(ray)?;
                 let frame = handles.ring_frame(axis);
@@ -505,27 +518,18 @@ impl WorkspaceView {
     }
 }
 
-/// Which of the part's own faces a Scale handle stands on, and the drag that
+/// Which of the part's own faces a Scale ball stands on, and the drag that
 /// grabbing it opens.
 ///
-/// `BasePart.Size` is expressed along the part's *own* axes, so a resize can
-/// only ever run along one of those — there is no `Size` that describes a part
-/// stretched along a world axis it is not aligned to. In local orientation the
-/// grabbed arm already *is* one of them; in world orientation the part's own
-/// axis nearest the grabbed arm is the one that stretches, which is exact for
-/// any axis-aligned part (where the two frames agree) and still grows the part
-/// the way the cursor is pulling for one that is turned.
-fn grab_face(handles: &Handles, target: Target, ray: Ray) -> Option<Drag> {
-    let (grabbed, sign) = handles.grab_arm(ray)?;
-    let arm = handles.direction(grabbed) * sign;
-
-    let orientation = target.orientation();
-    let (component, axis) = (0..3)
-        .map(|component| (component, orientation.col(component)))
-        .max_by(|(_, a), (_, b)| a.dot(arm).abs().total_cmp(&b.dot(arm).abs()))?;
+/// No guessing at which axis the user meant: a ball sits *on* one of the
+/// part's own faces, and `BasePart.Size` is expressed along exactly those axes
+/// — so the handle names the component that stretches outright, whichever way
+/// the world/local toggle stands.
+fn grab_face(faces: &Faces, target: Target, ray: Ray) -> Option<Drag> {
+    let (grabbed, sign) = faces.grab(ray)?;
     // Pointing out through the grabbed face, so dragging away from the part
     // always grows it.
-    let axis = axis * axis.dot(arm).signum();
+    let axis = faces.direction(grabbed) * sign;
 
     let origin = target.position();
     Some(Drag::Size {
@@ -533,7 +537,7 @@ fn grab_face(handles: &Handles, target: Target, ray: Ray) -> Option<Drag> {
         axis,
         grabbed: gizmo::along_axis(origin, axis, ray)?,
         size: target.size(),
-        component,
+        component: grabbed as usize,
     })
 }
 

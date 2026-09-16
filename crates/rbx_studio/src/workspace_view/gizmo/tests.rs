@@ -1,5 +1,6 @@
 use glam::{Mat3, Mat4, Quat, Vec3};
 use rbx_dom::Ref;
+use rbx_viewer::Pose;
 
 use super::*;
 
@@ -286,6 +287,23 @@ fn block() -> Target {
     }
 }
 
+/// The camera the Scale balls are sized for: ten studs down +Z looking at the
+/// world origin, which is where [`looking_at`] fires its rays from too.
+fn eye() -> Pose {
+    Pose {
+        position: Vec3::new(0.0, 0.0, 10.0),
+        yaw: 0.0,
+        pitch: 0.0,
+        fov_degrees: 70.0,
+        ortho_scale: 25.0,
+    }
+}
+
+/// The Scale handles standing on one target's own faces, seen from [`eye`].
+fn faces(target: Target) -> Faces {
+    Faces::new(target.model, eye(), false)
+}
+
 /// The Scale drag that grabbing the block's +X face opens, with the cursor
 /// standing exactly on that face (one stud out, half of the 2-stud width).
 fn grabbed_x_face() -> Drag {
@@ -296,6 +314,98 @@ fn grabbed_x_face() -> Drag {
         size: Vec3::new(2.0, 1.0, 4.0),
         component: 0,
     }
+}
+
+#[test]
+fn grabbing_a_ball_opens_a_resize_of_the_face_it_stands_on() {
+    // The block is 2 studs wide, so its +X ball stands at x = 1, and that is
+    // where the drag is grabbed.
+    let target = block();
+    let drag = grab_face(&faces(target), target, looking_at(1.0, 0.0)).expect("the +X ball");
+
+    assert_eq!(drag, grabbed_x_face());
+}
+
+#[test]
+fn grabbing_the_ball_on_the_far_face_resizes_the_part_the_other_way() {
+    let target = block();
+    let drag = grab_face(&faces(target), target, looking_at(-1.0, 0.0)).expect("the -X ball");
+
+    let Drag::Size {
+        axis, component, ..
+    } = drag
+    else {
+        panic!("expected a resize, got {drag:?}");
+    };
+    // Pointing out through the grabbed face, so pulling away from the part
+    // grows it whichever end was taken hold of.
+    assert!((axis - Vec3::NEG_X).length() < 1e-4, "{axis:?}");
+    assert_eq!(component, 0);
+}
+
+/// What binding the handles to the part's own faces buys: the component a ball
+/// resizes is the one whose face it stands on, not the world axis it happens
+/// to lie nearest.
+#[test]
+fn a_turned_parts_ball_resizes_the_face_it_actually_sits_on() {
+    // A quarter turn about Z carries the part's own X onto world +Y, so its
+    // own X faces — one stud out either way of a 2-stud width — now stand a
+    // stud above and below the part, where nothing of the world's own X is.
+    let target = Target {
+        referent: Ref::new(1),
+        model: Mat4::from_scale_rotation_translation(
+            Vec3::new(2.0, 1.0, 4.0),
+            Quat::from_rotation_z(std::f32::consts::FRAC_PI_2),
+            Vec3::ZERO,
+        ),
+    };
+    let drag = grab_face(&faces(target), target, looking_at(0.0, 1.0)).expect("the +X ball");
+
+    let Drag::Size {
+        axis,
+        component,
+        size,
+        ..
+    } = drag
+    else {
+        panic!("expected a resize, got {drag:?}");
+    };
+    // The part's own X, pointing out through the face that was grabbed — a
+    // resize along world Y that nonetheless writes `Size.X`.
+    assert!((axis - Vec3::Y).length() < 1e-4, "{axis:?}");
+    assert_eq!(component, 0);
+    assert!((size - Vec3::new(2.0, 1.0, 4.0)).length() < 1e-4);
+}
+
+#[test]
+fn pointing_at_no_ball_grabs_no_resize() {
+    // Inside the part but well away from the middle of any of its faces,
+    // which is what leaves a click there free to fall through to a pick.
+    let target = Target {
+        referent: Ref::new(1),
+        model: Mat4::from_scale(Vec3::splat(40.0)),
+    };
+    assert_eq!(
+        grab_face(&faces(target), target, looking_at(8.0, 8.0)),
+        None
+    );
+}
+
+/// Both halves together: grab the ball where it is drawn, pull the cursor out,
+/// and the part grows by exactly the travel with its far face left standing.
+#[test]
+fn a_ball_grabbed_where_it_is_drawn_resizes_from_there() {
+    let target = block();
+    let drag = grab_face(&faces(target), target, looking_at(1.0, 0.0)).expect("the +X ball");
+
+    let (_, change) = advance(drag, looking_at(4.0, 0.0), free()).expect("the drag has an answer");
+    assert_eq!(
+        change,
+        Change::Size {
+            size: Vec3::new(5.0, 1.0, 4.0),
+            position: Vec3::new(1.5, 0.0, 0.0),
+        }
+    );
 }
 
 #[test]
