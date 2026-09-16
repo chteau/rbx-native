@@ -343,3 +343,142 @@ fn patch_part_falls_back_when_the_material_needs_a_new_layer() {
 
     assert!(scene.patch_part(&dom, &database, referent, known).is_none());
 }
+
+/// Stands in for a union's computed boolean: nothing here reads the geometry,
+/// only which asset it came from.
+fn carved_mesh() -> rbx_mesh::Mesh {
+    rbx_mesh::Mesh {
+        version: (4, 1),
+        vertices: Vec::new(),
+        indices: Vec::new(),
+        lods: Vec::new(),
+        bounds: rbx_mesh::Aabb {
+            min: [0.0; 3],
+            max: [1.0; 3],
+        },
+    }
+}
+
+/// One union's worth of what `union::resolve` hands back when that union's
+/// asset bytes land: the boolean succeeded, so the union draws a mesh
+/// instance and its fallback box hides.
+fn union_landing(referent: Ref, asset: &str) -> union::Resolution {
+    let reference = AssetRef::Native(asset.to_string());
+    union::Resolution {
+        parts: Vec::new(),
+        hidden: HashSet::from([referent]),
+        meshes: HashMap::from([(reference.clone(), Arc::new(carved_mesh()))]),
+        instances: vec![ResolvedInstance {
+            referent,
+            mesh: reference,
+            material: material::Slot {
+                layer: 0,
+                kind: material::Kind::Plastic,
+                studs_per_tile: 1.0,
+            },
+            texture: None,
+            appearance: None,
+            model: Mat4::IDENTITY,
+            color: [1.0, 1.0, 1.0],
+            alpha: 1.0,
+            reflectance: 0.0,
+            casts_shadow: true,
+        }],
+    }
+}
+
+/// The tail of [`Scene::resolve_unions`], from the point `union::resolve` has
+/// answered. Only the plan and the evaluations need real union bytes, and
+/// neither of those decides what is appended here.
+fn absorb_union_landing(scene: &mut Scene, resolution: union::Resolution) {
+    scene.unions_resolved.absorb(resolution);
+    let fresh = std::mem::take(&mut scene.unions_resolved.fresh_parts);
+    scene.parts.extend(fresh);
+    scene.apply_resolved_unions();
+}
+
+fn union_referents(scene: &Scene) -> Vec<Ref> {
+    scene
+        .resolved_file_meshes()
+        .instances
+        .iter()
+        .map(|instance| instance.referent)
+        .collect()
+}
+
+// Two legacy unions whose asset bytes land on separate streaming ticks — the
+// normal case, since the pool answers each whenever it answers it. Every tick
+// runs the file mesh pass and then the union pass, and both put the
+// accumulated unions back into the resolved set: the second tick must end
+// with one instance per union, not with the first union's geometry drawn
+// twice for the rest of the session.
+#[test]
+fn a_union_that_landed_on_an_earlier_tick_is_not_drawn_twice() {
+    let database = ReflectionDatabase::embedded();
+    let mut scene = Scene::from_dom(&test_place(), &database).unwrap();
+    let a = scene.parts()[0].referent;
+    let b = scene.parts()[1].referent;
+
+    // Tick one: union A's bytes land.
+    scene.resolve_file_meshes(HashMap::new(), HashMap::new());
+    absorb_union_landing(&mut scene, union_landing(a, "unions/a.rbxm"));
+    assert_eq!(union_referents(&scene), vec![a]);
+
+    // Tick two: union B's land, A's having been absorbed long since.
+    scene.resolve_file_meshes(HashMap::new(), HashMap::new());
+    absorb_union_landing(&mut scene, union_landing(b, "unions/b.rbxm"));
+
+    assert_eq!(union_referents(&scene), vec![a, b]);
+}
+
+// The one-union case a cold load with every asset already resident takes,
+// which must come out of the same two passes unchanged.
+#[test]
+fn a_union_landing_on_the_tick_that_rebuilds_the_resolved_set_is_drawn_once() {
+    let database = ReflectionDatabase::embedded();
+    let mut scene = Scene::from_dom(&test_place(), &database).unwrap();
+    let a = scene.parts()[0].referent;
+
+    scene.resolve_file_meshes(HashMap::new(), HashMap::new());
+    absorb_union_landing(&mut scene, union_landing(a, "unions/a.rbxm"));
+
+    assert_eq!(union_referents(&scene), vec![a]);
+    assert!(scene.parts()[0].suppressed, "the fallback box hides");
+}
+
+// Every later tick of a place whose unions have all landed: the two passes
+// run again over the same accumulated set and must leave it as it was.
+#[test]
+fn re_resolving_with_no_new_union_bytes_changes_nothing() {
+    let database = ReflectionDatabase::embedded();
+    let mut scene = Scene::from_dom(&test_place(), &database).unwrap();
+    let a = scene.parts()[0].referent;
+    scene.resolve_file_meshes(HashMap::new(), HashMap::new());
+    absorb_union_landing(&mut scene, union_landing(a, "unions/a.rbxm"));
+
+    for _ in 0..3 {
+        scene.resolve_file_meshes(HashMap::new(), HashMap::new());
+        scene.resolve_unions(HashMap::new(), &mut UnionEvaluations::default());
+    }
+
+    assert_eq!(union_referents(&scene), vec![a]);
+}
+
+// `union::resolve` answers for every union whose asset it can evaluate, so a
+// union carved on an earlier tick is answered for again on every tick after
+// it. Absorbing that answer twice would append its instance — and, where the
+// boolean failed, each of its recovered pieces — a second time.
+#[test]
+fn absorbing_the_same_union_twice_merges_it_once() {
+    let database = ReflectionDatabase::embedded();
+    let mut scene = Scene::from_dom(&test_place(), &database).unwrap();
+    let a = scene.parts()[0].referent;
+    let parts_before = scene.parts().len();
+
+    scene.resolve_file_meshes(HashMap::new(), HashMap::new());
+    absorb_union_landing(&mut scene, union_landing(a, "unions/a.rbxm"));
+    absorb_union_landing(&mut scene, union_landing(a, "unions/a.rbxm"));
+
+    assert_eq!(union_referents(&scene), vec![a]);
+    assert_eq!(scene.parts().len(), parts_before);
+}

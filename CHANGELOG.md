@@ -2,6 +2,30 @@
 
 ## 2026-09-16
 
+- **Async assets: review fixes.** Four things the streaming work below got
+  wrong, caught in review. A place with two legacy `Union`/`Negate` parts
+  whose asset bytes landed on separate ticks drew the first one's geometry
+  twice, for good: every tick runs the file mesh pass and then the union
+  pass, both of which put the accumulated unions back into the resolved set,
+  and the second call appended the whole set on top of what the first had
+  just put there. Both halves of that path are idempotent now:
+  `Scene::apply_resolved_unions` drops what an earlier call left, by the
+  union referent each instance draws in place of, before laying the set back
+  down, and `union::Merged::absorb` ignores a union it has already merged —
+  which is also what lets the loader stop tracking that itself and hand
+  `Scene::resolve_unions` whatever landed, carved or not. An edit that both
+  named a brand-new `MeshId` and set `Transparency` to 1 took the
+  "instance removed" branch of `Headless::patch_instance`, which asked for
+  nothing: the fetch did not start until some later edit made the instance
+  visible again. It asks now, like every other branch. The swap-in throttle
+  was reset before the landed batch was checked against the place, so a
+  result arriving for a reference nothing names any more delayed the next
+  real swap-in by up to 100 ms; the timer moves only when something is
+  actually folded in. And `renderer::particles` did not filter
+  `AssetRef::Empty` out of its texture list the way `beam`/`trail` do, so an
+  emitter with no texture was re-evaluated on every renderer rebuild for the
+  life of the session. — @chteau
+
 - **Assets stream in instead of stopping the frame.** Resolving one
   `MeshId`, `TextureID`, material pack or `Decal` image is a download, a
   disk read and a decode — two thirds of a `marked.rbxl` reload, by the

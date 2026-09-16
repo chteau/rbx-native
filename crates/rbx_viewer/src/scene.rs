@@ -13,7 +13,7 @@ mod shape;
 mod trail;
 mod union;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use glam::{Mat4, Vec3, Vec4};
@@ -376,6 +376,13 @@ impl Scene {
     /// Puts the unions' own meshes and instances back into the resolved set
     /// after [`Scene::resolve_file_meshes`] has rebuilt it from the file mesh
     /// plan, which knows nothing about them.
+    ///
+    /// Idempotent, because a streaming tick calls it twice over a growing
+    /// `unions_resolved`: once when the file mesh pass rebuilds the resolved
+    /// set, and again when the union pass absorbs whatever bytes landed since.
+    /// The instances are a `Vec`, so the second call would otherwise append a
+    /// union already put back by the first and draw it twice — for good, since
+    /// nothing later prunes the set.
     fn apply_resolved_unions(&mut self) {
         for part in &mut self.parts {
             if self.unions_resolved.hidden.contains(&part.referent) {
@@ -389,6 +396,19 @@ impl Scene {
                 .iter()
                 .map(|(reference, mesh)| (reference.clone(), Arc::clone(mesh))),
         );
+        // By referent, which is the union part the instance draws in place of
+        // and is unique across the whole resolved set: whatever an earlier
+        // call put there is dropped, and the accumulated set goes back on top
+        // in the order a cold load would have produced it.
+        let unions: HashSet<Ref> = self
+            .unions_resolved
+            .instances
+            .iter()
+            .map(|instance| instance.referent)
+            .collect();
+        resolved
+            .instances
+            .retain(|instance| !unions.contains(&instance.referent));
         resolved
             .instances
             .extend(self.unions_resolved.instances.iter().cloned());
@@ -411,11 +431,12 @@ impl Scene {
     /// Always safe to call with an empty or partial map: anything that fails
     /// to resolve simply leaves its box alone.
     ///
-    /// Each asset must be handed over exactly once for the life of the scene:
-    /// a failed boolean's recovered pieces are *appended* to the parts, and
-    /// recovering the same union twice would draw them twice. A streaming load
-    /// upholds that by passing only what has newly landed — see
-    /// `load::Loaded::resolve`.
+    /// Safe to call again every tick of a streaming load, which is what one
+    /// does: `assets` need only carry the bytes of what has not been carved
+    /// yet, and a union already merged in is ignored however many times
+    /// `union::resolve` answers for it again — see `union::Merged::absorb`,
+    /// without which a failed boolean's recovered pieces would be appended to
+    /// the parts a second time.
     pub(crate) fn resolve_unions(
         &mut self,
         assets: HashMap<AssetRef, Vec<u8>>,

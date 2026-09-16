@@ -377,7 +377,7 @@ impl Particles {
 fn texture_refs(emitters: &[Emitter]) -> Vec<AssetRef> {
     let mut seen = Vec::new();
     for emitter in emitters {
-        if !seen.contains(&emitter.texture) {
+        if emitter.texture != AssetRef::Empty && !seen.contains(&emitter.texture) {
             seen.push(emitter.texture.clone());
         }
     }

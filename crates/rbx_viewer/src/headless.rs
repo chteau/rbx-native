@@ -263,6 +263,12 @@ impl Headless {
             }
             Some(MeshPatch::Removed) => {
                 self.offscreen.remove_mesh_instance(referent);
+                // Invisible is not uninteresting: one edit can name a mesh
+                // this session has never fetched *and* set `Transparency` to
+                // 1, and dropping the request here would leave the fetch
+                // unstarted until some later edit made the instance visible
+                // again.
+                self.request(wanted);
                 Ok(true)
             }
             None => self.patch_onto_fallback(dom, referent, wanted),

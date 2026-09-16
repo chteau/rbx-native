@@ -11,8 +11,8 @@
 //! What is new is that every step has to survive being run again over a
 //! superset of the same assets and leave the place exactly as one run with all
 //! of them would have. Each of the three is idempotent for its own reason —
-//! see `Scene::resolve_file_meshes`, `Scene::resolve_unions` (handed each
-//! union asset once, since it appends the parts it recovers) and
+//! see `Scene::resolve_file_meshes`, `Scene::resolve_unions` (which ignores a
+//! union it has already merged, since it appends the parts it recovers) and
 //! `scene::material::Catalog::resolve`.
 
 use rbx_assets::AssetRef;
@@ -85,18 +85,7 @@ impl Loaded {
             .cloned()
             .collect();
         let (bytes, warnings) = resident.bytes(&uncarved);
-        // Each asset exactly once, ever: `Scene::resolve_unions` appends the
-        // parts a failed boolean falls back to, and handing it an asset it has
-        // already recovered would draw those pieces twice.
-        let fresh = bytes
-            .into_iter()
-            .filter(|(reference, _)| !self.applied_unions.contains(reference))
-            .collect::<std::collections::HashMap<_, _>>();
-        if fresh.is_empty() {
-            return warnings;
-        }
-        self.applied_unions.extend(fresh.keys().cloned());
-        self.scene.resolve_unions(fresh, &mut resident.unions);
+        self.scene.resolve_unions(bytes, &mut resident.unions);
         warnings
     }
 

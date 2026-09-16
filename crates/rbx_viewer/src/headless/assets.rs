@@ -57,15 +57,17 @@ impl Headless {
         }
 
         let landed = std::mem::take(&mut self.landed);
-        self.swapped = Instant::now();
         // A fetch cannot be cancelled, so a `MeshId` typed, corrected and
         // typed again leaves a result arriving for a reference nothing names
         // any more. It stays filed in the `Resident` — the next place to name
-        // it gets it free — and costs nothing else.
+        // it gets it free — and costs nothing else. The throttle is not
+        // touched on the way out: nothing was swapped in, so the next batch
+        // that matters must not be held back on this one's account.
         if !self.loaded.wants_any(&landed) {
             return false;
         }
 
+        self.swapped = Instant::now();
         let warnings = self.loaded.resolve(&mut self.resident);
         self.warnings.extend(warnings);
         self.offscreen.reload(self.loaded.world(), &self.view);

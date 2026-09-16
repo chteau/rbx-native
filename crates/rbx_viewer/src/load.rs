@@ -72,9 +72,6 @@ pub(crate) struct Loaded {
     /// on the thread that draws.
     images: Answered,
     toggles: Toggles,
-    /// Union assets already merged into the scene. `Scene::resolve_unions`
-    /// appends its recovered parts, so it is handed each asset exactly once.
-    applied_unions: Vec<AssetRef>,
     /// Every reference this place has asked the loader for. What
     /// `Headless` checks a landing against before re-resolving anything: a
     /// result for an asset the place stopped naming is filed and ignored.
@@ -142,7 +139,6 @@ impl Loaded {
             lights: Vec::new(),
             images: Answered::default(),
             toggles,
-            applied_unions: Vec::new(),
             wanted: Vec::new(),
             warnings: Vec::new(),
         };
