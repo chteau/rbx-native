@@ -10,6 +10,8 @@
 
 mod role;
 
+use std::collections::HashMap;
+
 use rbx_dom::{Change, Ref};
 
 pub(crate) use role::{Known, Role, Roles};
@@ -94,24 +96,31 @@ pub(crate) struct Touched {
 /// finds the instance gone and takes it out.
 pub(crate) fn fold(changes: &[Change]) -> Vec<Touched> {
     let mut touched: Vec<Touched> = Vec::new();
+    // Where each referent's entry sits, so a log of a thousand writes folds
+    // in a thousand lookups rather than a scan per write.
+    let mut slots: HashMap<Ref, usize> = HashMap::new();
     for change in changes {
         let (referent, structural, old_parent) = match change {
             Change::Property { referent, .. } => (*referent, false, None),
             Change::Parent { referent, old, .. } => (*referent, true, *old),
             Change::Added(referent) | Change::Removed(referent) => (*referent, true, None),
         };
-        match touched.iter_mut().find(|entry| entry.referent == referent) {
-            Some(entry) => {
+        match slots.get(&referent) {
+            Some(&slot) => {
+                let entry = &mut touched[slot];
                 entry.structural |= structural;
                 if entry.old_parent.is_none() {
                     entry.old_parent = old_parent;
                 }
             }
-            None => touched.push(Touched {
-                referent,
-                structural,
-                old_parent,
-            }),
+            None => {
+                slots.insert(referent, touched.len());
+                touched.push(Touched {
+                    referent,
+                    structural,
+                    old_parent,
+                });
+            }
         }
     }
     touched

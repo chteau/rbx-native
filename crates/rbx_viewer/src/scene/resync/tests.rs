@@ -405,7 +405,7 @@ fn a_material_needing_a_new_layer_is_a_rebuild() {
 fn a_union_drawn_as_its_pieces_is_a_rebuild() {
     let (dom, mut scene) = place();
     let piece = scene.parts()[0];
-    scene.parts.push(Part {
+    scene.push_part(Part {
         referent: Ref::new(PLAIN_PART),
         ..piece
     });
@@ -420,7 +420,7 @@ fn a_union_drawn_as_its_pieces_is_a_rebuild() {
 fn a_union_deleted_goes_with_its_pieces() {
     let (mut dom, mut scene) = place();
     let piece = scene.parts()[0];
-    scene.parts.push(Part {
+    scene.push_part(Part {
         referent: Ref::new(PLAIN_PART),
         ..piece
     });
@@ -446,11 +446,167 @@ fn bounds_leave_out_a_unions_recovered_pieces() {
         suppressed: false,
         ..scene.parts()[0]
     };
-    scene.parts.push(far);
+    scene.push_part(far);
 
     assert!(
         !scene.refresh_bounds(),
         "a piece under the suppressed MeshPart's referent must not grow the extent"
     );
     assert_eq!(*scene.bounds(), before);
+}
+
+/// [`place`] with the `MeshPart`'s mesh asked for and never delivered — a
+/// 404, or a download that failed — so it stays drawn as its box.
+fn place_without_the_mesh() -> (WeakDom, Scene) {
+    let (dom, _) = place();
+    let database = ReflectionDatabase::embedded();
+    let mut scene = Scene::from_dom(&dom, &database).unwrap();
+    scene.resolve_file_meshes(HashMap::new(), HashMap::new());
+    assert!(scene.resolved_file_meshes().instances.is_empty());
+    assert!(scene.parts().iter().all(|part| !part.suppressed));
+    (dom, scene)
+}
+
+// A mesh the load asked for and never got leaves its part a box, and every
+// later edit of that part — colour, frame, anything — is a box edit, not a
+// reload asking for the same mesh again: the box is exactly what a rebuild
+// would show for it too.
+#[test]
+fn a_part_whose_mesh_never_came_is_edited_as_its_box() {
+    let (mut dom, mut scene) = place_without_the_mesh();
+    dom.set_property(
+        Ref::new(MESH_PART),
+        "Color3uint8",
+        Variant::Color3uint8 { r: 255, g: 0, b: 0 },
+    )
+    .unwrap();
+
+    let part = boxed(&mut scene, &dom, MESH_PART);
+
+    assert!(!part.suppressed, "nothing stands in for the box");
+    assert_eq!(part.color, [srgb_to_linear(1.0), 0.0, 0.0]);
+    assert!(scene.resolved_file_meshes().instances.is_empty());
+    assert_eq!(scene.parts().len(), 2);
+
+    // A fully transparent box keeps its placement, as a full build's does.
+    dom.set_property(Ref::new(MESH_PART), "Transparency", Variant::Float32(1.0))
+        .unwrap();
+    let part = boxed(&mut scene, &dom, MESH_PART);
+    assert!(!part.suppressed);
+    assert!(scene.placement_of(Ref::new(MESH_PART)).is_some());
+}
+
+// The mesh landing after all (into the same scene) still takes over from
+// the box: the box path is for an asset known to be missing, not a
+// permanent verdict on the part.
+#[test]
+fn a_mesh_that_lands_after_failing_still_takes_over_from_the_box() {
+    let (dom, mut scene) = place_without_the_mesh();
+    scene
+        .resolved_file_meshes
+        .meshes
+        .insert(AssetRef::Id(1), Arc::new(fake_mesh()));
+
+    let index = meshed(&mut scene, &dom, MESH_PART);
+
+    assert_eq!(
+        scene.resolved_file_meshes().instances[index].referent,
+        Ref::new(MESH_PART)
+    );
+    let part = scene
+        .parts()
+        .iter()
+        .find(|part| part.referent == Ref::new(MESH_PART))
+        .unwrap();
+    assert!(part.suppressed, "the box stands down under the mesh");
+}
+
+// A `MeshId` nobody ever asked for is still a reload's to fetch, failed
+// mesh or not: only the asset that was asked for and refused is known to
+// be missing.
+#[test]
+fn a_mesh_never_asked_for_is_still_a_rebuild() {
+    let (mut dom, mut scene) = place_without_the_mesh();
+    dom.set_property(
+        Ref::new(MESH_PART),
+        "MeshId",
+        Variant::String("rbxassetid://2".to_string()),
+    )
+    .unwrap();
+
+    assert_eq!(
+        resync(&mut scene, &dom, MESH_PART).err(),
+        Some(Rebuild::Asset)
+    );
+}
+
+// The parts' index survives a delete: the last part fills the hole and an
+// edit of it still lands in its own slot, not the deleted one's ghost.
+#[test]
+fn a_delete_leaves_every_other_part_where_it_can_be_found() {
+    let (mut dom, mut scene) = place();
+    dom.remove(Ref::new(MESH_PART));
+    assert!(matches!(
+        resync(&mut scene, &dom, MESH_PART),
+        Ok(PartSync::Gone)
+    ));
+    assert_eq!(scene.parts().len(), 1);
+
+    dom.set_property(Ref::new(PLAIN_PART), "CFrame", cframe_at(9.0, 0.0, 0.0))
+        .unwrap();
+    let part = boxed(&mut scene, &dom, PLAIN_PART);
+
+    assert_eq!(scene.parts().len(), 1);
+    assert_eq!(scene.parts()[0].transform, part.transform);
+    assert_eq!(
+        scene.placement_of(Ref::new(PLAIN_PART)).map(|p| p.model),
+        Some(part.transform)
+    );
+    assert!(scene.placement_of(Ref::new(MESH_PART)).is_none());
+}
+
+/// What a recount of every part answers — the extent a rebuild would frame.
+fn recounted(scene: &Scene) -> crate::scene::Bounds {
+    let originals = scene.parts().iter().filter(|part| {
+        part.suppressed
+            || scene
+                .parts()
+                .iter()
+                .all(|other| other.referent != part.referent || !other.suppressed)
+    });
+    crate::scene::bounds::of(originals).unwrap()
+}
+
+// The extent follows a part out and back exactly as a recount would: grown
+// in place on the way out, recounted on the way back — the part was holding
+// the edge — and either way what a rebuild would frame.
+#[test]
+fn the_extent_follows_a_part_out_and_back_in() {
+    let (mut dom, mut scene) = place();
+    let before = *scene.bounds();
+
+    dom.set_property(Ref::new(PLAIN_PART), "CFrame", cframe_at(60.0, 0.0, 0.0))
+        .unwrap();
+    boxed(&mut scene, &dom, PLAIN_PART);
+    assert!(
+        scene.refresh_bounds(),
+        "a part moved past the edge grows it"
+    );
+    assert_eq!(*scene.bounds(), recounted(&scene));
+    assert!(scene.bounds().max.x > before.max.x);
+
+    dom.set_property(Ref::new(PLAIN_PART), "CFrame", cframe_at(4.0, 0.0, 0.0))
+        .unwrap();
+    boxed(&mut scene, &dom, PLAIN_PART);
+    assert!(scene.refresh_bounds(), "the edge it held comes back in");
+    assert_eq!(*scene.bounds(), before);
+    assert!(!scene.refresh_bounds(), "nothing moved since");
+
+    dom.remove(Ref::new(PLAIN_PART));
+    assert!(matches!(
+        resync(&mut scene, &dom, PLAIN_PART),
+        Ok(PartSync::Gone)
+    ));
+    assert!(scene.refresh_bounds(), "the part holding the edge is gone");
+    assert_eq!(*scene.bounds(), recounted(&scene));
 }

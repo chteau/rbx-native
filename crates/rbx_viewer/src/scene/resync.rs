@@ -1,8 +1,6 @@
 //! Bringing one `BasePart` of a built scene in line with the DOM — added,
 //! edited, moved or gone — see [`Scene::resync_part`].
 
-use std::collections::HashSet;
-
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
@@ -27,6 +25,17 @@ pub(crate) enum PartSync {
     Gone,
 }
 
+/// Where a referent stands in `Scene::parts` — see `Scene::standing`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Standing {
+    /// Its one box, at this index.
+    Box(usize),
+    /// A failed union's recovered pieces, which all answer to the union's
+    /// own referent alongside its suppressed box (see `union::tree`): no
+    /// single slot stands for the lot, and an edit of one is a rebuild.
+    Pieces,
+}
+
 impl Scene {
     /// Recomputes one part from `dom`, exactly as [`Scene::from_dom`] and
     /// the resolutions after it would build it, and puts the result in
@@ -43,10 +52,15 @@ impl Scene {
     /// edit that lands on a material past that count needs its maps
     /// uploaded, which only a reload does (see [`Rebuild::Asset`]); the
     /// same for a mesh, texture or `SurfaceAppearance` set the scene never
-    /// downloaded. A union drawn as its recovered pieces is refused as
-    /// [`Rebuild::Union`]. Nothing is refused for being *new*: a shape kind
-    /// the place never used, a part with no counterpart in the scene, a
-    /// mesh another instance already draws through are all patched.
+    /// asked for. A mesh or union asset it asked for and never got (see
+    /// [`Scene::unresolved`]) is not one of those: the part draws as its
+    /// box, exactly as the full build left it, and the edit is a box edit —
+    /// otherwise every later edit of a `MeshPart` whose mesh once failed to
+    /// download would be a reload, for the rest of the session. A union
+    /// drawn as its recovered pieces is refused as [`Rebuild::Union`].
+    /// Nothing is refused for being *new*: a shape kind the place never
+    /// used, a part with no counterpart in the scene, a mesh another
+    /// instance already draws through are all patched.
     pub(crate) fn resync_part(
         &mut self,
         dom: &WeakDom,
@@ -65,28 +79,30 @@ impl Scene {
             return Ok(PartSync::Gone);
         };
 
-        let mut standing_in = self
-            .parts
-            .iter()
-            .enumerate()
-            .filter(|(_, part)| part.referent == referent)
-            .map(|(index, _)| index);
-        let held = standing_in.next();
-        if standing_in.next().is_some() {
-            // A failed union's recovered pieces all answer to the union's
-            // referent (see `union::tree`): no one box recomputed from the
-            // union's own properties stands for the lot. Only an edit is
-            // refused — a union gone from the DOM went, above, with every
-            // piece.
-            return Err(Rebuild::Union);
-        }
+        // Only an edit is refused for being a union's pieces — a union gone
+        // from the DOM went, above, with every piece.
+        let held = match self.standing.get(&referent) {
+            Some(Standing::Box(index)) => Some(*index),
+            Some(Standing::Pieces) => return Err(Rebuild::Union),
+            None => None,
+        };
         if part.material.layer as usize >= known_layers {
             return Err(Rebuild::Asset);
         }
 
         let sync = match Replanned::of(dom, database, referent, &mut self.materials) {
             None => {
-                self.remove_instance(referent);
+                self.resolved_file_meshes.remove(referent);
+                PartSync::Box(part)
+            }
+            Some(entry) if !self.resolved_file_meshes.meshes.contains_key(entry.asset()) => {
+                // Before the transparency check on purpose: a fully
+                // transparent box keeps its placement, and a full build
+                // never hid the box of a part whose mesh did not come.
+                if !self.unresolved.contains(entry.asset()) {
+                    return Err(Rebuild::Asset);
+                }
+                self.resolved_file_meshes.remove(referent);
                 PartSync::Box(part)
             }
             Some(entry) => {
@@ -96,7 +112,7 @@ impl Scene {
                 // been projected on if the mesh had not taken over.
                 part.suppressed = true;
                 if entry.is_invisible() {
-                    self.remove_instance(referent);
+                    self.resolved_file_meshes.remove(referent);
                     PartSync::Gone
                 } else {
                     let missing = match entry {
@@ -107,45 +123,62 @@ impl Scene {
                     if instance.material.layer as usize >= known_layers {
                         return Err(Rebuild::Asset);
                     }
-                    let instances = &mut self.resolved_file_meshes.instances;
-                    let index = match instances.iter().position(|held| held.referent == referent) {
+                    let resolved = &mut self.resolved_file_meshes;
+                    let index = match resolved.slot_of(referent) {
                         Some(index) => {
-                            instances[index] = instance;
+                            resolved.instances[index] = instance;
                             index
                         }
-                        None => {
-                            instances.push(instance);
-                            instances.len() - 1
-                        }
+                        None => resolved.push(instance),
                     };
                     PartSync::Mesh(index)
                 }
             }
         };
 
+        let old = held.map(|index| self.parts[index]);
         match held {
             Some(index) => self.parts[index] = part,
-            None => self.parts.push(part),
+            None => self.push_part(part),
         }
+        self.note_extent(old.as_ref(), Some(&part));
         Ok(sync)
     }
 
     /// Takes every box and resolved instance standing for `referent` out of
     /// the scene — all of them, so a deleted union goes with its pieces.
     pub(crate) fn remove_part(&mut self, referent: Ref) {
-        self.parts.retain(|part| part.referent != referent);
-        self.remove_instance(referent);
+        match self.standing.get(&referent).copied() {
+            Some(Standing::Box(index)) => {
+                let old = self.parts[index];
+                self.note_extent(Some(&old), None);
+                self.standing.remove(&referent);
+                self.remove_slot(index);
+            }
+            // The one case that still scans: pieces are not indexed, and a
+            // failed union being deleted is rare enough not to be.
+            Some(Standing::Pieces) => {
+                self.extent_stale = true;
+                self.standing.remove(&referent);
+                while let Some(index) = self.parts.iter().position(|part| part.referent == referent)
+                {
+                    self.remove_slot(index);
+                }
+            }
+            None => {}
+        }
+        self.resolved_file_meshes.remove(referent);
     }
 
-    fn remove_instance(&mut self, referent: Ref) {
-        // Order only ever mattered to a full build's batch construction; the
-        // renderer finds instances by referent from here on.
-        let instances = &mut self.resolved_file_meshes.instances;
-        if let Some(index) = instances
-            .iter()
-            .position(|instance| instance.referent == referent)
-        {
-            instances.swap_remove(index);
+    /// Takes the part at `index` out, the last one filling the hole and told
+    /// where it now stands. Order among parts only ever mattered to a full
+    /// build's batch construction; a patch finds parts by referent.
+    fn remove_slot(&mut self, index: usize) {
+        self.parts.swap_remove(index);
+        if let Some(moved) = self.parts.get(index) {
+            if let Some(Standing::Box(slot)) = self.standing.get_mut(&moved.referent) {
+                *slot = index;
+            }
         }
     }
 
@@ -153,38 +186,66 @@ impl Scene {
     /// entry [`Scene::placements`] would hold for it, without building the
     /// whole map to look up one part.
     pub(crate) fn placement_of(&self, referent: Ref) -> Option<Placement> {
-        self.parts
-            .iter()
-            .find(|part| part.referent == referent && !part.suppressed)
-            .map(Part::placement)
+        let part = match self.standing.get(&referent)? {
+            Standing::Box(index) => &self.parts[*index],
+            // The first drawn piece, as `placements` would list it.
+            Standing::Pieces => self
+                .parts
+                .iter()
+                .find(|part| part.referent == referent && !part.suppressed)?,
+        };
+        (!part.suppressed).then(|| part.placement())
     }
 
-    /// Recomputes the scene's extent after its parts changed, reporting
-    /// whether it moved. The same box [`Scene::from_dom`] computes: every
-    /// part as the DOM lists it, suppressed or not, but not a failed union's
-    /// recovered pieces, which `from_dom` never saw either — it took its
-    /// bounds before `resolve_unions` appended them. A scene left with no
-    /// part at all keeps its last extent rather than none: the camera and
-    /// the shadow fit still need a box to work against.
-    pub(crate) fn refresh_bounds(&mut self) -> bool {
-        let suppressed: HashSet<Ref> = self
-            .parts
-            .iter()
-            .filter(|part| part.suppressed)
-            .map(|part| part.referent)
-            .collect();
-        let originals: Vec<Part> = self
-            .parts
-            .iter()
-            .filter(|part| part.suppressed || !suppressed.contains(&part.referent))
-            .copied()
-            .collect();
-        match bounds::of(&originals) {
-            Some(extent) if extent != self.bounds => {
-                self.bounds = extent;
-                true
+    /// Keeps the extent in step with one part going from `old` to `new`
+    /// (either absent): grown on the spot by the new corners, which is all a
+    /// move outward or an insert needs, and marked for a recount only when
+    /// the old part may have been holding an edge — nothing short of every
+    /// part says where that edge is now. A part strictly inside the box
+    /// therefore moves for free, however many parts the place has.
+    fn note_extent(&mut self, old: Option<&Part>, new: Option<&Part>) {
+        if let Some(old) = old.filter(|old| self.counts_towards_extent(old)) {
+            let was = bounds::of_part(old);
+            if was.min.cmple(self.bounds.min).any() || was.max.cmpge(self.bounds.max).any() {
+                self.extent_stale = true;
             }
-            _ => false,
+        }
+        if let Some(new) = new.filter(|new| self.counts_towards_extent(new)) {
+            let now = bounds::of_part(new);
+            self.bounds.min = self.bounds.min.min(now.min);
+            self.bounds.max = self.bounds.max.max(now.max);
+        }
+    }
+
+    /// The same box [`Scene::from_dom`] computes: every part as the DOM
+    /// lists it, suppressed or not, but not a failed union's recovered
+    /// pieces, which `from_dom` never saw either — it took its bounds before
+    /// `resolve_unions` appended them.
+    fn counts_towards_extent(&self, part: &Part) -> bool {
+        part.suppressed || matches!(self.standing.get(&part.referent), Some(Standing::Box(_)))
+    }
+
+    /// The scene's extent after its parts changed, and whether it moved
+    /// since the last call. Exact either way: what `note_extent` grew is the
+    /// answer unless a part that may have held an edge changed, in which
+    /// case every part is counted again. A scene left with no part at all
+    /// keeps its last extent rather than none: the camera and the shadow fit
+    /// still need a box to work against.
+    pub(crate) fn refresh_bounds(&mut self) -> bool {
+        if std::mem::take(&mut self.extent_stale) {
+            let originals = self
+                .parts
+                .iter()
+                .filter(|part| self.counts_towards_extent(part));
+            if let Some(extent) = bounds::of(originals) {
+                self.bounds = extent;
+            }
+        }
+        if self.bounds != self.reported {
+            self.reported = self.bounds;
+            true
+        } else {
+            false
         }
     }
 

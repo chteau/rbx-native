@@ -84,6 +84,12 @@ impl Entry {
         }
     }
 
+    /// The asset this entry's geometry is carved from — what has to have
+    /// downloaded and parsed.
+    pub(super) fn asset(&self) -> &AssetRef {
+        &self.asset
+    }
+
     /// Whether a fresh [`resolve`] would drop this entry as fully transparent
     /// — see `filemesh::Entry::is_invisible`.
     pub(super) fn is_invisible(&self) -> bool {

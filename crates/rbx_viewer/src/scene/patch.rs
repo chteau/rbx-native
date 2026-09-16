@@ -2,6 +2,7 @@
 //! whether a referent draws through the file-mesh path at all, and the
 //! instance it would get against what already downloaded.
 
+use rbx_assets::AssetRef;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
@@ -28,6 +29,15 @@ impl Replanned {
         filemesh::replan(dom, database, referent, materials)
             .map(Replanned::Mesh)
             .or_else(|| union::replan(dom, database, referent, materials).map(Replanned::Union))
+    }
+
+    /// The mesh or union asset the entry draws through: what a fresh
+    /// resolution would need to have in hand before anything else.
+    pub(super) fn asset(&self) -> &AssetRef {
+        match self {
+            Replanned::Mesh(entry) => entry.asset(),
+            Replanned::Union(entry) => entry.asset(),
+        }
     }
 
     /// `Transparency` 1: a fresh resolution would drop the instance outright.

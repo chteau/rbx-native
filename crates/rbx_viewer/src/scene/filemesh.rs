@@ -95,6 +95,39 @@ pub(crate) struct Resolved {
     /// a character's dozen limbs usually share one map set.
     pub(crate) appearances: Vec<Appearance>,
     pub(crate) instances: Vec<ResolvedInstance>,
+    /// Where each referent's instance sits in `instances`, for an edit to
+    /// find without a scan; kept in step by [`Resolved::push`] and
+    /// [`Resolved::remove`], the only two places the list changes length.
+    /// A referent with two entries (two `SpecialMesh` children on one part)
+    /// answers with its first, the same one a scan would find.
+    slot_of: HashMap<Ref, usize>,
+}
+
+impl Resolved {
+    pub(crate) fn slot_of(&self, referent: Ref) -> Option<usize> {
+        self.slot_of.get(&referent).copied()
+    }
+
+    /// Appends `instance`, answering with the index it got.
+    pub(crate) fn push(&mut self, instance: ResolvedInstance) -> usize {
+        let index = self.instances.len();
+        self.slot_of.entry(instance.referent).or_insert(index);
+        self.instances.push(instance);
+        index
+    }
+
+    /// Takes `referent`'s instance out. Order only ever mattered to a full
+    /// build's batch construction — the renderer finds instances by referent
+    /// from there on — so the last one fills the hole.
+    pub(crate) fn remove(&mut self, referent: Ref) {
+        let Some(index) = self.slot_of.remove(&referent) else {
+            return;
+        };
+        self.instances.swap_remove(index);
+        if let Some(moved) = self.instances.get(index) {
+            self.slot_of.insert(moved.referent, index);
+        }
+    }
 }
 
 impl Plan {
@@ -196,12 +229,17 @@ pub(crate) fn resolve(
         });
     }
 
+    let mut slot_of = HashMap::new();
+    for (index, instance) in instances.iter().enumerate() {
+        slot_of.entry(instance.referent).or_insert(index);
+    }
     (
         Resolved {
             meshes,
             images,
             appearances,
             instances,
+            slot_of,
         },
         hidden,
     )
