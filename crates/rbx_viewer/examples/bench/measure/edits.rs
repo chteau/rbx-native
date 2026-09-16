@@ -4,6 +4,13 @@
 //! undo handing over the *mutation's* own change log against the restored
 //! DOM the way `rbxstudio`'s history does.
 //!
+//! The hand-off is timed with the call: `rbxstudio` keeps the viewer on a
+//! render thread with a mirror of the editor's DOM, and what crosses over
+//! per edit is a snapshot of the instances the log names (see
+//! `WeakDom::snapshot`/`WeakDom::mirror`). That is a cost the editor pays
+//! for every edit, so an `edit` number here starts where the editor would
+//! take the log, not where the viewer gets it.
+//!
 //! Every phase asserts `Applied::Patched`: a number taken while the viewer
 //! quietly fell back to a rebuild would be a reload timing wearing the wrong
 //! label.
@@ -38,6 +45,7 @@ pub(super) fn patch(path: &Path, dom: &mut WeakDom, args: &Args) -> Result<Optio
     let mut cframe = cframe;
     // `patchables`' trial patch uploaded an instance without drawing it.
     wait_for_frame(&mut headless, args.size)?;
+    let mut mirror = dom.clone();
 
     let mut call = Vec::with_capacity(args.patch_iters);
     let mut frame = Vec::with_capacity(args.patch_iters);
@@ -48,7 +56,8 @@ pub(super) fn patch(path: &Path, dom: &mut WeakDom, args: &Args) -> Result<Optio
         let log = dom.take_changes();
 
         let started = Instant::now();
-        let applied = headless.apply_changes(dom, &log)?;
+        mirror.mirror(dom.snapshot(&log));
+        let applied = headless.apply_changes(&mirror, &log)?;
         call.push(started.elapsed());
         if let Applied::Rebuilt(why) = applied {
             return Err(format!(
@@ -85,10 +94,14 @@ pub(super) fn phases(
     };
     // `patchables`' trial patches uploaded instances without drawing them.
     wait_for_frame(&mut headless, args.size)?;
+    let mut viewer = Viewer {
+        headless,
+        mirror: dom.clone(),
+    };
 
-    let (insert, undo_insert) = insert(&mut headless, dom, args, workspace, frame)?;
-    let (delete, undo_delete) = delete(&mut headless, dom, args, anchor)?;
-    let (moved, undo_move) = batch_move(&mut headless, dom, args, &parts)?;
+    let (insert, undo_insert) = insert(&mut viewer, dom, args, workspace, frame)?;
+    let (delete, undo_delete) = delete(&mut viewer, dom, args, anchor)?;
+    let (moved, undo_move) = batch_move(&mut viewer, dom, args, &parts)?;
     Ok(Some(vec![
         insert,
         undo_insert,
@@ -103,7 +116,7 @@ pub(super) fn phases(
 /// quick-insert sets (see `shell::keys`), next to a part known to be on
 /// screen; then taken out again with the insert's own log.
 fn insert(
-    headless: &mut Headless,
+    viewer: &mut Viewer,
     dom: &mut WeakDom,
     args: &Args,
     workspace: Ref,
@@ -140,11 +153,11 @@ fn insert(
                 .map_err(|err| format!("failed to set up the inserted part: {err}"))?;
         }
         let log = dom.take_changes();
-        forward.measure(headless, dom, &log, args, "insert")?;
+        forward.measure(viewer, dom, &log, args, "insert")?;
 
         dom.remove(part);
         dom.take_changes();
-        backward.measure(headless, dom, &log, args, "undo of insert")?;
+        backward.measure(viewer, dom, &log, args, "undo of insert")?;
     }
     Ok((forward.phase("insert part"), backward.phase("undo insert")))
 }
@@ -153,7 +166,7 @@ fn insert(
 /// back — every instance re-inserted under its old parent — and reflected
 /// with the delete's own log.
 fn delete(
-    headless: &mut Headless,
+    viewer: &mut Viewer,
     dom: &mut WeakDom,
     args: &Args,
     part: Ref,
@@ -167,7 +180,7 @@ fn delete(
             .collect();
         dom.remove(part);
         let log = dom.take_changes();
-        forward.measure(headless, dom, &log, args, "delete")?;
+        forward.measure(viewer, dom, &log, args, "delete")?;
 
         // Parents first: `walk` is pre-order from `part`, so each instance's
         // parent is either outside the subtree or already back in.
@@ -177,7 +190,7 @@ fn delete(
             dom.set_parent(referent, *parent);
         }
         dom.take_changes();
-        backward.measure(headless, dom, &log, args, "undo of delete")?;
+        backward.measure(viewer, dom, &log, args, "undo of delete")?;
     }
     Ok((forward.phase("delete part"), backward.phase("undo delete")))
 }
@@ -185,7 +198,7 @@ fn delete(
 /// Every part in `parts` nudged in one go — what a script moving a model
 /// writes, or a group drag's one step — then moved back with the same log.
 fn batch_move(
-    headless: &mut Headless,
+    viewer: &mut Viewer,
     dom: &mut WeakDom,
     args: &Args,
     parts: &[(Ref, CFrameData)],
@@ -200,7 +213,7 @@ fn batch_move(
                 .map_err(|err| format!("failed to move a batched part: {err}"))?;
         }
         let log = dom.take_changes();
-        forward.measure(headless, dom, &log, args, "batch move")?;
+        forward.measure(viewer, dom, &log, args, "batch move")?;
 
         for (referent, frame) in &mut frames {
             frame.position.y -= NUDGE;
@@ -208,7 +221,7 @@ fn batch_move(
                 .map_err(|err| format!("failed to move a batched part back: {err}"))?;
         }
         dom.take_changes();
-        backward.measure(headless, dom, &log, args, "undo of batch move")?;
+        backward.measure(viewer, dom, &log, args, "undo of batch move")?;
     }
     let count = parts.len();
     Ok((
@@ -225,6 +238,13 @@ fn batch_move(
     ))
 }
 
+/// The viewer as the editor keeps it: on its own thread, with a copy of the
+/// DOM that each edit's snapshot brings in step — see the module doc.
+struct Viewer {
+    headless: Headless,
+    mirror: WeakDom,
+}
+
 /// One phase's two sample sets, filled one iteration at a time.
 struct Timings {
     call: Vec<std::time::Duration>,
@@ -239,23 +259,25 @@ impl Timings {
         }
     }
 
-    /// Times `apply_changes` and the first readable frame after it, the same
-    /// discipline as every other phase (see `wait_for_frame`).
+    /// Times the hand-off, `apply_changes` and the first readable frame
+    /// after it, the same discipline as every other phase (see
+    /// `wait_for_frame`).
     fn measure(
         &mut self,
-        headless: &mut Headless,
+        viewer: &mut Viewer,
         dom: &WeakDom,
         log: &[Change],
         args: &Args,
         what: &str,
     ) -> Result<(), String> {
         let started = Instant::now();
-        let applied = headless.apply_changes(dom, log)?;
+        viewer.mirror.mirror(dom.snapshot(log));
+        let applied = viewer.headless.apply_changes(&viewer.mirror, log)?;
         self.call.push(started.elapsed());
         if let Applied::Rebuilt(why) = applied {
             return Err(format!("the {what} was not patched in place: {why}"));
         }
-        wait_for_frame(headless, args.size)?;
+        wait_for_frame(&mut viewer.headless, args.size)?;
         self.frame.push(started.elapsed());
         Ok(())
     }

@@ -11,7 +11,7 @@ mod reference;
 mod variant;
 
 pub use change::Change;
-pub use dom::WeakDom;
+pub use dom::{Snapshot, WeakDom};
 pub use error::DomError;
 pub use instance::Instance;
 pub use reference::Ref;

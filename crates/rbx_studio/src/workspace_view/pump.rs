@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use rbx_dom::{Change, Ref, WeakDom};
+use rbx_dom::{Change, Ref, Snapshot, WeakDom};
 use rbx_viewer::pick::Meshes;
 use rbx_viewer::{Applied, CameraInput, Gizmo, Headless, Pose, QualityLevel};
 
@@ -47,12 +47,14 @@ enum Command {
     /// see `Headless::set_gizmo`.
     Gizmo(Option<Gizmo>),
     /// An edit to the DOM, as the `Change` log it produced, patched into the
-    /// scene instance by instance — see `Headless::apply_changes`. One
-    /// command, one DOM clone and one pass over the log however many
-    /// instances it names; the few edits that still need a full rebuild
-    /// (see `rbx_viewer::Rebuild`) get one right there on the render
+    /// scene instance by instance — see `Headless::apply_changes`. What
+    /// travels with the log is a snapshot of the instances it names (see
+    /// `WeakDom::snapshot`), never the tree: the thread keeps a mirror of
+    /// the editor's DOM and brings it in step first, so one command costs
+    /// the edit, not the place. The few edits that still need a full
+    /// rebuild (see `rbx_viewer::Rebuild`) get one right there on the render
     /// thread, and are reported on stderr so the reason is on record.
-    Changes(WeakDom, Vec<Change>),
+    Changes(Vec<Snapshot>, Vec<Change>),
     Visible(bool),
     Stop,
 }
@@ -97,7 +99,15 @@ pub(super) struct Pump {
 }
 
 impl Pump {
-    pub(super) fn spawn(viewer: Headless, interval: Duration, quality: QualityLevel) -> Self {
+    /// `dom` is the tree `viewer` was built from, handed over once: the
+    /// thread keeps it as its mirror of the editor's DOM from here on — see
+    /// [`Command::Changes`].
+    pub(super) fn spawn(
+        viewer: Headless,
+        dom: WeakDom,
+        interval: Duration,
+        quality: QualityLevel,
+    ) -> Self {
         let (commands, orders) = mpsc::channel();
         let (frames, ready) = mpsc::channel();
         let stats = Arc::new(Stats::default());
@@ -108,6 +118,7 @@ impl Pump {
             .spawn(move || {
                 run(
                     viewer,
+                    dom,
                     &orders,
                     &frames,
                     &counters,
@@ -157,8 +168,8 @@ impl Pump {
 
     /// Patches the viewer's scene for one edit's `Change` log — see
     /// [`Command::Changes`].
-    pub(super) fn apply_changes(&self, dom: WeakDom, changes: Vec<Change>) {
-        let _ = self.commands.send(Command::Changes(dom, changes));
+    pub(super) fn apply_changes(&self, snapshots: Vec<Snapshot>, changes: Vec<Change>) {
+        let _ = self.commands.send(Command::Changes(snapshots, changes));
     }
 
     /// Tells the render thread whether the panel is actually on screen — the
@@ -199,6 +210,7 @@ struct Opened {
 
 fn run(
     mut viewer: Headless,
+    mut mirror: WeakDom,
     commands: &Receiver<Command>,
     frames: &Sender<Ready>,
     stats: &Stats,
@@ -228,6 +240,7 @@ fn run(
             commands,
             Rendering {
                 viewer: &mut viewer,
+                mirror: &mut mirror,
                 quality: &mut quality,
                 size: &mut size,
                 visible: &mut visible,
@@ -400,6 +413,8 @@ fn drain_pending_frame(viewer: &mut Headless, stats: &Stats) -> Option<Frame> {
 /// draws at and whether the panel is currently visible.
 struct Rendering<'a> {
     viewer: &'a mut Headless,
+    /// The editor's DOM as this thread last saw it — see [`Command::Changes`].
+    mirror: &'a mut WeakDom,
     quality: &'a mut Quality,
     size: &'a mut (u32, u32),
     visible: &'a mut bool,
@@ -445,14 +460,17 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::Orthographic(orthographic) => rendering.viewer.set_orthographic(orthographic),
         Command::Selection(referents) => rendering.viewer.set_selection(&referents),
         Command::Gizmo(gizmo) => rendering.viewer.set_gizmo(gizmo),
-        Command::Changes(dom, changes) => match rendering.viewer.apply_changes(&dom, &changes) {
-            Ok(Applied::Patched) => {}
-            Ok(Applied::Rebuilt(why)) => {
-                *rendering.rebuilt = true;
-                eprintln!("rbxstudio: scene rebuilt: {why}");
+        Command::Changes(snapshots, changes) => {
+            rendering.mirror.mirror(snapshots);
+            match rendering.viewer.apply_changes(rendering.mirror, &changes) {
+                Ok(Applied::Patched) => {}
+                Ok(Applied::Rebuilt(why)) => {
+                    *rendering.rebuilt = true;
+                    eprintln!("rbxstudio: scene rebuilt: {why}");
+                }
+                Err(err) => eprintln!("rbxstudio: edit failed: {err}"),
             }
-            Err(err) => eprintln!("rbxstudio: edit failed: {err}"),
-        },
+        }
         Command::Visible(new) => *rendering.visible = new,
         Command::Stop => return false,
     }

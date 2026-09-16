@@ -2,7 +2,7 @@
 //! own render loop: passing on a selection, and reflecting an edit to the
 //! DOM.
 
-use rbx_dom::{Change, Ref, WeakDom};
+use rbx_dom::{Change, Ref, Snapshot};
 
 use super::WorkspaceView;
 
@@ -15,11 +15,12 @@ impl WorkspaceView {
     /// Reflects one edit's `Change` log in the render thread's scene, every
     /// instance it names patched in place there, between two frames (see
     /// `rbx_viewer::Headless::apply_changes`) — the render thread owns the
-    /// viewer, so that is where the patch happens. `dom` is what the log is
-    /// read against: the tree as it stands after the edit, whichever way the
-    /// edit went (an undo hands over the mutation's own log with the
-    /// restored tree).
-    pub(crate) fn apply_changes(&mut self, dom: WeakDom, changes: Vec<Change>) {
-        self.pump.apply_changes(dom, changes);
+    /// viewer, so that is where the patch happens. `snapshots` is what the
+    /// log is read against: the instances it names as they stand after the
+    /// edit, whichever way the edit went (an undo hands over the mutation's
+    /// own log with snapshots off the restored tree), brought into the
+    /// render thread's own copy of the DOM before the patch.
+    pub(crate) fn apply_changes(&mut self, snapshots: Vec<Snapshot>, changes: Vec<Change>) {
+        self.pump.apply_changes(snapshots, changes);
     }
 }

@@ -56,6 +56,44 @@
   builds the tree through the same calls an edit uses, and the log of its
   own construction is not an edit. — @chteau
 
+- **Incremental edits: review fixes.** Four things the patch path above
+  got wrong, caught in review — one of them by a pixel comparison. A `Frame`
+  dragged from a `ScreenGui` onto a part's `BillboardGui` showed up in both:
+  a GUI tree is planned from its container down, and only the container the
+  element *landed in* was re-planned, so the overlay kept drawing it where
+  it used to be — 21 340 pixels off a rebuild of the same DOM at 640×360.
+  `Patcher::left` now re-plans the container an element left, the way it
+  already re-derived the part a `SpecialMesh` left, and `patch_parity` has
+  the case. A `MeshPart` whose mesh never downloaded (a 404, a file the
+  content package lacks) drew as its box, correctly, but every later edit of
+  it — a colour, a move, anything — was a full reload for the rest of the
+  session: `resync_part` classified by class, saw a `MeshId`, found no mesh
+  and asked for a rebuild. The scene now remembers what it asked for and
+  never got (`Scene::unresolved`, file meshes and union assets alike) and
+  edits such a part as the box a full build leaves it; a `MeshId` nobody
+  asked for yet is still a reload's to fetch, and a mesh that lands after
+  all still takes over. `Shell::reflect_changes` cloned the entire DOM to
+  hand the render thread every edit — once per mouse move of a drag — which
+  on `marked.rbxl` (16 742 instances) measured 60 ms an edit, sixty times
+  what patching one part costs. The render thread now keeps a mirror of the
+  editor's DOM, and an edit crosses as a snapshot of the instances its log
+  names (`WeakDom::snapshot`/`WeakDom::mirror`; a move or delete also
+  carries the parents whose child lists changed, so an undo puts a child
+  back among its siblings rather than after them). With that hand-off timed
+  as part of the edit, one part's move on `marked.rbxl` went from 61.4 ms to
+  0.02 ms (`call`) and 63.7 ms to 1.0 ms first frame readable; a hundred
+  parts from 66.5 ms to 2.9 ms and 70.8 ms to 4.0 ms — see `BENCHMARKS.md`.
+  And the per-edit path still scanned the place in four spots: the scene
+  found a part's slot, and a mesh part's resolved instance, by walking every
+  part; the extent was recounted over every part whenever any moved; and
+  `fold` scanned its own output per change. Each is indexed by referent now
+  (`Scene::standing`, `Resolved::slot_of`), the log folds through a map, and
+  the extent grows in place, recounted only when a part that may have been
+  holding an edge moved or went — which is what keeps it exactly what a
+  rebuild frames. Still whole-list, left for a later pass: a moved part's
+  `BillboardGui`/`SurfaceGui` canvases are re-planned as a list, the ~1.8 ms
+  the batch move above attributes to it. — @chteau
+
 - **A full reload no longer starts over.** `Headless::reload` — what a
   Command Bar script, an undo the fast paths cannot classify, or any edit
   they refuse falls back to — used to be a cold load in all but name: it
