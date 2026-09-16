@@ -10,9 +10,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use rbx_assets::{
-    decode_image, AssetCache, AssetFetcher, AssetRef, AssetResolver, FetchError, NativeContent,
+    decode_image, AssetCache, AssetError, AssetFetcher, AssetRef, AssetResolver, FetchError,
+    NativeContent,
 };
-use rbx_cloud::{ApiKey, Client};
+use rbx_cloud::{ApiKey, Client, CloudError};
 
 /// Roblox allows 3000 asset requests a minute; six in flight keeps a place with
 /// a few dozen textures fast while staying an order of magnitude below that.
@@ -41,17 +42,70 @@ impl AssetFetcher for CloudFetcher {
         self.0
             .asset(id)
             .map(|content| content.bytes)
-            .map_err(|err| FetchError::Other {
-                id,
-                message: err.to_string(),
-            })
+            .map_err(|err| fetch_error(id, err))
     }
 }
 
-/// What one reference turned into: the decoded value, or the warning saying
-/// why it could not — kept by reference so a caller that remembers results
-/// across reloads (see `load::Resident`) can remember the failures too.
-pub(crate) type Keyed<T> = HashMap<AssetRef, Result<T, String>>;
+/// An asset that is not there to be had is a different answer from a
+/// request that did not complete: the first is final (see [`Failure`]), the
+/// second is worth asking again.
+fn fetch_error(id: u64, err: CloudError) -> FetchError {
+    match err {
+        CloudError::Http {
+            status: 404 | 410, ..
+        } => FetchError::NotFound(id),
+        err => FetchError::Other {
+            id,
+            message: err.to_string(),
+        },
+    }
+}
+
+/// Why a reference could not be answered, and whether asking again on a
+/// later load could change that. A transient failure is the machine's, not
+/// the asset's — a request that did not complete, a cache that would not
+/// write, a key not yet configured — and worth one more try per load. A
+/// 404, a file the content package does not hold or bytes that will not
+/// decode are not: asking again cannot change the answer, and on a real
+/// place the ask is the expensive part (a package scan, a round trip), so
+/// `load::Resident` keeps those for good.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Failure {
+    pub(crate) warning: String,
+    pub(crate) transient: bool,
+}
+
+impl Failure {
+    fn resolving(reference: &AssetRef, err: &AssetError) -> Self {
+        Failure {
+            warning: format!("{}: {err}", describe(reference)),
+            transient: transient(err),
+        }
+    }
+}
+
+/// See [`Failure`]: whether `err` says something about this machine right
+/// now rather than about the asset.
+fn transient(err: &AssetError) -> bool {
+    match err {
+        AssetError::Cache(_) | AssetError::Network(_) => true,
+        // Everything `rbx_cloud` reports that is not a plain "not there":
+        // transport, a rate limit, a key the next load may find configured.
+        AssetError::Fetch(FetchError::Other { .. }) => true,
+        AssetError::Empty
+        | AssetError::Fetch(FetchError::NotFound(_))
+        | AssetError::UnknownNativePackage(..)
+        | AssetError::NativeFileNotFound(_)
+        | AssetError::Zip(_)
+        | AssetError::ImageDecode(_)
+        | AssetError::PackageTooLarge { .. } => false,
+    }
+}
+
+/// What one reference turned into: the decoded value, or why it could not —
+/// kept by reference so a caller that remembers results across reloads (see
+/// `load::Resident`) can remember the failures too.
+pub(crate) type Keyed<T> = HashMap<AssetRef, Result<T, Failure>>;
 
 /// Resolves and decodes every reference into an [`Image`], skipping the ones
 /// that fail.
@@ -84,7 +138,10 @@ pub(crate) fn load_bytes(references: &[AssetRef]) -> Keyed<Vec<u8>> {
         resolver
             .resolve(reference)
             .map(|asset| asset.bytes)
-            .map_err(|err| err.to_string())
+            .map_err(|err| Failure {
+                warning: err.to_string(),
+                transient: transient(&err),
+            })
     })
 }
 
@@ -98,7 +155,7 @@ fn split<T>(keyed: Keyed<T>) -> (HashMap<AssetRef, T>, Vec<String>) {
             Ok(value) => {
                 values.insert(reference, value);
             }
-            Err(warning) => warnings.push(warning),
+            Err(failure) => warnings.push(failure.warning),
         }
     }
     (values, warnings)
@@ -112,13 +169,15 @@ fn split<T>(keyed: Keyed<T>) -> (HashMap<AssetRef, T>, Vec<String>) {
 /// Every warning is the same text already `eprintln!`'d, kept against its
 /// reference for a caller (`Loaded::from_dom`, ultimately the Output dock)
 /// that wants to show it somewhere besides stderr; the CLI's stderr output is
-/// unchanged either way. A reference is missing from the answer only when no
-/// resolver could be built at all (no cache directory, say), which is reported
-/// under the empty reference so the message still reaches the caller.
+/// unchanged either way. When no resolver could be built at all (no cache
+/// directory, say) every reference fails with that one message: it then
+/// reaches the caller through the same channel as any other failure, keyed
+/// by references the caller actually looks up, and — transient, since it is
+/// the machine's fault — is retried by the next load once that is fixed.
 fn load_with<T: Send>(
     label: &str,
     references: &[AssetRef],
-    decode: impl Fn(&AssetResolver, &AssetRef) -> Result<T, String> + Sync,
+    decode: impl Fn(&AssetResolver, &AssetRef) -> Result<T, Failure> + Sync,
 ) -> Keyed<T> {
     if references.is_empty() {
         return HashMap::new();
@@ -129,7 +188,14 @@ fn load_with<T: Send>(
         Err(err) => {
             let message = format!("rbxview: no {label} ({err})");
             eprintln!("{message}");
-            return HashMap::from([(AssetRef::Empty, Err(message))]);
+            let failure = Failure {
+                warning: message,
+                transient: true,
+            };
+            return references
+                .iter()
+                .map(|reference| (reference.clone(), Err(failure.clone())))
+                .collect();
         }
     };
 
@@ -160,13 +226,19 @@ fn load_with<T: Send>(
     let results: Keyed<T> = results.into_inner().unwrap_or_else(|e| e.into_inner());
     // After the progress line is finished, so a warning never lands in the
     // middle of it.
-    for warning in results.values().filter_map(|result| result.as_ref().err()) {
-        eprintln!("warning: {warning}");
+    for failure in results.values().filter_map(|result| result.as_ref().err()) {
+        eprintln!("warning: {}", failure.warning);
     }
     results
 }
 
 fn resolver() -> Result<AssetResolver, String> {
+    #[cfg(test)]
+    {
+        if let Some(failure) = tests::forced_failure() {
+            return Err(failure);
+        }
+    }
     let cache = AssetCache::new(None).map_err(|err| err.to_string())?;
     let native = NativeContent::new(cache.native_packages_dir());
     let client = Client::new(ApiKey::from_env_or_config());
@@ -178,11 +250,11 @@ fn resolver() -> Result<AssetResolver, String> {
     ))
 }
 
-fn fetch_image(resolver: &AssetResolver, reference: &AssetRef) -> Result<Image, String> {
-    let failed = |err: &dyn std::fmt::Display| format!("{}: {err}", describe(reference));
+fn fetch_image(resolver: &AssetResolver, reference: &AssetRef) -> Result<Image, Failure> {
+    let failed = |err: AssetError| Failure::resolving(reference, &err);
 
-    let asset = resolver.resolve(reference).map_err(|err| failed(&err))?;
-    let decoded = decode_image(&asset).map_err(|err| failed(&err))?;
+    let asset = resolver.resolve(reference).map_err(failed)?;
+    let decoded = decode_image(&asset).map_err(failed)?;
 
     let (width, height) = decoded.dimensions();
     Ok(Image {
@@ -192,11 +264,15 @@ fn fetch_image(resolver: &AssetResolver, reference: &AssetRef) -> Result<Image, 
     })
 }
 
-fn fetch_mesh(resolver: &AssetResolver, reference: &AssetRef) -> Result<rbx_mesh::Mesh, String> {
-    let failed = |err: &dyn std::fmt::Display| format!("{}: {err}", describe(reference));
-
-    let asset = resolver.resolve(reference).map_err(|err| failed(&err))?;
-    rbx_mesh::parse(&asset.bytes).map_err(|err| failed(&err))
+fn fetch_mesh(resolver: &AssetResolver, reference: &AssetRef) -> Result<rbx_mesh::Mesh, Failure> {
+    let asset = resolver
+        .resolve(reference)
+        .map_err(|err| Failure::resolving(reference, &err))?;
+    // The bytes are on disk by now, so a parse that fails would fail again.
+    rbx_mesh::parse(&asset.bytes).map_err(|err| Failure {
+        warning: format!("{}: {err}", describe(reference)),
+        transient: false,
+    })
 }
 
 fn progress(label: &str, done: usize, total: usize) {
@@ -213,8 +289,40 @@ fn describe(reference: &AssetRef) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
+    use std::cell::RefCell;
+
     use super::*;
+
+    thread_local! {
+        /// Why [`resolver`] should fail on this thread, while a
+        /// [`ResolverFailure`] is alive.
+        static FORCED_FAILURE: RefCell<Option<String>> = const { RefCell::new(None) };
+    }
+
+    pub(crate) fn forced_failure() -> Option<String> {
+        FORCED_FAILURE.with(|failure| failure.borrow().clone())
+    }
+
+    /// Stands in for a machine on which no resolver can be built (an
+    /// unwritable cache directory, say) without touching the real one:
+    /// thread-local, so every other test still resolves for real, and lifted
+    /// when dropped. `load_with` builds the resolver on the calling thread,
+    /// before its workers start, which is what makes a thread-local enough.
+    pub(crate) struct ResolverFailure;
+
+    impl ResolverFailure {
+        pub(crate) fn new(message: &str) -> Self {
+            FORCED_FAILURE.with(|failure| *failure.borrow_mut() = Some(message.to_string()));
+            ResolverFailure
+        }
+    }
+
+    impl Drop for ResolverFailure {
+        fn drop(&mut self) {
+            FORCED_FAILURE.with(|failure| *failure.borrow_mut() = None);
+        }
+    }
 
     fn image(alpha: u8) -> Image {
         Image {
@@ -260,6 +368,13 @@ mod tests {
         assert!(warnings.is_empty());
     }
 
+    fn permanent(warning: &str) -> Failure {
+        Failure {
+            warning: warning.to_string(),
+            transient: false,
+        }
+    }
+
     #[test]
     fn load_with_keeps_every_warning_against_its_reference() {
         let references = vec![AssetRef::Id(1), AssetRef::Id(2)];
@@ -268,16 +383,74 @@ mod tests {
             &references,
             |_resolver, reference| match reference {
                 AssetRef::Id(1) => Ok(1u32),
-                _ => Err(format!("{}: boom", describe(reference))),
+                _ => Err(permanent(&format!("{}: boom", describe(reference)))),
             },
         );
 
         assert_eq!(results.get(&AssetRef::Id(1)), Some(&Ok(1)));
         assert_eq!(
             results.get(&AssetRef::Id(2)),
-            Some(&Err("asset 2: boom".to_string()))
+            Some(&Err(permanent("asset 2: boom")))
         );
         assert_eq!(results.len(), 2);
+    }
+
+    // The line between "ask again next load" and "remembered for good" is
+    // whether the answer is about this machine or about the asset — see
+    // `Failure`. `TestPlace.rbxl` names a `SpawnLocation.png` its content
+    // package does not hold, and each ask is a 200 ms package scan.
+    #[test]
+    fn only_a_failure_of_the_machine_is_transient() {
+        assert!(transient(&AssetError::Cache(
+            rbx_assets::CacheError::NoCacheDir
+        )));
+        assert!(transient(&AssetError::Network("timed out".to_string())));
+        assert!(transient(&AssetError::Fetch(FetchError::Other {
+            id: 1,
+            message: "rate limited".to_string(),
+        })));
+
+        assert!(!transient(&AssetError::Fetch(FetchError::NotFound(1))));
+        assert!(!transient(&AssetError::NativeFileNotFound(
+            "textures/SpawnLocation.png".to_string()
+        )));
+        assert!(!transient(&AssetError::ImageDecode("bad".to_string())));
+    }
+
+    #[test]
+    fn a_404_from_the_cloud_is_not_found_and_everything_else_is_other() {
+        let gone = CloudError::Http {
+            status: 404,
+            url: "https://example.com/x".to_string(),
+        };
+        assert!(matches!(fetch_error(7, gone), FetchError::NotFound(7)));
+
+        let down = CloudError::Transport("connection reset".to_string());
+        assert!(matches!(
+            fetch_error(7, down),
+            FetchError::Other { id: 7, .. }
+        ));
+    }
+
+    // The one failure that is nobody's in particular has to be somebody's
+    // to be seen: a caller looks results up by the references it asked with.
+    #[test]
+    fn a_resolver_that_cannot_be_built_fails_every_reference_with_its_message() {
+        let _failure = ResolverFailure::new("cache dir is a file");
+        let references = [AssetRef::Id(1), AssetRef::Id(2)];
+
+        let results = load_with::<u32>("things", &references, |_resolver, _reference| Ok(0));
+
+        assert_eq!(results.len(), 2);
+        for reference in &references {
+            assert_eq!(
+                results.get(reference),
+                Some(&Err(Failure {
+                    warning: "rbxview: no things (cache dir is a file)".to_string(),
+                    transient: true,
+                }))
+            );
+        }
     }
 
     #[test]
@@ -290,7 +463,7 @@ mod tests {
     fn split_separates_the_values_from_the_warning_text() {
         let keyed: Keyed<u32> = HashMap::from([
             (AssetRef::Id(1), Ok(1)),
-            (AssetRef::Id(2), Err("asset 2: boom".to_string())),
+            (AssetRef::Id(2), Err(permanent("asset 2: boom"))),
         ]);
 
         let (values, warnings) = split(keyed);

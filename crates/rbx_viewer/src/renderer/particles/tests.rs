@@ -1,4 +1,5 @@
 use super::*;
+use crate::quality::QualityLevel;
 use glam::Mat4;
 use rbx_dom::{ColorSequence, ColorSequenceKeypoint, NumberSequence, NumberSequenceKeypoint, Ref};
 
@@ -47,6 +48,35 @@ pub(super) fn emitter(texture: rbx_assets::AssetRef) -> Emitter {
         referent: Ref::new(1),
         volume: Mat4::IDENTITY,
     }
+}
+
+// A quality level switched between two scenes has to take on the next
+// rebuild: whether particles draw is read from the profile every rebuild,
+// not only once when the pass was built. No emitters, on purpose: an
+// emitter's texture is a download this pass makes itself, and the toggle is
+// decided before any of that.
+#[test]
+fn a_rebuild_follows_the_quality_toggle_it_is_given() {
+    let Some((device, queue)) = crate::gpu::for_tests() else {
+        return;
+    };
+    let target = super::super::pipeline::Target {
+        format: crate::renderer::post::HDR_FORMAT,
+        samples: 1,
+    };
+    let mut on = QualityLevel::Automatic.profile();
+    on.particles = true;
+    let mut off = on;
+    off.particles = false;
+
+    let mut pass = Particles::new(&device, &queue, target, &[], &off);
+    assert!(!pass.enabled);
+
+    pass.rebuild(&device, &queue, &[], &on);
+    assert!(pass.enabled);
+
+    pass.rebuild(&device, &queue, &[], &off);
+    assert!(!pass.enabled);
 }
 
 #[test]

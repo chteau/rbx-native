@@ -1,6 +1,7 @@
 //! The second pass: `Decal` and `Texture` images projected back onto the very
 //! surfaces they are pinned to, one instanced draw per (image, shape) pair.
 
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use bytemuck::{Pod, Zeroable};
@@ -42,12 +43,19 @@ fn reuse_plan(
     still_pending: &[usize],
     groups: &[Group],
 ) -> Vec<Option<usize>> {
+    let still_pending: HashSet<usize> = still_pending.iter().copied().collect();
+    // `or_insert`: a reference never sits in two slots (see `Decor::assemble`),
+    // but were it to, the first is the one a linear search would have found.
+    let mut slot_of: HashMap<&AssetRef, usize> = HashMap::new();
+    for (slot, reference) in previous.iter().enumerate() {
+        slot_of.entry(reference).or_insert(slot);
+    }
     groups
         .iter()
         .map(|group| {
-            previous
-                .iter()
-                .position(|reference| *reference == group.reference)
+            slot_of
+                .get(&group.reference)
+                .copied()
                 .filter(|slot| !still_pending.contains(slot))
         })
         .collect()

@@ -592,6 +592,36 @@ fn a_second_resolve_reuses_every_boolean_already_carved() {
     }
 }
 
+// A reload skips fetching the bytes of every asset already carved (see
+// `load::resolve_unions`), so a second resolve with none of them must still
+// find every union in the evaluations and hand out the same meshes.
+#[test]
+fn a_known_asset_resolves_without_its_bytes() {
+    let database = database();
+    let dom = WeakDom::new();
+    let mut materials = Catalog::new(&dom, &database);
+    let (plan, assets) = synthetic_plan(3, 3, &materials);
+    let mut evaluations = Evaluations::default();
+
+    let first = resolve(&plan, assets, &database, &mut materials, &mut evaluations);
+    let second = resolve(
+        &plan,
+        HashMap::new(),
+        &database,
+        &mut materials,
+        &mut evaluations,
+    );
+
+    assert_eq!(first.meshes.len(), plan.entries.len());
+    assert_eq!(second.instances.len(), first.instances.len());
+    assert_eq!(second.hidden, first.hidden);
+    for (asset, mesh) in &first.meshes {
+        assert!(evaluations.is_known(asset));
+        let again = second.meshes.get(asset).expect("resolved without bytes");
+        assert!(Arc::ptr_eq(mesh, again));
+    }
+}
+
 /// Manual profiling harness, not part of the regular gate: run with
 /// `cargo test --release -p rbx_viewer --lib union::tests::profile_synthetic_csg_heavy_place -- --ignored --nocapture`
 /// to see where `resolve`'s time actually goes on a synthetic, CSG-heavy
