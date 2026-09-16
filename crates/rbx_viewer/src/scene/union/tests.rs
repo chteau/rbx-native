@@ -480,7 +480,10 @@ fn synthetic_plan(
     let mut entries = Vec::new();
     for i in 0..unions {
         let asset = AssetRef::Id(1_000_000 + i as u64);
-        assets.insert(asset.clone(), synthetic_asset_bytes(i as u32, leaves_per_union));
+        assets.insert(
+            asset.clone(),
+            synthetic_asset_bytes(i as u32, leaves_per_union),
+        );
         entries.push(Entry {
             referent: Ref::new(2_000 + i as u32),
             asset,

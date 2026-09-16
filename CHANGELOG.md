@@ -45,6 +45,17 @@
   (a rotated element's children swinging around with it, the way
   `GuiBase2d.AbsoluteRotation` implies real Studio composes it) is still
   open. — @chteau
+- **Parallelized the legacy union/negate CSG boolean.** Profiling a
+  synthetic CSG-heavy place (this repository ships no real one) showed
+  resolving 40 legacy `UnionOperation`/`NegateOperation` booleans took ~6s
+  single-threaded, dwarfing the ~0.1s an equivalent number of texture mip
+  chains took to generate — the from-scratch BSP boolean, not texture
+  decode/upload, was the dominant cost behind a real place's reported CPU
+  spike on load. `union::resolve` now evaluates each distinct asset's
+  boolean across a bounded worker pool sized to CPU parallelism, the same
+  synthetic place resolving in ~0.8-1.1s afterward. Texture upload
+  happening in one uninterrupted burst rather than spread across frames
+  remains open as a separate, lower-priority follow-up. — @chteau
 
 ## 2026-09-15
 
