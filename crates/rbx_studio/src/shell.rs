@@ -308,11 +308,15 @@ impl Shell {
             shell.apply_debug_select(&spec, cx);
         }
 
-        // `RBX_STUDIO_DRAG` (see `shell::drag`): applied right after
+        // `RBX_STUDIO_DRAG` (see `shell::drag::debug`): applied right after
         // selection, so it moves whatever the file itself or
         // `RBX_STUDIO_SELECT` just selected — a screenshot aid for a group
         // drag.
         shell.apply_debug_drag(cx);
+
+        // `RBX_STUDIO_RESIZE` (same module): the same, for a Scale drag of
+        // the selected part.
+        shell.apply_debug_resize(cx);
 
         // A debugging aid for a screenshot that proves the bar works without
         // sending it synthetic input (see `AGENTS.md`'s safety rules): runs

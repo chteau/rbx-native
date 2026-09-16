@@ -19,6 +19,10 @@ use crate::workspace_view::ViewportAction;
 
 use super::{selection, Shell};
 
+/// `RBX_STUDIO_DRAG` / `RBX_STUDIO_RESIZE`: one drag step, applied at startup
+/// through the same entry points a real gesture ends with.
+mod debug;
+
 /// The property a viewport move or rotation writes. A move gives it three
 /// numbers and a rotation nine, and `properties::edit::commit` carries the
 /// half that was left out through untouched — which is what keeps a dragged
@@ -27,15 +31,6 @@ const CFRAME_PROPERTY: &str = "CFrame";
 /// Roblox's binary format spells `BasePart.Size` lowercase, which is the name
 /// the DOM keeps — see `rbx_viewer::pick::model_of`, which reads the same pair.
 const SIZE_PROPERTY: &str = "size";
-
-/// `RBX_STUDIO_DRAG=<dx>,<dy>,<dz>`: moves every selected part by this
-/// world-space offset, preserving their layout relative to each other and to
-/// the gizmo's anchor, through the exact same [`Targets::translate`] and
-/// [`Shell::move_parts`] a real gizmo or cursor drag ends a mouse gesture
-/// with — a debugging aid for a screenshot of a group drag, since nothing can
-/// send the viewport a real mouse drag on the editor's behalf (see
-/// `AGENTS.md`'s safety rules).
-pub(super) const DRAG_VARIABLE: &str = "RBX_STUDIO_DRAG";
 
 impl Shell {
     pub(super) fn handle_viewport_action(
@@ -166,9 +161,10 @@ impl Shell {
         // undo of the whole gesture classifies (see this method's doc
         // comment for why history is pushed once, on `first`, not per
         // frame) — a single dragged part writes exactly the one `CFrame`
-        // change `single_change` fast-paths, however many mouse-move frames
-        // it took to get there; a group drag's several referents keep it
-        // falling back, the same as any other multi-instance edit.
+        // change `single_instance_change` fast-paths, however many
+        // mouse-move frames it took to get there; a group drag's several
+        // referents keep it falling back, the same as any other
+        // multi-instance edit.
         let changes = self.dom.take_changes();
         self.record_history_change(changes);
 
@@ -249,10 +245,10 @@ impl Shell {
         });
         self.dom = dom;
         // Same reasoning as `move_parts`: overwrites the entry's log with
-        // just this step's writes. `properties` carries one name (a
-        // Rotate drag) or two (Scale's paired Size/CFrame), so
-        // `single_change` fast-paths the former and correctly falls back
-        // for the latter, the same way it would for any two-property batch.
+        // just this step's writes. `properties` carries one name (a Rotate
+        // drag) or two (Scale's paired Size/CFrame), all on the one part —
+        // exactly what `single_instance_change` patches in place on undo,
+        // one patch per name, the same loop this step itself runs below.
         let changes = self.dom.take_changes();
         self.record_history_change(changes);
 
@@ -367,63 +363,10 @@ impl Shell {
         self.viewport
             .update(cx, |viewport, _| viewport.set_neighbours(neighbours));
     }
-
-    /// [`DRAG_VARIABLE`]: documented on its own doc comment. A no-op with
-    /// nothing selected, or a target-less selection (a `Folder`, a `Model` —
-    /// nothing with a placement to move).
-    pub(super) fn apply_debug_drag(&mut self, cx: &mut Context<Self>) {
-        let Ok(spec) = std::env::var(DRAG_VARIABLE) else {
-            return;
-        };
-        let Some(delta) = parse_delta(&spec) else {
-            eprintln!("rbxstudio: {DRAG_VARIABLE}: expected <dx>,<dy>,<dz>, got {spec:?}");
-            return;
-        };
-
-        let mut targets = Targets::read(&self.dom, self.selected_all());
-        let moves = targets.translate(delta);
-        if !moves.is_empty() {
-            self.move_parts(&moves, true, None, cx);
-        }
-    }
 }
 
 /// The three-number text `properties::edit::parse` reads a `Vector3` — or a
 /// `CFrame`'s position — back out of.
 fn vector(value: Vec3) -> String {
     format!("{}, {}, {}", value.x, value.y, value.z)
-}
-
-/// Parses `"<x>,<y>,<z>"` into a world-space offset, or `None` for anything
-/// else — [`DRAG_VARIABLE`]'s only format.
-fn parse_delta(spec: &str) -> Option<Vec3> {
-    let mut fields = spec.split(',').map(str::trim);
-    let x = fields.next()?.parse().ok()?;
-    let y = fields.next()?.parse().ok()?;
-    let z = fields.next()?.parse().ok()?;
-    fields.next().is_none().then_some(Vec3::new(x, y, z))
-}
-
-#[cfg(test)]
-mod tests {
-    // Not `use super::*`: this file's own `use gpui_kit::*` glob, re-imported
-    // through it, sends `#[test]`'s name resolution into a search space deep
-    // enough to blow the macro recursion limit — naming exactly what these
-    // tests need avoids it.
-    use glam::Vec3;
-
-    use super::parse_delta;
-
-    #[test]
-    fn three_comma_separated_numbers_parse_as_an_offset() {
-        assert_eq!(parse_delta("1, -2.5, 0"), Some(Vec3::new(1.0, -2.5, 0.0)));
-    }
-
-    #[test]
-    fn anything_else_is_rejected_rather_than_guessed_at() {
-        assert_eq!(parse_delta(""), None);
-        assert_eq!(parse_delta("1,2"), None, "too few fields");
-        assert_eq!(parse_delta("1,2,3,4"), None, "too many fields");
-        assert_eq!(parse_delta("x,2,3"), None, "not a number");
-    }
 }

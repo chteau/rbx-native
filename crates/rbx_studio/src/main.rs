@@ -19,7 +19,10 @@
 //! on) at startup, the same aid for the transform toolbar and its viewport
 //! draggers (see `shell::toolbar`). `RBX_STUDIO_DRAG=<dx>,<dy>,<dz>` moves the
 //! selection by that offset through the same path a real gizmo or cursor drag
-//! ends with, the same aid for a group drag (see `shell::drag`).
+//! ends with, the same aid for a group drag; `RBX_STUDIO_RESIZE=<dx>,<dy>,<dz>`
+//! grows the selected part by that much along its own axes through the path
+//! a Scale drag ends with, the same aid for the Scale tool (see
+//! `shell::drag::debug` for both).
 //! `RBX_STUDIO_OPEN_SCRIPT=<name>[,<name>...]` opens each named
 //! `Script`/`LocalScript`/`ModuleScript` in the Script Editor panel exactly as
 //! double-clicking its Explorer row would — the same aid, for the script
