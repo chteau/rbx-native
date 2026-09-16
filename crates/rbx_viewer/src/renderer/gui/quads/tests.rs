@@ -16,6 +16,7 @@ fn element(rect: GuiRect, clip: Option<GuiRect>) -> GuiElement {
     GuiElement {
         rect,
         clip,
+        rotation: 0.0,
         background: [1.0, 0.0, 0.0],
         background_alpha: 1.0,
         border: None,
@@ -172,4 +173,48 @@ fn a_zero_sized_element_draws_nothing() {
     let (vertices, _) = build(&elements, &HashMap::new(), VIEWPORT);
 
     assert!(vertices.is_empty());
+}
+
+#[test]
+fn zero_rotation_is_the_identity() {
+    let spin = Spin::new(0.0, [10.0, 5.0]);
+
+    assert_eq!(spin.apply([0.0, 0.0]), [0.0, 0.0]);
+    assert_eq!(spin.apply([12.0, 30.0]), [12.0, 30.0]);
+}
+
+#[test]
+fn rotation_turns_a_point_clockwise_about_the_pivot() {
+    // A square centred on the pivot: turning it 90 degrees clockwise sends
+    // the point that was top-left to where top-right used to be — "up" swings
+    // to "right" the way a clock's hand does, in this y-down pixel space.
+    let spin = Spin::new(90.0, [10.0, 10.0]);
+    let top_left = [5.0, 5.0];
+    let top_right = [15.0, 5.0];
+
+    let rotated = spin.apply(top_left);
+
+    assert!((rotated[0] - top_right[0]).abs() < 1e-4);
+    assert!((rotated[1] - top_right[1]).abs() < 1e-4);
+}
+
+#[test]
+fn a_rotated_quad_stays_centred_on_the_unrotated_rects_centre() {
+    // `GuiObject.Rotation` always turns about the element's own centre and
+    // gives no way to move that pivot (not even via `AnchorPoint`), per
+    // Roblox's own docs for the property.
+    let mut spun = element(rect(0.0, 0.0, 20.0, 10.0), None);
+    spun.rotation = 90.0;
+
+    let (vertices, _) = build(&[spun], &HashMap::new(), VIEWPORT);
+
+    let centre_x = vertices.iter().map(|v| v.position[0]).sum::<f32>() / vertices.len() as f32;
+    let centre_y = vertices.iter().map(|v| v.position[1]).sum::<f32>() / vertices.len() as f32;
+    assert!((centre_x - 10.0).abs() < 1e-3);
+    assert!((centre_y - 5.0).abs() < 1e-3);
+    // Rotated a quarter turn, the box's own axes swap: it now spans as far
+    // vertically as it used to horizontally.
+    let min_y = vertices.iter().map(|v| v.position[1]).fold(f32::MAX, f32::min);
+    let max_y = vertices.iter().map(|v| v.position[1]).fold(f32::MIN, f32::max);
+    assert!((max_y - min_y - 20.0).abs() < 1e-3);
 }
