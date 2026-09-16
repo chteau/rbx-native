@@ -39,31 +39,60 @@ fn dock_layout_path() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::Mutex;
+
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn temp_config_dir() -> PathBuf {
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("rbx_studio_dock_test_{}_{n}", std::process::id()))
+    }
 
     #[test]
-    fn round_trips_through_disk() {
-        let path = {
-            let n = std::process::id();
-            std::env::temp_dir()
-                .join(format!("rbx_studio_dock_layout_test_{n}"))
-                .join("dock_layout.json")
-        };
+    fn save_and_load_round_trip() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = temp_config_dir();
+        std::env::set_var("XDG_CONFIG_HOME", &dir);
 
-        // Create a minimal DockAreaState
         let state = DockAreaState::default();
-        let bytes = serde_json::to_vec_pretty(&state).unwrap();
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, &bytes).unwrap();
+        save(&state);
 
-        // Load it back
-        let loaded: DockAreaState = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(loaded, state);
+        let loaded = load();
+        std::env::remove_var("XDG_CONFIG_HOME");
+
+        assert_eq!(loaded, Some(state));
     }
 
     #[test]
     fn missing_file_returns_none() {
-        let path = PathBuf::from("/nonexistent/path/dock_layout.json");
-        let bytes = std::fs::read(&path);
-        assert!(bytes.is_err());
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = temp_config_dir();
+        // Don't create the directory, so load() returns None
+        std::env::set_var("XDG_CONFIG_HOME", &dir);
+
+        let loaded = load();
+        std::env::remove_var("XDG_CONFIG_HOME");
+
+        assert_eq!(loaded, None);
+    }
+
+    #[test]
+    fn malformed_file_returns_none() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = temp_config_dir();
+        std::fs::create_dir_all(dir.join("rbx-native")).unwrap();
+        std::fs::write(
+            dir.join("rbx-native/dock_layout.json"),
+            b"not valid json at all {{{",
+        )
+        .unwrap();
+        std::env::set_var("XDG_CONFIG_HOME", &dir);
+
+        let loaded = load();
+        std::env::remove_var("XDG_CONFIG_HOME");
+
+        assert_eq!(loaded, None);
     }
 }

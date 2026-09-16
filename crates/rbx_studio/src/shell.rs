@@ -112,7 +112,7 @@ pub(crate) struct Shell {
     /// The two snap increment fields' live text — see `shell::toolbar::snap`.
     snap_fields: SnapFields,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
-    _subscriptions: [Subscription; 9],
+    _subscriptions: [Subscription; 10],
 }
 
 impl Shell {
@@ -204,6 +204,16 @@ impl Shell {
         // as soon as `cx.new` starts building it, same as `dock_area` above).
         let menu_bar = crate::menu_bar::build(cx.entity(), cx);
 
+        // Subscribe to dock layout changes so they're saved immediately, not just
+        // when other settings are toggled. This is the actual trigger for the
+        // dock-persistence feature to work when users rearrange panels.
+        let dock_layout_changed = cx.subscribe(&dock_area, |shell, _, event, cx| {
+            use gpui_kit::component::dock::DockEvent;
+            if matches!(event, DockEvent::LayoutChanged) {
+                shell.save_settings(cx);
+            }
+        });
+
         let transform = Transform::default();
         let (snap_fields, [translate_typed, rotate_typed]) = SnapFields::new(transform, window, cx);
 
@@ -247,6 +257,7 @@ impl Shell {
                 asset_warnings,
                 translate_typed,
                 rotate_typed,
+                dock_layout_changed,
             ],
         };
 
