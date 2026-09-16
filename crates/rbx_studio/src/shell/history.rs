@@ -43,7 +43,22 @@ impl Shell {
     /// mutation that follows it (see `record_history_change`).
     pub(super) fn push_history(&mut self) {
         self.dom.take_changes();
-        self.history.push(self.dom.clone());
+        let before = self.dom.clone();
+        self.push_history_snapshot(before);
+    }
+
+    /// [`Shell::push_history`] for a mutation that has to be attempted before
+    /// anyone can know whether it will reach the DOM at all: the caller takes
+    /// `before` itself, tries the mutation, and pushes only once it has
+    /// landed. Draining the stale change log is then the caller's job too,
+    /// for the reason `push_history` does it above.
+    ///
+    /// `shell::scripts`'s debounced `Source` write is the one call site that
+    /// needs this — a tab can outlive its script by a frame, and a snapshot
+    /// pushed for a write that never happened is a Ctrl+Z that reverts
+    /// nothing, having cleared the redo stack to offer it.
+    pub(super) fn push_history_snapshot(&mut self, before: WeakDom) {
+        self.history.push(before);
     }
 
     /// Attaches `changes` — the `Change` log the mutation `push_history`

@@ -124,10 +124,43 @@ fn the_label_is_the_instance_name_and_follows_a_rename() {
 /// lets an undone `Source` take the fast viewport patch instead of a full
 /// reload; `shell::history`'s own tests read it back through the classifier.
 fn commit(history: &mut History, dom: &mut WeakDom, script: Ref, text: &str) {
+    if is(dom, script, text) {
+        return;
+    }
     dom.take_changes();
-    history.push(dom.clone());
-    write(dom, script, text);
+    let before = dom.clone();
+    if !write(dom, script, text) {
+        return;
+    }
+    history.push(before);
     history.record_changes(dom.take_changes());
+}
+
+#[test]
+fn a_write_that_cannot_land_leaves_the_undo_stack_alone() {
+    // A tab outlives its script for the frame between a delete and the
+    // `resync_scripts` that closes it, and a debounce firing in that window
+    // has nowhere to write. A snapshot taken for it would sit on the stack as
+    // a Ctrl+Z that reverts nothing.
+    let (mut dom, script) = place("Script", Some("print(1)\n"));
+    let mut history = History::new(DEFAULT_CAP);
+    commit(&mut history, &mut dom, script, "print(2)\n");
+
+    dom.remove(script);
+    commit(&mut history, &mut dom, script, "print(3)\n");
+
+    let (previous, _) = history
+        .undo(dom.clone())
+        .expect("the one edit that did land");
+    assert_eq!(
+        read(&previous, script).as_deref(),
+        Some("print(1)\n"),
+        "one undo must reach the edit before the delete, not a snapshot of nothing"
+    );
+    assert!(
+        history.undo(previous).is_none(),
+        "and there was only ever one edit to undo"
+    );
 }
 
 #[test]

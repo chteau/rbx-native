@@ -226,13 +226,25 @@ impl Shell {
             return;
         }
 
-        // See `shell::history`: snapshotted before the write below.
-        self.push_history();
-        source::write(&mut self.dom, reference, &text);
+        // See `shell::history`: the snapshot is of the tree as it stood
+        // before the write, and is only pushed once the write has landed.
+        self.dom.take_changes();
+        let before = self.dom.clone();
+        if !source::write(&mut self.dom, reference, &text) {
+            // Nothing reached the DOM. The referent stopped resolving between
+            // the guard above and here — a tab outlives its script for the
+            // frame between a delete and the `resync_scripts` that closes it,
+            // and a debounce firing in that window lands exactly here. The
+            // tab is marked clean because there is no longer anywhere to
+            // write its text to.
+            self.mark_synced(reference, text);
+            return;
+        }
+        self.push_history_snapshot(before);
         // A `Source` write is exactly one property write, so undoing it takes
         // the same fast in-place viewport patch every other single edit does
         // rather than a full reload — but only if the log that write produced
-        // is attached to the snapshot above (see `shell::history`).
+        // is attached to the snapshot (see `shell::history`).
         let changes = self.dom.take_changes();
         self.record_history_change(changes);
         self.mark_synced(reference, text);
