@@ -2,6 +2,60 @@
 
 ## 2026-09-16
 
+- **An edit is a patch of the instances it touched, never a rebuild.**
+  Roblox's engine never reloads its scene: the DataModel is the live
+  picture, and a property write is an event applied to that one instance.
+  The editor now works the same way. `Headless::apply_changes` takes the
+  `Change` log a mutation produced — every `Added`, `Removed`, `Property`
+  and `Parent` the DOM recorded — folds it by instance, looks each one up
+  in the DOM as it stands *now*, and patches only those: a part's box or
+  mesh is re-derived and its opaque/blended record, shadow caster and
+  outline rewritten, moved between batches, added or dropped (the box-part
+  removal that never existed now does); the decals, lights, emitters and
+  attachments hung off it follow; a `Model` reparented reaches its whole
+  subtree, in or out of `Workspace`; a light, an effect list or a GUI
+  canvas set is re-planned once per batch however many members changed.
+  Because the log is read as *which* instances to look at rather than
+  *what* happened to them, undo hands over the very log its mutation
+  produced against the restored DOM — the `Added` of an insert, applied
+  after the undo, finds the part gone and takes it out — so undo and redo
+  of anything take the same path as the edit. On the editor side that
+  closes every reload that was left: the Explorer's insert, delete and
+  multi-instance drag-drop, a Command Bar script touching any number of
+  instances, a Properties edit on a class the old classifier did not know
+  (every `Sky` edit aside), a `Script`'s `Source` on save, and undo/redo of
+  each; `shell::edit`'s `classify_edit`, `shell::command`'s one-instance
+  classifier and `reload_viewport` itself are gone, and the render thread
+  takes one `Command::Changes` — one DOM clone, one pass — where it took a
+  command per instance. The GPU side batches too: an instance buffer marks
+  the slots an edit touched and uploads the span once before the next
+  frame (`renderer::slots::Slots::flush`), where each patched instance used
+  to cost its own staging buffer. What still rebuilds the whole scene is
+  the closed list in `rbx_viewer::Rebuild`, one variant per reason: a `Sky`
+  edit (its six panels prefilter the environment probe — a few
+  milliseconds, kept on purpose), a `MaterialVariant`/`MaterialService`
+  edit (the material catalog is defined from the service), an asset this
+  renderer never uploaded (a mesh, texture, material pack or
+  `SurfaceAppearance` set — fetching one is a load-time path today), and a
+  failed-CSG union drawn as its fallback pieces (they share the union's
+  referent). Measured with `scripts/bench.sh` on `marked.rbxl` (16 742
+  instances, assets on, 1280×720, RTX 4070, medians of 50, first frame
+  readable / call returned): one part's `CFrame` 1.04 ms / 0.04 ms, insert
+  1.07 / 0.03, undo insert 1.07 / 0.03, delete 1.02 / 0.03, undo delete
+  1.05 / 0.03, 100 parts moved in one script 3.56 / 2.28 (7.53 ms before
+  the coalesced upload; the rest is the one canvas re-plan a
+  `SurfaceGui` among them costs), undo of that 3.63 / 2.34 — against a
+  full reload of 30.1 ms on the same run — all of them phases of the
+  harness now, not a one-off. For every kind of change — insert, delete, move, a 100-part
+  move, a reparent inside `Workspace`, a reparent out of it, a script
+  touching several instances, and the undo and redo of each — the patched
+  frame is pixel-identical (AE 0, uploads drained) to a cold rebuild of the
+  same DOM, on both `TestPlace.rbxl` and `marked.rbxl`
+  (`crates/rbx_viewer/tests/patch_parity.rs`, `--ignored`, needs a GPU).
+  `read_place` now hands back a DOM with an empty change log: a parser
+  builds the tree through the same calls an edit uses, and the log of its
+  own construction is not an edit. — @chteau
+
 - **A full reload no longer starts over.** `Headless::reload` — what a
   Command Bar script, an undo the fast paths cannot classify, or any edit
   they refuse falls back to — used to be a cold load in all but name: it

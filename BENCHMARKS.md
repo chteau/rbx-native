@@ -123,6 +123,36 @@ instance, adapter and device and rebuilds every pipeline — and re-resolves eve
 texture, material and file mesh from the on-disk cache, for a scene whose assets
 are already resident. Those two together are roughly 900 ms of the 1.09 s.
 
+## Edits
+
+`Headless::apply_changes` patches the instances a change log names in place;
+the harness times the edits the editor makes most — one part's `CFrame`
+(`patch instance`), an insert, a delete, a hundred parts moved in one batch,
+and the undo of each, handed over the way `rbxstudio`'s history hands it: the
+mutation's own log against the restored DOM. Same machine, commit `d168421`
+plus this branch, assets on, medians of 50:
+
+| Fixture | Operation | call med | readable med | readable p95 |
+| :--- | :--- | ---: | ---: | ---: |
+| marked | full reload | 19.74 ms | 30.12 ms | 46.03 ms |
+| marked | patch instance | 0.04 ms | 1.04 ms | 1.74 ms |
+| marked | insert part | 0.03 ms | 1.07 ms | 1.28 ms |
+| marked | undo insert | 0.03 ms | 1.07 ms | 1.89 ms |
+| marked | delete part | 0.03 ms | 1.02 ms | 1.52 ms |
+| marked | undo delete | 0.03 ms | 1.05 ms | 1.71 ms |
+| marked | move 100 parts | 2.28 ms | 3.56 ms | 5.58 ms |
+| marked | undo move 100 | 2.34 ms | 3.63 ms | 4.81 ms |
+
+A single-instance edit is one frame, whatever the place's size: its `call` is
+at the resolution floor and its `readable` is the redraw. The batch move is
+not yet flat in the place's size — of its 2.3 ms, the parts themselves are
+under 0.5 ms and the rest is the one `SurfaceGui` among the hundred, whose
+canvas list is re-planned whole (a walk of the place's GUI trees) rather than
+re-placed alone; the same holds for a moved light (the local light list is
+re-collected) and a moved attachment (the beam and trail lists). Those walks
+are CPU-only and a few milliseconds on 16k instances, but they are the next
+thing to make incremental.
+
 ## Why the tracked number has assets off
 
 With assets on, the reload timing is not unimodal. On `marked.rbxl` it settles
