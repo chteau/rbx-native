@@ -16,7 +16,7 @@
 use gpui_kit::component::list::ListItem;
 use gpui_kit::component::ActiveTheme;
 use gpui_kit::*;
-use rbx_dom::{Ref, WeakDom};
+use rbx_dom::Ref;
 
 use crate::explorer::reparent;
 
@@ -150,11 +150,9 @@ impl Shell {
         // See `shell::history`: snapshotted before the moves below, so one
         // drag is one Ctrl+Z however many instances it carried.
         self.push_history();
-        let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
         for reference in &moving {
-            dom.set_parent(*reference, Some(target));
+            self.dom.set_parent(*reference, Some(target));
         }
-        self.dom = dom;
 
         self.rebuild_explorer(cx);
         self.reveal_moved(&moving, cx);

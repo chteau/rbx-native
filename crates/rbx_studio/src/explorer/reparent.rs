@@ -68,6 +68,31 @@ fn moves(
     reference: Ref,
     target: Ref,
 ) -> bool {
+    // Dropped together with something it already sits inside: moving that
+    // ancestor carries this one along, and pulling it out of it on the way is
+    // a second rearrangement nobody asked for. Only an ancestor that is
+    // *itself* going somewhere counts, though — dragging `Workspace` and one
+    // of its parts together must still move the part, since the service half
+    // of that selection is refused and carries nothing anywhere.
+    //
+    // Asking whether the ancestor is [`standalone`] answers that without
+    // recursing into `moves` for it: if any dragged ancestor of `reference` is
+    // standalone then the outermost such one has no standalone ancestor of its
+    // own left to be absorbed by, so it does move — and if none is standalone,
+    // none of them moves at all. The two questions have the same answer, and
+    // this one cannot blow up on a selection that is one long nested chain.
+    standalone(dom, database, reference, target)
+        && !dragged.iter().any(|&other| {
+            other != reference
+                && is_ancestor(dom, other, reference)
+                && standalone(dom, database, other, target)
+        })
+}
+
+/// Whether `reference` could move to `target` on its own — every rule that
+/// looks only at the instance and where it is going, none that depends on what
+/// else is being dragged alongside it.
+fn standalone(dom: &WeakDom, database: &ReflectionDatabase, reference: Ref, target: Ref) -> bool {
     let Some(instance) = dom.get(reference) else {
         return false;
     };
@@ -88,15 +113,7 @@ fn moves(
     // Already there. Refusing rather than re-parenting in place is what keeps
     // a drop onto the row's own parent from pushing an undo step that undoes
     // nothing.
-    if dom.parent(reference) == Some(target) {
-        return false;
-    }
-    // Dropped together with something it already sits inside: moving the
-    // ancestor carries this one along, and pulling it out of that ancestor on
-    // the way is a second rearrangement nobody asked for.
-    !dragged
-        .iter()
-        .any(|&other| other != reference && is_ancestor(dom, other, reference))
+    dom.parent(reference) != Some(target)
 }
 
 /// Whether `ancestor` is somewhere above `reference`, walking the parent chain

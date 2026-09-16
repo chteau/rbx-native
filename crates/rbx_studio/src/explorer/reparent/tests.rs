@@ -159,6 +159,61 @@ fn dragging_a_parent_and_its_child_together_moves_only_the_parent() {
 }
 
 #[test]
+fn a_child_dragged_with_a_service_still_moves_on_its_own() {
+    // The ancestor only absorbs the child when it is actually going somewhere.
+    // `Workspace` is refused for being a service, so it carries nothing with
+    // it, and the part it was dragged alongside has to move by itself.
+    let mut place = place();
+    let loose = place
+        .dom
+        .new_instance("Part", "Loose", Some(place.workspace));
+
+    assert_eq!(
+        movable(
+            &place.dom,
+            &database(),
+            &[place.workspace, loose],
+            place.lighting
+        ),
+        vec![loose]
+    );
+}
+
+#[test]
+fn a_child_dragged_with_an_ancestor_that_cannot_take_the_target_still_moves() {
+    // Dropping `Model` into a folder inside itself is the cycle rule's job to
+    // refuse — but `Part` moving into that same folder is perfectly legal, and
+    // being selected next to `Model` must not veto it.
+    let mut place = place();
+    let inner = place.dom.new_instance("Folder", "Inner", Some(place.model));
+
+    assert_eq!(
+        movable(&place.dom, &database(), &[place.model, place.part], inner),
+        vec![place.part]
+    );
+}
+
+#[test]
+fn only_the_outermost_movable_ancestor_of_a_dragged_chain_moves() {
+    // A whole nested chain selected at once: the service at the top is
+    // refused, the one below it becomes the outermost thing actually moving,
+    // and everything under that rides along inside it.
+    let mut place = place();
+    let middle = place.dom.new_instance("Model", "Middle", Some(place.model));
+    let leaf = place.dom.new_instance("Part", "Leaf", Some(middle));
+
+    assert_eq!(
+        movable(
+            &place.dom,
+            &database(),
+            &[place.workspace, place.model, middle, leaf],
+            place.lighting
+        ),
+        vec![place.model]
+    );
+}
+
+#[test]
 fn several_unrelated_instances_all_move() {
     let mut place = place();
     let other = place
