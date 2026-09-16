@@ -25,6 +25,7 @@ enum Section {
     Explorer,
     Properties,
     Output,
+    Scripts,
 }
 
 impl Section {
@@ -34,6 +35,7 @@ impl Section {
             Section::Explorer => "Explorer",
             Section::Properties => "Properties",
             Section::Output => "Output",
+            Section::Scripts => "Script Editor",
         }
     }
 }
@@ -72,6 +74,7 @@ impl Render for SectionPanel {
             Section::Explorer => shell.explorer(cx).into_any_element(),
             Section::Properties => shell.properties(window, cx).into_any_element(),
             Section::Output => shell.output_panel(cx).into_any_element(),
+            Section::Scripts => shell.script_editor(window, cx).into_any_element(),
         })
     }
 }
@@ -97,7 +100,9 @@ impl ComponentPanel for SectionPanel {
         let label = match self.section {
             Section::Viewport => self.shell.read(cx).title(),
             Section::Properties => self.shell.read(cx).properties_title(),
-            Section::Explorer | Section::Output => SharedString::from(self.section.name()),
+            Section::Explorer | Section::Output | Section::Scripts => {
+                SharedString::from(self.section.name())
+            }
         };
         // Smaller than the vendored default (see `title_style` below for the
         // matching colour change): the dock's own chrome should read quieter
@@ -195,7 +200,8 @@ pub(super) fn build(
     let viewport = cx.new(|cx| SectionPanel::new(shell.clone(), Section::Viewport, cx));
     let explorer = cx.new(|cx| SectionPanel::new(shell.clone(), Section::Explorer, cx));
     let properties = cx.new(|cx| SectionPanel::new(shell.clone(), Section::Properties, cx));
-    let output = cx.new(|cx| SectionPanel::new(shell, Section::Output, cx));
+    let output = cx.new(|cx| SectionPanel::new(shell.clone(), Section::Output, cx));
+    let scripts = cx.new(|cx| SectionPanel::new(shell, Section::Scripts, cx));
 
     area.update(cx, |area, cx| {
         area.set_center(
@@ -208,7 +214,9 @@ pub(super) fn build(
                     // viewport, like Roblox Studio's own Output window.
                     DockLayout::v_split()
                         .child(
-                            DockLayout::tabs().panel_view(panel_handle(viewport), cx),
+                            DockLayout::tabs()
+                                .panel_view(panel_handle(viewport), cx)
+                                .panel_view(panel_handle(scripts), cx),
                             None,
                         )
                         .child(
@@ -243,12 +251,13 @@ pub(super) fn register_panels(_dock_area: Entity<DockArea>, shell: Entity<Shell>
     use gpui_kit::component::dock::register_panel;
     use std::sync::Arc;
 
-    // Register all four section panels so they can be reconstructed from saved state.
+    // Register every section panel so it can be reconstructed from saved state.
     for section in &[
         Section::Viewport,
         Section::Explorer,
         Section::Properties,
         Section::Output,
+        Section::Scripts,
     ] {
         let section = *section;
         let shell_clone = shell.clone();
@@ -274,7 +283,17 @@ mod tests {
             Section::Explorer.name(),
             Section::Properties.name(),
             Section::Output.name(),
+            Section::Scripts.name(),
         ];
-        assert_eq!(names, ["Viewport", "Explorer", "Properties", "Output"]);
+        assert_eq!(
+            names,
+            [
+                "Viewport",
+                "Explorer",
+                "Properties",
+                "Output",
+                "Script Editor"
+            ]
+        );
     }
 }

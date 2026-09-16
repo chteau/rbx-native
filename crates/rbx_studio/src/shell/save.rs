@@ -47,6 +47,10 @@ impl Shell {
     /// rather than inventing a new one for this. On failure the on-disk file
     /// at `path` is left exactly as it was (see `save::save`).
     fn write_to(&mut self, path: &std::path::Path, cx: &mut Context<Self>) {
+        // An open script editor's text reaches the DOM on a debounce (see
+        // `shell::scripts`); saving must write what is on screen, not what
+        // the DOM happened to hold when typing last paused.
+        self.flush_script_edits(cx);
         let feedback = match save::save(&self.dom, self.format, path) {
             Ok(()) => Feedback::Output(format!("Saved {}", path.display())),
             Err(message) => Feedback::Error(message),

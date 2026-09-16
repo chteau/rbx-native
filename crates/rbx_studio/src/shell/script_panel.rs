@@ -1,0 +1,114 @@
+//! What the dock's Script Editor panel draws: a tab strip over the active
+//! script's editor.
+//!
+//! The tabs are drawn here rather than made dock panels of their own. A dock
+//! tab is a persisted, rearrangeable part of the window layout, and an open
+//! script is neither — it comes and goes with a double-click, and a saved
+//! layout naming scripts by referent would be meaningless on the next file
+//! opened.
+
+use gpui_kit::assets::IconName;
+use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::input::Editor;
+use gpui_kit::component::tab::{Tab, TabBar};
+use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Icon, Sizable};
+use gpui_kit::*;
+use rbx_dom::Ref;
+
+use crate::script_editor::source;
+
+use super::Shell;
+
+impl Shell {
+    /// The Script Editor panel. Reconciles every open tab against the DOM
+    /// first (see [`Shell::resync_scripts`]) so a tab never paints a script
+    /// the DOM no longer agrees with.
+    pub(super) fn script_editor(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        self.resync_scripts(window, cx);
+
+        let Some(active) = self.scripts.tabs.active() else {
+            return no_scripts_open(cx).into_any_element();
+        };
+
+        v_flex()
+            .size_full()
+            .child(self.script_tabs(active, cx))
+            .child(
+                div()
+                    .flex_1()
+                    .overflow_hidden()
+                    .children(self.scripts.open.get(&active).map(|open| {
+                        Editor::new(&open.state)
+                            .bordered(false)
+                            .h(relative(1.0))
+                            .w_full()
+                    })),
+            )
+            .into_any_element()
+    }
+
+    fn script_tabs(&self, active: Ref, cx: &mut Context<Self>) -> impl IntoElement {
+        let open: Vec<Ref> = self.scripts.tabs.all().to_vec();
+        let selected = open.iter().position(|tab| *tab == active).unwrap_or(0);
+        let clicked = open.clone();
+
+        let tabs = open.iter().enumerate().map(|(index, reference)| {
+            let reference = *reference;
+            // Read from the DOM rather than cached at open time, so a rename
+            // in the Explorer retitles the tab.
+            let label = source::label(&self.dom, reference).unwrap_or_default();
+            Tab::new()
+                .label(SharedString::from(label))
+                .icon(Icon::new(IconName::FileCode))
+                .suffix(
+                    Button::new(("close-script-tab", index))
+                        .icon(IconName::Close)
+                        .ghost()
+                        .xsmall()
+                        .accessibility_label("Close tab")
+                        .on_click(cx.listener(move |shell, _, _, cx| {
+                            shell.close_script(reference, cx);
+                        })),
+                )
+        });
+
+        h_flex().w_full().child(
+            TabBar::new("script-editor-tabs")
+                .w_full()
+                .underline()
+                .small()
+                .selected_index(selected)
+                .children(tabs)
+                .on_click(cx.listener(move |shell, index: &usize, _, cx| {
+                    if let Some(reference) = clicked.get(*index) {
+                        shell.activate_script(*reference, cx);
+                    }
+                })),
+        )
+    }
+}
+
+/// What the panel shows before anything has been opened in it — the panel is
+/// part of the default layout, so it is what a fresh window draws.
+fn no_scripts_open(cx: &App) -> impl IntoElement {
+    v_flex()
+        .size_full()
+        .items_center()
+        .justify_center()
+        .gap_2()
+        .child(
+            Icon::new(IconName::FileCode)
+                .large()
+                .text_color(cx.theme().muted_foreground),
+        )
+        .child(
+            div()
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                .child("Double-click a Script in the Explorer to edit it"),
+        )
+}

@@ -16,6 +16,8 @@ mod quality;
 mod reparent;
 mod rows;
 mod save;
+mod script_panel;
+mod scripts;
 mod selection;
 mod toolbar;
 
@@ -39,6 +41,7 @@ use crate::explorer::Explorer;
 use crate::history::{History, DEFAULT_CAP};
 use crate::properties::Properties;
 use crate::save::Format;
+use crate::script_editor::ScriptEditor;
 use crate::settings::Settings;
 use crate::transform::{Targets, Transform};
 use crate::workspace_view::{AssetWarnings, PoseSynced, ViewportAction, WorkspaceView};
@@ -84,6 +87,8 @@ pub(crate) struct Shell {
     edits: edit::Edits,
     /// Mirrors the tree's selected row (see [`Shell::sync_selection`]).
     selection: Selection,
+    /// Every script open in the Script Editor panel; see `shell::scripts`.
+    scripts: ScriptEditor,
     properties_scroll: ScrollHandle,
     dock_area: Entity<DockArea>,
     quality: Entity<SelectState<QualityOptions>>,
@@ -233,6 +238,7 @@ impl Shell {
             properties,
             edits: edit::Edits::default(),
             selection: Selection::new(selected),
+            scripts: ScriptEditor::default(),
             properties_scroll: ScrollHandle::new(),
             dock_area,
             quality: selector,

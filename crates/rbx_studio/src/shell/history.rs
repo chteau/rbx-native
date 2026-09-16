@@ -34,6 +34,11 @@ impl Shell {
     /// Undo item's entry point, so a menu click runs the exact same path
     /// Ctrl+Z does.
     pub(crate) fn undo(&mut self, cx: &mut Context<Self>) {
+        // A script editor's text reaches the DOM on a debounce (see
+        // `shell::scripts`), so without this an undo moments after typing
+        // would step over text that had not become a history entry yet, and
+        // the pending write would then land on top of the undone DOM.
+        self.flush_script_edits(cx);
         if let Some(previous) = self.history.undo(self.dom.clone()) {
             self.install(previous, cx);
         }
@@ -42,6 +47,7 @@ impl Shell {
     /// Ctrl+Y / Ctrl+Shift+Z: symmetric to [`Shell::undo`]. A no-op with
     /// nothing to redo. `pub(crate)` for the same reason as `undo` above.
     pub(crate) fn redo(&mut self, cx: &mut Context<Self>) {
+        self.flush_script_edits(cx);
         if let Some(next) = self.history.redo(self.dom.clone()) {
             self.install(next, cx);
         }

@@ -41,6 +41,18 @@ pub(crate) fn read(dom: &WeakDom, reference: Ref) -> Option<String> {
     }
 }
 
+/// Whether the instance's `Source` is already exactly `text`, answered
+/// without cloning the source out of the DOM to find out — this runs once per
+/// open tab on every render of the panel (see
+/// `crate::shell::Shell::resync_scripts`).
+pub(crate) fn is(dom: &WeakDom, reference: Ref, text: &str) -> bool {
+    matches!(
+        dom.get(reference)
+            .and_then(|instance| instance.properties().get(SOURCE_PROPERTY)),
+        Some(Variant::String(source)) if source == text
+    )
+}
+
 /// Writes `source` to the instance's `Source`, reporting whether the DOM
 /// actually changed.
 ///
@@ -49,7 +61,7 @@ pub(crate) fn read(dom: &WeakDom, reference: Ref) -> Option<String> {
 /// echoing that same text straight back as a fresh edit — and so from burying
 /// the undo the user just asked for under a new history entry.
 pub(crate) fn write(dom: &mut WeakDom, reference: Ref, source: &str) -> bool {
-    if read(dom, reference).as_deref() == Some(source) {
+    if is(dom, reference, source) {
         return false;
     }
     dom.set_property(

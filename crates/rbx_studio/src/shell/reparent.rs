@@ -110,6 +110,24 @@ pub(super) fn draggable_row(
             }
         })
         .drag_over::<DraggedInstances>(|style, _, _, cx| style.bg(cx.theme().drop_target))
+        // Double-click opens a script, the way Studio's own Explorer does.
+        // It rides on this wrapper rather than on the tree widget's row,
+        // which offers no click handler of its own; the row's mouse-down has
+        // already selected by the time a second click arrives, so opening and
+        // selecting do not compete. A row that is not a script ignores this
+        // (see `Shell::open_script`), which is why no class check happens
+        // here — the DOM is the thing that knows.
+        .on_click({
+            let shell = shell.clone();
+            move |event: &ClickEvent, window, cx| {
+                if event.click_count() < 2 {
+                    return;
+                }
+                shell.update(cx, |shell, cx| {
+                    shell.open_script(target, window, cx);
+                });
+            }
+        })
         .on_drop({
             let shell = shell.clone();
             move |dragged: &DraggedInstances, _, cx| {

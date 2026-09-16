@@ -32,8 +32,12 @@ pub(crate) fn save(state: &DockAreaState) {
     let _ = write_atomic(&path, &bytes);
 }
 
+/// Versioned by filename: a saved layout names the panels it arranges, so one
+/// written before a panel existed would silently hide that panel forever
+/// rather than fail. Bumping the name discards such a layout instead, which
+/// costs a rearrangement once and never loses a panel.
 fn dock_layout_path() -> Option<PathBuf> {
-    default_config_dir().map(|dir| dir.join("dock_layout.json"))
+    default_config_dir().map(|dir| dir.join("dock_layout_v2.json"))
 }
 
 #[cfg(test)]
@@ -84,7 +88,7 @@ mod tests {
         let dir = temp_config_dir();
         std::fs::create_dir_all(dir.join("rbx-native")).unwrap();
         std::fs::write(
-            dir.join("rbx-native/dock_layout.json"),
+            dir.join("rbx-native/dock_layout_v2.json"),
             b"not valid json at all {{{",
         )
         .unwrap();

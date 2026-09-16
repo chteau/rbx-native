@@ -9,7 +9,6 @@ fn script(id: u32) -> Ref {
 #[test]
 fn a_fresh_editor_has_no_tabs_and_nothing_in_front() {
     let tabs = Tabs::default();
-    assert!(tabs.is_empty());
     assert!(tabs.all().is_empty());
     assert_eq!(tabs.active(), None);
 }
@@ -21,7 +20,7 @@ fn opening_a_script_adds_a_tab_and_puts_it_in_front() {
 
     assert_eq!(tabs.all(), [script(1)]);
     assert_eq!(tabs.active(), Some(script(1)));
-    assert!(!tabs.is_empty());
+    assert!(!tabs.all().is_empty());
 }
 
 #[test]
@@ -93,7 +92,7 @@ fn closing_the_only_tab_leaves_the_editor_empty() {
     tabs.open(script(1));
 
     tabs.close(script(1));
-    assert!(tabs.is_empty());
+    assert!(tabs.all().is_empty());
     assert_eq!(tabs.active(), None);
 }
 
@@ -166,7 +165,7 @@ fn retain_can_close_every_tab_at_once() {
     }
 
     tabs.retain(|_| false);
-    assert!(tabs.is_empty());
+    assert!(tabs.all().is_empty());
     assert_eq!(tabs.active(), None);
 }
 

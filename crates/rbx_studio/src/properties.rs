@@ -12,6 +12,10 @@ pub(crate) mod edit;
 /// worth showing.
 const MAX_STRING_LEN: usize = 64;
 
+/// The base class whose `Source` the Script Editor panel owns; see
+/// [`Properties::edit_kind`].
+const SCRIPT_BASE_CLASS: &str = "LuaSourceContainer";
+
 /// Category for a property the reflection dump has never heard of (e.g. an
 /// unreflected `Tags`, or a class the dump does not know). Not a dump
 /// category itself, so it can never collide with a real one.
@@ -164,6 +168,17 @@ impl Properties {
     /// Which widget `value` should edit through; `None` keeps the row
     /// read-only, same as when `edit::edit_text` itself returns `None`.
     fn edit_kind(&self, class: &str, name: &str, value: &Variant) -> Option<EditKind> {
+        // A script's code is edited in the Script Editor panel, not here. A
+        // one-line field is the wrong shape for it, and this panel's commit
+        // path trims what it writes (see `edit::parse`'s `String` arm), which
+        // would silently eat a script's trailing newline. The row stays,
+        // read-only, showing the source's size like any other long string.
+        if name == crate::script_editor::source::SOURCE_PROPERTY
+            && self.db.is_subclass_of(class, SCRIPT_BASE_CLASS)
+        {
+            return None;
+        }
+
         let text = edit::edit_text(value)?;
 
         Some(match value {

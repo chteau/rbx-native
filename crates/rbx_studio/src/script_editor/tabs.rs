@@ -89,8 +89,4 @@ impl Tabs {
     pub(crate) fn active(&self) -> Option<Ref> {
         self.active
     }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.open.is_empty()
-    }
 }
