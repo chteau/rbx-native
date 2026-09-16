@@ -34,6 +34,15 @@ a dragged gizmo, a dock being rearranged, a dialog flow — needs motion to
 actually show. If this change genuinely has no visible surface (a parser
 fix, an internal refactor, a format-only change), say so explicitly here
 instead of leaving the section empty.
+
+To attach one: `./scripts/publish-screenshot.sh path/to.png` (or `.ps1` on
+Windows) is the supported way — see its header comment for why a plain
+`gh gist create` doesn't work directly on images. It publishes to a
+secret (unlisted) gist and prints Markdown you can paste straight in
+below, so only run it when you actually have permission to share data
+outside the repo this way. If you don't have that permission, state the
+local file path and describe what it shows instead, and say plainly that
+the image still needs attaching by whoever can.
 -->
 
 ## Anything left undone or worth flagging for review
