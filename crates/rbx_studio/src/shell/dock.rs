@@ -9,8 +9,8 @@
 //! presentation change: nothing about how those three sections work moved.
 
 use gpui_kit::component::dock::{
-    panel_handle, BasePanel, DockArea, DockLayout, DockSkin, Panel as ComponentPanel, PanelEvent,
-    TitleStyle,
+    panel_handle, BasePanel, DockArea, DockLayout, DockPlacement, DockSkin, InsertTarget, NodeId,
+    PaneRef, Panel as ComponentPanel, PanelEvent, PanelId, TitleStyle,
 };
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::component::ActiveTheme;
@@ -266,6 +266,71 @@ pub(super) fn register_panels(_dock_area: Entity<DockArea>, shell: Entity<Shell>
             Arc::new(panel)
         });
     }
+}
+
+/// Brings the Script Editor panel's own dock tab to the front, wherever in
+/// the layout it currently sits, so opening a script is visible even when the
+/// panel is stacked behind the Viewport (which is where the default layout
+/// puts it).
+///
+/// `DockArea` has no "activate this panel" call, but moving a panel into the
+/// tab group it is already in, at the index it already has, changes nothing
+/// except raising it — `InsertTarget`'s own `activate` flag is what the tab
+/// bar sets when a tab is clicked. Looking the panel up by name rather than
+/// caching its id is what makes this keep working after a saved layout has
+/// been restored, which rebuilds the panels as new entities.
+pub(super) fn reveal_scripts(area: &Entity<DockArea>, window: &mut Window, cx: &mut App) {
+    let Some((panel, node, ix)) = locate(area, Section::Scripts.name(), cx) else {
+        return;
+    };
+    area.update(cx, |area, cx| {
+        area.move_panel(
+            panel,
+            InsertTarget::Tabs {
+                node,
+                ix,
+                activate: true,
+            },
+            window,
+            cx,
+        );
+    });
+}
+
+/// Where the panel called `name` currently lives: which panel id it has,
+/// which tab group holds it, and its index within that group.
+fn locate(
+    area: &Entity<DockArea>,
+    name: &str,
+    cx: &App,
+) -> Option<(PanelId, NodeId, Option<usize>)> {
+    let dock = area.read(cx);
+    for placement in [
+        DockPlacement::Center,
+        DockPlacement::Left,
+        DockPlacement::Right,
+        DockPlacement::Bottom,
+    ] {
+        let Some(tree) = dock.layout(placement) else {
+            continue;
+        };
+        let found = tree.panels().find(|panel| {
+            dock.panel(*panel)
+                .is_some_and(|view| view.panel_name(cx) == name)
+        });
+        let Some(panel) = found else {
+            continue;
+        };
+        let node = tree.find_panel_node(panel)?;
+        // Re-inserting at the index it already has keeps the tab where the
+        // user last left it; the move is only a way to raise it.
+        let ix = match tree.find_node(node)?.kind() {
+            PaneRef::Tabs { panels, .. } => panels.iter().position(|held| *held == panel),
+            _ => None,
+        };
+        return Some((panel, node, ix));
+    }
+    None
 }
 
 #[cfg(test)]

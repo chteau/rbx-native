@@ -20,6 +20,10 @@
 //! draggers (see `shell::toolbar`). `RBX_STUDIO_DRAG=<dx>,<dy>,<dz>` moves the
 //! selection by that offset through the same path a real gizmo or cursor drag
 //! ends with, the same aid for a group drag (see `shell::drag`).
+//! `RBX_STUDIO_OPEN_SCRIPT=<name>[,<name>...]` opens each named
+//! `Script`/`LocalScript`/`ModuleScript` in the Script Editor panel exactly as
+//! double-clicking its Explorer row would — the same aid, for the script
+//! editor and its Luau highlighting (see `shell::scripts`).
 //! Ctrl+S writes the place back to the file it was opened from, in the
 //! format it was opened in; `RBX_STUDIO_SAVE_AS=<path>` redirects one such
 //! save to a scratch path instead (see `save`).

@@ -63,7 +63,10 @@ impl Shell {
             let label = source::label(&self.dom, reference).unwrap_or_default();
             Tab::new()
                 .label(SharedString::from(label))
-                .icon(Icon::new(IconName::FileCode))
+                // `prefix`, not `icon`: a `Tab` given an icon draws *only*
+                // the icon, and a tab strip of identical file glyphs says
+                // nothing about which script is which.
+                .prefix(Icon::new(IconName::FileCode).xsmall())
                 .suffix(
                     Button::new(("close-script-tab", index))
                         .icon(IconName::Close)

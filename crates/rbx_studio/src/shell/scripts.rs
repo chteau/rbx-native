@@ -13,10 +13,15 @@ use gpui_kit::component::input::{EditorState, InputEvent};
 use gpui_kit::*;
 use rbx_dom::Ref;
 
+use crate::explorer;
 use crate::script_editor::tabs::Opened;
 use crate::script_editor::{highlight, source, OpenScript};
 
 use super::Shell;
+
+/// Read once at startup by `Shell::new`; documented in `main`'s module doc
+/// comment alongside the other debug aids.
+pub(crate) const OPEN_VARIABLE: &str = "RBX_STUDIO_OPEN_SCRIPT";
 
 /// How long typing must pause before a tab's text is written to the DOM.
 ///
@@ -46,6 +51,7 @@ impl Shell {
         // would throw away an edit in progress.
         if self.scripts.tabs.open(reference) == Opened::Existing {
             self.focus_script(reference, window, cx);
+            super::dock::reveal_scripts(&self.dock_area, window, cx);
             cx.notify();
             return;
         }
@@ -79,7 +85,23 @@ impl Shell {
             },
         );
         self.focus_script(reference, window, cx);
+        super::dock::reveal_scripts(&self.dock_area, window, cx);
         cx.notify();
+    }
+
+    /// `RBX_STUDIO_OPEN_SCRIPT=<name>[,<name>...]`: opens each named script
+    /// through the exact path a double-click does, once, at startup. The only
+    /// way to get a tab open for a screenshot — nothing else can double-click
+    /// the Explorer on the editor's behalf (see `AGENTS.md`'s safety rules).
+    pub(super) fn apply_debug_open_script(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Ok(spec) = std::env::var(OPEN_VARIABLE) else {
+            return;
+        };
+        for name in spec.split(',').map(str::trim).filter(|n| !n.is_empty()) {
+            if let Some(reference) = explorer::find_by_name(&self.dom, name) {
+                self.open_script(reference, window, cx);
+            }
+        }
     }
 
     /// Brings an open tab to the front; the dock's tab strip's click handler.

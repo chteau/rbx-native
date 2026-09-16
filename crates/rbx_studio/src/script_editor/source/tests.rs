@@ -1,7 +1,8 @@
 use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
-use super::{is_script, label, read, write, SOURCE_PROPERTY};
+use super::{is, is_script, label, read, write, SOURCE_PROPERTY};
+use crate::history::{History, DEFAULT_CAP};
 
 /// A place holding one instance of `class`, with `Source` already set when
 /// `source` says so — a script read out of a real file always has one, a
@@ -114,5 +115,67 @@ fn the_label_is_the_instance_name_and_follows_a_rename() {
         label(&dom, script).as_deref(),
         Some("Renamed"),
         "the tab label is read from the DOM, never cached at open time"
+    );
+}
+
+/// What `shell::scripts::commit_script` does — snapshot, then write — using
+/// the same two pieces it calls, so the undo path can be exercised without a
+/// window around it.
+fn commit(history: &mut History, dom: &mut WeakDom, script: Ref, text: &str) {
+    history.push(dom.clone());
+    write(dom, script, text);
+}
+
+#[test]
+fn an_edit_to_a_scripts_source_undoes_and_redoes_cleanly() {
+    let (mut dom, script) = place("Script", Some("print(1)\n"));
+    let mut history = History::new(DEFAULT_CAP);
+
+    commit(&mut history, &mut dom, script, "print(2)\n");
+    assert_eq!(read(&dom, script).as_deref(), Some("print(2)\n"));
+
+    let undone = history.undo(dom.clone()).expect("the edit to undo");
+    assert_eq!(
+        read(&undone, script).as_deref(),
+        Some("print(1)\n"),
+        "Ctrl+Z must put the script's source back"
+    );
+
+    let redone = history.redo(undone).expect("the edit to redo");
+    assert_eq!(read(&redone, script).as_deref(), Some("print(2)\n"));
+}
+
+#[test]
+fn each_typing_burst_is_its_own_undo_step() {
+    // The debounce means one write per pause, not per keystroke, so stepping
+    // back twice must land on the two texts that were actually committed.
+    let (mut dom, script) = place("Script", Some("one"));
+    let mut history = History::new(DEFAULT_CAP);
+
+    commit(&mut history, &mut dom, script, "two");
+    commit(&mut history, &mut dom, script, "three");
+
+    let once = history.undo(dom.clone()).expect("the second edit to undo");
+    assert_eq!(read(&once, script).as_deref(), Some("two"));
+
+    let twice = history.undo(once).expect("the first edit to undo");
+    assert_eq!(read(&twice, script).as_deref(), Some("one"));
+}
+
+#[test]
+fn an_undone_source_no_longer_matches_what_the_editor_last_synced() {
+    // The signal `Shell::resync_scripts` re-seeds an open tab on: the DOM
+    // stopped agreeing with the text that tab last had in common with it.
+    let (mut dom, script) = place("Script", Some("before"));
+    let mut history = History::new(DEFAULT_CAP);
+
+    commit(&mut history, &mut dom, script, "after");
+    let synced = "after";
+    assert!(is(&dom, script, synced), "nothing to re-seed yet");
+
+    let undone = history.undo(dom).expect("the edit to undo");
+    assert!(
+        !is(&undone, script, synced),
+        "the undo must be visible to the editor as a mismatch"
     );
 }

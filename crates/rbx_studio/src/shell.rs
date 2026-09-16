@@ -338,6 +338,10 @@ impl Shell {
         // last, so an insert can parent under whatever is already selected.
         shell.apply_debug_explorer_action(cx);
 
+        // `RBX_STUDIO_OPEN_SCRIPT` (see `shell::scripts`): after the Command
+        // Bar block above, so a script that block just created can be opened.
+        shell.apply_debug_open_script(window, cx);
+
         // `RBX_STUDIO_UNDO` (see `shell::history`): applied after every debug
         // mutation above, through the exact undo path a keypress would use —
         // a screenshot aid proving a just-applied mutation was reverted.
