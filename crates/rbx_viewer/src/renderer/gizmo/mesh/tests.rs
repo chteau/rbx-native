@@ -13,7 +13,9 @@ fn handles() -> Handles {
 /// their front halves (or, worse, showing both).
 fn signed_volume(vertices: &[Vertex]) -> f32 {
     vertices
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .map(|triangle| {
             let [a, b, c] = [0, 1, 2].map(|corner| Vec3::from(triangle[corner].position));
             a.dot(b.cross(c))
@@ -109,7 +111,7 @@ fn a_scale_block_faces_outwards_on_every_side() {
     // The shaft comes first and is swept, not built from quads; only the last
     // `VERTICES_PER_BLOCK` vertices are the block.
     let block = &block[block.len() - VERTICES_PER_BLOCK..];
-    for triangle in block.chunks_exact(3) {
+    for triangle in block.as_chunks::<3>().0 {
         let [a, b, c] = [0, 1, 2].map(|corner| Vec3::from(triangle[corner].position));
         let normal = (b - a).cross(c - a);
         let outward = (a + b + c) / 3.0 - centre;
@@ -128,9 +130,9 @@ fn the_arms_are_painted_back_to_front() {
     let handles = Handles::new(Vec3::ZERO, basis(None), 1.0);
     let vertices = arms(&handles, Vec3::new(100.0, 0.0, 0.0), arrow);
 
-    let mut chunks = vertices.chunks_exact(VERTICES_PER_ARM);
-    let first = chunks.next().expect("six arms");
-    let last = chunks.next_back().expect("six arms");
+    let (chunks, _) = vertices.as_chunks::<VERTICES_PER_ARM>();
+    let first = chunks.first().expect("six arms");
+    let last = chunks.last().expect("six arms");
 
     let reach = |arm: &[Vertex], pick: fn(f32, f32) -> f32, seed: f32| {
         arm.iter().map(|vertex| vertex.position[0]).fold(seed, pick)
@@ -162,7 +164,7 @@ fn the_ring_slices_are_painted_back_to_front() {
             / slice.len() as f32
     };
     let mut previous = f32::INFINITY;
-    for slice in vertices.chunks_exact(VERTICES_PER_SLICE) {
+    for slice in vertices.as_chunks::<VERTICES_PER_SLICE>().0 {
         let now = depth(slice);
         assert!(
             now <= previous + 1e-3,

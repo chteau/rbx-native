@@ -51,7 +51,9 @@ pub(super) fn hit(mesh: &Mesh, model: Mat4, ray: Ray) -> Option<f32> {
     };
     let nearest = mesh
         .lod0()
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .filter_map(|triangle| {
             let (a, b, c) = (
                 vertex(triangle[0])?,

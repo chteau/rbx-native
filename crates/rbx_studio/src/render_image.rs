@@ -17,7 +17,7 @@ pub(crate) fn to_render_image(
     width: u32,
     height: u32,
 ) -> Option<Arc<RenderImage>> {
-    for pixel in pixels.chunks_exact_mut(4) {
+    for pixel in pixels.as_chunks_mut::<4>().0 {
         pixel.swap(0, 2);
     }
 

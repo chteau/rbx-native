@@ -250,7 +250,7 @@ mod tests {
         for position in &mesh.positions {
             writeln!(obj, "v {} {} {}", position[0], position[1], position[2]).unwrap();
         }
-        for triangle in mesh.indices.chunks_exact(3) {
+        for triangle in mesh.indices.as_chunks::<3>().0 {
             // OBJ face indices are 1-based.
             writeln!(
                 obj,

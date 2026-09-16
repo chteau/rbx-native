@@ -122,7 +122,9 @@ impl Solid {
         };
         let polygons = mesh
             .indices
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .filter_map(|triangle| {
                 let (a, b, c) = (
                     vertex(triangle[0])?,

@@ -110,7 +110,7 @@ fn width_maps_to_u_unwrapped_and_length_maps_to_v_tiled() {
     // `TextureLength`.
     let beam = straight_beam(4, 1.0, 1.0);
     let verts = vertices(&beam, Vec3::new(0.0, 20.0, 0.0), 0.0);
-    for section in verts.chunks_exact(2) {
+    for section in verts.as_chunks::<2>().0 {
         assert_eq!(section[0].uv[0], 0.0, "one edge of the ribbon is u=0");
         assert_eq!(section[1].uv[0], 1.0, "the other edge is u=1");
     }
