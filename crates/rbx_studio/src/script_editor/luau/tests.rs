@@ -319,3 +319,44 @@ end
         );
     }
 }
+
+#[test]
+fn no_arrangement_of_luaus_nastiest_tokens_breaks_the_range_contract() {
+    // The highlighter contracts on ranges that are ordered, non-overlapping
+    // and sliceable, and the editor hands this lexer a buffer mid-edit — which
+    // is to say usually not valid Luau. Two of the passes are recursive
+    // (interpolation holes re-enter the lexer; a type walks itself), so a
+    // malformed nesting is the shape most likely to run one off the end or
+    // off the stack. This shuffles the delimiters that open and close things
+    // and checks the contract holds however they land.
+    let alphabet = [
+        "`", "{", "}", "\"", "'", "\\", "[", "]", "[[", "]]", "[==[", "]==]", "--", "\n", " ",
+        "local", "function", "type", "<", ">", ":", "::", "|", "&", "=", "(", ")", ".", ",", "x",
+        "number", "0x", "1_0", "é", "🙂", "?", "->", "...", "#", "e-",
+    ];
+    let mut seed: u64 = 0x2545_F491_4F6C_DD1D;
+    for case in 0..5000u32 {
+        let mut source = String::new();
+        for _ in 0..3 + (case % 40) as usize {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            source.push_str(alphabet[(seed >> 33) as usize % alphabet.len()]);
+        }
+        let tokens = tokenize(&source);
+        let mut at = 0usize;
+        for token in &tokens {
+            assert!(
+                token.range.start >= at && token.range.start < token.range.end,
+                "{token:?} overlaps or is empty in {source:?}"
+            );
+            assert!(
+                source.is_char_boundary(token.range.start)
+                    && source.is_char_boundary(token.range.end),
+                "{token:?} is not sliceable out of {source:?}"
+            );
+            at = token.range.end;
+        }
+        assert!(at <= source.len(), "a token ran past the end of {source:?}");
+    }
+}
