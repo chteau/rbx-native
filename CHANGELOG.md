@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-16
+
+- **`GuiObject.Rotation` now renders.** A `Frame`/`ImageLabel`/text
+  element's background, border and image all turn together about the
+  element's own centre — never its `AnchorPoint`, which Roblox's own docs
+  say can't be done — and `ClipsDescendants` is skipped wherever the element
+  or an ancestor has a non-zero `Rotation`, matching the primary source's
+  own description of the two properties as incompatible. Nested rotation
+  (a rotated element's children swinging around with it, the way
+  `GuiBase2d.AbsoluteRotation` implies real Studio composes it) is still
+  open. — @chteau
+
 ## 2026-09-15
 
 - **Viewport selection and a Move gizmo.** Clicking in the 3D view now

@@ -59,6 +59,16 @@ Roblox's own engine.
   `Trail`.
 - [x] GUI containers: `ScreenGui`/`Frame`/`ImageLabel`, `BillboardGui`,
   `SurfaceGui` — see [What's planned](#gui--full-guiobject-compatibility) for text.
+- [x] 🚧 `GuiObject.Rotation` applied in rendering: the element's background,
+  border and image all turn together about the element's own centre, never
+  its `AnchorPoint` — Roblox's own docs for the property are explicit you
+  can't move that pivot. `ClipsDescendants` is ignored wherever the element
+  or any ancestor has a non-zero `Rotation`, matching the same primary
+  source's description of the two as incompatible. Still open: a rotated
+  element's children aren't carried around with it the way Roblox's
+  cumulative `GuiBase2d.AbsoluteRotation` implies real Studio composes
+  nested rotations — each element only ever turns about its own centre by
+  its own `Rotation`.
 - [x] Free-flight camera (WASD + mouse look + wheel), exponentially-eased
   movement (mouse look itself stays unfiltered).
 - [x] Orthographic camera mode — toggled from the Viewport panel's overflow
@@ -490,12 +500,6 @@ real Studio UI needs. All classes below checked against
 - [ ] 📋 `ImageButton` — the image-based sibling of `TextButton`, not yet
   scoped anywhere (easy to lose track of next to `TextButton`, but a
   distinct class).
-- [ ] 📋 `GuiObject.Rotation` applied in rendering — a plain `float` degrees
-  property that already exists on every `GuiObject`; not yet read by the
-  GUI renderer. Rotates around the element's **center**, not its
-  `AnchorPoint` (Roblox's own docs are explicit you cannot change the pivot
-  point), and is documented as incompatible with `ClipsDescendants` — worth
-  a test that pins both.
 - [ ] 📋 `UIGradient` — `Color` (`ColorSequence`), `Transparency`
   (`NumberSequence`), `Rotation`, `Offset`, `Scale`, and a `Type` enum
   (`Linear`/`Radial`/`Conical`) plus `TileMode` — not just a linear
