@@ -44,13 +44,20 @@ pub(crate) fn movable(
 
 /// Whether dropping `dragged` onto `target` would move anything at all — the
 /// predicate the hovered row's highlight and GPUI's `can_drop` ask.
+///
+/// Short-circuits instead of calling [`movable`], which would allocate: this
+/// runs for every visible row on every frame for as long as a drag lasts. Both
+/// still decide one instance at a time with the same [`moves`].
 pub(crate) fn accepts(
     dom: &WeakDom,
     database: &ReflectionDatabase,
     dragged: &[Ref],
     target: Ref,
 ) -> bool {
-    !movable(dom, database, dragged, target).is_empty()
+    dom.get(target).is_some()
+        && dragged
+            .iter()
+            .any(|&reference| moves(dom, database, dragged, reference, target))
 }
 
 /// Whether this one instance out of `dragged` ends up somewhere new.
