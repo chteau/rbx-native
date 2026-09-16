@@ -564,3 +564,88 @@ fn a_model_with_no_parts_beneath_it_is_still_no_target() {
     assert_eq!(targets.anchor(), None);
     assert_eq!(targets.centre(), None);
 }
+
+/// A box part standing square to the world at `position`, `size` studs a side.
+fn part_at(referent: u32, position: Vec3, size: Vec3) -> Target {
+    Target {
+        referent: Ref::new(referent),
+        model: Mat4::from_translation(position) * Mat4::from_scale(size),
+    }
+}
+
+#[test]
+fn a_group_scales_every_part_and_its_offset_from_the_pivot_by_one_factor() {
+    // Two 2-stud cubes side by side, x from -3 to 3; the -X face of the
+    // group's box stands at x = -3 and holds still while the +X one is pulled.
+    let held = Targets(vec![
+        part_at(1, Vec3::new(-2.0, 0.0, 0.0), Vec3::splat(2.0)),
+        part_at(2, Vec3::new(2.0, 0.0, 0.0), Vec3::splat(2.0)),
+    ]);
+    let mut targets = held.clone();
+    let pivot = Vec3::new(-3.0, 0.0, 0.0);
+
+    let written = targets.scale_about(&held, pivot, 2.0);
+
+    assert_eq!(written.len(), 2);
+    let (_, size, position) = written[0];
+    assert!(
+        (size - Vec3::splat(4.0)).length() < 1e-5,
+        "every part doubles"
+    );
+    assert!((position - Vec3::new(-1.0, 0.0, 0.0)).length() < 1e-5);
+    let (_, size, position) = written[1];
+    assert!((size - Vec3::splat(4.0)).length() < 1e-5);
+    assert!((position - Vec3::new(7.0, 0.0, 0.0)).length() < 1e-5);
+    // The far face still stands at x = -3: the first part now spans -3..1.
+    assert!((targets.anchor().unwrap().position().x - 2.0 + 3.0).abs() < 1e-5);
+    // And the group's own box doubled with it.
+    let (min, max) = gizmo::bounds_of(targets.iter().map(|t| t.model)).unwrap();
+    assert!((min.x + 3.0).abs() < 1e-5 && (max.x - 9.0).abs() < 1e-5);
+}
+
+#[test]
+fn a_group_scale_is_absolute_from_the_grab_not_a_running_product() {
+    let held = Targets(vec![part_at(1, Vec3::ZERO, Vec3::splat(2.0))]);
+    let mut targets = held.clone();
+    targets.scale_about(&held, Vec3::ZERO, 3.0);
+    targets.scale_about(&held, Vec3::ZERO, 1.5);
+    assert!((targets.anchor().unwrap().size() - Vec3::splat(3.0)).length() < 1e-5);
+}
+
+#[test]
+fn a_group_factor_stops_where_any_part_would_leave_the_size_range() {
+    let targets = Targets(vec![
+        part_at(1, Vec3::ZERO, Vec3::new(1.0, 1.0, 1.0)),
+        part_at(2, Vec3::ZERO, Vec3::new(10.0, 1.0, 1.0)),
+    ]);
+    // The 10-stud part hits a 20-stud ceiling at a factor of 2, however far
+    // the handle is pulled.
+    assert!((targets.factor_within(5.0, 0.001, 20.0) - 2.0).abs() < 1e-6);
+    // And the floor: nothing may shrink below a tenth of a stud, which the
+    // 1-stud parts reach at 0.1.
+    assert!((targets.factor_within(0.01, 0.1, 20.0) - 0.1).abs() < 1e-6);
+    // A factor inside the range passes through.
+    assert!((targets.factor_within(1.5, 0.001, 20.0) - 1.5).abs() < 1e-6);
+}
+
+#[test]
+fn a_group_rotates_about_its_centre_carrying_each_part_round_with_it() {
+    let held = Targets(vec![
+        part_at(1, Vec3::new(4.0, 0.0, 0.0), Vec3::splat(2.0)),
+        part_at(2, Vec3::new(-4.0, 0.0, 0.0), Vec3::splat(2.0)),
+    ]);
+    let mut targets = held.clone();
+    let quarter = Mat3::from_axis_angle(Vec3::Y, std::f32::consts::FRAC_PI_2);
+
+    let written = targets.rotate_about(&held, Vec3::ZERO, quarter);
+
+    // A quarter turn about Y carries +X onto -Z: the part at x = 4 swings to
+    // z = -4, the other to z = 4, and each faces the new way too.
+    let (_, orientation, position) = written[0];
+    assert!((position - Vec3::new(0.0, 0.0, -4.0)).length() < 1e-5);
+    assert!((orientation.x_axis - Vec3::NEG_Z).length() < 1e-5);
+    let (_, _, position) = written[1];
+    assert!((position - Vec3::new(0.0, 0.0, 4.0)).length() < 1e-5);
+    // Sizes are untouched by a turn.
+    assert!((targets.anchor().unwrap().size() - Vec3::splat(2.0)).length() < 1e-5);
+}

@@ -113,16 +113,20 @@ pub(crate) enum ViewportAction {
     /// opposite the grabbed one holds still, so growing the part by a stud
     /// moves its middle by half of one.
     Resized {
-        referent: Ref,
-        size: Vec3,
-        position: Vec3,
+        /// Each part's new size and centre — one entry for a lone part's
+        /// own Scale, every selected part for a group scaled as a whole (see
+        /// `transform::Targets::scale_about`).
+        parts: Vec<(Ref, Vec3, Vec3)>,
         first: bool,
     },
     /// A Rotate drag turned the part about its centre, which is where the
     /// rings stand. Only the `CFrame`'s rotation changes.
     Rotated {
-        referent: Ref,
-        orientation: Mat3,
+        /// Each part's new orientation and centre — the centre unchanged for
+        /// a lone part turning about itself, swung round the selection's
+        /// centre for every part of a group (see
+        /// `transform::Targets::rotate_about`).
+        parts: Vec<(Ref, Mat3, Vec3)>,
         first: bool,
     },
     /// `T` or `R` during a cursor drag: a quarter turn about `pivot`, the
@@ -249,6 +253,11 @@ pub(crate) struct WorkspaceView {
     /// `Shell` has resolved the same click against the real geometry (see
     /// `ViewportAction::Pick`'s `held`).
     pending_grab: Option<Drag>,
+    /// The selection as it stood when the drag in progress grabbed it: what
+    /// a group Scale or Rotate measures from, so a gesture is one absolute
+    /// factor or turn rather than a running product (see
+    /// `transform::Targets::scale_about`).
+    held: Targets,
     /// Whether the drag in progress has actually moved the part yet, which is
     /// what tells `Shell` which move opens the gesture's one undo step.
     dragged: bool,
@@ -340,6 +349,7 @@ impl WorkspaceView {
             meshes: Meshes::default(),
             drag: None,
             pending_grab: None,
+            held: Targets::default(),
             dragged: false,
             _subscriptions: [blur, deactivated],
         }

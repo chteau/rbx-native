@@ -296,6 +296,16 @@ impl Selection {
     /// `rbxstudio` places the handles it hit-tests from the very same
     /// `gizmo::centre_of` (see `transform::Targets::centre`), so what the user
     /// can grab and what they can see cannot drift apart.
+    /// The box the Scale handles stand on — see `gizmo::scale_box`.
+    pub(super) fn scale_box(&self) -> Option<Mat4> {
+        gizmo::scale_box(
+            self.outline
+                .selected
+                .iter()
+                .flat_map(|entry| models_of(&self.outline.placements, entry)),
+        )
+    }
+
     pub(super) fn centre(&self) -> Option<Vec3> {
         gizmo::centre_of(
             self.outline

@@ -760,3 +760,70 @@ fn a_snapped_rotate_drag_rounds_its_whole_sweep_not_each_step() {
     let expected = Vec3::new(45f32.to_radians().cos(), 45f32.to_radians().sin(), 0.0);
     assert!((turned.x_axis - expected).length() < 1e-4);
 }
+
+/// A group's 8-by-2-by-2 box centred on the origin, its +X ball grabbed where
+/// it stands (4 studs out).
+fn grabbed_group_x_face() -> Drag {
+    Drag::Box {
+        origin: Vec3::ZERO,
+        axis: Vec3::X,
+        grabbed: 4.0,
+        extent: 8.0,
+        pivot: Vec3::new(-4.0, 0.0, 0.0),
+    }
+}
+
+#[test]
+fn a_group_scale_drag_pulls_the_box_into_a_factor_about_its_far_face() {
+    // Pulled from 4 out to 8: the box is 12 long now, one and a half times
+    // what it was, and everything scales about the -X face at x = -4.
+    let (_, change) = advance(grabbed_group_x_face(), looking_at(8.0, 0.0), free())
+        .expect("the axis is across the view");
+    assert_eq!(
+        change,
+        Change::Scaled {
+            pivot: Vec3::new(-4.0, 0.0, 0.0),
+            factor: 1.5,
+        }
+    );
+}
+
+#[test]
+fn a_snapped_group_scale_drag_grows_the_box_by_whole_studs() {
+    let (_, change) = advance(grabbed_group_x_face(), looking_at(7.6, 0.0), grid(1.0))
+        .expect("the axis is across the view");
+    // 3.6 studs of pull round to 4: 12 over 8.
+    let Change::Scaled { factor, .. } = change else {
+        panic!("expected a group scale, got {change:?}");
+    };
+    assert!((factor - 1.5).abs() < 1e-5);
+}
+
+#[test]
+fn a_group_scale_applied_to_a_part_moves_it_away_from_the_pivot() {
+    let part = block();
+    let scaled = applied(
+        part,
+        Change::Scaled {
+            pivot: Vec3::new(-4.0, 0.0, 0.0),
+            factor: 2.0,
+        },
+    )
+    .expect("a factor of two changes it");
+    assert!((scaled.size() - part.size() * 2.0).length() < 1e-5);
+    // Twice as far from the pivot as it was.
+    let was = part.position() - Vec3::new(-4.0, 0.0, 0.0);
+    let now = scaled.position() - Vec3::new(-4.0, 0.0, 0.0);
+    assert!((now - was * 2.0).length() < 1e-5);
+    // And a factor of exactly one is no change at all.
+    assert_eq!(
+        applied(
+            part,
+            Change::Scaled {
+                pivot: Vec3::ZERO,
+                factor: 1.0
+            }
+        ),
+        None
+    );
+}

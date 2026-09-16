@@ -128,6 +128,15 @@ impl Selection {
     /// documents the "adds another object" half; toggling back off on a
     /// second click of the same object is not spelled out there, but is
     /// standard multi-select behaviour and what Studio itself does.
+    /// Replaces the whole selection, reporting whether it changed — what an
+    /// undo needs, since a multi-selection survives one exactly as far as
+    /// its referents still resolve.
+    pub(super) fn replace(&mut self, selected: Vec<Ref>) -> bool {
+        let changed = self.0 != selected;
+        self.0 = selected;
+        changed
+    }
+
     pub(super) fn toggle(&mut self, reference: Ref) {
         match self.0.iter().position(|&selected| selected == reference) {
             Some(index) => {
@@ -236,6 +245,19 @@ mod tests {
         assert!(selection.set(None));
         assert_eq!(selection.get(), None);
         assert!(!selection.set(None));
+    }
+
+    #[test]
+    fn replacing_keeps_every_survivor_of_a_multi_selection() {
+        let (a, b, c) = (Ref::new(1), Ref::new(2), Ref::new(3));
+        let mut selection = Selection::new([a, b, c]);
+
+        assert!(!selection.replace(vec![a, b, c]), "nothing changed");
+        assert!(selection.replace(vec![a, c]), "b is gone");
+        assert_eq!(selection.all(), [a, c]);
+        assert_eq!(selection.get(), Some(a));
+        assert!(selection.replace(Vec::new()));
+        assert_eq!(selection.get(), None);
     }
 
     #[test]

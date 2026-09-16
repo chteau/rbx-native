@@ -464,3 +464,27 @@ fn four_quarter_turns_come_back_to_where_they_started() {
     assert!((state.1 - start.1).length() < 1e-4, "{:?}", state.1);
     assert!((state.0.x_axis - Vec3::X).length() < 1e-4, "{:?}", state.0);
 }
+
+#[test]
+fn one_part_scales_on_its_own_box_and_a_group_on_the_box_round_them() {
+    let only = Mat4::from_translation(Vec3::new(1.0, 2.0, 3.0))
+        * Mat4::from_rotation_y(0.7)
+        * Mat4::from_scale(Vec3::new(2.0, 4.0, 6.0));
+    assert_eq!(
+        scale_box([only]),
+        Some(only),
+        "a lone part keeps its own frame"
+    );
+
+    let a = Mat4::from_translation(Vec3::new(-2.0, 0.0, 0.0)) * Mat4::from_scale(Vec3::splat(2.0));
+    let b = Mat4::from_translation(Vec3::new(4.0, 1.0, 0.0)) * Mat4::from_scale(Vec3::splat(2.0));
+    let group = scale_box([a, b]).expect("two parts");
+    // From x=-3 to x=5, y=-1 to y=2, z=-1 to z=1: centred at (1, 0.5, 0),
+    // 8 by 3 by 2, and standing square to the world.
+    assert!((group.w_axis.truncate() - Vec3::new(1.0, 0.5, 0.0)).length() < 1e-5);
+    assert!((group.x_axis.truncate() - Vec3::new(8.0, 0.0, 0.0)).length() < 1e-5);
+    assert!((group.y_axis.truncate() - Vec3::new(0.0, 3.0, 0.0)).length() < 1e-5);
+    assert!((group.z_axis.truncate() - Vec3::new(0.0, 0.0, 2.0)).length() < 1e-5);
+
+    assert_eq!(scale_box([]), None);
+}

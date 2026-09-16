@@ -100,6 +100,24 @@ impl Shell {
     /// the outline, the gizmo and the Explorer's own highlight (see
     /// `shell::panels::instance_tree`) all read that directly rather than the
     /// tree's idea of "selected".
+    /// Sets the selection to `kept` as a whole — every entry of a
+    /// multi-selection that an undo, redo or rebuild left standing, in its
+    /// order, with the first as the Explorer's row — rather than collapsing
+    /// it to its anchor the way [`Shell::select`] would.
+    pub(super) fn reselect(&mut self, kept: Vec<Ref>, cx: &mut Context<Self>) {
+        let anchor = kept.first().and_then(|&r| self.explorer.item(r));
+        let tree = self.tree.clone();
+        tree.update(cx, |tree, cx| {
+            tree.set_selected_item(anchor.as_ref(), cx);
+            if let Some(anchor) = &anchor {
+                tree.reveal_item(&anchor.id, ScrollStrategy::Center, cx);
+            }
+        });
+        if self.selection.replace(kept) {
+            self.selection_changed(cx);
+        }
+    }
+
     pub(super) fn extend_selection(&mut self, reference: Ref, cx: &mut Context<Self>) {
         self.selection.toggle(reference);
 

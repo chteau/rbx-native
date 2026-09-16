@@ -95,10 +95,23 @@ pub(super) enum Drag {
         /// part's own frame, so the axis alone does not say.
         component: usize,
     },
+    /// One of the Scale tool's balls is held on a *group's* box (see
+    /// `gizmo::scale_box`): the box's centre, the world axis pointing out
+    /// through the grabbed face, where the cursor stood along it, how long
+    /// the box was along that axis, and the centre of the opposite face —
+    /// the point the whole group scales about, so that face holds still the
+    /// way a lone part's does.
+    Box {
+        origin: Vec3,
+        axis: Vec3,
+        grabbed: f32,
+        extent: f32,
+        pivot: Vec3,
+    },
     /// One of the Rotate tool's rings is held: the ring's own frame, frozen at
-    /// the grab (see [`gizmo::ring_crossing`]), the orientation the part
-    /// started at, the angle last measured and how far the drag has turned in
-    /// total.
+    /// the grab (see [`gizmo::ring_crossing`]), the orientation the anchor
+    /// part started at, the angle last measured and how far the drag has
+    /// turned in total.
     Ring {
         origin: Vec3,
         frame: (Vec3, Vec3, Vec3),
@@ -119,6 +132,12 @@ pub(super) enum Change {
         position: Vec3,
     },
     Orientation(Mat3),
+    /// A group's box pulled to `factor` times its size at the grab, about
+    /// `pivot` (see [`Drag::Box`]).
+    Scaled {
+        pivot: Vec3,
+        factor: f32,
+    },
 }
 
 impl Drag {
@@ -130,7 +149,7 @@ impl Drag {
             // Only a Move drag's own body-grab (`Plane`) settles onto a
             // surface — Scale and Rotate have no such concept, and an
             // axis-arrow Move drag already slides exactly along its axis.
-            Drag::Axis { .. } | Drag::Size { .. } | Drag::Ring { .. } => None,
+            Drag::Axis { .. } | Drag::Size { .. } | Drag::Box { .. } | Drag::Ring { .. } => None,
             Drag::Plane {
                 point,
                 normal,
@@ -204,16 +223,14 @@ impl WorkspaceView {
     fn handles(&self) -> Option<Handles> {
         let anchor = self.targets.anchor()?;
         let pose = self.view?;
-        // Move drags the whole selection by one offset, so its handles sit at
-        // the middle of it; Rotate turns the anchor part alone and stays on
-        // it. The renderer picks the same origin the same way (see
-        // `renderer::Renderer::handles`), both from `gizmo::centre_of`, so
-        // what can be grabbed is what is drawn. The *basis* always comes from
-        // the anchor — a selection has no aggregate rotation to take.
-        let origin = match self.transform.tool {
-            Tool::Move => self.targets.centre()?,
-            _ => anchor.position(),
-        };
+        // Move drags the whole selection by one offset and Rotate turns it
+        // about one point, so both sit at the middle of it — which for one
+        // part is that part's own centre. The renderer picks the same origin
+        // the same way (see `renderer::Renderer::handles`), both from
+        // `gizmo::centre_of`, so what can be grabbed is what is drawn. The
+        // *basis* always comes from the anchor — a selection has no
+        // aggregate rotation to take.
+        let origin = self.targets.centre()?;
         Some(Handles::new(
             origin,
             gizmo::basis(self.transform.local.then(|| anchor.rotation())),
@@ -221,14 +238,15 @@ impl WorkspaceView {
         ))
     }
 
-    /// Where the Scale tool's balls stand this frame: on the faces of the
-    /// anchor part's own box, which is the part a Scale drag resizes. Built
-    /// from the same placement and the same camera the renderer builds the
-    /// drawn ones from (see `rbx_viewer::renderer::Renderer::handles`), so
-    /// what can be grabbed is what is on screen.
+    /// Where the Scale tool's balls stand this frame: on the faces of a lone
+    /// part's own box, or of the world-aligned box round a group (see
+    /// `gizmo::scale_box`). Built from the same placement and the same camera
+    /// the renderer builds the drawn ones from (see
+    /// `rbx_viewer::renderer::Renderer::handles`), so what can be grabbed is
+    /// what is on screen.
     fn faces(&self) -> Option<Faces> {
         Some(Faces::new(
-            self.targets.anchor()?.model,
+            self.targets.scale_box()?,
             self.view?,
             self.orthographic,
         ))
@@ -286,6 +304,7 @@ impl WorkspaceView {
     /// instead of `hover_pending` once `dragging()` is true.
     fn begin(&mut self, drag: Drag, cx: &mut gpui_kit::Context<Self>) {
         self.drag = Some(drag);
+        self.held = self.targets.clone();
         self.dragged = false;
         self.hover_pending = None;
         cx.emit(ViewportAction::Hover(None));
@@ -317,6 +336,7 @@ impl WorkspaceView {
         match self.transform.tool {
             Tool::Select => None,
             Tool::Move => self.grab_axis(&handles, ray),
+            Tool::Scale if self.targets.len() > 1 => grab_box(&self.faces()?, ray),
             Tool::Scale => grab_face(&self.faces()?, anchor, ray),
             Tool::Rotate => {
                 let axis = handles.grab_ring(ray)?;
@@ -455,25 +475,52 @@ impl WorkspaceView {
             // `transform::Targets::set_anchor` — so only the anchor itself
             // moves, exactly as it did before there was more than one part to
             // select.
-            _ => {
+            // A lone part's Size is its own, so a Scale of one resizes that
+            // one axis exactly as before; a group has no one Size and scales
+            // as a whole (see `transform::Targets::scale_about`), which is
+            // what the box its handles stand on already promised.
+            Change::Size { size, position } => {
                 let Some((moved, first)) = stepped(anchor, change, &mut self.dragged) else {
                     return;
                 };
                 self.targets.set_anchor(moved);
-                cx.emit(match change {
-                    Change::Size { size, position } => ViewportAction::Resized {
-                        referent,
-                        size,
-                        position,
-                        first,
-                    },
-                    Change::Orientation(orientation) => ViewportAction::Rotated {
-                        referent,
-                        orientation,
-                        first,
-                    },
-                    Change::Position(_) => unreachable!("handled above"),
+                cx.emit(ViewportAction::Resized {
+                    parts: vec![(referent, size, position)],
+                    first,
                 });
+            }
+            Change::Scaled { pivot, factor } => {
+                let factor = self.held.factor_within(factor, MIN_SIZE, MAX_SIZE);
+                let change = Change::Scaled { pivot, factor };
+                let Some((_, first)) = stepped(anchor, change, &mut self.dragged) else {
+                    return;
+                };
+                let held = self.held.clone();
+                let parts = self.targets.scale_about(&held, pivot, factor);
+                cx.emit(ViewportAction::Resized { parts, first });
+            }
+            // Rotate turns every selected part about the selection's centre
+            // (`creator-docs`, `parts/models.md`: a model "transforms based
+            // on the center of its bounding box"), which for one part is its
+            // own centre and leaves it exactly where it stands.
+            Change::Orientation(orientation) => {
+                let Some((_, first)) = stepped(anchor, change, &mut self.dragged) else {
+                    return;
+                };
+                let Drag::Ring {
+                    origin,
+                    orientation: was,
+                    ..
+                } = drag
+                else {
+                    unreachable!("only a ring turns");
+                };
+                // The turn since the grab, as the anchor's orientation then
+                // and now give it: absolute, so the group cannot drift.
+                let rotation = orientation * was.transpose();
+                let held = self.held.clone();
+                let parts = self.targets.rotate_about(&held, origin, rotation);
+                cx.emit(ViewportAction::Rotated { parts, first });
             }
         }
     }
@@ -621,6 +668,29 @@ fn grab_face(faces: &Faces, target: Target, ray: Ray) -> Option<Drag> {
     })
 }
 
+/// Which face of a group's box a Scale ball stands on, and the whole-group
+/// drag grabbing it opens: pulling the face scales every part by the same
+/// factor about the opposite face, which holds still.
+///
+/// One factor rather than one axis: a group's parts stand at every angle to
+/// the box, and stretching the box along one world axis is nothing a rotated
+/// part's own `Size` can express. `creator-docs` gives the transform tools no
+/// per-axis behaviour for models at all (`parts/models.md`), so this follows
+/// `Model:ScaleTo`, the one model-scaling operation Roblox does document.
+fn grab_box(faces: &Faces, ray: Ray) -> Option<Drag> {
+    let (grabbed, sign) = faces.grab(ray)?;
+    let axis = faces.direction(grabbed) * sign;
+    let origin = faces.centre();
+    let extent = faces.extent(grabbed);
+    Some(Drag::Box {
+        origin,
+        axis,
+        grabbed: gizmo::along_axis(origin, axis, ray)?,
+        extent,
+        pivot: origin - axis * extent * 0.5,
+    })
+}
+
 /// What this cursor ray does to the part, and the drag state the next step is
 /// measured from. `None` when the gesture has no answer at this angle — an
 /// axis sighted end-on, or a drag plane the ray has turned parallel to (or
@@ -689,6 +759,29 @@ pub(super) fn advance(drag: Drag, ray: Ray, landing: Landing) -> Option<(Drag, C
                 },
             ))
         }
+        Drag::Box {
+            origin,
+            axis,
+            grabbed,
+            extent,
+            pivot,
+        } => {
+            let travelled = snap::round_to(
+                gizmo::along_axis(origin, axis, ray)? - grabbed,
+                landing.grid,
+            );
+            // The box's own length along the pulled axis, held to the same
+            // range a part's Size is; what every part scales by is how much
+            // that grew or shrank in proportion.
+            let pulled = (extent + travelled).clamp(MIN_SIZE, MAX_SIZE);
+            Some((
+                drag,
+                Change::Scaled {
+                    pivot,
+                    factor: pulled / extent,
+                },
+            ))
+        }
         Drag::Ring {
             origin,
             frame,
@@ -748,6 +841,12 @@ pub(super) fn applied(target: Target, change: Change) -> Option<Target> {
         Change::Orientation(orientation) => {
             (orientation != target.orientation()).then(|| target.rotated_to(orientation))
         }
+        Change::Scaled { pivot, factor } => (factor != 1.0).then(|| {
+            target.resized_to(
+                target.size() * factor,
+                pivot + (target.position() - pivot) * factor,
+            )
+        }),
     }
 }
 

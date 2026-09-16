@@ -369,23 +369,22 @@ impl Renderer {
         };
         let model = self.selection.anchor()?;
         let orthographic = self.camera.is_orthographic();
-        // Scale's balls are bound to the anchor part's own surface, so there
-        // is no origin or arm to pick for them at all — the part's placement
-        // is the whole of where they go.
+        // Scale's balls are bound to the surface of the box the selection
+        // scales on — a lone part's own, a group's world-aligned bounds — so
+        // there is no origin or arm to pick for them at all.
         if gizmo.kind == Kind::Scale {
-            return Some(Shape::Scale(Faces::new(model, pose, orthographic)));
+            let scaled = self.selection.scale_box().unwrap_or(model);
+            return Some(Shape::Scale(Faces::new(scaled, pose, orthographic)));
         }
 
         let (anchor, rotation) = (model.w_axis.truncate(), Mat3::from_mat4(model));
-        // Move drags every selected part by one offset, so its gizmo belongs
-        // at the middle of the whole selection rather than hanging off
-        // whichever part happens to be first. Rotate still turns the anchor
-        // part alone, and its rings stay on it: a ring floating in the gap
-        // between two parts would turn one the user is not pointing at.
-        let origin = match gizmo.kind {
-            Kind::Move => self.selection.centre().unwrap_or(anchor),
-            _ => anchor,
-        };
+        // Move drags every selected part by one offset and Rotate turns them
+        // all about one point, so both gizmos belong at the middle of the
+        // whole selection rather than hanging off whichever part happens to
+        // be first (for one part the two are the same place). The *basis*
+        // still comes from the anchor: a selection has no aggregate rotation
+        // to take.
+        let origin = self.selection.centre().unwrap_or(anchor);
         let handles = Handles::new(
             origin,
             basis(gizmo.local.then_some(rotation)),

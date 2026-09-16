@@ -52,17 +52,8 @@ impl Shell {
                 first,
                 settle,
             } => self.move_parts(moves, *first, *settle, cx),
-            ViewportAction::Resized {
-                referent,
-                size,
-                position,
-                first,
-            } => self.resize_part(*referent, *size, *position, *first, cx),
-            ViewportAction::Rotated {
-                referent,
-                orientation,
-                first,
-            } => self.rotate_part(*referent, *orientation, *first, cx),
+            ViewportAction::Resized { parts, first } => self.resize_parts(parts, *first, cx),
+            ViewportAction::Rotated { parts, first } => self.rotate_parts(parts, *first, cx),
             ViewportAction::Turned {
                 referent,
                 pivot,
@@ -236,48 +227,50 @@ impl Shell {
         cx.notify();
     }
 
-    /// One step of a Scale drag. Two properties, because Studio's Scale tool
-    /// holds the face opposite the grabbed one still: the part's `Size` grows
-    /// and its `CFrame` shifts by half of that growth, and either one written
-    /// without the other would show the part jumping.
-    fn resize_part(
-        &mut self,
-        referent: Ref,
-        size: Vec3,
-        position: Vec3,
-        first: bool,
-        cx: &mut Context<Self>,
-    ) {
-        let (size, position) = (vector(size), vector(position));
-        self.write_drag(
-            referent,
-            first,
-            &[(SIZE_PROPERTY, &size), (CFRAME_PROPERTY, &position)],
-            cx,
-        );
+    /// One step of a Scale drag, for every part it carries. Two properties
+    /// per part, because Studio's Scale tool holds the face opposite the
+    /// grabbed one still: the part's `Size` grows and its `CFrame` shifts by
+    /// half of that growth — or, for a group scaled as a whole, by its
+    /// offset from the box's far face — and either one written without the
+    /// other would show the part jumping.
+    fn resize_parts(&mut self, parts: &[(Ref, Vec3, Vec3)], first: bool, cx: &mut Context<Self>) {
+        let writes: Vec<(Ref, &str, String)> = parts
+            .iter()
+            .flat_map(|&(referent, size, position)| {
+                [
+                    (referent, SIZE_PROPERTY, vector(size)),
+                    (referent, CFRAME_PROPERTY, vector(position)),
+                ]
+            })
+            .collect();
+        self.write_drag(first, &writes, cx);
     }
 
-    /// One step of a Rotate drag. The rings stand on the part's centre, so
-    /// only the `CFrame`'s rotation changes — written as the nine numbers
-    /// Roblox's own `CFrame.new(x, y, z, R00 … R22)` takes them in, row by row
-    /// (`creator-docs`, `reference/engine/datatypes/CFrame.yaml`).
-    fn rotate_part(
-        &mut self,
-        referent: Ref,
-        orientation: Mat3,
-        first: bool,
-        cx: &mut Context<Self>,
-    ) {
-        let rows = (0..3).flat_map(|row| (0..3).map(move |column| orientation.col(column)[row]));
-        let text = rows
-            .map(|term| term.to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        self.write_drag(referent, first, &[(CFRAME_PROPERTY, &text)], cx);
+    /// One step of a Rotate drag, for every part it carries: the rotation
+    /// and the centre together, as the twelve numbers Roblox's own
+    /// `CFrame.new(x, y, z, R00 … R22)` takes them in, row by row
+    /// (`creator-docs`, `reference/engine/datatypes/CFrame.yaml`) — a lone
+    /// part turning about itself keeps its centre, a part of a group swings
+    /// round the group's.
+    fn rotate_parts(&mut self, parts: &[(Ref, Mat3, Vec3)], first: bool, cx: &mut Context<Self>) {
+        let writes: Vec<(Ref, &str, String)> = parts
+            .iter()
+            .map(|&(referent, orientation, position)| {
+                let rows =
+                    (0..3).flat_map(|row| (0..3).map(move |column| orientation.col(column)[row]));
+                let text = [position.x, position.y, position.z]
+                    .into_iter()
+                    .chain(rows)
+                    .map(|term| term.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                (referent, CFRAME_PROPERTY, text)
+            })
+            .collect();
+        self.write_drag(first, &writes, cx);
     }
 
-    /// Writes one step of a Scale or Rotate drag into the DOM, reporting
-    /// whether it succeeded.
+    /// Writes one step of a Scale or Rotate drag into the DOM.
     ///
     /// History is pushed once, on `first`: a snapshot is a whole `WeakDom`
     /// clone (see `crate::history`), so one per mouse move would both cost
@@ -286,36 +279,29 @@ impl Shell {
     /// the same `properties::edit::commit` the Properties panel uses, so a
     /// drag and a typed value cannot disagree about what transforming a part
     /// means.
-    fn write_drag(
-        &mut self,
-        referent: Ref,
-        first: bool,
-        properties: &[(&str, &str)],
-        cx: &mut Context<Self>,
-    ) -> bool {
+    fn write_drag(&mut self, first: bool, writes: &[(Ref, &str, String)], cx: &mut Context<Self>) {
         if first {
             self.push_history();
         }
 
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
-        let written = properties.iter().try_for_each(|(name, text)| {
-            properties::edit::commit(&mut dom, &self.database, referent, name, text).map(|_| ())
+        let written = writes.iter().try_for_each(|(referent, name, text)| {
+            properties::edit::commit(&mut dom, &self.database, *referent, name, text).map(|_| ())
         });
         self.dom = dom;
         // Same reasoning as `move_parts`: overwrites the entry's log with
-        // just this step's writes. `properties` carries one name (a Rotate
-        // drag) or two (Scale's paired Size/CFrame), all on the one part —
-        // one patch of that part either way, here and on undo.
+        // just this step's writes — one `CFrame` per part for a Rotate,
+        // Size and CFrame per part for a Scale — one patch of each part
+        // either way, here and on undo.
         let changes = self.dom.take_changes();
         self.reflect_changes(&changes, cx);
         self.record_history_change(changes);
 
         if let Err(err) = written {
             self.output.push_warning(&format!("viewport drag: {err}"));
-            return false;
+            return;
         }
         cx.notify();
-        true
     }
 
     /// A `T`/`R` quarter turn mid-drag.
