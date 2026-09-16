@@ -54,6 +54,7 @@ use selection::Selection;
 use shadow::{Fit, Lamp, Shadows};
 use shaped::Shaped;
 use stars::Stars;
+use texture::PER_FRAME;
 use trail::Trails;
 use translucent::Translucent;
 
@@ -405,6 +406,18 @@ impl Renderer {
         }
     }
 
+    /// Uploads every texture still queued from the last load or reload, all
+    /// at once, instead of a bounded amount per [`Renderer::draw`] call.
+    ///
+    /// For a caller with no next frame to spread the rest across — the
+    /// single-shot `rbxview --screenshot` path — rather than one that
+    /// forever draws whatever loaded so far, the way a live window or an
+    /// embedder's continuously redrawn viewport does.
+    pub(crate) fn finish_loading(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        self.textured
+            .upload_pending(device, queue, &self.quality, usize::MAX);
+    }
+
     pub(crate) fn draw(
         &mut self,
         device: &wgpu::Device,
@@ -417,6 +430,12 @@ impl Renderer {
         if size.0 == 0 || size.1 == 0 {
             return;
         }
+
+        // Bounded so a place with many `Decal`/`Texture` images spreads their
+        // GPU upload across the frames after load instead of stalling this
+        // one uploading all of them — see `textured::Textured::upload_pending`.
+        self.textured
+            .upload_pending(device, queue, &self.quality, PER_FRAME);
 
         let aspect = size.0 as f32 / size.1 as f32;
         let eye = self.camera.eye_position(from);

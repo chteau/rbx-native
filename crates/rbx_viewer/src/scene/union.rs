@@ -12,6 +12,8 @@ mod csg;
 mod tree;
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 use glam::{Mat4, Vec3};
 use rbx_assets::AssetRef;
@@ -24,6 +26,13 @@ use super::material::{Catalog, Slot};
 use super::{Part, ResolvedInstance};
 
 const PART_OPERATION: &str = "PartOperation";
+
+/// A place with many legacy unions shouldn't spawn one thread per boolean
+/// regardless of core count — same bounded-worker-pool shape as
+/// `crate::assets`'s download pool, just sized to available CPU parallelism
+/// rather than a remote request-rate limit: this work is CPU-bound, not
+/// network-bound, so the cap that matters is core count, not Roblox's API.
+const MAX_CSG_WORKERS: usize = 8;
 
 /// One legacy union/negate found in the DOM, before its asset exists.
 pub(super) struct Entry {
@@ -220,17 +229,11 @@ pub(crate) fn resolve(
     database: &ReflectionDatabase,
     materials: &mut Catalog,
 ) -> Resolution {
-    let mut evaluated: HashMap<AssetRef, Option<Evaluated>> = HashMap::new();
+    let evaluated = evaluate_all(plan, &assets, database);
     let mut resolution = Resolution::default();
 
     for entry in &plan.entries {
-        let Some(bytes) = assets.get(&entry.asset) else {
-            continue;
-        };
-        let Some(Evaluated { tree, mesh }) = evaluated
-            .entry(entry.asset.clone())
-            .or_insert_with(|| evaluate(bytes, database))
-        else {
+        let Some(Some(Evaluated { tree, mesh })) = evaluated.get(&entry.asset) else {
             continue;
         };
         resolution.hidden.insert(entry.referent);
@@ -271,6 +274,57 @@ fn evaluate(bytes: &[u8], database: &ReflectionDatabase) -> Option<Evaluated> {
     let tree = tree::parse(bytes, database)?;
     let mesh = csg::evaluate(&tree).ok().map(|solid| solid.to_mesh());
     Some(Evaluated { tree, mesh })
+}
+
+/// Runs [`evaluate`] for every distinct, downloaded asset `plan` needs,
+/// across a bounded worker pool — same `thread::scope` plus atomic work-list
+/// index shape as `crate::assets::load_with`'s download pool, just with the
+/// BSP boolean itself as the unit of work instead of a network fetch.
+///
+/// This is the one CPU-heavy step in resolving a plan: each asset's boolean
+/// is a from-scratch BSP tree build, completely independent of every other
+/// asset's, so a place with dozens of legacy unions can spread that cost
+/// across cores instead of paying for it back to back on the caller's own
+/// thread. Several entries can share an asset (a builder copy-pasting the
+/// same rock), so this dedupes by [`AssetRef`] first — the whole point is
+/// never redoing the same boolean twice, in parallel or not.
+fn evaluate_all(
+    plan: &Plan,
+    assets: &HashMap<AssetRef, Vec<u8>>,
+    database: &ReflectionDatabase,
+) -> HashMap<AssetRef, Option<Evaluated>> {
+    let mut seen = HashSet::new();
+    let unique: Vec<&AssetRef> = plan
+        .entries
+        .iter()
+        .map(|entry| &entry.asset)
+        .filter(|asset| assets.contains_key(*asset) && seen.insert((*asset).clone()))
+        .collect();
+    if unique.is_empty() {
+        return HashMap::new();
+    }
+
+    let next = AtomicUsize::new(0);
+    let results = Mutex::new(HashMap::with_capacity(unique.len()));
+    let workers = MAX_CSG_WORKERS
+        .min(std::thread::available_parallelism().map_or(1, |n| n.get()))
+        .min(unique.len());
+
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            scope.spawn(|| {
+                while let Some(&asset) = unique.get(next.fetch_add(1, Ordering::Relaxed)) {
+                    let evaluated = evaluate(&assets[asset], database);
+                    results
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .insert(asset.clone(), evaluated);
+                }
+            });
+        }
+    });
+
+    results.into_inner().unwrap_or_else(|e| e.into_inner())
 }
 
 #[cfg(test)]

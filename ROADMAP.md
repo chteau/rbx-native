@@ -90,6 +90,34 @@ Roblox's own engine.
   not just within one session. Still open: no size cap or eviction, so the
   directory only grows; low priority in practice, since Roblox's own
   asset ids are immutable content and the bytes never need invalidating.
+- [x] **Loading a real place no longer spikes CPU (and, on a laptop, the
+  fans) the way it was reported to from real use.** Both candidates the
+  original report named turned out to matter. Profiled with a synthetic,
+  CSG-heavy place (this repository ships no real one): resolving 40 legacy
+  `UnionOperation`/`NegateOperation` booleans (30 leaves each) took ~6s
+  single-threaded versus ~0.1s to generate the equivalent number of texture
+  mip chains, so the CSG boolean was the dominant cost — but that mip-chain
+  number only measured CPU-side mip generation, not the actual GPU upload
+  burst, which turned out to matter on its own.
+  `crates/rbx_viewer/src/scene/union.rs`'s `resolve` now runs each distinct
+  asset's from-scratch BSP boolean across a bounded worker pool
+  (`evaluate_all`, sized to available CPU parallelism rather than a fixed
+  count, since this work is CPU-bound rather than rate-limited by a remote
+  server) instead of one after another on the caller's own thread — the
+  same synthetic place now resolves in ~0.8-1.1s. Separately,
+  `renderer/textured.rs`'s `Textured::new` used to upload every
+  `Decal`/`Texture` image's full mip chain to the GPU in one uninterrupted
+  burst before the renderer was usable at all; it now seeds each slot with
+  a cheap placeholder and `Renderer::draw` uploads a bounded number of the
+  real images per call (`texture::PER_FRAME`), so a place with many
+  textures spreads that cost across the frames after load instead of
+  stalling the first one. Measured directly (real GPU, 60 synthetic
+  1024x1024 images, no network, no committed asset): one burst uploading
+  all of them took ~245-295ms, while spreading it across 8 budgeted frames
+  kept every single frame under ~33ms. The one-shot `rbxview --screenshot`
+  path has no next frame to spread across, so it drains any remaining
+  upload immediately (`Renderer::finish_loading`) before capturing rather
+  than writing out a PNG with textures still mid-upload.
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: real Roblox class icons (fetched at runtime, never
@@ -276,24 +304,6 @@ Roblox's own engine.
 - [ ] 📋 `Light.Shadows` for `PointLight` (needs 6-face shadow maps; done
   for `SpotLight`/`SurfaceLight`).
 - [ ] 📋 Neon/`ForceField` shimmer, `Glass` refraction — currently flat.
-- [ ] 📋 **Loading a real place spikes CPU (and, on a laptop, the fans)
-  hard enough to be reported directly from use.** Not yet root-caused to
-  one specific bug the way the undo/redo item under "What's planned" →
-  Editor was — the load path itself is already somewhat conservative
-  (`crates/rbx_viewer/src/assets.rs` bounds texture/mesh downloads and
-  decoding to a fixed 6-thread pool, sized to Roblox's own request-rate
-  limit rather than core count, and the render loop is capped to the
-  display's refresh rate even during load) — but two real candidates
-  stand out from reading the load path: the legacy `UnionOperation`/
-  `NegateOperation` CSG boolean (a real, from-scratch BSP implementation —
-  see "What's been implemented" above) runs single-threaded with no
-  parallelism at all, one operation after another, however many a place
-  has; and every downloaded texture is decoded and uploaded to the GPU in
-  one uninterrupted burst rather than spread across frames. Needs an
-  actual profile of a real, CSG-heavy place to confirm which (if either)
-  dominates before picking a fix — parallelizing CSG across the same
-  bounded-worker-pool pattern `assets.rs` already established is the
-  obvious first thing to try if it's that.
 - [ ] 📋 **An FPS/frame-time readout**, matching real Studio's own
   performance-debugging surface rather than inventing a new one: Studio's
   `Window > Performance > Stats` toggles a debug stats overlay, and
