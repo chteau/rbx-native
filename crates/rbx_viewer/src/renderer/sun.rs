@@ -7,12 +7,13 @@
 
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec2, Vec3};
+use rbx_assets::AssetRef;
 use wgpu::util::DeviceExt;
 
 use super::pipeline::{Frame, Shared, Target, DEPTH_FORMAT};
 use super::texture;
 use crate::quality::QualityProfile;
-use crate::textures::{Celestial, QUAD_INDICES};
+use crate::textures::{Body, Celestial, QUAD_INDICES};
 
 /// How far outside the visible frame the sun's projection may still fall
 /// before `SunRaysEffect` gives up on the frame rather than blur toward a
@@ -107,6 +108,29 @@ pub(super) struct Bodies {
     images: Vec<wgpu::BindGroup>,
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
+    /// What the buffers were built from (see [`bodies_key`]), for a scene
+    /// rebuild to keep them when the `Sky` still asks for the same discs.
+    bodies: Vec<(AssetRef, Body)>,
+}
+
+/// The identity of the discs as far as their uploads go: each one's image
+/// asset and the angular size and side its quad is built for. Two skies with
+/// the same key upload the same images and the same quads.
+fn bodies_key(bodies: &[Celestial]) -> Vec<(AssetRef, Body)> {
+    bodies
+        .iter()
+        .map(|body| (body.reference.clone(), body.body))
+        .collect()
+}
+
+/// Everything about the pass that comes from the discs rather than from the
+/// renderer: built once by [`Bodies::new`], and again by [`Bodies::replace`]
+/// when a rebuild finds other discs.
+struct Discs {
+    uploads: Vec<texture::Uploaded>,
+    images: Vec<wgpu::BindGroup>,
+    vertices: wgpu::Buffer,
+    indices: wgpu::Buffer,
 }
 
 impl Bodies {
@@ -126,22 +150,12 @@ impl Bodies {
         }
 
         let image_layout = texture::layout(device);
-        // ClampToEdge: a disc is a single image, and wrapping at its border would
-        // smear the sky's own colour round the outside of the sun.
-        let sampler = texture::sampler(device, wgpu::AddressMode::ClampToEdge, quality.anisotropy);
-
-        let mut vertices = Vec::with_capacity(bodies.len() * 4);
-        let mut indices = Vec::with_capacity(bodies.len() * QUAD_INDICES.len());
-        let mut uploads = Vec::with_capacity(bodies.len());
-        let mut images = Vec::with_capacity(bodies.len());
-        for (offset, body) in bodies.iter().enumerate() {
-            let base = u16::try_from(offset * 4).unwrap_or(0);
-            vertices.extend(quad(body));
-            indices.extend(QUAD_INDICES.iter().map(|index| base + index));
-            let upload = texture::Uploaded::color(device, queue, &body.image);
-            images.push(upload.bind(device, &image_layout, &sampler, quality.texture_max_size));
-            uploads.push(upload);
-        }
+        let Discs {
+            uploads,
+            images,
+            vertices,
+            indices,
+        } = upload(device, queue, &image_layout, bodies, quality);
 
         Some(Bodies {
             pipeline: create(device, target, &[Some(frame_layout), Some(&image_layout)]),
@@ -149,17 +163,39 @@ impl Bodies {
             uploads,
             image_layout,
             images,
-            vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("rbxview celestial vertices"),
-                contents: bytemuck::cast_slice(&vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            }),
-            indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("rbxview celestial indices"),
-                contents: bytemuck::cast_slice(&indices),
-                usage: wgpu::BufferUsages::INDEX,
-            }),
+            vertices,
+            indices,
+            bodies: bodies_key(bodies),
         })
+    }
+
+    /// Whether the uploaded discs are exactly `bodies` — see [`bodies_key`].
+    pub(super) fn holds(&self, bodies: &[Celestial]) -> bool {
+        self.bodies == bodies_key(bodies)
+    }
+
+    /// Swaps in other discs, keeping the pipeline and the camera bind group:
+    /// what a scene rebuild does for a `Sky` edit that changed a texture or an
+    /// angular size. `bodies` must not be empty — a place with none drops the
+    /// pass instead (see [`Bodies::new`]).
+    pub(super) fn replace(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        bodies: &[Celestial],
+        quality: &QualityProfile,
+    ) {
+        let Discs {
+            uploads,
+            images,
+            vertices,
+            indices,
+        } = upload(device, queue, &self.image_layout, bodies, quality);
+        self.uploads = uploads;
+        self.images = images;
+        self.vertices = vertices;
+        self.indices = indices;
+        self.bodies = bodies_key(bodies);
     }
 
     /// Re-views the discs at the new texture cap and anisotropy.
@@ -205,6 +241,47 @@ impl Bodies {
             pass.set_bind_group(1, image, &[]);
             pass.draw_indexed(first..first + per_body, 0, 0..1);
         }
+    }
+}
+
+/// Uploads every disc and builds the quads they are drawn on.
+fn upload(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    image_layout: &wgpu::BindGroupLayout,
+    bodies: &[Celestial],
+    quality: &QualityProfile,
+) -> Discs {
+    // ClampToEdge: a disc is a single image, and wrapping at its border would
+    // smear the sky's own colour round the outside of the sun.
+    let sampler = texture::sampler(device, wgpu::AddressMode::ClampToEdge, quality.anisotropy);
+
+    let mut vertices = Vec::with_capacity(bodies.len() * 4);
+    let mut indices = Vec::with_capacity(bodies.len() * QUAD_INDICES.len());
+    let mut uploads = Vec::with_capacity(bodies.len());
+    let mut images = Vec::with_capacity(bodies.len());
+    for (offset, body) in bodies.iter().enumerate() {
+        let base = u16::try_from(offset * 4).unwrap_or(0);
+        vertices.extend(quad(body));
+        indices.extend(QUAD_INDICES.iter().map(|index| base + index));
+        let upload = texture::Uploaded::color(device, queue, &body.image);
+        images.push(upload.bind(device, image_layout, &sampler, quality.texture_max_size));
+        uploads.push(upload);
+    }
+
+    Discs {
+        uploads,
+        images,
+        vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("rbxview celestial vertices"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        }),
+        indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("rbxview celestial indices"),
+            contents: bytemuck::cast_slice(&indices),
+            usage: wgpu::BufferUsages::INDEX,
+        }),
     }
 }
 

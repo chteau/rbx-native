@@ -9,6 +9,7 @@ use glam::{Mat4, Vec3};
 use rbx_assets::AssetRef;
 use wgpu::util::DeviceExt;
 
+use super::super::rebuild::take_spare;
 use super::super::slots::keyed::Keyed;
 use super::super::slots::Roster;
 use crate::scene::{of_part, Part, Resolved, ResolvedInstance, Scene, ShapeKind};
@@ -86,7 +87,16 @@ pub(super) fn sync_shape(
 }
 
 /// The casters among the resolved file meshes, one batch per mesh asset.
-pub(super) fn mesh_batches(device: &wgpu::Device, resolved: &Resolved) -> MeshBatches {
+///
+/// `spare` is the previous scene's geometry by mesh asset (see
+/// `Shadows::rebuild`), taken over wherever the same mesh casts again rather
+/// than copied out of the mesh and uploaded a second time; empty for a first
+/// build.
+pub(super) fn mesh_batches(
+    device: &wgpu::Device,
+    resolved: &Resolved,
+    spare: &mut Vec<(AssetRef, MeshGeometry)>,
+) -> MeshBatches {
     let mut batches = Keyed::new("rbxview shadow casters");
     let mut order: Vec<AssetRef> = Vec::new();
     for instance in resolved.instances.iter().filter(|i| i.casts_shadow) {
@@ -95,7 +105,9 @@ pub(super) fn mesh_batches(device: &wgpu::Device, resolved: &Resolved) -> MeshBa
         }
     }
     for reference in order {
-        let Some(geometry) = geometry(device, resolved, &reference) else {
+        let Some(geometry) = take_spare(spare, &reference, |_| true)
+            .or_else(|| geometry(device, resolved, &reference))
+        else {
             continue;
         };
         let roster = Roster::from_iter(

@@ -14,7 +14,7 @@ use crate::controller::{Controller, Start, DEFAULT_SENSITIVITY};
 use crate::gizmo::Gizmo;
 use crate::input::{CameraInput, Input};
 use crate::lighting::{self, Lighting};
-use crate::load::{Loaded, Toggles};
+use crate::load::{Loaded, Resident, Toggles};
 use crate::quality::QualityLevel;
 use crate::scene::{Bounds, EffectKind, MeshPatch};
 use crate::view::View;
@@ -31,8 +31,8 @@ pub struct Headless {
     quality: QualityLevel,
     /// What the embedder asked the renderer to show that the place itself does
     /// not say: the projection mode, the outlined selection and the transform
-    /// gizmo. Kept here rather than only inside the renderer because a rebuild
-    /// throws that one away — see [`View`].
+    /// gizmo. Kept here, not only inside the renderer, as the one copy every
+    /// rebuild is put back into — see [`View`].
     view: View,
     bounds: Bounds,
     controller: Controller,
@@ -55,6 +55,9 @@ pub struct Headless {
     /// [`Headless::update_lighting`]/[`Headless::patch_instance`] can
     /// recompute their own small piece of it instead of the whole place.
     loaded: Loaded,
+    /// Every asset the place's loads decoded so far, so a reload decodes
+    /// only what the place never showed before — see [`Resident`].
+    resident: Resident,
     /// Asset-fetch/decode warnings from every [`Headless::load`]/
     /// [`Headless::reload`] so far, not yet claimed by
     /// [`Headless::drain_warnings`] — an embedder (`rbxstudio`'s render
@@ -82,7 +85,8 @@ impl Headless {
         };
         let database = ReflectionDatabase::embedded();
         let dom = crate::load::read_place(path)?;
-        let mut loaded = Loaded::from_dom(&dom, &database, toggles)
+        let mut resident = Resident::default();
+        let mut loaded = Loaded::from_dom(&dom, &database, toggles, &mut resident)
             .map_err(|err| format!("nothing to show in {path:?}: {err}"))?;
         let warnings = loaded.take_warnings();
 
@@ -100,6 +104,7 @@ impl Headless {
             toggles,
             database,
             loaded,
+            resident,
             warnings,
         })
     }
@@ -108,11 +113,16 @@ impl Headless {
     /// edit, not a file on disk — keeping the current camera pose and quality
     /// level exactly as they were.
     ///
-    /// Downloads (textures, materials, meshes) hit `assets`' on-disk cache for
-    /// anything the place already showed, so a small edit reloads fast even
-    /// though this rebuilds the whole scene rather than patching it in place.
+    /// The whole scene is re-derived from the DOM rather than patched, which
+    /// is the one answer that is right whatever the edit did; neither the
+    /// assets nor the GPU are started over for it. Every asset the place
+    /// already decoded is answered from memory (see [`Resident`]), and the
+    /// device, its pipelines and every upload the new scene names the same
+    /// asset for — material packs, sky, decal images, file meshes, effect
+    /// textures — stay where they are (see `renderer::rebuild`); only an
+    /// asset the place never showed before is fetched, decoded and uploaded.
     pub fn reload(&mut self, dom: &WeakDom) -> Result<(), String> {
-        let mut loaded = Loaded::from_dom(dom, &self.database, self.toggles)?;
+        let mut loaded = Loaded::from_dom(dom, &self.database, self.toggles, &mut self.resident)?;
         self.warnings.extend(loaded.take_warnings());
         let bounds = *loaded.world().scene.bounds();
 
@@ -120,10 +130,10 @@ impl Headless {
             Viewpoint::Orbit(_) => Start::Orbit,
             Viewpoint::Free(pose) => Start::Pose(pose),
         };
-        // `self.view`, not a fresh one: the renderer being replaced here is
-        // the only thing that held the selection outline, the gizmo and the
-        // projection mode, and none of them are rebuilt from the DOM.
-        self.offscreen = Offscreen::new(loaded.world(), &self.quality.profile(), &self.view)?;
+        // `self.view`, not a fresh one: the selection outline, the gizmo and
+        // the projection mode are not rebuilt from the DOM, and this is the
+        // copy of them the rebuild is put back into.
+        self.offscreen.reload(loaded.world(), &self.view);
         self.controller = Controller::new(
             start,
             &bounds,

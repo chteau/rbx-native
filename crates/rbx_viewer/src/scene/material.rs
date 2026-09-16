@@ -12,6 +12,7 @@
 
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use rbx_assets::AssetRef;
 use rbx_dom::{Variant, WeakDom};
@@ -50,7 +51,7 @@ pub(crate) struct Slot {
 }
 
 /// The maps of one material, indexed by [`MapKind::ALL`].
-type Maps = [Option<AssetRef>; 4];
+pub(crate) type Maps = [Option<AssetRef>; 4];
 
 struct Def {
     kind: Kind,
@@ -72,7 +73,9 @@ struct Service {
 pub(crate) struct Catalog {
     service: Service,
     defs: Vec<Def>,
-    images: HashMap<AssetRef, Image>,
+    /// Behind `Arc`s: the same decoded pack the loader keeps across reloads
+    /// (see `load::Resident`), not a copy of it per scene.
+    images: HashMap<AssetRef, Arc<Image>>,
 }
 
 impl Slot {
@@ -147,7 +150,7 @@ impl Catalog {
     /// Joins the layers to whatever downloaded. A textured layer left without a
     /// colour map falls back to plastic — with `--no-materials`, or with no
     /// network, that is every one of them.
-    pub(crate) fn resolve(&mut self, images: HashMap<AssetRef, Image>) {
+    pub(crate) fn resolve(&mut self, images: HashMap<AssetRef, Arc<Image>>) {
         for def in &mut self.defs {
             let resolved = def
                 .maps
@@ -165,11 +168,31 @@ impl Catalog {
         self.defs.len()
     }
 
+    /// Every layer's maps in layer order, `None` where a layer has no such map
+    /// or its download failed — which is exactly, and only, what
+    /// `renderer::material` reads through [`Catalog::image`] when it uploads
+    /// the texture arrays. Two catalogs answering the same thing would upload
+    /// identical texels, so a scene rebuild compares this before deciding
+    /// whether the arrays it already holds can stay (see
+    /// `renderer::material::Materials::holds`). The kind and studs-per-tile of
+    /// a layer are deliberately left out: they ride in the instance buffer,
+    /// not in the arrays.
+    pub(crate) fn resolved_maps(&self) -> Vec<Maps> {
+        self.defs
+            .iter()
+            .map(|def| {
+                def.maps
+                    .clone()
+                    .map(|map| map.filter(|reference| self.images.contains_key(reference)))
+            })
+            .collect()
+    }
+
     /// The image of one layer's map, `None` where the material has no such map
     /// or it failed to download.
     pub(crate) fn image(&self, layer: usize, kind: MapKind) -> Option<&Image> {
         let reference = self.defs.get(layer)?.maps[kind.index()].as_ref()?;
-        self.images.get(reference)
+        self.images.get(reference).map(Arc::as_ref)
     }
 
     /// Builds the definition a part's `Material`/`MaterialVariantSerialized`

@@ -17,6 +17,7 @@ mod pass;
 mod patch;
 mod pipeline;
 mod post;
+mod rebuild;
 mod selection;
 mod shadow;
 mod shaped;
@@ -158,6 +159,10 @@ impl Renderer {
     /// meshes both passes instance, an instance buffer per shape, one decal batch
     /// per image and shape, the sky panels and the environment probe built from
     /// them.
+    ///
+    /// Once, per device: another scene on the same device goes through
+    /// [`Renderer::rebuild`], which redoes only the scene-derived half of
+    /// this and mirrors it step for step.
     pub(crate) fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,

@@ -31,6 +31,7 @@ use rbx_assets::AssetRef;
 
 use super::pipeline::Target;
 use super::post::Targets;
+use super::rebuild::untried;
 use super::texture;
 use crate::assets::{self, Image};
 use crate::quality::QualityProfile;
@@ -59,7 +60,8 @@ pub(super) struct Trails {
     image_layout: wgpu::BindGroupLayout,
     /// Index 0 is always the flat-white fallback, both for `AssetRef::Empty`
     /// and a texture that failed to download — see `renderer::beam::Beams`'s
-    /// identical field.
+    /// identical field, empty until the first scene with a trail in it for
+    /// the same reason.
     textures: Vec<Slot>,
     /// Each live trail's static definition, paired with the running history
     /// only `Trails` (not `crate::scene::Scene`) has any business owning —
@@ -110,22 +112,44 @@ impl Trails {
         let render_pipeline =
             pipeline::create_pipeline(device, target, &camera_layout, &image_layout);
 
-        if !quality.trails || trails.is_empty() {
-            return Trails {
-                pipeline: render_pipeline,
-                camera_layout,
-                camera_buffer,
-                camera_bind_group,
-                image_layout,
-                textures: Vec::new(),
-                live: Vec::new(),
-                enabled: quality.trails,
-                slots: HashMap::new(),
-                vertices: None,
-                vertex_capacity: 0,
-                last_tick: None,
-                elapsed: 0.0,
-            };
+        let mut pass = Trails {
+            pipeline: render_pipeline,
+            camera_layout,
+            camera_buffer,
+            camera_bind_group,
+            image_layout,
+            textures: Vec::new(),
+            live: Vec::new(),
+            enabled: quality.trails,
+            slots: HashMap::new(),
+            vertices: None,
+            vertex_capacity: 0,
+            last_tick: None,
+            elapsed: 0.0,
+        };
+        pass.rebuild(device, queue, trails, quality);
+        pass
+    }
+
+    /// Replaces the trail set with `trails`, every one starting a fresh
+    /// recorder, keeping the pipeline and every texture this pass ever tried:
+    /// only a texture no trail named before is downloaded, and one that was
+    /// tried and failed keeps its solid fallback rather than being fetched
+    /// again (see [`Trails::slots`]). The clock starts over with the set, so
+    /// the first frame after a rebuild is drawn exactly as the first frame
+    /// after a load.
+    pub(super) fn rebuild(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        trails: &[Trail],
+        quality: &QualityProfile,
+    ) {
+        self.live.clear();
+        self.last_tick = None;
+        self.elapsed = 0.0;
+        if !self.enabled || trails.is_empty() {
+            return;
         }
 
         // U repeats by `TextureLength`, V does not: a trail's texture never
@@ -141,55 +165,54 @@ impl Trails {
             anisotropy_clamp: quality.anisotropy.max(1),
             ..Default::default()
         });
-
-        let mut textures = vec![white_slot(device, queue, &image_layout, &sampler, quality)];
-        let references = texture_refs(trails);
-        // Live-effect asset warnings aren't wired to the Output dock yet — see
-        // `assets::load`'s doc comment; only scene-load-time warnings are.
-        let (images, _warnings) = assets::load(&references);
-        let mut slots = HashMap::new();
-        for reference in references {
-            let slot = match images.get(&reference) {
-                Some(image) => {
-                    let uploaded = texture::Uploaded::color(device, queue, image);
-                    let bind_group =
-                        uploaded.bind(device, &image_layout, &sampler, quality.texture_max_size);
-                    textures.push(Slot {
-                        bind_group,
-                        uploaded,
-                    });
-                    textures.len() - 1
-                }
-                // Never downloaded, or the fetch failed: Roblox itself falls
-                // back to a solid plane here (see `Trail.Texture`'s docs).
-                None => 0,
-            };
-            slots.insert(reference, slot);
+        if self.textures.is_empty() {
+            self.textures.push(white_slot(
+                device,
+                queue,
+                &self.image_layout,
+                &sampler,
+                quality,
+            ));
         }
 
-        let live: Vec<(Trail, TrailRecorder, usize)> = trails
+        let references = untried(&self.slots, texture_refs(trails));
+        if !references.is_empty() {
+            // Live-effect asset warnings aren't wired to the Output dock yet —
+            // see `assets::load`'s doc comment; only scene-load-time warnings
+            // are.
+            let (images, _warnings) = assets::load(&references);
+            for reference in references {
+                let slot = match images.get(&reference) {
+                    Some(image) => {
+                        let uploaded = texture::Uploaded::color(device, queue, image);
+                        let bind_group = uploaded.bind(
+                            device,
+                            &self.image_layout,
+                            &sampler,
+                            quality.texture_max_size,
+                        );
+                        self.textures.push(Slot {
+                            bind_group,
+                            uploaded,
+                        });
+                        self.textures.len() - 1
+                    }
+                    // Never downloaded, or the fetch failed: Roblox itself
+                    // falls back to a solid plane here (see `Trail.Texture`'s
+                    // docs).
+                    None => 0,
+                };
+                self.slots.insert(reference, slot);
+            }
+        }
+
+        self.live = trails
             .iter()
             .map(|trail| {
-                let texture = patch::slot_of(&slots, &trail.texture).unwrap_or(0);
+                let texture = patch::slot_of(&self.slots, &trail.texture).unwrap_or(0);
                 (trail.clone(), TrailRecorder::new(), texture)
             })
             .collect();
-
-        Trails {
-            pipeline: render_pipeline,
-            camera_layout,
-            camera_buffer,
-            camera_bind_group,
-            image_layout,
-            textures,
-            live,
-            enabled: true,
-            slots,
-            vertices: None,
-            vertex_capacity: 0,
-            last_tick: None,
-            elapsed: 0.0,
-        }
     }
 
     /// Rebuilds the pipeline for a new sample count — see `renderer::switch`.

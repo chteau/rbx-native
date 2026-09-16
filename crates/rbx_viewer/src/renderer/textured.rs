@@ -1,7 +1,10 @@
 //! The second pass: `Decal` and `Texture` images projected back onto the very
 //! surfaces they are pinned to, one instanced draw per (image, shape) pair.
 
+use std::sync::Arc;
+
 use bytemuck::{Pod, Zeroable};
+use rbx_assets::AssetRef;
 use rbx_dom::Ref;
 
 use super::geometry::Meshes;
@@ -28,16 +31,25 @@ fn placeholder_image() -> Image {
     }
 }
 
-/// Pairs each group's real image with the slot [`Textured::new`] assigns it
-/// (the same order `images`/`uploads` are pushed in, so index `i` here is
-/// slot `i` there) — the mapping [`Textured::upload_pending`] relies on to
-/// land a spread-out upload on the GPU resource it actually belongs to,
-/// rather than whichever one happens to be next in the queue.
-fn pending_uploads(groups: &[Group]) -> Vec<(usize, Image)> {
+/// Which of the previous scene's uploads each of `groups` can take over, by
+/// slot: `Some(old)` where slot `old` held the very same asset's real image,
+/// `None` where the group needs a placeholder and a deferred upload of its
+/// own. `still_pending` names the old slots whose real image never got its
+/// turn in [`Textured::upload_pending`] — what they hold is the placeholder,
+/// not the asset, so they are not worth taking over.
+fn reuse_plan(
+    previous: &[AssetRef],
+    still_pending: &[usize],
+    groups: &[Group],
+) -> Vec<Option<usize>> {
     groups
         .iter()
-        .enumerate()
-        .map(|(slot, group)| (slot, group.image.clone()))
+        .map(|group| {
+            previous
+                .iter()
+                .position(|reference| *reference == group.reference)
+                .filter(|slot| !still_pending.contains(slot))
+        })
         .collect()
 }
 
@@ -136,9 +148,14 @@ pub(super) struct Textured {
     /// instance sorts into the same pass a full reload would put it in
     /// without needing the decoded image kept around just to ask again.
     image_alpha: Vec<bool>,
-    /// Real images [`Textured::new`] hasn't uploaded to their slot yet, each
-    /// tagged with which one it belongs to — see [`Textured::upload_pending`].
-    pending: Pending<(usize, Image)>,
+    /// Real images [`Textured::rebuild`] hasn't uploaded to their slot yet,
+    /// each tagged with which one it belongs to — see
+    /// [`Textured::upload_pending`].
+    pending: Pending<(usize, Arc<Image>)>,
+    /// Which asset each slot's image is, so a scene rebuild can take an
+    /// upload over from the slot the previous scene held it in (see
+    /// [`Textured::rebuild`]) rather than decode and upload it again.
+    references: Vec<AssetRef>,
     opaque: Batches,
     blended: Batches,
 }
@@ -153,44 +170,94 @@ impl Textured {
         quality: &QualityProfile,
     ) -> Self {
         let image_layout = texture::layout(device);
+        let layouts = [Some(view_projection), Some(&image_layout)];
+        let mut textured = Textured {
+            opaque_pipeline: create(device, target, &layouts, false),
+            blended_pipeline: create(device, target, &layouts, true),
+            uploads: Vec::new(),
+            image_layout,
+            images: Vec::new(),
+            image_alpha: Vec::new(),
+            pending: Pending::new([]),
+            references: Vec::new(),
+            opaque: Keyed::new(INSTANCES_LABEL),
+            blended: Keyed::new(INSTANCES_LABEL),
+        };
+        textured.rebuild(device, queue, groups, quality);
+        textured
+    }
+
+    /// Replaces every batch with `groups`' face instances, keeping the
+    /// pipelines and, wherever a group's asset was already uploaded for the
+    /// previous scene, that upload — slot by slot, so `images[i]` is still
+    /// `groups[i]`'s image afterwards, whatever slot it sat in before.
+    ///
+    /// A group whose asset is new (or whose upload was still queued, and so
+    /// only ever held the placeholder) gets a cheap placeholder up front
+    /// rather than its real image: the real ones are decoded, full-size
+    /// textures that can number in the dozens for one place, and uploading
+    /// all of them here is exactly the load-time burst this module exists to
+    /// spread across frames instead (see [`Textured::upload_pending`]).
+    pub(super) fn rebuild(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        groups: &[Group],
+        quality: &QualityProfile,
+    ) {
         // Repeat, because a Texture's whole point is tiling past its own edges.
         let sampler = texture::sampler(device, wgpu::AddressMode::Repeat, quality.anisotropy);
+        let previous = std::mem::take(&mut self.references);
+        let still_pending: Vec<usize> = self
+            .pending
+            .take(usize::MAX)
+            .into_iter()
+            .map(|(slot, _)| slot)
+            .collect();
+        let plan = reuse_plan(&previous, &still_pending, groups);
+        let mut held: Vec<Option<(texture::Uploaded, wgpu::BindGroup, bool)>> =
+            std::mem::take(&mut self.uploads)
+                .into_iter()
+                .zip(std::mem::take(&mut self.images))
+                .zip(std::mem::take(&mut self.image_alpha))
+                .map(|((upload, image), alpha)| Some((upload, image, alpha)))
+                .collect();
 
-        let mut uploads = Vec::with_capacity(groups.len());
-        let mut images = Vec::with_capacity(groups.len());
-        let mut image_alpha = Vec::with_capacity(groups.len());
+        let placeholder = placeholder_image();
+        let mut pending = Vec::new();
         let mut opaque = Keyed::new(INSTANCES_LABEL);
         let mut blended = Keyed::new(INSTANCES_LABEL);
-        // Every slot gets a cheap placeholder up front rather than its real
-        // image: the real ones are decoded, full-size textures that can
-        // number in the dozens for one place, and uploading all of them here
-        // is exactly the load-time burst this module exists to spread across
-        // frames instead (see `Textured::upload_pending`).
-        let placeholder = placeholder_image();
-        for (slot, group) in groups.iter().enumerate() {
-            let upload = texture::Uploaded::color(device, queue, &placeholder);
-            images.push(upload.bind(device, &image_layout, &sampler, quality.texture_max_size));
-            image_alpha.push(group.image.has_alpha());
-            uploads.push(upload);
+        for (slot, (group, reuse)) in groups.iter().zip(plan).enumerate() {
+            match reuse.and_then(|old| held[old].take()) {
+                Some((upload, image, alpha)) => {
+                    self.uploads.push(upload);
+                    self.images.push(image);
+                    self.image_alpha.push(alpha);
+                }
+                None => {
+                    let upload = texture::Uploaded::color(device, queue, &placeholder);
+                    self.images.push(upload.bind(
+                        device,
+                        &self.image_layout,
+                        &sampler,
+                        quality.texture_max_size,
+                    ));
+                    self.image_alpha.push(group.image.has_alpha());
+                    self.uploads.push(upload);
+                    pending.push((slot, group.image.clone()));
+                }
+            }
+            self.references.push(group.reference.clone());
             add_batches(device, &mut opaque, slot, &group.opaque);
             add_batches(device, &mut blended, slot, &group.blended);
         }
 
-        let layouts = [Some(view_projection), Some(&image_layout)];
-        Textured {
-            opaque_pipeline: create(device, target, &layouts, false),
-            blended_pipeline: create(device, target, &layouts, true),
-            uploads,
-            image_layout,
-            images,
-            image_alpha,
-            pending: Pending::new(pending_uploads(groups)),
-            opaque,
-            blended,
-        }
+        self.pending = Pending::new(pending);
+        self.opaque = opaque;
+        self.blended = blended;
     }
 
-    /// Uploads up to `budget` of the real images [`Textured::new`] deferred,
+    /// Uploads up to `budget` of the real images [`Textured::rebuild`] deferred,
     /// replacing that slot's placeholder bind group with the real one —
     /// called once per drawn frame (see `Renderer::draw`) with a bounded
     /// budget so a place with many textures spreads their GPU upload cost

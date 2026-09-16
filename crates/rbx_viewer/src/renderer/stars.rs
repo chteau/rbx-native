@@ -47,6 +47,11 @@ pub(super) struct Stars {
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
     indices_count: u32,
+    /// How many stars the buffers hold. `textures::stars::field` generates
+    /// the same directions for the same count every time, so this alone tells
+    /// a scene rebuild whether the buffers are still right (see
+    /// [`Stars::holds`]).
+    count: usize,
 }
 
 impl Stars {
@@ -63,36 +68,32 @@ impl Stars {
             return None;
         }
 
-        let corners = [(-1.0, 1.0), (1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
-        let mut vertices = Vec::with_capacity(field.len() * corners.len());
-        let mut indices = Vec::with_capacity(field.len() * QUAD_INDICES.len());
-        for (offset, star) in field.iter().enumerate() {
-            // u32 indices, not the u16 every other quad pass uses: a default
-            // field is 3000 stars, which is twelve thousand vertices.
-            let base = u32::try_from(offset * corners.len()).unwrap_or(0);
-            vertices.extend(corners.map(|corner| Vertex {
-                direction: star.direction.to_array(),
-                corner: [corner.0, corner.1],
-                magnitude: star.magnitude,
-            }));
-            indices.extend(QUAD_INDICES.iter().map(|&index| base + u32::from(index)));
-        }
-
+        let (vertices, indices) = buffers(device, field);
         Some(Stars {
             pipeline: create(device, target, &[Some(frame_layout)]),
             camera: Frame::new(device, frame_layout, shared),
-            indices_count: u32::try_from(indices.len()).unwrap_or(0),
-            vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("rbxview star vertices"),
-                contents: bytemuck::cast_slice(&vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            }),
-            indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("rbxview star indices"),
-                contents: bytemuck::cast_slice(&indices),
-                usage: wgpu::BufferUsages::INDEX,
-            }),
+            indices_count: index_count(field),
+            vertices,
+            indices,
+            count: field.len(),
         })
+    }
+
+    /// Whether the buffers already hold `field` — see [`Stars::count`].
+    pub(super) fn holds(&self, field: &[Star]) -> bool {
+        self.count == field.len()
+    }
+
+    /// Swaps in another field, keeping the pipeline and the camera bind group:
+    /// what a scene rebuild does for a `StarCount` edit. `field` must not be
+    /// empty — a place with no stars drops the pass instead (see
+    /// [`Stars::new`]).
+    pub(super) fn replace(&mut self, device: &wgpu::Device, field: &[Star]) {
+        let (vertices, indices) = buffers(device, field);
+        self.vertices = vertices;
+        self.indices = indices;
+        self.indices_count = index_count(field);
+        self.count = field.len();
     }
 
     /// Rebuilds the pipeline for a new sample count.
@@ -112,6 +113,41 @@ impl Stars {
         pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
         pass.draw_indexed(0..self.indices_count, 0, 0..1);
     }
+}
+
+fn index_count(field: &[Star]) -> u32 {
+    u32::try_from(field.len() * QUAD_INDICES.len()).unwrap_or(0)
+}
+
+/// One quad per star, as a vertex buffer and the index buffer that winds it.
+fn buffers(device: &wgpu::Device, field: &[Star]) -> (wgpu::Buffer, wgpu::Buffer) {
+    let corners = [(-1.0, 1.0), (1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
+    let mut vertices = Vec::with_capacity(field.len() * corners.len());
+    let mut indices = Vec::with_capacity(field.len() * QUAD_INDICES.len());
+    for (offset, star) in field.iter().enumerate() {
+        // u32 indices, not the u16 every other quad pass uses: a default
+        // field is 3000 stars, which is twelve thousand vertices.
+        let base = u32::try_from(offset * corners.len()).unwrap_or(0);
+        vertices.extend(corners.map(|corner| Vertex {
+            direction: star.direction.to_array(),
+            corner: [corner.0, corner.1],
+            magnitude: star.magnitude,
+        }));
+        indices.extend(QUAD_INDICES.iter().map(|&index| base + u32::from(index)));
+    }
+
+    (
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("rbxview star vertices"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        }),
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("rbxview star indices"),
+            contents: bytemuck::cast_slice(&indices),
+            usage: wgpu::BufferUsages::INDEX,
+        }),
+    )
 }
 
 fn create(

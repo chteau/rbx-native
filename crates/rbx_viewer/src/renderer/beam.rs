@@ -21,6 +21,7 @@ use rbx_assets::AssetRef;
 
 use super::pipeline::Target;
 use super::post::Targets;
+use super::rebuild::untried;
 use super::texture;
 use crate::assets::{self, Image};
 use crate::quality::QualityProfile;
@@ -48,16 +49,18 @@ pub(super) struct Beams {
     camera_bind_group: wgpu::BindGroup,
     image_layout: wgpu::BindGroupLayout,
     /// Index 0 is always the flat-white fallback both `AssetRef::Empty` and a
-    /// texture that failed to download draw through (see [`Beams::new`]) —
-    /// Roblox itself falls back to a solid line in both cases.
+    /// texture that failed to download draw through (see [`Beams::rebuild`])
+    /// — Roblox itself falls back to a solid line in both cases. Empty until
+    /// the first scene with a beam in it, since a place without one never
+    /// needs the fallback either.
     textures: Vec<Slot>,
     live: Vec<(Beam, usize)>,
     /// Whether the quality profile draws beams at all — `false` keeps `live`
     /// empty for the whole run, [`Beams::replace`] included.
     enabled: bool,
-    /// The slot in `textures` every reference [`Beams::new`] tried resolved
-    /// to (0 where the download failed); a reference missing here was never
-    /// attempted — see [`Beams::replace`].
+    /// The slot in `textures` every reference [`Beams::rebuild`] tried
+    /// resolved to (0 where the download failed); a reference missing here
+    /// was never attempted — see [`Beams::replace`].
     slots: HashMap<AssetRef, usize>,
     vertices: Option<wgpu::Buffer>,
     /// Grown, never shrunk — same reasoning as `renderer::particles::Particles::instances`.
@@ -96,22 +99,43 @@ impl Beams {
         let render_pipeline =
             pipeline::create_pipeline(device, target, &camera_layout, &image_layout);
 
-        if !quality.beams || beams.is_empty() {
-            return Beams {
-                pipeline: render_pipeline,
-                camera_layout,
-                camera_buffer,
-                camera_bind_group,
-                image_layout,
-                textures: Vec::new(),
-                live: Vec::new(),
-                enabled: quality.beams,
-                slots: HashMap::new(),
-                vertices: None,
-                vertex_capacity: 0,
-                last_tick: None,
-                elapsed: 0.0,
-            };
+        let mut pass = Beams {
+            pipeline: render_pipeline,
+            camera_layout,
+            camera_buffer,
+            camera_bind_group,
+            image_layout,
+            textures: Vec::new(),
+            live: Vec::new(),
+            enabled: quality.beams,
+            slots: HashMap::new(),
+            vertices: None,
+            vertex_capacity: 0,
+            last_tick: None,
+            elapsed: 0.0,
+        };
+        pass.rebuild(device, queue, beams, quality);
+        pass
+    }
+
+    /// Replaces the beam set with `beams`, keeping the pipeline and every
+    /// texture this pass ever tried: only a texture no beam named before is
+    /// downloaded, and one that was tried and failed keeps its solid-line
+    /// fallback rather than being fetched again (see [`Beams::slots`]). The
+    /// scroll clock starts over with the set, so the first frame after a
+    /// rebuild is drawn exactly as the first frame after a load.
+    pub(super) fn rebuild(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        beams: &[Beam],
+        quality: &QualityProfile,
+    ) {
+        self.live.clear();
+        self.last_tick = None;
+        self.elapsed = 0.0;
+        if !self.enabled || beams.is_empty() {
+            return;
         }
 
         // V repeats (`TextureMode`/`TextureSpeed` tiling and scrolling), U
@@ -129,55 +153,54 @@ impl Beams {
             anisotropy_clamp: quality.anisotropy.max(1),
             ..Default::default()
         });
-
-        let mut textures = vec![white_slot(device, queue, &image_layout, &sampler, quality)];
-        let references = texture_refs(beams);
-        // Live-effect asset warnings aren't wired to the Output dock yet — see
-        // `assets::load`'s doc comment; only scene-load-time warnings are.
-        let (images, _warnings) = assets::load(&references);
-        let mut slots = HashMap::new();
-        for reference in references {
-            let slot = match images.get(&reference) {
-                Some(image) => {
-                    let uploaded = texture::Uploaded::color(device, queue, image);
-                    let bind_group =
-                        uploaded.bind(device, &image_layout, &sampler, quality.texture_max_size);
-                    textures.push(Slot {
-                        bind_group,
-                        uploaded,
-                    });
-                    textures.len() - 1
-                }
-                // Never downloaded, or the fetch failed: Roblox itself falls
-                // back to a solid line here (see `Beam.Texture`'s docs).
-                None => 0,
-            };
-            slots.insert(reference, slot);
+        if self.textures.is_empty() {
+            self.textures.push(white_slot(
+                device,
+                queue,
+                &self.image_layout,
+                &sampler,
+                quality,
+            ));
         }
 
-        let live: Vec<(Beam, usize)> = beams
+        let references = untried(&self.slots, texture_refs(beams));
+        if !references.is_empty() {
+            // Live-effect asset warnings aren't wired to the Output dock yet —
+            // see `assets::load`'s doc comment; only scene-load-time warnings
+            // are.
+            let (images, _warnings) = assets::load(&references);
+            for reference in references {
+                let slot = match images.get(&reference) {
+                    Some(image) => {
+                        let uploaded = texture::Uploaded::color(device, queue, image);
+                        let bind_group = uploaded.bind(
+                            device,
+                            &self.image_layout,
+                            &sampler,
+                            quality.texture_max_size,
+                        );
+                        self.textures.push(Slot {
+                            bind_group,
+                            uploaded,
+                        });
+                        self.textures.len() - 1
+                    }
+                    // Never downloaded, or the fetch failed: Roblox itself
+                    // falls back to a solid line here (see `Beam.Texture`'s
+                    // docs).
+                    None => 0,
+                };
+                self.slots.insert(reference, slot);
+            }
+        }
+
+        self.live = beams
             .iter()
             .map(|beam| {
-                let texture = patch::slot_of(&slots, &beam.texture).unwrap_or(0);
+                let texture = patch::slot_of(&self.slots, &beam.texture).unwrap_or(0);
                 (beam.clone(), texture)
             })
             .collect();
-
-        Beams {
-            pipeline: render_pipeline,
-            camera_layout,
-            camera_buffer,
-            camera_bind_group,
-            image_layout,
-            textures,
-            live,
-            enabled: true,
-            slots,
-            vertices: None,
-            vertex_capacity: 0,
-            last_tick: None,
-            elapsed: 0.0,
-        }
     }
 
     /// Rebuilds the pipeline for a new sample count — see `renderer::switch`.

@@ -2,6 +2,7 @@
 //! single-instance patch, and which still need a full reload.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use glam::Vec3;
 use rbx_assets::AssetRef;
@@ -73,7 +74,7 @@ fn resolved_place() -> (WeakDom, Scene) {
     let database = ReflectionDatabase::embedded();
     let mut scene = Scene::from_dom(&dom, &database).unwrap();
     let mut meshes = HashMap::new();
-    meshes.insert(AssetRef::Id(1), fake_mesh());
+    meshes.insert(AssetRef::Id(1), Arc::new(fake_mesh()));
     scene.resolve_file_meshes(meshes, HashMap::new());
     assert_eq!(scene.resolved_file_meshes().instances.len(), 1);
     (dom, scene)

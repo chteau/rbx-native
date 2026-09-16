@@ -5,12 +5,14 @@ use std::collections::HashMap;
 
 use rbx_assets::AssetRef;
 
+use super::super::rebuild::untried;
 use super::super::texture;
 use crate::assets::{self, Image};
 use crate::quality::QualityProfile;
 
 pub(super) struct Atlas {
     pub(super) image_layout: wgpu::BindGroupLayout,
+    sampler: wgpu::Sampler,
     groups: Vec<wgpu::BindGroup>,
     /// Kept alive beside the bind groups that view them — identical role to
     /// `renderer::trail::Slot`.
@@ -19,6 +21,10 @@ pub(super) struct Atlas {
     /// Only holds the images that actually downloaded: an `ImageLabel` whose
     /// asset is missing draws nothing, the way Roblox itself leaves it blank.
     slot_of: HashMap<AssetRef, usize>,
+    /// Every reference [`Atlas::extend`] ever tried, the failed ones
+    /// included — `slot_of` cannot tell those from one never asked for, and
+    /// a scene rebuild must not fetch a missing asset again on every edit.
+    tried: HashMap<AssetRef, ()>,
 }
 
 impl Atlas {
@@ -52,32 +58,48 @@ impl Atlas {
         };
         let mut atlas = Atlas {
             image_layout,
+            sampler,
             groups: Vec::new(),
             uploads: Vec::new(),
             slot_of: HashMap::new(),
+            tried: HashMap::new(),
         };
-        atlas.push(device, queue, &sampler, &white, quality);
+        atlas.push(device, queue, &white, quality);
+        atlas.extend(device, queue, references, quality);
+        atlas
+    }
 
+    /// Downloads and uploads whichever of `references` the atlas never tried,
+    /// keeping every slot already handed out: what a scene rebuild calls, so
+    /// the same `ImageLabel` images are neither fetched nor uploaded twice.
+    pub(super) fn extend(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        references: &[AssetRef],
+        quality: &QualityProfile,
+    ) {
+        let references = untried(&self.tried, references.iter().cloned());
+        if references.is_empty() {
+            return;
+        }
         // Live-effect asset warnings aren't wired to the Output dock yet — see
         // `assets::load`'s doc comment; only scene-load-time warnings are.
-        let (images, _warnings) = assets::load(references);
+        let (images, _warnings) = assets::load(&references);
         for reference in references {
-            let Some(image) = images.get(reference) else {
+            self.tried.insert(reference.clone(), ());
+            let Some(image) = images.get(&reference) else {
                 continue;
             };
-            atlas.push(device, queue, &sampler, image, quality);
-            atlas
-                .slot_of
-                .insert(reference.clone(), atlas.groups.len() - 1);
+            self.push(device, queue, image, quality);
+            self.slot_of.insert(reference, self.groups.len() - 1);
         }
-        atlas
     }
 
     fn push(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        sampler: &wgpu::Sampler,
         image: &Image,
         quality: &QualityProfile,
     ) {
@@ -85,7 +107,7 @@ impl Atlas {
         self.groups.push(uploaded.bind(
             device,
             &self.image_layout,
-            sampler,
+            &self.sampler,
             quality.texture_max_size,
         ));
         self.uploads.push(uploaded);

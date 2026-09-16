@@ -4,11 +4,12 @@ use crate::textures::Body;
 
 fn celestial(angular_size: f32, toward_sun: bool) -> Celestial {
     Celestial {
-        image: Image {
+        reference: rbx_assets::AssetRef::Id(1),
+        image: std::sync::Arc::new(Image {
             width: 1,
             height: 1,
             pixels: vec![255; 4],
-        },
+        }),
         body: Body {
             angular_size,
             toward_sun,
@@ -123,4 +124,18 @@ fn the_sun_in_front_and_above_the_horizon_gets_its_real_screen_position() {
         sun_screen_position(direction, &matrix),
         project_direction(&matrix, direction),
     );
+}
+
+// The rebuild decision for the discs: the same images at the same sizes are
+// the same pass, and a `SunAngularSize` edit alone — no new download — still
+// has to rebuild the quads, since the size is baked into their vertices.
+#[test]
+fn the_discs_identity_is_their_images_and_their_angular_sizes() {
+    let sun_and_moon = [celestial(21.0, true), celestial(11.0, false)];
+    let same_again = [celestial(21.0, true), celestial(11.0, false)];
+    let bigger_sun = [celestial(45.0, true), celestial(11.0, false)];
+
+    assert_eq!(bodies_key(&sun_and_moon), bodies_key(&same_again));
+    assert_ne!(bodies_key(&sun_and_moon), bodies_key(&bigger_sun));
+    assert_ne!(bodies_key(&sun_and_moon), bodies_key(&sun_and_moon[..1]));
 }

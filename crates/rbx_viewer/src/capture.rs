@@ -44,12 +44,13 @@ pub(crate) struct Offscreen {
 }
 
 impl Offscreen {
-    /// Builds a renderer for `world` and puts it straight into `view`.
+    /// Opens a GPU device of its own, builds a renderer for `world` on it and
+    /// puts that straight into `view`.
     ///
-    /// `view` is not optional on purpose: a rebuild (see
-    /// [`crate::Headless::reload`]) discards the old renderer wholesale, and
-    /// requiring the state that does not come from the place is what stops one
-    /// from silently starting blank — see [`View`].
+    /// `view` is not optional on purpose: the state that does not come from
+    /// the place has to be said out loud wherever a renderer is built or
+    /// rebuilt (see [`Offscreen::reload`]), which is what stops one from
+    /// silently starting blank — see [`View`].
     pub(crate) fn new(
         world: World<'_>,
         quality: &QualityProfile,
@@ -71,6 +72,18 @@ impl Offscreen {
         offscreen.set_selection(&view.selected);
         offscreen.set_gizmo(view.gizmo);
         Ok(offscreen)
+    }
+
+    /// Rebuilds the renderer around `world` on the device it already has —
+    /// see [`Renderer::rebuild`] for what that keeps — and puts it back into
+    /// `view`, for the same reason [`Offscreen::new`] takes one. The frame
+    /// still in flight, if any, is left to be collected as usual: it is a
+    /// finished picture of the previous scene, not a stale one.
+    pub(crate) fn reload(&mut self, world: World<'_>, view: &View) {
+        self.renderer.rebuild(&self.device, &self.queue, world);
+        self.set_orthographic(view.orthographic);
+        self.set_selection(&view.selected);
+        self.set_gizmo(view.gizmo);
     }
 
     /// Moves the renderer to another graphics quality level, in place: see

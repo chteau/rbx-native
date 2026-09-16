@@ -94,9 +94,10 @@ impl Renderer {
     }
 
     /// Rebuilds bind group 0 for every pass that has one: the probe's view, the
-    /// shadow map and the light buffer have all just been replaced, and a bind
+    /// shadow map and the light buffer have all just been replaced (or may
+    /// have been, after a scene rebuild — see `renderer::rebuild`), and a bind
     /// group is immutable once created.
-    fn rebind_frames(&mut self, device: &wgpu::Device) {
+    pub(super) fn rebind_frames(&mut self, device: &wgpu::Device) {
         let shared = Shared {
             lighting: &self.lighting_buffer,
             lights: &self.lights_buffer,

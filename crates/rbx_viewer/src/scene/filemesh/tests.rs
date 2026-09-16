@@ -259,7 +259,7 @@ fn resolve_hides_only_referents_whose_mesh_actually_downloaded() {
 
     let plan = planned(&dom);
     let mut meshes = HashMap::new();
-    meshes.insert(AssetRef::Id(1), fake_mesh([1.0, 1.0, 1.0]));
+    meshes.insert(AssetRef::Id(1), Arc::new(fake_mesh([1.0, 1.0, 1.0])));
     // Asset 2's mesh never downloaded (v6/v7, network failure, ...).
 
     let (resolved, hidden) = resolve(&plan, meshes, HashMap::new());
@@ -293,7 +293,7 @@ fn a_texture_that_failed_to_download_still_resolves_the_mesh_untextured() {
 
     let plan = planned(&dom);
     let mut meshes = HashMap::new();
-    meshes.insert(AssetRef::Id(1), fake_mesh([1.0, 1.0, 1.0]));
+    meshes.insert(AssetRef::Id(1), Arc::new(fake_mesh([1.0, 1.0, 1.0])));
 
     let (resolved, _) = resolve(&plan, meshes, HashMap::new());
 

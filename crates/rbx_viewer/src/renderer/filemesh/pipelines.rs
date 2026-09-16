@@ -10,7 +10,11 @@ use super::super::pipeline::{
 use super::vertex::{AppearanceVertex, TexturedVertex};
 
 /// What a batch samples, and therefore which pipeline and bind group 2 it needs.
-#[derive(Clone, Copy)]
+///
+/// Compared by a scene rebuild deciding whether a batch's converted vertex
+/// buffers can be kept (see `FileMeshes::rebuild`): each skin reads its own
+/// vertex format, so the same mesh under another skin is other bytes.
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Skin {
     /// The part's colour alone, shaded by its `BasePart.Material`.
     Plain,

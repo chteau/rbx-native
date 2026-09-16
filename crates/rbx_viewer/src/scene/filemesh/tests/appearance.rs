@@ -163,16 +163,16 @@ fn resolve_drops_the_maps_that_never_downloaded_and_deduplicates_the_sets() {
 
     let plan = planned(&dom);
     let mut meshes = HashMap::new();
-    meshes.insert(AssetRef::Id(1), fake_mesh([1.0, 1.0, 1.0]));
+    meshes.insert(AssetRef::Id(1), Arc::new(fake_mesh([1.0, 1.0, 1.0])));
     let mut images = HashMap::new();
     // Only the normal map arrived, so the alpha mode has nothing left to blend.
     images.insert(
         AssetRef::Id(11),
-        crate::assets::Image {
+        Arc::new(crate::assets::Image {
             width: 1,
             height: 1,
             pixels: vec![128, 128, 255, 255],
-        },
+        }),
     );
 
     let (resolved, _) = resolve(&plan, meshes, images);
@@ -197,15 +197,15 @@ fn only_a_transparency_set_whose_colour_map_has_alpha_blends() {
         ]);
         let plan = planned(&dom);
         let mut meshes = HashMap::new();
-        meshes.insert(AssetRef::Id(1), fake_mesh([1.0, 1.0, 1.0]));
+        meshes.insert(AssetRef::Id(1), Arc::new(fake_mesh([1.0, 1.0, 1.0])));
         let mut images = HashMap::new();
         images.insert(
             AssetRef::Id(10),
-            crate::assets::Image {
+            Arc::new(crate::assets::Image {
                 width: 1,
                 height: 1,
                 pixels: vec![255, 255, 255, alpha],
-            },
+            }),
         );
         let (resolved, _) = resolve(&plan, meshes, images);
         resolved.appearances[0].is_translucent(&resolved.images)

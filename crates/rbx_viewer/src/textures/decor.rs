@@ -1,6 +1,7 @@
 //! Joins a [`super::Plan`] to the images that actually downloaded.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use rbx_assets::AssetRef;
 
@@ -10,21 +11,36 @@ use crate::assets::Image;
 
 /// All the face instances sharing one image, split by whether they can go in the
 /// opaque pass or have to be blended after it.
+///
+/// The image is behind an `Arc` here and in [`Panel`]/[`Celestial`]: it is
+/// the decoded asset the loader keeps across reloads (see `load::Resident`),
+/// shared rather than copied into every scene built from it.
 pub(crate) struct Group {
-    pub(crate) image: Image,
+    /// The asset `image` was decoded from. Not drawn from — the renderer keeps
+    /// its uploads keyed by this, so a scene rebuild (see
+    /// `renderer::textured::Textured::rebuild`) can tell an image it already
+    /// holds on the GPU from one it has to upload.
+    pub(crate) reference: AssetRef,
+    pub(crate) image: Arc<Image>,
     pub(crate) opaque: Vec<FaceInstance>,
     pub(crate) blended: Vec<FaceInstance>,
 }
 
 /// One skybox panel and the image pasted on it.
 pub(crate) struct Panel {
-    pub(crate) image: Image,
+    /// The asset `image` came from — the same role as [`Group::reference`]:
+    /// six unchanged references mean an unchanged environment probe and
+    /// skybox, which a rebuild then keeps rather than prefilters again.
+    pub(crate) reference: AssetRef,
+    pub(crate) image: Arc<Image>,
     pub(crate) quad: Quad,
 }
 
 /// The sun or the moon, with its disc image.
 pub(crate) struct Celestial {
-    pub(crate) image: Image,
+    /// The asset `image` came from — see [`Group::reference`].
+    pub(crate) reference: AssetRef,
+    pub(crate) image: Arc<Image>,
     pub(crate) body: Body,
 }
 
@@ -44,7 +60,7 @@ impl Decor {
     /// A face whose image is missing is simply left unpainted; a skybox is all
     /// or nothing, since five panels and a hole reads as a bug rather than as a
     /// sky.
-    pub(crate) fn assemble(plan: Plan, images: &HashMap<AssetRef, Image>) -> Self {
+    pub(crate) fn assemble(plan: Plan, images: &HashMap<AssetRef, Arc<Image>>) -> Self {
         let mut groups: Vec<Group> = Vec::new();
         let mut index: HashMap<AssetRef, usize> = HashMap::new();
 
@@ -52,8 +68,9 @@ impl Decor {
             let Some(image) = images.get(&reference) else {
                 continue;
             };
-            let slot = *index.entry(reference).or_insert_with(|| {
+            let slot = *index.entry(reference.clone()).or_insert_with(|| {
                 groups.push(Group {
+                    reference,
                     image: image.clone(),
                     opaque: Vec::new(),
                     blended: Vec::new(),
@@ -74,6 +91,7 @@ impl Decor {
                 .map(|(reference, quad)| {
                     images.get(&reference).map(|image| Panel {
                         image: image.clone(),
+                        reference,
                         quad,
                     })
                 })
@@ -88,6 +106,7 @@ impl Decor {
             .filter_map(|(reference, body)| {
                 images.get(&reference).map(|image| Celestial {
                     image: image.clone(),
+                    reference,
                     body,
                 })
             })
@@ -112,12 +131,12 @@ mod tests {
     use crate::scene::ShapeKind;
     use crate::textures::face;
 
-    fn image(alpha: u8) -> Image {
-        Image {
+    fn image(alpha: u8) -> Arc<Image> {
+        Arc::new(Image {
             width: 1,
             height: 1,
             pixels: vec![255, 255, 255, alpha],
-        }
+        })
     }
 
     fn plan_of(faces: Vec<(AssetRef, FaceInstance)>) -> Plan {

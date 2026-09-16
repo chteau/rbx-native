@@ -48,6 +48,11 @@ impl AssetFetcher for CloudFetcher {
     }
 }
 
+/// What one reference turned into: the decoded value, or the warning saying
+/// why it could not — kept by reference so a caller that remembers results
+/// across reloads (see `load::Resident`) can remember the failures too.
+pub(crate) type Keyed<T> = HashMap<AssetRef, Result<T, String>>;
+
 /// Resolves and decodes every reference into an [`Image`], skipping the ones
 /// that fail.
 ///
@@ -56,23 +61,25 @@ impl AssetFetcher for CloudFetcher {
 /// Returned alongside the map so a caller with somewhere to show them (the
 /// Output dock) can, without changing what already goes to stderr.
 pub(crate) fn load(references: &[AssetRef]) -> (HashMap<AssetRef, Image>, Vec<String>) {
+    split(load_images(references))
+}
+
+/// [`load`], with every failure still attached to the reference it belongs to.
+pub(crate) fn load_images(references: &[AssetRef]) -> Keyed<Image> {
     load_with("textures", references, fetch_image)
 }
 
-/// Resolves and parses every reference into a [`rbx_mesh::Mesh`], skipping the
-/// ones that fail (v6/v7 files, a network error, a corrupt download, ...).
-///
-/// Failures are warnings, not errors: `Scene::resolve_file_meshes` leaves the
-/// affected `MeshPart`/`SpecialMesh` drawing its fallback box.
-pub(crate) fn load_meshes(
-    references: &[AssetRef],
-) -> (HashMap<AssetRef, rbx_mesh::Mesh>, Vec<String>) {
+/// Resolves and parses every reference into a [`rbx_mesh::Mesh`]; a failure
+/// (a v6/v7 file, a network error, a corrupt download, ...) is a warning
+/// against its reference, not an error: `Scene::resolve_file_meshes` leaves
+/// the affected `MeshPart`/`SpecialMesh` drawing its fallback box.
+pub(crate) fn load_meshes(references: &[AssetRef]) -> Keyed<rbx_mesh::Mesh> {
     load_with("meshes", references, fetch_mesh)
 }
 
 /// Resolves every reference to its raw bytes, for assets whose format the
 /// scene decodes itself (legacy union assets are `.rbxm` files).
-pub(crate) fn load_bytes(references: &[AssetRef]) -> (HashMap<AssetRef, Vec<u8>>, Vec<String>) {
+pub(crate) fn load_bytes(references: &[AssetRef]) -> Keyed<Vec<u8>> {
     load_with("unions", references, |resolver, reference| {
         resolver
             .resolve(reference)
@@ -81,22 +88,40 @@ pub(crate) fn load_bytes(references: &[AssetRef]) -> (HashMap<AssetRef, Vec<u8>>
     })
 }
 
-/// Shared worker-pool machinery behind [`load`], [`load_meshes`] and
-/// [`load_bytes`]: same
-/// bounded concurrency, same disk cache, same warn-and-skip failure handling —
-/// only what a resolved [`Asset`](rbx_assets::Asset) turns into differs.
+/// The successes as a plain map and the failures as the warning text alone,
+/// for a caller that only wants to show them.
+fn split<T>(keyed: Keyed<T>) -> (HashMap<AssetRef, T>, Vec<String>) {
+    let mut values = HashMap::new();
+    let mut warnings = Vec::new();
+    for (reference, result) in keyed {
+        match result {
+            Ok(value) => {
+                values.insert(reference, value);
+            }
+            Err(warning) => warnings.push(warning),
+        }
+    }
+    (values, warnings)
+}
+
+/// Shared worker-pool machinery behind [`load_images`], [`load_meshes`] and
+/// [`load_bytes`]: same bounded concurrency, same disk cache, same
+/// warn-and-skip failure handling — only what a resolved
+/// [`Asset`](rbx_assets::Asset) turns into differs.
 ///
-/// The `Vec<String>` returned alongside the map is the same text already
-/// `eprintln!`'d, for a caller (`Loaded::from_dom`, ultimately the Output
-/// dock) that wants to show it somewhere besides stderr; the CLI's stderr
-/// output is unchanged either way.
+/// Every warning is the same text already `eprintln!`'d, kept against its
+/// reference for a caller (`Loaded::from_dom`, ultimately the Output dock)
+/// that wants to show it somewhere besides stderr; the CLI's stderr output is
+/// unchanged either way. A reference is missing from the answer only when no
+/// resolver could be built at all (no cache directory, say), which is reported
+/// under the empty reference so the message still reaches the caller.
 fn load_with<T: Send>(
     label: &str,
     references: &[AssetRef],
     decode: impl Fn(&AssetResolver, &AssetRef) -> Result<T, String> + Sync,
-) -> (HashMap<AssetRef, T>, Vec<String>) {
+) -> Keyed<T> {
     if references.is_empty() {
-        return (HashMap::new(), Vec::new());
+        return HashMap::new();
     }
 
     let resolver = match resolver() {
@@ -104,33 +129,23 @@ fn load_with<T: Send>(
         Err(err) => {
             let message = format!("rbxview: no {label} ({err})");
             eprintln!("{message}");
-            return (HashMap::new(), vec![message]);
+            return HashMap::from([(AssetRef::Empty, Err(message))]);
         }
     };
 
     let next = AtomicUsize::new(0);
     let done = AtomicUsize::new(0);
     let results = Mutex::new(HashMap::new());
-    // Held back until the progress line is finished, so a warning never lands
-    // in the middle of it.
-    let warnings = Mutex::new(Vec::new());
 
     std::thread::scope(|scope| {
         for _ in 0..WORKERS.min(references.len()) {
             scope.spawn(|| {
                 while let Some(reference) = references.get(next.fetch_add(1, Ordering::Relaxed)) {
-                    match decode(&resolver, reference) {
-                        Ok(value) => {
-                            results
-                                .lock()
-                                .unwrap_or_else(|e| e.into_inner())
-                                .insert(reference.clone(), value);
-                        }
-                        Err(warning) => warnings
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .push(warning),
-                    }
+                    let result = decode(&resolver, reference);
+                    results
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .insert(reference.clone(), result);
                     progress(
                         label,
                         done.fetch_add(1, Ordering::Relaxed) + 1,
@@ -142,14 +157,13 @@ fn load_with<T: Send>(
     });
     eprintln!();
 
-    let warnings = warnings.into_inner().unwrap_or_else(|e| e.into_inner());
-    for warning in &warnings {
+    let results: Keyed<T> = results.into_inner().unwrap_or_else(|e| e.into_inner());
+    // After the progress line is finished, so a warning never lands in the
+    // middle of it.
+    for warning in results.values().filter_map(|result| result.as_ref().err()) {
         eprintln!("warning: {warning}");
     }
-    (
-        results.into_inner().unwrap_or_else(|e| e.into_inner()),
-        warnings,
-    )
+    results
 }
 
 fn resolver() -> Result<AssetResolver, String> {
@@ -247,27 +261,41 @@ mod tests {
     }
 
     #[test]
-    fn load_with_collects_warnings_instead_of_only_printing_them() {
+    fn load_with_keeps_every_warning_against_its_reference() {
         let references = vec![AssetRef::Id(1), AssetRef::Id(2)];
-        let (results, warnings) =
-            load_with(
-                "things",
-                &references,
-                |_resolver, reference| match reference {
-                    AssetRef::Id(1) => Ok(1u32),
-                    _ => Err(format!("{}: boom", describe(reference))),
-                },
-            );
+        let results = load_with(
+            "things",
+            &references,
+            |_resolver, reference| match reference {
+                AssetRef::Id(1) => Ok(1u32),
+                _ => Err(format!("{}: boom", describe(reference))),
+            },
+        );
 
-        assert_eq!(results.get(&AssetRef::Id(1)), Some(&1));
-        assert_eq!(results.len(), 1);
-        assert_eq!(warnings, vec!["asset 2: boom".to_string()]);
+        assert_eq!(results.get(&AssetRef::Id(1)), Some(&Ok(1)));
+        assert_eq!(
+            results.get(&AssetRef::Id(2)),
+            Some(&Err("asset 2: boom".to_string()))
+        );
+        assert_eq!(results.len(), 2);
     }
 
     #[test]
     fn load_with_returns_nothing_for_an_empty_reference_list() {
-        let (results, warnings) = load_with::<u32>("things", &[], |_resolver, _reference| Ok(0));
+        let results = load_with::<u32>("things", &[], |_resolver, _reference| Ok(0));
         assert!(results.is_empty());
-        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn split_separates_the_values_from_the_warning_text() {
+        let keyed: Keyed<u32> = HashMap::from([
+            (AssetRef::Id(1), Ok(1)),
+            (AssetRef::Id(2), Err("asset 2: boom".to_string())),
+        ]);
+
+        let (values, warnings) = split(keyed);
+
+        assert_eq!(values, HashMap::from([(AssetRef::Id(1), 1)]));
+        assert_eq!(warnings, vec!["asset 2: boom".to_string()]);
     }
 }

@@ -13,7 +13,7 @@ mod tree;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use glam::{Mat4, Vec3};
 use rbx_assets::AssetRef;
@@ -203,7 +203,7 @@ pub(crate) struct Resolution {
     /// Every union that resolved either way, whose fallback box must hide.
     pub(crate) hidden: HashSet<Ref>,
     /// One computed mesh per asset, shared by every instance of it.
-    pub(crate) meshes: HashMap<AssetRef, rbx_mesh::Mesh>,
+    pub(crate) meshes: HashMap<AssetRef, Arc<rbx_mesh::Mesh>>,
     pub(crate) instances: Vec<ResolvedInstance>,
 }
 
@@ -211,7 +211,18 @@ pub(crate) struct Resolution {
 /// computed once however many instances share the asset.
 struct Evaluated {
     tree: tree::Node,
-    mesh: Option<rbx_mesh::Mesh>,
+    mesh: Option<Arc<rbx_mesh::Mesh>>,
+}
+
+/// Every asset's [`Evaluated`] so far — `None` where its bytes did not
+/// parse — kept across scene rebuilds by whoever owns the place (see
+/// `load::Resident`). A boolean is a function of the asset's bytes alone,
+/// never of the union placed in the scene, so once carved it is carved for
+/// good: a reload re-plans every union from the DOM and finds every one of
+/// its assets already here.
+#[derive(Default)]
+pub(crate) struct Evaluations {
+    known: HashMap<AssetRef, Option<Arc<Evaluated>>>,
 }
 
 /// Resolves a plan against downloaded asset bytes.
@@ -228,14 +239,16 @@ pub(crate) fn resolve(
     assets: HashMap<AssetRef, Vec<u8>>,
     database: &ReflectionDatabase,
     materials: &mut Catalog,
+    evaluations: &mut Evaluations,
 ) -> Resolution {
-    let evaluated = evaluate_all(plan, &assets, database);
+    let evaluated = evaluate_all(plan, &assets, database, evaluations);
     let mut resolution = Resolution::default();
 
     for entry in &plan.entries {
-        let Some(Some(Evaluated { tree, mesh })) = evaluated.get(&entry.asset) else {
+        let Some(Some(evaluated)) = evaluated.get(&entry.asset) else {
             continue;
         };
+        let Evaluated { tree, mesh } = evaluated.as_ref();
         resolution.hidden.insert(entry.referent);
 
         if mesh.is_none() {
@@ -263,7 +276,7 @@ pub(crate) fn resolve(
 
     resolution.meshes = evaluated
         .into_iter()
-        .filter_map(|(asset, evaluated)| Some((asset, evaluated?.mesh?)))
+        .filter_map(|(asset, evaluated)| Some((asset, evaluated?.mesh.clone()?)))
         .collect();
     resolution
 }
@@ -272,14 +285,18 @@ pub(crate) fn resolve(
 /// a parsed tree whose boolean failed keeps `mesh: None` for the fallback.
 fn evaluate(bytes: &[u8], database: &ReflectionDatabase) -> Option<Evaluated> {
     let tree = tree::parse(bytes, database)?;
-    let mesh = csg::evaluate(&tree).ok().map(|solid| solid.to_mesh());
+    let mesh = csg::evaluate(&tree)
+        .ok()
+        .map(|solid| Arc::new(solid.to_mesh()));
     Some(Evaluated { tree, mesh })
 }
 
-/// Runs [`evaluate`] for every distinct, downloaded asset `plan` needs,
-/// across a bounded worker pool — same `thread::scope` plus atomic work-list
-/// index shape as `crate::assets::load_with`'s download pool, just with the
-/// BSP boolean itself as the unit of work instead of a network fetch.
+/// Every distinct, downloaded asset `plan` needs, evaluated: out of
+/// `evaluations` where an earlier scene already carved it, and through
+/// [`evaluate`] across a bounded worker pool where not — same `thread::scope`
+/// plus atomic work-list index shape as `crate::assets::load_with`'s download
+/// pool, just with the BSP boolean itself as the unit of work instead of a
+/// network fetch. Whatever is carved here is remembered in `evaluations`.
 ///
 /// This is the one CPU-heavy step in resolving a plan: each asset's boolean
 /// is a from-scratch BSP tree build, completely independent of every other
@@ -287,44 +304,56 @@ fn evaluate(bytes: &[u8], database: &ReflectionDatabase) -> Option<Evaluated> {
 /// across cores instead of paying for it back to back on the caller's own
 /// thread. Several entries can share an asset (a builder copy-pasting the
 /// same rock), so this dedupes by [`AssetRef`] first — the whole point is
-/// never redoing the same boolean twice, in parallel or not.
+/// never redoing the same boolean twice, in parallel or not, and a reload
+/// is the same boolean again.
 fn evaluate_all(
     plan: &Plan,
     assets: &HashMap<AssetRef, Vec<u8>>,
     database: &ReflectionDatabase,
-) -> HashMap<AssetRef, Option<Evaluated>> {
+    evaluations: &mut Evaluations,
+) -> HashMap<AssetRef, Option<Arc<Evaluated>>> {
     let mut seen = HashSet::new();
-    let unique: Vec<&AssetRef> = plan
+    let wanted: Vec<&AssetRef> = plan
         .entries
         .iter()
         .map(|entry| &entry.asset)
         .filter(|asset| assets.contains_key(*asset) && seen.insert((*asset).clone()))
         .collect();
-    if unique.is_empty() {
-        return HashMap::new();
+    let unique: Vec<&AssetRef> = wanted
+        .iter()
+        .copied()
+        .filter(|asset| !evaluations.known.contains_key(*asset))
+        .collect();
+
+    if !unique.is_empty() {
+        let next = AtomicUsize::new(0);
+        let results = Mutex::new(HashMap::with_capacity(unique.len()));
+        let workers = MAX_CSG_WORKERS
+            .min(std::thread::available_parallelism().map_or(1, |n| n.get()))
+            .min(unique.len());
+
+        std::thread::scope(|scope| {
+            for _ in 0..workers {
+                scope.spawn(|| {
+                    while let Some(&asset) = unique.get(next.fetch_add(1, Ordering::Relaxed)) {
+                        let evaluated = evaluate(&assets[asset], database).map(Arc::new);
+                        results
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .insert(asset.clone(), evaluated);
+                    }
+                });
+            }
+        });
+        evaluations
+            .known
+            .extend(results.into_inner().unwrap_or_else(|e| e.into_inner()));
     }
 
-    let next = AtomicUsize::new(0);
-    let results = Mutex::new(HashMap::with_capacity(unique.len()));
-    let workers = MAX_CSG_WORKERS
-        .min(std::thread::available_parallelism().map_or(1, |n| n.get()))
-        .min(unique.len());
-
-    std::thread::scope(|scope| {
-        for _ in 0..workers {
-            scope.spawn(|| {
-                while let Some(&asset) = unique.get(next.fetch_add(1, Ordering::Relaxed)) {
-                    let evaluated = evaluate(&assets[asset], database);
-                    results
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .insert(asset.clone(), evaluated);
-                }
-            });
-        }
-    });
-
-    results.into_inner().unwrap_or_else(|e| e.into_inner())
+    wanted
+        .into_iter()
+        .filter_map(|asset| Some((asset.clone(), evaluations.known.get(asset)?.clone())))
+        .collect()
 }
 
 #[cfg(test)]

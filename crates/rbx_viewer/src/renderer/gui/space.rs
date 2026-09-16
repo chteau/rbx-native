@@ -46,6 +46,11 @@ pub(super) struct Space {
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     image_layout: wgpu::BindGroupLayout,
+    /// The painter every canvas is baked with, built for [`CANVAS_FORMAT`].
+    /// `None` until the first scene with a canvas to bake: a place without
+    /// one never pays for its pipeline, and one that has some keeps it across
+    /// every rebuild rather than compiling it again per reload.
+    painter: Option<Painter>,
     canvases: Vec<Canvas>,
     items: Vec<Item>,
     vertices: Option<wgpu::Buffer>,
@@ -88,13 +93,31 @@ impl Space {
             camera_buffer,
             camera_bind_group,
             image_layout,
+            painter: None,
             canvases: Vec::new(),
             items: Vec::new(),
             vertices: None,
             vertex_capacity: 0,
         };
+        space.rebuild(device, queue, viewport_layout, atlas, spaces);
+        space
+    }
+
+    /// Bakes `spaces`' canvases afresh, keeping the pipelines and the painter.
+    /// Nothing else is worth keeping: a canvas is the painted tree, and the
+    /// tree is what a scene rebuild is for.
+    pub(super) fn rebuild(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        viewport_layout: &wgpu::BindGroupLayout,
+        atlas: &Atlas,
+        spaces: &[SpaceGui],
+    ) {
+        self.canvases.clear();
+        self.items.clear();
         if spaces.is_empty() {
-            return space;
+            return;
         }
 
         // Clamped, unlike the atlas' own sampler: a canvas is sampled over
@@ -109,22 +132,22 @@ impl Space {
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
-        // Its own painter, built for `CANVAS_FORMAT`; dropped with this call,
-        // since a canvas is never repainted.
-        let mut painter = Painter::new(device, CANVAS_FORMAT, viewport_layout, &atlas.image_layout);
+        let mut painter = self.painter.take().unwrap_or_else(|| {
+            Painter::new(device, CANVAS_FORMAT, viewport_layout, &atlas.image_layout)
+        });
         for gui in spaces {
             let canvas = bake(device, queue, &mut painter, atlas, gui);
-            space.canvases.push(Canvas {
-                bind_group: space.bind(device, &canvas, &sampler),
+            self.canvases.push(Canvas {
+                bind_group: self.bind(device, &canvas, &sampler),
                 texture: canvas,
             });
-            space.items.push(Item {
+            self.items.push(Item {
                 anchor: gui.anchor,
                 always_on_top: gui.always_on_top,
-                canvas: space.canvases.len() - 1,
+                canvas: self.canvases.len() - 1,
             });
         }
-        space
+        self.painter = Some(painter);
     }
 
     /// Rebuilds both pipelines for a new sample count — see `renderer::switch`.
