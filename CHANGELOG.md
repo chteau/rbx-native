@@ -45,17 +45,25 @@
   (a rotated element's children swinging around with it, the way
   `GuiBase2d.AbsoluteRotation` implies real Studio composes it) is still
   open. — @chteau
-- **Parallelized the legacy union/negate CSG boolean.** Profiling a
+- **Fixed the CPU (and GPU upload) spike loading a real place.** Profiling a
   synthetic CSG-heavy place (this repository ships no real one) showed
   resolving 40 legacy `UnionOperation`/`NegateOperation` booleans took ~6s
   single-threaded, dwarfing the ~0.1s an equivalent number of texture mip
-  chains took to generate — the from-scratch BSP boolean, not texture
-  decode/upload, was the dominant cost behind a real place's reported CPU
-  spike on load. `union::resolve` now evaluates each distinct asset's
-  boolean across a bounded worker pool sized to CPU parallelism, the same
-  synthetic place resolving in ~0.8-1.1s afterward. Texture upload
-  happening in one uninterrupted burst rather than spread across frames
-  remains open as a separate, lower-priority follow-up. — @chteau
+  chains took to generate — the from-scratch BSP boolean was the dominant
+  cost, though that mip-chain number only measured CPU-side generation, not
+  the GPU upload itself, which turned out to be its own real spike.
+  `union::resolve` now evaluates each distinct asset's boolean across a
+  bounded worker pool sized to CPU parallelism, the same synthetic place
+  resolving in ~0.8-1.1s afterward. Separately, every `Decal`/`Texture`
+  image used to upload its full mip chain to the GPU in one uninterrupted
+  burst before the renderer was usable at all; `Renderer::draw` now spreads
+  that upload across a bounded number of images per frame instead
+  (`texture::PER_FRAME`), each slot starting from a cheap placeholder until
+  its turn comes up. Measured directly on a real GPU: uploading 60 synthetic
+  1024x1024 images in one burst took ~245-295ms, versus every single frame
+  staying under ~33ms once spread across 8 of them. The one-shot `rbxview
+  --screenshot` path drains any remaining upload immediately instead, since
+  it has no next frame to spread the rest across. — @chteau
 
 ## 2026-09-15
 
