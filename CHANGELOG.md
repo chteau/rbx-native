@@ -22,7 +22,12 @@
   a tree-sitter grammar: no new dependency, and Luau's type annotations,
   `continue`/`export`/`type`, compound assignment, `0b` literals, digit
   separators and backtick interpolation all lex correctly where a Lua 5.1
-  grammar sees a parse error and stops colouring the rest of the file. Edits
+  grammar sees a parse error and stops colouring the rest of the file. Two
+  things a flat token stream cannot decide get a pass of their own on top: a
+  type annotation's names are told apart from an expression's (so
+  `local n: Vector3` colours `Vector3`, while the colon in `obj:method()` is
+  left alone), and the `{...}` holes inside a backtick string are lexed as the
+  Luau expressions they are, by re-entering the lexer on them. Edits
   land on `Source` through the same `set_property` every other property edit
   uses, 400 ms after typing stops, so a typing burst is one undo step; Ctrl+S
   and undo/redo flush any pending write first. `Source` became read-only in
