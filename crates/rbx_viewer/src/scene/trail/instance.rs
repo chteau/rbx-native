@@ -88,7 +88,7 @@ pub(crate) fn plan(dom: &WeakDom, database: &ReflectionDatabase) -> Vec<Trail> {
 
 fn build(
     dom: &WeakDom,
-    parents: &ParentMap,
+    parents: &ParentMap<'_>,
     referent: Ref,
     properties: &BTreeMap<String, Variant>,
 ) -> Option<Trail> {

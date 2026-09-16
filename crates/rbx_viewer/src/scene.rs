@@ -8,7 +8,7 @@ mod gui;
 mod material;
 mod particles;
 mod patch;
-mod reparent;
+mod resync;
 mod shape;
 mod trail;
 mod union;
@@ -44,7 +44,7 @@ pub(crate) use gui::Painted;
 pub(crate) use material::{Catalog, Kind, Maps, Slot};
 pub(crate) use particles::sequence::{eval_color, eval_number};
 pub(crate) use particles::{Emitter, Simulation};
-pub(crate) use patch::MeshPatch;
+pub(crate) use resync::PartSync;
 pub(crate) use shape::{resolve as resolve_shape, ShapeKind};
 pub(crate) use trail::{segments as trail_segments, Recorder as TrailRecorder, Trail};
 pub(crate) use union::Evaluations as UnionEvaluations;
@@ -56,7 +56,7 @@ const FALLBACK_COLOR: [u8; 3] = [163, 162, 165];
 const PART_ANCESTOR: &str = "BasePart";
 // Terrain is a BasePart whose `size` covers the whole voxel region, so drawing it as a
 // box would swallow the rest of the scene and wreck the camera framing.
-const EXCLUDED_CLASS: &str = "Terrain";
+pub(crate) const EXCLUDED_CLASS: &str = "Terrain";
 /// How solid a `ForceField` part is drawn, whatever its `Transparency`.
 const FORCE_FIELD_ALPHA: f32 = 0.5;
 
@@ -68,10 +68,11 @@ const FORCE_FIELD_ALPHA: f32 = 0.5;
 /// fallback if [`filemesh`] fails to resolve real geometry for them — see
 /// `referent` and `suppressed`.
 ///
-/// `Clone`/`Copy`: `Scene::patch_part` hands a value copy back to the renderer
-/// rather than a borrow, so the caller is free of `Scene`'s own borrow by the
-/// time it reaches into `Renderer`/`Offscreen`, both behind other fields.
-#[derive(Clone, Copy)]
+/// `Clone`/`Copy`: `Scene::resync_part` hands a value copy back to the
+/// renderer rather than a borrow, so the caller is free of `Scene`'s own
+/// borrow by the time it reaches into `Renderer`/`Offscreen`, both behind
+/// other fields.
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct Part {
     pub(crate) kind: ShapeKind,
     /// Which texture-array layer shades it, and how — see `scene::material`.
@@ -93,7 +94,7 @@ pub(crate) struct Part {
     /// can find and hide it instead of drawing both on top of each other —
     /// and so the renderer's own per-instance patch maps (`renderer::shaped`,
     /// `renderer::translucent`, `renderer::shadow::casters`) can key
-    /// themselves off the same id [`Scene::patch_part`] looks it up by.
+    /// themselves off the same id [`Scene::resync_part`] looks it up by.
     pub(crate) referent: Ref,
     /// Set by [`Scene::resolve_file_meshes`] once a real mesh has taken over
     /// drawing this part; left `false` forever if that resolution fails, which
@@ -385,80 +386,6 @@ impl Scene {
         resolved.meshes.extend(resolution.meshes);
         resolved.instances.extend(resolution.instances);
     }
-
-    /// Recomputes one non-suppressed part from `dom` in place — a single
-    /// Properties-row edit, never a structural change — and reports whether
-    /// the result can be handed to the renderer as a single-instance update
-    /// rather than forcing a full scene rebuild.
-    ///
-    /// `Some(index)` means `self.parts[index]` already holds the patched
-    /// part, whatever the edit did to it: a part that changed shape, crossed
-    /// into or out of the blended pass, stopped or started casting a shadow,
-    /// or turned invisible is still one instance, and moving it between the
-    /// renderer's batches is `Renderer::sync_instance`'s job.
-    ///
-    /// `known_material_layers` is `self.materials().layers()` as of the last
-    /// full build: a `Material`/`MaterialVariantSerialized` edit landing on a
-    /// layer at or past that count would need its maps downloaded and
-    /// uploaded, which only a full reload does, so that (like a `size`/
-    /// `CFrame` gone missing) reports `None` instead of mutating anything.
-    ///
-    /// A part whose box a resolved mesh has replaced is suppressed and so
-    /// refused here; [`Scene::patch_mesh_instance`] is its counterpart. So
-    /// is a union whose boolean failed: its recovered pieces all answer to
-    /// the union's own referent (see `union::tree`), and no single box
-    /// recomputed from the union's own properties stands for the lot.
-    pub(crate) fn patch_part(
-        &mut self,
-        dom: &WeakDom,
-        database: &ReflectionDatabase,
-        referent: Ref,
-        known_material_layers: usize,
-    ) -> Option<usize> {
-        let mut standing_in = self
-            .parts
-            .iter()
-            .enumerate()
-            .filter(|(_, part)| part.referent == referent && !part.suppressed)
-            .map(|(index, _)| index);
-        let index = standing_in.next()?;
-        if standing_in.next().is_some() {
-            return None;
-        }
-        let instance = dom.get(referent)?;
-        let properties = instance.properties();
-
-        let Some(Variant::Vector3(size)) = properties.get("size") else {
-            return None;
-        };
-        let Some(Variant::CFrame(cframe)) = properties.get("CFrame") else {
-            return None;
-        };
-        let size = Vec3::new(size.x, size.y, size.z);
-        let geometry = shape::resolve(dom, database, instance, size);
-
-        let patched = assemble_part(
-            properties,
-            database,
-            &mut self.materials,
-            geometry,
-            cframe_matrix(cframe),
-            referent,
-        );
-        if patched.material.layer as usize >= known_material_layers {
-            return None;
-        }
-
-        self.parts[index] = patched;
-        Some(index)
-    }
-
-    /// Whether `referent` (a suppressed box, a resolved mesh, or a union's
-    /// recovered pieces) is something this scene built — see
-    /// [`Scene::already_draws`].
-    pub(super) fn knows(&self, referent: Ref) -> bool {
-        self.parts.iter().any(|part| part.referent == referent)
-    }
 }
 
 /// Builds the model matrix of a part: its CFrame, then its shape's offset (if
@@ -614,7 +541,7 @@ fn walk(dom: &WeakDom, mut pending: Vec<Ref>) -> impl Iterator<Item = Ref> + '_ 
     })
 }
 
-const WORKSPACE_CLASS: &str = "Workspace";
+pub(super) const WORKSPACE_CLASS: &str = "Workspace";
 
 /// Every descendant of the DOM's `Workspace` service, `Workspace` itself
 /// included — real Studio only ever draws what is actually parented under it,

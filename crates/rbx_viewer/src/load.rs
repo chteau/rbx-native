@@ -24,13 +24,21 @@ use crate::textures::{self, Decor};
 /// so `rbxview`, `rbxstudio` and their embedders never re-implement the sniff.
 pub fn read_place(path: &Path) -> Result<WeakDom, String> {
     let bytes = std::fs::read(path).map_err(|err| format!("failed to read {path:?}: {err}"))?;
-    if rbx_xml::is_xml(&bytes) {
+    let mut dom = if rbx_xml::is_xml(&bytes) {
         let text = std::str::from_utf8(&bytes)
             .map_err(|err| format!("{path:?} is not valid UTF-8 XML: {err}"))?;
-        rbx_xml::deserialize(text).map_err(|err| format!("failed to parse {path:?}: {err}"))
+        rbx_xml::deserialize(text).map_err(|err| format!("failed to parse {path:?}: {err}"))?
     } else {
-        rbx_binary::deserialize(&bytes).map_err(|err| format!("failed to parse {path:?}: {err}"))
-    }
+        rbx_binary::deserialize(&bytes).map_err(|err| format!("failed to parse {path:?}: {err}"))?
+    };
+    // A parser builds the tree through the same `insert`/`set_parent` an edit
+    // uses, so the DOM comes back with a change log of its own construction
+    // — one entry per instance in the file. The log is what happened *since*
+    // the tree stood, and to a caller feeding it to `Headless::apply_changes`
+    // a whole place's worth of "new" instances would be an edit of the whole
+    // place; it starts empty here instead.
+    dom.take_changes();
+    Ok(dom)
 }
 
 /// What a load is allowed to download, and the hour its sky is lit at.
@@ -121,8 +129,7 @@ impl Loaded {
         std::mem::take(&mut self.warnings)
     }
 
-    /// The parts a single-instance Properties-panel edit patches in place —
-    /// see `Headless::patch_instance`.
+    /// The parts an edit patches in place — see `Headless::apply_changes`.
     pub(crate) fn scene_mut(&mut self) -> &mut Scene {
         &mut self.scene
     }
@@ -131,11 +138,20 @@ impl Loaded {
         &self.scene
     }
 
-    /// Replaces the constant lighting terms and local lights wholesale — what
-    /// `Headless::update_lighting` recomputes off a mutated DOM without
-    /// touching `self.scene`/`self.decor` at all.
-    pub(crate) fn set_lighting(&mut self, lighting: Lighting, lights: Vec<LocalLight>) {
+    /// Replaces the constant lighting terms wholesale — what
+    /// `Headless::apply_changes` recomputes off a mutated DOM for a
+    /// `Lighting` edit, without touching `self.scene`/`self.decor` at all.
+    pub(crate) fn set_lighting(&mut self, lighting: Lighting) {
         self.lighting = lighting;
+    }
+
+    pub(crate) fn lights(&self) -> &[LocalLight] {
+        &self.lights
+    }
+
+    /// Replaces the local lights wholesale — the same, for a `Light` (or the
+    /// part one hangs off) that changed.
+    pub(crate) fn set_lights(&mut self, lights: Vec<LocalLight>) {
         self.lights = lights;
     }
 

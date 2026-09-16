@@ -122,7 +122,7 @@ pub(crate) fn plan(
 
 /// Re-derives one part's face instances against a freshly patched
 /// [`Placement`] — the Properties-panel fast path's decal counterpart to
-/// [`plan`], called for exactly the one part `Scene::patch_part` just
+/// [`plan`], called for exactly the one part `Scene::resync_part` just
 /// recomputed rather than walking the whole DOM again.
 pub(crate) fn faces(
     dom: &WeakDom,
@@ -292,8 +292,8 @@ mod tests {
         );
     }
 
-    // The Properties-panel fast path's own re-derivation: `Scene::patch_part`
-    // hands `faces` the part's new `Placement`, not a fresh DOM walk, and the
+    // An edit's own re-derivation: `Headless::apply_changes` hands `faces`
+    // the part's new `Placement`, not a fresh DOM walk, and the
     // renderer finds the instance to rewrite again by this same referent (see
     // `renderer::textured::Textured::sync`) — so a patch that moved the part
     // has to keep naming the same Decal, not a fresh one.

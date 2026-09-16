@@ -343,7 +343,7 @@ fn fixture_bytes() -> Vec<u8> {
         .bytes
 }
 
-// `Scene::patch_mesh_instance` re-plans a union through `replan`/`patched`;
+// `Scene::resync_part` re-plans a union through `replan`/`patched`;
 // the one thing a fresh plan cannot recover without the operation tree is a
 // colour that comes from the pieces (`UsePartColor` off), so that must refuse.
 #[test]

@@ -5,37 +5,30 @@
 //! `lighting::local` uses for a light hung off an `Attachment`, just walked
 //! from the attachment side since a `Beam` only ever holds the Ref.
 
-use std::collections::HashMap;
-
 use glam::Mat4;
 use rbx_dom::{Instance, Ref, Variant, WeakDom};
 
-use crate::scene::{cframe_matrix, descendants};
+use crate::scene::cframe_matrix;
 
-/// Referent → parent referent, built once per [`super::plan`] call since
-/// `WeakDom` keeps no back-pointer of its own (the identical need is met the
-/// same way in `scene::particles::emitter`).
+/// Referent → parent referent, for every plan that resolves an attachment's
+/// parent part. A view over [`WeakDom::parent`]'s own reverse edge rather
+/// than a map of its own: building one per plan call walked the whole place
+/// into a hash map to answer a handful of lookups, and a beam re-planned
+/// after a part moved paid that walk every time.
 ///
 /// `pub(crate)`, not `pub(super)`: `scene::trail` resolves its own
 /// `Attachment0`/`Attachment1` the identical way and reuses this rather than
-/// rebuilding the same parent walk (see `scene::beam`'s re-export).
-pub(crate) struct ParentMap(HashMap<Ref, Ref>);
+/// rebuilding the same lookup (see `scene::beam`'s re-export).
+#[derive(Clone, Copy)]
+pub(crate) struct ParentMap<'a>(&'a WeakDom);
 
-impl ParentMap {
-    pub(crate) fn build(dom: &WeakDom) -> Self {
-        let mut parents = HashMap::new();
-        for referent in descendants(dom) {
-            if let Some(instance) = dom.get(referent) {
-                for &child in instance.children() {
-                    parents.insert(child, referent);
-                }
-            }
-        }
-        ParentMap(parents)
+impl<'a> ParentMap<'a> {
+    pub(crate) fn build(dom: &'a WeakDom) -> Self {
+        ParentMap(dom)
     }
 
     fn get(&self, referent: Ref) -> Option<Ref> {
-        self.0.get(&referent).copied()
+        self.0.parent(referent)
     }
 }
 
@@ -43,7 +36,7 @@ impl ParentMap {
 /// if the reference is dangling, either instance carries no `CFrame`, or the
 /// attachment's parent was never recorded (no parent, i.e. a root instance) —
 /// a beam that cannot be placed is simply not drawn (see [`super::plan`]).
-pub(crate) fn world_cframe(dom: &WeakDom, parents: &ParentMap, referent: Ref) -> Option<Mat4> {
+pub(crate) fn world_cframe(dom: &WeakDom, parents: &ParentMap<'_>, referent: Ref) -> Option<Mat4> {
     let attachment = dom.get(referent)?;
     let local = frame_of(attachment)?;
     let parent = dom.get(parents.get(referent)?)?;

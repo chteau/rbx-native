@@ -232,7 +232,7 @@ impl Post {
     }
 
     /// Swaps in a freshly read `Lighting.Effects` — a `PostEffect` edit's fast
-    /// path (see `Renderer::update_lighting`). Safe with no rebuild: every
+    /// path (see `Renderer::set_lighting`). Safe with no rebuild: every
     /// pipeline here is built once and reads `self.effects` fresh every
     /// `prepare`, so nothing pins the old value but this field.
     pub(super) fn set_effects(&mut self, effects: Effects) {

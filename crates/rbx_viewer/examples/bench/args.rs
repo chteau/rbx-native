@@ -106,7 +106,7 @@ impl Args {
              \x20 --no-textures        skip every texture, material and file-mesh resolve\n\
              \x20 --load-iters <n>     cold loads per fixture (default: {})\n\
              \x20 --reload-iters <n>   reloads per fixture (default: {})\n\
-             \x20 --patch-iters <n>    single-instance patches per fixture (default: {})\n\
+             \x20 --patch-iters <n>    patches and edits per fixture (default: {})\n\
              \x20 --frame-iters <n>    measured frames per quality level (default: {})\n\
              \x20 --frame-warmup <n>   discarded frames before each level (default: {})\n\
              \n\

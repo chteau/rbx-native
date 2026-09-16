@@ -68,14 +68,14 @@ pub(in crate::renderer) fn buffer(device: &wgpu::Device, lights: &[LocalLight]) 
         label: Some("rbxview local lights"),
         contents: bytemuck::cast_slice(&pack(lights)),
         // COPY_DST: written afterwards by `write`, for a `Light` property
-        // edit's fast path (see `Renderer::update_lighting`).
+        // edit's fast path (see `Renderer::set_lights`).
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
     })
 }
 
-/// Rewrites an existing buffer in place, for a `Light` property edit that
-/// changed neither the count nor which lights the level allows (see
-/// `Renderer::update_lighting`): same byte length in, so no bind group that
+/// Rewrites an existing buffer in place, for a `Light` edit that changed
+/// neither the count nor which lights the level allows (see
+/// `Renderer::set_lights`): same byte length in, so no bind group that
 /// already points at `buffer` goes stale.
 pub(in crate::renderer) fn write(
     queue: &wgpu::Queue,

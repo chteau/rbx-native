@@ -3,19 +3,16 @@
 //! than a second `on_key_down` — a key event bubbles up from whatever holds
 //! focus, and undo must go through no matter which panel is focused.
 //!
-//! Undo/redo takes the same fast in-place viewport patch an ordinary edit
-//! does (`shell::edit::reflect_in_viewport`) whenever the reverted/reapplied
-//! mutation wrote to one instance only — one property, a reparent, or
-//! several properties at once the way a Scale drag writes `size` and
-//! `CFrame` together (see `shell::drag`) — falling back to a full
-//! [`Shell::reload_viewport`] only for anything wider: an instance create or
-//! delete, a multi-instance drag, a script that touched more than one thing.
-//! `crate::history::History` records the `Change` log each pushed snapshot's
-//! mutation produced (see `Shell::push_history`/
-//! `Shell::record_history_change`, called from every mutating call site);
-//! [`Shell::install`] below hands it to `Shell::reflect_changes` (see
-//! `shell::command`) — the exact path a script run's own viewport reflection
-//! takes, classifier and all — rather than a second one built for this.
+//! Undo/redo reaches the viewport exactly the way the mutation it reverts or
+//! reapplies did: `crate::history::History` records the `Change` log each
+//! pushed snapshot's mutation produced (see `Shell::push_history`/
+//! `Shell::record_history_change`, called from every mutating call site),
+//! and [`Shell::install`] below hands that same log to
+//! `Shell::reflect_changes` (see `shell::command`) with the restored DOM.
+//! The viewport reads a log as *which* instances to look at again, not as
+//! what happened to them — so the log of an insert, applied against the DOM
+//! the undo put back, takes the part out; applied again by the redo, it puts
+//! it back — and every step, whatever it was, patches in place.
 //!
 //! `RBX_STUDIO_UNDO=1` applies one undo once, right after startup, through
 //! this exact path — a debugging aid for a screenshot that proves a mutation
@@ -66,7 +63,7 @@ impl Shell {
     /// (or, for a multi-step drag, the gesture's own most recent step) just
     /// preceded produced — to the entry currently on top of the undo stack.
     /// Called once per mutating call site, right after that mutation
-    /// completes, so undo/redo can classify it later without re-diffing two
+    /// completes, so undo/redo can reflect it later without re-diffing two
     /// `WeakDom` trees.
     pub(super) fn record_history_change(&mut self, changes: Vec<Change>) {
         self.history.record_changes(changes);
@@ -97,12 +94,12 @@ impl Shell {
     }
 
     /// Installs `dom` as the canonical tree and reflects it in the viewport
-    /// — through [`Shell::reflect_changes`]: the fast patch, per property
-    /// `changes` shows written on one instance, or a full
-    /// [`Shell::reload_viewport`] for anything wider (see this module's doc
-    /// comment) — plus the Explorer and the selection: cleared when its
-    /// referent no longer resolves in `dom`, the same rule
-    /// `shell::keys::selection_after_removal` applies to a delete.
+    /// — through `Shell::reflect_changes`, with the log the step's mutation
+    /// produced (see this module's doc comment) — plus the Explorer and the
+    /// selection: cleared when its referent no longer resolves in `dom`,
+    /// the same rule `shell::keys::selection_after_removal` applies to a
+    /// delete. The selection settles before the viewport is told, since what
+    /// the viewport refreshes on this side depends on it.
     fn install(&mut self, dom: WeakDom, changes: &[Change], cx: &mut Context<Self>) {
         self.dom = dom;
         self.rebuild_explorer(cx);
@@ -150,21 +147,23 @@ impl Shell {
 // harness for — see the other `shell::*` test modules, which stop at the
 // same boundary and test the pure logic underneath a GPUI call instead of
 // the call itself. What is tested below is that same underneath: a real
-// `History` (from `crate::history`), fed real `WeakDom` mutations and read
-// back through the exact `single_instance_change` classifier
-// `Shell::reflect_changes` runs for `install` above, which is the whole of
-// what decides fast patch vs. full reload — `install` itself is a thin,
-// untestable-without-a-window wrapper around it.
+// `History` (from `crate::history`), fed real `WeakDom` mutations, and what
+// it hands `install` for each — the restored DOM, and the log the viewport
+// is then told to reflect against it, which has to be the mutation's own
+// (its referents are what the viewport looks at again) for undo and redo
+// alike.
 #[cfg(test)]
 mod tests {
-    use rbx_dom::{CFrameData, Variant, Vector3Data, WeakDom};
+    use rbx_dom::{CFrameData, Change, Ref, Variant, Vector3Data, WeakDom};
 
     use crate::history::{History, DEFAULT_CAP};
     use crate::script_editor::source;
-    use crate::shell::command::single_instance_change;
 
-    fn names(names: &[&str]) -> Vec<String> {
-        names.iter().map(|name| name.to_string()).collect()
+    fn write(referent: Ref, name: &str) -> Change {
+        Change::Property {
+            referent,
+            name: name.to_string(),
+        }
     }
 
     fn vector3(x: f32, y: f32, z: f32) -> Variant {
@@ -181,7 +180,7 @@ mod tests {
     }
 
     #[test]
-    fn undoing_a_single_property_edit_classifies_as_a_fast_patch_and_restores_the_old_value() {
+    fn undoing_a_property_edit_restores_the_old_value_and_names_the_instance() {
         let mut dom = WeakDom::new();
         let part = dom.new_instance("Part", "Part", None);
         dom.set_property(part, "Transparency", Variant::Float32(0.0))
@@ -197,21 +196,21 @@ mod tests {
 
         let (previous, changes) = history.undo(dom.clone()).expect("something to undo");
         assert_eq!(
-            single_instance_change(&changes),
-            Some((part, names(&["Transparency"]))),
-            "a lone property write must classify as the fast path"
+            changes,
+            vec![write(part, "Transparency")],
+            "the viewport is pointed at the one instance the edit wrote"
         );
         assert_eq!(
             previous.get(part).unwrap().properties().get("Transparency"),
             Some(&Variant::Float32(0.0)),
-            "undo must actually restore the old value, not just classify the edit"
+            "undo must actually restore the old value"
         );
 
         let (next, changes) = history.redo(previous).expect("something to redo");
         assert_eq!(
-            single_instance_change(&changes),
-            Some((part, names(&["Transparency"]))),
-            "redo reapplies the same single edit, so it classifies the same way"
+            changes,
+            vec![write(part, "Transparency")],
+            "redo reapplies the same edit, so it hands over the same log"
         );
         assert_eq!(
             next.get(part).unwrap().properties().get("Transparency"),
@@ -221,7 +220,7 @@ mod tests {
     }
 
     #[test]
-    fn undoing_a_reparent_classifies_as_a_fast_patch_and_restores_the_old_parent() {
+    fn undoing_a_reparent_restores_the_old_parent_with_the_move_it_reverts() {
         let mut dom = WeakDom::new();
         let a = dom.new_instance("Model", "A", None);
         let b = dom.new_instance("Model", "B", None);
@@ -236,8 +235,12 @@ mod tests {
 
         let (previous, changes) = history.undo(dom.clone()).expect("something to undo");
         assert_eq!(
-            single_instance_change(&changes),
-            Some((part, names(&["Parent"])))
+            changes,
+            vec![Change::Parent {
+                referent: part,
+                old: Some(a),
+                new: Some(b),
+            }]
         );
         assert_eq!(
             previous.parent(part),
@@ -246,8 +249,10 @@ mod tests {
         );
     }
 
+    // The log of a delete names every instance of the subtree; against the
+    // restored DOM, each of those is an instance to build again.
     #[test]
-    fn undoing_an_instance_delete_falls_back_and_restores_the_whole_subtree() {
+    fn undoing_an_instance_delete_restores_the_whole_subtree_and_names_all_of_it() {
         let mut dom = WeakDom::new();
         let model = dom.new_instance("Model", "Model", None);
         let child = dom.new_instance("Part", "Child", Some(model));
@@ -260,19 +265,24 @@ mod tests {
         history.record_changes(dom.take_changes());
 
         let (previous, changes) = history.undo(dom.clone()).expect("something to undo");
-        assert_eq!(
-            single_instance_change(&changes),
-            None,
-            "a subtree delete is never one instance's property writes"
-        );
+        assert_eq!(changes.len(), 2);
+        for referent in [model, child] {
+            assert!(
+                changes.contains(&Change::Removed(referent)),
+                "the log names {referent:?}"
+            );
+        }
         assert!(
             previous.get(model).is_some() && previous.get(child).is_some(),
             "undo must restore the whole removed subtree, not just its root"
         );
     }
 
+    // The log of an insert, against a DOM the insert has been undone in,
+    // names an instance that is no longer there — which is exactly how the
+    // viewport learns to take it out.
     #[test]
-    fn undoing_an_instance_create_falls_back() {
+    fn undoing_an_instance_create_removes_it_and_names_it() {
         let mut dom = WeakDom::new();
         dom.take_changes();
 
@@ -283,11 +293,7 @@ mod tests {
         history.record_changes(dom.take_changes());
 
         let (previous, changes) = history.undo(dom.clone()).expect("something to undo");
-        assert_eq!(
-            single_instance_change(&changes),
-            None,
-            "an insert is never one instance's property writes"
-        );
+        assert_eq!(changes, vec![Change::Added(part)]);
         assert!(
             previous.get(part).is_none(),
             "undo must remove the instance the insert created"
@@ -295,45 +301,11 @@ mod tests {
     }
 
     #[test]
-    fn undoing_a_multi_property_edit_on_one_instance_is_a_fast_patch_per_property() {
-        let mut dom = WeakDom::new();
-        let part = dom.new_instance("Part", "Part", None);
-        dom.set_property(part, "Transparency", Variant::Float32(0.0))
-            .unwrap();
-        dom.set_property(part, "Reflectance", Variant::Float32(0.0))
-            .unwrap();
-        dom.take_changes();
-
-        let mut history = History::new(DEFAULT_CAP);
-        history.push(dom.clone());
-
-        // The kind of batch a Command Bar script (or, here, anything that
-        // writes more than one property in one go) produces on one part.
-        dom.set_property(part, "Transparency", Variant::Float32(0.5))
-            .unwrap();
-        dom.set_property(part, "Reflectance", Variant::Float32(0.3))
-            .unwrap();
-        history.record_changes(dom.take_changes());
-
-        let (previous, changes) = history.undo(dom.clone()).expect("something to undo");
-        assert_eq!(
-            single_instance_change(&changes),
-            Some((part, names(&["Transparency", "Reflectance"]))),
-            "two writes on one instance are two in-place patches, not a reload"
-        );
-        let properties = previous.get(part).unwrap().properties();
-        assert_eq!(properties.get("Transparency"), Some(&Variant::Float32(0.0)));
-        assert_eq!(properties.get("Reflectance"), Some(&Variant::Float32(0.0)));
-    }
-
-    #[test]
-    fn undoing_a_scale_drag_is_a_fast_patch_for_both_properties_it_wrote() {
+    fn undoing_a_scale_drag_restores_both_properties_it_wrote() {
         // What one Scale step logs (see `shell::drag::resize_part`): `size`
         // and `CFrame` together, on the one part, because the face opposite
         // the grabbed one holds still and the centre moves by half the
-        // growth. Undoing it has to put both back, and a scene rebuild is
-        // the wrong price for that — on a large place it is what made undo
-        // look broken.
+        // growth. Undoing it has to put both back.
         let mut dom = WeakDom::new();
         let part = dom.new_instance("Part", "Part", None);
         dom.set_property(part, "size", vector3(4.0, 1.0, 2.0))
@@ -352,31 +324,22 @@ mod tests {
         history.record_changes(dom.take_changes());
 
         let (previous, changes) = history.undo(dom.clone()).expect("something to undo");
-        assert_eq!(
-            single_instance_change(&changes),
-            Some((part, names(&["size", "CFrame"]))),
-            "a Scale step is two patches on one part, never a reload"
-        );
+        assert_eq!(changes, vec![write(part, "size"), write(part, "CFrame")]);
         let properties = previous.get(part).unwrap().properties();
         assert_eq!(properties.get("size"), Some(&vector3(4.0, 1.0, 2.0)));
         assert_eq!(properties.get("CFrame"), Some(&cframe_at(0.0, 0.0, 0.0)));
 
         let (next, changes) = history.redo(previous).expect("something to redo");
-        assert_eq!(
-            single_instance_change(&changes),
-            Some((part, names(&["size", "CFrame"]))),
-            "redo reapplies the same step, so it classifies the same way"
-        );
+        assert_eq!(changes, vec![write(part, "size"), write(part, "CFrame")]);
         let properties = next.get(part).unwrap().properties();
         assert_eq!(properties.get("size"), Some(&vector3(6.0, 1.0, 2.0)));
         assert_eq!(properties.get("CFrame"), Some(&cframe_at(1.0, 0.0, 0.0)));
     }
 
+    // `shell::drag::move_parts` writes one `CFrame` per part carried, and
+    // the whole gesture is one undo step: every part goes back at once.
     #[test]
-    fn undoing_a_group_drag_falls_back_and_restores_every_part() {
-        // `shell::drag::move_parts` writes one `CFrame` per part carried, so
-        // a group drag's log names two instances — the fallback that stays
-        // deliberate (see that method's doc comment).
+    fn undoing_a_group_drag_restores_every_part_in_one_step() {
         let mut dom = WeakDom::new();
         let a = dom.new_instance("Part", "A", None);
         let b = dom.new_instance("Part", "B", None);
@@ -396,11 +359,7 @@ mod tests {
         history.record_changes(dom.take_changes());
 
         let (previous, changes) = history.undo(dom.clone()).expect("something to undo");
-        assert_eq!(
-            single_instance_change(&changes),
-            None,
-            "two parts moved is wider than one instance"
-        );
+        assert_eq!(changes, vec![write(a, "CFrame"), write(b, "CFrame")]);
         assert_eq!(
             previous.get(a).unwrap().properties().get("CFrame"),
             Some(&cframe_at(0.0, 0.0, 0.0))
@@ -412,13 +371,13 @@ mod tests {
     }
 
     #[test]
-    fn undoing_a_script_source_edit_classifies_as_a_fast_patch_and_re_seeds_its_tab() {
+    fn undoing_a_script_source_edit_re_seeds_its_tab() {
         // Both halves of what an undo owes an open script tab, on the one
-        // return value `History::undo` now hands back: the `Change` log
-        // decides the viewport takes the in-place patch rather than a full
-        // reload, and the DOM beside it is what `Shell::resync_scripts`
-        // compares an open tab's last-synced text against. A tab is re-seeded
-        // exactly when that comparison fails.
+        // return value `History::undo` hands back: the `Change` log names
+        // the script (which the viewport then finds nothing to draw for),
+        // and the DOM beside it is what `Shell::resync_scripts` compares an
+        // open tab's last-synced text against. A tab is re-seeded exactly
+        // when that comparison fails.
         let mut dom = WeakDom::new();
         let script = dom.new_instance("Script", "Greeter", None);
         dom.set_property(
@@ -440,11 +399,7 @@ mod tests {
         assert!(source::is(&dom, script, synced), "nothing to re-seed yet");
 
         let (previous, changes) = history.undo(dom.clone()).expect("the edit to undo");
-        assert_eq!(
-            single_instance_change(&changes),
-            Some((script, names(&[source::SOURCE_PROPERTY]))),
-            "a lone `Source` write is a single edit, so undoing it must take the fast patch"
-        );
+        assert_eq!(changes, vec![write(script, source::SOURCE_PROPERTY)]);
         assert!(
             !source::is(&previous, script, synced),
             "the undone DOM must read to the tab as the mismatch it re-seeds on"
@@ -456,11 +411,7 @@ mod tests {
         );
 
         let (next, changes) = history.redo(previous).expect("the edit to redo");
-        assert_eq!(
-            single_instance_change(&changes),
-            Some((script, names(&[source::SOURCE_PROPERTY]))),
-            "redo reapplies the same single write, so it classifies the same way"
-        );
+        assert_eq!(changes, vec![write(script, source::SOURCE_PROPERTY)]);
         assert!(
             source::is(&next, script, synced),
             "redo puts the tab back in agreement with the DOM, so nothing re-seeds"

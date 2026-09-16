@@ -1,4 +1,4 @@
-//! The file-mesh half of `Scene::patch_mesh_instance`: re-reading one
+//! The file-mesh half of `Scene::resync_part`: re-reading one
 //! `MeshPart`/`SpecialMesh` entry off the DOM and rebuilding its
 //! [`ResolvedInstance`] against meshes and images that already downloaded,
 //! without going anywhere near the network.

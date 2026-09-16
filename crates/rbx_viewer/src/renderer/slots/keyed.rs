@@ -1,7 +1,8 @@
 //! Several [`Slots`] buffers under one referent index: a pass's batches,
 //! keyed by whatever decides which batch an instance draws in (its unit
-//! shape, its mesh asset, its mesh-and-skin), with the one entry point a
-//! single-instance edit needs — [`Keyed::sync`].
+//! shape, its mesh asset, its mesh-and-skin), with the entry points a
+//! single-instance edit needs — [`Keyed::sync`], [`Keyed::remove`] — and
+//! the [`Keyed::flush`] a frame runs before reading what they wrote.
 
 use std::collections::HashMap;
 
@@ -70,15 +71,6 @@ impl<K: PartialEq, G, T: Pod, S: Copy> Keyed<K, G, T, S> {
         self.groups
     }
 
-    /// The key of whichever batch currently holds `referent`, for a caller
-    /// that has to rebuild a record's key (a new image slot, say) around
-    /// whichever part of it did not change — `None` for a referent no batch
-    /// holds.
-    pub(in crate::renderer) fn key_of(&self, referent: Ref) -> Option<&K> {
-        let &(position, _) = self.index.get(&referent)?;
-        Some(&self.groups[position].key)
-    }
-
     /// Brings this pass in line with one instance's new state: `wanted` is
     /// the batch it belongs in now and the record to hold there, or `None`
     /// when it no longer belongs in this pass at all. Whichever batch held
@@ -93,7 +85,6 @@ impl<K: PartialEq, G, T: Pod, S: Copy> Keyed<K, G, T, S> {
     pub(in crate::renderer) fn sync(
         &mut self,
         device: &wgpu::Device,
-        queue: &wgpu::Queue,
         referent: Ref,
         wanted: Option<(K, T, S)>,
         extra: impl FnOnce(&K) -> Option<G>,
@@ -103,36 +94,43 @@ impl<K: PartialEq, G, T: Pod, S: Copy> Keyed<K, G, T, S> {
             (Some((position, offset)), Some((key, raw, side)))
                 if self.groups[position].key == key =>
             {
-                self.groups[position].slots.set(queue, offset, raw, side);
+                self.groups[position].slots.set(offset, raw, side);
                 true
             }
             (Some(_), Some(wanted)) => {
-                self.remove(queue, referent);
-                self.insert(device, queue, referent, wanted, extra)
+                self.remove(referent);
+                self.insert(device, referent, wanted, extra)
             }
             (Some(_), None) => {
-                self.remove(queue, referent);
+                self.remove(referent);
                 true
             }
-            (None, Some(wanted)) => self.insert(device, queue, referent, wanted, extra),
+            (None, Some(wanted)) => self.insert(device, referent, wanted, extra),
             (None, None) => true,
         }
     }
 
     /// Takes `referent` out of whichever batch holds it; a no-op if none does.
-    pub(in crate::renderer) fn remove(&mut self, queue: &wgpu::Queue, referent: Ref) {
+    pub(in crate::renderer) fn remove(&mut self, referent: Ref) {
         let Some((position, offset)) = self.index.remove(&referent) else {
             return;
         };
-        if let Some(moved) = self.groups[position].slots.swap_remove(queue, offset) {
+        if let Some(moved) = self.groups[position].slots.swap_remove(offset) {
             self.index.insert(moved, (position, offset));
+        }
+    }
+
+    /// Uploads what every batch's edits left owed to its buffer — see
+    /// [`Slots::flush`].
+    pub(in crate::renderer) fn flush(&mut self, queue: &wgpu::Queue) {
+        for group in &mut self.groups {
+            group.slots.flush(queue);
         }
     }
 
     fn insert(
         &mut self,
         device: &wgpu::Device,
-        queue: &wgpu::Queue,
         referent: Ref,
         (key, raw, side): (K, T, S),
         extra: impl FnOnce(&K) -> Option<G>,
@@ -149,7 +147,7 @@ impl<K: PartialEq, G, T: Pod, S: Copy> Keyed<K, G, T, S> {
         };
         let offset = self.groups[position]
             .slots
-            .push(device, queue, referent, raw, side);
+            .push(device, referent, raw, side);
         self.index.insert(referent, (position, offset));
         true
     }

@@ -9,6 +9,7 @@
 //! of that but the upload happens on a thread of its own (see [`pump`]); this
 //! module is the UI half — events in, finished frames out.
 
+mod changes;
 mod frame;
 mod gizmo;
 mod input;
@@ -16,7 +17,6 @@ mod label;
 mod presence;
 mod pump;
 mod quality;
-mod reload;
 mod stats;
 
 use std::cell::Cell;

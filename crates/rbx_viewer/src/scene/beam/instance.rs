@@ -88,7 +88,7 @@ pub(crate) fn plan(dom: &WeakDom, database: &ReflectionDatabase) -> Vec<Beam> {
 
 fn build(
     dom: &WeakDom,
-    parents: &ParentMap,
+    parents: &ParentMap<'_>,
     properties: &BTreeMap<String, Variant>,
 ) -> Option<Beam> {
     if !bool_or(properties, "Enabled", true) {

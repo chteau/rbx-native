@@ -1,7 +1,7 @@
 //! The Properties-panel fast path for the effects a [`Scene`] keeps beside its
 //! parts — `ParticleEmitter`s, `Beam`s and `Trail`s — which the renderer draws
 //! from static definitions rather than from the instance buffers
-//! `Scene::patch_part` writes into, so an edit to one is a re-plan of its
+//! `Scene::resync_part` writes into, so an edit to one is a re-plan of its
 //! list, not a rewrite of one GPU slot.
 
 use rbx_dom::WeakDom;
@@ -37,9 +37,9 @@ impl EffectKind {
 
 impl Scene {
     /// Re-reads every effect of `kind` from `dom`, exactly as
-    /// [`Scene::from_dom`] did — for a single Properties-row edit on one
-    /// emitter/beam/trail, never a structural change to the parts they hang
-    /// off (those still need a full reload, see `shell::edit::classify_edit`).
+    /// [`Scene::from_dom`] did — for an edit on an emitter/beam/trail, or on
+    /// the part or attachment one hangs off, which `Headless::apply_changes`
+    /// turns into a re-plan of that kind's list.
     ///
     /// The whole list rather than the one edited instance: each `plan` is a
     /// filtered walk that drops a disabled emitter or an unplaceable beam

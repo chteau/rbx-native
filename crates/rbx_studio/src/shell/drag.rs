@@ -14,7 +14,7 @@ use rbx_viewer::pick::{self, Ray};
 
 use crate::properties;
 use crate::settle::{self, Settle};
-use crate::transform::{self, Targets};
+use crate::transform;
 use crate::workspace_view::ViewportAction;
 
 use super::{selection, Shell};
@@ -157,20 +157,16 @@ impl Shell {
             }
         }
         self.dom = dom;
-        // Overwrites, not appends: this step's log alone is what a later
-        // undo of the whole gesture classifies (see this method's doc
-        // comment for why history is pushed once, on `first`, not per
-        // frame) — a single dragged part writes exactly the one `CFrame`
-        // change `single_instance_change` fast-paths, however many
-        // mouse-move frames it took to get there; a group drag's several
-        // referents keep it falling back, the same as any other
-        // multi-instance edit.
+        // Overwrites, not appends: this step's log alone — one `CFrame`
+        // write per part carried, however many mouse-move frames it took to
+        // get there — is what a later undo of the whole gesture reflects
+        // (see this method's doc comment for why history is pushed once, on
+        // `first`, not per frame). Reflected as one batch, one DOM clone,
+        // whatever the group's size.
         let changes = self.dom.take_changes();
+        self.reflect_changes(&changes, cx);
         self.record_history_change(changes);
 
-        for &(referent, _) in moves {
-            self.reflect_in_viewport(referent, CFRAME_PROPERTY, cx);
-        }
         if let Some(delta) = delta {
             self.viewport
                 .update(cx, |viewport, _| viewport.settle_at(delta));
@@ -247,18 +243,14 @@ impl Shell {
         // Same reasoning as `move_parts`: overwrites the entry's log with
         // just this step's writes. `properties` carries one name (a Rotate
         // drag) or two (Scale's paired Size/CFrame), all on the one part —
-        // exactly what `single_instance_change` patches in place on undo,
-        // one patch per name, the same loop this step itself runs below.
+        // one patch of that part either way, here and on undo.
         let changes = self.dom.take_changes();
+        self.reflect_changes(&changes, cx);
         self.record_history_change(changes);
 
         if let Err(err) = written {
             self.output.push_warning(&format!("viewport drag: {err}"));
             return false;
-        }
-
-        for (name, _) in properties {
-            self.reflect_in_viewport(referent, name, cx);
         }
         cx.notify();
         true
@@ -328,32 +320,19 @@ impl Shell {
         // Same reasoning as `move_parts`: this turn writes exactly the one
         // `CFrame` change, however many `T`/`R` presses the gesture took.
         let changes = self.dom.take_changes();
+        self.reflect_changes(&changes, cx);
         self.record_history_change(changes);
-
-        self.reflect_in_viewport(referent, CFRAME_PROPERTY, cx);
         cx.notify();
-    }
-
-    /// Tells the viewport where every selected part stands now, so its
-    /// draggers follow an edit that moved or resized one of them — a typed
-    /// coordinate, an undo, or a Command Bar script.
-    pub(super) fn sync_gizmo_target(&mut self, reference: Ref, cx: &mut Context<Self>) {
-        if !self.selected_all().contains(&reference) {
-            return;
-        }
-
-        let targets = Targets::read(&self.dom, self.selected_all());
-        self.viewport
-            .update(cx, |viewport, _| viewport.set_targets(targets));
     }
 
     /// Hands the viewport the boxes a free drag can soft-snap onto: every
     /// drawn part in the workspace except whichever are selected — a group
     /// drag carries all of them together, so none should pull the others.
     ///
-    /// Only on a selection change or after a script has rearranged the place,
-    /// never per mouse move — this walks the whole workspace, and during a
-    /// drag nothing but the dragged parts is moving anyway.
+    /// Only on a selection change or after an edit moved something other
+    /// than the selection (see `Shell::reflect_changes`), never per mouse
+    /// move — this walks the whole workspace, and during a drag nothing but
+    /// the dragged parts is moving anyway.
     pub(super) fn sync_snap_neighbours(&mut self, cx: &mut Context<Self>) {
         let selected = self.selected_all();
         let neighbours: Vec<Mat4> = pick::drawable_parts(&self.dom, &self.database)

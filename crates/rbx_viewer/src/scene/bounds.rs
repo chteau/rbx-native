@@ -8,7 +8,7 @@ use super::Part;
 ///
 /// Computed from the corners of rotated boxes, not from their centers, to ensure
 /// tight framing of the entire scene.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Bounds {
     // Readable throughout `scene`, which is where the extent is asserted on.
     pub(super) min: Vec3,

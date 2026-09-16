@@ -7,6 +7,7 @@
 //! buffer change between groups.
 
 use glam::Vec3;
+use rbx_dom::Ref;
 
 use super::cull::{visible_runs, MainCull};
 use super::geometry::Meshes;
@@ -79,12 +80,24 @@ impl Shaped {
     /// batch if not, dropped if it turned translucent or invisible, and added
     /// if it just became opaque. `part.kind`'s mesh must already be in
     /// [`Meshes`] (see `Meshes::ensure`) for the new batch to draw.
-    pub(super) fn sync(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, part: &Part) {
+    pub(super) fn sync(&mut self, device: &wgpu::Device, part: &Part) {
         let wanted = belongs(part).then(|| (part.kind, InstanceRaw::from_part(part), sphere(part)));
         // A unit shape's batch needs no payload, so a new one can always be
         // made — the `false` case never happens here.
         self.batches
-            .sync(device, queue, part.referent, wanted, |_| Some(()));
+            .sync(device, part.referent, wanted, |_| Some(()));
+    }
+
+    /// Takes one part out of whichever batch holds it — it stopped drawing
+    /// as a box, or is gone. A no-op for a referent no batch holds.
+    pub(super) fn remove(&mut self, referent: Ref) {
+        self.batches.remove(referent);
+    }
+
+    /// Uploads what the edits since the last frame owe the buffers — see
+    /// `slots::Slots::flush`.
+    pub(super) fn flush(&mut self, queue: &wgpu::Queue) {
+        self.batches.flush(queue);
     }
 }
 

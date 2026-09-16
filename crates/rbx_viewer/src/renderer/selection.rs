@@ -202,6 +202,18 @@ impl Selection {
         }
     }
 
+    /// Forgets where one part was drawn — it stopped drawing as a box (a
+    /// mesh took over, so a full build would list no placement for it
+    /// either) or is gone — and redraws the outline without it if it was in
+    /// the selection: an outline around nothing is exactly what a deleted
+    /// part leaves behind.
+    pub(super) fn remove(&mut self, device: &wgpu::Device, referent: Ref) {
+        if self.placements.remove(&referent).is_some() && self.referents.contains(&referent) {
+            let referents = std::mem::take(&mut self.referents);
+            self.set(device, &referents);
+        }
+    }
+
     /// The first outlined part's centre and the rotation its own local axes
     /// point along (see `renderer::gizmo`) — the part Scale and Rotate
     /// transform, and whose frame the local-orientation toggle takes. `None`

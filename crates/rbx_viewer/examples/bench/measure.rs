@@ -1,12 +1,15 @@
-//! The four measurements, taken through `Headless`'s public API and nothing
-//! else, so the same harness runs unchanged against a branch that rewrites what
-//! is underneath it.
+//! The measurements, taken through `Headless`'s public API and nothing else,
+//! so the same harness runs unchanged against a branch that rewrites what is
+//! underneath it: a cold load, a full reload, the edits in [`edits`], and the
+//! steady-state frame.
+
+mod edits;
 
 use std::path::Path;
 use std::time::Instant;
 
-use rbx_dom::{CFrameData, Ref, Variant, WeakDom};
-use rbx_viewer::{Headless, QualityLevel};
+use rbx_dom::{CFrameData, Change, Ref, Variant, WeakDom};
+use rbx_viewer::{Applied, Headless, QualityLevel};
 
 use crate::args::Args;
 use crate::stats::Samples;
@@ -64,14 +67,20 @@ pub(crate) fn fixture(path: &Path, args: &Args) -> Result<Measured, String> {
 
     let mut phases = vec![cold_load(path, args)?, reload(path, &dom, args)?];
     let mut notes = Vec::new();
-    // `&mut` last, and only here: the patch phase moves a part around in this
-    // very DOM, and every phase that shares it has already run.
-    match patch(path, &mut dom, args)? {
+    // `&mut` from here on: the patch and edit phases move parts around in
+    // this very DOM (and put them back), and every phase that shares it
+    // read-only has already run.
+    match edits::patch(path, &mut dom, args)? {
         Some(phase) => phases.push(phase),
         None => notes.push(
             "single-instance patch skipped: no BasePart in this place is patched in place"
                 .to_string(),
         ),
+    }
+    match edits::phases(path, &mut dom, args)? {
+        Some(edited) => phases.extend(edited),
+        None => notes
+            .push("edit phases skipped: no BasePart in this place is patched in place".to_string()),
     }
 
     Ok(Measured {
@@ -131,45 +140,6 @@ fn reload(path: &Path, dom: &WeakDom, args: &Args) -> Result<Phase, String> {
         call: Samples::new(&call),
         frame: Samples::new(&frame),
     })
-}
-
-/// `Headless::patch_instance` after one `BasePart`'s `CFrame` moves — the
-/// Properties-panel edit a reload is supposed to be unnecessary for.
-fn patch(path: &Path, dom: &mut WeakDom, args: &Args) -> Result<Option<Phase>, String> {
-    let mut headless = Headless::load(path, args.textures)?;
-    // The target, its pipelines and the freshly loaded place's textures must
-    // all be on the GPU already, or the first patches would be charged for
-    // finishing the load — see `drain_upload_budget`.
-    drain_upload_budget(&mut headless, args)?;
-
-    let Some((referent, mut cframe)) = patchable(&mut headless, dom)? else {
-        return Ok(None);
-    };
-    // `patchable`'s trial patch uploaded an instance without drawing it.
-    wait_for_frame(&mut headless, args.size)?;
-
-    let mut call = Vec::with_capacity(args.patch_iters);
-    let mut frame = Vec::with_capacity(args.patch_iters);
-    for _ in 0..args.patch_iters {
-        cframe.position.y += NUDGE;
-        dom.set_property(referent, "CFrame", Variant::CFrame(cframe))
-            .map_err(|err| format!("failed to move the part being patched: {err}"))?;
-
-        let started = Instant::now();
-        let patched = headless.patch_instance(dom, referent)?;
-        call.push(started.elapsed());
-        if !patched {
-            return Err("the part stopped being patchable part-way through the run".to_string());
-        }
-        wait_for_frame(&mut headless, args.size)?;
-        frame.push(started.elapsed());
-    }
-
-    Ok(Some(Phase {
-        name: "patch instance",
-        call: Samples::new(&call),
-        frame: Samples::new(&frame),
-    }))
 }
 
 /// `render_frame` to `take_frame` with the view held still, at each quality
@@ -249,26 +219,39 @@ fn wait_for_frame(headless: &mut Headless, size: (u32, u32)) -> Result<(), Strin
     Ok(())
 }
 
-/// Finds a `BasePart` the renderer really does patch in place.
+/// Finds up to `count` `BasePart`s the renderer really does patch in place,
+/// each with its `CFrame` as it stands.
 ///
-/// Tries candidates instead of trusting the first: `patch_instance` answers
-/// `false` for anything the scene never built as a plain part — a union
-/// repainted from its operation tree, an instance outside `Workspace` — and
-/// timing that fallback as though it were a patch would report a lie.
-fn patchable(headless: &mut Headless, dom: &WeakDom) -> Result<Option<(Ref, CFrameData)>, String> {
+/// Tries candidates instead of trusting the first: `apply_changes` rebuilds
+/// for anything the scene cannot patch as one part — a union drawn as its
+/// fallback pieces, a material never uploaded — and timing that rebuild as
+/// though it were a patch would report a lie. The trial is a `CFrame` write
+/// the DOM has not actually changed for, so it re-reads the same placement.
+fn patchables(
+    headless: &mut Headless,
+    dom: &WeakDom,
+    count: usize,
+) -> Result<Vec<(Ref, CFrameData)>, String> {
+    let mut found = Vec::with_capacity(count);
     for referent in parts(dom) {
+        if found.len() == count {
+            break;
+        }
         let Some(Variant::CFrame(cframe)) = dom
             .get(referent)
             .and_then(|instance| instance.properties().get("CFrame"))
         else {
             continue;
         };
-        let cframe = *cframe;
-        if headless.patch_instance(dom, referent)? {
-            return Ok(Some((referent, cframe)));
+        let trial = [Change::Property {
+            referent,
+            name: "CFrame".to_string(),
+        }];
+        if headless.apply_changes(dom, &trial)? == Applied::Patched {
+            found.push((referent, *cframe));
         }
     }
-    Ok(None)
+    Ok(found)
 }
 
 /// Candidate parts, `Workspace` first: the scene is built from that subtree

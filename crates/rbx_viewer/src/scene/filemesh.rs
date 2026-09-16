@@ -56,7 +56,7 @@ pub(crate) struct Plan {
 /// draws, its model matrix, and its tint.
 pub(crate) struct ResolvedInstance {
     /// The part this instance draws in place of (see [`Entry::referent`]), so
-    /// the renderer's per-instance patch maps and `Scene::patch_mesh_instance`
+    /// the renderer's per-instance patch maps and `Scene::resync_part`
     /// can find it by the same id the Properties panel edits.
     pub(crate) referent: Ref,
     pub(crate) mesh: AssetRef,

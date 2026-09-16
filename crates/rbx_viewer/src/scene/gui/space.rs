@@ -7,6 +7,7 @@
 //! ([`Anchor`]). The tree itself is read by [`super::plan`] and resolved by
 //! [`super::layout`], unchanged.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 
 use glam::Vec3;
@@ -67,6 +68,10 @@ pub(crate) enum Anchor {
 /// One `BillboardGui`/`SurfaceGui` reduced to a canvas and a placement.
 #[derive(Clone)]
 pub(crate) struct SpaceGui {
+    /// What the canvas hangs off (see [`adornee`]) — so an edit that moves
+    /// that part knows to re-place the canvas, wherever in the tree the
+    /// container itself sits.
+    pub(crate) adornee: Ref,
     /// The offscreen texture's size in pixels, which is also the viewport the
     /// tree's top-level `UDim2`s resolve against.
     pub(crate) canvas: [f32; 2],
@@ -101,11 +106,13 @@ pub(crate) fn plan(
     placements: &HashMap<Ref, Placement>,
 ) -> Vec<SpaceGui> {
     let parents = ParentMap::build(dom);
+    let kinds = RefCell::new(HashMap::new());
     let context = Context {
         dom,
         database,
         parents: &parents,
         placements,
+        kinds: &kinds,
     };
     let mut found = Vec::new();
     for &root in dom.root_refs() {
@@ -120,8 +127,13 @@ pub(crate) fn plan(
 struct Context<'a> {
     dom: &'a WeakDom,
     database: &'a ReflectionDatabase,
-    parents: &'a ParentMap,
+    parents: &'a ParentMap<'a>,
     placements: &'a HashMap<Ref, Placement>,
+    /// Each class met so far, as `(billboard, surface)`: the walk asks the
+    /// question of every instance in the place, and a superclass chain is
+    /// several hash lookups per answer — memoised, a place of tens of
+    /// thousands of instances asks it a few dozen times.
+    kinds: &'a RefCell<HashMap<String, (bool, bool)>>,
 }
 
 /// Its own recursion rather than [`crate::scene::descendants`] for the same
@@ -132,9 +144,8 @@ fn gather(context: Context<'_>, referent: Ref, parent: Option<Ref>, into: &mut V
     let Some(instance) = context.dom.get(referent) else {
         return;
     };
-    let class = instance.class();
-    let billboard = context.database.is_subclass_of(class, BILLBOARD_CLASS);
-    if billboard || context.database.is_subclass_of(class, SURFACE_CLASS) {
+    let (billboard, surface) = kind_of(context, instance.class());
+    if billboard || surface {
         if let Some(gui) = read(context, instance, parent, billboard) {
             into.push(gui);
         }
@@ -144,6 +155,20 @@ fn gather(context: Context<'_>, referent: Ref, parent: Option<Ref>, into: &mut V
     for &child in instance.children() {
         gather(context, child, Some(referent), into);
     }
+}
+
+/// Whether `class` is a `BillboardGui`, a `SurfaceGui`, or neither — see
+/// `Context::kinds`.
+fn kind_of(context: Context<'_>, class: &str) -> (bool, bool) {
+    if let Some(&known) = context.kinds.borrow().get(class) {
+        return known;
+    }
+    let kind = (
+        context.database.is_subclass_of(class, BILLBOARD_CLASS),
+        context.database.is_subclass_of(class, SURFACE_CLASS),
+    );
+    context.kinds.borrow_mut().insert(class.to_string(), kind);
+    kind
 }
 
 fn read(
@@ -193,6 +218,7 @@ fn read(
     }
 
     Some(SpaceGui {
+        adornee,
         canvas,
         always_on_top: flag(properties, "AlwaysOnTop", false),
         anchor,

@@ -20,6 +20,7 @@ mod app;
 mod assets;
 mod camera;
 mod capture;
+mod changes;
 mod cli;
 mod controller;
 pub mod gizmo;
@@ -39,6 +40,7 @@ mod view;
 
 pub use camera::Pose;
 pub use capture::Rendered;
+pub use changes::{Applied, Rebuild};
 pub use cli::Options;
 pub use gizmo::Gizmo;
 // Only so a report (`examples/bench`) can label its numbers with the GPU that

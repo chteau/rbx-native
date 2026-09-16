@@ -29,7 +29,7 @@
 //!
 //! # Completion discipline
 //!
-//! `Headless::reload`/`patch_instance` return once the GPU work is *queued*, and
+//! `Headless::reload`/`apply_changes` return once the GPU work is *queued*, and
 //! `render_frame` queues a frame and hands back the one before it. So every
 //! phase reports the call's own wall clock and, from the same instant, the time
 //! until `take_frame` hands back the pixels of the frame queued after the edit —
