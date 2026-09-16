@@ -5,13 +5,16 @@
 //! cannot afford.
 //!
 //! Needs a GPU, so it is `#[ignore]`d and run by hand:
-//! `cargo test -p rbx_viewer --release --test patch_parity -- --ignored`.
-//! Runs against the in-repo `TestPlace.rbxl` by default; `RBX_PARITY_FIXTURE`
-//! points it at a real place instead (`marked.rbxl`, say).
+//! `cargo test -p rbx_viewer --release --test patch_parity -- --ignored
+//! --test-threads=1` — every test opens two or more devices of its own, and
+//! eight tests' worth at once has tripped the driver into a panic deep in
+//! `wgpu` before any pixel was compared. Runs against the in-repo
+//! `TestPlace.rbxl` by default; `RBX_PARITY_FIXTURE` points it at a real
+//! place instead (`marked.rbxl`, say).
 
 use std::path::PathBuf;
 
-use rbx_dom::{Change, Ref, Variant, WeakDom};
+use rbx_dom::{Change, Color3Data, Ref, UDim, UDim2, Variant, WeakDom};
 use rbx_viewer::{Applied, Headless};
 
 const SIZE: (u32, u32) = (640, 360);
@@ -82,10 +85,24 @@ fn check(patched: &mut Headless, dom: &WeakDom, log: &[Change], what: &str) {
 /// from before (or after) is put back whole, and the *edit's* log is what
 /// the viewport is handed.
 fn parity(what: &str, edit: impl Fn(&mut WeakDom)) {
+    staged(what, |_| {}, edit);
+}
+
+/// [`parity`] for an edit that needs the place set up first: `setup` is
+/// patched in (and checked) as an edit of its own, so the log under test is
+/// the edit's alone — a `Frame` *moved* into a `BillboardGui` is not the
+/// same log as one created there.
+fn staged(what: &str, setup: impl Fn(&mut WeakDom), edit: impl Fn(&mut WeakDom)) {
     let path = fixture();
     let mut dom = rbx_viewer::read_place(&path).expect("the fixture parses");
     let mut patched = Headless::load(&path, true).expect("the fixture loads");
     frame(&mut patched);
+
+    setup(&mut dom);
+    let staging = dom.take_changes();
+    if !staging.is_empty() {
+        check(&mut patched, &dom, &staging, &format!("{what} (setup)"));
+    }
 
     let before = dom.clone();
     edit(&mut dom);
@@ -128,6 +145,26 @@ fn parts(dom: &WeakDom) -> Vec<Ref> {
 
 fn workspace(dom: &WeakDom) -> Ref {
     dom.parent(parts(dom)[0]).expect("a part's parent")
+}
+
+/// The one instance called `name`, wherever it hangs.
+fn named(dom: &WeakDom, name: &str) -> Ref {
+    let mut stack = dom.root_refs().to_vec();
+    while let Some(referent) = stack.pop() {
+        let Some(instance) = dom.get(referent) else {
+            continue;
+        };
+        if instance.name() == name {
+            return referent;
+        }
+        stack.extend_from_slice(instance.children());
+    }
+    panic!("no instance named {name}");
+}
+
+fn udim2(scale: f32) -> Variant {
+    let axis = UDim { scale, offset: 0 };
+    Variant::UDim2(UDim2 { x: axis, y: axis })
 }
 
 fn nudge(dom: &mut WeakDom, referent: Ref, dy: f32) {
@@ -256,4 +293,44 @@ fn a_script_touching_several_instances_draws_as_a_rebuild_draws_it() {
         let workspace = workspace(dom);
         dom.set_name(workspace, "Renamed").unwrap();
     });
+}
+
+// A GUI tree is planned from its container down, so a `Frame` dragged from
+// a `ScreenGui` onto a part's `BillboardGui` leaves two plans stale, not
+// one: the overlay's, which kept drawing the frame where it used to be, as
+// well as the canvas's.
+#[test]
+#[ignore = "needs a GPU"]
+fn a_frame_moved_from_a_screen_gui_to_a_billboard_gui_draws_as_a_rebuild_draws_it() {
+    staged(
+        "reparent a Frame between GUI containers",
+        |dom| {
+            let workspace = workspace(dom);
+            let part = parts(dom)[0];
+            let screen = dom.new_instance("ScreenGui", "Screen", Some(workspace));
+            let frame = dom.new_instance("Frame", "Moved", Some(screen));
+            for (name, value) in [
+                ("Size", udim2(0.3)),
+                ("Position", udim2(0.1)),
+                (
+                    "BackgroundColor3",
+                    Variant::Color3(Color3Data {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                    }),
+                ),
+            ] {
+                dom.set_property(frame, name, value).unwrap();
+            }
+            let billboard = dom.new_instance("BillboardGui", "Board", Some(part));
+            // Scale is studs on a `BillboardGui`.
+            dom.set_property(billboard, "Size", udim2(6.0)).unwrap();
+        },
+        |dom| {
+            let frame = named(dom, "Moved");
+            let billboard = named(dom, "Board");
+            dom.set_parent(frame, Some(billboard));
+        },
+    );
 }
