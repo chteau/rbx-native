@@ -87,6 +87,14 @@ pub(crate) fn fixture(path: &Path, args: &Args) -> Result<Measured, String> {
             .push("edit phases skipped: no BasePart in this place is patched in place".to_string()),
     }
     phases.extend(crate::streaming::phases(path, &mut dom, args, &mut notes)?);
+    match edits::unions(path, &mut dom, args)? {
+        Some(edited) => phases.extend(edited),
+        None => notes.push(
+            "union edit phases skipped: this place draws no union as its recovered \
+             fallback pieces"
+                .to_string(),
+        ),
+    }
 
     Ok(Measured {
         instances,

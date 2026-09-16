@@ -18,6 +18,56 @@
   joins `RBX_STUDIO_DRAG` as the debug aid that stands in for a Scale drag,
   so a `RBX_STUDIO_UNDO=1` run can prove it. — @chteau
 
+- **A union drawn as its recovered pieces is patched piece by piece, not
+  rebuilt for.** A legacy `UnionOperation`/`NegateOperation` whose boolean
+  cannot be computed draws as the additive parts recovered from its
+  operation tree, and every one of those pieces used to answer to the
+  union's own referent — so the renderer's per-instance maps could hold
+  only one of them, `Scene::resync_part` refused the lot, and moving,
+  recolouring, hiding or deleting one union rebuilt the whole scene
+  (`Rebuild::Union`). Each piece now carries an identity of its own,
+  `scene::PartId`: the union's referent plus the piece's position in the
+  tree's additive order. That order is a function of the asset's bytes
+  alone — never of where the union stands or what colour it is — so no
+  edit can renumber a piece, and the record an edit rewrites is always the
+  record that leaf already had. The renderer's instance rosters, batch
+  index, blended list and shadow casters are keyed by that id instead of
+  by a referent; everything else keeps naming instances by referent, so a
+  decal, a mesh instance and a light are untouched. `Scene::resync_part`
+  re-derives a union's pieces from the boolean `load::Resident` already
+  carved — the boolean is a function of the asset's bytes, so a move costs
+  the tree walk that re-places half a dozen pieces, never a BSP build —
+  and writes each into the slot it already had, dropping only the ones an
+  asset change left over. `Rebuild::Union` is gone with it, and the colour
+  a union with `UsePartColor` off takes from its own tree, which was the
+  variant's second reason, is now read off that same carving; a union
+  whose asset was never carved draws as its own box exactly as a rebuild
+  leaves it, and so does one pointed at an asset nobody has fetched yet —
+  the background loader is asked for it instead (see
+  `Headless::apply_changes`'s asset-streaming path), the same as a
+  `MeshPart` named for the first time. `Rebuild::Asset` is narrower for it
+  too, then: a material sample past what the renderer uploaded, never a
+  missing download. The union itself stays one thing to the
+  editor: `Scene::placements` keeps its own box — the very shape
+  `pick::parts_along` hit-tests it as — and lists none of its pieces, so
+  the selection outline, a `Decal` on it, an emitter's spawn volume and a
+  `SurfaceGui`'s adornee all go on drawing against the union rather than
+  against whichever piece happened to be last (which is what they did
+  before, arbitrarily). Measured on `FindTheCode.rbxl` (7 167 instances,
+  4 946 parts, 40 unions drawn as 208 recovered pieces; `marked.rbxl` has
+  none — its five `394314025` "Rock" unions all carve successfully and
+  draw as computed meshes), assets on, 1280x720, RTX 4070, first frame
+  readable / call returned: moving one union 2.12 ms / 0.42 ms against
+  24.62 / 22.25 before, recolouring it 2.06 / 0.41 against 25.23 / 23.33,
+  and the undo of each the same — against that place's own single-instance
+  patch at 2.20 / 0.41 and its full reload at 33.98 / 30.51. The harness
+  has all four as phases, skipped with a note on a place that draws no
+  union that way. For a union moved, recoloured, turned invisible and
+  deleted — each forwards, undone and redone — the patched frame is
+  pixel-identical (AE 0, uploads drained) to a cold rebuild of the same
+  DOM (`tests/patch_parity.rs`, `--ignored`, needs a GPU and a fixture
+  with such a union). — @chteau
+
 - **An edit is a patch of the instances it touched, never a rebuild.**
   Roblox's engine never reloads its scene: the DataModel is the live
   picture, and a property write is an event applied to that one instance.

@@ -214,10 +214,10 @@ impl Shadows {
         self.mesh_batches.remove(referent);
     }
 
-    /// Drops a box caster whose part no longer draws as one; a no-op if it
-    /// never cast.
-    pub(super) fn remove_caster(&mut self, referent: rbx_dom::Ref) {
-        self.shape_batches.remove(referent);
+    /// Drops a box caster whose box no longer draws; a no-op if it never
+    /// cast.
+    pub(super) fn remove_caster(&mut self, id: crate::scene::PartId) {
+        self.shape_batches.remove(id);
     }
 
     /// Uploads what the edits since the last frame owe both caster buffers

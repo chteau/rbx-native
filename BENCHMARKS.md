@@ -36,7 +36,7 @@ than print a number nobody should record.
 | OS | Linux 7.0.11-76070011-generic |
 | Frame size | 1280x720 |
 | Iterations | 5 cold loads, 25 reloads, 50 patches, 200 frames per level after 40 warmup |
-| Fixtures | `assets/tests/TestPlace.rbxl` (81 instances), `marked.rbxl` (16 742 instances, 2.2 MB) |
+| Fixtures | `assets/tests/TestPlace.rbxl` (81 instances), `marked.rbxl` (16 742 instances, 2.2 MB), `FindTheCode.rbxl` (7 167 instances) for the union edits |
 
 Each table below is the median of three consecutive full runs; the rightmost
 column is how far those three run medians spread, as a percentage of their own
@@ -229,6 +229,52 @@ edit; the snapshot is the cost of the edit — one instance copied for one
 part's move, a hundred for the batch — and the edit rows are back to being
 one redraw. The half-millisecond the batch move's `call` gained over the
 table above is those hundred copies.
+
+## Union edits
+
+A legacy `UnionOperation` whose CSG boolean cannot be computed is drawn as the
+additive pieces recovered from its operation tree, several instances under the
+one referent (see `scene::union`). Each piece now has an identity of its own
+(`scene::PartId`), so an edit to such a union is patched piece by piece rather
+than refused.
+
+`marked.rbxl` has no union of that kind: its five `Workspace` unions all carry
+asset `394314025`, whose boolean *succeeds*, so each draws as one computed mesh
+and patches through the ordinary mesh-instance path. `FindTheCode.rbxl` (7 167
+instances, 4 946 parts, 148 legacy unions of which 40 are drawn as 208 recovered
+pieces) is the fixture that has them, and the harness skips the phases on a
+place that does not — a skipped row says so rather than timing something else.
+
+Same machine, assets on, 1280x720, the union's own `CFrame` and `Color3uint8`
+written and put back the way `rbxstudio`'s history hands an undo. "before" is
+the same harness against the union arm made to refuse, i.e. a full reload,
+medians of 25; "after" is
+medians of 50.
+
+| Fixture | Operation | call med | readable med | readable p95 |
+| :--- | :--- | ---: | ---: | ---: |
+| FindTheCode | full reload | 30.51 ms | 33.98 ms | 49.63 ms |
+| FindTheCode | patch instance | 0.41 ms | 2.20 ms | 3.68 ms |
+| **FindTheCode** | **move union — before** | **22.25 ms** | **24.62 ms** | **30.13 ms** |
+| **FindTheCode** | **move union — after** | **0.42 ms** | **2.12 ms** | **3.63 ms** |
+| FindTheCode | undo move union — before | 21.89 ms | 23.78 ms | 29.45 ms |
+| FindTheCode | undo move union — after | 0.41 ms | 2.15 ms | 3.88 ms |
+| **FindTheCode** | **recolour union — before** | **23.33 ms** | **25.23 ms** | **29.95 ms** |
+| **FindTheCode** | **recolour union — after** | **0.41 ms** | **2.06 ms** | **3.62 ms** |
+| FindTheCode | undo recolour — before | 23.50 ms | 25.84 ms | 33.14 ms |
+| FindTheCode | undo recolour — after | 0.40 ms | 2.03 ms | 3.15 ms |
+
+Every union row lands on that fixture's own `patch instance` row and stays
+there: the edit costs the tree walk that re-places half a dozen pieces plus the
+redraw, not a re-walk of the place. What it does *not* show is two place sizes,
+because only one fixture in the set has a union drawn as its pieces at all —
+the claim of flatness rests on the union rows tracking `patch instance`, which
+is measured flat from 81 to 16 742 instances in the tables above.
+
+`patch instance` itself is dearer here (0.41 ms) than on `marked` (0.03 ms) for
+a reason that has nothing to do with unions: this place draws 4 946 parts where
+`marked` draws 293, and a single-instance patch still walks the part list a
+couple of times. That walk is the next thing to make incremental.
 
 ## Why the tracked number has assets off
 

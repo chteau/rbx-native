@@ -1,5 +1,6 @@
 //! The edits: one part's property write, an insert, a delete, a hundred
-//! parts moved at once, and the undo of each — all through
+//! parts moved at once, a legacy union drawn as its recovered fallback
+//! pieces moved and recoloured, and the undo of each — all through
 //! `Headless::apply_changes`, exactly as the editor reflects them, with the
 //! undo handing over the *mutation's* own change log against the restored
 //! DOM the way `rbxstudio`'s history does.
@@ -236,6 +237,145 @@ fn batch_move(
             "undo move n"
         }),
     ))
+}
+
+/// The union edits: a legacy `UnionOperation` drawn as the fallback pieces
+/// recovered from its operation tree, moved and recoloured, with the undo of
+/// each. Kept apart from [`phases`] because a place has to *have* such a
+/// union for any of it to mean anything — one whose boolean succeeded draws
+/// as a single computed mesh and is an ordinary mesh-instance patch, already
+/// covered by `patch instance`.
+///
+/// `None` for a place that draws no union as its pieces, which the caller
+/// reports as a skip rather than quietly measuring something else.
+pub(super) fn unions(
+    path: &Path,
+    dom: &mut WeakDom,
+    args: &Args,
+) -> Result<Option<Vec<Phase>>, String> {
+    let mut headless = Headless::load(path, args.textures)?;
+    drain_upload_budget(&mut headless, args)?;
+    let Some(union) = fallback_union(&headless, dom) else {
+        return Ok(None);
+    };
+    let mut viewer = Viewer {
+        headless,
+        mirror: dom.clone(),
+    };
+
+    let (moved, undo_moved) = union_move(&mut viewer, dom, args, union)?;
+    let (painted, undo_painted) = union_colour(&mut viewer, dom, args, union)?;
+    Ok(Some(vec![moved, undo_moved, painted, undo_painted]))
+}
+
+/// The first instance the viewer draws as several recovered pieces.
+///
+/// Asked of the renderer rather than guessed from the class: whether a given
+/// `UnionOperation` is drawn as one computed mesh or as its pieces depends on
+/// what its asset carved to, and a place usually has both. The whole tree is
+/// searched, unlike `patchables`' capped candidate list — a place's unions
+/// are wherever the builder put them, and this costs one walk outside
+/// everything measured.
+fn fallback_union(headless: &Headless, dom: &WeakDom) -> Option<Ref> {
+    walk(dom, dom.root_refs())
+        .into_iter()
+        .find(|&referent| headless.fallback_pieces(referent) > 0)
+}
+
+/// The union nudged, then put back with the move's own log — the drag, and
+/// the undo of it.
+fn union_move(
+    viewer: &mut Viewer,
+    dom: &mut WeakDom,
+    args: &Args,
+    union: Ref,
+) -> Result<(Phase, Phase), String> {
+    let mut frame = cframe_of(dom, union)?;
+    let mut forward = Timings::new(args.patch_iters);
+    let mut backward = Timings::new(args.patch_iters);
+    for _ in 0..args.patch_iters {
+        frame.position.y += NUDGE;
+        set(dom, union, "CFrame", Variant::CFrame(frame))?;
+        let log = dom.take_changes();
+        forward.measure(viewer, dom, &log, args, "union move")?;
+
+        frame.position.y -= NUDGE;
+        set(dom, union, "CFrame", Variant::CFrame(frame))?;
+        dom.take_changes();
+        backward.measure(viewer, dom, &log, args, "undo of a union move")?;
+    }
+    Ok((
+        forward.phase("move union"),
+        backward.phase("undo move union"),
+    ))
+}
+
+/// The union's own `Color3uint8` written, then put back with the write's own
+/// log. A union drawn as its pieces does not repaint them — they keep the
+/// colours of the parts they were recovered from, which is what a rebuild
+/// draws too — so this measures the edit, not a change of picture: the point
+/// is that a Properties row nobody can see the effect of still must not cost
+/// a reload.
+fn union_colour(
+    viewer: &mut Viewer,
+    dom: &mut WeakDom,
+    args: &Args,
+    union: Ref,
+) -> Result<(Phase, Phase), String> {
+    let before = colour_of(dom, union);
+    let mut forward = Timings::new(args.patch_iters);
+    let mut backward = Timings::new(args.patch_iters);
+    for _ in 0..args.patch_iters {
+        set(
+            dom,
+            union,
+            "Color3uint8",
+            Variant::Color3uint8 {
+                r: 200,
+                g: 40,
+                b: 40,
+            },
+        )?;
+        let log = dom.take_changes();
+        forward.measure(viewer, dom, &log, args, "union recolour")?;
+
+        set(dom, union, "Color3uint8", before.clone())?;
+        dom.take_changes();
+        backward.measure(viewer, dom, &log, args, "undo of a union recolour")?;
+    }
+    Ok((
+        forward.phase("recolour union"),
+        backward.phase("undo recolour"),
+    ))
+}
+
+fn cframe_of(dom: &WeakDom, referent: Ref) -> Result<CFrameData, String> {
+    match dom
+        .get(referent)
+        .and_then(|instance| instance.properties().get("CFrame"))
+    {
+        Some(Variant::CFrame(frame)) => Ok(*frame),
+        _ => Err("the union being measured has no CFrame".to_string()),
+    }
+}
+
+/// The union's colour as it stands, or the studio default for one that has
+/// never been painted — so the undo half writes the value the place had.
+fn colour_of(dom: &WeakDom, referent: Ref) -> Variant {
+    dom.get(referent)
+        .and_then(|instance| instance.properties().get("Color3uint8"))
+        .cloned()
+        .unwrap_or(Variant::Color3uint8 {
+            r: 163,
+            g: 162,
+            b: 165,
+        })
+}
+
+fn set(dom: &mut WeakDom, referent: Ref, name: &str, value: Variant) -> Result<(), String> {
+    dom.set_property(referent, name, value)
+        .map(|_| ())
+        .map_err(|err| format!("failed to write {name} on the union being measured: {err}"))
 }
 
 /// The viewer as the editor keeps it: on its own thread, with a copy of the

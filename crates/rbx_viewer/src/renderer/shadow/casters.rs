@@ -12,7 +12,7 @@ use wgpu::util::DeviceExt;
 use super::super::rebuild::take_spare;
 use super::super::slots::keyed::Keyed;
 use super::super::slots::Roster;
-use crate::scene::{of_part, Part, Resolved, ResolvedInstance, Scene, ShapeKind};
+use crate::scene::{of_part, Part, PartId, Resolved, ResolvedInstance, Scene, ShapeKind};
 
 pub(super) const POSITION_ATTRIBUTE: [wgpu::VertexAttribute; 1] =
     wgpu::vertex_attr_array![0 => Float32x3];
@@ -39,7 +39,7 @@ pub(super) type Sphere = (Vec3, f32);
 /// buffers. Indexed separately from `Shaped`'s own batches: a caster batch
 /// is filtered by `casts_shadow()` alone, not by drawn/translucent too, so
 /// the same part lands at a different slot in each.
-pub(super) type ShapeBatches = Keyed<ShapeKind, (), CasterRaw, Sphere>;
+pub(super) type ShapeBatches = Keyed<ShapeKind, (), CasterRaw, Sphere, PartId>;
 
 /// A file mesh's positions and indices, the payload of one [`MeshBatches`]
 /// group. A mesh's skin is irrelevant to a depth pass, so the (mesh, skin)
@@ -63,7 +63,7 @@ pub(super) fn shape_batches(device: &wgpu::Device, scene: &Scene) -> ShapeBatche
                 .parts()
                 .iter()
                 .filter(|part| part.kind == kind && part.casts_shadow())
-                .map(|part| (part.referent, raw(part.transform), sphere(part))),
+                .map(|part| (part.id, raw(part.transform), sphere(part))),
         );
         if roster.len() > 0 {
             batches.add_group(device, kind, (), roster);
@@ -78,7 +78,7 @@ pub(super) fn sync_shape(device: &wgpu::Device, batches: &mut ShapeBatches, part
     let wanted = part
         .casts_shadow()
         .then(|| (part.kind, raw(part.transform), sphere(part)));
-    batches.sync(device, part.referent, wanted, |_| Some(()));
+    batches.sync(device, part.id, wanted, |_| Some(()));
 }
 
 /// The casters among the resolved file meshes, one batch per mesh asset.

@@ -18,46 +18,51 @@ use wgpu::util::DeviceExt;
 /// Every instance of one buffer, in buffer order, with what each one is
 /// the instance *of*.
 ///
+/// `Id` is that "what": a plain [`Ref`] for a pass whose instances are one
+/// per DOM instance (a decal's projection, a file mesh), and
+/// `scene::PartId` for the box passes, where a union drawn as its recovered
+/// pieces holds several instances under the one referent.
+///
 /// Removal is a swap-remove: the last instance drops into the freed slot
 /// rather than everything after it shifting down, so a removal costs one
 /// buffer write and one index update however long the buffer is. The price
 /// is that buffer order is not DOM order — nothing here relies on it; the
 /// blended passes (which do care about order) re-sort every frame anyway.
-pub(super) struct Roster<T, S = ()> {
-    referents: Vec<Ref>,
+pub(super) struct Roster<T, S = (), Id = Ref> {
+    ids: Vec<Id>,
     raw: Vec<T>,
     side: Vec<S>,
 }
 
-impl<T, S> Default for Roster<T, S> {
+impl<T, S, Id> Default for Roster<T, S, Id> {
     fn default() -> Self {
         Roster {
-            referents: Vec::new(),
+            ids: Vec::new(),
             raw: Vec::new(),
             side: Vec::new(),
         }
     }
 }
 
-impl<T: Copy, S: Copy> Roster<T, S> {
-    pub(super) fn from_iter(entries: impl IntoIterator<Item = (Ref, T, S)>) -> Self {
+impl<T: Copy, S: Copy, Id: Copy> Roster<T, S, Id> {
+    pub(super) fn from_iter(entries: impl IntoIterator<Item = (Id, T, S)>) -> Self {
         let mut roster = Roster::default();
-        for (referent, raw, side) in entries {
-            roster.push(referent, raw, side);
+        for (id, raw, side) in entries {
+            roster.push(id, raw, side);
         }
         roster
     }
 
     pub(super) fn len(&self) -> usize {
-        self.referents.len()
+        self.ids.len()
     }
 
     pub(super) fn raw(&self) -> &[T] {
         &self.raw
     }
 
-    pub(super) fn referents(&self) -> &[Ref] {
-        &self.referents
+    pub(super) fn ids(&self) -> &[Id] {
+        &self.ids
     }
 
     pub(super) fn side(&self, offset: usize) -> S {
@@ -70,21 +75,21 @@ impl<T: Copy, S: Copy> Roster<T, S> {
     }
 
     /// Appends, returning the slot it landed in.
-    pub(super) fn push(&mut self, referent: Ref, raw: T, side: S) -> usize {
-        self.referents.push(referent);
+    pub(super) fn push(&mut self, id: Id, raw: T, side: S) -> usize {
+        self.ids.push(id);
         self.raw.push(raw);
         self.side.push(side);
-        self.referents.len() - 1
+        self.ids.len() - 1
     }
 
     /// Frees `offset` by dropping the last instance into it, and names the
-    /// referent that just moved there so the caller can re-index it — `None`
+    /// instance that just moved there so the caller can re-index it — `None`
     /// when `offset` *was* the last one and nothing moved.
-    pub(super) fn swap_remove(&mut self, offset: usize) -> Option<Ref> {
-        self.referents.swap_remove(offset);
+    pub(super) fn swap_remove(&mut self, offset: usize) -> Option<Id> {
+        self.ids.swap_remove(offset);
         self.raw.swap_remove(offset);
         self.side.swap_remove(offset);
-        (offset < self.referents.len()).then(|| self.referents[offset])
+        (offset < self.ids.len()).then(|| self.ids[offset])
     }
 }
 
@@ -104,8 +109,8 @@ impl<T: Copy, S: Copy> Roster<T, S> {
 /// single-part edit still costs one. The roster is the buffer's mirror, so
 /// the untouched slots inside the span are rewritten with what they already
 /// hold.
-pub(super) struct Slots<T: Pod, S: Copy = ()> {
-    roster: Roster<T, S>,
+pub(super) struct Slots<T: Pod, S: Copy = (), Id = Ref> {
+    roster: Roster<T, S, Id>,
     buffer: wgpu::Buffer,
     /// In instances, not bytes.
     capacity: usize,
@@ -116,8 +121,12 @@ pub(super) struct Slots<T: Pod, S: Copy = ()> {
 
 const USAGE: wgpu::BufferUsages = wgpu::BufferUsages::VERTEX.union(wgpu::BufferUsages::COPY_DST);
 
-impl<T: Pod, S: Copy> Slots<T, S> {
-    pub(super) fn new(device: &wgpu::Device, label: &'static str, roster: Roster<T, S>) -> Self {
+impl<T: Pod, S: Copy, Id: Copy> Slots<T, S, Id> {
+    pub(super) fn new(
+        device: &wgpu::Device,
+        label: &'static str,
+        roster: Roster<T, S, Id>,
+    ) -> Self {
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some(label),
             contents: bytemuck::cast_slice(roster.raw()),
@@ -151,8 +160,8 @@ impl<T: Pod, S: Copy> Slots<T, S> {
 
     /// See [`Roster::push`]; reallocates when the buffer is full, in which
     /// case the whole roster is owed to the new buffer.
-    pub(super) fn push(&mut self, device: &wgpu::Device, referent: Ref, raw: T, side: S) -> u32 {
-        let offset = self.roster.push(referent, raw, side);
+    pub(super) fn push(&mut self, device: &wgpu::Device, id: Id, raw: T, side: S) -> u32 {
+        let offset = self.roster.push(id, raw, side);
         if self.roster.len() > self.capacity {
             self.capacity = (self.capacity * 2).max(self.roster.len());
             self.buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -170,7 +179,7 @@ impl<T: Pod, S: Copy> Slots<T, S> {
 
     /// See [`Roster::swap_remove`]; the moved record is owed to the freed
     /// slot, and the stale copy past `count()` is simply never drawn.
-    pub(super) fn swap_remove(&mut self, offset: u32) -> Option<Ref> {
+    pub(super) fn swap_remove(&mut self, offset: u32) -> Option<Id> {
         let moved = self.roster.swap_remove(offset as usize)?;
         self.mark(offset as usize, offset as usize);
         Some(moved)
@@ -229,7 +238,7 @@ mod tests {
     }
 
     fn ids(roster: &Roster<u32, ()>) -> Vec<u32> {
-        roster.referents().iter().map(|r| r.value()).collect()
+        roster.ids().iter().map(|r| r.value()).collect()
     }
 
     #[test]

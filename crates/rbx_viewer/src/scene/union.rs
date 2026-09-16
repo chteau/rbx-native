@@ -9,6 +9,7 @@
 //! see `crate::assets` for downloading.
 
 mod csg;
+mod patch;
 mod tree;
 
 use std::collections::{HashMap, HashSet};
@@ -24,6 +25,8 @@ use crate::textures::asset_uri;
 
 use super::material::{Catalog, Slot};
 use super::{Part, ResolvedInstance};
+
+pub(super) use patch::replan;
 
 const PART_OPERATION: &str = "PartOperation";
 
@@ -83,41 +86,6 @@ impl Entry {
             casts_shadow: self.casts_shadow,
         }
     }
-
-    /// The asset this entry's geometry is carved from — what has to have
-    /// downloaded and parsed.
-    pub(super) fn asset(&self) -> &AssetRef {
-        &self.asset
-    }
-
-    /// Whether a fresh [`resolve`] would drop this entry as fully transparent
-    /// — see `filemesh::Entry::is_invisible`.
-    pub(super) fn is_invisible(&self) -> bool {
-        self.alpha <= 0.0
-    }
-
-    /// The instance [`resolve`] would build for this entry, assuming its
-    /// boolean geometry already computed — `None` where a fresh resolution
-    /// would drop it (fully transparent), or where its colour would have to
-    /// come from the operation tree (`UsePartColor` off — see [`resolve`]),
-    /// which only exists while that tree is being evaluated.
-    pub(super) fn patched(&self) -> Option<ResolvedInstance> {
-        if self.alpha <= 0.0 {
-            return None;
-        }
-        let color = self.color?;
-        Some(self.instance(color.map(|channel| super::srgb_to_linear(f32::from(channel) / 255.0))))
-    }
-}
-
-/// The single-instance counterpart of [`plan`] — see `filemesh::replan`.
-pub(super) fn replan(
-    dom: &WeakDom,
-    database: &ReflectionDatabase,
-    referent: Ref,
-    materials: &mut Catalog,
-) -> Option<Entry> {
-    from_operation(dom, database, referent, materials)
 }
 
 /// Every legacy union/negate in a DOM, extracted once and reused both to list
@@ -252,7 +220,7 @@ impl Merged {
             .instances
             .iter()
             .map(|instance| instance.referent)
-            .chain(resolution.parts.iter().map(|part| part.referent))
+            .chain(resolution.parts.iter().map(|part| part.referent()))
             .filter(|referent| !self.absorbed.contains(referent))
             .collect();
         self.absorbed.extend(fresh.iter().copied());
@@ -265,14 +233,14 @@ impl Merged {
         self.fresh_parts = resolution
             .parts
             .into_iter()
-            .filter(|part| fresh.contains(&part.referent))
+            .filter(|part| fresh.contains(&part.referent()))
             .collect();
     }
 }
 
 /// One asset's decoded tree and, when the boolean succeeded, its mesh —
 /// computed once however many instances share the asset.
-struct Evaluated {
+pub(super) struct Evaluated {
     tree: tree::Node,
     mesh: Option<Arc<rbx_mesh::Mesh>>,
 }
@@ -289,9 +257,13 @@ pub(crate) struct Evaluations {
 }
 
 impl Evaluations {
-    /// Whether an earlier scene already parsed and carved `asset` (or found
-    /// it unparseable): [`resolve`] then needs none of its bytes, so a
-    /// reload can skip fetching them — see `load::resolve_unions`.
+    /// Whether this place has already tried to carve `asset` at all —
+    /// carved it, or found its bytes unparseable. [`resolve`] then needs
+    /// none of those bytes, so a reload can skip fetching them (see
+    /// `load::resolve_unions`), and an edit pointing a union at the asset
+    /// is answered here rather than by a reload (see
+    /// `Scene::resync_union`): a `true` with no [`Evaluations::of`] is a
+    /// permanent answer, and the same one a reload would come to.
     pub(crate) fn is_known(&self, asset: &AssetRef) -> bool {
         self.known.contains_key(asset)
     }
@@ -327,26 +299,21 @@ pub(crate) fn resolve(
         resolution.hidden.insert(entry.referent);
 
         if mesh.is_none() {
-            tree.fallback_parts(
+            resolution.parts.extend(tree.pieces(
                 entry.placement(),
                 entry.referent,
                 database,
                 materials,
-                &mut resolution.parts,
-            );
+            ));
             continue;
         }
         // Invisible either way; hidden above so the box never reappears.
         if entry.alpha <= 0.0 {
             continue;
         }
-        let color = entry
-            .color
-            .or_else(|| csg::largest_additive_color(tree))
-            .unwrap_or(super::FALLBACK_COLOR);
-        resolution.instances.push(
-            entry.instance(color.map(|channel| super::srgb_to_linear(f32::from(channel) / 255.0))),
-        );
+        resolution
+            .instances
+            .push(entry.instance(entry.carved_color(evaluated)));
     }
 
     resolution.meshes = evaluated
@@ -434,6 +401,10 @@ fn evaluate_all(
         .filter_map(|asset| Some((asset.clone(), evaluations.known.get(asset)?.clone())))
         .collect()
 }
+
+#[cfg(test)]
+#[path = "union/tests_support.rs"]
+pub(in crate::scene) mod tests_support;
 
 #[cfg(test)]
 #[path = "union/tests.rs"]

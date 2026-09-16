@@ -15,7 +15,7 @@ fn item(kind: ShapeKind, center: Vec3) -> Item {
     let mut model = [[0.0; 4]; 4];
     model[3] = [center.x, center.y, center.z, 1.0];
     Item {
-        referent: Ref::new(0),
+        id: crate::scene::PartId::whole(rbx_dom::Ref::new(0)),
         kind,
         center,
         radius: 1.0,

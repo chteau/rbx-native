@@ -67,7 +67,7 @@ fn a_suppressed_part_offers_no_placement() {
 
     let placements = scene.placements();
     assert_eq!(placements.len(), 1);
-    assert!(!placements.contains_key(&scene.parts[0].referent));
+    assert!(!placements.contains_key(&scene.parts[0].referent()));
 }
 
 // ...but it is still a `BasePart` a click selects and a drag moves, so the
@@ -81,7 +81,7 @@ fn a_suppressed_part_still_offers_a_placement_to_outline() {
     let placements = scene.all_placements();
     assert_eq!(placements.len(), 2);
     assert_eq!(
-        placements.get(&scene.parts[0].referent),
+        placements.get(&scene.parts[0].referent()),
         Some(&scene.parts[0].placement())
     );
 }
@@ -152,7 +152,7 @@ fn bounds_wrap_the_corners_of_a_rotated_box() {
         reflectance: 0.0,
         size: Vec3::splat(2.0),
         casts_shadow: true,
-        referent: Ref::new(0),
+        id: PartId::whole(Ref::new(0)),
         suppressed: false,
     };
 
@@ -195,7 +195,7 @@ fn only_the_invisible_and_the_opted_out_stop_casting() {
         reflectance: 0.0,
         size: Vec3::ONE,
         casts_shadow: flag,
-        referent: Ref::new(0),
+        id: PartId::whole(Ref::new(0)),
         suppressed: false,
     };
 
@@ -277,8 +277,8 @@ fn union_referents(scene: &Scene) -> Vec<Ref> {
 fn a_union_that_landed_on_an_earlier_tick_is_not_drawn_twice() {
     let database = ReflectionDatabase::embedded();
     let mut scene = Scene::from_dom(&test_place(), &database).unwrap();
-    let a = scene.parts()[0].referent;
-    let b = scene.parts()[1].referent;
+    let a = scene.parts()[0].referent();
+    let b = scene.parts()[1].referent();
 
     // Tick one: union A's bytes land.
     scene.resolve_file_meshes(HashMap::new(), HashMap::new());
@@ -298,7 +298,7 @@ fn a_union_that_landed_on_an_earlier_tick_is_not_drawn_twice() {
 fn a_union_landing_on_the_tick_that_rebuilds_the_resolved_set_is_drawn_once() {
     let database = ReflectionDatabase::embedded();
     let mut scene = Scene::from_dom(&test_place(), &database).unwrap();
-    let a = scene.parts()[0].referent;
+    let a = scene.parts()[0].referent();
 
     scene.resolve_file_meshes(HashMap::new(), HashMap::new());
     absorb_union_landing(&mut scene, union_landing(a, "unions/a.rbxm"));
@@ -313,7 +313,7 @@ fn a_union_landing_on_the_tick_that_rebuilds_the_resolved_set_is_drawn_once() {
 fn re_resolving_with_no_new_union_bytes_changes_nothing() {
     let database = ReflectionDatabase::embedded();
     let mut scene = Scene::from_dom(&test_place(), &database).unwrap();
-    let a = scene.parts()[0].referent;
+    let a = scene.parts()[0].referent();
     scene.resolve_file_meshes(HashMap::new(), HashMap::new());
     absorb_union_landing(&mut scene, union_landing(a, "unions/a.rbxm"));
 
@@ -333,7 +333,7 @@ fn re_resolving_with_no_new_union_bytes_changes_nothing() {
 fn absorbing_the_same_union_twice_merges_it_once() {
     let database = ReflectionDatabase::embedded();
     let mut scene = Scene::from_dom(&test_place(), &database).unwrap();
-    let a = scene.parts()[0].referent;
+    let a = scene.parts()[0].referent();
     let parts_before = scene.parts().len();
 
     scene.resolve_file_meshes(HashMap::new(), HashMap::new());

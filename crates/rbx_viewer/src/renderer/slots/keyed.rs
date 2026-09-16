@@ -1,4 +1,4 @@
-//! Several [`Slots`] buffers under one referent index: a pass's batches,
+//! Several [`Slots`] buffers under one instance index: a pass's batches,
 //! keyed by whatever decides which batch an instance draws in (its unit
 //! shape, its mesh asset, its mesh-and-skin), with the entry points a
 //! single-instance edit needs — [`Keyed::sync`], [`Keyed::remove`] — and
@@ -13,24 +13,25 @@ use super::{Roster, Slots};
 
 /// One batch: its key, whatever else drawing it needs (a file mesh's
 /// geometry; nothing for a unit shape), and its instances.
-pub(in crate::renderer) struct Group<K, G, T: Pod, S: Copy> {
+pub(in crate::renderer) struct Group<K, G, T: Pod, S: Copy, Id = Ref> {
     pub(in crate::renderer) key: K,
     pub(in crate::renderer) extra: G,
-    pub(in crate::renderer) slots: Slots<T, S>,
+    pub(in crate::renderer) slots: Slots<T, S, Id>,
 }
 
 /// The batches of one pass. A group is never dropped once made, even when
 /// its last instance leaves — an empty batch draws nothing and costs one
 /// small buffer, and keeping it means group positions are stable enough to
 /// index by.
-pub(in crate::renderer) struct Keyed<K, G, T: Pod, S: Copy> {
-    groups: Vec<Group<K, G, T, S>>,
-    /// Which group, and which slot in it, holds each referent's instance.
-    index: HashMap<Ref, (usize, u32)>,
+pub(in crate::renderer) struct Keyed<K, G, T: Pod, S: Copy, Id = Ref> {
+    groups: Vec<Group<K, G, T, S, Id>>,
+    /// Which group, and which slot in it, holds each instance's record — by
+    /// whatever identifies one to this pass (see [`Roster`]'s own `Id`).
+    index: HashMap<Id, (usize, u32)>,
     label: &'static str,
 }
 
-impl<K: PartialEq, G, T: Pod, S: Copy> Keyed<K, G, T, S> {
+impl<K: PartialEq, G, T: Pod, S: Copy, Id: Copy + Eq + std::hash::Hash> Keyed<K, G, T, S, Id> {
     pub(in crate::renderer) fn new(label: &'static str) -> Self {
         Keyed {
             groups: Vec::new(),
@@ -46,11 +47,11 @@ impl<K: PartialEq, G, T: Pod, S: Copy> Keyed<K, G, T, S> {
         device: &wgpu::Device,
         key: K,
         extra: G,
-        roster: Roster<T, S>,
+        roster: Roster<T, S, Id>,
     ) {
         let position = self.groups.len();
-        for (offset, &referent) in roster.referents().iter().enumerate() {
-            self.index.insert(referent, (position, offset as u32));
+        for (offset, &id) in roster.ids().iter().enumerate() {
+            self.index.insert(id, (position, offset as u32));
         }
         self.groups.push(Group {
             key,
@@ -59,7 +60,7 @@ impl<K: PartialEq, G, T: Pod, S: Copy> Keyed<K, G, T, S> {
         });
     }
 
-    pub(in crate::renderer) fn groups(&self) -> &[Group<K, G, T, S>] {
+    pub(in crate::renderer) fn groups(&self) -> &[Group<K, G, T, S, Id>] {
         &self.groups
     }
 
@@ -67,7 +68,7 @@ impl<K: PartialEq, G, T: Pod, S: Copy> Keyed<K, G, T, S> {
     /// payload — a file mesh's vertex buffers — wherever the new scene asks
     /// for the same key again (see `renderer::rebuild`). The instances go
     /// with the old scene; nothing of them is worth keeping.
-    pub(in crate::renderer) fn into_groups(self) -> Vec<Group<K, G, T, S>> {
+    pub(in crate::renderer) fn into_groups(self) -> Vec<Group<K, G, T, S, Id>> {
         self.groups
     }
 
@@ -85,11 +86,11 @@ impl<K: PartialEq, G, T: Pod, S: Copy> Keyed<K, G, T, S> {
     pub(in crate::renderer) fn sync(
         &mut self,
         device: &wgpu::Device,
-        referent: Ref,
+        id: Id,
         wanted: Option<(K, T, S)>,
         extra: impl FnOnce(&K) -> Option<G>,
     ) -> bool {
-        let held = self.index.get(&referent).copied();
+        let held = self.index.get(&id).copied();
         match (held, wanted) {
             (Some((position, offset)), Some((key, raw, side)))
                 if self.groups[position].key == key =>
@@ -98,21 +99,21 @@ impl<K: PartialEq, G, T: Pod, S: Copy> Keyed<K, G, T, S> {
                 true
             }
             (Some(_), Some(wanted)) => {
-                self.remove(referent);
-                self.insert(device, referent, wanted, extra)
+                self.remove(id);
+                self.insert(device, id, wanted, extra)
             }
             (Some(_), None) => {
-                self.remove(referent);
+                self.remove(id);
                 true
             }
-            (None, Some(wanted)) => self.insert(device, referent, wanted, extra),
+            (None, Some(wanted)) => self.insert(device, id, wanted, extra),
             (None, None) => true,
         }
     }
 
-    /// Takes `referent` out of whichever batch holds it; a no-op if none does.
-    pub(in crate::renderer) fn remove(&mut self, referent: Ref) {
-        let Some((position, offset)) = self.index.remove(&referent) else {
+    /// Takes `id` out of whichever batch holds it; a no-op if none does.
+    pub(in crate::renderer) fn remove(&mut self, id: Id) {
+        let Some((position, offset)) = self.index.remove(&id) else {
             return;
         };
         if let Some(moved) = self.groups[position].slots.swap_remove(offset) {
@@ -131,7 +132,7 @@ impl<K: PartialEq, G, T: Pod, S: Copy> Keyed<K, G, T, S> {
     fn insert(
         &mut self,
         device: &wgpu::Device,
-        referent: Ref,
+        id: Id,
         (key, raw, side): (K, T, S),
         extra: impl FnOnce(&K) -> Option<G>,
     ) -> bool {
@@ -145,10 +146,8 @@ impl<K: PartialEq, G, T: Pod, S: Copy> Keyed<K, G, T, S> {
                 self.groups.len() - 1
             }
         };
-        let offset = self.groups[position]
-            .slots
-            .push(device, referent, raw, side);
-        self.index.insert(referent, (position, offset));
+        let offset = self.groups[position].slots.push(device, id, raw, side);
+        self.index.insert(id, (position, offset));
         true
     }
 }

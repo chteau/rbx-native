@@ -363,6 +363,21 @@ impl Headless {
         std::mem::take(&mut self.meshes_changed)
     }
 
+    /// How many recovered fallback pieces the picture draws `referent` as —
+    /// zero for everything but a legacy `UnionOperation`/`NegateOperation`
+    /// whose boolean could not be computed, which is drawn as the additive
+    /// parts recovered from its operation tree instead (see `scene::union`).
+    ///
+    /// Public because a union drawn that way is the one instance a place
+    /// draws as several, and nothing about its class says so: which of the
+    /// two a given union is depends on what its asset carved to. A harness
+    /// or a test that means to exercise that case has no other way to find
+    /// one, and guessing from the class would measure whichever kind the
+    /// fixture happened to list first.
+    pub fn fallback_pieces(&self, referent: Ref) -> usize {
+        self.loaded.scene().piece_count(referent) as usize
+    }
+
     /// Draws the current view and returns the frame the *previous* call asked
     /// for: the GPU is left drawing this one while the host uploads that one.
     ///

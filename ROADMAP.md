@@ -172,16 +172,19 @@ Roblox's own engine.
   the undone mutation produced, against the restored DOM) — and re-derives
   only what it names: a part's box or mesh, its shadow caster and outline,
   the decals, lights, emitters and attachments hung off it; a `Model`
-  moved reaches its whole subtree. An edit naming an asset that was never
-  downloaded is patched too, onto its fallback, with the asset fetched in
-  the background (see the renderer's asset-streaming entry above) instead
-  of forcing a reload the way it once did. What still rebuilds the whole
-  scene is the closed list in `rbx_viewer::Rebuild`: a `Sky` edit (the
-  environment probe is prefiltered from its six panels), a
+  moved reaches its whole subtree; a failed-CSG union drawn as its
+  recovered pieces is patched piece by piece, each piece addressed by an
+  identity of its own (`scene::PartId`). An edit naming an asset that was
+  never downloaded — a mesh, texture, material pack, `SurfaceAppearance`
+  set or legacy union asset alike — is patched too, onto its fallback,
+  with the asset fetched in the background (see the renderer's
+  asset-streaming entry above) instead of forcing a reload the way it once
+  did. What still rebuilds the whole scene is the closed list in
+  `rbx_viewer::Rebuild`, down to three: a `Sky` edit (the environment
+  probe is prefiltered from its six panels), a
   `MaterialVariant`/`MaterialService` edit (the material catalog is
-  defined from the service), a material needing a texture-array layer
-  past the ones uploaded, and a failed-CSG union drawn as its fallback
-  pieces (see the CSG item under "What's planned").
+  defined from the service), and a material needing a texture-array layer
+  past the ones uploaded.
 - [x] **Interactive viewport gizmos — Select/Move/Scale/Rotate, matching
   Studio's real toolbar and behaviour**, checked against
   `Roblox/creator-docs` (`parts/index.md#transform-parts`,
@@ -733,13 +736,17 @@ against `Roblox/creator-docs` rather than assumed:
 #### CSG
 - [x] 🚧 Legacy union/negate parts reconstruct the real constituent
   geometry via a from-scratch CSG boolean.
-- [ ] 📋 **Give each of a failed-CSG union's recovered fallback pieces its
-  own referent.** Today they all share the union's own referent
-  (`Scene::resolve_unions`), so an edit meant for one specific fallback
-  piece can't be fast-pathed to just that piece — `Scene::resync_part`
-  correctly refuses to patch any of them (`rbx_viewer::Rebuild::Union`) and
-  falls back to a full reload rather than risking patching the wrong one,
-  but that reload is still more than the edit needs.
+- [x] **Give each of a failed-CSG union's recovered fallback pieces its
+  own identity.** Every piece now carries a `scene::PartId` of its own —
+  the union's referent plus its position in the operation tree's additive
+  order, which the asset's bytes alone decide, so moving or recolouring a
+  union cannot renumber them. `Scene::resync_part` re-derives the pieces
+  from the boolean `load::Resident` already carved and patches each in the
+  slot it had, instead of refusing; `Rebuild::Union` is gone, and so is
+  the reload a union edit used to cost (24.6 ms to 2.1 ms first frame
+  readable on `FindTheCode.rbxl` — see `BENCHMARKS.md`). The union stays
+  one thing to select, outline, click and cast a shadow from: it is
+  placed, and its pieces are not.
 - [ ] 📋 `MeshData`/CSGMDL (Roblox's own baked union result format) — see
   [Explicitly impossible](#explicitly-impossible-without-robloxs-engine),
   deliberately not attempted; the from-scratch boolean above is the

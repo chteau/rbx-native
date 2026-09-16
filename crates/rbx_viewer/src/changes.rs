@@ -47,15 +47,11 @@ pub enum Rebuild {
     /// from the catalog as a whole.
     Materials,
     /// The edit needs an asset this renderer never uploaded: a mesh, a decal
-    /// or mesh texture, a material pack or a `SurfaceAppearance` map set.
-    /// Fetching, decoding and uploading one is a load-time path today, so
-    /// only a full reload has it.
+    /// or mesh texture, a material pack, a `SurfaceAppearance` map set, or
+    /// the legacy union asset an edit has just pointed a `UnionOperation` at.
+    /// Fetching, decoding and (for a union) carving one is a load-time path
+    /// today, so only a full reload has it.
     Asset,
-    /// A `UnionOperation` whose boolean failed draws as its recovered pieces,
-    /// all sharing the union's own referent, or paints its colour from its
-    /// operation tree (see `scene::union`): no single instance stands for it
-    /// and nothing short of a rebuild can redraw it.
-    Union,
 }
 
 impl std::fmt::Display for Rebuild {
@@ -64,7 +60,6 @@ impl std::fmt::Display for Rebuild {
             Rebuild::Sky => "a Sky changed",
             Rebuild::Materials => "a material definition changed",
             Rebuild::Asset => "an asset was never uploaded",
-            Rebuild::Union => "a union draws as its fallback pieces",
         })
     }
 }

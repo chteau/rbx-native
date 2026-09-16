@@ -202,8 +202,8 @@ impl Patcher<'_> {
         };
         match known.role {
             Role::Part => {
-                self.loaded.scene_mut().remove_part(referent);
-                self.render_part(referent, &PartSync::Gone);
+                let dropped = self.loaded.scene_mut().remove_part(referent);
+                self.render_part(referent, &PartSync::gone(dropped));
                 self.pending.parts = true;
                 Ok(())
             }
@@ -250,6 +250,7 @@ impl Patcher<'_> {
             self.database,
             referent,
             self.known_layers,
+            &self.resident.unions,
         )?;
         if !self.render_part(referent, &sync) {
             return Err(Rebuild::Asset);
@@ -321,17 +322,21 @@ impl Patcher<'_> {
     /// call whether or not anything is actually missing: `Resident`/
     /// `Loaded` skip a reference already resident or already asked for.
     fn request_assets_of(&mut self, referent: Ref) {
-        let (meshes, images) =
-            self.loaded
-                .scene_mut()
-                .wanted_assets_of(self.dom, self.database, referent);
-        if !meshes.is_empty() {
-            self.loaded.also_wants(&meshes);
-            self.resident.meshes(&meshes);
+        let wanted = self
+            .loaded
+            .scene_mut()
+            .wanted_assets_of(self.dom, self.database, referent);
+        if !wanted.meshes.is_empty() {
+            self.loaded.also_wants(&wanted.meshes);
+            self.resident.meshes(&wanted.meshes);
         }
-        if !images.is_empty() {
-            self.loaded.also_wants(&images);
-            self.resident.images(&images);
+        if !wanted.unions.is_empty() {
+            self.loaded.also_wants(&wanted.unions);
+            self.resident.bytes(&wanted.unions);
+        }
+        if !wanted.images.is_empty() {
+            self.loaded.also_wants(&wanted.images);
+            self.resident.images(&wanted.images);
         }
     }
 
