@@ -89,13 +89,66 @@ fn parity(what: &str, edit: impl Fn(&mut WeakDom)) {
 
     let before = dom.clone();
     edit(&mut dom);
+    three_ways(what, &mut patched, before, &mut dom);
+}
+
+/// [`parity`] for an edit that needs a union this fixture actually draws as
+/// its recovered fallback pieces.
+///
+/// A fixture with no such union is *skipped*, loudly: `TestPlace.rbxl` — the
+/// default — has no `UnionOperation` at all, and a hand-built stand-in would
+/// compare the patch path against itself rather than against a real place's
+/// baked CSG. Point `RBX_PARITY_FIXTURE` at a place that has one.
+fn union_parity(what: &str, edit: impl Fn(&mut WeakDom, Ref)) {
+    let path = fixture();
+    let mut dom = rbx_viewer::read_place(&path).expect("the fixture parses");
+    let mut patched = Headless::load(&path, true).expect("the fixture loads");
+    frame(&mut patched);
+
+    let Some(union) = fallback_union(&patched, &dom) else {
+        println!(
+            "{what}: skipped, {} draws no union as its recovered fallback pieces",
+            path.display()
+        );
+        return;
+    };
+    println!(
+        "{what}: on {union:?}, drawn as {} recovered pieces",
+        patched.fallback_pieces(union)
+    );
+
+    let before = dom.clone();
+    edit(&mut dom, union);
+    three_ways(what, &mut patched, before, &mut dom);
+}
+
+/// The comparison both entry points share: the edit's own log applied to the
+/// edited DOM, then to the one from before it, then to the edited one again.
+fn three_ways(what: &str, patched: &mut Headless, before: WeakDom, dom: &mut WeakDom) {
     let log = dom.take_changes();
     assert!(!log.is_empty(), "{what} changed nothing");
     let after = dom.clone();
 
-    check(&mut patched, &after, &log, &format!("{what} (forward)"));
-    check(&mut patched, &before, &log, &format!("{what} (undo)"));
-    check(&mut patched, &after, &log, &format!("{what} (redo)"));
+    check(patched, &after, &log, &format!("{what} (forward)"));
+    check(patched, &before, &log, &format!("{what} (undo)"));
+    check(patched, &after, &log, &format!("{what} (redo)"));
+}
+
+/// The first instance the viewer draws as several recovered pieces — which
+/// depends on what that union's asset carved to, not on its class, so the
+/// renderer is asked rather than the DOM.
+fn fallback_union(headless: &Headless, dom: &WeakDom) -> Option<Ref> {
+    let mut stack = dom.root_refs().to_vec();
+    let mut found = None;
+    while let Some(referent) = stack.pop() {
+        if let Some(instance) = dom.get(referent) {
+            stack.extend_from_slice(instance.children());
+        }
+        if headless.fallback_pieces(referent) > 0 {
+            found = Some(referent);
+        }
+    }
+    found
 }
 
 /// Every `BasePart` under `Workspace`, in walk order.
@@ -255,5 +308,49 @@ fn a_script_touching_several_instances_draws_as_a_rebuild_draws_it() {
         }
         let workspace = workspace(dom);
         dom.set_name(workspace, "Renamed").unwrap();
+    });
+}
+
+#[test]
+#[ignore = "needs a GPU"]
+fn a_moved_union_draws_as_a_rebuild_draws_it() {
+    union_parity("union move", |dom, union| nudge(dom, union, 6.0));
+}
+
+// A union's own colour paints the mesh its boolean would have produced, and
+// nothing at all when it is drawn as its pieces — which is exactly what makes
+// this worth pinning: the patch has to agree with the rebuild about drawing
+// *no* change, rather than repainting pieces a rebuild would leave alone.
+#[test]
+#[ignore = "needs a GPU"]
+fn a_recoloured_union_draws_as_a_rebuild_draws_it() {
+    union_parity("union recolour", |dom, union| {
+        dom.set_property(
+            union,
+            "Color3uint8",
+            Variant::Color3uint8 {
+                r: 10,
+                g: 220,
+                b: 90,
+            },
+        )
+        .expect("the union exists");
+    });
+}
+
+#[test]
+#[ignore = "needs a GPU"]
+fn a_union_turned_transparent_draws_as_a_rebuild_draws_it() {
+    union_parity("union transparency", |dom, union| {
+        dom.set_property(union, "Transparency", Variant::Float32(1.0))
+            .expect("the union exists");
+    });
+}
+
+#[test]
+#[ignore = "needs a GPU"]
+fn a_deleted_union_draws_as_a_rebuild_draws_it() {
+    union_parity("union delete", |dom, union| {
+        dom.remove(union);
     });
 }
