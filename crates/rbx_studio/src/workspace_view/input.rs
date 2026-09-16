@@ -78,7 +78,7 @@ pub(crate) fn camera_key(key: &str, layout: Layout) -> Option<CameraKey> {
 /// the unshifted row has to reach the same tools; `Shift`+`2` still types a
 /// plain `2` there, which is exactly the chord `transform::action_for` gives
 /// the increment field.
-pub(crate) fn tool_key<'a>(key: &'a str, layout: Layout) -> &'a str {
+pub(crate) fn tool_key(key: &str, layout: Layout) -> &str {
     if layout != Layout::Azerty {
         return key;
     }
