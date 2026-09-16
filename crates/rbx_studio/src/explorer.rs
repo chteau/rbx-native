@@ -12,6 +12,8 @@ use rbx_dom::{Ref, WeakDom};
 
 use crate::class_icons::{self, SpriteSheet};
 
+pub(crate) mod reparent;
+
 /// The order Studio lists services in — neither alphabetical nor the order the
 /// file stores them in. Anything else a place has at its root comes after.
 const SERVICE_ORDER: [&str; 14] = [
