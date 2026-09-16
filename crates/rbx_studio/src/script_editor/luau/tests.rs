@@ -115,9 +115,12 @@ fn a_long_string_spans_lines() {
 }
 
 #[test]
-fn an_interpolated_string_lexes_as_one_string() {
+fn an_interpolated_strings_hole_lexes_as_the_expression_it_is() {
+    // The delimiters and the braces around a hole stay string; the hole's own
+    // contents are lexed as the Luau they are (see `luau::interpolation`).
     let source = "local greeting = `hello {name}`";
-    assert_eq!(of_kind(source, TokenKind::String), ["`hello {name}`"]);
+    assert_eq!(of_kind(source, TokenKind::String), ["`hello {", "}`"]);
+    assert_eq!(of_kind(source, TokenKind::Identifier), ["greeting", "name"]);
 }
 
 #[test]
@@ -190,15 +193,62 @@ fn a_method_call_on_a_roblox_global_marks_only_the_method() {
 }
 
 #[test]
-fn compound_assignment_and_type_punctuation_lex_as_operators() {
-    let source = "n += 1 local v: number = x :: any";
+fn every_compound_assignment_operator_lexes_as_one_token() {
+    // Luau's full set. `//=` and `..=` are the two a shorter-match-first lexer
+    // would split, into `//` + `=` and `..` + `=`; `//` would then swallow the
+    // rest of the line as a comment in any language where it is one.
+    for operator in ["+=", "-=", "*=", "/=", "//=", "%=", "^=", "..="] {
+        let source = format!("n {operator} 1");
+        assert_eq!(
+            of_kind(&source, TokenKind::Operator),
+            [operator],
+            "{operator} should lex as a single operator token"
+        );
+    }
+}
+
+#[test]
+fn type_punctuation_lexes_as_operators() {
+    let source = "local v: number = x :: any";
     let operators = of_kind(source, TokenKind::Operator);
-    for expected in ["+=", "=", "::"] {
+    for expected in ["=", "::"] {
         assert!(
             operators.contains(&expected),
             "{expected} missing from {operators:?}"
         );
     }
+}
+
+#[test]
+fn the_union_and_intersection_operators_lex_as_operators() {
+    // Neither had a token of any kind, so a union type painted with a gap
+    // where its `|` should have been.
+    assert_eq!(of_kind("type X = A | B", TokenKind::Operator), ["=", "|"]);
+    assert_eq!(of_kind("type Y = A & B", TokenKind::Operator), ["=", "&"]);
+}
+
+#[test]
+fn a_generic_functions_name_is_still_a_function_name() {
+    // `<T>` sits between the name and the `(` that call position is found by,
+    // so the name has to be found forward from the keyword instead.
+    assert_eq!(
+        of_kind("function f<T>(x: T) end", TokenKind::Function),
+        ["f"]
+    );
+    assert_eq!(of_kind("function f(x) end", TokenKind::Function), ["f"]);
+    assert_eq!(
+        of_kind("local function g<A, B>(x) end", TokenKind::Function),
+        ["g"]
+    );
+    assert_eq!(
+        of_kind("function m.a:b<T>() end", TokenKind::Function),
+        ["b"],
+        "a method path's name is the last of it, generic or not"
+    );
+    assert!(
+        of_kind("local f = function(x) end", TokenKind::Function).is_empty(),
+        "an anonymous function defines no name"
+    );
 }
 
 #[test]

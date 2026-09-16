@@ -9,13 +9,18 @@
 //! so a parser's C grammars and incremental-reparse machinery would be weight
 //! spent for nothing.
 //!
-//! Deliberately not attempted: telling a type annotation's identifiers apart
-//! from an expression's (`local n: Vector3` leaves `Vector3` uncoloured), and
-//! the `{...}` holes inside an interpolated string, which stay part of the
-//! string run. Both need the parse this module is built to avoid.
+//! Two things do need more than a flat token stream, and each has a submodule
+//! rather than a rule bolted onto the loop below: [`interpolation`] lexes the
+//! `{...}` holes inside a backtick string as the Luau expressions they are, by
+//! re-entering this lexer on them, and `types` walks the finished tokens to
+//! tell a type annotation's names from an expression's. Neither needs a parse
+//! tree; both need to know where one construct ends and the next begins.
 
+mod calls;
+mod interpolation;
 #[cfg(test)]
 mod tests;
+mod types;
 
 use std::ops::Range;
 
@@ -39,9 +44,13 @@ const SPECIAL_VARIABLES: [&str; 7] = [
 ];
 
 /// Longest match first: `..` must not shadow `...`, nor `/` shadow `//=`.
-const OPERATORS: [&str; 28] = [
+///
+/// `|` and `&` are here for Luau's union and intersection types (`A | B`,
+/// `A & B`), which is the only place either appears — Lua has no bitwise
+/// operators and spells its logical ones `or`/`and`.
+const OPERATORS: [&str; 30] = [
     "...", "//=", "..=", "==", "~=", "<=", ">=", "..", "::", "->", "+=", "-=", "*=", "/=", "%=",
-    "^=", "//", "+", "-", "*", "/", "%", "^", "#", "=", "<", ">", "?",
+    "^=", "//", "+", "-", "*", "/", "%", "^", "#", "=", "<", ">", "?", "|", "&",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,10 +61,14 @@ pub(crate) enum TokenKind {
     Keyword,
     Boolean,
     Nil,
-    /// An identifier in call position — see [`mark_calls`].
+    /// An identifier in call position — see [`calls`].
     Function,
     /// `self` and the Roblox globals; see [`SPECIAL_VARIABLES`].
     SpecialVariable,
+    /// An identifier naming a type rather than a value — see [`types`].
+    Type,
+    /// A type Luau has without anyone declaring it (`number`, `string`).
+    BuiltinType,
     Identifier,
     Operator,
     Bracket,
@@ -81,6 +94,13 @@ impl TokenKind {
             TokenKind::Nil => Some("constant"),
             TokenKind::Function => Some("function"),
             TokenKind::SpecialVariable => Some("variable.special"),
+            TokenKind::Type => Some("type"),
+            // GPUI Kit's shipped themes define no `type.builtin`, and its
+            // resolver falls back on the prefix before the dot, so this paints
+            // as `type` until some theme does define it. Kept distinct here
+            // rather than collapsed into `Type`: the two are a real
+            // distinction in the language, and one a theme can act on.
+            TokenKind::BuiltinType => Some("type.builtin"),
             TokenKind::Operator => Some("operator"),
             TokenKind::Bracket => Some("punctuation.bracket"),
             TokenKind::Delimiter => Some("punctuation.delimiter"),
@@ -102,6 +122,13 @@ pub(crate) struct Token {
 /// end of their line or of the file, because a highlighter has to keep
 /// colouring a file that is mid-edit and therefore usually not yet valid.
 pub(crate) fn tokenize(source: &str) -> Vec<Token> {
+    tokenize_at(source, 0)
+}
+
+/// `depth` is how many interpolated strings this source sits inside — 0 for a
+/// whole file, and one more for each hole `interpolation::expand` descends
+/// into. It bounds that recursion and nothing else.
+fn tokenize_at(source: &str, depth: usize) -> Vec<Token> {
     let bytes = source.as_bytes();
     let mut tokens = Vec::new();
     let mut at = 0;
@@ -117,8 +144,14 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
                 at = comment_end(bytes, at);
                 TokenKind::Comment
             }
-            b'"' | b'\'' | b'`' => {
+            b'"' | b'\'' => {
                 at = quoted_string_end(bytes, at);
+                TokenKind::String
+            }
+            // One opaque token for now; `interpolation::expand` below splits
+            // it once the call-position passes have seen the literal whole.
+            b'`' => {
+                at = interpolation::end(source, at, depth);
                 TokenKind::String
             }
             // `[[` opens a long string even directly after a name, which is
@@ -165,32 +198,11 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
         });
     }
 
-    mark_calls(&mut tokens, source);
+    calls::mark_definitions(&mut tokens, source);
+    calls::mark_calls(&mut tokens, source);
+    types::mark(&mut tokens, source);
+    interpolation::expand(source, &mut tokens, depth);
     tokens
-}
-
-/// Promotes an identifier in call position to [`TokenKind::Function`]: `f(`,
-/// and Lua's parenthesis-free `f{...}` / `f"..."` call sugar. A definition's
-/// name needs no rule of its own — `function f(`, `function a.b:c(` and
-/// `local function f(` all put the name immediately before its parameter
-/// list, so this already catches every one of them.
-fn mark_calls(tokens: &mut [Token], source: &str) {
-    for index in 0..tokens.len() {
-        if tokens[index].kind != TokenKind::Identifier {
-            continue;
-        }
-        let called = tokens[index + 1..]
-            .iter()
-            .find(|token| token.kind != TokenKind::Comment)
-            .is_some_and(|token| match token.kind {
-                TokenKind::String => true,
-                TokenKind::Bracket => matches!(source.as_bytes()[token.range.start], b'(' | b'{'),
-                _ => false,
-            });
-        if called {
-            tokens[index].kind = TokenKind::Function;
-        }
-    }
 }
 
 fn is_word_start(byte: u8) -> bool {

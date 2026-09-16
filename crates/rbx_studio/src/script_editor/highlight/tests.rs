@@ -95,6 +95,37 @@ fn every_range_of_a_real_script_is_covered_exactly() {
 }
 
 #[test]
+fn every_range_of_a_script_with_types_and_interpolation_is_covered_exactly() {
+    // The same contract as above over the two constructs that no longer lex
+    // to one flat token each: a type annotation, whose names are reclassified
+    // after the fact, and an interpolated string, which is replaced by several
+    // tokens covering between them exactly what the one it replaced did.
+    let source = "type Row = { n: number }\nlocal r: Row = { n = 1 }\nprint(`n is {r.n}`)";
+    for start in 0..source.len() {
+        for end in start..=source.len() {
+            assert_covers(source, start..end);
+        }
+    }
+}
+
+#[test]
+fn a_type_annotation_and_an_interpolation_hole_are_coloured() {
+    // The visible half of the same change: neither used to resolve to a
+    // highlight name at all.
+    let coloured = covering("local n: Vector3 = `at {n}`");
+    assert!(
+        coloured.contains(&("Vector3", Some("type"))),
+        "the annotation should paint as a type: {coloured:?}"
+    );
+    assert!(
+        coloured
+            .iter()
+            .any(|(text, name)| *text == "n" && name.is_none()),
+        "the hole's contents should be code, not string: {coloured:?}"
+    );
+}
+
+#[test]
 fn an_empty_buffer_produces_nothing() {
     assert!(runs(&tokenize(""), &(0..0)).is_empty());
 }
