@@ -126,6 +126,20 @@
   onto geometry nothing draws — the outline now reads `Scene::all_placements`
   instead, which keeps them. — @chteau
 
+- **Hover outline: fixed flicker on Wayland orbit, and the per-move
+  raycast.** Two review fixes on the new viewport hover outline. Hover
+  suppression during a camera look gated on `PointerLock::holds`, which is
+  always `false` on Wayland (no OS-level pointer capture there by design —
+  see `pointer_lock`'s module doc) — every mouse-move during a Wayland
+  orbit was re-resolving and redrawing the hover box against the moving
+  cursor. It now gates on whether a look gesture is actually in progress
+  (`WorkspaceView::looking`, set by `begin_look`/`end_look`) instead.
+  Separately, hover resolution called `pick::parts_along` — a full-scene
+  raycast, per-triangle for `MeshPart`s — on every reported mouse-move
+  event, not just once per rendered frame; it's now throttled to at most
+  one resolve per frame interval (`workspace_view::hover::due`), with the
+  latest cursor position always caught up to once due. — @chteau
+
 - **Undo/redo fast path.** `Ctrl+Z`/`Ctrl+Y` used to reload the whole scene
   on every step, however small the reverted edit — undoing a single
   `Transparency` change cost exactly as much as undoing an instance delete.

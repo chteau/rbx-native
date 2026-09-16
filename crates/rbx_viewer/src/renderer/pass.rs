@@ -94,11 +94,16 @@ impl Renderer {
             self.textured.draw_blended(&mut pass, &self.meshes);
         }
 
-        // Last, so the outline never gets drawn over by geometry it should
-        // sit on top of.
+        // Last, so the outlines never get drawn over by geometry they should
+        // sit on top of. Hover after selection: `Shell` never sends a hover
+        // for an already-selected referent, so the two never contest the
+        // same box, but drawing hover second is still the more sensible
+        // order if that ever changes — the "about to click" cue reading as
+        // the top layer rather than being hidden under the selection box.
         self.selection.draw(&mut pass, &self.frame.bind_group);
-        // After the outline, and with no depth test of its own: a dragger is
-        // a control rather than scenery, and one buried inside the part it
+        self.hover.draw(&mut pass, &self.frame.bind_group);
+        // After both outlines, and with no depth test of its own: a dragger
+        // is a control rather than scenery, and one buried inside the part it
         // moves would be impossible to grab.
         self.draggers.draw(&mut pass, &self.frame.bind_group);
     }

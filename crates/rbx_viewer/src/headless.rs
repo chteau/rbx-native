@@ -330,6 +330,20 @@ impl Headless {
         self.offscreen.set_selection(selected);
     }
 
+    /// Outlines whatever `BasePart` the cursor is over, distinctly from the
+    /// selection outline above — Studio's "about to click" cue. `None` clears
+    /// it. Unlike `set_selection`, the caller is expected to have already
+    /// resolved this down to a `BasePart` referent (or nothing) rather than
+    /// walking up to an enclosing `Model`: there is no click here to apply
+    /// Studio's "select the model" convention to, only a cursor position.
+    ///
+    /// Same idle-skipping caveat as `set_selection`: force a frame afterwards
+    /// if the host's render loop only draws on camera movement.
+    pub fn set_hover(&mut self, referent: Option<Ref>) {
+        self.view.set_hover(referent);
+        self.offscreen.set_hover(referent);
+    }
+
     /// Draws the transform tool's axis draggers over the selected part, or
     /// hides them again with `None` — Studio's Select tool, where there is
     /// nothing to drag.

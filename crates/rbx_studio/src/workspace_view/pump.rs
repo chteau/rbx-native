@@ -43,6 +43,9 @@ enum Command {
     Quality(QualityLevel),
     Orthographic(bool),
     Selection(Vec<Selected>),
+    /// The "about to click" cue — see `Headless::set_hover`. `None` clears
+    /// it, the way an empty `Selection` clears the selection outline.
+    Hover(Option<Ref>),
     /// Which transform tool's draggers to draw over the selection, if any —
     /// see `Headless::set_gizmo`.
     Gizmo(Option<Gizmo>),
@@ -155,6 +158,12 @@ impl Pump {
     /// Outlines what `selected` covers in the viewport.
     pub(super) fn select(&self, selected: Vec<Selected>) {
         let _ = self.commands.send(Command::Selection(selected));
+    }
+
+    /// Outlines the hovered part in the viewport, distinctly from the
+    /// selection — `None` clears it.
+    pub(super) fn hover(&self, referent: Option<Ref>) {
+        let _ = self.commands.send(Command::Hover(referent));
     }
 
     /// Shows or hides the transform tool's draggers over the selection.
@@ -472,6 +481,7 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::Quality(mode) => rendering.quality.set(mode, rendering.viewer),
         Command::Orthographic(orthographic) => rendering.viewer.set_orthographic(orthographic),
         Command::Selection(selected) => rendering.viewer.set_selection(&selected),
+        Command::Hover(referent) => rendering.viewer.set_hover(referent),
         Command::Gizmo(gizmo) => rendering.viewer.set_gizmo(gizmo),
         Command::Reload(dom) => match rendering.viewer.reload(&dom) {
             Ok(()) => *rendering.rebuilt = true,

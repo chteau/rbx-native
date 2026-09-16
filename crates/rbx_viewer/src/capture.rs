@@ -71,6 +71,7 @@ impl Offscreen {
         };
         offscreen.set_orthographic(view.orthographic);
         offscreen.set_selection(&view.selected);
+        offscreen.set_hover(view.hovered);
         offscreen.set_gizmo(view.gizmo);
         Ok(offscreen)
     }
@@ -107,6 +108,12 @@ impl Offscreen {
     /// buffer right away.
     pub(crate) fn set_selection(&mut self, selected: &[Selected]) {
         self.renderer.set_selection(&self.device, selected);
+    }
+
+    /// Replaces the hover outline box, rebuilding its tiny vertex buffer
+    /// right away.
+    pub(crate) fn set_hover(&mut self, referent: Option<Ref>) {
+        self.renderer.set_hover(&self.device, referent);
     }
 
     /// Shows or hides the transform tool's draggers over the selection.

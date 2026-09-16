@@ -11,6 +11,7 @@
 
 mod frame;
 mod gizmo;
+mod hover;
 mod input;
 mod label;
 mod presence;
@@ -129,6 +130,15 @@ pub(crate) enum ViewportAction {
     },
     /// A transform-toolbar shortcut typed over the view.
     Tool(transform::Action),
+    /// Cursor motion with nothing held: `Shell` resolves whatever `BasePart`
+    /// is nearest under the ray and outlines it, distinctly from the
+    /// selection outline — Studio's "about to click" cue (see
+    /// `rbx_viewer::renderer::hover`). `None` clears the outline outright
+    /// rather than leaving it to resolve to nothing on its own: the cursor
+    /// left the panel (see `render`'s `on_hover`), or a drag or camera look
+    /// just began and a hover box hanging over the gesture would look
+    /// broken.
+    Hover(Option<Ray>),
 }
 
 impl EventEmitter<ViewportAction> for WorkspaceView {}
@@ -149,6 +159,22 @@ pub(crate) struct WorkspaceView {
     /// measures the travel against the centre it warps back to instead.
     cursor: Option<Point<Pixels>>,
     lock: PointerLock,
+    /// Whether a look gesture (right-button orbit) is in progress right now
+    /// — independent of whether `PointerLock` actually captured the OS
+    /// pointer, which it never does on Wayland (see `pointer_lock`'s module
+    /// doc). What hover resolution gates on instead of `PointerLock::holds`
+    /// (see `hover::suppressed`).
+    looking: bool,
+    /// The latest un-resolved cursor position from an ordinary move,
+    /// waiting for `advance` to decide it's due (see `hover::due`) and cast
+    /// a ray against the DOM. Cleared, not just left to resolve stale, at
+    /// every place that already emits `ViewportAction::Hover(None)` — a drag
+    /// starting (`gizmo::press`), a look starting (`begin_look`), and the
+    /// cursor leaving the panel (`render`'s `on_hover`) — or a throttled
+    /// move would otherwise un-clear it a moment later.
+    hover_pending: Option<Point<Pixels>>,
+    /// When the hover ray was last actually resolved, for `hover::due`.
+    hover_resolved_at: Option<Instant>,
     /// The panel's place in the window, in physical pixels. Written during
     /// layout and read afterwards, which is why it is shared rather than passed:
     /// both happen on the UI thread, never at the same time.
@@ -268,6 +294,9 @@ impl WorkspaceView {
             focus,
             cursor: None,
             lock: PointerLock::new(),
+            looking: false,
+            hover_pending: None,
+            hover_resolved_at: None,
             viewport: Rc::new(Cell::new(Viewport::default())),
             sized: (0, 0),
             // Assumed visible until `advance` first has a chance to find out
@@ -302,7 +331,8 @@ impl WorkspaceView {
         &self.meshes
     }
 
-    /// Puts whatever the render thread has finished on screen, and returns how
+    /// Puts whatever the render thread has finished on screen, resolves a
+    /// pending hover ray if one is due (see `hover::due`), and returns how
     /// long the loop should wait before looking again.
     fn advance(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Duration {
         let now = Instant::now();
@@ -382,6 +412,25 @@ impl WorkspaceView {
             cx.emit(AssetWarnings(warnings));
         }
 
+        // Throttled to at most once per `interval` (see `hover::due`): a raw
+        // OS mouse-move can fire far more often than the display refreshes,
+        // and `Shell::hover_in_viewport` pays for a full-scene raycast every
+        // time this resolves, so recording the position on every move but
+        // only casting the ray here keeps that cost tied to frames drawn
+        // rather than input events reported.
+        if let Some(position) = self.hover_pending.take() {
+            let elapsed = self
+                .hover_resolved_at
+                .map(|at| now.saturating_duration_since(at));
+            if hover::due(elapsed, self.interval) {
+                let scale = window.scale_factor();
+                self.hover_moved(position, scale, cx);
+                self.hover_resolved_at = Some(now);
+            } else {
+                self.hover_pending = Some(position);
+            }
+        }
+
         (self.interval / POLLS_PER_FRAME).saturating_sub(now.elapsed())
     }
 
@@ -418,10 +467,19 @@ impl WorkspaceView {
         }
     }
 
-    fn begin_look(&mut self, window: &mut Window, cx: &mut App) {
+    fn begin_look(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus, cx);
         self.cursor = None;
+        self.looking = true;
         self.pump.input(CameraInput::LookButton(true));
+        // Orbiting the camera would otherwise leave whatever was last
+        // hovered stuck on screen for the whole gesture: `mouse_moved` feeds
+        // this same motion to the camera instead of resolving a new hover
+        // while a look is in progress (see `hover::suppressed`, and
+        // `self.looking` above rather than `self.lock.holds()` — the lock
+        // never actually engages on Wayland), so nothing else would clear it.
+        self.hover_pending = None;
+        cx.emit(ViewportAction::Hover(None));
 
         if let (Some(id), Some(centre)) = (
             pointer_lock::window_id(window),
@@ -437,6 +495,7 @@ impl WorkspaceView {
     fn end_look(&mut self) {
         self.lock.release();
         self.cursor = None;
+        self.looking = false;
         self.pump.input(CameraInput::LookButton(false));
     }
 
@@ -557,6 +616,11 @@ impl Render for WorkspaceView {
         );
 
         div()
+            // Only `on_hover` (used below, to clear the hover outline when
+            // the cursor leaves the panel) actually needs an id — it is
+            // `StatefulInteractiveElement`'s alone, unlike every other
+            // handler here.
+            .id("workspace-viewport")
             .track_focus(&self.focus)
             .relative()
             .size_full()
@@ -606,6 +670,27 @@ impl Render for WorkspaceView {
                     return;
                 }
                 view.mouse_moved(event.position);
+                // While a look is in progress this same motion just turned
+                // the camera above, not the cursor: there is nothing new
+                // under it to resolve a hover against, and the last one
+                // already stands cleared (see `begin_look`). Gated on
+                // `looking`, not `view.lock.holds()` — the lock never
+                // actually engages on Wayland (see `hover::suppressed`).
+                // Recording the position is cheap; the raycast itself is
+                // throttled in `advance` (see `hover::due`), not run here.
+                if !hover::suppressed(view.looking) {
+                    view.hover_pending = Some(event.position);
+                }
+            }))
+            // The cursor leaving the panel altogether never fires another
+            // `on_mouse_move` to say so — bounds-scoped, like every handler
+            // above — so a stale hover box would otherwise outlive it; `false`
+            // is exactly that transition (see `Interactivity::on_hover`).
+            .on_hover(cx.listener(|view, hovering: &bool, _, cx| {
+                if !hovering {
+                    view.hover_pending = None;
+                    cx.emit(ViewportAction::Hover(None));
+                }
             }))
             .on_scroll_wheel(cx.listener(|view, event: &ScrollWheelEvent, _, _| {
                 let notches = wheel_notches(event.delta);

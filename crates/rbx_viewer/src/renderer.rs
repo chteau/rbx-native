@@ -8,10 +8,12 @@ mod filemesh;
 mod geometry;
 mod gizmo;
 mod gui;
+mod hover;
 mod instance;
 mod lighting;
 mod material;
 mod mesh;
+mod outline;
 mod particles;
 mod pass;
 mod patch;
@@ -48,6 +50,7 @@ use envmap::EnvMap;
 use geometry::Meshes;
 use gizmo::Draggers;
 use gui::Gui;
+use hover::Hover;
 use lighting::LightingRaw;
 use material::Materials;
 use particles::Particles;
@@ -131,6 +134,10 @@ pub(crate) struct Renderer {
     /// The Explorer's selection outline. Reads `self.frame`'s bind group at
     /// draw time, so it needs no camera state of its own.
     selection: Selection,
+    /// The "about to click" cue drawn around whatever `BasePart` the cursor is
+    /// over, distinctly from `selection` above — see `renderer::hover`. Reads
+    /// the same shared bind group, for the same reason.
+    hover: Hover,
     /// The transform tool's axis draggers, drawn over the selection outline.
     draggers: Draggers,
     /// Which transform tool the editor has active, if any — `None` while the
@@ -234,8 +241,12 @@ impl Renderer {
         // Read once here rather than kept as a whole `Scene`: an edit keeps
         // the copy in step one placement at a time (see
         // `Renderer::sync_instance`), and `Renderer::new` has no other reason
-        // to hold on to the scene itself.
-        let selection = Selection::new(device, target, &layout, scene.all_placements());
+        // to hold on to the scene itself. `hover` keeps its own copy rather
+        // than sharing `selection`'s: the two outlines' GPU state stays
+        // independent, at the cost of one extra clone paid once here.
+        let placements = scene.all_placements();
+        let selection = Selection::new(device, target, &layout, placements.clone());
+        let hover = Hover::new(device, target, &layout, placements);
         let draggers = Draggers::new(device, target, &layout);
 
         Renderer {
@@ -275,6 +286,7 @@ impl Renderer {
             trails: Trails::new(device, queue, target, scene.trails(), quality),
             particles: Particles::new(device, queue, target, scene.particle_emitters(), quality),
             selection,
+            hover,
             draggers,
             gizmo: None,
             gui: Gui::new(
@@ -314,6 +326,12 @@ impl Renderer {
     /// away rather than waiting for the next `draw`.
     pub(crate) fn set_selection(&mut self, device: &wgpu::Device, selected: &[Selected]) {
         self.selection.set(device, selected);
+    }
+
+    /// Replaces the hover outline, rebuilding its tiny vertex buffer right
+    /// away rather than waiting for the next `draw`. `None` clears it.
+    pub(crate) fn set_hover(&mut self, device: &wgpu::Device, referent: Option<Ref>) {
+        self.hover.set(device, referent);
     }
 
     /// Shows or hides the transform tool's draggers over whatever is
@@ -420,6 +438,7 @@ impl Renderer {
         self.translucent.sync(device, part);
         self.shadows.sync_caster(device, queue, part);
         self.selection.place(part.referent, part.placement());
+        self.hover.place(device, part.referent, part.placement());
         for (_, face) in crate::textures::faces(dom, database, part.referent, &part.placement()) {
             self.textured.sync(device, queue, &face);
         }

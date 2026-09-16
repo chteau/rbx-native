@@ -10,10 +10,13 @@
 //! resolve them through one function. A container holding no drawable
 //! geometry at all still outlines nothing: there is genuinely nothing to
 //! draw a box around.
+//!
+//! The box-edge math itself lives in [`super::outline`], shared with
+//! [`super::hover::Hover`]: only the GPU state below (which referents are
+//! tracked, the pipeline's colour) is specific to the selection.
 
 use std::collections::{HashMap, HashSet};
 
-use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3};
 use rbx_dom::Ref;
 use wgpu::util::DeviceExt;
@@ -22,14 +25,10 @@ use crate::gizmo;
 use crate::pick::Selected;
 use crate::scene::Placement;
 
+use super::outline::{self, Vertex};
 use super::pipeline::{self, Surface, Target};
 
 const SHADER: &str = include_str!("selection.wgsl");
-
-/// Half the unit cube's side, matching `renderer::mesh`'s own box extent: a
-/// part's model matrix already folds its `Size` into the scale, so the same
-/// [-0.5, 0.5] corners it instances land exactly on the part's surface.
-const HALF: f32 = 0.5;
 
 // wgpu rejects a depth bias on anything but triangle topology, so unlike the
 // decal pass this outline cannot nudge itself toward the camera. It does not
@@ -37,67 +36,6 @@ const HALF: f32 = 0.5;
 // already wrote, so `GreaterEqual` below wins every on-surface tie outright,
 // while a genuinely far edge is behind a nearer (bigger, reversed-Z) depth
 // already in the buffer and loses to it exactly as it should.
-
-const CORNERS: [Vec3; 8] = [
-    Vec3::new(-HALF, -HALF, -HALF),
-    Vec3::new(HALF, -HALF, -HALF),
-    Vec3::new(HALF, HALF, -HALF),
-    Vec3::new(-HALF, HALF, -HALF),
-    Vec3::new(-HALF, -HALF, HALF),
-    Vec3::new(HALF, -HALF, HALF),
-    Vec3::new(HALF, HALF, HALF),
-    Vec3::new(-HALF, HALF, HALF),
-];
-
-/// The cube's 12 edges as corner index pairs: one ring on each end, then the
-/// four edges joining them.
-const EDGES: [(usize, usize); 12] = [
-    (0, 1),
-    (1, 2),
-    (2, 3),
-    (3, 0),
-    (4, 5),
-    (5, 6),
-    (6, 7),
-    (7, 4),
-    (0, 4),
-    (1, 5),
-    (2, 6),
-    (3, 7),
-];
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct Vertex {
-    position: [f32; 3],
-}
-
-impl Vertex {
-    const fn layout() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &wgpu::vertex_attr_array![0 => Float32x3],
-        }
-    }
-}
-
-/// The 12 edges (24 vertices) of one part's oriented bounding box: the unit
-/// cube's corners carried through its model matrix, which already scales them
-/// to the part's `Size`.
-fn edges(model: Mat4) -> [Vertex; 24] {
-    let corners = CORNERS.map(|corner| model.transform_point3(corner));
-    let mut vertices = [Vertex { position: [0.0; 3] }; 24];
-    for (edge, (a, b)) in EDGES.iter().enumerate() {
-        vertices[edge * 2] = Vertex {
-            position: corners[*a].into(),
-        };
-        vertices[edge * 2 + 1] = Vertex {
-            position: corners[*b].into(),
-        };
-    }
-    vertices
-}
 
 /// Every model matrix one selected instance covers, in the order
 /// `crate::pick::parts_of` resolved them — a part the scene never built (one
@@ -139,7 +77,7 @@ fn vertices_for(placements: &HashMap<Ref, Placement>, selected: &[Selected]) -> 
     selected
         .iter()
         .filter_map(|entry| box_of(placements, entry))
-        .flat_map(edges)
+        .flat_map(outline::edges)
         .collect()
 }
 

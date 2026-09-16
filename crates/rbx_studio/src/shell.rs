@@ -87,6 +87,12 @@ pub(crate) struct Shell {
     edits: edit::Edits,
     /// Mirrors the tree's selected row (see [`Shell::sync_selection`]).
     selection: Selection,
+    /// The `BasePart` the cursor was last resolved to be over, if any — see
+    /// `shell::drag::hover_in_viewport`. Kept here, alongside `selection`
+    /// above, purely to dedupe: the viewport reports cursor motion on every
+    /// pixel, and only an actual change is worth a command down to the
+    /// render thread.
+    hovered: Option<Ref>,
     /// Every script open in the Script Editor panel; see `shell::scripts`.
     scripts: ScriptEditor,
     properties_scroll: ScrollHandle,
@@ -247,6 +253,7 @@ impl Shell {
             properties,
             edits: edit::Edits::default(),
             selection: Selection::new(selected),
+            hovered: None,
             scripts: ScriptEditor::default(),
             properties_scroll: ScrollHandle::new(),
             dock_area,
@@ -426,6 +433,19 @@ impl Shell {
     fn selection_changed(&mut self, cx: &mut Context<Self>) {
         self.edits.clear();
         self.sync_viewport_selection(cx);
+        // A click on the very part the cursor was already hovering would
+        // otherwise leave its hover box drawn right under the new selection
+        // outline until the cursor happens to move again — `hover_in_viewport`
+        // suppresses a hover on an already-selected referent, but only
+        // resolves on the next mouse move, so the same suppression has to
+        // apply here too, immediately.
+        let stale_hover = self
+            .hovered
+            .is_some_and(|hovered| self.selection.all().contains(&hovered));
+        if stale_hover {
+            self.viewport.update(cx, |viewport, _| viewport.set_hover(None));
+            self.hovered = None;
+        }
         // Whatever just stopped being selected becomes one of the neighbours
         // a drag can settle against, and whatever just started stops being
         // one.

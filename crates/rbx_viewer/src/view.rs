@@ -20,6 +20,8 @@
 //! cannot quietly drop one of these — whatever it does or does not happen to
 //! keep of the renderer's own copy.
 
+use rbx_dom::Ref;
+
 use crate::gizmo::Gizmo;
 use crate::pick::Selected;
 
@@ -32,6 +34,11 @@ pub(crate) struct View {
     /// it covers (see [`Selected`]), which is what survives a rebuild: the
     /// renderer has no DOM to resolve a bare referent against.
     pub(crate) selected: Vec<Selected>,
+    /// The "about to click" cue's outline — see `renderer::hover::Hover`.
+    /// Unlike `selected`, at most one referent, since a cursor is only ever
+    /// over one part at a time; `None` while `rbxview` runs, which never asks
+    /// for a hover outline in the first place.
+    pub(crate) hovered: Option<Ref>,
     /// `None` whenever no transform tool is active, which is every `rbxview`
     /// frame: the standalone viewer edits nothing.
     pub(crate) gizmo: Option<Gizmo>,
@@ -45,6 +52,12 @@ impl View {
         self.selected.extend_from_slice(selected);
     }
 
+    /// Replaces the hovered referent, `None` included — unlike `select`,
+    /// there is only ever one to replace.
+    pub(crate) fn set_hover(&mut self, referent: Option<Ref>) {
+        self.hovered = referent;
+    }
+
     pub(crate) fn set_gizmo(&mut self, gizmo: Option<Gizmo>) {
         self.gizmo = gizmo;
     }
@@ -56,8 +69,6 @@ impl View {
 
 #[cfg(test)]
 mod tests {
-    use rbx_dom::Ref;
-
     use super::*;
     use crate::gizmo::Kind;
 
@@ -72,6 +83,7 @@ mod tests {
         let view = View::default();
 
         assert!(view.selected.is_empty());
+        assert_eq!(view.hovered, None);
         assert_eq!(view.gizmo, None);
         assert!(!view.orthographic);
     }
@@ -94,6 +106,24 @@ mod tests {
         assert!(view.selected.is_empty());
     }
 
+    #[test]
+    fn hovering_replaces_rather_than_accumulates() {
+        let mut view = View::default();
+        view.set_hover(Some(Ref::new(1)));
+        view.set_hover(Some(Ref::new(2)));
+
+        assert_eq!(view.hovered, Some(Ref::new(2)));
+    }
+
+    #[test]
+    fn hovering_nothing_clears_the_outline() {
+        let mut view = View::default();
+        view.set_hover(Some(Ref::new(1)));
+        view.set_hover(None);
+
+        assert_eq!(view.hovered, None);
+    }
+
     /// The regression this type exists for: everything the editor asked for
     /// between one rebuild and the next has to still be here when the next one
     /// happens, because this value is the whole of what `Offscreen::reload`
@@ -105,6 +135,7 @@ mod tests {
         let mut view = View::default();
         view.set_orthographic(true);
         view.select(&[part(9)]);
+        view.set_hover(Some(Ref::new(7)));
         view.set_gizmo(Some(Gizmo {
             kind: Kind::Rotate,
             local: true,
@@ -120,6 +151,7 @@ mod tests {
 
         assert!(view.orthographic);
         assert_eq!(view.selected, [part(9)]);
+        assert_eq!(view.hovered, Some(Ref::new(7)));
         assert_eq!(
             view.gizmo,
             Some(Gizmo {
