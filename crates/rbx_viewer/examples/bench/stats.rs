@@ -30,6 +30,15 @@ impl Samples {
         self.taken.len()
     }
 
+    /// Whether the run this summarises collected nothing at all.
+    ///
+    /// Every summary below answers `0.0` for an empty run, which is not a
+    /// timing and must never be printed as one — a report asks this first and
+    /// says so plainly instead (see `report::stat`).
+    pub(crate) fn is_empty(&self) -> bool {
+        self.taken.is_empty()
+    }
+
     pub(crate) fn taken(&self) -> &[f64] {
         &self.taken
     }
@@ -109,6 +118,17 @@ mod tests {
         // 8..12 around a median of 10 is a 40% spread.
         assert!((samples(&[8, 10, 10, 10, 12]).spread() - 40.0).abs() < 1e-9);
         assert_eq!(samples(&[]).spread(), 0.0);
+    }
+
+    #[test]
+    fn an_empty_run_is_distinguishable_from_a_fast_one() {
+        let nothing = samples(&[]);
+        let fast = samples(&[0]);
+        // Both summarise to zero, so the summaries cannot tell them apart and
+        // whatever prints them has to ask.
+        assert_eq!(nothing.median(), fast.median());
+        assert!(nothing.is_empty());
+        assert!(!fast.is_empty());
     }
 
     #[test]

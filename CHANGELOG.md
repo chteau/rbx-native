@@ -119,6 +119,26 @@
   (6.6% run-to-run) is what a before/after comparison should use. Deliberately
   not wired into `check.sh`: a GPU benchmark is not a CI gate. — @chteau
 
+- **The benchmark harness can no longer report a number that isn't the
+  number.** Three ways it could. A failed `cargo build` was swallowed by the
+  `|| true` on the pipeline that filtered its output, so `scripts/bench.sh`
+  ran on whatever binary the last successful build had left in `target/` and
+  printed its timings under the *current* commit — the build's status is now
+  taken on its own, and the filtering happens afterwards over its log.
+  A fixture that failed part-way through a run took the run with it: with
+  `TestPlace.rbxl` already measured and `marked.rbxl` unreadable, neither the
+  table nor `bench.json` was written at all, and minutes of GPU work went with
+  it. Each fixture now carries its own result, so the run reports everything
+  that did measure alongside which fixture failed and why, and still exits
+  non-zero. `--frame-warmup 0` left `render_frame`'s pipeline empty, which
+  makes the first measured frame come back as `None` — the phase collected
+  nothing and printed a tidy `0.00 ms` for it, indistinguishable from a real
+  sub-millisecond result; the warmup now parses like every other iteration
+  count (at least 1), and any column with no samples behind it says so
+  instead of printing a zero. The patch phase also tells an exhausted
+  candidate search apart from a place with nothing patchable in it, rather
+  than reporting both as the latter. — @chteau
+
 ## 2026-09-15
 
 - **Viewport selection and a Move gizmo.** Clicking in the 3D view now

@@ -108,10 +108,20 @@ fn run(args: &Args) -> Result<(), String> {
             continue;
         }
         eprintln!("-- {}", path.display());
-        let measured = measure::fixture(path, args)?;
+        // A fixture that fails takes itself out of the run and nothing else
+        // with it. Propagating here would throw away every fixture already
+        // measured — minutes of GPU work — before the table or the JSON file
+        // was ever written, over a place file that happened to be corrupt.
+        let outcome = match measure::fixture(path, args) {
+            Ok(measured) => Outcome::Measured(Box::new(measured)),
+            Err(err) => {
+                eprintln!("   failed: {err}");
+                Outcome::Failed(err)
+            }
+        };
         fixtures.push(Fixture {
             path: path.clone(),
-            outcome: Outcome::Measured(Box::new(measured)),
+            outcome,
         });
     }
 
@@ -129,7 +139,22 @@ fn run(args: &Args) -> Result<(), String> {
     report::table(&run, args);
     report::json(&run, args, &args.json)?;
     println!("wrote {}", args.json.display());
-    Ok(())
+
+    // Reported after both outputs exist, and still a failure: a run missing a
+    // fixture is not a run anyone should quietly compare against a full one.
+    let failed: Vec<String> = run
+        .fixtures
+        .iter()
+        .filter_map(|fixture| match &fixture.outcome {
+            Outcome::Failed(reason) => Some(format!("{}: {reason}", fixture.path.display())),
+            _ => None,
+        })
+        .collect();
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("measurement failed for {}", failed.join("; ")))
+    }
 }
 
 /// The commit these numbers belong to, and whether the tree they were taken

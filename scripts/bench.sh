@@ -18,11 +18,27 @@ mkdir -p "$OUT"
 # `ionice` is Linux-only; fall back to plain `nice` rather than failing outright
 # anywhere else (macOS, in particular) — see check.sh's own copy of this same
 # fallback, and bench.ps1 for the native Windows equivalent.
-if command -v ionice >/dev/null 2>&1; then
-  ionice -c3 nice -n 10 cargo build --release --example bench -p rbx_viewer 2>&1 | grep -E '^(error|warning)' || true
-else
-  nice -n 10 cargo build --release --example bench -p rbx_viewer 2>&1 | grep -E '^(error|warning)' || true
+run() {
+  if command -v ionice >/dev/null 2>&1; then
+    ionice -c3 nice -n 10 "$@"
+  else
+    nice -n 10 "$@"
+  fi
+}
+# The build's own status decides, and the filtering happens afterwards over its
+# log. Piping it straight into `grep` cannot: `grep` matches nothing in a clean
+# build and exits 1, and the `|| true` needed to survive that reports the status
+# of `true` for the whole pipeline, `pipefail` and all. A failed build would then
+# fall through to whichever binary the last successful one left in target/, and
+# those stale numbers would be printed and written to JSON under the *current*
+# commit. bench.ps1 checks $LASTEXITCODE for the same reason.
+LOG="$OUT/build.log"
+if ! run cargo build --release --example bench -p rbx_viewer >"$LOG" 2>&1; then
+  cat "$LOG" >&2
+  echo "error: the benchmark did not build; target/ may still hold an older binary" >&2
+  exit 1
 fi
+grep -E '^(error|warning)' "$LOG" || true
 # Built and run at normal priority on purpose: `nice`ing the measurement itself
 # would time a process the scheduler is deprioritising, not the code.
 exec ./target/release/examples/bench \

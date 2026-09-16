@@ -21,6 +21,12 @@ const NUDGE: f32 = 0.05;
 /// place. A place whose first candidates are all unions or non-`Workspace`
 /// instances still gets measured; one with no patchable part at all is reported
 /// as such rather than silently timing a fallback.
+///
+/// Each try is a real `patch_instance` call, which is why there is a cap at
+/// all. A union-heavy place can spend all of it on parts the renderer refuses
+/// while a patchable one sits further down the tree, so an exhausted search is
+/// reported as exhausted (`Patched::NoCandidate` carries both counts) and never
+/// as a place with nothing to patch.
 const CANDIDATES: usize = 512;
 
 /// One timed operation, reported at both ends of the GPU pipeline.
@@ -67,8 +73,12 @@ pub(crate) fn fixture(path: &Path, args: &Args) -> Result<Measured, String> {
     // `&mut` last, and only here: the patch phase moves a part around in this
     // very DOM, and every phase that shares it has already run.
     match patch(path, &mut dom, args)? {
-        Some(phase) => phases.push(phase),
-        None => notes.push(
+        Patched::Phase(phase) => phases.push(phase),
+        Patched::NoCandidate { tried, total } if tried < total => notes.push(format!(
+            "single-instance patch skipped: none of the first {tried} of {total} candidate parts \
+             patched in place, so a patchable one may still sit deeper in this place"
+        )),
+        Patched::NoCandidate { .. } => notes.push(
             "single-instance patch skipped: no BasePart in this place is patched in place"
                 .to_string(),
         ),
@@ -133,17 +143,33 @@ fn reload(path: &Path, dom: &WeakDom, args: &Args) -> Result<Phase, String> {
     })
 }
 
+/// What the patch phase found to time, or what it looked at instead.
+enum Patched {
+    Phase(Phase),
+    /// No part the search reached patched in place. `tried` against `total` is
+    /// what separates a place holding nothing patchable from one whose search
+    /// ran out of tries with candidates still unexamined.
+    NoCandidate {
+        tried: usize,
+        total: usize,
+    },
+}
+
 /// `Headless::patch_instance` after one `BasePart`'s `CFrame` moves — the
 /// Properties-panel edit a reload is supposed to be unnecessary for.
-fn patch(path: &Path, dom: &mut WeakDom, args: &Args) -> Result<Option<Phase>, String> {
+fn patch(path: &Path, dom: &mut WeakDom, args: &Args) -> Result<Patched, String> {
     let mut headless = Headless::load(path, args.textures)?;
     // The target, its pipelines and the freshly loaded place's textures must
     // all be on the GPU already, or the first patches would be charged for
     // finishing the load — see `drain_upload_budget`.
     drain_upload_budget(&mut headless, args)?;
 
-    let Some((referent, mut cframe)) = patchable(&mut headless, dom)? else {
-        return Ok(None);
+    let candidates = parts(dom);
+    let Some((referent, mut cframe)) = patchable(&mut headless, dom, &candidates)? else {
+        return Ok(Patched::NoCandidate {
+            tried: candidates.len().min(CANDIDATES),
+            total: candidates.len(),
+        });
     };
     // `patchable`'s trial patch uploaded an instance without drawing it.
     wait_for_frame(&mut headless, args.size)?;
@@ -165,7 +191,7 @@ fn patch(path: &Path, dom: &mut WeakDom, args: &Args) -> Result<Option<Phase>, S
         frame.push(started.elapsed());
     }
 
-    Ok(Some(Phase {
+    Ok(Patched::Phase(Phase {
         name: "patch instance",
         call: Samples::new(&call),
         frame: Samples::new(&frame),
@@ -194,7 +220,7 @@ fn frames(path: &Path, args: &Args) -> Result<Vec<Frames>, String> {
             let rendered = headless.render_frame(args.size.0, args.size.1)?;
             let elapsed = started.elapsed();
             // `None` only before the pipeline is full, which the warmup above
-            // already handled unless it was asked for zero frames.
+            // has already seen to — `--frame-warmup` will not take a zero.
             if let Some(rendered) = rendered {
                 wall.push(elapsed);
                 render.push(rendered.render);
@@ -255,8 +281,12 @@ fn wait_for_frame(headless: &mut Headless, size: (u32, u32)) -> Result<(), Strin
 /// `false` for anything the scene never built as a plain part — a union
 /// repainted from its operation tree, an instance outside `Workspace` — and
 /// timing that fallback as though it were a patch would report a lie.
-fn patchable(headless: &mut Headless, dom: &WeakDom) -> Result<Option<(Ref, CFrameData)>, String> {
-    for referent in parts(dom) {
+fn patchable(
+    headless: &mut Headless,
+    dom: &WeakDom,
+    candidates: &[Ref],
+) -> Result<Option<(Ref, CFrameData)>, String> {
+    for &referent in candidates.iter().take(CANDIDATES) {
         let Some(Variant::CFrame(cframe)) = dom
             .get(referent)
             .and_then(|instance| instance.properties().get("CFrame"))
@@ -273,6 +303,10 @@ fn patchable(headless: &mut Headless, dom: &WeakDom) -> Result<Option<(Ref, CFra
 
 /// Candidate parts, `Workspace` first: the scene is built from that subtree
 /// alone, so a part anywhere else is guaranteed not to patch.
+///
+/// Every candidate, not the first `CANDIDATES` of them: how many exist is what
+/// tells an exhausted search from a place with nothing to patch, and the caller
+/// is the one that stops trying.
 fn parts(dom: &WeakDom) -> Vec<Ref> {
     let workspace: Vec<Ref> = dom
         .root_refs()
@@ -298,7 +332,6 @@ fn parts(dom: &WeakDom) -> Vec<Ref> {
                 Some(Variant::CFrame(_))
             )
         })
-        .take(CANDIDATES)
         .collect()
 }
 
@@ -317,7 +350,7 @@ fn walk(dom: &WeakDom, roots: &[Ref]) -> Vec<Ref> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parts, walk};
+    use super::{parts, walk, CANDIDATES};
     use rbx_dom::{CFrameData, Variant, Vector3Data, WeakDom};
 
     fn place() -> WeakDom {
@@ -362,6 +395,33 @@ mod tests {
     fn walking_counts_every_instance_in_the_tree() {
         let dom = place();
         assert_eq!(walk(&dom, dom.root_refs()).len(), 4);
+    }
+
+    #[test]
+    fn candidates_are_not_truncated_to_the_number_that_will_be_tried() {
+        let mut dom = WeakDom::new();
+        let workspace = dom.new_instance("Workspace", "Workspace", None);
+        let extra = 8;
+        for index in 0..CANDIDATES + extra {
+            let part = dom.new_instance("Part", &format!("Part{index}"), Some(workspace));
+            dom.set_property(
+                part,
+                "CFrame",
+                Variant::CFrame(CFrameData {
+                    position: Vector3Data {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
+                    rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+                }),
+            )
+            .expect("the instance was just created");
+        }
+        // The cap is the search's, not the list's: a place whose first 512
+        // parts all refuse the patch is only reportable as such if the total
+        // is known.
+        assert_eq!(parts(&dom).len(), CANDIDATES + extra);
     }
 
     #[test]

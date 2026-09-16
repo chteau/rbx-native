@@ -36,6 +36,10 @@ pub(crate) enum Outcome {
     /// A fixture this machine does not have. Reported, never fatal: the
     /// interesting place file deliberately lives outside the repository.
     Skipped(String),
+    /// A fixture that was there and did not measure. Carried through to both
+    /// outputs so the run says which fixture failed and why, instead of the
+    /// whole run ending with nothing to show for the fixtures that worked.
+    Failed(String),
 }
 
 pub(crate) fn table(run: &Run, args: &Args) {
@@ -68,6 +72,9 @@ pub(crate) fn table(run: &Run, args: &Args) {
             Outcome::Skipped(reason) => {
                 println!("{} — skipped: {reason}", fixture.path.display());
             }
+            Outcome::Failed(reason) => {
+                println!("{} — FAILED: {reason}", fixture.path.display());
+            }
             Outcome::Measured(measured) => {
                 println!(
                     "{} — {} instances",
@@ -95,11 +102,15 @@ fn phases(phases: &[Phase]) {
             "  {:<16}{:>5}{:>13}{:>11}{:>15}{:>11}{:>10}",
             phase.name,
             phase.call.len(),
-            millis(phase.call.median()),
-            millis(phase.call.p95()),
-            millis(phase.frame.median()),
-            millis(phase.frame.p95()),
-            percent(phase.frame.spread()),
+            stat(&phase.call, Samples::median),
+            stat(&phase.call, Samples::p95),
+            stat(&phase.frame, Samples::median),
+            stat(&phase.frame, Samples::p95),
+            if phase.frame.is_empty() {
+                NOTHING.to_string()
+            } else {
+                percent(phase.frame.spread())
+            },
         );
     }
 }
@@ -119,11 +130,13 @@ fn frames(frames: &[Frames]) {
             "  {:<16}{:>5}{:>13}{:>11}{:>15}{:>11}{:>10}",
             format!("Level{:02}", level.level),
             level.wall.len(),
-            millis(median),
-            millis(level.wall.p95()),
-            millis(level.render.median()),
-            millis(level.readback.median()),
-            if median > 0.0 {
+            stat(&level.wall, Samples::median),
+            stat(&level.wall, Samples::p95),
+            stat(&level.render, Samples::median),
+            stat(&level.readback, Samples::median),
+            if level.wall.is_empty() {
+                NOTHING.to_string()
+            } else if median > 0.0 {
                 format!("{:.0}", 1000.0 / median)
             } else {
                 "-".to_string()
@@ -132,8 +145,18 @@ fn frames(frames: &[Frames]) {
     }
 }
 
-fn millis(value: f64) -> String {
-    format!("{value:.2} ms")
+/// What a column says when the run behind it collected nothing.
+///
+/// `Samples`' summaries answer `0.0` for an empty run, and `0.00 ms` in a
+/// timing column reads as a real, very fast measurement — the one reading a
+/// benchmark must never be wrong about.
+const NOTHING: &str = "no samples";
+
+fn stat(samples: &Samples, summary: fn(&Samples) -> f64) -> String {
+    if samples.is_empty() {
+        return NOTHING.to_string();
+    }
+    format!("{:.2} ms", summary(samples))
 }
 
 fn percent(value: f64) -> String {
@@ -180,6 +203,10 @@ fn fixture_json(fixture: &Fixture) -> String {
     match &fixture.outcome {
         Outcome::Skipped(reason) => format!(
             "    {{ \"path\": {path}, \"status\": \"skipped\", \"reason\": {} }}",
+            quote(reason)
+        ),
+        Outcome::Failed(reason) => format!(
+            "    {{ \"path\": {path}, \"status\": \"failed\", \"reason\": {} }}",
             quote(reason)
         ),
         Outcome::Measured(measured) => {
@@ -266,7 +293,52 @@ fn quote(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::quote;
+    use std::path::PathBuf;
+    use std::time::Duration;
+
+    use super::{quote, render_json, Fixture, Outcome, Run};
+    use crate::args::Args;
+    use crate::measure::{Measured, Phase};
+    use crate::stats::Samples;
+
+    #[test]
+    fn a_fixture_that_failed_costs_the_run_nothing_but_itself() {
+        let measured = Measured {
+            instances: 81,
+            phases: vec![Phase {
+                name: "cold load",
+                call: Samples::new(&[Duration::from_millis(200)]),
+                frame: Samples::new(&[Duration::from_millis(250)]),
+            }],
+            frames: Vec::new(),
+            notes: Vec::new(),
+        };
+        let run = Run {
+            adapter: "test adapter".to_string(),
+            commit: "abc1234".to_string(),
+            dirty: false,
+            recorded_unix: 0,
+            fixtures: vec![
+                Fixture {
+                    path: PathBuf::from("good.rbxl"),
+                    outcome: Outcome::Measured(Box::new(measured)),
+                },
+                Fixture {
+                    path: PathBuf::from("bad.rbxl"),
+                    outcome: Outcome::Failed("the place file is corrupt".to_string()),
+                },
+            ],
+        };
+
+        let json = render_json(&run, &Args::default());
+        // The point of the whole arrangement: the fixture that worked is in the
+        // file even though the one after it did not, and the one that did not
+        // says so with its reason rather than going missing.
+        assert!(json.contains("\"status\": \"measured\""));
+        assert!(json.contains("\"instances\": 81"));
+        assert!(json.contains("\"status\": \"failed\""));
+        assert!(json.contains("the place file is corrupt"));
+    }
 
     #[test]
     fn paths_and_control_characters_survive_quoting() {

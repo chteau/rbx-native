@@ -83,7 +83,7 @@ impl Args {
                 "--reload-iters" => args.reload_iters = count(&flag, &value()?)?,
                 "--patch-iters" => args.patch_iters = count(&flag, &value()?)?,
                 "--frame-iters" => args.frame_iters = count(&flag, &value()?)?,
-                "--frame-warmup" => args.frame_warmup = number(&flag, &value()?)?,
+                "--frame-warmup" => args.frame_warmup = count(&flag, &value()?)?,
                 other => return Err(format!("unknown option '{other}'")),
             }
         }
@@ -153,6 +153,12 @@ fn levels(text: &str) -> Result<Vec<u8>, String> {
 
 /// A count that must actually produce a sample: a zero-iteration phase would
 /// print a row of empty statistics rather than saying it measured nothing.
+///
+/// The warmup counts the same way, for a reason of `Headless`'s making rather
+/// than of presentation: `render_frame` hands back the frame *before* the one
+/// it queues, so with nothing warmed up the first measured frame comes back as
+/// `None` and is discarded — a phase that reports zero samples having drawn
+/// every frame it was asked to.
 fn count(flag: &str, text: &str) -> Result<usize, String> {
     let value = number(flag, text)?;
     if value == 0 {
@@ -187,5 +193,22 @@ mod tests {
         assert!(levels("22").is_err());
         assert_eq!(levels("1, 21").expect("valid"), vec![1, 21]);
         assert_eq!(levels("all").expect("valid").len(), 21);
+    }
+
+    #[test]
+    fn no_iteration_count_may_be_zero() {
+        for flag in [
+            "--load-iters",
+            "--reload-iters",
+            "--patch-iters",
+            "--frame-iters",
+            "--frame-warmup",
+        ] {
+            assert!(
+                Args::parse([flag, "0"].into_iter().map(String::from)).is_err(),
+                "{flag} accepted a count that measures nothing"
+            );
+            assert!(Args::parse([flag, "1"].into_iter().map(String::from)).is_ok());
+        }
     }
 }
