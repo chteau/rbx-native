@@ -14,7 +14,7 @@ use rbx_reflection::ReflectionDatabase;
 
 use super::super::material::Catalog;
 use super::super::{Part, Resolved, ResolvedInstance};
-use super::{csg, from_operation, Entry, Evaluated, Evaluations, Plan};
+use super::{csg, from_operation, Entry, Evaluated, Evaluations};
 
 /// The single-instance counterpart of [`super::plan`] — see
 /// `filemesh::patch::replan`.
@@ -25,18 +25,6 @@ pub(in crate::scene) fn replan(
     materials: &mut Catalog,
 ) -> Option<Entry> {
     from_operation(dom, database, referent, materials)
-}
-
-impl Plan {
-    /// Whether this plan already had `referent` drawing `asset` — what tells
-    /// a union whose asset this place simply never carved (its bytes did not
-    /// download) from one an edit has just pointed at an asset nobody has
-    /// fetched, which only a load can carve.
-    pub(in crate::scene) fn plans(&self, referent: Ref, asset: &AssetRef) -> bool {
-        self.entries
-            .iter()
-            .any(|entry| entry.referent == referent && entry.asset == *asset)
-    }
 }
 
 impl Evaluations {

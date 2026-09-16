@@ -85,6 +85,25 @@ impl Resident {
         self.bytes.fetch(references, assets::load_bytes)
     }
 
+    /// Every mesh and union asset this place has asked for and will never
+    /// get: a 404, a file the content package does not hold, bytes that
+    /// would not decode. A scene is told these up front (see
+    /// `Scene::note_lost`) because an edit pointing a part at one of them
+    /// draws the box a full build would have drawn, rather than forcing a
+    /// reload to ask for it again — and unlike the scene, this outlives
+    /// every reload.
+    ///
+    /// A failure of the machine is left out on purpose: the next load
+    /// retries it, so a part pointed at that asset is worth the reload that
+    /// does.
+    pub(crate) fn lost(&self) -> Vec<AssetRef> {
+        self.meshes
+            .lost()
+            .chain(self.bytes.lost())
+            .cloned()
+            .collect()
+    }
+
     /// Drops every remembered transient failure, so the next ask for it
     /// fetches again. Called once at the start of every load (see
     /// `Loaded::from_dom`): that is the unit a retry is worth — see the
@@ -118,6 +137,15 @@ impl<T> Default for Table<T> {
 }
 
 impl<T> Table<T> {
+    /// Every reference here that failed for a reason asking again cannot
+    /// change — see the module doc on which is which.
+    fn lost(&self) -> impl Iterator<Item = &AssetRef> {
+        self.entries
+            .iter()
+            .filter(|(_, result)| matches!(result, Err(failure) if !failure.transient))
+            .map(|(reference, _)| reference)
+    }
+
     fn forget_failures(&mut self) {
         self.entries
             .retain(|_, result| !matches!(result, Err(failure) if failure.transient));
@@ -309,6 +337,31 @@ mod tests {
         assert_eq!(asked.get(), 1, "never asked again");
         assert!(found.is_empty());
         assert_eq!(warnings, vec!["asset 5: not found".to_string()]);
+    }
+
+    // What `Resident::lost` rests on: only a failure of the asset itself is
+    // an answer that outlives the load that got it, so only that one is
+    // worth telling a rebuilt scene about.
+    #[test]
+    fn only_a_permanent_failure_counts_as_lost() {
+        let mut table: Table<u64> = Table::default();
+        table.fetch(&[AssetRef::Id(2), AssetRef::Id(3)], |references| {
+            references
+                .iter()
+                .map(|reference| {
+                    let transient = *reference == AssetRef::Id(3);
+                    (
+                        reference.clone(),
+                        Err(failure("asset: no", transient)) as Result<u64, Failure>,
+                    )
+                })
+                .collect()
+        });
+
+        assert_eq!(
+            table.lost().cloned().collect::<Vec<_>>(),
+            vec![AssetRef::Id(2)]
+        );
     }
 
     // Forgetting the failures must not cost the successes: those are the

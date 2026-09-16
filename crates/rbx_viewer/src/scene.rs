@@ -195,12 +195,17 @@ pub(crate) struct Scene {
     /// mesh/texture data has to live — `Renderer::new`'s signature has no room
     /// for a third, network-dependent argument.
     resolved_file_meshes: filemesh::Resolved,
-    /// Every mesh and union asset the load asked for and never got — a 404,
+    /// Every mesh and union asset that was asked for and never got — a 404,
     /// a file the content package lacks, bytes that would not decode or
     /// carve. The part draws as its box, exactly as a full build leaves it,
     /// and an edit of that part is a box edit rather than a reload asking
     /// for the asset once more; see [`Scene::resync_part`]. Only an asset
     /// nobody asked for yet is a reload's to fetch.
+    ///
+    /// This load's own failures, joined by whatever earlier loads of the
+    /// same place will never get either (see [`Scene::note_lost`]) — a
+    /// reload starts a scene over, and an answer that cannot change must
+    /// not be forgotten with it.
     unresolved: HashSet<AssetRef>,
     /// Every `ParticleEmitter` parented to a drawn `BasePart`; see
     /// [`Scene::particle_emitters`].
@@ -476,6 +481,18 @@ impl Scene {
         for instance in resolution.instances {
             resolved.push(instance);
         }
+    }
+
+    /// Notes assets this place has asked for before and will never get, so
+    /// an edit pointing a part at one of them is a box edit rather than a
+    /// reload that would ask for it again — see [`Scene::unresolved`].
+    ///
+    /// Told to the scene from outside because only whoever owns the place
+    /// across reloads knows it (`load::Resident`): this scene has only its
+    /// own load's failures, and the answer it needs may be three reloads
+    /// old.
+    pub(crate) fn note_lost(&mut self, assets: impl IntoIterator<Item = AssetRef>) {
+        self.unresolved.extend(assets);
     }
 
     /// Appends `part`, keeping [`Scene::standing`] in step: a part that is

@@ -40,8 +40,10 @@ impl Scene {
             // Nothing carved for the asset: a fresh resolution draws the
             // union's own box, and so does this — unless the edit has just
             // pointed it at an asset nobody has fetched, which only a load
-            // downloads and carves.
-            if !unions.is_known(entry.asset()) && !self.union_plan.plans(referent, entry.asset()) {
+            // downloads and carves. An asset already asked for and lost is
+            // not one of those, however many reloads ago it was asked for:
+            // that answer cannot change, so the box is the answer.
+            if !unions.is_known(entry.asset()) && !self.unresolved.contains(entry.asset()) {
                 return Err(Rebuild::Asset);
             }
             self.resolved_file_meshes.remove(referent);

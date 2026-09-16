@@ -102,6 +102,11 @@ impl Loaded {
         // Here and not deeper: one load is the unit a transient failure is
         // retried per, and every pass below asks through the same `resident`.
         resident.forget_failures();
+        // What earlier loads of this place asked for and will never get. A
+        // reload starts the scene over, so without this an edit pointing a
+        // part back at such an asset would be a reload of its own — and the
+        // one after it, and the one after that.
+        scene.note_lost(resident.lost());
         let mut warnings = Vec::new();
         // File meshes first: a MeshPart that gets real geometry stops drawing the
         // box its decals would otherwise be projected onto.

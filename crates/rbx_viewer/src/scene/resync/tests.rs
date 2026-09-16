@@ -24,6 +24,9 @@ const PLAIN_PART: u32 = 2;
 const STAGED: u32 = 3;
 const UNION: u32 = 4;
 const UNION_ASSET: u64 = 42;
+/// A second union asset, for the edits that point the fixture union away
+/// from its own.
+const OTHER_UNION_ASSET: u64 = 43;
 /// How many additive leaves the fixture union's asset carries, and so how
 /// many pieces it is drawn as.
 const UNION_PIECES: usize = 3;
@@ -453,6 +456,29 @@ fn union_place() -> (WeakDom, Scene, UnionEvaluations) {
     (dom, scene, evaluations)
 }
 
+/// [`union_place`] with the union's asset asked for and never delivered — a
+/// 404, or a download that failed — so the union stays drawn as its own box.
+/// The union counterpart of [`place_without_the_mesh`].
+fn union_place_without_the_asset() -> (WeakDom, Scene, UnionEvaluations) {
+    let (dom, _, _) = union_place();
+    let database = ReflectionDatabase::embedded();
+    let mut scene = Scene::from_dom(&dom, &database).unwrap();
+    let mut evaluations = UnionEvaluations::default();
+    scene.resolve_unions(HashMap::new(), &mut evaluations);
+    assert!(pieces_of(&scene, UNION).is_empty());
+    (dom, scene, evaluations)
+}
+
+/// Points the fixture union at `asset`, the way a Properties row does.
+fn point_union_at(dom: &mut WeakDom, asset: u64) {
+    dom.set_property(
+        Ref::new(UNION),
+        "AssetId",
+        Variant::String(format!("rbxassetid://{asset}")),
+    )
+    .unwrap();
+}
+
 /// The union's recovered pieces as the scene holds them, in piece order.
 fn pieces_of(scene: &Scene, referent: u32) -> Vec<Part> {
     let mut pieces: Vec<Part> = scene
@@ -620,16 +646,16 @@ fn a_union_with_no_recovered_pieces_draws_nothing() {
     );
 }
 
-// A union whose asset this place never carved — nothing downloaded it, or
-// its bytes would not parse — draws as its own box, exactly as a rebuild
-// leaves it. Only an edit pointing it at an asset nobody has fetched needs
-// the load-time path.
+// A union pointed at an asset this place asked for and never got draws as
+// its own box and lets go of the pieces it used to be drawn as — exactly
+// the box a rebuild would leave it as.
 #[test]
-fn a_union_whose_asset_was_never_carved_stays_a_box() {
-    let (mut dom, mut scene, _) = union_place();
-    let none = UnionEvaluations::default();
+fn a_union_pointed_at_an_asset_that_never_came_drops_its_pieces() {
+    let (mut dom, mut scene, unions) = union_place();
+    scene.note_lost([AssetRef::Id(OTHER_UNION_ASSET)]);
+    point_union_at(&mut dom, OTHER_UNION_ASSET);
 
-    let sync = resync_with(&mut scene, &dom, UNION, &none).expect("the box is still patchable");
+    let sync = resync_with(&mut scene, &dom, UNION, &unions).expect("the box is still patchable");
 
     let Drawn::Box(part) = &sync.drawn else {
         panic!("expected the union's own box, got {:?}", sync.drawn);
@@ -637,17 +663,106 @@ fn a_union_whose_asset_was_never_carved_stays_a_box() {
     assert!(part.is_drawn());
     assert_eq!(sync.dropped, 0..UNION_PIECES as u32);
     assert!(pieces_of(&scene, UNION).is_empty());
+}
 
-    dom.set_property(
-        Ref::new(UNION),
-        "AssetId",
-        Variant::String("rbxassetid://999".to_string()),
-    )
-    .unwrap();
+// The other side of it: an asset nobody has asked for yet may well carve,
+// and only a load fetches one.
+#[test]
+fn a_union_pointed_at_an_asset_nobody_fetched_is_a_rebuild() {
+    let (mut dom, mut scene, unions) = union_place();
+    point_union_at(&mut dom, OTHER_UNION_ASSET);
+
     assert_eq!(
-        resync_with(&mut scene, &dom, UNION, &none).err(),
+        resync_with(&mut scene, &dom, UNION, &unions).err(),
+        Some(Rebuild::Asset)
+    );
+}
+
+// The `AssetId` an undo puts back. A fails to download, an edit points the
+// union at B — which only a load can fetch, so that edit is a reload — and
+// the undo points it back at A. The reload planned B alone and has never
+// heard of A, so what says putting A back is a box edit is what this place
+// will never get, which outlives the very reload that edit forced.
+#[test]
+fn a_union_pointed_back_at_the_asset_its_first_load_lost_is_not_a_reload() {
+    let (mut dom, mut scene, unions) = union_place_without_the_asset();
+    point_union_at(&mut dom, OTHER_UNION_ASSET);
+    assert_eq!(
+        resync_with(&mut scene, &dom, UNION, &unions).err(),
         Some(Rebuild::Asset),
-        "an asset nobody has fetched is a load's to carve"
+        "the asset the edit named is a load's to fetch"
+    );
+
+    // The reload that refusal forces: the whole scene built again from the
+    // edited DOM, asking for the asset the union points at *now* and told
+    // what earlier loads will never get (see `load::Resident`).
+    let database = ReflectionDatabase::embedded();
+    let mut reloaded = Scene::from_dom(&dom, &database).unwrap();
+    let mut unions = UnionEvaluations::default();
+    reloaded.note_lost([AssetRef::Id(UNION_ASSET)]);
+    reloaded.resolve_unions(HashMap::new(), &mut unions);
+
+    point_union_at(&mut dom, UNION_ASSET);
+    let sync = resync_with(&mut reloaded, &dom, UNION, &unions)
+        .expect("the first load's answer for that asset is final");
+
+    assert!(
+        matches!(sync.drawn, Drawn::Box(_)),
+        "expected the union's own box, got {:?}",
+        sync.drawn
+    );
+}
+
+/// [`union_place`]'s DOM against evaluations that carved a *different*
+/// asset — another place's rock, kept in the `load::Resident` both share —
+/// and a scene that holds none of that asset's computed mesh, because it
+/// never planned for it.
+fn union_carved_elsewhere() -> (WeakDom, Scene, UnionEvaluations) {
+    let (mut dom, _, _) = union_place();
+    let database = ReflectionDatabase::embedded();
+    point_union_at(&mut dom, OTHER_UNION_ASSET);
+    let mut elsewhere = Scene::from_dom(&dom, &database).unwrap();
+    let mut evaluations = UnionEvaluations::default();
+    let mut assets = HashMap::new();
+    assets.insert(
+        AssetRef::Id(OTHER_UNION_ASSET),
+        union_tests_support::asset_bytes(&[union_tests_support::Leaf::additive(Vec3::ZERO, 4.0)]),
+    );
+    elsewhere.resolve_unions(assets, &mut evaluations);
+    assert!(
+        evaluations
+            .of(&AssetRef::Id(OTHER_UNION_ASSET))
+            .is_some_and(|evaluated| evaluated.is_carved()),
+        "the fixture asset must carve to one computed mesh"
+    );
+
+    point_union_at(&mut dom, UNION_ASSET);
+    let mut scene = Scene::from_dom(&dom, &database).unwrap();
+    scene.resolve_unions(HashMap::new(), &mut UnionEvaluations::default());
+    (dom, scene, evaluations)
+}
+
+// A union pointed at an asset whose boolean carved for another place, but
+// whose computed mesh this scene never uploaded: the entry cannot be drawn,
+// and the edit is the reload that uploads it rather than a
+// `ResolvedInstance` naming a mesh nothing holds. The file-mesh arm answers
+// the same way — see `a_mesh_never_asked_for_is_still_a_rebuild`.
+#[test]
+fn a_union_carved_but_never_uploaded_is_a_rebuild_not_a_dangling_instance() {
+    let (mut dom, mut scene, unions) = union_carved_elsewhere();
+    point_union_at(&mut dom, OTHER_UNION_ASSET);
+
+    assert_eq!(
+        resync_with(&mut scene, &dom, UNION, &unions).err(),
+        Some(Rebuild::Asset)
+    );
+    assert!(
+        scene
+            .resolved_file_meshes()
+            .instances
+            .iter()
+            .all(|instance| instance.referent != Ref::new(UNION)),
+        "a refused union leaves no instance behind"
     );
 }
 

@@ -336,6 +336,23 @@
   (6.6% run-to-run) is what a before/after comparison should use. Deliberately
   not wired into `check.sh`: a GPU benchmark is not a CI gate. — @chteau
 
+- **An asset already known to be lost stays lost across a reload.** The
+  scene remembers what its own load asked for and never got, and draws
+  those parts as the boxes a full build leaves them; a reload starts that
+  memory over. So an `AssetId` written and undone — a `UnionOperation`
+  pointed at a second asset, which only a load can fetch, and then back at
+  its first — was two reloads rather than one: the reload the first edit
+  forced planned the second asset alone, and putting the first one back
+  looked like naming something nobody had ever asked for, even though that
+  very load had asked for it and been refused. What a place will never get
+  outlives its scenes, so `load::Resident` is now what says so
+  (`Resident::lost`, the permanent failures only — a request that failed on
+  the machine is still worth the reload that retries it), handed to every
+  scene as it is built (`Scene::note_lost`). `Scene::resync_union` asks that
+  instead of the union plan taken at construction, which a later edit left
+  stale and which cost a pass over every union in the place per edit
+  besides. — @chteau
+
 ## 2026-09-15
 
 - **Viewport selection and a Move gizmo.** Clicking in the 3D view now
