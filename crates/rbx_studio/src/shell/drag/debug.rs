@@ -56,7 +56,8 @@ impl Shell {
             return;
         };
 
-        let Some(anchor) = Targets::read(&self.dom, &self.database, self.selected_all()).anchor() else {
+        let Some(anchor) = Targets::read(&self.dom, &self.database, self.selected_all()).anchor()
+        else {
             return;
         };
         let Some((size, position)) = grown(

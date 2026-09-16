@@ -1,3 +1,4 @@
+use glam::Mat3;
 use rbx_dom::WeakDom;
 use rbx_reflection::ReflectionDatabase;
 
@@ -149,9 +150,9 @@ fn a_single_parts_anchor_is_its_own_centre_and_rotation() {
     let mut placements = HashMap::new();
     placements.insert(Ref::new(1), placement(model));
 
-    let (origin, rotation) = anchor_of(&placements, &[part(1)]).unwrap();
-    assert_eq!(origin, Vec3::new(1.0, 2.0, 3.0));
-    assert_eq!(rotation, Mat3::from_mat4(model));
+    let anchor = anchor_of(&placements, &[part(1)]).unwrap();
+    assert_eq!(anchor.w_axis.truncate(), Vec3::new(1.0, 2.0, 3.0));
+    assert_eq!(Mat3::from_mat4(anchor), Mat3::from_mat4(model));
 }
 
 /// The whole point of an anchor at all: several parts selected together
@@ -163,8 +164,8 @@ fn several_parts_anchor_at_the_first_one_in_selection_order() {
     placements.insert(Ref::new(2), placement(Mat4::from_translation(Vec3::Y)));
     placements.insert(Ref::new(3), placement(Mat4::from_translation(Vec3::Z)));
 
-    let (origin, _) = anchor_of(&placements, &[part(2), part(1), part(3)]).unwrap();
-    assert_eq!(origin, Vec3::Y);
+    let anchor = anchor_of(&placements, &[part(2), part(1), part(3)]).unwrap();
+    assert_eq!(anchor.w_axis.truncate(), Vec3::Y);
 }
 
 /// Scale and Rotate transform the anchor, and a `Model` has no `Size` or
@@ -184,8 +185,8 @@ fn a_model_anchors_on_the_first_part_beneath_it() {
         placement(Mat4::from_translation(Vec3::Y)),
     );
 
-    let (origin, _) = anchor_of(&placements, &[selected]).unwrap();
-    assert_eq!(origin, Vec3::X);
+    let anchor = anchor_of(&placements, &[selected]).unwrap();
+    assert_eq!(anchor.w_axis.truncate(), Vec3::X);
 }
 
 /// A referent with nothing drawn under it must not hide the gizmo — the
@@ -195,8 +196,8 @@ fn a_referent_with_no_placement_is_skipped_rather_than_hiding_the_gizmo() {
     let mut placements = HashMap::new();
     placements.insert(Ref::new(2), placement(Mat4::from_translation(Vec3::X)));
 
-    let (origin, _) = anchor_of(&placements, &[part(1), part(2)]).unwrap();
-    assert_eq!(origin, Vec3::X);
+    let anchor = anchor_of(&placements, &[part(1), part(2)]).unwrap();
+    assert_eq!(anchor.w_axis.truncate(), Vec3::X);
 }
 
 #[test]
