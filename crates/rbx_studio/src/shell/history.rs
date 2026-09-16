@@ -118,3 +118,164 @@ impl Shell {
         }
     }
 }
+
+// `Shell::undo`/`redo`/`install` themselves need a live GPUI `Context` (a
+// window, a viewport entity, an Explorer tree) this crate has no headless
+// harness for — see the other `shell::*` test modules, which stop at the
+// same boundary and test the pure logic underneath a GPUI call instead of
+// the call itself. What is tested below is that same underneath: a real
+// `History` (from `crate::history`), fed real `WeakDom` mutations and read
+// back through the exact `single_change` classifier `install` calls above,
+// which is the whole of what decides fast patch vs. full reload — `install`
+// itself is a thin, untestable-without-a-window wrapper around it.
+#[cfg(test)]
+mod tests {
+    use rbx_dom::{Variant, WeakDom};
+
+    use crate::history::{History, DEFAULT_CAP};
+
+    use super::single_change;
+
+    #[test]
+    fn undoing_a_single_property_edit_classifies_as_a_fast_patch_and_restores_the_old_value() {
+        let mut dom = WeakDom::new();
+        let part = dom.new_instance("Part", "Part", None);
+        dom.set_property(part, "Transparency", Variant::Float32(0.0))
+            .unwrap();
+        dom.take_changes(); // the write above is the part's creation, not the edit under test
+
+        let mut history = History::new(DEFAULT_CAP);
+        history.push(dom.clone()); // `Shell::push_history`'s snapshot, before the edit
+
+        dom.set_property(part, "Transparency", Variant::Float32(0.5))
+            .unwrap();
+        history.record_changes(dom.take_changes()); // `Shell::record_history_change`, right after it
+
+        let (previous, changes) = history.undo(dom.clone()).expect("something to undo");
+        assert_eq!(
+            single_change(&changes),
+            Some((part, "Transparency".to_string())),
+            "a lone property write must classify as the fast path"
+        );
+        assert_eq!(
+            previous.get(part).unwrap().properties().get("Transparency"),
+            Some(&Variant::Float32(0.0)),
+            "undo must actually restore the old value, not just classify the edit"
+        );
+
+        let (next, changes) = history.redo(previous).expect("something to redo");
+        assert_eq!(
+            single_change(&changes),
+            Some((part, "Transparency".to_string())),
+            "redo reapplies the same single edit, so it classifies the same way"
+        );
+        assert_eq!(
+            next.get(part).unwrap().properties().get("Transparency"),
+            Some(&Variant::Float32(0.5)),
+            "redo must actually reapply the new value"
+        );
+    }
+
+    #[test]
+    fn undoing_a_reparent_classifies_as_a_fast_patch_and_restores_the_old_parent() {
+        let mut dom = WeakDom::new();
+        let a = dom.new_instance("Model", "A", None);
+        let b = dom.new_instance("Model", "B", None);
+        let part = dom.new_instance("Part", "Part", Some(a));
+        dom.take_changes();
+
+        let mut history = History::new(DEFAULT_CAP);
+        history.push(dom.clone());
+
+        dom.set_parent(part, Some(b));
+        history.record_changes(dom.take_changes());
+
+        let (previous, changes) = history.undo(dom.clone()).expect("something to undo");
+        assert_eq!(single_change(&changes), Some((part, "Parent".to_string())));
+        assert_eq!(
+            previous.parent(part),
+            Some(a),
+            "undo must restore the old parent"
+        );
+    }
+
+    #[test]
+    fn undoing_an_instance_delete_falls_back_and_restores_the_whole_subtree() {
+        let mut dom = WeakDom::new();
+        let model = dom.new_instance("Model", "Model", None);
+        let child = dom.new_instance("Part", "Child", Some(model));
+        dom.take_changes();
+
+        let mut history = History::new(DEFAULT_CAP);
+        history.push(dom.clone()); // `Shell::push_history`, before the delete
+
+        dom.remove(model); // `WeakDom::remove` logs one `Change::Removed` per instance in the subtree
+        history.record_changes(dom.take_changes());
+
+        let (previous, changes) = history.undo(dom.clone()).expect("something to undo");
+        assert_eq!(
+            single_change(&changes),
+            None,
+            "a subtree delete is never a single property write or reparent"
+        );
+        assert!(
+            previous.get(model).is_some() && previous.get(child).is_some(),
+            "undo must restore the whole removed subtree, not just its root"
+        );
+    }
+
+    #[test]
+    fn undoing_an_instance_create_falls_back() {
+        let mut dom = WeakDom::new();
+        dom.take_changes();
+
+        let mut history = History::new(DEFAULT_CAP);
+        history.push(dom.clone());
+
+        let part = dom.new_instance("Part", "Part", None);
+        history.record_changes(dom.take_changes());
+
+        let (previous, changes) = history.undo(dom.clone()).expect("something to undo");
+        assert_eq!(
+            single_change(&changes),
+            None,
+            "an insert is never a single edit"
+        );
+        assert!(
+            previous.get(part).is_none(),
+            "undo must remove the instance the insert created"
+        );
+    }
+
+    #[test]
+    fn undoing_a_multi_property_batch_falls_back_and_restores_every_property() {
+        let mut dom = WeakDom::new();
+        let part = dom.new_instance("Part", "Part", None);
+        dom.set_property(part, "Transparency", Variant::Float32(0.0))
+            .unwrap();
+        dom.set_property(part, "Reflectance", Variant::Float32(0.0))
+            .unwrap();
+        dom.take_changes();
+
+        let mut history = History::new(DEFAULT_CAP);
+        history.push(dom.clone());
+
+        // The kind of batch a Command Bar script (or, here, anything that
+        // writes more than one property in one go) produces.
+        dom.set_property(part, "Transparency", Variant::Float32(0.5))
+            .unwrap();
+        dom.set_property(part, "Reflectance", Variant::Float32(0.3))
+            .unwrap();
+        history.record_changes(dom.take_changes());
+
+        let (previous, changes) = history.undo(dom.clone()).expect("something to undo");
+        assert_eq!(
+            single_change(&changes),
+            None,
+            "two property writes in one action are not a single edit"
+        );
+        let properties = previous.get(part).unwrap().properties();
+        assert_eq!(properties.get("Transparency"), Some(&Variant::Float32(0.0)));
+        assert_eq!(properties.get("Reflectance"), Some(&Variant::Float32(0.0)));
+    }
+}
