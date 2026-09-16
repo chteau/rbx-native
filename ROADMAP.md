@@ -446,7 +446,20 @@ Roblox's own engine.
   exist, these don't yet (the menu bar already has honest placeholders for
   them); folds into the fuller Explorer editing item above rather than
   being separate work.
-- [ ] 📋 Drag-and-drop reparenting in the Explorer tree.
+- [x] 🚧 Drag-and-drop reparenting in the Explorer tree. Dragging a row
+  onto another reparents onto it, the way creator-docs describes
+  ("simply drag and drop them onto the new parent") — with a ghost under
+  the cursor, the hovered row highlighted only while the drop is legal,
+  the new parent expanded and revealed afterwards, and one undo step per
+  drag. A drop is refused onto the dragged instance itself, into its own
+  subtree, onto the parent it already has, and for a service. Still open:
+  dragging a row *outside* the current selection collapses that selection
+  to the pressed row before the drag starts, so a multi-instance drag only
+  carries the whole selection when grabbed by its anchor row — the
+  Explorer tree tracks one selected row and already behaves this way for a
+  plain click, so fixing it properly belongs with the fuller Explorer
+  editing item above. No Escape-to-cancel (GPUI has no drag-cancel hook
+  wired), and no drop *between* rows, which Studio does not offer either.
 - [ ] 📋 **Save/Publish to Roblox from the editor UI.** The Open Cloud
   client side of this already exists and works —
   `rbx_cloud::Client::publish_place`

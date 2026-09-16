@@ -136,6 +136,18 @@ impl WeakDom {
         &self.root_refs
     }
 
+    /// The instance `referent` currently hangs under, or `None` when it is a
+    /// root (or absent entirely).
+    ///
+    /// Reads the reverse edge `set_parent` already maintains, so walking up a
+    /// chain costs its depth rather than a search of the whole tree — which is
+    /// what makes an "is this instance an ancestor of that one" check cheap
+    /// enough for a caller to run per frame (the Explorer's drag-and-drop
+    /// refuses a drop into the dragged instance's own subtree that way).
+    pub fn parent(&self, referent: Ref) -> Option<Ref> {
+        self.parents.get(&referent).copied()
+    }
+
     /// Moves `child` to a new parent, detaching it from its current parent if any.
     ///
     /// If `parent` is `None`, the child becomes a root instance.
@@ -230,5 +242,29 @@ mod tests {
 
         assert!(dom.get(a).unwrap().children().is_empty());
         assert_eq!(dom.get(b).unwrap().children(), &[child]);
+    }
+
+    #[test]
+    fn parent_follows_the_reverse_edge_and_is_none_at_the_root() {
+        let mut dom = WeakDom::new();
+        let folder = Ref::new(1);
+        let child = Ref::new(2);
+        dom.insert(Instance::new(folder, "Folder", "Folder"));
+        dom.insert(Instance::new(child, "Part", "Part"));
+
+        assert_eq!(dom.parent(folder), None);
+        assert_eq!(dom.parent(child), None);
+
+        dom.set_parent(child, Some(folder));
+        assert_eq!(dom.parent(child), Some(folder));
+
+        dom.set_parent(child, None);
+        assert_eq!(dom.parent(child), None);
+    }
+
+    #[test]
+    fn parent_of_an_unknown_referent_is_none() {
+        let dom = WeakDom::new();
+        assert_eq!(dom.parent(Ref::new(7)), None);
     }
 }
