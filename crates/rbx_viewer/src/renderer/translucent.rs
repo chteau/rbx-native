@@ -10,18 +10,17 @@
 use std::collections::HashMap;
 
 use glam::Vec3;
-use rbx_dom::Ref;
 use wgpu::util::DeviceExt;
 
 use super::cull::MainCull;
 use super::geometry::Meshes;
 use super::instance::InstanceRaw;
-use crate::scene::{of_part, Part, ShapeKind};
+use crate::scene::{of_part, Part, PartId, ShapeKind};
 
 /// One translucent instance, kept on the CPU: the sort order depends on the
 /// camera, so the GPU copy is rewritten every frame rather than built once.
 struct Item {
-    referent: Ref,
+    id: PartId,
     kind: ShapeKind,
     center: Vec3,
     /// World-space bounding radius, for the same cull test the opaque pass
@@ -39,11 +38,11 @@ struct Run {
 
 pub(super) struct Translucent {
     items: Vec<Item>,
-    /// Where each referent's `Item` sits in `items` — flat, not grouped by
+    /// Where each box's `Item` sits in `items` — flat, not grouped by
     /// shape (unlike `renderer::shaped::Shaped`), since [`Translucent::prepare`]
     /// already re-sorts and re-uploads the whole buffer every frame; an edit
     /// here only has to update the CPU-side item, not write the GPU directly.
-    part_index: HashMap<Ref, usize>,
+    part_index: HashMap<PartId, usize>,
     /// Rebuilt every frame; kept around so the sort allocates nothing.
     order: Vec<usize>,
     uploaded: Vec<InstanceRaw>,
@@ -65,7 +64,7 @@ impl Translucent {
         let part_index = items
             .iter()
             .enumerate()
-            .map(|(index, item)| (item.referent, index))
+            .map(|(index, item)| (item.id, index))
             .collect();
 
         let instances = (!items.is_empty()).then(|| {
@@ -111,16 +110,16 @@ impl Translucent {
         }));
     }
 
-    /// Takes one part out of this pass — it stopped blending, or is gone.
-    /// CPU-side only, like [`Translucent::place`]; a no-op for a referent
-    /// not held.
-    pub(super) fn remove(&mut self, referent: Ref) {
-        let Some(index) = self.part_index.remove(&referent) else {
+    /// Takes one box out of this pass — it stopped blending, or is gone.
+    /// CPU-side only, like [`Translucent::place`]; a no-op for an id not
+    /// held.
+    pub(super) fn remove(&mut self, id: PartId) {
+        let Some(index) = self.part_index.remove(&id) else {
             return;
         };
         self.items.swap_remove(index);
         if let Some(moved) = self.items.get(index) {
-            self.part_index.insert(moved.referent, index);
+            self.part_index.insert(moved.id, index);
         }
     }
 
@@ -129,18 +128,18 @@ impl Translucent {
     /// edit has to keep straight is `items` and the index into it. A removal
     /// is a swap-remove, re-indexing whichever item dropped into the hole.
     fn place(&mut self, part: &Part) {
-        match (self.part_index.get(&part.referent).copied(), belongs(part)) {
+        match (self.part_index.get(&part.id).copied(), belongs(part)) {
             (Some(index), true) => self.items[index] = Item::of(part),
             (Some(index), false) => {
-                self.part_index.remove(&part.referent);
+                self.part_index.remove(&part.id);
                 self.items.swap_remove(index);
                 if let Some(moved) = self.items.get(index) {
-                    self.part_index.insert(moved.referent, index);
+                    self.part_index.insert(moved.id, index);
                 }
             }
             (None, true) => {
                 self.items.push(Item::of(part));
-                self.part_index.insert(part.referent, self.items.len() - 1);
+                self.part_index.insert(part.id, self.items.len() - 1);
             }
             (None, false) => {}
         }
@@ -191,7 +190,7 @@ impl Item {
     fn of(part: &Part) -> Self {
         let instance = InstanceRaw::from_part(part);
         Item {
-            referent: part.referent,
+            id: part.id,
             kind: part.kind,
             center: instance.center(),
             radius: of_part(part).radius(),

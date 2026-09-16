@@ -8,7 +8,7 @@ use rbx_dom::Ref;
 use super::{lighting, shadow, Renderer};
 use crate::camera::Camera;
 use crate::lighting::{Lighting, LocalLight};
-use crate::scene::{Bounds, EffectKind, PartSync, Resolved, Scene};
+use crate::scene::{Bounds, Drawn, EffectKind, Part, PartId, PartSync, Resolved, Scene};
 use crate::textures::FaceInstance;
 
 impl Renderer {
@@ -18,9 +18,11 @@ impl Renderer {
     /// shape, a `Transparency` that crossed 0, a `CastShadow` toggle), added
     /// or dropped, and the selection outline follows its placement; a mesh
     /// instance the same through the file-mesh batches, with any box record
-    /// the referent used to have taken out; and a referent gone from the
-    /// scene is taken out of everything. A shape the place never used
-    /// before gets its unit mesh built here (see `Meshes::ensure`).
+    /// the referent used to have taken out; a union drawn as its recovered
+    /// pieces the same again, once per piece, each in the slot that piece
+    /// already had; and a referent gone from the scene is taken out of
+    /// everything. A shape the place never used before gets its unit mesh
+    /// built here (see `Meshes::ensure`).
     ///
     /// `false` when a mesh batch the instance now belongs in would need a
     /// mesh or texture `resolved` never downloaded — the scene's own check
@@ -34,37 +36,71 @@ impl Renderer {
         referent: Ref,
         sync: &PartSync,
     ) -> bool {
-        match sync {
-            PartSync::Box(part) => {
-                self.meshes.ensure(device, part.kind);
-                self.shaped.sync(device, part);
-                self.translucent.sync(device, part);
-                self.shadows.sync_caster(device, part);
-                self.selection
-                    .place(device, part.referent, part.placement());
+        // Whatever the referent draws as now, the piece slots it has stopped
+        // filling are its own records to give up first.
+        for index in sync.dropped.clone() {
+            self.drop_box(PartId::piece(referent, index));
+        }
+        let whole = PartId::whole(referent);
+        match &sync.drawn {
+            Drawn::Box(part) => {
+                self.sync_box(device, part);
+                self.selection.place(device, referent, part.placement());
                 self.filemesh.remove(referent);
                 self.shadows.remove_mesh_caster(referent);
                 true
             }
-            PartSync::Mesh(index) => {
+            Drawn::Pieces { placement, pieces } => {
+                // The union's own box is suppressed behind its pieces, so
+                // whatever record it had as a box of its own goes — it had
+                // one if this edit is what pointed it at a carved asset.
+                self.drop_box(whole);
+                for piece in pieces {
+                    self.sync_box(device, piece);
+                }
+                // The union is outlined as the one box its pieces fill —
+                // exactly the entry `Scene::placements` keeps for it, down to
+                // the tree that recovered nothing at all: a union drawing no
+                // piece is placed by neither a rebuild nor this.
+                match pieces.is_empty() {
+                    false => self.selection.place(device, referent, *placement),
+                    true => self.selection.remove(device, referent),
+                }
+                self.filemesh.remove(referent);
+                self.shadows.remove_mesh_caster(referent);
+                true
+            }
+            Drawn::Mesh(index) => {
                 let instance = &resolved.instances[*index];
-                self.shaped.remove(referent);
-                self.translucent.remove(referent);
-                self.shadows.remove_caster(referent);
+                self.drop_box(whole);
                 self.selection.remove(device, referent);
                 self.filemesh.sync(device, queue, resolved, instance)
                     && self.shadows.sync_mesh_caster(device, resolved, instance)
             }
-            PartSync::Gone => {
-                self.shaped.remove(referent);
-                self.translucent.remove(referent);
-                self.shadows.remove_caster(referent);
+            Drawn::Gone => {
+                self.drop_box(whole);
                 self.selection.remove(device, referent);
                 self.filemesh.remove(referent);
                 self.shadows.remove_mesh_caster(referent);
                 true
             }
         }
+    }
+
+    /// One box — an instance's own or one piece of it — rewritten, moved,
+    /// added or dropped across the three passes that draw boxes.
+    fn sync_box(&mut self, device: &wgpu::Device, part: &Part) {
+        self.meshes.ensure(device, part.kind);
+        self.shaped.sync(device, part);
+        self.translucent.sync(device, part);
+        self.shadows.sync_caster(device, part);
+    }
+
+    /// The same three passes told to forget one box.
+    fn drop_box(&mut self, id: PartId) {
+        self.shaped.remove(id);
+        self.translucent.remove(id);
+        self.shadows.remove_caster(id);
     }
 
     /// Rewrites, moves or adds one `Decal`/`Texture`'s projection — see

@@ -343,12 +343,50 @@ fn fixture_bytes() -> Vec<u8> {
         .bytes
 }
 
-// `Scene::resync_part` re-plans a union through `replan`/`patched`;
-// the one thing a fresh plan cannot recover without the operation tree is a
-// colour that comes from the pieces (`UsePartColor` off), so that must refuse.
-#[test]
-fn a_replanned_union_patches_only_when_it_paints_its_own_colour() {
-    let database = database();
+/// One additive or negated box leaf of a hand-built operation tree, `at`
+/// studs along X in the union's own frame, painted `color` where it has one.
+fn test_leaf(at: f32, negate: bool, color: Option<[u8; 3]>) -> tree::Node {
+    use std::collections::BTreeMap;
+
+    use crate::scene::shape::Geometry;
+    use crate::scene::ShapeKind;
+
+    let mut properties = BTreeMap::new();
+    if let Some([r, g, b]) = color {
+        properties.insert("Color3uint8".to_string(), Variant::Color3uint8 { r, g, b });
+    }
+    tree::Node::Leaf(tree::Leaf {
+        negate,
+        geometry: Geometry {
+            kind: ShapeKind::Box,
+            size: Vec3::splat(2.0),
+            offset: Vec3::ZERO,
+        },
+        cframe: Mat4::from_translation(Vec3::new(at, 0.0, 0.0)),
+        properties,
+    })
+}
+
+/// A carving as `Evaluations` holds one: the tree, plus the computed mesh
+/// only where the boolean is meant to have succeeded — which is exactly what
+/// tells a union drawn as one mesh from one drawn as its pieces.
+fn carving(children: Vec<tree::Node>, carved: bool) -> Evaluated {
+    let tree = tree::Node::Operation {
+        negate: false,
+        children,
+    };
+    let mesh = carved.then(|| {
+        Arc::new(
+            csg::evaluate(&tree)
+                .expect("the boolean must run")
+                .to_mesh(),
+        )
+    });
+    Evaluated { tree, mesh }
+}
+
+/// The union fixture `replan` reads, `UsePartColor` on and painted red.
+fn union_dom() -> WeakDom {
     let mut instance = operation(Ref::new(1), "UnionOperation", Some("rbxassetid://42"));
     instance.properties_mut().insert(
         "Color3uint8".to_string(),
@@ -357,12 +395,28 @@ fn a_replanned_union_patches_only_when_it_paints_its_own_colour() {
     instance
         .properties_mut()
         .insert("UsePartColor".to_string(), Variant::Bool(true));
-    let mut dom = dom_with(instance);
+    dom_with(instance)
+}
+
+// `Scene::resync_part` re-plans a union through `replan`/`patched` against
+// the boolean this place already carved. That carving is what lets a colour
+// coming from the pieces (`UsePartColor` off) be repainted here too — it is
+// read off the very tree `resolve` reads it off.
+#[test]
+fn a_replanned_union_takes_its_colour_from_itself_or_from_its_tree() {
+    let database = database();
+    let mut dom = union_dom();
     let mut materials = Catalog::new(&dom, &database);
+    let carved = carving(vec![test_leaf(0.0, false, Some([0, 0, 255]))], true);
+    let mut resolved = crate::scene::Resolved::default();
+    resolved.meshes.insert(
+        AssetRef::Id(42),
+        carved.mesh.clone().expect("the boolean succeeded"),
+    );
 
     let entry = replan(&dom, &database, Ref::new(1), &mut materials).expect("a union re-plans");
     let patched = entry
-        .patched()
+        .patched(&carved, &resolved)
         .expect("UsePartColor on: the union's own colour");
     assert_eq!(patched.referent, Ref::new(1));
     assert_eq!(patched.mesh, AssetRef::Id(42));
@@ -375,7 +429,109 @@ fn a_replanned_union_patches_only_when_it_paints_its_own_colour() {
     dom.set_property(Ref::new(1), "UsePartColor", Variant::Bool(false))
         .unwrap();
     let entry = replan(&dom, &database, Ref::new(1), &mut materials).unwrap();
-    assert!(entry.patched().is_none());
+    let patched = entry
+        .patched(&carved, &resolved)
+        .expect("UsePartColor off: the biggest additive leaf's colour");
+    assert_eq!(patched.color, [0.0, 0.0, super::super::srgb_to_linear(1.0)]);
+}
+
+// A mesh this renderer never uploaded is the one thing a re-planned union
+// still cannot draw on its own — an edit that points it at another asset.
+#[test]
+fn a_union_whose_computed_mesh_is_not_resident_does_not_patch() {
+    let database = database();
+    let dom = union_dom();
+    let mut materials = Catalog::new(&dom, &database);
+    let carved = carving(vec![test_leaf(0.0, false, None)], true);
+
+    let entry = replan(&dom, &database, Ref::new(1), &mut materials).expect("a union re-plans");
+
+    assert!(entry
+        .patched(&carved, &crate::scene::Resolved::default())
+        .is_none());
+}
+
+// The piece identity the renderer addresses each fallback piece by: its
+// position in the tree's additive order. Re-deriving the same tree at another
+// placement — the union moved — has to hand every leaf the same number back,
+// or an edit would rewrite the record of a different piece than it moved.
+#[test]
+fn a_unions_pieces_are_numbered_in_tree_order_and_keep_their_numbers() {
+    let database = database();
+    let mut dom = union_dom();
+    let mut materials = Catalog::new(&dom, &database);
+    // The negated leaf sits between two additive ones: it is carved away
+    // rather than drawn, and must not consume a number either.
+    let carved = carving(
+        vec![
+            test_leaf(0.0, false, Some([255, 0, 0])),
+            test_leaf(1.0, true, None),
+            test_leaf(4.0, false, Some([0, 255, 0])),
+        ],
+        false,
+    );
+    let entry = replan(&dom, &database, Ref::new(1), &mut materials).expect("a union re-plans");
+
+    let pieces = entry.pieces(&carved, &database, &mut materials);
+
+    let ids: Vec<_> = pieces.iter().map(|piece| piece.id).collect();
+    assert_eq!(
+        ids,
+        vec![
+            crate::scene::PartId::piece(Ref::new(1), 0),
+            crate::scene::PartId::piece(Ref::new(1), 1),
+        ],
+        "one number per surviving additive leaf, in tree order"
+    );
+
+    // The union moved: every piece follows it, and not one of them is
+    // renumbered by the move.
+    dom.set_property(
+        Ref::new(1),
+        "CFrame",
+        Variant::CFrame(CFrameData {
+            position: Vector3Data {
+                x: 100.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            rotation: IDENTITY_ROTATION,
+        }),
+    )
+    .unwrap();
+    let moved = replan(&dom, &database, Ref::new(1), &mut materials).expect("a union re-plans");
+
+    let after = moved.pieces(&carved, &database, &mut materials);
+
+    assert_eq!(
+        after.iter().map(|piece| piece.id).collect::<Vec<_>>(),
+        ids,
+        "a move renumbers nothing"
+    );
+    for (before, after) in pieces.iter().zip(&after) {
+        assert_eq!(before.color, after.color);
+        let shift = after.transform.transform_point3(Vec3::ZERO)
+            - before.transform.transform_point3(Vec3::ZERO);
+        // The fixture union stands at (1, 2, 3) and the move put it at
+        // (100, 0, 0): every piece has to have travelled exactly that.
+        assert!(
+            shift.abs_diff_eq(Vec3::new(99.0, -2.0, -3.0), 1e-4),
+            "{shift}"
+        );
+    }
+}
+
+// An all-negated tree recovers nothing to draw: the union hides its box
+// (`resolve` hides it whatever the tree held) and stands for no piece at all.
+#[test]
+fn a_union_with_no_additive_leaf_recovers_no_pieces() {
+    let database = database();
+    let dom = union_dom();
+    let mut materials = Catalog::new(&dom, &database);
+    let carved = carving(vec![test_leaf(0.0, true, None)], false);
+    let entry = replan(&dom, &database, Ref::new(1), &mut materials).expect("a union re-plans");
+
+    assert!(entry.pieces(&carved, &database, &mut materials).is_empty());
 }
 
 /// Builds one synthetic legacy union asset's raw bytes: a `PartOperationAsset`
@@ -391,80 +547,17 @@ fn a_replanned_union_patches_only_when_it_paints_its_own_colour() {
 /// rules) and, via [`synthetic_plan`], to check a parallel evaluation order
 /// against this module's sequential one.
 fn synthetic_asset_bytes(seed: u32, leaves: usize) -> Vec<u8> {
-    fn leaf(referent: Ref, class: &str, cframe: Mat4, size: Vec3) -> Instance {
-        let (_, rotation, translation) = cframe.to_scale_rotation_translation();
-        let mut instance = Instance::new(referent, class, "leaf");
-        let properties = instance.properties_mut();
-        let basis = glam::Mat3::from_quat(rotation);
-        properties.insert(
-            "CFrame".to_string(),
-            Variant::CFrame(CFrameData {
-                position: Vector3Data {
-                    x: translation.x,
-                    y: translation.y,
-                    z: translation.z,
-                },
-                rotation: [
-                    basis.x_axis.x,
-                    basis.y_axis.x,
-                    basis.z_axis.x,
-                    basis.x_axis.y,
-                    basis.y_axis.y,
-                    basis.z_axis.y,
-                    basis.x_axis.z,
-                    basis.y_axis.z,
-                    basis.z_axis.z,
-                ],
-            }),
-        );
-        properties.insert(
-            "size".to_string(),
-            Variant::Vector3(Vector3Data {
-                x: size.x,
-                y: size.y,
-                z: size.z,
-            }),
-        );
-        instance
-    }
-
-    let mut inner = WeakDom::new();
-    let base = Ref::new(1);
-    inner.insert(leaf(base, "Part", Mat4::IDENTITY, Vec3::splat(10.0)));
-    inner.set_parent(base, None);
-    for i in 0..leaves {
+    let mut nodes = vec![tests_support::Leaf::additive(Vec3::ZERO, 10.0)];
+    nodes.extend((0..leaves).map(|i| {
         let t = (seed as f32 * 31.0 + i as f32) * 0.7;
         // Deterministic pseudo-scatter (sin/cos of an index, no `rand`
         // dependency for one throwaway coordinate source) keeping every
         // negation's centre inside the base box so the boolean has real
         // carving to do rather than degenerating into no-op disjoint cuts.
         let center = Vec3::new(t.sin(), (t * 1.3).cos(), (t * 1.7).sin()) * 3.5;
-        let r = Ref::new(1000 + i as u32);
-        inner.insert(leaf(
-            r,
-            "NegateOperation",
-            Mat4::from_translation(center),
-            Vec3::splat(1.5),
-        ));
-        inner.set_parent(r, None);
-    }
-    let inner_bytes = rbx_binary::serialize(&inner).expect("synthetic inner dom must serialize");
-
-    let mut outer = WeakDom::new();
-    let root = Ref::new(1);
-    let mut instance = Instance::new(root, "PartOperationAsset", "Rock");
-    // `ChildData` is a `BinaryString`, which shares wire type 0x01 (String)
-    // with `Variant::String` — see the module doc on `tree::parse`.
-    instance.properties_mut().insert(
-        "ChildData".to_string(),
-        Variant::Unknown {
-            type_id: 0x01,
-            raw: inner_bytes,
-        },
-    );
-    outer.insert(instance);
-    outer.set_parent(root, None);
-    rbx_binary::serialize(&outer).expect("synthetic outer dom must serialize")
+        tests_support::Leaf::negation(center, 1.5)
+    }));
+    tests_support::asset_bytes(&nodes)
 }
 
 /// A [`Plan`] of `unions` entries, each its own distinct synthetic asset of

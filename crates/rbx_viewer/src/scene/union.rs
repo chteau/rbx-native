@@ -9,6 +9,7 @@
 //! see `crate::assets` for downloading.
 
 mod csg;
+mod patch;
 mod tree;
 
 use std::collections::{HashMap, HashSet};
@@ -24,6 +25,8 @@ use crate::textures::asset_uri;
 
 use super::material::{Catalog, Slot};
 use super::{Part, ResolvedInstance};
+
+pub(super) use patch::replan;
 
 const PART_OPERATION: &str = "PartOperation";
 
@@ -83,35 +86,6 @@ impl Entry {
             casts_shadow: self.casts_shadow,
         }
     }
-
-    /// Whether a fresh [`resolve`] would drop this entry as fully transparent
-    /// — see `filemesh::Entry::is_invisible`.
-    pub(super) fn is_invisible(&self) -> bool {
-        self.alpha <= 0.0
-    }
-
-    /// The instance [`resolve`] would build for this entry, assuming its
-    /// boolean geometry already computed — `None` where a fresh resolution
-    /// would drop it (fully transparent), or where its colour would have to
-    /// come from the operation tree (`UsePartColor` off — see [`resolve`]),
-    /// which only exists while that tree is being evaluated.
-    pub(super) fn patched(&self) -> Option<ResolvedInstance> {
-        if self.alpha <= 0.0 {
-            return None;
-        }
-        let color = self.color?;
-        Some(self.instance(color.map(|channel| super::srgb_to_linear(f32::from(channel) / 255.0))))
-    }
-}
-
-/// The single-instance counterpart of [`plan`] — see `filemesh::replan`.
-pub(super) fn replan(
-    dom: &WeakDom,
-    database: &ReflectionDatabase,
-    referent: Ref,
-    materials: &mut Catalog,
-) -> Option<Entry> {
-    from_operation(dom, database, referent, materials)
 }
 
 /// Every legacy union/negate in a DOM, extracted once and reused both to list
@@ -209,7 +183,7 @@ pub(crate) struct Resolution {
 
 /// One asset's decoded tree and, when the boolean succeeded, its mesh —
 /// computed once however many instances share the asset.
-struct Evaluated {
+pub(super) struct Evaluated {
     tree: tree::Node,
     mesh: Option<Arc<rbx_mesh::Mesh>>,
 }
@@ -252,26 +226,21 @@ pub(crate) fn resolve(
         resolution.hidden.insert(entry.referent);
 
         if mesh.is_none() {
-            tree.fallback_parts(
+            resolution.parts.extend(tree.pieces(
                 entry.placement(),
                 entry.referent,
                 database,
                 materials,
-                &mut resolution.parts,
-            );
+            ));
             continue;
         }
         // Invisible either way; hidden above so the box never reappears.
         if entry.alpha <= 0.0 {
             continue;
         }
-        let color = entry
-            .color
-            .or_else(|| csg::largest_additive_color(tree))
-            .unwrap_or(super::FALLBACK_COLOR);
-        resolution.instances.push(
-            entry.instance(color.map(|channel| super::srgb_to_linear(f32::from(channel) / 255.0))),
-        );
+        resolution
+            .instances
+            .push(entry.instance(entry.carved_color(evaluated)));
     }
 
     resolution.meshes = evaluated
@@ -355,6 +324,10 @@ fn evaluate_all(
         .filter_map(|asset| Some((asset.clone(), evaluations.known.get(asset)?.clone())))
         .collect()
 }
+
+#[cfg(test)]
+#[path = "union/tests_support.rs"]
+pub(in crate::scene) mod tests_support;
 
 #[cfg(test)]
 #[path = "union/tests.rs"]

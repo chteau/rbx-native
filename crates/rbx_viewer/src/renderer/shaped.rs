@@ -7,14 +7,13 @@
 //! buffer change between groups.
 
 use glam::Vec3;
-use rbx_dom::Ref;
 
 use super::cull::{visible_runs, MainCull};
 use super::geometry::Meshes;
 use super::instance::InstanceRaw;
 use super::slots::keyed::Keyed;
 use super::slots::Roster;
-use crate::scene::{of_part, Part, ShapeKind};
+use crate::scene::{of_part, Part, PartId, ShapeKind};
 
 /// One world-space bounding sphere (center, radius) per instance, kept
 /// beside the GPU record — what [`Shaped::draw`]'s cull test checks each one
@@ -23,7 +22,7 @@ type Sphere = (Vec3, f32);
 
 /// A scene's opaque parts, one batch per shape kind, ready to draw.
 pub(super) struct Shaped {
-    batches: Keyed<ShapeKind, (), InstanceRaw, Sphere>,
+    batches: Keyed<ShapeKind, (), InstanceRaw, Sphere, PartId>,
 }
 
 impl Shaped {
@@ -34,7 +33,7 @@ impl Shaped {
                 parts
                     .iter()
                     .filter(|part| part.kind == kind && belongs(part))
-                    .map(|part| (part.referent, InstanceRaw::from_part(part), sphere(part))),
+                    .map(|part| (part.id, InstanceRaw::from_part(part), sphere(part))),
             );
             batches.add_group(device, kind, (), roster);
         }
@@ -84,14 +83,13 @@ impl Shaped {
         let wanted = belongs(part).then(|| (part.kind, InstanceRaw::from_part(part), sphere(part)));
         // A unit shape's batch needs no payload, so a new one can always be
         // made — the `false` case never happens here.
-        self.batches
-            .sync(device, part.referent, wanted, |_| Some(()));
+        self.batches.sync(device, part.id, wanted, |_| Some(()));
     }
 
-    /// Takes one part out of whichever batch holds it — it stopped drawing
-    /// as a box, or is gone. A no-op for a referent no batch holds.
-    pub(super) fn remove(&mut self, referent: Ref) {
-        self.batches.remove(referent);
+    /// Takes one box out of whichever batch holds it — it stopped drawing
+    /// as one, or is gone. A no-op for an id no batch holds.
+    pub(super) fn remove(&mut self, id: PartId) {
+        self.batches.remove(id);
     }
 
     /// Uploads what the edits since the last frame owe the buffers — see

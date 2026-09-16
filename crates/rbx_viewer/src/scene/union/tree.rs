@@ -25,7 +25,7 @@ use rbx_reflection::ReflectionDatabase;
 
 use super::super::material::Catalog;
 use super::super::shape::{self, Geometry};
-use super::super::{assemble_part, cframe_matrix, Part};
+use super::super::{assemble_part, cframe_matrix, Part, PartId};
 
 const NEGATE_OPERATION: &str = "NegateOperation";
 const CHILD_DATA_PROPERTY: &str = "ChildData";
@@ -87,7 +87,28 @@ impl Node {
     /// what draws when the boolean itself cannot be computed. `negate` latches
     /// under any `NegateOperation` ancestor — a compound shape subtracted from
     /// another subtracts every one of its own pieces, not just the top one.
-    pub(super) fn fallback_parts(
+    ///
+    /// Every piece stands in for the same union instance — that `Ref`, rather
+    /// than the leaf's own, which is only unique within its transient nested
+    /// DOM — and is told apart from its siblings by its position in this
+    /// walk. That position depends on the tree and nothing else, and the tree
+    /// is a function of the union's asset bytes alone, so reading the same
+    /// asset again hands the same leaf the same [`PartId`] however the union
+    /// has been moved, resized or recoloured since: the record an edit
+    /// rewrites is always the record that leaf already had.
+    pub(super) fn pieces(
+        &self,
+        placement: Mat4,
+        stand_in_for: Ref,
+        database: &ReflectionDatabase,
+        materials: &mut Catalog,
+    ) -> Vec<Part> {
+        let mut out = Vec::new();
+        self.append_pieces(placement, stand_in_for, database, materials, &mut out);
+        out
+    }
+
+    fn append_pieces(
         &self,
         placement: Mat4,
         stand_in_for: Ref,
@@ -96,25 +117,24 @@ impl Node {
         out: &mut Vec<Part>,
     ) {
         match self {
-            // Every recovered part stands in for the same union instance: that
-            // Ref (rather than the leaf's own, which is only unique within its
-            // transient nested DOM) is what lets `Scene::resolve_unions` find
-            // and suppress the union's fallback box.
-            Node::Leaf(leaf) if !leaf.negate => out.push(assemble_part(
-                &leaf.properties,
-                database,
-                materials,
-                leaf.geometry,
-                placement * leaf.cframe,
-                stand_in_for,
-            )),
+            Node::Leaf(leaf) if !leaf.negate => {
+                let id = PartId::piece(stand_in_for, out.len() as u32);
+                out.push(assemble_part(
+                    &leaf.properties,
+                    database,
+                    materials,
+                    leaf.geometry,
+                    placement * leaf.cframe,
+                    id,
+                ));
+            }
             Node::Leaf(_) => {}
             Node::Operation { negate, children } => {
                 if *negate {
                     return;
                 }
                 for child in children {
-                    child.fallback_parts(placement, stand_in_for, database, materials, out);
+                    child.append_pieces(placement, stand_in_for, database, materials, out);
                 }
             }
         }

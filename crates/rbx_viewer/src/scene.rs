@@ -5,6 +5,7 @@ mod bounds;
 mod effects;
 mod filemesh;
 mod gui;
+mod identity;
 mod material;
 mod particles;
 mod patch;
@@ -13,7 +14,7 @@ mod shape;
 mod trail;
 mod union;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use glam::{Mat4, Vec3, Vec4};
@@ -37,6 +38,7 @@ pub(crate) use gui::{
     resolve as gui_layout, resolve_canvas as gui_canvas_layout, Anchor as GuiAnchor,
     Element as GuiElement, Rect as GuiRect, Screen as GuiScreen, SpaceGui,
 };
+pub(crate) use identity::PartId;
 // Only a test (`renderer::gui::quads`'s) names an element's image directly;
 // everything else reaches one through `GuiElement::image`.
 #[cfg(test)]
@@ -44,7 +46,7 @@ pub(crate) use gui::Painted;
 pub(crate) use material::{Catalog, Kind, Maps, Slot};
 pub(crate) use particles::sequence::{eval_color, eval_number};
 pub(crate) use particles::{Emitter, Simulation};
-pub(crate) use resync::PartSync;
+pub(crate) use resync::{Drawn, PartSync};
 pub(crate) use shape::{resolve as resolve_shape, ShapeKind};
 pub(crate) use trail::{segments as trail_segments, Recorder as TrailRecorder, Trail};
 pub(crate) use union::Evaluations as UnionEvaluations;
@@ -62,11 +64,13 @@ const FORCE_FIELD_ALPHA: f32 = 0.5;
 
 /// One BasePart reduced to a unit mesh instance.
 ///
-/// UnionOperation is ignored; those keep rendering as their bounding box until
-/// real CSG geometry lands. `MeshPart` and a `SpecialMesh` FileMesh child also
-/// start out classified this way (see `shape::resolve`), which doubles as their
-/// fallback if [`filemesh`] fails to resolve real geometry for them — see
-/// `referent` and `suppressed`.
+/// Everything starts out as one of these, a `UnionOperation`, a `MeshPart` and
+/// a `SpecialMesh` FileMesh child included (see `shape::resolve`), and that box
+/// doubles as the fallback for whichever of them fails to resolve real geometry
+/// — see `id` and `suppressed`. A union that resolves is either one computed
+/// mesh or, where its boolean could not be run, several of these: one per
+/// additive piece recovered from its operation tree, each with an id of its own
+/// (see [`PartId`]).
 ///
 /// `Clone`/`Copy`: `Scene::resync_part` hands a value copy back to the
 /// renderer rather than a borrow, so the caller is free of `Scene`'s own
@@ -90,12 +94,14 @@ pub(crate) struct Part {
     /// `transform`. Kept apart from it because a `Texture`'s studs-per-tile is a
     /// physical length along the part, which a full matrix no longer spells out.
     size: Vec3,
-    /// The DOM instance this box stands in for, so a later-resolved file mesh
-    /// can find and hide it instead of drawing both on top of each other —
-    /// and so the renderer's own per-instance patch maps (`renderer::shaped`,
-    /// `renderer::translucent`, `renderer::shadow::casters`) can key
-    /// themselves off the same id [`Scene::resync_part`] looks it up by.
-    pub(crate) referent: Ref,
+    /// Which box in the picture this is: the DOM instance it stands in for,
+    /// so a later-resolved file mesh can find and hide it instead of drawing
+    /// both on top of each other, plus which piece of that instance it is
+    /// where one instance draws as several (see [`PartId`]). The renderer's
+    /// own per-instance patch maps (`renderer::shaped`,
+    /// `renderer::translucent`, `renderer::shadow::casters`) key themselves
+    /// off the same id [`Scene::resync_part`] looks it up by.
+    pub(crate) id: PartId,
     /// Set by [`Scene::resolve_file_meshes`] once a real mesh has taken over
     /// drawing this part; left `false` forever if that resolution fails, which
     /// is exactly what keeps this box as the fallback.
@@ -112,6 +118,12 @@ pub(crate) struct Placement {
 }
 
 impl Part {
+    /// The DOM instance this box belongs to — the same referent for every
+    /// recovered piece of one union, since the union is what the DOM knows.
+    pub(crate) fn referent(&self) -> Ref {
+        self.id.referent()
+    }
+
     /// Whether a real file mesh has replaced this box; the renderer skips
     /// drawing it when true so the two never overlap.
     pub(crate) fn is_suppressed(&self) -> bool {
@@ -305,14 +317,30 @@ impl Scene {
     /// Every part's unit-mesh placement, keyed by DOM referent so the texture
     /// planner can project a face instance onto the geometry actually drawn.
     ///
-    /// Suppressed parts are left out: a `MeshPart` whose real mesh resolved no
-    /// longer draws the box its decal would be projected on, and a decal
-    /// floating in the air where that box used to be is worse than none.
+    /// One entry per referent, always the instance's own box and never one of
+    /// a union's recovered pieces: the pieces are what the union is *drawn*
+    /// as, while the union is the one thing an outline, a decal, an emitter's
+    /// spawn volume or a `SurfaceGui`'s adornee addresses — and the box those
+    /// pieces stand inside is the very shape `pick` hit-tests it as.
+    ///
+    /// Suppressed parts are left out, with that one exception: a `MeshPart`
+    /// whose real mesh resolved no longer draws the box its decal would be
+    /// projected on, and a decal floating in the air where that box used to
+    /// be is worse than none. A union drawn as its pieces keeps its box's
+    /// placement precisely because those pieces fill it.
     pub(crate) fn placements(&self) -> HashMap<Ref, Placement> {
+        let pieced: HashSet<Ref> = self
+            .parts
+            .iter()
+            .filter(|part| !part.id.is_whole())
+            .map(Part::referent)
+            .collect();
         self.parts
             .iter()
-            .filter(|part| !part.suppressed)
-            .map(|part| (part.referent, part.placement()))
+            .filter(|part| {
+                part.id.is_whole() && (!part.suppressed || pieced.contains(&part.referent()))
+            })
+            .map(|part| (part.referent(), part.placement()))
             .collect()
     }
 
@@ -341,7 +369,7 @@ impl Scene {
     ) {
         let (resolved, hidden) = filemesh::resolve(&self.file_mesh_plan, meshes, images);
         for part in &mut self.parts {
-            if hidden.contains(&part.referent) {
+            if hidden.contains(&part.referent()) {
                 part.suppressed = true;
             }
         }
@@ -377,7 +405,7 @@ impl Scene {
             evaluations,
         );
         for part in &mut self.parts {
-            if resolution.hidden.contains(&part.referent) {
+            if resolution.hidden.contains(&part.referent()) {
                 part.suppressed = true;
             }
         }
@@ -417,7 +445,7 @@ fn build_part(
         materials,
         geometry,
         cframe_matrix(cframe),
-        referent,
+        PartId::whole(referent),
     ))
 }
 
@@ -430,7 +458,7 @@ pub(super) fn assemble_part(
     materials: &mut Catalog,
     geometry: shape::Geometry,
     cframe: Mat4,
-    referent: Ref,
+    id: PartId,
 ) -> Part {
     let color = match properties.get("Color3uint8") {
         Some(&Variant::Color3uint8 { r, g, b }) => [r, g, b],
@@ -448,7 +476,7 @@ pub(super) fn assemble_part(
         reflectance: number(properties.get("Reflectance")).clamp(0.0, 1.0),
         casts_shadow: casts_shadow(properties),
         size: geometry.size,
-        referent,
+        id,
         suppressed: false,
     }
 }

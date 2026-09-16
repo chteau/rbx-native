@@ -67,7 +67,7 @@ fn a_suppressed_part_offers_no_placement() {
 
     let placements = scene.placements();
     assert_eq!(placements.len(), 1);
-    assert!(!placements.contains_key(&scene.parts[0].referent));
+    assert!(!placements.contains_key(&scene.parts[0].referent()));
 }
 
 // An invisible part is still part of the scene's extent — the camera frames
@@ -136,7 +136,7 @@ fn bounds_wrap_the_corners_of_a_rotated_box() {
         reflectance: 0.0,
         size: Vec3::splat(2.0),
         casts_shadow: true,
-        referent: Ref::new(0),
+        id: PartId::whole(Ref::new(0)),
         suppressed: false,
     };
 
@@ -179,7 +179,7 @@ fn only_the_invisible_and_the_opted_out_stop_casting() {
         reflectance: 0.0,
         size: Vec3::ONE,
         casts_shadow: flag,
-        referent: Ref::new(0),
+        id: PartId::whole(Ref::new(0)),
         suppressed: false,
     };
 

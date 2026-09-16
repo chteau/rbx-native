@@ -196,8 +196,8 @@ impl Patcher<'_> {
         };
         match known.role {
             Role::Part => {
-                self.loaded.scene_mut().remove_part(referent);
-                self.render_part(referent, &PartSync::Gone);
+                let dropped = self.loaded.scene_mut().remove_part(referent);
+                self.render_part(referent, &PartSync::gone(dropped));
                 self.pending.parts = true;
                 Ok(())
             }
@@ -244,6 +244,7 @@ impl Patcher<'_> {
             self.database,
             referent,
             self.known_layers,
+            &self.resident.unions,
         )?;
         if !self.render_part(referent, &sync) {
             return Err(Rebuild::Asset);
