@@ -237,6 +237,28 @@ pub(super) fn build(
     area
 }
 
+/// Register the panel types with the dock so they can be restored from saved state.
+/// This must be called before calling `dock_area.load()` for layout restoration to work.
+pub(super) fn register_panels(_dock_area: Entity<DockArea>, shell: Entity<Shell>, cx: &mut App) {
+    use gpui_kit::component::dock::register_panel;
+    use std::sync::Arc;
+
+    // Register all four section panels so they can be reconstructed from saved state.
+    for section in &[
+        Section::Viewport,
+        Section::Explorer,
+        Section::Properties,
+        Section::Output,
+    ] {
+        let section = *section;
+        let shell_clone = shell.clone();
+        register_panel(cx, section.name(), move |_context, _window, cx| {
+            let panel = cx.new(|cx| SectionPanel::new(shell_clone.clone(), section, cx));
+            Arc::new(panel)
+        });
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Section;
