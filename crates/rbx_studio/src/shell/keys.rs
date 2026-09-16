@@ -78,6 +78,12 @@ impl Shell {
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
         let removed = dom.remove(reference);
         self.dom = dom;
+        // A subtree delete always logs more than one `Change::Removed`, or a
+        // lone one that still isn't a `Property`/`Parent` write — either way
+        // `single_change` reads it as unclassifiable, so undoing this always
+        // falls back to a full reload, correctly.
+        let changes = self.dom.take_changes();
+        self.record_history_change(changes);
 
         self.rebuild_explorer(cx);
         // The Explorer holds one selection, always the deleted root itself,
@@ -112,6 +118,13 @@ impl Shell {
             apply_part_defaults(&mut dom, reference);
         }
         self.dom = dom;
+        // An insert always logs a `Change::Added` (plus, for a `Part`, a
+        // dozen more `Property` writes for its defaults) — never a single
+        // `Property`/`Parent` write on its own, so `single_change` always
+        // reads this as unclassifiable and undoing it falls back to a full
+        // reload, correctly.
+        let changes = self.dom.take_changes();
+        self.record_history_change(changes);
 
         self.rebuild_explorer(cx);
         self.select(reference, cx);

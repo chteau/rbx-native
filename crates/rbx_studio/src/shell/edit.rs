@@ -288,6 +288,13 @@ impl Shell {
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
         let result = properties::edit::commit(&mut dom, &self.database, reference, name, text);
         self.dom = dom;
+        // Recorded whether or not the commit below succeeded: a rejected
+        // value never reaches `WeakDom::set_property`, so the log is simply
+        // empty then, which `single_change` already reads as "fall back" —
+        // the same safe answer a real edit's classifier gives any log it
+        // can't classify.
+        let changes = self.dom.take_changes();
+        self.record_history_change(changes);
         result?;
 
         if name == NAME_PROPERTY {
