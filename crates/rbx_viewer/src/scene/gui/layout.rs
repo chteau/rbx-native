@@ -60,6 +60,8 @@ pub(crate) struct Element {
     /// The scissor rect inherited from the nearest `ClipsDescendants`
     /// ancestor, if any. Already intersected down the whole chain.
     pub(crate) clip: Option<Rect>,
+    /// `Rotation`, degrees clockwise around `rect`'s own centre.
+    pub(crate) rotation: f32,
     pub(crate) background: [f32; 3],
     pub(crate) background_alpha: f32,
     /// `BorderSizePixel` and `BorderColor3`, `None` for a zero-width border.
@@ -85,6 +87,7 @@ pub(crate) fn resolve(screens: &[Screen], viewport: [f32; 2]) -> Vec<Element> {
             screen.list.as_ref(),
             &frame,
             None,
+            false,
             &mut elements,
         );
     }
@@ -98,7 +101,14 @@ pub(crate) fn resolve(screens: &[Screen], viewport: [f32; 2]) -> Vec<Element> {
 pub(crate) fn resolve_canvas(gui: &SpaceGui) -> Vec<Element> {
     let frame = canvas(gui.canvas);
     let mut elements = Vec::new();
-    children(&gui.roots, gui.list.as_ref(), &frame, None, &mut elements);
+    children(
+        &gui.roots,
+        gui.list.as_ref(),
+        &frame,
+        None,
+        false,
+        &mut elements,
+    );
     elements
 }
 
@@ -121,6 +131,7 @@ fn children(
     list: Option<&List>,
     parent: &Rect,
     clip: Option<Rect>,
+    rotated: bool,
     into: &mut Vec<Element>,
 ) {
     let rects = match list {
@@ -131,7 +142,7 @@ fn children(
             .collect(),
     };
     for index in sorted(nodes) {
-        emit(&nodes[index], rects[index], clip, into);
+        emit(&nodes[index], rects[index], clip, rotated, into);
     }
 }
 
@@ -142,23 +153,37 @@ fn sorted(nodes: &[Node]) -> Vec<usize> {
     order
 }
 
-fn emit(node: &Node, rect: Rect, clip: Option<Rect>, into: &mut Vec<Element>) {
+fn emit(node: &Node, rect: Rect, clip: Option<Rect>, rotated: bool, into: &mut Vec<Element>) {
     into.push(Element {
         rect,
         clip,
+        rotation: node.rotation,
         background: node.background,
         background_alpha: node.background_alpha,
         border: (node.border > 0.0).then_some((node.border, node.border_color)),
         image: node.fill.as_ref().map(|fill| painted(fill, &rect)),
     });
 
-    // `ClipsDescendants` bounds the children, never the frame itself: the
-    // frame's own background is exactly what they are clipped to.
-    let inner = match node.clips {
+    // Roblox's own docs describe two modes here, gated on the (NotScriptable,
+    // RolloutState) `StarterGui.ClipsDescendantsSupportsRotation`: enabled,
+    // clipping works correctly against rotated shapes; not enabled — the
+    // mode this models, since there is no scriptable way to read the flag at
+    // all — a non-zero `Rotation` on this element or any ancestor makes
+    // `ClipsDescendants` a no-op rather than clipping to a box that no longer
+    // matches what is actually drawn on screen.
+    let rotated = rotated || node.rotation != 0.0;
+    let inner = match node.clips && !rotated {
         true => Some(clip.map_or(rect, |outer| outer.intersect(&rect))),
         false => clip,
     };
-    children(&node.children, node.list.as_ref(), &rect, inner, into);
+    children(
+        &node.children,
+        node.list.as_ref(),
+        &rect,
+        inner,
+        rotated,
+        into,
+    );
 }
 
 /// `UIListLayout` placement, one rect per node in `nodes`'s own order: the

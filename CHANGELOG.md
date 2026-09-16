@@ -29,6 +29,15 @@
   whole selection only when grabbed by its anchor — the tree widget tracks one
   selected row and already behaves that way for a plain click; untangling it
   belongs with the fuller Explorer editing work. — @chteau
+- **`GuiObject.Rotation` now renders.** A `Frame`/`ImageLabel`/text
+  element's background, border and image all turn together about the
+  element's own centre — never its `AnchorPoint`, which Roblox's own docs
+  say can't be done — and `ClipsDescendants` is skipped wherever the element
+  or an ancestor has a non-zero `Rotation`, matching the primary source's
+  own description of the two properties as incompatible. Nested rotation
+  (a rotated element's children swinging around with it, the way
+  `GuiBase2d.AbsoluteRotation` implies real Studio composes it) is still
+  open. — @chteau
 
 ## 2026-09-15
 

@@ -16,6 +16,7 @@ fn element(rect: GuiRect, clip: Option<GuiRect>) -> GuiElement {
     GuiElement {
         rect,
         clip,
+        rotation: 0.0,
         background: [1.0, 0.0, 0.0],
         background_alpha: 1.0,
         border: None,
@@ -172,4 +173,91 @@ fn a_zero_sized_element_draws_nothing() {
     let (vertices, _) = build(&elements, &HashMap::new(), VIEWPORT);
 
     assert!(vertices.is_empty());
+}
+
+#[test]
+fn zero_rotation_is_the_identity() {
+    let spin = Spin::new(0.0, [10.0, 5.0]);
+
+    assert_eq!(spin.apply([0.0, 0.0]), [0.0, 0.0]);
+    assert_eq!(spin.apply([12.0, 30.0]), [12.0, 30.0]);
+}
+
+#[test]
+fn rotation_turns_a_point_clockwise_about_the_pivot() {
+    // A square centred on the pivot: turning it 90 degrees clockwise sends
+    // the point that was top-left to where top-right used to be — "up" swings
+    // to "right" the way a clock's hand does, in this y-down pixel space.
+    let spin = Spin::new(90.0, [10.0, 10.0]);
+    let top_left = [5.0, 5.0];
+    let top_right = [15.0, 5.0];
+
+    let rotated = spin.apply(top_left);
+
+    assert!((rotated[0] - top_right[0]).abs() < 1e-4);
+    assert!((rotated[1] - top_right[1]).abs() < 1e-4);
+}
+
+#[test]
+fn a_rotated_quad_stays_centred_on_the_unrotated_rects_centre() {
+    // `GuiObject.Rotation` always turns about the element's own centre and
+    // gives no way to move that pivot (not even via `AnchorPoint`), per
+    // Roblox's own docs for the property.
+    let mut spun = element(rect(0.0, 0.0, 20.0, 10.0), None);
+    spun.rotation = 90.0;
+
+    let (vertices, _) = build(&[spun], &HashMap::new(), VIEWPORT);
+
+    let centre_x = vertices.iter().map(|v| v.position[0]).sum::<f32>() / vertices.len() as f32;
+    let centre_y = vertices.iter().map(|v| v.position[1]).sum::<f32>() / vertices.len() as f32;
+    assert!((centre_x - 10.0).abs() < 1e-3);
+    assert!((centre_y - 5.0).abs() < 1e-3);
+    // Rotated a quarter turn, the box's own axes swap: it now spans as far
+    // vertically as it used to horizontally.
+    let min_y = vertices
+        .iter()
+        .map(|v| v.position[1])
+        .fold(f32::MAX, f32::min);
+    let max_y = vertices
+        .iter()
+        .map(|v| v.position[1])
+        .fold(f32::MIN, f32::max);
+    assert!((max_y - min_y - 20.0).abs() < 1e-3);
+}
+
+#[test]
+fn a_rotated_borders_bands_turn_about_the_elements_centre_too() {
+    // `outline`'s four bands sit outside `rect`, each with its own, different
+    // centre — sharing the element's own `Spin` (rather than each band
+    // getting its own, freshly computed one) is what keeps them turning as
+    // one rigid box rather than four independently-spinning strips.
+    let mut bordered = element(rect(0.0, 0.0, 20.0, 10.0), None);
+    bordered.rotation = 90.0;
+    bordered.border = Some((4.0, [0.0, 0.0, 0.0]));
+
+    let (vertices, _) = build(&[bordered], &HashMap::new(), VIEWPORT);
+    // The background is the first quad (6 vertices); every vertex after that
+    // is one of the four border bands.
+    let border = &vertices[6..];
+
+    let centre_x = border.iter().map(|v| v.position[0]).sum::<f32>() / border.len() as f32;
+    let centre_y = border.iter().map(|v| v.position[1]).sum::<f32>() / border.len() as f32;
+    assert!((centre_x - 10.0).abs() < 1e-3);
+    assert!((centre_y - 5.0).abs() < 1e-3);
+
+    // Unrotated, the bordered box spans 20 + 2*4 = 28 px horizontally and
+    // 10 + 2*4 = 18 px vertically. A quarter turn swaps those: if every band
+    // shares the element's own pivot, the vertical extent afterwards is the
+    // *un*rotated horizontal one, 28 — not 18, and not something else
+    // entirely, which is what four bands rotating about their own separate
+    // centres would produce instead.
+    let min_y = border
+        .iter()
+        .map(|v| v.position[1])
+        .fold(f32::MAX, f32::min);
+    let max_y = border
+        .iter()
+        .map(|v| v.position[1])
+        .fold(f32::MIN, f32::max);
+    assert!((max_y - min_y - 28.0).abs() < 1e-3);
 }
