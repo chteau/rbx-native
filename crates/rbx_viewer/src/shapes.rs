@@ -105,7 +105,9 @@ impl MeshData {
         let vertex = |index: u32| Vec3::from(self.positions[index as usize]);
         let sum: f32 = self
             .indices
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .map(|triangle| {
                 let (a, b, c) = (
                     vertex(triangle[0]),

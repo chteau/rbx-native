@@ -96,7 +96,7 @@ fn tangents(mesh: &rbx_mesh::Mesh) -> Vec<[f32; 4]> {
     let mut along_u = vec![Vec3::ZERO; count];
     let mut along_v = vec![Vec3::ZERO; count];
 
-    for face in mesh.lod0().chunks_exact(3) {
+    for face in mesh.lod0().as_chunks::<3>().0 {
         let corners: Option<Vec<&rbx_mesh::Vertex>> = face
             .iter()
             .map(|&index| mesh.vertices.get(index as usize))
