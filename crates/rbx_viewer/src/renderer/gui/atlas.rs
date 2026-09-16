@@ -7,7 +7,8 @@ use rbx_assets::AssetRef;
 
 use super::super::rebuild::untried;
 use super::super::texture;
-use crate::assets::{self, Image};
+use crate::assets::Image;
+use crate::load::Answered;
 use crate::quality::QualityProfile;
 
 pub(super) struct Atlas {
@@ -34,6 +35,7 @@ impl Atlas {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         references: &[AssetRef],
+        images: &Answered,
         quality: &QualityProfile,
     ) -> Self {
         let image_layout = texture::layout(device);
@@ -65,30 +67,31 @@ impl Atlas {
             tried: HashMap::new(),
         };
         atlas.push(device, queue, &white, quality);
-        atlas.extend(device, queue, references, quality);
+        atlas.extend(device, queue, references, images, quality);
         atlas
     }
 
-    /// Downloads and uploads whichever of `references` the atlas never tried,
-    /// keeping every slot already handed out: what a scene rebuild calls, so
-    /// the same `ImageLabel` images are neither fetched nor uploaded twice.
+    /// Uploads whichever of `references` the loader has decoded and the atlas
+    /// has not taken yet, keeping every slot already handed out: what a scene
+    /// rebuild calls, so the same `ImageLabel` image is never uploaded twice.
+    ///
+    /// A reference `images` has no answer for is left untried, so the rebuild
+    /// that follows its landing picks it up; one answered `None` is recorded
+    /// as tried and never asked about again.
     pub(super) fn extend(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         references: &[AssetRef],
+        images: &Answered,
         quality: &QualityProfile,
     ) {
-        let references = untried(&self.tried, references.iter().cloned());
-        if references.is_empty() {
-            return;
-        }
-        // Live-effect asset warnings aren't wired to the Output dock yet — see
-        // `assets::load`'s doc comment; only scene-load-time warnings are.
-        let (images, _warnings) = assets::load(&references);
-        for reference in references {
+        for reference in untried(&self.tried, references.iter().cloned()) {
+            let Some(answer) = images.get(&reference) else {
+                continue;
+            };
             self.tried.insert(reference.clone(), ());
-            let Some(image) = images.get(&reference) else {
+            let Some(image) = answer else {
                 continue;
             };
             self.push(device, queue, image, quality);

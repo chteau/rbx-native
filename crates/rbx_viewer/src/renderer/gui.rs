@@ -26,6 +26,7 @@ use glam::{Mat4, Vec3};
 
 use super::pipeline::Target;
 use super::post::Targets;
+use crate::load::Answered;
 use crate::quality::QualityProfile;
 use crate::scene::{gui_layout, GuiScreen, SpaceGui};
 use atlas::Atlas;
@@ -54,9 +55,10 @@ impl Gui {
         format: wgpu::TextureFormat,
         target: Target,
         (screens, spaces): (&[GuiScreen], &[SpaceGui]),
+        images: &Answered,
         quality: &QualityProfile,
     ) -> Self {
-        let atlas = Atlas::new(device, queue, &[], quality);
+        let atlas = Atlas::new(device, queue, &[], images, quality);
         let viewport_layout = pipeline::viewport_layout(device);
         let screen_painter = Painter::new(device, format, &viewport_layout, &atlas.image_layout);
         let space = Space::new(device, queue, target, &viewport_layout, &atlas, &[]);
@@ -70,7 +72,7 @@ impl Gui {
             viewport_layout,
             enabled: quality.gui,
         };
-        gui.rebuild(device, queue, (screens, spaces), quality);
+        gui.rebuild(device, queue, (screens, spaces), images, quality);
         gui
     }
 
@@ -83,6 +85,7 @@ impl Gui {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         (screens, spaces): (&[GuiScreen], &[SpaceGui]),
+        images: &Answered,
         quality: &QualityProfile,
     ) {
         let screens: &[GuiScreen] = match self.enabled {
@@ -94,9 +97,9 @@ impl Gui {
             false => &[],
         };
 
-        // One download and one upload for all three container kinds: both
-        // collectors skip an asset already in the list, so the same
-        // `ImageLabel` image on a screen and on a surface is fetched once.
+        // One upload for all three container kinds: both collectors skip an
+        // asset already in the list, so the same `ImageLabel` image on a
+        // screen and on a surface is uploaded once.
         let mut references = Vec::new();
         for screen in screens {
             screen.assets(&mut references);
@@ -104,7 +107,8 @@ impl Gui {
         for gui in spaces {
             gui.assets(&mut references);
         }
-        self.atlas.extend(device, queue, &references, quality);
+        self.atlas
+            .extend(device, queue, &references, images, quality);
 
         self.screens = screens.to_vec();
         self.built = None;

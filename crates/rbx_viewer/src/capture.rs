@@ -146,8 +146,8 @@ impl Offscreen {
     }
 
     /// Forwards to [`Renderer::patch_effect`].
-    pub(crate) fn patch_effect(&mut self, kind: EffectKind, scene: &Scene) -> bool {
-        self.renderer.patch_effect(kind, scene)
+    pub(crate) fn patch_effect(&mut self, kind: EffectKind, scene: &Scene) {
+        self.renderer.patch_effect(kind, scene);
     }
 
     /// Forwards to [`Renderer::finish_loading`] — for [`write_png`], which

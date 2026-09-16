@@ -23,7 +23,8 @@ use super::pipeline::Target;
 use super::post::Targets;
 use super::rebuild::untried;
 use super::texture;
-use crate::assets::{self, Image};
+use crate::assets::Image;
+use crate::load::Answered;
 use crate::quality::QualityProfile;
 use crate::scene::Beam;
 use pipeline::{CameraRaw, VertexRaw};
@@ -78,6 +79,7 @@ impl Beams {
         queue: &wgpu::Queue,
         target: Target,
         beams: &[Beam],
+        images: &Answered,
         quality: &QualityProfile,
     ) -> Self {
         let camera_layout = pipeline::camera_layout(device);
@@ -114,7 +116,7 @@ impl Beams {
             last_tick: None,
             elapsed: 0.0,
         };
-        pass.rebuild(device, queue, beams, quality);
+        pass.rebuild(device, queue, beams, images, quality);
         pass
     }
 
@@ -129,6 +131,7 @@ impl Beams {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         beams: &[Beam],
+        images: &Answered,
         quality: &QualityProfile,
     ) {
         self.live.clear();
@@ -163,35 +166,34 @@ impl Beams {
             ));
         }
 
-        let references = untried(&self.slots, texture_refs(beams));
-        if !references.is_empty() {
-            // Live-effect asset warnings aren't wired to the Output dock yet —
-            // see `assets::load`'s doc comment; only scene-load-time warnings
-            // are.
-            let (images, _warnings) = assets::load(&references);
-            for reference in references {
-                let slot = match images.get(&reference) {
-                    Some(image) => {
-                        let uploaded = texture::Uploaded::color(device, queue, image);
-                        let bind_group = uploaded.bind(
-                            device,
-                            &self.image_layout,
-                            &sampler,
-                            quality.texture_max_size,
-                        );
-                        self.textures.push(Slot {
-                            bind_group,
-                            uploaded,
-                        });
-                        self.textures.len() - 1
-                    }
-                    // Never downloaded, or the fetch failed: Roblox itself
-                    // falls back to a solid line here (see `Beam.Texture`'s
-                    // docs).
-                    None => 0,
-                };
-                self.slots.insert(reference, slot);
-            }
+        for reference in untried(&self.slots, texture_refs(beams)) {
+            // No answer yet: the fetch is still running, and leaving this
+            // reference unrecorded is what brings the ribbon back for it on
+            // the rebuild that follows its landing (see
+            // `renderer::rebuild::untried`).
+            let Some(answer) = images.get(&reference) else {
+                continue;
+            };
+            let slot = match answer {
+                Some(image) => {
+                    let uploaded = texture::Uploaded::color(device, queue, image);
+                    let bind_group = uploaded.bind(
+                        device,
+                        &self.image_layout,
+                        &sampler,
+                        quality.texture_max_size,
+                    );
+                    self.textures.push(Slot {
+                        bind_group,
+                        uploaded,
+                    });
+                    self.textures.len() - 1
+                }
+                // Tried and failed: Roblox itself falls back to a solid line
+                // here (see `Beam.Texture`'s docs).
+                None => 0,
+            };
+            self.slots.insert(reference, slot);
         }
 
         self.live = beams

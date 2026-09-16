@@ -18,26 +18,21 @@ impl Particles {
     /// effect, and pre-warming only an emitter that just appeared (`Enabled`
     /// flipped on) exactly as [`Particles::new`] would have.
     ///
-    /// `false` when an emitter names a texture this pass never tried to
-    /// download (a `Texture` edit to a new image): only a full reload fetches
-    /// it. A texture that was tried and failed keeps dropping its emitter,
-    /// same as at load, rather than forcing a reload that would only fail the
-    /// same way again.
-    pub(in crate::renderer) fn replace(&mut self, emitters: &[Emitter]) -> bool {
+    /// An emitter whose texture this pass has no upload for is dropped —
+    /// exactly as at load, and exactly as one whose texture failed to decode
+    /// already was. There is nothing else to do about it here: the loader is
+    /// the only thing that fetches an image (see `load::fetcher`), a `Texture`
+    /// edit naming a new one has already asked it to, and the rebuild that
+    /// follows the landing is what brings the emitter back. A reload would
+    /// only arrive at this same answer, slower.
+    pub(in crate::renderer) fn replace(&mut self, emitters: &[Emitter]) {
         if !self.enabled {
-            return true;
-        }
-        if emitters
-            .iter()
-            .any(|emitter| !self.slots.contains_key(&emitter.texture))
-        {
-            return false;
+            return;
         }
         let previous = std::mem::take(&mut self.live);
         self.live = carry_over(previous, emitters, |texture| {
             self.slots.get(texture).copied().flatten()
         });
-        true
     }
 }
 

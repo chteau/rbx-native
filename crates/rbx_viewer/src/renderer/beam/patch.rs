@@ -15,21 +15,25 @@ impl Beams {
     /// ribbon is rebuilt from its definition every frame (see [`Beams::draw`]),
     /// so the next frame simply draws the new set.
     ///
-    /// `false` when a beam names a texture this pass never tried to download
-    /// (a `Texture` edit to a new image): only a full reload fetches it.
-    pub(in crate::renderer) fn replace(&mut self, beams: &[Beam]) -> bool {
+    /// A beam whose texture this pass has no upload for draws on the flat
+    /// white slot — the solid line Roblox itself falls back to — whether that
+    /// image failed to decode or has simply not arrived yet. The loader is the
+    /// only thing that fetches one (see `load::fetcher`), a `Texture` edit
+    /// naming a new one has already asked it to, and the rebuild that follows
+    /// the landing is what paints it on.
+    pub(in crate::renderer) fn replace(&mut self, beams: &[Beam]) {
         if !self.enabled {
-            return true;
+            return;
         }
-        let Some(live) = beams
+        self.live = beams
             .iter()
-            .map(|beam| Some((beam.clone(), slot_of(&self.slots, &beam.texture)?)))
-            .collect::<Option<Vec<_>>>()
-        else {
-            return false;
-        };
-        self.live = live;
-        true
+            .map(|beam| {
+                (
+                    beam.clone(),
+                    slot_of(&self.slots, &beam.texture).unwrap_or(0),
+                )
+            })
+            .collect();
     }
 }
 

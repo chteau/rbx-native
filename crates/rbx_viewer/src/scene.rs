@@ -178,6 +178,12 @@ pub(crate) struct Scene {
     /// Every placeable `BillboardGui`/`SurfaceGui`; see [`Scene::gui_spaces`].
     gui_spaces: Vec<SpaceGui>,
     union_plan: union::Plan,
+    /// What every [`Scene::resolve_unions`] so far contributed to the resolved
+    /// set, kept apart from it because [`Scene::resolve_file_meshes`] rebuilds
+    /// that set from the file mesh plan alone and would otherwise drop it.
+    /// The recovered *parts* need no such copy: they are appended to `parts`
+    /// once and nothing rebuilds those.
+    unions_resolved: union::Merged,
     /// Cloned once so [`Scene::resolve_unions`] can classify the `BasePart`s a
     /// downloaded union's operation tree turns out to hold — that only runs
     /// once network results are in, long after the `&ReflectionDatabase`
@@ -212,6 +218,7 @@ impl Scene {
             gui: gui::plan(dom, database),
             gui_spaces: Vec::new(),
             union_plan,
+            unions_resolved: union::Merged::default(),
             database: database.clone(),
         };
         // Needs `scene.placements()`, which only exists once `parts` is set —
@@ -332,7 +339,11 @@ impl Scene {
     /// the fallback box of every instance that got real geometry.
     ///
     /// Always safe to call with empty or partial maps: anything that fails to
-    /// resolve simply leaves its box alone.
+    /// resolve simply leaves its box alone. Safe to call *again* over a larger
+    /// map, which is what a streaming load does every time more meshes land:
+    /// the resolved set is rebuilt from the plan, the unions already merged in
+    /// are put back on top of it, and suppression only ever grows — a part
+    /// whose mesh resolved once never goes back to drawing its box on its own.
     pub(crate) fn resolve_file_meshes(
         &mut self,
         meshes: HashMap<AssetRef, Arc<rbx_mesh::Mesh>>,
@@ -345,6 +356,28 @@ impl Scene {
             }
         }
         self.resolved_file_meshes = resolved;
+        self.apply_resolved_unions();
+    }
+
+    /// Puts the unions' own meshes and instances back into the resolved set
+    /// after [`Scene::resolve_file_meshes`] has rebuilt it from the file mesh
+    /// plan, which knows nothing about them.
+    fn apply_resolved_unions(&mut self) {
+        for part in &mut self.parts {
+            if self.unions_resolved.hidden.contains(&part.referent) {
+                part.suppressed = true;
+            }
+        }
+        let resolved = &mut self.resolved_file_meshes;
+        resolved.meshes.extend(
+            self.unions_resolved
+                .meshes
+                .iter()
+                .map(|(reference, mesh)| (reference.clone(), Arc::clone(mesh))),
+        );
+        resolved
+            .instances
+            .extend(self.unions_resolved.instances.iter().cloned());
     }
 
     /// One `(referent, asset)` pair per legacy union/negate found, to download
@@ -363,6 +396,12 @@ impl Scene {
     /// which is what re-reads the material slot of everything added here.
     /// Always safe to call with an empty or partial map: anything that fails
     /// to resolve simply leaves its box alone.
+    ///
+    /// Each asset must be handed over exactly once for the life of the scene:
+    /// a failed boolean's recovered pieces are *appended* to the parts, and
+    /// recovering the same union twice would draw them twice. A streaming load
+    /// upholds that by passing only what has newly landed — see
+    /// `load::Loaded::resolve`.
     pub(crate) fn resolve_unions(
         &mut self,
         assets: HashMap<AssetRef, Vec<u8>>,
@@ -375,15 +414,10 @@ impl Scene {
             &mut self.materials,
             evaluations,
         );
-        for part in &mut self.parts {
-            if resolution.hidden.contains(&part.referent) {
-                part.suppressed = true;
-            }
-        }
-        self.parts.extend(resolution.parts);
-        let resolved = &mut self.resolved_file_meshes;
-        resolved.meshes.extend(resolution.meshes);
-        resolved.instances.extend(resolution.instances);
+        self.unions_resolved.absorb(resolution);
+        self.parts
+            .extend(std::mem::take(&mut self.unions_resolved.fresh_parts));
+        self.apply_resolved_unions();
     }
 
     /// Recomputes one non-suppressed part from `dom` in place — a single

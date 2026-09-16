@@ -1,11 +1,17 @@
 //! `Scene::patch_part`'s counterpart for a part whose box a real mesh has
-//! replaced — see [`Scene::patch_mesh_instance`].
+//! replaced — see [`Scene::patch_mesh_instance`] — and the two things a
+//! single-instance edit that names an asset nobody has fetched yet needs:
+//! what to fetch ([`Scene::replan_assets_of`]) and what to draw meanwhile
+//! ([`Scene::fall_back_to_box`]).
 
-use rbx_dom::{Ref, WeakDom};
+use rbx_assets::AssetRef;
+use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
+use glam::Vec3;
+
 use super::material::Catalog;
-use super::{filemesh, union, Resolved, ResolvedInstance, Scene};
+use super::{filemesh, shape, union, Resolved, ResolvedInstance, Scene};
 
 /// What [`Scene::patch_mesh_instance`] did to the resolved set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,6 +134,98 @@ impl Scene {
             }
         };
         Some(MeshPatch::Placed(index))
+    }
+
+    /// Re-plans `referent` against the DOM as it now stands and reports every
+    /// asset it would need drawn that way: its mesh, and the images its own
+    /// `TextureID`, its `SurfaceAppearance` and its material sample.
+    ///
+    /// Installing the fresh plan entry matters as much as the report does.
+    /// The file mesh plan is what a later landing joins the place from — there
+    /// is no DOM left to re-plan from by then — so an edit that changed what
+    /// this instance draws has to leave it saying so, or the mesh that lands
+    /// would be the `MeshId` the file was opened with.
+    pub(crate) fn replan_assets_of(
+        &mut self,
+        dom: &WeakDom,
+        database: &ReflectionDatabase,
+        referent: Ref,
+    ) -> (Vec<AssetRef>, Vec<AssetRef>) {
+        let entry = filemesh::replan(dom, database, referent, &mut self.materials);
+        let (meshes, mut images) = match &entry {
+            Some(entry) => {
+                let (mesh, images) = entry.assets();
+                (vec![mesh], images)
+            }
+            None => (Vec::new(), Vec::new()),
+        };
+        self.file_mesh_plan.install(referent, entry);
+
+        if let Some(instance) = dom.get(referent) {
+            let slot = self.materials.slot_for(instance.properties(), database);
+            images.extend(self.materials.maps_of(slot.layer));
+        }
+        (meshes, images)
+    }
+
+    /// Puts `referent` back on the box a `MeshPart` falls back to, for an edit
+    /// naming geometry this session has never decoded.
+    ///
+    /// The box is what Roblox itself shows while a mesh streams in, and it is
+    /// what this viewer already draws for a `MeshId` that never resolved — so
+    /// there is nothing new to invent for the moments between the edit and the
+    /// asset landing. `Some(index)` means `self.parts[index]` holds it and the
+    /// resolved instance is gone; the caller hands both on to the renderer.
+    ///
+    /// `None` where no box stands for the referent: a union, whose recovered
+    /// pieces all answer to the union's own referent (see `union::tree`); one
+    /// this scene never built; or one whose edit also named a material layer
+    /// past `known_material_layers`, which is a texture array only a rebuild
+    /// resizes.
+    pub(crate) fn fall_back_to_box(
+        &mut self,
+        dom: &WeakDom,
+        database: &ReflectionDatabase,
+        referent: Ref,
+        known_material_layers: usize,
+    ) -> Option<usize> {
+        if union::replan(dom, database, referent, &mut self.materials).is_some() {
+            return None;
+        }
+        let index = self
+            .parts
+            .iter()
+            .position(|part| part.referent == referent && part.is_suppressed())?;
+
+        let instance = dom.get(referent)?;
+        let properties = instance.properties();
+        let Some(Variant::Vector3(size)) = properties.get("size") else {
+            return None;
+        };
+        let Some(Variant::CFrame(cframe)) = properties.get("CFrame") else {
+            return None;
+        };
+        let size = Vec3::new(size.x, size.y, size.z);
+        let geometry = shape::resolve(dom, database, instance, size);
+        let patched = super::assemble_part(
+            properties,
+            database,
+            &mut self.materials,
+            geometry,
+            super::cframe_matrix(cframe),
+            referent,
+        );
+        if patched.material.layer as usize >= known_material_layers {
+            return None;
+        }
+
+        // `assemble_part` builds an unsuppressed part, which is the whole
+        // point: the box draws again until the mesh lands.
+        self.parts[index] = patched;
+        self.resolved_file_meshes
+            .instances
+            .retain(|instance| instance.referent != referent);
+        Some(index)
     }
 }
 

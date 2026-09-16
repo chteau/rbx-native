@@ -124,6 +124,15 @@ impl Catalog {
         self.slot(u32::try_from(layer).unwrap_or(0))
     }
 
+    /// The slot one layer draws as *right now*: a textured layer whose pack
+    /// has not arrived shades as plain plastic, and starts shading as itself
+    /// the moment it has.
+    ///
+    /// Read off the layer's own maps rather than remembered, so that asking
+    /// again after more of them have landed answers the newer truth. A
+    /// demotion written into the definition would be permanent, and a
+    /// streaming load — which asks once with nothing resolved and again with
+    /// everything — would leave every material plastic forever.
     pub(crate) fn slot(&self, layer: u32) -> Slot {
         let Some(def) = self.defs.get(layer as usize) else {
             return Slot::plastic();
@@ -131,9 +140,21 @@ impl Catalog {
 
         Slot {
             layer,
-            kind: def.kind,
+            kind: match def.kind {
+                Kind::Textured if !self.has_maps(def) => Kind::Plastic,
+                kind => kind,
+            },
             studs_per_tile: def.studs_per_tile,
         }
+    }
+
+    /// Whether any of a layer's maps actually decoded — with `--no-materials`,
+    /// or with no network, that is none of them for every layer.
+    fn has_maps(&self, def: &Def) -> bool {
+        def.maps
+            .iter()
+            .flatten()
+            .any(|reference| self.images.contains_key(reference))
     }
 
     /// Every map every layer needs, in first-seen order and without duplicates.
@@ -148,24 +169,25 @@ impl Catalog {
     }
 
     /// Joins the layers to whatever downloaded. A textured layer left without a
-    /// colour map falls back to plastic — with `--no-materials`, or with no
-    /// network, that is every one of them.
+    /// map falls back to plastic — with `--no-materials`, or with no network,
+    /// that is every one of them; see [`Catalog::slot`], which is where that
+    /// fallback is decided rather than written down.
     pub(crate) fn resolve(&mut self, images: HashMap<AssetRef, Arc<Image>>) {
-        for def in &mut self.defs {
-            let resolved = def
-                .maps
-                .iter()
-                .flatten()
-                .any(|reference| images.contains_key(reference));
-            if def.kind == Kind::Textured && !resolved {
-                def.kind = Kind::Plastic;
-            }
-        }
         self.images = images;
     }
 
     pub(crate) fn layers(&self) -> usize {
         self.defs.len()
+    }
+
+    /// One layer's maps, for a caller that has to fetch them — a single-part
+    /// edit naming a material the place had not used before, whose pack is
+    /// not resident and has to be asked for.
+    pub(crate) fn maps_of(&self, layer: u32) -> Vec<AssetRef> {
+        let Some(def) = self.defs.get(layer as usize) else {
+            return Vec::new();
+        };
+        def.maps.iter().flatten().cloned().collect()
     }
 
     /// Every layer's maps in layer order, `None` where a layer has no such map

@@ -62,6 +62,31 @@ fn slot(catalog: &mut Catalog, properties: &BTreeMap<String, Variant>) -> Slot {
     catalog.slot_for(properties, &ReflectionDatabase::embedded())
 }
 
+/// Pretends every map the catalog asks for decoded, as a load does once its
+/// packs are in.
+///
+/// Needed by any test that asserts a layer is `Textured`: whether it is or
+/// not is read off the images that actually resolved (see `Catalog::slot`),
+/// so a catalog nothing has been resolved into shades every one of them as
+/// plain plastic — which is exactly what the viewer draws at that moment.
+fn resolve_all(catalog: &mut Catalog) {
+    let images = catalog
+        .asset_refs()
+        .into_iter()
+        .map(|reference| {
+            (
+                reference,
+                Arc::new(Image {
+                    width: 1,
+                    height: 1,
+                    pixels: vec![255; 4],
+                }),
+            )
+        })
+        .collect();
+    catalog.resolve(images);
+}
+
 #[test]
 fn a_part_with_no_material_property_is_plastic_with_its_own_normal_map() {
     let mut catalog = built(&WeakDom::new());
@@ -103,7 +128,8 @@ fn a_textured_material_takes_a_layer_of_its_own_with_its_tiling_scale() {
     // The same material twice is the same layer, whatever else the part says.
     let again = slot(&mut catalog, &material_of("Wood"));
 
-    assert_eq!(wood.kind, Kind::Textured);
+    resolve_all(&mut catalog);
+    assert_eq!(catalog.slot(wood.layer).kind, Kind::Textured);
     assert_eq!(wood.studs_per_tile, 4.0);
     assert_eq!(brick.studs_per_tile, 5.0);
     assert_ne!(wood.layer, brick.layer);
@@ -136,7 +162,8 @@ fn use_2022_materials_false_selects_the_legacy_pack() {
 
     assert_eq!(catalog.asset_refs()[0], AssetRef::Id(7546648254));
     assert_eq!(modern[0], AssetRef::Id(9920482813));
-    assert_eq!(slot.kind, Kind::Textured);
+    resolve_all(&mut catalog);
+    assert_eq!(catalog.slot(slot.layer).kind, Kind::Textured);
 }
 
 fn slot_ref(catalog: &mut Catalog, name: &str) -> Vec<AssetRef> {
@@ -172,12 +199,13 @@ fn a_part_naming_a_variant_is_drawn_with_it() {
     );
     let slot = slot(&mut catalog, &properties);
 
-    assert_eq!(slot.kind, Kind::Textured);
     assert_eq!(slot.studs_per_tile, 9.1);
     assert_eq!(
         catalog.asset_refs(),
         vec![AssetRef::Id(17697791225), AssetRef::Id(17697791233)]
     );
+    resolve_all(&mut catalog);
+    assert_eq!(catalog.slot(slot.layer).kind, Kind::Textured);
 }
 
 #[test]
@@ -220,11 +248,16 @@ fn a_name_property_equal_to_its_own_material_overrides_nothing() {
 fn a_layer_whose_pack_never_downloaded_falls_back_to_plastic() {
     let mut catalog = built(&WeakDom::new());
     let wood = slot(&mut catalog, &material_of("Wood"));
-    assert_eq!(wood.kind, Kind::Textured);
+    // Nothing resolved yet, so nothing is textured yet — a load draws plain
+    // plastic until the pack lands, and says so here.
+    assert_eq!(wood.kind, Kind::Plastic);
 
     catalog.resolve(HashMap::new());
-
     assert_eq!(catalog.slot(wood.layer).kind, Kind::Plastic);
+
+    // And the other direction: the very same layer, once its pack is in.
+    resolve_all(&mut catalog);
+    assert_eq!(catalog.slot(wood.layer).kind, Kind::Textured);
     // Neon needs no download and keeps glowing.
     let mut lit = built(&WeakDom::new());
     let neon = slot(&mut lit, &material_of("Neon"));

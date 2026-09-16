@@ -57,10 +57,24 @@ pub(crate) struct FaceInstance {
     pub(crate) alpha: f32,
 }
 
+/// One planned face: the part it is pinned to, the image it wants, and where
+/// it lands on that part's unit mesh.
+///
+/// The part is carried alongside because a plan outlives the moment it was
+/// made — see [`Decor::assemble`], which drops a face whose part has stopped
+/// drawing its box, and [`Plan::replace_faces`], which re-projects one part's
+/// faces after it moves.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Planned {
+    pub(crate) part: Ref,
+    pub(crate) reference: AssetRef,
+    pub(crate) face: FaceInstance,
+}
+
 /// What a DOM asks to be painted, before any image exists.
 #[derive(Debug, Default, PartialEq)]
 pub(crate) struct Plan {
-    faces: Vec<(AssetRef, FaceInstance)>,
+    faces: Vec<Planned>,
     sky: Option<Vec<(AssetRef, Quad)>>,
     bodies: Vec<(AssetRef, Body)>,
     /// How many stars the `Sky` asks for; the field itself is generated in
@@ -76,7 +90,7 @@ impl Plan {
         let all = self
             .faces
             .iter()
-            .map(|(reference, _)| reference)
+            .map(|planned| &planned.reference)
             .chain(self.sky.iter().flatten().map(|(reference, _)| reference))
             .chain(self.bodies.iter().map(|(reference, _)| reference));
         for reference in all {
@@ -85,6 +99,28 @@ impl Plan {
             }
         }
         seen
+    }
+
+    /// Swaps one part's faces for `faces`, in the place its old ones held.
+    ///
+    /// In place, not appended: the order the faces are planned in is the order
+    /// [`Decor::assemble`] groups them in, which is the order the renderer
+    /// builds and draws its decal batches in — a moved part that jumped to the
+    /// end of the plan would redraw the scene's translucent decals in a
+    /// different order than a build from the same DOM would.
+    pub(crate) fn replace_faces(&mut self, part: Ref, faces: Vec<(AssetRef, FaceInstance)>) {
+        let at = self
+            .faces
+            .iter()
+            .position(|planned| planned.part == part)
+            .unwrap_or(self.faces.len());
+        self.faces.retain(|planned| planned.part != part);
+        let replaced = faces.into_iter().map(|(reference, face)| Planned {
+            part,
+            reference,
+            face,
+        });
+        self.faces.splice(at..at, replaced);
     }
 }
 
@@ -102,7 +138,15 @@ pub(crate) fn plan(
 ) -> Plan {
     let faces = scene::workspace_descendants(dom, database)
         .filter_map(|referent| Some((referent, placements.get(&referent)?)))
-        .flat_map(|(referent, placement)| part::faces(dom, database, referent, placement))
+        .flat_map(|(referent, placement)| {
+            part::faces(dom, database, referent, placement)
+                .into_iter()
+                .map(move |(reference, face)| Planned {
+                    part: referent,
+                    reference,
+                    face,
+                })
+        })
         .collect();
 
     // The sun and moon hang off the same `Sky` the panels come from, so a place
@@ -225,8 +269,8 @@ mod tests {
 
         assert_eq!(plan.faces.len(), 2);
         // The tiled one covers 8/4 = 2 tiles per axis, the stretched one covers 1.
-        assert_eq!(plan.faces[0].1.projection.uv_scale, [2.0, 2.0]);
-        assert_eq!(plan.faces[1].1.projection.uv_scale, [1.0, 1.0]);
+        assert_eq!(plan.faces[0].face.projection.uv_scale, [2.0, 2.0]);
+        assert_eq!(plan.faces[1].face.projection.uv_scale, [1.0, 1.0]);
     }
 
     #[test]
@@ -280,7 +324,7 @@ mod tests {
     fn an_instance_carries_its_part_own_shape_and_model_matrix() {
         let dom = dom_with([2.0, 6.0, 2.0], &[("Decal", "rbxassetid://5", 1, None)]);
 
-        let face = planned(&dom).faces[0].1;
+        let face = planned(&dom).faces[0].face;
 
         // Face 1 is Top, and the model matrix is the one the part is drawn with:
         // the unit mesh scaled to 2x6x2 at the origin.
@@ -300,7 +344,7 @@ mod tests {
     #[test]
     fn faces_re_derives_the_same_decal_against_a_patched_placement() {
         let dom = dom_with([2.0, 6.0, 2.0], &[("Decal", "rbxassetid://5", 1, None)]);
-        let original = planned(&dom).faces[0].1;
+        let original = planned(&dom).faces[0].face;
 
         let moved = Placement {
             kind: ShapeKind::Box,

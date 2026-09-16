@@ -207,6 +207,34 @@ pub(crate) struct Resolution {
     pub(crate) instances: Vec<ResolvedInstance>,
 }
 
+/// Every [`Resolution`] so far, merged.
+///
+/// A place's unions do not all resolve at the same moment any more: a
+/// streaming load hands [`resolve`] each asset the tick it lands, and what it
+/// contributed has to survive the next `Scene::resolve_file_meshes`, which
+/// rebuilds the resolved set from the file mesh plan alone. So the meshes and
+/// instances are kept here to be laid back on top of it, while the recovered
+/// parts — which are appended to the scene's own parts once and never
+/// rebuilt — are handed straight over through `fresh_parts`.
+#[derive(Default)]
+pub(crate) struct Merged {
+    pub(crate) hidden: HashSet<Ref>,
+    pub(crate) meshes: HashMap<AssetRef, Arc<rbx_mesh::Mesh>>,
+    pub(crate) instances: Vec<ResolvedInstance>,
+    /// The parts of the latest [`Merged::absorb`] alone, for the caller to
+    /// take. Empty at every other moment.
+    pub(crate) fresh_parts: Vec<Part>,
+}
+
+impl Merged {
+    pub(crate) fn absorb(&mut self, resolution: Resolution) {
+        self.hidden.extend(resolution.hidden);
+        self.meshes.extend(resolution.meshes);
+        self.instances.extend(resolution.instances);
+        self.fresh_parts = resolution.parts;
+    }
+}
+
 /// One asset's decoded tree and, when the boolean succeeded, its mesh —
 /// computed once however many instances share the asset.
 struct Evaluated {

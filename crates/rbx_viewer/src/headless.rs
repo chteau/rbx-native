@@ -19,6 +19,8 @@ use crate::quality::QualityLevel;
 use crate::scene::{Bounds, EffectKind, MeshPatch};
 use crate::view::View;
 
+mod assets;
+
 /// A loaded place that renders frames on demand, flown with the very same
 /// free-flight camera as the windowed viewer.
 ///
@@ -55,9 +57,27 @@ pub struct Headless {
     /// [`Headless::update_lighting`]/[`Headless::patch_instance`] can
     /// recompute their own small piece of it instead of the whole place.
     loaded: Loaded,
-    /// Every asset the place's loads decoded so far, so a reload decodes
-    /// only what the place never showed before — see [`Resident`].
+    /// Every asset the place's loads decoded so far, and the background pool
+    /// that decodes the ones it has not seen — see [`Resident`]. Nothing on
+    /// this struct ever waits on it: an asset that is not here yet is drawn as
+    /// its fallback and swapped in when it lands (see [`Headless::tick`]).
     resident: Resident,
+    /// References answered since the last swap-in, held until one is due.
+    landed: Vec<rbx_assets::AssetRef>,
+    /// When the last swap-in ran, so a cold load's few hundred assets cost a
+    /// bounded number of rebuilds rather than one per tick they trickle in on.
+    swapped: Instant,
+    /// Whether a swap-in has changed the resolved meshes since the host last
+    /// took them — see [`Headless::pick_meshes_changed`].
+    meshes_changed: bool,
+    /// How many material layers the renderer's texture arrays actually hold.
+    ///
+    /// Not `scene.materials().layers()`: a single-part edit naming a material
+    /// the place had not used adds a layer to the catalog there and then,
+    /// while the arrays on the GPU are only ever resized by a rebuild. An
+    /// instance written with a layer past this would sample past the end of
+    /// them.
+    uploaded_material_layers: usize,
     /// Asset-fetch/decode warnings from every [`Headless::load`]/
     /// [`Headless::reload`] so far, not yet claimed by
     /// [`Headless::drain_warnings`] — an embedder (`rbxstudio`'s render
@@ -69,10 +89,14 @@ pub struct Headless {
 impl Headless {
     /// Parses `path` and uploads it to a GPU of its own.
     ///
-    /// Blocks while the place's decals, textures and meshes download, so a host
-    /// with a UI thread must call this before it has a window to keep alive.
-    /// `textures` off skips those downloads entirely, which is what makes a
-    /// network-less or key-less run fast rather than slow.
+    /// Returns with the place drawable and its assets still arriving: every
+    /// decal, material pack and file mesh is asked for in the background and
+    /// swapped in by [`Headless::tick`] as it lands, so the first frame is a
+    /// scene of plain boxes under a default sky rather than a wait. That is
+    /// what Roblox's own engine does, and it is the only shape that also
+    /// answers the harder case — a keystroke naming an asset nobody has
+    /// fetched, where there is no "before the window exists" left to hide a
+    /// download in. `textures` off skips those requests entirely.
     ///
     /// The view opens orbiting the place's bounds and flies freely from there on
     /// the first input; [`Headless::open_at`] starts from a pose instead.
@@ -85,12 +109,13 @@ impl Headless {
         };
         let database = ReflectionDatabase::embedded();
         let dom = crate::load::read_place(path)?;
-        let mut resident = Resident::default();
+        let mut resident = Resident::streaming();
         let mut loaded = Loaded::from_dom(&dom, &database, toggles, &mut resident)
             .map_err(|err| format!("nothing to show in {path:?}: {err}"))?;
         let warnings = loaded.take_warnings();
 
         let bounds = *loaded.world().scene.bounds();
+        let uploaded_material_layers = loaded.scene().materials().layers();
         let quality = QualityLevel::default();
         Ok(Headless {
             offscreen: Offscreen::new(loaded.world(), &quality.profile(), &View::default())?,
@@ -105,6 +130,10 @@ impl Headless {
             database,
             loaded,
             resident,
+            landed: Vec::new(),
+            swapped: Instant::now(),
+            meshes_changed: false,
+            uploaded_material_layers,
             warnings,
         })
     }
@@ -119,8 +148,9 @@ impl Headless {
     /// already decoded is answered from memory (see [`Resident`]), and the
     /// device, its pipelines and every upload the new scene names the same
     /// asset for — material packs, sky, decal images, file meshes, effect
-    /// textures — stay where they are (see `renderer::rebuild`); only an
-    /// asset the place never showed before is fetched, decoded and uploaded.
+    /// textures — stay where they are (see `renderer::rebuild`). An asset the
+    /// place never showed before is asked for rather than waited for, exactly
+    /// as at load: a reload never blocks on the network either.
     pub fn reload(&mut self, dom: &WeakDom) -> Result<(), String> {
         let mut loaded = Loaded::from_dom(dom, &self.database, self.toggles, &mut self.resident)?;
         self.warnings.extend(loaded.take_warnings());
@@ -141,6 +171,7 @@ impl Headless {
             DEFAULT_SENSITIVITY,
         );
         self.bounds = bounds;
+        self.uploaded_material_layers = loaded.scene().materials().layers();
         self.loaded = loaded;
         Ok(())
     }
@@ -182,19 +213,38 @@ impl Headless {
     /// `Transparency` crossing 0, a `CastShadow` toggle, a new `Shape`) is
     /// still a single-instance operation: see `Renderer::sync_instance`.
     ///
-    /// `Ok(false)` means only a full reload draws the right picture — a
-    /// material layer, mesh or texture never uploaded, a union repainted
-    /// from its operation tree, a referent the scene never built — and the
-    /// caller falls back to [`Headless::reload`].
+    /// An edit that names a `MeshId`, `TextureID`, `SurfaceAppearance` map or
+    /// material pack this session has never decoded is still patched here, not
+    /// reloaded: the instance is drawn on its fallback — the box a `MeshPart`
+    /// already falls back to, or the untextured mesh — the asset is asked for
+    /// in the background, and [`Headless::tick`] swaps it in when it lands.
+    ///
+    /// `Ok(false)` is left for the three cases where no single-instance answer
+    /// exists at all: a union repainted from its operation tree, a referent
+    /// this scene never built, and an edit whose new material needs a texture
+    /// array layer past the ones uploaded (which only a rebuild resizes). The
+    /// caller falls back to [`Headless::reload`] — which no longer blocks on
+    /// the network either.
     pub fn patch_instance(&mut self, dom: &WeakDom, referent: Ref) -> Result<bool, String> {
-        let known_material_layers = self.loaded.scene().materials().layers();
+        let known_material_layers = self.uploaded_material_layers;
+        // Before the patch, whatever it turns out to be: this re-plans the
+        // instance against the DOM as it now stands, which is what a later
+        // landing is joined to the place from.
+        let wanted = self
+            .loaded
+            .scene_mut()
+            .replan_assets_of(dom, &self.database, referent);
+
         if let Some(index) =
             self.loaded
                 .scene_mut()
                 .patch_part(dom, &self.database, referent, known_material_layers)
         {
             let part = self.loaded.scene().parts()[index];
+            self.loaded
+                .replan_faces(dom, &self.database, referent, &part.placement());
             self.offscreen.sync_instance(dom, &self.database, &part);
+            self.request(wanted);
             return Ok(true);
         }
         match self.loaded.scene_mut().patch_mesh_instance(
@@ -205,15 +255,17 @@ impl Headless {
         ) {
             Some(MeshPatch::Placed(index)) => {
                 let resolved = self.loaded.scene().resolved_file_meshes();
-                Ok(self
+                let synced = self
                     .offscreen
-                    .sync_mesh_instance(resolved, &resolved.instances[index]))
+                    .sync_mesh_instance(resolved, &resolved.instances[index]);
+                self.request(wanted);
+                Ok(synced)
             }
             Some(MeshPatch::Removed) => {
                 self.offscreen.remove_mesh_instance(referent);
                 Ok(true)
             }
-            None => Ok(false),
+            None => self.patch_onto_fallback(dom, referent, wanted),
         }
     }
 
@@ -240,9 +292,14 @@ impl Headless {
     /// `crate::scene::Scene::replan_effect` for why the whole list and
     /// `crate::renderer::Renderer::patch_effect` for what survives.
     ///
-    /// `Ok(false)` when `referent` is none of those three classes, or its
-    /// edit named a texture never downloaded; the caller falls back to
-    /// [`Headless::reload`].
+    /// An edit naming a texture this session has never decoded is patched
+    /// here too: the effect is drawn on its own fallback — a solid line for a
+    /// `Beam`, a solid plane for a `Trail`, nothing at all for a
+    /// `ParticleEmitter`, which is what each already shows for a texture that
+    /// will not resolve — and the image is asked for in the background.
+    ///
+    /// `Ok(false)` is left for one case: `referent` is none of those three
+    /// classes at all.
     pub fn patch_effect(&mut self, dom: &WeakDom, referent: Ref) -> Result<bool, String> {
         let Some(kind) = dom
             .get(referent)
@@ -253,7 +310,9 @@ impl Headless {
         self.loaded
             .scene_mut()
             .replan_effect(dom, &self.database, kind);
-        Ok(self.offscreen.patch_effect(kind, self.loaded.scene()))
+        self.request_effect_images();
+        self.offscreen.patch_effect(kind, self.loaded.scene());
+        Ok(true)
     }
 
     /// Opens the view standing at `eye` and looking toward `look_at`, both in
@@ -342,9 +401,16 @@ impl Headless {
         self.offscreen.set_gizmo(gizmo);
     }
 
-    /// Advances the camera by `dt` and reports whether the view actually moved,
-    /// which is the host's cue to draw a frame: a camera at rest returns `false`
-    /// every tick, so an untouched view costs no render and no readback at all.
+    /// Advances the camera by `dt` and reports whether the next frame would
+    /// differ from the last: the view moved, or an asset landed and was swapped
+    /// into the picture. A camera at rest over a place whose assets are all in
+    /// returns `false` every tick, so an untouched view costs no render and no
+    /// readback at all.
+    ///
+    /// This is also the one place a background fetch is ever collected — see
+    /// `Headless::take_landed_assets`. A host that stops ticking stops
+    /// streaming, which is the right way round: a viewport nobody is looking
+    /// at has nothing to swap anything into.
     pub fn tick(&mut self, dt: Duration) -> bool {
         let from = self.controller.update(
             &mut self.input,
@@ -355,7 +421,10 @@ impl Headless {
         );
         let moved = from != self.from;
         self.from = from;
-        moved
+        // Not `||`: the assets have to be collected whether the camera moved
+        // or not, and short-circuiting would leave them waiting for a tick
+        // that happens to be still.
+        moved | self.take_landed_assets()
     }
 
     /// The flight speed in studs per second, for a host that shows it the way
@@ -389,11 +458,21 @@ impl Headless {
     /// the triangles actually drawn — see [`crate::pick::parts_along`]. A
     /// handle onto the renderer's own copies rather than a duplicate of them,
     /// so an embedder can pass it to another thread for the cost of a few
-    /// reference counts. Changes only when the scene is rebuilt
-    /// ([`Headless::load`]/[`Headless::reload`]): a single-instance patch
-    /// never downloads a mesh the scene did not already have.
+    /// reference counts. Changes when the scene is rebuilt
+    /// ([`Headless::load`]/[`Headless::reload`]) and when an asset lands and
+    /// is swapped in — see [`Headless::pick_meshes_changed`], which is how a
+    /// host notices the second of those without a command having been applied.
     pub fn pick_meshes(&self) -> crate::pick::Meshes {
         crate::pick::Meshes::new(self.loaded.scene().resolved_file_meshes().meshes.clone())
+    }
+
+    /// Whether a landed asset has changed the geometry a click is tested
+    /// against since the last call, and clears that. A host that holds only a
+    /// handle onto [`Headless::pick_meshes`] has to take the new one, or a
+    /// click on a mesh that has just streamed in would be tested against a set
+    /// that did not have it.
+    pub fn pick_meshes_changed(&mut self) -> bool {
+        std::mem::take(&mut self.meshes_changed)
     }
 
     /// Draws the current view and returns the frame the *previous* call asked
