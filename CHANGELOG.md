@@ -18,6 +18,98 @@
   joins `RBX_STUDIO_DRAG` as the debug aid that stands in for a Scale drag,
   so a `RBX_STUDIO_UNDO=1` run can prove it. — @chteau
 
+- **An edit is a patch of the instances it touched, never a rebuild.**
+  Roblox's engine never reloads its scene: the DataModel is the live
+  picture, and a property write is an event applied to that one instance.
+  The editor now works the same way. `Headless::apply_changes` takes the
+  `Change` log a mutation produced — every `Added`, `Removed`, `Property`
+  and `Parent` the DOM recorded — folds it by instance, looks each one up
+  in the DOM as it stands *now*, and patches only those: a part's box or
+  mesh is re-derived and its opaque/blended record, shadow caster and
+  outline rewritten, moved between batches, added or dropped (the box-part
+  removal that never existed now does); the decals, lights, emitters and
+  attachments hung off it follow; a `Model` reparented reaches its whole
+  subtree, in or out of `Workspace`; a light, an effect list or a GUI
+  canvas set is re-planned once per batch however many members changed.
+  Because the log is read as *which* instances to look at rather than
+  *what* happened to them, undo hands over the very log its mutation
+  produced against the restored DOM — the `Added` of an insert, applied
+  after the undo, finds the part gone and takes it out — so undo and redo
+  of anything take the same path as the edit. On the editor side that
+  closes every reload that was left: the Explorer's insert, delete and
+  multi-instance drag-drop, a Command Bar script touching any number of
+  instances, a Properties edit on a class the old classifier did not know
+  (every `Sky` edit aside), a `Script`'s `Source` on save, and undo/redo of
+  each; `shell::edit`'s `classify_edit`, `shell::command`'s one-instance
+  classifier and `reload_viewport` itself are gone, and the render thread
+  takes one `Command::Changes` — one DOM clone, one pass — where it took a
+  command per instance. The GPU side batches too: an instance buffer marks
+  the slots an edit touched and uploads the span once before the next
+  frame (`renderer::slots::Slots::flush`), where each patched instance used
+  to cost its own staging buffer. What still rebuilds the whole scene is
+  the closed list in `rbx_viewer::Rebuild`, one variant per reason: a `Sky`
+  edit (its six panels prefilter the environment probe — a few
+  milliseconds, kept on purpose), a `MaterialVariant`/`MaterialService`
+  edit (the material catalog is defined from the service), an asset this
+  renderer never uploaded (a mesh, texture, material pack or
+  `SurfaceAppearance` set — fetching one is a load-time path today), and a
+  failed-CSG union drawn as its fallback pieces (they share the union's
+  referent). Measured with `scripts/bench.sh` on `marked.rbxl` (16 742
+  instances, assets on, 1280×720, RTX 4070, medians of 50, first frame
+  readable / call returned): one part's `CFrame` 1.04 ms / 0.04 ms, insert
+  1.07 / 0.03, undo insert 1.07 / 0.03, delete 1.02 / 0.03, undo delete
+  1.05 / 0.03, 100 parts moved in one script 3.56 / 2.28 (7.53 ms before
+  the coalesced upload; the rest is the one canvas re-plan a
+  `SurfaceGui` among them costs), undo of that 3.63 / 2.34 — against a
+  full reload of 30.1 ms on the same run — all of them phases of the
+  harness now, not a one-off. For every kind of change — insert, delete, move, a 100-part
+  move, a reparent inside `Workspace`, a reparent out of it, a script
+  touching several instances, and the undo and redo of each — the patched
+  frame is pixel-identical (AE 0, uploads drained) to a cold rebuild of the
+  same DOM, on both `TestPlace.rbxl` and `marked.rbxl`
+  (`crates/rbx_viewer/tests/patch_parity.rs`, `--ignored`, needs a GPU).
+  `read_place` now hands back a DOM with an empty change log: a parser
+  builds the tree through the same calls an edit uses, and the log of its
+  own construction is not an edit. — @chteau
+
+- **Incremental edits: review fixes.** Four things the patch path above
+  got wrong, caught in review — one of them by a pixel comparison. A `Frame`
+  dragged from a `ScreenGui` onto a part's `BillboardGui` showed up in both:
+  a GUI tree is planned from its container down, and only the container the
+  element *landed in* was re-planned, so the overlay kept drawing it where
+  it used to be — 21 340 pixels off a rebuild of the same DOM at 640×360.
+  `Patcher::left` now re-plans the container an element left, the way it
+  already re-derived the part a `SpecialMesh` left, and `patch_parity` has
+  the case. A `MeshPart` whose mesh never downloaded (a 404, a file the
+  content package lacks) drew as its box, correctly, but every later edit of
+  it — a colour, a move, anything — was a full reload for the rest of the
+  session: `resync_part` classified by class, saw a `MeshId`, found no mesh
+  and asked for a rebuild. The scene now remembers what it asked for and
+  never got (`Scene::unresolved`, file meshes and union assets alike) and
+  edits such a part as the box a full build leaves it; a `MeshId` nobody
+  asked for yet is still a reload's to fetch, and a mesh that lands after
+  all still takes over. `Shell::reflect_changes` cloned the entire DOM to
+  hand the render thread every edit — once per mouse move of a drag — which
+  on `marked.rbxl` (16 742 instances) measured 60 ms an edit, sixty times
+  what patching one part costs. The render thread now keeps a mirror of the
+  editor's DOM, and an edit crosses as a snapshot of the instances its log
+  names (`WeakDom::snapshot`/`WeakDom::mirror`; a move or delete also
+  carries the parents whose child lists changed, so an undo puts a child
+  back among its siblings rather than after them). With that hand-off timed
+  as part of the edit, one part's move on `marked.rbxl` went from 61.4 ms to
+  0.02 ms (`call`) and 63.7 ms to 1.0 ms first frame readable; a hundred
+  parts from 66.5 ms to 2.9 ms and 70.8 ms to 4.0 ms — see `BENCHMARKS.md`.
+  And the per-edit path still scanned the place in four spots: the scene
+  found a part's slot, and a mesh part's resolved instance, by walking every
+  part; the extent was recounted over every part whenever any moved; and
+  `fold` scanned its own output per change. Each is indexed by referent now
+  (`Scene::standing`, `Resolved::slot_of`), the log folds through a map, and
+  the extent grows in place, recounted only when a part that may have been
+  holding an edge moved or went — which is what keeps it exactly what a
+  rebuild frames. Still whole-list, left for a later pass: a moved part's
+  `BillboardGui`/`SurfaceGui` canvases are re-planned as a list, the ~1.8 ms
+  the batch move above attributes to it. — @chteau
+
 - **A full reload no longer starts over.** `Headless::reload` — what a
   Command Bar script, an undo the fast paths cannot classify, or any edit
   they refuse falls back to — used to be a cold load in all but name: it
@@ -65,8 +157,7 @@
   answer and the ask is the expensive part: `TestPlace.rbxl` names a
   `SpawnLocation.png` its package lacks, and retrying that on every reload
   measured 220 ms a time. When no asset resolver could be built at all (an
-  unwritable cache
-  directory, say) the warning was filed under a reference no caller ever
+  unwritable cache directory, say) the warning was filed under a reference no caller ever
   looked up and reached only stderr; `assets::load_with` now fails every
   requested reference with that message, so it reaches the Output dock, once,
   and is retried like any other failure. The `Trail`, `Beam`,

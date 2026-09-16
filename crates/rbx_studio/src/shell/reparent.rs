@@ -171,22 +171,16 @@ impl Shell {
         for reference in &moving {
             self.dom.set_parent(*reference, Some(target));
         }
-        // One `Change::Parent` per moved reference — `single_instance_change`
-        // reads a one-instance drag as classifiable and anything wider the way
-        // `moving[..]`'s own match below already does, so undoing this drag
-        // takes exactly the same fast/full split a redo of it would.
+        // One `Change::Parent` per moved reference: each subtree is re-read
+        // where it landed — nothing new to draw for a move within
+        // `Workspace`, built or taken out for one across its boundary — and
+        // undoing the drag reflects the same log from the other end.
         let changes = self.dom.take_changes();
-        self.record_history_change(changes);
 
         self.rebuild_explorer(cx);
         self.reveal_moved(&moving, cx);
-        match moving[..] {
-            // The same cheap path a script's `part.Parent = model` already
-            // takes (see `shell::edit::reflect_in_viewport`): only a move that
-            // actually crossed the Workspace boundary costs a scene rebuild.
-            [only] => self.reflect_in_viewport(only, "Parent", cx),
-            _ => self.reload_viewport(cx),
-        }
+        self.reflect_changes(&changes, cx);
+        self.record_history_change(changes);
         cx.notify();
     }
 

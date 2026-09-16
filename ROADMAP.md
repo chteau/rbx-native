@@ -146,14 +146,24 @@ Roblox's own engine.
   a single part's property change patches the GPU state directly instead
   of rebuilding the whole scene — editing stays interactive on large real
   places.
-- [x] Undo/redo takes that same fast path: `shell/history.rs` pairs each
-  pushed snapshot with the `Change` log the mutation right after it
-  produced and reads it back through `shell::command`'s own `single_change`
-  classifier — the same one a Command Bar script's viewport reflection
-  already uses — so undoing or redoing a single property write or reparent
-  patches the GPU state in place instead of paying for a full scene
-  reload; an instance create/delete, a multi-instance drag, or anything
-  else `single_change` can't classify still reloads, correctly.
+- [x] Every edit reaches the viewport as a patch of the instances it
+  touched, never a rebuild — the Roblox model, where the DataModel is the
+  live scene and a property write is an event applied to that one
+  instance. `Headless::apply_changes` takes the `Change` log a mutation
+  produced — a Properties row, a viewport drag, a Command Bar script
+  touching a hundred parts, the Explorer's insert, delete and drag-drop,
+  and undo/redo of any of them (`shell/history.rs` hands over the very log
+  the undone mutation produced, against the restored DOM) — and re-derives
+  only what it names: a part's box or mesh, its shadow caster and outline,
+  the decals, lights, emitters and attachments hung off it; a `Model`
+  moved reaches its whole subtree. What still rebuilds the whole scene is
+  the closed list in `rbx_viewer::Rebuild`: a `Sky` edit (the environment
+  probe is prefiltered from its six panels), a `MaterialVariant`/
+  `MaterialService` edit (the material catalog is defined from the
+  service), an asset this renderer never uploaded (a mesh, texture,
+  material pack or `SurfaceAppearance` set — fetching one is a load-time
+  path today), and a failed-CSG union drawn as its fallback pieces (see
+  the CSG item under "What's planned").
 - [x] **Interactive viewport gizmos — Select/Move/Scale/Rotate, matching
   Studio's real toolbar and behaviour**, checked against
   `Roblox/creator-docs` (`parts/index.md#transform-parts`,
@@ -708,10 +718,10 @@ against `Roblox/creator-docs` rather than assumed:
 - [ ] 📋 **Give each of a failed-CSG union's recovered fallback pieces its
   own referent.** Today they all share the union's own referent
   (`Scene::resolve_unions`), so an edit meant for one specific fallback
-  piece can't be fast-pathed to just that piece — `Scene::patch_part`
-  correctly refuses to patch any of them and falls back to a full reload
-  rather than risking patching the wrong one, but that reload is still
-  more than the edit needs.
+  piece can't be fast-pathed to just that piece — `Scene::resync_part`
+  correctly refuses to patch any of them (`rbx_viewer::Rebuild::Union`) and
+  falls back to a full reload rather than risking patching the wrong one,
+  but that reload is still more than the edit needs.
 - [ ] 📋 `MeshData`/CSGMDL (Roblox's own baked union result format) — see
   [Explicitly impossible](#explicitly-impossible-without-robloxs-engine),
   deliberately not attempted; the from-scratch boolean above is the

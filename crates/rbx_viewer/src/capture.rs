@@ -7,17 +7,14 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use glam::Vec3;
-use rbx_dom::{Ref, WeakDom};
-use rbx_reflection::ReflectionDatabase;
+use rbx_dom::Ref;
 
 use crate::camera::{self, Camera, Viewpoint};
 use crate::gizmo::Gizmo;
 use crate::gpu;
-use crate::lighting::{Lighting, LocalLight};
 use crate::pick::Selected;
 use crate::quality::QualityProfile;
 use crate::renderer::{Renderer, World};
-use crate::scene::{EffectKind, Part, Resolved, ResolvedInstance, Scene};
 use crate::view::View;
 use readback::{Pending, Target, FORMAT};
 
@@ -121,41 +118,15 @@ impl Offscreen {
         self.renderer.set_gizmo(gizmo);
     }
 
-    /// Forwards to [`Renderer::update_lighting`] — see its doc comment for
-    /// what does and does not need a GPU write here.
-    pub(crate) fn update_lighting(&mut self, lighting: Lighting, lights: &[LocalLight]) -> bool {
-        self.renderer.update_lighting(&self.queue, lighting, lights)
-    }
-
-    /// Forwards to [`Renderer::sync_instance`].
-    pub(crate) fn sync_instance(
+    /// The renderer with the device and queue it draws through, for an
+    /// edit applied one instance at a time (see `Headless::apply_changes`):
+    /// every per-instance write the renderer offers needs the same two
+    /// handles, and one door for all of them beats a forwarder each.
+    pub(crate) fn with_renderer<T>(
         &mut self,
-        dom: &WeakDom,
-        database: &ReflectionDatabase,
-        part: &Part,
-    ) {
-        self.renderer
-            .sync_instance(&self.device, &self.queue, dom, database, part);
-    }
-
-    /// Forwards to [`Renderer::sync_mesh_instance`].
-    pub(crate) fn sync_mesh_instance(
-        &mut self,
-        resolved: &Resolved,
-        instance: &ResolvedInstance,
-    ) -> bool {
-        self.renderer
-            .sync_mesh_instance(&self.device, &self.queue, resolved, instance)
-    }
-
-    /// Forwards to [`Renderer::remove_mesh_instance`].
-    pub(crate) fn remove_mesh_instance(&mut self, referent: Ref) {
-        self.renderer.remove_mesh_instance(&self.queue, referent);
-    }
-
-    /// Forwards to [`Renderer::patch_effect`].
-    pub(crate) fn patch_effect(&mut self, kind: EffectKind, scene: &Scene) -> bool {
-        self.renderer.patch_effect(kind, scene)
+        f: impl FnOnce(&mut Renderer, &wgpu::Device, &wgpu::Queue) -> T,
+    ) -> T {
+        f(&mut self.renderer, &self.device, &self.queue)
     }
 
     /// Forwards to [`Renderer::finish_loading`] — for [`write_png`], which

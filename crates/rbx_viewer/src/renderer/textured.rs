@@ -296,45 +296,55 @@ impl Textured {
         }
     }
 
-    /// Brings both passes in line with one `Decal`/`Texture` instance whose
-    /// part was just patched (see `Scene::patch_part`): rewritten in place
-    /// if its (image, shape) batch is unchanged, otherwise moved to the one
-    /// it belongs in now. Its image slot is looked up from whichever batch
-    /// already holds it rather than resolved from `face`'s asset again,
-    /// since a `CFrame`/`Size`/`Shape` edit never changes which `Texture` an
-    /// instance points at — so `false` here means this renderer never drew
-    /// this referent in the first place (its image never downloaded), not
-    /// that the edit itself failed; there is nothing to catch up on.
+    /// Brings both passes in line with one `Decal`/`Texture` instance: its
+    /// projection rewritten in place if its (image, shape) batch is
+    /// unchanged, moved to the batch it belongs in now, or added if this
+    /// renderer never drew the instance — a decal just inserted, or one
+    /// whose part just moved into `Workspace`. The image slot is looked up
+    /// by `reference`, the asset the face names *now*, so a `Texture`
+    /// property pointed at another image the place already uses lands in
+    /// that image's batch rather than staying in the old one.
+    ///
+    /// `false` when `reference` is an image this renderer never uploaded,
+    /// which only a full reload fetches and decodes. A slot whose real
+    /// image is still queued (see [`Textured::upload_pending`]) is fine:
+    /// the face draws the placeholder until that upload's turn, the same
+    /// as it would after a rebuild.
     pub(super) fn sync(
         &mut self,
         device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        reference: &AssetRef,
         face: &FaceInstance,
     ) -> bool {
-        let Some(image) = self
-            .opaque
-            .key_of(face.referent)
-            .or_else(|| self.blended.key_of(face.referent))
-            .map(|&(image, _)| image)
-        else {
+        let Some(image) = self.references.iter().position(|held| held == reference) else {
             return false;
         };
 
         let key = (image, face.kind);
         let raw = DecalRaw::new(face);
         if face.alpha >= 1.0 && !self.image_alpha[image] {
-            self.blended.remove(queue, face.referent);
+            self.blended.remove(face.referent);
             self.opaque
-                .sync(device, queue, face.referent, Some((key, raw, ())), |_| {
-                    Some(())
-                })
+                .sync(device, face.referent, Some((key, raw, ())), |_| Some(()))
         } else {
-            self.opaque.remove(queue, face.referent);
+            self.opaque.remove(face.referent);
             self.blended
-                .sync(device, queue, face.referent, Some((key, raw, ())), |_| {
-                    Some(())
-                })
+                .sync(device, face.referent, Some((key, raw, ())), |_| Some(()))
         }
+    }
+
+    /// Takes one `Decal`/`Texture` out of whichever pass holds it; a no-op
+    /// for a referent neither does.
+    pub(super) fn remove(&mut self, referent: Ref) {
+        self.opaque.remove(referent);
+        self.blended.remove(referent);
+    }
+
+    /// Uploads what the edits since the last frame owe both passes' buffers
+    /// — see `slots::Slots::flush`.
+    pub(super) fn flush(&mut self, queue: &wgpu::Queue) {
+        self.opaque.flush(queue);
+        self.blended.flush(queue);
     }
 
     /// Re-views every decal at the new texture cap and anisotropy: one sampler

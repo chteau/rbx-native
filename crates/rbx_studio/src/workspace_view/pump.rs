@@ -16,9 +16,9 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use rbx_dom::{Ref, WeakDom};
+use rbx_dom::{Change, Ref, Snapshot, WeakDom};
 use rbx_viewer::pick::{Meshes, Selected};
-use rbx_viewer::{CameraInput, Gizmo, Headless, Pose, QualityLevel};
+use rbx_viewer::{Applied, CameraInput, Gizmo, Headless, Pose, QualityLevel};
 
 use super::quality::Quality;
 use super::stats::Stats;
@@ -49,20 +49,15 @@ enum Command {
     /// Which transform tool's draggers to draw over the selection, if any —
     /// see `Headless::set_gizmo`.
     Gizmo(Option<Gizmo>),
-    Reload(WeakDom),
-    /// A `Lighting`/`Atmosphere`/`Clouds`/`PostEffect`/`Light` edit — see
-    /// `Headless::update_lighting`. Falls back to a full [`Command::Reload`]
-    /// right here on the render thread if that itself reports it cannot.
-    Lighting(WeakDom),
-    /// A single `BasePart` edit — see `Headless::patch_instance`. Falls back
-    /// the same way.
-    Instance(WeakDom, Ref),
-    /// A single `ParticleEmitter`/`Beam`/`Trail` edit — see
-    /// `Headless::patch_effect`. Falls back the same way.
-    Effect(WeakDom, Ref),
-    /// A `Parent` change on a part or container — see `Headless::reparent`.
-    /// Falls back the same way.
-    Reparent(WeakDom, Ref),
+    /// An edit to the DOM, as the `Change` log it produced, patched into the
+    /// scene instance by instance — see `Headless::apply_changes`. What
+    /// travels with the log is a snapshot of the instances it names (see
+    /// `WeakDom::snapshot`), never the tree: the thread keeps a mirror of
+    /// the editor's DOM and brings it in step first, so one command costs
+    /// the edit, not the place. The few edits that still need a full
+    /// rebuild (see `rbx_viewer::Rebuild`) get one right there on the render
+    /// thread, and are reported on stderr so the reason is on record.
+    Changes(Vec<Snapshot>, Vec<Change>),
     Visible(bool),
     Stop,
 }
@@ -107,7 +102,15 @@ pub(super) struct Pump {
 }
 
 impl Pump {
-    pub(super) fn spawn(viewer: Headless, interval: Duration, quality: QualityLevel) -> Self {
+    /// `dom` is the tree `viewer` was built from, handed over once: the
+    /// thread keeps it as its mirror of the editor's DOM from here on — see
+    /// [`Command::Changes`].
+    pub(super) fn spawn(
+        viewer: Headless,
+        dom: WeakDom,
+        interval: Duration,
+        quality: QualityLevel,
+    ) -> Self {
         let (commands, orders) = mpsc::channel();
         let (frames, ready) = mpsc::channel();
         let stats = Arc::new(Stats::default());
@@ -118,6 +121,7 @@ impl Pump {
             .spawn(move || {
                 run(
                     viewer,
+                    dom,
                     &orders,
                     &frames,
                     &counters,
@@ -171,31 +175,10 @@ impl Pump {
         let _ = self.commands.send(Command::Gizmo(gizmo));
     }
 
-    /// Rebuilds the viewer's scene from a mutated DOM.
-    pub(super) fn reload(&self, dom: WeakDom) {
-        let _ = self.commands.send(Command::Reload(dom));
-    }
-
-    /// Recomputes just the lighting uniform and local-light buffer from a
-    /// mutated DOM — see [`Command::Lighting`].
-    pub(super) fn update_lighting(&self, dom: WeakDom) {
-        let _ = self.commands.send(Command::Lighting(dom));
-    }
-
-    /// Patches one `BasePart`'s GPU instance from a mutated DOM — see
-    /// [`Command::Instance`].
-    pub(super) fn patch_instance(&self, dom: WeakDom, referent: Ref) {
-        let _ = self.commands.send(Command::Instance(dom, referent));
-    }
-
-    /// Re-plans one effect list from a mutated DOM — see [`Command::Effect`].
-    pub(super) fn patch_effect(&self, dom: WeakDom, referent: Ref) {
-        let _ = self.commands.send(Command::Effect(dom, referent));
-    }
-
-    /// Checks one reparent against a mutated DOM — see [`Command::Reparent`].
-    pub(super) fn reparent(&self, dom: WeakDom, referent: Ref) {
-        let _ = self.commands.send(Command::Reparent(dom, referent));
+    /// Patches the viewer's scene for one edit's `Change` log — see
+    /// [`Command::Changes`].
+    pub(super) fn apply_changes(&self, snapshots: Vec<Snapshot>, changes: Vec<Change>) {
+        let _ = self.commands.send(Command::Changes(snapshots, changes));
     }
 
     /// Tells the render thread whether the panel is actually on screen — the
@@ -236,6 +219,7 @@ struct Opened {
 
 fn run(
     mut viewer: Headless,
+    mut mirror: WeakDom,
     commands: &Receiver<Command>,
     frames: &Sender<Ready>,
     stats: &Stats,
@@ -265,6 +249,7 @@ fn run(
             commands,
             Rendering {
                 viewer: &mut viewer,
+                mirror: &mut mirror,
                 quality: &mut quality,
                 size: &mut size,
                 visible: &mut visible,
@@ -437,6 +422,8 @@ fn drain_pending_frame(viewer: &mut Headless, stats: &Stats) -> Option<Frame> {
 /// draws at and whether the panel is currently visible.
 struct Rendering<'a> {
     viewer: &'a mut Headless,
+    /// The editor's DOM as this thread last saw it — see [`Command::Changes`].
+    mirror: &'a mut WeakDom,
     quality: &'a mut Quality,
     size: &'a mut (u32, u32),
     visible: &'a mut bool,
@@ -483,46 +470,22 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::Selection(selected) => rendering.viewer.set_selection(&selected),
         Command::Hover(referent) => rendering.viewer.set_hover(referent),
         Command::Gizmo(gizmo) => rendering.viewer.set_gizmo(gizmo),
-        Command::Reload(dom) => match rendering.viewer.reload(&dom) {
-            Ok(()) => *rendering.rebuilt = true,
-            Err(err) => eprintln!("rbxstudio: command bar reload failed: {err}"),
-        },
-        Command::Lighting(dom) => match rendering.viewer.update_lighting(&dom) {
-            Ok(true) => {}
-            Ok(false) => fall_back_to_reload(rendering, &dom, "lighting edit"),
-            Err(err) => eprintln!("rbxstudio: lighting edit failed: {err}"),
-        },
-        Command::Instance(dom, referent) => match rendering.viewer.patch_instance(&dom, referent) {
-            Ok(true) => {}
-            Ok(false) => fall_back_to_reload(rendering, &dom, "instance edit"),
-            Err(err) => eprintln!("rbxstudio: instance edit failed: {err}"),
-        },
-        Command::Effect(dom, referent) => match rendering.viewer.patch_effect(&dom, referent) {
-            Ok(true) => {}
-            Ok(false) => fall_back_to_reload(rendering, &dom, "effect edit"),
-            Err(err) => eprintln!("rbxstudio: effect edit failed: {err}"),
-        },
-        Command::Reparent(dom, referent) => match rendering.viewer.reparent(&dom, referent) {
-            Ok(true) => {}
-            Ok(false) => fall_back_to_reload(rendering, &dom, "reparent"),
-            Err(err) => eprintln!("rbxstudio: reparent failed: {err}"),
-        },
+        Command::Changes(snapshots, changes) => {
+            rendering.mirror.mirror(snapshots);
+            match rendering.viewer.apply_changes(rendering.mirror, &changes) {
+                Ok(Applied::Patched) => {}
+                Ok(Applied::Rebuilt(why)) => {
+                    *rendering.rebuilt = true;
+                    eprintln!("rbxstudio: scene rebuilt: {why}");
+                }
+                Err(err) => eprintln!("rbxstudio: edit failed: {err}"),
+            }
+        }
         Command::Visible(new) => *rendering.visible = new,
         Command::Stop => return false,
     }
 
     true
-}
-
-/// What every fast-path command does when `Headless` itself reports it cannot
-/// take the shortcut (a bucket crossed, a material never uploaded, a local
-/// light added or removed underneath — see their own doc comments): the one
-/// thing guaranteed to draw the right picture regardless of why.
-fn fall_back_to_reload(rendering: &mut Rendering<'_>, dom: &WeakDom, what: &str) {
-    match rendering.viewer.reload(dom) {
-        Ok(()) => *rendering.rebuilt = true,
-        Err(err) => eprintln!("rbxstudio: {what} fallback reload failed: {err}"),
-    }
 }
 
 /// How far to advance the camera for a frame that took `since` to come round.

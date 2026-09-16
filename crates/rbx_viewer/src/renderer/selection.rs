@@ -153,6 +153,17 @@ impl Outline {
         self.stale |= self.covered.contains(&referent);
     }
 
+    /// Forgets where one part was drawn — it stopped drawing as a box (a mesh
+    /// took over, so a full build would list no placement for it either) or
+    /// is gone — and notes the outline as owing a rebuild if that part was one
+    /// it covers: an outline around nothing is exactly what a deleted part
+    /// leaves behind.
+    fn remove(&mut self, referent: Ref) {
+        if self.placements.remove(&referent).is_some() {
+            self.stale |= self.covered.contains(&referent);
+        }
+    }
+
     /// The outline's vertices when something has moved under it since they
     /// were last taken, and `None` when nothing has.
     ///
@@ -253,6 +264,16 @@ impl Selection {
                 usage: wgpu::BufferUsages::VERTEX,
             })
         });
+    }
+
+    /// Forgets where one part was drawn — it stopped drawing as a box (a
+    /// mesh took over, so a full build would list no placement for it
+    /// either) or is gone — and notes the outline as owing a rebuild if that
+    /// part was one it covers, the same deferred way [`Selection::place`]
+    /// does: an outline around nothing is exactly what a deleted part
+    /// leaves behind.
+    pub(super) fn remove(&mut self, referent: Ref) {
+        self.outline.remove(referent);
     }
 
     /// The first outlined part's placement (see `renderer::gizmo`) — the part

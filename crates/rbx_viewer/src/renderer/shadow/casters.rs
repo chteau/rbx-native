@@ -74,16 +74,11 @@ pub(super) fn shape_batches(device: &wgpu::Device, scene: &Scene) -> ShapeBatche
 
 /// Brings the shape casters in line with one edited part — see
 /// `renderer::shaped::Shaped::sync` for the same four outcomes.
-pub(super) fn sync_shape(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    batches: &mut ShapeBatches,
-    part: &Part,
-) {
+pub(super) fn sync_shape(device: &wgpu::Device, batches: &mut ShapeBatches, part: &Part) {
     let wanted = part
         .casts_shadow()
         .then(|| (part.kind, raw(part.transform), sphere(part)));
-    batches.sync(device, queue, part.referent, wanted, |_| Some(()));
+    batches.sync(device, part.referent, wanted, |_| Some(()));
 }
 
 /// The casters among the resolved file meshes, one batch per mesh asset.
@@ -124,11 +119,10 @@ pub(super) fn mesh_batches(
 
 /// [`sync_shape`] for a resolved file mesh. `false` when the instance now
 /// casts through a mesh `resolved` never downloaded — which
-/// `Scene::patch_mesh_instance` already refuses, so this is a defensive
+/// `Scene::resync_part` already refuses, so this is a defensive
 /// answer rather than a documented case.
 pub(super) fn sync_mesh(
     device: &wgpu::Device,
-    queue: &wgpu::Queue,
     batches: &mut MeshBatches,
     resolved: &Resolved,
     instance: &ResolvedInstance,
@@ -136,7 +130,7 @@ pub(super) fn sync_mesh(
     let wanted = instance
         .casts_shadow
         .then(|| (instance.mesh.clone(), raw(instance.model), ()));
-    batches.sync(device, queue, instance.referent, wanted, |mesh| {
+    batches.sync(device, instance.referent, wanted, |mesh| {
         geometry(device, resolved, mesh)
     })
 }

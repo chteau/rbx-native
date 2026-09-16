@@ -9,6 +9,7 @@ use rbx_dom::{Change, Ref, WeakDom};
 
 use crate::command_bar::{self, Feedback};
 use crate::explorer::{self, Explorer};
+use crate::transform::Targets;
 
 use super::Shell;
 
@@ -149,37 +150,55 @@ impl Shell {
     /// DOM: the Explorer's rows and the viewport's scene. The Properties panel
     /// reads `self.dom` itself, so the re-render is all it needs.
     ///
-    /// A script that wrote to one instance only (`workspace.Part.Transparency
-    /// = 0.5`, `part.Parent = model`, a part given a `Size` and a `CFrame`
-    /// in one go — the bulk of what gets typed into the bar) takes the same
-    /// viewport path a Properties-panel commit of each of those edits would
-    /// (see [`Shell::reflect_changes`]); any other run rebuilds the whole
-    /// scene, the one answer that is right whatever the script did.
+    /// Whatever the script did — one property, a hundred parts moved, a
+    /// model built or destroyed — reaches the viewport as the change log it
+    /// produced, patched instance by instance (see
+    /// [`Shell::reflect_changes`]); there is no script-shaped fallback.
     fn rebuild_after_script(&mut self, cx: &mut Context<Self>) {
         self.rebuild_explorer(cx);
         let changes = self.dom.take_changes();
         self.reflect_changes(&changes, cx);
         // See `shell::history`: pairs this run's log with the snapshot
-        // `push_history` took before it, so undoing it can be classified the
-        // same way redoing it just was, above.
+        // `push_history` took before it, so undoing it reflects the same log
+        // from the other end.
         self.record_history_change(changes);
     }
 
-    /// Reflects a mutation's `Change` log in the 3D view: the in-place patch
-    /// `shell::edit::reflect_in_viewport` takes, once per property
-    /// [`single_instance_change`] finds written on the one instance the log
-    /// touched, or a full [`Shell::reload_viewport`] for anything it cannot
-    /// classify. Shared with `shell::history`'s undo/redo, which reflects
-    /// the same log from the other end — so the two can never disagree about
-    /// which edits are cheap to show.
+    /// Reflects a mutation's `Change` log in the 3D view: every instance it
+    /// names is patched in place on the render thread, whatever and however
+    /// many they are (see `rbx_viewer::Headless::apply_changes`), and the
+    /// two things on this side that mirror the DOM through the viewport are
+    /// refreshed as the log warrants (see [`refresh_for`]): the draggers'
+    /// copy of the selected parts' transforms (`transform::Targets`) when a
+    /// selected part or the tree itself changed, and the boxes a free drag
+    /// soft-snaps onto when anything *other* than the selection did — a drag
+    /// moves nothing but the selection, and re-reading those per mouse move
+    /// would walk the whole workspace every frame.
+    ///
+    /// The one path every mutation takes — a Command Bar script, a
+    /// Properties row, a viewport drag, the Explorer's insert, delete and
+    /// drag-drop, and undo/redo of each — so no two of them can disagree
+    /// about what an edit costs to show.
     pub(super) fn reflect_changes(&mut self, changes: &[Change], cx: &mut Context<Self>) {
-        match single_instance_change(changes) {
-            Some((reference, names)) => {
-                for name in &names {
-                    self.reflect_in_viewport(reference, name, cx);
-                }
+        if changes.is_empty() {
+            return;
+        }
+        let refresh = refresh_for(changes, self.selected_all());
+        // The instances the log names, not the tree: a drag reflects a
+        // change every mouse move, and copying the whole place per move
+        // would cost what the patch itself was made to save.
+        let snapshots = self.dom.snapshot(changes);
+        let targets = refresh
+            .targets
+            .then(|| Targets::read(&self.dom, &self.database, self.selected_all()));
+        self.viewport.update(cx, |viewport, _| {
+            viewport.apply_changes(snapshots, changes.to_vec());
+            if let Some(targets) = targets {
+                viewport.set_targets(targets);
             }
-            None => self.reload_viewport(cx),
+        });
+        if refresh.neighbours {
+            self.sync_snap_neighbours(cx);
         }
     }
 
@@ -203,67 +222,55 @@ impl Shell {
             tree.set_selected_item(preselected.as_ref(), cx);
         });
     }
-
-    /// Reflects `self.dom` in the 3D view. Cheap enough to call after every
-    /// committed edit, not just a script run: `Headless::reload` is what a
-    /// single-property change needs too.
-    pub(super) fn reload_viewport(&mut self, cx: &mut Context<Self>) {
-        let dom = self.dom.clone();
-        self.viewport.update(cx, |viewport, _| viewport.reload(dom));
-        // The box and the draggers are both placed from what this side reads
-        // out of the DOM (see `shell::selection`), and a reload is exactly the
-        // case where whatever moved them was not one of the edits
-        // `reflect_in_viewport` refreshes that reading for — a script that
-        // parents a `Part` under the selected model included, which widens the
-        // box as well as adding a target.
-        self.sync_viewport_selection(cx);
-        // A reload is also the one case where parts other than the selected
-        // one may have moved, appeared or gone — so what a drag can soft-snap
-        // onto has to be read again too.
-        self.sync_snap_neighbours(cx);
-    }
 }
 
-/// The one instance a change log amounts to, with every property written on
-/// it in the order first written — each the `(instance, property)` pair
-/// `Shell::reflect_in_viewport` classifies, a reparent spelled `Parent` —
-/// or `None` for a log the viewport can only reflect by rebuilding: one that
-/// touches a second instance, or creates or removes one (an empty log is
-/// `None` too: nothing to patch is not the same as nothing to do).
-///
-/// Several writes on one instance stay a fast patch because one gesture
-/// produces them: a Scale drag writes `size` and `CFrame` together (see
-/// `shell::drag`), and a script that sets three properties on one part is
-/// no wider a change than one that sets one. A name written twice is listed
-/// once — the patch reads the value back from the DOM, so reflecting it
-/// twice would only redo the same work.
-///
-/// `pub(super)`: also `shell::history`'s classifier for undo/redo, reused
-/// rather than duplicated (see that module's doc comment).
-pub(super) fn single_instance_change(changes: &[Change]) -> Option<(Ref, Vec<String>)> {
-    let mut edits: Option<(Ref, Vec<String>)> = None;
+/// What on this side of the viewport has to be re-read after `changes`:
+/// see [`Shell::reflect_changes`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Refresh {
+    /// The selected parts' transforms, for the draggers.
+    pub(super) targets: bool,
+    /// Every unselected part's box, for a drag's soft snap.
+    pub(super) neighbours: bool,
+}
+
+/// Which of the two mirrors a log invalidates. A structural change — an
+/// instance added, removed or moved — invalidates both: the selection may
+/// have lost a part or gained one, and so may the neighbours. A property
+/// write invalidates only the side it landed on: the targets if it touched
+/// a selected part (a typed coordinate, an undo of one), the neighbours if
+/// it touched anything else (a script moving parts the user has not
+/// selected). A drag writes only selected parts, so it never pays for the
+/// workspace walk the neighbours cost.
+pub(super) fn refresh_for(changes: &[Change], selected: &[Ref]) -> Refresh {
+    let mut refresh = Refresh {
+        targets: false,
+        neighbours: false,
+    };
     for change in changes {
-        let (referent, name) = match change {
-            Change::Property { referent, name } => (*referent, name.as_str()),
-            Change::Parent { referent, .. } => (*referent, "Parent"),
-            Change::Added(_) | Change::Removed(_) => return None,
+        let referent = match change {
+            Change::Property { referent, .. } => *referent,
+            Change::Parent { .. } | Change::Added(_) | Change::Removed(_) => {
+                return Refresh {
+                    targets: true,
+                    neighbours: true,
+                }
+            }
         };
-        let (instance, names) = edits.get_or_insert_with(|| (referent, Vec::new()));
-        if *instance != referent {
-            return None;
-        }
-        if !names.iter().any(|known| known == name) {
-            names.push(name.to_string());
+        if selected.contains(&referent) {
+            refresh.targets = true;
+        } else {
+            refresh.neighbours = true;
         }
     }
-    edits
+    refresh
 }
 
 #[cfg(test)]
 mod tests {
     use rbx_dom::{Change, Ref};
 
-    use super::single_instance_change;
+    use super::{refresh_for, Refresh};
 
     fn write(id: u32, name: &str) -> Change {
         Change::Property {
@@ -272,94 +279,71 @@ mod tests {
         }
     }
 
-    fn names(names: &[&str]) -> Vec<String> {
-        names.iter().map(|name| name.to_string()).collect()
-    }
+    const BOTH: Refresh = Refresh {
+        targets: true,
+        neighbours: true,
+    };
 
+    // A drag step: one `CFrame` per selected part, and nothing else moved.
+    // The draggers follow; the neighbours are not walked again per frame.
     #[test]
-    fn one_property_write_is_the_edit_it_names() {
+    fn writes_on_the_selection_refresh_the_targets_alone() {
+        let selected = [Ref::new(1), Ref::new(2)];
         assert_eq!(
-            single_instance_change(&[write(7, "Transparency")]),
-            Some((Ref::new(7), names(&["Transparency"])))
+            refresh_for(&[write(1, "CFrame"), write(2, "CFrame")], &selected),
+            Refresh {
+                targets: true,
+                neighbours: false,
+            }
         );
     }
 
-    // A reparent is logged under its own variant, but classifies exactly as
-    // a `Parent` property write would.
+    // A script moving parts the user never selected: the draggers stand
+    // where they were, but what a drag can snap onto has moved.
     #[test]
-    fn one_reparent_is_a_parent_edit() {
-        let changes = [Change::Parent {
-            referent: Ref::new(7),
-            old: Some(Ref::new(1)),
-            new: Some(Ref::new(2)),
-        }];
-
+    fn writes_off_the_selection_refresh_the_neighbours_alone() {
         assert_eq!(
-            single_instance_change(&changes),
-            Some((Ref::new(7), names(&["Parent"])))
+            refresh_for(&[write(7, "CFrame")], &[Ref::new(1)]),
+            Refresh {
+                targets: false,
+                neighbours: true,
+            }
         );
     }
 
-    // The shape a Scale drag step logs (see `shell::drag::resize_part`):
-    // two properties, one part. Each is its own in-place patch, in the
-    // order written, rather than a reason to rebuild the scene.
     #[test]
-    fn several_writes_on_one_instance_are_each_an_edit_on_it() {
+    fn writes_on_both_sides_refresh_both() {
         assert_eq!(
-            single_instance_change(&[write(7, "size"), write(7, "CFrame")]),
-            Some((Ref::new(7), names(&["size", "CFrame"])))
+            refresh_for(&[write(1, "size"), write(7, "size")], &[Ref::new(1)]),
+            BOTH
         );
     }
 
-    // A script that sets the same property twice, or reparents a part and
-    // then moves it, is still one instance's worth of patches — and a name
-    // is patched once however many times it was written.
+    // An insert, a delete or a move can take a part into or out of either
+    // set, whichever instance it names.
     #[test]
-    fn a_repeated_name_is_listed_once_and_a_reparent_sits_among_the_rest() {
+    fn anything_structural_refreshes_both() {
         let reparent = Change::Parent {
-            referent: Ref::new(7),
+            referent: Ref::new(3),
             old: None,
             new: Some(Ref::new(2)),
         };
-        let changes = [
-            write(7, "Transparency"),
-            reparent,
-            write(7, "CFrame"),
-            write(7, "Transparency"),
-        ];
-
+        assert_eq!(refresh_for(&[Change::Added(Ref::new(9))], &[]), BOTH);
+        assert_eq!(refresh_for(&[Change::Removed(Ref::new(9))], &[]), BOTH);
         assert_eq!(
-            single_instance_change(&changes),
-            Some((Ref::new(7), names(&["Transparency", "Parent", "CFrame"])))
+            refresh_for(&[write(1, "Name"), reparent], &[Ref::new(1)]),
+            BOTH
         );
     }
 
-    // Anything wider — nothing at all, a second instance, an instance added
-    // or removed (even alongside writes on that same instance, the way
-    // `Instance.new` followed by its setup logs) — leaves nothing one patch
-    // can show, so the caller rebuilds.
     #[test]
-    fn anything_wider_than_one_instance_is_not_classified() {
-        assert_eq!(single_instance_change(&[]), None);
+    fn an_empty_log_refreshes_nothing() {
         assert_eq!(
-            single_instance_change(&[write(1, "CFrame"), write(2, "CFrame")]),
-            None,
-            "a group drag: one write per part"
-        );
-        assert_eq!(single_instance_change(&[Change::Added(Ref::new(1))]), None);
-        assert_eq!(
-            single_instance_change(&[Change::Removed(Ref::new(1))]),
-            None
-        );
-        assert_eq!(
-            single_instance_change(&[Change::Added(Ref::new(1)), write(1, "Name")]),
-            None,
-            "an insert is a create however many properties it then sets"
-        );
-        assert_eq!(
-            single_instance_change(&[write(1, "Name"), Change::Removed(Ref::new(1))]),
-            None,
-            "a delete is a delete whatever was written first"
+            refresh_for(&[], &[Ref::new(1)]),
+            Refresh {
+                targets: false,
+                neighbours: false,
+            }
         );
     }
 }

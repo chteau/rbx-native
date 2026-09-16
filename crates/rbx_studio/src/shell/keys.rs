@@ -78,12 +78,10 @@ impl Shell {
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
         let removed = dom.remove(reference);
         self.dom = dom;
-        // A subtree delete always logs more than one `Change::Removed`, or a
-        // lone one that still isn't a `Property`/`Parent` write — either way
-        // `single_instance_change` reads it as unclassifiable, so undoing this
-        // always falls back to a full reload, correctly.
+        // One `Change::Removed` per instance in the subtree, each taken out
+        // of the viewport in place — and put back the same way when this is
+        // undone, since the log is reflected against whichever DOM stands.
         let changes = self.dom.take_changes();
-        self.record_history_change(changes);
 
         self.rebuild_explorer(cx);
         // The Explorer holds one selection, always the deleted root itself,
@@ -94,7 +92,10 @@ impl Shell {
             Some(kept) => self.select(kept, cx),
             None => self.deselect(cx),
         }
-        self.reload_viewport(cx);
+        // After the selection settled, not before: what the viewport is
+        // told to refresh depends on what is selected now.
+        self.reflect_changes(&changes, cx);
+        self.record_history_change(changes);
         cx.notify();
     }
 
@@ -118,17 +119,16 @@ impl Shell {
             apply_part_defaults(&mut dom, reference);
         }
         self.dom = dom;
-        // An insert always logs a `Change::Added` (plus, for a `Part`, a
-        // dozen more `Property` writes for its defaults, all on that same
-        // new instance) — and an `Added` is what `single_instance_change`
-        // refuses to classify however many writes sit beside it, so undoing
-        // this falls back to a full reload, correctly.
+        // An insert logs a `Change::Added` plus, for a `Part`, a dozen
+        // `Property` writes for its defaults, all on that same new instance:
+        // one instance for the viewport to build however many writes set it
+        // up, and one to take out again when this is undone.
         let changes = self.dom.take_changes();
-        self.record_history_change(changes);
 
         self.rebuild_explorer(cx);
         self.select(reference, cx);
-        self.reload_viewport(cx);
+        self.reflect_changes(&changes, cx);
+        self.record_history_change(changes);
         cx.notify();
     }
 

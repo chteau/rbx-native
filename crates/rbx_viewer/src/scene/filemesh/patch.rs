@@ -1,8 +1,9 @@
-//! The file-mesh half of `Scene::patch_mesh_instance`: re-reading one
+//! The file-mesh half of `Scene::resync_part`: re-reading one
 //! `MeshPart`/`SpecialMesh` entry off the DOM and rebuilding its
 //! [`ResolvedInstance`] against meshes and images that already downloaded,
 //! without going anywhere near the network.
 
+use rbx_assets::AssetRef;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
@@ -23,6 +24,11 @@ pub(crate) fn replan(
 }
 
 impl Entry {
+    /// The mesh this entry draws through — what has to have downloaded.
+    pub(crate) fn asset(&self) -> &AssetRef {
+        &self.mesh
+    }
+
     /// Whether a fresh [`super::resolve`] would drop this entry as fully
     /// transparent — told apart from [`Entry::patched`]'s other `None`s, since
     /// an invisible instance is removed in place while the rest need a reload.

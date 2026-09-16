@@ -189,35 +189,42 @@ impl Shadows {
     }
 
     /// The shadow-map half of a single-instance edit (see
-    /// `Renderer::sync_instance`): rewrites the part's caster in place, moves
+    /// `Renderer::sync_part`): rewrites the part's caster in place, moves
     /// it to its new shape's batch, drops it if it stopped casting, or adds
     /// it if it just started.
-    pub(super) fn sync_caster(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        part: &crate::scene::Part,
-    ) {
-        casters::sync_shape(device, queue, &mut self.shape_batches, part);
+    pub(super) fn sync_caster(&mut self, device: &wgpu::Device, part: &crate::scene::Part) {
+        casters::sync_shape(device, &mut self.shape_batches, part);
     }
 
     /// [`Shadows::sync_caster`] for a part drawn as a resolved file mesh —
-    /// the shadow-map half of `Renderer::sync_mesh_instance`. `false` only
+    /// the shadow-map half of `Renderer::sync_part`'s mesh case. `false` only
     /// when a new batch would need a mesh `resolved` never downloaded.
     pub(super) fn sync_mesh_caster(
         &mut self,
         device: &wgpu::Device,
-        queue: &wgpu::Queue,
         resolved: &crate::scene::Resolved,
         instance: &crate::scene::ResolvedInstance,
     ) -> bool {
-        casters::sync_mesh(device, queue, &mut self.mesh_batches, resolved, instance)
+        casters::sync_mesh(device, &mut self.mesh_batches, resolved, instance)
     }
 
     /// Drops a file-mesh caster whose instance the scene no longer draws at
-    /// all (see `Renderer::remove_mesh_instance`); a no-op if it never cast.
-    pub(super) fn remove_mesh_caster(&mut self, queue: &wgpu::Queue, referent: rbx_dom::Ref) {
-        self.mesh_batches.remove(queue, referent);
+    /// all (see `Renderer::sync_part`); a no-op if it never cast.
+    pub(super) fn remove_mesh_caster(&mut self, referent: rbx_dom::Ref) {
+        self.mesh_batches.remove(referent);
+    }
+
+    /// Drops a box caster whose part no longer draws as one; a no-op if it
+    /// never cast.
+    pub(super) fn remove_caster(&mut self, referent: rbx_dom::Ref) {
+        self.shape_batches.remove(referent);
+    }
+
+    /// Uploads what the edits since the last frame owe both caster buffers
+    /// — see `slots::Slots::flush`.
+    pub(super) fn flush(&mut self, queue: &wgpu::Queue) {
+        self.shape_batches.flush(queue);
+        self.mesh_batches.flush(queue);
     }
 
     pub(super) fn view(&self) -> &wgpu::TextureView {

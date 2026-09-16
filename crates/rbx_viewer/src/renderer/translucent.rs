@@ -111,6 +111,19 @@ impl Translucent {
         }));
     }
 
+    /// Takes one part out of this pass — it stopped blending, or is gone.
+    /// CPU-side only, like [`Translucent::place`]; a no-op for a referent
+    /// not held.
+    pub(super) fn remove(&mut self, referent: Ref) {
+        let Some(index) = self.part_index.remove(&referent) else {
+            return;
+        };
+        self.items.swap_remove(index);
+        if let Some(moved) = self.items.get(index) {
+            self.part_index.insert(moved.referent, index);
+        }
+    }
+
     /// The CPU half of [`Translucent::sync`], which touches no buffer: the
     /// next `prepare` re-sorts and re-uploads every item anyway, so all an
     /// edit has to keep straight is `items` and the index into it. A removal

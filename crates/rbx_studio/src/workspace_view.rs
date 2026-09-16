@@ -9,6 +9,7 @@
 //! of that but the upload happens on a thread of its own (see [`pump`]); this
 //! module is the UI half — events in, finished frames out.
 
+mod changes;
 mod frame;
 mod gizmo;
 mod hover;
@@ -17,7 +18,6 @@ mod label;
 mod presence;
 mod pump;
 mod quality;
-mod reload;
 mod stats;
 
 use std::cell::Cell;
@@ -28,7 +28,7 @@ use std::time::{Duration, Instant};
 use glam::{Mat3, Mat4, Vec3};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
-use rbx_dom::Ref;
+use rbx_dom::{Ref, WeakDom};
 use rbx_viewer::pick::{Meshes, Ray, Selected};
 use rbx_viewer::{CameraInput, Headless, Pose, QualityLevel};
 
@@ -143,6 +143,14 @@ pub(crate) enum ViewportAction {
 
 impl EventEmitter<ViewportAction> for WorkspaceView {}
 
+/// What a view opens on: the viewer, and the tree it was built from, which
+/// the render thread keeps as its own copy of the editor's DOM from then on
+/// — see `pump::Command::Changes`.
+pub(crate) struct Opened {
+    pub(crate) viewer: Headless,
+    pub(crate) dom: WeakDom,
+}
+
 pub(crate) struct WorkspaceView {
     /// The render thread. It owns the viewer, which is why no camera state is
     /// readable from here — only what it reports back with each frame.
@@ -239,7 +247,7 @@ pub(crate) struct WorkspaceView {
 
 impl WorkspaceView {
     pub(crate) fn new(
-        mut viewer: Headless,
+        opened: Opened,
         camera: Option<PlaceCamera>,
         quality: QualityLevel,
         orthographic: bool,
@@ -247,6 +255,7 @@ impl WorkspaceView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let Opened { mut viewer, dom } = opened;
         // A file with no camera of its own still has to be shown somehow: the
         // viewer then orbits its bounds until the first input, exactly as
         // `rbxview --orbit` does.
@@ -290,7 +299,7 @@ impl WorkspaceView {
         });
 
         WorkspaceView {
-            pump: Pump::spawn(viewer, interval, quality),
+            pump: Pump::spawn(viewer, dom, interval, quality),
             focus,
             cursor: None,
             lock: PointerLock::new(),

@@ -44,7 +44,7 @@ use crate::save::Format;
 use crate::script_editor::ScriptEditor;
 use crate::settings::Settings;
 use crate::transform::{Targets, Transform};
-use crate::workspace_view::{AssetWarnings, PoseSynced, ViewportAction, WorkspaceView};
+use crate::workspace_view::{AssetWarnings, Opened, PoseSynced, ViewportAction, WorkspaceView};
 use crate::Place;
 use quality::{quality_labels, quality_row};
 use selection::{outlined, Selection};
@@ -191,8 +191,12 @@ impl Shell {
 
         let initial_outline = outlined(&dom, &database, &Vec::from_iter(selected));
         let viewport = cx.new(|cx| {
-            WorkspaceView::new(
+            let opened = Opened {
                 viewer,
+                dom: dom.clone(),
+            };
+            WorkspaceView::new(
+                opened,
                 camera,
                 quality,
                 orthographic,

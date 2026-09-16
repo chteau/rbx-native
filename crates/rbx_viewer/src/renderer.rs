@@ -34,15 +34,14 @@ mod trail;
 mod translucent;
 
 use glam::Mat3;
-use rbx_dom::{Ref, WeakDom};
-use rbx_reflection::ReflectionDatabase;
+use rbx_dom::Ref;
 
 use crate::camera::{Camera, Frustum, Viewpoint};
 use crate::gizmo::{arm_length, basis, Faces, Gizmo, Handles, Kind, Shape};
 use crate::lighting::{Lighting, LocalLight};
 use crate::pick::Selected;
 use crate::quality::QualityProfile;
-use crate::scene::{Bounds, Part, Scene};
+use crate::scene::{Bounds, Scene};
 use crate::textures::Decor;
 use beam::Beams;
 use cull::MainCull;
@@ -77,8 +76,8 @@ pub(crate) struct World<'a> {
     pub(crate) decor: &'a Decor,
     pub(crate) lighting: &'a Lighting,
     /// The place's `PointLight`s, `SpotLight`s and `SurfaceLight`s. Empty with
-    /// `--no-lights`, and static: nothing in this viewer moves a light, so they
-    /// are uploaded once and never rewritten.
+    /// `--no-lights`. Uploaded once here; an edit that moves, adds or removes
+    /// one rewrites them through `Renderer::set_lights`.
     pub(crate) lights: &'a [LocalLight],
 }
 
@@ -240,7 +239,7 @@ impl Renderer {
         let stars = Stars::new(device, target, &layout, shared, &decor.stars);
         // Read once here rather than kept as a whole `Scene`: an edit keeps
         // the copy in step one placement at a time (see
-        // `Renderer::sync_instance`), and `Renderer::new` has no other reason
+        // `Renderer::sync_part`), and `Renderer::new` has no other reason
         // to hold on to the scene itself. `hover` keeps its own copy rather
         // than sharing `selection`'s: the two outlines' GPU state stays
         // independent, at the cost of one extra clone paid once here.
@@ -382,68 +381,6 @@ impl Renderer {
         })
     }
 
-    /// Applies a `Lighting`/`Atmosphere`/`Clouds`/`PostEffect`/`Light` edit
-    /// without rebuilding the scene.
-    ///
-    /// The constant terms (`sun_direction`, `fog`, `clouds`, `Effects`, …) are
-    /// already folded into the per-frame uniform (see [`Renderer::draw`]), so
-    /// swapping `self.lighting`/`self.post`'s copy in is enough for those; only
-    /// the local-light storage buffer is written here rather than every frame.
-    /// Nothing else writes that buffer: a reload ([`Renderer::rebuild`]) or a
-    /// quality switch (`cap_lights`) that changes how many lights it holds
-    /// replaces it outright, and both keep `self.lights` in step with its
-    /// length, which is what makes the write below always fit.
-    ///
-    /// `false` when `lights.len()` differs from what was last uploaded — a
-    /// property edit alone never adds or removes a `Light`, so this is a
-    /// safety net rather than an expected path, and it means the buffer is the
-    /// wrong size to write into; the caller falls back to a full reload.
-    pub(crate) fn update_lighting(
-        &mut self,
-        queue: &wgpu::Queue,
-        lighting: Lighting,
-        lights: &[LocalLight],
-    ) -> bool {
-        if lights.len() != self.all_lights.len() {
-            return false;
-        }
-        self.lighting = lighting;
-        self.post.set_effects(lighting.effects);
-        lighting::local_lights_write(queue, &self.lights_buffer, &lights[..self.lights]);
-        self.all_lights = lights.to_vec();
-        true
-    }
-
-    /// Brings every pass in line with one edited `BasePart` (see
-    /// `crate::scene::Scene::patch_part`): its opaque or blended instance and
-    /// its shadow caster are each rewritten in place, moved to another batch
-    /// (a new shape, a `Transparency` that crossed 0, a `CastShadow` toggle),
-    /// added, or dropped — whichever the part's new state calls for — and the
-    /// selection outline follows its placement. A shape the place never used
-    /// before gets its unit mesh built here (see `Meshes::ensure`). Every
-    /// `Decal`/`Texture` child follows along too, re-projected onto the
-    /// part's new placement (see `crate::textures::faces` and
-    /// `textured::Textured::sync`) instead of staying drawn at the old one
-    /// until the next full reload.
-    pub(crate) fn sync_instance(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        dom: &WeakDom,
-        database: &ReflectionDatabase,
-        part: &Part,
-    ) {
-        self.meshes.ensure(device, part.kind);
-        self.shaped.sync(device, queue, part);
-        self.translucent.sync(device, part);
-        self.shadows.sync_caster(device, queue, part);
-        self.selection.place(part.referent, part.placement());
-        self.hover.place(device, part.referent, part.placement());
-        for (_, face) in crate::textures::faces(dom, database, part.referent, &part.placement()) {
-            self.textured.sync(device, queue, &face);
-        }
-    }
-
     /// Uploads every texture still queued from the last load or reload, all
     /// at once, instead of a bounded amount per [`Renderer::draw`] call.
     ///
@@ -468,6 +405,11 @@ impl Renderer {
         if size.0 == 0 || size.1 == 0 {
             return;
         }
+
+        // Before any pass, the sun map's included: an edit since the last
+        // frame left its instance records owed to the batch buffers (see
+        // `Renderer::flush_writes`).
+        self.flush_writes(queue);
 
         // Bounded so a place with many `Decal`/`Texture` images spreads their
         // GPU upload across the frames after load instead of stalling this

@@ -106,6 +106,16 @@ impl Hover {
         }
     }
 
+    /// Forgets where one part was drawn — it stopped drawing as a box (a mesh
+    /// took over) or is gone — and clears the hover outline if it was the one
+    /// hovered: a box drawn around a part that no longer exists would
+    /// otherwise linger until the cursor moves onto something else.
+    pub(super) fn remove(&mut self, device: &wgpu::Device, referent: Ref) {
+        if self.placements.remove(&referent).is_some() && self.referent == Some(referent) {
+            self.set(device, None);
+        }
+    }
+
     /// Draws the outline, if any, reusing whichever camera bind group the rest
     /// of the scene pass just bound at group 0.
     pub(super) fn draw<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, frame: &'a wgpu::BindGroup) {

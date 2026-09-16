@@ -16,7 +16,7 @@ impl FileMeshes {
     /// that batch before, against `resolved`'s already-downloaded assets.
     ///
     /// `false` when that new batch would need a mesh or texture `resolved`
-    /// never downloaded, which `Scene::patch_mesh_instance` already refuses;
+    /// never downloaded, which `Scene::resync_part` already refuses;
     /// the caller falls back to a full reload.
     pub(in crate::renderer) fn sync(
         &mut self,
@@ -27,7 +27,7 @@ impl FileMeshes {
     ) -> bool {
         let key = GroupKey::of(instance);
         if blends(resolved, &key) || instance.alpha < 1.0 {
-            self.opaque.remove(queue, instance.referent);
+            self.opaque.remove(instance.referent);
             self.place_blended(device, queue, resolved, key, instance)
         } else {
             self.remove_blended(instance.referent);
@@ -43,7 +43,6 @@ impl FileMeshes {
             };
             self.opaque.sync(
                 device,
-                queue,
                 instance.referent,
                 Some((key, raw(instance), ())),
                 |_| geometry,
@@ -52,10 +51,17 @@ impl FileMeshes {
     }
 
     /// Drops an instance the scene no longer draws at all (it turned fully
-    /// transparent); a no-op for one neither pass held.
-    pub(in crate::renderer) fn remove(&mut self, queue: &wgpu::Queue, referent: Ref) {
-        self.opaque.remove(queue, referent);
+    /// transparent, or is gone); a no-op for one neither pass held.
+    pub(in crate::renderer) fn remove(&mut self, referent: Ref) {
+        self.opaque.remove(referent);
         self.remove_blended(referent);
+    }
+
+    /// Uploads what the edits since the last frame owe the opaque batches —
+    /// see `slots::Slots::flush`. The blended batches re-upload every frame
+    /// regardless (see `FileMeshes::prepare`).
+    pub(in crate::renderer) fn flush(&mut self, queue: &wgpu::Queue) {
+        self.opaque.flush(queue);
     }
 
     fn remove_blended(&mut self, referent: Ref) {

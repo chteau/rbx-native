@@ -8,7 +8,7 @@ use super::Part;
 ///
 /// Computed from the corners of rotated boxes, not from their centers, to ensure
 /// tight framing of the entire scene.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Bounds {
     // Readable throughout `scene`, which is where the extent is asserted on.
     pub(super) min: Vec3,
@@ -50,9 +50,9 @@ impl Bounds {
 ///
 /// Corners rather than centers: a rotated part sticks out of its own position, and the
 /// camera framing is only as good as this box.
-pub(crate) fn of(parts: &[Part]) -> Option<Bounds> {
+pub(crate) fn of<'a>(parts: impl IntoIterator<Item = &'a Part>) -> Option<Bounds> {
     parts
-        .iter()
+        .into_iter()
         .flat_map(|part| unit_cube_corners(part.transform))
         .fold(None, grow)
 }

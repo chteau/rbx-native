@@ -58,6 +58,14 @@ impl Resident {
             .fetch(references, |missing| shared(assets::load_images(missing)))
     }
 
+    /// Whether `reference` was asked for as an image and would not download
+    /// or decode — for an edit deciding whether a face it cannot paint is
+    /// one a full build would have left unpainted too, or one nobody has
+    /// fetched yet.
+    pub(crate) fn image_failed(&self, reference: &AssetRef) -> bool {
+        matches!(self.images.entries.get(reference), Some(Err(_)))
+    }
+
     /// [`Resident::images`] for file meshes.
     pub(crate) fn meshes(
         &mut self,
