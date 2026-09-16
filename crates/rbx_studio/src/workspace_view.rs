@@ -39,7 +39,7 @@ use crate::transform::{self, Targets, Transform};
 use crate::{display, pacing};
 use frame::{device_pixels, render_image, Viewport};
 use gizmo::Drag;
-use input::{camera_key, wheel_notches, Layout};
+use input::{camera_key, chorded, tool_key, wheel_notches, Layout};
 use pump::Pump;
 
 // How long a speed change stays on screen, matching the standalone viewer's
@@ -531,10 +531,12 @@ impl WorkspaceView {
     }
 
     fn key(&mut self, keystroke: &Keystroke, pressed: bool, cx: &mut Context<Self>) {
+        let layout = Layout::of(cx.keyboard_layout().name());
         // Only on the press: a tool switch is an edge, not a state the way the
         // camera's own movement keys are.
         if pressed {
-            if let Some(action) = transform::action_for(&keystroke.key, keystroke.modifiers) {
+            let key = tool_key(&keystroke.key, layout);
+            if let Some(action) = transform::action_for(key, keystroke.modifiers) {
                 cx.emit(ViewportAction::Tool(action));
                 return;
             }
@@ -546,7 +548,15 @@ impl WorkspaceView {
             }
         }
 
-        let layout = Layout::of(cx.keyboard_layout().name());
+        // A chord — Ctrl+Z, Ctrl+S, Ctrl+Y — is a command for whichever
+        // handler up the tree binds it, never a camera key: `z` sits on the
+        // W position of an AZERTY keyboard, and undo must not also fly the
+        // camera forward. Releases are always honoured, so a key pressed
+        // plain and released with a modifier already down cannot leave the
+        // camera moving on its own.
+        if pressed && chorded(keystroke.modifiers) {
+            return;
+        }
         if let Some(key) = camera_key(&keystroke.key, layout) {
             self.pump.input(CameraInput::Key { key, pressed });
         }

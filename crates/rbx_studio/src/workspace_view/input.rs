@@ -6,7 +6,7 @@
 //! same physical mapping has to be rebuilt from that character plus the layout
 //! GPUI reports (see [`Layout`]).
 
-use gpui_kit::ScrollDelta;
+use gpui_kit::{Modifiers, ScrollDelta};
 use rbx_viewer::CameraKey;
 
 // GPUI's Linux backends report one wheel notch as three "lines" (their own
@@ -69,6 +69,33 @@ pub(crate) fn camera_key(key: &str, layout: Layout) -> Option<CameraKey> {
         "q" => Some(CameraKey::Down),
         _ => None,
     }
+}
+
+/// The key a keystroke means to the transform toolbar, whose shortcuts are
+/// the digits `1`-`4` — on an AZERTY keyboard those sit on the *shifted*
+/// digit row, and the unshifted keys type `&`, `é`, `"` and `'` instead, which
+/// GPUI reports under their keysym names. Studio binds the physical key, so
+/// the unshifted row has to reach the same tools; `Shift`+`2` still types a
+/// plain `2` there, which is exactly the chord `transform::action_for` gives
+/// the increment field.
+pub(crate) fn tool_key<'a>(key: &'a str, layout: Layout) -> &'a str {
+    if layout != Layout::Azerty {
+        return key;
+    }
+    match key {
+        "ampersand" => "1",
+        "eacute" => "2",
+        "quotedbl" => "3",
+        "apostrophe" => "4",
+        _ => key,
+    }
+}
+
+/// Whether a keystroke is a chord — a command modifier is down — rather than
+/// a key the camera may read. `Shift` is not one: it is the camera's own
+/// precision modifier, and `Shift`+`W` still means forward.
+pub(crate) fn chorded(modifiers: Modifiers) -> bool {
+    modifiers.control || modifiers.alt || modifiers.platform
 }
 
 /// A scroll event in wheel notches, positive away from the user.
@@ -145,6 +172,50 @@ mod tests {
         assert_eq!(Layout::of("English (US)"), Layout::Qwerty);
         assert_eq!(Layout::of("German"), Layout::Qwerty);
         assert_eq!(Layout::of("unknown"), Layout::Qwerty);
+    }
+
+    #[test]
+    fn azerty_s_unshifted_digit_row_reaches_the_tool_shortcuts() {
+        assert_eq!(tool_key("ampersand", Layout::Azerty), "1");
+        assert_eq!(tool_key("eacute", Layout::Azerty), "2");
+        assert_eq!(tool_key("quotedbl", Layout::Azerty), "3");
+        assert_eq!(tool_key("apostrophe", Layout::Azerty), "4");
+        // Shifted, the same keys type the digits themselves.
+        assert_eq!(tool_key("2", Layout::Azerty), "2");
+    }
+
+    #[test]
+    fn qwerty_s_punctuation_is_not_a_tool_shortcut() {
+        assert_eq!(tool_key("eacute", Layout::Qwerty), "eacute");
+        assert_eq!(tool_key("apostrophe", Layout::Qwerty), "apostrophe");
+        assert_eq!(tool_key("2", Layout::Qwerty), "2");
+    }
+
+    // The bug this exists for: Ctrl+Z with the viewport focused is an undo,
+    // and on AZERTY `z` is also the forward key — it must not be both.
+    #[test]
+    fn a_command_modifier_makes_a_chord_but_shift_does_not() {
+        let control = Modifiers {
+            control: true,
+            ..Modifiers::none()
+        };
+        let alt = Modifiers {
+            alt: true,
+            ..Modifiers::none()
+        };
+        let platform = Modifiers {
+            platform: true,
+            ..Modifiers::none()
+        };
+        let shift = Modifiers {
+            shift: true,
+            ..Modifiers::none()
+        };
+        assert!(chorded(control));
+        assert!(chorded(alt));
+        assert!(chorded(platform));
+        assert!(!chorded(shift));
+        assert!(!chorded(Modifiers::none()));
     }
 
     #[test]

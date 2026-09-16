@@ -379,13 +379,15 @@ impl WorkspaceView {
         // nowhere still has to be the one the next step is measured from.
         self.drag = Some(drag);
 
-        let first = !std::mem::replace(&mut self.dragged, true);
         let referent = anchor.referent;
+        // `first` is asked for only once a step is known to change the part
+        // (see [`stepped`]): the answer opens the gesture's undo entry, and a
+        // sample that leaves the part where it stands must not spend it.
         match change {
             Change::Position(position) => {
-                if position == anchor.position() {
+                let Some((_, first)) = stepped(anchor, change, &mut self.dragged) else {
                     return;
-                }
+                };
                 // Applied to every selected part below, not just the anchor:
                 // this is what keeps the group's relative layout intact while
                 // only the anchor's own gizmo drag is ever actually measured
@@ -405,7 +407,7 @@ impl WorkspaceView {
             // moves, exactly as it did before there was more than one part to
             // select.
             _ => {
-                let Some(moved) = applied(anchor, change) else {
+                let Some((moved, first)) = stepped(anchor, change, &mut self.dragged) else {
                     return;
                 };
                 self.targets.set_anchor(moved);
@@ -524,6 +526,8 @@ impl WorkspaceView {
             *offset = turn * *offset;
         }
 
+        // A quarter turn always changes the part, so it can open the gesture
+        // the way a real drag step does.
         let first = !std::mem::replace(&mut self.dragged, true);
         cx.emit(ViewportAction::Turned {
             referent: target.referent,
@@ -649,6 +653,24 @@ pub(super) fn advance(drag: Drag, ray: Ray, landing: Landing) -> Option<(Drag, C
             ))
         }
     }
+}
+
+/// One step of a gesture: the target as `change` leaves it and whether this is
+/// the gesture's first step to change anything — the one that opens its undo
+/// entry — or `None` for a sample that leaves the part exactly where it is.
+///
+/// `dragged` is marked only on a real change, never on a sample. The first
+/// samples of a snapped Move round their travel to nothing until the cursor
+/// has crossed half an increment, and a gesture that spent its "first" on
+/// one of those would write every later step without ever pushing history:
+/// the whole drag would then sit outside undo.
+pub(super) fn stepped(
+    target: Target,
+    change: Change,
+    dragged: &mut bool,
+) -> Option<(Target, bool)> {
+    let moved = applied(target, change)?;
+    Some((moved, !std::mem::replace(dragged, true)))
 }
 
 /// The target as this change leaves it, or `None` when it leaves it exactly as

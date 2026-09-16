@@ -633,3 +633,27 @@ fn a_change_carries_the_part_through_to_the_next_drag_step() {
     assert!((turned.position() - target.position()).length() < 1e-4);
     assert!((turned.orientation().x_axis - Vec3::NEG_Z).length() < 1e-4);
 }
+
+// The bug this exists for: a snapped Move's first samples round their travel
+// to nothing, and a gesture that spent its "first" on one of them wrote every
+// later step without ever opening an undo entry.
+#[test]
+fn a_gesture_opens_its_undo_entry_on_its_first_real_change_not_its_first_sample() {
+    let anchor = block();
+    let mut dragged = false;
+
+    // Samples that leave the part where it is are not steps at all.
+    let still = Change::Position(anchor.position());
+    assert_eq!(stepped(anchor, still, &mut dragged), None);
+    assert_eq!(stepped(anchor, still, &mut dragged), None);
+    assert!(!dragged, "a sample that changed nothing began no gesture");
+
+    let moved = Change::Position(anchor.position() + Vec3::X);
+    let (target, first) = stepped(anchor, moved, &mut dragged).expect("the part moved");
+    assert!(first, "the first real change opens the gesture");
+    assert_eq!(target.position(), anchor.position() + Vec3::X);
+
+    let further = Change::Position(anchor.position() + Vec3::X * 2.0);
+    let (_, first) = stepped(target, further, &mut dragged).expect("the part moved again");
+    assert!(!first, "later steps share the entry the first one opened");
+}
