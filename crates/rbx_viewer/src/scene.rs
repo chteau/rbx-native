@@ -46,6 +46,7 @@ pub(crate) use gui::Painted;
 pub(crate) use material::{Catalog, Kind, Maps, Slot};
 pub(crate) use particles::sequence::{eval_color, eval_number};
 pub(crate) use particles::{Emitter, Simulation};
+use resync::Standing;
 pub(crate) use resync::{Drawn, PartSync};
 pub(crate) use shape::{resolve as resolve_shape, ShapeKind};
 pub(crate) use trail::{segments as trail_segments, Recorder as TrailRecorder, Trail};
@@ -171,7 +172,22 @@ impl Part {
 /// (see [`Part::is_suppressed`]) until [`Scene::resolve_file_meshes`] runs.
 pub(crate) struct Scene {
     parts: Vec<Part>,
+    /// Where each referent stands in `parts`, so an edit finds its box
+    /// without a scan of the place — see [`Standing`]. Kept in step by
+    /// [`Scene::push_part`] and `Scene::remove_part`, the only two places
+    /// `parts` changes length.
+    standing: HashMap<Ref, Standing>,
+    /// The extent as it stands, grown on the spot by every part that moved
+    /// past it since [`Scene::refresh_bounds`] last ran — see
+    /// `Scene::note_extent`.
     bounds: Bounds,
+    /// `bounds` as [`Scene::refresh_bounds`] last answered with, so it can
+    /// say whether the extent moved since.
+    reported: Bounds,
+    /// A part that may have been holding an edge moved or went, so `bounds`
+    /// is only known to be too large: the next [`Scene::refresh_bounds`]
+    /// recounts every part instead of trusting it.
+    extent_stale: bool,
     materials: Catalog,
     file_mesh_plan: filemesh::Plan,
     /// Empty until [`Scene::resolve_file_meshes`] runs. `Renderer::new` only
@@ -179,6 +195,13 @@ pub(crate) struct Scene {
     /// mesh/texture data has to live — `Renderer::new`'s signature has no room
     /// for a third, network-dependent argument.
     resolved_file_meshes: filemesh::Resolved,
+    /// Every mesh and union asset the load asked for and never got — a 404,
+    /// a file the content package lacks, bytes that would not decode or
+    /// carve. The part draws as its box, exactly as a full build leaves it,
+    /// and an edit of that part is a box edit rather than a reload asking
+    /// for the asset once more; see [`Scene::resync_part`]. Only an asset
+    /// nobody asked for yet is a reload's to fetch.
+    unresolved: HashSet<AssetRef>,
     /// Every `ParticleEmitter` parented to a drawn `BasePart`; see
     /// [`Scene::particle_emitters`].
     emitters: Vec<Emitter>,
@@ -213,12 +236,21 @@ impl Scene {
         let bounds = bounds::of(&parts).ok_or_else(|| "no BasePart to draw".to_string())?;
         let file_mesh_plan = filemesh::plan(dom, database, &mut materials);
         let union_plan = union::plan(dom, database, &mut materials);
+        let standing = parts
+            .iter()
+            .enumerate()
+            .map(|(index, part)| (part.referent(), Standing::whole(index)))
+            .collect();
         let mut scene = Scene {
             parts,
+            standing,
             bounds,
+            reported: bounds,
+            extent_stale: false,
             materials,
             file_mesh_plan,
             resolved_file_meshes: filemesh::Resolved::default(),
+            unresolved: HashSet::new(),
             emitters: Vec::new(),
             beams: Vec::new(),
             trails: Vec::new(),
@@ -291,6 +323,20 @@ impl Scene {
     /// a billboard's quad, which only exists once an eye does.
     pub(crate) fn gui_spaces(&self) -> &[SpaceGui] {
         &self.gui_spaces
+    }
+
+    /// Every image the GUI trees sample, in first-seen paint order and
+    /// without repeats across the three container kinds — one download for
+    /// an `ImageLabel` image that a screen and a surface both show.
+    pub(crate) fn gui_assets(&self) -> Vec<AssetRef> {
+        let mut references = Vec::new();
+        for screen in &self.gui {
+            screen.assets(&mut references);
+        }
+        for gui in &self.gui_spaces {
+            gui.assets(&mut references);
+        }
+        references
     }
 
     /// Every material map the scene needs before [`Scene::resolve_materials`].
@@ -367,6 +413,12 @@ impl Scene {
         meshes: HashMap<AssetRef, Arc<rbx_mesh::Mesh>>,
         images: HashMap<AssetRef, Arc<Image>>,
     ) {
+        self.unresolved.extend(
+            self.file_mesh_plan
+                .mesh_refs()
+                .into_iter()
+                .filter(|reference| !meshes.contains_key(reference)),
+        );
         let (resolved, hidden) = filemesh::resolve(&self.file_mesh_plan, meshes, images);
         for part in &mut self.parts {
             if hidden.contains(&part.referent()) {
@@ -404,15 +456,40 @@ impl Scene {
             &mut self.materials,
             evaluations,
         );
+        // A union whose box is not hidden got nothing to stand in for it:
+        // its asset never downloaded or would not parse.
+        for (referent, asset) in self.union_plan.assets() {
+            if !resolution.hidden.contains(&referent) {
+                self.unresolved.insert(asset);
+            }
+        }
         for part in &mut self.parts {
             if resolution.hidden.contains(&part.referent()) {
                 part.suppressed = true;
             }
         }
-        self.parts.extend(resolution.parts);
+        for piece in resolution.parts {
+            self.push_part(piece);
+        }
         let resolved = &mut self.resolved_file_meshes;
         resolved.meshes.extend(resolution.meshes);
-        resolved.instances.extend(resolution.instances);
+        for instance in resolution.instances {
+            resolved.push(instance);
+        }
+    }
+
+    /// Appends `part`, keeping [`Scene::standing`] in step: a part that is
+    /// not its referent's own box is one of a failed union's recovered
+    /// pieces (see `union::tree`), which stand under the same referent as
+    /// the box they fill.
+    pub(super) fn push_part(&mut self, part: Part) {
+        let index = self.parts.len();
+        let standing = self.standing.entry(part.referent()).or_default();
+        match part.id.is_whole() {
+            true => standing.whole = Some(index),
+            false => standing.pieces += 1,
+        }
+        self.parts.push(part);
     }
 }
 

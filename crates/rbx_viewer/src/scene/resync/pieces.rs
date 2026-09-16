@@ -41,10 +41,10 @@ impl Scene {
             // union's own box, and so does this — unless the edit has just
             // pointed it at an asset nobody has fetched, which only a load
             // downloads and carves.
-            if !unions.knows(entry.asset()) && !self.union_plan.plans(referent, entry.asset()) {
+            if !unions.is_known(entry.asset()) && !self.union_plan.plans(referent, entry.asset()) {
                 return Err(Rebuild::Asset);
             }
-            self.remove_instance(referent);
+            self.resolved_file_meshes.remove(referent);
             return Ok(Drawn::Box(*part));
         };
 
@@ -62,7 +62,7 @@ impl Scene {
             {
                 return Err(Rebuild::Asset);
             }
-            self.remove_instance(referent);
+            self.resolved_file_meshes.remove(referent);
             self.place_pieces(referent, &pieces);
             return Ok(Drawn::Pieces {
                 placement: part.placement(),
@@ -73,7 +73,7 @@ impl Scene {
         // Fully transparent: a fresh resolution lists no instance for it,
         // and the box above stays hidden so it cannot reappear underneath.
         if entry.is_invisible() {
-            self.remove_instance(referent);
+            self.resolved_file_meshes.remove(referent);
             return Ok(Drawn::Gone);
         }
         let instance = entry
@@ -102,12 +102,13 @@ impl Scene {
                 placed[index] = true;
             }
         }
-        self.parts.extend(
-            pieces
-                .iter()
-                .zip(&placed)
-                .filter(|(_, placed)| !**placed)
-                .map(|(piece, _)| *piece),
-        );
+        for piece in pieces
+            .iter()
+            .zip(&placed)
+            .filter(|(_, placed)| !**placed)
+            .map(|(piece, _)| *piece)
+        {
+            self.push_part(piece);
+        }
     }
 }

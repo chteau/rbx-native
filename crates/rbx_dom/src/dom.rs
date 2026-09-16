@@ -1,5 +1,7 @@
 //! Weak reference-based instance tree.
 
+mod mirror;
+
 use std::collections::HashMap;
 
 use crate::change::Change;
@@ -7,6 +9,8 @@ use crate::error::DomError;
 use crate::instance::Instance;
 use crate::reference::Ref;
 use crate::variant::Variant;
+
+pub use mirror::Snapshot;
 
 /// A tree of instances using weak references (u32 IDs).
 ///

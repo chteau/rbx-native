@@ -132,9 +132,9 @@ impl Patcher<'_> {
             self.loaded.scene_mut().replan_gui_spaces(dom, database);
         }
         if self.pending.screens || self.pending.spaces {
-            let scene = self.loaded.scene();
+            let world = self.loaded.world();
             self.offscreen.with_renderer(|renderer, device, queue| {
-                renderer.refresh_gui(device, queue, scene)
+                renderer.refresh_gui(device, queue, world)
             });
         }
         Ok(moved)

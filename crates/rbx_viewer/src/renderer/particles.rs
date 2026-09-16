@@ -57,7 +57,9 @@ pub(super) struct Particles {
     textures: Vec<Slot>,
     live: Vec<Live>,
     /// Whether the quality profile draws particles at all — `false` keeps
-    /// `live` empty for the whole run, [`Particles::replace`] included.
+    /// `live` empty, [`Particles::replace`] included. Re-read from the
+    /// profile by every [`Particles::rebuild`], so a level switched between
+    /// two scenes takes.
     enabled: bool,
     /// What [`Particles::rebuild`] learned about every texture it was asked
     /// for: `Some(slot)` uploaded into `textures`, `None` tried and failed. A
@@ -149,6 +151,7 @@ impl Particles {
     ) {
         self.live.clear();
         self.last_tick = None;
+        self.enabled = quality.particles;
         if !self.enabled || emitters.is_empty() {
             return;
         }

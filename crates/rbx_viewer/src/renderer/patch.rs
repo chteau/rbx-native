@@ -5,7 +5,7 @@
 use rbx_assets::AssetRef;
 use rbx_dom::Ref;
 
-use super::{lighting, shadow, Renderer};
+use super::{lighting, shadow, Renderer, World};
 use crate::camera::Camera;
 use crate::lighting::{Lighting, LocalLight};
 use crate::scene::{Bounds, Drawn, EffectKind, Part, PartId, PartSync, Resolved, Scene};
@@ -181,20 +181,22 @@ impl Renderer {
         }
     }
 
-    /// Rebuilds the GUI passes around `scene`'s re-planned trees (see
+    /// Rebuilds the GUI passes around `world`'s re-planned trees (see
     /// `Scene::replan_gui`) — the canvases are baked again, the atlas keeps
-    /// every image it already holds.
+    /// every image it already holds and takes on any `ImageLabel` image the
+    /// edit first named out of `Decor::gui`.
     pub(crate) fn refresh_gui(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        scene: &Scene,
+        world: World<'_>,
     ) {
         let quality = self.quality;
         self.gui.rebuild(
             device,
             queue,
-            (scene.gui_screens(), scene.gui_spaces()),
+            (world.scene.gui_screens(), world.scene.gui_spaces()),
+            &world.decor.gui,
             &quality,
         );
     }

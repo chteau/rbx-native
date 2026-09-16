@@ -50,9 +50,9 @@ impl Bounds {
 ///
 /// Corners rather than centers: a rotated part sticks out of its own position, and the
 /// camera framing is only as good as this box.
-pub(crate) fn of(parts: &[Part]) -> Option<Bounds> {
+pub(crate) fn of<'a>(parts: impl IntoIterator<Item = &'a Part>) -> Option<Bounds> {
     parts
-        .iter()
+        .into_iter()
         .flat_map(|part| unit_cube_corners(part.transform))
         .fold(None, grow)
 }

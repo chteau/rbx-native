@@ -44,16 +44,9 @@ impl Evaluations {
     /// bytes never downloaded, or they did not parse as an operation tree.
     /// Either way a fresh [`super::resolve`] leaves the union drawing as its
     /// own box, which is what makes both answerable without a reload — see
-    /// [`Evaluations::knows`] for the one case that is not.
+    /// [`Evaluations::is_known`] for the one case that is not.
     pub(in crate::scene) fn of(&self, asset: &AssetRef) -> Option<&Evaluated> {
         self.known.get(asset)?.as_deref()
-    }
-
-    /// Whether this place has already tried to carve `asset` at all. A `true`
-    /// with no [`Evaluations::of`] is bytes that would not parse — a
-    /// permanent answer, and the same one a reload would come to.
-    pub(in crate::scene) fn knows(&self, asset: &AssetRef) -> bool {
-        self.known.contains_key(asset)
     }
 }
 

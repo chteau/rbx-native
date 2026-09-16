@@ -64,6 +64,30 @@ impl PartSync {
     }
 }
 
+/// Where a referent stands in `Scene::parts`, so an edit finds it without a
+/// pass over the place — see [`Scene::standing_of`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(super) struct Standing {
+    /// Its own box. `None` only while a union being inserted has had its
+    /// recovered pieces placed and its own box not yet.
+    pub(super) whole: Option<usize>,
+    /// How many of those pieces stand under it (see `union::tree`) — zero
+    /// for everything but a union whose boolean failed. They are counted
+    /// rather than indexed one by one: a handful of parts under one
+    /// referent, and only an edit of that very union ever walks them.
+    pub(super) pieces: u32,
+}
+
+impl Standing {
+    /// A referent's own box, standing alone at `index`.
+    pub(super) fn whole(index: usize) -> Self {
+        Standing {
+            whole: Some(index),
+            pieces: 0,
+        }
+    }
+}
+
 impl Scene {
     /// Recomputes one part from `dom`, exactly as [`Scene::from_dom`] and
     /// the resolutions after it would build it, and puts the result in
@@ -81,11 +105,16 @@ impl Scene {
     /// edit that lands on a material past that count needs its maps
     /// uploaded, which only a reload does (see [`Rebuild::Asset`]); the
     /// same for a mesh, texture or `SurfaceAppearance` set the scene never
-    /// downloaded. `unions` is every boolean this place has already carved,
-    /// which is what lets a union be re-derived here without re-running one.
-    /// Nothing is refused for being *new*: a shape kind the place never
-    /// used, a part with no counterpart in the scene, a mesh another
-    /// instance already draws through are all patched.
+    /// asked for. A mesh or union asset it asked for and never got (see
+    /// [`Scene::unresolved`]) is not one of those: the part draws as its
+    /// box, exactly as the full build left it, and the edit is a box edit —
+    /// otherwise every later edit of a `MeshPart` whose mesh once failed to
+    /// download would be a reload, for the rest of the session. `unions` is
+    /// every boolean this place has already carved, which is what lets a
+    /// union be re-derived here without re-running one. Nothing is refused
+    /// for being *new*: a shape kind the place never used, a part with no
+    /// counterpart in the scene, a mesh another instance already draws
+    /// through are all patched.
     pub(crate) fn resync_part(
         &mut self,
         dom: &WeakDom,
@@ -107,17 +136,28 @@ impl Scene {
             return Err(Rebuild::Asset);
         }
 
-        // One pass for both: where the referent's own box sits and how many
-        // pieces stand under it. A single-instance edit walks the part list
-        // once, whatever it turns out to be.
-        let (held, held_pieces) = self.standing(referent);
+        // Where the referent's own box sits and how many pieces stand under
+        // it, read before anything below moves either.
+        let (held, held_pieces) = self.standing_of(referent);
         let drawn = match Replanned::of(dom, database, referent, &mut self.materials) {
             None => {
-                self.remove_instance(referent);
+                self.resolved_file_meshes.remove(referent);
                 Drawn::Box(part)
             }
             Some(Replanned::Union(entry)) => {
                 self.resync_union(&mut part, entry, unions, known_layers)?
+            }
+            Some(Replanned::Mesh(entry))
+                if !self.resolved_file_meshes.meshes.contains_key(entry.asset()) =>
+            {
+                // Before the transparency check on purpose: a fully
+                // transparent box keeps its placement, and a full build
+                // never hid the box of a part whose mesh did not come.
+                if !self.unresolved.contains(entry.asset()) {
+                    return Err(Rebuild::Asset);
+                }
+                self.resolved_file_meshes.remove(referent);
+                Drawn::Box(part)
             }
             Some(Replanned::Mesh(entry)) => {
                 // The box stays, suppressed, exactly as `resolve_file_meshes`
@@ -126,7 +166,7 @@ impl Scene {
                 // the mesh had not taken over.
                 part.suppressed = true;
                 if entry.is_invisible() {
-                    self.remove_instance(referent);
+                    self.resolved_file_meshes.remove(referent);
                     Drawn::Gone
                 } else {
                     let instance = entry
@@ -144,18 +184,21 @@ impl Scene {
             Drawn::Pieces { pieces, .. } => pieces.len() as u32,
             _ => 0,
         };
-        // Dropping a piece shifts every part after it along, so the box's own
-        // slot has to be found again — and only then, which is next to never.
+        // Dropping a piece moves whichever part fills its slot, so the box's
+        // own slot has to be read again — and only then, which is next to
+        // never.
         let held = if kept < held_pieces {
             self.drop_pieces_from(referent, kept);
-            self.standing(referent).0
+            self.standing_of(referent).0
         } else {
             held
         };
+        let old = held.map(|index| self.parts[index]);
         match held {
             Some(index) => self.parts[index] = part,
-            None => self.parts.push(part),
+            None => self.push_part(part),
         }
+        self.note_extent(old.as_ref(), Some(&part));
         Ok(PartSync {
             drawn,
             dropped: kept.min(held_pieces)..held_pieces,
@@ -166,71 +209,101 @@ impl Scene {
     /// the scene — all of them, so a deleted union goes with its pieces —
     /// and names the piece slots the renderer must now let go of too.
     pub(crate) fn remove_part(&mut self, referent: Ref) -> Range<u32> {
-        let dropped = 0..self.piece_count(referent);
-        self.parts.retain(|part| part.referent() != referent);
-        self.remove_instance(referent);
-        dropped
+        self.resolved_file_meshes.remove(referent);
+        let Some(standing) = self.standing.remove(&referent) else {
+            return 0..0;
+        };
+        if let Some(index) = standing.whole {
+            let whole = self.parts[index];
+            self.note_extent(Some(&whole), None);
+        }
+        let doomed = match standing.pieces {
+            // The one pass that still walks the parts: pieces are counted,
+            // not indexed, and a failed union being deleted is rare enough
+            // not to be worth indexing them for.
+            1.. => self.slots_of(referent, |_| true),
+            0 => standing.whole.into_iter().collect(),
+        };
+        self.remove_slots(doomed);
+        0..standing.pieces
     }
 
     /// Where `referent`'s own box sits in `parts`, and how many recovered
     /// pieces stand under it.
-    fn standing(&self, referent: Ref) -> (Option<usize>, u32) {
-        let mut whole = None;
-        let mut pieces = 0;
-        for (index, part) in self.parts.iter().enumerate() {
-            if part.referent() != referent {
-                continue;
-            }
-            match part.id.is_whole() {
-                true => whole = Some(index),
-                false => pieces += 1,
-            }
+    fn standing_of(&self, referent: Ref) -> (Option<usize>, u32) {
+        match self.standing.get(&referent) {
+            Some(standing) => (standing.whole, standing.pieces),
+            None => (None, 0),
         }
-        (whole, pieces)
     }
 
     /// How many recovered pieces this scene draws `referent` as — zero for
     /// everything but a union whose boolean failed.
     pub(crate) fn piece_count(&self, referent: Ref) -> u32 {
-        self.standing(referent).1
+        self.standing_of(referent).1
     }
 
     /// Takes `referent`'s recovered pieces from `first` on out of the scene,
     /// leaving its own box and the pieces before `first` alone.
     fn drop_pieces_from(&mut self, referent: Ref, first: u32) {
-        self.parts.retain(|part| {
-            part.referent() != referent || part.id.piece_index().is_none_or(|index| index < first)
+        let doomed = self.slots_of(referent, |part| {
+            part.id.piece_index().is_some_and(|index| index >= first)
         });
+        self.remove_slots(doomed);
     }
 
-    fn remove_instance(&mut self, referent: Ref) {
-        // Order only ever mattered to a full build's batch construction; the
-        // renderer finds instances by referent from here on.
-        let instances = &mut self.resolved_file_meshes.instances;
-        if let Some(index) = instances
+    /// Every slot `referent` fills that `wanted` accepts.
+    fn slots_of(&self, referent: Ref, wanted: impl Fn(&Part) -> bool) -> Vec<usize> {
+        self.parts
             .iter()
-            .position(|instance| instance.referent == referent)
-        {
-            instances.swap_remove(index);
+            .enumerate()
+            .filter(|(_, part)| part.referent() == referent && wanted(part))
+            .map(|(index, _)| index)
+            .collect()
+    }
+
+    /// Takes the parts at `doomed` out, highest slot first: [`remove_slot`]
+    /// fills each hole with the last part, which would renumber a slot still
+    /// to be taken out if it ran the other way round.
+    ///
+    /// [`remove_slot`]: Scene::remove_slot
+    fn remove_slots(&mut self, mut doomed: Vec<usize>) {
+        doomed.sort_unstable();
+        for index in doomed.into_iter().rev() {
+            self.remove_slot(index);
+        }
+    }
+
+    /// Takes the part at `index` out, the last one filling the hole and told
+    /// where it now stands. Order among parts only ever mattered to a full
+    /// build's batch construction; a patch finds parts by referent.
+    fn remove_slot(&mut self, index: usize) {
+        let dropped = self.parts.swap_remove(index);
+        if !dropped.id.is_whole() {
+            if let Some(standing) = self.standing.get_mut(&dropped.referent()) {
+                standing.pieces -= 1;
+            }
+        }
+        let Some(moved) = self.parts.get(index) else {
+            return;
+        };
+        if moved.id.is_whole() {
+            if let Some(standing) = self.standing.get_mut(&moved.referent()) {
+                standing.whole = Some(index);
+            }
         }
     }
 
     /// Puts one re-derived mesh instance where the scene already held that
     /// referent's, or at the end, and says where it landed.
     fn place_instance(&mut self, instance: super::ResolvedInstance) -> usize {
-        let instances = &mut self.resolved_file_meshes.instances;
-        match instances
-            .iter()
-            .position(|held| held.referent == instance.referent)
-        {
+        let resolved = &mut self.resolved_file_meshes;
+        match resolved.slot_of(instance.referent) {
             Some(index) => {
-                instances[index] = instance;
+                resolved.instances[index] = instance;
                 index
             }
-            None => {
-                instances.push(instance);
-                instances.len() - 1
-            }
+            None => resolved.push(instance),
         }
     }
 
@@ -239,39 +312,49 @@ impl Scene {
     /// whole map to look up one part. A union drawn as its recovered pieces
     /// keeps its own box's placement, for the same reason `placements` does.
     pub(crate) fn placement_of(&self, referent: Ref) -> Option<Placement> {
-        let mut whole = None;
-        let mut pieced = false;
-        for part in self.parts.iter().filter(|part| part.referent() == referent) {
-            match part.id.is_whole() {
-                true => whole = Some(part),
-                false => pieced = true,
-            }
-        }
-        whole
-            .filter(|part| !part.suppressed || pieced)
-            .map(|part| part.placement())
+        let standing = self.standing.get(&referent)?;
+        let part = self.parts.get(standing.whole?)?;
+        (!part.suppressed || standing.pieces > 0).then(|| part.placement())
     }
 
-    /// Recomputes the scene's extent after its parts changed, reporting
-    /// whether it moved. The same box [`Scene::from_dom`] computes: every
-    /// instance's own box as the DOM lists it, suppressed or not, but not a
-    /// failed union's recovered pieces, which `from_dom` never saw either —
-    /// it took its bounds before `resolve_unions` appended them. A scene left
-    /// with no part at all keeps its last extent rather than none: the camera
-    /// and the shadow fit still need a box to work against.
-    pub(crate) fn refresh_bounds(&mut self) -> bool {
-        let originals: Vec<Part> = self
-            .parts
-            .iter()
-            .filter(|part| part.id.is_whole())
-            .copied()
-            .collect();
-        match bounds::of(&originals) {
-            Some(extent) if extent != self.bounds => {
-                self.bounds = extent;
-                true
+    /// Keeps the extent in step with one part going from `old` to `new`
+    /// (either absent): grown on the spot by the new corners, which is all a
+    /// move outward or an insert needs, and marked for a recount only when
+    /// the old part may have been holding an edge — nothing short of every
+    /// part says where that edge is now. A part strictly inside the box
+    /// therefore moves for free, however many parts the place has.
+    fn note_extent(&mut self, old: Option<&Part>, new: Option<&Part>) {
+        if let Some(old) = old.filter(|old| counts_towards_extent(old)) {
+            let was = bounds::of_part(old);
+            if was.min.cmple(self.bounds.min).any() || was.max.cmpge(self.bounds.max).any() {
+                self.extent_stale = true;
             }
-            _ => false,
+        }
+        if let Some(new) = new.filter(|new| counts_towards_extent(new)) {
+            let now = bounds::of_part(new);
+            self.bounds.min = self.bounds.min.min(now.min);
+            self.bounds.max = self.bounds.max.max(now.max);
+        }
+    }
+
+    /// The scene's extent after its parts changed, and whether it moved
+    /// since the last call. Exact either way: what `note_extent` grew is the
+    /// answer unless a part that may have held an edge changed, in which
+    /// case every part is counted again. A scene left with no part at all
+    /// keeps its last extent rather than none: the camera and the shadow fit
+    /// still need a box to work against.
+    pub(crate) fn refresh_bounds(&mut self) -> bool {
+        if std::mem::take(&mut self.extent_stale) {
+            let originals = self.parts.iter().filter(|part| counts_towards_extent(part));
+            if let Some(extent) = bounds::of(originals) {
+                self.bounds = extent;
+            }
+        }
+        if self.bounds != self.reported {
+            self.reported = self.bounds;
+            true
+        } else {
+            false
         }
     }
 
@@ -298,6 +381,14 @@ impl Scene {
     pub(crate) fn adorns(&self, referent: Ref) -> bool {
         self.gui_spaces.iter().any(|gui| gui.adornee == referent)
     }
+}
+
+/// The same box [`Scene::from_dom`] computes: every instance's own box as
+/// the DOM lists it, suppressed or not, but not a failed union's recovered
+/// pieces, which `from_dom` never saw either — it took its bounds before
+/// `resolve_unions` appended them.
+fn counts_towards_extent(part: &Part) -> bool {
+    part.id.is_whole()
 }
 
 /// Whether `referent` hangs under the DOM's `Workspace` service — the only

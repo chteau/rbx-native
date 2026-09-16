@@ -103,6 +103,44 @@
   builds the tree through the same calls an edit uses, and the log of its
   own construction is not an edit. — @chteau
 
+- **Incremental edits: review fixes.** Four things the patch path above
+  got wrong, caught in review — one of them by a pixel comparison. A `Frame`
+  dragged from a `ScreenGui` onto a part's `BillboardGui` showed up in both:
+  a GUI tree is planned from its container down, and only the container the
+  element *landed in* was re-planned, so the overlay kept drawing it where
+  it used to be — 21 340 pixels off a rebuild of the same DOM at 640×360.
+  `Patcher::left` now re-plans the container an element left, the way it
+  already re-derived the part a `SpecialMesh` left, and `patch_parity` has
+  the case. A `MeshPart` whose mesh never downloaded (a 404, a file the
+  content package lacks) drew as its box, correctly, but every later edit of
+  it — a colour, a move, anything — was a full reload for the rest of the
+  session: `resync_part` classified by class, saw a `MeshId`, found no mesh
+  and asked for a rebuild. The scene now remembers what it asked for and
+  never got (`Scene::unresolved`, file meshes and union assets alike) and
+  edits such a part as the box a full build leaves it; a `MeshId` nobody
+  asked for yet is still a reload's to fetch, and a mesh that lands after
+  all still takes over. `Shell::reflect_changes` cloned the entire DOM to
+  hand the render thread every edit — once per mouse move of a drag — which
+  on `marked.rbxl` (16 742 instances) measured 60 ms an edit, sixty times
+  what patching one part costs. The render thread now keeps a mirror of the
+  editor's DOM, and an edit crosses as a snapshot of the instances its log
+  names (`WeakDom::snapshot`/`WeakDom::mirror`; a move or delete also
+  carries the parents whose child lists changed, so an undo puts a child
+  back among its siblings rather than after them). With that hand-off timed
+  as part of the edit, one part's move on `marked.rbxl` went from 61.4 ms to
+  0.02 ms (`call`) and 63.7 ms to 1.0 ms first frame readable; a hundred
+  parts from 66.5 ms to 2.9 ms and 70.8 ms to 4.0 ms — see `BENCHMARKS.md`.
+  And the per-edit path still scanned the place in four spots: the scene
+  found a part's slot, and a mesh part's resolved instance, by walking every
+  part; the extent was recounted over every part whenever any moved; and
+  `fold` scanned its own output per change. Each is indexed by referent now
+  (`Scene::standing`, `Resolved::slot_of`), the log folds through a map, and
+  the extent grows in place, recounted only when a part that may have been
+  holding an edge moved or went — which is what keeps it exactly what a
+  rebuild frames. Still whole-list, left for a later pass: a moved part's
+  `BillboardGui`/`SurfaceGui` canvases are re-planned as a list, the ~1.8 ms
+  the batch move above attributes to it. — @chteau
+
 - **A full reload no longer starts over.** `Headless::reload` — what a
   Command Bar script, an undo the fast paths cannot classify, or any edit
   they refuse falls back to — used to be a cold load in all but name: it
@@ -136,6 +174,34 @@
   are pixel-identical to a cold load of the same DOM on both fixtures. What
   is left of a reload is `Scene::from_dom` itself, ~15 ms on 16k instances.
   — @chteau
+
+- **Reload reuse: review fixes.** Four things the reload work above got
+  wrong, caught in review. A failed asset fetch was remembered as failed for
+  the life of the `Headless`, so a network blip during one load left that
+  decal bare through every later reload; `load::Resident` now forgets a
+  failure of the machine's (a request that did not complete, a cache that
+  would not write, a key not yet configured — see `assets::Failure`) at the
+  start of each load — one load still asks it once however many passes name
+  it, the next `Headless::reload` tries it again — while a failure of the
+  asset's (a 404, a file the content package does not hold, bytes that will
+  not decode) stays remembered, because asking again cannot change the
+  answer and the ask is the expensive part: `TestPlace.rbxl` names a
+  `SpawnLocation.png` its package lacks, and retrying that on every reload
+  measured 220 ms a time. When no asset resolver could be built at all (an
+  unwritable cache directory, say) the warning was filed under a reference no caller ever
+  looked up and reached only stderr; `assets::load_with` now fails every
+  requested reference with that message, so it reaches the Output dock, once,
+  and is retried like any other failure. The `Trail`, `Beam`,
+  `ParticleEmitter` and GUI passes read their quality on/off toggle once when
+  first built and never again, so a level changed between two reloads was
+  ignored until the place was reopened; every `rebuild` re-reads it. And the
+  GUI atlas decoded its `ImageLabel` images on its own, so an image used both
+  as a `Decal` and in a GUI was decoded twice — they come out of the same
+  `Resident` now, which also puts their warnings in the dock. In passing: the
+  reload's dedup helpers (`distinct`, `untried`, `reuse_plan`) scanned a
+  `Vec` inside a loop, O(n²) on a place naming hundreds of assets — they hash
+  now — and a reload no longer copies the bytes of a union it already carved
+  out of the resident table. — @chteau
 
 - **Undo/redo of a Scale drag no longer reloads the scene.** The fast path
   below classified an undo step as "exactly one property write on one

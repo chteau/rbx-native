@@ -44,7 +44,7 @@ use crate::save::Format;
 use crate::script_editor::ScriptEditor;
 use crate::settings::Settings;
 use crate::transform::{Targets, Transform};
-use crate::workspace_view::{AssetWarnings, PoseSynced, ViewportAction, WorkspaceView};
+use crate::workspace_view::{AssetWarnings, Opened, PoseSynced, ViewportAction, WorkspaceView};
 use crate::Place;
 use quality::{quality_labels, quality_row};
 use selection::Selection;
@@ -184,7 +184,11 @@ impl Shell {
         let dock_area = dock::build(cx.entity(), window, cx);
 
         let viewport = cx.new(|cx| {
-            WorkspaceView::new(viewer, camera, quality, orthographic, selected, window, cx)
+            let opened = Opened {
+                viewer,
+                dom: dom.clone(),
+            };
+            WorkspaceView::new(opened, camera, quality, orthographic, selected, window, cx)
         });
         let camera_synced = cx.subscribe(&viewport, |shell, _, event: &PoseSynced, cx| {
             shell.sync_camera_pose(event.0, cx);

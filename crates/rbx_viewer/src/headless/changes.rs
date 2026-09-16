@@ -125,18 +125,24 @@ impl Patcher<'_> {
     /// The part a `SpecialMesh` or `SurfaceAppearance` was just taken away
     /// from draws differently without it — as its own box again, or bare —
     /// and nothing in the DOM as it stands still leads from the child to it.
+    /// The same goes for the container a GUI element left: a GUI tree is
+    /// planned from its `ScreenGui`/`BillboardGui`/`SurfaceGui` down, so the
+    /// container the element now sits in is not the only one whose plan is
+    /// stale — left alone, the old one keeps drawing the element too, and
+    /// a `Frame` dragged from an overlay onto a part shows up in both.
     fn left(&mut self, old_parent: Ref, moved: Ref) -> Result<(), Rebuild> {
         let dom = self.dom;
-        let dependent = dom.get(moved).is_some_and(|instance| {
-            matches!(
-                Role::of(self.database, instance.class()),
-                Role::MeshChild | Role::Appearance
-            )
-        });
-        if dependent {
-            self.sync_parent_part(old_parent)?;
+        let role = dom
+            .get(moved)
+            .map(|instance| Role::of(self.database, instance.class()));
+        match role {
+            Some(Role::MeshChild | Role::Appearance) => self.sync_parent_part(old_parent),
+            Some(Role::Gui) => {
+                self.gui_changed(Some(old_parent));
+                Ok(())
+            }
+            _ => Ok(()),
         }
-        Ok(())
     }
 
     /// An instance the DOM has: (re)built into whichever pass its role says.

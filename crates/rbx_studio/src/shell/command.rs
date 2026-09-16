@@ -184,12 +184,15 @@ impl Shell {
             return;
         }
         let refresh = refresh_for(changes, self.selected_all());
-        let dom = self.dom.clone();
+        // The instances the log names, not the tree: a drag reflects a
+        // change every mouse move, and copying the whole place per move
+        // would cost what the patch itself was made to save.
+        let snapshots = self.dom.snapshot(changes);
         let targets = refresh
             .targets
             .then(|| Targets::read(&self.dom, self.selected_all()));
         self.viewport.update(cx, |viewport, _| {
-            viewport.apply_changes(dom, changes.to_vec());
+            viewport.apply_changes(snapshots, changes.to_vec());
             if let Some(targets) = targets {
                 viewport.set_targets(targets);
             }
