@@ -241,8 +241,9 @@ impl WorkspaceView {
                 // axis/face/ring grab, would otherwise still be wearing a
                 // hover box for the whole gesture — nothing moves the cursor
                 // off it, since `render`'s `on_mouse_move` routes every move
-                // into `drag_to` instead of `hover_moved` once `dragging()`
+                // into `drag_to` instead of `hover_pending` once `dragging()`
                 // is true.
+                self.hover_pending = None;
                 cx.emit(ViewportAction::Hover(None));
                 return;
             }
