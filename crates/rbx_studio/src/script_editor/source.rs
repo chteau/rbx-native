@@ -24,11 +24,19 @@ pub(crate) const SOURCE_PROPERTY: &str = "Source";
 /// and this list would not (`CoreScript`) still opens correctly.
 const SOURCE_CONTAINER: &str = "LuaSourceContainer";
 
+/// Whether instances of `class` keep their code in `Source`, and so belong to
+/// the script editor rather than to a Properties row. Also the Properties
+/// panel's own test for which `Source` rows it must leave read-only, so the
+/// two can never disagree about what counts as a script.
+pub(crate) fn is_script_class(db: &ReflectionDatabase, class: &str) -> bool {
+    db.is_subclass_of(class, SOURCE_CONTAINER)
+}
+
 /// Whether double-clicking `reference` in the Explorer should open it in the
 /// script editor.
 pub(crate) fn is_script(dom: &WeakDom, db: &ReflectionDatabase, reference: Ref) -> bool {
     dom.get(reference)
-        .is_some_and(|instance| db.is_subclass_of(instance.class(), SOURCE_CONTAINER))
+        .is_some_and(|instance| is_script_class(db, instance.class()))
 }
 
 /// The instance's `Source` as it stands. `None` when the referent no longer

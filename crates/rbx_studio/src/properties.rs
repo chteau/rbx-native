@@ -6,15 +6,13 @@ use std::collections::BTreeMap;
 use rbx_dom::{Axes, CFrameData, Color3Data, Content, Faces, Font, Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
+use crate::script_editor::source;
+
 pub(crate) mod edit;
 
 /// Above this, a string no longer reads on a one-line row and only its size is
 /// worth showing.
 const MAX_STRING_LEN: usize = 64;
-
-/// The base class whose `Source` the Script Editor panel owns; see
-/// [`Properties::edit_kind`].
-const SCRIPT_BASE_CLASS: &str = "LuaSourceContainer";
 
 /// Category for a property the reflection dump has never heard of (e.g. an
 /// unreflected `Tags`, or a class the dump does not know). Not a dump
@@ -173,9 +171,7 @@ impl Properties {
         // path trims what it writes (see `edit::parse`'s `String` arm), which
         // would silently eat a script's trailing newline. The row stays,
         // read-only, showing the source's size like any other long string.
-        if name == crate::script_editor::source::SOURCE_PROPERTY
-            && self.db.is_subclass_of(class, SCRIPT_BASE_CLASS)
-        {
+        if name == source::SOURCE_PROPERTY && source::is_script_class(&self.db, class) {
             return None;
         }
 
