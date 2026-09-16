@@ -13,6 +13,28 @@
   place instead. An instance create/delete, a multi-instance drag, or
   anything else `single_change` can't classify still falls back to a full
   reload, correctly. — @chteau
+
+- **A real script editor.** Double-clicking a `Script`, `LocalScript` or
+  `ModuleScript` in the Explorer now opens it in a new Script Editor dock
+  panel — tabbed, one tab per script, each closable — instead of leaving its
+  code in a one-line Properties field. Luau syntax highlighting comes from a
+  hand-written lexer behind GPUI Kit's own `InputHighlighter` seam rather than
+  a tree-sitter grammar: no new dependency, and Luau's type annotations,
+  `continue`/`export`/`type`, compound assignment, `0b` literals, digit
+  separators and backtick interpolation all lex correctly where a Lua 5.1
+  grammar sees a parse error and stops colouring the rest of the file. Two
+  things a flat token stream cannot decide get a pass of their own on top: a
+  type annotation's names are told apart from an expression's (so
+  `local n: Vector3` colours `Vector3`, while the colon in `obj:method()` is
+  left alone), and the `{...}` holes inside a backtick string are lexed as the
+  Luau expressions they are, by re-entering the lexer on them. Edits
+  land on `Source` through the same `set_property` every other property edit
+  uses, 400 ms after typing stops, so a typing burst is one undo step; Ctrl+S
+  and undo/redo flush any pending write first. `Source` became read-only in
+  the Properties panel for scripts — that panel's commit path trims what it
+  writes, which was quietly eating a script's trailing newline. The saved dock
+  layout is now `dock_layout_v2.json`, since a layout written before this
+  panel existed would have hidden it rather than failed. — @chteau
 - **Dock layout persistence.** Dock panel position, size, and docking state
   (floating vs. docked) now persist across restarts. Uses `DockAreaState`
   from `gpui_component::dock` to capture the full layout on

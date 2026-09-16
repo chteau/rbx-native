@@ -598,3 +598,71 @@ fn rows_group_by_category_in_alphabetical_order_with_no_empty_groups() {
     assert_eq!(categories, ["Appearance", "Collision", "Data", "Part"]);
     assert!(groups.iter().all(|(_, rows)| !rows.is_empty()));
 }
+
+/// A Workspace holding one instance of `class` carrying `values`, for the
+/// rows whose shape depends on which class the property sits on.
+fn instance_of(class: &str, values: &[(&str, Variant)]) -> Fixture {
+    let mut dom = WeakDom::new();
+    dom.insert(Instance::new(workspace(), "Workspace", "Workspace"));
+    let mut instance = Instance::new(part(), class, "Greeter");
+    for (name, value) in values {
+        instance
+            .properties_mut()
+            .insert((*name).to_owned(), value.clone());
+    }
+    dom.insert(instance);
+    dom.set_parent(part(), Some(workspace()));
+
+    Fixture {
+        dom,
+        properties: Properties::new(ReflectionDatabase::embedded()),
+    }
+}
+
+fn source_row(class: &str, source: &str) -> PropertyRow {
+    instance_of(class, &[("Source", Variant::String(source.to_owned()))])
+        .rows(part())
+        .into_iter()
+        .find(|row| row.name == "Source")
+        .expect("the Source row")
+}
+
+#[test]
+fn a_scripts_source_row_is_read_only_here_because_the_script_editor_owns_it() {
+    for class in ["Script", "LocalScript", "ModuleScript"] {
+        assert_eq!(
+            source_row(class, "print('hi')").edit,
+            None,
+            "{class}'s Source must not offer a one-line field that would trim the code"
+        );
+    }
+}
+
+#[test]
+fn a_scripts_source_row_still_shows_a_summary_of_the_code() {
+    // Read-only is not hidden: the row stays, spelled the way any other
+    // string is, so the panel still tells you the script has source.
+    let row = source_row("Script", "print('hi')");
+    assert_eq!(row.value, "\"print('hi')\"");
+}
+
+#[test]
+fn a_non_script_string_property_is_still_editable_here() {
+    // The read-only rule is about `Source` on a script, not about strings.
+    let editable = instance_of("StringValue", &[("Value", Variant::String("x".into()))])
+        .rows(part())
+        .into_iter()
+        .find(|row| row.name == "Value")
+        .expect("the Value row");
+    assert_eq!(editable.edit, Some(EditKind::Text("x".to_owned())));
+}
+
+#[test]
+fn a_source_property_on_a_class_that_is_not_a_script_stays_editable() {
+    // Only `LuaSourceContainer` hands its Source to the script editor; a
+    // property that merely shares the name elsewhere is untouched.
+    assert_eq!(
+        source_row("Part", "not code").edit,
+        Some(EditKind::Text("not code".to_owned()))
+    );
+}

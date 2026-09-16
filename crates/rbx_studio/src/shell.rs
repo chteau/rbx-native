@@ -16,6 +16,8 @@ mod quality;
 mod reparent;
 mod rows;
 mod save;
+mod script_panel;
+mod scripts;
 mod selection;
 mod toolbar;
 
@@ -39,6 +41,7 @@ use crate::explorer::Explorer;
 use crate::history::{History, DEFAULT_CAP};
 use crate::properties::Properties;
 use crate::save::Format;
+use crate::script_editor::ScriptEditor;
 use crate::settings::Settings;
 use crate::transform::{Targets, Transform};
 use crate::workspace_view::{AssetWarnings, PoseSynced, ViewportAction, WorkspaceView};
@@ -84,6 +87,8 @@ pub(crate) struct Shell {
     edits: edit::Edits,
     /// Mirrors the tree's selected row (see [`Shell::sync_selection`]).
     selection: Selection,
+    /// Every script open in the Script Editor panel; see `shell::scripts`.
+    scripts: ScriptEditor,
     properties_scroll: ScrollHandle,
     dock_area: Entity<DockArea>,
     quality: Entity<SelectState<QualityOptions>>,
@@ -233,6 +238,7 @@ impl Shell {
             properties,
             edits: edit::Edits::default(),
             selection: Selection::new(selected),
+            scripts: ScriptEditor::default(),
             properties_scroll: ScrollHandle::new(),
             dock_area,
             quality: selector,
@@ -331,6 +337,10 @@ impl Shell {
         // Explorer delete/insert debug aids (see `shell::keys`): applied
         // last, so an insert can parent under whatever is already selected.
         shell.apply_debug_explorer_action(cx);
+
+        // `RBX_STUDIO_OPEN_SCRIPT` (see `shell::scripts`): after the Command
+        // Bar block above, so a script that block just created can be opened.
+        shell.apply_debug_open_script(window, cx);
 
         // `RBX_STUDIO_UNDO` (see `shell::history`): applied after every debug
         // mutation above, through the exact undo path a keypress would use —
@@ -557,8 +567,8 @@ impl Render for Shell {
             // focus, and every panel — Explorer, Properties, viewport,
             // Command Bar — sits below this container, so a save works no
             // matter which one is focused.
-            .on_key_down(cx.listener(|shell, event: &KeyDownEvent, _, cx| {
-                shell.handle_shell_key(&event.keystroke, cx);
+            .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
+                shell.handle_shell_key(&event.keystroke, window, cx);
             }))
             .child(crate::menu_bar::bar(&self.menu_bar, cx))
             .child(self.toolbar(cx))

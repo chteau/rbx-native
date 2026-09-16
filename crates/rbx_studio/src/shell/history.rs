@@ -43,7 +43,22 @@ impl Shell {
     /// mutation that follows it (see `record_history_change`).
     pub(super) fn push_history(&mut self) {
         self.dom.take_changes();
-        self.history.push(self.dom.clone());
+        let before = self.dom.clone();
+        self.push_history_snapshot(before);
+    }
+
+    /// [`Shell::push_history`] for a mutation that has to be attempted before
+    /// anyone can know whether it will reach the DOM at all: the caller takes
+    /// `before` itself, tries the mutation, and pushes only once it has
+    /// landed. Draining the stale change log is then the caller's job too,
+    /// for the reason `push_history` does it above.
+    ///
+    /// `shell::scripts`'s debounced `Source` write is the one call site that
+    /// needs this — a tab can outlive its script by a frame, and a snapshot
+    /// pushed for a write that never happened is a Ctrl+Z that reverts
+    /// nothing, having cleared the redo stack to offer it.
+    pub(super) fn push_history_snapshot(&mut self, before: WeakDom) {
+        self.history.push(before);
     }
 
     /// Attaches `changes` — the `Change` log the mutation `push_history`
@@ -61,6 +76,11 @@ impl Shell {
     /// Undo item's entry point, so a menu click runs the exact same path
     /// Ctrl+Z does.
     pub(crate) fn undo(&mut self, cx: &mut Context<Self>) {
+        // A script editor's text reaches the DOM on a debounce (see
+        // `shell::scripts`), so without this an undo moments after typing
+        // would step over text that had not become a history entry yet, and
+        // the pending write would then land on top of the undone DOM.
+        self.flush_script_edits(cx);
         if let Some((previous, changes)) = self.history.undo(self.dom.clone()) {
             self.install(previous, &changes, cx);
         }
@@ -69,6 +89,7 @@ impl Shell {
     /// Ctrl+Y / Ctrl+Shift+Z: symmetric to [`Shell::undo`]. A no-op with
     /// nothing to redo. `pub(crate)` for the same reason as `undo` above.
     pub(crate) fn redo(&mut self, cx: &mut Context<Self>) {
+        self.flush_script_edits(cx);
         if let Some((next, changes)) = self.history.redo(self.dom.clone()) {
             self.install(next, &changes, cx);
         }
@@ -102,8 +123,14 @@ impl Shell {
     pub(super) fn handle_history_key(
         &mut self,
         keystroke: &gpui_kit::Keystroke,
+        window: &gpui_kit::Window,
         cx: &mut Context<Self>,
     ) {
+        // See `Shell::script_editor_focused`: the script editor owns Ctrl+Z
+        // while it has focus.
+        if self.script_editor_focused(window, cx) {
+            return;
+        }
         match history::action_for(&keystroke.key, keystroke.modifiers) {
             Some(history::Action::Undo) => self.undo(cx),
             Some(history::Action::Redo) => self.redo(cx),
@@ -133,6 +160,7 @@ mod tests {
     use rbx_dom::{Variant, WeakDom};
 
     use crate::history::{History, DEFAULT_CAP};
+    use crate::script_editor::source;
 
     use super::single_change;
 
@@ -277,5 +305,61 @@ mod tests {
         let properties = previous.get(part).unwrap().properties();
         assert_eq!(properties.get("Transparency"), Some(&Variant::Float32(0.0)));
         assert_eq!(properties.get("Reflectance"), Some(&Variant::Float32(0.0)));
+    }
+
+    #[test]
+    fn undoing_a_script_source_edit_classifies_as_a_fast_patch_and_re_seeds_its_tab() {
+        // Both halves of what an undo owes an open script tab, on the one
+        // return value `History::undo` now hands back: the `Change` log
+        // decides the viewport takes the in-place patch rather than a full
+        // reload, and the DOM beside it is what `Shell::resync_scripts`
+        // compares an open tab's last-synced text against. A tab is re-seeded
+        // exactly when that comparison fails.
+        let mut dom = WeakDom::new();
+        let script = dom.new_instance("Script", "Greeter", None);
+        dom.set_property(
+            script,
+            source::SOURCE_PROPERTY,
+            Variant::String("print(1)\n".into()),
+        )
+        .unwrap();
+
+        let mut history = History::new(DEFAULT_CAP);
+        // `shell::scripts::commit_script`, in the order it runs.
+        dom.take_changes();
+        history.push(dom.clone());
+        assert!(source::write(&mut dom, script, "print(2)\n"));
+        history.record_changes(dom.take_changes());
+
+        // What the tab holds on screen once its own debounced write landed.
+        let synced = "print(2)\n";
+        assert!(source::is(&dom, script, synced), "nothing to re-seed yet");
+
+        let (previous, changes) = history.undo(dom.clone()).expect("the edit to undo");
+        assert_eq!(
+            single_change(&changes),
+            Some((script, source::SOURCE_PROPERTY.to_string())),
+            "a lone `Source` write is a single edit, so undoing it must take the fast patch"
+        );
+        assert!(
+            !source::is(&previous, script, synced),
+            "the undone DOM must read to the tab as the mismatch it re-seeds on"
+        );
+        assert_eq!(
+            source::read(&previous, script).as_deref(),
+            Some("print(1)\n"),
+            "and re-seeding must put the pre-edit source back, not something else"
+        );
+
+        let (next, changes) = history.redo(previous).expect("the edit to redo");
+        assert_eq!(
+            single_change(&changes),
+            Some((script, source::SOURCE_PROPERTY.to_string())),
+            "redo reapplies the same single write, so it classifies the same way"
+        );
+        assert!(
+            source::is(&next, script, synced),
+            "redo puts the tab back in agreement with the DOM, so nothing re-seeds"
+        );
     }
 }

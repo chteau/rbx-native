@@ -9,8 +9,8 @@
 //! presentation change: nothing about how those three sections work moved.
 
 use gpui_kit::component::dock::{
-    panel_handle, BasePanel, DockArea, DockLayout, DockSkin, Panel as ComponentPanel, PanelEvent,
-    TitleStyle,
+    panel_handle, BasePanel, DockArea, DockLayout, DockPlacement, DockSkin, InsertTarget, NodeId,
+    PaneRef, Panel as ComponentPanel, PanelEvent, PanelId, TitleStyle,
 };
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::component::ActiveTheme;
@@ -25,6 +25,7 @@ enum Section {
     Explorer,
     Properties,
     Output,
+    Scripts,
 }
 
 impl Section {
@@ -34,6 +35,7 @@ impl Section {
             Section::Explorer => "Explorer",
             Section::Properties => "Properties",
             Section::Output => "Output",
+            Section::Scripts => "Script Editor",
         }
     }
 }
@@ -72,6 +74,7 @@ impl Render for SectionPanel {
             Section::Explorer => shell.explorer(cx).into_any_element(),
             Section::Properties => shell.properties(window, cx).into_any_element(),
             Section::Output => shell.output_panel(cx).into_any_element(),
+            Section::Scripts => shell.script_editor(window, cx).into_any_element(),
         })
     }
 }
@@ -97,7 +100,9 @@ impl ComponentPanel for SectionPanel {
         let label = match self.section {
             Section::Viewport => self.shell.read(cx).title(),
             Section::Properties => self.shell.read(cx).properties_title(),
-            Section::Explorer | Section::Output => SharedString::from(self.section.name()),
+            Section::Explorer | Section::Output | Section::Scripts => {
+                SharedString::from(self.section.name())
+            }
         };
         // Smaller than the vendored default (see `title_style` below for the
         // matching colour change): the dock's own chrome should read quieter
@@ -195,7 +200,8 @@ pub(super) fn build(
     let viewport = cx.new(|cx| SectionPanel::new(shell.clone(), Section::Viewport, cx));
     let explorer = cx.new(|cx| SectionPanel::new(shell.clone(), Section::Explorer, cx));
     let properties = cx.new(|cx| SectionPanel::new(shell.clone(), Section::Properties, cx));
-    let output = cx.new(|cx| SectionPanel::new(shell, Section::Output, cx));
+    let output = cx.new(|cx| SectionPanel::new(shell.clone(), Section::Output, cx));
+    let scripts = cx.new(|cx| SectionPanel::new(shell, Section::Scripts, cx));
 
     area.update(cx, |area, cx| {
         area.set_center(
@@ -208,7 +214,9 @@ pub(super) fn build(
                     // viewport, like Roblox Studio's own Output window.
                     DockLayout::v_split()
                         .child(
-                            DockLayout::tabs().panel_view(panel_handle(viewport), cx),
+                            DockLayout::tabs()
+                                .panel_view(panel_handle(viewport), cx)
+                                .panel_view(panel_handle(scripts), cx),
                             None,
                         )
                         .child(
@@ -243,12 +251,13 @@ pub(super) fn register_panels(_dock_area: Entity<DockArea>, shell: Entity<Shell>
     use gpui_kit::component::dock::register_panel;
     use std::sync::Arc;
 
-    // Register all four section panels so they can be reconstructed from saved state.
+    // Register every section panel so it can be reconstructed from saved state.
     for section in &[
         Section::Viewport,
         Section::Explorer,
         Section::Properties,
         Section::Output,
+        Section::Scripts,
     ] {
         let section = *section;
         let shell_clone = shell.clone();
@@ -257,6 +266,71 @@ pub(super) fn register_panels(_dock_area: Entity<DockArea>, shell: Entity<Shell>
             Arc::new(panel)
         });
     }
+}
+
+/// Brings the Script Editor panel's own dock tab to the front, wherever in
+/// the layout it currently sits, so opening a script is visible even when the
+/// panel is stacked behind the Viewport (which is where the default layout
+/// puts it).
+///
+/// `DockArea` has no "activate this panel" call, but moving a panel into the
+/// tab group it is already in, at the index it already has, changes nothing
+/// except raising it — `InsertTarget`'s own `activate` flag is what the tab
+/// bar sets when a tab is clicked. Looking the panel up by name rather than
+/// caching its id is what makes this keep working after a saved layout has
+/// been restored, which rebuilds the panels as new entities.
+pub(super) fn reveal_scripts(area: &Entity<DockArea>, window: &mut Window, cx: &mut App) {
+    let Some((panel, node, ix)) = locate(area, Section::Scripts.name(), cx) else {
+        return;
+    };
+    area.update(cx, |area, cx| {
+        area.move_panel(
+            panel,
+            InsertTarget::Tabs {
+                node,
+                ix,
+                activate: true,
+            },
+            window,
+            cx,
+        );
+    });
+}
+
+/// Where the panel called `name` currently lives: which panel id it has,
+/// which tab group holds it, and its index within that group.
+fn locate(
+    area: &Entity<DockArea>,
+    name: &str,
+    cx: &App,
+) -> Option<(PanelId, NodeId, Option<usize>)> {
+    let dock = area.read(cx);
+    for placement in [
+        DockPlacement::Center,
+        DockPlacement::Left,
+        DockPlacement::Right,
+        DockPlacement::Bottom,
+    ] {
+        let Some(tree) = dock.layout(placement) else {
+            continue;
+        };
+        let found = tree.panels().find(|panel| {
+            dock.panel(*panel)
+                .is_some_and(|view| view.panel_name(cx) == name)
+        });
+        let Some(panel) = found else {
+            continue;
+        };
+        let node = tree.find_panel_node(panel)?;
+        // Re-inserting at the index it already has keeps the tab where the
+        // user last left it; the move is only a way to raise it.
+        let ix = match tree.find_node(node)?.kind() {
+            PaneRef::Tabs { panels, .. } => panels.iter().position(|held| *held == panel),
+            _ => None,
+        };
+        return Some((panel, node, ix));
+    }
+    None
 }
 
 #[cfg(test)]
@@ -274,7 +348,17 @@ mod tests {
             Section::Explorer.name(),
             Section::Properties.name(),
             Section::Output.name(),
+            Section::Scripts.name(),
         ];
-        assert_eq!(names, ["Viewport", "Explorer", "Properties", "Output"]);
+        assert_eq!(
+            names,
+            [
+                "Viewport",
+                "Explorer",
+                "Properties",
+                "Output",
+                "Script Editor"
+            ]
+        );
     }
 }

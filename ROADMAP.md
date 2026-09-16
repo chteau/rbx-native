@@ -207,6 +207,35 @@ Roblox's own engine.
     `Size` of its own for the gizmo to read, so it draws neither an
     outline nor a gizmo today (all under "What's planned" → Renderer).
 
+- [x] **A real script editor** — double-clicking a `Script`, `LocalScript`
+  or `ModuleScript` in the Explorer opens it in the Script Editor dock
+  panel, which shares the viewport's tab group the way Studio's own does.
+  Several scripts open as several tabs, each closable; re-opening one
+  already open focuses its tab rather than re-seeding it.
+  - **Luau syntax highlighting** from a hand-written lexer
+    (`script_editor::luau`) plugged into GPUI Kit's own
+    `InputHighlighter` seam, so it costs no grammar crate and takes its
+    colours from the active theme. Luau, not Lua: type annotations,
+    `continue`/`export`/`type`, compound assignment, `0b` literals,
+    digit separators and backtick interpolation all lex correctly, where
+    a Lua 5.1 grammar treats each as a parse error.
+  - **Edits reach the live DOM** through the same `set_property` every
+    other property edit ends at, 400 ms after typing stops, with an undo
+    snapshot per typing burst. Ctrl+S, undo and redo flush any pending
+    write first, so each acts on the text as typed. An open tab is
+    reconciled against the DOM on every render, so an undo or a Command
+    Bar script re-seeds it and a deleted script closes its tab.
+  - `Source` is now read-only in the Properties panel for script classes:
+    a one-line field is the wrong shape for code, and that panel's commit
+    path trims what it writes, which silently ate a script's trailing
+    newline.
+  - **Still open** (their own bullets under "What's planned"): the
+    table-stakes conveniences (multi-cursor, Find/Replace, Go to
+    Declaration, the function filter), `luau-lsp` integration, script
+    debugging, and new-script templates. With focus in an editor, Ctrl+Z
+    is the editor's own text undo rather than the place's history — the
+    split Studio makes — and Edit > Undo still reaches the latter.
+
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
 - [x] Windows — asset cache and settings now fall back to
@@ -218,16 +247,6 @@ Roblox's own engine.
 ## What's planned
 
 ### Script authoring — the biggest real gap
-- [ ] 📋 **A real script editor.** `Script`/`LocalScript`/`ModuleScript`
-  source today is just another text field in the Properties panel — no
-  syntax highlighting, no multi-file/tabbed editing, nothing resembling
-  what you'd actually write a game in. This was never explicitly scoped in
-  an earlier pass of this roadmap even though it's arguably more load-
-  bearing than most of what *is* listed — you cannot build a real game
-  without comfortably editing its scripts. Planned shape: double-clicking a
-  script instance in the Explorer opens it in a tabbed editor with Luau
-  syntax highlighting; `luau-lsp` integration (see below) rides on top of
-  the same editor once it exists.
 - [ ] 📋 **Table-stakes editor conveniences**, real and current per
   `studio/script-editor.md`, worth scoping alongside the editor above
   rather than as an afterthought since retrofitting multi-cursor support
