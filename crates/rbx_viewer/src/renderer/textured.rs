@@ -28,6 +28,19 @@ fn placeholder_image() -> Image {
     }
 }
 
+/// Pairs each group's real image with the slot [`Textured::new`] assigns it
+/// (the same order `images`/`uploads` are pushed in, so index `i` here is
+/// slot `i` there) — the mapping [`Textured::upload_pending`] relies on to
+/// land a spread-out upload on the GPU resource it actually belongs to,
+/// rather than whichever one happens to be next in the queue.
+fn pending_uploads(groups: &[Group]) -> Vec<(usize, Image)> {
+    groups
+        .iter()
+        .enumerate()
+        .map(|(slot, group)| (slot, group.image.clone()))
+        .collect()
+}
+
 const INSTANCES_LABEL: &str = "rbxview decal instances";
 
 const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 10] = wgpu::vertex_attr_array![
@@ -154,14 +167,11 @@ impl Textured {
         // is exactly the load-time burst this module exists to spread across
         // frames instead (see `Textured::upload_pending`).
         let placeholder = placeholder_image();
-        let mut pending = Vec::with_capacity(groups.len());
-        for group in groups {
-            let slot = images.len();
+        for (slot, group) in groups.iter().enumerate() {
             let upload = texture::Uploaded::color(device, queue, &placeholder);
             images.push(upload.bind(device, &image_layout, &sampler, quality.texture_max_size));
             image_alpha.push(group.image.has_alpha());
             uploads.push(upload);
-            pending.push((slot, group.image.clone()));
             add_batches(device, &mut opaque, slot, &group.opaque);
             add_batches(device, &mut blended, slot, &group.blended);
         }
@@ -174,7 +184,7 @@ impl Textured {
             image_layout,
             images,
             image_alpha,
-            pending: Pending::new(pending),
+            pending: Pending::new(pending_uploads(groups)),
             opaque,
             blended,
         }
@@ -377,20 +387,5 @@ fn create(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Nothing but their order links the WGSL struct to this layout, so a field
-    // added to one alone reads the neighbouring attribute instead of failing to
-    // compile.
-    #[test]
-    fn the_shader_reads_the_wedge_flag_the_layout_supplies() {
-        assert!(DECAL_SHADER.contains("@location(11) wedge: u32"));
-        assert_eq!(INSTANCE_ATTRIBUTES.len(), 10);
-        assert_eq!(INSTANCE_ATTRIBUTES[9].shader_location, 11);
-        assert_eq!(
-            INSTANCE_ATTRIBUTES[9].offset + INSTANCE_ATTRIBUTES[9].format.size(),
-            std::mem::size_of::<DecalRaw>() as wgpu::BufferAddress
-        );
-    }
-}
+#[path = "textured/tests.rs"]
+mod tests;
