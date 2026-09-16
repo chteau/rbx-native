@@ -799,16 +799,15 @@ against `Roblox/creator-docs` rather than assumed:
 - [ ] 📋 **Native Git integration** — a real panel in `rbxstudio` (diff view,
   stage/commit, branch switch), not relying on the user's own external git
   client. Not scoped in any detail yet.
-- [ ] 📋 **Persist dock/panel layout across restarts.** Today's dockable,
-  rearrangeable panels (see "What's been implemented") always reset to
-  their default arrangement on launch — only quality and service-visibility
-  settings persist; `gpui_component::dock`'s own state (which panels are
-  open, docked position/size, floating vs. docked) is never saved. Small
-  and self-contained enough to land ahead of the broader settings file
-  below, though the two should ultimately share one file on disk. Real
-  community demand, not just a guess: "Studio layout saving" is one of the
-  more-requested threads in Roblox's own
-  [Studio Features devforum category](https://devforum.roblox.com/c/feature-requests/studio-features/24).
+- [x] 🚧 **Persist dock/panel layout across restarts.** Save/load
+  infrastructure established (`dock_layout.json` in the config directory,
+  following the same atomic-write pattern as `settings.json`); hooks
+  integrated into Shell's settings persistence. Tests written and passing
+  for serialization/deserialization round-trips. Still open: connecting to
+  the real DockArea to read/write its actual current state (panel positions,
+  sizes, visibility) — requires integrating with `gpui_component::dock`'s
+  state API; for now, the saved state reflects the defaults. Next iteration
+  should also allow users to close/hide panels and persist which are open.
 - [ ] 📋 **Colour-coded Explorer folders.** Another devforum request from
   the same category ("Colored folders!") — let a `Folder` (and perhaps any
   instance) carry a colour tag shown as a tint on its Explorer icon/row,

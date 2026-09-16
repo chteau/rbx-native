@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-16
+
+- **Dock layout persistence infrastructure.** Save/load mechanism established
+  for dock panel state, written to `~/.config/rbx-native/dock_layout.json`
+  (following the same atomic-write and cross-platform directory-selection
+  patterns as the existing settings file). Wired into Shell's settings
+  persistence so dock layout snapshots are saved whenever other preferences
+  change. Serialization and disk round-trip tested. Next phase: connecting to
+  the real DockArea to read its actual layout state (panel visibility,
+  positions, sizes) rather than just the defaults. — @chteau
+
 ## 2026-09-15
 
 - **Viewport selection and a Move gizmo.** Clicking in the 3D view now
