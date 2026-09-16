@@ -5,16 +5,18 @@
 //! (`local n: number`), `continue`, compound assignment (`n += 1`), `0b`
 //! literals and backtick string interpolation are all syntax errors to that
 //! grammar, and a parse error swallows the highlighting of everything after
-//! it. Highlighting also needs no tree — every distinction below is lexical —
-//! so a parser's C grammars and incremental-reparse machinery would be weight
-//! spent for nothing.
+//! it. Nothing here needs a parse tree either, so a grammar's C sources and
+//! incremental-reparse machinery would be weight spent for nothing.
 //!
-//! Two things do need more than a flat token stream, and each has a submodule
-//! rather than a rule bolted onto the loop below: [`interpolation`] lexes the
-//! `{...}` holes inside a backtick string as the Luau expressions they are, by
-//! re-entering this lexer on them, and `types` walks the finished tokens to
-//! tell a type annotation's names from an expression's. Neither needs a parse
-//! tree; both need to know where one construct ends and the next begins.
+//! Most of what a highlighter distinguishes is lexical, and the loop below
+//! settles it one token at a time. Three things are not, and each gets a pass
+//! of its own over the finished tokens rather than a rule bolted onto that
+//! loop: [`calls`] marks the identifiers that name something callable,
+//! [`types`] tells a type annotation's names from an expression's, and
+//! [`interpolation`] lexes the `{...}` holes inside a backtick string as the
+//! Luau expressions they are, by re-entering this lexer on them. None of the
+//! three builds a tree; each only needs to know where one construct ends and
+//! the next begins, which is a much smaller thing to know.
 
 mod calls;
 mod interpolation;

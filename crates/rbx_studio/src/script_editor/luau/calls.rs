@@ -44,10 +44,12 @@ pub(super) fn mark_definitions(tokens: &mut [Token], source: &str) {
 }
 
 /// Promotes an identifier in call position to [`TokenKind::Function`]: `f(`,
-/// and Lua's parenthesis-free `f{...}` / `f"..."` call sugar. A definition's
-/// name needs no rule of its own — `function f(`, `function a.b:c(` and
-/// `local function f(` all put the name immediately before its parameter
-/// list, so this already catches every one of them.
+/// and Lua's parenthesis-free `f{...}` / `f"..."` call sugar.
+///
+/// This also catches most definitions on the way past, since `function f(`,
+/// `function a.b:c(` and `local function f(` each put the name immediately
+/// before the parameter list. [`mark_definitions`] above is what covers the
+/// one spelling that does not.
 pub(super) fn mark_calls(tokens: &mut [Token], source: &str) {
     for index in 0..tokens.len() {
         if tokens[index].kind != TokenKind::Identifier {
