@@ -49,15 +49,17 @@ fn a_rebuild_follows_the_quality_toggle_it_is_given() {
     off.beams = false;
     let beams = [beam()];
 
-    let mut pass = Beams::new(&device, &queue, target, &beams, &off);
+    let images = Answered::default();
+
+    let mut pass = Beams::new(&device, &queue, target, &beams, &images, &off);
     assert!(!pass.enabled);
     assert!(pass.live.is_empty());
 
-    pass.rebuild(&device, &queue, &beams, &on);
+    pass.rebuild(&device, &queue, &beams, &images, &on);
     assert!(pass.enabled);
     assert_eq!(pass.live.len(), 1);
 
-    pass.rebuild(&device, &queue, &beams, &off);
+    pass.rebuild(&device, &queue, &beams, &images, &off);
     assert!(!pass.enabled);
     assert!(pass.live.is_empty());
 }

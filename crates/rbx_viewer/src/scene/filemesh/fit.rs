@@ -14,6 +14,7 @@ use crate::scene::cframe_matrix;
 
 /// How to place a mesh asset's native geometry in the world, before the mesh
 /// itself is known.
+#[derive(Debug, Clone, Copy)]
 pub(crate) enum Fit {
     /// `MeshPart`: native geometry is scaled componentwise so its own extent
     /// matches `size` — `InitialSize` if the file carries it (undocumented but

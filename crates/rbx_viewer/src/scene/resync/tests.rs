@@ -318,7 +318,9 @@ fn an_invisible_mesh_part_is_gone_and_comes_back() {
 }
 
 // Swapping to a mesh another instance already draws through is a batch
-// move; swapping to one that never downloaded is a download, i.e. a reload.
+// move; swapping to one nobody has downloaded yet is never a rebuild either
+// — the part draws its box until the mesh lands (see `Headless::apply_changes`'s
+// asset-streaming path), and the swap takes over in place once it does.
 #[test]
 fn a_mesh_id_swap_follows_only_a_downloaded_mesh() {
     let (mut dom, mut scene) = place();
@@ -329,10 +331,8 @@ fn a_mesh_id_swap_follows_only_a_downloaded_mesh() {
     )
     .unwrap();
 
-    assert_eq!(
-        resync(&mut scene, &dom, MESH_PART).err(),
-        Some(Rebuild::Asset)
-    );
+    let part = boxed(&mut scene, &dom, MESH_PART);
+    assert!(part.is_drawn(), "the box until the new mesh lands");
 
     scene
         .resolved_file_meshes
@@ -521,11 +521,12 @@ fn a_mesh_that_lands_after_failing_still_takes_over_from_the_box() {
     assert!(part.suppressed, "the box stands down under the mesh");
 }
 
-// A `MeshId` nobody ever asked for is still a reload's to fetch, failed
-// mesh or not: only the asset that was asked for and refused is known to
-// be missing.
+// A `MeshId` nobody has ever asked for at all is no more a rebuild than one
+// that was asked for and failed: both are the background loader's to fetch
+// now (see `Headless::apply_changes`'s asset-streaming path), and the part
+// draws its box either way until one lands.
 #[test]
-fn a_mesh_never_asked_for_is_still_a_rebuild() {
+fn a_mesh_never_asked_for_is_still_a_box_edit() {
     let (mut dom, mut scene) = place_without_the_mesh();
     dom.set_property(
         Ref::new(MESH_PART),
@@ -534,10 +535,8 @@ fn a_mesh_never_asked_for_is_still_a_rebuild() {
     )
     .unwrap();
 
-    assert_eq!(
-        resync(&mut scene, &dom, MESH_PART).err(),
-        Some(Rebuild::Asset)
-    );
+    let part = boxed(&mut scene, &dom, MESH_PART);
+    assert!(part.is_drawn());
 }
 
 // The parts' index survives a delete: the last part fills the hole and an

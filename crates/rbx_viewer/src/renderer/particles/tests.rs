@@ -52,9 +52,7 @@ pub(super) fn emitter(texture: rbx_assets::AssetRef) -> Emitter {
 
 // A quality level switched between two scenes has to take on the next
 // rebuild: whether particles draw is read from the profile every rebuild,
-// not only once when the pass was built. No emitters, on purpose: an
-// emitter's texture is a download this pass makes itself, and the toggle is
-// decided before any of that.
+// not only once when the pass was built.
 #[test]
 fn a_rebuild_follows_the_quality_toggle_it_is_given() {
     let Some((device, queue)) = crate::gpu::for_tests() else {
@@ -69,13 +67,15 @@ fn a_rebuild_follows_the_quality_toggle_it_is_given() {
     let mut off = on;
     off.particles = false;
 
-    let mut pass = Particles::new(&device, &queue, target, &[], &off);
+    let images = Answered::default();
+
+    let mut pass = Particles::new(&device, &queue, target, &[], &images, &off);
     assert!(!pass.enabled);
 
-    pass.rebuild(&device, &queue, &[], &on);
+    pass.rebuild(&device, &queue, &[], &images, &on);
     assert!(pass.enabled);
 
-    pass.rebuild(&device, &queue, &[], &off);
+    pass.rebuild(&device, &queue, &[], &images, &off);
     assert!(!pass.enabled);
 }
 
@@ -87,4 +87,14 @@ fn texture_refs_are_deduplicated_in_first_seen_order() {
         emitter(texture(1)),
     ];
     assert_eq!(texture_refs(&emitters), vec![texture(1), texture(2)]);
+}
+
+// A `ParticleEmitter` with no texture at all draws through the built-in
+// white slot and has nothing to ask the loader for. Leaving `Empty` in the
+// list would leave it untried for the life of the session — see
+// `renderer::rebuild::untried` — and re-evaluated on every rebuild.
+#[test]
+fn a_textureless_emitter_asks_for_nothing() {
+    let emitters = [emitter(AssetRef::Empty), emitter(texture(1))];
+    assert_eq!(texture_refs(&emitters), vec![texture(1)]);
 }

@@ -39,6 +39,7 @@ use rbx_dom::Ref;
 use crate::camera::{Camera, Frustum, Viewpoint};
 use crate::gizmo::{arm_length, basis, Faces, Gizmo, Handles, Kind, Shape};
 use crate::lighting::{Lighting, LocalLight};
+use crate::load::Answered;
 use crate::pick::Selected;
 use crate::quality::QualityProfile;
 use crate::scene::{Bounds, Scene};
@@ -67,9 +68,9 @@ use translucent::Translucent;
 /// would not resolve.
 const CLEAR_COLOR: wgpu::Color = wgpu::Color::BLACK;
 
-/// Everything a frame is drawn from. The three always travel together — both
+/// Everything a frame is drawn from. They always travel together — both
 /// render paths read the same DOM once and hand the lot straight on — so they
-/// move as one argument rather than three.
+/// move as one argument rather than five.
 #[derive(Clone, Copy)]
 pub(crate) struct World<'a> {
     pub(crate) scene: &'a Scene,
@@ -79,6 +80,13 @@ pub(crate) struct World<'a> {
     /// `--no-lights`. Uploaded once here; an edit that moves, adds or removes
     /// one rewrites them through `Renderer::set_lights`.
     pub(crate) lights: &'a [LocalLight],
+    /// Every image the passes below fetch for themselves — the `Beam`,
+    /// `Trail` and `ParticleEmitter` textures and the GUI atlas — as far as
+    /// the loader has an answer for them. Handed in rather than resolved here
+    /// because resolving one is a download and a decode, and this is the
+    /// thread that draws: see `load::Answered`, whose "no answer yet" is what
+    /// keeps a pass from writing an effect off before its texture lands.
+    pub(crate) images: &'a Answered,
 }
 
 /// Coordinates rendering to any target (window surface or offscreen texture).
@@ -183,6 +191,7 @@ impl Renderer {
             decor,
             lighting,
             lights,
+            images,
         } = world;
         // Every scene pass draws into the HDR target rather than into the
         // caller's: only the resolve at the end of `draw` knows `format`.
@@ -281,9 +290,16 @@ impl Renderer {
             stars,
             bodies,
             shadows,
-            beams: Beams::new(device, queue, target, scene.beams(), quality),
-            trails: Trails::new(device, queue, target, scene.trails(), quality),
-            particles: Particles::new(device, queue, target, scene.particle_emitters(), quality),
+            beams: Beams::new(device, queue, target, scene.beams(), images, quality),
+            trails: Trails::new(device, queue, target, scene.trails(), images, quality),
+            particles: Particles::new(
+                device,
+                queue,
+                target,
+                scene.particle_emitters(),
+                images,
+                quality,
+            ),
             selection,
             hover,
             draggers,
@@ -294,7 +310,7 @@ impl Renderer {
                 format,
                 target,
                 (scene.gui_screens(), scene.gui_spaces()),
-                &decor.gui,
+                images,
                 quality,
             ),
             lighting_buffer,

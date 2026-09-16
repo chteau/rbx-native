@@ -110,6 +110,96 @@
   `BillboardGui`/`SurfaceGui` canvases are re-planned as a list, the ~1.8 ms
   the batch move above attributes to it. — @chteau
 
+- **Async assets: review fixes.** Four things the streaming work below got
+  wrong, caught in review. A place with two legacy `Union`/`Negate` parts
+  whose asset bytes landed on separate ticks drew the first one's geometry
+  twice, for good: every tick runs the file mesh pass and then the union
+  pass, both of which put the accumulated unions back into the resolved set,
+  and the second call appended the whole set on top of what the first had
+  just put there. Both halves of that path are idempotent now:
+  `Scene::apply_resolved_unions` drops what an earlier call left, by the
+  union referent each instance draws in place of, before laying the set back
+  down, and `union::Merged::absorb` ignores a union it has already merged —
+  which is also what lets the loader stop tracking that itself and hand
+  `Scene::resolve_unions` whatever landed, carved or not. An edit that both
+  named a brand-new `MeshId` and set `Transparency` to 1 took the
+  "instance removed" branch of `Headless::patch_instance`, which asked for
+  nothing: the fetch did not start until some later edit made the instance
+  visible again. It asks now, like every other branch. The swap-in throttle
+  was reset before the landed batch was checked against the place, so a
+  result arriving for a reference nothing names any more delayed the next
+  real swap-in by up to 100 ms; the timer moves only when something is
+  actually folded in. And `renderer::particles` did not filter
+  `AssetRef::Empty` out of its texture list the way `beam`/`trail` do, so an
+  emitter with no texture was re-evaluated on every renderer rebuild for the
+  life of the session. — @chteau
+
+- **Assets stream in instead of stopping the frame.** Resolving one
+  `MeshId`, `TextureID`, material pack or `Decal` image is a download, a
+  disk read and a decode — two thirds of a `marked.rbxl` reload, by the
+  profile behind the reload entry below — and every bit of it used to run on
+  the thread that draws, before anything was drawn. Two things followed.
+  Opening a place showed nothing at all until its last asset had arrived.
+  And an edit naming an asset the session had never decoded — typing a new
+  `MeshId` or `TextureID`, picking a material whose pack was not resident —
+  made `Headless::patch_instance`/`patch_effect` answer `Ok(false)`, so the
+  render thread fell back to a full scene reload *with the download in front
+  of it*, between two frames.
+
+  Nothing waits for an asset now. `load::fetcher` resolves and decodes on a
+  small pool of worker threads and hands each result back over a channel the
+  render loop drains once a tick (`Headless::tick`); `load::Resident` gained
+  the in-flight half of its state machine, which is also what coalesces two
+  edits naming the same new asset into one fetch and what lets a result for
+  a reference nothing names any more be filed and ignored rather than
+  uploaded. `Loaded` now keeps the plans it was joined from — the file mesh
+  plan, the union plan, the material catalog, the decor plan — and not just
+  the result, so the place can be re-joined to whatever has decoded since
+  without the DOM, which costs 60 ms to clone on `marked.rbxl` and is long
+  gone by the time an asset lands. Until one does, what draws is the
+  fallback this viewer already had for an asset that never resolved at all:
+  the box a `MeshPart` falls back to, the untextured mesh, plain plastic, a
+  solid line for a `Beam`. Each landing is folded in by the same in-place
+  `Renderer::rebuild` the reload entry below added, whose invalidation keys mean it
+  uploads the one asset that landed and leaves every other upload where it
+  is; landings inside 100 ms of each other are folded in together, so a cold
+  load's several hundred assets cost ten rebuilds a second rather than one
+  per tick. The four renderer passes that fetched their own textures inside
+  `Renderer::rebuild` (`particles`, `beam`, `trail`, `gui::atlas`) read an
+  answer from the loader instead, so no call site on the render thread
+  resolves an asset any more.
+
+  What is left of `Ok(false)` on those two paths is three cases with no
+  single-instance answer at all, none of them about an asset being absent: a
+  union repainted from its operation tree (its recovered pieces share the
+  union's referent), a referent the scene never built (a `MeshPart` staged
+  outside `Workspace`), and an edit whose new material needs a texture-array
+  layer past the ones uploaded, which only a rebuild resizes.
+  `Headless::patch_effect` keeps only the first of those, for a referent
+  that is not a `ParticleEmitter`/`Beam`/`Trail`. A fetch that fails is
+  still remembered and never retried; its warning now reaches the Output
+  dock once per reference for the life of the viewer rather than again on
+  every reload.
+
+  `scripts/bench.sh`, 1280x720, same machine as `BENCHMARKS.md`, assets on.
+  `marked.rbxl` (16 742 instances): an edit naming a `MeshId` this session
+  had never decoded returns in 0.04 ms and is on screen in 0.90 ms (p95 1.00
+  ms), against a ~29 ms full reload plus a fetch and decode before this; the
+  mesh itself is fetched, decoded, uploaded and swapped in 3.10 ms from the
+  edit. A `TextureID` edit: 0.04 ms, 0.93 ms to the frame, 3.31 ms to the
+  swapped one. The first drawable frame of a cold load went from 1004 ms to
+  462 ms, with the finished picture at 978 ms — the whole place still takes
+  about as long to arrive, it just stops being a blank wait. A full reload
+  went from 29.0 ms to 16.8 ms first frame readable, since it no longer
+  walks the asset tables through a thread pool. `TestPlace.rbxl`: cold load
+  573 ms to 255 ms first frame (388 ms complete), reload 1.6 ms. Verified
+  pixel-for-pixel: the frame after a landed mesh is byte-identical to the
+  frame the place draws with that mesh resident from the start, and the
+  fallback drawn before it is byte-identical to a place built with the asset
+  withheld (`crates/rbx_viewer/tests/streamed_pixels.rs`, `#[ignore]`d,
+  needs a GPU and `RBX_STREAMING_FIXTURE`); all seven `scripts/shots.sh`
+  reference captures are unchanged. — @chteau
+
 - **A full reload no longer starts over.** `Headless::reload` — what a
   Command Bar script, an undo the fast paths cannot classify, or any edit
   they refuse falls back to — used to be a cold load in all but name: it

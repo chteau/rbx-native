@@ -47,15 +47,17 @@ fn a_rebuild_follows_the_quality_toggle_it_is_given() {
     off.trails = false;
     let trails = [trail()];
 
-    let mut pass = Trails::new(&device, &queue, target, &trails, &off);
+    let images = Answered::default();
+
+    let mut pass = Trails::new(&device, &queue, target, &trails, &images, &off);
     assert!(!pass.enabled);
     assert!(pass.live.is_empty());
 
-    pass.rebuild(&device, &queue, &trails, &on);
+    pass.rebuild(&device, &queue, &trails, &images, &on);
     assert!(pass.enabled);
     assert_eq!(pass.live.len(), 1);
 
-    pass.rebuild(&device, &queue, &trails, &off);
+    pass.rebuild(&device, &queue, &trails, &images, &off);
     assert!(!pass.enabled);
     assert!(pass.live.is_empty());
 }

@@ -17,23 +17,17 @@ impl Trails {
     /// ribbon it has already laid down; a trail that just appeared starts
     /// with an empty history, exactly as at load.
     ///
-    /// `false` when a trail names a texture this pass never tried to download
-    /// (a `Texture` edit to a new image): only a full reload fetches it.
-    pub(in crate::renderer) fn replace(&mut self, trails: &[Trail]) -> bool {
+    /// A trail whose texture this pass has no upload for draws on the flat
+    /// white slot — the solid plane Roblox itself falls back to — for the same
+    /// reasons as `renderer::beam::Beams::replace`.
+    pub(in crate::renderer) fn replace(&mut self, trails: &[Trail]) {
         if !self.enabled {
-            return true;
-        }
-        if trails
-            .iter()
-            .any(|trail| slot_of(&self.slots, &trail.texture).is_none())
-        {
-            return false;
+            return;
         }
         let previous = std::mem::take(&mut self.live);
         self.live = carry_over(previous, trails, |texture| {
             slot_of(&self.slots, texture).unwrap_or(0)
         });
-        true
     }
 }
 

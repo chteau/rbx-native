@@ -19,7 +19,7 @@ use super::pipeline::Target;
 use super::post::Targets;
 use super::rebuild::untried;
 use super::texture;
-use crate::assets;
+use crate::load::Answered;
 use crate::quality::QualityProfile;
 use crate::scene::{Emitter, Simulation};
 use pipeline::{CameraRaw, ParticleRaw, QUAD_CORNERS};
@@ -78,18 +78,20 @@ pub(super) struct Particles {
 }
 
 impl Particles {
-    /// Builds the GPU pipeline, then downloads every emitter's texture
-    /// (bypassing the scene's own asset plan — this pass owns its own network
-    /// call) and pre-warms each emitter to a steady state — see
+    /// Builds the GPU pipeline, uploads every emitter's texture the loader
+    /// has decoded and pre-warms each emitter to a steady state — see
     /// [`Particles::rebuild`], which is the whole of the second half.
     ///
-    /// An emitter whose texture never resolves is dropped outright: there is no
-    /// bare fallback for a particle, unlike a `Decal` with no image.
+    /// An emitter whose texture failed to resolve is dropped outright: there is
+    /// no bare fallback for a particle, unlike a `Decal` with no image. One
+    /// whose texture has not arrived *yet* is not dropped for good — see
+    /// [`Particles::rebuild`].
     pub(super) fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         target: Target,
         emitters: &[Emitter],
+        images: &Answered,
         quality: &QualityProfile,
     ) -> Self {
         let camera_layout = pipeline::camera_layout(device);
@@ -131,15 +133,17 @@ impl Particles {
             instance_capacity: 0,
             last_tick: None,
         };
-        particles.rebuild(device, queue, emitters, quality);
+        particles.rebuild(device, queue, emitters, images, quality);
         particles
     }
 
     /// Starts every emitter of `emitters` afresh — pre-warmed, as at load —
-    /// keeping the pipeline and every texture this pass ever tried: only a
-    /// texture no emitter named before is downloaded, and one that was tried
-    /// and failed keeps dropping its emitter rather than being fetched again
-    /// (see [`Particles::slots`]). The simulation clock starts over with the
+    /// keeping the pipeline and every texture this pass ever uploaded: only a
+    /// texture no emitter named before is uploaded, and one that was tried
+    /// and failed keeps dropping its emitter rather than being asked for again
+    /// (see [`Particles::slots`]). A texture the loader has not answered for
+    /// yet is left unrecorded, so the rebuild that follows its landing picks
+    /// it up. The simulation clock starts over with the
     /// emitters, so the first frame after a rebuild steps by nothing, the
     /// same as the first frame after a load.
     pub(super) fn rebuild(
@@ -147,6 +151,7 @@ impl Particles {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         emitters: &[Emitter],
+        images: &Answered,
         quality: &QualityProfile,
     ) {
         self.live.clear();
@@ -158,14 +163,18 @@ impl Particles {
 
         let references = untried(&self.slots, texture_refs(emitters));
         if !references.is_empty() {
-            // Live-effect asset warnings aren't wired to the Output dock yet —
-            // see `assets::load`'s doc comment; only scene-load-time warnings
-            // are.
-            let (images, _warnings) = assets::load(&references);
             let sampler =
                 texture::sampler(device, wgpu::AddressMode::ClampToEdge, quality.anisotropy);
             for reference in references {
-                let slot = images.get(&reference).map(|image| {
+                // No answer yet: the fetch is still running, and leaving this
+                // reference out of `slots` is what brings the emitter back for
+                // it on the rebuild that follows its landing (see
+                // `renderer::rebuild::untried`). `Some(None)` is the other
+                // thing entirely — tried and failed for good.
+                let Some(answer) = images.get(&reference) else {
+                    continue;
+                };
+                let slot = answer.as_ref().map(|image| {
                     let uploaded = texture::Uploaded::color(device, queue, image);
                     let bind_group = uploaded.bind(
                         device,
@@ -368,7 +377,7 @@ impl Particles {
 fn texture_refs(emitters: &[Emitter]) -> Vec<AssetRef> {
     let mut seen = Vec::new();
     for emitter in emitters {
-        if !seen.contains(&emitter.texture) {
+        if emitter.texture != AssetRef::Empty && !seen.contains(&emitter.texture) {
             seen.push(emitter.texture.clone());
         }
     }

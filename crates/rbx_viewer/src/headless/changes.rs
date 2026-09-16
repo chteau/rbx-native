@@ -49,7 +49,7 @@ impl Headless {
             database: &self.database,
             roles: &mut self.roles,
             loaded: &mut self.loaded,
-            resident: &self.resident,
+            resident: &mut self.resident,
             offscreen: &mut self.offscreen,
             toggles: self.toggles,
             known_layers,
@@ -79,7 +79,7 @@ struct Patcher<'a> {
     database: &'a ReflectionDatabase,
     roles: &'a mut Roles,
     loaded: &'a mut Loaded,
-    resident: &'a Resident,
+    resident: &'a mut Resident,
     offscreen: &'a mut Offscreen,
     toggles: Toggles,
     /// The material catalog's layer count as the renderer uploaded it, read
@@ -254,6 +254,21 @@ impl Patcher<'_> {
         if !self.render_part(referent, &sync) {
             return Err(Rebuild::Asset);
         }
+        // Whatever this referent now needs — whether it patched onto a
+        // resolved mesh/union or fell back to its box because one is not
+        // resident yet — is asked for here: a `resync_part` box-fallback
+        // draws right away, but only this keeps it from staying a box
+        // forever.
+        self.request_assets_of(referent);
+        // Keeps the decor plan's idea of where this part's own `Decal`s
+        // project in step with where it actually stands now, the way
+        // `render_part` just kept the GPU in step — without it, a decal
+        // image landing later would re-assemble at the placement this
+        // part had when the file was read.
+        if let Some(placement) = self.loaded.scene().placement_of(referent) {
+            self.loaded
+                .replan_faces(self.dom, self.database, referent, &placement);
+        }
         self.pending.parts = true;
         // A canvas adorned to this part hangs off it from anywhere in the
         // tree, so the children below are not the only thing that moved.
@@ -301,6 +316,25 @@ impl Patcher<'_> {
         Ok(())
     }
 
+    /// Asks the background loader for whatever `referent` now needs that
+    /// this session does not have — see `Scene::wanted_assets_of`. Cheap to
+    /// call whether or not anything is actually missing: `Resident`/
+    /// `Loaded` skip a reference already resident or already asked for.
+    fn request_assets_of(&mut self, referent: Ref) {
+        let (meshes, images) =
+            self.loaded
+                .scene_mut()
+                .wanted_assets_of(self.dom, self.database, referent);
+        if !meshes.is_empty() {
+            self.loaded.also_wants(&meshes);
+            self.resident.meshes(&meshes);
+        }
+        if !images.is_empty() {
+            self.loaded.also_wants(&images);
+            self.resident.images(&images);
+        }
+    }
+
     fn render_part(&mut self, referent: Ref, sync: &PartSync) -> bool {
         let resolved = self.loaded.scene().resolved_file_meshes();
         self.offscreen.with_renderer(|renderer, device, queue| {
@@ -311,9 +345,11 @@ impl Patcher<'_> {
     /// Re-projects one `Decal`/`Texture` onto its part as the scene now
     /// draws it, or takes the projection out: the part is gone, draws
     /// through a mesh, is not one the decal could be pinned to, or textures
-    /// are off for this load. An image that was asked for and failed is
-    /// left unpainted, exactly as a full build leaves it; only one this
-    /// renderer never asked for at all is a reload's to fetch.
+    /// are off for this load. An image that was asked for and failed, or
+    /// has not been asked for at all yet, is left unpainted, exactly as a
+    /// full build leaves an image it does not have — never a rebuild — and
+    /// an image nobody has asked for is asked for now, the same as
+    /// `sync_part`'s own fallback does for a mesh.
     fn sync_face(&mut self, referent: Ref) -> Result<(), Rebuild> {
         let dom = self.dom;
         let painted = self
@@ -335,10 +371,10 @@ impl Patcher<'_> {
         let synced = self
             .offscreen
             .with_renderer(|renderer, device, _| renderer.sync_face(device, &reference, &face));
-        if synced || self.resident.image_failed(&reference) {
-            Ok(())
-        } else {
-            Err(Rebuild::Asset)
+        if !synced && !self.resident.image_failed(&reference) {
+            self.loaded.also_wants(std::slice::from_ref(&reference));
+            self.resident.images(std::slice::from_ref(&reference));
         }
+        Ok(())
     }
 }

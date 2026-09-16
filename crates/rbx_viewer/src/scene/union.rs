@@ -213,6 +213,63 @@ pub(crate) struct Resolution {
     pub(crate) instances: Vec<ResolvedInstance>,
 }
 
+/// Every [`Resolution`] so far, merged.
+///
+/// A place's unions do not all resolve at the same moment any more: a
+/// streaming load hands [`resolve`] each asset the tick it lands, and what it
+/// contributed has to survive the next `Scene::resolve_file_meshes`, which
+/// rebuilds the resolved set from the file mesh plan alone. So the meshes and
+/// instances are kept here to be laid back on top of it, while the recovered
+/// parts — which are appended to the scene's own parts once and never
+/// rebuilt — are handed straight over through `fresh_parts`.
+#[derive(Default)]
+pub(crate) struct Merged {
+    pub(crate) hidden: HashSet<Ref>,
+    pub(crate) meshes: HashMap<AssetRef, Arc<rbx_mesh::Mesh>>,
+    pub(crate) instances: Vec<ResolvedInstance>,
+    /// The parts of the latest [`Merged::absorb`] alone, for the caller to
+    /// take. Empty at every other moment.
+    pub(crate) fresh_parts: Vec<Part>,
+    /// Every union referent merged in so far, whichever way it resolved. What
+    /// makes [`Merged::absorb`] idempotent — see its doc comment.
+    absorbed: HashSet<Ref>,
+}
+
+impl Merged {
+    /// Merges one [`resolve`] in, ignoring whatever it says about a union
+    /// already merged.
+    ///
+    /// [`resolve`] answers for every union whose asset it can evaluate, and
+    /// a streaming load calls it once a tick: once an asset has been carved
+    /// it is answered for on every later tick too, out of the evaluations
+    /// rather than its bytes. The instances are appended, and a boolean that
+    /// failed recovers *several* additive parts under the union's own
+    /// referent, so absorbing the same union twice would draw it twice.
+    pub(crate) fn absorb(&mut self, resolution: Resolution) {
+        self.hidden.extend(resolution.hidden);
+        self.meshes.extend(resolution.meshes);
+        let fresh: HashSet<Ref> = resolution
+            .instances
+            .iter()
+            .map(|instance| instance.referent)
+            .chain(resolution.parts.iter().map(|part| part.referent))
+            .filter(|referent| !self.absorbed.contains(referent))
+            .collect();
+        self.absorbed.extend(fresh.iter().copied());
+        self.instances.extend(
+            resolution
+                .instances
+                .into_iter()
+                .filter(|instance| fresh.contains(&instance.referent)),
+        );
+        self.fresh_parts = resolution
+            .parts
+            .into_iter()
+            .filter(|part| fresh.contains(&part.referent))
+            .collect();
+    }
+}
+
 /// One asset's decoded tree and, when the boolean succeeded, its mesh —
 /// computed once however many instances share the asset.
 struct Evaluated {

@@ -183,13 +183,6 @@ pub(crate) struct Scene {
     /// mesh/texture data has to live — `Renderer::new`'s signature has no room
     /// for a third, network-dependent argument.
     resolved_file_meshes: filemesh::Resolved,
-    /// Every mesh and union asset the load asked for and never got — a 404,
-    /// a file the content package lacks, bytes that would not decode or
-    /// carve. The part draws as its box, exactly as a full build leaves it,
-    /// and an edit of that part is a box edit rather than a reload asking
-    /// for the asset once more; see [`Scene::resync_part`]. Only an asset
-    /// nobody asked for yet is a reload's to fetch.
-    unresolved: HashSet<AssetRef>,
     /// Every `ParticleEmitter` parented to a drawn `BasePart`; see
     /// [`Scene::particle_emitters`].
     emitters: Vec<Emitter>,
@@ -202,6 +195,12 @@ pub(crate) struct Scene {
     /// Every placeable `BillboardGui`/`SurfaceGui`; see [`Scene::gui_spaces`].
     gui_spaces: Vec<SpaceGui>,
     union_plan: union::Plan,
+    /// What every [`Scene::resolve_unions`] so far contributed to the resolved
+    /// set, kept apart from it because [`Scene::resolve_file_meshes`] rebuilds
+    /// that set from the file mesh plan alone and would otherwise drop it.
+    /// The recovered *parts* need no such copy: they are appended to `parts`
+    /// once and nothing rebuilds those.
+    unions_resolved: union::Merged,
     /// Cloned once so [`Scene::resolve_unions`] can classify the `BasePart`s a
     /// downloaded union's operation tree turns out to hold — that only runs
     /// once network results are in, long after the `&ReflectionDatabase`
@@ -238,13 +237,13 @@ impl Scene {
             materials,
             file_mesh_plan,
             resolved_file_meshes: filemesh::Resolved::default(),
-            unresolved: HashSet::new(),
             emitters: Vec::new(),
             beams: Vec::new(),
             trails: Vec::new(),
             gui: gui::plan(dom, database),
             gui_spaces: Vec::new(),
             union_plan,
+            unions_resolved: union::Merged::default(),
             database: database.clone(),
         };
         // Needs `scene.placements()`, which only exists once `parts` is set —
@@ -397,18 +396,16 @@ impl Scene {
     /// the fallback box of every instance that got real geometry.
     ///
     /// Always safe to call with empty or partial maps: anything that fails to
-    /// resolve simply leaves its box alone.
+    /// resolve simply leaves its box alone. Safe to call *again* over a larger
+    /// map, which is what a streaming load does every time more meshes land:
+    /// the resolved set is rebuilt from the plan, the unions already merged in
+    /// are put back on top of it, and suppression only ever grows — a part
+    /// whose mesh resolved once never goes back to drawing its box on its own.
     pub(crate) fn resolve_file_meshes(
         &mut self,
         meshes: HashMap<AssetRef, Arc<rbx_mesh::Mesh>>,
         images: HashMap<AssetRef, Arc<Image>>,
     ) {
-        self.unresolved.extend(
-            self.file_mesh_plan
-                .mesh_refs()
-                .into_iter()
-                .filter(|reference| !meshes.contains_key(reference)),
-        );
         let (resolved, hidden) = filemesh::resolve(&self.file_mesh_plan, meshes, images);
         for part in &mut self.parts {
             if hidden.contains(&part.referent) {
@@ -416,6 +413,48 @@ impl Scene {
             }
         }
         self.resolved_file_meshes = resolved;
+        self.apply_resolved_unions();
+    }
+
+    /// Puts the unions' own meshes and instances back into the resolved set
+    /// after [`Scene::resolve_file_meshes`] has rebuilt it from the file mesh
+    /// plan, which knows nothing about them.
+    ///
+    /// Idempotent, because a streaming tick calls it twice over a growing
+    /// `unions_resolved`: once when the file mesh pass rebuilds the resolved
+    /// set, and again when the union pass absorbs whatever bytes landed since.
+    /// The instances are a `Vec`, so the second call would otherwise append a
+    /// union already put back by the first and draw it twice — for good, since
+    /// nothing later prunes the set.
+    fn apply_resolved_unions(&mut self) {
+        for part in &mut self.parts {
+            if self.unions_resolved.hidden.contains(&part.referent) {
+                part.suppressed = true;
+            }
+        }
+        let resolved = &mut self.resolved_file_meshes;
+        resolved.meshes.extend(
+            self.unions_resolved
+                .meshes
+                .iter()
+                .map(|(reference, mesh)| (reference.clone(), Arc::clone(mesh))),
+        );
+        // By referent, which is the union part the instance draws in place of
+        // and is unique across the whole resolved set: whatever an earlier
+        // call put there is dropped, and the accumulated set goes back on top
+        // in the order a cold load would have produced it.
+        let unions: HashSet<Ref> = self
+            .unions_resolved
+            .instances
+            .iter()
+            .map(|instance| instance.referent)
+            .collect();
+        resolved
+            .instances
+            .retain(|instance| !unions.contains(&instance.referent));
+        resolved
+            .instances
+            .extend(self.unions_resolved.instances.iter().cloned());
     }
 
     /// One `(referent, asset)` pair per legacy union/negate found, to download
@@ -434,6 +473,13 @@ impl Scene {
     /// which is what re-reads the material slot of everything added here.
     /// Always safe to call with an empty or partial map: anything that fails
     /// to resolve simply leaves its box alone.
+    ///
+    /// Safe to call again every tick of a streaming load, which is what one
+    /// does: `assets` need only carry the bytes of what has not been carved
+    /// yet, and a union already merged in is ignored however many times
+    /// `union::resolve` answers for it again — see `union::Merged::absorb`,
+    /// without which a failed boolean's recovered pieces would be appended to
+    /// the parts a second time.
     pub(crate) fn resolve_unions(
         &mut self,
         assets: HashMap<AssetRef, Vec<u8>>,
@@ -446,26 +492,15 @@ impl Scene {
             &mut self.materials,
             evaluations,
         );
-        // A union whose box is not hidden got nothing to stand in for it:
-        // its asset never downloaded or would not parse.
-        for (referent, asset) in self.union_plan.assets() {
-            if !resolution.hidden.contains(&referent) {
-                self.unresolved.insert(asset);
-            }
-        }
-        for part in &mut self.parts {
-            if resolution.hidden.contains(&part.referent) {
-                part.suppressed = true;
-            }
-        }
-        for piece in resolution.parts {
+        self.unions_resolved.absorb(resolution);
+        // `push_part`, not a raw extend: `self.standing` has to know every
+        // one of these by referent too, the same as any other part, or a
+        // later edit of one (`Scene::resync_part`) finds nothing standing
+        // for it.
+        for piece in std::mem::take(&mut self.unions_resolved.fresh_parts) {
             self.push_part(piece);
         }
-        let resolved = &mut self.resolved_file_meshes;
-        resolved.meshes.extend(resolution.meshes);
-        for instance in resolution.instances {
-            resolved.push(instance);
-        }
+        self.apply_resolved_unions();
     }
 
     /// Appends `part`, keeping [`Scene::standing`] in step: a second part

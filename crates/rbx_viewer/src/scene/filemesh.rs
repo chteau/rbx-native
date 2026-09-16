@@ -27,6 +27,7 @@ const MESH_PART: &str = "MeshPart";
 const FILE_MESH: u32 = 5; // Enum.MeshType.FileMesh
 
 /// One file-mesh-backed instance found in the DOM, before its assets exist.
+#[derive(Clone)]
 pub(super) struct Entry {
     material: Slot,
     /// The drawn `Part` this entry stands in for: the `MeshPart` itself, or
@@ -54,6 +55,11 @@ pub(crate) struct Plan {
 
 /// One instance ready for the renderer: which downloaded mesh/texture it
 /// draws, its model matrix, and its tint.
+///
+/// `Clone`: a union's instances outlive the resolved set they sit in, which a
+/// streaming load rebuilds from the file mesh plan every time more meshes
+/// land — see `scene::union::Merged`.
+#[derive(Clone)]
 pub(crate) struct ResolvedInstance {
     /// The part this instance draws in place of (see [`Entry::referent`]), so
     /// the renderer's per-instance patch maps and `Scene::resync_part`
@@ -130,10 +136,53 @@ impl Resolved {
     }
 }
 
+impl Entry {
+    /// The mesh this entry draws and every image it samples — its own
+    /// `TextureID` and, where it has one, the four `SurfaceAppearance` maps.
+    pub(super) fn assets(&self) -> (AssetRef, Vec<AssetRef>) {
+        let images = self
+            .texture
+            .iter()
+            .chain(
+                self.appearance
+                    .iter()
+                    .flat_map(|appearance| appearance.maps.iter().flatten()),
+            )
+            .cloned()
+            .collect();
+        (self.mesh.clone(), images)
+    }
+}
+
 impl Plan {
     /// Every distinct mesh asset this plan needs, in first-seen order.
     pub(crate) fn mesh_refs(&self) -> Vec<AssetRef> {
         dedup(self.entries.iter().map(|entry| &entry.mesh))
+    }
+
+    /// Swaps one part's entry for `entry`, in the place the old one held, or
+    /// drops it where the part is no longer file-mesh-backed at all.
+    ///
+    /// A plan is made once from the DOM and joined to assets again every time
+    /// more of them land (see `load::Loaded::resolve`), long after the DOM is
+    /// out of reach — so a single-instance edit that changes what an instance
+    /// draws has to leave the plan saying so, or the next landing would
+    /// resolve the `MeshId` the file was opened with.
+    pub(super) fn install(&mut self, referent: Ref, entry: Option<Entry>) {
+        let at = self
+            .entries
+            .iter()
+            .position(|held| held.referent == referent);
+        match (at, entry) {
+            // In place: the plan's order is the order `resolve` builds
+            // instances in, which is the order the renderer batches them in.
+            (Some(at), Some(entry)) => self.entries[at] = entry,
+            (Some(at), None) => {
+                self.entries.remove(at);
+            }
+            (None, Some(entry)) => self.entries.push(entry),
+            (None, None) => {}
+        }
     }
 
     /// Every distinct image asset this plan needs, in first-seen order: the

@@ -3,6 +3,7 @@
 //! member of — each once per batch, however many members changed — and the
 //! extent, the lighting and the local lights the same way.
 
+use rbx_assets::AssetRef;
 use rbx_dom::Ref;
 
 use super::Patcher;
@@ -118,12 +119,12 @@ impl Patcher<'_> {
             }
             self.loaded.scene_mut().replan_effect(dom, database, kind);
             let scene = self.loaded.scene();
-            let patched = self
-                .offscreen
+            // Always serves the edit now: a texture this renderer has no
+            // upload for draws that effect's own fallback until it lands
+            // (see `Renderer::patch_effect`) — never a rebuild.
+            self.offscreen
                 .with_renderer(|renderer, _, _| renderer.patch_effect(kind, scene));
-            if !patched {
-                return Err(Rebuild::Asset);
-            }
+            self.request_effect_textures(kind);
         }
         if self.pending.screens {
             self.loaded.scene_mut().replan_gui_screens(dom, database);
@@ -138,5 +139,36 @@ impl Patcher<'_> {
             });
         }
         Ok(moved)
+    }
+
+    /// Asks the background loader for the textures `kind`'s freshly
+    /// re-planned list names, whichever of them this session does not have
+    /// — the whole list rather than just the touched instance, since
+    /// `replan_effect` rebuilds it whole.
+    fn request_effect_textures(&mut self, kind: EffectKind) {
+        let images: Vec<AssetRef> = {
+            let scene = self.loaded.scene();
+            let refs: Box<dyn Iterator<Item = &AssetRef>> = match kind {
+                EffectKind::Particles => Box::new(
+                    scene
+                        .particle_emitters()
+                        .iter()
+                        .map(|emitter| &emitter.texture),
+                ),
+                EffectKind::Beams => Box::new(scene.beams().iter().map(|beam| &beam.texture)),
+                EffectKind::Trails => Box::new(scene.trails().iter().map(|trail| &trail.texture)),
+            };
+            let mut wanted = Vec::new();
+            for reference in refs {
+                if *reference != AssetRef::Empty && !wanted.contains(reference) {
+                    wanted.push(reference.clone());
+                }
+            }
+            wanted
+        };
+        if !images.is_empty() {
+            self.loaded.also_wants(&images);
+            self.resident.images(&images);
+        }
     }
 }

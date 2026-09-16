@@ -4,10 +4,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use rbx_assets::AssetRef;
+use rbx_dom::Ref;
 
 use super::sky::stars;
 use super::{Body, FaceInstance, Plan, Quad, Star};
 use crate::assets::Image;
+use crate::scene::Placement;
 
 /// All the face instances sharing one image, split by whether they can go in the
 /// opaque pass or have to be blended after it.
@@ -52,13 +54,6 @@ pub(crate) struct Decor {
     pub(crate) sky: Option<Vec<Panel>>,
     pub(crate) bodies: Vec<Celestial>,
     pub(crate) stars: Vec<Star>,
-    /// Every GUI image that decoded (`ImageLabel`, `ImageButton`), by the
-    /// reference the tree names it with — an image missing here never
-    /// downloaded, and its label draws blank the way Roblox leaves it. Set by
-    /// `load::Loaded::from_dom` rather than [`Decor::assemble`], since it is
-    /// wanted with textures off too: the same `Arc`s the loader keeps, so a
-    /// `Decal` and an `ImageLabel` naming one asset decode it once.
-    pub(crate) gui: HashMap<AssetRef, Arc<Image>>,
 }
 
 impl Decor {
@@ -67,17 +62,33 @@ impl Decor {
     /// A face whose image is missing is simply left unpainted; a skybox is all
     /// or nothing, since five panels and a hole reads as a bug rather than as a
     /// sky.
-    pub(crate) fn assemble(plan: Plan, images: &HashMap<AssetRef, Arc<Image>>) -> Self {
+    ///
+    /// `drawn` is the scene's placements as they stand — a face whose part is
+    /// not among them is dropped. A plan is made while every part still draws
+    /// its box (there is no other moment a streaming load could make one), and
+    /// this is where a part whose real mesh has since arrived stops carrying
+    /// the decals that were projected onto that box: a decal floating in the
+    /// air where the box used to be is worse than none, and dropping it here
+    /// leaves exactly the faces a build with every asset already resident
+    /// would have planned.
+    pub(crate) fn assemble(
+        plan: &Plan,
+        images: &HashMap<AssetRef, Arc<Image>>,
+        drawn: &HashMap<Ref, Placement>,
+    ) -> Self {
         let mut groups: Vec<Group> = Vec::new();
         let mut index: HashMap<AssetRef, usize> = HashMap::new();
 
-        for (reference, face) in plan.faces {
-            let Some(image) = images.get(&reference) else {
+        for planned in &plan.faces {
+            if !drawn.contains_key(&planned.part) {
+                continue;
+            }
+            let Some(image) = images.get(&planned.reference) else {
                 continue;
             };
-            let slot = *index.entry(reference.clone()).or_insert_with(|| {
+            let slot = *index.entry(planned.reference.clone()).or_insert_with(|| {
                 groups.push(Group {
-                    reference,
+                    reference: planned.reference.clone(),
                     image: image.clone(),
                     opaque: Vec::new(),
                     blended: Vec::new(),
@@ -85,21 +96,21 @@ impl Decor {
                 groups.len() - 1
             });
             let group = &mut groups[slot];
-            if face.alpha >= 1.0 && !group.image.has_alpha() {
-                group.opaque.push(face);
+            if planned.face.alpha >= 1.0 && !group.image.has_alpha() {
+                group.opaque.push(planned.face);
             } else {
-                group.blended.push(face);
+                group.blended.push(planned.face);
             }
         }
 
-        let sky = plan.sky.and_then(|panels| {
+        let sky = plan.sky.as_ref().and_then(|panels| {
             panels
-                .into_iter()
+                .iter()
                 .map(|(reference, quad)| {
-                    images.get(&reference).map(|image| Panel {
+                    images.get(reference).map(|image| Panel {
                         image: image.clone(),
-                        reference,
-                        quad,
+                        reference: reference.clone(),
+                        quad: quad.clone(),
                     })
                 })
                 .collect::<Option<Vec<_>>>()
@@ -109,12 +120,12 @@ impl Decor {
         // failing to download is no reason to drop the other.
         let bodies = plan
             .bodies
-            .into_iter()
+            .iter()
             .filter_map(|(reference, body)| {
-                images.get(&reference).map(|image| Celestial {
+                images.get(reference).map(|image| Celestial {
                     image: image.clone(),
-                    reference,
-                    body,
+                    reference: reference.clone(),
+                    body: *body,
                 })
             })
             .collect();
@@ -126,7 +137,6 @@ impl Decor {
             // Generated rather than downloaded: a star is a direction and a
             // brightness, and Roblox ships no image for them.
             stars: stars::field(plan.stars),
-            gui: HashMap::new(),
         }
     }
 }
@@ -147,13 +157,37 @@ mod tests {
         })
     }
 
+    /// Every planned face on the one part [`drawn`] places, so the tests
+    /// below exercise grouping rather than the drawn-part filter.
+    fn part() -> Ref {
+        Ref::new(1)
+    }
+
     fn plan_of(faces: Vec<(AssetRef, FaceInstance)>) -> Plan {
         Plan {
-            faces,
+            faces: faces
+                .into_iter()
+                .map(|(reference, face)| crate::textures::Planned {
+                    part: part(),
+                    reference,
+                    face,
+                })
+                .collect(),
             sky: None,
             bodies: Vec::new(),
             stars: 0,
         }
+    }
+
+    fn drawn() -> HashMap<Ref, Placement> {
+        HashMap::from([(
+            part(),
+            Placement {
+                kind: ShapeKind::CylinderY,
+                model: Mat4::IDENTITY,
+                size: Vec3::splat(2.0),
+            },
+        )])
     }
 
     fn instance(alpha: f32) -> FaceInstance {
@@ -181,11 +215,24 @@ mod tests {
         ]);
         let images = HashMap::from([(AssetRef::Id(1), image(255)), (AssetRef::Id(2), image(255))]);
 
-        let decor = Decor::assemble(plan, &images);
+        let decor = Decor::assemble(&plan, &images, &drawn());
 
         assert_eq!(decor.groups.len(), 2);
         assert_eq!(decor.groups[0].opaque.len(), 2);
         assert_eq!(decor.groups[1].opaque.len(), 1);
+    }
+
+    // A part whose real mesh has landed since the plan was made no longer
+    // draws the box these faces were projected onto, so they are dropped
+    // rather than left hanging in the air where it was.
+    #[test]
+    fn a_face_on_a_part_that_stopped_drawing_is_dropped() {
+        let plan = plan_of(vec![(AssetRef::Id(1), instance(1.0))]);
+        let images = HashMap::from([(AssetRef::Id(1), image(255))]);
+
+        let decor = Decor::assemble(&plan, &images, &HashMap::new());
+
+        assert!(decor.groups.is_empty());
     }
 
     #[test]
@@ -197,7 +244,7 @@ mod tests {
         ]);
         let images = HashMap::from([(AssetRef::Id(1), image(255)), (AssetRef::Id(2), image(128))]);
 
-        let decor = Decor::assemble(plan, &images);
+        let decor = Decor::assemble(&plan, &images, &drawn());
 
         assert_eq!(decor.groups[0].blended.len(), 1);
         assert_eq!(decor.groups[0].opaque.len(), 1);
@@ -211,7 +258,7 @@ mod tests {
     fn an_instance_whose_image_never_downloaded_is_left_unpainted() {
         let plan = plan_of(vec![(AssetRef::Id(1), instance(1.0))]);
 
-        let decor = Decor::assemble(plan, &HashMap::new());
+        let decor = Decor::assemble(&plan, &HashMap::new(), &drawn());
 
         assert!(decor.groups.is_empty());
     }

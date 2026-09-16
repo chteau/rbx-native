@@ -137,9 +137,10 @@ impl Renderer {
     /// uploaded and every running simulation or recorder that still applies
     /// — see each pass's own `replace` for exactly what survives.
     ///
-    /// `false` when a definition names a texture this renderer never tried
-    /// to download, which only a full reload fetches.
-    pub(crate) fn patch_effect(&mut self, kind: EffectKind, scene: &Scene) -> bool {
+    /// Always serves the edit: a definition naming a texture this renderer has
+    /// no upload for draws that effect's own fallback until the loader lands
+    /// one, which is what each `replace` documents.
+    pub(crate) fn patch_effect(&mut self, kind: EffectKind, scene: &Scene) {
         match kind {
             EffectKind::Particles => self.particles.replace(scene.particle_emitters()),
             EffectKind::Beams => self.beams.replace(scene.beams()),
@@ -150,7 +151,8 @@ impl Renderer {
     /// Rebuilds the GUI passes around `world`'s re-planned trees (see
     /// `Scene::replan_gui`) — the canvases are baked again, the atlas keeps
     /// every image it already holds and takes on any `ImageLabel` image the
-    /// edit first named out of `Decor::gui`.
+    /// edit first named, as far as `world.images` already has an answer for
+    /// it — see `renderer::gui::atlas`.
     pub(crate) fn refresh_gui(
         &mut self,
         device: &wgpu::Device,
@@ -162,7 +164,7 @@ impl Renderer {
             device,
             queue,
             (world.scene.gui_screens(), world.scene.gui_spaces()),
-            &world.decor.gui,
+            world.images,
             &quality,
         );
     }

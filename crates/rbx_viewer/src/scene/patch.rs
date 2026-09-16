@@ -58,4 +58,18 @@ impl Replanned {
             Replanned::Union(entry) => entry.patched(),
         }
     }
+
+    /// Every mesh/union and image asset this entry needs, whether or not
+    /// this session has them yet — what `Headless::apply_changes` asks the
+    /// background loader for after `Scene::resync_part` patches onto a box
+    /// fallback, so a missing asset does not stay missing forever.
+    pub(super) fn assets(&self) -> (Vec<AssetRef>, Vec<AssetRef>) {
+        match self {
+            Replanned::Mesh(entry) => {
+                let (mesh, images) = entry.assets();
+                (vec![mesh], images)
+            }
+            Replanned::Union(entry) => (vec![entry.asset().clone()], Vec::new()),
+        }
+    }
 }

@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use rbx_assets::{
     decode_image, AssetCache, AssetError, AssetFetcher, AssetRef, AssetResolver, FetchError,
@@ -15,9 +15,11 @@ use rbx_assets::{
 };
 use rbx_cloud::{ApiKey, Client, CloudError};
 
+use crate::load::Source;
+
 /// Roblox allows 3000 asset requests a minute; six in flight keeps a place with
 /// a few dozen textures fast while staying an order of magnitude below that.
-const WORKERS: usize = 6;
+pub(crate) const WORKERS: usize = 6;
 
 /// A decoded image, tightly packed RGBA8, top row first.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -107,18 +109,13 @@ fn transient(err: &AssetError) -> bool {
 /// `load::Resident`) can remember the failures too.
 pub(crate) type Keyed<T> = HashMap<AssetRef, Result<T, Failure>>;
 
-/// Resolves and decodes every reference into an [`Image`], skipping the ones
-/// that fail.
+/// Resolves and decodes every reference into an [`Image`], with every failure
+/// still attached to the reference it belongs to.
 ///
 /// Failures are warnings, not errors: a texture that will not download leaves
 /// its face bare, which is a far better outcome than refusing to open the file.
-/// Returned alongside the map so a caller with somewhere to show them (the
+/// Kept against the reference so a caller with somewhere to show them (the
 /// Output dock) can, without changing what already goes to stderr.
-pub(crate) fn load(references: &[AssetRef]) -> (HashMap<AssetRef, Image>, Vec<String>) {
-    split(load_images(references))
-}
-
-/// [`load`], with every failure still attached to the reference it belongs to.
 pub(crate) fn load_images(references: &[AssetRef]) -> Keyed<Image> {
     load_with("textures", references, fetch_image)
 }
@@ -134,31 +131,69 @@ pub(crate) fn load_meshes(references: &[AssetRef]) -> Keyed<rbx_mesh::Mesh> {
 /// Resolves every reference to its raw bytes, for assets whose format the
 /// scene decodes itself (legacy union assets are `.rbxm` files).
 pub(crate) fn load_bytes(references: &[AssetRef]) -> Keyed<Vec<u8>> {
-    load_with("unions", references, |resolver, reference| {
-        resolver
-            .resolve(reference)
-            .map(|asset| asset.bytes)
-            .map_err(|err| Failure {
-                warning: err.to_string(),
-                transient: transient(&err),
-            })
-    })
+    load_with("unions", references, fetch_bytes)
 }
 
-/// The successes as a plain map and the failures as the warning text alone,
-/// for a caller that only wants to show them.
-fn split<T>(keyed: Keyed<T>) -> (HashMap<AssetRef, T>, Vec<String>) {
-    let mut values = HashMap::new();
-    let mut warnings = Vec::new();
-    for (reference, result) in keyed {
-        match result {
-            Ok(value) => {
-                values.insert(reference, value);
-            }
-            Err(failure) => warnings.push(failure.warning),
+/// The cache-and-network resolver behind every background fetch — see
+/// [`crate::load::Source`], whose three methods are the same three decoders
+/// [`load_images`]/[`load_meshes`]/[`load_bytes`] run in their own pool.
+struct Resolved(AssetResolver);
+
+impl Source for Resolved {
+    fn image(&self, reference: &AssetRef) -> Result<Image, Failure> {
+        fetch_image(&self.0, reference)
+    }
+
+    fn mesh(&self, reference: &AssetRef) -> Result<rbx_mesh::Mesh, Failure> {
+        fetch_mesh(&self.0, reference)
+    }
+
+    fn bytes(&self, reference: &AssetRef) -> Result<Vec<u8>, Failure> {
+        fetch_bytes(&self.0, reference)
+    }
+}
+
+/// Stands in where no resolver could be built at all (no cache directory,
+/// say), so every reference is *answered* with that reason rather than left
+/// in flight forever — a viewport waiting on a fetch that can never land
+/// would keep its placeholders and never say why. Transient, for the same
+/// reason [`load_with`]'s is: the next load may find the machine fixed.
+struct Unavailable(String);
+
+impl Unavailable {
+    fn failure(&self) -> Failure {
+        Failure {
+            warning: self.0.clone(),
+            transient: true,
         }
     }
-    (values, warnings)
+}
+
+impl Source for Unavailable {
+    fn image(&self, _reference: &AssetRef) -> Result<Image, Failure> {
+        Err(self.failure())
+    }
+
+    fn mesh(&self, _reference: &AssetRef) -> Result<rbx_mesh::Mesh, Failure> {
+        Err(self.failure())
+    }
+
+    fn bytes(&self, _reference: &AssetRef) -> Result<Vec<u8>, Failure> {
+        Err(self.failure())
+    }
+}
+
+/// What the background workers resolve through. Built once per streaming
+/// loader, not once per batch the way [`load_with`] builds one.
+pub(crate) fn source() -> Arc<dyn Source> {
+    match resolver() {
+        Ok(resolver) => Arc::new(Resolved(resolver)),
+        Err(err) => {
+            let message = format!("rbxview: no assets ({err})");
+            eprintln!("{message}");
+            Arc::new(Unavailable(message))
+        }
+    }
 }
 
 /// Shared worker-pool machinery behind [`load_images`], [`load_meshes`] and
@@ -275,6 +310,16 @@ fn fetch_mesh(resolver: &AssetResolver, reference: &AssetRef) -> Result<rbx_mesh
     })
 }
 
+fn fetch_bytes(resolver: &AssetResolver, reference: &AssetRef) -> Result<Vec<u8>, Failure> {
+    resolver
+        .resolve(reference)
+        .map(|asset| asset.bytes)
+        .map_err(|err| Failure {
+            warning: err.to_string(),
+            transient: transient(&err),
+        })
+}
+
 fn progress(label: &str, done: usize, total: usize) {
     eprint!("\rrbxview: {label} {done}/{total}");
 }
@@ -363,9 +408,7 @@ pub(crate) mod tests {
 
     #[test]
     fn an_empty_reference_list_needs_no_cache_and_no_network() {
-        let (images, warnings) = load(&[]);
-        assert!(images.is_empty());
-        assert!(warnings.is_empty());
+        assert!(load_images(&[]).is_empty());
     }
 
     fn permanent(warning: &str) -> Failure {
@@ -457,18 +500,5 @@ pub(crate) mod tests {
     fn load_with_returns_nothing_for_an_empty_reference_list() {
         let results = load_with::<u32>("things", &[], |_resolver, _reference| Ok(0));
         assert!(results.is_empty());
-    }
-
-    #[test]
-    fn split_separates_the_values_from_the_warning_text() {
-        let keyed: Keyed<u32> = HashMap::from([
-            (AssetRef::Id(1), Ok(1)),
-            (AssetRef::Id(2), Err(permanent("asset 2: boom"))),
-        ]);
-
-        let (values, warnings) = split(keyed);
-
-        assert_eq!(values, HashMap::from([(AssetRef::Id(1), 1)]));
-        assert_eq!(warnings, vec!["asset 2: boom".to_string()]);
     }
 }

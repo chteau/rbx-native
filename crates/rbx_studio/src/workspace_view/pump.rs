@@ -286,7 +286,10 @@ fn run(
         }
 
         let warnings = viewer.drain_warnings();
-        let meshes = std::mem::take(&mut rebuilt).then(|| viewer.pick_meshes());
+        // Either a command rebuilt the scene, or an asset landed on this tick
+        // and was swapped into it — both mean new geometry to pick against.
+        let meshes = (std::mem::take(&mut rebuilt) | viewer.pick_meshes_changed())
+            .then(|| viewer.pick_meshes());
 
         if (frame.is_some() || told || pose.is_some() || !warnings.is_empty() || meshes.is_some())
             && frames

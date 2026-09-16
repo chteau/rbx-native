@@ -49,6 +49,17 @@ from that same instant through to the first frame whose pixels are back in
 system memory, which is what someone waiting for the viewport actually waits
 for. The two are never added together.
 
+The operations, in the order the harness reports them:
+
+| Operation | What it covers |
+| :--- | :--- |
+| `cold load` | `Headless::load` to the first drawable frame. Its assets are *not* in this: the load asks for them and returns, and they arrive afterwards. |
+| `load complete` | The same load through to the frame after the last asset has landed and been swapped in — the finished picture. |
+| `full reload` | The whole scene re-derived from a DOM already in memory, against a place whose assets are all resident. |
+| `patch instance` | One `BasePart`'s `CFrame` moved, patched in place. |
+| `edit: new mesh` / `new texture` | One `MeshPart` edited to name a `MeshId`/`TextureID` this session has never decoded: what the person typing waits for. Staged with `Headless::forget_asset` and a reload, so the fetch behind it is a disk-cache read rather than a download — see `examples/bench/streaming.rs`. |
+| `mesh swapped` / `texture swapped` | The same edit through to the frame that actually shows the asset; `call` is the swap-in rebuild alone. |
+
 ## Baseline — `--no-textures`
 
 The tracked number. Reproducible to under 7% run to run, so a regression in it
@@ -100,6 +111,44 @@ target below is about — but see "Why the tracked number has assets off".
 This reproduces the one-off profile in `CHANGELOG.md` (a `marked.rbxl` reload at
 0.9–1.15 s cold), which is the first evidence that the harness measures what
 that profile measured.
+
+## 2026-09-16 — assets off the render thread
+
+Same machine and settings, on `perf/async-assets`. Assets are resolved on a
+background pool and swapped into the picture as they land, so a cold load's
+number splits in two and two new operations exist at all. `--load-iters 5`,
+`--reload-iters 25`, `--patch-iters 50`, one full run rather than the median of
+three the two baselines above are, so read these to two significant figures,
+not to the last digit.
+
+| Fixture | Operation | call med | readable med | readable p95 |
+| :--- | :--- | ---: | ---: | ---: |
+| TestPlace | cold load | 220.6 ms | 254.8 ms | 261.2 ms |
+| TestPlace | load complete | 387.2 ms | 388.2 ms | 403.3 ms |
+| TestPlace | full reload | 0.60 ms | 1.61 ms | 1.79 ms |
+| TestPlace | patch instance | 0.01 ms | 1.01 ms | 1.08 ms |
+| marked | cold load | 433.6 ms | 462.2 ms | 491.1 ms |
+| marked | load complete | 977.0 ms | 977.8 ms | 992.5 ms |
+| **marked** | **full reload** | **15.5 ms** | **16.8 ms** | **19.7 ms** |
+| marked | patch instance | 0.01 ms | 0.89 ms | 1.01 ms |
+| **marked** | **edit: new mesh** | **0.04 ms** | **0.90 ms** | **1.00 ms** |
+| marked | mesh swapped | 1.28 ms | 3.10 ms | 3.58 ms |
+| **marked** | **edit: new texture** | **0.04 ms** | **0.93 ms** | **1.06 ms** |
+| marked | texture swapped | 1.39 ms | 3.31 ms | 3.66 ms |
+
+`TestPlace.rbxl` has no `MeshPart` with two distinct `MeshId`s to swap
+between, so the two edit phases report as skipped there rather than being
+measured against something they are not about.
+
+Against `dd04b1e` (the commit before, measured on the same machine in the same
+session, `marked.rbxl`, assets on): cold load 954.4 / 1004.4 ms, full reload
+19.6 / 29.0 ms, patch instance 0.00 / 0.91 ms. So the first drawable frame of
+a cold load more than halved while the finished picture stayed where it was
+(978 ms against 1004 ms), and a reload lost the asset-table walk it no longer
+does. There is no `dd04b1e` number for the two edit phases: the harness stages
+them with `Headless::forget_asset`, which does not exist there, and the edit
+itself answers `Ok(false)` and becomes a full reload with a fetch in front of
+it — so ~29 ms plus a decode is the honest comparison, not a measured one.
 
 ## Target
 

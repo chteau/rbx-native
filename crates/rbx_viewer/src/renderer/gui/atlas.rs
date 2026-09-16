@@ -2,12 +2,13 @@
 //! the screen overlay and every offscreen canvas.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use rbx_assets::AssetRef;
 
+use super::super::rebuild::untried;
 use super::super::texture;
 use crate::assets::Image;
+use crate::load::Answered;
 use crate::quality::QualityProfile;
 
 pub(super) struct Atlas {
@@ -21,14 +22,21 @@ pub(super) struct Atlas {
     /// Only holds the images that actually decoded: an `ImageLabel` whose
     /// asset is missing draws nothing, the way Roblox itself leaves it blank.
     slot_of: HashMap<AssetRef, usize>,
+    /// Every reference [`Atlas::extend`] ever tried, the failed ones
+    /// included — `slot_of` cannot tell those from one never asked for, and
+    /// a scene rebuild must not fetch a missing asset again on every edit.
+    tried: HashMap<AssetRef, ()>,
 }
 
 impl Atlas {
-    /// An atlas holding only the flat-white fallback every background and
-    /// border samples (`quads::WHITE`); [`Atlas::extend`] adds the images.
+    /// Uploads whichever of `references` the loader has already decoded, the
+    /// flat-white fallback every background and border samples
+    /// (`quads::WHITE`) first.
     pub(super) fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        references: &[AssetRef],
+        images: &Answered,
         quality: &QualityProfile,
     ) -> Self {
         let image_layout = texture::layout(device);
@@ -57,36 +65,38 @@ impl Atlas {
             groups: Vec::new(),
             uploads: Vec::new(),
             slot_of: HashMap::new(),
+            tried: HashMap::new(),
         };
         atlas.push(device, queue, &white, quality);
+        atlas.extend(device, queue, references, images, quality);
         atlas
     }
 
-    /// Uploads whichever of `references` the atlas does not hold yet, out of
-    /// `images` (what the loader decoded — see `Decor::gui`; a reference it
-    /// lacks never downloaded and is skipped), keeping every slot already
-    /// handed out: what a scene rebuild calls, so the same `ImageLabel`
-    /// images are not uploaded twice. Slots are handed out in `references`'
-    /// order rather than the map's, so the same file draws the same
-    /// texture-to-slot mapping twice in a row.
+    /// Uploads whichever of `references` the loader has decoded and the atlas
+    /// has not taken yet, keeping every slot already handed out: what a scene
+    /// rebuild calls, so the same `ImageLabel` image is never uploaded twice.
+    ///
+    /// A reference `images` has no answer for is left untried, so the rebuild
+    /// that follows its landing picks it up; one answered `None` is recorded
+    /// as tried and never asked about again.
     pub(super) fn extend(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         references: &[AssetRef],
-        images: &HashMap<AssetRef, Arc<Image>>,
+        images: &Answered,
         quality: &QualityProfile,
     ) {
-        for reference in references {
-            if self.slot_of.contains_key(reference) {
+        for reference in untried(&self.tried, references.iter().cloned()) {
+            let Some(answer) = images.get(&reference) else {
                 continue;
-            }
-            let Some(image) = images.get(reference) else {
+            };
+            self.tried.insert(reference.clone(), ());
+            let Some(image) = answer else {
                 continue;
             };
             self.push(device, queue, image, quality);
-            self.slot_of
-                .insert(reference.clone(), self.groups.len() - 1);
+            self.slot_of.insert(reference, self.groups.len() - 1);
         }
     }
 

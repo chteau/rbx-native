@@ -1,6 +1,7 @@
 //! Bringing one `BasePart` of a built scene in line with the DOM — added,
 //! edited, moved or gone — see [`Scene::resync_part`].
 
+use rbx_assets::AssetRef;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
@@ -50,17 +51,20 @@ impl Scene {
     /// `known_layers` is the material catalog's layer count as of the last
     /// full build — how many texture-array layers the renderer holds. An
     /// edit that lands on a material past that count needs its maps
-    /// uploaded, which only a reload does (see [`Rebuild::Asset`]); the
-    /// same for a mesh, texture or `SurfaceAppearance` set the scene never
-    /// asked for. A mesh or union asset it asked for and never got (see
-    /// [`Scene::unresolved`]) is not one of those: the part draws as its
-    /// box, exactly as the full build left it, and the edit is a box edit —
-    /// otherwise every later edit of a `MeshPart` whose mesh once failed to
-    /// download would be a reload, for the rest of the session. A union
-    /// drawn as its recovered pieces is refused as [`Rebuild::Union`].
-    /// Nothing is refused for being *new*: a shape kind the place never
-    /// used, a part with no counterpart in the scene, a mesh another
-    /// instance already draws through are all patched.
+    /// uploaded, which only a reload does (see [`Rebuild::Asset`]).
+    ///
+    /// A mesh, texture, `SurfaceAppearance` set or union boolean this
+    /// session has not resolved yet is never a rebuild either: the part
+    /// draws as its box, exactly as a full build with that asset withheld
+    /// leaves it, the asset is asked for in the background (see
+    /// `Headless::apply_changes`), and the box gives way to the resolved
+    /// instance in place whenever it lands — otherwise every later edit of
+    /// a `MeshPart` whose mesh had not arrived yet would be a reload for
+    /// the rest of the session. A union drawn as its recovered pieces is
+    /// refused as [`Rebuild::Union`]: patching one recovered piece in place
+    /// is not implemented. Nothing is refused for being *new*: a shape kind
+    /// the place never used, a part with no counterpart in the scene, a
+    /// mesh another instance already draws through are all patched.
     pub(crate) fn resync_part(
         &mut self,
         dom: &WeakDom,
@@ -92,46 +96,71 @@ impl Scene {
 
         let sync = match Replanned::of(dom, database, referent, &mut self.materials) {
             None => {
-                self.resolved_file_meshes.remove(referent);
-                PartSync::Box(part)
-            }
-            Some(entry) if !self.resolved_file_meshes.meshes.contains_key(entry.asset()) => {
-                // Before the transparency check on purpose: a fully
-                // transparent box keeps its placement, and a full build
-                // never hid the box of a part whose mesh did not come.
-                if !self.unresolved.contains(entry.asset()) {
-                    return Err(Rebuild::Asset);
-                }
+                self.file_mesh_plan.install(referent, None);
                 self.resolved_file_meshes.remove(referent);
                 PartSync::Box(part)
             }
             Some(entry) => {
-                // The box stays, suppressed, exactly as `resolve_file_meshes`
-                // and `resolve_unions` leave it: it is what says the referent
-                // draws through the mesh path, and what a decal would have
-                // been projected on if the mesh had not taken over.
-                part.suppressed = true;
-                if entry.is_invisible() {
+                // A single-instance edit that changes what this referent
+                // draws through has to leave the file-mesh plan saying so,
+                // or a mesh landing later would resolve against the
+                // `MeshId` the place opened with (see
+                // `filemesh::Plan::install`). Unions have no such plan to
+                // keep current outside a full build.
+                if let Replanned::Mesh(mesh_entry) = &entry {
+                    self.file_mesh_plan
+                        .install(referent, Some(mesh_entry.clone()));
+                }
+                if !self.resolved_file_meshes.meshes.contains_key(entry.asset()) {
+                    // Before the transparency check on purpose: a fully
+                    // transparent box keeps its placement, and a full
+                    // build never hid the box of a part whose mesh did
+                    // not come.
+                    //
+                    // Never a rebuild for this reason: the missing asset
+                    // is asked for in the background (see
+                    // `Headless::apply_changes`) and folded in, mesh or
+                    // union alike, whenever it lands.
                     self.resolved_file_meshes.remove(referent);
-                    PartSync::Gone
+                    PartSync::Box(part)
                 } else {
-                    let missing = match entry {
-                        Replanned::Mesh(_) => Rebuild::Asset,
-                        Replanned::Union(_) => Rebuild::Union,
-                    };
-                    let instance = entry.patched(&self.resolved_file_meshes).ok_or(missing)?;
-                    if instance.material.layer as usize >= known_layers {
-                        return Err(Rebuild::Asset);
-                    }
-                    let resolved = &mut self.resolved_file_meshes;
-                    let index = match resolved.slot_of(referent) {
-                        Some(index) => {
-                            resolved.instances[index] = instance;
-                            index
+                    // The box stays, suppressed, exactly as
+                    // `resolve_file_meshes` and `resolve_unions` leave it:
+                    // it is what says the referent draws through the mesh
+                    // path, and what a decal would have been projected on
+                    // if the mesh had not taken over.
+                    part.suppressed = true;
+                    if entry.is_invisible() {
+                        self.resolved_file_meshes.remove(referent);
+                        PartSync::Gone
+                    } else {
+                        match entry.patched(&self.resolved_file_meshes) {
+                            // A texture, `SurfaceAppearance` set, material
+                            // sample or (for a union) an operation tree
+                            // not finished evaluating: the same "not
+                            // landed yet" case as the mesh itself not
+                            // resolving, so the box until it does.
+                            None => {
+                                part.suppressed = false;
+                                self.resolved_file_meshes.remove(referent);
+                                PartSync::Box(part)
+                            }
+                            Some(instance) if instance.material.layer as usize >= known_layers => {
+                                return Err(Rebuild::Asset);
+                            }
+                            Some(instance) => {
+                                let resolved = &mut self.resolved_file_meshes;
+                                let index = match resolved.slot_of(referent) {
+                                    Some(index) => {
+                                        resolved.instances[index] = instance;
+                                        index
+                                    }
+                                    None => resolved.push(instance),
+                                };
+                                PartSync::Mesh(index)
+                            }
                         }
-                        None => resolved.push(instance),
-                    };
-                    PartSync::Mesh(index)
+                    }
                 }
             }
         };
@@ -143,6 +172,31 @@ impl Scene {
         }
         self.note_extent(old.as_ref(), Some(&part));
         Ok(sync)
+    }
+
+    /// The mesh/union and image assets a fresh re-plan of `referent` would
+    /// need, whether or not this session already has them — what
+    /// `Headless::apply_changes` asks the background loader for right after
+    /// [`Scene::resync_part`], so an asset that just took the box-fallback
+    /// path is asked for rather than left missing for good. Empty for a
+    /// referent [`Replanned::of`] has nothing to say about (a plain `Part`),
+    /// but every referent still in `dom` also gets its own material sample's
+    /// maps checked, whether or not it is mesh/union-backed: a brand-new
+    /// material named for the first time needs its own pack fetched too.
+    pub(crate) fn wanted_assets_of(
+        &mut self,
+        dom: &WeakDom,
+        database: &ReflectionDatabase,
+        referent: Ref,
+    ) -> (Vec<AssetRef>, Vec<AssetRef>) {
+        let (meshes, mut images) = Replanned::of(dom, database, referent, &mut self.materials)
+            .map(|entry| entry.assets())
+            .unwrap_or_default();
+        if let Some(instance) = dom.get(referent) {
+            let slot = self.materials.slot_for(instance.properties(), database);
+            images.extend(self.materials.maps_of(slot.layer));
+        }
+        (meshes, images)
     }
 
     /// Takes every box and resolved instance standing for `referent` out of

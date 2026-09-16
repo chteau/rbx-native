@@ -22,15 +22,11 @@ mod pipeline;
 mod quads;
 mod space;
 
-use std::collections::HashMap;
-use std::sync::Arc;
-
 use glam::{Mat4, Vec3};
-use rbx_assets::AssetRef;
 
 use super::pipeline::Target;
 use super::post::Targets;
-use crate::assets::Image;
+use crate::load::Answered;
 use crate::quality::QualityProfile;
 use crate::scene::{gui_layout, GuiScreen, SpaceGui};
 use atlas::Atlas;
@@ -62,10 +58,10 @@ impl Gui {
         format: wgpu::TextureFormat,
         target: Target,
         (screens, spaces): (&[GuiScreen], &[SpaceGui]),
-        images: &HashMap<AssetRef, Arc<Image>>,
+        images: &Answered,
         quality: &QualityProfile,
     ) -> Self {
-        let atlas = Atlas::new(device, queue, quality);
+        let atlas = Atlas::new(device, queue, &[], images, quality);
         let viewport_layout = pipeline::viewport_layout(device);
         let screen_painter = Painter::new(device, format, &viewport_layout, &atlas.image_layout);
         let space = Space::new(device, queue, target, &viewport_layout, &atlas, &[]);
@@ -92,7 +88,7 @@ impl Gui {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         (screens, spaces): (&[GuiScreen], &[SpaceGui]),
-        images: &HashMap<AssetRef, Arc<Image>>,
+        images: &Answered,
         quality: &QualityProfile,
     ) {
         self.enabled = quality.gui;
@@ -107,7 +103,7 @@ impl Gui {
 
         // One upload for all three container kinds: both collectors skip an
         // asset already in the list, so the same `ImageLabel` image on a
-        // screen and on a surface gets one slot.
+        // screen and on a surface is uploaded once.
         let mut references = Vec::new();
         for screen in screens {
             screen.assets(&mut references);
@@ -196,7 +192,7 @@ mod tests {
         on.gui = true;
         let mut off = on;
         off.gui = false;
-        let images = HashMap::new();
+        let images = Answered::new();
         let format = wgpu::TextureFormat::Rgba8UnormSrgb;
 
         let mut gui = Gui::new(&device, &queue, format, target, (&[], &[]), &images, &off);

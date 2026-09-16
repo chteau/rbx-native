@@ -48,6 +48,7 @@ impl Renderer {
             decor,
             lighting,
             lights,
+            images,
         } = world;
         let quality = self.quality;
 
@@ -144,15 +145,17 @@ impl Renderer {
             .rebuild(device, queue, scene.resolved_file_meshes());
         self.textured
             .rebuild(device, queue, &decor.groups, &quality);
-        self.beams.rebuild(device, queue, scene.beams(), &quality);
-        self.trails.rebuild(device, queue, scene.trails(), &quality);
+        self.beams
+            .rebuild(device, queue, scene.beams(), images, &quality);
+        self.trails
+            .rebuild(device, queue, scene.trails(), images, &quality);
         self.particles
-            .rebuild(device, queue, scene.particle_emitters(), &quality);
+            .rebuild(device, queue, scene.particle_emitters(), images, &quality);
         self.gui.rebuild(
             device,
             queue,
             (scene.gui_screens(), scene.gui_spaces()),
-            &decor.gui,
+            images,
             &quality,
         );
 
