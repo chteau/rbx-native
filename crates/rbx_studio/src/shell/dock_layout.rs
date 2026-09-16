@@ -17,6 +17,9 @@ pub(crate) enum PanelKind {
 }
 
 impl PanelKind {
+    /// Serialize to string form (for potential future use with more sophisticated
+    /// layout representations).
+    #[allow(dead_code)]
     pub(crate) fn as_str(&self) -> &'static str {
         match self {
             Self::Viewport => "Viewport",
@@ -26,6 +29,9 @@ impl PanelKind {
         }
     }
 
+    /// Deserialize from string form (for potential future use with more sophisticated
+    /// layout representations).
+    #[allow(dead_code)]
     pub(crate) fn from_str(s: &str) -> Option<Self> {
         match s {
             "Viewport" => Some(Self::Viewport),
@@ -164,8 +170,7 @@ fn load_from(path: &Path) -> DockLayoutState {
 }
 
 fn save_to(layout: &DockLayoutState, path: &Path) -> Result<(), DockLayoutError> {
-    let bytes = serde_json::to_vec_pretty(layout)
-        .expect("dock layout always serializes");
+    let bytes = serde_json::to_vec_pretty(layout).expect("dock layout always serializes");
     write_atomic(path, &bytes)
 }
 
@@ -217,10 +222,8 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), DockLayoutError> {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::sync::Mutex;
 
     static COUNTER: AtomicU64 = AtomicU64::new(0);
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn temp_dock_layout_path() -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -236,10 +239,7 @@ mod tests {
     fn default_layout_has_all_panels_visible() {
         let layout = DockLayoutState::default();
         assert_eq!(layout.panels.len(), 4);
-        assert!(layout
-            .panels
-            .iter()
-            .all(|p| p.visible == true));
+        assert!(layout.panels.iter().all(|p| p.visible));
     }
 
     #[test]
