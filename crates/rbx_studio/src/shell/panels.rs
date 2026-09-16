@@ -15,6 +15,7 @@ use rbx_dom::Ref;
 use crate::explorer;
 use crate::properties::{group_by_category, EditKind};
 
+use super::reparent::{draggable_row, DraggedInstances};
 use super::rows::{property_row, property_row_control, render_editor, row};
 use super::Shell;
 
@@ -30,6 +31,10 @@ impl Shell {
     /// only thing in the Explorer that ever does — see `shell::keys`.
     pub(super) fn instance_tree(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let explorer = self.explorer.clone();
+        // Every row's drop handler mutates the DOM, and its `can_drop` has to
+        // ask the DOM what it would do — neither runs while this render holds
+        // `self`, so both reach the shell back through its own handle.
+        let shell = cx.entity();
         let scroll_handle = self.tree.read(cx).scroll_handle().clone();
         // Highlighting reads `self.selection`'s own full set rather than the
         // `TreeState`'s `state.is_selected()`: the tree can track only one
@@ -46,10 +51,22 @@ impl Shell {
             .child(
                 base::Tree::new(&self.tree)
                     .item(move |index, entry, _, _, _| {
-                        let icon = explorer.icon(&entry.item().id);
-                        let highlighted = explorer::item_ref(&entry.item().id)
-                            .is_some_and(|referent| selected.contains(&referent));
-                        row(index, entry, highlighted, icon).into_any_element()
+                        let item = entry.item();
+                        let icon = explorer.icon(&item.id);
+                        // A row whose id does not read back as a referent has
+                        // nothing to drag or drop onto; it still has to draw.
+                        let Some(reference) = explorer::item_ref(&item.id) else {
+                            return row(index, entry, false, icon).into_any_element();
+                        };
+                        let highlighted = selected.contains(&reference);
+                        let dragged = DraggedInstances::new(&selected, reference, &item.label);
+                        draggable_row(
+                            &shell,
+                            index,
+                            reference,
+                            dragged,
+                            row(index, entry, highlighted, icon),
+                        )
                     })
                     .list_style(StyleRefinement::default().flex_grow_1().size_full())
                     .relative()

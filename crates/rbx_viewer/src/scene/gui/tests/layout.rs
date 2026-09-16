@@ -1,5 +1,6 @@
 //! Resolution of a planned tree against a viewport: `UDim2` boxes, anchor
-//! points, paint order and `ClipsDescendants`.
+//! points, paint order and `UIListLayout` stacking. `ClipsDescendants` (and
+//! its incompatibility with `Rotation`) lives in [`super::clips`].
 
 use super::*;
 
@@ -135,79 +136,6 @@ fn a_higher_display_order_paints_over_a_lower_one() {
 
     assert_eq!(elements[0].rect.width, 22.0);
     assert_eq!(elements[1].rect.width, 11.0);
-}
-
-#[test]
-fn clips_descendants_scissors_children_to_the_frame_and_compounds() {
-    let (mut dom, gui) = screen_gui();
-    let outer = frame(
-        &mut dom,
-        gui,
-        udim2(0.0, 0, 0.0, 0),
-        udim2(0.0, 200, 0.0, 200),
-    );
-    dom.set_property(outer, "ClipsDescendants", Variant::Bool(true))
-        .unwrap();
-    // Sticks out to x=300, and clips again 50 px narrower than that.
-    let inner = frame(
-        &mut dom,
-        outer,
-        udim2(0.0, 100, 0.0, 0),
-        udim2(0.0, 200, 0.0, 100),
-    );
-    dom.set_property(inner, "ClipsDescendants", Variant::Bool(true))
-        .unwrap();
-    frame(
-        &mut dom,
-        inner,
-        udim2(0.0, 0, 0.0, 0),
-        udim2(0.0, 10, 0.0, 10),
-    );
-
-    let elements = resolve(&screens(&dom), VIEWPORT);
-
-    // The clipping frame itself is never clipped by its own flag.
-    assert_eq!(elements[0].clip, None);
-    assert_eq!(
-        elements[1].clip,
-        Some(Rect {
-            x: 0.0,
-            y: 0.0,
-            width: 200.0,
-            height: 200.0,
-        })
-    );
-    // Both rects intersected: x 100..200, y 0..100.
-    assert_eq!(
-        elements[2].clip,
-        Some(Rect {
-            x: 100.0,
-            y: 0.0,
-            width: 100.0,
-            height: 100.0,
-        })
-    );
-}
-
-#[test]
-fn a_clip_that_misses_its_parent_entirely_is_empty_rather_than_negative() {
-    let left = Rect {
-        x: 0.0,
-        y: 0.0,
-        width: 10.0,
-        height: 10.0,
-    };
-    let right = Rect {
-        x: 100.0,
-        y: 100.0,
-        width: 10.0,
-        height: 10.0,
-    };
-
-    let overlap = left.intersect(&right);
-
-    assert_eq!(overlap.width, 0.0);
-    assert_eq!(overlap.height, 0.0);
 }
 
 // `UIListLayout`: siblings keep their `Size`, lose their `Position`, and are

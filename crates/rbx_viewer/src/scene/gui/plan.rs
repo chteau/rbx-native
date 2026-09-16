@@ -99,6 +99,9 @@ pub(super) struct Node {
     pub(super) position: Span,
     pub(super) size: Span,
     pub(super) anchor: [f32; 2],
+    /// `Rotation`, in degrees around the element's own centre — Roblox gives
+    /// no way to move the pivot, so `AnchorPoint` plays no part in this.
+    pub(super) rotation: f32,
     pub(super) background: [f32; 3],
     pub(super) background_alpha: f32,
     /// `BorderSizePixel`, drawn just outside the box: `BorderMode.Outline` is
@@ -225,6 +228,7 @@ fn element(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> Optio
         position: span(properties, "Position"),
         size: span(properties, "Size"),
         anchor: vector2(properties, "AnchorPoint"),
+        rotation: degrees(properties, "Rotation"),
         background: color(properties, "BackgroundColor3", [1.0, 1.0, 1.0]),
         background_alpha: alpha(properties, "BackgroundTransparency"),
         border: integer(properties, "BorderSizePixel", 1).max(0) as f32,
@@ -289,8 +293,9 @@ fn enum_of(properties: &BTreeMap<String, Variant>, name: &str, default: u32) -> 
 /// The image of anything carrying one, told apart by the property rather than
 /// by class name so `ImageButton` lands here beside `ImageLabel`.
 ///
-/// TODO: `ScaleType.Slice`/`Fit`/`Crop`, `ImageRectOffset`/`ImageRectSize` and
-/// `Rotation` are all read as a plain stretch.
+/// TODO: `ScaleType.Slice`/`Fit`/`Crop` and `ImageRectOffset`/`ImageRectSize`
+/// are all read as a plain stretch. `GuiObject.Rotation` (shared with the
+/// element's background and border) is handled in `super::layout`.
 fn fill(properties: &BTreeMap<String, Variant>) -> Option<Fill> {
     let asset = AssetRef::parse(asset_uri(properties.get("Image")?)?).ok()?;
     if asset == AssetRef::Empty {
@@ -341,6 +346,15 @@ fn color(properties: &BTreeMap<String, Variant>, name: &str, default: [f32; 3]) 
         _ => default,
     };
     raw.map(srgb_to_linear)
+}
+
+/// `Rotation`, 0 degrees (unrotated) where the property is missing.
+fn degrees(properties: &BTreeMap<String, Variant>, name: &str) -> f32 {
+    match properties.get(name) {
+        Some(Variant::Float32(value)) => *value,
+        Some(Variant::Float64(value)) => *value as f32,
+        _ => 0.0,
+    }
 }
 
 /// `1 - Transparency`, 1 (fully opaque) where the property is missing.

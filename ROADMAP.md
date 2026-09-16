@@ -447,7 +447,20 @@ Roblox's own engine.
   exist, these don't yet (the menu bar already has honest placeholders for
   them); folds into the fuller Explorer editing item above rather than
   being separate work.
-- [ ] 📋 Drag-and-drop reparenting in the Explorer tree.
+- [x] 🚧 Drag-and-drop reparenting in the Explorer tree. Dragging a row
+  onto another reparents onto it, the way creator-docs describes
+  ("simply drag and drop them onto the new parent") — with a ghost under
+  the cursor, the hovered row highlighted only while the drop is legal,
+  the new parent expanded and revealed afterwards, and one undo step per
+  drag. A drop is refused onto the dragged instance itself, into its own
+  subtree, onto the parent it already has, and for a service. Still open:
+  dragging a row *outside* the current selection collapses that selection
+  to the pressed row before the drag starts, so a multi-instance drag only
+  carries the whole selection when grabbed by its anchor row — the
+  Explorer tree tracks one selected row and already behaves this way for a
+  plain click, so fixing it properly belongs with the fuller Explorer
+  editing item above. No Escape-to-cancel (GPUI has no drag-cancel hook
+  wired), and no drop *between* rows, which Studio does not offer either.
 - [ ] 📋 **Save/Publish to Roblox from the editor UI.** The Open Cloud
   client side of this already exists and works —
   `rbx_cloud::Client::publish_place`
@@ -491,12 +504,21 @@ real Studio UI needs. All classes below checked against
 - [ ] 📋 `ImageButton` — the image-based sibling of `TextButton`, not yet
   scoped anywhere (easy to lose track of next to `TextButton`, but a
   distinct class).
-- [ ] 📋 `GuiObject.Rotation` applied in rendering — a plain `float` degrees
-  property that already exists on every `GuiObject`; not yet read by the
-  GUI renderer. Rotates around the element's **center**, not its
-  `AnchorPoint` (Roblox's own docs are explicit you cannot change the pivot
-  point), and is documented as incompatible with `ClipsDescendants` — worth
-  a test that pins both.
+- [x] 🚧 `GuiObject.Rotation` applied in rendering: the element's background,
+  border and image all turn together about the element's own centre, never
+  its `AnchorPoint` — Roblox's own docs for the property are explicit you
+  can't move that pivot. `ClipsDescendants` is ignored wherever the element
+  or any ancestor has a non-zero `Rotation`, matching the same primary
+  source's description of the two as incompatible — but only in the mode
+  that source describes as the default: `StarterGui.ClipsDescendantsSupportsRotation`
+  (a `RolloutState`, `NotScriptable`) gates a *second* mode where enabled
+  clipping works correctly against rotated shapes instead, which this
+  renderer doesn't read or model at all — the flag isn't scriptable, so
+  there's nothing in a DOM to read regardless. Still open: a rotated
+  element's children aren't carried around with it the way Roblox's
+  cumulative `GuiBase2d.AbsoluteRotation` implies real Studio composes
+  nested rotations — each element only ever turns about its own centre by
+  its own `Rotation`.
 - [ ] 📋 `UIGradient` — `Color` (`ColorSequence`), `Transparency`
   (`NumberSequence`), `Rotation`, `Offset`, `Scale`, and a `Type` enum
   (`Linear`/`Radial`/`Conical`) plus `TileMode` — not just a linear

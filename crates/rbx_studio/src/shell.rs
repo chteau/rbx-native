@@ -13,6 +13,7 @@ mod keys;
 mod output;
 mod panels;
 mod quality;
+mod reparent;
 mod rows;
 mod save;
 mod selection;
