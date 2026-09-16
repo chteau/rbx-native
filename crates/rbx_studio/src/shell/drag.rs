@@ -346,7 +346,7 @@ impl Shell {
             return;
         }
 
-        let targets = Targets::read(&self.dom, self.selected_all());
+        let targets = Targets::read(&self.dom, &self.database, self.selected_all());
         self.viewport
             .update(cx, |viewport, _| viewport.set_targets(targets));
     }
@@ -380,7 +380,7 @@ impl Shell {
             return;
         };
 
-        let mut targets = Targets::read(&self.dom, self.selected_all());
+        let mut targets = Targets::read(&self.dom, &self.database, self.selected_all());
         let moves = targets.translate(delta);
         if !moves.is_empty() {
             self.move_parts(&moves, true, None, cx);

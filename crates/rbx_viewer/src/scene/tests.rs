@@ -70,6 +70,22 @@ fn a_suppressed_part_offers_no_placement() {
     assert!(!placements.contains_key(&scene.parts[0].referent));
 }
 
+// ...but it is still a `BasePart` a click selects and a drag moves, so the
+// outline and the gizmo that stand on its box do get one. Before they did,
+// selecting any mesh in a place drew no box and no handles at all.
+#[test]
+fn a_suppressed_part_still_offers_a_placement_to_outline() {
+    let mut scene = Scene::from_dom(&test_place(), &ReflectionDatabase::embedded()).unwrap();
+    scene.parts[0].suppressed = true;
+
+    let placements = scene.all_placements();
+    assert_eq!(placements.len(), 2);
+    assert_eq!(
+        placements.get(&scene.parts[0].referent),
+        Some(&scene.parts[0].placement())
+    );
+}
+
 // An invisible part is still part of the scene's extent — the camera frames
 // where the place is built, not only what happens to be painted — and a Decal on
 // one still needs its placement, so only the drawing stops.

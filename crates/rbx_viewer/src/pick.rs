@@ -22,7 +22,8 @@ use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use crate::scene::{
-    cframe_matrix, file_mesh_fit, is_drawable, resolve_shape, workspace_descendants, ShapeKind,
+    cframe_matrix, descendants_of, file_mesh_fit, is_drawable, resolve_shape,
+    workspace_descendants, ShapeKind,
 };
 
 pub use mesh::Meshes;
@@ -178,6 +179,84 @@ pub fn drawable_parts<'a>(
 ) -> impl Iterator<Item = Ref> + 'a {
     workspace_descendants(dom, database)
         .filter(move |&referent| is_drawable(dom, database, referent))
+}
+
+/// Every drawable `BasePart` `referent` stands for: itself, when it is one,
+/// and otherwise everything beneath it.
+///
+/// A `Model`, a `Folder` or a service carries no `CFrame` of its own, so the
+/// only geometry the viewport can outline or transform for one is what it
+/// contains. That is not an edge case: a click in the 3D view resolves to the
+/// outermost `Model` around whatever it hit (`rbxstudio`'s
+/// `shell::selection::outermost_model`, matching Studio), so most selections a
+/// user makes by clicking arrive here as a container rather than as a part.
+///
+/// Both sides of the editor resolve a selection through this one function —
+/// the renderer that draws the handles and the viewport that hit-tests the
+/// cursor against them — so the order matters as much as the membership: the
+/// first part yielded is the one Scale and Rotate anchor on, and two
+/// derivations disagreeing about which that is would draw the handles
+/// somewhere the cursor cannot reach.
+pub fn parts_of<'a>(
+    dom: &'a WeakDom,
+    database: &'a ReflectionDatabase,
+    referent: Ref,
+) -> impl Iterator<Item = Ref> + 'a {
+    descendants_of(dom, referent).filter(move |&found| is_drawable(dom, database, found))
+}
+
+/// One entry in the viewport's selection: the instance the Explorer names,
+/// and every drawable part it stands for (see [`parts_of`]).
+///
+/// Resolved by the editor, which owns the DOM, and handed to the renderer
+/// whole rather than worked out again there. The render thread holds no DOM —
+/// every command that needs one ships a clone of the entire place — and a
+/// copy of the place per selection change, for what is usually one click,
+/// would cost far more than the handful of referents this carries instead.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Selected {
+    referent: Ref,
+    parts: Vec<Ref>,
+}
+
+impl Selected {
+    pub fn read(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> Self {
+        Selected {
+            referent,
+            parts: parts_of(dom, database, referent).collect(),
+        }
+    }
+
+    /// One `BasePart` standing for itself, for a caller that already knows it
+    /// is one and has no DOM in hand to say so again — what every entry looked
+    /// like before a container could be selected at all.
+    pub fn part(referent: Ref) -> Self {
+        Selected {
+            referent,
+            parts: vec![referent],
+        }
+    }
+
+    pub fn referent(&self) -> Ref {
+        self.referent
+    }
+
+    /// The parts this entry covers, in the order the gizmo's anchor is picked
+    /// from — empty for a container holding no drawable geometry at all,
+    /// which is the one case that still outlines and transforms nothing.
+    pub fn parts(&self) -> &[Ref] {
+        &self.parts
+    }
+
+    /// Whether the selected instance is a drawable part in its own right.
+    ///
+    /// Only then does it have an orientation of its own to draw an oriented
+    /// bounding box along; a container is outlined by one world-axis-aligned
+    /// box around everything beneath it instead, the same extent
+    /// `creator-docs` means by a model's bounding box (`studio/pivot-tools.md`).
+    pub fn is_part(&self) -> bool {
+        self.parts == [self.referent]
+    }
 }
 
 /// The matrix one `BasePart` in `dom` is drawn with, or `None` for anything

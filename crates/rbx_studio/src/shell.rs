@@ -47,7 +47,7 @@ use crate::transform::{Targets, Transform};
 use crate::workspace_view::{AssetWarnings, PoseSynced, ViewportAction, WorkspaceView};
 use crate::Place;
 use quality::{quality_labels, quality_row};
-use selection::Selection;
+use selection::{outlined, Selection};
 use toolbar::snap::SnapFields;
 
 const EXPLORER_WIDTH: f32 = 320.0;
@@ -183,8 +183,17 @@ impl Shell {
         // struct exists — valid as soon as `cx.new` starts building it.
         let dock_area = dock::build(cx.entity(), window, cx);
 
+        let initial_outline = outlined(&dom, &database, &Vec::from_iter(selected));
         let viewport = cx.new(|cx| {
-            WorkspaceView::new(viewer, camera, quality, orthographic, selected, window, cx)
+            WorkspaceView::new(
+                viewer,
+                camera,
+                quality,
+                orthographic,
+                initial_outline,
+                window,
+                cx,
+            )
         });
         let camera_synced = cx.subscribe(&viewport, |shell, _, event: &PoseSynced, cx| {
             shell.sync_camera_pose(event.0, cx);
@@ -223,7 +232,7 @@ impl Shell {
         let transform = Transform::default();
         let (snap_fields, [translate_typed, rotate_typed]) = SnapFields::new(transform, window, cx);
 
-        let initial_targets = Targets::read(&dom, &Vec::from_iter(selected));
+        let initial_targets = Targets::read(&dom, &database, &Vec::from_iter(selected));
         let mut shell = Shell {
             menu_bar,
             title: title.into(),
@@ -413,9 +422,10 @@ impl Shell {
     fn selection_changed(&mut self, cx: &mut Context<Self>) {
         self.edits.clear();
         let referents = self.selection.all().to_vec();
-        let targets = Targets::read(&self.dom, &referents);
+        let outline = outlined(&self.dom, &self.database, &referents);
+        let targets = Targets::read(&self.dom, &self.database, &referents);
         self.viewport.update(cx, |viewport, _| {
-            viewport.set_selection(&referents);
+            viewport.set_selection(&outline);
             viewport.set_targets(targets);
         });
         // Whatever just stopped being selected becomes one of the neighbours

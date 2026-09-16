@@ -15,6 +15,7 @@ use crate::gizmo::Gizmo;
 use crate::input::{CameraInput, Input};
 use crate::lighting::{self, Lighting};
 use crate::load::{Loaded, Toggles};
+use crate::pick::Selected;
 use crate::quality::QualityLevel;
 use crate::scene::{Bounds, EffectKind, MeshPatch};
 use crate::view::View;
@@ -304,18 +305,19 @@ impl Headless {
         self.input.apply(event);
     }
 
-    /// Outlines `referents`' parts in the viewport — a slice so a future
-    /// multi-select has somewhere to grow into — and drops the outline
-    /// entirely for a referent with no `BasePart` placement (a `Folder`, a
-    /// service, or a `Model`, whose aggregate bounds nothing here computes
-    /// yet).
+    /// Outlines what `selected` covers in the viewport — a slice so a
+    /// multi-select has somewhere to grow into. Each entry names an instance
+    /// and the parts it stands for, resolved by the host against its own DOM
+    /// (`crate::pick::Selected`): a `Model` or a `Folder` has no placement to
+    /// outline itself, so what is drawn for one is the box around the parts
+    /// beneath it, and only a container with none of those draws nothing.
     ///
     /// A host with an idle-skipping render loop (see `Headless::tick`) still
     /// has to force one frame after this: the camera has not moved, but the
     /// picture has.
-    pub fn set_selection(&mut self, referents: &[Ref]) {
-        self.view.select(referents);
-        self.offscreen.set_selection(referents);
+    pub fn set_selection(&mut self, selected: &[Selected]) {
+        self.view.select(selected);
+        self.offscreen.set_selection(selected);
     }
 
     /// Draws the transform tool's axis draggers over the selected part, or

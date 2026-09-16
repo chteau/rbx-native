@@ -30,12 +30,13 @@ mod textured;
 mod trail;
 mod translucent;
 
-use rbx_dom::{Ref, WeakDom};
+use rbx_dom::WeakDom;
 use rbx_reflection::ReflectionDatabase;
 
 use crate::camera::{Camera, Frustum, Viewpoint};
 use crate::gizmo::{arm_length, basis, Gizmo, Handles, Kind};
 use crate::lighting::{Lighting, LocalLight};
+use crate::pick::Selected;
 use crate::quality::QualityProfile;
 use crate::scene::{Bounds, Part, Scene};
 use crate::textures::Decor;
@@ -228,7 +229,7 @@ impl Renderer {
         // the copy in step one placement at a time (see
         // `Renderer::sync_instance`), and `Renderer::new` has no other reason
         // to hold on to the scene itself.
-        let selection = Selection::new(device, target, &layout, scene.placements());
+        let selection = Selection::new(device, target, &layout, scene.all_placements());
         let draggers = Draggers::new(device, target, &layout);
 
         Renderer {
@@ -304,8 +305,8 @@ impl Renderer {
 
     /// Replaces the outlined selection, rebuilding its tiny vertex buffer right
     /// away rather than waiting for the next `draw`.
-    pub(crate) fn set_selection(&mut self, device: &wgpu::Device, referents: &[Ref]) {
-        self.selection.set(device, referents);
+    pub(crate) fn set_selection(&mut self, device: &wgpu::Device, selected: &[Selected]) {
+        self.selection.set(device, selected);
     }
 
     /// Shows or hides the transform tool's draggers over whatever is

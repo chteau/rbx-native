@@ -2,6 +2,22 @@
 
 ## 2026-09-16
 
+- **A selected `Model` finally has an outline and a gizmo.** Selecting a
+  `Model`, a `Folder`, a `Tool` or any other container drew nothing at all and
+  showed no Move/Scale/Rotate handles — and since a viewport click selects the
+  outermost `Model` around whatever it hit, that was most selections a user
+  makes by clicking. `rbx_viewer::pick::parts_of` now resolves a selected
+  instance to the drawable parts beneath it, and both sides go through it: the
+  renderer outlines a container with one world-axis-aligned box around
+  everything under it, and `transform::Targets::read` gives the editor's own
+  hit-testing the same parts, so a Move drag carries a whole model and Scale
+  and Rotate anchor on a real part rather than on a `Model` that has no `Size`
+  or `CFrame` to write. Meshes were missing the same two things for a second
+  reason: `Scene::placements` deliberately leaves out a part whose box a
+  resolved `MeshPart`/union mesh replaced, so that a decal is never projected
+  onto geometry nothing draws — the outline now reads `Scene::all_placements`
+  instead, which keeps them. — @chteau
+
 - **Undo/redo fast path.** `Ctrl+Z`/`Ctrl+Y` used to reload the whole scene
   on every step, however small the reverted edit — undoing a single
   `Transparency` change cost exactly as much as undoing an instance delete.

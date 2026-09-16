@@ -11,10 +11,14 @@
 //! (`parts/index.md#transform-parts`): `2` for Move, `3` for Scale, `4` for
 //! Rotate, `Ctrl`/`Cmd`+`L` for local orientation.
 
+use std::collections::HashSet;
+
 use glam::{Mat3, Mat4, Vec3};
 use gpui_kit::Modifiers;
 use rbx_dom::{Ref, WeakDom};
+use rbx_reflection::ReflectionDatabase;
 use rbx_viewer::gizmo::{self, Kind};
+use rbx_viewer::pick;
 use rbx_viewer::Gizmo;
 
 /// A transform tool the viewport can carry out.
@@ -251,8 +255,10 @@ pub(crate) struct Target {
 
 impl Target {
     /// Reads one instance's placement out of the DOM, or `None` for anything
-    /// that isn't a part with a transform to drag (a `Folder`, a service, a
-    /// `Model` — whose aggregate bounds nothing here derives yet).
+    /// that isn't a part with a transform to drag. A container (a `Folder`, a
+    /// service, a `Model`) has no `CFrame` or `Size` of its own to write, so
+    /// it never becomes a target itself — [`Targets::read`] resolves one to
+    /// the parts beneath it instead.
     pub(crate) fn read(dom: &WeakDom, referent: Option<Ref>) -> Option<Self> {
         let referent = referent?;
         Some(Target {
@@ -358,21 +364,37 @@ impl Target {
 pub(crate) struct Targets(Vec<Target>);
 
 impl Targets {
-    /// Reads every selected referent's placement out of the DOM, in the same
-    /// order `referents` lists them. A referent with nothing to drag (a
-    /// `Folder`, a service, a `Model`) is silently dropped rather than
-    /// stopping the whole selection from having any target at all.
-    pub(crate) fn read(dom: &WeakDom, referents: &[Ref]) -> Self {
+    /// Reads every part the selection covers out of the DOM, in the order
+    /// `referents` lists them.
+    ///
+    /// A container resolves to the parts beneath it (`pick::parts_of`, the
+    /// same function the renderer's outline is built from) rather than being
+    /// dropped: a viewport click selects the outermost `Model` around what it
+    /// hit, so dropping them left the commonest selection of all with no
+    /// target, no handles, and nothing on screen to explain why. A container
+    /// with no drawable geometry under it still yields nothing — there is
+    /// genuinely nothing to transform.
+    ///
+    /// Selecting a `Model` *and* something inside it would otherwise name the
+    /// same part twice, which a group drag would then move twice as far as
+    /// the gizmo travelled; the first mention wins and the rest are dropped.
+    pub(crate) fn read(dom: &WeakDom, database: &ReflectionDatabase, referents: &[Ref]) -> Self {
+        let mut seen = HashSet::new();
         Targets(
             referents
                 .iter()
-                .filter_map(|&referent| Target::read(dom, Some(referent)))
+                .flat_map(|&referent| pick::parts_of(dom, database, referent))
+                .filter(|&part| seen.insert(part))
+                .filter_map(|part| Target::read(dom, Some(part)))
                 .collect(),
         )
     }
 
-    /// The first part with a placement: what Scale and Rotate transform, and
-    /// whose own frame the local-orientation toggle takes. Where the gizmo
+    /// The first part the selection covers: what Scale and Rotate transform,
+    /// and whose own frame the local-orientation toggle takes. For a selected
+    /// `Model` that is its own first descendant part — a `Model` has no
+    /// `Size` or `CFrame` to write a resize or a turn into, exactly as a
+    /// multi-part selection scales and rotates its anchor alone. Where the gizmo
     /// *sits* is [`Targets::centre`] instead — see this type's own doc
     /// comment for why the two are separate questions.
     pub(crate) fn anchor(&self) -> Option<Target> {

@@ -3,6 +3,7 @@
 use gpui_kit::component::tree::TreeItem;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
+use rbx_viewer::pick::Selected;
 
 use crate::explorer;
 
@@ -12,6 +13,25 @@ use crate::explorer;
 /// the whole workspace.
 const WORKSPACE_CLASS: &str = "Workspace";
 const MODEL_CLASS: &str = "Model";
+
+/// What the viewport outlines for each selected instance: the instance and
+/// every drawable part it stands for, resolved here because only the editor
+/// side holds a DOM to walk (see `rbx_viewer::pick::Selected`).
+///
+/// Paired with `crate::transform::Targets::read`, which resolves the very
+/// same referents through the very same `pick::parts_of`: one derivation of
+/// what a selected `Model` covers, so the box the user sees and the handles
+/// the cursor can reach are built from the same parts.
+pub(super) fn outlined(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    referents: &[Ref],
+) -> Vec<Selected> {
+    referents
+        .iter()
+        .map(|&referent| Selected::read(dom, database, referent))
+        .collect()
+}
 
 /// The selection, in the order instances were added to it. Kept apart from
 /// the tree's own selected row because the tree can track only one of them,

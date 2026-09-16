@@ -198,7 +198,8 @@ impl Shell {
         // transform held on this side (see `transform::Targets`), and a
         // reload is exactly the case where whatever moved one of them was not
         // one of the edits `reflect_in_viewport` refreshes that copy for.
-        let targets = crate::transform::Targets::read(&self.dom, self.selected_all());
+        let targets =
+            crate::transform::Targets::read(&self.dom, &self.database, self.selected_all());
         self.viewport.update(cx, |viewport, _| {
             viewport.reload(dom);
             viewport.set_targets(targets);

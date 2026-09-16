@@ -3,13 +3,14 @@
 //! script's edit to the DOM.
 
 use rbx_dom::{Ref, WeakDom};
+use rbx_viewer::pick::Selected;
 
 use super::WorkspaceView;
 
 impl WorkspaceView {
     /// Forwards the Explorer's selection, forcing one frame even at rest.
-    pub(crate) fn set_selection(&mut self, referents: &[Ref]) {
-        self.pump.select(referents.to_vec());
+    pub(crate) fn set_selection(&mut self, selected: &[Selected]) {
+        self.pump.select(selected.to_vec());
     }
 
     /// Rebuilds the render thread's scene from a mutated DOM, forcing one
