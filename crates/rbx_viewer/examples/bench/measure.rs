@@ -1,6 +1,7 @@
-//! The four measurements, taken through `Headless`'s public API and nothing
-//! else, so the same harness runs unchanged against a branch that rewrites what
-//! is underneath it.
+//! The load, reload, patch and frame measurements, taken through `Headless`'s
+//! public API and nothing else, so the same harness runs unchanged against a
+//! branch that rewrites what is underneath it. The two edits that name an
+//! asset nobody has fetched live in `streaming`.
 
 use std::path::Path;
 use std::time::Instant;
@@ -22,6 +23,11 @@ const NUDGE: f32 = 0.05;
 /// instances still gets measured; one with no patchable part at all is reported
 /// as such rather than silently timing a fallback.
 const CANDIDATES: usize = 512;
+
+/// How long a place is given to finish streaming its assets in before the run
+/// is called broken. A cold `marked.rbxl` off a warm disk cache is a second or
+/// two; anything near this is a fetch that never lands.
+const SETTLE_LIMIT: std::time::Duration = std::time::Duration::from_secs(120);
 
 /// One timed operation, reported at both ends of the GPU pipeline.
 pub(crate) struct Phase {
@@ -62,7 +68,11 @@ pub(crate) fn fixture(path: &Path, args: &Args) -> Result<Measured, String> {
     let mut dom = rbx_viewer::read_place(path)?;
     let instances = walk(&dom, dom.root_refs()).len();
 
-    let mut phases = vec![cold_load(path, args)?, reload(path, &dom, args)?];
+    let mut phases = vec![
+        cold_load(path, args)?,
+        loaded(path, args)?,
+        reload(path, &dom, args)?,
+    ];
     let mut notes = Vec::new();
     // `&mut` last, and only here: the patch phase moves a part around in this
     // very DOM, and every phase that shares it has already run.
@@ -73,6 +83,7 @@ pub(crate) fn fixture(path: &Path, args: &Args) -> Result<Measured, String> {
                 .to_string(),
         ),
     }
+    phases.extend(crate::streaming::phases(path, &mut dom, args, &mut notes)?);
 
     Ok(Measured {
         instances,
@@ -82,8 +93,12 @@ pub(crate) fn fixture(path: &Path, args: &Args) -> Result<Measured, String> {
     })
 }
 
-/// `Headless::load`: parsing the file, building the scene, resolving its assets
-/// and uploading the lot to a GPU device opened for the occasion.
+/// `Headless::load`: parsing the file, building the scene and uploading it to
+/// a GPU device opened for the occasion.
+///
+/// The assets are *not* in this number. The load asks for them and returns;
+/// they arrive on the ticks after it, and [`loaded`] is what times the place
+/// being finished rather than drawable.
 fn cold_load(path: &Path, args: &Args) -> Result<Phase, String> {
     // One load thrown away first. It pays for the OS page cache on the place
     // file and for the asset cache's own cold reads, neither of which anything
@@ -107,10 +122,39 @@ fn cold_load(path: &Path, args: &Args) -> Result<Phase, String> {
     })
 }
 
+/// `Headless::load` through to the frame after the last of the place's assets
+/// has landed and been swapped in — the picture somebody opening a file
+/// actually waits for, as against the first drawable frame [`cold_load`]
+/// times.
+fn loaded(path: &Path, args: &Args) -> Result<Phase, String> {
+    drop(Headless::load(path, args.textures)?);
+
+    let mut call = Vec::with_capacity(args.load_iters);
+    let mut frame = Vec::with_capacity(args.load_iters);
+    for _ in 0..args.load_iters {
+        let started = Instant::now();
+        let mut headless = Headless::load(path, args.textures)?;
+        settle(&mut headless, args)?;
+        call.push(started.elapsed());
+        wait_for_frame(&mut headless, args.size)?;
+        frame.push(started.elapsed());
+    }
+
+    Ok(Phase {
+        name: "load complete",
+        call: Samples::new(&call),
+        frame: Samples::new(&frame),
+    })
+}
+
 /// `Headless::reload`: the whole scene rebuilt from a DOM already in memory,
 /// which is what an editor pays for every script or command-bar edit.
 fn reload(path: &Path, dom: &WeakDom, args: &Args) -> Result<Phase, String> {
     let mut headless = Headless::load(path, args.textures)?;
+    // Measured against a place whose assets are all in, the way it was before
+    // loading streamed: a reload part-way through one would be timing the
+    // stream, not the reload.
+    settle(&mut headless, args)?;
     // The first reload in a process still pays for pipeline caches the cold
     // load left cold, so it is warmup rather than a sample.
     headless.reload(dom)?;
@@ -139,8 +183,8 @@ fn patch(path: &Path, dom: &mut WeakDom, args: &Args) -> Result<Option<Phase>, S
     let mut headless = Headless::load(path, args.textures)?;
     // The target, its pipelines and the freshly loaded place's textures must
     // all be on the GPU already, or the first patches would be charged for
-    // finishing the load — see `drain_upload_budget`.
-    drain_upload_budget(&mut headless, args)?;
+    // finishing the load — see `settle` and `drain_upload_budget`.
+    settle(&mut headless, args)?;
 
     let Some((referent, mut cframe)) = patchable(&mut headless, dom)? else {
         return Ok(None);
@@ -176,6 +220,9 @@ fn patch(path: &Path, dom: &mut WeakDom, args: &Args) -> Result<Option<Phase>, S
 /// level asked for.
 fn frames(path: &Path, args: &Args) -> Result<Vec<Frames>, String> {
     let mut headless = Headless::load(path, args.textures)?;
+    // A steady-state frame is one with the place's assets in it, not one drawn
+    // while they are still arriving.
+    settle(&mut headless, args)?;
     let mut measured = Vec::with_capacity(args.levels.len());
 
     for &level in &args.levels {
@@ -225,12 +272,34 @@ fn frames(path: &Path, args: &Args) -> Result<Vec<Frames>, String> {
 /// or so frames after a load cost six to thirty times what every frame after
 /// them costs. Only the phases that deliberately measure *the first* frame
 /// (a cold load, a reload) skip this.
-fn drain_upload_budget(headless: &mut Headless, args: &Args) -> Result<(), String> {
+pub(crate) fn drain_upload_budget(headless: &mut Headless, args: &Args) -> Result<(), String> {
     for _ in 0..args.frame_warmup {
         headless.render_frame(args.size.0, args.size.1)?;
     }
     headless.take_frame()?;
     Ok(())
+}
+
+/// Waits until every asset the place asked for has landed and been folded into
+/// the picture, then drains the texture-upload backlog that leaves behind.
+///
+/// `Headless::load` now returns with the scene drawable and its assets still
+/// arriving, so every phase that means to measure a *finished* place has to say
+/// so. Spun rather than ticked, for the same reason `streaming::swap` spins:
+/// `Headless::tick` would fly the orbit camera, and a number that also measured
+/// the controller would not be the one it claims to be.
+pub(crate) fn settle(headless: &mut Headless, args: &Args) -> Result<(), String> {
+    let waited = Instant::now();
+    loop {
+        let swapped = headless.swap_assets();
+        if headless.assets_in_flight() == 0 && !swapped {
+            break;
+        }
+        if waited.elapsed() > SETTLE_LIMIT {
+            return Err("the place never finished loading its assets".to_string());
+        }
+    }
+    drain_upload_budget(headless, args)
 }
 
 /// Draws one frame and waits until its pixels are in system memory.
@@ -239,7 +308,7 @@ fn drain_upload_budget(headless: &mut Headless, args: &Args) -> Result<(), Strin
 /// nothing may be in flight when this is called — that is what makes the
 /// following `take_frame` wait on the frame just queued and on nothing else.
 /// Every phase here upholds that by draining through this same function.
-fn wait_for_frame(headless: &mut Headless, size: (u32, u32)) -> Result<(), String> {
+pub(crate) fn wait_for_frame(headless: &mut Headless, size: (u32, u32)) -> Result<(), String> {
     if headless.render_frame(size.0, size.1)?.is_some() {
         return Err("a frame was still in flight when the measurement started".to_string());
     }

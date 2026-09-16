@@ -45,11 +45,21 @@
 //! the backlog first (see `measure::drain_upload_budget`), which is also what
 //! measures it: on the 16k-instance fixture it is worth roughly a dozen frames
 //! at several times their settled cost.
+//!
+//! # A load that does not wait
+//!
+//! `Headless::load` returns with the scene drawable and its assets still
+//! arriving, so "cold load" and "the place finished loading" are two different
+//! numbers and are reported as two phases. Every phase that means to measure a
+//! *finished* place — the reload, the patch, the frame costs, and both edit
+//! phases — drives the swap-ins to completion first (`measure::settle`), or it
+//! would be timing the stream rather than the thing it names.
 
 mod args;
 mod measure;
 mod report;
 mod stats;
+mod streaming;
 
 use std::path::Path;
 use std::process::{Command, ExitCode};
