@@ -214,7 +214,13 @@ fn a_rotated_quad_stays_centred_on_the_unrotated_rects_centre() {
     assert!((centre_y - 5.0).abs() < 1e-3);
     // Rotated a quarter turn, the box's own axes swap: it now spans as far
     // vertically as it used to horizontally.
-    let min_y = vertices.iter().map(|v| v.position[1]).fold(f32::MAX, f32::min);
-    let max_y = vertices.iter().map(|v| v.position[1]).fold(f32::MIN, f32::max);
+    let min_y = vertices
+        .iter()
+        .map(|v| v.position[1])
+        .fold(f32::MAX, f32::min);
+    let max_y = vertices
+        .iter()
+        .map(|v| v.position[1])
+        .fold(f32::MIN, f32::max);
     assert!((max_y - min_y - 20.0).abs() < 1e-3);
 }

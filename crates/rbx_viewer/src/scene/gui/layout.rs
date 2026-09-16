@@ -173,7 +173,14 @@ fn emit(node: &Node, rect: Rect, clip: Option<Rect>, rotated: bool, into: &mut V
         true => Some(clip.map_or(rect, |outer| outer.intersect(&rect))),
         false => clip,
     };
-    children(&node.children, node.list.as_ref(), &rect, inner, rotated, into);
+    children(
+        &node.children,
+        node.list.as_ref(),
+        &rect,
+        inner,
+        rotated,
+        into,
+    );
 }
 
 /// `UIListLayout` placement, one rect per node in `nodes`'s own order: the
