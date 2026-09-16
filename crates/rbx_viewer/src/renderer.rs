@@ -400,8 +400,7 @@ impl Renderer {
         self.shaped.sync(device, queue, part);
         self.translucent.sync(device, part);
         self.shadows.sync_caster(device, queue, part);
-        self.selection
-            .place(device, part.referent, part.placement());
+        self.selection.place(part.referent, part.placement());
         for (_, face) in crate::textures::faces(dom, database, part.referent, &part.placement()) {
             self.textured.sync(device, queue, &face);
         }
@@ -437,6 +436,10 @@ impl Renderer {
         // one uploading all of them — see `textured::Textured::upload_pending`.
         self.textured
             .upload_pending(device, queue, &self.quality, PER_FRAME);
+        // Once here rather than once per moved part: a drag of a whole model
+        // reports every one of its parts through `sync_instance` before the
+        // frame they all belong to (see `selection::Outline::take_vertices`).
+        self.selection.flush(device);
 
         let aspect = size.0 as f32 / size.1 as f32;
         let eye = self.camera.eye_position(from);

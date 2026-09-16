@@ -194,16 +194,14 @@ impl Shell {
     /// single-property change needs too.
     pub(super) fn reload_viewport(&mut self, cx: &mut Context<Self>) {
         let dom = self.dom.clone();
-        // The draggers are placed from a copy of every selected part's
-        // transform held on this side (see `transform::Targets`), and a
-        // reload is exactly the case where whatever moved one of them was not
-        // one of the edits `reflect_in_viewport` refreshes that copy for.
-        let targets =
-            crate::transform::Targets::read(&self.dom, &self.database, self.selected_all());
-        self.viewport.update(cx, |viewport, _| {
-            viewport.reload(dom);
-            viewport.set_targets(targets);
-        });
+        self.viewport.update(cx, |viewport, _| viewport.reload(dom));
+        // The box and the draggers are both placed from what this side reads
+        // out of the DOM (see `shell::selection`), and a reload is exactly the
+        // case where whatever moved them was not one of the edits
+        // `reflect_in_viewport` refreshes that reading for — a script that
+        // parents a `Part` under the selected model included, which widens the
+        // box as well as adding a target.
+        self.sync_viewport_selection(cx);
         // A reload is also the one case where parts other than the selected
         // one may have moved, appeared or gone — so what a drag can soft-snap
         // onto has to be read again too.

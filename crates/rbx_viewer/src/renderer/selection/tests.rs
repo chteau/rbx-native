@@ -204,3 +204,142 @@ fn a_selection_with_no_placement_at_all_anchors_nothing() {
     let placements = HashMap::new();
     assert_eq!(anchor_of(&placements, &[part(1), part(2)]), None);
 }
+
+/// A `Model` holding `parts` `Part`s, in a DOM the caller can go on adding to.
+fn model_in(dom: &mut WeakDom, parts: usize) -> Ref {
+    let model = dom.new_instance("Model", "Model", None);
+    for index in 0..parts {
+        dom.new_instance("Part", &format!("Part{index}"), Some(model));
+    }
+    model
+}
+
+/// The box a `BasePart` gets is its own, hugging it however it is turned —
+/// not the loose world-axis-aligned box a container gets, even where parts
+/// are parented under it (a welded assembly, a `Tool`'s `Handle`).
+#[test]
+fn a_part_with_parts_under_it_keeps_its_own_oriented_box() {
+    let mut dom = WeakDom::new();
+    let handle = dom.new_instance("Part", "Handle", None);
+    let sight = dom.new_instance("Part", "Sight", Some(handle));
+    let selected = Selected::read(&dom, &ReflectionDatabase::embedded(), handle);
+
+    // Turned an eighth of a turn: a box around the two of them would be both
+    // wider than the part and square to the world rather than to the part.
+    let turned = Mat4::from_rotation_y(std::f32::consts::FRAC_PI_4);
+    let mut placements = HashMap::new();
+    placements.insert(handle, placement(turned));
+    placements.insert(sight, cube(Vec3::new(9.0, 0.0, 0.0)));
+
+    assert_eq!(box_of(&placements, &selected), Some(turned));
+    assert_eq!(vertices_for(&placements, &[selected]).len(), 24);
+}
+
+/// A model selected together with one of its own parts is one box, not two
+/// drawn over each other: `pick::selection` drops the covered entry, and the
+/// outline is built from what it kept.
+#[test]
+fn a_model_and_a_part_inside_it_draw_one_box() {
+    let mut dom = WeakDom::new();
+    let model = model_in(&mut dom, 2);
+    let database = ReflectionDatabase::embedded();
+    let inside: Vec<Ref> = crate::pick::parts_of(&dom, &database, model).collect();
+
+    let selected = crate::pick::selection(&dom, &database, &[model, inside[0]]);
+    let mut placements = HashMap::new();
+    for (index, &referent) in inside.iter().enumerate() {
+        placements.insert(referent, cube(Vec3::new(index as f32 * 6.0, 0.0, 0.0)));
+    }
+
+    assert_eq!(vertices_for(&placements, &selected).len(), 24);
+}
+
+/// What a drag of a whole model costs: each of its parts arrives through
+/// `place` in turn, and rebuilding the aggregate box for every one of them
+/// would make a single drag step quadratic in the number of parts. One
+/// rebuild per frame, however many moved.
+#[test]
+fn a_group_drag_rebuilds_the_outline_once_however_many_parts_moved() {
+    let selected = model_holding(64);
+    let mut outline = Outline::default();
+    outline.set(std::slice::from_ref(&selected));
+    assert!(
+        outline.take_vertices().is_some(),
+        "a fresh selection owes its first box"
+    );
+
+    for (index, &referent) in selected.parts().iter().enumerate() {
+        outline.place(referent, cube(Vec3::new(index as f32, 0.0, 0.0)));
+    }
+
+    assert!(outline.take_vertices().is_some());
+    assert!(
+        outline.take_vertices().is_none(),
+        "and nothing more until something moves again"
+    );
+}
+
+/// A part the selection does not cover moves constantly — every other
+/// instance a script or a drag touches — and must not cost the outline a
+/// rebuild.
+#[test]
+fn a_part_outside_the_selection_owes_the_outline_nothing() {
+    let selected = model_holding(2);
+    let mut outline = Outline::default();
+    outline.set(std::slice::from_ref(&selected));
+    outline.take_vertices();
+
+    outline.place(Ref::new(999), cube(Vec3::ZERO));
+    assert!(outline.take_vertices().is_none());
+}
+
+/// The box still follows the parts that moved under it, which is the whole
+/// reason `place` marks it stale at all.
+#[test]
+fn the_box_follows_a_part_that_moved_under_it() {
+    let selected = model_holding(2);
+    let [first, second] = [selected.parts()[0], selected.parts()[1]];
+    let mut outline = Outline::default();
+    outline.set(std::slice::from_ref(&selected));
+    outline.place(first, cube(Vec3::ZERO));
+    outline.place(second, cube(Vec3::new(4.0, 0.0, 0.0)));
+    outline.take_vertices();
+
+    outline.place(second, cube(Vec3::new(20.0, 0.0, 0.0)));
+    assert!(outline.take_vertices().is_some());
+    let widened = box_of(&outline.placements, &selected).expect("both parts placed");
+    assert!((widened.x_axis.length() - 22.0).abs() < 1e-4);
+}
+
+/// A reload that parents another `Part` under the selected model widens the
+/// box and moves the gizmo with it — the renderer holds no DOM to notice on
+/// its own, so it is told by being sent the selection again (see
+/// `rbxstudio`'s `Shell::sync_viewport_selection`).
+#[test]
+fn a_model_that_gained_a_part_is_outlined_around_it_once_resent() {
+    let mut dom = WeakDom::new();
+    let model = model_in(&mut dom, 2);
+    let database = ReflectionDatabase::embedded();
+    let before = Selected::read(&dom, &database, model);
+
+    let mut outline = Outline::default();
+    for (index, &referent) in before.parts().iter().enumerate() {
+        outline.place(referent, cube(Vec3::new(index as f32 * 4.0, 0.0, 0.0)));
+    }
+    outline.set(std::slice::from_ref(&before));
+    outline.take_vertices();
+    let narrow = box_of(&outline.placements, &before).expect("both parts placed");
+    assert!((narrow.x_axis.length() - 6.0).abs() < 1e-4);
+
+    // What the script did, and what the reload then has to re-resolve.
+    let added = dom.new_instance("Part", "Part2", Some(model));
+    let after = Selected::read(&dom, &database, model);
+    assert_eq!(after.parts().len(), 3);
+    outline.place(added, cube(Vec3::new(20.0, 0.0, 0.0)));
+    outline.set(std::slice::from_ref(&after));
+
+    assert!(outline.take_vertices().is_some());
+    let wide = box_of(&outline.placements, &after).expect("all three parts placed");
+    assert!((wide.x_axis.length() - 22.0).abs() < 1e-4, "{wide}");
+    assert!((wide.w_axis.truncate().x - 10.0).abs() < 1e-4, "{wide}");
+}

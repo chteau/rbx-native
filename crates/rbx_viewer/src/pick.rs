@@ -191,6 +191,13 @@ pub fn drawable_parts<'a>(
 /// `shell::selection::outermost_model`, matching Studio), so most selections a
 /// user makes by clicking arrive here as a container rather than as a part.
 ///
+/// A part stands for itself *alone*, even where parts are parented under it —
+/// a welded assembly, or a `Tool`'s `Handle` with something screwed onto it.
+/// Nothing in Roblox moves a child part because its parent part moved (only a
+/// weld or a `Model`'s pivot does), so pulling those in would drag geometry
+/// the user did not select, and would swell the box drawn around one part
+/// into a loose box around several.
+///
 /// Both sides of the editor resolve a selection through this one function —
 /// the renderer that draws the handles and the viewport that hit-tests the
 /// cursor against them — so the order matters as much as the membership: the
@@ -202,7 +209,15 @@ pub fn parts_of<'a>(
     database: &'a ReflectionDatabase,
     referent: Ref,
 ) -> impl Iterator<Item = Ref> + 'a {
-    descendants_of(dom, referent).filter(move |&found| is_drawable(dom, database, found))
+    let itself = is_drawable(dom, database, referent).then_some(referent);
+    let beneath = itself
+        .is_none()
+        .then(|| {
+            descendants_of(dom, referent).filter(move |&found| is_drawable(dom, database, found))
+        })
+        .into_iter()
+        .flatten();
+    itself.into_iter().chain(beneath)
 }
 
 /// One entry in the viewport's selection: the instance the Explorer names,
@@ -216,6 +231,11 @@ pub fn parts_of<'a>(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Selected {
     referent: Ref,
+    /// Whether `referent` is a drawable `BasePart` itself, answered from its
+    /// own class while the DOM is still in hand — the render thread has none
+    /// to ask again, and the shape of [`Selected::parts`] cannot stand in for
+    /// the question (see [`Selected::is_part`]).
+    drawable: bool,
     parts: Vec<Ref>,
 }
 
@@ -223,6 +243,7 @@ impl Selected {
     pub fn read(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> Self {
         Selected {
             referent,
+            drawable: is_drawable(dom, database, referent),
             parts: parts_of(dom, database, referent).collect(),
         }
     }
@@ -233,6 +254,7 @@ impl Selected {
     pub fn part(referent: Ref) -> Self {
         Selected {
             referent,
+            drawable: true,
             parts: vec![referent],
         }
     }
@@ -254,9 +276,63 @@ impl Selected {
     /// bounding box along; a container is outlined by one world-axis-aligned
     /// box around everything beneath it instead, the same extent
     /// `creator-docs` means by a model's bounding box (`studio/pivot-tools.md`).
+    ///
+    /// Read from the instance's own class rather than inferred from what
+    /// [`parts_of`] answered for it: the two are not the same question, and
+    /// only the class says which box the part deserves.
     pub fn is_part(&self) -> bool {
-        self.parts == [self.referent]
+        self.drawable
     }
+}
+
+/// What a selection covers, one entry per referent, with anything already
+/// covered by another entry left out.
+///
+/// Selecting a `Model` *and* something inside it names the same geometry
+/// twice. A group drag would then move that part twice as far as the gizmo
+/// travelled, and the outline would draw a second box inside the first,
+/// visibly doubled along every shared edge. The entry covering the other wins,
+/// because its box is the one that spans everything the user picked; between
+/// two entries covering exactly the same parts the earlier one wins, since the
+/// anchor Scale and Rotate act on is taken from the front.
+///
+/// Both halves of the editor resolve a selection through here — the boxes
+/// `rbxstudio`'s `shell::selection::outlined` sends the renderer and the
+/// parts its `transform::Targets::read` hit-tests — so neither can disagree
+/// with the other about what a selection covers.
+pub fn selection(dom: &WeakDom, database: &ReflectionDatabase, referents: &[Ref]) -> Vec<Selected> {
+    let entries: Vec<Selected> = referents
+        .iter()
+        .map(|&referent| Selected::read(dom, database, referent))
+        .collect();
+
+    entries
+        .iter()
+        .enumerate()
+        .filter(|&(index, entry)| {
+            !entries.iter().enumerate().any(|(other, candidate)| {
+                other != index
+                    && covers(candidate, entry)
+                    // Equal coverage is a tie only position can break.
+                    && (candidate.parts.len() > entry.parts.len() || other < index)
+            })
+        })
+        .map(|(_, entry)| entry.clone())
+        .collect()
+}
+
+/// Whether every part `inner` covers is one `outer` covers too.
+///
+/// Both sets are a node's drawable descendants (or a lone part), and two such
+/// sets in a tree are nested or disjoint — never partly overlapping. So one
+/// shared part already settles which way round they nest, and the sizes settle
+/// which of the two is the container.
+fn covers(outer: &Selected, inner: &Selected) -> bool {
+    inner.parts.len() <= outer.parts.len()
+        && inner
+            .parts
+            .first()
+            .is_some_and(|part| outer.parts.contains(part))
 }
 
 /// The matrix one `BasePart` in `dom` is drawn with, or `None` for anything

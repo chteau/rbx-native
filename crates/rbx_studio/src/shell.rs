@@ -421,13 +421,7 @@ impl Shell {
     /// outline and draggers have to move to the new one.
     fn selection_changed(&mut self, cx: &mut Context<Self>) {
         self.edits.clear();
-        let referents = self.selection.all().to_vec();
-        let outline = outlined(&self.dom, &self.database, &referents);
-        let targets = Targets::read(&self.dom, &self.database, &referents);
-        self.viewport.update(cx, |viewport, _| {
-            viewport.set_selection(&outline);
-            viewport.set_targets(targets);
-        });
+        self.sync_viewport_selection(cx);
         // Whatever just stopped being selected becomes one of the neighbours
         // a drag can settle against, and whatever just started stops being
         // one.

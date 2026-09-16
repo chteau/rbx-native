@@ -584,3 +584,85 @@ fn a_container_with_no_geometry_stands_for_nothing() {
     let database = ReflectionDatabase::embedded();
     assert!(Selected::read(&dom, &database, folder).parts().is_empty());
 }
+
+/// A `BasePart` is a part however much is parented under it — a welded
+/// assembly, or a `Tool`'s `Handle` with something screwed onto it. Reading
+/// that off the number of parts resolved for it made such a part a
+/// *container*, and outlined it with a loose world-axis-aligned box around
+/// itself and its child instead of the tight one every other part gets.
+#[test]
+fn a_part_with_parts_under_it_is_still_a_part() {
+    let mut dom = WeakDom::new();
+    let handle = dom.new_instance("Part", "Handle", None);
+    dom.new_instance("MeshPart", "Sight", Some(handle));
+
+    let database = ReflectionDatabase::embedded();
+    let selected = Selected::read(&dom, &database, handle);
+
+    assert!(selected.is_part());
+    // And it stands for itself alone: nothing in Roblox moves a child part
+    // because its parent part moved, so a drag must not carry the child.
+    assert_eq!(selected.parts(), [handle]);
+}
+
+/// Selecting a `Model` and something inside it names the same geometry twice
+/// — a second box drawn over the first, and a group drag moving the shared
+/// part twice as far as the gizmo travelled.
+#[test]
+fn a_model_selected_with_its_own_child_covers_it_once() {
+    let mut dom = WeakDom::new();
+    let model = dom.new_instance("Model", "Revolver", None);
+    let barrel = dom.new_instance("Part", "Barrel", Some(model));
+    let grip = dom.new_instance("Part", "Grip", Some(model));
+    let database = ReflectionDatabase::embedded();
+
+    // Either order: which one the user ctrl-clicked first says nothing about
+    // which box spans the other.
+    for referents in [[model, grip], [grip, model]] {
+        let entries = selection(&dom, &database, &referents);
+        assert_eq!(entries.len(), 1, "{referents:?}");
+        assert_eq!(entries[0].referent(), model);
+        assert_eq!(entries[0].parts().len(), 2);
+        assert!(entries[0].parts().contains(&barrel));
+    }
+}
+
+/// Two selections that do not contain one another are both kept — the dedup
+/// is about covered geometry, not about trimming the selection.
+#[test]
+fn two_unrelated_selections_are_both_kept() {
+    let mut dom = WeakDom::new();
+    let workspace = dom.new_instance("Workspace", "Workspace", None);
+    let model = dom.new_instance("Model", "House", Some(workspace));
+    dom.new_instance("Part", "Wall", Some(model));
+    let loose = dom.new_instance("Part", "Baseplate", Some(workspace));
+
+    let database = ReflectionDatabase::embedded();
+    let entries = selection(&dom, &database, &[model, loose]);
+
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[1].referent(), loose);
+}
+
+/// The same instance named twice keeps the first mention, which is the one
+/// Scale and Rotate take their anchor from.
+#[test]
+fn the_same_instance_twice_is_one_entry() {
+    let mut dom = WeakDom::new();
+    let part = dom.new_instance("Part", "Part", None);
+
+    let database = ReflectionDatabase::embedded();
+    assert_eq!(selection(&dom, &database, &[part, part]).len(), 1);
+}
+
+/// An empty container covers nothing, so it can neither swallow another entry
+/// nor be swallowed by one.
+#[test]
+fn an_empty_container_neither_covers_nor_is_covered() {
+    let mut dom = WeakDom::new();
+    let empty = dom.new_instance("Folder", "Scripts", None);
+    let part = dom.new_instance("Part", "Part", None);
+
+    let database = ReflectionDatabase::embedded();
+    assert_eq!(selection(&dom, &database, &[empty, part]).len(), 2);
+}

@@ -6,12 +6,12 @@
 //! [`Scene::all_placements`] is keyed by `BasePart` referent and never has an
 //! entry for a container, so the parts each selected instance stands for are
 //! resolved against the DOM by the *editor* and arrive here already worked
-//! out, as [`Selected`] — see `crate::pick::parts_of` for why both sides
+//! out, as [`Selected`] — see `crate::pick::selection` for why both sides
 //! resolve them through one function. A container holding no drawable
 //! geometry at all still outlines nothing: there is genuinely nothing to
 //! draw a box around.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat3, Mat4, Vec3};
@@ -151,8 +151,8 @@ fn vertices_for(placements: &HashMap<Ref, Placement>, selected: &[Selected]) -> 
 /// when the whole selection covers nothing drawn at all.
 ///
 /// `rbxstudio` picks the same part the same way (`transform::Targets::read`
-/// flattens a selection through the very `pick::parts_of` that built these
-/// entries), so the handles it hit-tests stand where these are drawn.
+/// flattens the very `pick::selection` entries these are, dedup and order
+/// alike), so the handles it hit-tests stand where these are drawn.
 fn anchor_of(placements: &HashMap<Ref, Placement>, selected: &[Selected]) -> Option<(Vec3, Mat3)> {
     let model = selected
         .iter()
@@ -165,21 +165,71 @@ fn anchor_of(placements: &HashMap<Ref, Placement>, selected: &[Selected]) -> Opt
     Some((model.w_axis.truncate(), Mat3::from_mat4(model)))
 }
 
-/// The selection outline's GPU state: a `LineList` pipeline sharing the
-/// renderer's own camera bind group, and the tiny vertex buffer rebuilt each
-/// time the selection changes.
-pub(super) struct Selection {
-    pipeline: wgpu::RenderPipeline,
+/// Everything the outline is worked out from, with no GPU in it: what is
+/// selected, where every part stands, and whether the vertices last uploaded
+/// still match.
+///
+/// Apart from [`Selection`] because a group drag leans on the bookkeeping
+/// here — one aggregate rebuild per frame, however many of a model's parts
+/// moved in it — and that is worth being able to test without a device.
+#[derive(Default)]
+struct Outline {
     /// Every part's placement — including one whose box a resolved mesh
     /// replaced, which is still selectable and still has the box Studio
     /// outlines (see [`Scene::all_placements`]) — read once from the scene at
-    /// construction and kept in step by [`Selection::place`] afterwards, so
+    /// construction and kept in step by [`Outline::place`] afterwards, so
     /// there is no reason to walk the scene again on every selection change.
     placements: HashMap<Ref, Placement>,
     /// What [`Selection::set`] last outlined, each entry already resolved to
     /// the parts it covers, so a placement that moves under the outline (see
-    /// [`Selection::place`]) can redraw it without a DOM to walk.
+    /// [`Outline::place`]) can redraw it without a DOM to walk.
     selected: Vec<Selected>,
+    /// Every part the selection covers, flattened. A set rather than a walk of
+    /// `selected`: [`Outline::place`] runs this test once per moved part, and
+    /// re-scanning an N-part model's entry each time would make dragging it
+    /// quadratic in the membership test alone.
+    covered: HashSet<Ref>,
+    /// Whether a placement under the outline has moved since the vertices were
+    /// last worked out.
+    stale: bool,
+}
+
+impl Outline {
+    fn set(&mut self, selected: &[Selected]) {
+        self.selected = selected.to_vec();
+        self.covered = selected
+            .iter()
+            .flat_map(|entry| entry.parts())
+            .copied()
+            .collect();
+        self.stale = true;
+    }
+
+    /// Records where one part is drawn now, and notes the outline as owing a
+    /// rebuild when that part is one it covers.
+    fn place(&mut self, referent: Ref, placement: Placement) {
+        self.placements.insert(referent, placement);
+        self.stale |= self.covered.contains(&referent);
+    }
+
+    /// The outline's vertices when something has moved under it since they
+    /// were last taken, and `None` when nothing has.
+    ///
+    /// Taken once per frame rather than once per placement: a drag of a model
+    /// moves each of its parts in turn, and rebuilding the whole aggregate box
+    /// for every one of them is quadratic in the number of parts, where one
+    /// rebuild at the end of the step is linear.
+    fn take_vertices(&mut self) -> Option<Vec<Vertex>> {
+        std::mem::take(&mut self.stale).then(|| vertices_for(&self.placements, &self.selected))
+    }
+}
+
+/// The selection outline's GPU state: a `LineList` pipeline sharing the
+/// renderer's own camera bind group, and the tiny vertex buffer rebuilt from
+/// [`Outline`] whenever that has something new to say.
+pub(super) struct Selection {
+    pipeline: wgpu::RenderPipeline,
+    outline: Outline,
     vertices: Option<wgpu::Buffer>,
     count: u32,
 }
@@ -209,8 +259,10 @@ impl Selection {
 
         Selection {
             pipeline,
-            placements,
-            selected: Vec::new(),
+            outline: Outline {
+                placements,
+                ..Outline::default()
+            },
             vertices: None,
             count: 0,
         }
@@ -219,8 +271,30 @@ impl Selection {
     /// Rebuilds the outline around whatever `selected` names now, replacing
     /// whatever the previous selection drew.
     pub(super) fn set(&mut self, device: &wgpu::Device, selected: &[Selected]) {
-        self.selected = selected.to_vec();
-        let vertices = vertices_for(&self.placements, selected);
+        self.outline.set(selected);
+        self.flush(device);
+    }
+
+    /// Records where one part is drawn now — a Properties-panel edit moved,
+    /// resized or reshaped it, or a drag is walking a whole model's parts
+    /// through their new placements one at a time.
+    ///
+    /// Bookkeeping only: the box itself is rebuilt by [`Selection::flush`]
+    /// before the next frame, which is what keeps a drag of an N-part model
+    /// from paying for N aggregate rebuilds inside a single step of it.
+    pub(super) fn place(&mut self, referent: Ref, placement: Placement) {
+        self.outline.place(referent, placement);
+    }
+
+    /// Uploads the outline again if anything has moved under it since the last
+    /// frame — the edited instance is nearly always the selected one, and
+    /// during a drag of a whole `Model` it is one of its descendants rather
+    /// than the selected instance itself, which is exactly the case that would
+    /// otherwise leave the box behind where the model used to stand.
+    pub(super) fn flush(&mut self, device: &wgpu::Device) {
+        let Some(vertices) = self.outline.take_vertices() else {
+            return;
+        };
         self.count = vertices.len() as u32;
         self.vertices = (!vertices.is_empty()).then(|| {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -229,25 +303,6 @@ impl Selection {
                 usage: wgpu::BufferUsages::VERTEX,
             })
         });
-    }
-
-    /// Records where one part is drawn now — a Properties-panel edit moved,
-    /// resized or reshaped it — and redraws the outline if that part is one
-    /// the selection covers: the edited instance is nearly always the
-    /// selected one, and during a drag of a whole `Model` it is one of its
-    /// descendants rather than the selected instance itself, which is exactly
-    /// the case that would otherwise leave the box behind where the model
-    /// used to stand.
-    pub(super) fn place(&mut self, device: &wgpu::Device, referent: Ref, placement: Placement) {
-        self.placements.insert(referent, placement);
-        if self
-            .selected
-            .iter()
-            .any(|entry| entry.parts().contains(&referent))
-        {
-            let selected = std::mem::take(&mut self.selected);
-            self.set(device, &selected);
-        }
     }
 
     /// The first outlined part's centre and the rotation its own local axes
@@ -259,7 +314,7 @@ impl Selection {
     /// drags the whole selection as a group, so it belongs at the middle of
     /// it rather than hanging off whichever part happens to be first.
     pub(super) fn anchor(&self) -> Option<(Vec3, Mat3)> {
-        anchor_of(&self.placements, &self.selected)
+        anchor_of(&self.outline.placements, &self.outline.selected)
     }
 
     /// The centre of the world-axis-aligned box containing every part the
@@ -272,9 +327,10 @@ impl Selection {
     /// can grab and what they can see cannot drift apart.
     pub(super) fn centre(&self) -> Option<Vec3> {
         gizmo::centre_of(
-            self.selected
+            self.outline
+                .selected
                 .iter()
-                .flat_map(|entry| models_of(&self.placements, entry)),
+                .flat_map(|entry| models_of(&self.outline.placements, entry)),
         )
     }
 

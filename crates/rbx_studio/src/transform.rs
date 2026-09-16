@@ -11,8 +11,6 @@
 //! (`parts/index.md#transform-parts`): `2` for Move, `3` for Scale, `4` for
 //! Rotate, `Ctrl`/`Cmd`+`L` for local orientation.
 
-use std::collections::HashSet;
-
 use glam::{Mat3, Mat4, Vec3};
 use gpui_kit::Modifiers;
 use rbx_dom::{Ref, WeakDom};
@@ -377,15 +375,16 @@ impl Targets {
     ///
     /// Selecting a `Model` *and* something inside it would otherwise name the
     /// same part twice, which a group drag would then move twice as far as
-    /// the gizmo travelled; the first mention wins and the rest are dropped.
+    /// the gizmo travelled. `pick::selection` drops the covered entry, here
+    /// and for the outline `shell::selection::outlined` sends the renderer
+    /// alike — the dedup belongs to both of them, so neither holds a copy of
+    /// it that could drift from the other's.
     pub(crate) fn read(dom: &WeakDom, database: &ReflectionDatabase, referents: &[Ref]) -> Self {
-        let mut seen = HashSet::new();
         Targets(
-            referents
+            pick::selection(dom, database, referents)
                 .iter()
-                .flat_map(|&referent| pick::parts_of(dom, database, referent))
-                .filter(|&part| seen.insert(part))
-                .filter_map(|part| Target::read(dom, Some(part)))
+                .flat_map(|entry| entry.parts())
+                .filter_map(|&part| Target::read(dom, Some(part)))
                 .collect(),
         )
     }
