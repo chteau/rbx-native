@@ -98,6 +98,27 @@
   --screenshot` path drains any remaining upload immediately instead, since
   it has no next frame to spread the rest across. — @chteau
 
+- **Performance is a measured quantity now: `scripts/bench.sh` and
+  `BENCHMARKS.md`.** Until today the only reload timing that existed anywhere
+  was the hand profile written into this file — a number nobody could re-run,
+  so nobody could tell whether a change had helped. `crates/rbx_viewer/examples/bench`
+  times cold load, full reload, single-instance patch and steady-state frame
+  cost at each quality level, through `Headless`'s public API only, and prints a
+  table plus a JSON file carrying every sample, the adapter, the commit and the
+  iteration counts. Two numbers per operation, never added together: when the
+  call returned, and when the first frame it queued was actually readable —
+  a reload returns with its GPU work still in flight, and a wall clock around
+  the call alone would flatter it by 26-49ms. Median and p95, never a mean.
+  The recorded baseline reproduces the old hand profile (1.09s to a readable
+  frame on `marked.rbxl`, against ~0.9-1.15s profiled by hand) and decomposes
+  it: ~245ms is `Offscreen::new` opening a fresh wgpu device and rebuilding
+  every pipeline, ~132ms is the 16 742-instance scene itself, and ~665ms is
+  re-resolving textures, materials and meshes the previous scene already had
+  resident. That last part is also the only unstable one — bimodal, 15%
+  run-to-run — so the baseline is recorded both ways and `--no-textures`
+  (6.6% run-to-run) is what a before/after comparison should use. Deliberately
+  not wired into `check.sh`: a GPU benchmark is not a CI gate. — @chteau
+
 ## 2026-09-15
 
 - **Viewport selection and a Move gizmo.** Clicking in the 3D view now

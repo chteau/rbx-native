@@ -29,6 +29,22 @@ pub(crate) fn adapter(
     Ok(adapter)
 }
 
+/// Names the adapter [`adapter`] would pick, for a report that has to say which
+/// GPU produced a number.
+///
+/// Asks for an adapter of its own rather than holding on to the one a device was
+/// opened on: the answer is wanted once, off any hot path, and going through
+/// [`adapter`] is what makes it name the card the offscreen path actually
+/// renders on rather than a second, independently-chosen guess.
+pub fn describe_adapter() -> Result<String, String> {
+    let instance = instance();
+    let info = adapter(&instance, None)?.get_info();
+    Ok(format!(
+        "{} ({:?}, {:?}, driver {} {})",
+        info.name, info.backend, info.device_type, info.driver, info.driver_info
+    ))
+}
+
 /// Opens a device and command queue on the adapter.
 pub(crate) fn device(adapter: &wgpu::Adapter) -> Result<(wgpu::Device, wgpu::Queue), String> {
     pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
