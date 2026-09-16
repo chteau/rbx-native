@@ -179,6 +179,38 @@ fn a_stretched_image_repeats_once_and_a_tiled_one_by_its_tile_size() {
 }
 
 #[test]
+fn rotation_is_read_verbatim_in_degrees() {
+    let (mut dom, gui) = screen_gui();
+    let spun = frame(
+        &mut dom,
+        gui,
+        udim2(0.0, 0, 0.0, 0),
+        udim2(0.0, 10, 0.0, 10),
+    );
+    dom.set_property(spun, "Rotation", Variant::Float32(33.5))
+        .unwrap();
+
+    let elements = resolve(&screens(&dom), VIEWPORT);
+
+    assert_eq!(elements[0].rotation, 33.5);
+}
+
+#[test]
+fn an_unset_rotation_defaults_to_zero() {
+    let (mut dom, gui) = screen_gui();
+    frame(
+        &mut dom,
+        gui,
+        udim2(0.0, 0, 0.0, 0),
+        udim2(0.0, 10, 0.0, 10),
+    );
+
+    let elements = resolve(&screens(&dom), VIEWPORT);
+
+    assert_eq!(elements[0].rotation, 0.0);
+}
+
+#[test]
 fn an_empty_image_property_leaves_the_element_a_plain_box() {
     let (mut dom, gui) = screen_gui();
     let label = dom.new_instance("ImageLabel", "ImageLabel", Some(gui));

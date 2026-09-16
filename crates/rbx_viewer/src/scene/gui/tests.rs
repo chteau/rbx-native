@@ -1,6 +1,7 @@
 //! Unit tests for [`super`], split by what they exercise: [`layout`] for
-//! `UDim2` resolution, paint ordering and clipping, [`properties`] for what is
-//! read out of a DOM in the first place.
+//! `UDim2` resolution, paint ordering and `UIListLayout` stacking, [`clips`]
+//! for `ClipsDescendants` and its incompatibility with `Rotation`,
+//! [`properties`] for what is read out of a DOM in the first place.
 //!
 //! The fixtures every test builds on live here, in the parent.
 
@@ -46,5 +47,6 @@ fn screens(dom: &WeakDom) -> Vec<Screen> {
     plan(dom, &ReflectionDatabase::embedded())
 }
 
+mod clips;
 mod layout;
 mod properties;

@@ -59,6 +59,8 @@ pub(super) fn build(
             continue;
         }
 
+        let spin = Spin::new(element.rotation, center(&element.rect));
+
         let start = vertices.len();
         if element.background_alpha > 0.0 {
             quad(
@@ -66,17 +68,22 @@ pub(super) fn build(
                 [1.0, 1.0],
                 element.background,
                 element.background_alpha,
+                &spin,
                 &mut vertices,
             );
             // Roblox ties the outline to `BackgroundTransparency`: a frame
             // with no background shows no border either.
             if let Some((width, color)) = element.border {
+                // The bands are rotated about the element's own centre, same
+                // as the background — not each band's own, or a rotated
+                // border would fly apart from the box it outlines.
                 for side in outline(&element.rect, width) {
                     quad(
                         &side,
                         [1.0, 1.0],
                         color,
                         element.background_alpha,
+                        &spin,
                         &mut vertices,
                     );
                 }
@@ -101,6 +108,7 @@ pub(super) fn build(
             image.repeat,
             image.tint,
             image.alpha,
+            &spin,
             &mut vertices,
         );
         extend(&mut runs, texture, scissor, start..vertices.len());
@@ -128,14 +136,62 @@ fn extend(runs: &mut Vec<Run>, texture: usize, scissor: Option<Scissor>, range: 
     }
 }
 
-/// Two triangles covering `rect`, the image repeating `repeat` times across it.
-fn quad(rect: &GuiRect, repeat: [f32; 2], color: [f32; 3], alpha: f32, into: &mut Vec<VertexRaw>) {
+/// `GuiObject.Rotation` about one fixed pivot, shared by every quad an
+/// element contributes (background, border bands, image) so they turn
+/// together as a rigid box — Roblox gives no way to rotate about anything but
+/// the element's own centre, so that is the only pivot this ever takes.
+struct Spin {
+    sin: f32,
+    cos: f32,
+    pivot: [f32; 2],
+}
+
+impl Spin {
+    fn new(degrees: f32, pivot: [f32; 2]) -> Self {
+        // Positive `Rotation` turns clockwise on screen: Roblox's own style
+        // docs describe a transition *to* a negative rotation as turning a
+        // button counterclockwise (content/en-us/ui/styling/editor.md), and
+        // this coordinate space already has y increasing downward, so the
+        // ordinary (cos, sin; -sin, cos) rotation matrix needs no extra flip.
+        let radians = degrees.to_radians();
+        Spin {
+            sin: radians.sin(),
+            cos: radians.cos(),
+            pivot,
+        }
+    }
+
+    fn apply(&self, point: [f32; 2]) -> [f32; 2] {
+        let dx = point[0] - self.pivot[0];
+        let dy = point[1] - self.pivot[1];
+        [
+            self.pivot[0] + dx * self.cos - dy * self.sin,
+            self.pivot[1] + dx * self.sin + dy * self.cos,
+        ]
+    }
+}
+
+fn center(rect: &GuiRect) -> [f32; 2] {
+    [rect.x + rect.width * 0.5, rect.y + rect.height * 0.5]
+}
+
+/// Two triangles covering `rect`, the image repeating `repeat` times across
+/// it and every corner turned by `spin` — an identity `Spin` (zero rotation)
+/// leaves them exactly where `rect` puts them.
+fn quad(
+    rect: &GuiRect,
+    repeat: [f32; 2],
+    color: [f32; 3],
+    alpha: f32,
+    spin: &Spin,
+    into: &mut Vec<VertexRaw>,
+) {
     let left = rect.x;
     let top = rect.y;
     let right = rect.x + rect.width;
     let bottom = rect.y + rect.height;
     let corner = |position: [f32; 2], uv: [f32; 2]| VertexRaw {
-        position,
+        position: spin.apply(position),
         uv,
         color,
         alpha,
