@@ -19,7 +19,7 @@ pub(super) struct Atlas {
     /// `renderer::trail::Slot`.
     #[allow(dead_code)]
     uploads: Vec<texture::Uploaded>,
-    /// Only holds the images that actually downloaded: an `ImageLabel` whose
+    /// Only holds the images that actually decoded: an `ImageLabel` whose
     /// asset is missing draws nothing, the way Roblox itself leaves it blank.
     slot_of: HashMap<AssetRef, usize>,
     /// Every reference [`Atlas::extend`] ever tried, the failed ones
@@ -29,8 +29,9 @@ pub(super) struct Atlas {
 }
 
 impl Atlas {
-    /// Downloads and uploads `references`, the flat-white fallback every
-    /// background and border samples (`quads::WHITE`) first.
+    /// Uploads whichever of `references` the loader has already decoded, the
+    /// flat-white fallback every background and border samples
+    /// (`quads::WHITE`) first.
     pub(super) fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,

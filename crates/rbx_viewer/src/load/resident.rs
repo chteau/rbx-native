@@ -10,8 +10,18 @@
 //! that owns this lives — and only a reference never seen before touches the
 //! disk.
 //!
-//! A failure is remembered too, with its warning: an asset that would not
-//! download or decode is not fetched again on every edit.
+//! A failure is remembered too, with its warning. One of the asset's own —
+//! a 404, a file the content package does not hold, bytes that will not
+//! decode — is remembered for good: asking again cannot change the answer,
+//! and the ask is the expensive part. One of the machine's — a request that
+//! did not complete, a cache that would not write — is remembered only until
+//! the next load: the load that hit it asks for the same reference from
+//! several passes (a decal image and a material map can name one asset) and
+//! must not download it that many times, while the next `Headless::reload`
+//! tries it once more, so a network blip does not leave a face bare for the
+//! life of the editor. See `assets::Failure` for which is which. Either way
+//! the warning is answered again each time the reference is asked for, so
+//! the Output dock reads the same after a reload as it did after the load.
 //!
 //! # Streaming and blocking
 //!
@@ -27,7 +37,7 @@
 //! load use: neither has a next frame to stream into, so there is nothing to
 //! be gained by returning without the picture.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 #[cfg(test)]
 use std::time::Duration;
@@ -35,7 +45,7 @@ use std::time::Duration;
 use rbx_assets::AssetRef;
 
 use super::fetcher::{Fetcher, Landed, Want};
-use crate::assets::{self, Image, Keyed};
+use crate::assets::{self, Failure, Image, Keyed};
 use crate::scene::UnionEvaluations;
 
 /// Every decoded asset a place has asked for so far. Behind `Arc`s where the
@@ -86,10 +96,12 @@ impl Resident {
         }
     }
 
-    /// Every decoded image among `references`, plus — for a blocking
-    /// `Resident` — the warning of every one that failed. A streaming one
-    /// answers only from memory, queues whatever is missing and reports its
-    /// warnings through [`Resident::poll`] instead.
+    /// Every decoded image among `references`, decoding only what was never
+    /// asked for before, plus — for a blocking `Resident` — the warning of
+    /// every one that failed, whether it failed just now or earlier in the
+    /// same load. A streaming one answers only from memory, queues whatever
+    /// is missing and reports its warnings through [`Resident::poll`]
+    /// instead.
     pub(crate) fn images(
         &mut self,
         references: &[AssetRef],
@@ -216,6 +228,16 @@ impl Resident {
         self.meshes.forget(reference);
         self.bytes.forget(reference);
     }
+
+    /// Drops every remembered transient failure, so the next ask for it
+    /// fetches again. Called once at the start of every load (see
+    /// `Loaded::from_dom`): that is the unit a retry is worth — see the
+    /// module doc.
+    pub(crate) fn forget_failures(&mut self) {
+        self.images.forget_failures();
+        self.meshes.forget_failures();
+        self.bytes.forget_failures();
+    }
 }
 
 /// Every image a caller asked about that has been answered: `Some` decoded,
@@ -257,11 +279,24 @@ impl<T> Default for Table<T> {
     }
 }
 
+impl<T> Table<T> {
+    fn forget_failures(&mut self) {
+        self.entries
+            .retain(|_, result| !matches!(result, Err(failure) if failure.transient));
+    }
+}
+
 impl<T: Clone> Table<T> {
     /// Answers `references` from what is already here, asking `load` only
     /// for the ones that are not — never twice for the same reference, a
-    /// remembered failure included. A reference `load` answers nothing for
-    /// (no resolver could be built at all) is asked again next time.
+    /// remembered failure included, until [`Table::forget_failures`] lets a
+    /// transient one go. A reference `load` answers nothing for is asked
+    /// again next time.
+    ///
+    /// A warning shared by several references comes out once: a resolver
+    /// that could not be built fails every reference with the same text (see
+    /// `assets::load_with`), and the Output dock wants that line once, not
+    /// once per asset.
     fn fetch(
         &mut self,
         references: &[AssetRef],
@@ -279,13 +314,16 @@ impl<T: Clone> Table<T> {
 
         let mut found = HashMap::new();
         let mut warnings = Vec::new();
+        let mut reported = HashSet::new();
         for reference in wanted {
             match self.entries.get(&reference) {
                 Some(Ok(value)) => {
                     found.insert(reference, value.clone());
                 }
-                Some(Err(warning)) => warnings.push(warning.clone()),
-                None => {}
+                Some(Err(failure)) if reported.insert(failure.warning.as_str()) => {
+                    warnings.push(failure.warning.clone());
+                }
+                Some(Err(_)) | None => {}
             }
         }
         (found, warnings)
@@ -330,13 +368,13 @@ impl<T: Clone> Table<T> {
     fn land(
         &mut self,
         reference: AssetRef,
-        result: Result<T, String>,
+        result: Result<T, Failure>,
     ) -> (AssetRef, Option<String>) {
         self.in_flight.retain(|held| *held != reference);
         let warning = match &result {
-            Err(warning) if !self.warned.contains(&reference) => {
+            Err(failure) if !self.warned.contains(&reference) => {
                 self.warned.push(reference.clone());
-                Some(warning.clone())
+                Some(failure.warning.clone())
             }
             _ => None,
         };
@@ -363,13 +401,12 @@ impl<T: Clone> Table<T> {
 /// `references` without repeats, in first-seen order — the order the
 /// progress line and the warnings then come out in.
 fn distinct(references: &[AssetRef]) -> Vec<AssetRef> {
-    let mut seen = Vec::new();
-    for reference in references {
-        if !seen.contains(reference) {
-            seen.push(reference.clone());
-        }
-    }
-    seen
+    let mut seen = HashSet::new();
+    references
+        .iter()
+        .filter(|reference| seen.insert(*reference))
+        .cloned()
+        .collect()
 }
 
 #[cfg(test)]

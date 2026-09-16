@@ -78,6 +78,55 @@ fn from_dom_surfaces_a_warning_for_a_decal_that_cannot_resolve() {
     assert!(loaded.take_warnings().is_empty());
 }
 
+// The failure that is nobody's in particular — no resolver could be built
+// at all — still has to land in the dock, not only on stderr.
+#[test]
+fn from_dom_surfaces_a_warning_when_no_resolver_can_be_built() {
+    let _failure = crate::assets::tests::ResolverFailure::new("cache dir is a file");
+    let database = ReflectionDatabase::embedded();
+    let dom = dom_with_unresolvable_decal();
+
+    let mut loaded = Loaded::from_dom(&dom, &database, textures_only(), &mut Resident::default())
+        .expect("scene should still load");
+    let warnings = loaded.take_warnings();
+
+    assert_eq!(
+        warnings,
+        vec!["rbxview: no textures (cache dir is a file)".to_string()]
+    );
+}
+
+// A transient failure is retried by the next load, not remembered for the
+// life of the `Resident`: once the machine is fixed, the reload fetches what
+// the load could not — here the warning changes from "no resolver" to the
+// asset's own, which only a second fetch can produce.
+#[test]
+fn a_reload_retries_what_the_previous_load_failed_to_fetch() {
+    let database = ReflectionDatabase::embedded();
+    let dom = dom_with_unresolvable_decal();
+    let mut resident = Resident::default();
+
+    let no_resolver = crate::assets::tests::ResolverFailure::new("cache dir is a file");
+    let mut first =
+        Loaded::from_dom(&dom, &database, textures_only(), &mut resident).expect("load");
+    assert_eq!(
+        first.take_warnings(),
+        vec!["rbxview: no textures (cache dir is a file)".to_string()]
+    );
+    drop(no_resolver);
+
+    let mut again =
+        Loaded::from_dom(&dom, &database, textures_only(), &mut resident).expect("reload");
+    let warnings = again.take_warnings();
+
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning.contains("unknown-native-package")),
+        "expected the asset to be fetched again, got {warnings:?}"
+    );
+}
+
 // The streaming counterpart: the same place comes back drawable with the
 // fetch still running, and the warning arrives from the loader's own poll
 // once the resolve has failed for good rather than from the build.

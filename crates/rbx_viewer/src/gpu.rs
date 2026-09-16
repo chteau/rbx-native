@@ -53,3 +53,17 @@ pub(crate) fn device(adapter: &wgpu::Adapter) -> Result<(wgpu::Device, wgpu::Que
     }))
     .map_err(|err| format!("failed to open a GPU device: {err}"))
 }
+
+/// A device for a unit test that builds real GPU state, or `None` where the
+/// machine has no adapter at all (CI, say) — such a test reports itself
+/// skipped rather than failing, since what it checks is not the GPU.
+#[cfg(test)]
+pub(crate) fn for_tests() -> Option<(wgpu::Device, wgpu::Queue)> {
+    let instance = instance();
+    let adapter = adapter(&instance, None)
+        .map_err(|err| eprintln!("skipped: {err}"))
+        .ok()?;
+    device(&adapter)
+        .map_err(|err| eprintln!("skipped: {err}"))
+        .ok()
+}

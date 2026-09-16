@@ -17,7 +17,7 @@
 //! A `Sky` edit changes the probe; a material on one part does not change the
 //! pack. The keys, not this module, decide which.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use rbx_assets::AssetRef;
 
@@ -193,13 +193,11 @@ pub(super) fn untried<V>(
     tried: &HashMap<AssetRef, V>,
     wanted: impl IntoIterator<Item = AssetRef>,
 ) -> Vec<AssetRef> {
-    let mut missing: Vec<AssetRef> = Vec::new();
-    for reference in wanted {
-        if !tried.contains_key(&reference) && !missing.contains(&reference) {
-            missing.push(reference);
-        }
-    }
-    missing
+    let mut seen = HashSet::new();
+    wanted
+        .into_iter()
+        .filter(|reference| !tried.contains_key(reference) && seen.insert(reference.clone()))
+        .collect()
 }
 
 #[cfg(test)]

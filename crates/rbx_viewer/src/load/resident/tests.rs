@@ -2,10 +2,19 @@ use std::cell::Cell;
 use std::sync::atomic::Ordering;
 
 use super::*;
+use crate::assets::Failure;
 use crate::load::fetcher::tests::Counted;
 
-/// A loader that decodes `Id(n)` to `n` and fails every odd id, counting
-/// how many references it was actually asked for.
+fn failure(warning: &str, transient: bool) -> Failure {
+    Failure {
+        warning: warning.to_string(),
+        transient,
+    }
+}
+
+/// A loader that decodes `Id(n)` to `n` and fails every odd id — as the
+/// machine's fault, the kind a later load retries — counting how many
+/// references it was actually asked for.
 fn loader(asked: &Cell<usize>) -> impl Fn(&[AssetRef]) -> Keyed<u64> + '_ {
     move |references| {
         asked.set(asked.get() + references.len());
@@ -18,7 +27,7 @@ fn loader(asked: &Cell<usize>) -> impl Fn(&[AssetRef]) -> Keyed<u64> + '_ {
                 let result = if id % 2 == 0 {
                     Ok(*id)
                 } else {
-                    Err(format!("asset {id}: odd"))
+                    Err(failure(&format!("asset {id}: odd"), true))
                 };
                 (reference.clone(), result)
             })
@@ -41,10 +50,10 @@ fn a_first_fetch_loads_everything_once() {
     assert_eq!(warnings, vec!["asset 3: odd".to_string()]);
 }
 
-// The whole point: a reload asks for the same assets again and must not
-// decode any of them a second time — nor retry the one that failed —
-// while still answering exactly what a first load answered, warning
-// included.
+// The whole point: a second pass of the same load asks for the same assets
+// again and must not decode any of them a second time — nor retry the one
+// that failed — while still answering exactly what the first pass answered,
+// warning included.
 #[test]
 fn a_second_fetch_answers_from_memory_warnings_included() {
     let asked = Cell::new(0);
@@ -70,9 +79,104 @@ fn only_a_never_seen_reference_is_loaded_later() {
     assert_eq!(found.len(), 2);
 }
 
-// No resolver at all (no cache directory, say) answers nothing for the
-// references themselves: they stay unknown rather than remembered as
-// failed, so the next reload tries again once the machine is fixed.
+// A failure of the machine is worth one more try once it may have changed —
+// the next load, not the next ask: the blip is then gone, and the asset
+// resolves as if it had never failed.
+#[test]
+fn a_transient_failure_is_retried_by_the_next_load() {
+    let asked = Cell::new(0);
+    let mut table = Table::default();
+    let (_, warnings) = table.fetch(&[AssetRef::Id(3)], loader(&asked));
+    assert_eq!(warnings, vec!["asset 3: odd".to_string()]);
+    table.fetch(&[AssetRef::Id(3)], loader(&asked));
+    assert_eq!(asked.get(), 1, "the same load never retries");
+
+    table.forget_failures();
+    let (found, warnings) = table.fetch(&[AssetRef::Id(3)], |references| {
+        asked.set(asked.get() + references.len());
+        references
+            .iter()
+            .map(|reference| (reference.clone(), Ok(30)))
+            .collect()
+    });
+
+    assert_eq!(asked.get(), 2, "the next load retries exactly once");
+    assert_eq!(found, HashMap::from([(AssetRef::Id(3), 30)]));
+    assert!(warnings.is_empty());
+}
+
+// A failure of the asset — a 404, a file the package does not hold — is
+// not: the answer cannot change, and on a real place the ask is the
+// expensive part, so the next load answers it from memory like a success,
+// warning included.
+#[test]
+fn a_permanent_failure_is_not_retried_by_the_next_load() {
+    let asked = Cell::new(0);
+    let mut table: Table<u64> = Table::default();
+    let not_found = |references: &[AssetRef]| {
+        asked.set(asked.get() + references.len());
+        references
+            .iter()
+            .map(|reference| (reference.clone(), Err(failure("asset 5: not found", false))))
+            .collect()
+    };
+    table.fetch(&[AssetRef::Id(5)], not_found);
+
+    table.forget_failures();
+    let (found, warnings) = table.fetch(&[AssetRef::Id(5)], not_found);
+
+    assert_eq!(asked.get(), 1, "never asked again");
+    assert!(found.is_empty());
+    assert_eq!(warnings, vec!["asset 5: not found".to_string()]);
+}
+
+// Forgetting the failures must not cost the successes: those are the decodes
+// a reload exists to skip.
+#[test]
+fn forgetting_failures_keeps_every_success() {
+    let asked = Cell::new(0);
+    let mut table = Table::default();
+    let references = [AssetRef::Id(2), AssetRef::Id(3)];
+    table.fetch(&references, loader(&asked));
+
+    table.forget_failures();
+    let (found, warnings) = table.fetch(&references, loader(&asked));
+
+    assert_eq!(asked.get(), 3, "only the failed reference is asked again");
+    assert_eq!(found, HashMap::from([(AssetRef::Id(2), 2)]));
+    assert_eq!(warnings, vec!["asset 3: odd".to_string()]);
+}
+
+// What `assets::load_with` answers when no resolver could be built at all:
+// the one message against every reference. Every reference is remembered as
+// failed (so the next load retries once the machine is fixed), but the dock
+// reads the message once.
+#[test]
+fn one_warning_shared_by_every_reference_is_reported_once() {
+    let mut table: Table<u64> = Table::default();
+    let no_resolver = |references: &[AssetRef]| {
+        references
+            .iter()
+            .map(|reference| {
+                (
+                    reference.clone(),
+                    Err(failure("rbxview: no things (boom)", true)),
+                )
+            })
+            .collect()
+    };
+
+    let (found, warnings) = table.fetch(
+        &[AssetRef::Id(1), AssetRef::Id(2), AssetRef::Id(3)],
+        no_resolver,
+    );
+
+    assert!(found.is_empty());
+    assert_eq!(warnings, vec!["rbxview: no things (boom)".to_string()]);
+}
+
+// A loader that answers nothing for a reference leaves it unknown rather
+// than remembered as failed: it is asked again on the very next fetch.
 #[test]
 fn a_reference_the_loader_did_not_answer_is_asked_again() {
     let asked = Cell::new(0);

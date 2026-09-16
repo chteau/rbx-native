@@ -57,7 +57,8 @@ pub(super) struct Beams {
     textures: Vec<Slot>,
     live: Vec<(Beam, usize)>,
     /// Whether the quality profile draws beams at all — `false` keeps `live`
-    /// empty for the whole run, [`Beams::replace`] included.
+    /// empty, [`Beams::replace`] included. Re-read from the profile by every
+    /// [`Beams::rebuild`], so a level switched between two scenes takes.
     enabled: bool,
     /// The slot in `textures` every reference [`Beams::rebuild`] tried
     /// resolved to (0 where the download failed); a reference missing here
@@ -137,6 +138,7 @@ impl Beams {
         self.live.clear();
         self.last_tick = None;
         self.elapsed = 0.0;
+        self.enabled = quality.beams;
         if !self.enabled || beams.is_empty() {
             return;
         }
@@ -377,3 +379,7 @@ fn texture_refs(beams: &[Beam]) -> Vec<AssetRef> {
     }
     seen
 }
+
+#[cfg(test)]
+#[path = "beam/tests.rs"]
+mod tests;

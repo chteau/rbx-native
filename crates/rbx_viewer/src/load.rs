@@ -110,7 +110,8 @@ impl Loaded {
     ///
     /// `resident` is where every asset this decodes stays: hand the same one
     /// to every reload of the same place and only an asset the place never
-    /// showed before is fetched and decoded again — see [`Resident`]. A
+    /// showed before — or whose fetch failed for a reason that may since
+    /// have passed — is fetched and decoded again; see [`Resident`]. A
     /// streaming one makes this return without waiting for any of them; see
     /// [`Loaded::resolve`] for what finishes the job afterwards.
     pub(crate) fn from_dom(
@@ -120,6 +121,9 @@ impl Loaded {
         resident: &mut Resident,
     ) -> Result<Self, String> {
         let scene = Scene::from_dom(dom, database).map_err(|err| err.to_string())?;
+        // Here and not deeper: one load is the unit a transient failure is
+        // retried per, and every pass below asks through the same `resident`.
+        resident.forget_failures();
         // Planned against the parts as built, before any mesh has suppressed
         // one: a face on a part a mesh later replaces is dropped at assembly
         // instead (see `Decor::assemble`), which is the same set of faces a

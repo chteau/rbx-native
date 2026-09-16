@@ -75,7 +75,16 @@ impl Loaded {
             return Vec::new();
         }
         self.want(&references);
-        let (bytes, warnings) = resident.bytes(&references);
+        // Only what was never carved needs its bytes: a known asset resolves
+        // out of the evaluation an earlier scene left behind (see
+        // `scene::union::resolve`), so a tick that has nothing new to carve
+        // copies nothing out of the resident table at all.
+        let uncarved: Vec<AssetRef> = references
+            .iter()
+            .filter(|reference| !resident.unions.is_known(reference))
+            .cloned()
+            .collect();
+        let (bytes, warnings) = resident.bytes(&uncarved);
         // Each asset exactly once, ever: `Scene::resolve_unions` appends the
         // parts a failed boolean falls back to, and handing it an asset it has
         // already recovered would draw those pieces twice.
@@ -150,14 +159,7 @@ impl Loaded {
         for trail in self.scene.trails() {
             push(&trail.texture);
         }
-        let mut gui = Vec::new();
-        for screen in self.scene.gui_screens() {
-            screen.assets(&mut gui);
-        }
-        for space in self.scene.gui_spaces() {
-            space.assets(&mut gui);
-        }
-        for reference in &gui {
+        for reference in &self.scene.gui_assets() {
             push(reference);
         }
 

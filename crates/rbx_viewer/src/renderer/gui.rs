@@ -44,11 +44,14 @@ pub(super) struct Gui {
     /// rebuild may still have to build (see `Space::rebuild`).
     viewport_layout: wgpu::BindGroupLayout,
     /// Whether the quality profile draws GUIs at all — `false` keeps every
-    /// tree out, [`Gui::rebuild`] included.
+    /// tree out. Re-read from the profile by every [`Gui::rebuild`], so a
+    /// level switched between two scenes takes.
     enabled: bool,
 }
 
 impl Gui {
+    /// `images` is what the loader decoded for the trees' `ImageLabel`s
+    /// (see `Decor::gui`); this pass downloads nothing of its own.
     pub(super) fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -88,6 +91,7 @@ impl Gui {
         images: &Answered,
         quality: &QualityProfile,
     ) {
+        self.enabled = quality.gui;
         let screens: &[GuiScreen] = match self.enabled {
             true => screens,
             false => &[],
@@ -164,5 +168,40 @@ impl Gui {
             self.atlas.groups(),
             size,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::quality::QualityLevel;
+
+    // A quality level switched between two scenes has to take on the next
+    // rebuild: whether GUIs draw is read from the profile every rebuild, not
+    // only once when the pass was built.
+    #[test]
+    fn a_rebuild_follows_the_quality_toggle_it_is_given() {
+        let Some((device, queue)) = crate::gpu::for_tests() else {
+            return;
+        };
+        let target = Target {
+            format: crate::renderer::post::HDR_FORMAT,
+            samples: 1,
+        };
+        let mut on = QualityLevel::Automatic.profile();
+        on.gui = true;
+        let mut off = on;
+        off.gui = false;
+        let images = Answered::new();
+        let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+
+        let mut gui = Gui::new(&device, &queue, format, target, (&[], &[]), &images, &off);
+        assert!(!gui.enabled);
+
+        gui.rebuild(&device, &queue, (&[], &[]), &images, &on);
+        assert!(gui.enabled);
+
+        gui.rebuild(&device, &queue, (&[], &[]), &images, &off);
+        assert!(!gui.enabled);
     }
 }

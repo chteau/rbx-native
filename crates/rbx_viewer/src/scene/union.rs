@@ -253,6 +253,15 @@ pub(crate) struct Evaluations {
     known: HashMap<AssetRef, Option<Arc<Evaluated>>>,
 }
 
+impl Evaluations {
+    /// Whether an earlier scene already parsed and carved `asset` (or found
+    /// it unparseable): [`resolve`] then needs none of its bytes, so a
+    /// reload can skip fetching them — see `load::resolve_unions`.
+    pub(crate) fn is_known(&self, asset: &AssetRef) -> bool {
+        self.known.contains_key(asset)
+    }
+}
+
 /// Resolves a plan against downloaded asset bytes.
 ///
 /// Must run before [`super::Scene::resolve_materials`]: it is the one place
@@ -262,6 +271,9 @@ pub(crate) struct Evaluations {
 /// The boolean can fail (too many polygons, an all-carved result, a tree that
 /// did not parse); the first two fall back to the additive-only parts of the
 /// old resolver and the last keeps the box. Never a hole-ridden mesh.
+///
+/// `assets` need only hold the bytes of what `evaluations` has not seen: an
+/// asset it knows is resolved from what it carved before, bytes or not.
 pub(crate) fn resolve(
     plan: &Plan,
     assets: HashMap<AssetRef, Vec<u8>>,
@@ -319,12 +331,13 @@ fn evaluate(bytes: &[u8], database: &ReflectionDatabase) -> Option<Evaluated> {
     Some(Evaluated { tree, mesh })
 }
 
-/// Every distinct, downloaded asset `plan` needs, evaluated: out of
-/// `evaluations` where an earlier scene already carved it, and through
-/// [`evaluate`] across a bounded worker pool where not — same `thread::scope`
-/// plus atomic work-list index shape as `crate::assets::load_with`'s download
-/// pool, just with the BSP boolean itself as the unit of work instead of a
-/// network fetch. Whatever is carved here is remembered in `evaluations`.
+/// Every distinct asset `plan` needs that is either already known or
+/// downloaded, evaluated: out of `evaluations` where an earlier scene already
+/// carved it, and through [`evaluate`] across a bounded worker pool where
+/// not — same `thread::scope` plus atomic work-list index shape as
+/// `crate::assets::load_with`'s download pool, just with the BSP boolean
+/// itself as the unit of work instead of a network fetch. Whatever is carved
+/// here is remembered in `evaluations`.
 ///
 /// This is the one CPU-heavy step in resolving a plan: each asset's boolean
 /// is a from-scratch BSP tree build, completely independent of every other
@@ -345,7 +358,10 @@ fn evaluate_all(
         .entries
         .iter()
         .map(|entry| &entry.asset)
-        .filter(|asset| assets.contains_key(*asset) && seen.insert((*asset).clone()))
+        .filter(|asset| {
+            (evaluations.known.contains_key(*asset) || assets.contains_key(*asset))
+                && seen.insert((*asset).clone())
+        })
         .collect();
     let unique: Vec<&AssetRef> = wanted
         .iter()

@@ -69,7 +69,8 @@ pub(super) struct Trails {
     /// see this module's doc.
     live: Vec<(Trail, TrailRecorder, usize)>,
     /// Whether the quality profile draws trails at all — `false` keeps `live`
-    /// empty for the whole run, [`Trails::replace`] included.
+    /// empty, [`Trails::replace`] included. Re-read from the profile by every
+    /// [`Trails::rebuild`], so a level switched between two scenes takes.
     enabled: bool,
     /// The slot in `textures` every reference [`Trails::new`] tried resolved
     /// to (0 where the download failed); a reference missing here was never
@@ -151,6 +152,7 @@ impl Trails {
         self.live.clear();
         self.last_tick = None;
         self.elapsed = 0.0;
+        self.enabled = quality.trails;
         if !self.enabled || trails.is_empty() {
             return;
         }
@@ -413,3 +415,7 @@ fn texture_refs(trails: &[Trail]) -> Vec<AssetRef> {
     }
     seen
 }
+
+#[cfg(test)]
+#[path = "trail/tests.rs"]
+mod tests;

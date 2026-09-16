@@ -287,6 +287,20 @@ impl Scene {
         &self.gui_spaces
     }
 
+    /// Every image the GUI trees sample, in first-seen paint order and
+    /// without repeats across the three container kinds — one download for
+    /// an `ImageLabel` image that a screen and a surface both show.
+    pub(crate) fn gui_assets(&self) -> Vec<AssetRef> {
+        let mut references = Vec::new();
+        for screen in &self.gui {
+            screen.assets(&mut references);
+        }
+        for gui in &self.gui_spaces {
+            gui.assets(&mut references);
+        }
+        references
+    }
+
     /// Every material map the scene needs before [`Scene::resolve_materials`].
     pub(crate) fn material_assets(&self) -> Vec<AssetRef> {
         self.materials.asset_refs()

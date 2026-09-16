@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use rbx_assets::AssetRef;
 
-use crate::assets::Image;
+use crate::assets::{Failure, Image};
 
 /// Which decoder a reference is bound for.
 ///
@@ -38,13 +38,14 @@ pub(crate) enum Want {
     Bytes,
 }
 
-/// One finished request: the decoded value, or the warning saying why it could
-/// not be — the same text the blocking path already puts against a reference,
-/// so the Output dock reads the same either way.
+/// One finished request: the decoded value, or why it could not be — the
+/// same [`Failure`] the blocking path already puts against a reference, so
+/// the Output dock reads the same either way and a transient one is retried
+/// by the next load just the same.
 pub(crate) enum Landed {
-    Image(AssetRef, Result<Arc<Image>, String>),
-    Mesh(AssetRef, Result<Arc<rbx_mesh::Mesh>, String>),
-    Bytes(AssetRef, Result<Vec<u8>, String>),
+    Image(AssetRef, Result<Arc<Image>, Failure>),
+    Mesh(AssetRef, Result<Arc<rbx_mesh::Mesh>, Failure>),
+    Bytes(AssetRef, Result<Vec<u8>, Failure>),
 }
 
 impl Landed {
@@ -65,9 +66,9 @@ impl Landed {
 /// real disk-cache-and-network resolver, and nothing else in the crate needs
 /// to know which of the two it has.
 pub(crate) trait Source: Send + Sync + 'static {
-    fn image(&self, reference: &AssetRef) -> Result<Image, String>;
-    fn mesh(&self, reference: &AssetRef) -> Result<rbx_mesh::Mesh, String>;
-    fn bytes(&self, reference: &AssetRef) -> Result<Vec<u8>, String>;
+    fn image(&self, reference: &AssetRef) -> Result<Image, Failure>;
+    fn mesh(&self, reference: &AssetRef) -> Result<rbx_mesh::Mesh, Failure>;
+    fn bytes(&self, reference: &AssetRef) -> Result<Vec<u8>, Failure>;
 }
 
 /// The work every worker shares. `None` once the [`Fetcher`] is gone, which
@@ -189,8 +190,9 @@ pub(crate) mod tests {
     use super::*;
 
     /// A source that decodes `Id(n)` into an `n`-pixel-wide image and fails
-    /// every odd id, counting what it was actually asked to resolve. No cache
-    /// directory, no network, no fixture on disk.
+    /// every odd id — the asset's own fault, so no load retries it — counting
+    /// what it was actually asked to resolve. No cache directory, no network,
+    /// no fixture on disk.
     #[derive(Default)]
     pub(crate) struct Counted {
         pub(crate) resolved: AtomicUsize,
@@ -201,21 +203,28 @@ pub(crate) mod tests {
             &self,
             reference: &AssetRef,
             value: impl FnOnce(u64) -> T,
-        ) -> Result<T, String> {
+        ) -> Result<T, Failure> {
             self.resolved.fetch_add(1, Ordering::Relaxed);
             let AssetRef::Id(id) = reference else {
-                return Err(format!("{reference:?}: not an id"));
+                return Err(permanent(&format!("{reference:?}: not an id")));
             };
             if id % 2 == 0 {
                 Ok(value(*id))
             } else {
-                Err(format!("asset {id}: odd"))
+                Err(permanent(&format!("asset {id}: odd")))
             }
         }
     }
 
+    fn permanent(warning: &str) -> Failure {
+        Failure {
+            warning: warning.to_string(),
+            transient: false,
+        }
+    }
+
     impl Source for Arc<Counted> {
-        fn image(&self, reference: &AssetRef) -> Result<Image, String> {
+        fn image(&self, reference: &AssetRef) -> Result<Image, Failure> {
             self.answer(reference, |id| Image {
                 width: id as u32,
                 height: 1,
@@ -223,11 +232,11 @@ pub(crate) mod tests {
             })
         }
 
-        fn mesh(&self, _reference: &AssetRef) -> Result<rbx_mesh::Mesh, String> {
-            Err("no meshes here".to_string())
+        fn mesh(&self, _reference: &AssetRef) -> Result<rbx_mesh::Mesh, Failure> {
+            Err(permanent("no meshes here"))
         }
 
-        fn bytes(&self, reference: &AssetRef) -> Result<Vec<u8>, String> {
+        fn bytes(&self, reference: &AssetRef) -> Result<Vec<u8>, Failure> {
             self.answer(reference, |id| vec![id as u8])
         }
     }
@@ -256,10 +265,10 @@ pub(crate) mod tests {
 
         fetcher.request(Want::Bytes, AssetRef::Id(3));
 
-        let Some(Landed::Bytes(_, Err(warning))) = fetcher.wait(PATIENCE) else {
+        let Some(Landed::Bytes(_, Err(failure))) = fetcher.wait(PATIENCE) else {
             panic!("expected a warning");
         };
-        assert_eq!(warning, "asset 3: odd");
+        assert_eq!(failure.warning, "asset 3: odd");
     }
 
     // Every worker has to be reachable: a pool whose queue only ever wakes one

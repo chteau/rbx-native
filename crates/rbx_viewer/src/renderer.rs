@@ -375,8 +375,11 @@ impl Renderer {
     /// The constant terms (`sun_direction`, `fog`, `clouds`, `Effects`, …) are
     /// already folded into the per-frame uniform (see [`Renderer::draw`]), so
     /// swapping `self.lighting`/`self.post`'s copy in is enough for those; only
-    /// the local-light storage buffer is written here rather than every frame,
-    /// since nothing else ever touches it after [`Renderer::new`].
+    /// the local-light storage buffer is written here rather than every frame.
+    /// Nothing else writes that buffer: a reload ([`Renderer::rebuild`]) or a
+    /// quality switch (`cap_lights`) that changes how many lights it holds
+    /// replaces it outright, and both keep `self.lights` in step with its
+    /// length, which is what makes the write below always fit.
     ///
     /// `false` when `lights.len()` differs from what was last uploaded — a
     /// property edit alone never adds or removes a `Light`, so this is a
