@@ -90,6 +90,22 @@ Roblox's own engine.
   not just within one session. Still open: no size cap or eviction, so the
   directory only grows; low priority in practice, since Roblox's own
   asset ids are immutable content and the bytes never need invalidating.
+- [x] **Assets are resolved off the render thread and swapped into the
+  picture as they land**, the way Roblox's own engine streams them: a load
+  returns with the scene drawable and its assets still arriving, and an
+  edit naming a `MeshId`/`TextureID`/material this session has never
+  decoded draws the fallback it already had for one that never resolved —
+  the `MeshPart`'s box, the untextured mesh, plain plastic — asks for the
+  asset in the background (`load::fetcher`, a worker pool behind
+  `load::Resident`'s in-flight state) and folds it in on a later tick,
+  instead of falling back to a full reload with a download in front of it.
+  The four renderer passes that fetched their own textures inside
+  `Renderer::rebuild` (`particles`, `beam`, `trail`, `gui::atlas`) read the
+  loader's answer instead, so nothing on the render thread resolves an
+  asset any more. On `marked.rbxl`: an unseen-`MeshId` edit is on screen in
+  0.9 ms and the mesh itself swaps in 3.1 ms later, against a ~29 ms reload
+  plus a fetch; a cold load's first drawable frame went from 1004 ms to
+  462 ms, with the finished picture still at 978 ms.
 - [x] **Loading a real place no longer spikes CPU (and, on a laptop, the
   fans) the way it was reported to from real use.** Both candidates the
   original report named turned out to matter. Profiled with a synthetic,
@@ -145,7 +161,12 @@ Roblox's own engine.
 - [x] Fast-path scene updates: a `Lighting`/`Atmosphere`/post-effect edit or
   a single part's property change patches the GPU state directly instead
   of rebuilding the whole scene — editing stays interactive on large real
-  places.
+  places. An edit naming an asset that was never downloaded is patched too,
+  onto its fallback, with the asset fetched in the background (see the
+  renderer's asset-streaming entry above); what still falls back to a full
+  reload is a union repainted from its operation tree, a referent the scene
+  never built, and a material needing a texture-array layer past the ones
+  uploaded.
 - [x] Undo/redo takes that same fast path: `shell/history.rs` pairs each
   pushed snapshot with the `Change` log the mutation right after it
   produced and reads it back through `shell::command`'s own `single_change`
@@ -1004,9 +1025,10 @@ against `Roblox/creator-docs` rather than assumed:
   supersedes the original ask for an explicit `Ctrl+S`-triggered flush —
   nothing is ever left pending by the time a save happens. Still open: the
   four live-render call sites (`renderer::particles`/`trail`/`beam`/
-  `gui::atlas`) discard their warnings instead of routing them too (would
-  need per-frame dedup/rate-limiting first, to stop an animated emitter
-  re-resolving the same bad texture from spamming the log); no dedicated
+  `gui::atlas`) still show nothing for a texture that will not resolve —
+  they no longer fetch one themselves (the loader does, once, and answers
+  them), so what is left is routing that single answer's warning to the
+  dock rather than dropping it; no dedicated
   "Warnings" `OutputFilter` bucket; no distinct visual marker for a
   warning row versus a successful Command Bar run.
 - [ ] 📋 **Output window: real Studio's filter/display feature set**,
