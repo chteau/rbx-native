@@ -56,6 +56,15 @@ pub(super) fn shown(
     )
 }
 
+/// Whether `nearest` — the part a click actually lands on, `None` for a
+/// click on nothing — is already part of the selection `outlined` describes:
+/// a selected part itself, or a part beneath a selected `Model`. What lets a
+/// Move body-drag begin on it rather than re-select it (see
+/// `Shell::pick_in_viewport`).
+pub(super) fn covers(outlined: &[Selected], nearest: Option<Ref>) -> bool {
+    nearest.is_some_and(|part| outlined.iter().any(|entry| entry.parts().contains(&part)))
+}
+
 impl Shell {
     /// Re-resolves the selection against the current `self.dom` and sends the
     /// viewport both halves of it (see [`shown`]).
@@ -301,6 +310,37 @@ mod tests {
         let inner = dom.new_instance("Model", "Door", Some(outer));
         let deep = dom.new_instance("Part", "Handle", Some(inner));
         (dom, loose, outer, inner, deep)
+    }
+
+    // The bug this exists for: with the Move tool up, a click on a part
+    // standing in front of the selection body-dragged the selection instead
+    // of selecting the part, because the view only ever tested the
+    // selection's own boxes.
+    #[test]
+    fn a_click_on_a_selected_part_or_inside_a_selected_model_is_a_body_grab() {
+        let (dom, loose, outer, _, deep) = nested_place();
+        let database = ReflectionDatabase::embedded();
+
+        let part_selected = outlined(&dom, &database, &[loose]);
+        assert!(covers(&part_selected, Some(loose)));
+        assert!(
+            !covers(&part_selected, Some(deep)),
+            "a part outside the selection is a pick"
+        );
+
+        let model_selected = outlined(&dom, &database, &[outer]);
+        assert!(
+            covers(&model_selected, Some(deep)),
+            "any part beneath the model drags it"
+        );
+        assert!(!covers(&model_selected, Some(loose)));
+    }
+
+    #[test]
+    fn a_click_on_nothing_never_grabs() {
+        let (dom, loose, ..) = nested_place();
+        let database = ReflectionDatabase::embedded();
+        assert!(!covers(&outlined(&dom, &database, &[loose]), None));
     }
 
     #[test]

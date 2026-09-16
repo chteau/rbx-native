@@ -44,7 +44,8 @@ impl Shell {
                 ray,
                 cycling,
                 extend,
-            } => self.pick_in_viewport(*ray, *cycling, *extend, cx),
+                held,
+            } => self.pick_in_viewport(*ray, *cycling, *extend, *held, cx),
             ViewportAction::Hover(ray) => self.hover_in_viewport(*ray, cx),
             ViewportAction::Moved {
                 moves,
@@ -119,12 +120,37 @@ impl Shell {
     /// selection instead, leaving an empty-space click with the modifier held
     /// alone rather than clearing everything a Studio user did not ask to
     /// drop.
-    fn pick_in_viewport(&mut self, ray: Ray, cycling: bool, extend: bool, cx: &mut Context<Self>) {
+    ///
+    /// With `held`, the view has a Move body-drag waiting on this same click
+    /// (see `ViewportAction::Pick`): it goes ahead, and the selection stays
+    /// as it is, only when the part actually under the cursor is already
+    /// selected — itself, or through a selected `Model` — the way Studio
+    /// drags a selected object from any point on it. Anything nearer takes
+    /// the click as an ordinary pick instead.
+    fn pick_in_viewport(
+        &mut self,
+        ray: Ray,
+        cycling: bool,
+        extend: bool,
+        held: bool,
+        cx: &mut Context<Self>,
+    ) {
         // The viewport holds a handle onto the render thread's own mesh data
         // (see `WorkspaceView::meshes`): what keeps a `MeshPart`'s pick on the
         // triangles actually drawn rather than the box around them.
         let meshes = self.viewport.read(cx).meshes().clone();
         let hits = pick::parts_along(&self.dom, &self.database, &meshes, ray);
+        if held {
+            let outlined = selection::outlined(&self.dom, &self.database, self.selected_all());
+            let covered = selection::covers(&outlined, hits.first().copied());
+            self.viewport.update(cx, |viewport, cx| match covered {
+                true => viewport.confirm_grab(cx),
+                false => viewport.refuse_grab(),
+            });
+            if covered {
+                return;
+            }
+        }
         let picked =
             selection::from_click(&self.dom, &self.database, &hits, self.selected(), cycling);
 

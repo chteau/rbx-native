@@ -242,23 +242,28 @@ impl WorkspaceView {
         cx: &mut gpui_kit::Context<Self>,
     ) {
         self.drag = None;
+        self.pending_grab = None;
         let Some(ray) = self.cursor_ray(position, scale) else {
             return;
         };
 
+        let cycling = modifiers.alt;
+        let extend = extends_selection(modifiers);
         if self.transform.drags() {
-            if let Some(drag) = self.grab(ray) {
-                self.drag = Some(drag);
-                self.dragged = false;
-                // The part under a body grab, or the gizmo itself under an
-                // axis/face/ring grab, would otherwise still be wearing a
-                // hover box for the whole gesture — nothing moves the cursor
-                // off it, since `render`'s `on_mouse_move` routes every move
-                // into `drag_to` instead of `hover_pending` once `dragging()`
-                // is true.
-                self.hover_pending = None;
-                cx.emit(ViewportAction::Hover(None));
+            // A handle is the gizmo's own, drawn over everything: grabbing
+            // one needs no second opinion.
+            if let Some(drag) = self.grab_handle(ray) {
+                self.begin(drag, cx);
                 return;
+            }
+            // A selected part's body is only a *candidate*: the view knows
+            // the selection's boxes but not what else stands in front of
+            // them, so the click goes to `Shell` as a pick that may turn
+            // into this drag (see [`WorkspaceView::confirm_grab`]) — and
+            // never with `Alt` or an extend modifier, which ask to change
+            // the selection, not to move it.
+            if !cycling && !extend {
+                self.pending_grab = self.grab_body(ray);
             }
         }
 
@@ -266,38 +271,50 @@ impl WorkspaceView {
             ray,
             // Studio's selection cycling: `Alt`/`⌥`-click steps to the next
             // object behind the current one instead of selecting a model.
-            cycling: modifiers.alt,
-            extend: extends_selection(modifiers),
+            cycling,
+            extend,
+            held: self.pending_grab.is_some(),
         });
     }
 
-    /// What this ray grabs on the current selection, if anything: a handle on
-    /// the gizmo's anchor first, then — for Move alone — any selected part's
-    /// own body, which starts a group drag of the whole selection (see
-    /// [`WorkspaceView::drag_to`]).
-    fn grab(&self, ray: Ray) -> Option<Drag> {
+    /// Starts `drag` this gesture: the part under a body grab, or the gizmo
+    /// itself under an axis/face/ring grab, would otherwise still be wearing
+    /// a hover box for the whole gesture — nothing moves the cursor off it,
+    /// since `render`'s `on_mouse_move` routes every move into `drag_to`
+    /// instead of `hover_pending` once `dragging()` is true.
+    fn begin(&mut self, drag: Drag, cx: &mut gpui_kit::Context<Self>) {
+        self.drag = Some(drag);
+        self.dragged = false;
+        self.hover_pending = None;
+        cx.emit(ViewportAction::Hover(None));
+    }
+
+    /// `Shell`'s answer to a pick sent with `held`: what the cursor is over
+    /// is already selected, so the body grab the press held back goes ahead
+    /// as this gesture's drag. A no-op once the button is up again
+    /// ([`WorkspaceView::end_drag`] clears the candidate), or when the press
+    /// held nothing.
+    pub(crate) fn confirm_grab(&mut self, cx: &mut gpui_kit::Context<Self>) {
+        if let Some(drag) = self.pending_grab.take() {
+            self.begin(drag, cx);
+        }
+    }
+
+    /// `Shell`'s other answer: something nearer than the selection was under
+    /// the cursor and took the click as a pick instead, so nothing is held.
+    pub(crate) fn refuse_grab(&mut self) {
+        self.pending_grab = None;
+    }
+
+    /// What this ray grabs on the gizmo itself, if anything: a Move arrow, a
+    /// Scale face, a Rotate ring — never a part's body, which is
+    /// [`WorkspaceView::grab_body`]'s own question.
+    fn grab_handle(&self, ray: Ray) -> Option<Drag> {
         let handles = self.handles()?;
         let anchor = self.targets.anchor()?;
         match self.transform.tool {
             Tool::Select => None,
-            // Only Move falls back to a part's own body: `creator-docs`
-            // documents cursor dragging under Move alone.
-            Tool::Move => self.grab_axis(&handles, ray).or_else(|| {
-                let distance = self
-                    .targets
-                    .iter()
-                    .filter_map(|target| pick::ray_hits_box(ray, target.model))
-                    .min_by(|a, b| a.total_cmp(b))?;
-                let point = ray.at(distance);
-                Some(Drag::Plane {
-                    point,
-                    // Square to the view at the moment of the grab, which is
-                    // the one orientation every cursor position on screen has
-                    // an answer in.
-                    normal: -ray.direction,
-                    offset: anchor.position() - point,
-                })
-            }),
+            Tool::Move => self.grab_axis(&handles, ray),
             Tool::Scale => grab_face(&self.faces()?, anchor, ray),
             Tool::Rotate => {
                 let axis = handles.grab_ring(ray)?;
@@ -312,6 +329,35 @@ impl WorkspaceView {
                 })
             }
         }
+    }
+
+    /// The body grab this ray would open on the current selection — Move's
+    /// cursor dragging, which starts a group drag of the whole selection by
+    /// any selected part's own body (see [`WorkspaceView::drag_to`]). Only
+    /// Move: `creator-docs` documents cursor dragging under Move alone.
+    ///
+    /// Tested against the selection's own boxes only, which is all the view
+    /// holds: whether something *unselected* stands nearer along the ray is
+    /// `Shell`'s call, made against the real geometry when the pick this
+    /// accompanies is resolved (see `Shell::pick_in_viewport`).
+    fn grab_body(&self, ray: Ray) -> Option<Drag> {
+        if self.transform.tool != Tool::Move {
+            return None;
+        }
+        let anchor = self.targets.anchor()?;
+        let distance = self
+            .targets
+            .iter()
+            .filter_map(|target| pick::ray_hits_box(ray, target.model))
+            .min_by(|a, b| a.total_cmp(b))?;
+        let point = ray.at(distance);
+        Some(Drag::Plane {
+            point,
+            // Square to the view at the moment of the grab, which is the one
+            // orientation every cursor position on screen has an answer in.
+            normal: -ray.direction,
+            offset: anchor.position() - point,
+        })
     }
 
     fn grab_axis(&self, handles: &Handles, ray: Ray) -> Option<Drag> {
@@ -452,6 +498,9 @@ impl WorkspaceView {
 
     pub(super) fn end_drag(&mut self) {
         self.drag = None;
+        // A grab `Shell` has not answered yet is answered by the release:
+        // nothing is held any more.
+        self.pending_grab = None;
     }
 
     /// `t`/`r` typed with a part held by its body, reporting whether it was

@@ -79,10 +79,17 @@ pub(crate) enum ViewportAction {
     /// actually hits (see `shell::selection::from_click`). `extend` is
     /// `Shift`/`Ctrl`/`Cmd` held: add the hit to the selection (or drop it, if
     /// it was already in) rather than replacing the selection with it.
+    ///
+    /// `held`: the view has a Move body-drag ready for this same click, to
+    /// start only if what is actually under the cursor is already selected
+    /// (see [`WorkspaceView::confirm_grab`]) — the view sees the selection's
+    /// boxes, not whatever unselected part may stand in front of them, and a
+    /// click on that part must select it, not drag the selection behind it.
     Pick {
         ray: Ray,
         cycling: bool,
         extend: bool,
+        held: bool,
     },
     /// A drag moved every part it carries to a new position — more than one
     /// when the gesture grabbed a multi-part selection's gizmo, each keeping
@@ -238,6 +245,10 @@ pub(crate) struct WorkspaceView {
     /// copy of it.
     meshes: Meshes,
     drag: Option<Drag>,
+    /// A body grab the last press found on the selection, held back until
+    /// `Shell` has resolved the same click against the real geometry (see
+    /// `ViewportAction::Pick`'s `held`).
+    pending_grab: Option<Drag>,
     /// Whether the drag in progress has actually moved the part yet, which is
     /// what tells `Shell` which move opens the gesture's one undo step.
     dragged: bool,
@@ -328,6 +339,7 @@ impl WorkspaceView {
             view: None,
             meshes: Meshes::default(),
             drag: None,
+            pending_grab: None,
             dragged: false,
             _subscriptions: [blur, deactivated],
         }
