@@ -22,6 +22,7 @@ pub(super) mod local;
 use super::cull;
 use super::geometry::Meshes;
 use super::mesh::Vertex;
+use super::slots::keyed::Keyed;
 use crate::quality::QualityProfile;
 use crate::scene::Scene;
 use casters::{CasterRaw, MeshBatches, ShapeBatches, CASTER_ATTRIBUTES, POSITION_ATTRIBUTE};
@@ -118,7 +119,8 @@ impl Shadows {
         let local_buffers = local_buffers(device, quality.local_shadow_lights_max);
         let local_bind_groups = local_bind_groups(device, &layout, &local_buffers);
         let shape_batches = casters::shape_batches(device, scene);
-        let mesh_batches = casters::mesh_batches(device, scene.resolved_file_meshes());
+        let mesh_batches =
+            casters::mesh_batches(device, scene.resolved_file_meshes(), &mut Vec::new());
 
         Shadows {
             view: map(device, quality.shadow_map_size),
@@ -169,6 +171,21 @@ impl Shadows {
         self.local_layers = layers;
         self.local_buffers = local_buffers(device, quality.local_shadow_lights_max);
         self.local_bind_groups = local_bind_groups(device, &self.light_layout, &self.local_buffers);
+    }
+
+    /// Replaces every caster with `scene`'s, keeping the maps, the pipelines
+    /// and the per-light buffers — none of which a scene decides — and the
+    /// position-only copy of every file mesh the new scene still casts with
+    /// (see [`casters::mesh_batches`]).
+    pub(super) fn rebuild(&mut self, device: &wgpu::Device, scene: &Scene) {
+        self.shape_batches = casters::shape_batches(device, scene);
+        let mut spare: Vec<(rbx_assets::AssetRef, casters::MeshGeometry)> =
+            std::mem::replace(&mut self.mesh_batches, Keyed::new("rbxview shadow casters"))
+                .into_groups()
+                .into_iter()
+                .map(|group| (group.key, group.extra))
+                .collect();
+        self.mesh_batches = casters::mesh_batches(device, scene.resolved_file_meshes(), &mut spare);
     }
 
     /// The shadow-map half of a single-instance edit (see

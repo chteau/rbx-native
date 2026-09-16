@@ -31,6 +31,7 @@ use wgpu::util::DeviceExt;
 use super::instance::InstanceRaw;
 use super::mesh::Vertex as BoxVertex;
 use super::pipeline::{Bindings, Target};
+use super::rebuild::take_spare;
 use super::slots::keyed::Keyed;
 use super::slots::Roster;
 use super::texture;
@@ -92,56 +93,18 @@ impl FileMeshes {
         resolved: &Resolved,
         quality: &QualityProfile,
     ) -> Self {
-        let mut opaque = Keyed::new("rbxview filemesh instances");
-        let mut blended = Vec::new();
-        let mut blended_index = HashMap::new();
         let image_layout = texture::layout(device);
         let appearance_layout = appearance::layout(device);
         // Clamped, not repeated: a mesh's UVs are an authored atlas, not a
         // tiling pattern the way a `Texture` face is.
         let sampler = texture::sampler(device, wgpu::AddressMode::ClampToEdge, quality.anisotropy);
-        let mut images = Images::default();
-        let binding = Binding {
-            layout: &image_layout,
-            sampler: &sampler,
-            max_size: quality.texture_max_size,
-        };
-
-        for (key, group) in group_by_mesh_and_skin(resolved) {
-            let Some(mesh) = resolved.meshes.get(&key.mesh) else {
-                continue;
-            };
-            let Some(skin) = images.slot(device, queue, binding, resolved, &key) else {
-                continue;
-            };
-
-            let blends = blends(resolved, &key);
-            let (see_through, still): (Vec<_>, Vec<_>) = group
-                .into_iter()
-                .partition(|instance| blends || instance.alpha < 1.0);
-            if !still.is_empty() {
-                let roster = Roster::from_iter(still.iter().map(|i| (i.referent, raw(i), ())));
-                opaque.add_group(device, key.clone(), build(device, mesh, skin), roster);
-            }
-            if !see_through.is_empty() {
-                for instance in &see_through {
-                    blended_index.insert(instance.referent, blended.len());
-                }
-                let items: Vec<_> = see_through
-                    .iter()
-                    .map(|i| (i.referent, center(i), raw(i)))
-                    .collect();
-                blended.push(Blended::new(device, key, build(device, mesh, skin), items));
-            }
-        }
-
         let layouts = Layouts {
             frame: frame_layout,
             image: &image_layout,
             materials: material_layout,
             appearance: &appearance_layout,
         };
-        FileMeshes {
+        let mut meshes = FileMeshes {
             opaque_pipelines: pipelines::build(device, target, &layouts, false),
             blended_pipelines: pipelines::build(device, target, &layouts, true),
             appearances: appearance::Sets::new(
@@ -152,17 +115,102 @@ impl FileMeshes {
                     sampler: &sampler,
                     max_size: quality.texture_max_size,
                 },
-                resolved,
+                &Resolved::default(),
             ),
             image_layout,
             appearance_layout,
             texture_max_size: quality.texture_max_size,
             sampler,
-            images,
-            opaque,
-            blended,
-            blended_index,
+            images: Images::default(),
+            opaque: Keyed::new("rbxview filemesh instances"),
+            blended: Vec::new(),
+            blended_index: HashMap::new(),
             order: Vec::new(),
+        };
+        meshes.rebuild(device, queue, resolved);
+        meshes
+    }
+
+    /// Replaces every batch with `resolved`'s instances, keeping the
+    /// pipelines and every upload the new scene asks for again: a mesh
+    /// texture (see [`Images`]), a `SurfaceAppearance` map set (see
+    /// [`appearance::Sets::rebuild`]) and a batch's converted vertex buffers
+    /// — the same mesh under the same skin is the same bytes, so a batch
+    /// keyed the same way as one the previous scene drew takes its geometry
+    /// over instead of converting and uploading the mesh again.
+    pub(super) fn rebuild(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        resolved: &Resolved,
+    ) {
+        let binding = Binding {
+            layout: &self.image_layout,
+            sampler: &self.sampler,
+            max_size: self.texture_max_size,
+        };
+        // Before the batches: a batch's skin indexes the sets, and the index
+        // an appearance lands at is only known once they are re-ordered.
+        self.appearances.rebuild(
+            device,
+            queue,
+            Binding {
+                layout: &self.appearance_layout,
+                sampler: &self.sampler,
+                max_size: self.texture_max_size,
+            },
+            resolved,
+        );
+        let mut spare: Vec<(GroupKey, Geometry)> =
+            std::mem::replace(&mut self.opaque, Keyed::new("rbxview filemesh instances"))
+                .into_groups()
+                .into_iter()
+                .map(|group| (group.key, group.extra))
+                .chain(
+                    std::mem::take(&mut self.blended)
+                        .into_iter()
+                        .map(|blended| (blended.key, blended.geometry)),
+                )
+                .collect();
+        self.blended_index.clear();
+        self.order.clear();
+
+        for (key, group) in group_by_mesh_and_skin(resolved) {
+            let Some(mesh) = resolved.meshes.get(&key.mesh) else {
+                continue;
+            };
+            let Some(skin) = self.images.slot(device, queue, binding, resolved, &key) else {
+                continue;
+            };
+            // A skin's index can move between two scenes (see `Skin`), so a
+            // spare batch is only the same geometry if its skin still agrees.
+            let mut geometry = || {
+                take_spare(&mut spare, &key, |geometry| geometry.skin == skin)
+                    .unwrap_or_else(|| build(device, mesh, skin))
+            };
+
+            let blends = blends(resolved, &key);
+            let (see_through, still): (Vec<_>, Vec<_>) = group
+                .into_iter()
+                .partition(|instance| blends || instance.alpha < 1.0);
+            if !still.is_empty() {
+                let roster = Roster::from_iter(still.iter().map(|i| (i.referent, raw(i), ())));
+                let geometry = geometry();
+                self.opaque.add_group(device, key.clone(), geometry, roster);
+            }
+            if !see_through.is_empty() {
+                for instance in &see_through {
+                    self.blended_index
+                        .insert(instance.referent, self.blended.len());
+                }
+                let items: Vec<_> = see_through
+                    .iter()
+                    .map(|i| (i.referent, center(i), raw(i)))
+                    .collect();
+                let geometry = geometry();
+                self.blended
+                    .push(Blended::new(device, key, geometry, items));
+            }
         }
     }
 

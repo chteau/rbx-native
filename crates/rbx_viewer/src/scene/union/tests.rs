@@ -143,7 +143,7 @@ fn resolves_the_real_rock_union_from_a_real_place_fixture() {
     // same way a real run leaves anything that failed to download alone.
     let mut assets = HashMap::new();
     assets.insert(rock.clone(), fixture_bytes());
-    scene.resolve_unions(assets);
+    scene.resolve_unions(assets, &mut Evaluations::default());
 
     let suppressed = scene
         .parts()
@@ -521,7 +521,7 @@ fn parallel_csg_evaluation_matches_evaluating_each_asset_alone() {
     // exercise at all.
     let (plan, assets) = synthetic_plan(12, 6, &materials);
 
-    let expected: HashMap<AssetRef, rbx_mesh::Mesh> = assets
+    let expected: HashMap<AssetRef, Arc<rbx_mesh::Mesh>> = assets
         .iter()
         .map(|(asset, bytes)| {
             let evaluated = evaluate(bytes, &database).expect("synthetic asset must parse");
@@ -534,7 +534,13 @@ fn parallel_csg_evaluation_matches_evaluating_each_asset_alone() {
     assert_eq!(expected.len(), plan.entries.len());
 
     for _ in 0..5 {
-        let resolution = resolve(&plan, assets.clone(), &database, &mut materials);
+        let resolution = resolve(
+            &plan,
+            assets.clone(),
+            &database,
+            &mut materials,
+            &mut Evaluations::default(),
+        );
         assert_eq!(resolution.meshes.len(), expected.len());
         for (asset, mesh) in &expected {
             let got = resolution
@@ -547,6 +553,72 @@ fn parallel_csg_evaluation_matches_evaluating_each_asset_alone() {
                  evaluating the same asset alone"
             );
         }
+    }
+}
+
+// A reload re-plans every union and resolves the same assets again: with the
+// evaluations kept, the second resolve must hand out the very meshes the
+// first carved — the same allocation, not an equal one computed again — and
+// still resolve every instance exactly as the first did.
+#[test]
+fn a_second_resolve_reuses_every_boolean_already_carved() {
+    let database = database();
+    let dom = WeakDom::new();
+    let mut materials = Catalog::new(&dom, &database);
+    let (plan, assets) = synthetic_plan(4, 3, &materials);
+    let mut evaluations = Evaluations::default();
+
+    let first = resolve(
+        &plan,
+        assets.clone(),
+        &database,
+        &mut materials,
+        &mut evaluations,
+    );
+    let second = resolve(&plan, assets, &database, &mut materials, &mut evaluations);
+
+    assert_eq!(first.meshes.len(), plan.entries.len());
+    assert_eq!(second.instances.len(), first.instances.len());
+    assert_eq!(second.hidden, first.hidden);
+    for (asset, mesh) in &first.meshes {
+        let again = second
+            .meshes
+            .get(asset)
+            .expect("the same asset resolves again");
+        assert!(
+            Arc::ptr_eq(mesh, again),
+            "asset {asset:?}: the boolean was carved a second time"
+        );
+    }
+}
+
+// A reload skips fetching the bytes of every asset already carved (see
+// `load::resolve_unions`), so a second resolve with none of them must still
+// find every union in the evaluations and hand out the same meshes.
+#[test]
+fn a_known_asset_resolves_without_its_bytes() {
+    let database = database();
+    let dom = WeakDom::new();
+    let mut materials = Catalog::new(&dom, &database);
+    let (plan, assets) = synthetic_plan(3, 3, &materials);
+    let mut evaluations = Evaluations::default();
+
+    let first = resolve(&plan, assets, &database, &mut materials, &mut evaluations);
+    let second = resolve(
+        &plan,
+        HashMap::new(),
+        &database,
+        &mut materials,
+        &mut evaluations,
+    );
+
+    assert_eq!(first.meshes.len(), plan.entries.len());
+    assert_eq!(second.instances.len(), first.instances.len());
+    assert_eq!(second.hidden, first.hidden);
+    for (asset, mesh) in &first.meshes {
+        assert!(evaluations.is_known(asset));
+        let again = second.meshes.get(asset).expect("resolved without bytes");
+        assert!(Arc::ptr_eq(mesh, again));
     }
 }
 
@@ -566,7 +638,13 @@ fn profile_synthetic_csg_heavy_place() {
     let (plan, assets) = synthetic_plan(40, 30, &materials);
 
     let start = std::time::Instant::now();
-    let resolution = resolve(&plan, assets, &database, &mut materials);
+    let resolution = resolve(
+        &plan,
+        assets,
+        &database,
+        &mut materials,
+        &mut Evaluations::default(),
+    );
     let elapsed = start.elapsed();
 
     println!(

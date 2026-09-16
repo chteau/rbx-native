@@ -41,12 +41,15 @@ pub(crate) use gui::{
 // everything else reaches one through `GuiElement::image`.
 #[cfg(test)]
 pub(crate) use gui::Painted;
-pub(crate) use material::{Catalog, Kind, Slot};
+pub(crate) use material::{Catalog, Kind, Maps, Slot};
 pub(crate) use particles::sequence::{eval_color, eval_number};
 pub(crate) use particles::{Emitter, Simulation};
 pub(crate) use patch::MeshPatch;
 pub(crate) use shape::{resolve as resolve_shape, ShapeKind};
 pub(crate) use trail::{segments as trail_segments, Recorder as TrailRecorder, Trail};
+pub(crate) use union::Evaluations as UnionEvaluations;
+
+use crate::assets::Image;
 
 // Roblox's own "Medium stone grey", the default part color.
 const FALLBACK_COLOR: [u8; 3] = [163, 162, 165];
@@ -277,6 +280,20 @@ impl Scene {
         &self.gui_spaces
     }
 
+    /// Every image the GUI trees sample, in first-seen paint order and
+    /// without repeats across the three container kinds — one download for
+    /// an `ImageLabel` image that a screen and a surface both show.
+    pub(crate) fn gui_assets(&self) -> Vec<AssetRef> {
+        let mut references = Vec::new();
+        for screen in &self.gui {
+            screen.assets(&mut references);
+        }
+        for gui in &self.gui_spaces {
+            gui.assets(&mut references);
+        }
+        references
+    }
+
     /// Every material map the scene needs before [`Scene::resolve_materials`].
     pub(crate) fn material_assets(&self) -> Vec<AssetRef> {
         self.materials.asset_refs()
@@ -288,7 +305,7 @@ impl Scene {
     /// Runs after [`Scene::resolve_file_meshes`] and [`Scene::resolve_unions`],
     /// which are what create the resolved/recovered parts patched here
     /// alongside the rest.
-    pub(crate) fn resolve_materials(&mut self, images: HashMap<AssetRef, crate::assets::Image>) {
+    pub(crate) fn resolve_materials(&mut self, images: HashMap<AssetRef, Arc<Image>>) {
         self.materials.resolve(images);
         for part in &mut self.parts {
             part.material = self.materials.slot(part.material.layer);
@@ -332,8 +349,8 @@ impl Scene {
     /// resolve simply leaves its box alone.
     pub(crate) fn resolve_file_meshes(
         &mut self,
-        meshes: HashMap<AssetRef, rbx_mesh::Mesh>,
-        images: HashMap<AssetRef, crate::assets::Image>,
+        meshes: HashMap<AssetRef, Arc<rbx_mesh::Mesh>>,
+        images: HashMap<AssetRef, Arc<Image>>,
     ) {
         let (resolved, hidden) = filemesh::resolve(&self.file_mesh_plan, meshes, images);
         for part in &mut self.parts {
@@ -360,12 +377,17 @@ impl Scene {
     /// which is what re-reads the material slot of everything added here.
     /// Always safe to call with an empty or partial map: anything that fails
     /// to resolve simply leaves its box alone.
-    pub(crate) fn resolve_unions(&mut self, assets: HashMap<AssetRef, Vec<u8>>) {
+    pub(crate) fn resolve_unions(
+        &mut self,
+        assets: HashMap<AssetRef, Vec<u8>>,
+        evaluations: &mut UnionEvaluations,
+    ) {
         let resolution = union::resolve(
             &self.union_plan,
             assets,
             &self.database,
             &mut self.materials,
+            evaluations,
         );
         for part in &mut self.parts {
             if resolution.hidden.contains(&part.referent) {
@@ -374,12 +396,7 @@ impl Scene {
         }
         self.parts.extend(resolution.parts);
         let resolved = &mut self.resolved_file_meshes;
-        resolved.meshes.extend(
-            resolution
-                .meshes
-                .into_iter()
-                .map(|(asset, mesh)| (asset, Arc::new(mesh))),
-        );
+        resolved.meshes.extend(resolution.meshes);
         resolved.instances.extend(resolution.instances);
     }
 

@@ -9,7 +9,7 @@ use rbx_materials::MapKind;
 use super::texture;
 use crate::assets::Image;
 use crate::quality::QualityProfile;
-use crate::scene::Catalog;
+use crate::scene::{Catalog, Maps};
 
 /// Every pack Roblox publishes is 1024²; anything else (a `MaterialVariant`'s
 /// own maps) is resampled to it, since one array holds one size for all layers.
@@ -45,6 +45,11 @@ pub(super) struct Materials {
     /// One array per map kind, in [`MapKind::ALL`] order, kept alive so a change
     /// of quality level only has to re-view and re-bind them.
     arrays: Vec<wgpu::Texture>,
+    /// What the arrays were uploaded from (see [`Catalog::resolved_maps`]), so
+    /// a scene rebuild can tell whether the new scene's catalog would upload
+    /// the very same texels — the common case for any edit that is not a new
+    /// material — and keep them (see [`Materials::holds`]).
+    maps: Vec<Maps>,
 }
 
 pub(super) fn layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
@@ -92,7 +97,17 @@ impl Materials {
         Materials {
             bind_group: bind(device, layout, &arrays, quality),
             arrays,
+            maps: catalog.resolved_maps(),
         }
+    }
+
+    /// Whether the arrays already hold exactly what `catalog` would upload —
+    /// every layer, every map, in the same order, so every instance buffer's
+    /// layer index still points at the right texels. This is the whole of the
+    /// arrays' identity: their size is fixed (see [`RESOLUTION`]) and the
+    /// quality level only re-views them.
+    pub(super) fn holds(&self, catalog: &Catalog) -> bool {
+        self.maps == catalog.resolved_maps()
     }
 
     /// Re-views the packs at the new texture cap and rebuilds the sampler at the

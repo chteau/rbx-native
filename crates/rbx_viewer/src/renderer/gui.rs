@@ -22,10 +22,15 @@ mod pipeline;
 mod quads;
 mod space;
 
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use glam::{Mat4, Vec3};
+use rbx_assets::AssetRef;
 
 use super::pipeline::Target;
 use super::post::Targets;
+use crate::assets::Image;
 use crate::quality::QualityProfile;
 use crate::scene::{gui_layout, GuiScreen, SpaceGui};
 use atlas::Atlas;
@@ -39,30 +44,70 @@ pub(super) struct Gui {
     /// The viewport the overlay was laid out for; a different one rebuilds it.
     built: Option<(u32, u32)>,
     space: Space,
+    /// Bind group 0's layout for both painters, kept for the canvas painter a
+    /// rebuild may still have to build (see `Space::rebuild`).
+    viewport_layout: wgpu::BindGroupLayout,
+    /// Whether the quality profile draws GUIs at all — `false` keeps every
+    /// tree out. Re-read from the profile by every [`Gui::rebuild`], so a
+    /// level switched between two scenes takes.
+    enabled: bool,
 }
 
 impl Gui {
+    /// `images` is what the loader decoded for the trees' `ImageLabel`s
+    /// (see `Decor::gui`); this pass downloads nothing of its own.
     pub(super) fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         format: wgpu::TextureFormat,
         target: Target,
         (screens, spaces): (&[GuiScreen], &[SpaceGui]),
+        images: &HashMap<AssetRef, Arc<Image>>,
         quality: &QualityProfile,
     ) -> Self {
-        let enabled = quality.gui;
-        let screens: &[GuiScreen] = match enabled {
+        let atlas = Atlas::new(device, queue, quality);
+        let viewport_layout = pipeline::viewport_layout(device);
+        let screen_painter = Painter::new(device, format, &viewport_layout, &atlas.image_layout);
+        let space = Space::new(device, queue, target, &viewport_layout, &atlas, &[]);
+
+        let mut gui = Gui {
+            atlas,
+            screen: screen_painter,
+            screens: Vec::new(),
+            built: None,
+            space,
+            viewport_layout,
+            enabled: quality.gui,
+        };
+        gui.rebuild(device, queue, (screens, spaces), images, quality);
+        gui
+    }
+
+    /// Replaces every tree with `screens` and `spaces`, keeping both painters
+    /// and every image the atlas already holds (see [`Atlas::extend`]): the
+    /// overlay is laid out again on the next frame, the canvases are baked
+    /// again here.
+    pub(super) fn rebuild(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        (screens, spaces): (&[GuiScreen], &[SpaceGui]),
+        images: &HashMap<AssetRef, Arc<Image>>,
+        quality: &QualityProfile,
+    ) {
+        self.enabled = quality.gui;
+        let screens: &[GuiScreen] = match self.enabled {
             true => screens,
             false => &[],
         };
-        let spaces: &[SpaceGui] = match enabled {
+        let spaces: &[SpaceGui] = match self.enabled {
             true => spaces,
             false => &[],
         };
 
-        // One download and one upload for all three container kinds: both
-        // collectors skip an asset already in the list, so the same
-        // `ImageLabel` image on a screen and on a surface is fetched once.
+        // One upload for all three container kinds: both collectors skip an
+        // asset already in the list, so the same `ImageLabel` image on a
+        // screen and on a surface gets one slot.
         let mut references = Vec::new();
         for screen in screens {
             screen.assets(&mut references);
@@ -70,19 +115,13 @@ impl Gui {
         for gui in spaces {
             gui.assets(&mut references);
         }
-        let atlas = Atlas::new(device, queue, &references, quality);
+        self.atlas
+            .extend(device, queue, &references, images, quality);
 
-        let viewport_layout = pipeline::viewport_layout(device);
-        let screen_painter = Painter::new(device, format, &viewport_layout, &atlas.image_layout);
-        let space = Space::new(device, queue, target, &viewport_layout, &atlas, spaces);
-
-        Gui {
-            atlas,
-            screen: screen_painter,
-            screens: screens.to_vec(),
-            built: None,
-            space,
-        }
+        self.screens = screens.to_vec();
+        self.built = None;
+        self.space
+            .rebuild(device, queue, &self.viewport_layout, &self.atlas, spaces);
     }
 
     /// Rebuilds the in-world pipelines for a new sample count — see
@@ -133,5 +172,40 @@ impl Gui {
             self.atlas.groups(),
             size,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::quality::QualityLevel;
+
+    // A quality level switched between two scenes has to take on the next
+    // rebuild: whether GUIs draw is read from the profile every rebuild, not
+    // only once when the pass was built.
+    #[test]
+    fn a_rebuild_follows_the_quality_toggle_it_is_given() {
+        let Some((device, queue)) = crate::gpu::for_tests() else {
+            return;
+        };
+        let target = Target {
+            format: crate::renderer::post::HDR_FORMAT,
+            samples: 1,
+        };
+        let mut on = QualityLevel::Automatic.profile();
+        on.gui = true;
+        let mut off = on;
+        off.gui = false;
+        let images = HashMap::new();
+        let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+
+        let mut gui = Gui::new(&device, &queue, format, target, (&[], &[]), &images, &off);
+        assert!(!gui.enabled);
+
+        gui.rebuild(&device, &queue, (&[], &[]), &images, &on);
+        assert!(gui.enabled);
+
+        gui.rebuild(&device, &queue, (&[], &[]), &images, &off);
+        assert!(!gui.enabled);
     }
 }

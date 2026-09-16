@@ -18,6 +18,69 @@
   joins `RBX_STUDIO_DRAG` as the debug aid that stands in for a Scale drag,
   so a `RBX_STUDIO_UNDO=1` run can prove it. — @chteau
 
+- **A full reload no longer starts over.** `Headless::reload` — what a
+  Command Bar script, an undo the fast paths cannot classify, or any edit
+  they refuse falls back to — used to be a cold load in all but name: it
+  threw the whole `Offscreen` away and opened a brand-new wgpu instance,
+  adapter, device and queue, compiled every pipeline again, and, before any
+  of that, decoded every decal image, material pack, file mesh and union
+  asset from the disk cache again and carved every union's boolean again,
+  even though the edit had changed none of them. Two things now outlive a
+  reload. `Headless` keeps a `load::Resident` of everything its assets
+  decoded to, keyed by asset reference, so a reload decodes only what the
+  place never showed before — failures included, whose warnings are answered
+  again each time so the Output dock reads as it did; the union booleans are
+  kept the same way, and the decoded images ride along behind `Arc`s rather
+  than being copied into each scene. And the renderer is rebuilt in place
+  (`renderer/rebuild.rs`): only what the scene decides — instance buffers,
+  shadow casters, effect lists, GUI canvases, the selection's placements —
+  is redone, while every asset-keyed upload stays under a key that says it
+  would be uploaded identically (the material arrays by the catalog's
+  resolved maps, the environment probe and skybox by the six panel assets,
+  the sun and moon by image and angular size, decals, mesh textures,
+  `SurfaceAppearance` sets and file-mesh geometry by asset and skin). A
+  `Sky` edit still rebuilds the probe; a material on one part still does not
+  touch the pack. Measured with `scripts/bench.sh` (1280×720, first frame
+  readable, median of 25 reloads, same machine as `BENCHMARKS.md`):
+  `marked.rbxl`'s full reload went from 1092 ms to 30.6 ms (p95 46.6 ms)
+  with assets on and from 404 ms to 13.8 ms without; `TestPlace.rbxl` from
+  568 ms to 1.7 ms and 280 ms to 1.4 ms. With a part moved between every
+  reload (a throwaway harness, 1500×900, 12 iterations) `marked.rbxl` went
+  from 1009 ms to 34 ms median, 1125 ms to 56 ms p95. Frames after a reload
+  that moves parts, changes materials, edits the `Sky` or edits `Lighting`
+  are pixel-identical to a cold load of the same DOM on both fixtures. What
+  is left of a reload is `Scene::from_dom` itself, ~15 ms on 16k instances.
+  — @chteau
+
+- **Reload reuse: review fixes.** Four things the reload work above got
+  wrong, caught in review. A failed asset fetch was remembered as failed for
+  the life of the `Headless`, so a network blip during one load left that
+  decal bare through every later reload; `load::Resident` now forgets a
+  failure of the machine's (a request that did not complete, a cache that
+  would not write, a key not yet configured — see `assets::Failure`) at the
+  start of each load — one load still asks it once however many passes name
+  it, the next `Headless::reload` tries it again — while a failure of the
+  asset's (a 404, a file the content package does not hold, bytes that will
+  not decode) stays remembered, because asking again cannot change the
+  answer and the ask is the expensive part: `TestPlace.rbxl` names a
+  `SpawnLocation.png` its package lacks, and retrying that on every reload
+  measured 220 ms a time. When no asset resolver could be built at all (an
+  unwritable cache
+  directory, say) the warning was filed under a reference no caller ever
+  looked up and reached only stderr; `assets::load_with` now fails every
+  requested reference with that message, so it reaches the Output dock, once,
+  and is retried like any other failure. The `Trail`, `Beam`,
+  `ParticleEmitter` and GUI passes read their quality on/off toggle once when
+  first built and never again, so a level changed between two reloads was
+  ignored until the place was reopened; every `rebuild` re-reads it. And the
+  GUI atlas decoded its `ImageLabel` images on its own, so an image used both
+  as a `Decal` and in a GUI was decoded twice — they come out of the same
+  `Resident` now, which also puts their warnings in the dock. In passing: the
+  reload's dedup helpers (`distinct`, `untried`, `reuse_plan`) scanned a
+  `Vec` inside a loop, O(n²) on a place naming hundreds of assets — they hash
+  now — and a reload no longer copies the bytes of a union it already carved
+  out of the resident table. — @chteau
+
 - **Undo/redo fast path.** `Ctrl+Z`/`Ctrl+Y` used to reload the whole scene
   on every step, however small the reverted edit — undoing a single
   `Transparency` change cost exactly as much as undoing an instance delete.

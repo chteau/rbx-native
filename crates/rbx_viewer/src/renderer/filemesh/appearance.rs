@@ -10,6 +10,7 @@ use bytemuck::{Pod, Zeroable};
 use rbx_materials::MapKind;
 use wgpu::util::DeviceExt;
 
+use super::super::rebuild::take_spare;
 use super::super::texture;
 use super::images::Binding;
 use crate::assets::Image;
@@ -89,6 +90,13 @@ pub(super) fn layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
 /// order their indices address them.
 pub(super) struct Sets {
     sets: Vec<Set>,
+    /// What each entry of `sets` was uploaded from. A resolved appearance is
+    /// its four map assets (only the ones that downloaded — see
+    /// `scene::filemesh::Appearance::resolved`), its tint and its alpha mode,
+    /// which is everything [`upload`] reads: an equal one uploads equal maps
+    /// and an equal uniform, so a scene rebuild keeps the set (see
+    /// [`Sets::rebuild`]).
+    appearances: Vec<Appearance>,
     pub(super) bind_groups: Vec<wgpu::BindGroup>,
 }
 
@@ -106,14 +114,45 @@ impl Sets {
         binding: Binding<'_>,
         resolved: &Resolved,
     ) -> Self {
-        let sets: Vec<Set> = resolved
+        let mut sets = Sets {
+            sets: Vec::new(),
+            appearances: Vec::new(),
+            bind_groups: Vec::new(),
+        };
+        sets.rebuild(device, queue, binding, resolved);
+        sets
+    }
+
+    /// Re-indexes the sets to `resolved.appearances`' order, uploading only
+    /// the appearances the previous scene did not have: a character's limbs
+    /// re-resolved after an edit elsewhere in the place still wear the very
+    /// same maps. The bind groups are rebuilt regardless — they are indexed
+    /// by the new order, and a bind group is cheap next to a map upload.
+    pub(super) fn rebuild(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        binding: Binding<'_>,
+        resolved: &Resolved,
+    ) {
+        let mut spare: Vec<(Appearance, Set)> = std::mem::take(&mut self.appearances)
+            .into_iter()
+            .zip(std::mem::take(&mut self.sets))
+            .collect();
+        self.sets = resolved
             .appearances
             .iter()
-            .map(|appearance| upload(device, queue, appearance, resolved))
+            .map(|appearance| {
+                take_spare(&mut spare, appearance, |_| true)
+                    .unwrap_or_else(|| upload(device, queue, appearance, resolved))
+            })
             .collect();
-        let bind_groups = sets.iter().map(|set| bind(device, binding, set)).collect();
-
-        Sets { sets, bind_groups }
+        self.appearances = resolved.appearances.clone();
+        self.bind_groups = self
+            .sets
+            .iter()
+            .map(|set| bind(device, binding, set))
+            .collect();
     }
 
     /// Re-views every map at the new texture cap, behind a sampler rebuilt at the
@@ -138,7 +177,8 @@ fn upload(
         .map(|&kind| {
             let image = appearance.maps[kind.index()]
                 .as_ref()
-                .and_then(|reference| resolved.images.get(reference));
+                .and_then(|reference| resolved.images.get(reference))
+                .map(|image| image.as_ref());
             let blank = solid(neutral(kind));
             texture::Uploaded::new(device, queue, image.unwrap_or(&blank), format(kind))
         })

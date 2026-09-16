@@ -19,29 +19,53 @@ fn the_shader_reads_the_wedge_flag_the_layout_supplies() {
 
 fn group(value: u8) -> Group {
     Group {
-        image: Image {
+        reference: AssetRef::Id(u64::from(value)),
+        image: Arc::new(Image {
             width: 1,
             height: 1,
             pixels: vec![value, value, value, 255],
-        },
+        }),
         opaque: Vec::new(),
         blended: Vec::new(),
     }
 }
 
-/// The slot a spread-out upload lands on is read straight off the pending
-/// entry, not off queue position — this is what stops a deferred upload
-/// from ever landing on the wrong GPU resource once `Pending::take` starts
-/// returning partial, out-of-order batches across several frames.
+/// A first build has nothing to take over: every group is its own deferred
+/// upload, at its own slot.
 #[test]
-fn pending_uploads_pairs_each_group_with_the_slot_textured_new_gives_it() {
+fn a_first_build_reuses_nothing() {
     let groups: Vec<Group> = (0..5).map(group).collect();
-    let pending = pending_uploads(&groups);
 
-    assert_eq!(pending.len(), groups.len());
-    for (slot, image) in pending {
-        assert_eq!(image, groups[slot].image, "slot {slot} got the wrong image");
-    }
+    assert_eq!(reuse_plan(&[], &[], &groups), vec![None; 5]);
+}
+
+/// The rebuild decision that keeps a scene edit from re-uploading every
+/// decal in the place: an asset the previous scene already uploaded is
+/// found by reference, wherever its slot was, and a group's slot is its
+/// position in the new list — the same rule `upload_pending` lands deferred
+/// uploads by.
+#[test]
+fn a_rebuild_takes_over_the_previous_upload_of_the_same_asset() {
+    let previous = [AssetRef::Id(1), AssetRef::Id(2), AssetRef::Id(3)];
+    // 3 moved up, 1 stayed, 2 left the scene and 9 joined it.
+    let groups = [group(3), group(1), group(9)];
+
+    assert_eq!(
+        reuse_plan(&previous, &[], &groups),
+        vec![Some(2), Some(0), None]
+    );
+}
+
+/// A slot whose real image was still queued only ever held the 1x1
+/// placeholder: taking it over would leave that asset drawn white forever,
+/// since the queue entry that would have replaced it is gone with the old
+/// scene. It has to be re-queued instead.
+#[test]
+fn an_upload_still_queued_is_not_taken_over() {
+    let previous = [AssetRef::Id(1), AssetRef::Id(2)];
+    let groups = [group(1), group(2)];
+
+    assert_eq!(reuse_plan(&previous, &[1], &groups), vec![Some(0), None]);
 }
 
 /// `count` distinct, procedurally generated `side`x`side` images — no
@@ -53,13 +77,14 @@ fn pending_uploads_pairs_each_group_with_the_slot_textured_new_gives_it() {
 fn synthetic_groups(count: usize, side: u32) -> Vec<Group> {
     (0..count)
         .map(|index| Group {
-            image: Image {
+            reference: AssetRef::Id(index as u64 + 1),
+            image: Arc::new(Image {
                 width: side,
                 height: side,
                 pixels: (0..side * side * 4)
                     .map(|byte| ((index as u32 + byte) % 251) as u8)
                     .collect(),
-            },
+            }),
             opaque: Vec::new(),
             blended: Vec::new(),
         })

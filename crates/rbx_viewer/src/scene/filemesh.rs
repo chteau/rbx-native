@@ -86,9 +86,11 @@ pub(crate) struct ResolvedInstance {
 pub(crate) struct Resolved {
     /// Behind `Arc`s so a hit test on another thread (see
     /// `crate::pick::Meshes`) reads the very vertices the renderer uploads
-    /// rather than a copy of every mesh in the place.
+    /// rather than a copy of every mesh in the place — and so the decoded
+    /// mesh kept across reloads (see `load::Resident`) is that same one.
     pub(crate) meshes: HashMap<AssetRef, Arc<rbx_mesh::Mesh>>,
-    pub(crate) images: HashMap<AssetRef, Image>,
+    /// Behind `Arc`s for the second of those reasons.
+    pub(crate) images: HashMap<AssetRef, Arc<Image>>,
     /// Every distinct `SurfaceAppearance` the scene resolved, deduplicated:
     /// a character's dozen limbs usually share one map set.
     pub(crate) appearances: Vec<Appearance>,
@@ -148,13 +150,9 @@ pub(crate) fn plan(dom: &WeakDom, database: &ReflectionDatabase, materials: &mut
 /// got real geometry, so the fallback box of everything else can stay put.
 pub(crate) fn resolve(
     plan: &Plan,
-    meshes: HashMap<AssetRef, rbx_mesh::Mesh>,
-    images: HashMap<AssetRef, Image>,
+    meshes: HashMap<AssetRef, Arc<rbx_mesh::Mesh>>,
+    images: HashMap<AssetRef, Arc<Image>>,
 ) -> (Resolved, HashSet<Ref>) {
-    let meshes: HashMap<AssetRef, Arc<rbx_mesh::Mesh>> = meshes
-        .into_iter()
-        .map(|(asset, mesh)| (asset, Arc::new(mesh)))
-        .collect();
     let mut instances = Vec::new();
     let mut appearances: Vec<Appearance> = Vec::new();
     let mut hidden = HashSet::new();

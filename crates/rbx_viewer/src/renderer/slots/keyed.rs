@@ -62,6 +62,14 @@ impl<K: PartialEq, G, T: Pod, S: Copy> Keyed<K, G, T, S> {
         &self.groups
     }
 
+    /// Takes the batches apart, for a scene rebuild that keeps each one's
+    /// payload — a file mesh's vertex buffers — wherever the new scene asks
+    /// for the same key again (see `renderer::rebuild`). The instances go
+    /// with the old scene; nothing of them is worth keeping.
+    pub(in crate::renderer) fn into_groups(self) -> Vec<Group<K, G, T, S>> {
+        self.groups
+    }
+
     /// The key of whichever batch currently holds `referent`, for a caller
     /// that has to rebuild a record's key (a new image slot, say) around
     /// whichever part of it did not change — `None` for a referent no batch

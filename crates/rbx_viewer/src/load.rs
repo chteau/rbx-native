@@ -2,13 +2,16 @@
 //! the decals and textures painted on it, the place's `Lighting` and its local
 //! lights. The windowed, offscreen and embedded paths all start here.
 
+mod resident;
+
 use std::path::Path;
 
 use rbx_assets::AssetRef;
 use rbx_dom::WeakDom;
 use rbx_reflection::ReflectionDatabase;
 
-use crate::assets;
+pub(crate) use resident::Resident;
+
 use crate::lighting::{self, Lighting, LocalLight};
 use crate::renderer::World;
 use crate::scene::Scene;
@@ -68,7 +71,7 @@ impl Loaded {
     pub(crate) fn read(path: &Path, toggles: Toggles) -> Result<Self, String> {
         let dom = read_place(path)?;
         let database = ReflectionDatabase::embedded();
-        Self::from_dom(&dom, &database, toggles)
+        Self::from_dom(&dom, &database, toggles, &mut Resident::default())
             .map_err(|err| format!("nothing to show in {path:?}: {err}"))
     }
 
@@ -76,23 +79,37 @@ impl Loaded {
     /// reflection database already in memory instead of a path — what the
     /// command bar's reload takes after a script mutates the tree, since
     /// re-serializing it to disk just to re-parse it would be wasted work.
+    ///
+    /// `resident` is where every asset this decodes stays: hand the same one
+    /// to every reload of the same place and only an asset the place never
+    /// showed before — or whose fetch failed for a reason that may since
+    /// have passed — is fetched and decoded again; see [`Resident`].
     pub(crate) fn from_dom(
         dom: &WeakDom,
         database: &ReflectionDatabase,
         toggles: Toggles,
+        resident: &mut Resident,
     ) -> Result<Self, String> {
         let mut scene = Scene::from_dom(dom, database).map_err(|err| err.to_string())?;
+        // Here and not deeper: one load is the unit a transient failure is
+        // retried per, and every pass below asks through the same `resident`.
+        resident.forget_failures();
         let mut warnings = Vec::new();
         // File meshes first: a MeshPart that gets real geometry stops drawing the
         // box its decals would otherwise be projected onto.
-        warnings.extend(resolve_file_meshes(&mut scene, toggles.textures));
+        warnings.extend(resolve_file_meshes(&mut scene, toggles.textures, resident));
         // Unions next, for the same reason: a recovered pre-CSG part replaces
         // the union's box before materials are joined to every part at once.
-        warnings.extend(resolve_unions(&mut scene));
-        warnings.extend(resolve_materials(&mut scene, toggles.materials));
+        warnings.extend(resolve_unions(&mut scene, resident));
+        warnings.extend(resolve_materials(&mut scene, toggles.materials, resident));
 
-        let (decor, decor_warnings) = decor(dom, database, &scene, toggles.textures);
+        let (mut decor, decor_warnings) = decor(dom, database, &scene, toggles.textures, resident);
         warnings.extend(decor_warnings);
+        // Whatever the toggles say: a GUI's images have always downloaded on
+        // a `--no-textures` run, and turning them off is not this path's call.
+        let (gui, gui_warnings) = resident.images(&scene.gui_assets());
+        decor.gui = gui;
+        warnings.extend(gui_warnings);
         let lighting = Lighting::from_dom(dom, database, toggles.clock_time);
         let lights = local_lights(dom, database, &scene, toggles.lights);
 
@@ -163,13 +180,13 @@ fn local_lights(
 /// Runs after [`resolve_file_meshes`], whose resolved instances carry a material
 /// of their own. Nothing here can fail the run: with `--no-materials` or with no
 /// network, a part keeps its colour and is drawn as plain plastic.
-fn resolve_materials(scene: &mut Scene, enabled: bool) -> Vec<String> {
+fn resolve_materials(scene: &mut Scene, enabled: bool, resident: &mut Resident) -> Vec<String> {
     let references = if enabled {
         scene.material_assets()
     } else {
         Vec::new()
     };
-    let (images, warnings) = assets::load(&references);
+    let (images, warnings) = resident.images(&references);
     scene.resolve_materials(images);
     warnings
 }
@@ -184,6 +201,7 @@ fn decor(
     database: &rbx_reflection::ReflectionDatabase,
     scene: &Scene,
     enabled: bool,
+    resident: &mut Resident,
 ) -> (Decor, Vec<String>) {
     if !enabled {
         return (Decor::default(), Vec::new());
@@ -195,7 +213,7 @@ fn decor(
         return (Decor::default(), Vec::new());
     }
 
-    let (images, warnings) = assets::load(&references);
+    let (images, warnings) = resident.images(&references);
     (Decor::assemble(plan, &images), warnings)
 }
 
@@ -206,25 +224,30 @@ fn decor(
 /// instance simply keeps drawing the box `Scene::from_dom` already gave it.
 /// Downloads the legacy union assets and swaps each union's box for the
 /// original parts found inside. Nothing here can fail the run either.
-fn resolve_unions(scene: &mut Scene) -> Vec<String> {
+fn resolve_unions(scene: &mut Scene, resident: &mut Resident) -> Vec<String> {
+    // Only what was never carved: a known asset resolves from its evaluation
+    // alone (see `scene::union::resolve`), so its bytes are not even copied
+    // out of `resident`.
     let references: Vec<AssetRef> = scene
         .union_assets()
         .into_iter()
         .map(|(_, reference)| reference)
+        .filter(|reference| !resident.unions.is_known(reference))
         .collect();
-    if references.is_empty() {
-        return Vec::new();
-    }
-    let (bytes, warnings) = assets::load_bytes(&references);
-    scene.resolve_unions(bytes);
+    let (bytes, warnings) = resident.bytes(&references);
+    scene.resolve_unions(bytes, &mut resident.unions);
     warnings
 }
 
-fn resolve_file_meshes(scene: &mut Scene, textures_enabled: bool) -> Vec<String> {
+fn resolve_file_meshes(
+    scene: &mut Scene,
+    textures_enabled: bool,
+    resident: &mut Resident,
+) -> Vec<String> {
     let (mesh_refs, texture_refs) = scene.file_mesh_assets();
-    let (meshes, mut warnings) = assets::load_meshes(&mesh_refs);
+    let (meshes, mut warnings) = resident.meshes(&mesh_refs);
     let images = if textures_enabled {
-        let (images, texture_warnings) = assets::load(&texture_refs);
+        let (images, texture_warnings) = resident.images(&texture_refs);
         warnings.extend(texture_warnings);
         images
     } else {
@@ -299,8 +322,8 @@ mod tests {
             clock_time: None,
         };
 
-        let mut loaded =
-            Loaded::from_dom(&dom, &database, toggles).expect("scene should still load");
+        let mut loaded = Loaded::from_dom(&dom, &database, toggles, &mut Resident::default())
+            .expect("scene should still load");
         let warnings = loaded.take_warnings();
 
         assert!(
@@ -311,6 +334,65 @@ mod tests {
         );
         // A second drain finds nothing: a `Loaded` yields its warnings once.
         assert!(loaded.take_warnings().is_empty());
+    }
+
+    // The failure that is nobody's in particular — no resolver could be
+    // built at all — still has to land in the dock, not only on stderr.
+    #[test]
+    fn from_dom_surfaces_a_warning_when_no_resolver_can_be_built() {
+        let _failure = crate::assets::tests::ResolverFailure::new("cache dir is a file");
+        let database = ReflectionDatabase::embedded();
+        let dom = dom_with_unresolvable_decal();
+        let toggles = Toggles {
+            textures: true,
+            materials: false,
+            lights: false,
+            clock_time: None,
+        };
+
+        let mut loaded = Loaded::from_dom(&dom, &database, toggles, &mut Resident::default())
+            .expect("scene should still load");
+        let warnings = loaded.take_warnings();
+
+        assert_eq!(
+            warnings,
+            vec!["rbxview: no textures (cache dir is a file)".to_string()]
+        );
+    }
+
+    // A transient failure is retried by the next load, not remembered for
+    // the life of the `Resident`: once the machine is fixed, the reload
+    // fetches what the load could not — here the warning changes from "no
+    // resolver" to the asset's own, which only a second fetch can produce.
+    #[test]
+    fn a_reload_retries_what_the_previous_load_failed_to_fetch() {
+        let database = ReflectionDatabase::embedded();
+        let dom = dom_with_unresolvable_decal();
+        let toggles = Toggles {
+            textures: true,
+            materials: false,
+            lights: false,
+            clock_time: None,
+        };
+        let mut resident = Resident::default();
+
+        let no_resolver = crate::assets::tests::ResolverFailure::new("cache dir is a file");
+        let mut first = Loaded::from_dom(&dom, &database, toggles, &mut resident).expect("load");
+        assert_eq!(
+            first.take_warnings(),
+            vec!["rbxview: no textures (cache dir is a file)".to_string()]
+        );
+        drop(no_resolver);
+
+        let mut again = Loaded::from_dom(&dom, &database, toggles, &mut resident).expect("reload");
+        let warnings = again.take_warnings();
+
+        assert!(
+            warnings
+                .iter()
+                .any(|warning| warning.contains("unknown-native-package")),
+            "expected the asset to be fetched again, got {warnings:?}"
+        );
     }
 
     #[test]
@@ -354,7 +436,8 @@ mod tests {
             .expect("fixture should have a sized part");
 
         let database = ReflectionDatabase::embedded();
-        let before = Loaded::from_dom(&dom, &database, toggles).expect("first load");
+        let mut resident = Resident::default();
+        let before = Loaded::from_dom(&dom, &database, toggles, &mut resident).expect("first load");
         let before_corners = before.world().scene.bounds().corners();
 
         // Grown far past whatever the fixture already spans, so the bounds
@@ -370,7 +453,8 @@ mod tests {
         )
         .expect("the fixture part should still exist");
 
-        let after = Loaded::from_dom(&dom, &database, toggles).expect("reload after mutation");
+        let after = Loaded::from_dom(&dom, &database, toggles, &mut resident)
+            .expect("reload after mutation");
         let after_corners = after.world().scene.bounds().corners();
 
         assert_eq!(

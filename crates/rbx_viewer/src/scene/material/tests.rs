@@ -243,7 +243,7 @@ fn a_resolved_layer_hands_its_images_out_by_map_kind() {
     };
 
     let color = catalog.asset_refs()[0].clone();
-    catalog.resolve(HashMap::from([(color, image.clone())]));
+    catalog.resolve(HashMap::from([(color, Arc::new(image.clone()))]));
 
     let layer = wood.layer as usize;
     assert_eq!(catalog.image(layer, MapKind::Color), Some(&image));
@@ -251,4 +251,59 @@ fn a_resolved_layer_hands_its_images_out_by_map_kind() {
     assert_eq!(catalog.image(layer, MapKind::Normal), None);
     assert_eq!(catalog.image(layer, MapKind::Metalness), None);
     assert_eq!(catalog.slot(wood.layer).kind, Kind::Textured);
+}
+
+// What a scene rebuild compares before keeping the texture arrays it already
+// uploaded: the same materials, resolved to the same downloads, must read
+// back identical — layer for layer, map for map.
+#[test]
+fn resolved_maps_agree_between_two_catalogs_of_the_same_materials() {
+    let build = || {
+        let mut catalog = built(&WeakDom::new());
+        slot(&mut catalog, &material_of("Wood"));
+        slot(&mut catalog, &material_of("Neon"));
+        let color = catalog.asset_refs()[0].clone();
+        catalog.resolve(HashMap::from([(
+            color,
+            Arc::new(Image {
+                width: 1,
+                height: 1,
+                pixels: vec![0; 4],
+            }),
+        )]));
+        catalog
+    };
+
+    assert_eq!(build().resolved_maps(), build().resolved_maps());
+}
+
+// A map that never downloaded is uploaded as the neutral fill, exactly as a
+// layer without that map is — so the key says `None` for both, and a catalog
+// whose download failed does not read as different from one that never had
+// the map.
+#[test]
+fn resolved_maps_reads_an_undownloaded_map_as_absent() {
+    let mut catalog = built(&WeakDom::new());
+    let wood = slot(&mut catalog, &material_of("Wood"));
+    catalog.resolve(HashMap::new());
+
+    let maps = catalog.resolved_maps();
+    assert_eq!(maps.len(), 2);
+    assert_eq!(maps[wood.layer as usize], [None, None, None, None]);
+}
+
+// A material the scene had not used before is a new layer, which means new
+// texels in every array: the key has to move, while the layers already there
+// stay exactly where they were.
+#[test]
+fn resolved_maps_change_when_a_material_joins_the_scene() {
+    let mut catalog = built(&WeakDom::new());
+    slot(&mut catalog, &material_of("Wood"));
+    let before = catalog.resolved_maps();
+
+    slot(&mut catalog, &material_of("Brick"));
+
+    let after = catalog.resolved_maps();
+    assert_ne!(after, before);
+    assert_eq!(after[..before.len()], before[..]);
 }

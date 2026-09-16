@@ -9,6 +9,8 @@
 
 mod irradiance;
 
+use rbx_assets::AssetRef;
+
 use super::texture;
 use crate::assets::Image;
 use crate::quality::QualityProfile;
@@ -40,6 +42,19 @@ pub(super) struct EnvMap {
     pub(super) view: wgpu::TextureView,
     pub(super) sampler: wgpu::Sampler,
     pub(super) probe: Probe,
+    /// Which panels the cube was prefiltered from (see [`sky_key`]), so a
+    /// scene rebuild whose `Sky` did not change keeps the probe instead of
+    /// resampling six faces and integrating their irradiance again.
+    sky: Option<Vec<AssetRef>>,
+}
+
+/// The identity of a sky as far as its uploads go: the six panel assets in
+/// face order, or `None` for a scene drawing no sky at all. The panel quads
+/// are fixed per face (see `textures::sky`), and the same asset decodes to
+/// the same texels, so two skies with the same key build the same probe and
+/// the same skybox.
+pub(super) fn sky_key(panels: Option<&[Panel]>) -> Option<Vec<AssetRef>> {
+    panels.map(|panels| panels.iter().map(|panel| panel.reference.clone()).collect())
 }
 
 /// What the shaders need to know about the probe once it is bound: how deep its
@@ -126,7 +141,14 @@ impl EnvMap {
             levels,
             view,
             sampler: texture::sampler(device, wgpu::AddressMode::ClampToEdge, quality.anisotropy),
+            sky: sky_key(panels),
         }
+    }
+
+    /// Whether this probe was built from exactly `panels` (see [`sky_key`]),
+    /// which is what lets a scene rebuild keep it.
+    pub(super) fn holds(&self, panels: Option<&[Panel]>) -> bool {
+        self.sky == sky_key(panels)
     }
 
     /// Re-views the probe at the new texture cap and rebuilds its sampler at the
@@ -245,11 +267,12 @@ mod tests {
 
     fn panel(width: u32, height: u32, value: u8) -> Panel {
         Panel {
-            image: Image {
+            reference: AssetRef::Id(u64::from(value)),
+            image: std::sync::Arc::new(Image {
                 width,
                 height,
                 pixels: vec![value; (width * height) as usize * CHANNELS],
-            },
+            }),
             quad: Quad {
                 positions: [[0.0; 3]; 4],
                 uvs: [[0.0; 2]; 4],
@@ -279,6 +302,31 @@ mod tests {
     fn a_sky_missing_panels_gets_no_cube_at_all() {
         assert!(cube_faces(&[panel(4, 4, 0)]).is_none());
         assert!(cube_faces(&[]).is_none());
+    }
+
+    // The rebuild decision for the probe and the skybox: the same six assets
+    // in the same order are the same sky, whatever else in the place changed.
+    #[test]
+    fn the_same_panel_assets_are_the_same_sky() {
+        let panels: Vec<Panel> = (0..6).map(|i| panel(4, 4, i)).collect();
+        let again: Vec<Panel> = (0..6).map(|i| panel(8, 8, i)).collect();
+
+        // Image size is not part of it: the same asset decodes the same way
+        // every time, so the reference alone says what was uploaded.
+        assert_eq!(sky_key(Some(&panels)), sky_key(Some(&again)));
+        assert_eq!(sky_key(None), None);
+    }
+
+    // A `Sky` edit that swaps one panel — or removes the sky outright — has
+    // to invalidate: a stale probe would reflect a sky no longer drawn.
+    #[test]
+    fn a_changed_or_removed_panel_is_a_different_sky() {
+        let panels: Vec<Panel> = (0..6).map(|i| panel(4, 4, i)).collect();
+        let mut swapped: Vec<Panel> = (0..6).map(|i| panel(4, 4, i)).collect();
+        swapped[2] = panel(4, 4, 9);
+
+        assert_ne!(sky_key(Some(&panels)), sky_key(Some(&swapped)));
+        assert_ne!(sky_key(Some(&panels)), sky_key(None));
     }
 
     // The two panels a quarter turn out of the cube map convention, and the four

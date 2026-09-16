@@ -6,6 +6,7 @@
 //! uploads what this names.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use rbx_assets::AssetRef;
 use rbx_dom::{Instance, Variant, WeakDom};
@@ -42,7 +43,7 @@ pub(crate) struct Appearance {
 impl Appearance {
     /// The same set with every map that failed to download dropped, so the GPU
     /// side only ever sees references it can upload.
-    pub(super) fn resolved(&self, images: &HashMap<AssetRef, Image>) -> Appearance {
+    pub(super) fn resolved(&self, images: &HashMap<AssetRef, Arc<Image>>) -> Appearance {
         let maps = self
             .maps
             .clone()
@@ -65,12 +66,12 @@ impl Appearance {
     /// Whether its instances belong in the blended pass: only `Transparency`
     /// reads the colour map's alpha as transparency, and only a map that
     /// actually carries one changes anything.
-    pub(crate) fn is_translucent(&self, images: &HashMap<AssetRef, Image>) -> bool {
+    pub(crate) fn is_translucent(&self, images: &HashMap<AssetRef, Arc<Image>>) -> bool {
         self.alpha_mode == AlphaMode::Transparency
             && self.maps[MapKind::Color.index()]
                 .as_ref()
                 .and_then(|reference| images.get(reference))
-                .is_some_and(Image::has_alpha)
+                .is_some_and(|image| image.has_alpha())
     }
 }
 

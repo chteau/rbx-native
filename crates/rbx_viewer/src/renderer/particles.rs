@@ -17,6 +17,7 @@ use wgpu::util::DeviceExt;
 
 use super::pipeline::Target;
 use super::post::Targets;
+use super::rebuild::untried;
 use super::texture;
 use crate::assets;
 use crate::quality::QualityProfile;
@@ -56,10 +57,12 @@ pub(super) struct Particles {
     textures: Vec<Slot>,
     live: Vec<Live>,
     /// Whether the quality profile draws particles at all — `false` keeps
-    /// `live` empty for the whole run, [`Particles::replace`] included.
+    /// `live` empty, [`Particles::replace`] included. Re-read from the
+    /// profile by every [`Particles::rebuild`], so a level switched between
+    /// two scenes takes.
     enabled: bool,
-    /// What [`Particles::new`] learned about every texture it was asked for:
-    /// `Some(slot)` uploaded into `textures`, `None` tried and failed. A
+    /// What [`Particles::rebuild`] learned about every texture it was asked
+    /// for: `Some(slot)` uploaded into `textures`, `None` tried and failed. A
     /// reference missing here was never attempted, which is the one case
     /// [`Particles::replace`] cannot serve without a download.
     slots: HashMap<AssetRef, Option<usize>>,
@@ -75,9 +78,10 @@ pub(super) struct Particles {
 }
 
 impl Particles {
-    /// Downloads every emitter's texture (bypassing the scene's own asset
-    /// plan — see the task brief on why this pass owns its own network call),
-    /// pre-warms each to a steady state, and builds the GPU pipeline.
+    /// Builds the GPU pipeline, then downloads every emitter's texture
+    /// (bypassing the scene's own asset plan — this pass owns its own network
+    /// call) and pre-warms each emitter to a steady state — see
+    /// [`Particles::rebuild`], which is the whole of the second half.
     ///
     /// An emitter whose texture never resolves is dropped outright: there is no
     /// bare fallback for a particle, unlike a `Decal` with no image.
@@ -112,50 +116,77 @@ impl Particles {
         let render_pipeline =
             pipeline::create_pipeline(device, target, &camera_layout, &image_layout);
 
-        if !quality.particles || emitters.is_empty() {
-            return Particles {
-                pipeline: render_pipeline,
-                camera_layout,
-                camera_buffer,
-                camera_bind_group,
-                image_layout,
-                textures: Vec::new(),
-                live: Vec::new(),
-                enabled: quality.particles,
-                slots: HashMap::new(),
-                quad,
-                instances: None,
-                instance_capacity: 0,
-                last_tick: None,
-            };
+        let mut particles = Particles {
+            pipeline: render_pipeline,
+            camera_layout,
+            camera_buffer,
+            camera_bind_group,
+            image_layout,
+            textures: Vec::new(),
+            live: Vec::new(),
+            enabled: quality.particles,
+            slots: HashMap::new(),
+            quad,
+            instances: None,
+            instance_capacity: 0,
+            last_tick: None,
+        };
+        particles.rebuild(device, queue, emitters, quality);
+        particles
+    }
+
+    /// Starts every emitter of `emitters` afresh — pre-warmed, as at load —
+    /// keeping the pipeline and every texture this pass ever tried: only a
+    /// texture no emitter named before is downloaded, and one that was tried
+    /// and failed keeps dropping its emitter rather than being fetched again
+    /// (see [`Particles::slots`]). The simulation clock starts over with the
+    /// emitters, so the first frame after a rebuild steps by nothing, the
+    /// same as the first frame after a load.
+    pub(super) fn rebuild(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        emitters: &[Emitter],
+        quality: &QualityProfile,
+    ) {
+        self.live.clear();
+        self.last_tick = None;
+        self.enabled = quality.particles;
+        if !self.enabled || emitters.is_empty() {
+            return;
         }
 
-        let references = texture_refs(emitters);
-        // Live-effect asset warnings aren't wired to the Output dock yet — see
-        // `assets::load`'s doc comment; only scene-load-time warnings are.
-        let (images, _warnings) = assets::load(&references);
-        let sampler = texture::sampler(device, wgpu::AddressMode::ClampToEdge, quality.anisotropy);
-
-        let mut textures = Vec::new();
-        let mut slots = HashMap::new();
-        for reference in references {
-            let slot = images.get(&reference).map(|image| {
-                let uploaded = texture::Uploaded::color(device, queue, image);
-                let bind_group =
-                    uploaded.bind(device, &image_layout, &sampler, quality.texture_max_size);
-                textures.push(Slot {
-                    bind_group,
-                    uploaded,
+        let references = untried(&self.slots, texture_refs(emitters));
+        if !references.is_empty() {
+            // Live-effect asset warnings aren't wired to the Output dock yet —
+            // see `assets::load`'s doc comment; only scene-load-time warnings
+            // are.
+            let (images, _warnings) = assets::load(&references);
+            let sampler =
+                texture::sampler(device, wgpu::AddressMode::ClampToEdge, quality.anisotropy);
+            for reference in references {
+                let slot = images.get(&reference).map(|image| {
+                    let uploaded = texture::Uploaded::color(device, queue, image);
+                    let bind_group = uploaded.bind(
+                        device,
+                        &self.image_layout,
+                        &sampler,
+                        quality.texture_max_size,
+                    );
+                    self.textures.push(Slot {
+                        bind_group,
+                        uploaded,
+                    });
+                    self.textures.len() - 1
                 });
-                textures.len() - 1
-            });
-            slots.insert(reference, slot);
+                self.slots.insert(reference, slot);
+            }
         }
 
-        let live: Vec<Live> = emitters
+        self.live = emitters
             .iter()
             .filter_map(|emitter| {
-                let texture = slots.get(&emitter.texture).copied().flatten()?;
+                let texture = self.slots.get(&emitter.texture).copied().flatten()?;
                 let mut simulation = Simulation::new(emitter.seed);
                 simulation.prewarm(emitter);
                 Some(Live {
@@ -165,22 +196,6 @@ impl Particles {
                 })
             })
             .collect();
-
-        Particles {
-            pipeline: render_pipeline,
-            camera_layout,
-            camera_buffer,
-            camera_bind_group,
-            image_layout,
-            textures,
-            live,
-            enabled: true,
-            slots,
-            quad,
-            instances: None,
-            instance_capacity: 0,
-            last_tick: None,
-        }
     }
 
     /// Rebuilds the pipeline for a new sample count — the one thing about the

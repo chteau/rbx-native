@@ -167,6 +167,15 @@ impl Selection {
         }
     }
 
+    /// Replaces every placement with a rebuilt scene's, keeping the pipeline
+    /// and the selection itself — redrawn straight away around wherever its
+    /// parts stand in the new scene, or around nothing if they are gone.
+    pub(super) fn rebuild(&mut self, device: &wgpu::Device, placements: HashMap<Ref, Placement>) {
+        self.placements = placements;
+        let referents = std::mem::take(&mut self.referents);
+        self.set(device, &referents);
+    }
+
     /// Rebuilds the outline around whatever `referents` names now, replacing
     /// whatever the previous selection drew.
     pub(super) fn set(&mut self, device: &wgpu::Device, referents: &[Ref]) {

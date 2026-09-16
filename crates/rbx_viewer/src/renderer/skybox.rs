@@ -1,8 +1,10 @@
 //! The background pass: a `Sky`'s six panels, drawn before everything else.
 
 use bytemuck::{Pod, Zeroable};
+use rbx_assets::AssetRef;
 use wgpu::util::DeviceExt;
 
+use super::envmap::sky_key;
 use super::pipeline::{Frame, Shared, Target, DEPTH_FORMAT, SKYBOX_SHADER};
 use super::texture;
 use crate::quality::QualityProfile;
@@ -29,6 +31,19 @@ pub(super) struct Skybox {
     images: Vec<wgpu::BindGroup>,
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
+    /// Which sky the panels are (see `envmap::sky_key`), for a scene rebuild
+    /// to keep them when it is still the same one.
+    panels: Vec<AssetRef>,
+}
+
+/// Everything about a skybox that comes from its panels rather than from the
+/// renderer: built once by [`Skybox::new`], and again by [`Skybox::replace`]
+/// when a rebuild finds another sky.
+struct Panels {
+    uploads: Vec<texture::Uploaded>,
+    images: Vec<wgpu::BindGroup>,
+    vertices: wgpu::Buffer,
+    indices: wgpu::Buffer,
 }
 
 impl Skybox {
@@ -42,27 +57,12 @@ impl Skybox {
         quality: &QualityProfile,
     ) -> Self {
         let image_layout = texture::layout(device);
-        // ClampToEdge: a panel is sampled right up to its border, and wrapping
-        // there would pull the far edge of the image into the seam.
-        let sampler = texture::sampler(device, wgpu::AddressMode::ClampToEdge, quality.anisotropy);
-
-        let mut vertices = Vec::with_capacity(panels.len() * 4);
-        let mut indices = Vec::with_capacity(panels.len() * QUAD_INDICES.len());
-        let mut uploads = Vec::with_capacity(panels.len());
-        let mut images = Vec::with_capacity(panels.len());
-        for (offset, panel) in panels.iter().enumerate() {
-            let base = (offset * 4) as u16;
-            for corner in 0..4 {
-                vertices.push(Vertex {
-                    position: panel.quad.positions[corner],
-                    uv: panel.quad.uvs[corner],
-                });
-            }
-            indices.extend(QUAD_INDICES.iter().map(|index| base + index));
-            let upload = texture::Uploaded::color(device, queue, &panel.image);
-            images.push(upload.bind(device, &image_layout, &sampler, quality.texture_max_size));
-            uploads.push(upload);
-        }
+        let Panels {
+            uploads,
+            images,
+            vertices,
+            indices,
+        } = upload(device, queue, &image_layout, panels, quality);
 
         Skybox {
             pipeline: create(device, target, &[Some(frame_layout), Some(&image_layout)]),
@@ -70,17 +70,38 @@ impl Skybox {
             uploads,
             image_layout,
             images,
-            vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("rbxview sky vertices"),
-                contents: bytemuck::cast_slice(&vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            }),
-            indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("rbxview sky indices"),
-                contents: bytemuck::cast_slice(&indices),
-                usage: wgpu::BufferUsages::INDEX,
-            }),
+            vertices,
+            indices,
+            panels: sky_key(Some(panels)).unwrap_or_default(),
         }
+    }
+
+    /// Whether the uploaded panels are exactly `panels` — see `envmap::sky_key`.
+    pub(super) fn holds(&self, panels: &[Panel]) -> bool {
+        sky_key(Some(panels)).is_some_and(|key| key == self.panels)
+    }
+
+    /// Swaps in another sky's panels, keeping the pipeline and the camera bind
+    /// group: what a scene rebuild does for a `Sky` edit, rather than
+    /// compiling the sky shader again.
+    pub(super) fn replace(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        panels: &[Panel],
+        quality: &QualityProfile,
+    ) {
+        let Panels {
+            uploads,
+            images,
+            vertices,
+            indices,
+        } = upload(device, queue, &self.image_layout, panels, quality);
+        self.uploads = uploads;
+        self.images = images;
+        self.vertices = vertices;
+        self.indices = indices;
+        self.panels = sky_key(Some(panels)).unwrap_or_default();
     }
 
     /// Re-views the six panels at the new texture cap and anisotropy.
@@ -127,6 +148,52 @@ impl Skybox {
             pass.set_bind_group(1, image, &[]);
             pass.draw_indexed(first..first + per_panel, 0, 0..1);
         }
+    }
+}
+
+/// Uploads every panel and builds the quads they are pasted on.
+fn upload(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    image_layout: &wgpu::BindGroupLayout,
+    panels: &[Panel],
+    quality: &QualityProfile,
+) -> Panels {
+    // ClampToEdge: a panel is sampled right up to its border, and wrapping
+    // there would pull the far edge of the image into the seam.
+    let sampler = texture::sampler(device, wgpu::AddressMode::ClampToEdge, quality.anisotropy);
+
+    let mut vertices = Vec::with_capacity(panels.len() * 4);
+    let mut indices = Vec::with_capacity(panels.len() * QUAD_INDICES.len());
+    let mut uploads = Vec::with_capacity(panels.len());
+    let mut images = Vec::with_capacity(panels.len());
+    for (offset, panel) in panels.iter().enumerate() {
+        let base = (offset * 4) as u16;
+        for corner in 0..4 {
+            vertices.push(Vertex {
+                position: panel.quad.positions[corner],
+                uv: panel.quad.uvs[corner],
+            });
+        }
+        indices.extend(QUAD_INDICES.iter().map(|index| base + index));
+        let upload = texture::Uploaded::color(device, queue, &panel.image);
+        images.push(upload.bind(device, image_layout, &sampler, quality.texture_max_size));
+        uploads.push(upload);
+    }
+
+    Panels {
+        uploads,
+        images,
+        vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("rbxview sky vertices"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        }),
+        indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("rbxview sky indices"),
+            contents: bytemuck::cast_slice(&indices),
+            usage: wgpu::BufferUsages::INDEX,
+        }),
     }
 }
 

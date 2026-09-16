@@ -1,20 +1,24 @@
-//! The renderer state that does not come from the place, and so does not
-//! survive rebuilding the renderer from it.
+//! The renderer state that does not come from the place, and so is not
+//! rebuilt from it.
 //!
 //! [`crate::Headless::reload`] — a Command Bar script's edit, a `Parent` move
 //! that crossed the `Workspace` boundary, any fast path that reported it could
-//! not take the shortcut — throws the whole renderer away and builds a new one
-//! from the new DOM, which is the only thing guaranteed to draw the right
-//! picture. Everything the *editor* asked for rather than the file goes with
-//! it: the projection mode, the outlined selection, the transform gizmo. Each
-//! one silently missing afterwards is a visual regression with nothing on
-//! screen to explain it — an outline that vanished, draggers that stopped
-//! being drawn, a parallel projection that went back to perspective — and the
-//! user's only recourse is to toggle the setting off and on again.
+//! not take the shortcut — re-derives the whole scene from the new DOM, which
+//! is the only thing guaranteed to draw the right picture. Everything the
+//! *editor* asked for rather than the file is outside that derivation: the
+//! projection mode, the outlined selection, the transform gizmo. Each one
+//! silently missing afterwards is a visual regression with nothing on screen
+//! to explain it — an outline that vanished, draggers that stopped being
+//! drawn, a parallel projection that went back to perspective — and the
+//! user's only recourse is to toggle the setting off and on again. (This
+//! happened, back when a reload built a whole new renderer and lost the
+//! three with the old one.)
 //!
-//! Collecting them into one value that `Offscreen::new` *requires* is the
-//! point: there is no way to build a renderer without saying what view it is
-//! being built for, so a rebuild cannot quietly drop one of these again.
+//! Collecting them into one value that `Offscreen::new` and
+//! `Offscreen::reload` both *require* is the point: there is no way to build
+//! or rebuild a renderer without saying what view it is for, so a rebuild
+//! cannot quietly drop one of these — whatever it does or does not happen to
+//! keep of the renderer's own copy.
 
 use rbx_dom::Ref;
 
@@ -85,9 +89,9 @@ mod tests {
 
     /// The regression this type exists for: everything the editor asked for
     /// between one rebuild and the next has to still be here when the next one
-    /// happens, because this value is the whole of what `Offscreen::new`
-    /// carries across. Before it existed, a Command Bar script's reload left
-    /// the gizmo (and the outline, and the projection mode) switched off until
+    /// happens, because this value is the whole of what `Offscreen::reload`
+    /// puts back. Before it existed, a Command Bar script's reload left the
+    /// gizmo (and the outline, and the projection mode) switched off until
     /// the user toggled each one by hand.
     #[test]
     fn a_rebuild_is_handed_everything_the_editor_last_asked_for() {
