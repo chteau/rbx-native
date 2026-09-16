@@ -2,6 +2,13 @@
 
 ## 2026-09-16
 
+- **Dock layout persistence.** Dock panel position, size, and docking state
+  (floating vs. docked) now persist across restarts. Uses `DockAreaState`
+  from `gpui_component::dock` to capture the full layout on
+  `DockEvent::LayoutChanged`, persisting to `~/.config/rbx-native/dock_layout.json`.
+  Verified: rearrange panels, restart, layout is restored. Panels cannot
+  currently be closed (they're marked non-closable), so panel visibility
+  persistence is a follow-up feature blocked by making panels closable first. — @chteau
 - **Drag-and-drop reparenting in the Explorer.** Dragging a row onto another
   moves the instance under it, which is the whole of what Studio offers here —
   creator-docs' Explorer page says only "to change the parent of one or more

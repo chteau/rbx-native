@@ -5946,6 +5946,7 @@ dependencies = [
  "rbx_reflection",
  "rbx_viewer",
  "rbx_xml",
+ "serde",
  "serde_json",
  "ureq",
  "x11rb",

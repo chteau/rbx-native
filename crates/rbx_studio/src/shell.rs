@@ -5,6 +5,7 @@
 
 mod command;
 mod dock;
+mod dock_layout;
 mod drag;
 mod edit;
 mod history;
@@ -112,7 +113,7 @@ pub(crate) struct Shell {
     /// The two snap increment fields' live text — see `shell::toolbar::snap`.
     snap_fields: SnapFields,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
-    _subscriptions: [Subscription; 9],
+    _subscriptions: [Subscription; 10],
 }
 
 impl Shell {
@@ -204,6 +205,16 @@ impl Shell {
         // as soon as `cx.new` starts building it, same as `dock_area` above).
         let menu_bar = crate::menu_bar::build(cx.entity(), cx);
 
+        // Subscribe to dock layout changes so they're saved immediately, not just
+        // when other settings are toggled. This is the actual trigger for the
+        // dock-persistence feature to work when users rearrange panels.
+        let dock_layout_changed = cx.subscribe(&dock_area, |shell, _, event, cx| {
+            use gpui_kit::component::dock::DockEvent;
+            if matches!(event, DockEvent::LayoutChanged) {
+                shell.save_settings(cx);
+            }
+        });
+
         let transform = Transform::default();
         let (snap_fields, [translate_typed, rotate_typed]) = SnapFields::new(transform, window, cx);
 
@@ -247,6 +258,7 @@ impl Shell {
                 asset_warnings,
                 translate_typed,
                 rotate_typed,
+                dock_layout_changed,
             ],
         };
 
@@ -258,6 +270,18 @@ impl Shell {
             .viewport
             .update(cx, |viewport, _| viewport.set_targets(initial_targets));
         shell.sync_snap_neighbours(cx);
+
+        // Register panel types so the dock can restore them from saved state.
+        // The panel names must match those in shell::dock::Section::name().
+        dock::register_panels(shell.dock_area.clone(), cx.entity(), cx);
+
+        // Restore the saved dock layout if one exists, falling back to the default
+        // if loading fails or the file doesn't exist.
+        if let Some(layout) = dock_layout::load() {
+            let _ = shell
+                .dock_area
+                .update(cx, |area, cx| area.load(layout, window, cx));
+        }
 
         // `RBX_STUDIO_TOOL` (see `shell::toolbar`). Before the Command Bar
         // block below rather than after it: a script's reload rebuilds the
@@ -406,7 +430,7 @@ impl Shell {
         self.viewport
             .update(cx, |viewport, cx| viewport.set_quality(mode, cx));
         self.quality_choice = mode;
-        self.save_settings();
+        self.save_settings(cx);
     }
 
     /// Whether the Explorer lists every root, for the dock's Explorer menu
@@ -436,7 +460,7 @@ impl Shell {
             tree.set_selected_item(selected.as_ref(), cx);
         });
         cx.notify();
-        self.save_settings();
+        self.save_settings(cx);
     }
 
     /// Whether the viewport's main camera is orthographic, for the dock's
@@ -456,22 +480,26 @@ impl Shell {
         self.viewport.update(cx, |viewport, cx| {
             viewport.set_orthographic(orthographic, cx)
         });
-        self.save_settings();
+        self.save_settings(cx);
     }
 
-    /// Writes the current quality pick, Explorer visibility and projection
-    /// mode to disk. A settings file is tiny, so this runs synchronously on
-    /// every change rather than debouncing; a write failure (e.g. no
-    /// writable config directory) is not fatal and is silently dropped —
-    /// losing a preference write is better than interrupting the editor
-    /// over it.
-    fn save_settings(&self) {
+    /// Writes the current quality pick, Explorer visibility, and projection mode
+    /// to disk. Also saves the current dock layout. A settings file is tiny,
+    /// so this runs synchronously on every change rather than debouncing;
+    /// a write failure (e.g. no writable config directory) is not fatal and is
+    /// silently dropped — losing a preference write is better than interrupting
+    /// the editor over it.
+    fn save_settings(&self, cx: &App) {
         let settings = Settings {
             quality: self.quality_choice,
             show_all_services: self.show_all_services,
             orthographic: self.orthographic,
         };
         let _ = settings.save();
+
+        // Save the current dock layout state
+        let layout = self.dock_area.read(cx).dump(cx);
+        dock_layout::save(&layout);
     }
 
     /// The place file's name, shown as the dock's own Viewport tab title

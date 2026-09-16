@@ -157,7 +157,9 @@ fn default_settings_path() -> Option<PathBuf> {
     default_config_dir().map(|dir| dir.join("settings.json"))
 }
 
-fn default_config_dir() -> Option<PathBuf> {
+/// Returns the config directory used for all rbx-native state files
+/// (`$XDG_CONFIG_HOME/rbx-native`, `%APPDATA%\rbx-native`, or `~/.config/rbx-native`).
+pub(crate) fn default_config_dir() -> Option<PathBuf> {
     if let Some(xdg) = non_empty_env("XDG_CONFIG_HOME") {
         return Some(PathBuf::from(xdg).join("rbx-native"));
     }
@@ -179,8 +181,9 @@ fn non_empty_env(key: &str) -> Option<String> {
 }
 
 /// Writes via a temp file + rename so a reader never observes a partially
-/// written settings file, and a crash mid-write can't corrupt an existing one.
-fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), SettingsError> {
+/// written file, and a crash mid-write can't corrupt an existing one.
+/// Used for all persisted state files (settings, dock layout, etc).
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), SettingsError> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     std::fs::create_dir_all(parent).map_err(|source| SettingsError::CreateDir {
         path: parent.to_path_buf(),

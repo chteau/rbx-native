@@ -109,8 +109,9 @@ Roblox's own engine.
 - [x] Undo/redo (`Ctrl+Z`/`Ctrl+Y`), bit-for-bit reversion verified.
 - [x] Save (`Ctrl+S`, writes back in the file's original format, atomic
   write).
-- [x] Dockable, rearrangeable panel layout (`gpui_component::dock`),
-  persisted settings (quality, service visibility).
+- [x] Dockable, rearrangeable panel layout (`gpui_component::dock`) with
+  persistence — layout position/size/docking state saved across restarts,
+  plus persisted settings (quality, service visibility).
 - [x] Live camera pose reflected into `Workspace.CurrentCamera.CFrame` as
   you fly, throttled and explicitly excluded from undo history.
 - [x] Fast-path scene updates: a `Lighting`/`Atmosphere`/post-effect edit or
@@ -821,16 +822,6 @@ against `Roblox/creator-docs` rather than assumed:
 - [ ] 📋 **Native Git integration** — a real panel in `rbxstudio` (diff view,
   stage/commit, branch switch), not relying on the user's own external git
   client. Not scoped in any detail yet.
-- [ ] 📋 **Persist dock/panel layout across restarts.** Today's dockable,
-  rearrangeable panels (see "What's been implemented") always reset to
-  their default arrangement on launch — only quality and service-visibility
-  settings persist; `gpui_component::dock`'s own state (which panels are
-  open, docked position/size, floating vs. docked) is never saved. Small
-  and self-contained enough to land ahead of the broader settings file
-  below, though the two should ultimately share one file on disk. Real
-  community demand, not just a guess: "Studio layout saving" is one of the
-  more-requested threads in Roblox's own
-  [Studio Features devforum category](https://devforum.roblox.com/c/feature-requests/studio-features/24).
 - [ ] 📋 **Colour-coded Explorer folders.** Another devforum request from
   the same category ("Colored folders!") — let a `Folder` (and perhaps any
   instance) carry a colour tag shown as a tint on its Explorer icon/row,
