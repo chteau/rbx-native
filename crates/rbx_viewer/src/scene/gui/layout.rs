@@ -164,10 +164,13 @@ fn emit(node: &Node, rect: Rect, clip: Option<Rect>, rotated: bool, into: &mut V
         image: node.fill.as_ref().map(|fill| painted(fill, &rect)),
     });
 
-    // Roblox's own docs are explicit that `ClipsDescendants` and `Rotation`
-    // don't compose: a non-zero rotation on this element or any ancestor
-    // makes `ClipsDescendants` a no-op rather than clipping to a box that no
-    // longer matches what is actually drawn on screen.
+    // Roblox's own docs describe two modes here, gated on the (NotScriptable,
+    // RolloutState) `StarterGui.ClipsDescendantsSupportsRotation`: enabled,
+    // clipping works correctly against rotated shapes; not enabled — the
+    // mode this models, since there is no scriptable way to read the flag at
+    // all — a non-zero `Rotation` on this element or any ancestor makes
+    // `ClipsDescendants` a no-op rather than clipping to a box that no longer
+    // matches what is actually drawn on screen.
     let rotated = rotated || node.rotation != 0.0;
     let inner = match node.clips && !rotated {
         true => Some(clip.map_or(rect, |outer| outer.intersect(&rect))),

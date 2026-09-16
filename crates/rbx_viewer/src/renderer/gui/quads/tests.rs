@@ -224,3 +224,40 @@ fn a_rotated_quad_stays_centred_on_the_unrotated_rects_centre() {
         .fold(f32::MIN, f32::max);
     assert!((max_y - min_y - 20.0).abs() < 1e-3);
 }
+
+#[test]
+fn a_rotated_borders_bands_turn_about_the_elements_centre_too() {
+    // `outline`'s four bands sit outside `rect`, each with its own, different
+    // centre — sharing the element's own `Spin` (rather than each band
+    // getting its own, freshly computed one) is what keeps them turning as
+    // one rigid box rather than four independently-spinning strips.
+    let mut bordered = element(rect(0.0, 0.0, 20.0, 10.0), None);
+    bordered.rotation = 90.0;
+    bordered.border = Some((4.0, [0.0, 0.0, 0.0]));
+
+    let (vertices, _) = build(&[bordered], &HashMap::new(), VIEWPORT);
+    // The background is the first quad (6 vertices); every vertex after that
+    // is one of the four border bands.
+    let border = &vertices[6..];
+
+    let centre_x = border.iter().map(|v| v.position[0]).sum::<f32>() / border.len() as f32;
+    let centre_y = border.iter().map(|v| v.position[1]).sum::<f32>() / border.len() as f32;
+    assert!((centre_x - 10.0).abs() < 1e-3);
+    assert!((centre_y - 5.0).abs() < 1e-3);
+
+    // Unrotated, the bordered box spans 20 + 2*4 = 28 px horizontally and
+    // 10 + 2*4 = 18 px vertically. A quarter turn swaps those: if every band
+    // shares the element's own pivot, the vertical extent afterwards is the
+    // *un*rotated horizontal one, 28 — not 18, and not something else
+    // entirely, which is what four bands rotating about their own separate
+    // centres would produce instead.
+    let min_y = border
+        .iter()
+        .map(|v| v.position[1])
+        .fold(f32::MAX, f32::min);
+    let max_y = border
+        .iter()
+        .map(|v| v.position[1])
+        .fold(f32::MIN, f32::max);
+    assert!((max_y - min_y - 28.0).abs() < 1e-3);
+}
