@@ -38,29 +38,9 @@ fn model_holding(parts: usize) -> Selected {
     Selected::read(&dom, &ReflectionDatabase::embedded(), model)
 }
 
-#[test]
-fn a_box_has_twelve_edges_and_twenty_four_vertices() {
-    let vertices = edges(Mat4::IDENTITY);
-    assert_eq!(vertices.len(), 24);
-    // 12 edges, each contributing exactly one pair of endpoints.
-    assert_eq!(EDGES.len(), 12);
-}
-
-#[test]
-fn the_corners_follow_the_model_matrix() {
-    let model = Mat4::from_translation(Vec3::new(66.0, 6.5, -81.0))
-        * Mat4::from_scale(Vec3::new(10.0, 13.0, 2.0));
-    let vertices = edges(model);
-
-    // Every vertex is a cube corner carried through `model`: half the part's
-    // size away from its centre on every axis.
-    for vertex in vertices {
-        let local = Vec3::from(vertex.position) - Vec3::new(66.0, 6.5, -81.0);
-        assert!((local.x.abs() - 5.0).abs() < 1e-4);
-        assert!((local.y.abs() - 6.5).abs() < 1e-4);
-        assert!((local.z.abs() - 1.0).abs() < 1e-4);
-    }
-}
+// The box-edge math itself (`edges`, `EDGES`) now lives in `super::outline`
+// and is tested there — this file tests only what selection.rs still owns:
+// container resolution, aggregation and the O(N) redraw bookkeeping.
 
 #[test]
 fn a_referent_with_no_placement_draws_nothing() {

@@ -34,7 +34,7 @@ mod trail;
 mod translucent;
 
 use glam::Mat3;
-use rbx_dom::WeakDom;
+use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use crate::camera::{Camera, Frustum, Viewpoint};

@@ -443,7 +443,8 @@ impl Shell {
             .hovered
             .is_some_and(|hovered| self.selection.all().contains(&hovered));
         if stale_hover {
-            self.viewport.update(cx, |viewport, _| viewport.set_hover(None));
+            self.viewport
+                .update(cx, |viewport, _| viewport.set_hover(None));
             self.hovered = None;
         }
         // Whatever just stopped being selected becomes one of the neighbours
