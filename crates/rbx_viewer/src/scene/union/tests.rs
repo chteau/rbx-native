@@ -377,3 +377,200 @@ fn a_replanned_union_patches_only_when_it_paints_its_own_colour() {
     let entry = replan(&dom, &database, Ref::new(1), &mut materials).unwrap();
     assert!(entry.patched().is_none());
 }
+
+/// Builds one synthetic legacy union asset's raw bytes: a `PartOperationAsset`
+/// root whose `ChildData` is a nested `.rbxm` of one large additive base box
+/// and `leaves` small `NegateOperation` boxes scattered through it, the same
+/// shape (one additive leaf, many negations) as the real rock asset this
+/// module was reverse-engineered against — see `REAL_ROCK_ASSET_ID` above.
+/// `seed` scatters the negations differently per call so two calls never
+/// serialize to identical bytes (real unions in a place never do either).
+///
+/// Used both to profile [`resolve`]'s CSG cost against a place with many
+/// unions (no network, no committed asset — see `agents/AGENTS.md`'s asset
+/// rules) and, via [`synthetic_plan`], to check a parallel evaluation order
+/// against this module's sequential one.
+fn synthetic_asset_bytes(seed: u32, leaves: usize) -> Vec<u8> {
+    fn leaf(referent: Ref, class: &str, cframe: Mat4, size: Vec3) -> Instance {
+        let (_, rotation, translation) = cframe.to_scale_rotation_translation();
+        let mut instance = Instance::new(referent, class, "leaf");
+        let properties = instance.properties_mut();
+        let basis = glam::Mat3::from_quat(rotation);
+        properties.insert(
+            "CFrame".to_string(),
+            Variant::CFrame(CFrameData {
+                position: Vector3Data {
+                    x: translation.x,
+                    y: translation.y,
+                    z: translation.z,
+                },
+                rotation: [
+                    basis.x_axis.x,
+                    basis.y_axis.x,
+                    basis.z_axis.x,
+                    basis.x_axis.y,
+                    basis.y_axis.y,
+                    basis.z_axis.y,
+                    basis.x_axis.z,
+                    basis.y_axis.z,
+                    basis.z_axis.z,
+                ],
+            }),
+        );
+        properties.insert(
+            "size".to_string(),
+            Variant::Vector3(Vector3Data {
+                x: size.x,
+                y: size.y,
+                z: size.z,
+            }),
+        );
+        instance
+    }
+
+    let mut inner = WeakDom::new();
+    let base = Ref::new(1);
+    inner.insert(leaf(base, "Part", Mat4::IDENTITY, Vec3::splat(10.0)));
+    inner.set_parent(base, None);
+    for i in 0..leaves {
+        let t = (seed as f32 * 31.0 + i as f32) * 0.7;
+        // Deterministic pseudo-scatter (sin/cos of an index, no `rand`
+        // dependency for one throwaway coordinate source) keeping every
+        // negation's centre inside the base box so the boolean has real
+        // carving to do rather than degenerating into no-op disjoint cuts.
+        let center = Vec3::new(t.sin(), (t * 1.3).cos(), (t * 1.7).sin()) * 3.5;
+        let r = Ref::new(1000 + i as u32);
+        inner.insert(leaf(
+            r,
+            "NegateOperation",
+            Mat4::from_translation(center),
+            Vec3::splat(1.5),
+        ));
+        inner.set_parent(r, None);
+    }
+    let inner_bytes = rbx_binary::serialize(&inner).expect("synthetic inner dom must serialize");
+
+    let mut outer = WeakDom::new();
+    let root = Ref::new(1);
+    let mut instance = Instance::new(root, "PartOperationAsset", "Rock");
+    // `ChildData` is a `BinaryString`, which shares wire type 0x01 (String)
+    // with `Variant::String` — see the module doc on `tree::parse`.
+    instance.properties_mut().insert(
+        "ChildData".to_string(),
+        Variant::Unknown {
+            type_id: 0x01,
+            raw: inner_bytes,
+        },
+    );
+    outer.insert(instance);
+    outer.set_parent(root, None);
+    rbx_binary::serialize(&outer).expect("synthetic outer dom must serialize")
+}
+
+/// A [`Plan`] of `unions` entries, each its own distinct synthetic asset of
+/// `leaves_per_union` leaves (see [`synthetic_asset_bytes`]), plus the byte
+/// map [`resolve`] needs to evaluate every one of them — a synthetic stand-in
+/// for a real, CSG-heavy place with many different unions.
+fn synthetic_plan(
+    unions: usize,
+    leaves_per_union: usize,
+    materials: &Catalog,
+) -> (Plan, HashMap<AssetRef, Vec<u8>>) {
+    let mut assets = HashMap::new();
+    let mut entries = Vec::new();
+    for i in 0..unions {
+        let asset = AssetRef::Id(1_000_000 + i as u64);
+        assets.insert(asset.clone(), synthetic_asset_bytes(i as u32, leaves_per_union));
+        entries.push(Entry {
+            referent: Ref::new(2_000 + i as u32),
+            asset,
+            cframe: Mat4::IDENTITY,
+            size: Vec3::splat(10.0),
+            initial_size: Vec3::splat(10.0),
+            material: materials.slot(0),
+            color: None,
+            alpha: 1.0,
+            reflectance: 0.0,
+            casts_shadow: true,
+        });
+    }
+    (Plan { entries }, assets)
+}
+
+/// `resolve` used to evaluate every union's BSP boolean one at a time, on
+/// the caller's own thread; it now runs them across a bounded worker pool
+/// (`evaluate_all`) since they are independent of each other. This checks
+/// that parallelizing the evaluation order never changes the result: each
+/// asset's mesh must come out byte-for-byte identical to evaluating it alone,
+/// on its own, the way the old sequential resolver would have — a race or
+/// an ordering bug in the parallel path would show up here as a mismatched
+/// vertex/index list, not as a crash, which is exactly the kind of silent
+/// regression a "just check it's faster" test would miss.
+///
+/// Run several times over: a race that only sometimes reorders two threads'
+/// writes would not necessarily show up on the first call.
+#[test]
+fn parallel_csg_evaluation_matches_evaluating_each_asset_alone() {
+    let database = database();
+    let dom = WeakDom::new();
+    let mut materials = Catalog::new(&dom, &database);
+    // More entries than `MAX_CSG_WORKERS` so every worker thread actually
+    // picks up more than one asset — the scenario a single-asset run can't
+    // exercise at all.
+    let (plan, assets) = synthetic_plan(12, 6, &materials);
+
+    let expected: HashMap<AssetRef, rbx_mesh::Mesh> = assets
+        .iter()
+        .map(|(asset, bytes)| {
+            let evaluated = evaluate(bytes, &database).expect("synthetic asset must parse");
+            (
+                asset.clone(),
+                evaluated.mesh.expect("synthetic boolean must succeed"),
+            )
+        })
+        .collect();
+    assert_eq!(expected.len(), plan.entries.len());
+
+    for _ in 0..5 {
+        let resolution = resolve(&plan, assets.clone(), &database, &mut materials);
+        assert_eq!(resolution.meshes.len(), expected.len());
+        for (asset, mesh) in &expected {
+            let got = resolution
+                .meshes
+                .get(asset)
+                .expect("every asset evaluated alone must also resolve through the pool");
+            assert_eq!(
+                got, mesh,
+                "asset {asset:?}: the pooled evaluation produced a different mesh than \
+                 evaluating the same asset alone"
+            );
+        }
+    }
+}
+
+/// Manual profiling harness, not part of the regular gate: run with
+/// `cargo test --release -p rbx_viewer --lib union::tests::profile_synthetic_csg_heavy_place -- --ignored --nocapture`
+/// to see where `resolve`'s time actually goes on a synthetic, CSG-heavy
+/// place (this repository ships no real one — see `agents/AGENTS.md`'s asset
+/// rules). Prints wall time only; a caller comparing before/after times it
+/// externally (`/usr/bin/time` or similar) to also see CPU time and thread
+/// fan-out.
+#[test]
+#[ignore = "manual profiling harness, see doc comment"]
+fn profile_synthetic_csg_heavy_place() {
+    let database = database();
+    let dom = WeakDom::new();
+    let mut materials = Catalog::new(&dom, &database);
+    let (plan, assets) = synthetic_plan(40, 30, &materials);
+
+    let start = std::time::Instant::now();
+    let resolution = resolve(&plan, assets, &database, &mut materials);
+    let elapsed = start.elapsed();
+
+    println!(
+        "resolve: {elapsed:?} for {} unions, {} meshes computed",
+        plan.entries.len(),
+        resolution.meshes.len()
+    );
+    assert!(!resolution.meshes.is_empty());
+}
