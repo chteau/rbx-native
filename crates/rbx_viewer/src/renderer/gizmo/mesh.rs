@@ -1,10 +1,10 @@
 //! The triangles one transform gizmo is made of.
 //!
 //! Where [`crate::gizmo`] says where the handles *are* — the half the editor's
-//! UI thread hit-tests the cursor against — this is the half that turns those
-//! same [`Handles`] into a mesh: Move's arrows, Scale's blocks, Rotate's rings.
-//! Rebuilt every frame because the arms are scaled to keep a constant size on
-//! screen and so change with every camera move.
+//! UI thread hit-tests the cursor against — this is the half that turns that
+//! same [`Shape`] into a mesh: Move's arrows, Scale's balls, Rotate's rings.
+//! Rebuilt every frame because everything here is scaled to keep a constant
+//! size on screen and so changes with every camera move.
 //!
 //! Everything here is drawn with the depth test off (a handle inside the part
 //! it transforms still has to be grabbable), which leaves paint order as the
@@ -17,7 +17,7 @@ use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
 
 use crate::gizmo::{
-    Axis, Handles, Kind, HANDLE_RADIUS, HEAD_RADIUS, HEAD_START, RING_RADIUS, RING_THICKNESS,
+    Axis, Faces, Handles, Shape, HEAD_RADIUS, HEAD_START, RING_RADIUS, RING_THICKNESS,
     SHAFT_RADIUS, SHAFT_START,
 };
 
@@ -26,18 +26,24 @@ use crate::gizmo::{
 /// small vertex buffer rewritten every frame — there is nothing to gain from
 /// more.
 const SEGMENTS: usize = 8;
-/// Three axes, each with an arm in both directions.
+/// Three axes, each with a dragger in both directions: an arm each way for
+/// Move, a ball on each of the six faces for Scale.
 const ARMS: usize = 6;
 /// Per arm: the shaft's sides and its open end's cap, then the arrowhead's
 /// sides and base.
 pub(super) const VERTICES_PER_ARM: usize = SEGMENTS * (6 + 3 + 3 + 3);
 const ARROW_VERTICES: usize = ARMS * VERTICES_PER_ARM;
 
-/// A cube: six faces of two triangles each.
-const VERTICES_PER_BLOCK: usize = 36;
-/// Per Scale arm: a shaft with its open end capped, then the block on its end.
-const VERTICES_PER_HANDLE: usize = SEGMENTS * (6 + 3) + VERTICES_PER_BLOCK;
-const HANDLE_VERTICES: usize = ARMS * VERTICES_PER_HANDLE;
+/// How many segments go round a ball, and how many bands it is sliced into
+/// from pole to pole. A Scale handle is a small blob on screen, but it is a
+/// silhouette with no straight edge to hide behind, so it needs rather more
+/// than a shaft does before it stops reading as a gem.
+const BALL_SEGMENTS: usize = 12;
+const BALL_BANDS: usize = 6;
+/// Per ball: a triangle for each segment at each pole, where a whole ring of
+/// the sphere collapses to a point, and a quad for every band between them.
+pub(super) const VERTICES_PER_BALL: usize = BALL_SEGMENTS * (2 * 3 + (BALL_BANDS - 2) * 6);
+const BALL_VERTICES: usize = ARMS * VERTICES_PER_BALL;
 
 /// How many slices go round one rotation ring. Far finer than a shaft needs:
 /// a ring is a full circle the width of the whole gizmo, so its silhouette is
@@ -59,7 +65,7 @@ const fn larger(a: usize, b: usize) -> usize {
 
 /// The buffer has to hold whichever tool draws the most, since the tool
 /// changes without the renderer being rebuilt.
-pub(super) const CAPACITY: usize = larger(larger(ARROW_VERTICES, HANDLE_VERTICES), RING_VERTICES);
+pub(super) const CAPACITY: usize = larger(larger(ARROW_VERTICES, BALL_VERTICES), RING_VERTICES);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -85,11 +91,11 @@ impl Vertex {
 }
 
 /// This tool's handles as one triangle list, painted back to front.
-pub(super) fn mesh(kind: Kind, handles: &Handles, eye: Vec3) -> Vec<Vertex> {
-    match kind {
-        Kind::Move => arms(handles, eye, arrow),
-        Kind::Scale => arms(handles, eye, handle),
-        Kind::Rotate => rings(handles, eye),
+pub(super) fn mesh(shape: &Shape, eye: Vec3) -> Vec<Vertex> {
+    match shape {
+        Shape::Move(handles) => arms(handles, eye, arrow),
+        Shape::Scale(faces) => balls(faces, eye),
+        Shape::Rotate(handles) => rings(handles, eye),
     }
 }
 
@@ -136,7 +142,7 @@ fn frame(direction: Vec3) -> (Vec3, Vec3) {
 /// One Move arrow: a thin shaft capped at the end nearest the gizmo's centre,
 /// then a cone for the head.
 fn arrow(vertices: &mut Vec<Vertex>, origin: Vec3, direction: Vec3, arm: f32, color: [f32; 3]) {
-    shaft(vertices, origin, direction, arm, HEAD_START, color);
+    shaft(vertices, origin, direction, arm, color);
 
     let (across, round) = frame(direction);
     let neck = HEAD_START * arm;
@@ -156,50 +162,77 @@ fn arrow(vertices: &mut Vec<Vertex>, origin: Vec3, direction: Vec3, arm: f32, co
     }
 }
 
-/// One Scale handle: the same thin shaft with a block on its end instead of an
-/// arrowhead.
+/// The six Scale balls, furthest from `eye` first.
 ///
-/// `creator-docs` (`parts/index.md#transform-parts`) says only "click/drag a
-/// handle" to "scale (resize) a selected part along the X, Y, or Z axis"; it
-/// illustrates the blocks but never states their proportions, so these are
-/// chosen to read at the same weight as the Move arrowhead rather than
-/// measured from anything.
-fn handle(vertices: &mut Vec<Vertex>, origin: Vec3, direction: Vec3, arm: f32, color: [f32; 3]) {
-    // The block's outer face sits on the end of the arm, so a Scale gizmo
-    // reaches exactly as far as a Move one does.
-    let half = HANDLE_RADIUS * arm;
-    let centre = origin + direction * (arm - half);
-    shaft(vertices, origin, direction, arm, 1.0 - HANDLE_RADIUS, color);
+/// Sorted by ball for the same reason [`arms`] sorts by arm: six convex pieces
+/// that only meet when a part is small enough for opposite faces to touch, so
+/// a painter's order over them is exact wherever it matters.
+fn balls(faces: &Faces, eye: Vec3) -> Vec<Vertex> {
+    let mut order: Vec<(f32, Axis, f32)> = faces
+        .all()
+        .map(|(axis, sign)| ((faces.handle(axis, sign) - eye).length(), axis, sign))
+        .collect();
+    order.sort_by(|(a, ..), (b, ..)| b.total_cmp(a));
 
-    let (across, round) = frame(direction);
-    let (a, b, c) = (across * half, round * half, direction * half);
-    // `across × round == direction`, so (a, b, c) is right-handed and each
-    // face below comes out wound away from the block's centre.
-    for (offset, u, v) in [
-        (c, a, b),
-        (-c, b, a),
-        (a, b, c),
-        (-a, c, b),
-        (b, c, a),
-        (-b, a, c),
-    ] {
-        quad(vertices, centre + offset, u, v, color);
+    let mut vertices = Vec::with_capacity(BALL_VERTICES);
+    for (_, axis, sign) in order {
+        ball(
+            &mut vertices,
+            faces.handle(axis, sign),
+            faces.radius(axis, sign),
+            axis.color(),
+        );
+    }
+    vertices
+}
+
+/// One Scale handle: a ball centred on the middle of the face it resizes.
+///
+/// `creator-docs` states the shape for the engine's own resize handles —
+/// `Enum.HandlesStyle.Resize` "renders `Class.Handles` as sphere shapes for
+/// resizing an adornee along its face axes" — but publishes no proportions for
+/// the Studio tool's, so the size ([`crate::gizmo::Faces::radius`]) is chosen
+/// to read at the weight of a Move arrowhead rather than measured from
+/// anything.
+///
+/// Swept about the world's own Y: a ball has no orientation for the part's
+/// frame to disagree with, so there is nothing to build it from the face's
+/// normal for.
+fn ball(vertices: &mut Vec<Vertex>, centre: Vec3, radius: f32, color: [f32; 3]) {
+    let point = |band: usize, segment: usize| {
+        let down = std::f32::consts::PI * band as f32 / BALL_BANDS as f32;
+        let round = std::f32::consts::TAU * segment as f32 / BALL_SEGMENTS as f32;
+        let (sine, cosine) = (down.sin(), down.cos());
+        centre + Vec3::new(sine * round.cos(), cosine, sine * round.sin()) * radius
+    };
+
+    for band in 0..BALL_BANDS {
+        for segment in 0..BALL_SEGMENTS {
+            let (a, b) = (point(band, segment), point(band, segment + 1));
+            let (c, d) = (point(band + 1, segment + 1), point(band + 1, segment));
+            // Walking round the sphere and then down it comes out wound
+            // outwards. At each pole one of the two rings has collapsed to a
+            // point, and the triangle that would be built from it is
+            // degenerate — so the band there is the other triangle alone.
+            if band > 0 {
+                for corner in [a, b, c] {
+                    push(vertices, corner, color);
+                }
+            }
+            if band + 1 < BALL_BANDS {
+                for corner in [a, c, d] {
+                    push(vertices, corner, color);
+                }
+            }
+        }
     }
 }
 
-/// The tube both axis tools hang their end piece on, capped at the end nearest
-/// the gizmo's centre and open at the other, where the piece covers it.
-/// `end` is in arm lengths, like every other proportion in [`crate::gizmo`];
-/// the shaft always starts at `SHAFT_START`, which is the gap that leaves the
-/// part itself clickable.
-fn shaft(
-    vertices: &mut Vec<Vertex>,
-    origin: Vec3,
-    direction: Vec3,
-    arm: f32,
-    end: f32,
-    color: [f32; 3],
-) {
+/// The tube a Move arrow hangs its head on, capped at the end nearest the
+/// gizmo's centre and open at the other, where the head covers it. The shaft
+/// starts at `SHAFT_START`, which is the gap that leaves the part itself
+/// clickable, and ends where the head begins.
+fn shaft(vertices: &mut Vec<Vertex>, origin: Vec3, direction: Vec3, arm: f32, color: [f32; 3]) {
     let (across, round) = frame(direction);
     let ring = |offset: f32, segment: usize| {
         let angle = std::f32::consts::TAU * segment as f32 / SEGMENTS as f32;
@@ -210,7 +243,7 @@ fn shaft(
     let base = origin + direction * SHAFT_START * arm;
     for segment in 0..SEGMENTS {
         let (a, b) = (ring(SHAFT_START, segment), ring(SHAFT_START, segment + 1));
-        let (c, d) = (ring(end, segment), ring(end, segment + 1));
+        let (c, d) = (ring(HEAD_START, segment), ring(HEAD_START, segment + 1));
         // The side, as two triangles of one quad, then the open end facing
         // back towards the gizmo's centre — hence the reversed winding.
         for point in [a, b, d, a, d, c, base, b, a] {
@@ -266,20 +299,6 @@ fn slice(vertices: &mut Vec<Vertex>, handles: &Handles, axis: Axis, step: usize)
         for vertex in [a, b, c, a, c, d] {
             push(vertices, vertex, color);
         }
-    }
-}
-
-/// A flat rectangle centred on `centre`, reaching `u` and `v` from it, wound
-/// counter-clockwise seen from the `u × v` side.
-fn quad(vertices: &mut Vec<Vertex>, centre: Vec3, u: Vec3, v: Vec3, color: [f32; 3]) {
-    let corners = [
-        centre - u - v,
-        centre + u - v,
-        centre + u + v,
-        centre - u + v,
-    ];
-    for corner in [0, 1, 2, 0, 2, 3] {
-        push(vertices, corners[corner], color);
     }
 }
 

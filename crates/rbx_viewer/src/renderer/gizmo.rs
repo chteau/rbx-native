@@ -6,7 +6,7 @@
 
 use glam::Vec3;
 
-use crate::gizmo::{Handles, Kind};
+use crate::gizmo::Shape;
 
 use super::pipeline::{self, Surface, Target};
 use mesh::{Vertex, CAPACITY};
@@ -63,18 +63,13 @@ impl Draggers {
 
     /// Rebuilds this frame's handles, or draws none at all when nothing is
     /// selected or no transform tool is active.
-    pub(super) fn update(
-        &mut self,
-        queue: &wgpu::Queue,
-        handles: Option<(Kind, Handles)>,
-        eye: Vec3,
-    ) {
-        let Some((kind, handles)) = handles else {
+    pub(super) fn update(&mut self, queue: &wgpu::Queue, shape: Option<Shape>, eye: Vec3) {
+        let Some(shape) = shape else {
             self.count = 0;
             return;
         };
 
-        let vertices = mesh::mesh(kind, &handles, eye);
+        let vertices = mesh::mesh(&shape, eye);
         self.count = vertices.len() as u32;
         queue.write_buffer(&self.vertices, 0, bytemuck::cast_slice(&vertices));
     }

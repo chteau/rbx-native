@@ -81,6 +81,18 @@
   now — and a reload no longer copies the bytes of a union it already carved
   out of the resident table. — @chteau
 
+- **Scale handles sit on the part again.** The Scale tool drew small blocks
+  on the end of the same screen-relative arms the Move tool uses, so a
+  baseplate's handles hung in a little cluster around its pivot instead of
+  anywhere near the plate. They are now balls on the middle of each of the
+  six faces of the part's own box — `gizmo::Faces`, built from the
+  placement matrix the selection outline already draws its corners from —
+  which is the shape `creator-docs` gives the engine's own equivalent
+  (`Enum.HandlesStyle.Resize`: spheres "for resizing an adornee along its
+  face axes"). Each ball is still sized for the camera, now at its own
+  distance rather than the part's centre's, so the far corner of something
+  enormous stays grabbable. Move and Rotate are untouched. — @chteau
+
 - **Undo/redo fast path.** `Ctrl+Z`/`Ctrl+Y` used to reload the whole scene
   on every step, however small the reverted edit — undoing a single
   `Transparency` change cost exactly as much as undoing an instance delete.

@@ -190,8 +190,7 @@ fn a_grabbed_arm_reports_which_end_of_the_axis_it_is() {
     let ray = Ray::new(Vec3::new(0.5, 0.0, 10.0), Vec3::NEG_Z);
     assert_eq!(handles.grab_arm(ray), Some((Axis::X, 1.0)));
 
-    // The arm on the far side of the origin is the same axis, other end —
-    // which is the face a Scale drag grows.
+    // The arm on the far side of the origin is the same axis, other end.
     let back = Ray::new(Vec3::new(-0.5, 0.0, 10.0), Vec3::NEG_Z);
     assert_eq!(handles.grab_arm(back), Some((Axis::X, -1.0)));
 }

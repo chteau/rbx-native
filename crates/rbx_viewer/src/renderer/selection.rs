@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use bytemuck::{Pod, Zeroable};
-use glam::{Mat3, Mat4, Vec3};
+use glam::{Mat4, Vec3};
 use rbx_dom::Ref;
 use wgpu::util::DeviceExt;
 
@@ -103,20 +103,23 @@ fn vertices_for(placements: &HashMap<Ref, Placement>, referents: &[Ref]) -> Vec<
         .collect()
 }
 
-/// Where the transform gizmo takes its frame of reference: the first referent
-/// (in selection order) that actually has a placement, so a `Model` or a
-/// `Folder` selected ahead of a real part is skipped rather than silently
+/// Where the transform gizmo takes its frame of reference: the placement of
+/// the first referent (in selection order) that actually has one, so a `Model`
+/// or a `Folder` selected ahead of a real part is skipped rather than silently
 /// hiding the gizmo. `None` when nothing selected has a placement at all — an
 /// all-`Folder` selection, or none.
-fn anchor_of(placements: &HashMap<Ref, Placement>, referents: &[Ref]) -> Option<(Vec3, Mat3)> {
-    let model = referents
-        .iter()
-        .find_map(|referent| placements.get(referent))?
-        .model;
-    // A part's model matrix folds its `Size` into the same columns its
-    // rotation lives in, so the basis vectors come out scaled; the gizmo
-    // normalizes them (see `gizmo::basis`).
-    Some((model.w_axis.truncate(), Mat3::from_mat4(model)))
+///
+/// The whole matrix rather than a centre and a rotation: a part's model matrix
+/// folds its `Size` into the same columns its rotation lives in, and the Scale
+/// tool's handles need those lengths to find the part's own faces (the gizmo
+/// normalizes them where it wants directions instead — see `gizmo::basis`).
+fn anchor_of(placements: &HashMap<Ref, Placement>, referents: &[Ref]) -> Option<Mat4> {
+    Some(
+        referents
+            .iter()
+            .find_map(|referent| placements.get(referent))?
+            .model,
+    )
 }
 
 /// The selection outline's GPU state: a `LineList` pipeline sharing the
@@ -202,15 +205,15 @@ impl Selection {
         }
     }
 
-    /// The first outlined part's centre and the rotation its own local axes
-    /// point along (see `renderer::gizmo`) — the part Scale and Rotate
-    /// transform, and whose frame the local-orientation toggle takes. `None`
-    /// when nothing with a placement is selected.
+    /// The first outlined part's placement (see `renderer::gizmo`) — the part
+    /// Scale and Rotate transform, whose faces Scale's balls stand on, and
+    /// whose frame the local-orientation toggle takes. `None` when nothing
+    /// with a placement is selected.
     ///
     /// Where the Move gizmo is *drawn* is [`Selection::centre`] instead: it
     /// drags the whole selection as a group, so it belongs at the middle of
     /// it rather than hanging off whichever part happens to be first.
-    pub(super) fn anchor(&self) -> Option<(Vec3, Mat3)> {
+    pub(super) fn anchor(&self) -> Option<Mat4> {
         anchor_of(&self.placements, &self.referents)
     }
 
@@ -246,6 +249,8 @@ impl Selection {
 
 #[cfg(test)]
 mod tests {
+    use glam::Mat3;
+
     use super::*;
     use crate::scene::ShapeKind;
 
@@ -318,9 +323,9 @@ mod tests {
         let mut placements = HashMap::new();
         placements.insert(Ref::new(1), placement(model));
 
-        let (origin, rotation) = anchor_of(&placements, &[Ref::new(1)]).unwrap();
-        assert_eq!(origin, Vec3::new(1.0, 2.0, 3.0));
-        assert_eq!(rotation, Mat3::from_mat4(model));
+        let anchor = anchor_of(&placements, &[Ref::new(1)]).unwrap();
+        assert_eq!(anchor.w_axis.truncate(), Vec3::new(1.0, 2.0, 3.0));
+        assert_eq!(Mat3::from_mat4(anchor), Mat3::from_mat4(model));
     }
 
     /// The whole point of an anchor at all: several parts selected together
@@ -332,8 +337,8 @@ mod tests {
         placements.insert(Ref::new(2), placement(Mat4::from_translation(Vec3::Y)));
         placements.insert(Ref::new(3), placement(Mat4::from_translation(Vec3::Z)));
 
-        let (origin, _) = anchor_of(&placements, &[Ref::new(2), Ref::new(1), Ref::new(3)]).unwrap();
-        assert_eq!(origin, Vec3::Y);
+        let anchor = anchor_of(&placements, &[Ref::new(2), Ref::new(1), Ref::new(3)]).unwrap();
+        assert_eq!(anchor.w_axis.truncate(), Vec3::Y);
     }
 
     /// A `Model`/`Folder` selected ahead of a real part (no placement of its
@@ -344,8 +349,8 @@ mod tests {
         let mut placements = HashMap::new();
         placements.insert(Ref::new(2), placement(Mat4::from_translation(Vec3::X)));
 
-        let (origin, _) = anchor_of(&placements, &[Ref::new(1), Ref::new(2)]).unwrap();
-        assert_eq!(origin, Vec3::X);
+        let anchor = anchor_of(&placements, &[Ref::new(1), Ref::new(2)]).unwrap();
+        assert_eq!(anchor.w_axis.truncate(), Vec3::X);
     }
 
     #[test]

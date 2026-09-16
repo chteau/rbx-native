@@ -31,11 +31,12 @@ mod textured;
 mod trail;
 mod translucent;
 
+use glam::Mat3;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use crate::camera::{Camera, Frustum, Viewpoint};
-use crate::gizmo::{arm_length, basis, Gizmo, Handles, Kind};
+use crate::gizmo::{arm_length, basis, Faces, Gizmo, Handles, Kind, Shape};
 use crate::lighting::{Lighting, LocalLight};
 use crate::quality::QualityProfile;
 use crate::scene::{Bounds, Part, Scene};
@@ -327,30 +328,39 @@ impl Renderer {
     /// on its automatic orbit — which only happens in a file with no saved
     /// camera of its own, before the first input, where there is nothing to
     /// drag with yet either.
-    fn handles(&self, from: Viewpoint) -> Option<(Kind, Handles)> {
+    fn handles(&self, from: Viewpoint) -> Option<Shape> {
         let gizmo = self.gizmo?;
         let Viewpoint::Free(pose) = from else {
             return None;
         };
-        let (anchor, rotation) = self.selection.anchor()?;
+        let model = self.selection.anchor()?;
+        let orthographic = self.camera.is_orthographic();
+        // Scale's balls are bound to the anchor part's own surface, so there
+        // is no origin or arm to pick for them at all — the part's placement
+        // is the whole of where they go.
+        if gizmo.kind == Kind::Scale {
+            return Some(Shape::Scale(Faces::new(model, pose, orthographic)));
+        }
+
+        let (anchor, rotation) = (model.w_axis.truncate(), Mat3::from_mat4(model));
         // Move drags every selected part by one offset, so its gizmo belongs
         // at the middle of the whole selection rather than hanging off
-        // whichever part happens to be first. Scale and Rotate still transform
-        // the anchor part alone, and their handles stay on it: a scale block
-        // floating in the gap between two parts would resize one the user is
-        // not pointing at.
+        // whichever part happens to be first. Rotate still turns the anchor
+        // part alone, and its rings stay on it: a ring floating in the gap
+        // between two parts would turn one the user is not pointing at.
         let origin = match gizmo.kind {
             Kind::Move => self.selection.centre().unwrap_or(anchor),
-            Kind::Scale | Kind::Rotate => anchor,
+            _ => anchor,
         };
-        Some((
-            gizmo.kind,
-            Handles::new(
-                origin,
-                basis(gizmo.local.then_some(rotation)),
-                arm_length(origin, pose, self.camera.is_orthographic()),
-            ),
-        ))
+        let handles = Handles::new(
+            origin,
+            basis(gizmo.local.then_some(rotation)),
+            arm_length(origin, pose, orthographic),
+        );
+        Some(match gizmo.kind {
+            Kind::Rotate => Shape::Rotate(handles),
+            _ => Shape::Move(handles),
+        })
     }
 
     /// Applies a `Lighting`/`Atmosphere`/`Clouds`/`PostEffect`/`Light` edit
