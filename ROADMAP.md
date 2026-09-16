@@ -109,8 +109,9 @@ Roblox's own engine.
 - [x] Undo/redo (`Ctrl+Z`/`Ctrl+Y`), bit-for-bit reversion verified.
 - [x] Save (`Ctrl+S`, writes back in the file's original format, atomic
   write).
-- [x] Dockable, rearrangeable panel layout (`gpui_component::dock`),
-  persisted settings (quality, service visibility).
+- [x] Dockable, rearrangeable panel layout (`gpui_component::dock`) with
+  persistence — layout position/size/docking state saved across restarts,
+  plus persisted settings (quality, service visibility).
 - [x] Live camera pose reflected into `Workspace.CurrentCamera.CFrame` as
   you fly, throttled and explicitly excluded from undo history.
 - [x] Fast-path scene updates: a `Lighting`/`Atmosphere`/post-effect edit or
@@ -799,15 +800,6 @@ against `Roblox/creator-docs` rather than assumed:
 - [ ] 📋 **Native Git integration** — a real panel in `rbxstudio` (diff view,
   stage/commit, branch switch), not relying on the user's own external git
   client. Not scoped in any detail yet.
-- [x] 🚧 **Persist dock/panel layout across restarts.** Save/load
-  infrastructure established (`dock_layout.json` in the config directory,
-  following the same atomic-write pattern as `settings.json`); hooks
-  integrated into Shell's settings persistence. Tests written and passing
-  for serialization/deserialization round-trips. Still open: connecting to
-  the real DockArea to read/write its actual current state (panel positions,
-  sizes, visibility) — requires integrating with `gpui_component::dock`'s
-  state API; for now, the saved state reflects the defaults. Next iteration
-  should also allow users to close/hide panels and persist which are open.
 - [ ] 📋 **Colour-coded Explorer folders.** Another devforum request from
   the same category ("Colored folders!") — let a `Folder` (and perhaps any
   instance) carry a colour tag shown as a tint on its Explorer icon/row,
