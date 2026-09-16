@@ -80,8 +80,8 @@ impl Shell {
         self.dom = dom;
         // A subtree delete always logs more than one `Change::Removed`, or a
         // lone one that still isn't a `Property`/`Parent` write — either way
-        // `single_change` reads it as unclassifiable, so undoing this always
-        // falls back to a full reload, correctly.
+        // `single_instance_change` reads it as unclassifiable, so undoing this
+        // always falls back to a full reload, correctly.
         let changes = self.dom.take_changes();
         self.record_history_change(changes);
 
@@ -119,10 +119,10 @@ impl Shell {
         }
         self.dom = dom;
         // An insert always logs a `Change::Added` (plus, for a `Part`, a
-        // dozen more `Property` writes for its defaults) — never a single
-        // `Property`/`Parent` write on its own, so `single_change` always
-        // reads this as unclassifiable and undoing it falls back to a full
-        // reload, correctly.
+        // dozen more `Property` writes for its defaults, all on that same
+        // new instance) — and an `Added` is what `single_instance_change`
+        // refuses to classify however many writes sit beside it, so undoing
+        // this falls back to a full reload, correctly.
         let changes = self.dom.take_changes();
         self.record_history_change(changes);
 

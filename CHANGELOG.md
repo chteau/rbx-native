@@ -2,6 +2,22 @@
 
 ## 2026-09-16
 
+- **Undo/redo of a Scale drag no longer reloads the scene.** The fast path
+  below classified an undo step as "exactly one property write on one
+  instance", and a Scale drag never is one: Studio's Scale tool holds the
+  face opposite the grabbed one still, so every step writes `size` *and*
+  `CFrame` on the part together (see `shell::drag`). Every Scale-then-undo —
+  of a single part, too — therefore fell back to a full `reload_viewport`,
+  which on a large place made undo look broken. `shell::command`'s
+  classifier now answers "one instance, and every property written on it"
+  instead of "one write", and the new `Shell::reflect_changes` patches each
+  of those properties in place — the same per-property loop the live drag
+  already ran each frame — for undo/redo and a Command Bar script alike. A
+  multi-part drag, an instance create/delete, or a script touching a second
+  instance still reloads, deliberately. `RBX_STUDIO_RESIZE=<dx>,<dy>,<dz>`
+  joins `RBX_STUDIO_DRAG` as the debug aid that stands in for a Scale drag,
+  so a `RBX_STUDIO_UNDO=1` run can prove it. — @chteau
+
 - **Undo/redo fast path.** `Ctrl+Z`/`Ctrl+Y` used to reload the whole scene
   on every step, however small the reverted edit — undoing a single
   `Transparency` change cost exactly as much as undoing an instance delete.
