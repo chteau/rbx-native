@@ -1,7 +1,14 @@
 use glam::{Mat3, Mat4, Vec3};
 use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
+use rbx_reflection::ReflectionDatabase;
 
 use super::*;
+
+/// `Targets::read` needs one to tell a `BasePart` from a container it has to
+/// look inside (see `rbx_viewer::pick::parts_of`).
+fn database() -> ReflectionDatabase {
+    ReflectionDatabase::embedded()
+}
 
 fn control() -> Modifiers {
     Modifiers {
@@ -356,14 +363,14 @@ fn targets_anchor_at_the_first_referent_with_a_placement() {
 
     // A `Folder` ahead of `a` in selection order has no placement of its
     // own, so the anchor skips it rather than coming up empty.
-    let targets = Targets::read(&dom, &[folder, a, b]);
+    let targets = Targets::read(&dom, &database(), &[folder, a, b]);
     assert_eq!(targets.anchor().map(|t| t.referent), Some(a));
 }
 
 #[test]
 fn an_empty_selection_has_no_anchor() {
     let (dom, ..) = three_parts();
-    let targets = Targets::read(&dom, &[]);
+    let targets = Targets::read(&dom, &database(), &[]);
     assert_eq!(targets.anchor(), None);
     assert_eq!(targets.centre(), None);
 }
@@ -371,7 +378,7 @@ fn an_empty_selection_has_no_anchor() {
 #[test]
 fn one_selected_part_centres_the_gizmo_on_it() {
     let (dom, _, b, _) = three_parts();
-    let targets = Targets::read(&dom, &[b]);
+    let targets = Targets::read(&dom, &database(), &[b]);
     let centre = targets.centre().expect("one part");
     assert!(
         (centre - Vec3::new(5.0, 0.0, 0.0)).length() < 1e-4,
@@ -385,7 +392,7 @@ fn one_selected_part_centres_the_gizmo_on_it() {
 #[test]
 fn several_selected_parts_centre_the_gizmo_between_them_not_on_the_anchor() {
     let (dom, a, b, c) = three_parts();
-    let targets = Targets::read(&dom, &[a, b, c]);
+    let targets = Targets::read(&dom, &database(), &[a, b, c]);
 
     // Unit cubes at (0,0,0), (5,0,0) and (0,0,5): the bounds run -0.5..5.5 on
     // both X and Z, so the centre is (2.5, 0, 2.5).
@@ -408,8 +415,12 @@ fn the_centre_does_not_depend_on_selection_order() {
     // sits, or clicking the same three parts in a different order would put
     // the handles somewhere else.
     let (dom, a, b, c) = three_parts();
-    let one = Targets::read(&dom, &[a, b, c]).centre().expect("three");
-    let other = Targets::read(&dom, &[c, a, b]).centre().expect("three");
+    let one = Targets::read(&dom, &database(), &[a, b, c])
+        .centre()
+        .expect("three");
+    let other = Targets::read(&dom, &database(), &[c, a, b])
+        .centre()
+        .expect("three");
     assert!((one - other).length() < 1e-4, "{one} vs {other}");
 }
 
@@ -419,7 +430,7 @@ fn the_centre_does_not_depend_on_selection_order() {
 #[test]
 fn translating_moves_every_target_by_the_same_offset_and_preserves_their_layout() {
     let (dom, a, b, c) = three_parts();
-    let mut targets = Targets::read(&dom, &[a, b, c]);
+    let mut targets = Targets::read(&dom, &database(), &[a, b, c]);
     let before: Vec<Vec3> = targets.iter().map(Target::position).collect();
 
     let delta = Vec3::new(1.0, 2.0, 3.0);
@@ -443,4 +454,108 @@ fn translating_moves_every_target_by_the_same_offset_and_preserves_their_layout(
     for (&(_, position), original) in more.iter().zip(&after) {
         assert!((position - (*original + delta)).length() < 1e-4);
     }
+}
+
+/// One unit cube standing `x` studs along the world X axis.
+fn unit_cube_at(dom: &mut WeakDom, parent: Option<Ref>, x: f32) -> Ref {
+    let part = dom.new_instance("Part", "Part", parent);
+    let _ = dom.set_property(
+        part,
+        "CFrame",
+        Variant::CFrame(CFrameData {
+            position: Vector3Data { x, y: 0.0, z: 0.0 },
+            rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        }),
+    );
+    let _ = dom.set_property(
+        part,
+        "size",
+        Variant::Vector3(Vector3Data {
+            x: 1.0,
+            y: 1.0,
+            z: 1.0,
+        }),
+    );
+    part
+}
+
+/// A `Model` holding two unit cubes four studs apart, one of them buried in a
+/// `Folder` — the shape of a real prop, and what a viewport click actually
+/// selects (see `shell::selection::outermost_model`).
+fn model_of_two_parts() -> (WeakDom, Ref, Ref, Ref) {
+    let mut dom = WeakDom::new();
+    let model = dom.new_instance("Model", "Revolver", None);
+    let near = unit_cube_at(&mut dom, Some(model), 0.0);
+    let group = dom.new_instance("Folder", "Group", Some(model));
+    let far = unit_cube_at(&mut dom, Some(group), 4.0);
+    (dom, model, near, far)
+}
+
+/// The bug this resolution exists for: selecting a `Model` — which is what
+/// clicking any part inside one does — used to leave the gizmo with nothing
+/// to stand on at all.
+#[test]
+fn a_selected_model_targets_every_part_beneath_it() {
+    let (dom, model, near, far) = model_of_two_parts();
+    let targets = Targets::read(&dom, &database(), &[model]);
+
+    let referents: Vec<Ref> = targets.iter().map(|target| target.referent).collect();
+    assert_eq!(referents.len(), 2);
+    assert!(referents.contains(&near) && referents.contains(&far));
+
+    // Two unit cubes at 0 and 4 studs: the bounds run -0.5..4.5, so the
+    // gizmo stands at 2.
+    let centre = targets.centre().expect("a model with parts under it");
+    assert!(
+        (centre - Vec3::new(2.0, 0.0, 0.0)).length() < 1e-4,
+        "{centre}"
+    );
+
+    // Scale and Rotate write a `Size` and a `CFrame`, which a `Model` has
+    // neither of — so the anchor is a real part beneath it.
+    let anchor = targets.anchor().expect("a model with parts under it");
+    assert_ne!(anchor.referent, model);
+    assert!(anchor.referent == near || anchor.referent == far);
+}
+
+/// A group drag of a model moves everything under it by the one offset the
+/// gizmo travelled, exactly as a multi-part selection does.
+#[test]
+fn dragging_a_model_moves_every_part_beneath_it_together() {
+    let (dom, model, ..) = model_of_two_parts();
+    let mut targets = Targets::read(&dom, &database(), &[model]);
+    let before: Vec<Vec3> = targets.iter().map(Target::position).collect();
+    let delta = Vec3::new(0.0, 10.0, 0.0);
+
+    let moves = targets.translate(delta);
+
+    assert_eq!(moves.len(), 2);
+    for (&(_, position), original) in moves.iter().zip(&before) {
+        assert!((position - (*original + delta)).length() < 1e-4);
+    }
+}
+
+/// Selecting a model *and* something inside it names the same part twice.
+/// Left in, a group drag would move it twice as far as the gizmo went.
+#[test]
+fn a_model_and_a_part_inside_it_name_that_part_once() {
+    let (dom, model, near, far) = model_of_two_parts();
+    let targets = Targets::read(&dom, &database(), &[model, near]);
+
+    let referents: Vec<Ref> = targets.iter().map(|target| target.referent).collect();
+    assert_eq!(referents.len(), 2);
+    assert!(referents.contains(&near) && referents.contains(&far));
+}
+
+/// An empty container is not a regression to fix: there is genuinely nothing
+/// under it to outline or transform.
+#[test]
+fn a_model_with_no_parts_beneath_it_is_still_no_target() {
+    let mut dom = WeakDom::new();
+    let model = dom.new_instance("Model", "Empty", None);
+    dom.new_instance("Script", "Script", Some(model));
+
+    let targets = Targets::read(&dom, &database(), &[model]);
+    assert_eq!(targets.anchor(), None);
+    assert_eq!(targets.centre(), None);
 }

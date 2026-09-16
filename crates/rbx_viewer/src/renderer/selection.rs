@@ -1,12 +1,17 @@
-//! The Explorer's selection, drawn as a thin outline around the selected
-//! part's oriented bounding box.
+//! The Explorer's selection, drawn as a thin outline around what it covers:
+//! a selected part's own oriented bounding box, or — for a `Model`, a
+//! `Folder`, or any other container with no placement of its own — one
+//! world-axis-aligned box around every part beneath it.
 //!
-//! A `Folder`, a service, or any other non-`BasePart` instance has no
-//! placement to outline — [`Scene::placements`] never has an entry for one —
-//! so selecting it simply draws nothing (a `Model`'s aggregate bounds are a
-//! TODO: nothing here derives one yet).
+//! [`Scene::all_placements`] is keyed by `BasePart` referent and never has an
+//! entry for a container, so the parts each selected instance stands for are
+//! resolved against the DOM by the *editor* and arrive here already worked
+//! out, as [`Selected`] — see `crate::pick::selection` for why both sides
+//! resolve them through one function. A container holding no drawable
+//! geometry at all still outlines nothing: there is genuinely nothing to
+//! draw a box around.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3};
@@ -14,6 +19,7 @@ use rbx_dom::Ref;
 use wgpu::util::DeviceExt;
 
 use crate::gizmo;
+use crate::pick::Selected;
 use crate::scene::Placement;
 
 use super::pipeline::{self, Surface, Target};
@@ -93,47 +99,140 @@ fn edges(model: Mat4) -> [Vertex; 24] {
     vertices
 }
 
-/// Every selected referent's edges, in placement order — referents with no
-/// placement (not a `BasePart`) contribute nothing.
-fn vertices_for(placements: &HashMap<Ref, Placement>, referents: &[Ref]) -> Vec<Vertex> {
-    referents
+/// Every model matrix one selected instance covers, in the order
+/// `crate::pick::parts_of` resolved them — a part the scene never built (one
+/// outside `Workspace`, or a suppressed `MeshPart`) drops out here.
+fn models_of<'a>(
+    placements: &'a HashMap<Ref, Placement>,
+    entry: &'a Selected,
+) -> impl Iterator<Item = Mat4> + 'a {
+    entry
+        .parts()
         .iter()
         .filter_map(|referent| placements.get(referent))
-        .flat_map(|placement| edges(placement.model))
+        .map(|placement| placement.model)
+}
+
+/// The single box drawn around one selected instance, or `None` when it
+/// covers no drawn geometry at all.
+///
+/// A part keeps its own oriented box, which hugs it however it is turned. A
+/// container has no orientation to hug it with, so it gets the world-axis
+/// -aligned box around everything beneath it — one box for the whole thing,
+/// not one per part, because that extent is what Studio calls a model's
+/// bounding box and what the Move gizmo already stands in the middle of (see
+/// [`gizmo::bounds_of`], which [`Selection::centre`] takes its answer from
+/// too).
+fn box_of(placements: &HashMap<Ref, Placement>, entry: &Selected) -> Option<Mat4> {
+    if entry.is_part() {
+        return Some(placements.get(&entry.referent())?.model);
+    }
+    let (min, max) = gizmo::bounds_of(models_of(placements, entry))?;
+    // The unit cube `edges` carries through this spans [-0.5, 0.5], so the
+    // box's full extent is its scale, exactly as a part's `Size` is.
+    Some(Mat4::from_translation((min + max) * 0.5) * Mat4::from_scale(max - min))
+}
+
+/// Every selected instance's edges, in selection order — one box each,
+/// and nothing at all for a container with no drawable geometry under it.
+fn vertices_for(placements: &HashMap<Ref, Placement>, selected: &[Selected]) -> Vec<Vertex> {
+    selected
+        .iter()
+        .filter_map(|entry| box_of(placements, entry))
+        .flat_map(edges)
         .collect()
 }
 
-/// Where the transform gizmo takes its frame of reference: the placement of
-/// the first referent (in selection order) that actually has one, so a `Model`
-/// or a `Folder` selected ahead of a real part is skipped rather than silently
-/// hiding the gizmo. `None` when nothing selected has a placement at all — an
-/// all-`Folder` selection, or none.
+/// Where the transform gizmo takes its frame of reference: the first part the
+/// selection covers that actually has a placement — a container's own first
+/// descendant part, so Scale and Rotate act on real geometry rather than on a
+/// `Model` that has no `Size` or `CFrame` to write. A referent with nothing
+/// drawn under it is skipped rather than silently hiding the gizmo. `None`
+/// when the whole selection covers nothing drawn at all.
 ///
 /// The whole matrix rather than a centre and a rotation: a part's model matrix
 /// folds its `Size` into the same columns its rotation lives in, and the Scale
 /// tool's handles need those lengths to find the part's own faces (the gizmo
 /// normalizes them where it wants directions instead — see `gizmo::basis`).
-fn anchor_of(placements: &HashMap<Ref, Placement>, referents: &[Ref]) -> Option<Mat4> {
+///
+/// `rbxstudio` picks the same part the same way (`transform::Targets::read`
+/// flattens the very `pick::selection` entries these are, dedup and order
+/// alike), so the handles it hit-tests stand where these are drawn.
+fn anchor_of(placements: &HashMap<Ref, Placement>, selected: &[Selected]) -> Option<Mat4> {
     Some(
-        referents
+        selected
             .iter()
+            .flat_map(|entry| entry.parts())
             .find_map(|referent| placements.get(referent))?
             .model,
     )
 }
 
-/// The selection outline's GPU state: a `LineList` pipeline sharing the
-/// renderer's own camera bind group, and the tiny vertex buffer rebuilt each
-/// time the selection changes.
-pub(super) struct Selection {
-    pipeline: wgpu::RenderPipeline,
-    /// Every drawable part's placement, read once from the scene at
-    /// construction and kept in step by [`Selection::place`] afterwards, so
+/// Everything the outline is worked out from, with no GPU in it: what is
+/// selected, where every part stands, and whether the vertices last uploaded
+/// still match.
+///
+/// Apart from [`Selection`] because a group drag leans on the bookkeeping
+/// here — one aggregate rebuild per frame, however many of a model's parts
+/// moved in it — and that is worth being able to test without a device.
+#[derive(Default)]
+struct Outline {
+    /// Every part's placement — including one whose box a resolved mesh
+    /// replaced, which is still selectable and still has the box Studio
+    /// outlines (see [`Scene::all_placements`]) — read once from the scene at
+    /// construction and kept in step by [`Outline::place`] afterwards, so
     /// there is no reason to walk the scene again on every selection change.
     placements: HashMap<Ref, Placement>,
-    /// What [`Selection::set`] last outlined, so a placement that moves
-    /// under the outline (see [`Selection::place`]) can redraw it.
-    referents: Vec<Ref>,
+    /// What [`Selection::set`] last outlined, each entry already resolved to
+    /// the parts it covers, so a placement that moves under the outline (see
+    /// [`Outline::place`]) can redraw it without a DOM to walk.
+    selected: Vec<Selected>,
+    /// Every part the selection covers, flattened. A set rather than a walk of
+    /// `selected`: [`Outline::place`] runs this test once per moved part, and
+    /// re-scanning an N-part model's entry each time would make dragging it
+    /// quadratic in the membership test alone.
+    covered: HashSet<Ref>,
+    /// Whether a placement under the outline has moved since the vertices were
+    /// last worked out.
+    stale: bool,
+}
+
+impl Outline {
+    fn set(&mut self, selected: &[Selected]) {
+        self.selected = selected.to_vec();
+        self.covered = selected
+            .iter()
+            .flat_map(|entry| entry.parts())
+            .copied()
+            .collect();
+        self.stale = true;
+    }
+
+    /// Records where one part is drawn now, and notes the outline as owing a
+    /// rebuild when that part is one it covers.
+    fn place(&mut self, referent: Ref, placement: Placement) {
+        self.placements.insert(referent, placement);
+        self.stale |= self.covered.contains(&referent);
+    }
+
+    /// The outline's vertices when something has moved under it since they
+    /// were last taken, and `None` when nothing has.
+    ///
+    /// Taken once per frame rather than once per placement: a drag of a model
+    /// moves each of its parts in turn, and rebuilding the whole aggregate box
+    /// for every one of them is quadratic in the number of parts, where one
+    /// rebuild at the end of the step is linear.
+    fn take_vertices(&mut self) -> Option<Vec<Vertex>> {
+        std::mem::take(&mut self.stale).then(|| vertices_for(&self.placements, &self.selected))
+    }
+}
+
+/// The selection outline's GPU state: a `LineList` pipeline sharing the
+/// renderer's own camera bind group, and the tiny vertex buffer rebuilt from
+/// [`Outline`] whenever that has something new to say.
+pub(super) struct Selection {
+    pipeline: wgpu::RenderPipeline,
+    outline: Outline,
     vertices: Option<wgpu::Buffer>,
     count: u32,
 }
@@ -163,8 +262,10 @@ impl Selection {
 
         Selection {
             pipeline,
-            placements,
-            referents: Vec::new(),
+            outline: Outline {
+                placements,
+                ..Outline::default()
+            },
             vertices: None,
             count: 0,
         }
@@ -174,16 +275,38 @@ impl Selection {
     /// and the selection itself — redrawn straight away around wherever its
     /// parts stand in the new scene, or around nothing if they are gone.
     pub(super) fn rebuild(&mut self, device: &wgpu::Device, placements: HashMap<Ref, Placement>) {
-        self.placements = placements;
-        let referents = std::mem::take(&mut self.referents);
-        self.set(device, &referents);
+        self.outline.placements = placements;
+        let selected = std::mem::take(&mut self.outline.selected);
+        self.set(device, &selected);
     }
 
-    /// Rebuilds the outline around whatever `referents` names now, replacing
+    /// Rebuilds the outline around whatever `selected` names now, replacing
     /// whatever the previous selection drew.
-    pub(super) fn set(&mut self, device: &wgpu::Device, referents: &[Ref]) {
-        self.referents = referents.to_vec();
-        let vertices = vertices_for(&self.placements, referents);
+    pub(super) fn set(&mut self, device: &wgpu::Device, selected: &[Selected]) {
+        self.outline.set(selected);
+        self.flush(device);
+    }
+
+    /// Records where one part is drawn now — a Properties-panel edit moved,
+    /// resized or reshaped it, or a drag is walking a whole model's parts
+    /// through their new placements one at a time.
+    ///
+    /// Bookkeeping only: the box itself is rebuilt by [`Selection::flush`]
+    /// before the next frame, which is what keeps a drag of an N-part model
+    /// from paying for N aggregate rebuilds inside a single step of it.
+    pub(super) fn place(&mut self, referent: Ref, placement: Placement) {
+        self.outline.place(referent, placement);
+    }
+
+    /// Uploads the outline again if anything has moved under it since the last
+    /// frame — the edited instance is nearly always the selected one, and
+    /// during a drag of a whole `Model` it is one of its descendants rather
+    /// than the selected instance itself, which is exactly the case that would
+    /// otherwise leave the box behind where the model used to stand.
+    pub(super) fn flush(&mut self, device: &wgpu::Device) {
+        let Some(vertices) = self.outline.take_vertices() else {
+            return;
+        };
         self.count = vertices.len() as u32;
         self.vertices = (!vertices.is_empty()).then(|| {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -194,42 +317,32 @@ impl Selection {
         });
     }
 
-    /// Records where one part is drawn now — a Properties-panel edit moved,
-    /// resized or reshaped it — and redraws the outline if that part is in
-    /// it: the edited instance is nearly always the selected one.
-    pub(super) fn place(&mut self, device: &wgpu::Device, referent: Ref, placement: Placement) {
-        self.placements.insert(referent, placement);
-        if self.referents.contains(&referent) {
-            let referents = std::mem::take(&mut self.referents);
-            self.set(device, &referents);
-        }
-    }
-
     /// The first outlined part's placement (see `renderer::gizmo`) — the part
     /// Scale and Rotate transform, whose faces Scale's balls stand on, and
-    /// whose frame the local-orientation toggle takes. `None` when nothing
-    /// with a placement is selected.
+    /// whose frame the local-orientation toggle takes. `None` when the
+    /// selection covers nothing drawn.
     ///
     /// Where the Move gizmo is *drawn* is [`Selection::centre`] instead: it
     /// drags the whole selection as a group, so it belongs at the middle of
     /// it rather than hanging off whichever part happens to be first.
     pub(super) fn anchor(&self) -> Option<Mat4> {
-        anchor_of(&self.placements, &self.referents)
+        anchor_of(&self.outline.placements, &self.outline.selected)
     }
 
-    /// The centre of the world-axis-aligned box containing every outlined
-    /// part — where one gizmo for a whole selection belongs. For a single
-    /// part this is simply that part's own centre.
+    /// The centre of the world-axis-aligned box containing every part the
+    /// selection covers — where one gizmo for a whole selection belongs. For a
+    /// single part this is simply that part's own centre; for a `Model` it is
+    /// the middle of the very box [`box_of`] outlines it with.
     ///
     /// `rbxstudio` places the handles it hit-tests from the very same
     /// `gizmo::centre_of` (see `transform::Targets::centre`), so what the user
     /// can grab and what they can see cannot drift apart.
     pub(super) fn centre(&self) -> Option<Vec3> {
         gizmo::centre_of(
-            self.referents
+            self.outline
+                .selected
                 .iter()
-                .filter_map(|referent| self.placements.get(referent))
-                .map(|placement| placement.model),
+                .flat_map(|entry| models_of(&self.outline.placements, entry)),
         )
     }
 
@@ -248,114 +361,5 @@ impl Selection {
 }
 
 #[cfg(test)]
-mod tests {
-    use glam::Mat3;
-
-    use super::*;
-    use crate::scene::ShapeKind;
-
-    fn placement(model: Mat4) -> Placement {
-        Placement {
-            kind: ShapeKind::Box,
-            model,
-            size: Vec3::ONE,
-        }
-    }
-
-    #[test]
-    fn a_box_has_twelve_edges_and_twenty_four_vertices() {
-        let vertices = edges(Mat4::IDENTITY);
-        assert_eq!(vertices.len(), 24);
-        // 12 edges, each contributing exactly one pair of endpoints.
-        assert_eq!(EDGES.len(), 12);
-    }
-
-    #[test]
-    fn the_corners_follow_the_model_matrix() {
-        let model = Mat4::from_translation(Vec3::new(66.0, 6.5, -81.0))
-            * Mat4::from_scale(Vec3::new(10.0, 13.0, 2.0));
-        let vertices = edges(model);
-
-        // Every vertex is a cube corner carried through `model`: half the part's
-        // size away from its centre on every axis.
-        for vertex in vertices {
-            let local = Vec3::from(vertex.position) - Vec3::new(66.0, 6.5, -81.0);
-            assert!((local.x.abs() - 5.0).abs() < 1e-4);
-            assert!((local.y.abs() - 6.5).abs() < 1e-4);
-            assert!((local.z.abs() - 1.0).abs() < 1e-4);
-        }
-    }
-
-    #[test]
-    fn a_referent_with_no_placement_draws_nothing() {
-        // Stands for a `Folder`, a service, or a `Model`: none of them are a
-        // `BasePart`, so `Scene::placements` never has an entry for one.
-        let placements = HashMap::new();
-        let vertices = vertices_for(&placements, &[Ref::new(1)]);
-        assert!(vertices.is_empty());
-    }
-
-    #[test]
-    fn a_part_referent_draws_its_box() {
-        let mut placements = HashMap::new();
-        placements.insert(Ref::new(1), placement(Mat4::IDENTITY));
-
-        let vertices = vertices_for(&placements, &[Ref::new(1)]);
-        assert_eq!(vertices.len(), 24);
-    }
-
-    #[test]
-    fn an_empty_selection_draws_nothing() {
-        let placements = HashMap::new();
-        let vertices = vertices_for(&placements, &[]);
-        assert!(vertices.is_empty());
-    }
-
-    #[test]
-    fn nothing_selected_anchors_nothing() {
-        let placements = HashMap::new();
-        assert_eq!(anchor_of(&placements, &[]), None);
-    }
-
-    #[test]
-    fn a_single_parts_anchor_is_its_own_centre_and_rotation() {
-        let model = Mat4::from_translation(Vec3::new(1.0, 2.0, 3.0));
-        let mut placements = HashMap::new();
-        placements.insert(Ref::new(1), placement(model));
-
-        let anchor = anchor_of(&placements, &[Ref::new(1)]).unwrap();
-        assert_eq!(anchor.w_axis.truncate(), Vec3::new(1.0, 2.0, 3.0));
-        assert_eq!(Mat3::from_mat4(anchor), Mat3::from_mat4(model));
-    }
-
-    /// The whole point of an anchor at all: several parts selected together
-    /// still get exactly one gizmo, at the first one in selection order.
-    #[test]
-    fn several_parts_anchor_at_the_first_one_in_selection_order() {
-        let mut placements = HashMap::new();
-        placements.insert(Ref::new(1), placement(Mat4::from_translation(Vec3::X)));
-        placements.insert(Ref::new(2), placement(Mat4::from_translation(Vec3::Y)));
-        placements.insert(Ref::new(3), placement(Mat4::from_translation(Vec3::Z)));
-
-        let anchor = anchor_of(&placements, &[Ref::new(2), Ref::new(1), Ref::new(3)]).unwrap();
-        assert_eq!(anchor.w_axis.truncate(), Vec3::Y);
-    }
-
-    /// A `Model`/`Folder` selected ahead of a real part (no placement of its
-    /// own) must not hide the gizmo — the search skips it for the next
-    /// referent that actually has one.
-    #[test]
-    fn a_referent_with_no_placement_is_skipped_rather_than_hiding_the_gizmo() {
-        let mut placements = HashMap::new();
-        placements.insert(Ref::new(2), placement(Mat4::from_translation(Vec3::X)));
-
-        let anchor = anchor_of(&placements, &[Ref::new(1), Ref::new(2)]).unwrap();
-        assert_eq!(anchor.w_axis.truncate(), Vec3::X);
-    }
-
-    #[test]
-    fn a_selection_with_no_placement_at_all_anchors_nothing() {
-        let placements = HashMap::new();
-        assert_eq!(anchor_of(&placements, &[Ref::new(1), Ref::new(2)]), None);
-    }
-}
+#[path = "selection/tests.rs"]
+mod tests;

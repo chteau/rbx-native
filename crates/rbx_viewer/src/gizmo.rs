@@ -296,6 +296,17 @@ pub fn angle_step(from: f32, to: f32) -> f32 {
 /// One part is the same answer as before — its own bounding box is centred on
 /// it — so this needs no special case for a single selection.
 pub fn centre_of(models: impl IntoIterator<Item = Mat4>) -> Option<Vec3> {
+    bounds_of(models).map(|(min, max)| (min + max) * 0.5)
+}
+
+/// The world-axis-aligned box containing every one of `models`, as its minimum
+/// and maximum corner. `None` for an empty selection.
+///
+/// Split out of [`centre_of`] because a selected `Model` needs the whole box
+/// and not just its middle: the outline drawn around a container is exactly
+/// this extent, and deriving it a second time somewhere else is how the box
+/// the user sees and the point the gizmo stands on start to disagree.
+pub fn bounds_of(models: impl IntoIterator<Item = Mat4>) -> Option<(Vec3, Vec3)> {
     let mut bounds: Option<(Vec3, Vec3)> = None;
     for model in models {
         let centre = model.w_axis.truncate();
@@ -313,7 +324,7 @@ pub fn centre_of(models: impl IntoIterator<Item = Mat4>) -> Option<Vec3> {
             Some((min, max)) => (min.min(centre - half), max.max(centre + half)),
         });
     }
-    bounds.map(|(min, max)| (min + max) * 0.5)
+    bounds
 }
 
 /// The world-space directions the three draggers point along: the world axes,

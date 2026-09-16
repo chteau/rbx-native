@@ -329,6 +329,24 @@ impl Scene {
             .collect()
     }
 
+    /// The same, suppressed parts included — what the selection outline and
+    /// the transform gizmo stand on.
+    ///
+    /// The opposite call from [`Scene::placements`]' for the opposite reason:
+    /// a `MeshPart` or a union whose real mesh replaced its box is still a
+    /// `BasePart` with a `Size` and a `CFrame`, is still what a click selects
+    /// and a drag moves, and Studio outlines exactly that box around it —
+    /// while a *decal* projected onto a box nothing draws would float in the
+    /// air. Leaving them out here left every mesh in a place unable to show a
+    /// gizmo at all, and put the handles the editor hit-tests (which read the
+    /// DOM, not this map) somewhere the renderer drew nothing.
+    pub(crate) fn all_placements(&self) -> HashMap<Ref, Placement> {
+        self.parts
+            .iter()
+            .map(|part| (part.referent, part.placement()))
+            .collect()
+    }
+
     /// Every mesh and texture asset a caller needs to download before calling
     /// [`Scene::resolve_file_meshes`].
     pub(crate) fn file_mesh_assets(&self) -> (Vec<AssetRef>, Vec<AssetRef>) {

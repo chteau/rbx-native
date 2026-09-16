@@ -39,7 +39,7 @@ impl Shell {
             return;
         };
 
-        let mut targets = Targets::read(&self.dom, self.selected_all());
+        let mut targets = Targets::read(&self.dom, &self.database, self.selected_all());
         let moves = targets.translate(delta);
         if !moves.is_empty() {
             self.move_parts(&moves, true, None, cx);
@@ -56,7 +56,7 @@ impl Shell {
             return;
         };
 
-        let Some(anchor) = Targets::read(&self.dom, self.selected_all()).anchor() else {
+        let Some(anchor) = Targets::read(&self.dom, &self.database, self.selected_all()).anchor() else {
             return;
         };
         let Some((size, position)) = grown(

@@ -28,7 +28,7 @@ use glam::{Mat3, Mat4, Vec3};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_dom::Ref;
-use rbx_viewer::pick::{Meshes, Ray};
+use rbx_viewer::pick::{Meshes, Ray, Selected};
 use rbx_viewer::{CameraInput, Headless, Pose, QualityLevel};
 
 use crate::camera::PlaceCamera;
@@ -217,7 +217,7 @@ impl WorkspaceView {
         camera: Option<PlaceCamera>,
         quality: QualityLevel,
         orthographic: bool,
-        selected: Option<Ref>,
+        selected: Vec<Selected>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -227,7 +227,7 @@ impl WorkspaceView {
         if let Some(camera) = camera {
             viewer.open_at(camera.eye, camera.look_at, camera.fov_degrees);
         }
-        viewer.set_selection(&Vec::from_iter(selected));
+        viewer.set_selection(&selected);
         viewer.set_orthographic(orthographic);
 
         let interval = pacing::frame_interval(display::refresh_hz());

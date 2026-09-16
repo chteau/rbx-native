@@ -1,10 +1,15 @@
 //! The editor's selection: zero or more instances, in DOM terms.
 
 use gpui_kit::component::tree::TreeItem;
+use gpui_kit::Context;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
+use rbx_viewer::pick::{self, Selected};
 
 use crate::explorer;
+use crate::transform::Targets;
+
+use super::Shell;
 
 /// The service a viewport click's search for a `Model` ancestor stops at.
 /// `Workspace` is itself a `Model` subclass in Roblox's own class hierarchy,
@@ -12,6 +17,61 @@ use crate::explorer;
 /// the whole workspace.
 const WORKSPACE_CLASS: &str = "Workspace";
 const MODEL_CLASS: &str = "Model";
+
+/// What the viewport outlines for each selected instance: the instance and
+/// every drawable part it stands for, resolved here because only the editor
+/// side holds a DOM to walk (see `rbx_viewer::pick::Selected`).
+///
+/// Paired with `crate::transform::Targets::read`, which flattens the entries
+/// this returns: one derivation of what a selected `Model` covers — dedup
+/// included, so a model selected alongside its own child is outlined by the
+/// one box that spans both rather than by two drawn over each other — and so
+/// the box the user sees and the handles the cursor can reach are built from
+/// the same parts.
+pub(super) fn outlined(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    referents: &[Ref],
+) -> Vec<Selected> {
+    pick::selection(dom, database, referents)
+}
+
+/// Both halves of what the 3D view shows for a selection, read together: the
+/// boxes the renderer outlines it with, and the placements this side
+/// hit-tests the handles against.
+///
+/// Together because they are one answer to one question. What a selected
+/// `Model` covers changes whenever the DOM does, so a script that parents
+/// another `Part` under it moves the box and the gizmo as surely as picking a
+/// different model would — and reading back only one of the two leaves the
+/// other describing the membership the selection had before.
+pub(super) fn shown(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    referents: &[Ref],
+) -> (Vec<Selected>, Targets) {
+    (
+        outlined(dom, database, referents),
+        Targets::read(dom, database, referents),
+    )
+}
+
+impl Shell {
+    /// Re-resolves the selection against the current `self.dom` and sends the
+    /// viewport both halves of it (see [`shown`]).
+    ///
+    /// One method for both of its callers — a selection change, and a reload
+    /// — because a reload is the other way what a selected container covers
+    /// can change, and the user has no way to ask for the box again short of
+    /// reselecting.
+    pub(super) fn sync_viewport_selection(&mut self, cx: &mut Context<Self>) {
+        let (outline, targets) = shown(&self.dom, &self.database, self.selection.all());
+        self.viewport.update(cx, |viewport, _| {
+            viewport.set_selection(&outline);
+            viewport.set_targets(targets);
+        });
+    }
+}
 
 /// The selection, in the order instances were added to it. Kept apart from
 /// the tree's own selected row because the tree can track only one of them,
@@ -144,6 +204,8 @@ fn outermost_model(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) 
 
 #[cfg(test)]
 mod tests {
+    use rbx_dom::{CFrameData, Variant, Vector3Data};
+
     use super::*;
 
     #[test]
@@ -314,6 +376,77 @@ mod tests {
             from_click(&dom, &database, &hits, Some(loose), true),
             Some(deep)
         );
+    }
+
+    /// What a Command Bar script does to a selected model, and what the
+    /// reload after it has to answer for: the box and the handles both cover
+    /// the part that appeared, with nothing asked of the user.
+    ///
+    /// Reading back only the targets — which is all a reload used to do —
+    /// left a drag carrying three parts while the box drawn round them still
+    /// spanned two.
+    #[test]
+    fn a_part_parented_under_a_selected_model_joins_both_halves_of_what_is_shown() {
+        let mut dom = WeakDom::new();
+        let workspace = dom.new_instance("Workspace", "Workspace", None);
+        let model = dom.new_instance("Model", "House", Some(workspace));
+        for index in 0..2 {
+            placed_part(&mut dom, model, index as f32);
+        }
+        let database = ReflectionDatabase::embedded();
+
+        let (outline, targets) = shown(&dom, &database, &[model]);
+        assert_eq!(outline.len(), 1);
+        assert_eq!(outline[0].parts().len(), 2);
+        assert_eq!(targets.iter().count(), 2);
+
+        placed_part(&mut dom, model, 40.0);
+
+        let (outline, targets) = shown(&dom, &database, &[model]);
+        assert_eq!(outline[0].parts().len(), 3);
+        assert_eq!(targets.iter().count(), 3);
+    }
+
+    /// The outline and the targets are one derivation, dedup and all: a model
+    /// selected with its own child is one box, over exactly the parts a drag
+    /// carries.
+    #[test]
+    fn a_model_and_a_part_inside_it_are_one_box_over_the_parts_a_drag_carries() {
+        let mut dom = WeakDom::new();
+        let workspace = dom.new_instance("Workspace", "Workspace", None);
+        let model = dom.new_instance("Model", "House", Some(workspace));
+        let wall = placed_part(&mut dom, model, 0.0);
+        placed_part(&mut dom, model, 8.0);
+        let database = ReflectionDatabase::embedded();
+
+        let (outline, targets) = shown(&dom, &database, &[model, wall]);
+        assert_eq!(outline.len(), 1, "one box, not one per selected referent");
+        assert_eq!(outline[0].referent(), model);
+        assert_eq!(outline[0].parts().len(), targets.iter().count());
+    }
+
+    /// A unit cube `x` studs along, which is what `Targets::read` needs to
+    /// see a part as draggable at all.
+    fn placed_part(dom: &mut WeakDom, parent: Ref, x: f32) -> Ref {
+        let part = dom.new_instance("Part", "Part", Some(parent));
+        let _ = dom.set_property(
+            part,
+            "CFrame",
+            Variant::CFrame(CFrameData {
+                position: Vector3Data { x, y: 0.0, z: 0.0 },
+                rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+            }),
+        );
+        let _ = dom.set_property(
+            part,
+            "size",
+            Variant::Vector3(Vector3Data {
+                x: 1.0,
+                y: 1.0,
+                z: 1.0,
+            }),
+        );
+        part
     }
 
     #[test]

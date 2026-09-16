@@ -20,17 +20,18 @@
 //! cannot quietly drop one of these — whatever it does or does not happen to
 //! keep of the renderer's own copy.
 
-use rbx_dom::Ref;
-
 use crate::gizmo::Gizmo;
+use crate::pick::Selected;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct View {
     pub(crate) orthographic: bool,
     /// Outlined in the viewport — every instance in the selection, not just
     /// one: `rbxstudio`'s `Shift`/`Ctrl`/`Cmd`-click adds another top-level
-    /// object rather than replacing it.
-    pub(crate) selected: Vec<Ref>,
+    /// object rather than replacing it. Each entry already carries the parts
+    /// it covers (see [`Selected`]), which is what survives a rebuild: the
+    /// renderer has no DOM to resolve a bare referent against.
+    pub(crate) selected: Vec<Selected>,
     /// `None` whenever no transform tool is active, which is every `rbxview`
     /// frame: the standalone viewer edits nothing.
     pub(crate) gizmo: Option<Gizmo>,
@@ -39,9 +40,9 @@ pub(crate) struct View {
 impl View {
     /// Replaces the outlined selection — never adds to it, the way selecting
     /// another row in the Explorer replaces rather than extends.
-    pub(crate) fn select(&mut self, referents: &[Ref]) {
+    pub(crate) fn select(&mut self, selected: &[Selected]) {
         self.selected.clear();
-        self.selected.extend_from_slice(referents);
+        self.selected.extend_from_slice(selected);
     }
 
     pub(crate) fn set_gizmo(&mut self, gizmo: Option<Gizmo>) {
@@ -55,8 +56,14 @@ impl View {
 
 #[cfg(test)]
 mod tests {
+    use rbx_dom::Ref;
+
     use super::*;
     use crate::gizmo::Kind;
+
+    fn part(referent: u32) -> Selected {
+        Selected::part(Ref::new(referent))
+    }
 
     #[test]
     fn a_fresh_view_outlines_nothing_and_draws_no_draggers() {
@@ -72,16 +79,16 @@ mod tests {
     #[test]
     fn selecting_replaces_rather_than_accumulates() {
         let mut view = View::default();
-        view.select(&[Ref::new(1), Ref::new(2)]);
-        view.select(&[Ref::new(3)]);
+        view.select(&[part(1), part(2)]);
+        view.select(&[part(3)]);
 
-        assert_eq!(view.selected, [Ref::new(3)]);
+        assert_eq!(view.selected, [part(3)]);
     }
 
     #[test]
     fn selecting_nothing_clears_the_outline() {
         let mut view = View::default();
-        view.select(&[Ref::new(1)]);
+        view.select(&[part(1)]);
         view.select(&[]);
 
         assert!(view.selected.is_empty());
@@ -97,7 +104,7 @@ mod tests {
     fn a_rebuild_is_handed_everything_the_editor_last_asked_for() {
         let mut view = View::default();
         view.set_orthographic(true);
-        view.select(&[Ref::new(9)]);
+        view.select(&[part(9)]);
         view.set_gizmo(Some(Gizmo {
             kind: Kind::Rotate,
             local: true,
@@ -112,7 +119,7 @@ mod tests {
         }));
 
         assert!(view.orthographic);
-        assert_eq!(view.selected, [Ref::new(9)]);
+        assert_eq!(view.selected, [part(9)]);
         assert_eq!(
             view.gizmo,
             Some(Gizmo {

@@ -17,7 +17,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use rbx_dom::{Ref, WeakDom};
-use rbx_viewer::pick::Meshes;
+use rbx_viewer::pick::{Meshes, Selected};
 use rbx_viewer::{CameraInput, Gizmo, Headless, Pose, QualityLevel};
 
 use super::quality::Quality;
@@ -42,7 +42,7 @@ enum Command {
     Size((u32, u32)),
     Quality(QualityLevel),
     Orthographic(bool),
-    Selection(Vec<Ref>),
+    Selection(Vec<Selected>),
     /// Which transform tool's draggers to draw over the selection, if any —
     /// see `Headless::set_gizmo`.
     Gizmo(Option<Gizmo>),
@@ -152,9 +152,9 @@ impl Pump {
         let _ = self.commands.send(Command::Orthographic(orthographic));
     }
 
-    /// Outlines `referents` in the viewport.
-    pub(super) fn select(&self, referents: Vec<Ref>) {
-        let _ = self.commands.send(Command::Selection(referents));
+    /// Outlines what `selected` covers in the viewport.
+    pub(super) fn select(&self, selected: Vec<Selected>) {
+        let _ = self.commands.send(Command::Selection(selected));
     }
 
     /// Shows or hides the transform tool's draggers over the selection.
@@ -471,7 +471,7 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::Size(new) => *rendering.size = new,
         Command::Quality(mode) => rendering.quality.set(mode, rendering.viewer),
         Command::Orthographic(orthographic) => rendering.viewer.set_orthographic(orthographic),
-        Command::Selection(referents) => rendering.viewer.set_selection(&referents),
+        Command::Selection(selected) => rendering.viewer.set_selection(&selected),
         Command::Gizmo(gizmo) => rendering.viewer.set_gizmo(gizmo),
         Command::Reload(dom) => match rendering.viewer.reload(&dom) {
             Ok(()) => *rendering.rebuilt = true,

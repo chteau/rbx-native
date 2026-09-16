@@ -342,7 +342,7 @@ impl Shell {
             return;
         }
 
-        let targets = Targets::read(&self.dom, self.selected_all());
+        let targets = Targets::read(&self.dom, &self.database, self.selected_all());
         self.viewport
             .update(cx, |viewport, _| viewport.set_targets(targets));
     }

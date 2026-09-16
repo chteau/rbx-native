@@ -14,6 +14,7 @@ use crate::camera::{self, Camera, Viewpoint};
 use crate::gizmo::Gizmo;
 use crate::gpu;
 use crate::lighting::{Lighting, LocalLight};
+use crate::pick::Selected;
 use crate::quality::QualityProfile;
 use crate::renderer::{Renderer, World};
 use crate::scene::{EffectKind, Part, Resolved, ResolvedInstance, Scene};
@@ -104,8 +105,8 @@ impl Offscreen {
 
     /// Replaces the outlined selection box(es), rebuilding their tiny vertex
     /// buffer right away.
-    pub(crate) fn set_selection(&mut self, referents: &[Ref]) {
-        self.renderer.set_selection(&self.device, referents);
+    pub(crate) fn set_selection(&mut self, selected: &[Selected]) {
+        self.renderer.set_selection(&self.device, selected);
     }
 
     /// Shows or hides the transform tool's draggers over the selection.
