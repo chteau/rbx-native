@@ -5,7 +5,7 @@
 //! dispatch point `shell::history` reuses for Ctrl+Z/Ctrl+Y, rather than a
 //! second `on_key_down`.
 
-use gpui_kit::{Context, Keystroke};
+use gpui_kit::{Context, Keystroke, Window};
 
 use crate::command_bar::Feedback;
 use crate::save::{self, Action};
@@ -15,11 +15,16 @@ use super::Shell;
 impl Shell {
     /// The window-level `on_key_down` handler: Ctrl+S here, Ctrl+Z/Ctrl+Y
     /// delegated to `shell::history` (see this module's doc comment).
-    pub(super) fn handle_shell_key(&mut self, keystroke: &Keystroke, cx: &mut Context<Self>) {
+    pub(super) fn handle_shell_key(
+        &mut self,
+        keystroke: &Keystroke,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
         if let Some(Action::Save) = save::action_for(&keystroke.key, keystroke.modifiers) {
             self.save(cx);
         }
-        self.handle_history_key(keystroke, cx);
+        self.handle_history_key(keystroke, window, cx);
     }
 
     /// Writes the current DOM back to the file it was opened from, in the

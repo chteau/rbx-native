@@ -163,6 +163,22 @@ impl Shell {
         }
     }
 
+    /// Whether an open script editor currently holds focus.
+    ///
+    /// While one does, Ctrl+Z belongs to that editor's own text history and
+    /// not to the place's — the same split Studio makes, where the script
+    /// editor undoes typing and the place's history undoes everything else.
+    /// Running both would step two stacks on one keypress, reverting an
+    /// unrelated earlier edit along with the typing. Nothing is lost by
+    /// standing aside: whatever the editor's undo leaves behind reaches the
+    /// DOM through the usual debounced write.
+    pub(super) fn script_editor_focused(&self, window: &Window, cx: &App) -> bool {
+        self.scripts
+            .open
+            .values()
+            .any(|open| open.state.focus_handle(cx).contains_focused(window, cx))
+    }
+
     fn focus_script(&self, reference: Ref, window: &mut Window, cx: &mut App) {
         if let Some(open) = self.scripts.open.get(&reference) {
             window.focus(&open.state.focus_handle(cx), cx);

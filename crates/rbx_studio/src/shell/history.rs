@@ -77,8 +77,14 @@ impl Shell {
     pub(super) fn handle_history_key(
         &mut self,
         keystroke: &gpui_kit::Keystroke,
+        window: &gpui_kit::Window,
         cx: &mut Context<Self>,
     ) {
+        // See `Shell::script_editor_focused`: the script editor owns Ctrl+Z
+        // while it has focus.
+        if self.script_editor_focused(window, cx) {
+            return;
+        }
         match history::action_for(&keystroke.key, keystroke.modifiers) {
             Some(history::Action::Undo) => self.undo(cx),
             Some(history::Action::Redo) => self.redo(cx),

@@ -567,8 +567,8 @@ impl Render for Shell {
             // focus, and every panel — Explorer, Properties, viewport,
             // Command Bar — sits below this container, so a save works no
             // matter which one is focused.
-            .on_key_down(cx.listener(|shell, event: &KeyDownEvent, _, cx| {
-                shell.handle_shell_key(&event.keystroke, cx);
+            .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
+                shell.handle_shell_key(&event.keystroke, window, cx);
             }))
             .child(crate::menu_bar::bar(&self.menu_bar, cx))
             .child(self.toolbar(cx))
