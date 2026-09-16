@@ -114,6 +114,47 @@
   --screenshot` path drains any remaining upload immediately instead, since
   it has no next frame to spread the rest across. — @chteau
 
+- **Performance is a measured quantity now: `scripts/bench.sh` and
+  `BENCHMARKS.md`.** Until today the only reload timing that existed anywhere
+  was the hand profile written into this file — a number nobody could re-run,
+  so nobody could tell whether a change had helped. `crates/rbx_viewer/examples/bench`
+  times cold load, full reload, single-instance patch and steady-state frame
+  cost at each quality level, through `Headless`'s public API only, and prints a
+  table plus a JSON file carrying every sample, the adapter, the commit and the
+  iteration counts. Two numbers per operation, never added together: when the
+  call returned, and when the first frame it queued was actually readable —
+  a reload returns with its GPU work still in flight, and a wall clock around
+  the call alone would flatter it by 26-49ms. Median and p95, never a mean.
+  The recorded baseline reproduces the old hand profile (1.09s to a readable
+  frame on `marked.rbxl`, against ~0.9-1.15s profiled by hand) and decomposes
+  it: ~245ms is `Offscreen::new` opening a fresh wgpu device and rebuilding
+  every pipeline, ~132ms is the 16 742-instance scene itself, and ~665ms is
+  re-resolving textures, materials and meshes the previous scene already had
+  resident. That last part is also the only unstable one — bimodal, 15%
+  run-to-run — so the baseline is recorded both ways and `--no-textures`
+  (6.6% run-to-run) is what a before/after comparison should use. Deliberately
+  not wired into `check.sh`: a GPU benchmark is not a CI gate. — @chteau
+
+- **The benchmark harness can no longer report a number that isn't the
+  number.** Three ways it could. A failed `cargo build` was swallowed by the
+  `|| true` on the pipeline that filtered its output, so `scripts/bench.sh`
+  ran on whatever binary the last successful build had left in `target/` and
+  printed its timings under the *current* commit — the build's status is now
+  taken on its own, and the filtering happens afterwards over its log.
+  A fixture that failed part-way through a run took the run with it: with
+  `TestPlace.rbxl` already measured and `marked.rbxl` unreadable, neither the
+  table nor `bench.json` was written at all, and minutes of GPU work went with
+  it. Each fixture now carries its own result, so the run reports everything
+  that did measure alongside which fixture failed and why, and still exits
+  non-zero. `--frame-warmup 0` left `render_frame`'s pipeline empty, which
+  makes the first measured frame come back as `None` — the phase collected
+  nothing and printed a tidy `0.00 ms` for it, indistinguishable from a real
+  sub-millisecond result; the warmup now parses like every other iteration
+  count (at least 1), and any column with no samples behind it says so
+  instead of printing a zero. The patch phase also tells an exhausted
+  candidate search apart from a place with nothing patchable in it, rather
+  than reporting both as the latter. — @chteau
+
 ## 2026-09-15
 
 - **Viewport selection and a Move gizmo.** Clicking in the 3D view now

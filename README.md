@@ -152,6 +152,9 @@ the real answer is simply: it doesn't belong here at all.
   architecture rules every change in this repo follows.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — how to propose a change.
 - [CHANGELOG.md](CHANGELOG.md) — a running log of what landed and why.
+- [BENCHMARKS.md](BENCHMARKS.md) — recorded load, reload and frame timings,
+  the machine they came from, and what `./scripts/bench.sh` re-runs to get
+  them again.
 - [agents/](agents/) — standing instructions for AI coding agents working in
   this repository, including a step-by-step workflow
   ([agents/workflows/roadmap-task.md](agents/workflows/roadmap-task.md)) for

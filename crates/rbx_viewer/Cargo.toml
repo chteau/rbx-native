@@ -8,6 +8,16 @@ license.workspace = true
 name = "rbxview"
 path = "src/main.rs"
 
+# The performance harness (see scripts/bench.sh). An example rather than a bin
+# so it never ships in a release build of the viewer, with `test = true` because
+# cargo does not run an example's own unit tests otherwise — and the statistics
+# and argument parsing behind a committed number have to be held to the same
+# gate as everything else.
+[[example]]
+name = "bench"
+path = "examples/bench/main.rs"
+test = true
+
 [dependencies]
 rbx_dom = { path = "../rbx_dom" }
 rbx_binary = { path = "../rbx_binary" }
