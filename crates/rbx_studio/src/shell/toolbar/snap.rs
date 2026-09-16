@@ -16,7 +16,7 @@
 
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
-use gpui_kit::component::{h_flex, ActiveTheme, Disableable as _, Sizable as _};
+use gpui_kit::component::{h_flex, ActiveTheme, Sizable as _};
 use gpui_kit::*;
 
 use crate::transform::{self, Action, Snap, SnapKind};
@@ -112,7 +112,6 @@ impl Shell {
         };
         // Everything about the rotate pair is live except what it would act
         // on; see this module's own header.
-        let unimplemented = kind == SnapKind::Rotate;
         let handle = cx.entity();
 
         h_flex()
@@ -123,7 +122,6 @@ impl Shell {
                     .label(kind.label())
                     .checked(snap.enabled)
                     .xsmall()
-                    .disabled(unimplemented)
                     .on_click(move |_, _, cx| {
                         handle.update(cx, |shell, cx| {
                             shell.transform_action(Action::ToggleSnap(kind), cx);
@@ -131,11 +129,9 @@ impl Shell {
                     }),
             )
             .child(
-                div().w(FIELD_WIDTH).child(
-                    Input::new(self.snap_fields.of(kind))
-                        .xsmall()
-                        .disabled(unimplemented),
-                ),
+                div()
+                    .w(FIELD_WIDTH)
+                    .child(Input::new(self.snap_fields.of(kind)).xsmall()),
             )
             .child(
                 div()

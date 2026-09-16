@@ -147,11 +147,13 @@ impl Drag {
 }
 
 /// What a drag is allowed to land on for this one mouse move: the grid its
-/// travel rounds to (`0.0` for no grid), and the parts its grab point can
-/// soft-snap onto.
+/// travel rounds to (`0.0` for no grid) — studs for Move and Scale, which
+/// share the toolbar's one increment, radians for Rotate's own — and the
+/// parts its grab point can soft-snap onto.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Landing<'a> {
     pub(super) grid: f32,
+    pub(super) angle: f32,
     pub(super) neighbours: &'a [Mat4],
     pub(super) reach: f32,
 }
@@ -384,6 +386,7 @@ impl WorkspaceView {
     fn landing(&self, shift: bool) -> Landing<'_> {
         Landing {
             grid: self.transform.translate.grid(shift),
+            angle: self.transform.rotate.grid(shift).to_radians(),
             neighbours: &self.neighbours,
             reach: self.arm() * SOFT_SNAP_REACH,
         }
@@ -626,14 +629,17 @@ fn grab_face(faces: &Faces, target: Target, ray: Ray) -> Option<Drag> {
 /// Pure, and the whole of what a drag computes: [`Drag`] is a grab's worth of
 /// geometry, and this turns it plus a ray into the part's new placement.
 ///
-/// `landing` only bears on the Move tool's two gestures (`Axis`, `Plane`) —
-/// Scale and Rotate have no grid or soft-snap surface of their own to land on.
-/// What it rounds is the *travel* since the handle was grabbed, not the part's
-/// world position. The docs say only that increments are "based on studs" and
-/// never where the grid is anchored; rounding the travel is what keeps a part
-/// that already stood off-grid from jumping the moment it is picked up, and it
-/// is the one reading that means the same thing for a dragger along a local
-/// axis as for one along a world axis.
+/// `landing`'s soft-snap surfaces bear on the Move tool's body grab alone;
+/// its grids on every tool — the stud increment on a Move or Scale travel
+/// (`creator-docs`, `parts/index.md#transform-parts`: increments "are based
+/// on studs for moving/scaling"), the degree increment on a Rotate. What is
+/// rounded is the *travel* since the handle was grabbed — the studs slid or
+/// grown, the angle swept — not the part's world position, size or heading.
+/// The docs say only that increments are "based on studs" and never where the
+/// grid is anchored; rounding the travel is what keeps a part that already
+/// stood off-grid from jumping the moment it is picked up, and it is the one
+/// reading that means the same thing for a dragger along a local axis as for
+/// one along a world axis.
 pub(super) fn advance(drag: Drag, ray: Ray, landing: Landing) -> Option<(Drag, Change)> {
     match drag {
         Drag::Axis {
@@ -663,7 +669,10 @@ pub(super) fn advance(drag: Drag, ray: Ray, landing: Landing) -> Option<(Drag, C
             size,
             component,
         } => {
-            let travelled = gizmo::along_axis(origin, axis, ray)? - grabbed;
+            let travelled = snap::round_to(
+                gizmo::along_axis(origin, axis, ray)? - grabbed,
+                landing.grid,
+            );
             let mut resized = size;
             resized[component] = (size[component] + travelled).clamp(MIN_SIZE, MAX_SIZE);
             // Half the growth, so the face opposite the grabbed one holds
@@ -690,6 +699,10 @@ pub(super) fn advance(drag: Drag, ray: Ray, landing: Landing) -> Option<(Drag, C
             let (angle, ..) = gizmo::ring_crossing(origin, frame, ray)?;
             let turned = turned + gizmo::angle_step(last, angle);
             let (turn, ..) = frame;
+            // The running total is kept exact and only the angle *applied* is
+            // rounded: rounding each step before adding it up would let a
+            // slow drag creep past the increments without ever crossing one.
+            let applied = snap::round_to(turned, landing.angle);
             Some((
                 Drag::Ring {
                     origin,
@@ -698,7 +711,7 @@ pub(super) fn advance(drag: Drag, ray: Ray, landing: Landing) -> Option<(Drag, C
                     last: angle,
                     turned,
                 },
-                Change::Orientation(Mat3::from_axis_angle(turn, turned) * orientation),
+                Change::Orientation(Mat3::from_axis_angle(turn, applied) * orientation),
             ))
         }
     }

@@ -76,15 +76,20 @@ fn shift_two_jumps_to_the_move_scale_increment_field() {
 }
 
 #[test]
-fn the_rotate_increment_shortcut_stays_unbound_while_rotate_does_not_exist() {
-    // Alt+R is the docs' jump to the rotate increment field; that field has no
-    // Rotate tool behind it yet, and a shortcut that does nothing visible is
-    // worse than one that visibly isn't there.
+fn alt_r_jumps_to_the_rotate_increment_field() {
+    // creator-docs: "To quickly jump to the rotate increment input, press
+    // Alt+R (Windows) or ⌥R (Mac)".
     let alt = Modifiers {
         alt: true,
         ..Modifiers::none()
     };
-    assert_eq!(action_for("r", alt), None);
+    assert_eq!(
+        action_for("r", alt),
+        Some(Action::FocusIncrement(SnapKind::Rotate))
+    );
+    // A plain `r` is not it: that one belongs to cursor dragging's quarter
+    // turn (see `WorkspaceView::turn_key`).
+    assert_eq!(action_for("r", Modifiers::none()), None);
 }
 
 #[test]

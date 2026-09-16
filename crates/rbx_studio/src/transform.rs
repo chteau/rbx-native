@@ -206,12 +206,12 @@ pub(crate) enum Action {
 /// not Move either: creator-docs gives that chord to the move/scale increment
 /// field, so it jumps to the field instead.
 ///
-/// `Alt`/`⌥`+`R`, the docs' shortcut for the *rotate* increment field, stays
-/// unbound while that field has no Rotate tool behind it — the same reason
-/// `3` and `4` are unbound.
+/// `Alt`/`⌥`+`R` is the docs' own chord for the *rotate* increment field,
+/// the counterpart of `Shift`+`2`.
 pub(crate) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
     let plain = !modifiers.control && !modifiers.alt && !modifiers.shift && !modifiers.platform;
     let only_shift = modifiers.shift && !modifiers.control && !modifiers.alt && !modifiers.platform;
+    let only_alt = modifiers.alt && !modifiers.control && !modifiers.shift && !modifiers.platform;
     match key {
         // `platform` is Cmd on a Mac, where creator-docs gives the toggle as
         // ⌘L rather than Ctrl+L.
@@ -219,6 +219,7 @@ pub(crate) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
             Some(Action::ToggleLocal)
         }
         "2" if only_shift => Some(Action::FocusIncrement(SnapKind::Translate)),
+        "r" if only_alt => Some(Action::FocusIncrement(SnapKind::Rotate)),
         _ if !plain => None,
         "1" => Some(Action::Use(Tool::Select)),
         "2" => Some(Action::Use(Tool::Move)),
