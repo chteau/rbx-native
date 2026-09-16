@@ -1,16 +1,21 @@
 //! Undo/redo: a bounded stack of whole-DOM snapshots, taken right before each
 //! mutation (see `shell::history`, which calls [`History::push`] at every
 //! call site `shell::command`, `shell::edit` and `shell::keys` already use to
-//! take `Shell::dom` out, mutate it, and put it back).
+//! take `Shell::dom` out, mutate it, and put it back), each paired with the
+//! `Change` log that mutation went on to produce (see [`History::record_changes`]).
 //!
 //! Keeping a full [`WeakDom`] clone per entry rather than a diff is the same
 //! trade `shell::command` already makes for a script run: places are small
 //! enough in practice that a clone is cheap, and a diff format would have to
 //! track every mutation path (script, property edit, insert, delete)
-//! separately instead of once, here.
+//! separately instead of once, here. The `Change` log carried alongside each
+//! snapshot is that same log, not a second one: every mutation path already
+//! writes to `WeakDom`'s own change log (`shell::command`'s script run reads
+//! it too, via `single_change`), so recording it here costs nothing beyond
+//! draining it at the right two moments.
 
 use gpui_kit::Modifiers;
-use rbx_dom::WeakDom;
+use rbx_dom::{Change, WeakDom};
 
 /// How many undo steps are kept before the oldest is dropped — bounds memory
 /// rather than growing the stack for the length of a whole editing session.
@@ -37,11 +42,31 @@ pub(crate) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
     }
 }
 
+/// One snapshot on either stack: the DOM as it stood at that point, plus the
+/// `Change` log the mutation right after it went on to produce. Read by
+/// `shell::history::install` through `shell::command::single_change` — the
+/// same classifier an ordinary edit's viewport reflection already uses — to
+/// tell "exactly one property write or reparent" apart from anything a fast
+/// in-place GPU patch cannot safely cover, without inventing a second
+/// classifier or re-diffing two `WeakDom` trees.
+///
+/// `changes` starts empty and is filled in once, after the fact, by
+/// [`History::record_changes`] — `push` runs *before* the mutation it
+/// snapshots, so the log it produces isn't known yet. An entry whose
+/// mutation never actually changed anything (a Properties-panel commit that
+/// failed validation, say) simply keeps the empty log `push` left it with;
+/// `single_change` reads that the same safe way it reads any log it can't
+/// classify — fall back to a full reload.
+struct Entry {
+    dom: WeakDom,
+    changes: Vec<Change>,
+}
+
 /// A bounded stack of DOM snapshots either side of the current state: `undo`
 /// holds what came before, `redo` holds what an undo just stepped back from.
 pub(crate) struct History {
-    undo: Vec<WeakDom>,
-    redo: Vec<WeakDom>,
+    undo: Vec<Entry>,
+    redo: Vec<Entry>,
     cap: usize,
 }
 
@@ -62,26 +87,48 @@ impl History {
         if self.undo.len() >= self.cap {
             self.undo.remove(0);
         }
-        self.undo.push(dom);
+        self.undo.push(Entry {
+            dom,
+            changes: Vec::new(),
+        });
         self.redo.clear();
     }
 
-    /// Pops the last snapshot, pushes `current` onto the redo stack so a
-    /// following redo can restore it, and returns the popped snapshot to
-    /// install as the new DOM. `None` with nothing to undo — a no-op that
-    /// leaves both stacks untouched.
-    pub(crate) fn undo(&mut self, current: WeakDom) -> Option<WeakDom> {
+    /// Attaches `changes` to the entry `push` most recently added — see
+    /// [`Entry`]'s doc comment. A no-op if nothing has been pushed yet
+    /// (should not happen given `Shell::push_history`'s own call sites, but
+    /// costs nothing to guard).
+    pub(crate) fn record_changes(&mut self, changes: Vec<Change>) {
+        if let Some(entry) = self.undo.last_mut() {
+            entry.changes = changes;
+        }
+    }
+
+    /// Pops the last snapshot, pushes `current` onto the redo stack — paired
+    /// with the same `Change` log, since redoing this step reapplies exactly
+    /// the mutation undoing it just reverted — and returns the popped DOM
+    /// plus that log, for the caller to classify and install. `None` with
+    /// nothing to undo — a no-op that leaves both stacks untouched.
+    pub(crate) fn undo(&mut self, current: WeakDom) -> Option<(WeakDom, Vec<Change>)> {
         let previous = self.undo.pop()?;
-        self.redo.push(current);
-        Some(previous)
+        self.redo.push(Entry {
+            dom: current,
+            changes: previous.changes.clone(),
+        });
+        Some((previous.dom, previous.changes))
     }
 
     /// Symmetric to [`History::undo`]: pops the last undone snapshot, pushes
-    /// `current` back onto the undo stack, and returns the popped snapshot.
-    pub(crate) fn redo(&mut self, current: WeakDom) -> Option<WeakDom> {
+    /// `current` back onto the undo stack (with the same log, for the same
+    /// reason `undo` carries it onto `redo`), and returns the popped DOM
+    /// plus that log.
+    pub(crate) fn redo(&mut self, current: WeakDom) -> Option<(WeakDom, Vec<Change>)> {
         let next = self.redo.pop()?;
-        self.undo.push(current);
-        Some(next)
+        self.undo.push(Entry {
+            dom: current,
+            changes: next.changes.clone(),
+        });
+        Some((next.dom, next.changes))
     }
 }
 
@@ -110,10 +157,10 @@ mod tests {
         let after = named("After");
 
         history.push(before);
-        let undone = history.undo(after.clone()).expect("something to undo");
+        let (undone, _) = history.undo(after.clone()).expect("something to undo");
         assert_eq!(root_name(&undone), "Before");
 
-        let redone = history.redo(undone).expect("something to redo");
+        let (redone, _) = history.redo(undone).expect("something to redo");
         assert_eq!(root_name(&redone), "After");
     }
 
@@ -125,9 +172,9 @@ mod tests {
         history.push(named("Three"));
 
         assert_eq!(history.undo.len(), 2);
-        let top = history.undo(named("Current")).expect("something to undo");
+        let (top, _) = history.undo(named("Current")).expect("something to undo");
         assert_eq!(root_name(&top), "Three");
-        let next = history
+        let (next, _) = history
             .undo(named("Current"))
             .expect("still something to undo");
         assert_eq!(
@@ -141,7 +188,7 @@ mod tests {
     fn a_new_push_clears_the_redo_stack() {
         let mut history = History::new(DEFAULT_CAP);
         history.push(named("Before"));
-        let undone = history.undo(named("After")).expect("something to undo");
+        let (undone, _) = history.undo(named("After")).expect("something to undo");
         assert!(!history.redo.is_empty());
 
         history.push(undone);
@@ -149,6 +196,38 @@ mod tests {
             history.redo.is_empty(),
             "a new action must invalidate any redo history"
         );
+    }
+
+    #[test]
+    fn a_recorded_change_log_survives_undo_and_carries_onto_redo() {
+        let mut history = History::new(DEFAULT_CAP);
+        history.push(named("Before"));
+        let change = Change::Property {
+            referent: rbx_dom::Ref::new(1),
+            name: "Transparency".to_string(),
+        };
+        history.record_changes(vec![change.clone()]);
+
+        let (undone, changes) = history.undo(named("After")).expect("something to undo");
+        assert_eq!(
+            changes,
+            vec![change.clone()],
+            "the log recorded before undo travels with the snapshot"
+        );
+
+        let (_, changes) = history.redo(undone).expect("something to redo");
+        assert_eq!(
+            changes,
+            vec![change],
+            "redo reapplies the same mutation, so it carries the same log"
+        );
+    }
+
+    #[test]
+    fn record_changes_with_nothing_pushed_is_a_no_op() {
+        let mut history = History::new(DEFAULT_CAP);
+        history.record_changes(vec![Change::Added(rbx_dom::Ref::new(1))]);
+        assert!(history.undo.is_empty());
     }
 
     #[test]

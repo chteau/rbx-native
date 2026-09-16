@@ -162,6 +162,15 @@ impl Shell {
             }
         }
         self.dom = dom;
+        // Overwrites, not appends: this step's log alone is what a later
+        // undo of the whole gesture classifies (see this method's doc
+        // comment for why history is pushed once, on `first`, not per
+        // frame) — a single dragged part writes exactly the one `CFrame`
+        // change `single_change` fast-paths, however many mouse-move frames
+        // it took to get there; a group drag's several referents keep it
+        // falling back, the same as any other multi-instance edit.
+        let changes = self.dom.take_changes();
+        self.record_history_change(changes);
 
         for &(referent, _) in moves {
             self.reflect_in_viewport(referent, CFRAME_PROPERTY, cx);
@@ -239,6 +248,13 @@ impl Shell {
             properties::edit::commit(&mut dom, &self.database, referent, name, text).map(|_| ())
         });
         self.dom = dom;
+        // Same reasoning as `move_parts`: overwrites the entry's log with
+        // just this step's writes. `properties` carries one name (a
+        // Rotate drag) or two (Scale's paired Size/CFrame), so
+        // `single_change` fast-paths the former and correctly falls back
+        // for the latter, the same way it would for any two-property batch.
+        let changes = self.dom.take_changes();
+        self.record_history_change(changes);
 
         if let Err(err) = written {
             self.output.push_warning(&format!("viewport drag: {err}"));
@@ -313,6 +329,10 @@ impl Shell {
             self.output.push_warning(&format!("viewport turn: {err}"));
             return;
         }
+        // Same reasoning as `move_parts`: this turn writes exactly the one
+        // `CFrame` change, however many `T`/`R` presses the gesture took.
+        let changes = self.dom.take_changes();
+        self.record_history_change(changes);
 
         self.reflect_in_viewport(referent, CFRAME_PROPERTY, cx);
         cx.notify();
