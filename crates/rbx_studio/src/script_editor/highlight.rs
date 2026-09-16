@@ -103,7 +103,13 @@ fn runs(tokens: &[Token], range: &Range<usize>) -> Vec<(Range<usize>, Option<&'s
     let mut runs = Vec::new();
     let mut at = range.start;
 
-    for token in tokens {
+    // The editor asks for one range per painted chunk, so scanning from the
+    // first token in the file each time would cost the whole token list per
+    // chunk. Tokens are sorted and non-overlapping, so bisection finds the
+    // first one that can reach into `range`.
+    let first = tokens.partition_point(|token| token.range.end <= range.start);
+
+    for token in &tokens[first..] {
         if at >= range.end || token.range.start >= range.end {
             break;
         }
