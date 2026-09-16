@@ -500,12 +500,11 @@ fn synthetic_plan(
     (Plan { entries }, assets)
 }
 
-/// `resolve` used to evaluate every union's BSP boolean one at a time, on
-/// the caller's own thread; it now runs them across a bounded worker pool
-/// (`evaluate_all`) since they are independent of each other. This checks
-/// that parallelizing the evaluation order never changes the result: each
-/// asset's mesh must come out byte-for-byte identical to evaluating it alone,
-/// on its own, the way the old sequential resolver would have — a race or
+/// `resolve` runs every union's BSP boolean across a bounded worker pool
+/// (`evaluate_all`) rather than one at a time on the caller's own thread,
+/// since each asset's boolean is independent of every other. This checks
+/// that the evaluation order never changes the result: each asset's mesh
+/// must come out byte-for-byte identical to evaluating it alone — a race or
 /// an ordering bug in the parallel path would show up here as a mismatched
 /// vertex/index list, not as a crash, which is exactly the kind of silent
 /// regression a "just check it's faster" test would miss.

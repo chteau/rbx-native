@@ -1,5 +1,9 @@
 //! Uploading a decoded image as a mipmapped GPU texture.
 
+mod spread;
+
+pub(super) use spread::{Pending, PER_FRAME};
+
 use crate::assets::Image;
 use crate::quality::MAX_TEXTURE_SIZE;
 

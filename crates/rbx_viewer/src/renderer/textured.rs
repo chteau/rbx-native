@@ -9,10 +9,24 @@ use super::mesh::Vertex;
 use super::pipeline::{self, Surface, Target, DECAL_SHADER};
 use super::slots::keyed::Keyed;
 use super::slots::Roster;
-use super::texture;
+use super::texture::{self, Pending};
+use crate::assets::Image;
 use crate::quality::QualityProfile;
 use crate::scene::ShapeKind;
 use crate::textures::{FaceInstance, Group};
+
+/// A single opaque white texel, uploaded synchronously for every slot before
+/// [`Textured::new`] returns, so a batch always has something valid to bind
+/// even before its real image's turn in [`Textured::upload_pending`] comes
+/// up. 1x1, with no mip chain beyond itself, so seeding every slot with one
+/// costs nothing like the burst this module spreads out.
+fn placeholder_image() -> Image {
+    Image {
+        width: 1,
+        height: 1,
+        pixels: vec![255, 255, 255, 255],
+    }
+}
 
 const INSTANCES_LABEL: &str = "rbxview decal instances";
 
@@ -109,6 +123,9 @@ pub(super) struct Textured {
     /// instance sorts into the same pass a full reload would put it in
     /// without needing the decoded image kept around just to ask again.
     image_alpha: Vec<bool>,
+    /// Real images [`Textured::new`] hasn't uploaded to their slot yet, each
+    /// tagged with which one it belongs to — see [`Textured::upload_pending`].
+    pending: Pending<(usize, Image)>,
     opaque: Batches,
     blended: Batches,
 }
@@ -131,12 +148,20 @@ impl Textured {
         let mut image_alpha = Vec::with_capacity(groups.len());
         let mut opaque = Keyed::new(INSTANCES_LABEL);
         let mut blended = Keyed::new(INSTANCES_LABEL);
+        // Every slot gets a cheap placeholder up front rather than its real
+        // image: the real ones are decoded, full-size textures that can
+        // number in the dozens for one place, and uploading all of them here
+        // is exactly the load-time burst this module exists to spread across
+        // frames instead (see `Textured::upload_pending`).
+        let placeholder = placeholder_image();
+        let mut pending = Vec::with_capacity(groups.len());
         for group in groups {
             let slot = images.len();
-            let upload = texture::Uploaded::color(device, queue, &group.image);
+            let upload = texture::Uploaded::color(device, queue, &placeholder);
             images.push(upload.bind(device, &image_layout, &sampler, quality.texture_max_size));
             image_alpha.push(group.image.has_alpha());
             uploads.push(upload);
+            pending.push((slot, group.image.clone()));
             add_batches(device, &mut opaque, slot, &group.opaque);
             add_batches(device, &mut blended, slot, &group.blended);
         }
@@ -149,8 +174,40 @@ impl Textured {
             image_layout,
             images,
             image_alpha,
+            pending: Pending::new(pending),
             opaque,
             blended,
+        }
+    }
+
+    /// Uploads up to `budget` of the real images [`Textured::new`] deferred,
+    /// replacing that slot's placeholder bind group with the real one —
+    /// called once per drawn frame (see `Renderer::draw`) with a bounded
+    /// budget so a place with many textures spreads their GPU upload cost
+    /// across the frames after load instead of paying for all of them before
+    /// the first one. Pass [`usize::MAX`] to finish every remaining upload
+    /// at once, for a caller with no next frame to spread the rest across
+    /// (the single-shot `--screenshot` path — see `Renderer::finish_loading`).
+    pub(super) fn upload_pending(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        quality: &QualityProfile,
+        budget: usize,
+    ) {
+        if self.pending.is_empty() {
+            return;
+        }
+        let sampler = texture::sampler(device, wgpu::AddressMode::Repeat, quality.anisotropy);
+        for (slot, image) in self.pending.take(budget) {
+            let upload = texture::Uploaded::color(device, queue, &image);
+            self.images[slot] = upload.bind(
+                device,
+                &self.image_layout,
+                &sampler,
+                quality.texture_max_size,
+            );
+            self.uploads[slot] = upload;
         }
     }
 

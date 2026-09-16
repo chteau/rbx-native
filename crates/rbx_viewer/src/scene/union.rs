@@ -283,11 +283,11 @@ fn evaluate(bytes: &[u8], database: &ReflectionDatabase) -> Option<Evaluated> {
 ///
 /// This is the one CPU-heavy step in resolving a plan: each asset's boolean
 /// is a from-scratch BSP tree build, completely independent of every other
-/// asset's, and a place with dozens of legacy unions used to pay for all of
-/// them back to back on the caller's own thread. Several entries can share
-/// an asset (a builder copy-pasting the same rock), so this dedupes by
-/// [`AssetRef`] first — the whole point is never redoing the same boolean
-/// twice, in parallel or not.
+/// asset's, so a place with dozens of legacy unions can spread that cost
+/// across cores instead of paying for it back to back on the caller's own
+/// thread. Several entries can share an asset (a builder copy-pasting the
+/// same rock), so this dedupes by [`AssetRef`] first — the whole point is
+/// never redoing the same boolean twice, in parallel or not.
 fn evaluate_all(
     plan: &Plan,
     assets: &HashMap<AssetRef, Vec<u8>>,

@@ -137,6 +137,13 @@ impl Offscreen {
         self.renderer.patch_effect(kind, scene)
     }
 
+    /// Forwards to [`Renderer::finish_loading`] — for [`write_png`], which
+    /// draws exactly one frame and so has no later frame to finish the load
+    /// spread across (see [`Renderer::draw`]'s own texture-upload budget).
+    pub(crate) fn finish_loading(&mut self) {
+        self.renderer.finish_loading(&self.device, &self.queue);
+    }
+
     /// Draws one frame and waits for it, for a caller that wants this very view
     /// and nothing after it.
     pub(crate) fn frame(&mut self, size: (u32, u32), from: Viewpoint) -> Result<Vec<u8>, String> {
@@ -251,6 +258,11 @@ pub(crate) fn write_png(
         ..View::default()
     };
     let mut offscreen = Offscreen::new(world, quality, &view)?;
+    // A single offscreen frame is drawn below and nothing after it, so there
+    // is no later frame for `Renderer::draw`'s own texture-upload budget to
+    // spread the rest of the load across — finish it now instead of writing
+    // out a PNG with some textures still on their placeholder.
+    offscreen.finish_loading();
 
     if let Some(degrees) = framing.pitch {
         offscreen.pitch(degrees);
