@@ -2,6 +2,18 @@
 
 ## 2026-09-16
 
+- **Undo/redo fast path.** `Ctrl+Z`/`Ctrl+Y` used to reload the whole scene
+  on every step, however small the reverted edit — undoing a single
+  `Transparency` change cost exactly as much as undoing an instance delete.
+  `shell/history.rs` now pairs each pushed `WeakDom` snapshot with the
+  `Change` log the mutation right after it produced, and reads it back
+  through `shell::command`'s own `single_change` classifier — the same one
+  a Command Bar script's viewport reflection already uses — so undoing or
+  redoing a single property write or reparent patches the GPU state in
+  place instead. An instance create/delete, a multi-instance drag, or
+  anything else `single_change` can't classify still falls back to a full
+  reload, correctly. — @chteau
+
 - **A real script editor.** Double-clicking a `Script`, `LocalScript` or
   `ModuleScript` in the Explorer now opens it in a new Script Editor dock
   panel — tabbed, one tab per script, each closable — instead of leaving its
@@ -18,7 +30,6 @@
   writes, which was quietly eating a script's trailing newline. The saved dock
   layout is now `dock_layout_v2.json`, since a layout written before this
   panel existed would have hidden it rather than failed. — @chteau
-
 - **Dock layout persistence.** Dock panel position, size, and docking state
   (floating vs. docked) now persist across restarts. Uses `DockAreaState`
   from `gpui_component::dock` to capture the full layout on

@@ -118,12 +118,16 @@ fn the_label_is_the_instance_name_and_follows_a_rename() {
     );
 }
 
-/// What `shell::scripts::commit_script` does — snapshot, then write — using
-/// the same two pieces it calls, so the undo path can be exercised without a
-/// window around it.
+/// What `shell::scripts::commit_script` does — snapshot, write, then attach
+/// the change log that write produced — using the same pieces it calls, so
+/// the undo path can be exercised without a window around it. The log is what
+/// lets an undone `Source` take the fast viewport patch instead of a full
+/// reload; `shell::history`'s own tests read it back through the classifier.
 fn commit(history: &mut History, dom: &mut WeakDom, script: Ref, text: &str) {
+    dom.take_changes();
     history.push(dom.clone());
     write(dom, script, text);
+    history.record_changes(dom.take_changes());
 }
 
 #[test]
@@ -134,14 +138,14 @@ fn an_edit_to_a_scripts_source_undoes_and_redoes_cleanly() {
     commit(&mut history, &mut dom, script, "print(2)\n");
     assert_eq!(read(&dom, script).as_deref(), Some("print(2)\n"));
 
-    let undone = history.undo(dom.clone()).expect("the edit to undo");
+    let (undone, _) = history.undo(dom.clone()).expect("the edit to undo");
     assert_eq!(
         read(&undone, script).as_deref(),
         Some("print(1)\n"),
         "Ctrl+Z must put the script's source back"
     );
 
-    let redone = history.redo(undone).expect("the edit to redo");
+    let (redone, _) = history.redo(undone).expect("the edit to redo");
     assert_eq!(read(&redone, script).as_deref(), Some("print(2)\n"));
 }
 
@@ -155,10 +159,10 @@ fn each_typing_burst_is_its_own_undo_step() {
     commit(&mut history, &mut dom, script, "two");
     commit(&mut history, &mut dom, script, "three");
 
-    let once = history.undo(dom.clone()).expect("the second edit to undo");
+    let (once, _) = history.undo(dom.clone()).expect("the second edit to undo");
     assert_eq!(read(&once, script).as_deref(), Some("two"));
 
-    let twice = history.undo(once).expect("the first edit to undo");
+    let (twice, _) = history.undo(once).expect("the first edit to undo");
     assert_eq!(read(&twice, script).as_deref(), Some("one"));
 }
 
@@ -173,7 +177,7 @@ fn an_undone_source_no_longer_matches_what_the_editor_last_synced() {
     let synced = "after";
     assert!(is(&dom, script, synced), "nothing to re-seed yet");
 
-    let undone = history.undo(dom).expect("the edit to undo");
+    let (undone, _) = history.undo(dom).expect("the edit to undo");
     assert!(
         !is(&undone, script, synced),
         "the undo must be visible to the editor as a mismatch"

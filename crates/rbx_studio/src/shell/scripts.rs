@@ -229,6 +229,12 @@ impl Shell {
         // See `shell::history`: snapshotted before the write below.
         self.push_history();
         source::write(&mut self.dom, reference, &text);
+        // A `Source` write is exactly one property write, so undoing it takes
+        // the same fast in-place viewport patch every other single edit does
+        // rather than a full reload — but only if the log that write produced
+        // is attached to the snapshot above (see `shell::history`).
+        let changes = self.dom.take_changes();
+        self.record_history_change(changes);
         self.mark_synced(reference, text);
         cx.notify();
     }
