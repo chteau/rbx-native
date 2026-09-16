@@ -60,7 +60,12 @@ fn an_instance_never_drops_onto_itself() {
 #[test]
 fn an_instance_never_drops_into_its_own_child() {
     let place = place();
-    assert!(!accepts(&place.dom, &database(), &[place.model], place.part));
+    assert!(!accepts(
+        &place.dom,
+        &database(),
+        &[place.model],
+        place.part
+    ));
 }
 
 #[test]
@@ -129,7 +134,9 @@ fn a_dragged_instance_that_is_gone_is_skipped_rather_than_refused() {
     let mut place = place();
     let ghost = Ref::new(9999);
     place.dom.remove(place.model);
-    let loose = place.dom.new_instance("Part", "Loose", Some(place.workspace));
+    let loose = place
+        .dom
+        .new_instance("Part", "Loose", Some(place.workspace));
 
     assert_eq!(
         movable(&place.dom, &database(), &[ghost, loose], place.lighting),
