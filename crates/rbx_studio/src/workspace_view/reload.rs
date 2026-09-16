@@ -12,6 +12,12 @@ impl WorkspaceView {
         self.pump.select(referents.to_vec());
     }
 
+    /// Forwards the hovered part (or `None`, clearing it), forcing one frame
+    /// even at rest — the same reason `set_selection` above does.
+    pub(crate) fn set_hover(&mut self, referent: Option<Ref>) {
+        self.pump.hover(referent);
+    }
+
     /// Rebuilds the render thread's scene from a mutated DOM, forcing one
     /// frame even at rest — the render thread owns the viewer, so the rebuild
     /// happens there, between two frames.

@@ -129,6 +129,15 @@ pub(crate) enum ViewportAction {
     },
     /// A transform-toolbar shortcut typed over the view.
     Tool(transform::Action),
+    /// Cursor motion with nothing held: `Shell` resolves whatever `BasePart`
+    /// is nearest under the ray and outlines it, distinctly from the
+    /// selection outline — Studio's "about to click" cue (see
+    /// `rbx_viewer::renderer::hover`). `None` clears the outline outright
+    /// rather than leaving it to resolve to nothing on its own: the cursor
+    /// left the panel (see `render`'s `on_hover`), or a drag or camera look
+    /// just began and a hover box hanging over the gesture would look
+    /// broken.
+    Hover(Option<Ray>),
 }
 
 impl EventEmitter<ViewportAction> for WorkspaceView {}
@@ -418,10 +427,16 @@ impl WorkspaceView {
         }
     }
 
-    fn begin_look(&mut self, window: &mut Window, cx: &mut App) {
+    fn begin_look(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus, cx);
         self.cursor = None;
         self.pump.input(CameraInput::LookButton(true));
+        // Orbiting the camera would otherwise leave whatever was last
+        // hovered stuck on screen for the whole gesture: `mouse_moved` feeds
+        // this same motion to the camera instead of resolving a new hover
+        // while the look button is held (see its own `self.lock.holds()`
+        // guard), so nothing else would clear it.
+        cx.emit(ViewportAction::Hover(None));
 
         if let (Some(id), Some(centre)) = (
             pointer_lock::window_id(window),
@@ -557,6 +572,11 @@ impl Render for WorkspaceView {
         );
 
         div()
+            // Only `on_hover` (used below, to clear the hover outline when
+            // the cursor leaves the panel) actually needs an id — it is
+            // `StatefulInteractiveElement`'s alone, unlike every other
+            // handler here.
+            .id("workspace-viewport")
             .track_focus(&self.focus)
             .relative()
             .size_full()
@@ -606,6 +626,23 @@ impl Render for WorkspaceView {
                     return;
                 }
                 view.mouse_moved(event.position);
+                // While look-locked this same motion just turned the camera
+                // above, not the cursor: there is nothing new under it to
+                // resolve a hover against, and the last one already stands
+                // cleared (see `begin_look`).
+                if !view.lock.holds() {
+                    let scale = window.scale_factor();
+                    view.hover_moved(event.position, scale, cx);
+                }
+            }))
+            // The cursor leaving the panel altogether never fires another
+            // `on_mouse_move` to say so — bounds-scoped, like every handler
+            // above — so a stale hover box would otherwise outlive it; `false`
+            // is exactly that transition (see `Interactivity::on_hover`).
+            .on_hover(cx.listener(|_, hovering: &bool, _, cx| {
+                if !hovering {
+                    cx.emit(ViewportAction::Hover(None));
+                }
             }))
             .on_scroll_wheel(cx.listener(|view, event: &ScrollWheelEvent, _, _| {
                 let notches = wheel_notches(event.delta);

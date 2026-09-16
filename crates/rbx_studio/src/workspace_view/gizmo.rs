@@ -178,6 +178,22 @@ impl WorkspaceView {
         Some(pick::ray_through(projection, pick::ndc_of(pixel, extent)))
     }
 
+    /// Cursor motion with nothing held: resolves what is under it and asks
+    /// `Shell` to outline it, distinctly from the selection outline —
+    /// Studio's "about to click" cue. `None` when the panel has no size yet
+    /// or the render thread has not reported a camera (see `cursor_ray`),
+    /// which clears the hover outline exactly as a ray that hits nothing
+    /// does.
+    pub(super) fn hover_moved(
+        &mut self,
+        position: Point<Pixels>,
+        scale: f32,
+        cx: &mut gpui_kit::Context<Self>,
+    ) {
+        let ray = self.cursor_ray(position, scale);
+        cx.emit(ViewportAction::Hover(ray));
+    }
+
     /// Where the handles stand this frame, anchored on the same part
     /// `rbx_viewer::renderer::selection::Selection::anchor` draws them on —
     /// the first selected part with a placement, whether or not it is alone —
@@ -221,6 +237,13 @@ impl WorkspaceView {
             if let Some(drag) = self.grab(ray) {
                 self.drag = Some(drag);
                 self.dragged = false;
+                // The part under a body grab, or the gizmo itself under an
+                // axis/face/ring grab, would otherwise still be wearing a
+                // hover box for the whole gesture — nothing moves the cursor
+                // off it, since `render`'s `on_mouse_move` routes every move
+                // into `drag_to` instead of `hover_moved` once `dragging()`
+                // is true.
+                cx.emit(ViewportAction::Hover(None));
                 return;
             }
         }

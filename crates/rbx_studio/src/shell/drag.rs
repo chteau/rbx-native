@@ -50,6 +50,7 @@ impl Shell {
                 cycling,
                 extend,
             } => self.pick_in_viewport(*ray, *cycling, *extend, cx),
+            ViewportAction::Hover(ray) => self.hover_in_viewport(*ray, cx),
             ViewportAction::Moved {
                 moves,
                 first,
@@ -79,6 +80,41 @@ impl Shell {
             }
             ViewportAction::Tool(action) => self.transform_action(*action, cx),
         }
+    }
+
+    /// Cursor motion with nothing held: outlines the nearest `BasePart`
+    /// under `ray`, distinctly from the selection outline — Studio's "about
+    /// to click" cue (see `ViewportAction::Hover`'s own doc comment for what
+    /// `None` means).
+    ///
+    /// Takes the nearest hit directly rather than going through
+    /// `selection::from_click`'s walk up to an enclosing `Model`: hovering is
+    /// never a click, Studio's "select the model" convention has nothing to
+    /// answer for here, and a `Model`/`Folder` referent has no placement for
+    /// the outline machinery to draw a box around in the first place (see
+    /// `rbx_viewer::renderer::hover`).
+    fn hover_in_viewport(&mut self, ray: Option<Ray>, cx: &mut Context<Self>) {
+        let meshes = self.viewport.read(cx).meshes().clone();
+        let hovered = ray
+            .and_then(|ray| {
+                pick::parts_along(&self.dom, &self.database, &meshes, ray)
+                    .into_iter()
+                    .next()
+            })
+            // Hovering the part that is already selected would draw a second,
+            // near-identical box right under the selection's own outline for
+            // no visible gain, so it is suppressed rather than layered under
+            // it — see `Shell::selection_changed` for the other half of this,
+            // the case where the selection changes out from under a
+            // still-hovered part rather than the other way around.
+            .filter(|referent| !self.selected_all().contains(referent));
+
+        if hovered == self.hovered {
+            return;
+        }
+        self.hovered = hovered;
+        self.viewport
+            .update(cx, |viewport, _| viewport.set_hover(hovered));
     }
 
     /// A click in the 3D view: select whatever it resolves to, clear the
