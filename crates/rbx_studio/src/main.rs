@@ -36,6 +36,7 @@ mod pointer_lock;
 mod properties;
 mod render_image;
 mod save;
+mod script_editor;
 mod settings;
 mod settle;
 mod shell;
