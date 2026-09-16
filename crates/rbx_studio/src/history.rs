@@ -11,8 +11,8 @@
 //! separately instead of once, here. The `Change` log carried alongside each
 //! snapshot is that same log, not a second one: every mutation path already
 //! writes to `WeakDom`'s own change log (`shell::command`'s script run reads
-//! it too, via `single_change`), so recording it here costs nothing beyond
-//! draining it at the right two moments.
+//! it too, via `single_instance_change`), so recording it here costs nothing
+//! beyond draining it at the right two moments.
 
 use gpui_kit::Modifiers;
 use rbx_dom::{Change, WeakDom};
@@ -44,9 +44,9 @@ pub(crate) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
 
 /// One snapshot on either stack: the DOM as it stood at that point, plus the
 /// `Change` log the mutation right after it went on to produce. Read by
-/// `shell::history::install` through `shell::command::single_change` — the
-/// same classifier an ordinary edit's viewport reflection already uses — to
-/// tell "exactly one property write or reparent" apart from anything a fast
+/// `shell::history::install` through `shell::command::single_instance_change`
+/// — the same classifier an ordinary edit's viewport reflection already uses
+/// — to tell "property writes on one instance" apart from anything a fast
 /// in-place GPU patch cannot safely cover, without inventing a second
 /// classifier or re-diffing two `WeakDom` trees.
 ///
@@ -55,8 +55,8 @@ pub(crate) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
 /// snapshots, so the log it produces isn't known yet. An entry whose
 /// mutation never actually changed anything (a Properties-panel commit that
 /// failed validation, say) simply keeps the empty log `push` left it with;
-/// `single_change` reads that the same safe way it reads any log it can't
-/// classify — fall back to a full reload.
+/// `single_instance_change` reads that the same safe way it reads any log it
+/// can't classify — fall back to a full reload.
 struct Entry {
     dom: WeakDom,
     changes: Vec<Change>,
