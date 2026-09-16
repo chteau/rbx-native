@@ -280,6 +280,7 @@ impl Renderer {
                 format,
                 target,
                 (scene.gui_screens(), scene.gui_spaces()),
+                &decor.gui,
                 quality,
             ),
             lighting_buffer,

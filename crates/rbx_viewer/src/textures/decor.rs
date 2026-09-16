@@ -52,6 +52,13 @@ pub(crate) struct Decor {
     pub(crate) sky: Option<Vec<Panel>>,
     pub(crate) bodies: Vec<Celestial>,
     pub(crate) stars: Vec<Star>,
+    /// Every GUI image that decoded (`ImageLabel`, `ImageButton`), by the
+    /// reference the tree names it with — an image missing here never
+    /// downloaded, and its label draws blank the way Roblox leaves it. Set by
+    /// `load::Loaded::from_dom` rather than [`Decor::assemble`], since it is
+    /// wanted with textures off too: the same `Arc`s the loader keeps, so a
+    /// `Decal` and an `ImageLabel` naming one asset decode it once.
+    pub(crate) gui: HashMap<AssetRef, Arc<Image>>,
 }
 
 impl Decor {
@@ -119,6 +126,7 @@ impl Decor {
             // Generated rather than downloaded: a star is a direction and a
             // brightness, and Roblox ships no image for them.
             stars: stars::field(plan.stars),
+            gui: HashMap::new(),
         }
     }
 }

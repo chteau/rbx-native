@@ -90,6 +90,34 @@
   is left of a reload is `Scene::from_dom` itself, ~15 ms on 16k instances.
   — @chteau
 
+- **Reload reuse: review fixes.** Four things the reload work above got
+  wrong, caught in review. A failed asset fetch was remembered as failed for
+  the life of the `Headless`, so a network blip during one load left that
+  decal bare through every later reload; `load::Resident` now forgets a
+  failure of the machine's (a request that did not complete, a cache that
+  would not write, a key not yet configured — see `assets::Failure`) at the
+  start of each load — one load still asks it once however many passes name
+  it, the next `Headless::reload` tries it again — while a failure of the
+  asset's (a 404, a file the content package does not hold, bytes that will
+  not decode) stays remembered, because asking again cannot change the
+  answer and the ask is the expensive part: `TestPlace.rbxl` names a
+  `SpawnLocation.png` its package lacks, and retrying that on every reload
+  measured 220 ms a time. When no asset resolver could be built at all (an
+  unwritable cache directory, say) the warning was filed under a reference no caller ever
+  looked up and reached only stderr; `assets::load_with` now fails every
+  requested reference with that message, so it reaches the Output dock, once,
+  and is retried like any other failure. The `Trail`, `Beam`,
+  `ParticleEmitter` and GUI passes read their quality on/off toggle once when
+  first built and never again, so a level changed between two reloads was
+  ignored until the place was reopened; every `rebuild` re-reads it. And the
+  GUI atlas decoded its `ImageLabel` images on its own, so an image used both
+  as a `Decal` and in a GUI was decoded twice — they come out of the same
+  `Resident` now, which also puts their warnings in the dock. In passing: the
+  reload's dedup helpers (`distinct`, `untried`, `reuse_plan`) scanned a
+  `Vec` inside a loop, O(n²) on a place naming hundreds of assets — they hash
+  now — and a reload no longer copies the bytes of a union it already carved
+  out of the resident table. — @chteau
+
 - **Undo/redo of a Scale drag no longer reloads the scene.** The fast path
   below classified an undo step as "exactly one property write on one
   instance", and a Scale drag never is one: Studio's Scale tool holds the
