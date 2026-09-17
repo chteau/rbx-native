@@ -77,7 +77,7 @@ fn a_sharp_box_is_shaped_by_nothing() {
 #[test]
 fn a_stroke_is_one_more_quad_grown_by_its_outer_edge_and_a_pixel_of_ramp() {
     let mut outlined = rounded(8.0);
-    outlined.stroke = Some(stroke([0.0, 6.0], GuiJoin::Round));
+    outlined.strokes = vec![stroke([0.0, 6.0], GuiJoin::Round)];
 
     let (vertices, runs, _) = build(&[outlined], &HashMap::new(), VIEWPORT);
 
@@ -95,10 +95,35 @@ fn a_stroke_is_one_more_quad_grown_by_its_outer_edge_and_a_pixel_of_ramp() {
         .all(|v| v.half == [100.0, 50.0] && v.band == [0.0, 6.0] && v.color == [0.0, 1.0, 0.0]));
 }
 
+// A button ringed in black outside and a faint white line inside is two
+// `UIStroke`s on one box, each drawn as its own band with its own join.
+#[test]
+fn every_stroke_is_a_band_of_its_own_in_the_order_given() {
+    let mut ringed = rounded(0.0);
+    ringed.strokes = vec![
+        stroke([0.0, 3.0], GuiJoin::Round),
+        GuiStroke {
+            color: [1.0; 3],
+            ..stroke([-2.0, 0.0], GuiJoin::Miter)
+        },
+    ];
+
+    let (vertices, _, _) = build(&[ringed], &HashMap::new(), VIEWPORT);
+
+    assert_eq!(vertices.len(), 18);
+    let (outer, inner) = (&vertices[6..12], &vertices[12..]);
+    assert!(outer
+        .iter()
+        .all(|v| v.band == [0.0, 3.0] && v.mode & 3 == GuiJoin::Round as u32));
+    assert!(inner.iter().all(|v| v.band == [-2.0, 0.0]
+        && v.color == [1.0; 3]
+        && v.mode & 3 == GuiJoin::Miter as u32));
+}
+
 #[test]
 fn an_inner_stroke_does_not_grow_the_quad() {
     let mut outlined = rounded(0.0);
-    outlined.stroke = Some(stroke([-4.0, 0.0], GuiJoin::Round));
+    outlined.strokes = vec![stroke([-4.0, 0.0], GuiJoin::Round)];
 
     let (vertices, _, _) = build(&[outlined], &HashMap::new(), VIEWPORT);
 
@@ -115,7 +140,7 @@ fn an_inner_stroke_does_not_grow_the_quad() {
 fn a_stroke_draws_without_a_background() {
     let mut hollow = rounded(0.0);
     hollow.background_alpha = 0.0;
-    hollow.stroke = Some(stroke([0.0, 2.0], GuiJoin::Bevel));
+    hollow.strokes = vec![stroke([0.0, 2.0], GuiJoin::Bevel)];
 
     let (vertices, _, _) = build(&[hollow], &HashMap::new(), VIEWPORT);
 
@@ -126,10 +151,10 @@ fn a_stroke_draws_without_a_background() {
 #[test]
 fn a_stroke_on_text_is_left_to_the_text_renderer() {
     let mut labelled = rounded(0.0);
-    labelled.stroke = Some(GuiStroke {
+    labelled.strokes = vec![GuiStroke {
         on_text: true,
         ..stroke([0.0, 2.0], GuiJoin::Round)
-    });
+    }];
 
     let (vertices, _, _) = build(&[labelled], &HashMap::new(), VIEWPORT);
 
@@ -140,7 +165,7 @@ fn a_stroke_on_text_is_left_to_the_text_renderer() {
 fn a_gradient_is_baked_to_a_row_the_fills_refer_to_and_the_stroke_does_not() {
     let mut shaded = rounded(0.0);
     shaded.gradient = Some(gradient());
-    shaded.stroke = Some(stroke([0.0, 2.0], GuiJoin::Round));
+    shaded.strokes = vec![stroke([0.0, 2.0], GuiJoin::Round)];
 
     let (vertices, _, rows) = build(&[shaded], &HashMap::new(), VIEWPORT);
 

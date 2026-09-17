@@ -36,7 +36,7 @@ fn a_rounded_stroked_shaded_element_draws_through_the_pipeline() {
         border_inset: 0.0,
         z_index: 1,
         corner_radii: [8.0; 4],
-        stroke: Some(GuiStroke {
+        strokes: vec![GuiStroke {
             color: [0.0; 3],
             alpha: 1.0,
             band: [0.0, 3.0],
@@ -44,7 +44,7 @@ fn a_rounded_stroked_shaded_element_draws_through_the_pipeline() {
             on_text: false,
             thickness: 3.0,
             scaled: false,
-        }),
+        }],
         gradient: Some(GuiGradient {
             color: ColorSequence {
                 keypoints: vec![ColorSequenceKeypoint {
@@ -151,7 +151,7 @@ fn a_half_transparent_black_quad_halves_the_encoded_pixel_under_it() {
         border_inset: 0.0,
         z_index: 1,
         corner_radii: [0.0; 4],
-        stroke: None,
+        strokes: Vec::new(),
         gradient: None,
         text: None,
         viewport: None,

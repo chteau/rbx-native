@@ -53,7 +53,7 @@ fn a_frame_without_modifiers_has_none() {
     let element = only(&dom);
 
     assert_eq!(element.corner_radii, [0.0; 4]);
-    assert_eq!(element.stroke, None);
+    assert!(element.strokes.is_empty());
     assert_eq!(element.gradient, None);
 }
 
@@ -142,7 +142,7 @@ fn a_stroke_defaults_to_an_opaque_black_pixel_outside_the_edge() {
     let frame = boxed(&mut dom, gui);
     dom.new_instance("UIStroke", "UIStroke", Some(frame));
 
-    let stroke = only(&dom).stroke.unwrap();
+    let stroke = only(&dom).strokes[0];
 
     assert_eq!(stroke.color, [0.0; 3]);
     assert_eq!(stroke.alpha, 1.0);
@@ -163,7 +163,7 @@ fn a_stroke_reads_its_colour_thickness_transparency_and_join() {
     dom.set_property(stroke, "LineJoinMode", Variant::Enum(2))
         .unwrap();
 
-    let stroke = only(&dom).stroke.unwrap();
+    let stroke = only(&dom).strokes[0];
 
     assert_eq!(stroke.color, [1.0; 3]);
     assert_eq!(stroke.alpha, 0.75);
@@ -185,7 +185,7 @@ fn a_stroke_band_follows_its_position_sizing_and_offset() {
     dom.set_property(stroke, "BorderOffset", udim(0.0, 2))
         .unwrap();
 
-    assert_eq!(only(&dom).stroke.unwrap().band, [-3.0, 7.0]);
+    assert_eq!(only(&dom).strokes[0].band, [-3.0, 7.0]);
 }
 
 #[test]
@@ -196,22 +196,29 @@ fn an_inner_stroke_sits_entirely_inside_the_edge() {
     dom.set_property(stroke, "BorderStrokePosition", Variant::Enum(2))
         .unwrap();
 
-    assert_eq!(only(&dom).stroke.unwrap().band, [-4.0, 0.0]);
+    assert_eq!(only(&dom).strokes[0].band, [-4.0, 0.0]);
 }
 
-// The docs: `Enabled = false` is a stroke "not rendered", so a later enabled
-// sibling is the one read.
+// The docs: `Enabled = false` is a stroke "not rendered"; every enabled
+// sibling is, "relative to sibling `UIStroke` instances" by `ZIndex`, lower
+// under higher.
 #[test]
-fn a_disabled_stroke_is_skipped_for_the_first_enabled_one() {
+fn a_disabled_stroke_is_skipped_and_the_enabled_ones_come_in_z_index_order() {
     let (mut dom, gui) = screen_gui();
     let frame = boxed(&mut dom, gui);
     let off = stroke(&mut dom, frame, 20.0);
     dom.set_property(off, "Enabled", Variant::Bool(false))
         .unwrap();
-    stroke(&mut dom, frame, 3.0);
+    let over = stroke(&mut dom, frame, 3.0);
+    dom.set_property(over, "ZIndex", Variant::Int32(2)).unwrap();
     stroke(&mut dom, frame, 9.0);
 
-    assert_eq!(only(&dom).stroke.unwrap().band, [0.0, 3.0]);
+    let bands: Vec<[f32; 2]> = only(&dom)
+        .strokes
+        .iter()
+        .map(|stroke| stroke.band)
+        .collect();
+    assert_eq!(bands, [[0.0, 9.0], [0.0, 3.0]]);
 }
 
 // On a text class a `Contextual` stroke outlines the glyphs; `Border` forces
@@ -227,13 +234,13 @@ fn a_contextual_stroke_is_on_text_only_for_a_text_class() {
     stroke(&mut dom, plain, 2.0);
 
     let elements = resolve(&screens(&dom), VIEWPORT);
-    assert!(elements[0].stroke.unwrap().on_text);
-    assert!(!elements[1].stroke.unwrap().on_text);
+    assert!(elements[0].strokes[0].on_text);
+    assert!(!elements[1].strokes[0].on_text);
 
     dom.set_property(contextual, "ApplyStrokeMode", Variant::Enum(1))
         .unwrap();
     let elements = resolve(&screens(&dom), VIEWPORT);
-    assert!(!elements[0].stroke.unwrap().on_text);
+    assert!(!elements[0].strokes[0].on_text);
 }
 
 #[test]

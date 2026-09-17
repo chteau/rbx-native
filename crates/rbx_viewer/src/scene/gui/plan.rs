@@ -220,7 +220,7 @@ fn element(
         list: layout_of(dom, database, styles, instance.children()),
         flex: layouts::flex_item(dom, database, styles, instance.children()),
         corner: corner::read(dom, database, styles, instance.children()),
-        stroke: stroke::read(
+        strokes: stroke::read(
             dom,
             database,
             styles,

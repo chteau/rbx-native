@@ -61,7 +61,8 @@ pub(crate) struct Element {
     pub(crate) image: Option<Painted>,
     /// `UICorner` in pixels, top-left first then clockwise; all zero without.
     pub(crate) corner_radii: [f32; 4],
-    pub(crate) stroke: Option<StrokePx>,
+    /// Every `UIStroke`, in the order they are painted.
+    pub(crate) strokes: Vec<StrokePx>,
     pub(crate) gradient: Option<GradientPx>,
     /// A text object's text, drawn over the background and image.
     pub(crate) text: Option<Typeset>,
@@ -223,10 +224,11 @@ pub(in crate::scene::gui) fn emit(
         z_index: node.z_index,
         image: node.fill.as_ref().map(|fill| painted(fill, &rect)),
         corner_radii,
-        stroke: node
-            .stroke
-            .as_ref()
-            .map(|stroke| modifiers::stroke(stroke, rect.size())),
+        strokes: node
+            .strokes
+            .iter()
+            .map(|stroke| modifiers::stroke(stroke, rect.size()))
+            .collect(),
         gradient: node
             .gradient
             .as_ref()

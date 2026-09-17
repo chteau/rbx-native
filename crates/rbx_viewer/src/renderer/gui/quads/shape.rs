@@ -65,13 +65,14 @@ pub(super) struct Shape {
 }
 
 impl Shape {
-    /// The element's own outline, which its stroke always follows.
+    /// The element's own outline, which its strokes always follow — each
+    /// with its own join, set where it is drawn.
     pub(super) fn of(element: &GuiElement) -> Self {
         Shape {
             center: center(&element.rect),
             half: [element.rect.width * 0.5, element.rect.height * 0.5],
             radii: element.corner_radii,
-            join: element.stroke.map_or(GuiJoin::Round, |stroke| stroke.join),
+            join: GuiJoin::Round,
         }
     }
 

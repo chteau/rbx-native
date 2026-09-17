@@ -170,7 +170,7 @@ fn build_once(
         // Over the image, and — unlike the border — independent of the
         // background: the docs give `UIStroke.Transparency` its own life so
         // a box can be "hollow", an outline and nothing else.
-        if let Some(stroke) = &element.stroke {
+        for stroke in &element.strokes {
             if !stroke.on_text && stroke.alpha > 0.0 {
                 let start = vertices.len();
                 let paint = Paint {
@@ -179,7 +179,10 @@ fn build_once(
                     band: stroke.band,
                     gradient: None,
                 };
-                let shape = Shape::of(element);
+                let shape = Shape {
+                    join: stroke.join,
+                    ..Shape::of(element)
+                };
                 let rect = grown(&element.rect, stroke.band);
                 quad(&rect, UV_WHOLE, &paint, &shape, &spin, &mut vertices);
                 extend(&mut runs, WHITE, scissor, start..vertices.len());
@@ -192,7 +195,7 @@ fn build_once(
         // own `Thickness`.
         if let Some(typeset) = &element.text {
             let mut strokes = text::strokes(&typeset.text);
-            if let Some(stroke) = &element.stroke {
+            for stroke in &element.strokes {
                 if stroke.on_text && stroke.alpha > 0.0 {
                     strokes.push(text::Stroke {
                         color: stroke.color,

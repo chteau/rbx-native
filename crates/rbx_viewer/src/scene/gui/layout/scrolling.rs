@@ -136,7 +136,7 @@ pub(super) fn scroll(
                     pixelated: false,
                 }),
                 corner_radii: [0.0; 4],
-                stroke: None,
+                strokes: Vec::new(),
                 gradient: None,
                 text: None,
                 group: None,

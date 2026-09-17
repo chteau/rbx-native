@@ -1,11 +1,13 @@
 //! `UIStroke`: an outline around its parent's (rounded) box, or around its
 //! parent's glyphs where the parent is a text class.
 
-use rbx_dom::{Ref, WeakDom};
+use std::collections::BTreeMap;
+
+use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use super::modifiers;
-use super::props::{alpha, color, enum_of, flag, float, udim};
+use super::props::{alpha, color, enum_of, flag, float, integer, udim};
 use crate::scene::gui::style::Styled;
 
 const CLASS: &str = "UIStroke";
@@ -51,9 +53,14 @@ const APPLY_BORDER: u32 = 1;
 /// `Enum.StrokeSizingMode.ScaledSize`; `FixedSize` (the default) is 0.
 const SIZING_SCALED: u32 = 1;
 
-/// The first *enabled* `UIStroke` among `children`, `text` saying whether the
+/// Every *enabled* `UIStroke` among `children`, `text` saying whether the
 /// parent is a text class. The docs make `Enabled = false` a stroke that is
 /// not rendered at all, so it is skipped over rather than read as invisible.
+/// All the others apply — a text object can carry "two `UIStroke` instances,
+/// one set to `Contextual` and the other to `Border`" — in the order the
+/// stroke's own `ZIndex` sets, "those with a lower `ZIndex` render under
+/// (behind) those with a higher `ZIndex`"; ties, which the docs leave
+/// undefined, keep tree order.
 ///
 /// Defaults for a property the file leaves out are the ones Studio's
 /// property window shows for a fresh `UIStroke` (1 px, black, opaque); the
@@ -64,11 +71,20 @@ pub(super) fn read(
     styles: &Styled,
     children: &[Ref],
     text: bool,
-) -> Option<Stroke> {
-    let instance = modifiers(dom, database, children, CLASS)
-        .find(|instance| flag(styles.properties_of(instance), "Enabled", true))?;
-    let properties = styles.properties_of(instance);
-    Some(Stroke {
+) -> Vec<Stroke> {
+    let mut strokes: Vec<(i32, Stroke)> = modifiers(dom, database, children, CLASS)
+        .filter(|instance| flag(styles.properties_of(instance), "Enabled", true))
+        .map(|instance| {
+            let properties = styles.properties_of(instance);
+            (integer(properties, "ZIndex", 1), stroke(properties, text))
+        })
+        .collect();
+    strokes.sort_by_key(|(z_index, _)| *z_index);
+    strokes.into_iter().map(|(_, stroke)| stroke).collect()
+}
+
+fn stroke(properties: &BTreeMap<String, Variant>, text: bool) -> Stroke {
+    Stroke {
         color: color(properties, "Color", [0.0, 0.0, 0.0]),
         alpha: alpha(properties, "Transparency"),
         thickness: float(properties, "Thickness", 1.0).max(0.0),
@@ -85,5 +101,5 @@ pub(super) fn read(
             _ => Join::Round,
         },
         on_text: text && enum_of(properties, "ApplyStrokeMode", 0) != APPLY_BORDER,
-    })
+    }
 }

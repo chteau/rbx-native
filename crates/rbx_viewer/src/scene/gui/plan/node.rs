@@ -73,7 +73,8 @@ pub(in crate::scene::gui) struct Node {
     /// `UIListLayout`.
     pub(in crate::scene::gui) flex: Option<FlexItem>,
     pub(in crate::scene::gui) corner: Option<Corner>,
-    pub(in crate::scene::gui) stroke: Option<Stroke>,
+    /// Every enabled `UIStroke`, lowest `ZIndex` first.
+    pub(in crate::scene::gui) strokes: Vec<Stroke>,
     pub(in crate::scene::gui) gradient: Option<Gradient>,
     /// A `ViewportFrame`'s 3D content, rendered into a texture the box then
     /// shows like an image.
@@ -97,7 +98,7 @@ impl Node {
             || self.viewport.as_ref().is_some_and(|viewport| {
                 viewport.alpha > 0.0 && viewport.camera.is_some() && !viewport.parts.is_empty()
             })
-            || self.stroke.is_some_and(|stroke| stroke.alpha > 0.0)
+            || self.strokes.iter().any(|stroke| stroke.alpha > 0.0)
             || self.text.as_ref().is_some_and(Text::visible)
             // A fixed `CanvasSize` can overflow an empty frame, and the bar
             // that shows for it is paint of its own.

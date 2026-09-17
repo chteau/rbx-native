@@ -48,7 +48,7 @@ fn element(text: GuiText) -> GuiElement {
         z_index: 1,
         image: None,
         corner_radii: [0.0; 4],
-        stroke: None,
+        strokes: Vec::new(),
         gradient: None,
         text: Some(GuiTypeset { text, size: 20.0 }),
         viewport: None,

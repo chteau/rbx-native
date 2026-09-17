@@ -27,7 +27,7 @@ fn boxed(x: f32, y: f32, width: f32, height: f32, alpha: f32) -> GuiElement {
         z_index: 1,
         image: None,
         corner_radii: [0.0; 4],
-        stroke: None,
+        strokes: Vec::new(),
         gradient: None,
         text: None,
         group: None,
