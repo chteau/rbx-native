@@ -1149,6 +1149,40 @@ against `Roblox/creator-docs` rather than assumed:
     `rbx_assets::AssetCache` already owns) so people can publish and swap
     packs without forking the project — the actual goal behind spec'ing a
     from-scratch icon kit in the first place.
+- [ ] 📋 **Soften the editor's visual theme — calmer and lower-contrast,
+  closer to real Studio but gentler.** Today's panels are high-contrast
+  flat blocks: near-pure black/white backgrounds, hard 1px borders, sharp
+  rectangular corners, tight padding, saturated colour used everywhere
+  rather than reserved for anything in particular. Planned direction,
+  taking inspiration (not a straight clone) from a community redesign
+  concept's dock/panel layout and surface treatment — credit
+  [u/1324764019 on the Roblox DevForum](https://www.roblox.com/users/1324764019/profile),
+  [reference screenshot](https://devforum-uploads.s3.dualstack.us-east-2.amazonaws.com/uploads/original/4X/f/0/8/f08fc6d47d3aef25edecb00dd708f13e4f0553c1.png):
+  - **Palette**: a muted 6-8 step neutral grey ramp replacing today's
+    near-black/near-white panel backgrounds — nothing darker than
+    roughly `#1a1a1a`, nothing lighter than roughly `#f0f0f0`.
+  - **Panel separation**: hard 1px borders replaced by either a small
+    background-luminance step between adjacent panels (2-4%) or a soft,
+    low-opacity shadow (<15%) with no visible stroke.
+  - **Corner radius**: a consistent small radius (4-6px) on buttons, icon
+    containers and panel corners — no sharp rectangles.
+  - **Padding**: toolbar buttons and list/tree rows (Explorer, Properties)
+    grow roughly 30-50% over today's values to read as less dense.
+  - **Accent colour**: saturated colour reserved for the selection
+    highlight, the active tab indicator and functional icons; everything
+    else desaturated.
+  - **Typography**: regular/medium weight by default; bold reserved for
+    section headers only.
+  - **Dock/panel structure**: review the reference concept's
+    floating/grouped-tab dock style and propose which pieces (tab
+    grouping, panel grouping, drag handles) fit this project's existing
+    dock layout — presented as options to choose from, not a mandated
+    rebuild.
+  - **Deliverable**: a theme/token file (colours, radii, spacing, font
+    weights) the rest of the UI reads from — a concrete first instance of
+    the theme format the item above calls for — plus a before/after
+    screenshot of one representative panel (the Explorer, or a popup like
+    Store/Upgrades) for review before it rolls out app-wide.
 
 ### Play / Test workflow
 - [ ] 📋 The sandbox-place design (private per-developer place, injected
