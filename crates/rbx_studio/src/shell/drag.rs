@@ -92,12 +92,18 @@ impl Shell {
         let hovered: Vec<Selected> = ray
             .and_then(|ray| {
                 let hits = pick::parts_along(&self.dom, &self.database, &meshes, ray);
-                // A plain click resolves to a `Model`, an `Alt` click to the
-                // one part under the cursor. The outline is built from that
-                // one referent through the same `pick::selection` the real
-                // selection uses, so a model hover is one aggregate box and a
-                // part hover is its own — never a box per child.
-                let referent = selection::from_click(&self.dom, &self.database, &hits, None, alt)?;
+                // The same resolution a click makes, current selection and
+                // all: a plain hover previews the enclosing `Model` a plain
+                // click would take, and an `Alt` hover previews the *next*
+                // part `Alt`-click cycling would land on from the current
+                // selection — so the cue tracks the cycle rather than always
+                // showing the nearest hit. That last part is what makes the
+                // preview work with the camera inside a part: the surrounding
+                // part is the nearest hit (distance zero), and only cycling
+                // from the current selection reaches the child in front of it,
+                // for the hover exactly as for the click.
+                let referent =
+                    selection::from_click(&self.dom, &self.database, &hits, self.selected(), alt)?;
                 selection::outlined(&self.dom, &self.database, &[referent])
                     .into_iter()
                     // A hover entirely inside the current selection adds only a
