@@ -7,7 +7,7 @@
 
 mod text;
 
-use super::plan::{Align, Group, GroupTint, Layout, Node, Screen, Span, Viewport};
+use super::plan::{Align, GroupTint, Node, Screen, Span, Viewport};
 use super::space::SpaceGui;
 // Reaches all the way to `renderer::gui::quads::image`, unlike everything
 // else `plan` hands this module — see the type's own doc comment.
@@ -19,67 +19,21 @@ mod image;
 mod list;
 mod modifiers;
 mod page;
+mod rect;
 mod scrolling;
 mod sizing;
 mod table;
+mod walk;
 
+#[allow(unused_imports)]
+use arrange::Arranged as _;
 pub(crate) use arrange::{arrange, Arranged};
 use image::painted;
 pub(crate) use image::{ImageScale, Painted};
 pub(crate) use modifiers::{GradientPx, StrokePx};
+pub(crate) use rect::Rect;
 pub(crate) use text::{TextMeasure, Typeset};
-
-/// A screen-space box in pixels, top-left origin.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct Rect {
-    pub(crate) x: f32,
-    pub(crate) y: f32,
-    pub(crate) width: f32,
-    pub(crate) height: f32,
-}
-
-impl Rect {
-    pub(crate) fn size(&self) -> [f32; 2] {
-        [self.width, self.height]
-    }
-
-    /// This box carried `degrees` clockwise around `pivot`: its centre turns,
-    /// its extent does not, which is all an axis-aligned box can say about
-    /// a rotation — the element's own turn about that centre is
-    /// [`Element::rotation`]'s.
-    pub(crate) fn turned(&self, degrees: f32, pivot: [f32; 2]) -> Rect {
-        if degrees == 0.0 {
-            return *self;
-        }
-        // Same clockwise convention as the renderer's own rotation, y running
-        // down the screen.
-        let (sin, cos) = degrees.to_radians().sin_cos();
-        let dx = self.x + self.width * 0.5 - pivot[0];
-        let dy = self.y + self.height * 0.5 - pivot[1];
-        Rect {
-            x: pivot[0] + dx * cos - dy * sin - self.width * 0.5,
-            y: pivot[1] + dx * sin + dy * cos - self.height * 0.5,
-            ..*self
-        }
-    }
-
-    /// The overlap of two boxes, empty (zero-sized) where they do not meet —
-    /// which is what a scissor rect has to become for a child clipped away
-    /// entirely.
-    pub(crate) fn intersect(&self, other: &Rect) -> Rect {
-        let x = self.x.max(other.x);
-        let y = self.y.max(other.y);
-        let right = (self.x + self.width).min(other.x + other.width);
-        let bottom = (self.y + self.height).min(other.y + other.height);
-
-        Rect {
-            x,
-            y,
-            width: (right - x).max(0.0),
-            height: (bottom - y).max(0.0),
-        }
-    }
-}
+pub(in crate::scene::gui) use walk::{children, Context, Scope};
 
 /// One `GuiObject` at its final pixel position, ready to be drawn on its own.
 #[derive(Debug, Clone, PartialEq)]
@@ -240,135 +194,7 @@ fn canvas(size: [f32; 2]) -> Rect {
     }
 }
 
-/// What an element hands down to the subtree under it.
-#[derive(Debug, Clone, Copy, Default)]
-struct Context {
-    /// The scissor rect inherited from the nearest `ClipsDescendants`
-    /// ancestor, already intersected down the whole chain.
-    clip: Option<Rect>,
-    /// Whether this element or any ancestor carries a non-zero `Rotation`,
-    /// which is what turns `ClipsDescendants` off.
-    rotated: bool,
-    /// The ancestors' cumulative `AbsoluteRotation`, and the screen point it
-    /// turns about — the nearest rotated ancestor's own centre.
-    angle: f32,
-    pivot: [f32; 2],
-    /// `ZIndexBehavior.Global`, where siblings are emitted in tree order and
-    /// [`resolve`] sorts the whole screen by `ZIndex` afterwards.
-    global_z_index: bool,
-}
-
-impl Context {
-    /// Where a child's axis-aligned box actually lands: an ancestor's rotation
-    /// carries the whole box around that ancestor's centre, and only then does
-    /// the child turn about its own.
-    fn carried(&self, rect: Rect) -> Rect {
-        rect.turned(self.angle, self.pivot)
-    }
-}
-
-/// One box's worth of contents to place: the elements themselves, the layout
-/// arranging them, and the scopes any plain instances among them open — see
-/// [`Group`].
-#[derive(Clone, Copy)]
-struct Scope<'a> {
-    nodes: &'a [Node],
-    groups: &'a [Group],
-    layout: Option<&'a Layout>,
-}
-
-impl<'a> Scope<'a> {
-    fn of(group: &'a Group) -> Self {
-        Scope {
-            nodes: &group.children,
-            groups: &group.groups,
-            layout: group.layout.as_ref(),
-        }
-    }
-}
-
-/// One element about to be emitted, with the rect its own layout scope gave
-/// it — and the cells a `UITableLayout` in that scope handed down.
-struct Placed<'a> {
-    node: &'a Node,
-    rect: Rect,
-    cells: Option<Vec<Rect>>,
-}
-
-/// Places every sibling inside `parent`, then emits them in paint order.
-///
-/// The two orders are distinct: a layout decides where a sibling sits,
-/// `ZIndex` decides which one is drawn over the other.
-///
-/// `given` is the one exception to a sibling being placed here at all: a
-/// `UITableLayout` sizes its cells, which are its siblings' children, so it
-/// hands them down ready-made.
-fn children(
-    scope: Scope<'_>,
-    parent: &Rect,
-    given: Option<&[Rect]>,
-    context: Context,
-    measure: &mut dyn TextMeasure,
-    into: &mut Vec<Element>,
-) {
-    let mut placed = Vec::with_capacity(scope.nodes.len());
-    place_scope(scope, parent, given, measure, &mut placed);
-    // Stable, so siblings sharing a `ZIndex` keep tree order. Under
-    // `ZIndexBehavior.Global` they are left in tree order outright: that is
-    // the hierarchy order the screen-wide sort breaks ties with, and
-    // reordering them here would interleave their subtrees wrongly.
-    if !context.global_z_index {
-        placed.sort_by_key(|item| item.node.z_index);
-    }
-    for item in placed {
-        emit(
-            item.node,
-            context.carried(item.rect),
-            item.cells.as_deref(),
-            context,
-            measure,
-            into,
-        );
-    }
-}
-
-/// One layout scope's worth of placement, appended to `into` in tree order.
-///
-/// A [`Group`] is a scope of its own inside the same `parent` box: its
-/// contents are arranged by the group's own layout, never by `layout`, and
-/// they land where the group sits among `nodes` so that a container which is
-/// not itself drawn still leaves its contents in tree order.
-fn place_scope<'a>(
-    scope: Scope<'a>,
-    parent: &Rect,
-    given: Option<&[Rect]>,
-    measure: &mut dyn TextMeasure,
-    into: &mut Vec<Placed<'a>>,
-) {
-    let arranged = match given {
-        Some(rects) => Arranged {
-            rects: rects.to_vec(),
-            cells: None,
-        },
-        None => arrange(scope.nodes, scope.layout, parent, measure),
-    };
-    let mut next = 0;
-    for index in 0..=scope.nodes.len() {
-        while let Some(group) = scope.groups.get(next).filter(|group| group.at <= index) {
-            place_scope(Scope::of(group), parent, None, measure, into);
-            next += 1;
-        }
-        if index < scope.nodes.len() {
-            into.push(Placed {
-                node: &scope.nodes[index],
-                rect: arranged.rects[index],
-                cells: arranged.cells.as_ref().map(|cells| cells[index].clone()),
-            });
-        }
-    }
-}
-
-fn emit(
+pub(in crate::scene::gui) fn emit(
     node: &Node,
     rect: Rect,
     cells: Option<&[Rect]>,

@@ -9,6 +9,7 @@ use rbx_dom::{UDim, UDim2, Vector2Data, Vector3Data, WeakDom};
 use super::*;
 use crate::scene::gui::resolve_canvas;
 use crate::scene::ShapeKind;
+use crate::textures::NormalId;
 
 const DATABASE: fn() -> ReflectionDatabase = ReflectionDatabase::embedded;
 
