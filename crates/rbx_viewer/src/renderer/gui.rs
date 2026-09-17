@@ -17,6 +17,7 @@
 //! since a `UDim2`'s scale half is a fraction of the viewport.
 
 mod atlas;
+mod gradient;
 mod paint;
 mod pipeline;
 mod quads;
@@ -63,7 +64,8 @@ impl Gui {
     ) -> Self {
         let atlas = Atlas::new(device, queue, &[], images, quality);
         let viewport_layout = pipeline::viewport_layout(device);
-        let screen_painter = Painter::new(device, format, &viewport_layout, &atlas.image_layout);
+        let screen_painter =
+            Painter::new(device, queue, format, &viewport_layout, &atlas.image_layout);
         let space = Space::new(device, queue, target, &viewport_layout, &atlas, &[]);
 
         let mut gui = Gui {

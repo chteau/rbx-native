@@ -102,3 +102,28 @@ pub(in crate::scene::gui) fn enum_of(
         _ => default,
     }
 }
+
+/// A plain `float` property, `default` where it is missing.
+pub(in crate::scene::gui) fn float(
+    properties: &BTreeMap<String, Variant>,
+    name: &str,
+    default: f32,
+) -> f32 {
+    match properties.get(name) {
+        Some(Variant::Float32(value)) => *value,
+        Some(Variant::Float64(value)) => *value as f32,
+        _ => default,
+    }
+}
+
+/// One `UDim` as its `(scale, offset)` pair, `None` where the property is
+/// missing so a caller can tell "unset" from `UDim.new(0, 0)`.
+pub(in crate::scene::gui) fn udim(
+    properties: &BTreeMap<String, Variant>,
+    name: &str,
+) -> Option<(f32, f32)> {
+    match properties.get(name) {
+        Some(Variant::UDim(value)) => Some((value.scale, value.offset as f32)),
+        _ => None,
+    }
+}
