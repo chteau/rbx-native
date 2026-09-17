@@ -14,12 +14,14 @@
 //! the Explorer and the live viewport all see a styling edit the way they see
 //! any other.
 //!
-//! `RBX_STUDIO_STYLE_EDITOR` brings this panel's tab to the front at startup,
-//! and — given a `Prop=value` — applies that edit to whatever `StyleRule`
-//! `RBX_STUDIO_SELECT` selected, through this same commit path. A debugging
-//! aid, like the other `RBX_STUDIO_*` variables: the panel starts stacked
-//! behind the Viewport, and nothing else can click its tab on the editor's
-//! behalf (see `AGENTS.md`'s safety rules).
+//! `RBX_STUDIO_STYLE_EDITOR=1` brings this panel's tab to the front at
+//! startup; given a `Prop=value` instead, it applies that edit to whatever
+//! `StyleRule` `RBX_STUDIO_SELECT` selected, through this same commit path,
+//! and deliberately leaves the layout alone so the Viewport stays in front
+//! and a screenshot catches the live preview rather than this panel. A
+//! debugging aid, like the other `RBX_STUDIO_*` variables: the panel starts
+//! stacked behind the Viewport, and nothing else can click its tab on the
+//! editor's behalf (see `AGENTS.md`'s safety rules).
 
 use std::collections::HashMap;
 
@@ -129,18 +131,18 @@ impl Shell {
         cx.notify();
     }
 
-    /// `RBX_STUDIO_STYLE_EDITOR[=Prop=value]`: documented in this module's
-    /// doc comment. A value with no `=`, a selection that is not a
-    /// `StyleRule`, or a rejected edit only shows the panel — this is a
-    /// screenshot aid, not user input, and must never crash a debugging
-    /// session.
+    /// `RBX_STUDIO_STYLE_EDITOR=1|Prop=value`: documented in this module's
+    /// doc comment. A selection that is not a `StyleRule`, or a rejected
+    /// value, does nothing — this is a screenshot aid, not user input, and
+    /// must never crash a debugging session.
     pub(super) fn apply_debug_style_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Ok(spec) = std::env::var(STYLE_EDITOR_VARIABLE) else {
             return;
         };
-        self.reveal_style_editor(window, cx);
-
         let Some((name, value)) = spec.split_once('=') else {
+            // No edit to apply: the whole point of the variable is then to
+            // raise the tab for a screenshot of the panel itself.
+            self.reveal_style_editor(window, cx);
             return;
         };
         let Some(rule) = self.selected().filter(|&reference| {
@@ -356,7 +358,7 @@ impl Shell {
         v_flex()
             .w_full()
             .gap_1()
-            .pl(px(depth as f32 * INDENT))
+            .pl(px((depth + 1) as f32 * INDENT))
             .text_xs()
             .child(
                 h_flex()
@@ -411,7 +413,7 @@ impl Shell {
             .gap_2()
             .items_center()
             .text_xs()
-            .pl(px(depth as f32 * INDENT + INDENT))
+            .pl(px((depth + 2) as f32 * INDENT))
             .child(
                 div()
                     .w(px(LABEL_WIDTH))
