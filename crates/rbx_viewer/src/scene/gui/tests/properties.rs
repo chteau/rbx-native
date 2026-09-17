@@ -1,6 +1,8 @@
 //! What is read out of a DOM, and what is deliberately not: enabled flags,
 //! colours, borders, the unknown-class fallback and the skipped text classes.
 
+use rbx_assets::AssetRef;
+
 use super::*;
 
 #[test]
@@ -176,6 +178,171 @@ fn a_stretched_image_repeats_once_and_a_tiled_one_by_its_tile_size() {
     let tile = elements[1].image.as_ref().unwrap();
     // 300 px across 100 px tiles, and 200 px across tiles half its own height.
     assert_eq!(tile.repeat, [3.0, 2.0]);
+}
+
+// `ImageButton` is a `GuiButton`, not a `GuiLabel` — but it draws its image
+// exactly the way an `ImageLabel` does, `HoverImage`/`PressedImage` aside:
+// those only ever show while the mouse is over or holding the button down,
+// which this static renderer has no notion of, so they are never read.
+#[test]
+fn an_image_button_reads_its_image_the_same_way_an_image_label_does() {
+    let (mut dom, gui) = screen_gui();
+    let button = dom.new_instance("ImageButton", "ImageButton", Some(gui));
+    dom.set_property(
+        button,
+        "Image",
+        Variant::String("rbxassetid://12345".to_string()),
+    )
+    .unwrap();
+    dom.set_property(
+        button,
+        "HoverImage",
+        Variant::String("rbxassetid://99999".to_string()),
+    )
+    .unwrap();
+
+    let elements = resolve(&screens(&dom), VIEWPORT);
+
+    let image = elements[0].image.as_ref().unwrap();
+    assert_eq!(image.asset, AssetRef::parse("rbxassetid://12345").unwrap());
+    assert_eq!(image.scale, ImageScale::Stretch);
+}
+
+fn image_with_scale_type(dom: &mut WeakDom, gui: Ref, ordinal: u32) -> Ref {
+    let label = dom.new_instance("ImageLabel", "ImageLabel", Some(gui));
+    dom.set_property(
+        label,
+        "Image",
+        Variant::String("rbxassetid://12345".to_string()),
+    )
+    .unwrap();
+    dom.set_property(label, "ScaleType", Variant::Enum(ordinal))
+        .unwrap();
+    label
+}
+
+#[test]
+fn scale_type_fit_and_crop_are_read_off_the_enum() {
+    let (mut dom, gui) = screen_gui();
+    image_with_scale_type(&mut dom, gui, 3); // Fit
+    image_with_scale_type(&mut dom, gui, 4); // Crop
+
+    let elements = resolve(&screens(&dom), VIEWPORT);
+
+    assert_eq!(elements[0].image.as_ref().unwrap().scale, ImageScale::Fit);
+    assert_eq!(elements[1].image.as_ref().unwrap().scale, ImageScale::Crop);
+}
+
+#[test]
+fn scale_type_slice_reads_slice_center_and_defaults_slice_scale_to_one() {
+    let (mut dom, gui) = screen_gui();
+    let label = image_with_scale_type(&mut dom, gui, 1); // Slice
+    dom.set_property(
+        label,
+        "SliceCenter",
+        Variant::Rect(rbx_dom::Rect {
+            min: Vector2Data { x: 10.0, y: 20.0 },
+            max: Vector2Data { x: 90.0, y: 80.0 },
+        }),
+    )
+    .unwrap();
+
+    let elements = resolve(&screens(&dom), VIEWPORT);
+
+    match elements[0].image.as_ref().unwrap().scale {
+        ImageScale::Slice { center, scale } => {
+            assert_eq!(
+                center,
+                Some(PixelRect {
+                    min: [10.0, 20.0],
+                    max: [90.0, 80.0],
+                })
+            );
+            assert_eq!(scale, 1.0);
+        }
+        _ => panic!("expected ScaleType.Slice"),
+    }
+}
+
+#[test]
+fn an_unset_slice_center_reads_as_no_border_rather_than_a_guess() {
+    let (mut dom, gui) = screen_gui();
+    image_with_scale_type(&mut dom, gui, 1); // Slice, no SliceCenter set
+
+    let elements = resolve(&screens(&dom), VIEWPORT);
+
+    match elements[0].image.as_ref().unwrap().scale {
+        ImageScale::Slice { center, .. } => assert_eq!(center, None),
+        _ => panic!("expected ScaleType.Slice"),
+    }
+}
+
+#[test]
+fn slice_scale_overrides_its_documented_default_of_one() {
+    let (mut dom, gui) = screen_gui();
+    let label = image_with_scale_type(&mut dom, gui, 1); // Slice
+    dom.set_property(label, "SliceScale", Variant::Float32(2.5))
+        .unwrap();
+
+    let elements = resolve(&screens(&dom), VIEWPORT);
+
+    match elements[0].image.as_ref().unwrap().scale {
+        ImageScale::Slice { scale, .. } => assert_eq!(scale, 2.5),
+        _ => panic!("expected ScaleType.Slice"),
+    }
+}
+
+#[test]
+fn image_rect_offset_and_size_are_read_in_source_pixels() {
+    let (mut dom, gui) = screen_gui();
+    let label = dom.new_instance("ImageLabel", "ImageLabel", Some(gui));
+    dom.set_property(
+        label,
+        "Image",
+        Variant::String("rbxassetid://12345".to_string()),
+    )
+    .unwrap();
+    dom.set_property(
+        label,
+        "ImageRectOffset",
+        Variant::Vector2(Vector2Data { x: 4.0, y: 8.0 }),
+    )
+    .unwrap();
+    dom.set_property(
+        label,
+        "ImageRectSize",
+        Variant::Vector2(Vector2Data { x: 16.0, y: 32.0 }),
+    )
+    .unwrap();
+
+    let elements = resolve(&screens(&dom), VIEWPORT);
+
+    let image = elements[0].image.as_ref().unwrap();
+    assert_eq!(image.rect_offset, [4.0, 8.0]);
+    assert_eq!(image.rect_size, [16.0, 32.0]);
+}
+
+#[test]
+fn resample_mode_pixelated_is_read_and_default_is_not() {
+    let (mut dom, gui) = screen_gui();
+    for (name, pixelated) in [("default", false), ("pixelated", true)] {
+        let label = dom.new_instance("ImageLabel", name, Some(gui));
+        dom.set_property(
+            label,
+            "Image",
+            Variant::String("rbxassetid://12345".to_string()),
+        )
+        .unwrap();
+        if pixelated {
+            dom.set_property(label, "ResampleMode", Variant::Enum(1))
+                .unwrap();
+        }
+    }
+
+    let elements = resolve(&screens(&dom), VIEWPORT);
+
+    assert!(!elements[0].image.as_ref().unwrap().pixelated);
+    assert!(elements[1].image.as_ref().unwrap().pixelated);
 }
 
 #[test]

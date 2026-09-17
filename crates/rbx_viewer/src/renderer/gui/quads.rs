@@ -12,8 +12,11 @@ use std::ops::Range;
 
 use rbx_assets::AssetRef;
 
+use super::atlas::Slot;
 use super::pipeline::VertexRaw;
 use crate::scene::{GuiElement, GuiRect};
+
+mod image;
 
 /// The slot every untextured rectangle — a background, a border — samples: a
 /// single white texel, so one pipeline covers both.
@@ -39,7 +42,7 @@ pub(super) struct Run {
 /// Every rectangle of every element, in paint order.
 pub(super) fn build(
     elements: &[GuiElement],
-    textures: &HashMap<AssetRef, usize>,
+    textures: &HashMap<AssetRef, Slot>,
     target: (u32, u32),
 ) -> (Vec<VertexRaw>, Vec<Run>) {
     let mut vertices = Vec::new();
@@ -65,6 +68,7 @@ pub(super) fn build(
         if element.background_alpha > 0.0 {
             quad(
                 &element.rect,
+                [0.0, 0.0],
                 [1.0, 1.0],
                 element.background,
                 element.background_alpha,
@@ -80,6 +84,7 @@ pub(super) fn build(
                 for side in outline(&element.rect, width) {
                     quad(
                         &side,
+                        [0.0, 0.0],
                         [1.0, 1.0],
                         color,
                         element.background_alpha,
@@ -91,26 +96,24 @@ pub(super) fn build(
         }
         extend(&mut runs, WHITE, scissor, start..vertices.len());
 
-        let Some(image) = &element.image else {
+        let Some(painted) = &element.image else {
             continue;
         };
-        let Some(&texture) = textures.get(&image.asset) else {
+        let Some(slot) = textures.get(&painted.asset) else {
             // Never downloaded, or the fetch failed. Roblox draws nothing at
             // all for an image it cannot load, so neither does this.
             continue;
         };
-        if image.alpha <= 0.0 {
+        if painted.alpha <= 0.0 {
             continue;
         }
+        let texture = if painted.pixelated {
+            slot.nearest
+        } else {
+            slot.linear
+        };
         let start = vertices.len();
-        quad(
-            &element.rect,
-            image.repeat,
-            image.tint,
-            image.alpha,
-            &spin,
-            &mut vertices,
-        );
+        image::build(&element.rect, painted, slot.size, &spin, &mut vertices);
         extend(&mut runs, texture, scissor, start..vertices.len());
     }
 
@@ -175,12 +178,15 @@ fn center(rect: &GuiRect) -> [f32; 2] {
     [rect.x + rect.width * 0.5, rect.y + rect.height * 0.5]
 }
 
-/// Two triangles covering `rect`, the image repeating `repeat` times across
-/// it and every corner turned by `spin` — an identity `Spin` (zero rotation)
-/// leaves them exactly where `rect` puts them.
+/// Two triangles covering `rect`, its corners sampling from `uv0` to `uv1`
+/// (a plain quad is `[0, 0]`..`[1, 1]`; a `Tile` reaches past `1` to repeat,
+/// relying on the atlas's `Repeat` address mode) and every corner turned by
+/// `spin` — an identity `Spin` (zero rotation) leaves them exactly where
+/// `rect` puts them.
 fn quad(
     rect: &GuiRect,
-    repeat: [f32; 2],
+    uv0: [f32; 2],
+    uv1: [f32; 2],
     color: [f32; 3],
     alpha: f32,
     spin: &Spin,
@@ -197,10 +203,10 @@ fn quad(
         alpha,
     };
 
-    let top_left = corner([left, top], [0.0, 0.0]);
-    let top_right = corner([right, top], [repeat[0], 0.0]);
-    let bottom_left = corner([left, bottom], [0.0, repeat[1]]);
-    let bottom_right = corner([right, bottom], repeat);
+    let top_left = corner([left, top], [uv0[0], uv0[1]]);
+    let top_right = corner([right, top], [uv1[0], uv0[1]]);
+    let bottom_left = corner([left, bottom], [uv0[0], uv1[1]]);
+    let bottom_right = corner([right, bottom], [uv1[0], uv1[1]]);
     into.extend([
         top_left,
         top_right,

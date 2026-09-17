@@ -24,9 +24,7 @@ mod layout;
 mod plan;
 mod space;
 
-#[cfg(test)]
-pub(crate) use layout::Painted;
-pub(crate) use layout::{resolve, resolve_canvas, Element, Rect};
+pub(crate) use layout::{resolve, resolve_canvas, Element, ImageScale, Painted, PixelRect, Rect};
 pub(crate) use plan::{plan, Screen};
 pub(crate) use space::{plan as plan_space, Anchor, SpaceGui};
 

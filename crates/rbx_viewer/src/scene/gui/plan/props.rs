@@ -48,10 +48,19 @@ pub(in crate::scene::gui) fn color(
 
 /// `Rotation`, 0 degrees (unrotated) where the property is missing.
 pub(in crate::scene::gui) fn degrees(properties: &BTreeMap<String, Variant>, name: &str) -> f32 {
+    float(properties, name, 0.0)
+}
+
+/// A plain `float` property, e.g. `SliceScale`.
+pub(in crate::scene::gui) fn float(
+    properties: &BTreeMap<String, Variant>,
+    name: &str,
+    default: f32,
+) -> f32 {
     match properties.get(name) {
         Some(Variant::Float32(value)) => *value,
         Some(Variant::Float64(value)) => *value as f32,
-        _ => 0.0,
+        _ => default,
     }
 }
 

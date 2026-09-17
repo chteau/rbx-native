@@ -1,7 +1,7 @@
 //! Unit tests for [`super`]: scissor conversion, border bands and run merging.
 
 use super::*;
-use crate::scene::{GuiElement, Painted};
+use crate::scene::{GuiElement, GuiImageScale, Painted};
 
 fn rect(x: f32, y: f32, width: f32, height: f32) -> GuiRect {
     GuiRect {
@@ -130,15 +130,23 @@ fn consecutive_elements_sharing_a_texture_and_a_scissor_merge_into_one_run() {
     assert_eq!(runs[1].range, 12..18);
 }
 
-#[test]
-fn an_image_whose_asset_never_downloaded_leaves_only_its_background() {
-    let mut label = element(rect(0.0, 0.0, 10.0, 10.0), None);
-    label.image = Some(Painted {
-        asset: AssetRef::Id(7),
+fn stretch_image(asset: AssetRef) -> Painted {
+    Painted {
+        asset,
         tint: [1.0, 1.0, 1.0],
         alpha: 1.0,
         repeat: [1.0, 1.0],
-    });
+        scale: GuiImageScale::Stretch,
+        rect_offset: [0.0, 0.0],
+        rect_size: [0.0, 0.0],
+        pixelated: false,
+    }
+}
+
+#[test]
+fn an_image_whose_asset_never_downloaded_leaves_only_its_background() {
+    let mut label = element(rect(0.0, 0.0, 10.0, 10.0), None);
+    label.image = Some(stretch_image(AssetRef::Id(7)));
 
     let (vertices, runs) = build(&[label], &HashMap::new(), VIEWPORT);
 
@@ -151,12 +159,18 @@ fn a_tiled_image_carries_its_repeat_count_into_the_uvs() {
     let mut label = element(rect(0.0, 0.0, 300.0, 200.0), None);
     label.background_alpha = 0.0;
     label.image = Some(Painted {
-        asset: AssetRef::Id(7),
-        tint: [1.0, 1.0, 1.0],
-        alpha: 1.0,
+        scale: GuiImageScale::Tile,
         repeat: [3.0, 2.0],
+        ..stretch_image(AssetRef::Id(7))
     });
-    let textures = HashMap::from([(AssetRef::Id(7), 1)]);
+    let textures = HashMap::from([(
+        AssetRef::Id(7),
+        Slot {
+            linear: 1,
+            nearest: 2,
+            size: [64.0, 64.0],
+        },
+    )]);
 
     let (vertices, runs) = build(&[label], &textures, VIEWPORT);
 
@@ -164,6 +178,28 @@ fn a_tiled_image_carries_its_repeat_count_into_the_uvs() {
     let corners: Vec<[f32; 2]> = vertices.iter().map(|vertex| vertex.uv).collect();
     assert!(corners.contains(&[0.0, 0.0]));
     assert!(corners.contains(&[3.0, 2.0]));
+}
+
+#[test]
+fn a_pixelated_image_draws_through_the_nearest_slot_instead_of_linear() {
+    let mut label = element(rect(0.0, 0.0, 10.0, 10.0), None);
+    label.background_alpha = 0.0;
+    label.image = Some(Painted {
+        pixelated: true,
+        ..stretch_image(AssetRef::Id(7))
+    });
+    let textures = HashMap::from([(
+        AssetRef::Id(7),
+        Slot {
+            linear: 1,
+            nearest: 2,
+            size: [64.0, 64.0],
+        },
+    )]);
+
+    let (_, runs) = build(&[label], &textures, VIEWPORT);
+
+    assert_eq!(runs[0].texture, 2);
 }
 
 #[test]

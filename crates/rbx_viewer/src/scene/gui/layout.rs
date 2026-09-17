@@ -7,8 +7,11 @@
 
 use rbx_assets::AssetRef;
 
-use super::plan::{Align, Fill, List, Node, Screen, Span, Tiling};
+use super::plan::{Align, Fill, List, Node, ScaleMode, Screen, Span};
 use super::space::SpaceGui;
+// Reaches all the way to `renderer::gui::quads::image`, unlike everything
+// else `plan` hands this module — see the type's own doc comment.
+pub(crate) use super::plan::PixelRect;
 
 /// A screen-space box in pixels, top-left origin.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -42,15 +45,38 @@ impl Rect {
     }
 }
 
-/// An `ImageLabel`'s image with its tiling already turned into a UV repeat
-/// count, so the renderer never has to resolve a `UDim2` of its own.
+/// An `ImageLabel`/`ImageButton`'s `ScaleType`, resolved as far as this layer
+/// can: a `Tile`'s `UDim2` is already turned into a repeat count (in
+/// [`Painted::repeat`]), but `Fit`/`Crop`'s letterbox and crop math need the
+/// source image's own pixel size, which only the renderer's atlas knows — see
+/// `renderer::gui::quads::image`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum ImageScale {
+    Stretch,
+    Tile,
+    Slice {
+        center: Option<PixelRect>,
+        scale: f32,
+    },
+    Fit,
+    Crop,
+}
+
+/// An `ImageLabel`/`ImageButton`'s image, resolved as far as a pixel-space
+/// `Rect` allows.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Painted {
     pub(crate) asset: AssetRef,
     pub(crate) tint: [f32; 3],
     pub(crate) alpha: f32,
-    /// How many times the image repeats across the box, 1 being a stretch.
+    /// How many times the image repeats across the box under `Stretch`/
+    /// `Tile`, 1 being a stretch; meaningless for the other scale types.
     pub(crate) repeat: [f32; 2],
+    pub(crate) scale: ImageScale,
+    /// `ImageRectOffset`/`ImageRectSize`, still in the source image's pixels.
+    pub(crate) rect_offset: [f32; 2],
+    pub(crate) rect_size: [f32; 2],
+    pub(crate) pixelated: bool,
 }
 
 /// One `GuiObject` at its final pixel position, ready to be drawn on its own.
@@ -264,19 +290,28 @@ fn place(position: Span, size: Span, anchor: [f32; 2], parent: &Rect) -> Rect {
 }
 
 fn painted(fill: &Fill, rect: &Rect) -> Painted {
+    let (scale, repeat) = match fill.scale {
+        ScaleMode::Stretch => (ImageScale::Stretch, [1.0, 1.0]),
+        // A tile bigger than the box repeats less than once, which is
+        // Roblox's own behaviour: `TileSize` is a size, not a count.
+        ScaleMode::Tile { size } => {
+            let tile = size.against(rect.size());
+            let repeat = [ratio(rect.width, tile[0]), ratio(rect.height, tile[1])];
+            (ImageScale::Tile, repeat)
+        }
+        ScaleMode::Slice { center, scale } => (ImageScale::Slice { center, scale }, [1.0, 1.0]),
+        ScaleMode::Fit => (ImageScale::Fit, [1.0, 1.0]),
+        ScaleMode::Crop => (ImageScale::Crop, [1.0, 1.0]),
+    };
     Painted {
         asset: fill.asset.clone(),
         tint: fill.tint,
         alpha: fill.alpha,
-        repeat: match fill.tiling {
-            Tiling::Stretch => [1.0, 1.0],
-            // A tile bigger than the box repeats less than once, which is
-            // Roblox's own behaviour: `TileSize` is a size, not a count.
-            Tiling::Tile { size } => {
-                let tile = size.against(rect.size());
-                [ratio(rect.width, tile[0]), ratio(rect.height, tile[1])]
-            }
-        },
+        repeat,
+        scale,
+        rect_offset: fill.rect_offset,
+        rect_size: fill.rect_size,
+        pixelated: fill.pixelated,
     }
 }
 

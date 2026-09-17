@@ -36,13 +36,10 @@ pub(crate) use filemesh::{
 };
 pub(crate) use gui::{
     resolve as gui_layout, resolve_canvas as gui_canvas_layout, Anchor as GuiAnchor,
-    Element as GuiElement, Rect as GuiRect, Screen as GuiScreen, SpaceGui,
+    Element as GuiElement, ImageScale as GuiImageScale, Painted, PixelRect as GuiPixelRect,
+    Rect as GuiRect, Screen as GuiScreen, SpaceGui,
 };
 pub(crate) use identity::PartId;
-// Only a test (`renderer::gui::quads`'s) names an element's image directly;
-// everything else reaches one through `GuiElement::image`.
-#[cfg(test)]
-pub(crate) use gui::Painted;
 pub(crate) use material::{Catalog, Kind, Maps, Slot};
 pub(crate) use particles::sequence::{eval_color, eval_number};
 pub(crate) use particles::{Emitter, Simulation};

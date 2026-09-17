@@ -9,7 +9,7 @@ use rbx_dom::{Color3Data, Ref, UDim, UDim2, Variant, Vector2Data, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use super::plan::Screen;
-use super::{plan, resolve, Rect};
+use super::{plan, resolve, ImageScale, PixelRect, Rect};
 
 const VIEWPORT: [f32; 2] = [800.0, 600.0];
 
