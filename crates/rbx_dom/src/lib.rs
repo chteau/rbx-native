@@ -19,5 +19,5 @@ pub use reference::Ref;
 pub use variant::{
     Axes, CFrameData, Color3Data, ColorSequence, ColorSequenceKeypoint, Content, Faces, Font,
     FontStyle, NumberRange, NumberSequence, NumberSequenceKeypoint, PhysicalProperties, Rect, UDim,
-    UDim2, UniqueId, Variant, Vector2Data, Vector3Data,
+    UDim2, UniqueId, Variant, Vector2Data, Vector3Data, FONT_UNKNOWN,
 };
