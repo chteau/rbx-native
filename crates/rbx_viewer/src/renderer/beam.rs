@@ -217,6 +217,7 @@ impl Beams {
     /// draws one run per texture group over `targets`'s existing colour and
     /// depth attachments (loaded, not cleared — see `renderer::particles`,
     /// whose pass this one runs just before).
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn draw(
         &mut self,
         queue: &wgpu::Queue,
@@ -225,6 +226,7 @@ impl Beams {
         targets: &Targets,
         eye: Vec3,
         view_projection: Mat4,
+        env_light: Vec3,
     ) {
         let now = Instant::now();
         let dt = self
@@ -238,6 +240,7 @@ impl Beams {
             0,
             bytemuck::bytes_of(&CameraRaw {
                 view_projection: view_projection.to_cols_array_2d(),
+                env_light: [env_light.x, env_light.y, env_light.z, 0.0],
             }),
         );
 

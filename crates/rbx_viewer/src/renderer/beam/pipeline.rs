@@ -16,6 +16,9 @@ const SHADER: &str = include_str!("../beam.wgsl");
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub(super) struct CameraRaw {
     pub(super) view_projection: [[f32; 4]; 4],
+    /// The light a `LightInfluence`-1 beam is tinted by (rgb; `w` padding) —
+    /// see `beam.wgsl`.
+    pub(super) env_light: [f32; 4],
 }
 
 /// One ribbon vertex, already at its final world position — see
@@ -28,14 +31,16 @@ pub(super) struct VertexRaw {
     pub(super) color: [f32; 3],
     pub(super) alpha: f32,
     pub(super) light_emission: f32,
+    pub(super) light_influence: f32,
 }
 
-const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![
+const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 6] = wgpu::vertex_attr_array![
     0 => Float32x3,
     1 => Float32x2,
     2 => Float32x3,
     3 => Float32,
     4 => Float32,
+    5 => Float32,
 ];
 
 /// Same premultiplied `(One, OneMinusSrcAlpha)` state particles use — see
@@ -140,10 +145,11 @@ mod tests {
     #[test]
     fn the_shader_reads_the_light_emission_field_the_layout_supplies() {
         assert!(SHADER.contains("@location(4) light_emission: f32"));
-        assert_eq!(VERTEX_ATTRIBUTES.len(), 5);
-        assert_eq!(VERTEX_ATTRIBUTES[4].shader_location, 4);
+        assert!(SHADER.contains("@location(5) light_influence: f32"));
+        assert_eq!(VERTEX_ATTRIBUTES.len(), 6);
+        assert_eq!(VERTEX_ATTRIBUTES[5].shader_location, 5);
         assert_eq!(
-            VERTEX_ATTRIBUTES[4].offset + VERTEX_ATTRIBUTES[4].format.size(),
+            VERTEX_ATTRIBUTES[5].offset + VERTEX_ATTRIBUTES[5].format.size(),
             std::mem::size_of::<VertexRaw>() as wgpu::BufferAddress
         );
     }

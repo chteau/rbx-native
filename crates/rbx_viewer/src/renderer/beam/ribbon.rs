@@ -28,8 +28,16 @@ pub(super) fn vertices(beam: &Beam, eye: Vec3, elapsed: f32) -> Vec<VertexRaw> {
     };
 
     let mut out = Vec::with_capacity(centers.len() * 2);
-    for &(t, center) in &centers {
-        let tangent = beam.curve.tangent(t);
+    for (i, &(t, center)) in centers.iter().enumerate() {
+        // The direction of the ribbon *as drawn*, from the neighbouring
+        // samples rather than the analytic Bézier tangent: a curved beam
+        // tessellated into few segments has a straight centreline between its
+        // samples, and the width has to stay square to that straight line. The
+        // analytic tangent at an endpoint points along the attachment's own
+        // axis (see `Curve::tangent`), which for a low-segment curved beam is
+        // nowhere near the chord — taking it would twist the ribbon and bend a
+        // beam that should read straight.
+        let tangent = polyline_tangent(&centers, i);
         let width_dir = if beam.face_camera {
             let to_camera = (eye - center).normalize_or_zero();
             face_camera_width(tangent, to_camera)
@@ -65,6 +73,7 @@ pub(super) fn vertices(beam: &Beam, eye: Vec3, elapsed: f32) -> Vec<VertexRaw> {
             color,
             alpha,
             light_emission: beam.light_emission,
+            light_influence: beam.light_influence,
         });
         out.push(VertexRaw {
             position: (position - width_dir * half).to_array(),
@@ -72,6 +81,7 @@ pub(super) fn vertices(beam: &Beam, eye: Vec3, elapsed: f32) -> Vec<VertexRaw> {
             color,
             alpha,
             light_emission: beam.light_emission,
+            light_influence: beam.light_influence,
         });
     }
     out
@@ -148,6 +158,31 @@ fn fixed_width(secondary0: Vec3, secondary1: Vec3, tangent: Vec3, t: f32) -> Vec
 /// Sum of consecutive sample distances — a piecewise-linear approximation of
 /// the curve's true length, accurate enough for tiling a texture by since a
 /// beam's `Segments` is already the resolution its curve is drawn at.
+/// The direction of the ribbon at sample `i`, from the samples on either side
+/// of it — the average of the segments it joins, or the one segment at an end.
+/// A degenerate run (two coincident samples) falls back to the whole chord.
+fn polyline_tangent(centers: &[(f32, Vec3)], i: usize) -> Vec3 {
+    let prev = centers.get(i.wrapping_sub(1)).map(|&(_, p)| p);
+    let next = centers.get(i + 1).map(|&(_, p)| p);
+    let here = centers[i].1;
+    let direction = match (prev, next) {
+        (Some(a), Some(b)) => b - a,
+        (None, Some(b)) => b - here,
+        (Some(a), None) => here - a,
+        (None, None) => Vec3::ZERO,
+    };
+    let unit = direction.normalize_or_zero();
+    if unit != Vec3::ZERO {
+        return unit;
+    }
+    let chord = (centers[centers.len() - 1].1 - centers[0].1).normalize_or_zero();
+    if chord != Vec3::ZERO {
+        chord
+    } else {
+        Vec3::Z
+    }
+}
+
 fn arc_length(centers: &[(f32, Vec3)]) -> f32 {
     centers
         .windows(2)

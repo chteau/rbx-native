@@ -54,6 +54,7 @@ fn straight_beam(segments: u32, width0: f32, width1: f32) -> Beam {
         texture_mode: TextureMode::Stretch,
         texture_speed: 0.0,
         light_emission: 0.0,
+        light_influence: 1.0,
         face_camera: false,
         secondary_axis0: Vec3::Y,
         secondary_axis1: Vec3::Y,
@@ -256,6 +257,7 @@ fn appended_strips_bridge_with_two_degenerate_vertices() {
         color: [0.0; 3],
         alpha: 1.0,
         light_emission: 0.0,
+        light_influence: 1.0,
     }];
     let b = vec![VertexRaw {
         position: [1.0; 3],
@@ -263,6 +265,7 @@ fn appended_strips_bridge_with_two_degenerate_vertices() {
         color: [0.0; 3],
         alpha: 1.0,
         light_emission: 0.0,
+        light_influence: 1.0,
     }];
     let mut out = a.clone();
     append(&mut out, &b);
@@ -274,5 +277,40 @@ fn appended_strips_bridge_with_two_degenerate_vertices() {
     assert_eq!(
         out[2], b[0],
         "then a repeat of the next strip's first vertex"
+    );
+}
+
+// The bug this exists for: a curved beam with too few segments to bend its
+// centreline (Segments = 1 → a straight chord) must still read straight. The
+// analytic Bézier tangent at the far end points along the attachment axis, not
+// the chord, and taking it twisted a camera-facing ribbon into a visible bend
+// (marked.rbxl's dashed sign borders). The ribbon's width now comes from the
+// polyline, so both cross-sections face the same way and the quad stays flat.
+#[test]
+fn a_one_segment_curved_beam_does_not_twist() {
+    let mut beam = straight_beam(1, 2.0, 2.0);
+    // A far-end curve handle pulling sideways — what CurveSize1 does — with
+    // only one segment, so the centreline is the straight chord regardless.
+    beam.curve = Curve::new(
+        Vec3::ZERO,
+        Vec3::X,
+        0.0,
+        Vec3::new(0.0, 0.0, -10.0),
+        Vec3::Y,
+        4.0,
+    );
+    beam.face_camera = true;
+
+    let verts = vertices(&beam, Vec3::new(0.0, 10.0, -5.0), 0.0);
+    assert_eq!(verts.len(), 4, "two cross-sections, two vertices each");
+
+    // The two edges of the ribbon, from the pairs at each end.
+    let edge_a = Vec3::from(verts[0].position) - Vec3::from(verts[1].position);
+    let edge_b = Vec3::from(verts[2].position) - Vec3::from(verts[3].position);
+    // A flat quad has its two width edges parallel; a twist makes them cross.
+    let cross = edge_a.normalize().cross(edge_b.normalize()).length();
+    assert!(
+        cross < 1e-3,
+        "the ribbon must not twist end to end, got {cross}"
     );
 }

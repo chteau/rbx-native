@@ -526,8 +526,24 @@ impl Renderer {
         // Before particles: sorting the two passes against each other is out
         // of scope for v1 (see `renderer::beam`'s docs), so beams simply go
         // first, both depth-tested against the opaque pass above.
-        self.beams
-            .draw(queue, device, &mut encoder, targets, eye, view_projection);
+        // What a `LightInfluence`-1 beam is tinted by: a normal-less ribbon
+        // has no face to catch the sun, so the flat, average-orientation
+        // illumination — the ambient hemisphere plus half of each directional
+        // lamp — stands in for "the light in the scene", dimming a beam at
+        // night and leaving it near full brightness in daylight. Roblox
+        // publishes no beam-lighting formula, so this is a documented
+        // approximation rather than a match.
+        let l = self.lighting;
+        let env_light = l.ambient + 0.5 * (l.sun_color + l.fill_color);
+        self.beams.draw(
+            queue,
+            device,
+            &mut encoder,
+            targets,
+            eye,
+            view_projection,
+            env_light,
+        );
         // Right after beams, same reasoning: sorting the two ribbon passes
         // against each other is out of scope for v1 — see `renderer::trail`'s
         // docs.
