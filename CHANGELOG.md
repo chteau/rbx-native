@@ -64,6 +64,17 @@
   Editor panel in `rbxstudio` that edits sheets, rules and their properties
   with the viewport following live. Every behaviour was checked against
   `Roblox/creator-docs`; where a page is silent the code says so. — @chteau
+- **GUI parity fixes on the same branch.** Text now measures like Studio's:
+  `TextSize` is the line box, the glyph em a fixed 1/1.2 of it (measured
+  against Studio captures of three families), and a family lacking the
+  requested weight shapes in its closest face instead of a system font —
+  which is why FindTheCode lost Fredoka One. Translucent frames read as
+  dark as Studio's: the overlay composites in encoded space through a
+  non-sRGB view of the target. A `Folder` inside a `ScreenGui` no longer
+  swallows its subtree, and is the layout scope the docs describe.
+  `ScrollingFrame`, `CanvasGroup`, `ViewportFrame` and `UIPageLayout` draw
+  as themselves, and every property of `StarterGui`'s 45 GUI classes is
+  either implemented or documented as having no still-frame effect. — @chteau
 
 
 ## 2026-09-16

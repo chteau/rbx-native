@@ -123,6 +123,45 @@ Roblox's own engine.
     editable in place through the undo history, with the viewport
     re-rendering on every edit; sheet tokens and `StyleQuery` are not
     editable there yet.
+  - Text metrics match Studio: `TextSize` is the *line box* height (the
+    docs: "line height equal to the `TextSize`"), the glyph em a fixed
+    1/1.2 of it — measured against Studio captures of three families
+    (Source Sans Pro, Gotham SSm, Fredoka One) to the pixel, which no font
+    table combination reproduced. A family that lacks the requested
+    weight shapes in its closest face rather than falling back to a
+    system font (cosmic-text only matches an exact weight). Studio's
+    synthetic bold for a weight the family lacks is not reproduced.
+  - The overlay composites in encoded (sRGB) space, as Roblox does, through
+    a non-sRGB view of the target: a `BackgroundTransparency` 0.5 frame
+    over the scene halves the encoded pixel like Studio's, not the linear
+    one.
+  - A `Folder` (or any non-`GuiObject` instance) inside a GUI tree is the
+    layout scope the `Folder` docs describe: its contents render against
+    the nearest `GuiBase2d`, arranged by the folder's own `UILayout` if it
+    has one and exempt from its siblings' layout.
+  - `ScrollingFrame` (canvas, `CanvasPosition`, `AutomaticCanvasSize`, the
+    scroll bars from their three images with every inset/position/
+    direction property), `CanvasGroup` (`GroupTransparency`/`GroupColor3`
+    over the subtree flattened to a texture, one blend for overlapping
+    children), `ViewportFrame` (its parts under `CurrentCamera` — or the
+    saved camera pose — with `Ambient`/`LightColor`/`LightDirection`, a
+    single-light opaque+blended pass with no shadows or post, `ImageColor3`
+    /`ImageTransparency`; meshes, unions and decals inside a frame draw as
+    their fallback boxes), `UIPageLayout` (the current page laid out, no
+    transition), `BillboardGui`/`SurfaceGui` `Brightness`/`LightInfluence`/
+    `MaxDistance`/`SizeOffset`, `ScreenGui.ClipToDeviceSafeArea`,
+    `ImageContent`.
+  - Every property of `StarterGui` and of the 45 classes a place's GUI
+    tree can hold was audited against the API dump and the docs (384
+    properties): each is implemented, or documented as having no
+    still-frame effect (`Active`, `Selectable`, `AutoButtonColor`, the
+    selection/navigation family, `VideoFrame` playback…). Deliberately
+    not honoured: `StarterGui.ShowDevelopmentGui`, a Studio *view* toggle
+    a player never sees — the viewer draws the play view, and a real
+    Studio capture of a place saving it `false` shows the GUI. Known gaps:
+    the deprecated `FrameStyle`/`ButtonStyle` skins (client assets), a
+    second `UIStroke` on one element, `TextDirection`/`OpenTypeFeatures`,
+    `BillboardGui.ExtentsOffset*`.
 - [x] Free-flight camera (WASD + mouse look + wheel), exponentially-eased
   movement (mouse look itself stays unfiltered).
 - [x] Orthographic camera mode — toggled from the Viewport panel's overflow
