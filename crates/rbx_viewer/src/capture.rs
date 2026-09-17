@@ -117,6 +117,12 @@ impl Offscreen {
         self.renderer.set_gizmo(gizmo);
     }
 
+    /// The renderer, read-only: for what an embedder asks of the last frame
+    /// rather than writes into the next (see `Headless::gui_scroll_target`).
+    pub(crate) fn renderer(&self) -> &Renderer {
+        &self.renderer
+    }
+
     /// The renderer with the device and queue it draws through, for an
     /// edit applied one instance at a time (see `Headless::apply_changes`):
     /// every per-instance write the renderer offers needs the same two

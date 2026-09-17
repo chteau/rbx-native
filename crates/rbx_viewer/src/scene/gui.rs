@@ -29,6 +29,7 @@ mod layout;
 mod plan;
 mod space;
 mod style;
+mod wheel;
 
 #[cfg(test)]
 pub(crate) use layout::StrokePx;
@@ -46,6 +47,8 @@ pub(crate) use plan::{
     plan, span_face, Align, GradientKind, Join, Screen, Text, Tile, ViewCamera, Viewport,
 };
 pub(crate) use space::{plan as plan_space, Anchor, SpaceGui};
+pub(crate) use wheel::{scroll_target, ScrollWindow};
+pub use wheel::ScrollTarget;
 
 #[cfg(test)]
 mod tests;

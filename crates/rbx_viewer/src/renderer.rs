@@ -42,7 +42,7 @@ use crate::lighting::{Lighting, LocalLight};
 use crate::load::Answered;
 use crate::pick::Selected;
 use crate::quality::QualityProfile;
-use crate::scene::{Bounds, Scene};
+use crate::scene::{Bounds, Scene, ScrollTarget};
 use crate::textures::Decor;
 use beam::Beams;
 use cull::MainCull;
@@ -364,6 +364,13 @@ impl Renderer {
     /// they change with every camera move, not only when the tool does.
     pub(crate) fn set_gizmo(&mut self, gizmo: Option<Gizmo>) {
         self.gizmo = gizmo;
+    }
+
+    /// The `ScrollingFrame` of the screen overlay the wheel over `point` (in
+    /// pixels of the last frame drawn) would scroll along `axis` — see
+    /// `scene::gui::scroll_target`.
+    pub(crate) fn gui_scroll_target(&self, point: [f32; 2], axis: usize) -> Option<ScrollTarget> {
+        self.gui.scroll_target(point, axis)
     }
 
     /// Where this frame's draggers sit, or `None` when no transform tool is

@@ -55,6 +55,9 @@ pub(in crate::scene::gui) struct Scrolling {
     /// `ScrollingDirection`, per axis: "if scrolling is disallowed in a
     /// direction, the associated scroll bar will not appear".
     pub(in crate::scene::gui) direction: [bool; 2],
+    /// `ScrollingEnabled`, kept apart from `thickness` for a host scrolling
+    /// the frame by wheel: a bar of thickness zero is hidden, not disabled.
+    pub(in crate::scene::gui) enabled: bool,
     /// `ScrollBarThickness` in pixels, already zero where `ScrollingEnabled`
     /// is off — the docs give both the same effect, "no scroll bars will be
     /// rendered".
@@ -93,7 +96,8 @@ pub(in crate::scene::gui) fn scrolling(properties: &BTreeMap<String, Variant>) -
         DIRECTION_Y => [false, true],
         _ => [true, true],
     };
-    let thickness = match flag(properties, "ScrollingEnabled", true) {
+    let enabled = flag(properties, "ScrollingEnabled", true);
+    let thickness = match enabled {
         true => integer(properties, "ScrollBarThickness", DEFAULT_THICKNESS).max(0) as f32,
         false => 0.0,
     };
@@ -102,6 +106,7 @@ pub(in crate::scene::gui) fn scrolling(properties: &BTreeMap<String, Variant>) -
         canvas_position: vector2(properties, "CanvasPosition"),
         automatic_canvas: super::constraints::automatic_axes(properties, "AutomaticCanvasSize"),
         direction,
+        enabled,
         thickness,
         // The docs state no default; "when set to white, no colorization
         // occurs" is all they say. A Studio-saved place carries black.

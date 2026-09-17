@@ -33,7 +33,9 @@ use super::post::Targets;
 use crate::fonts::Library;
 use crate::load::Answered;
 use crate::quality::QualityProfile;
-use crate::scene::{gui_layout_with, GuiScreen, SpaceGui};
+use crate::scene::{
+    gui_layout_with, gui_scroll_target, GuiScreen, GuiScrollWindow, ScrollTarget, SpaceGui,
+};
 use atlas::Atlas;
 use group::Baked;
 use paint::Painter;
@@ -53,6 +55,9 @@ pub(super) struct Gui {
     screens: Vec<GuiScreen>,
     /// The viewport the overlay was laid out for; a different one rebuilds it.
     built: Option<(u32, u32)>,
+    /// Every `ScrollingFrame` window of the current overlay, in paint order,
+    /// for [`Gui::scroll_target`]. Empty until the first layout.
+    windows: Vec<GuiScrollWindow>,
     /// The flattened `CanvasGroup`s of the current overlay, and every
     /// texture its runs can name (the atlas' slots first, then those).
     baked: Baked,
@@ -111,6 +116,7 @@ impl Gui {
             format,
             screens: Vec::new(),
             built: None,
+            windows: Vec::new(),
             baked: Baked::new(device),
             bindings: Vec::new(),
             space,
@@ -180,6 +186,7 @@ impl Gui {
 
         self.screens = screens.to_vec();
         self.built = None;
+        self.windows.clear();
         self.space.rebuild(
             device,
             queue,
@@ -238,6 +245,9 @@ impl Gui {
                 [size.0 as f32, size.1 as f32],
                 &mut self.text,
             );
+            // Before the flatten below, which folds a `CanvasGroup`'s subtree
+            // away: a list inside a group still scrolls.
+            self.windows = elements.iter().filter_map(|element| element.scroll).collect();
             self.viewports.bake_all(
                 device,
                 queue,
@@ -278,14 +288,145 @@ impl Gui {
             size,
         );
     }
+
+    /// The `ScrollingFrame` the wheel over `point` would scroll along `axis`,
+    /// against the overlay as last laid out — `None` before the first draw,
+    /// and until the draw after a rebuild.
+    pub(super) fn scroll_target(&self, point: [f32; 2], axis: usize) -> Option<ScrollTarget> {
+        gui_scroll_target(&self.windows, point, axis)
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use rbx_dom::{UDim, UDim2, Variant, WeakDom};
     use rbx_reflection::ReflectionDatabase;
 
     use super::*;
     use crate::quality::QualityLevel;
+    use crate::scene::{gui_plan, Catalog};
+
+    fn udim2(ox: i32, oy: i32) -> Variant {
+        Variant::UDim2(UDim2 {
+            x: UDim {
+                scale: 0.0,
+                offset: ox,
+            },
+            y: UDim {
+                scale: 0.0,
+                offset: oy,
+            },
+        })
+    }
+
+    /// A `ScreenGui` holding one 200 × 100 `ScrollingFrame` at the origin
+    /// with a canvas of `canvas` pixels.
+    fn place(canvas: (i32, i32)) -> (WeakDom, rbx_dom::Ref) {
+        let mut dom = WeakDom::new();
+        let gui = dom.new_instance("ScreenGui", "ScreenGui", None);
+        dom.set_property(gui, "ScreenInsets", Variant::Enum(0))
+            .unwrap();
+        let frame = dom.new_instance("ScrollingFrame", "List", Some(gui));
+        dom.set_property(frame, "Size", udim2(200, 100)).unwrap();
+        dom.set_property(frame, "CanvasSize", udim2(canvas.0, canvas.1))
+            .unwrap();
+        dom.set_property(frame, "ScrollBarThickness", Variant::Int32(12))
+            .unwrap();
+        (dom, frame)
+    }
+
+    fn screens(dom: &WeakDom) -> Vec<GuiScreen> {
+        let database = ReflectionDatabase::embedded();
+        gui_plan(dom, &database, &mut Catalog::new(dom, &database))
+    }
+
+    // The wheel's hit list is a by-product of the overlay's own layout: it
+    // exists once the overlay has been drawn, and follows a rebuild — a
+    // canvas that has since come to fit its window is no longer a target.
+    #[test]
+    fn the_scroll_targets_follow_the_overlay_as_drawn() {
+        let Some((device, queue)) = crate::gpu::for_tests() else {
+            return;
+        };
+        let target = Target {
+            format: crate::renderer::post::HDR_FORMAT,
+            samples: 1,
+        };
+        let mut quality = QualityLevel::Automatic.profile();
+        quality.gui = true;
+        let images = Answered::new();
+        let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+        let fonts = Library::default();
+        let material_layout = crate::renderer::material::layout(&device);
+        let materials = crate::renderer::material::Materials::new(
+            &device,
+            &queue,
+            &material_layout,
+            &Catalog::new(&WeakDom::new(), &ReflectionDatabase::embedded()),
+            &quality,
+        );
+        let (dom, frame) = place((200, 300));
+        let mut gui = Gui::new(
+            &device,
+            &queue,
+            format,
+            target,
+            (&screens(&dom), &[]),
+            (&material_layout, &materials.bind_group),
+            &images,
+            &fonts,
+            &quality,
+        );
+        assert!(gui.scroll_target([50.0, 50.0], 1).is_none(), "not laid out yet");
+
+        let size = (400, 300);
+        let display = device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d {
+                width: size.0,
+                height: size.1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[pipeline::encoded(format)],
+        });
+        let draw = |gui: &mut Gui| {
+            let mut encoder = device.create_command_encoder(&Default::default());
+            gui.draw(
+                &device,
+                &queue,
+                &mut encoder,
+                &display,
+                size,
+                &materials.bind_group,
+            );
+            queue.submit(std::iter::once(encoder.finish()));
+        };
+
+        draw(&mut gui);
+        let hit = gui.scroll_target([50.0, 50.0], 1).unwrap();
+        assert_eq!(hit.referent, frame);
+        assert_eq!(hit.range, 200.0);
+        assert!(gui.scroll_target([50.0, 50.0], 0).is_none(), "fits across");
+        assert!(gui.scroll_target([250.0, 50.0], 1).is_none(), "beside it");
+
+        let (fitted, _) = place((200, 100));
+        gui.rebuild(
+            &device,
+            &queue,
+            (&screens(&fitted), &[]),
+            &materials.bind_group,
+            &images,
+            &fonts,
+            &quality,
+        );
+        draw(&mut gui);
+        assert!(gui.scroll_target([50.0, 50.0], 1).is_none());
+    }
 
     // A quality level switched between two scenes has to take on the next
     // rebuild: whether GUIs draw is read from the profile every rebuild, not

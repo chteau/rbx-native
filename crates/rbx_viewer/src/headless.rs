@@ -19,7 +19,7 @@ use crate::input::{CameraInput, Input};
 use crate::load::{Loaded, Resident, Toggles};
 use crate::pick::Selected;
 use crate::quality::QualityLevel;
-use crate::scene::Bounds;
+use crate::scene::{Bounds, ScrollTarget};
 use crate::view::View;
 
 mod assets;
@@ -287,6 +287,21 @@ impl Headless {
     pub fn set_gizmo(&mut self, gizmo: Option<Gizmo>) {
         self.view.set_gizmo(gizmo);
         self.offscreen.set_gizmo(gizmo);
+    }
+
+    /// The `ScreenGui` `ScrollingFrame` the mouse wheel over `point` — in
+    /// pixels of the last frame drawn — would scroll along `axis` (0 across,
+    /// 1 down), with how far its `CanvasPosition` can go. The innermost
+    /// frame under the point whose canvas overflows its window on that axis;
+    /// `None` over anything else, which is what leaves the wheel to the
+    /// camera. Only the screen overlay is tested: a `SurfaceGui`/
+    /// `BillboardGui` canvas has no cursor in pixels to test against.
+    ///
+    /// Scrolling it is the host's job: it writes `CanvasPosition` and hands
+    /// the change back through [`Headless::apply_changes`], and the next
+    /// frame lays the overlay out again.
+    pub fn gui_scroll_target(&self, point: [f32; 2], axis: usize) -> Option<ScrollTarget> {
+        self.offscreen.renderer().gui_scroll_target(point, axis)
     }
 
     /// Advances the camera by `dt` and reports whether the next frame would

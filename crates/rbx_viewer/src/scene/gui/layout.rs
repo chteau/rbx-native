@@ -9,6 +9,7 @@ mod text;
 
 use super::plan::{Align, GroupTint, Node, Screen, Span, Viewport};
 use super::space::SpaceGui;
+use super::wheel::ScrollWindow;
 // Reaches all the way to `renderer::gui::quads::image`, unlike everything
 // else `plan` hands this module — see the type's own doc comment.
 pub(crate) use super::plan::PixelRect;
@@ -74,6 +75,9 @@ pub(crate) struct Element {
     /// tinting; `None` for every other element, and for a group under
     /// `ZIndexBehavior.Global`.
     pub(crate) group: Option<Grouped>,
+    /// A `ScrollingFrame`'s window, for a host to hit-test the wheel against
+    /// (see `super::wheel`); `None` for every other element.
+    pub(crate) scroll: Option<ScrollWindow>,
 }
 
 /// A `CanvasGroup`'s tint and the run of elements it applies to.
@@ -236,6 +240,7 @@ pub(in crate::scene::gui) fn emit(
         text,
         viewport: node.viewport.clone(),
         group: None,
+        scroll: None,
     });
 
     // Roblox's own docs describe two modes here, gated on the (NotScriptable,
@@ -262,7 +267,18 @@ pub(in crate::scene::gui) fn emit(
         ..context
     };
     match &node.scrolling {
-        Some(scrolling) => scrolling::scroll(node, scrolling, &rect, cells, inner, measure, into),
+        Some(scrolling) => {
+            let window = scrolling::scroll(node, scrolling, &rect, cells, inner, measure, into);
+            into[start].scroll = Some(ScrollWindow {
+                referent: node.referent,
+                rect: window.rect,
+                clip: context.clip,
+                range: [0, 1].map(|axis| match scrolling.enabled && scrolling.direction[axis] {
+                    true => (window.canvas[axis] - window.rect.size()[axis]).max(0.0),
+                    false => 0.0,
+                }),
+            });
+        }
         None => children(
             Scope {
                 nodes: &node.children,
