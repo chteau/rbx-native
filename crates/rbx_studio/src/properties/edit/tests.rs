@@ -1,5 +1,6 @@
 use rbx_dom::{
-    CFrameData, Color3Data, Instance, NumberRange, UDim, UDim2, Vector2Data, Vector3Data,
+    CFrameData, Color3Data, Font, FontStyle, Instance, NumberRange, UDim, UDim2, Vector2Data,
+    Vector3Data,
 };
 
 use super::*;
@@ -433,4 +434,151 @@ fn a_cframe_of_no_recognised_length_is_rejected() {
     assert!(parse_as(&current, "1, 2").is_err());
     assert!(parse_as(&current, "1, 2, 3, 4").is_err());
     assert!(parse_as(&current, "0, 0, 1, 0, 1, 0, -1, 0").is_err());
+}
+
+// --- Font / FontFace ------------------------------------------------------
+
+fn face(family: &str, weight: u16, style: FontStyle) -> Font {
+    Font {
+        family: family.to_owned(),
+        weight,
+        style,
+        cached_face_id: None,
+    }
+}
+
+/// One `TextLabel` — the class the reflection dump resolves `Font` on.
+fn label_with(values: &[(&str, Variant)]) -> WeakDom {
+    let mut dom = WeakDom::new();
+    let mut label = Instance::new(part_ref(), "TextLabel", "Label");
+    for (name, value) in values {
+        label
+            .properties_mut()
+            .insert((*name).to_owned(), value.clone());
+    }
+    dom.insert(label);
+    dom
+}
+
+#[test]
+fn a_font_face_edits_as_family_weight_and_style_names_and_round_trips() {
+    let bold = face(
+        "rbxasset://fonts/families/SourceSansPro.json",
+        700,
+        FontStyle::Normal,
+    );
+    let text = edit_text(&Variant::Font(bold.clone())).unwrap();
+    assert_eq!(text, "SourceSansPro, Bold, Normal");
+    assert_eq!(
+        parse_as(&Variant::Font(bold.clone()), &text),
+        Ok(Variant::Font(bold.clone()))
+    );
+
+    // Names are case-insensitive, a weight may be its number, and a family
+    // from anywhere else keeps its URI.
+    assert_eq!(
+        parse_as(&Variant::Font(bold.clone()), "fredokaone, 600, italic"),
+        Ok(Variant::Font(face(
+            "rbxasset://fonts/families/fredokaone.json",
+            600,
+            FontStyle::Italic
+        )))
+    );
+    let cloud = face("rbxassetid://12187365364", 450, FontStyle::Italic);
+    let text = edit_text(&Variant::Font(cloud.clone())).unwrap();
+    assert_eq!(text, "rbxassetid://12187365364, 450, Italic");
+    assert_eq!(
+        parse_as(&Variant::Font(bold.clone()), &text),
+        Ok(Variant::Font(cloud))
+    );
+
+    // The cached face id named the old face and is dropped with it.
+    let cached = Font {
+        cached_face_id: Some("abc".to_owned()),
+        ..bold.clone()
+    };
+    assert_eq!(
+        parse_as(&Variant::Font(cached), "SourceSansPro, Bold, Normal"),
+        Ok(Variant::Font(bold.clone()))
+    );
+
+    assert!(parse_as(&Variant::Font(bold.clone()), "SourceSansPro, Bold").is_err());
+    assert!(parse_as(
+        &Variant::Font(bold.clone()),
+        "SourceSansPro, Bolder, Normal"
+    )
+    .is_err());
+    assert!(parse_as(&Variant::Font(bold), "SourceSansPro, Bold, Slanted").is_err());
+}
+
+#[test]
+fn committing_font_writes_the_matching_font_face_and_back() {
+    let regular = face(
+        "rbxasset://fonts/families/SourceSansPro.json",
+        400,
+        FontStyle::Normal,
+    );
+    let mut dom = label_with(&[
+        ("Font", Variant::Enum(3)),
+        ("FontFace", Variant::Font(regular)),
+    ]);
+    let property = |dom: &WeakDom, name: &str| {
+        dom.get(part_ref())
+            .unwrap()
+            .properties()
+            .get(name)
+            .cloned()
+            .unwrap()
+    };
+
+    // `SourceSansBold` is 4.
+    commit(&mut dom, &db(), part_ref(), "Font", "4").unwrap();
+    assert_eq!(
+        property(&dom, "FontFace"),
+        Variant::Font(face(
+            "rbxasset://fonts/families/SourceSansPro.json",
+            700,
+            FontStyle::Normal
+        ))
+    );
+
+    commit(
+        &mut dom,
+        &db(),
+        part_ref(),
+        "FontFace",
+        "SourceSansPro, Regular, Italic",
+    )
+    .unwrap();
+    assert_eq!(property(&dom, "Font"), Variant::Enum(6), "SourceSansItalic");
+
+    commit(
+        &mut dom,
+        &db(),
+        part_ref(),
+        "FontFace",
+        "FredokaOne, Bold, Normal",
+    )
+    .unwrap();
+    assert_eq!(property(&dom, "Font"), Variant::Enum(rbx_dom::FONT_UNKNOWN));
+
+    // `Unknown` names no face: `FontFace` stays.
+    commit(&mut dom, &db(), part_ref(), "Font", "100").unwrap();
+    assert_eq!(
+        property(&dom, "FontFace"),
+        Variant::Font(face(
+            "rbxasset://fonts/families/FredokaOne.json",
+            700,
+            FontStyle::Normal
+        ))
+    );
+}
+
+#[test]
+fn committing_font_on_an_instance_without_a_font_face_writes_only_font() {
+    let mut dom = label_with(&[("Font", Variant::Enum(3))]);
+    commit(&mut dom, &db(), part_ref(), "Font", "4").unwrap();
+    let properties = dom.get(part_ref()).unwrap().properties().clone();
+    assert_eq!(properties.get("Font"), Some(&Variant::Enum(4)));
+    assert!(!properties.contains_key("FontFace"));
 }
