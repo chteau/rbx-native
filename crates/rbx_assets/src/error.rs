@@ -52,6 +52,15 @@ pub enum FetchError {
     #[error("asset {0} was not found")]
     NotFound(u64),
 
+    /// The service answered, and its answer is final: the asset is there but
+    /// this caller may not have it, or the request itself was wrong. Asking
+    /// again with the same credentials gets the same answer.
+    #[error("fetching asset {id} was refused: {message}")]
+    Refused { id: u64, message: String },
+
+    /// The request did not get an answer worth keeping — a rate limit, an
+    /// outage, a dropped connection. About the machine and the moment, not
+    /// about the asset, so a later try may well succeed.
     #[error("fetching asset {id} failed: {message}")]
     Other { id: u64, message: String },
 }
