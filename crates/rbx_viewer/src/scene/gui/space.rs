@@ -23,6 +23,7 @@ use super::style::Styled;
 use crate::fonts::Face;
 use crate::scene::beam::{world_cframe, ParentMap};
 use crate::scene::Placement;
+use crate::scene::{Catalog, Part};
 use crate::textures::NormalId;
 
 const BILLBOARD_CLASS: &str = "BillboardGui";
@@ -104,6 +105,13 @@ impl SpaceGui {
             collect_fonts(root, into);
         }
     }
+
+    /// Every `ViewportFrame` part on the canvas — see `Screen::viewport_parts`.
+    pub(crate) fn viewport_parts(&mut self, apply: &mut impl FnMut(&mut Part)) {
+        for root in &mut self.roots {
+            super::plan::each_viewport_part(root, apply);
+        }
+    }
 }
 
 /// Every enabled `BillboardGui`/`SurfaceGui` that could be placed and has
@@ -119,6 +127,7 @@ pub(crate) fn plan(
     dom: &WeakDom,
     database: &ReflectionDatabase,
     placements: &HashMap<Ref, Placement>,
+    materials: &mut Catalog,
 ) -> Vec<SpaceGui> {
     let parents = ParentMap::build(dom);
     let kinds = RefCell::new(HashMap::new());
@@ -133,7 +142,7 @@ pub(crate) fn plan(
     };
     let mut found = Vec::new();
     for &root in dom.root_refs() {
-        gather(context, root, None, &mut found);
+        gather(context, materials, root, None, &mut found);
     }
     found
 }
@@ -158,20 +167,30 @@ struct Context<'a> {
 /// reason [`super::plan::plan`] walks itself — paint order is tree order —
 /// and because a container's *parent* is what it hangs off when `Adornee` is
 /// unset, which a flat iterator cannot hand back.
-fn gather(context: Context<'_>, referent: Ref, parent: Option<Ref>, into: &mut Vec<SpaceGui>) {
+///
+/// `materials` rides beside [`Context`] rather than inside it: the context
+/// is copied down the walk, and a catalog a `ViewportFrame` adds layers to
+/// cannot be.
+fn gather(
+    context: Context<'_>,
+    materials: &mut Catalog,
+    referent: Ref,
+    parent: Option<Ref>,
+    into: &mut Vec<SpaceGui>,
+) {
     let Some(instance) = context.dom.get(referent) else {
         return;
     };
     let (billboard, surface) = kind_of(context, instance.class());
     if billboard || surface {
-        if let Some(gui) = read(context, instance, parent, billboard) {
+        if let Some(gui) = read(context, materials, instance, parent, billboard) {
             into.push(gui);
         }
         // Neither nests inside the other, and the children are the GUI tree.
         return;
     }
     for &child in instance.children() {
-        gather(context, child, Some(referent), into);
+        gather(context, materials, child, Some(referent), into);
     }
 }
 
@@ -191,6 +210,7 @@ fn kind_of(context: Context<'_>, class: &str) -> (bool, bool) {
 
 fn read(
     context: Context<'_>,
+    materials: &mut Catalog,
     instance: &Instance,
     parent: Option<Ref>,
     billboard: bool,
@@ -204,6 +224,7 @@ fn read(
         context.dom,
         context.database,
         context.styles,
+        materials,
         instance.children(),
     );
     // A tree that paints nothing is every `SurfaceGui` holding only

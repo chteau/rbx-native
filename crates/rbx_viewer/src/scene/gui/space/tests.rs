@@ -65,7 +65,13 @@ fn filled(dom: &mut WeakDom, parent: Ref) {
 }
 
 fn planned(dom: &WeakDom, placements: &HashMap<Ref, Placement>) -> Vec<SpaceGui> {
-    plan(dom, &DATABASE(), placements)
+    let database = DATABASE();
+    plan(
+        dom,
+        &database,
+        placements,
+        &mut Catalog::new(dom, &database),
+    )
 }
 
 #[test]

@@ -16,6 +16,7 @@ use glam::{Mat4, Vec3};
 use super::atlas::Atlas;
 use super::paint::Painter;
 use super::text::Typesetter;
+use super::viewport::Viewports;
 use crate::renderer::pipeline::Target;
 use crate::renderer::post::Targets;
 use crate::renderer::texture;
@@ -60,13 +61,16 @@ pub(super) struct Space {
 }
 
 impl Space {
+    /// `shared` is what a bake draws with — the image atlas, the typesetter
+    /// and the `ViewportFrame` pass, whose textures sample `materials`.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         target: Target,
         viewport_layout: &wgpu::BindGroupLayout,
-        atlas: &mut Atlas,
-        fonts: &mut Typesetter,
+        shared: (&mut Atlas, &mut Typesetter, &mut Viewports),
+        materials: &wgpu::BindGroup,
         spaces: &[SpaceGui],
     ) -> Self {
         let camera_layout = pipeline::camera_layout(device);
@@ -101,7 +105,7 @@ impl Space {
             vertices: None,
             vertex_capacity: 0,
         };
-        space.rebuild(device, queue, viewport_layout, atlas, fonts, spaces);
+        space.rebuild(device, queue, viewport_layout, shared, materials, spaces);
         space
     }
 
@@ -113,8 +117,8 @@ impl Space {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         viewport_layout: &wgpu::BindGroupLayout,
-        atlas: &mut Atlas,
-        fonts: &mut Typesetter,
+        (atlas, fonts, viewports): (&mut Atlas, &mut Typesetter, &mut Viewports),
+        materials: &wgpu::BindGroup,
         spaces: &[SpaceGui],
     ) {
         self.canvases.clear();
@@ -144,8 +148,15 @@ impl Space {
                 &atlas.image_layout,
             )
         });
-        for gui in spaces {
-            let canvas = bake(device, queue, &mut painter, atlas, fonts, gui);
+        for (index, gui) in spaces.iter().enumerate() {
+            let canvas = bake(
+                device,
+                queue,
+                &mut painter,
+                (atlas, fonts, viewports),
+                (materials, index),
+                gui,
+            );
             self.canvases.push(Canvas {
                 bind_group: self.bind(device, &canvas, &sampler),
                 texture: canvas,
@@ -303,12 +314,14 @@ impl Space {
 ///
 /// Submitted on the spot rather than folded into the frame encoder: the canvas
 /// is a one-off, and `Renderer::new` has no encoder of its own to borrow.
+/// `index` keeps this canvas' `ViewportFrame` textures apart from every
+/// other's in the shared atlas.
 fn bake(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     painter: &mut Painter,
-    atlas: &mut Atlas,
-    fonts: &mut Typesetter,
+    (atlas, fonts, viewports): (&mut Atlas, &mut Typesetter, &mut Viewports),
+    (materials, index): (&wgpu::BindGroup, usize),
     gui: &SpaceGui,
 ) -> wgpu::Texture {
     let size = (gui.canvas[0].max(1.0) as u32, gui.canvas[1].max(1.0) as u32);
@@ -328,14 +341,16 @@ fn bake(
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-    painter.prepare(
+    let mut elements = gui_canvas_layout_with(gui, fonts);
+    viewports.bake_all(
         device,
         queue,
-        &gui_canvas_layout_with(gui, fonts),
-        atlas.slot_of(),
-        size,
-        fonts,
+        materials,
+        atlas,
+        &format!("canvas/{index}"),
+        &mut elements,
     );
+    painter.prepare(device, queue, &elements, atlas.slot_of(), size, fonts);
     atlas.sync_glyphs(device, queue, &mut fonts.atlas);
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("rbxview gui canvas"),

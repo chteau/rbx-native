@@ -421,7 +421,7 @@ impl Scene {
     /// Re-reads every enabled `ScreenGui` from `dom`, the way
     /// [`Scene::from_dom`] did.
     pub(crate) fn replan_gui_screens(&mut self, dom: &WeakDom, database: &ReflectionDatabase) {
-        self.gui = super::gui::plan(dom, database);
+        self.gui = super::gui::plan(dom, database, &mut self.materials);
     }
 
     /// Re-reads every placeable `BillboardGui`/`SurfaceGui` from `dom`,
@@ -432,7 +432,7 @@ impl Scene {
     /// it.
     pub(crate) fn replan_gui_spaces(&mut self, dom: &WeakDom, database: &ReflectionDatabase) {
         let placements = self.placements();
-        self.gui_spaces = super::gui::plan_space(dom, database, &placements);
+        self.gui_spaces = super::gui::plan_space(dom, database, &placements, &mut self.materials);
     }
 
     /// Whether any `BillboardGui`/`SurfaceGui` canvas this scene placed hangs

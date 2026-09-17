@@ -40,7 +40,9 @@ pub(crate) use layout::{
 };
 #[cfg(test)]
 pub(crate) use plan::TextSpan;
-pub(crate) use plan::{plan, span_face, Align, GradientKind, Join, Screen, Text, Tile};
+pub(crate) use plan::{
+    plan, span_face, Align, GradientKind, Join, Screen, Text, Tile, ViewCamera, Viewport,
+};
 pub(crate) use space::{plan as plan_space, Anchor, SpaceGui};
 
 #[cfg(test)]

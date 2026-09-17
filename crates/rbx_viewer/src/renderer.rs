@@ -260,6 +260,9 @@ impl Renderer {
         let selection = Selection::new(device, target, &layout, placements.clone());
         let hover = Hover::new(device, target, &layout, placements);
         let draggers = Draggers::new(device, target, &layout);
+        // Before the GUI pass, which shades a `ViewportFrame`'s parts with
+        // the very same arrays.
+        let materials = Materials::new(device, queue, &material_layout, scene.materials(), quality);
 
         Renderer {
             opaque,
@@ -270,7 +273,6 @@ impl Renderer {
             lights: allowed,
             env,
             meshes,
-            materials: Materials::new(device, queue, &material_layout, scene.materials(), quality),
             shaped: Shaped::new(device, scene.parts()),
             translucent: Translucent::new(device, scene.parts()),
             filemesh: filemesh::FileMeshes::new(
@@ -314,10 +316,12 @@ impl Renderer {
                 format,
                 target,
                 (scene.gui_screens(), scene.gui_spaces()),
+                (&material_layout, &materials.bind_group),
                 images,
                 fonts,
                 quality,
             ),
+            materials,
             lighting_buffer,
             lights_buffer,
             light_shadows_buffer,
@@ -572,7 +576,14 @@ impl Renderer {
         self.post.resolve(&mut encoder, target);
         // After the resolve, not before it: a `ScreenGui` is an overlay, so
         // bloom, depth of field and the tone map must leave it alone.
-        self.gui.draw(device, queue, &mut encoder, target, size);
+        self.gui.draw(
+            device,
+            queue,
+            &mut encoder,
+            target,
+            size,
+            &self.materials.bind_group,
+        );
 
         queue.submit(std::iter::once(encoder.finish()));
     }

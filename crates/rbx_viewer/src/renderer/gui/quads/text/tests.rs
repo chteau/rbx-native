@@ -51,6 +51,7 @@ fn element(text: GuiText) -> GuiElement {
         stroke: None,
         gradient: None,
         text: Some(GuiTypeset { text, size: 20.0 }),
+        viewport: None,
     }
 }
 

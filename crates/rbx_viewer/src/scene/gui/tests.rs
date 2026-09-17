@@ -17,7 +17,9 @@ use rbx_dom::{Color3Data, Ref, UDim, UDim2, Variant, Vector2Data, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use super::plan::Screen;
+use super::plan::{ViewCamera, Viewport};
 use super::{plan, resolve, Element, ImageScale, PixelRect, Rect};
+use crate::scene::Catalog;
 
 const VIEWPORT: [f32; 2] = [800.0, 600.0];
 
@@ -59,7 +61,8 @@ fn frame(dom: &mut WeakDom, parent: Ref, position: Variant, size: Variant) -> Re
 }
 
 fn screens(dom: &WeakDom) -> Vec<Screen> {
-    plan(dom, &ReflectionDatabase::embedded())
+    let database = ReflectionDatabase::embedded();
+    plan(dom, &database, &mut Catalog::new(dom, &database))
 }
 
 /// Every element of every screen, reduced to the rect it came to.
@@ -81,3 +84,4 @@ mod properties;
 mod style;
 mod table;
 mod text;
+mod viewport;
