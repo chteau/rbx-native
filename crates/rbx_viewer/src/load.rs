@@ -65,6 +65,9 @@ pub(crate) struct Toggles {
 /// `--show-development-gui` asks for, since the flag is a Studio view toggle
 /// and a screenshot is often wanted of what a player would see.
 pub(crate) fn show_development_gui(dom: &mut WeakDom) {
+    // A service is never subclassed, so the exact class name is the whole
+    // test and no reflection database is needed here. Collected first
+    // because the walk borrows the DOM the writes need.
     let services: Vec<Ref> = crate::scene::descendants(dom)
         .filter(|&referent| {
             dom.get(referent)
@@ -72,8 +75,6 @@ pub(crate) fn show_development_gui(dom: &mut WeakDom) {
         })
         .collect();
     for service in services {
-        // A service is never subclassed, so the exact class name is the
-        // whole test and no reflection database is needed here.
         let _ = dom.set_property(service, "ShowDevelopmentGui", rbx_dom::Variant::Bool(true));
     }
 }
