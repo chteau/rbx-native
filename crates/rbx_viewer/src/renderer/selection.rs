@@ -30,56 +30,13 @@ use super::pipeline::{self, Surface, Target};
 
 const SHADER: &str = include_str!("selection.wgsl");
 
-// wgpu rejects a depth bias on anything but triangle topology, so unlike the
-// decal pass this outline cannot nudge itself toward the camera. It does not
-// need to: an edge sits exactly on the same geometry the box's own opaque pass
-// already wrote, so `GreaterEqual` below wins every on-surface tie outright,
-// while a genuinely far edge is behind a nearer (bigger, reversed-Z) depth
-// already in the buffer and loses to it exactly as it should.
-
-/// Every model matrix one selected instance covers, in the order
-/// `crate::pick::parts_of` resolved them — a part the scene never built (one
-/// outside `Workspace`, or a suppressed `MeshPart`) drops out here.
-fn models_of<'a>(
-    placements: &'a HashMap<Ref, Placement>,
-    entry: &'a Selected,
-) -> impl Iterator<Item = Mat4> + 'a {
-    entry
-        .parts()
-        .iter()
-        .filter_map(|referent| placements.get(referent))
-        .map(|placement| placement.model)
-}
-
-/// The single box drawn around one selected instance, or `None` when it
-/// covers no drawn geometry at all.
-///
-/// A part keeps its own oriented box, which hugs it however it is turned. A
-/// container has no orientation to hug it with, so it gets the world-axis
-/// -aligned box around everything beneath it — one box for the whole thing,
-/// not one per part, because that extent is what Studio calls a model's
-/// bounding box and what the Move gizmo already stands in the middle of (see
-/// [`gizmo::bounds_of`], which [`Selection::centre`] takes its answer from
-/// too).
-fn box_of(placements: &HashMap<Ref, Placement>, entry: &Selected) -> Option<Mat4> {
-    if entry.is_part() {
-        return Some(placements.get(&entry.referent())?.model);
-    }
-    let (min, max) = gizmo::bounds_of(models_of(placements, entry))?;
-    // The unit cube `edges` carries through this spans [-0.5, 0.5], so the
-    // box's full extent is its scale, exactly as a part's `Size` is.
-    Some(Mat4::from_translation((min + max) * 0.5) * Mat4::from_scale(max - min))
-}
-
-/// Every selected instance's edges, in selection order — one box each,
-/// and nothing at all for a container with no drawable geometry under it.
-fn vertices_for(placements: &HashMap<Ref, Placement>, selected: &[Selected]) -> Vec<Vertex> {
-    selected
-        .iter()
-        .filter_map(|entry| box_of(placements, entry))
-        .flat_map(outline::edges)
-        .collect()
-}
+// Drawn with the depth test off (`compare: Always`): a selection box reads as
+// a control the user is acting on, not scenery, so it is never occluded by the
+// geometry it wraps — the whole box shows through, which is what Studio does
+// and what makes a part selected behind another object still visible. Drawn
+// last of the scene geometry (see `renderer::pass`), so drawing on top writes
+// no depth anything later reads except the draggers, which have no depth test
+// of their own either.
 
 /// Where the transform gizmo takes its frame of reference: the first part the
 /// selection covers that actually has a placement — a container's own first
@@ -172,7 +129,8 @@ impl Outline {
     /// for every one of them is quadratic in the number of parts, where one
     /// rebuild at the end of the step is linear.
     fn take_vertices(&mut self) -> Option<Vec<Vertex>> {
-        std::mem::take(&mut self.stale).then(|| vertices_for(&self.placements, &self.selected))
+        std::mem::take(&mut self.stale)
+            .then(|| outline::box_edges(&self.placements, &self.selected))
     }
 }
 
@@ -198,8 +156,13 @@ impl Selection {
             target,
             &Surface {
                 cull: None,
-                compare: wgpu::CompareFunction::GreaterEqual,
-                topology: wgpu::PrimitiveTopology::LineList,
+                // The selection box is never occluded — see this module's own
+                // note above on why the depth test is off.
+                compare: wgpu::CompareFunction::Always,
+                // Screen-space quads, two triangles an edge, not a `LineList`:
+                // the outline is expanded to a real pixel width in the vertex
+                // shader (see `selection.wgsl`).
+                topology: wgpu::PrimitiveTopology::TriangleList,
                 ..Surface::new(
                     "rbxview selection",
                     SHADER,
@@ -296,12 +259,22 @@ impl Selection {
     /// `rbxstudio` places the handles it hit-tests from the very same
     /// `gizmo::centre_of` (see `transform::Targets::centre`), so what the user
     /// can grab and what they can see cannot drift apart.
+    /// The box the Scale handles stand on — see `gizmo::scale_box`.
+    pub(super) fn scale_box(&self) -> Option<Mat4> {
+        gizmo::scale_box(
+            self.outline
+                .selected
+                .iter()
+                .flat_map(|entry| outline::models_of(&self.outline.placements, entry)),
+        )
+    }
+
     pub(super) fn centre(&self) -> Option<Vec3> {
         gizmo::centre_of(
             self.outline
                 .selected
                 .iter()
-                .flat_map(|entry| models_of(&self.outline.placements, entry)),
+                .flat_map(|entry| outline::models_of(&self.outline.placements, entry)),
         )
     }
 

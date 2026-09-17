@@ -344,3 +344,45 @@ fn as_file_mesh(data: &MeshData) -> rbx_mesh::Mesh {
         },
     }
 }
+
+// The bug this exists for: `hit` answers 0 for a ray starting inside a box, so
+// a part the camera sits inside sorted first and swallowed every click and
+// hover. `hit_key` orders it by where the ray leaves it instead, so a child in
+// front of it — reached only by cycling past the enclosing part before — is
+// picked directly.
+#[test]
+fn a_box_the_ray_starts_inside_is_keyed_by_its_exit_not_zero() {
+    // A ten-stud box centred on the origin; the ray starts at its centre
+    // heading -Z, so it is inside and leaves through the -Z face at 5 studs.
+    let big = Mat4::from_scale(Vec3::splat(10.0));
+    let inside = Ray::new(Vec3::ZERO, Vec3::NEG_Z);
+    assert_eq!(
+        hit(ShapeKind::Box, big, inside),
+        Some(0.0),
+        "hit is 0 from inside"
+    );
+    assert_eq!(
+        hit_key(ShapeKind::Box, big, inside),
+        Some(5.0),
+        "the key is the exit distance, so it sorts behind nearer things"
+    );
+
+    // A small box two studs ahead of the same ray: keyed by its near face, as
+    // always, so it sorts before the enclosing box's exit.
+    let child = Mat4::from_translation(Vec3::new(0.0, 0.0, -3.0));
+    let near = hit_key(ShapeKind::Box, child, inside).expect("the ray meets it");
+    assert!(
+        near < 5.0,
+        "the child in front sorts before the enclosure, {near} < 5"
+    );
+}
+
+#[test]
+fn a_box_in_front_keys_the_same_as_it_hits() {
+    // Not inside anything: the key is just the near-face distance, unchanged.
+    let ray = toward_neg_z(0.0, 0.0);
+    assert_eq!(
+        hit_key(ShapeKind::Box, Mat4::IDENTITY, ray),
+        hit(ShapeKind::Box, Mat4::IDENTITY, ray)
+    );
+}

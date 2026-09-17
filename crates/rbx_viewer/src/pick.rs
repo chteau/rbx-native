@@ -140,8 +140,12 @@ pub fn parts_along(
     hits.into_iter().map(|(_, referent)| referent).collect()
 }
 
-/// How far along `ray` one part's drawn surface lies, or `None` when the ray
-/// misses it (or the part has nothing to draw).
+/// How `parts_along` orders one part along `ray`: how far its drawn surface
+/// lies, except that a *box* the ray starts inside is ordered by where the ray
+/// leaves it rather than by 0 (see `shape::hit_key`), so a part the camera
+/// sits inside sorts behind whatever it encloses. `None` when the ray misses
+/// it (or the part has nothing to draw). Only ever used to sort, never as a
+/// hit point.
 fn distance_to(
     dom: &WeakDom,
     database: &ReflectionDatabase,
@@ -167,7 +171,7 @@ fn distance_to(
         return None;
     };
     let geometry = resolve_shape(dom, database, instance, Vec3::new(size.x, size.y, size.z));
-    shape::hit(geometry.kind, geometry.model(cframe_matrix(cframe)), ray)
+    shape::hit_key(geometry.kind, geometry.model(cframe_matrix(cframe)), ray)
 }
 
 /// Everything in the scene a click or a drag can resolve against: `Workspace`'s

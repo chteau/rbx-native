@@ -39,7 +39,7 @@ use crate::transform::{self, Targets, Transform};
 use crate::{display, pacing};
 use frame::{device_pixels, render_image, Viewport};
 use gizmo::Drag;
-use input::{camera_key, wheel_notches, Layout};
+use input::{camera_key, chorded, tool_key, wheel_notches, Layout};
 use pump::Pump;
 
 // How long a speed change stays on screen, matching the standalone viewer's
@@ -79,10 +79,17 @@ pub(crate) enum ViewportAction {
     /// actually hits (see `shell::selection::from_click`). `extend` is
     /// `Shift`/`Ctrl`/`Cmd` held: add the hit to the selection (or drop it, if
     /// it was already in) rather than replacing the selection with it.
+    ///
+    /// `held`: the view has a Move body-drag ready for this same click, to
+    /// start only if what is actually under the cursor is already selected
+    /// (see [`WorkspaceView::confirm_grab`]) — the view sees the selection's
+    /// boxes, not whatever unselected part may stand in front of them, and a
+    /// click on that part must select it, not drag the selection behind it.
     Pick {
         ray: Ray,
         cycling: bool,
         extend: bool,
+        held: bool,
     },
     /// A drag moved every part it carries to a new position — more than one
     /// when the gesture grabbed a multi-part selection's gizmo, each keeping
@@ -106,16 +113,20 @@ pub(crate) enum ViewportAction {
     /// opposite the grabbed one holds still, so growing the part by a stud
     /// moves its middle by half of one.
     Resized {
-        referent: Ref,
-        size: Vec3,
-        position: Vec3,
+        /// Each part's new size and centre — one entry for a lone part's
+        /// own Scale, every selected part for a group scaled as a whole (see
+        /// `transform::Targets::scale_about`).
+        parts: Vec<(Ref, Vec3, Vec3)>,
         first: bool,
     },
     /// A Rotate drag turned the part about its centre, which is where the
     /// rings stand. Only the `CFrame`'s rotation changes.
     Rotated {
-        referent: Ref,
-        orientation: Mat3,
+        /// Each part's new orientation and centre — the centre unchanged for
+        /// a lone part turning about itself, swung round the selection's
+        /// centre for every part of a group (see
+        /// `transform::Targets::rotate_about`).
+        parts: Vec<(Ref, Mat3, Vec3)>,
         first: bool,
     },
     /// `T` or `R` during a cursor drag: a quarter turn about `pivot`, the
@@ -130,15 +141,17 @@ pub(crate) enum ViewportAction {
     },
     /// A transform-toolbar shortcut typed over the view.
     Tool(transform::Action),
-    /// Cursor motion with nothing held: `Shell` resolves whatever `BasePart`
-    /// is nearest under the ray and outlines it, distinctly from the
-    /// selection outline — Studio's "about to click" cue (see
-    /// `rbx_viewer::renderer::hover`). `None` clears the outline outright
+    /// Cursor motion with nothing held: `Shell` resolves what is under the
+    /// ray and outlines it, distinctly from the selection outline — Studio's
+    /// "about to click" cue (see `rbx_viewer::renderer::hover`). `alt` is the
+    /// selection-cycling modifier held, so the outline previews what a click
+    /// would land on: the whole enclosing `Model` plain, the single part
+    /// under the cursor with `Alt`. `ray` `None` clears the outline outright
     /// rather than leaving it to resolve to nothing on its own: the cursor
     /// left the panel (see `render`'s `on_hover`), or a drag or camera look
     /// just began and a hover box hanging over the gesture would look
     /// broken.
-    Hover(Option<Ray>),
+    Hover { ray: Option<Ray>, alt: bool },
 }
 
 impl EventEmitter<ViewportAction> for WorkspaceView {}
@@ -180,7 +193,13 @@ pub(crate) struct WorkspaceView {
     /// starting (`gizmo::press`), a look starting (`begin_look`), and the
     /// cursor leaving the panel (`render`'s `on_hover`) — or a throttled
     /// move would otherwise un-clear it a moment later.
-    hover_pending: Option<Point<Pixels>>,
+    hover_pending: Option<(Point<Pixels>, Modifiers)>,
+    /// The cursor's latest position and modifiers while a drag is held, not
+    /// yet applied to the part — applied by `advance` at most once per
+    /// frame, and by the release (see `gizmo::WorkspaceView::end_drag`).
+    drag_pending: Option<(Point<Pixels>, Modifiers)>,
+    /// When the drag in progress last stepped, for that once-per-frame gate.
+    drag_stepped_at: Option<Instant>,
     /// When the hover ray was last actually resolved, for `hover::due`.
     hover_resolved_at: Option<Instant>,
     /// The panel's place in the window, in physical pixels. Written during
@@ -238,6 +257,15 @@ pub(crate) struct WorkspaceView {
     /// copy of it.
     meshes: Meshes,
     drag: Option<Drag>,
+    /// A body grab the last press found on the selection, held back until
+    /// `Shell` has resolved the same click against the real geometry (see
+    /// `ViewportAction::Pick`'s `held`).
+    pending_grab: Option<Drag>,
+    /// The selection as it stood when the drag in progress grabbed it: what
+    /// a group Scale or Rotate measures from, so a gesture is one absolute
+    /// factor or turn rather than a running product (see
+    /// `transform::Targets::scale_about`).
+    held: Targets,
     /// Whether the drag in progress has actually moved the part yet, which is
     /// what tells `Shell` which move opens the gesture's one undo step.
     dragged: bool,
@@ -305,6 +333,8 @@ impl WorkspaceView {
             lock: PointerLock::new(),
             looking: false,
             hover_pending: None,
+            drag_pending: None,
+            drag_stepped_at: None,
             hover_resolved_at: None,
             viewport: Rc::new(Cell::new(Viewport::default())),
             sized: (0, 0),
@@ -328,6 +358,8 @@ impl WorkspaceView {
             view: None,
             meshes: Meshes::default(),
             drag: None,
+            pending_grab: None,
+            held: Targets::default(),
             dragged: false,
             _subscriptions: [blur, deactivated],
         }
@@ -427,16 +459,27 @@ impl WorkspaceView {
         // time this resolves, so recording the position on every move but
         // only casting the ray here keeps that cost tied to frames drawn
         // rather than input events reported.
-        if let Some(position) = self.hover_pending.take() {
+        if let Some((position, modifiers)) = self.hover_pending.take() {
             let elapsed = self
                 .hover_resolved_at
                 .map(|at| now.saturating_duration_since(at));
             if hover::due(elapsed, self.interval) {
                 let scale = window.scale_factor();
-                self.hover_moved(position, scale, cx);
+                self.hover_moved(position, modifiers, scale, cx);
                 self.hover_resolved_at = Some(now);
             } else {
-                self.hover_pending = Some(position);
+                self.hover_pending = Some((position, modifiers));
+            }
+        }
+        // Same gate as the hover above: the latest cursor position wins,
+        // once per frame — see the `on_mouse_move` handler in `render`.
+        if self.drag_pending.is_some() {
+            let elapsed = self
+                .drag_stepped_at
+                .map(|at| now.saturating_duration_since(at));
+            if hover::due(elapsed, self.interval) {
+                self.step_drag(window, cx);
+                self.drag_stepped_at = Some(now);
             }
         }
 
@@ -488,7 +531,10 @@ impl WorkspaceView {
         // `self.looking` above rather than `self.lock.holds()` — the lock
         // never actually engages on Wayland), so nothing else would clear it.
         self.hover_pending = None;
-        cx.emit(ViewportAction::Hover(None));
+        cx.emit(ViewportAction::Hover {
+            ray: None,
+            alt: false,
+        });
 
         if let (Some(id), Some(centre)) = (
             pointer_lock::window_id(window),
@@ -531,10 +577,12 @@ impl WorkspaceView {
     }
 
     fn key(&mut self, keystroke: &Keystroke, pressed: bool, cx: &mut Context<Self>) {
+        let layout = Layout::of(cx.keyboard_layout().name());
         // Only on the press: a tool switch is an edge, not a state the way the
         // camera's own movement keys are.
         if pressed {
-            if let Some(action) = transform::action_for(&keystroke.key, keystroke.modifiers) {
+            let key = tool_key(&keystroke.key, layout);
+            if let Some(action) = transform::action_for(key, keystroke.modifiers) {
                 cx.emit(ViewportAction::Tool(action));
                 return;
             }
@@ -546,7 +594,15 @@ impl WorkspaceView {
             }
         }
 
-        let layout = Layout::of(cx.keyboard_layout().name());
+        // A chord — Ctrl+Z, Ctrl+S, Ctrl+Y — is a command for whichever
+        // handler up the tree binds it, never a camera key: `z` sits on the
+        // W position of an AZERTY keyboard, and undo must not also fly the
+        // camera forward. Releases are always honoured, so a key pressed
+        // plain and released with a modifier already down cannot leave the
+        // camera moving on its own.
+        if pressed && chorded(keystroke.modifiers) {
+            return;
+        }
         if let Some(key) = camera_key(&keystroke.key, layout) {
             self.pump.input(CameraInput::Key { key, pressed });
         }
@@ -644,13 +700,13 @@ impl Render for WorkspaceView {
             )
             .on_mouse_up(
                 MouseButton::Left,
-                cx.listener(|view, _: &MouseUpEvent, _, _| view.end_drag()),
+                cx.listener(|view, _: &MouseUpEvent, window, cx| view.end_drag(window, cx)),
             )
             // A drag released off the panel still ends it, or the part would
             // keep following the cursor with nothing to let go of it.
             .on_mouse_up_out(
                 MouseButton::Left,
-                cx.listener(|view, _: &MouseUpEvent, _, _| view.end_drag()),
+                cx.listener(|view, _: &MouseUpEvent, window, cx| view.end_drag(window, cx)),
             )
             .on_mouse_down(
                 MouseButton::Right,
@@ -672,10 +728,16 @@ impl Render for WorkspaceView {
                     view.end_look();
                 }),
             )
-            .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, window, cx| {
+            .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, _, _| {
+                // Recorded, not applied: the step itself runs in `advance`,
+                // at most once per frame (see `gizmo::Drag`'s doc and
+                // `WorkspaceView::step_drag`), the way a hover is. A mouse
+                // reports far more moves than the display draws, and each
+                // step writes every carried part into the DOM and reflects
+                // it — for a large Model, milliseconds the UI thread cannot
+                // spend a thousand times a second.
                 if view.dragging() {
-                    let scale = window.scale_factor();
-                    view.drag_to(event.position, event.modifiers, scale, cx);
+                    view.drag_pending = Some((event.position, event.modifiers));
                     return;
                 }
                 view.mouse_moved(event.position);
@@ -688,7 +750,7 @@ impl Render for WorkspaceView {
                 // Recording the position is cheap; the raycast itself is
                 // throttled in `advance` (see `hover::due`), not run here.
                 if !hover::suppressed(view.looking) {
-                    view.hover_pending = Some(event.position);
+                    view.hover_pending = Some((event.position, event.modifiers));
                 }
             }))
             // The cursor leaving the panel altogether never fires another
@@ -698,7 +760,10 @@ impl Render for WorkspaceView {
             .on_hover(cx.listener(|view, hovering: &bool, _, cx| {
                 if !hovering {
                     view.hover_pending = None;
-                    cx.emit(ViewportAction::Hover(None));
+                    cx.emit(ViewportAction::Hover {
+                        ray: None,
+                        alt: false,
+                    });
                 }
             }))
             .on_scroll_wheel(cx.listener(|view, event: &ScrollWheelEvent, _, _| {
@@ -718,6 +783,16 @@ impl Render for WorkspaceView {
                     key: rbx_viewer::CameraKey::Slow,
                     pressed: event.modifiers.shift,
                 });
+                // Alt toggles what a click would land on (the whole model, or
+                // one part inside it), so the "about to click" outline has to
+                // re-resolve the moment Alt is pressed or released, without
+                // waiting for the cursor to move. Re-queued at the last known
+                // position; suppressed mid-look exactly as an ordinary move is.
+                if !hover::suppressed(view.looking) {
+                    if let Some(position) = view.cursor {
+                        view.hover_pending = Some((position, event.modifiers));
+                    }
+                }
             }))
             .when_some(self.frame.clone(), |this, frame| {
                 this.child(img(frame).size_full().object_fit(ObjectFit::Fill))

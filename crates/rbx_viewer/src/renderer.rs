@@ -34,7 +34,6 @@ mod trail;
 mod translucent;
 
 use glam::Mat3;
-use rbx_dom::Ref;
 
 use crate::camera::{Camera, Frustum, Viewpoint};
 use crate::gizmo::{arm_length, basis, Faces, Gizmo, Handles, Kind, Shape};
@@ -345,8 +344,8 @@ impl Renderer {
 
     /// Replaces the hover outline, rebuilding its tiny vertex buffer right
     /// away rather than waiting for the next `draw`. `None` clears it.
-    pub(crate) fn set_hover(&mut self, device: &wgpu::Device, referent: Option<Ref>) {
-        self.hover.set(device, referent);
+    pub(crate) fn set_hover(&mut self, device: &wgpu::Device, selected: Vec<Selected>) {
+        self.hover.set(device, selected);
     }
 
     /// Shows or hides the transform tool's draggers over whatever is
@@ -369,23 +368,22 @@ impl Renderer {
         };
         let model = self.selection.anchor()?;
         let orthographic = self.camera.is_orthographic();
-        // Scale's balls are bound to the anchor part's own surface, so there
-        // is no origin or arm to pick for them at all — the part's placement
-        // is the whole of where they go.
+        // Scale's balls are bound to the surface of the box the selection
+        // scales on — a lone part's own, a group's world-aligned bounds — so
+        // there is no origin or arm to pick for them at all.
         if gizmo.kind == Kind::Scale {
-            return Some(Shape::Scale(Faces::new(model, pose, orthographic)));
+            let scaled = self.selection.scale_box().unwrap_or(model);
+            return Some(Shape::Scale(Faces::new(scaled, pose, orthographic)));
         }
 
         let (anchor, rotation) = (model.w_axis.truncate(), Mat3::from_mat4(model));
-        // Move drags every selected part by one offset, so its gizmo belongs
-        // at the middle of the whole selection rather than hanging off
-        // whichever part happens to be first. Rotate still turns the anchor
-        // part alone, and its rings stay on it: a ring floating in the gap
-        // between two parts would turn one the user is not pointing at.
-        let origin = match gizmo.kind {
-            Kind::Move => self.selection.centre().unwrap_or(anchor),
-            _ => anchor,
-        };
+        // Move drags every selected part by one offset and Rotate turns them
+        // all about one point, so both gizmos belong at the middle of the
+        // whole selection rather than hanging off whichever part happens to
+        // be first (for one part the two are the same place). The *basis*
+        // still comes from the anchor: a selection has no aggregate rotation
+        // to take.
+        let origin = self.selection.centre().unwrap_or(anchor);
         let handles = Handles::new(
             origin,
             basis(gizmo.local.then_some(rotation)),
@@ -440,7 +438,8 @@ impl Renderer {
         let aspect = size.0 as f32 / size.1 as f32;
         let eye = self.camera.eye_position(from);
         let view_projection = self.camera.view_projection(from, aspect);
-        self.frame.write(queue, &view_projection);
+        let viewport = glam::Vec2::new(size.0 as f32, size.1 as f32);
+        self.frame.write(queue, &view_projection, viewport);
         // The main pass's own visibility test: tight to the camera's frustum
         // and this level's render distance. The shadow pass below never uses
         // this — see `Fit::visible` — so a caster it culls can still land a
@@ -481,13 +480,13 @@ impl Renderer {
 
         let rotation_only = self.camera.view_rotation_projection(from, aspect);
         if let Some(sky) = &self.sky {
-            sky.camera.write(queue, &rotation_only);
+            sky.camera.write(queue, &rotation_only, viewport);
         }
         if let Some(stars) = &self.stars {
-            stars.camera.write(queue, &rotation_only);
+            stars.camera.write(queue, &rotation_only, viewport);
         }
         if let Some(bodies) = &self.bodies {
-            bodies.camera.write(queue, &rotation_only);
+            bodies.camera.write(queue, &rotation_only, viewport);
         }
         // The same matrix the sun disc itself is drawn with, so the god-rays
         // in the resolve can never point anywhere the disc is not.
@@ -527,8 +526,24 @@ impl Renderer {
         // Before particles: sorting the two passes against each other is out
         // of scope for v1 (see `renderer::beam`'s docs), so beams simply go
         // first, both depth-tested against the opaque pass above.
-        self.beams
-            .draw(queue, device, &mut encoder, targets, eye, view_projection);
+        // What a `LightInfluence`-1 beam is tinted by: a normal-less ribbon
+        // has no face to catch the sun, so the flat, average-orientation
+        // illumination — the ambient hemisphere plus half of each directional
+        // lamp — stands in for "the light in the scene", dimming a beam at
+        // night and leaving it near full brightness in daylight. Roblox
+        // publishes no beam-lighting formula, so this is a documented
+        // approximation rather than a match.
+        let l = self.lighting;
+        let env_light = l.ambient + 0.5 * (l.sun_color + l.fill_color);
+        self.beams.draw(
+            queue,
+            device,
+            &mut encoder,
+            targets,
+            eye,
+            view_projection,
+            env_light,
+        );
         // Right after beams, same reasoning: sorting the two ribbon passes
         // against each other is out of scope for v1 — see `renderer::trail`'s
         // docs.

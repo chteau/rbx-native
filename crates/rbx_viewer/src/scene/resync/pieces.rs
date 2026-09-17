@@ -87,7 +87,10 @@ impl Scene {
             Some(instance) if instance.material.layer as usize >= known_layers => {
                 Err(Rebuild::Asset)
             }
-            Some(instance) => Ok(Drawn::Mesh(self.place_instance(instance))),
+            Some(instance) => Ok(Drawn::Mesh {
+                index: self.place_instance(instance),
+                placement: part.placement(),
+            }),
         }
     }
 

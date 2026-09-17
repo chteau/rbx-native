@@ -95,10 +95,23 @@ pub(super) enum Drag {
         /// part's own frame, so the axis alone does not say.
         component: usize,
     },
+    /// One of the Scale tool's balls is held on a *group's* box (see
+    /// `gizmo::scale_box`): the box's centre, the world axis pointing out
+    /// through the grabbed face, where the cursor stood along it, how long
+    /// the box was along that axis, and the centre of the opposite face —
+    /// the point the whole group scales about, so that face holds still the
+    /// way a lone part's does.
+    Box {
+        origin: Vec3,
+        axis: Vec3,
+        grabbed: f32,
+        extent: f32,
+        pivot: Vec3,
+    },
     /// One of the Rotate tool's rings is held: the ring's own frame, frozen at
-    /// the grab (see [`gizmo::ring_crossing`]), the orientation the part
-    /// started at, the angle last measured and how far the drag has turned in
-    /// total.
+    /// the grab (see [`gizmo::ring_crossing`]), the orientation the anchor
+    /// part started at, the angle last measured and how far the drag has
+    /// turned in total.
     Ring {
         origin: Vec3,
         frame: (Vec3, Vec3, Vec3),
@@ -119,6 +132,12 @@ pub(super) enum Change {
         position: Vec3,
     },
     Orientation(Mat3),
+    /// A group's box pulled to `factor` times its size at the grab, about
+    /// `pivot` (see [`Drag::Box`]).
+    Scaled {
+        pivot: Vec3,
+        factor: f32,
+    },
 }
 
 impl Drag {
@@ -130,7 +149,7 @@ impl Drag {
             // Only a Move drag's own body-grab (`Plane`) settles onto a
             // surface — Scale and Rotate have no such concept, and an
             // axis-arrow Move drag already slides exactly along its axis.
-            Drag::Axis { .. } | Drag::Size { .. } | Drag::Ring { .. } => None,
+            Drag::Axis { .. } | Drag::Size { .. } | Drag::Box { .. } | Drag::Ring { .. } => None,
             Drag::Plane {
                 point,
                 normal,
@@ -147,11 +166,13 @@ impl Drag {
 }
 
 /// What a drag is allowed to land on for this one mouse move: the grid its
-/// travel rounds to (`0.0` for no grid), and the parts its grab point can
-/// soft-snap onto.
+/// travel rounds to (`0.0` for no grid) — studs for Move and Scale, which
+/// share the toolbar's one increment, radians for Rotate's own — and the
+/// parts its grab point can soft-snap onto.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Landing<'a> {
     pub(super) grid: f32,
+    pub(super) angle: f32,
     pub(super) neighbours: &'a [Mat4],
     pub(super) reach: f32,
 }
@@ -187,11 +208,15 @@ impl WorkspaceView {
     pub(super) fn hover_moved(
         &mut self,
         position: Point<Pixels>,
+        modifiers: Modifiers,
         scale: f32,
         cx: &mut gpui_kit::Context<Self>,
     ) {
         let ray = self.cursor_ray(position, scale);
-        cx.emit(ViewportAction::Hover(ray));
+        cx.emit(ViewportAction::Hover {
+            ray,
+            alt: modifiers.alt,
+        });
     }
 
     /// Where the Move and Rotate arms stand this frame, anchored on the same
@@ -202,16 +227,14 @@ impl WorkspaceView {
     fn handles(&self) -> Option<Handles> {
         let anchor = self.targets.anchor()?;
         let pose = self.view?;
-        // Move drags the whole selection by one offset, so its handles sit at
-        // the middle of it; Rotate turns the anchor part alone and stays on
-        // it. The renderer picks the same origin the same way (see
-        // `renderer::Renderer::handles`), both from `gizmo::centre_of`, so
-        // what can be grabbed is what is drawn. The *basis* always comes from
-        // the anchor — a selection has no aggregate rotation to take.
-        let origin = match self.transform.tool {
-            Tool::Move => self.targets.centre()?,
-            _ => anchor.position(),
-        };
+        // Move drags the whole selection by one offset and Rotate turns it
+        // about one point, so both sit at the middle of it — which for one
+        // part is that part's own centre. The renderer picks the same origin
+        // the same way (see `renderer::Renderer::handles`), both from
+        // `gizmo::centre_of`, so what can be grabbed is what is drawn. The
+        // *basis* always comes from the anchor — a selection has no
+        // aggregate rotation to take.
+        let origin = self.targets.centre()?;
         Some(Handles::new(
             origin,
             gizmo::basis(self.transform.local.then(|| anchor.rotation())),
@@ -219,14 +242,15 @@ impl WorkspaceView {
         ))
     }
 
-    /// Where the Scale tool's balls stand this frame: on the faces of the
-    /// anchor part's own box, which is the part a Scale drag resizes. Built
-    /// from the same placement and the same camera the renderer builds the
-    /// drawn ones from (see `rbx_viewer::renderer::Renderer::handles`), so
-    /// what can be grabbed is what is on screen.
+    /// Where the Scale tool's balls stand this frame: on the faces of a lone
+    /// part's own box, or of the world-aligned box round a group (see
+    /// `gizmo::scale_box`). Built from the same placement and the same camera
+    /// the renderer builds the drawn ones from (see
+    /// `rbx_viewer::renderer::Renderer::handles`), so what can be grabbed is
+    /// what is on screen.
     fn faces(&self) -> Option<Faces> {
         Some(Faces::new(
-            self.targets.anchor()?.model,
+            self.targets.scale_box()?,
             self.view?,
             self.orthographic,
         ))
@@ -242,23 +266,28 @@ impl WorkspaceView {
         cx: &mut gpui_kit::Context<Self>,
     ) {
         self.drag = None;
+        self.pending_grab = None;
         let Some(ray) = self.cursor_ray(position, scale) else {
             return;
         };
 
+        let cycling = modifiers.alt;
+        let extend = extends_selection(modifiers);
         if self.transform.drags() {
-            if let Some(drag) = self.grab(ray) {
-                self.drag = Some(drag);
-                self.dragged = false;
-                // The part under a body grab, or the gizmo itself under an
-                // axis/face/ring grab, would otherwise still be wearing a
-                // hover box for the whole gesture — nothing moves the cursor
-                // off it, since `render`'s `on_mouse_move` routes every move
-                // into `drag_to` instead of `hover_pending` once `dragging()`
-                // is true.
-                self.hover_pending = None;
-                cx.emit(ViewportAction::Hover(None));
+            // A handle is the gizmo's own, drawn over everything: grabbing
+            // one needs no second opinion.
+            if let Some(drag) = self.grab_handle(ray) {
+                self.begin(drag, cx);
                 return;
+            }
+            // A selected part's body is only a *candidate*: the view knows
+            // the selection's boxes but not what else stands in front of
+            // them, so the click goes to `Shell` as a pick that may turn
+            // into this drag (see [`WorkspaceView::confirm_grab`]) — and
+            // never with `Alt` or an extend modifier, which ask to change
+            // the selection, not to move it.
+            if !cycling && !extend {
+                self.pending_grab = self.grab_body(ray);
             }
         }
 
@@ -266,38 +295,55 @@ impl WorkspaceView {
             ray,
             // Studio's selection cycling: `Alt`/`⌥`-click steps to the next
             // object behind the current one instead of selecting a model.
-            cycling: modifiers.alt,
-            extend: extends_selection(modifiers),
+            cycling,
+            extend,
+            held: self.pending_grab.is_some(),
         });
     }
 
-    /// What this ray grabs on the current selection, if anything: a handle on
-    /// the gizmo's anchor first, then — for Move alone — any selected part's
-    /// own body, which starts a group drag of the whole selection (see
-    /// [`WorkspaceView::drag_to`]).
-    fn grab(&self, ray: Ray) -> Option<Drag> {
+    /// Starts `drag` this gesture: the part under a body grab, or the gizmo
+    /// itself under an axis/face/ring grab, would otherwise still be wearing
+    /// a hover box for the whole gesture — nothing moves the cursor off it,
+    /// since `render`'s `on_mouse_move` routes every move into `drag_to`
+    /// instead of `hover_pending` once `dragging()` is true.
+    fn begin(&mut self, drag: Drag, cx: &mut gpui_kit::Context<Self>) {
+        self.drag = Some(drag);
+        self.held = self.targets.clone();
+        self.dragged = false;
+        self.hover_pending = None;
+        cx.emit(ViewportAction::Hover {
+            ray: None,
+            alt: false,
+        });
+    }
+
+    /// `Shell`'s answer to a pick sent with `held`: what the cursor is over
+    /// is already selected, so the body grab the press held back goes ahead
+    /// as this gesture's drag. A no-op once the button is up again
+    /// ([`WorkspaceView::end_drag`] clears the candidate), or when the press
+    /// held nothing.
+    pub(crate) fn confirm_grab(&mut self, cx: &mut gpui_kit::Context<Self>) {
+        if let Some(drag) = self.pending_grab.take() {
+            self.begin(drag, cx);
+        }
+    }
+
+    /// `Shell`'s other answer: something nearer than the selection was under
+    /// the cursor and took the click as a pick instead, so nothing is held.
+    pub(crate) fn refuse_grab(&mut self) {
+        self.pending_grab = None;
+    }
+
+    /// What this ray grabs on the gizmo itself, if anything: a Move arrow, a
+    /// Scale face, a Rotate ring — never a part's body, which is
+    /// [`WorkspaceView::grab_body`]'s own question.
+    fn grab_handle(&self, ray: Ray) -> Option<Drag> {
         let handles = self.handles()?;
         let anchor = self.targets.anchor()?;
         match self.transform.tool {
             Tool::Select => None,
-            // Only Move falls back to a part's own body: `creator-docs`
-            // documents cursor dragging under Move alone.
-            Tool::Move => self.grab_axis(&handles, ray).or_else(|| {
-                let distance = self
-                    .targets
-                    .iter()
-                    .filter_map(|target| pick::ray_hits_box(ray, target.model))
-                    .min_by(|a, b| a.total_cmp(b))?;
-                let point = ray.at(distance);
-                Some(Drag::Plane {
-                    point,
-                    // Square to the view at the moment of the grab, which is
-                    // the one orientation every cursor position on screen has
-                    // an answer in.
-                    normal: -ray.direction,
-                    offset: anchor.position() - point,
-                })
-            }),
+            Tool::Move => self.grab_axis(&handles, ray),
+            Tool::Scale if self.targets.len() > 1 => grab_box(&self.faces()?, ray),
             Tool::Scale => grab_face(&self.faces()?, anchor, ray),
             Tool::Rotate => {
                 let axis = handles.grab_ring(ray)?;
@@ -312,6 +358,35 @@ impl WorkspaceView {
                 })
             }
         }
+    }
+
+    /// The body grab this ray would open on the current selection — Move's
+    /// cursor dragging, which starts a group drag of the whole selection by
+    /// any selected part's own body (see [`WorkspaceView::drag_to`]). Only
+    /// Move: `creator-docs` documents cursor dragging under Move alone.
+    ///
+    /// Tested against the selection's own boxes only, which is all the view
+    /// holds: whether something *unselected* stands nearer along the ray is
+    /// `Shell`'s call, made against the real geometry when the pick this
+    /// accompanies is resolved (see `Shell::pick_in_viewport`).
+    fn grab_body(&self, ray: Ray) -> Option<Drag> {
+        if self.transform.tool != Tool::Move {
+            return None;
+        }
+        let anchor = self.targets.anchor()?;
+        let distance = self
+            .targets
+            .iter()
+            .filter_map(|target| pick::ray_hits_box(ray, target.model))
+            .min_by(|a, b| a.total_cmp(b))?;
+        let point = ray.at(distance);
+        Some(Drag::Plane {
+            point,
+            // Square to the view at the moment of the grab, which is the one
+            // orientation every cursor position on screen has an answer in.
+            normal: -ray.direction,
+            offset: anchor.position() - point,
+        })
     }
 
     fn grab_axis(&self, handles: &Handles, ray: Ray) -> Option<Drag> {
@@ -338,6 +413,7 @@ impl WorkspaceView {
     fn landing(&self, shift: bool) -> Landing<'_> {
         Landing {
             grid: self.transform.translate.grid(shift),
+            angle: self.transform.rotate.grid(shift).to_radians(),
             neighbours: &self.neighbours,
             reach: self.arm() * SOFT_SNAP_REACH,
         }
@@ -379,13 +455,15 @@ impl WorkspaceView {
         // nowhere still has to be the one the next step is measured from.
         self.drag = Some(drag);
 
-        let first = !std::mem::replace(&mut self.dragged, true);
         let referent = anchor.referent;
+        // `first` is asked for only once a step is known to change the part
+        // (see [`stepped`]): the answer opens the gesture's undo entry, and a
+        // sample that leaves the part where it stands must not spend it.
         match change {
             Change::Position(position) => {
-                if position == anchor.position() {
+                let Some((_, first)) = stepped(anchor, change, &mut self.dragged) else {
                     return;
-                }
+                };
                 // Applied to every selected part below, not just the anchor:
                 // this is what keeps the group's relative layout intact while
                 // only the anchor's own gizmo drag is ever actually measured
@@ -404,25 +482,52 @@ impl WorkspaceView {
             // `transform::Targets::set_anchor` — so only the anchor itself
             // moves, exactly as it did before there was more than one part to
             // select.
-            _ => {
-                let Some(moved) = applied(anchor, change) else {
+            // A lone part's Size is its own, so a Scale of one resizes that
+            // one axis exactly as before; a group has no one Size and scales
+            // as a whole (see `transform::Targets::scale_about`), which is
+            // what the box its handles stand on already promised.
+            Change::Size { size, position } => {
+                let Some((moved, first)) = stepped(anchor, change, &mut self.dragged) else {
                     return;
                 };
                 self.targets.set_anchor(moved);
-                cx.emit(match change {
-                    Change::Size { size, position } => ViewportAction::Resized {
-                        referent,
-                        size,
-                        position,
-                        first,
-                    },
-                    Change::Orientation(orientation) => ViewportAction::Rotated {
-                        referent,
-                        orientation,
-                        first,
-                    },
-                    Change::Position(_) => unreachable!("handled above"),
+                cx.emit(ViewportAction::Resized {
+                    parts: vec![(referent, size, position)],
+                    first,
                 });
+            }
+            Change::Scaled { pivot, factor } => {
+                let factor = self.held.factor_within(factor, MIN_SIZE, MAX_SIZE);
+                let change = Change::Scaled { pivot, factor };
+                let Some((_, first)) = stepped(anchor, change, &mut self.dragged) else {
+                    return;
+                };
+                let held = self.held.clone();
+                let parts = self.targets.scale_about(&held, pivot, factor);
+                cx.emit(ViewportAction::Resized { parts, first });
+            }
+            // Rotate turns every selected part about the selection's centre
+            // (`creator-docs`, `parts/models.md`: a model "transforms based
+            // on the center of its bounding box"), which for one part is its
+            // own centre and leaves it exactly where it stands.
+            Change::Orientation(orientation) => {
+                let Some((_, first)) = stepped(anchor, change, &mut self.dragged) else {
+                    return;
+                };
+                let Drag::Ring {
+                    origin,
+                    orientation: was,
+                    ..
+                } = drag
+                else {
+                    unreachable!("only a ring turns");
+                };
+                // The turn since the grab, as the anchor's orientation then
+                // and now give it: absolute, so the group cannot drift.
+                let rotation = orientation * was.transpose();
+                let held = self.held.clone();
+                let parts = self.targets.rotate_about(&held, origin, rotation);
+                cx.emit(ViewportAction::Rotated { parts, first });
             }
         }
     }
@@ -448,8 +553,29 @@ impl WorkspaceView {
         self.drag.is_some()
     }
 
-    pub(super) fn end_drag(&mut self) {
+    /// Applies the latest recorded cursor position to the drag in progress
+    /// — see `render`'s `on_mouse_move` handler for why the two are apart.
+    pub(super) fn step_drag(
+        &mut self,
+        window: &gpui_kit::Window,
+        cx: &mut gpui_kit::Context<Self>,
+    ) {
+        if let Some((position, modifiers)) = self.drag_pending.take() {
+            let scale = window.scale_factor();
+            self.drag_to(position, modifiers, scale, cx);
+        }
+    }
+
+    /// The button coming up: the last cursor position the frame gate has
+    /// not applied yet is applied first, so the part lands exactly where it
+    /// was let go rather than a frame short of it.
+    pub(super) fn end_drag(&mut self, window: &gpui_kit::Window, cx: &mut gpui_kit::Context<Self>) {
+        self.step_drag(window, cx);
         self.drag = None;
+        self.drag_stepped_at = None;
+        // A grab `Shell` has not answered yet is answered by the release:
+        // nothing is held any more.
+        self.pending_grab = None;
     }
 
     /// `t`/`r` typed with a part held by its body, reporting whether it was
@@ -524,6 +650,8 @@ impl WorkspaceView {
             *offset = turn * *offset;
         }
 
+        // A quarter turn always changes the part, so it can open the gesture
+        // the way a real drag step does.
         let first = !std::mem::replace(&mut self.dragged, true);
         cx.emit(ViewportAction::Turned {
             referent: target.referent,
@@ -565,6 +693,29 @@ fn grab_face(faces: &Faces, target: Target, ray: Ray) -> Option<Drag> {
     })
 }
 
+/// Which face of a group's box a Scale ball stands on, and the whole-group
+/// drag grabbing it opens: pulling the face scales every part by the same
+/// factor about the opposite face, which holds still.
+///
+/// One factor rather than one axis: a group's parts stand at every angle to
+/// the box, and stretching the box along one world axis is nothing a rotated
+/// part's own `Size` can express. `creator-docs` gives the transform tools no
+/// per-axis behaviour for models at all (`parts/models.md`), so this follows
+/// `Model:ScaleTo`, the one model-scaling operation Roblox does document.
+fn grab_box(faces: &Faces, ray: Ray) -> Option<Drag> {
+    let (grabbed, sign) = faces.grab(ray)?;
+    let axis = faces.direction(grabbed) * sign;
+    let origin = faces.centre();
+    let extent = faces.extent(grabbed);
+    Some(Drag::Box {
+        origin,
+        axis,
+        grabbed: gizmo::along_axis(origin, axis, ray)?,
+        extent,
+        pivot: origin - axis * extent * 0.5,
+    })
+}
+
 /// What this cursor ray does to the part, and the drag state the next step is
 /// measured from. `None` when the gesture has no answer at this angle — an
 /// axis sighted end-on, or a drag plane the ray has turned parallel to (or
@@ -573,14 +724,17 @@ fn grab_face(faces: &Faces, target: Target, ray: Ray) -> Option<Drag> {
 /// Pure, and the whole of what a drag computes: [`Drag`] is a grab's worth of
 /// geometry, and this turns it plus a ray into the part's new placement.
 ///
-/// `landing` only bears on the Move tool's two gestures (`Axis`, `Plane`) —
-/// Scale and Rotate have no grid or soft-snap surface of their own to land on.
-/// What it rounds is the *travel* since the handle was grabbed, not the part's
-/// world position. The docs say only that increments are "based on studs" and
-/// never where the grid is anchored; rounding the travel is what keeps a part
-/// that already stood off-grid from jumping the moment it is picked up, and it
-/// is the one reading that means the same thing for a dragger along a local
-/// axis as for one along a world axis.
+/// `landing`'s soft-snap surfaces bear on the Move tool's body grab alone;
+/// its grids on every tool — the stud increment on a Move or Scale travel
+/// (`creator-docs`, `parts/index.md#transform-parts`: increments "are based
+/// on studs for moving/scaling"), the degree increment on a Rotate. What is
+/// rounded is the *travel* since the handle was grabbed — the studs slid or
+/// grown, the angle swept — not the part's world position, size or heading.
+/// The docs say only that increments are "based on studs" and never where the
+/// grid is anchored; rounding the travel is what keeps a part that already
+/// stood off-grid from jumping the moment it is picked up, and it is the one
+/// reading that means the same thing for a dragger along a local axis as for
+/// one along a world axis.
 pub(super) fn advance(drag: Drag, ray: Ray, landing: Landing) -> Option<(Drag, Change)> {
     match drag {
         Drag::Axis {
@@ -610,7 +764,10 @@ pub(super) fn advance(drag: Drag, ray: Ray, landing: Landing) -> Option<(Drag, C
             size,
             component,
         } => {
-            let travelled = gizmo::along_axis(origin, axis, ray)? - grabbed;
+            let travelled = snap::round_to(
+                gizmo::along_axis(origin, axis, ray)? - grabbed,
+                landing.grid,
+            );
             let mut resized = size;
             resized[component] = (size[component] + travelled).clamp(MIN_SIZE, MAX_SIZE);
             // Half the growth, so the face opposite the grabbed one holds
@@ -627,6 +784,29 @@ pub(super) fn advance(drag: Drag, ray: Ray, landing: Landing) -> Option<(Drag, C
                 },
             ))
         }
+        Drag::Box {
+            origin,
+            axis,
+            grabbed,
+            extent,
+            pivot,
+        } => {
+            let travelled = snap::round_to(
+                gizmo::along_axis(origin, axis, ray)? - grabbed,
+                landing.grid,
+            );
+            // The box's own length along the pulled axis, held to the same
+            // range a part's Size is; what every part scales by is how much
+            // that grew or shrank in proportion.
+            let pulled = (extent + travelled).clamp(MIN_SIZE, MAX_SIZE);
+            Some((
+                drag,
+                Change::Scaled {
+                    pivot,
+                    factor: pulled / extent,
+                },
+            ))
+        }
         Drag::Ring {
             origin,
             frame,
@@ -637,6 +817,10 @@ pub(super) fn advance(drag: Drag, ray: Ray, landing: Landing) -> Option<(Drag, C
             let (angle, ..) = gizmo::ring_crossing(origin, frame, ray)?;
             let turned = turned + gizmo::angle_step(last, angle);
             let (turn, ..) = frame;
+            // The running total is kept exact and only the angle *applied* is
+            // rounded: rounding each step before adding it up would let a
+            // slow drag creep past the increments without ever crossing one.
+            let applied = snap::round_to(turned, landing.angle);
             Some((
                 Drag::Ring {
                     origin,
@@ -645,10 +829,28 @@ pub(super) fn advance(drag: Drag, ray: Ray, landing: Landing) -> Option<(Drag, C
                     last: angle,
                     turned,
                 },
-                Change::Orientation(Mat3::from_axis_angle(turn, turned) * orientation),
+                Change::Orientation(Mat3::from_axis_angle(turn, applied) * orientation),
             ))
         }
     }
+}
+
+/// One step of a gesture: the target as `change` leaves it and whether this is
+/// the gesture's first step to change anything — the one that opens its undo
+/// entry — or `None` for a sample that leaves the part exactly where it is.
+///
+/// `dragged` is marked only on a real change, never on a sample. The first
+/// samples of a snapped Move round their travel to nothing until the cursor
+/// has crossed half an increment, and a gesture that spent its "first" on
+/// one of those would write every later step without ever pushing history:
+/// the whole drag would then sit outside undo.
+pub(super) fn stepped(
+    target: Target,
+    change: Change,
+    dragged: &mut bool,
+) -> Option<(Target, bool)> {
+    let moved = applied(target, change)?;
+    Some((moved, !std::mem::replace(dragged, true)))
 }
 
 /// The target as this change leaves it, or `None` when it leaves it exactly as
@@ -664,6 +866,12 @@ pub(super) fn applied(target: Target, change: Change) -> Option<Target> {
         Change::Orientation(orientation) => {
             (orientation != target.orientation()).then(|| target.rotated_to(orientation))
         }
+        Change::Scaled { pivot, factor } => (factor != 1.0).then(|| {
+            target.resized_to(
+                target.size() * factor,
+                pivot + (target.position() - pivot) * factor,
+            )
+        }),
     }
 }
 

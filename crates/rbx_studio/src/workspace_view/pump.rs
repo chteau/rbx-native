@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use rbx_dom::{Change, Ref, Snapshot, WeakDom};
+use rbx_dom::{Change, Snapshot, WeakDom};
 use rbx_viewer::pick::{Meshes, Selected};
 use rbx_viewer::{Applied, CameraInput, Gizmo, Headless, Pose, QualityLevel};
 
@@ -45,7 +45,7 @@ enum Command {
     Selection(Vec<Selected>),
     /// The "about to click" cue — see `Headless::set_hover`. `None` clears
     /// it, the way an empty `Selection` clears the selection outline.
-    Hover(Option<Ref>),
+    Hover(Vec<Selected>),
     /// Which transform tool's draggers to draw over the selection, if any —
     /// see `Headless::set_gizmo`.
     Gizmo(Option<Gizmo>),
@@ -166,8 +166,8 @@ impl Pump {
 
     /// Outlines the hovered part in the viewport, distinctly from the
     /// selection — `None` clears it.
-    pub(super) fn hover(&self, referent: Option<Ref>) {
-        let _ = self.commands.send(Command::Hover(referent));
+    pub(super) fn hover(&self, selected: Vec<Selected>) {
+        let _ = self.commands.send(Command::Hover(selected));
     }
 
     /// Shows or hides the transform tool's draggers over the selection.
@@ -451,17 +451,48 @@ fn drain(commands: &Receiver<Command>, mut rendering: Rendering<'_>, idle: bool)
         }
     }
 
+    let mut queued = Vec::new();
     loop {
         match commands.try_recv() {
-            Ok(command) => {
-                if !apply(command, &mut rendering) {
-                    return false;
-                }
-            }
-            Err(TryRecvError::Empty) => return true,
+            Ok(command) => queued.push(command),
+            Err(TryRecvError::Empty) => break,
             Err(TryRecvError::Disconnected) => return false,
         }
     }
+    for command in coalesce(queued) {
+        if !apply(command, &mut rendering) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Folds every run of consecutive [`Command::Changes`] into one, keeping
+/// everything else where it was.
+///
+/// A drag sends one change batch per mouse-move event, and a mouse reports
+/// far more of those than the display draws frames — up to a thousand a
+/// second. Each batch is a hint about *which* instances to re-read from the
+/// mirror (see `Headless::apply_changes`), never a value, so applying the
+/// union once is the same picture as applying each in turn — while the
+/// per-batch cost that does not scale with the edit (the effect, GUI and
+/// light plans a moved part's children invalidate) is paid once a frame
+/// instead of once a move. Without this a place big enough for those plans
+/// to cost a few milliseconds fell behind the mouse and stayed there for
+/// the whole gesture. Snapshots keep their order, so the mirror ends up
+/// where the last batch left it.
+fn coalesce(commands: Vec<Command>) -> Vec<Command> {
+    let mut folded: Vec<Command> = Vec::with_capacity(commands.len());
+    for command in commands {
+        match (folded.last_mut(), command) {
+            (Some(Command::Changes(snapshots, changes)), Command::Changes(more, further)) => {
+                snapshots.extend(more);
+                changes.extend(further);
+            }
+            (_, command) => folded.push(command),
+        }
+    }
+    folded
 }
 
 fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
@@ -471,7 +502,7 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::Quality(mode) => rendering.quality.set(mode, rendering.viewer),
         Command::Orthographic(orthographic) => rendering.viewer.set_orthographic(orthographic),
         Command::Selection(selected) => rendering.viewer.set_selection(&selected),
-        Command::Hover(referent) => rendering.viewer.set_hover(referent),
+        Command::Hover(selected) => rendering.viewer.set_hover(selected),
         Command::Gizmo(gizmo) => rendering.viewer.set_gizmo(gizmo),
         Command::Changes(snapshots, changes) => {
             rendering.mirror.mirror(snapshots);

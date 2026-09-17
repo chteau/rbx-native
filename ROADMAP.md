@@ -224,9 +224,13 @@ Roblox's own engine.
     the whole set. One Move gizmo appears, centred on the selection's
     bounding box; dragging any handle, or any selected part's own body,
     moves the whole group together by the same offset, so its layout
-    relative to itself never changes. Scale and Rotate still act on the
-    first-selected ("anchor") part alone — a group Scale/Rotate has no
-    agreed meaning yet.
+    relative to itself never changes. Scale and Rotate act on the whole
+    selection too, centred on its bounding box: Rotate turns every part
+    about that centre, and Scale grows the group about the box's opposite
+    face by one factor (the way `Model:ScaleTo` scales — a per-axis stretch
+    is nothing a rotated part's own `Size` can express, and Studio gives
+    the tools no per-axis model behaviour). A lone part keeps its own
+    per-axis Scale.
   - Clicking (and dragging) resolves against the shape actually drawn —
     sphere, capped cylinder, wedge slope, a downloaded mesh's own
     triangles — not the part's bounding box.
@@ -436,17 +440,18 @@ Roblox's own engine.
     (F3X's own `C` rotate-tool binding is documented to conflict with
     Studio's native `C` = Toggle Comment Cursor) — worth checking against
     a real Studio instance before adopting either verbatim.
-  - **Selection outline shape and thickness**: today's outline (see
-    `rbx_viewer::renderer::selection`) is a plain wireframe box around
-    every part's oriented bounding box, drawn as raw GPU lines with no
-    width control at all — a `Ball`, `Cylinder` or wedge outlines as its
-    box, not its own silhouette, and the line itself is about as thin as a
-    line can be. Real Studio's own selection highlight is documented
-    (`parts/models.md`) only as a light-blue outline around the selected
-    object(s), with no thickness or shape-conformance spec published —
-    needs checking against a real Studio instance to know how closely to
-    match the actual silhouette versus how thick the line really is,
-    rather than guessing either number.
+  - [x] 🚧 **Selection outline shape and thickness**: the *thickness* half
+    has shipped — the outline (see `rbx_viewer::renderer::selection` and
+    `renderer::outline`) is no longer a one-pixel `LineList` but a
+    screen-space quad per edge, expanded in the vertex shader to a constant
+    on-screen width (~3px selection blue, matching Studio's light-blue
+    selection box; the hover cue rides the same path in amber). What is
+    *still open* is shape-conformance: a `Ball`, `Cylinder`, wedge or mesh
+    still outlines as its oriented bounding box, not its own silhouette, and
+    Real Studio's own highlight is documented (`parts/models.md`) only as a
+    light-blue outline with no shape-conformance spec published — so matching
+    the true silhouette still needs checking against a real Studio instance
+    rather than guessing.
 - [ ] 📋 **Align tool**, matching Studio's real Model-tab tool (checked
   against `studio/align-tool.md` rather than assumed, not the transform
   gizmos under "What's been implemented" → Editor). Aligns the selected

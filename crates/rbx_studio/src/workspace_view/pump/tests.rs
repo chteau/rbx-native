@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use std::time::Instant;
 
-use super::{deadline, due_pose, step};
+use super::{coalesce, deadline, due_pose, step, Command};
 
 const INTERVAL: Duration = Duration::from_millis(13);
 
@@ -76,4 +76,50 @@ fn a_moved_pose_reports_once_due() {
 #[test]
 fn the_first_pose_is_reported_with_nothing_sent_before_it() {
     assert_eq!(due_pose(Some(1), None, true), Some(1));
+}
+
+fn batch(referent: u32) -> Command {
+    Command::Changes(
+        Vec::new(),
+        vec![rbx_dom::Change::Property {
+            referent: rbx_dom::Ref::new(referent),
+            name: String::from("CFrame"),
+        }],
+    )
+}
+
+// The bug this exists for: a drag over a large place queued one change batch
+// per mouse-move event, each paying the full per-batch cost, and the render
+// thread fell behind the mouse for the length of the gesture.
+#[test]
+fn consecutive_change_batches_fold_into_one_in_order() {
+    let folded = coalesce(vec![batch(1), batch(2), batch(3)]);
+
+    assert_eq!(folded.len(), 1);
+    let Command::Changes(_, changes) = &folded[0] else {
+        panic!("expected one change batch");
+    };
+    let referents: Vec<u32> = changes
+        .iter()
+        .map(|change| match change {
+            rbx_dom::Change::Property { referent, .. } => referent.value(),
+            other => panic!("unexpected {other:?}"),
+        })
+        .collect();
+    assert_eq!(referents, [1, 2, 3]);
+}
+
+#[test]
+fn another_command_between_two_batches_keeps_them_apart_and_in_place() {
+    let folded = coalesce(vec![batch(1), Command::Visible(false), batch(2), batch(3)]);
+
+    assert_eq!(folded.len(), 3);
+    assert!(matches!(&folded[0], Command::Changes(_, changes) if changes.len() == 1));
+    assert!(matches!(folded[1], Command::Visible(false)));
+    assert!(matches!(&folded[2], Command::Changes(_, changes) if changes.len() == 2));
+}
+
+#[test]
+fn nothing_queued_folds_to_nothing() {
+    assert!(coalesce(Vec::new()).is_empty());
 }

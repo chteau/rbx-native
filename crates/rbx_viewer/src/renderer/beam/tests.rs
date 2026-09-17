@@ -23,6 +23,7 @@ fn beam() -> Beam {
         texture_mode: TextureMode::Stretch,
         texture_speed: 0.0,
         light_emission: 0.0,
+        light_influence: 1.0,
         face_camera: true,
         secondary_axis0: Vec3::Y,
         secondary_axis1: Vec3::Y,

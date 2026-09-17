@@ -3,29 +3,23 @@
 //! selection outline (see [`super::selection::Selection`]).
 //!
 //! Mirrors `Selection` almost exactly, down to reusing its box-edge math (see
-//! [`super::outline`]), but tracks at most one referent rather than a whole
-//! selection, and has no `anchor`/`centre`: the transform gizmo has no
-//! business following whatever the cursor happens to be sitting over.
+//! [`super::outline`]), but has no `anchor`/`centre`: the transform gizmo has
+//! no business following whatever the cursor happens to be sitting over. It
+//! tracks a list of parts, not one: hovering a `Model` outlines every part it
+//! covers, the way a plain click selects the whole model.
 
 use std::collections::HashMap;
 
 use rbx_dom::Ref;
 use wgpu::util::DeviceExt;
 
+use crate::pick::Selected;
 use crate::scene::Placement;
 
-use super::outline::{vertices_for, Vertex};
+use super::outline::{box_edges, Vertex};
 use super::pipeline::{self, Surface, Target};
 
 const SHADER: &str = include_str!("hover.wgsl");
-
-/// `Hover` only ever tracks at most one referent, where `vertices_for`
-/// (shared with `Selection`) takes a slice — the one hover-specific bit of
-/// pure logic in this file, and worth its own test rather than folding it
-/// silently into [`Hover::set`].
-fn slice_of(referent: &Option<Ref>) -> &[Ref] {
-    referent.as_ref().map_or(&[], std::slice::from_ref)
-}
 
 /// The hover outline's GPU state: a `LineList` pipeline of its own — same
 /// depth test as the selection outline, but alpha-blended in a distinct
@@ -38,9 +32,11 @@ pub(super) struct Hover {
     /// traded for keeping the two outlines' GPU state independent rather than
     /// threading a shared placements map through both.
     placements: HashMap<Ref, Placement>,
-    /// What [`Hover::set`] last outlined, so a placement that moves under the
-    /// cursor (see [`Hover::place`]) can redraw it.
-    referent: Option<Ref>,
+    /// What [`Hover::set`] last outlined — the instance(s) the hover covers,
+    /// each drawn as one box (a model's aggregate bounds, a part's own), so a
+    /// placement that moves under the cursor (see [`Hover::place`]) can redraw
+    /// it.
+    selected: Vec<Selected>,
     vertices: Option<wgpu::Buffer>,
     count: u32,
 }
@@ -58,7 +54,9 @@ impl Hover {
             &Surface {
                 cull: None,
                 compare: wgpu::CompareFunction::GreaterEqual,
-                topology: wgpu::PrimitiveTopology::LineList,
+                // Screen-space quads, like the selection outline (see
+                // `hover.wgsl`), not a one-pixel `LineList`.
+                topology: wgpu::PrimitiveTopology::TriangleList,
                 // Blended rather than replacing, unlike the selection outline:
                 // a translucent line reads as a dimmer cue even where it
                 // happens to sit right beside the selection's own edge.
@@ -75,17 +73,17 @@ impl Hover {
         Hover {
             pipeline,
             placements,
-            referent: None,
+            selected: Vec::new(),
             vertices: None,
             count: 0,
         }
     }
 
-    /// Rebuilds the outline around `referent`, replacing whatever was hovered
-    /// before. `None` clears it.
-    pub(super) fn set(&mut self, device: &wgpu::Device, referent: Option<Ref>) {
-        self.referent = referent;
-        let vertices = vertices_for(&self.placements, slice_of(&referent));
+    /// Rebuilds the outline around `selected`, replacing whatever was hovered
+    /// before. An empty list clears it.
+    pub(super) fn set(&mut self, device: &wgpu::Device, selected: Vec<Selected>) {
+        self.selected = selected;
+        let vertices = box_edges(&self.placements, &self.selected);
         self.count = vertices.len() as u32;
         self.vertices = (!vertices.is_empty()).then(|| {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -101,9 +99,17 @@ impl Hover {
     /// one currently hovered.
     pub(super) fn place(&mut self, device: &wgpu::Device, referent: Ref, placement: Placement) {
         self.placements.insert(referent, placement);
-        if self.referent == Some(referent) {
-            self.set(device, self.referent);
+        if self.covers(referent) {
+            self.set(device, self.selected.clone());
         }
+    }
+
+    /// Whether one part is inside anything the hover currently outlines — a
+    /// hovered part itself, or one beneath a hovered model.
+    fn covers(&self, referent: Ref) -> bool {
+        self.selected
+            .iter()
+            .any(|entry| entry.parts().contains(&referent))
     }
 
     /// Forgets where one part was drawn — it stopped drawing as a box (a mesh
@@ -111,8 +117,12 @@ impl Hover {
     /// hovered: a box drawn around a part that no longer exists would
     /// otherwise linger until the cursor moves onto something else.
     pub(super) fn remove(&mut self, device: &wgpu::Device, referent: Ref) {
-        if self.placements.remove(&referent).is_some() && self.referent == Some(referent) {
-            self.set(device, None);
+        // Only the placement is forgotten; the hovered entries stand, so the
+        // box simply drops that part until it draws as a box again. A mesh
+        // part keeps its placement now (see `renderer::patch`), so this is the
+        // genuine gone/off-Workspace case rather than a mesh finishing loading.
+        if self.placements.remove(&referent).is_some() && self.covers(referent) {
+            self.set(device, self.selected.clone());
         }
     }
 
@@ -145,28 +155,28 @@ mod tests {
         }
     }
 
-    #[test]
-    fn nothing_hovered_is_an_empty_slice() {
-        assert!(slice_of(&None).is_empty());
-    }
-
-    #[test]
-    fn something_hovered_is_a_one_element_slice() {
-        let referent = Some(Ref::new(1));
-        assert_eq!(slice_of(&referent), &[Ref::new(1)]);
-    }
-
     /// The rest of the geometry (how a box's edges follow its model matrix,
     /// how a referent with no placement draws nothing) is already covered by
-    /// `renderer::outline`'s own tests — this only checks that `slice_of`
-    /// actually feeds `vertices_for` a hovered part correctly.
+    /// `renderer::outline`'s own tests — this only checks that a hover of one
+    /// part draws its box and a hover of two draws both.
     #[test]
-    fn a_hovered_part_draws_its_box() {
+    fn a_hovered_part_draws_its_box_and_a_model_draws_all_of_them() {
         let mut placements = HashMap::new();
         placements.insert(Ref::new(1), placement(Mat4::IDENTITY));
-        let referent = Some(Ref::new(1));
+        placements.insert(Ref::new(2), placement(Mat4::IDENTITY));
 
-        let vertices = vertices_for(&placements, slice_of(&referent));
-        assert_eq!(vertices.len(), 24);
+        assert_eq!(
+            box_edges(&placements, &[Selected::part(Ref::new(1))]).len(),
+            72
+        );
+        assert_eq!(
+            box_edges(
+                &placements,
+                &[Selected::part(Ref::new(1)), Selected::part(Ref::new(2))]
+            )
+            .len(),
+            144
+        );
+        assert!(box_edges(&placements, &[]).is_empty());
     }
 }

@@ -1,5 +1,49 @@
 # Changelog
 
+## 2026-09-17
+
+- **A batch of viewport editor fixes (`fix/overall-bug-fixes`).** Undo/redo
+  and other shortcuts now work with the 3D view focused rather than steering
+  the camera (`z` is the forward key, so Ctrl+Z used to fly forward on
+  AZERTY), and a Move drag reaches the undo stack again — it opened its
+  history entry on the gesture's first *sample*, which a 1-stud grid rounds
+  to nothing, so the whole drag landed outside undo. AZERTY's unshifted
+  digit row reaches the tool shortcuts too. A Move-tool click on a part in
+  front of the selection now selects it instead of dragging the selection
+  behind it. The Move/Scale stud increment snaps Scale as well as Move, and
+  the Rotate increment is live (Alt+R jumps to it). Scale and Rotate act on
+  a whole multi-selection, centred on its bounds, not just the anchor part.
+  The hover outline previews what a click would select — the whole model
+  plain, one part with Alt held — and both the selection and hover outlines
+  are now thick screen-space lines instead of a one-pixel hairline. Dragging
+  a Model with many children no longer freezes the viewport: consecutive
+  change batches fold to one per frame, an attachment move re-plans only the
+  effect kinds the scene actually has, and a Model drag no longer re-walks
+  the whole workspace for the free-drag neighbour boxes each frame. The
+  sun's specular highlight on plastic is a touch stronger. — @chteau
+- **Follow-up viewport fixes on the same branch.** A `MeshPart` or
+  `UnionOperation` now shows its selection outline and transform gizmo — both
+  read the renderer's placement map, which dropped a mesh part's box the
+  moment its mesh became resident (a patch removed it, and a full rebuild
+  reseeded from the filtered `placements`); both keep the mesh part's own
+  bounding box now. Plain-hovering a model outlines the model as one box
+  rather than every child, and the selection box is no longer occluded by
+  geometry (it reads as a control, drawn on top). Beams no longer twist into
+  a bend on a low-segment curve — the ribbon takes its width from the
+  polyline, not the analytic tangent — and are affected by `LightInfluence`,
+  dimming with the scene at night. Alt-hover now previews the part Alt-click
+  cycling would select next rather than always the nearest hit, so a child
+  reached by cycling — the case when the camera sits inside a parent part —
+  is previewed before it is picked. A part the camera sits inside no longer
+  swallows every click and hover — it is ordered by where the ray leaves it,
+  so an Alt-hover or Alt-click reaches a child in front of it directly,
+  without selecting the enclosing part first. The sun's specular highlight is
+  now scaled by EnvironmentSpecularScale, the dial the environment reflection
+  already used: a place that sets it to 0 renders matte with full, vivid
+  colours as Studio does, instead of a broad white highlight washing the
+  greens toward grey, while a place at 1 keeps the full highlight. — @chteau
+
+
 ## 2026-09-16
 
 - **Undo/redo of a Scale drag no longer reloads the scene.** The fast path

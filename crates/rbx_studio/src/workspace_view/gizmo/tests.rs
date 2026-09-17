@@ -14,8 +14,17 @@ fn looking_at(x: f32, y: f32) -> Ray {
 fn free() -> Landing<'static> {
     Landing {
         grid: 0.0,
+        angle: 0.0,
         neighbours: &[],
         reach: 0.0,
+    }
+}
+
+/// A rotate increment of `degrees` and no stud grid.
+fn degrees(degrees: f32) -> Landing<'static> {
+    Landing {
+        angle: degrees.to_radians(),
+        ..free()
     }
 }
 
@@ -181,9 +190,9 @@ fn a_free_drag_soft_snaps_its_grab_point_onto_a_nearby_surface() {
         offset: Vec3::ZERO,
     };
     let landing = Landing {
-        grid: 0.0,
         neighbours: &[neighbour],
         reach: 0.5,
+        ..free()
     };
 
     let moved = moved_to(drag, looking_at(0.0, 1.2), landing).expect("the ray crosses");
@@ -203,9 +212,9 @@ fn a_free_drag_out_of_reach_of_everything_lands_where_the_cursor_is() {
         offset: Vec3::ZERO,
     };
     let landing = Landing {
-        grid: 0.0,
         neighbours: &[neighbour],
         reach: 0.5,
+        ..free()
     };
 
     let moved = moved_to(drag, looking_at(0.0, 4.0), landing).expect("the ray crosses");
@@ -231,6 +240,7 @@ fn a_grid_in_force_takes_the_place_of_soft_snapping_rather_than_stacking_on_it()
         grid: 1.0,
         neighbours: &[neighbour],
         reach: 5.0,
+        ..free()
     };
 
     let moved = moved_to(drag, looking_at(0.0, 1.2), landing).expect("the ray crosses");
@@ -632,4 +642,188 @@ fn a_change_carries_the_part_through_to_the_next_drag_step() {
     assert!((turned.size() - target.size()).length() < 1e-4);
     assert!((turned.position() - target.position()).length() < 1e-4);
     assert!((turned.orientation().x_axis - Vec3::NEG_Z).length() < 1e-4);
+}
+
+// The bug this exists for: a snapped Move's first samples round their travel
+// to nothing, and a gesture that spent its "first" on one of them wrote every
+// later step without ever opening an undo entry.
+#[test]
+fn a_gesture_opens_its_undo_entry_on_its_first_real_change_not_its_first_sample() {
+    let anchor = block();
+    let mut dragged = false;
+
+    // Samples that leave the part where it is are not steps at all.
+    let still = Change::Position(anchor.position());
+    assert_eq!(stepped(anchor, still, &mut dragged), None);
+    assert_eq!(stepped(anchor, still, &mut dragged), None);
+    assert!(!dragged, "a sample that changed nothing began no gesture");
+
+    let moved = Change::Position(anchor.position() + Vec3::X);
+    let (target, first) = stepped(anchor, moved, &mut dragged).expect("the part moved");
+    assert!(first, "the first real change opens the gesture");
+    assert_eq!(target.position(), anchor.position() + Vec3::X);
+
+    let further = Change::Position(anchor.position() + Vec3::X * 2.0);
+    let (_, first) = stepped(target, further, &mut dragged).expect("the part moved again");
+    assert!(!first, "later steps share the entry the first one opened");
+}
+
+// The bug this exists for: the toolbar's stud increment rounded a Move's
+// travel and nothing else, so a snapped Scale still grew by whatever fraction
+// the cursor happened to cover.
+#[test]
+fn a_snapped_scale_drag_grows_by_whole_increments_of_the_pull() {
+    let (_, free_change) =
+        advance(grabbed_x_face(), looking_at(3.6, 0.0), free()).expect("across the view");
+    let (_, snapped_change) =
+        advance(grabbed_x_face(), looking_at(3.6, 0.0), grid(1.0)).expect("across the view");
+    let (
+        Change::Size {
+            size: free_size, ..
+        },
+        Change::Size { size, position },
+    ) = (free_change, snapped_change)
+    else {
+        panic!("expected resizes, got {free_change:?} and {snapped_change:?}");
+    };
+
+    let grabbed = grabbed_x_face();
+    let Drag::Size { size: was, .. } = grabbed else {
+        unreachable!()
+    };
+    let free_growth = free_size.x - was.x;
+    let growth = size.x - was.x;
+    assert!(
+        free_growth.fract().abs() > 1e-3,
+        "the pull itself is off-grid"
+    );
+    assert!(
+        (growth - free_growth.round()).abs() < 1e-4,
+        "grown by a whole stud"
+    );
+    // Still holding the far face still: the centre moved by half the growth.
+    assert!((position.x - growth * 0.5).abs() < 1e-4);
+}
+
+#[test]
+fn a_snapped_rotate_drag_turns_by_whole_increments_of_the_sweep() {
+    let drag = Drag::Ring {
+        origin: Vec3::ZERO,
+        frame: (Vec3::Z, Vec3::X, Vec3::Y),
+        orientation: Mat3::IDENTITY,
+        last: 0.0,
+        turned: 0.0,
+    };
+    // Swept 60° round the ring with a 45° increment: the part turns 45°.
+    let sixty = 60f32.to_radians();
+    let (_, change) = advance(
+        drag,
+        looking_at(5.0 * sixty.cos(), 5.0 * sixty.sin()),
+        degrees(45.0),
+    )
+    .expect("the ray crosses the ring");
+    let Change::Orientation(turned) = change else {
+        panic!("expected a rotation, got {change:?}");
+    };
+    let expected = Vec3::new(45f32.to_radians().cos(), 45f32.to_radians().sin(), 0.0);
+    assert!((turned.x_axis - expected).length() < 1e-4);
+}
+
+// Rounding each step before adding it up would let a slow drag creep round
+// the ring without ever crossing an increment: the total is what is rounded.
+#[test]
+fn a_snapped_rotate_drag_rounds_its_whole_sweep_not_each_step() {
+    let mut drag = Drag::Ring {
+        origin: Vec3::ZERO,
+        frame: (Vec3::Z, Vec3::X, Vec3::Y),
+        orientation: Mat3::IDENTITY,
+        last: 0.0,
+        turned: 0.0,
+    };
+    let mut last = None;
+    for step in [20f32, 40.0] {
+        let angle = step.to_radians();
+        let (next, change) = advance(
+            drag,
+            looking_at(5.0 * angle.cos(), 5.0 * angle.sin()),
+            degrees(45.0),
+        )
+        .expect("the ray crosses the ring");
+        drag = next;
+        last = Some(change);
+    }
+    let Some(Change::Orientation(turned)) = last else {
+        panic!("expected a rotation, got {last:?}");
+    };
+    // Two 20° steps are a 40° sweep, which rounds up to one 45° increment —
+    // where per-step rounding would have turned the part not at all.
+    let expected = Vec3::new(45f32.to_radians().cos(), 45f32.to_radians().sin(), 0.0);
+    assert!((turned.x_axis - expected).length() < 1e-4);
+}
+
+/// A group's 8-by-2-by-2 box centred on the origin, its +X ball grabbed where
+/// it stands (4 studs out).
+fn grabbed_group_x_face() -> Drag {
+    Drag::Box {
+        origin: Vec3::ZERO,
+        axis: Vec3::X,
+        grabbed: 4.0,
+        extent: 8.0,
+        pivot: Vec3::new(-4.0, 0.0, 0.0),
+    }
+}
+
+#[test]
+fn a_group_scale_drag_pulls_the_box_into_a_factor_about_its_far_face() {
+    // Pulled from 4 out to 8: the box is 12 long now, one and a half times
+    // what it was, and everything scales about the -X face at x = -4.
+    let (_, change) = advance(grabbed_group_x_face(), looking_at(8.0, 0.0), free())
+        .expect("the axis is across the view");
+    assert_eq!(
+        change,
+        Change::Scaled {
+            pivot: Vec3::new(-4.0, 0.0, 0.0),
+            factor: 1.5,
+        }
+    );
+}
+
+#[test]
+fn a_snapped_group_scale_drag_grows_the_box_by_whole_studs() {
+    let (_, change) = advance(grabbed_group_x_face(), looking_at(7.6, 0.0), grid(1.0))
+        .expect("the axis is across the view");
+    // 3.6 studs of pull round to 4: 12 over 8.
+    let Change::Scaled { factor, .. } = change else {
+        panic!("expected a group scale, got {change:?}");
+    };
+    assert!((factor - 1.5).abs() < 1e-5);
+}
+
+#[test]
+fn a_group_scale_applied_to_a_part_moves_it_away_from_the_pivot() {
+    let part = block();
+    let scaled = applied(
+        part,
+        Change::Scaled {
+            pivot: Vec3::new(-4.0, 0.0, 0.0),
+            factor: 2.0,
+        },
+    )
+    .expect("a factor of two changes it");
+    assert!((scaled.size() - part.size() * 2.0).length() < 1e-5);
+    // Twice as far from the pivot as it was.
+    let was = part.position() - Vec3::new(-4.0, 0.0, 0.0);
+    let now = scaled.position() - Vec3::new(-4.0, 0.0, 0.0);
+    assert!((now - was * 2.0).length() < 1e-5);
+    // And a factor of exactly one is no change at all.
+    assert_eq!(
+        applied(
+            part,
+            Change::Scaled {
+                pivot: Vec3::ZERO,
+                factor: 1.0
+            }
+        ),
+        None
+    );
 }

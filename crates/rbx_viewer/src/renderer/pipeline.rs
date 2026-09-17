@@ -55,7 +55,12 @@ pub(super) const SKYBOX_SHADER: &str = concat!(
     include_str!("skybox.wgsl")
 );
 
-const MATRIX_SIZE: wgpu::BufferAddress = std::mem::size_of::<[[f32; 4]; 4]>() as _;
+// The frame uniform (bind group 0, binding 0): the view-projection matrix,
+// then the viewport's pixel size in a `vec4` (`xy` used, `zw` padding) so the
+// outline shaders can expand their edges to a constant pixel width. Every
+// other surface shader declares only the matrix and reads just the first 64
+// bytes, which stay first.
+const FRAME_SIZE: wgpu::BufferAddress = 64 + 16;
 
 /// Blending for everything translucent: straight (non-premultiplied) alpha over
 /// whatever is already in the target.
@@ -235,7 +240,7 @@ impl Frame {
     ) -> Self {
         let matrix = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rbxview view projection"),
-            size: MATRIX_SIZE,
+            size: FRAME_SIZE,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -256,12 +261,12 @@ impl Frame {
         self.bind_group = bind(device, layout, &self.matrix, shared);
     }
 
-    pub(super) fn write(&self, queue: &wgpu::Queue, matrix: &Mat4) {
-        queue.write_buffer(
-            &self.matrix,
-            0,
-            bytemuck::cast_slice(&matrix.to_cols_array()),
-        );
+    pub(super) fn write(&self, queue: &wgpu::Queue, matrix: &Mat4, viewport: glam::Vec2) {
+        let mut data = [0.0f32; 20];
+        data[..16].copy_from_slice(&matrix.to_cols_array());
+        data[16] = viewport.x;
+        data[17] = viewport.y;
+        queue.write_buffer(&self.matrix, 0, bytemuck::cast_slice(&data));
     }
 }
 
@@ -334,8 +339,9 @@ pub(super) struct Surface<'a> {
     /// instead: it redraws a surface already in the depth buffer, so it has to
     /// win the tie rather than disappear.
     pub(super) compare: wgpu::CompareFunction,
-    /// `TriangleList` for every surface pass but the selection outline, which
-    /// draws `LineList` edges instead.
+    /// `TriangleList` for every surface pass, the outline passes included:
+    /// their edges are expanded into screen-space quads (see
+    /// `renderer::outline`) rather than drawn as one-pixel lines.
     pub(super) topology: wgpu::PrimitiveTopology,
 }
 

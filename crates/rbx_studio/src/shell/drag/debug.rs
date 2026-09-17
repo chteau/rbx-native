@@ -71,7 +71,7 @@ impl Shell {
             );
             return;
         };
-        self.resize_part(anchor.referent, size, position, true, cx);
+        self.resize_parts(&[(anchor.referent, size, position)], true, cx);
     }
 }
 

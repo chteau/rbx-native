@@ -2,6 +2,7 @@
 //! `rbx_lua::Runtime` and reflecting whatever it changed in the Explorer and
 //! the viewport.
 
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use gpui_kit::{Context, ScrollStrategy};
@@ -100,6 +101,24 @@ impl Shell {
     /// the outline, the gizmo and the Explorer's own highlight (see
     /// `shell::panels::instance_tree`) all read that directly rather than the
     /// tree's idea of "selected".
+    /// Sets the selection to `kept` as a whole — every entry of a
+    /// multi-selection that an undo, redo or rebuild left standing, in its
+    /// order, with the first as the Explorer's row — rather than collapsing
+    /// it to its anchor the way [`Shell::select`] would.
+    pub(super) fn reselect(&mut self, kept: Vec<Ref>, cx: &mut Context<Self>) {
+        let anchor = kept.first().and_then(|&r| self.explorer.item(r));
+        let tree = self.tree.clone();
+        tree.update(cx, |tree, cx| {
+            tree.set_selected_item(anchor.as_ref(), cx);
+            if let Some(anchor) = &anchor {
+                tree.reveal_item(&anchor.id, ScrollStrategy::Center, cx);
+            }
+        });
+        if self.selection.replace(kept) {
+            self.selection_changed(cx);
+        }
+    }
+
     pub(super) fn extend_selection(&mut self, reference: Ref, cx: &mut Context<Self>) {
         self.selection.toggle(reference);
 
@@ -183,7 +202,7 @@ impl Shell {
         if changes.is_empty() {
             return;
         }
-        let refresh = refresh_for(changes, self.selected_all());
+        let refresh = refresh_for(changes, &self.covered);
         // The instances the log names, not the tree: a drag reflects a
         // change every mouse move, and copying the whole place per move
         // would cost what the patch itself was made to save.
@@ -191,6 +210,9 @@ impl Shell {
         let targets = refresh
             .targets
             .then(|| Targets::read(&self.dom, &self.database, self.selected_all()));
+        if let Some(targets) = &targets {
+            self.covered = targets.iter().map(|target| target.referent).collect();
+        }
         self.viewport.update(cx, |viewport, _| {
             viewport.apply_changes(snapshots, changes.to_vec());
             if let Some(targets) = targets {
@@ -238,11 +260,16 @@ pub(super) struct Refresh {
 /// instance added, removed or moved — invalidates both: the selection may
 /// have lost a part or gained one, and so may the neighbours. A property
 /// write invalidates only the side it landed on: the targets if it touched
-/// a selected part (a typed coordinate, an undo of one), the neighbours if
-/// it touched anything else (a script moving parts the user has not
-/// selected). A drag writes only selected parts, so it never pays for the
-/// workspace walk the neighbours cost.
-pub(super) fn refresh_for(changes: &[Change], selected: &[Ref]) -> Refresh {
+/// a part the selection *covers* (a typed coordinate, an undo of one), the
+/// neighbours if it touched anything else (a script moving parts the user
+/// has not selected). `covered` is every part the draggers carry — the
+/// selected parts themselves and every part beneath a selected `Model`
+/// (see `Shell::covered`) — not the selection's own referents: a drag of a
+/// Model writes its parts, never the Model, and judged against the Model's
+/// referent alone every one of those writes read as "something else
+/// moved", walking the whole workspace for the neighbours once per mouse
+/// move. A drag writes only covered parts, so it never pays that walk.
+pub(super) fn refresh_for(changes: &[Change], covered: &HashSet<Ref>) -> Refresh {
     let mut refresh = Refresh {
         targets: false,
         neighbours: false,
@@ -257,7 +284,7 @@ pub(super) fn refresh_for(changes: &[Change], selected: &[Ref]) -> Refresh {
                 }
             }
         };
-        if selected.contains(&referent) {
+        if covered.contains(&referent) {
             refresh.targets = true;
         } else {
             refresh.neighbours = true;
@@ -270,7 +297,7 @@ pub(super) fn refresh_for(changes: &[Change], selected: &[Ref]) -> Refresh {
 mod tests {
     use rbx_dom::{Change, Ref};
 
-    use super::{refresh_for, Refresh};
+    use super::{refresh_for, HashSet, Refresh};
 
     fn write(id: u32, name: &str) -> Change {
         Change::Property {
@@ -288,7 +315,7 @@ mod tests {
     // The draggers follow; the neighbours are not walked again per frame.
     #[test]
     fn writes_on_the_selection_refresh_the_targets_alone() {
-        let selected = [Ref::new(1), Ref::new(2)];
+        let selected = HashSet::from([Ref::new(1), Ref::new(2)]);
         assert_eq!(
             refresh_for(&[write(1, "CFrame"), write(2, "CFrame")], &selected),
             Refresh {
@@ -303,7 +330,7 @@ mod tests {
     #[test]
     fn writes_off_the_selection_refresh_the_neighbours_alone() {
         assert_eq!(
-            refresh_for(&[write(7, "CFrame")], &[Ref::new(1)]),
+            refresh_for(&[write(7, "CFrame")], &HashSet::from([Ref::new(1)])),
             Refresh {
                 targets: false,
                 neighbours: true,
@@ -314,7 +341,10 @@ mod tests {
     #[test]
     fn writes_on_both_sides_refresh_both() {
         assert_eq!(
-            refresh_for(&[write(1, "size"), write(7, "size")], &[Ref::new(1)]),
+            refresh_for(
+                &[write(1, "size"), write(7, "size")],
+                &HashSet::from([Ref::new(1)])
+            ),
             BOTH
         );
     }
@@ -328,10 +358,11 @@ mod tests {
             old: None,
             new: Some(Ref::new(2)),
         };
-        assert_eq!(refresh_for(&[Change::Added(Ref::new(9))], &[]), BOTH);
-        assert_eq!(refresh_for(&[Change::Removed(Ref::new(9))], &[]), BOTH);
+        let none = HashSet::new();
+        assert_eq!(refresh_for(&[Change::Added(Ref::new(9))], &none), BOTH);
+        assert_eq!(refresh_for(&[Change::Removed(Ref::new(9))], &none), BOTH);
         assert_eq!(
-            refresh_for(&[write(1, "Name"), reparent], &[Ref::new(1)]),
+            refresh_for(&[write(1, "Name"), reparent], &HashSet::from([Ref::new(1)])),
             BOTH
         );
     }
@@ -339,7 +370,7 @@ mod tests {
     #[test]
     fn an_empty_log_refreshes_nothing() {
         assert_eq!(
-            refresh_for(&[], &[Ref::new(1)]),
+            refresh_for(&[], &HashSet::from([Ref::new(1)])),
             Refresh {
                 targets: false,
                 neighbours: false,

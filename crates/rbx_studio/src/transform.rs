@@ -206,12 +206,12 @@ pub(crate) enum Action {
 /// not Move either: creator-docs gives that chord to the move/scale increment
 /// field, so it jumps to the field instead.
 ///
-/// `Alt`/`⌥`+`R`, the docs' shortcut for the *rotate* increment field, stays
-/// unbound while that field has no Rotate tool behind it — the same reason
-/// `3` and `4` are unbound.
+/// `Alt`/`⌥`+`R` is the docs' own chord for the *rotate* increment field,
+/// the counterpart of `Shift`+`2`.
 pub(crate) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
     let plain = !modifiers.control && !modifiers.alt && !modifiers.shift && !modifiers.platform;
     let only_shift = modifiers.shift && !modifiers.control && !modifiers.alt && !modifiers.platform;
+    let only_alt = modifiers.alt && !modifiers.control && !modifiers.shift && !modifiers.platform;
     match key {
         // `platform` is Cmd on a Mac, where creator-docs gives the toggle as
         // ⌘L rather than Ctrl+L.
@@ -219,6 +219,7 @@ pub(crate) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
             Some(Action::ToggleLocal)
         }
         "2" if only_shift => Some(Action::FocusIncrement(SnapKind::Translate)),
+        "r" if only_alt => Some(Action::FocusIncrement(SnapKind::Rotate)),
         _ if !plain => None,
         "1" => Some(Action::Use(Tool::Select)),
         "2" => Some(Action::Use(Tool::Move)),
@@ -318,7 +319,7 @@ impl Target {
 
     /// Rebuilds the model matrix the way `pick::part_model` does: the
     /// orientation's columns scaled by the size, and the centre in the last.
-    fn placed(self, orientation: Mat3, size: Vec3, position: Vec3) -> Self {
+    pub(crate) fn placed(self, orientation: Mat3, size: Vec3, position: Vec3) -> Self {
         Target {
             model: Mat4::from_cols(
                 (orientation.x_axis * size.x).extend(0.0),
@@ -414,6 +415,89 @@ impl Targets {
 
     pub(crate) fn iter(&self) -> impl Iterator<Item = &Target> {
         self.0.iter()
+    }
+
+    /// How many parts the selection covers.
+    pub(crate) fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// The box the Scale handles stand on — see `rbx_viewer::gizmo::scale_box`,
+    /// which the renderer draws them from.
+    pub(crate) fn scale_box(&self) -> Option<Mat4> {
+        gizmo::scale_box(self.0.iter().map(|target| target.model))
+    }
+
+    /// Every part scaled by the same `factor` about `pivot`, from where it
+    /// stood in `held` — the selection as it was when the handle was grabbed,
+    /// so a whole gesture is one absolute factor rather than a running
+    /// product that drifts. A group has no one `Size` to write, so it scales
+    /// the way `Model:ScaleTo` does: each part's size by the factor, each
+    /// centre by the factor along its offset from the pivot, orientations
+    /// untouched. Replaces this value and returns what `Shell` writes: each
+    /// referent's new size and position.
+    pub(crate) fn scale_about(
+        &mut self,
+        held: &Targets,
+        pivot: Vec3,
+        factor: f32,
+    ) -> Vec<(Ref, Vec3, Vec3)> {
+        self.0 = held
+            .0
+            .iter()
+            .map(|target| {
+                let size = target.size() * factor;
+                let position = pivot + (target.position() - pivot) * factor;
+                target.placed(target.orientation(), size, position)
+            })
+            .collect();
+        self.0
+            .iter()
+            .map(|target| (target.referent, target.size(), target.position()))
+            .collect()
+    }
+
+    /// The largest and smallest factor [`Targets::scale_about`] may take
+    /// before some part's size leaves `min..=max` on some axis — the whole
+    /// group stops growing when its biggest part hits the ceiling, exactly as
+    /// a lone part stops at its own.
+    pub(crate) fn factor_within(&self, factor: f32, min: f32, max: f32) -> f32 {
+        let mut clamped = factor;
+        for target in &self.0 {
+            let size = target.size();
+            for axis in 0..3 {
+                if size[axis] > 0.0 {
+                    clamped = clamped.clamp(min / size[axis], max / size[axis]);
+                }
+            }
+        }
+        clamped
+    }
+
+    /// Every part turned by `rotation` about `centre`, from where it stood in
+    /// `held` (see [`Targets::scale_about`] for why the gesture's start is
+    /// the reference): its orientation turned, its centre swung round the
+    /// pivot with it, so the group keeps its own arrangement. Returns what
+    /// `Shell` writes: each referent's new orientation and position.
+    pub(crate) fn rotate_about(
+        &mut self,
+        held: &Targets,
+        centre: Vec3,
+        rotation: Mat3,
+    ) -> Vec<(Ref, Mat3, Vec3)> {
+        self.0 = held
+            .0
+            .iter()
+            .map(|target| {
+                let orientation = rotation * target.orientation();
+                let position = centre + rotation * (target.position() - centre);
+                target.placed(orientation, target.size(), position)
+            })
+            .collect();
+        self.0
+            .iter()
+            .map(|target| (target.referent, target.orientation(), target.position()))
+            .collect()
     }
 
     /// Moves every target by the same offset, which is what keeps a group

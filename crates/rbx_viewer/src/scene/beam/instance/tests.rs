@@ -91,8 +91,19 @@ fn a_beam_with_no_properties_falls_back_to_documented_defaults() {
         "no Texture set means flat colour"
     );
     assert!(!beam.face_camera);
+    // LightInfluence defaults to 1 — a beam is affected by light unless a
+    // place opts out (see `beam.wgsl`).
+    assert_eq!(beam.light_influence, 1.0);
     assert!((beam.curve.position(0.0) - Vec3::ZERO).length() < 1e-5);
     assert!((beam.curve.position(1.0) - Vec3::new(10.0, 0.0, 0.0)).length() < 1e-5);
+}
+
+#[test]
+fn light_influence_is_read_and_clamped() {
+    let (dom, _) = fixture(vec![("LightInfluence", Variant::Float32(0.0))]);
+    assert_eq!(plan(&dom, &database())[0].light_influence, 0.0);
+    let (dom, _) = fixture(vec![("LightInfluence", Variant::Float32(5.0))]);
+    assert_eq!(plan(&dom, &database())[0].light_influence, 1.0);
 }
 
 #[test]

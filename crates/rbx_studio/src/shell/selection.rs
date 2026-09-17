@@ -56,6 +56,15 @@ pub(super) fn shown(
     )
 }
 
+/// Whether `nearest` — the part a click actually lands on, `None` for a
+/// click on nothing — is already part of the selection `outlined` describes:
+/// a selected part itself, or a part beneath a selected `Model`. What lets a
+/// Move body-drag begin on it rather than re-select it (see
+/// `Shell::pick_in_viewport`).
+pub(super) fn covers(outlined: &[Selected], nearest: Option<Ref>) -> bool {
+    nearest.is_some_and(|part| outlined.iter().any(|entry| entry.parts().contains(&part)))
+}
+
 impl Shell {
     /// Re-resolves the selection against the current `self.dom` and sends the
     /// viewport both halves of it (see [`shown`]).
@@ -66,6 +75,7 @@ impl Shell {
     /// reselecting.
     pub(super) fn sync_viewport_selection(&mut self, cx: &mut Context<Self>) {
         let (outline, targets) = shown(&self.dom, &self.database, self.selection.all());
+        self.covered = targets.iter().map(|target| target.referent).collect();
         self.viewport.update(cx, |viewport, _| {
             viewport.set_selection(&outline);
             viewport.set_targets(targets);
@@ -119,6 +129,15 @@ impl Selection {
     /// documents the "adds another object" half; toggling back off on a
     /// second click of the same object is not spelled out there, but is
     /// standard multi-select behaviour and what Studio itself does.
+    /// Replaces the whole selection, reporting whether it changed — what an
+    /// undo needs, since a multi-selection survives one exactly as far as
+    /// its referents still resolve.
+    pub(super) fn replace(&mut self, selected: Vec<Ref>) -> bool {
+        let changed = self.0 != selected;
+        self.0 = selected;
+        changed
+    }
+
     pub(super) fn toggle(&mut self, reference: Ref) {
         match self.0.iter().position(|&selected| selected == reference) {
             Some(index) => {
@@ -230,6 +249,19 @@ mod tests {
     }
 
     #[test]
+    fn replacing_keeps_every_survivor_of_a_multi_selection() {
+        let (a, b, c) = (Ref::new(1), Ref::new(2), Ref::new(3));
+        let mut selection = Selection::new([a, b, c]);
+
+        assert!(!selection.replace(vec![a, b, c]), "nothing changed");
+        assert!(selection.replace(vec![a, c]), "b is gone");
+        assert_eq!(selection.all(), [a, c]);
+        assert_eq!(selection.get(), Some(a));
+        assert!(selection.replace(Vec::new()));
+        assert_eq!(selection.get(), None);
+    }
+
+    #[test]
     fn toggling_adds_and_then_removes_an_instance() {
         let a = Ref::new(1);
         let b = Ref::new(2);
@@ -301,6 +333,37 @@ mod tests {
         let inner = dom.new_instance("Model", "Door", Some(outer));
         let deep = dom.new_instance("Part", "Handle", Some(inner));
         (dom, loose, outer, inner, deep)
+    }
+
+    // The bug this exists for: with the Move tool up, a click on a part
+    // standing in front of the selection body-dragged the selection instead
+    // of selecting the part, because the view only ever tested the
+    // selection's own boxes.
+    #[test]
+    fn a_click_on_a_selected_part_or_inside_a_selected_model_is_a_body_grab() {
+        let (dom, loose, outer, _, deep) = nested_place();
+        let database = ReflectionDatabase::embedded();
+
+        let part_selected = outlined(&dom, &database, &[loose]);
+        assert!(covers(&part_selected, Some(loose)));
+        assert!(
+            !covers(&part_selected, Some(deep)),
+            "a part outside the selection is a pick"
+        );
+
+        let model_selected = outlined(&dom, &database, &[outer]);
+        assert!(
+            covers(&model_selected, Some(deep)),
+            "any part beneath the model drags it"
+        );
+        assert!(!covers(&model_selected, Some(loose)));
+    }
+
+    #[test]
+    fn a_click_on_nothing_never_grabs() {
+        let (dom, loose, ..) = nested_place();
+        let database = ReflectionDatabase::embedded();
+        assert!(!covers(&outlined(&dom, &database, &[loose]), None));
     }
 
     #[test]

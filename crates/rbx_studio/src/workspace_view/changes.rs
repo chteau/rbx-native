@@ -2,7 +2,7 @@
 //! own render loop: passing on a selection or a hover, and reflecting an edit
 //! to the DOM.
 
-use rbx_dom::{Change, Ref, Snapshot};
+use rbx_dom::{Change, Snapshot};
 use rbx_viewer::pick::Selected;
 
 use super::WorkspaceView;
@@ -13,10 +13,10 @@ impl WorkspaceView {
         self.pump.select(selected.to_vec());
     }
 
-    /// Forwards the hovered part (or `None`, clearing it), forcing one frame
-    /// even at rest — the same reason `set_selection` above does.
-    pub(crate) fn set_hover(&mut self, referent: Option<Ref>) {
-        self.pump.hover(referent);
+    /// Forwards the instances a hover covers (empty to clear it), forcing one
+    /// frame even at rest — the same reason `set_selection` above does.
+    pub(crate) fn set_hover(&mut self, selected: Vec<Selected>) {
+        self.pump.hover(selected);
     }
 
     /// Reflects one edit's `Change` log in the render thread's scene, every

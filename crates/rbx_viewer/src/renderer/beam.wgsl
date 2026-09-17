@@ -9,6 +9,8 @@
 
 struct Camera {
     view_projection: mat4x4<f32>,
+    // The light a `LightInfluence`-1 beam is tinted by (rgb; w padding).
+    env_light: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> camera: Camera;
@@ -21,6 +23,7 @@ struct VertexInput {
     @location(2) color: vec3<f32>,
     @location(3) alpha: f32,
     @location(4) light_emission: f32,
+    @location(5) light_influence: f32,
 }
 
 struct VertexOutput {
@@ -36,7 +39,12 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     out.clip_position = camera.view_projection * vec4<f32>(in.position, 1.0);
     out.uv = in.uv;
-    out.color = in.color;
+    // `LightInfluence` blends the beam's own colour toward that colour lit by
+    // the scene: 0 leaves it at full brightness (unlit), 1 lets the scene's
+    // light tint it. Done here, per vertex, because the light is one value for
+    // the whole frame — the fragment shader stays a plain texture multiply.
+    let lit = in.color * camera.env_light.rgb;
+    out.color = mix(in.color, lit, in.light_influence);
     out.alpha = in.alpha;
     out.light_emission = in.light_emission;
     return out;

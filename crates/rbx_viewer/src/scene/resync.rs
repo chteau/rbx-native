@@ -36,8 +36,12 @@ pub(crate) enum Drawn {
     Box(Part),
     /// A resolved file mesh or computed union mesh:
     /// `Scene::resolved_file_meshes`'s `instances[index]`. Its box is
-    /// suppressed, and with it its placement.
-    Mesh(usize),
+    /// suppressed from the shaded passes, but `placement` is kept — its own
+    /// oriented bounding box — so the selection and hover outlines and the
+    /// transform gizmo still have a placement for a mesh part, exactly as
+    /// Studio outlines a mesh by its bounding box and sits the gizmo on its
+    /// `CFrame`/`Size`.
+    Mesh { index: usize, placement: Placement },
     /// The additive pieces recovered from a union whose boolean failed (see
     /// `scene::union`), each its own instance in every box pass. `placement`
     /// is the union's own box, which is not drawn but is still what an
@@ -201,7 +205,10 @@ impl Scene {
                             Some(instance) if instance.material.layer as usize >= known_layers => {
                                 return Err(Rebuild::Asset);
                             }
-                            Some(instance) => Drawn::Mesh(self.place_instance(instance)),
+                            Some(instance) => Drawn::Mesh {
+                                index: self.place_instance(instance),
+                                placement: part.placement(),
+                            },
                         }
                     }
                 }

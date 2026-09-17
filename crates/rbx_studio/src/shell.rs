@@ -21,6 +21,7 @@ mod scripts;
 mod selection;
 mod toolbar;
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -33,6 +34,7 @@ use gpui_kit::component::{h_flex, v_flex, ActiveTheme, IndexPath, Sizable};
 use gpui_kit::*;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
+use rbx_viewer::pick::Selected;
 use rbx_viewer::QualityLevel;
 
 use crate::class_icons::SpriteSheet;
@@ -92,7 +94,14 @@ pub(crate) struct Shell {
     /// above, purely to dedupe: the viewport reports cursor motion on every
     /// pixel, and only an actual change is worth a command down to the
     /// render thread.
-    hovered: Option<Ref>,
+    hovered: Vec<Selected>,
+    /// Every part the selection covers — the selected parts and every part
+    /// beneath a selected `Model`: exactly the referents a drag writes, kept
+    /// so `shell::command::refresh_for` can tell a drag's own writes from
+    /// an edit to something else without walking the tree per mouse move.
+    /// Re-read whenever the draggers' targets are (see
+    /// `Shell::sync_viewport_selection`, `Shell::reflect_changes`).
+    covered: HashSet<Ref>,
     /// Every script open in the Script Editor panel; see `shell::scripts`.
     scripts: ScriptEditor,
     properties_scroll: ScrollHandle,
@@ -257,7 +266,8 @@ impl Shell {
             properties,
             edits: edit::Edits::default(),
             selection: Selection::new(selected),
-            hovered: None,
+            hovered: Vec::new(),
+            covered: HashSet::new(),
             scripts: ScriptEditor::default(),
             properties_scroll: ScrollHandle::new(),
             dock_area,
@@ -445,11 +455,12 @@ impl Shell {
         // apply here too, immediately.
         let stale_hover = self
             .hovered
-            .is_some_and(|hovered| self.selection.all().contains(&hovered));
+            .iter()
+            .any(|entry| entry.parts().iter().all(|part| self.covered.contains(part)));
         if stale_hover {
             self.viewport
-                .update(cx, |viewport, _| viewport.set_hover(None));
-            self.hovered = None;
+                .update(cx, |viewport, _| viewport.set_hover(Vec::new()));
+            self.hovered.clear();
         }
         // Whatever just stopped being selected becomes one of the neighbours
         // a drag can settle against, and whatever just started stops being

@@ -82,6 +82,12 @@ impl Faces {
 
     /// The outward unit normal of this axis's `+` face — the part's own axis,
     /// which is the only direction its `Size` can grow along.
+    /// How long the box is along one of its own axes — what a pull on that
+    /// axis's ball is measured against when a group scales in proportion.
+    pub fn extent(&self, axis: Axis) -> f32 {
+        2.0 * self.half[axis as usize]
+    }
+
     pub fn direction(&self, axis: Axis) -> Vec3 {
         self.basis[axis as usize]
     }

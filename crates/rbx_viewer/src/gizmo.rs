@@ -306,6 +306,28 @@ pub fn centre_of(models: impl IntoIterator<Item = Mat4>) -> Option<Vec3> {
 /// and not just its middle: the outline drawn around a container is exactly
 /// this extent, and deriving it a second time somewhere else is how the box
 /// the user sees and the point the gizmo stands on start to disagree.
+/// The box the Scale tool's handles stand on: a single part's own oriented
+/// box, or — for more than one — the world-axis-aligned box round all of
+/// them, as the `Mat4` `part_model` would give a box-shaped part of that
+/// size at that centre. Shared by the renderer and the editor's hit test for
+/// the same reason [`centre_of`] is: two derivations of "where the handles
+/// are" are two things that can disagree.
+///
+/// `creator-docs` (`parts/models.md#transform-models`): "a model transforms
+/// based on the center of its bounding box" — and the bounding box it means
+/// is the world-aligned one `bounds_of` computes.
+pub fn scale_box(models: impl IntoIterator<Item = Mat4>) -> Option<Mat4> {
+    let models: Vec<Mat4> = models.into_iter().collect();
+    match models.as_slice() {
+        [] => None,
+        [only] => Some(*only),
+        many => {
+            let (min, max) = bounds_of(many.iter().copied())?;
+            Some(Mat4::from_translation((min + max) * 0.5) * Mat4::from_scale(max - min))
+        }
+    }
+}
+
 pub fn bounds_of(models: impl IntoIterator<Item = Mat4>) -> Option<(Vec3, Vec3)> {
     let mut bounds: Option<(Vec3, Vec3)> = None;
     for model in models {

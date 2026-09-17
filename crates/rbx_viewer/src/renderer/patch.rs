@@ -77,11 +77,16 @@ impl Renderer {
                 self.shadows.remove_mesh_caster(referent);
                 true
             }
-            Drawn::Mesh(index) => {
+            Drawn::Mesh { index, placement } => {
                 let instance = &resolved.instances[*index];
                 self.drop_box(whole);
-                self.selection.remove(referent);
-                self.hover.remove(device, referent);
+                // A mesh part keeps a placement in both outline maps — its own
+                // oriented bounding box — so it still outlines on hover and
+                // selection and still carries a gizmo, rather than losing all
+                // three the moment its mesh finishes downloading and it stops
+                // drawing as a box.
+                self.selection.place(referent, *placement);
+                self.hover.place(device, referent, *placement);
                 self.filemesh.sync(device, queue, resolved, instance)
                     && self.shadows.sync_mesh_caster(device, resolved, instance)
             }

@@ -59,6 +59,9 @@ pub(crate) struct Beam {
     pub(crate) texture_mode: TextureMode,
     pub(crate) texture_speed: f32,
     pub(crate) light_emission: f32,
+    /// `Beam.LightInfluence`: 0 draws the beam at full brightness (its own
+    /// colour, unlit), 1 lets the scene's light tint it — see `beam.wgsl`.
+    pub(crate) light_influence: f32,
     pub(crate) face_camera: bool,
     /// World-space `Attachment0`/`Attachment1` **Y** axis (`SecondaryAxis`),
     /// used to orient the ribbon when `face_camera` is false — see the task
@@ -122,6 +125,7 @@ fn build(
         texture_mode: texture_mode_or(properties, "TextureMode", TextureMode::Stretch),
         texture_speed: float_or(properties, "TextureSpeed", DEFAULT_TEXTURE_SPEED),
         light_emission: float_or(properties, "LightEmission", 0.0).clamp(0.0, 1.0),
+        light_influence: float_or(properties, "LightInfluence", 1.0).clamp(0.0, 1.0),
         face_camera: bool_or(properties, "FaceCamera", false),
         secondary_axis0: start.y_axis.truncate().normalize_or_zero(),
         secondary_axis1: end.y_axis.truncate().normalize_or_zero(),

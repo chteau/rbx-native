@@ -47,7 +47,7 @@ fn a_referent_with_no_placement_draws_nothing() {
     // A part the scene never built: one outside `Workspace`, or a `MeshPart`
     // whose real mesh replaced its box (see `Scene::placements`).
     let placements = HashMap::new();
-    let vertices = vertices_for(&placements, &[part(1)]);
+    let vertices = outline::box_edges(&placements, &[part(1)]);
     assert!(vertices.is_empty());
 }
 
@@ -56,14 +56,14 @@ fn a_part_referent_draws_its_box() {
     let mut placements = HashMap::new();
     placements.insert(Ref::new(1), placement(Mat4::IDENTITY));
 
-    let vertices = vertices_for(&placements, &[part(1)]);
-    assert_eq!(vertices.len(), 24);
+    let vertices = outline::box_edges(&placements, &[part(1)]);
+    assert_eq!(vertices.len(), 72);
 }
 
 #[test]
 fn an_empty_selection_draws_nothing() {
     let placements = HashMap::new();
-    let vertices = vertices_for(&placements, &[]);
+    let vertices = outline::box_edges(&placements, &[]);
     assert!(vertices.is_empty());
 }
 
@@ -79,12 +79,12 @@ fn a_model_is_outlined_by_one_box_around_every_part_beneath_it() {
     placements.insert(second, cube(Vec3::new(4.0, 0.0, 0.0)));
 
     // One box for the whole model, not one per part.
-    let vertices = vertices_for(&placements, std::slice::from_ref(&selected));
-    assert_eq!(vertices.len(), 24);
+    let vertices = outline::box_edges(&placements, std::slice::from_ref(&selected));
+    assert_eq!(vertices.len(), 72);
 
     // Spanning -3 to 5 in x and -1 to 1 in y and z: the union of two
     // two-stud cubes three studs and five studs from the origin.
-    let model = box_of(&placements, &selected).unwrap();
+    let model = outline::box_of(&placements, &selected).unwrap();
     assert!((model.w_axis.truncate() - Vec3::new(1.0, 0.0, 0.0)).length() < 1e-4);
     assert!((model.x_axis.length() - 8.0).abs() < 1e-4);
     assert!((model.y_axis.length() - 2.0).abs() < 1e-4);
@@ -99,7 +99,7 @@ fn a_model_with_no_parts_beneath_it_draws_nothing() {
     assert!(selected.parts().is_empty());
 
     let placements = HashMap::new();
-    assert!(vertices_for(&placements, std::slice::from_ref(&selected)).is_empty());
+    assert!(outline::box_edges(&placements, std::slice::from_ref(&selected)).is_empty());
     assert_eq!(anchor_of(&placements, &[selected]), None);
 }
 
@@ -113,8 +113,11 @@ fn a_models_outline_is_centred_where_its_gizmo_stands() {
         placements.insert(referent, cube(Vec3::splat(index as f32 * 7.0)));
     }
 
-    let outline = box_of(&placements, &selected).unwrap().w_axis.truncate();
-    let centre = gizmo::centre_of(models_of(&placements, &selected)).unwrap();
+    let outline = outline::box_of(&placements, &selected)
+        .unwrap()
+        .w_axis
+        .truncate();
+    let centre = gizmo::centre_of(outline::models_of(&placements, &selected)).unwrap();
     assert!((outline - centre).length() < 1e-4);
 }
 
@@ -212,8 +215,8 @@ fn a_part_with_parts_under_it_keeps_its_own_oriented_box() {
     placements.insert(handle, placement(turned));
     placements.insert(sight, cube(Vec3::new(9.0, 0.0, 0.0)));
 
-    assert_eq!(box_of(&placements, &selected), Some(turned));
-    assert_eq!(vertices_for(&placements, &[selected]).len(), 24);
+    assert_eq!(outline::box_of(&placements, &selected), Some(turned));
+    assert_eq!(outline::box_edges(&placements, &[selected]).len(), 72);
 }
 
 /// A model selected together with one of its own parts is one box, not two
@@ -232,7 +235,7 @@ fn a_model_and_a_part_inside_it_draw_one_box() {
         placements.insert(referent, cube(Vec3::new(index as f32 * 6.0, 0.0, 0.0)));
     }
 
-    assert_eq!(vertices_for(&placements, &selected).len(), 24);
+    assert_eq!(outline::box_edges(&placements, &selected).len(), 72);
 }
 
 /// What a drag of a whole model costs: each of its parts arrives through
@@ -288,7 +291,7 @@ fn the_box_follows_a_part_that_moved_under_it() {
 
     outline.place(second, cube(Vec3::new(20.0, 0.0, 0.0)));
     assert!(outline.take_vertices().is_some());
-    let widened = box_of(&outline.placements, &selected).expect("both parts placed");
+    let widened = outline::box_of(&outline.placements, &selected).expect("both parts placed");
     assert!((widened.x_axis.length() - 22.0).abs() < 1e-4);
 }
 
@@ -309,7 +312,7 @@ fn a_model_that_gained_a_part_is_outlined_around_it_once_resent() {
     }
     outline.set(std::slice::from_ref(&before));
     outline.take_vertices();
-    let narrow = box_of(&outline.placements, &before).expect("both parts placed");
+    let narrow = outline::box_of(&outline.placements, &before).expect("both parts placed");
     assert!((narrow.x_axis.length() - 6.0).abs() < 1e-4);
 
     // What the script did, and what the reload then has to re-resolve.
@@ -320,7 +323,7 @@ fn a_model_that_gained_a_part_is_outlined_around_it_once_resent() {
     outline.set(std::slice::from_ref(&after));
 
     assert!(outline.take_vertices().is_some());
-    let wide = box_of(&outline.placements, &after).expect("all three parts placed");
+    let wide = outline::box_of(&outline.placements, &after).expect("all three parts placed");
     assert!((wide.x_axis.length() - 22.0).abs() < 1e-4, "{wide}");
     assert!((wide.w_axis.truncate().x - 10.0).abs() < 1e-4, "{wide}");
 }

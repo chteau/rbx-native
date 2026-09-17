@@ -10,7 +10,7 @@ use glam::{Mat3, Mat4, Vec3};
 use gpui_kit::*;
 use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
 use rbx_viewer::gizmo;
-use rbx_viewer::pick::{self, Ray};
+use rbx_viewer::pick::{self, Ray, Selected};
 
 use crate::properties;
 use crate::settle::{self, Settle};
@@ -44,24 +44,16 @@ impl Shell {
                 ray,
                 cycling,
                 extend,
-            } => self.pick_in_viewport(*ray, *cycling, *extend, cx),
-            ViewportAction::Hover(ray) => self.hover_in_viewport(*ray, cx),
+                held,
+            } => self.pick_in_viewport(*ray, *cycling, *extend, *held, cx),
+            ViewportAction::Hover { ray, alt } => self.hover_in_viewport(*ray, *alt, cx),
             ViewportAction::Moved {
                 moves,
                 first,
                 settle,
             } => self.move_parts(moves, *first, *settle, cx),
-            ViewportAction::Resized {
-                referent,
-                size,
-                position,
-                first,
-            } => self.resize_part(*referent, *size, *position, *first, cx),
-            ViewportAction::Rotated {
-                referent,
-                orientation,
-                first,
-            } => self.rotate_part(*referent, *orientation, *first, cx),
+            ViewportAction::Resized { parts, first } => self.resize_parts(parts, *first, cx),
+            ViewportAction::Rotated { parts, first } => self.rotate_parts(parts, *first, cx),
             ViewportAction::Turned {
                 referent,
                 pivot,
@@ -82,32 +74,51 @@ impl Shell {
     /// to click" cue (see `ViewportAction::Hover`'s own doc comment for what
     /// `None` means).
     ///
-    /// Takes the nearest hit directly rather than going through
-    /// `selection::from_click`'s walk up to an enclosing `Model`: hovering is
-    /// never a click, Studio's "select the model" convention has nothing to
-    /// answer for here, and a `Model`/`Folder` referent has no placement for
-    /// the outline machinery to draw a box around in the first place (see
-    /// `rbx_viewer::renderer::hover`).
-    fn hover_in_viewport(&mut self, ray: Option<Ray>, cx: &mut Context<Self>) {
+    /// Resolves the outline exactly as a click would (see
+    /// `selection::from_click`): plain, the whole enclosing `Model`'s parts,
+    /// so the cue previews what a click selects; with `alt`, the single part
+    /// under the cursor, what `Alt`-click's cycling lands on. A hover that
+    /// only ever showed the raw nearest part told a Studio user the wrong
+    /// thing about a plain click on a model, and showed nothing extra when
+    /// they held `Alt` to reach a child.
+    ///
+    /// The parts the current selection already covers are dropped: a hover
+    /// box drawn right under the selection's own outline adds nothing (see
+    /// `Shell::selection_changed` for the other half of this, the selection
+    /// changing out from under a still-hovered part).
+    fn hover_in_viewport(&mut self, ray: Option<Ray>, alt: bool, cx: &mut Context<Self>) {
         let meshes = self.viewport.read(cx).meshes().clone();
-        let hovered = ray
+        let covered = self.covered.clone();
+        let hovered: Vec<Selected> = ray
             .and_then(|ray| {
-                pick::parts_along(&self.dom, &self.database, &meshes, ray)
+                let hits = pick::parts_along(&self.dom, &self.database, &meshes, ray);
+                // The same resolution a click makes, current selection and
+                // all: a plain hover previews the enclosing `Model` a plain
+                // click would take, and an `Alt` hover previews the *next*
+                // part `Alt`-click cycling would land on from the current
+                // selection — so the cue tracks the cycle rather than always
+                // showing the nearest hit. That last part is what makes the
+                // preview work with the camera inside a part: the surrounding
+                // part is the nearest hit (distance zero), and only cycling
+                // from the current selection reaches the child in front of it,
+                // for the hover exactly as for the click.
+                let referent =
+                    selection::from_click(&self.dom, &self.database, &hits, self.selected(), alt)?;
+                selection::outlined(&self.dom, &self.database, &[referent])
                     .into_iter()
-                    .next()
+                    // A hover entirely inside the current selection adds only a
+                    // second box right under the selection's own outline, so it
+                    // is dropped (see `Shell::selection_changed` for the other
+                    // half of this).
+                    .find(|entry| entry.parts().iter().any(|part| !covered.contains(part)))
+                    .map(|entry| vec![entry])
             })
-            // Hovering the part that is already selected would draw a second,
-            // near-identical box right under the selection's own outline for
-            // no visible gain, so it is suppressed rather than layered under
-            // it — see `Shell::selection_changed` for the other half of this,
-            // the case where the selection changes out from under a
-            // still-hovered part rather than the other way around.
-            .filter(|referent| !self.selected_all().contains(referent));
+            .unwrap_or_default();
 
         if hovered == self.hovered {
             return;
         }
-        self.hovered = hovered;
+        self.hovered = hovered.clone();
         self.viewport
             .update(cx, |viewport, _| viewport.set_hover(hovered));
     }
@@ -119,12 +130,37 @@ impl Shell {
     /// selection instead, leaving an empty-space click with the modifier held
     /// alone rather than clearing everything a Studio user did not ask to
     /// drop.
-    fn pick_in_viewport(&mut self, ray: Ray, cycling: bool, extend: bool, cx: &mut Context<Self>) {
+    ///
+    /// With `held`, the view has a Move body-drag waiting on this same click
+    /// (see `ViewportAction::Pick`): it goes ahead, and the selection stays
+    /// as it is, only when the part actually under the cursor is already
+    /// selected — itself, or through a selected `Model` — the way Studio
+    /// drags a selected object from any point on it. Anything nearer takes
+    /// the click as an ordinary pick instead.
+    fn pick_in_viewport(
+        &mut self,
+        ray: Ray,
+        cycling: bool,
+        extend: bool,
+        held: bool,
+        cx: &mut Context<Self>,
+    ) {
         // The viewport holds a handle onto the render thread's own mesh data
         // (see `WorkspaceView::meshes`): what keeps a `MeshPart`'s pick on the
         // triangles actually drawn rather than the box around them.
         let meshes = self.viewport.read(cx).meshes().clone();
         let hits = pick::parts_along(&self.dom, &self.database, &meshes, ray);
+        if held {
+            let outlined = selection::outlined(&self.dom, &self.database, self.selected_all());
+            let covered = selection::covers(&outlined, hits.first().copied());
+            self.viewport.update(cx, |viewport, cx| match covered {
+                true => viewport.confirm_grab(cx),
+                false => viewport.refuse_grab(),
+            });
+            if covered {
+                return;
+            }
+        }
         let picked =
             selection::from_click(&self.dom, &self.database, &hits, self.selected(), cycling);
 
@@ -210,48 +246,50 @@ impl Shell {
         cx.notify();
     }
 
-    /// One step of a Scale drag. Two properties, because Studio's Scale tool
-    /// holds the face opposite the grabbed one still: the part's `Size` grows
-    /// and its `CFrame` shifts by half of that growth, and either one written
-    /// without the other would show the part jumping.
-    fn resize_part(
-        &mut self,
-        referent: Ref,
-        size: Vec3,
-        position: Vec3,
-        first: bool,
-        cx: &mut Context<Self>,
-    ) {
-        let (size, position) = (vector(size), vector(position));
-        self.write_drag(
-            referent,
-            first,
-            &[(SIZE_PROPERTY, &size), (CFRAME_PROPERTY, &position)],
-            cx,
-        );
+    /// One step of a Scale drag, for every part it carries. Two properties
+    /// per part, because Studio's Scale tool holds the face opposite the
+    /// grabbed one still: the part's `Size` grows and its `CFrame` shifts by
+    /// half of that growth — or, for a group scaled as a whole, by its
+    /// offset from the box's far face — and either one written without the
+    /// other would show the part jumping.
+    fn resize_parts(&mut self, parts: &[(Ref, Vec3, Vec3)], first: bool, cx: &mut Context<Self>) {
+        let writes: Vec<(Ref, &str, String)> = parts
+            .iter()
+            .flat_map(|&(referent, size, position)| {
+                [
+                    (referent, SIZE_PROPERTY, vector(size)),
+                    (referent, CFRAME_PROPERTY, vector(position)),
+                ]
+            })
+            .collect();
+        self.write_drag(first, &writes, cx);
     }
 
-    /// One step of a Rotate drag. The rings stand on the part's centre, so
-    /// only the `CFrame`'s rotation changes — written as the nine numbers
-    /// Roblox's own `CFrame.new(x, y, z, R00 … R22)` takes them in, row by row
-    /// (`creator-docs`, `reference/engine/datatypes/CFrame.yaml`).
-    fn rotate_part(
-        &mut self,
-        referent: Ref,
-        orientation: Mat3,
-        first: bool,
-        cx: &mut Context<Self>,
-    ) {
-        let rows = (0..3).flat_map(|row| (0..3).map(move |column| orientation.col(column)[row]));
-        let text = rows
-            .map(|term| term.to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        self.write_drag(referent, first, &[(CFRAME_PROPERTY, &text)], cx);
+    /// One step of a Rotate drag, for every part it carries: the rotation
+    /// and the centre together, as the twelve numbers Roblox's own
+    /// `CFrame.new(x, y, z, R00 … R22)` takes them in, row by row
+    /// (`creator-docs`, `reference/engine/datatypes/CFrame.yaml`) — a lone
+    /// part turning about itself keeps its centre, a part of a group swings
+    /// round the group's.
+    fn rotate_parts(&mut self, parts: &[(Ref, Mat3, Vec3)], first: bool, cx: &mut Context<Self>) {
+        let writes: Vec<(Ref, &str, String)> = parts
+            .iter()
+            .map(|&(referent, orientation, position)| {
+                let rows =
+                    (0..3).flat_map(|row| (0..3).map(move |column| orientation.col(column)[row]));
+                let text = [position.x, position.y, position.z]
+                    .into_iter()
+                    .chain(rows)
+                    .map(|term| term.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                (referent, CFRAME_PROPERTY, text)
+            })
+            .collect();
+        self.write_drag(first, &writes, cx);
     }
 
-    /// Writes one step of a Scale or Rotate drag into the DOM, reporting
-    /// whether it succeeded.
+    /// Writes one step of a Scale or Rotate drag into the DOM.
     ///
     /// History is pushed once, on `first`: a snapshot is a whole `WeakDom`
     /// clone (see `crate::history`), so one per mouse move would both cost
@@ -260,36 +298,29 @@ impl Shell {
     /// the same `properties::edit::commit` the Properties panel uses, so a
     /// drag and a typed value cannot disagree about what transforming a part
     /// means.
-    fn write_drag(
-        &mut self,
-        referent: Ref,
-        first: bool,
-        properties: &[(&str, &str)],
-        cx: &mut Context<Self>,
-    ) -> bool {
+    fn write_drag(&mut self, first: bool, writes: &[(Ref, &str, String)], cx: &mut Context<Self>) {
         if first {
             self.push_history();
         }
 
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
-        let written = properties.iter().try_for_each(|(name, text)| {
-            properties::edit::commit(&mut dom, &self.database, referent, name, text).map(|_| ())
+        let written = writes.iter().try_for_each(|(referent, name, text)| {
+            properties::edit::commit(&mut dom, &self.database, *referent, name, text).map(|_| ())
         });
         self.dom = dom;
         // Same reasoning as `move_parts`: overwrites the entry's log with
-        // just this step's writes. `properties` carries one name (a Rotate
-        // drag) or two (Scale's paired Size/CFrame), all on the one part —
-        // one patch of that part either way, here and on undo.
+        // just this step's writes — one `CFrame` per part for a Rotate,
+        // Size and CFrame per part for a Scale — one patch of each part
+        // either way, here and on undo.
         let changes = self.dom.take_changes();
         self.reflect_changes(&changes, cx);
         self.record_history_change(changes);
 
         if let Err(err) = written {
             self.output.push_warning(&format!("viewport drag: {err}"));
-            return false;
+            return;
         }
         cx.notify();
-        true
     }
 
     /// A `T`/`R` quarter turn mid-drag.

@@ -96,20 +96,22 @@ impl Shell {
     /// Installs `dom` as the canonical tree and reflects it in the viewport
     /// — through `Shell::reflect_changes`, with the log the step's mutation
     /// produced (see this module's doc comment) — plus the Explorer and the
-    /// selection: cleared when its referent no longer resolves in `dom`,
-    /// the same rule `shell::keys::selection_after_removal` applies to a
-    /// delete. The selection settles before the viewport is told, since what
-    /// the viewport refreshes on this side depends on it.
+    /// selection: each entry kept exactly as far as its referent still
+    /// resolves in `dom`, the same rule `shell::keys::selection_after_removal`
+    /// applies to a delete, so undoing a group drag leaves the group
+    /// selected rather than just its anchor. The selection settles before
+    /// the viewport is told, since what the viewport refreshes on this side
+    /// depends on it.
     fn install(&mut self, dom: WeakDom, changes: &[Change], cx: &mut Context<Self>) {
         self.dom = dom;
         self.rebuild_explorer(cx);
-        match self
-            .selected()
+        let kept: Vec<rbx_dom::Ref> = self
+            .selected_all()
+            .iter()
+            .copied()
             .filter(|reference| self.dom.get(*reference).is_some())
-        {
-            Some(kept) => self.select(kept, cx),
-            None => self.deselect(cx),
-        }
+            .collect();
+        self.reselect(kept, cx);
         self.reflect_changes(changes, cx);
         cx.notify();
     }
