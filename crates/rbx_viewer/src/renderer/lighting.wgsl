@@ -70,11 +70,11 @@ struct LightingUniform {
 // primary-source derivation — Roblox publishes no formula for it — so it is
 // empirically tuned instead: low enough that an upward face reflecting the
 // sky never reads as a mirror, high enough that a curved part shows a real
-// highlight against the sun the way Studio's does. Raised from an earlier
-// 0.2 toward a stronger sun highlight — the maintainer's own reading against
-// Studio was that 0.2 sat too flat — while staying below the point a flat
-// upward face starts to read as a mirror (verified on the material-sample
-// fixture, which does not blow out at this value).
+// highlight against the sun the way Studio's does. This is the highlight's
+// strength at full EnvironmentSpecularScale; the term is scaled by that dial
+// in `shade`, so a place that sets it to 0 is matte here whatever this value
+// is (see `shade` for why). Verified against the material-sample fixture
+// (scale 1, glossy) and marked.rbxl (scale 0, matte).
 const PLASTIC_SHININESS: f32 = 30.0;
 const PLASTIC_SPEC_STRENGTH: f32 = 0.28;
 const PLASTIC_ROUGHNESS: f32 = 0.25;
@@ -304,8 +304,17 @@ fn shade(surface: Surface) -> vec3<f32> {
         u32(max(lighting.locals.x, 0.0))
     );
 
+    // The sun's own specular highlight is scaled by EnvironmentSpecularScale
+    // (`tuning.y`), the same dial the environment reflection below is: a place
+    // that turns it to 0 (as many low-poly/stylised places do) reads as matte
+    // in Studio, its flat colours full and unwashed, and adding a broad sun
+    // highlight there is exactly what greyed the greens out. A place that
+    // leaves it at 1 keeps the full highlight. Roblox publishes no formula, so
+    // this ties the direct highlight to the same scale as the reflection it is
+    // physically the sharp end of — matched against Studio on a place with the
+    // scale at 0 (matte) and one at 1 (glossy).
     var color = surface.albedo * (direct + ambient + locals.diffuse)
-        + (specular * lighting.sun_color.rgb
+        + (specular * lighting.sun_color.rgb * lighting.tuning.y
             + locals.specular
             + environment * lighting.tuning.y * surface.spec_strength)
             * surface.spec_tint;
