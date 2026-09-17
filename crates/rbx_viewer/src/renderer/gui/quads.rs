@@ -7,12 +7,15 @@
 //! regrouping by texture the way the ribbon passes do would reorder the paint
 //! and is not available here.
 
+mod text;
+
 use std::collections::HashMap;
 use std::ops::Range;
 
 use rbx_assets::AssetRef;
 
 use super::pipeline::VertexRaw;
+use super::text::Typesetter;
 use crate::scene::{GuiElement, GuiRect};
 
 /// The slot every untextured rectangle — a background, a border — samples: a
@@ -41,6 +44,25 @@ pub(super) fn build(
     elements: &[GuiElement],
     textures: &HashMap<AssetRef, usize>,
     target: (u32, u32),
+    fonts: &mut Typesetter,
+) -> (Vec<VertexRaw>, Vec<Run>) {
+    loop {
+        let generation = fonts.atlas.generation();
+        let built = build_once(elements, textures, target, fonts);
+        // The glyph atlas grew part-way through and every UV handed out
+        // before that names the old packing: once more over the same
+        // elements, every glyph now cached. Growth is bounded, so this ends.
+        if fonts.atlas.generation() == generation {
+            return built;
+        }
+    }
+}
+
+fn build_once(
+    elements: &[GuiElement],
+    textures: &HashMap<AssetRef, usize>,
+    target: (u32, u32),
+    fonts: &mut Typesetter,
 ) -> (Vec<VertexRaw>, Vec<Run>) {
     let mut vertices = Vec::new();
     let mut runs: Vec<Run> = Vec::new();
@@ -91,27 +113,40 @@ pub(super) fn build(
         }
         extend(&mut runs, WHITE, scissor, start..vertices.len());
 
-        let Some(image) = &element.image else {
-            continue;
-        };
-        let Some(&texture) = textures.get(&image.asset) else {
-            // Never downloaded, or the fetch failed. Roblox draws nothing at
-            // all for an image it cannot load, so neither does this.
-            continue;
-        };
-        if image.alpha <= 0.0 {
-            continue;
+        // Never downloaded, or the fetch failed: Roblox draws nothing at all
+        // for an image it cannot load, so neither does this.
+        let image = element
+            .image
+            .as_ref()
+            .filter(|image| image.alpha > 0.0)
+            .and_then(|image| Some((image, *textures.get(&image.asset)?)));
+        if let Some((image, texture)) = image {
+            let start = vertices.len();
+            quad(
+                &element.rect,
+                image.repeat,
+                image.tint,
+                image.alpha,
+                &spin,
+                &mut vertices,
+            );
+            extend(&mut runs, texture, scissor, start..vertices.len());
         }
-        let start = vertices.len();
-        quad(
-            &element.rect,
-            image.repeat,
-            image.tint,
-            image.alpha,
-            &spin,
-            &mut vertices,
-        );
-        extend(&mut runs, texture, scissor, start..vertices.len());
+
+        // Last, over the background and the image, as Roblox layers a text
+        // object.
+        if let Some(typeset) = &element.text {
+            text::emit(
+                &element.rect,
+                typeset,
+                &text::strokes(&typeset.text),
+                &spin,
+                scissor,
+                fonts,
+                &mut vertices,
+                &mut runs,
+            );
+        }
     }
 
     (vertices, runs)

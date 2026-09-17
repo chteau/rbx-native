@@ -5,7 +5,11 @@
 //! which is the frame `UDim2` itself is written in; the renderer is what turns
 //! them into clip space.
 
+mod text;
+
 use rbx_assets::AssetRef;
+
+pub(crate) use text::{TextMeasure, Typeset};
 
 use super::plan::{Align, Fill, List, Node, Screen, Span, Tiling};
 use super::space::SpaceGui;
@@ -67,12 +71,29 @@ pub(crate) struct Element {
     /// `BorderSizePixel` and `BorderColor3`, `None` for a zero-width border.
     pub(crate) border: Option<(f32, [f32; 3])>,
     pub(crate) image: Option<Painted>,
+    /// A text object's text, drawn over the background and image.
+    pub(crate) text: Option<Typeset>,
 }
 
 /// Every element of every screen, in paint order: `DisplayOrder` first, then
 /// `ZIndex` among siblings, then tree order — and a child always over its
 /// parent, which is what `ZIndexBehavior.Sibling` (the default) means.
+///
+/// Text is laid out at `TextSize` as is, unmeasured: what a test with no font
+/// system wants, and what the renderer never calls — see [`resolve_with`].
+#[cfg(test)]
 pub(crate) fn resolve(screens: &[Screen], viewport: [f32; 2]) -> Vec<Element> {
+    resolve_with(screens, viewport, &mut text::Unmeasured)
+}
+
+/// [`resolve`] with the text measured by `measure` — what the renderer calls,
+/// so `TextScaled` and an `AutomaticSize` text box come out at the size the
+/// glyphs will actually take.
+pub(crate) fn resolve_with(
+    screens: &[Screen],
+    viewport: [f32; 2],
+    measure: &mut dyn TextMeasure,
+) -> Vec<Element> {
     let frame = canvas(viewport);
 
     let mut order: Vec<&Screen> = screens.iter().collect();
@@ -88,6 +109,7 @@ pub(crate) fn resolve(screens: &[Screen], viewport: [f32; 2]) -> Vec<Element> {
             &frame,
             None,
             false,
+            measure,
             &mut elements,
         );
     }
@@ -98,7 +120,13 @@ pub(crate) fn resolve(screens: &[Screen], viewport: [f32; 2]) -> Vec<Element> {
 /// canvas instead of the viewport: a container drawn into an offscreen texture
 /// is a viewport of `canvas` pixels as far as a `UDim2` is concerned, which is
 /// the whole reason this and [`resolve`] are one code path.
+#[cfg(test)]
 pub(crate) fn resolve_canvas(gui: &SpaceGui) -> Vec<Element> {
+    resolve_canvas_with(gui, &mut text::Unmeasured)
+}
+
+/// [`resolve_canvas`] with the text measured — see [`resolve_with`].
+pub(crate) fn resolve_canvas_with(gui: &SpaceGui, measure: &mut dyn TextMeasure) -> Vec<Element> {
     let frame = canvas(gui.canvas);
     let mut elements = Vec::new();
     children(
@@ -107,6 +135,7 @@ pub(crate) fn resolve_canvas(gui: &SpaceGui) -> Vec<Element> {
         &frame,
         None,
         false,
+        measure,
         &mut elements,
     );
     elements
@@ -132,6 +161,7 @@ fn children(
     parent: &Rect,
     clip: Option<Rect>,
     rotated: bool,
+    measure: &mut dyn TextMeasure,
     into: &mut Vec<Element>,
 ) {
     let rects = match list {
@@ -142,7 +172,7 @@ fn children(
             .collect(),
     };
     for index in sorted(nodes) {
-        emit(&nodes[index], rects[index], clip, rotated, into);
+        emit(&nodes[index], rects[index], clip, rotated, measure, into);
     }
 }
 
@@ -153,7 +183,21 @@ fn sorted(nodes: &[Node]) -> Vec<usize> {
     order
 }
 
-fn emit(node: &Node, rect: Rect, clip: Option<Rect>, rotated: bool, into: &mut Vec<Element>) {
+fn emit(
+    node: &Node,
+    rect: Rect,
+    clip: Option<Rect>,
+    rotated: bool,
+    measure: &mut dyn TextMeasure,
+    into: &mut Vec<Element>,
+) {
+    // Settled before the children are placed: an `AutomaticSize` text box
+    // grows here, and its children resolve against the grown box.
+    let mut rect = rect;
+    let text = node
+        .text
+        .as_ref()
+        .map(|text| text::typeset(text, &mut rect, measure));
     into.push(Element {
         rect,
         clip,
@@ -162,6 +206,7 @@ fn emit(node: &Node, rect: Rect, clip: Option<Rect>, rotated: bool, into: &mut V
         background_alpha: node.background_alpha,
         border: (node.border > 0.0).then_some((node.border, node.border_color)),
         image: node.fill.as_ref().map(|fill| painted(fill, &rect)),
+        text,
     });
 
     // Roblox's own docs describe two modes here, gated on the (NotScriptable,
@@ -182,6 +227,7 @@ fn emit(node: &Node, rect: Rect, clip: Option<Rect>, rotated: bool, into: &mut V
         &rect,
         inner,
         rotated,
+        measure,
         into,
     );
 }

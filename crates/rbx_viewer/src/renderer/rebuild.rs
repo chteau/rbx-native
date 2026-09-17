@@ -49,6 +49,7 @@ impl Renderer {
             lighting,
             lights,
             images,
+            fonts,
         } = world;
         let quality = self.quality;
 
@@ -162,6 +163,7 @@ impl Renderer {
             queue,
             (scene.gui_screens(), scene.gui_spaces()),
             images,
+            fonts,
             &quality,
         );
 

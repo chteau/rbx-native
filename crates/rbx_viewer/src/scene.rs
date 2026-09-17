@@ -22,6 +22,8 @@ use rbx_assets::AssetRef;
 use rbx_dom::{CFrameData, Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
+use crate::fonts::Face;
+
 pub(crate) use beam::{Beam, TextureMode};
 #[cfg(test)]
 pub(crate) use bounds::tests_support;
@@ -35,14 +37,16 @@ pub(crate) use filemesh::{
     fit_of as file_mesh_fit, AlphaMode, Appearance, Resolved, ResolvedInstance,
 };
 pub(crate) use gui::{
-    resolve as gui_layout, resolve_canvas as gui_canvas_layout, Anchor as GuiAnchor,
-    Element as GuiElement, Rect as GuiRect, Screen as GuiScreen, SpaceGui,
+    resolve_canvas_with as gui_canvas_layout_with, resolve_with as gui_layout_with,
+    span_face as gui_span_face, Align as GuiAlign, Anchor as GuiAnchor, Element as GuiElement,
+    Rect as GuiRect, Screen as GuiScreen, SpaceGui, Text as GuiText, TextMeasure as GuiTextMeasure,
+    Typeset as GuiTypeset,
 };
 pub(crate) use identity::PartId;
 // Only a test (`renderer::gui::quads`'s) names an element's image directly;
 // everything else reaches one through `GuiElement::image`.
 #[cfg(test)]
-pub(crate) use gui::Painted;
+pub(crate) use gui::{Painted, TextSpan as GuiTextSpan};
 pub(crate) use material::{Catalog, Kind, Maps, Slot};
 pub(crate) use particles::sequence::{eval_color, eval_number};
 pub(crate) use particles::{Emitter, Simulation};
@@ -336,6 +340,19 @@ impl Scene {
             gui.assets(&mut references);
         }
         references
+    }
+
+    /// Every font face the GUI trees' text wants, in first-seen paint order
+    /// and without repeats — see [`Scene::gui_assets`].
+    pub(crate) fn gui_fonts(&self) -> Vec<Face> {
+        let mut faces = Vec::new();
+        for screen in &self.gui {
+            screen.fonts(&mut faces);
+        }
+        for gui in &self.gui_spaces {
+            gui.fonts(&mut faces);
+        }
+        faces
     }
 
     /// Every material map the scene needs before [`Scene::resolve_materials`].

@@ -213,6 +213,7 @@ impl Renderer {
             queue,
             (world.scene.gui_screens(), world.scene.gui_spaces()),
             world.images,
+            world.fonts,
             &quality,
         );
     }

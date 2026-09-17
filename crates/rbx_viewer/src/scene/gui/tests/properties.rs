@@ -1,5 +1,5 @@
 //! What is read out of a DOM, and what is deliberately not: enabled flags,
-//! colours, borders, the unknown-class fallback and the skipped text classes.
+//! colours, borders, the unknown-class fallback and the text classes' boxes.
 
 use super::*;
 
@@ -108,12 +108,12 @@ fn a_gui_object_class_with_no_special_handling_is_drawn_like_a_frame() {
     );
 }
 
-// Text needs a font stack this viewer has not chosen yet, but a `TextLabel`'s
-// background is a plain box like any other and is often the only thing
-// painted over a part's face — dropping it whole left that face bare.
+// A `TextLabel`'s background is a plain box like any other, and is often the
+// only thing painted over a part's face; its text rides on the same element
+// (see `tests::text` for what is read into it).
 
 #[test]
-fn text_classes_draw_their_background_but_no_text() {
+fn text_classes_draw_their_background_and_carry_their_text() {
     let (mut dom, gui) = screen_gui();
     for class in ["TextLabel", "TextButton", "TextBox"] {
         let referent = dom.new_instance(class, class, Some(gui));
@@ -127,6 +127,7 @@ fn text_classes_draw_their_background_but_no_text() {
         assert_eq!(element.rect.size(), [10.0, 10.0]);
         assert_eq!(element.background_alpha, 1.0);
         assert!(element.image.is_none());
+        assert!(element.text.is_some());
     }
 }
 

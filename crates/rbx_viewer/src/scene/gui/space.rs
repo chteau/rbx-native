@@ -15,7 +15,10 @@ use rbx_assets::AssetRef;
 use rbx_dom::{Instance, Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
-use super::plan::{collect_assets, elements, flag, list_layout, span, vector2, List, Node};
+use super::plan::{
+    collect_assets, collect_fonts, elements, flag, list_layout, span, vector2, List, Node,
+};
+use crate::fonts::Face;
 use crate::scene::beam::{world_cframe, ParentMap};
 use crate::scene::Placement;
 use crate::textures::NormalId;
@@ -87,6 +90,13 @@ impl SpaceGui {
     pub(crate) fn assets(&self, into: &mut Vec<AssetRef>) {
         for root in &self.roots {
             collect_assets(root, into);
+        }
+    }
+
+    /// Every font face the canvas' text wants, in first-seen paint order.
+    pub(crate) fn fonts(&self, into: &mut Vec<Face>) {
+        for root in &self.roots {
+            collect_fonts(root, into);
         }
     }
 }

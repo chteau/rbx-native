@@ -21,20 +21,26 @@ mod paint;
 mod pipeline;
 mod quads;
 mod space;
+mod text;
 
 use glam::{Mat4, Vec3};
 
 use super::pipeline::Target;
 use super::post::Targets;
+use crate::fonts::Library;
 use crate::load::Answered;
 use crate::quality::QualityProfile;
-use crate::scene::{gui_layout, GuiScreen, SpaceGui};
+use crate::scene::{gui_layout_with, GuiScreen, SpaceGui};
 use atlas::Atlas;
 use paint::Painter;
 use space::Space;
+use text::Typesetter;
 
 pub(super) struct Gui {
     atlas: Atlas,
+    /// The one font system, rasteriser and glyph atlas behind every text
+    /// quad, on screen or on a canvas.
+    text: Typesetter,
     screen: Painter,
     screens: Vec<GuiScreen>,
     /// The viewport the overlay was laid out for; a different one rebuilds it.
@@ -51,7 +57,9 @@ pub(super) struct Gui {
 
 impl Gui {
     /// `images` is what the loader decoded for the trees' `ImageLabel`s
-    /// (see `Decor::gui`); this pass downloads nothing of its own.
+    /// (see `Decor::gui`) and `fonts` what it fetched for their text; this
+    /// pass downloads nothing of its own.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -59,15 +67,26 @@ impl Gui {
         target: Target,
         (screens, spaces): (&[GuiScreen], &[SpaceGui]),
         images: &Answered,
+        fonts: &Library,
         quality: &QualityProfile,
     ) -> Self {
-        let atlas = Atlas::new(device, queue, &[], images, quality);
+        let mut atlas = Atlas::new(device, queue, &[], images, quality);
+        let mut text = Typesetter::new();
         let viewport_layout = pipeline::viewport_layout(device);
         let screen_painter = Painter::new(device, format, &viewport_layout, &atlas.image_layout);
-        let space = Space::new(device, queue, target, &viewport_layout, &atlas, &[]);
+        let space = Space::new(
+            device,
+            queue,
+            target,
+            &viewport_layout,
+            &mut atlas,
+            &mut text,
+            &[],
+        );
 
         let mut gui = Gui {
             atlas,
+            text,
             screen: screen_painter,
             screens: Vec::new(),
             built: None,
@@ -75,7 +94,7 @@ impl Gui {
             viewport_layout,
             enabled: quality.gui,
         };
-        gui.rebuild(device, queue, (screens, spaces), images, quality);
+        gui.rebuild(device, queue, (screens, spaces), images, fonts, quality);
         gui
     }
 
@@ -89,6 +108,7 @@ impl Gui {
         queue: &wgpu::Queue,
         (screens, spaces): (&[GuiScreen], &[SpaceGui]),
         images: &Answered,
+        fonts: &Library,
         quality: &QualityProfile,
     ) {
         self.enabled = quality.gui;
@@ -113,11 +133,27 @@ impl Gui {
         }
         self.atlas
             .extend(device, queue, &references, images, quality);
+        // Same for the faces: a face the loader has since landed is loaded
+        // once, and the overlay laid out below is shaped with it.
+        let mut faces = Vec::new();
+        for screen in screens {
+            screen.fonts(&mut faces);
+        }
+        for gui in spaces {
+            gui.fonts(&mut faces);
+        }
+        self.text.adopt(fonts, &faces);
 
         self.screens = screens.to_vec();
         self.built = None;
-        self.space
-            .rebuild(device, queue, &self.viewport_layout, &self.atlas, spaces);
+        self.space.rebuild(
+            device,
+            queue,
+            &self.viewport_layout,
+            &mut self.atlas,
+            &mut self.text,
+            spaces,
+        );
     }
 
     /// Rebuilds the in-world pipelines for a new sample count — see
@@ -157,9 +193,20 @@ impl Gui {
         }
         if self.built != Some(size) {
             self.built = Some(size);
-            let elements = gui_layout(&self.screens, [size.0 as f32, size.1 as f32]);
-            self.screen
-                .prepare(device, queue, &elements, self.atlas.slot_of(), size);
+            let elements = gui_layout_with(
+                &self.screens,
+                [size.0 as f32, size.1 as f32],
+                &mut self.text,
+            );
+            self.screen.prepare(
+                device,
+                queue,
+                &elements,
+                self.atlas.slot_of(),
+                size,
+                &mut self.text,
+            );
+            self.atlas.sync_glyphs(device, queue, &mut self.text.atlas);
         }
         self.screen.draw(
             encoder,
@@ -195,13 +242,23 @@ mod tests {
         let images = Answered::new();
         let format = wgpu::TextureFormat::Rgba8UnormSrgb;
 
-        let mut gui = Gui::new(&device, &queue, format, target, (&[], &[]), &images, &off);
+        let fonts = Library::default();
+        let mut gui = Gui::new(
+            &device,
+            &queue,
+            format,
+            target,
+            (&[], &[]),
+            &images,
+            &fonts,
+            &off,
+        );
         assert!(!gui.enabled);
 
-        gui.rebuild(&device, &queue, (&[], &[]), &images, &on);
+        gui.rebuild(&device, &queue, (&[], &[]), &images, &fonts, &on);
         assert!(gui.enabled);
 
-        gui.rebuild(&device, &queue, (&[], &[]), &images, &off);
+        gui.rebuild(&device, &queue, (&[], &[]), &images, &fonts, &off);
         assert!(!gui.enabled);
     }
 }

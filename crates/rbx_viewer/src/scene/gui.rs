@@ -13,12 +13,14 @@
 //! [`layout`] whole — the only thing that differs is the pixel rect the tree
 //! resolves against, and where that rect ends up.
 //!
+//! Text (`TextLabel`/`TextButton`/`TextBox`) is read into [`plan::Text`] and
+//! measured through [`layout::TextMeasure`], which the renderer's typesetter
+//! implements: shaping needs a font system, and none lives here.
+//!
 //! # What is not read here
-//! Text itself: a `TextLabel`/`TextButton`/`TextBox` draws its background and
-//! border like a `Frame`, but its glyphs need font loading and shaping, which
-//! is a dependency decision this viewer has not made. Of the `UIComponent`
-//! family only `UIListLayout` is read (see [`plan::List`]); the rest —
-//! `UIGridLayout`, `UIPadding`, `UIScale`, `UICorner`, `UIStroke`… — are not.
+//! Of the `UIComponent` family only `UIListLayout` is read (see
+//! [`plan::List`]); the rest — `UIGridLayout`, `UIPadding`, `UIScale`,
+//! `UICorner`, `UIStroke`… — are not.
 
 mod layout;
 mod plan;
@@ -26,8 +28,12 @@ mod space;
 
 #[cfg(test)]
 pub(crate) use layout::Painted;
-pub(crate) use layout::{resolve, resolve_canvas, Element, Rect};
-pub(crate) use plan::{plan, Screen};
+#[cfg(test)]
+pub(crate) use layout::{resolve, resolve_canvas};
+pub(crate) use layout::{resolve_canvas_with, resolve_with, Element, Rect, TextMeasure, Typeset};
+#[cfg(test)]
+pub(crate) use plan::TextSpan;
+pub(crate) use plan::{plan, span_face, Align, Screen, Text};
 pub(crate) use space::{plan as plan_space, Anchor, SpaceGui};
 
 #[cfg(test)]

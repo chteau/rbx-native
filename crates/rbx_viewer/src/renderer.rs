@@ -36,6 +36,7 @@ mod translucent;
 use glam::Mat3;
 
 use crate::camera::{Camera, Frustum, Viewpoint};
+use crate::fonts::Library;
 use crate::gizmo::{arm_length, basis, Faces, Gizmo, Handles, Kind, Shape};
 use crate::lighting::{Lighting, LocalLight};
 use crate::load::Answered;
@@ -86,6 +87,9 @@ pub(crate) struct World<'a> {
     /// thread that draws: see `load::Answered`, whose "no answer yet" is what
     /// keeps a pass from writing an effect off before its texture lands.
     pub(crate) images: &'a Answered,
+    /// Every font face the GUI trees' text needs, as far as the loader has
+    /// it — see `load::Loaded::resolve_fonts`. Same reasoning as `images`.
+    pub(crate) fonts: &'a Library,
 }
 
 /// Coordinates rendering to any target (window surface or offscreen texture).
@@ -191,6 +195,7 @@ impl Renderer {
             lighting,
             lights,
             images,
+            fonts,
         } = world;
         // Every scene pass draws into the HDR target rather than into the
         // caller's: only the resolve at the end of `draw` knows `format`.
@@ -310,6 +315,7 @@ impl Renderer {
                 target,
                 (scene.gui_screens(), scene.gui_spaces()),
                 images,
+                fonts,
                 quality,
             ),
             lighting_buffer,

@@ -12,13 +12,23 @@ use rbx_reflection::ReflectionDatabase;
 use crate::textures::asset_uri;
 
 mod props;
+mod text;
 
 use props::{alpha, color, degrees, enum_of};
 pub(super) use props::{flag, integer, span, vector2};
+#[cfg(test)]
+pub(crate) use text::Span as TextSpan;
+pub(crate) use text::{span_face, Text};
+
+use crate::fonts::Face;
 
 const SCREEN_CLASS: &str = "ScreenGui";
 const ELEMENT_CLASS: &str = "GuiObject";
 const LIST_LAYOUT_CLASS: &str = "UIListLayout";
+/// The three text classes share every text property, so one reader serves
+/// all of them; only the `TextBox` placeholder rule tells them apart.
+const TEXT_CLASSES: [&str; 3] = ["TextLabel", "TextButton", "TextBox"];
+const TEXT_BOX_CLASS: &str = "TextBox";
 
 /// Roblox's own default `BorderColor3`, `Color3.fromRGB(27, 42, 53)`. Only
 /// ever seen on a tree built in code: a place file serializes the property.
@@ -65,7 +75,7 @@ pub(super) struct Fill {
 /// the other. `Start` is Left/Top, `End` Right/Bottom; the two Roblox enums
 /// share ordinals (Center = 0, Left/Top = 1, Right/Bottom = 2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Align {
+pub(crate) enum Align {
     Center,
     Start,
     End,
@@ -90,11 +100,6 @@ pub(super) struct List {
 
 /// One `GuiObject` and everything under it, `Visible = false` subtrees already
 /// pruned away.
-///
-/// Text (`TextLabel`/`TextButton`/`TextBox`) is read like any other box: its
-/// background and border draw, the glyphs do not.
-///
-/// TODO: render text once a font stack is chosen.
 #[derive(Clone)]
 pub(super) struct Node {
     /// Only read for `SortOrder.Name` under a [`List`].
@@ -117,6 +122,9 @@ pub(super) struct Node {
     pub(super) clips: bool,
     pub(super) z_index: i32,
     pub(super) fill: Option<Fill>,
+    /// The text of a `TextLabel`/`TextButton`/`TextBox`, drawn over the
+    /// background and image.
+    pub(super) text: Option<Text>,
     /// The `UIListLayout` among this node's children, arranging them.
     pub(super) list: Option<List>,
     pub(super) children: Vec<Node>,
@@ -128,6 +136,7 @@ impl Node {
     pub(super) fn paints(&self) -> bool {
         self.background_alpha > 0.0
             || self.fill.as_ref().is_some_and(|fill| fill.alpha > 0.0)
+            || self.text.as_ref().is_some_and(Text::visible)
             || self.children.iter().any(Node::paints)
     }
 }
@@ -147,6 +156,22 @@ impl Screen {
         for root in &self.roots {
             collect_assets(root, into);
         }
+    }
+
+    /// Every font face the screen's text wants, in first-seen paint order.
+    pub(crate) fn fonts(&self, into: &mut Vec<Face>) {
+        for root in &self.roots {
+            collect_fonts(root, into);
+        }
+    }
+}
+
+pub(super) fn collect_fonts(node: &Node, into: &mut Vec<Face>) {
+    if let Some(text) = &node.text {
+        text.faces(into);
+    }
+    for child in &node.children {
+        collect_fonts(child, into);
     }
 }
 
@@ -240,6 +265,10 @@ fn element(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> Optio
         clips: flag(properties, "ClipsDescendants", false),
         z_index: integer(properties, "ZIndex", 1),
         fill: fill(properties),
+        text: TEXT_CLASSES
+            .iter()
+            .any(|text_class| database.is_subclass_of(class, text_class))
+            .then(|| text::text(properties, database.is_subclass_of(class, TEXT_BOX_CLASS))),
         list: list_layout(dom, database, instance.children()),
         children: elements(dom, database, instance.children()),
     })

@@ -157,6 +157,10 @@ impl Patcher<'_> {
             self.loaded.scene_mut().replan_gui_spaces(dom, database);
         }
         if self.pending.screens || self.pending.spaces {
+            // A text object the edit gave a family this session has never
+            // seen draws in the fallback face until the family lands; asking
+            // now is what makes it land.
+            self.loaded.resolve_fonts(self.resident);
             let world = self.loaded.world();
             self.offscreen.with_renderer(|renderer, device, queue| {
                 renderer.refresh_gui(device, queue, world)
