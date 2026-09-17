@@ -7,23 +7,26 @@
 
 mod text;
 
-use rbx_assets::AssetRef;
-
-use super::plan::{Align, Fill, Layout, Node, ScaleMode, Screen, Span};
+use super::plan::{Align, Layout, Node, Screen, Span};
 use super::space::SpaceGui;
 // Reaches all the way to `renderer::gui::quads::image`, unlike everything
 // else `plan` hands this module — see the type's own doc comment.
 pub(crate) use super::plan::PixelRect;
 
+mod arrange;
 mod grid;
+mod image;
 mod list;
 mod modifiers;
 mod sizing;
 mod table;
 
-pub(crate) use text::{TextMeasure, Typeset};
-
+pub(crate) use arrange::{arrange, Arranged};
+use arrange::{content_size, sorted};
+use image::painted;
+pub(crate) use image::{ImageScale, Painted};
 pub(crate) use modifiers::{GradientPx, StrokePx};
+pub(crate) use text::{TextMeasure, Typeset};
 
 /// A screen-space box in pixels, top-left origin.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -55,40 +58,6 @@ impl Rect {
             height: (bottom - y).max(0.0),
         }
     }
-}
-
-/// An `ImageLabel`/`ImageButton`'s `ScaleType`, resolved as far as this layer
-/// can: a `Tile`'s `UDim2` is already turned into a repeat count (in
-/// [`Painted::repeat`]), but `Fit`/`Crop`'s letterbox and crop math need the
-/// source image's own pixel size, which only the renderer's atlas knows — see
-/// `renderer::gui::quads::image`.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum ImageScale {
-    Stretch,
-    Tile,
-    Slice {
-        center: Option<PixelRect>,
-        scale: f32,
-    },
-    Fit,
-    Crop,
-}
-
-/// An `ImageLabel`/`ImageButton`'s image, resolved as far as a pixel-space
-/// `Rect` allows.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Painted {
-    pub(crate) asset: AssetRef,
-    pub(crate) tint: [f32; 3],
-    pub(crate) alpha: f32,
-    /// How many times the image repeats across the box under `Stretch`/
-    /// `Tile`, 1 being a stretch; meaningless for the other scale types.
-    pub(crate) repeat: [f32; 2],
-    pub(crate) scale: ImageScale,
-    /// `ImageRectOffset`/`ImageRectSize`, still in the source image's pixels.
-    pub(crate) rect_offset: [f32; 2],
-    pub(crate) rect_size: [f32; 2],
-    pub(crate) pixelated: bool,
 }
 
 /// One `GuiObject` at its final pixel position, ready to be drawn on its own.
@@ -259,76 +228,6 @@ impl Context {
     }
 }
 
-/// What a layout comes to: one rect per sibling in the tree's own order and
-/// the extent the laid-out content covers, which is
-/// `UIGridStyleLayout.AbsoluteContentSize`.
-pub(crate) struct Arranged {
-    pub(crate) rects: Vec<Rect>,
-    /// `AbsoluteContentSize`. Nothing in this module needs it — it exists for
-    /// `AutomaticSize`, which sizes a container to the content its layout
-    /// came to.
-    #[allow(dead_code)]
-    pub(crate) size: [f32; 2],
-    /// `UITableLayout` only: where each sibling's own children go, since a
-    /// table lays out its cells rather than leaving them to their row.
-    cells: Option<Vec<Vec<Rect>>>,
-}
-
-/// Places `nodes` inside `parent` under `layout`, or by their own `Position`
-/// and `Size` where there is none.
-pub(crate) fn arrange(
-    nodes: &[Node],
-    layout: Option<&Layout>,
-    parent: &Rect,
-    measure: &mut dyn TextMeasure,
-) -> Arranged {
-    match layout {
-        Some(Layout::List(spec)) => {
-            let (rects, size) = list::stacked(nodes, spec, parent, measure);
-            Arranged {
-                rects,
-                size,
-                cells: None,
-            }
-        }
-        Some(Layout::Grid(spec)) => {
-            let (rects, size) = grid::grid(nodes, spec, parent, measure);
-            Arranged {
-                rects,
-                size,
-                cells: None,
-            }
-        }
-        Some(Layout::Table(spec)) => {
-            let laid = table::table(nodes, spec, parent, measure);
-            Arranged {
-                rects: laid.rects,
-                size: laid.size,
-                cells: Some(laid.cells),
-            }
-        }
-        None => {
-            let rects: Vec<Rect> = nodes
-                .iter()
-                .map(|node| {
-                    place(
-                        node.position,
-                        sizing::extent(node, parent.size(), measure),
-                        node.anchor,
-                        parent,
-                    )
-                })
-                .collect();
-            let size = content_size(&rects);
-            Arranged {
-                rects,
-                size,
-                cells: None,
-            }
-        }
-    }
-}
-
 /// Places every sibling inside `parent`, then emits them in paint order.
 ///
 /// The two orders are distinct: a layout decides where a sibling sits,
@@ -365,49 +264,6 @@ fn children(
             into,
         );
     }
-}
-
-/// Sibling indices in the order a layout walks them: `SortOrder.Name`, or
-/// `LayoutOrder` with ties in tree order — stable, so equal orders keep the
-/// order they were added to the parent in.
-pub(super) fn ordered(nodes: &[Node], by_name: bool) -> Vec<usize> {
-    let mut order: Vec<usize> = (0..nodes.len()).collect();
-    match by_name {
-        true => order.sort_by(|&a, &b| nodes[a].name.cmp(&nodes[b].name)),
-        false => order.sort_by_key(|&index| nodes[index].layout_order),
-    }
-    order
-}
-
-/// The extent a run of rects covers: `AbsoluteContentSize`, which the docs
-/// describe as the space the elements take up "including any padding created
-/// by the grid".
-pub(super) fn content_size(rects: &[Rect]) -> [f32; 2] {
-    let mut low = [f32::INFINITY; 2];
-    let mut high = [f32::NEG_INFINITY; 2];
-    for rect in rects {
-        low[0] = low[0].min(rect.x);
-        low[1] = low[1].min(rect.y);
-        high[0] = high[0].max(rect.x + rect.width);
-        high[1] = high[1].max(rect.y + rect.height);
-    }
-    match rects.is_empty() {
-        true => [0.0, 0.0],
-        false => [high[0] - low[0], high[1] - low[1]],
-    }
-}
-
-/// Sibling indices in paint order. Stable for the same reason screens are.
-///
-/// Under `ZIndexBehavior.Global` the siblings are left in tree order: that is
-/// the hierarchy order the screen-wide sort breaks ties with, and reordering
-/// them here would interleave their subtrees wrongly.
-fn sorted(nodes: &[Node], global_z_index: bool) -> Vec<usize> {
-    let mut order: Vec<usize> = (0..nodes.len()).collect();
-    if !global_z_index {
-        order.sort_by_key(|&index| nodes[index].z_index);
-    }
-    order
 }
 
 fn emit(
@@ -496,7 +352,7 @@ pub(super) fn offset(align: Align, extent: f32, length: f32) -> f32 {
 /// pixel offset against the parent's own corner, and `AnchorPoint` then slides
 /// the box back by that fraction of its own size — the default `(0, 0)`
 /// putting the element's top-left corner on `Position`.
-fn place(position: Span, extent: [f32; 2], anchor: [f32; 2], parent: &Rect) -> Rect {
+pub(super) fn place(position: Span, extent: [f32; 2], anchor: [f32; 2], parent: &Rect) -> Rect {
     let origin = position.against(parent.size());
 
     Rect {
@@ -504,41 +360,5 @@ fn place(position: Span, extent: [f32; 2], anchor: [f32; 2], parent: &Rect) -> R
         y: parent.y + origin[1] - anchor[1] * extent[1],
         width: extent[0],
         height: extent[1],
-    }
-}
-
-fn painted(fill: &Fill, rect: &Rect) -> Painted {
-    let (scale, repeat) = match fill.scale {
-        ScaleMode::Stretch => (ImageScale::Stretch, [1.0, 1.0]),
-        // A tile bigger than the box repeats less than once, which is
-        // Roblox's own behaviour: `TileSize` is a size, not a count.
-        ScaleMode::Tile { size } => {
-            let tile = size.against(rect.size());
-            let repeat = [ratio(rect.width, tile[0]), ratio(rect.height, tile[1])];
-            (ImageScale::Tile, repeat)
-        }
-        ScaleMode::Slice { center, scale } => (ImageScale::Slice { center, scale }, [1.0, 1.0]),
-        ScaleMode::Fit => (ImageScale::Fit, [1.0, 1.0]),
-        ScaleMode::Crop => (ImageScale::Crop, [1.0, 1.0]),
-    };
-    Painted {
-        asset: fill.asset.clone(),
-        tint: fill.tint,
-        alpha: fill.alpha,
-        repeat,
-        scale,
-        rect_offset: fill.rect_offset,
-        rect_size: fill.rect_size,
-        pixelated: fill.pixelated,
-    }
-}
-
-/// How many tiles of `tile` pixels fit across `extent`. A non-positive tile
-/// would repeat infinitely often, so it falls back to a single stretch.
-fn ratio(extent: f32, tile: f32) -> f32 {
-    if tile > 0.0 {
-        extent / tile
-    } else {
-        1.0
     }
 }

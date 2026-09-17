@@ -5,7 +5,8 @@
 //! siblings stack along, and a *minor* axis, the one their cells run along.
 //! `MajorAxis.RowMajor` makes the major axis Y; `ColumnMajor` swaps the two.
 
-use super::{offset, ordered, Rect, TextMeasure};
+use super::arrange::ordered;
+use super::{offset, Rect, TextMeasure};
 use crate::scene::gui::plan::{Node, Table};
 
 /// One rect per sibling, one rect per cell of each sibling (in that sibling's

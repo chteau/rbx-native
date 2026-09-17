@@ -1,6 +1,7 @@
 //! `UIGridLayout` placement: uniform cells filled a line at a time.
 
-use super::{offset, ordered, Rect, TextMeasure};
+use super::arrange::ordered;
+use super::{offset, Rect, TextMeasure};
 use crate::scene::gui::plan::{Grid, Node};
 
 /// One rect per node in `nodes`'s own order, plus the extent the grid covers.

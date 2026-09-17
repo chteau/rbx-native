@@ -1,0 +1,119 @@
+//! Where every sibling of one container goes: through its layout where it has
+//! one, by its own `Position`/`Size` otherwise. The walk that emits them is
+//! [`super`]'s; this only answers with rects.
+
+use super::super::plan::{Layout, Node};
+use super::{grid, list, place, sizing, table, Rect, TextMeasure};
+
+/// What a layout comes to: one rect per sibling in the tree's own order and
+/// the extent the laid-out content covers, which is
+/// `UIGridStyleLayout.AbsoluteContentSize`.
+pub(crate) struct Arranged {
+    pub(crate) rects: Vec<Rect>,
+    /// `AbsoluteContentSize`. Nothing in this module needs it — it exists for
+    /// `AutomaticSize`, which sizes a container to the content its layout
+    /// came to.
+    #[allow(dead_code)]
+    pub(crate) size: [f32; 2],
+    /// `UITableLayout` only: where each sibling's own children go, since a
+    /// table lays out its cells rather than leaving them to their row.
+    pub(super) cells: Option<Vec<Vec<Rect>>>,
+}
+
+/// Places `nodes` inside `parent` under `layout`, or by their own `Position`
+/// and `Size` where there is none.
+pub(crate) fn arrange(
+    nodes: &[Node],
+    layout: Option<&Layout>,
+    parent: &Rect,
+    measure: &mut dyn TextMeasure,
+) -> Arranged {
+    match layout {
+        Some(Layout::List(spec)) => {
+            let (rects, size) = list::stacked(nodes, spec, parent, measure);
+            Arranged {
+                rects,
+                size,
+                cells: None,
+            }
+        }
+        Some(Layout::Grid(spec)) => {
+            let (rects, size) = grid::grid(nodes, spec, parent, measure);
+            Arranged {
+                rects,
+                size,
+                cells: None,
+            }
+        }
+        Some(Layout::Table(spec)) => {
+            let laid = table::table(nodes, spec, parent, measure);
+            Arranged {
+                rects: laid.rects,
+                size: laid.size,
+                cells: Some(laid.cells),
+            }
+        }
+        None => {
+            let rects: Vec<Rect> = nodes
+                .iter()
+                .map(|node| {
+                    place(
+                        node.position,
+                        sizing::extent(node, parent.size(), measure),
+                        node.anchor,
+                        parent,
+                    )
+                })
+                .collect();
+            let size = content_size(&rects);
+            Arranged {
+                rects,
+                size,
+                cells: None,
+            }
+        }
+    }
+}
+
+/// Sibling indices in the order a layout walks them: `SortOrder.Name`, or
+/// `LayoutOrder` with ties in tree order — stable, so equal orders keep the
+/// order they were added to the parent in.
+pub(in crate::scene::gui::layout) fn ordered(nodes: &[Node], by_name: bool) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..nodes.len()).collect();
+    match by_name {
+        true => order.sort_by(|&a, &b| nodes[a].name.cmp(&nodes[b].name)),
+        false => order.sort_by_key(|&index| nodes[index].layout_order),
+    }
+    order
+}
+
+/// The extent a run of rects covers: `AbsoluteContentSize`, which the docs
+/// describe as the space the elements take up "including any padding created
+/// by the grid".
+pub(in crate::scene::gui::layout) fn content_size(rects: &[Rect]) -> [f32; 2] {
+    let mut low = [f32::INFINITY; 2];
+    let mut high = [f32::NEG_INFINITY; 2];
+    for rect in rects {
+        low[0] = low[0].min(rect.x);
+        low[1] = low[1].min(rect.y);
+        high[0] = high[0].max(rect.x + rect.width);
+        high[1] = high[1].max(rect.y + rect.height);
+    }
+    match rects.is_empty() {
+        true => [0.0, 0.0],
+        false => [high[0] - low[0], high[1] - low[1]],
+    }
+}
+
+/// Sibling indices in paint order. Stable for the same reason screens are.
+///
+/// Under `ZIndexBehavior.Global` the siblings are left in tree order: that is
+/// the hierarchy order the screen-wide sort breaks ties with, and reordering
+/// them here would interleave their subtrees wrongly.
+pub(super) fn sorted(nodes: &[Node], global_z_index: bool) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..nodes.len()).collect();
+    if !global_z_index {
+        order.sort_by_key(|&index| nodes[index].z_index);
+    }
+    order
+}

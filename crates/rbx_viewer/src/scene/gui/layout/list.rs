@@ -5,7 +5,8 @@
 //! is on. Both axes are laid out by the same [`spread`]: a line of items on
 //! the fill axis, and the lines themselves on the cross axis.
 
-use super::{content_size, offset, ordered, Rect, TextMeasure};
+use super::arrange::{content_size, ordered};
+use super::{offset, Rect, TextMeasure};
 use crate::scene::gui::plan::{Align, Flex, FlexItem, LineAlign, List, Node};
 
 /// Slack big enough to swallow the float error a scale-resolved size carries,
