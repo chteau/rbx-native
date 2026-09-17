@@ -10,7 +10,8 @@
 //! `BorderMode`, `ScreenInsets` and `ZIndexBehavior`), [`modifiers`] for
 //! `UICorner`/`UIStroke`/`UIGradient`, [`containers`] for the non-`GuiObject`
 //! instances a GUI tree is allowed to hold, [`scrolling`] for `ScrollingFrame`,
-//! [`group`] for `CanvasGroup` and [`style`] for the `StyleSheet`
+//! [`group`] for `CanvasGroup`, [`starter`] for
+//! `StarterGui.ShowDevelopmentGui` and [`style`] for the `StyleSheet`
 //! engine.
 //!
 //! The fixtures every test builds on live here, in the parent.
@@ -87,6 +88,7 @@ mod pages;
 mod placement;
 mod properties;
 mod scrolling;
+mod starter;
 mod style;
 mod table;
 mod text;

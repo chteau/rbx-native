@@ -113,6 +113,7 @@ impl Headless {
             materials: textures,
             lights: true,
             clock_time: None,
+            show_development_gui: false,
         };
         let database = ReflectionDatabase::embedded();
         let dom = crate::load::read_place(path)?;

@@ -16,8 +16,8 @@ use rbx_dom::{Instance, Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use super::plan::{
-    collect_assets_of, collect_fonts_of, elements, flag, float, global_z_index, layout_of, span,
-    vector2, Group, Layout, Node,
+    collect_assets_of, collect_fonts_of, elements, flag, float, global_z_index, hides_contents,
+    layout_of, span, vector2, Group, Layout, Node,
 };
 use super::style::Styled;
 use crate::fonts::Face;
@@ -192,6 +192,11 @@ fn gather(
     let Some(instance) = context.dom.get(referent) else {
         return;
     };
+    // "The contents of `StarterGui`" a hidden development GUI covers is the
+    // whole subtree, canvases included — see `plan::starter`.
+    if hides_contents(context.database, instance) {
+        return;
+    }
     let (billboard, surface) = kind_of(context, instance.class());
     if billboard || surface {
         if let Some(gui) = read(context, materials, instance, parent, billboard) {
