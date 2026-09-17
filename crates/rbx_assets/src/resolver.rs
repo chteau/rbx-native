@@ -72,10 +72,37 @@ impl AssetResolver {
         if let Some(bytes) = self.cache.get_native(path) {
             return Ok(bytes);
         }
-        let bytes = self.native.fetch(path)?;
+        let bytes = match self.native.fetch(path) {
+            Ok(bytes) => bytes,
+            Err(AssetError::NativeFileNotFound(_)) => match substitute_for(path) {
+                Some(id) => return self.resolve_id(id),
+                None => return Err(AssetError::NativeFileNotFound(path.to_string())),
+            },
+            Err(other) => return Err(other),
+        };
         self.cache.put_native(path, &bytes)?;
         Ok(bytes)
     }
+}
+
+/// Public catalogue assets standing in for `rbxasset://` files the Studio
+/// content packages on the CDN do not hold (or may stop holding): a place
+/// that names one still shows what Studio shows. Tried only after the
+/// package itself has answered "not there", so a package that does carry
+/// the file wins.
+const SUBSTITUTES: [(&str, u64); 2] = [
+    // `SpawnLocation`'s own decal, absent from every content-textures package.
+    ("textures/SpawnLocation.png", 6891610111),
+    // The image an `ImageLabel` shows before it is given one.
+    ("textures/ui/GuiImagePlaceholder.png", 6293578665),
+];
+
+/// The catalogue asset that stands in for `path`, if any — see [`SUBSTITUTES`].
+pub fn substitute_for(path: &str) -> Option<u64> {
+    SUBSTITUTES
+        .iter()
+        .find(|(native, _)| *native == path)
+        .map(|(_, id)| *id)
 }
 
 /// An in-memory [`AssetFetcher`] for tests: no network, just a lookup table.
@@ -156,6 +183,19 @@ mod tests {
             err,
             Err(AssetError::Fetch(FetchError::NotFound(999)))
         ));
+    }
+
+    #[test]
+    fn only_the_files_the_packages_lack_have_a_substitute() {
+        assert_eq!(
+            substitute_for("textures/SpawnLocation.png"),
+            Some(6891610111)
+        );
+        assert_eq!(
+            substitute_for("textures/ui/GuiImagePlaceholder.png"),
+            Some(6293578665)
+        );
+        assert_eq!(substitute_for("sky/sun.jpg"), None);
     }
 
     #[test]

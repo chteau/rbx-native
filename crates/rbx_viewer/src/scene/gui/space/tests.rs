@@ -9,6 +9,7 @@ use rbx_dom::{UDim, UDim2, Vector2Data, Vector3Data, WeakDom};
 use super::*;
 use crate::scene::gui::resolve_canvas;
 use crate::scene::ShapeKind;
+use crate::textures::NormalId;
 
 const DATABASE: fn() -> ReflectionDatabase = ReflectionDatabase::embedded;
 
@@ -65,7 +66,13 @@ fn filled(dom: &mut WeakDom, parent: Ref) {
 }
 
 fn planned(dom: &WeakDom, placements: &HashMap<Ref, Placement>) -> Vec<SpaceGui> {
-    plan(dom, &DATABASE(), placements)
+    let database = DATABASE();
+    plan(
+        dom,
+        &database,
+        placements,
+        &mut Catalog::new(dom, &database),
+    )
 }
 
 #[test]
@@ -463,6 +470,68 @@ fn always_on_top_is_carried_through() {
 }
 
 #[test]
+fn brightness_scales_the_canvas_unless_light_takes_over_or_it_sits_on_top() {
+    let cases = [
+        // (Brightness, LightInfluence, AlwaysOnTop) -> factor.
+        (4.0, 0.0, false, 4.0),
+        (4.0, 1.0, false, 1.0),
+        (4.0, 0.5, false, 2.5),
+        (4.0, 0.0, true, 1.0),
+        (0.0, 0.0, false, 0.0),
+    ];
+    for (brightness, influence, on_top, expected) in cases {
+        let (mut dom, gui, placements) = fixture("SurfaceGui", Vec3::ONE);
+        filled(&mut dom, gui);
+        dom.set_property(gui, "Brightness", Variant::Float32(brightness))
+            .unwrap();
+        dom.set_property(gui, "LightInfluence", Variant::Float32(influence))
+            .unwrap();
+        dom.set_property(gui, "AlwaysOnTop", Variant::Bool(on_top))
+            .unwrap();
+        assert_eq!(planned(&dom, &placements)[0].brightness, expected);
+    }
+}
+
+#[test]
+fn max_distance_defaults_differ_and_zero_means_no_limit() {
+    for (class, default) in [("SurfaceGui", 1000.0), ("BillboardGui", f32::INFINITY)] {
+        let (mut dom, gui, placements) = fixture(class, Vec3::ONE);
+        filled(&mut dom, gui);
+        // A billboard with no `Size` has no canvas to place at all.
+        dom.set_property(gui, "Size", udim2(2.0, 0, 2.0, 0))
+            .unwrap();
+        assert_eq!(planned(&dom, &placements)[0].max_distance, default);
+
+        dom.set_property(gui, "MaxDistance", Variant::Float32(0.0))
+            .unwrap();
+        assert_eq!(
+            planned(&dom, &placements)[0].max_distance,
+            f32::INFINITY,
+            "{class} with MaxDistance 0"
+        );
+
+        dom.set_property(gui, "MaxDistance", Variant::Float32(25.0))
+            .unwrap();
+        assert_eq!(planned(&dom, &placements)[0].max_distance, 25.0);
+    }
+}
+
+#[test]
+fn size_offset_reaches_the_billboard_anchor() {
+    let (mut dom, gui, placements) = fixture("BillboardGui", Vec3::ONE);
+    filled(&mut dom, gui);
+    dom.set_property(gui, "Size", udim2(2.0, 0, 2.0, 0))
+        .unwrap();
+    dom.set_property(gui, "SizeOffset", vector2_of(0.5, -0.25))
+        .unwrap();
+
+    match planned(&dom, &placements)[0].anchor {
+        Anchor::Billboard { size_offset, .. } => assert_eq!(size_offset, [0.5, -0.25]),
+        other => panic!("expected a billboard, got {other:?}"),
+    }
+}
+
+#[test]
 fn a_canvas_resolves_udim2_against_its_own_pixels_not_a_viewport() {
     let (mut dom, gui, placements) = fixture("SurfaceGui", Vec3::ONE);
     filled(&mut dom, gui);
@@ -475,4 +544,50 @@ fn a_canvas_resolves_udim2_against_its_own_pixels_not_a_viewport() {
     assert_eq!(elements.len(), 1);
     assert_eq!(elements[0].rect.width, 800.0);
     assert_eq!(elements[0].rect.height, 600.0);
+}
+
+#[test]
+fn a_canvas_reaches_the_elements_under_a_folder() {
+    let (mut dom, gui, placements) = fixture("SurfaceGui", Vec3::ONE);
+    let group = dom.new_instance("Folder", "Group", Some(gui));
+    filled(&mut dom, group);
+    dom.set_property(gui, "SizingMode", Variant::Enum(FIXED_SIZE))
+        .unwrap();
+    dom.set_property(gui, "CanvasSize", vector2_of(800.0, 600.0))
+        .unwrap();
+
+    // The folder neither hides the label from the "does this paint anything"
+    // test that decides whether the canvas is worth allocating, nor stands
+    // between it and the canvas the label sizes against.
+    let elements = resolve_canvas(&planned(&dom, &placements)[0]);
+    assert_eq!(elements.len(), 1);
+    assert_eq!(elements[0].rect.width, 800.0);
+    assert_eq!(elements[0].rect.height, 600.0);
+}
+
+/// "Determines whether the contents of `StarterGui` is visible in Studio"
+/// (`StarterGui.ShowDevelopmentGui`) — its contents being the canvases too,
+/// not just the screens, and nothing outside the service.
+#[test]
+fn a_hidden_starter_gui_takes_only_its_own_canvases_out() {
+    let mut dom = WeakDom::new();
+    let workspace = dom.new_instance("Workspace", "Workspace", None);
+    let part = dom.new_instance("Part", "Part", Some(workspace));
+    let placements = HashMap::from([(part, placement(Vec3::splat(2.0)))]);
+    let on_the_part = dom.new_instance("SurfaceGui", "SurfaceGui", Some(part));
+    filled(&mut dom, on_the_part);
+    let starter = dom.new_instance("StarterGui", "StarterGui", None);
+    let hidden = dom.new_instance("SurfaceGui", "Hidden", Some(starter));
+    dom.set_property(hidden, "Adornee", Variant::Ref(part))
+        .unwrap();
+    filled(&mut dom, hidden);
+
+    assert_eq!(planned(&dom, &placements).len(), 2);
+
+    dom.set_property(starter, "ShowDevelopmentGui", Variant::Bool(false))
+        .unwrap();
+
+    let planned = planned(&dom, &placements);
+    assert_eq!(planned.len(), 1);
+    assert_eq!(planned[0].adornee, part);
 }

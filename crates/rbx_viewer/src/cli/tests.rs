@@ -146,6 +146,18 @@ fn the_gui_overlay_can_be_turned_off_on_its_own() {
     assert!(options.textures());
 }
 
+// A Studio view toggle, off by default: the place decides, unless a
+// screenshot of what a player sees is what is wanted.
+#[test]
+fn the_development_gui_is_only_forced_on_when_asked() {
+    assert!(!parse(&["m.rbxm"]).unwrap().show_development_gui());
+
+    let options = parse(&["m.rbxm", "--show-development-gui"]).unwrap();
+
+    assert!(options.show_development_gui());
+    assert!(options.gui());
+}
+
 #[test]
 fn malformed_arguments_are_rejected() {
     assert!(parse(&[]).is_err());

@@ -23,6 +23,7 @@ mod capture;
 mod changes;
 mod cli;
 mod controller;
+mod fonts;
 pub mod gizmo;
 mod gpu;
 mod headless;
@@ -50,6 +51,7 @@ pub use headless::Headless;
 pub use input::{CameraInput, CameraKey};
 pub use load::read_place;
 pub use quality::{FrameRateManager, QualityLevel};
+pub use scene::ScrollTarget;
 
 use glam::Vec3;
 use load::{Loaded, Toggles};
@@ -101,5 +103,6 @@ fn toggles(options: &Options) -> Toggles {
         materials: options.materials(),
         lights: options.lights(),
         clock_time: options.clock_time(),
+        show_development_gui: options.show_development_gui(),
     }
 }

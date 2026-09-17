@@ -22,6 +22,8 @@ use rbx_assets::AssetRef;
 use rbx_dom::{CFrameData, Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
+use crate::fonts::Face;
+
 pub(crate) use beam::{Beam, TextureMode};
 #[cfg(test)]
 pub(crate) use bounds::tests_support;
@@ -34,15 +36,22 @@ pub(crate) use bounds::{of_part, Bounds};
 pub(crate) use filemesh::{
     fit_of as file_mesh_fit, AlphaMode, Appearance, Resolved, ResolvedInstance,
 };
+pub(crate) use gui::gui_image_placeholder;
+pub use gui::ScrollTarget;
+#[cfg(test)]
 pub(crate) use gui::{
-    resolve as gui_layout, resolve_canvas as gui_canvas_layout, Anchor as GuiAnchor,
-    Element as GuiElement, Rect as GuiRect, Screen as GuiScreen, SpaceGui,
+    plan as gui_plan, GroupTint as GuiGroupTint, StrokePx as GuiStroke, TextSpan as GuiTextSpan,
+};
+pub(crate) use gui::{
+    resolve_canvas_with as gui_canvas_layout_with, resolve_with as gui_layout_with,
+    scroll_target as gui_scroll_target, span_face as gui_span_face, Align as GuiAlign,
+    Anchor as GuiAnchor, Element as GuiElement, GradientKind as GuiGradientKind,
+    GradientPx as GuiGradient, Grouped as GuiGroup, ImageScale as GuiImageScale, Join as GuiJoin,
+    Painted, PixelRect as GuiPixelRect, Rect as GuiRect, Screen as GuiScreen,
+    ScrollWindow as GuiScrollWindow, SpaceGui, Text as GuiText, TextMeasure as GuiTextMeasure,
+    Tile as GuiTile, Typeset as GuiTypeset, ViewCamera as GuiViewCamera, Viewport as GuiViewport,
 };
 pub(crate) use identity::PartId;
-// Only a test (`renderer::gui::quads`'s) names an element's image directly;
-// everything else reaches one through `GuiElement::image`.
-#[cfg(test)]
-pub(crate) use gui::Painted;
 pub(crate) use material::{Catalog, Kind, Maps, Slot};
 pub(crate) use particles::sequence::{eval_color, eval_number};
 pub(crate) use particles::{Emitter, Simulation};
@@ -77,7 +86,7 @@ const FORCE_FIELD_ALPHA: f32 = 0.5;
 /// renderer rather than a borrow, so the caller is free of `Scene`'s own
 /// borrow by the time it reaches into `Renderer`/`Offscreen`, both behind
 /// other fields.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Part {
     pub(crate) kind: ShapeKind,
     /// Which texture-array layer shades it, and how — see `scene::material`.
@@ -240,6 +249,9 @@ impl Scene {
             .enumerate()
             .map(|(index, part)| (part.referent(), Standing::whole(index)))
             .collect();
+        // After the workspace, the file meshes and the unions have claimed
+        // their layers: a `ViewportFrame`'s parts share the catalog.
+        let gui = gui::plan(dom, database, &mut materials);
         let mut scene = Scene {
             parts,
             standing,
@@ -252,7 +264,7 @@ impl Scene {
             emitters: Vec::new(),
             beams: Vec::new(),
             trails: Vec::new(),
-            gui: gui::plan(dom, database),
+            gui,
             gui_spaces: Vec::new(),
             union_plan,
             unions_resolved: union::Merged::default(),
@@ -263,7 +275,7 @@ impl Scene {
         // `SurfaceGui`'s canvas covers one face of the part as drawn.
         let placements = scene.placements();
         scene.emitters = particles::plan(dom, database, &placements);
-        scene.gui_spaces = gui::plan_space(dom, database, &placements);
+        scene.gui_spaces = gui::plan_space(dom, database, &placements, &mut scene.materials);
         // A beam resolves its own attachment chain straight off the DOM
         // instead (see `scene::beam::attachment`), so it needs no placement.
         scene.beams = beam::plan(dom, database);
@@ -335,7 +347,25 @@ impl Scene {
         for gui in &self.gui_spaces {
             gui.assets(&mut references);
         }
+        // Wanted only once something has an image to fall back from: a place
+        // with no `ImageLabel` at all never downloads it.
+        if !references.is_empty() {
+            references.push(gui_image_placeholder());
+        }
         references
+    }
+
+    /// Every font face the GUI trees' text wants, in first-seen paint order
+    /// and without repeats — see [`Scene::gui_assets`].
+    pub(crate) fn gui_fonts(&self) -> Vec<Face> {
+        let mut faces = Vec::new();
+        for screen in &self.gui {
+            screen.fonts(&mut faces);
+        }
+        for gui in &self.gui_spaces {
+            gui.fonts(&mut faces);
+        }
+        faces
     }
 
     /// Every material map the scene needs before [`Scene::resolve_materials`].
@@ -356,6 +386,16 @@ impl Scene {
         }
         for instance in &mut self.resolved_file_meshes.instances {
             instance.material = self.materials.slot(instance.material.layer);
+        }
+        // A `ViewportFrame`'s parts point at the same layers, so they go
+        // plastic-then-textured on the same schedule.
+        let materials = &self.materials;
+        let mut reslot = |part: &mut Part| part.material = materials.slot(part.material.layer);
+        for screen in &mut self.gui {
+            screen.viewport_parts(&mut reslot);
+        }
+        for gui in &mut self.gui_spaces {
+            gui.viewport_parts(&mut reslot);
         }
     }
 

@@ -15,10 +15,15 @@ use rbx_assets::AssetRef;
 use rbx_dom::{Instance, Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
-use super::plan::{collect_assets, elements, flag, list_layout, span, vector2, List, Node};
+use super::plan::{
+    collect_assets_of, collect_fonts_of, elements, flag, float, global_z_index, hides_contents,
+    layout_of, span, vector2, Group, Layout, Node,
+};
+use super::style::Styled;
+use crate::fonts::Face;
 use crate::scene::beam::{world_cframe, ParentMap};
 use crate::scene::Placement;
-use crate::textures::NormalId;
+use crate::scene::{Catalog, Part};
 
 const BILLBOARD_CLASS: &str = "BillboardGui";
 const SURFACE_CLASS: &str = "SurfaceGui";
@@ -42,6 +47,14 @@ const FIXED_SIZE: u32 = 0;
 /// texture no adapter will allocate, and nothing is legible past this anyway.
 const MAX_CANVAS: f32 = 2048.0;
 
+/// `Brightness`'s own documented ceiling: "can be set to any number between 0
+/// and 1000".
+const MAX_BRIGHTNESS: f32 = 1000.0;
+
+/// `SurfaceGui.MaxDistance`'s default, which a tree built in code falls back
+/// to; a `BillboardGui` has no limit by default.
+const SURFACE_MAX_DISTANCE: f32 = 1000.0;
+
 /// Where a canvas' rectangle sits in the world.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum Anchor {
@@ -56,6 +69,10 @@ pub(crate) enum Anchor {
         view_offset: Vec3,
         /// `StudsOffsetWorldSpace`, along the global axes.
         world_offset: Vec3,
+        /// `SizeOffset`: a shift in units of the billboard's own size, along
+        /// the camera's right and up axes — "a 2D offset in size-relative
+        /// units that acts like an anchor point" (`BillboardGui.SizeOffset`).
+        size_offset: [f32; 2],
     },
     /// A fixed quad on one face of a part: exactly the rectangle a stretched
     /// `Decal` on that face covers (see [`crate::textures`]), pushed out along
@@ -77,16 +94,36 @@ pub(crate) struct SpaceGui {
     pub(crate) canvas: [f32; 2],
     /// `AlwaysOnTop`: drawn without a depth test, over the whole scene.
     pub(crate) always_on_top: bool,
+    /// What the canvas' colour is scaled by before it is composited — see
+    /// [`brightness`].
+    pub(crate) brightness: f32,
+    /// `MaxDistance`: how far the eye may be before the canvas stops being
+    /// drawn at all. Infinite where the property means "no limit".
+    pub(crate) max_distance: f32,
     pub(crate) anchor: Anchor,
-    pub(super) list: Option<List>,
+    /// `ZIndexBehavior.Global`, which a `BillboardGui`/`SurfaceGui` carries
+    /// like any other `LayerCollector`.
+    pub(super) global_z_index: bool,
+    pub(super) list: Option<Layout>,
     pub(super) roots: Vec<Node>,
+    pub(super) groups: Vec<Group>,
 }
 
 impl SpaceGui {
     /// Every image the canvas wants, in first-seen paint order.
     pub(crate) fn assets(&self, into: &mut Vec<AssetRef>) {
-        for root in &self.roots {
-            collect_assets(root, into);
+        collect_assets_of(&self.roots, &self.groups, into);
+    }
+
+    /// Every font face the canvas' text wants, in first-seen paint order.
+    pub(crate) fn fonts(&self, into: &mut Vec<Face>) {
+        collect_fonts_of(&self.roots, &self.groups, into);
+    }
+
+    /// Every `ViewportFrame` part on the canvas — see `Screen::viewport_parts`.
+    pub(crate) fn viewport_parts(&mut self, apply: &mut impl FnMut(&mut Part)) {
+        for root in &mut self.roots {
+            super::plan::each_viewport_part(root, apply);
         }
     }
 }
@@ -97,26 +134,26 @@ impl SpaceGui {
 /// `placements` is what both are measured against: a canvas hangs off the part
 /// as the scene actually drew it, so a part that never made it in (a
 /// `MeshPart` replaced by real geometry, say) carries no canvas.
-///
-/// TODO: `Brightness`, `LightInfluence`, `MaxDistance` and the container's own
-/// `ClipsDescendants`.
 pub(crate) fn plan(
     dom: &WeakDom,
     database: &ReflectionDatabase,
     placements: &HashMap<Ref, Placement>,
+    materials: &mut Catalog,
 ) -> Vec<SpaceGui> {
     let parents = ParentMap::build(dom);
     let kinds = RefCell::new(HashMap::new());
+    let styles = Styled::new(dom);
     let context = Context {
         dom,
         database,
+        styles: &styles,
         parents: &parents,
         placements,
         kinds: &kinds,
     };
     let mut found = Vec::new();
     for &root in dom.root_refs() {
-        gather(context, root, None, &mut found);
+        gather(context, materials, root, None, &mut found);
     }
     found
 }
@@ -127,6 +164,7 @@ pub(crate) fn plan(
 struct Context<'a> {
     dom: &'a WeakDom,
     database: &'a ReflectionDatabase,
+    styles: &'a Styled,
     parents: &'a ParentMap<'a>,
     placements: &'a HashMap<Ref, Placement>,
     /// Each class met so far, as `(billboard, surface)`: the walk asks the
@@ -140,20 +178,35 @@ struct Context<'a> {
 /// reason [`super::plan::plan`] walks itself — paint order is tree order —
 /// and because a container's *parent* is what it hangs off when `Adornee` is
 /// unset, which a flat iterator cannot hand back.
-fn gather(context: Context<'_>, referent: Ref, parent: Option<Ref>, into: &mut Vec<SpaceGui>) {
+///
+/// `materials` rides beside [`Context`] rather than inside it: the context
+/// is copied down the walk, and a catalog a `ViewportFrame` adds layers to
+/// cannot be.
+fn gather(
+    context: Context<'_>,
+    materials: &mut Catalog,
+    referent: Ref,
+    parent: Option<Ref>,
+    into: &mut Vec<SpaceGui>,
+) {
     let Some(instance) = context.dom.get(referent) else {
         return;
     };
+    // "The contents of `StarterGui`" a hidden development GUI covers is the
+    // whole subtree, canvases included — see `plan::starter`.
+    if hides_contents(context.database, instance) {
+        return;
+    }
     let (billboard, surface) = kind_of(context, instance.class());
     if billboard || surface {
-        if let Some(gui) = read(context, instance, parent, billboard) {
+        if let Some(gui) = read(context, materials, instance, parent, billboard) {
             into.push(gui);
         }
         // Neither nests inside the other, and the children are the GUI tree.
         return;
     }
     for &child in instance.children() {
-        gather(context, child, Some(referent), into);
+        gather(context, materials, child, Some(referent), into);
     }
 }
 
@@ -173,19 +226,26 @@ fn kind_of(context: Context<'_>, class: &str) -> (bool, bool) {
 
 fn read(
     context: Context<'_>,
+    materials: &mut Catalog,
     instance: &Instance,
     parent: Option<Ref>,
     billboard: bool,
 ) -> Option<SpaceGui> {
-    let properties = instance.properties();
+    let properties = context.styles.properties_of(instance);
     if !flag(properties, "Enabled", true) {
         return None;
     }
     let adornee = adornee(context.dom, properties, parent)?;
-    let roots = elements(context.dom, context.database, instance.children());
+    let (roots, groups) = elements(
+        context.dom,
+        context.database,
+        context.styles,
+        materials,
+        instance.children(),
+    );
     // A tree that paints nothing is every `SurfaceGui` holding only
     // transparent text in practice; allocating it a canvas is pure waste.
-    if !roots.iter().any(Node::paints) {
+    if !roots.iter().any(Node::paints) && !groups.iter().any(Group::paints) {
         return None;
     }
 
@@ -200,13 +260,14 @@ fn read(
                     size,
                     view_offset: vector3(properties, "StudsOffset"),
                     world_offset: vector3(properties, "StudsOffsetWorldSpace"),
+                    size_offset: vector2(properties, "SizeOffset"),
                 },
             )
         }
         false => {
             let placement = context.placements.get(&adornee)?;
             let face = face(properties);
-            let corners = face_corners(face, placement, number(properties, "ZOffset", 0.0));
+            let corners = face_corners(face, placement, float(properties, "ZOffset", 0.0));
             (
                 surface_canvas(properties, face_studs(&corners)),
                 Anchor::Surface { corners },
@@ -220,11 +281,61 @@ fn read(
     Some(SpaceGui {
         adornee,
         canvas,
-        always_on_top: flag(properties, "AlwaysOnTop", false),
+        always_on_top: always_on_top(properties),
+        brightness: brightness(properties),
+        max_distance: max_distance(properties, billboard),
         anchor,
-        list: list_layout(context.dom, context.database, instance.children()),
+        global_z_index: global_z_index(properties),
+        list: layout_of(
+            context.dom,
+            context.database,
+            context.styles,
+            instance.children(),
+        ),
         roots,
+        groups,
     })
+}
+
+fn always_on_top(properties: &BTreeMap<String, Variant>) -> bool {
+    flag(properties, "AlwaysOnTop", false)
+}
+
+/// `Brightness` under `LightInfluence`, as the factor the canvas' colour is
+/// multiplied by.
+///
+/// "Determines the factor by which the container's light is scaled when
+/// `LightInfluence` is 0 ... `Brightness` ... has no effect when either
+/// `LightInfluence` is 1 or `AlwaysOnTop` is true"
+/// (`BillboardGui.Brightness`, `SurfaceGui.Brightness`), and `LightInfluence`
+/// itself runs "from 0 to 1 ... 1 means that surrounding lighting has complete
+/// control over the appearance". This viewer has no per-canvas light probe, so
+/// full influence is taken as the canvas' own colours unscaled and the two are
+/// mixed across the range.
+fn brightness(properties: &BTreeMap<String, Variant>) -> f32 {
+    if always_on_top(properties) {
+        return 1.0;
+    }
+    let influence = float(properties, "LightInfluence", 0.0).clamp(0.0, 1.0);
+    let brightness = float(properties, "Brightness", 1.0).clamp(0.0, MAX_BRIGHTNESS);
+    brightness + (1.0 - brightness) * influence
+}
+
+/// `MaxDistance` in studs, `f32::INFINITY` where there is no limit.
+///
+/// "A value of 0 ... means there is no limit and it will render infinitely far
+/// away" (`BillboardGui.MaxDistance`); a billboard's own default is `inf` and
+/// a `SurfaceGui`'s is 1000 ("the default value of 1000 works fine for most
+/// cases").
+fn max_distance(properties: &BTreeMap<String, Variant>, billboard: bool) -> f32 {
+    let default = match billboard {
+        true => f32::INFINITY,
+        false => SURFACE_MAX_DISTANCE,
+    };
+    match float(properties, "MaxDistance", default) {
+        limit if limit <= 0.0 => f32::INFINITY,
+        limit => limit,
+    }
 }
 
 /// What the canvas hangs off: `Adornee` where it points at a live instance,
@@ -239,101 +350,6 @@ pub(super) fn adornee(
         Some(&Variant::Ref(referent)) if dom.get(referent).is_some() => Some(referent),
         _ => parent,
     }
-}
-
-/// `Face`, Front by default like Roblox itself.
-fn face(properties: &BTreeMap<String, Variant>) -> NormalId {
-    match properties.get("Face") {
-        Some(&Variant::Enum(raw)) => NormalId::from_ordinal(raw).unwrap_or(NormalId::Front),
-        _ => NormalId::Front,
-    }
-}
-
-/// The canvas' pixel size for a billboard of `size` studs.
-pub(super) fn billboard_canvas(size: [f32; 2]) -> [f32; 2] {
-    size.map(|studs| (studs * PIXELS_PER_STUD).clamp(0.0, MAX_CANVAS).round())
-}
-
-/// The pixel size of a `SurfaceGui`'s canvas: the face's stud size at
-/// `PixelsPerStud` by default, `CanvasSize` under `SizingMode.FixedSize`.
-/// Either way the canvas is stretched over the whole face, so the two only
-/// differ in how many pixels a `UDim2` offset comes to.
-///
-/// Falls back to [`DEFAULT_CANVAS`] per axis where the result is degenerate —
-/// a zero axis would ask for a texture no adapter will allocate.
-pub(super) fn surface_canvas(
-    properties: &BTreeMap<String, Variant>,
-    face_studs: [f32; 2],
-) -> [f32; 2] {
-    let raw = match properties.get("SizingMode") {
-        Some(&Variant::Enum(FIXED_SIZE)) => vector2(properties, "CanvasSize"),
-        _ => {
-            let density = number(properties, "PixelsPerStud", PIXELS_PER_STUD);
-            face_studs.map(|studs| studs * density)
-        }
-    };
-    let axis = |value: f32, default: f32| match value.is_finite() && value >= 1.0 {
-        true => value.min(MAX_CANVAS).round(),
-        false => default,
-    };
-    [
-        axis(raw[0], DEFAULT_CANVAS[0]),
-        axis(raw[1], DEFAULT_CANVAS[1]),
-    ]
-}
-
-/// World width and height of a `BillboardGui.Size`, in studs.
-///
-/// Simplification: Roblox gives the two halves of that `UDim2` different
-/// units — the scale half is the billboard's stud size in 3D, the offset half
-/// a constant screen-pixel size that does not shrink with distance. Only the
-/// first is reproduced; an offset-only `Size` is read as studs at
-/// [`PIXELS_PER_STUD`], so such a billboard keeps a fixed *world* size instead
-/// of a fixed *screen* one.
-///
-/// TODO: true scale-with-distance for the offset half.
-pub(super) fn studs(size: super::plan::Span) -> [f32; 2] {
-    let axis = |scale: f32, offset: f32| match scale > 0.0 {
-        true => scale,
-        false => (offset / PIXELS_PER_STUD).max(0.0),
-    };
-    [
-        axis(size.scale[0], size.offset[0]),
-        axis(size.scale[1], size.offset[1]),
-    ]
-}
-
-/// The four world corners of `face` on a part, in image order.
-///
-/// The same rectangle a stretched `Decal` covers: [`NormalId::axes`] is what
-/// `crate::textures::face` builds its own projection from, so the canvas and a
-/// decal on the very same face land on exactly the same quad.
-pub(super) fn face_corners(face: NormalId, placement: &Placement, z_offset: f32) -> [Vec3; 4] {
-    let (normal, u, v) = face.axes();
-    // The unit mesh spans [-0.5, 0.5]³, so the face plane sits half a unit
-    // along its own normal and the image axes span the other two.
-    let centre = normal * 0.5;
-    let model = &placement.model;
-    let push = model.transform_vector3(normal).normalize_or_zero() * z_offset;
-    let corner = |right: f32, down: f32| {
-        model.transform_point3(centre + u * (right * 0.5) + v * (down * 0.5)) + push
-    };
-    [
-        corner(-1.0, -1.0),
-        corner(1.0, -1.0),
-        corner(1.0, 1.0),
-        corner(-1.0, 1.0),
-    ]
-}
-
-/// Width and height in studs of a face quad in image order, as the part is
-/// actually placed — so a scaled `Placement` sizes the canvas like Roblox
-/// sizes it off the part's own `Size`.
-pub(super) fn face_studs(corners: &[Vec3; 4]) -> [f32; 2] {
-    [
-        corners[1].distance(corners[0]),
-        corners[3].distance(corners[0]),
-    ]
 }
 
 /// The world position a billboard hangs off: an `Attachment`'s resolved CFrame
@@ -357,17 +373,11 @@ fn vector3(properties: &BTreeMap<String, Variant>, name: &str) -> Vec3 {
     }
 }
 
-fn number(properties: &BTreeMap<String, Variant>, name: &str, default: f32) -> f32 {
-    let raw = match properties.get(name) {
-        Some(&Variant::Float32(value)) => value,
-        Some(&Variant::Float64(value)) => value as f32,
-        _ => return default,
-    };
-    match raw.is_finite() {
-        true => raw,
-        false => default,
-    }
-}
+mod geometry;
+
+pub(in crate::scene::gui) use geometry::{
+    billboard_canvas, face, face_corners, face_studs, studs, surface_canvas,
+};
 
 #[cfg(test)]
 mod tests;

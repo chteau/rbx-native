@@ -5,53 +5,36 @@
 //! which is the frame `UDim2` itself is written in; the renderer is what turns
 //! them into clip space.
 
-use rbx_assets::AssetRef;
+mod text;
 
-use super::plan::{Align, Fill, List, Node, Screen, Span, Tiling};
+use super::plan::{Align, GroupTint, Node, Screen, Span, Viewport};
 use super::space::SpaceGui;
+use super::wheel::ScrollWindow;
+// Reaches all the way to `renderer::gui::quads::image`, unlike everything
+// else `plan` hands this module — see the type's own doc comment.
+pub(crate) use super::plan::PixelRect;
 
-/// A screen-space box in pixels, top-left origin.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct Rect {
-    pub(crate) x: f32,
-    pub(crate) y: f32,
-    pub(crate) width: f32,
-    pub(crate) height: f32,
-}
+mod arrange;
+mod grid;
+mod image;
+mod list;
+mod modifiers;
+mod page;
+mod rect;
+mod scrolling;
+mod sizing;
+mod table;
+mod walk;
 
-impl Rect {
-    pub(crate) fn size(&self) -> [f32; 2] {
-        [self.width, self.height]
-    }
-
-    /// The overlap of two boxes, empty (zero-sized) where they do not meet —
-    /// which is what a scissor rect has to become for a child clipped away
-    /// entirely.
-    pub(crate) fn intersect(&self, other: &Rect) -> Rect {
-        let x = self.x.max(other.x);
-        let y = self.y.max(other.y);
-        let right = (self.x + self.width).min(other.x + other.width);
-        let bottom = (self.y + self.height).min(other.y + other.height);
-
-        Rect {
-            x,
-            y,
-            width: (right - x).max(0.0),
-            height: (bottom - y).max(0.0),
-        }
-    }
-}
-
-/// An `ImageLabel`'s image with its tiling already turned into a UV repeat
-/// count, so the renderer never has to resolve a `UDim2` of its own.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Painted {
-    pub(crate) asset: AssetRef,
-    pub(crate) tint: [f32; 3],
-    pub(crate) alpha: f32,
-    /// How many times the image repeats across the box, 1 being a stretch.
-    pub(crate) repeat: [f32; 2],
-}
+#[allow(unused_imports)]
+use arrange::Arranged as _;
+pub(crate) use arrange::{arrange, Arranged};
+use image::painted;
+pub(crate) use image::{ImageScale, Painted};
+pub(crate) use modifiers::{GradientPx, StrokePx};
+pub(crate) use rect::Rect;
+pub(crate) use text::{TextMeasure, Typeset};
+pub(in crate::scene::gui) use walk::{children, Context, Scope};
 
 /// One `GuiObject` at its final pixel position, ready to be drawn on its own.
 #[derive(Debug, Clone, PartialEq)]
@@ -60,21 +43,74 @@ pub(crate) struct Element {
     /// The scissor rect inherited from the nearest `ClipsDescendants`
     /// ancestor, if any. Already intersected down the whole chain.
     pub(crate) clip: Option<Rect>,
-    /// `Rotation`, degrees clockwise around `rect`'s own centre.
+    /// `AbsoluteRotation`: degrees clockwise around `rect`'s own centre, this
+    /// element's `Rotation` plus every ancestor's. `rect` has already been
+    /// carried around those ancestors' centres, so turning it about its own
+    /// is all that is left to do.
     pub(crate) rotation: f32,
     pub(crate) background: [f32; 3],
     pub(crate) background_alpha: f32,
-    /// `BorderSizePixel` and `BorderColor3`, `None` for a zero-width border.
+    /// `BorderSizePixel` and `BorderColor3`, `None` for a zero-width border
+    /// — or for any rounded box, since a square outline around one is not
+    /// what a `UICorner` shows; the docs say nothing about the two together.
     pub(crate) border: Option<(f32, [f32; 3])>,
+    /// How far inside `rect` the border's outer edge sits, per `BorderMode`.
+    pub(crate) border_inset: f32,
+    /// `ZIndex`, kept so a `ZIndexBehavior.Global` screen can sort its whole
+    /// flattened tree by it after the fact.
+    pub(crate) z_index: i32,
     pub(crate) image: Option<Painted>,
+    /// `UICorner` in pixels, top-left first then clockwise; all zero without.
+    pub(crate) corner_radii: [f32; 4],
+    /// Every `UIStroke`, in the order they are painted.
+    pub(crate) strokes: Vec<StrokePx>,
+    pub(crate) gradient: Option<GradientPx>,
+    /// A text object's text, drawn over the background and image.
+    pub(crate) text: Option<Typeset>,
+    /// A `ViewportFrame`'s 3D content. The renderer bakes it to a texture of
+    /// `rect`'s pixel size and fills `image` in with it, so it lands over the
+    /// background exactly as an `ImageLabel`'s image would.
+    pub(crate) viewport: Option<Viewport>,
+    /// A `CanvasGroup` whose subtree the renderer is to flatten before
+    /// tinting; `None` for every other element, and for a group under
+    /// `ZIndexBehavior.Global`.
+    pub(crate) group: Option<Grouped>,
+    /// A `ScrollingFrame`'s window, for a host to hit-test the wheel against
+    /// (see `super::wheel`); `None` for every other element.
+    pub(crate) scroll: Option<ScrollWindow>,
+}
+
+/// A `CanvasGroup`'s tint and the run of elements it applies to.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Grouped {
+    pub(crate) tint: GroupTint,
+    /// How many elements straight after the group's own are its subtree,
+    /// contiguous because siblings are emitted depth-first.
+    pub(crate) descendants: usize,
+    /// The texture slot the renderer baked the subtree into, once it has;
+    /// the layout leaves it `None`.
+    pub(crate) texture: Option<usize>,
 }
 
 /// Every element of every screen, in paint order: `DisplayOrder` first, then
 /// `ZIndex` among siblings, then tree order — and a child always over its
 /// parent, which is what `ZIndexBehavior.Sibling` (the default) means.
+///
+/// Text is laid out at `TextSize` as is, unmeasured: what a test with no font
+/// system wants, and what the renderer never calls — see [`resolve_with`].
+#[cfg(test)]
 pub(crate) fn resolve(screens: &[Screen], viewport: [f32; 2]) -> Vec<Element> {
-    let frame = canvas(viewport);
+    resolve_with(screens, viewport, &mut text::Unmeasured)
+}
 
+/// [`resolve`] with the text measured by `measure` — what the renderer calls,
+/// so `TextScaled` and an `AutomaticSize` text box come out at the size the
+/// glyphs will actually take.
+pub(crate) fn resolve_with(
+    screens: &[Screen],
+    viewport: [f32; 2],
+    measure: &mut dyn TextMeasure,
+) -> Vec<Element> {
     let mut order: Vec<&Screen> = screens.iter().collect();
     // Stable, so two screens sharing a `DisplayOrder` keep the order the DOM
     // holds them in rather than an arbitrary one.
@@ -82,14 +118,39 @@ pub(crate) fn resolve(screens: &[Screen], viewport: [f32; 2]) -> Vec<Element> {
 
     let mut elements = Vec::new();
     for screen in order {
+        // `ScreenInsets`: the canvas starts below the top bar, and is that
+        // much shorter, so a `{1, 0}` child still reaches the bottom edge.
+        let frame = Rect {
+            y: screen.top_inset,
+            height: (viewport[1] - screen.top_inset).max(0.0),
+            ..canvas(viewport)
+        };
+        let start = elements.len();
         children(
-            &screen.roots,
-            screen.list.as_ref(),
+            Scope {
+                nodes: &screen.roots,
+                groups: &screen.groups,
+                layout: screen.list.as_ref(),
+            },
             &frame,
             None,
-            false,
+            Context {
+                global_z_index: screen.global_z_index,
+                // `ClipToDeviceSafeArea` scissors the whole screen to the
+                // canvas the insets leave, exactly as an ancestor's
+                // `ClipsDescendants` would.
+                clip: screen.clip_to_safe_area.then_some(frame),
+                ..Context::default()
+            },
+            measure,
             &mut elements,
         );
+        if screen.global_z_index {
+            // "Sorts all descendants according to the ZIndex, then breaks ties
+            // using the hierarchy order": the walk above already emitted them
+            // in hierarchy order, so a stable sort is the whole of it.
+            elements[start..].sort_by_key(|element| element.z_index);
+        }
     }
     elements
 }
@@ -98,17 +159,33 @@ pub(crate) fn resolve(screens: &[Screen], viewport: [f32; 2]) -> Vec<Element> {
 /// canvas instead of the viewport: a container drawn into an offscreen texture
 /// is a viewport of `canvas` pixels as far as a `UDim2` is concerned, which is
 /// the whole reason this and [`resolve`] are one code path.
+#[cfg(test)]
 pub(crate) fn resolve_canvas(gui: &SpaceGui) -> Vec<Element> {
+    resolve_canvas_with(gui, &mut text::Unmeasured)
+}
+
+/// [`resolve_canvas`] with the text measured — see [`resolve_with`].
+pub(crate) fn resolve_canvas_with(gui: &SpaceGui, measure: &mut dyn TextMeasure) -> Vec<Element> {
     let frame = canvas(gui.canvas);
     let mut elements = Vec::new();
     children(
-        &gui.roots,
-        gui.list.as_ref(),
+        Scope {
+            nodes: &gui.roots,
+            groups: &gui.groups,
+            layout: gui.list.as_ref(),
+        },
         &frame,
         None,
-        false,
+        Context {
+            global_z_index: gui.global_z_index,
+            ..Context::default()
+        },
+        measure,
         &mut elements,
     );
+    if gui.global_z_index {
+        elements.sort_by_key(|element| element.z_index);
+    }
     elements
 }
 
@@ -122,46 +199,48 @@ fn canvas(size: [f32; 2]) -> Rect {
     }
 }
 
-/// Places every sibling inside `parent`, then emits them in paint order.
-///
-/// The two orders are distinct: a `UIListLayout` decides where a sibling
-/// sits, `ZIndex` decides which one is drawn over the other.
-fn children(
-    nodes: &[Node],
-    list: Option<&List>,
-    parent: &Rect,
-    clip: Option<Rect>,
-    rotated: bool,
+pub(in crate::scene::gui) fn emit(
+    node: &Node,
+    rect: Rect,
+    cells: Option<&[Rect]>,
+    context: Context,
+    measure: &mut dyn TextMeasure,
     into: &mut Vec<Element>,
 ) {
-    let rects = match list {
-        Some(list) => stacked(nodes, list, parent),
-        None => nodes
-            .iter()
-            .map(|node| place(node.position, node.size, node.anchor, parent))
-            .collect(),
-    };
-    for index in sorted(nodes) {
-        emit(&nodes[index], rects[index], clip, rotated, into);
-    }
-}
-
-/// Sibling indices in paint order. Stable for the same reason screens are.
-fn sorted(nodes: &[Node]) -> Vec<usize> {
-    let mut order: Vec<usize> = (0..nodes.len()).collect();
-    order.sort_by_key(|&index| nodes[index].z_index);
-    order
-}
-
-fn emit(node: &Node, rect: Rect, clip: Option<Rect>, rotated: bool, into: &mut Vec<Element>) {
+    // Settled before the children are placed: an `AutomaticSize` text box
+    // grows here, and its children resolve against the grown box.
+    let mut rect = rect;
+    let text = node
+        .text
+        .as_ref()
+        .map(|text| text::typeset(text, &mut rect, measure));
+    let corner_radii = modifiers::radii(node.corner.as_ref(), rect.size());
+    let rounded = corner_radii.iter().any(|&radius| radius > 0.0);
+    let start = into.len();
     into.push(Element {
         rect,
-        clip,
-        rotation: node.rotation,
+        clip: context.clip,
+        rotation: context.angle + node.rotation,
         background: node.background,
         background_alpha: node.background_alpha,
-        border: (node.border > 0.0).then_some((node.border, node.border_color)),
+        border: (node.border > 0.0 && !rounded).then_some((node.border, node.border_color)),
+        border_inset: node.border_mode.inset(node.border),
+        z_index: node.z_index,
         image: node.fill.as_ref().map(|fill| painted(fill, &rect)),
+        corner_radii,
+        strokes: node
+            .strokes
+            .iter()
+            .map(|stroke| modifiers::stroke(stroke, rect.size()))
+            .collect(),
+        gradient: node
+            .gradient
+            .as_ref()
+            .map(|gradient| modifiers::gradient(gradient, rect.size())),
+        text,
+        viewport: node.viewport.clone(),
+        group: None,
+        scroll: None,
     });
 
     // Roblox's own docs describe two modes here, gated on the (NotScriptable,
@@ -171,75 +250,66 @@ fn emit(node: &Node, rect: Rect, clip: Option<Rect>, rotated: bool, into: &mut V
     // all — a non-zero `Rotation` on this element or any ancestor makes
     // `ClipsDescendants` a no-op rather than clipping to a box that no longer
     // matches what is actually drawn on screen.
-    let rotated = rotated || node.rotation != 0.0;
-    let inner = match node.clips && !rotated {
-        true => Some(clip.map_or(rect, |outer| outer.intersect(&rect))),
-        false => clip,
-    };
-    children(
-        &node.children,
-        node.list.as_ref(),
-        &rect,
-        inner,
+    let rotated = context.rotated || node.rotation != 0.0;
+    let angle = context.angle + node.rotation;
+    let inner = Context {
+        clip: match node.clips && !rotated {
+            true => Some(context.clip.map_or(rect, |outer| outer.intersect(&rect))),
+            false => context.clip,
+        },
         rotated,
-        into,
-    );
-}
-
-/// `UIListLayout` placement, one rect per node in `nodes`'s own order: the
-/// siblings keep their `Size`, are sorted, and are laid end to end along the
-/// fill axis with `Padding` between them. `Position` and `AnchorPoint` are
-/// ignored, as Roblox ignores them.
-fn stacked(nodes: &[Node], list: &List, parent: &Rect) -> Vec<Rect> {
-    let extent = parent.size();
-    let sizes: Vec<[f32; 2]> = nodes.iter().map(|node| node.size.against(extent)).collect();
-    let along = usize::from(list.vertical);
-    let across = 1 - along;
-
-    let mut order: Vec<usize> = (0..nodes.len()).collect();
-    match list.by_name {
-        true => order.sort_by(|&a, &b| nodes[a].name.cmp(&nodes[b].name)),
-        // Stable: equal `LayoutOrder`s keep tree order, which is what "added
-        // sooner to the parent" comes to in a saved place.
-        false => order.sort_by_key(|&index| nodes[index].layout_order),
-    }
-
-    let padding = list.padding.0 * extent[along] + list.padding.1;
-    let total = sizes.iter().map(|size| size[along]).sum::<f32>()
-        + padding * nodes.len().saturating_sub(1) as f32;
-    let (stack, item) = match list.vertical {
-        true => (list.vertical_align, list.horizontal),
-        false => (list.horizontal, list.vertical_align),
+        angle,
+        // Once this element turns, its children turn about *its* centre.
+        pivot: match angle == 0.0 {
+            true => context.pivot,
+            false => [rect.x + rect.width * 0.5, rect.y + rect.height * 0.5],
+        },
+        ..context
     };
-
-    let mut rects = vec![
-        Rect {
-            x: 0.0,
-            y: 0.0,
-            width: 0.0,
-            height: 0.0
-        };
-        nodes.len()
-    ];
-    let mut cursor = offset(stack, extent[along], total);
-    for index in order {
-        let size = sizes[index];
-        let mut origin = [0.0; 2];
-        origin[along] = cursor;
-        origin[across] = offset(item, extent[across], size[across]);
-        rects[index] = Rect {
-            x: parent.x + origin[0],
-            y: parent.y + origin[1],
-            width: size[0],
-            height: size[1],
-        };
-        cursor += size[along] + padding;
+    match &node.scrolling {
+        Some(scrolling) => {
+            let window = scrolling::scroll(node, scrolling, &rect, cells, inner, measure, into);
+            into[start].scroll = Some(ScrollWindow {
+                referent: node.referent,
+                rect: window.rect,
+                clip: context.clip,
+                range: [0, 1].map(
+                    |axis| match scrolling.enabled && scrolling.direction[axis] {
+                        true => (window.canvas[axis] - window.rect.size()[axis]).max(0.0),
+                        false => 0.0,
+                    },
+                ),
+            });
+        }
+        None => children(
+            Scope {
+                nodes: &node.children,
+                groups: &node.groups,
+                layout: node.list.as_ref(),
+            },
+            &sizing::padded(node, &rect),
+            cells,
+            inner,
+            measure,
+            into,
+        ),
     }
-    rects
+
+    // "Descendants of `CanvasGroup` will be rendered as a flattened texture
+    // only when the ancestor `LayerCollector` has its `ZIndexBehavior` set to
+    // `Sibling`" — which is also the only mode that leaves them contiguous
+    // behind the group here, since [`resolve`] re-sorts a `Global` screen.
+    if let Some(tint) = node.group.filter(|_| !context.global_z_index) {
+        into[start].group = Some(Grouped {
+            tint,
+            descendants: into.len() - start - 1,
+            texture: None,
+        });
+    }
 }
 
 /// Where a run of `length` starts inside `extent` for one alignment.
-fn offset(align: Align, extent: f32, length: f32) -> f32 {
+pub(super) fn offset(align: Align, extent: f32, length: f32) -> f32 {
     match align {
         Align::Start => 0.0,
         Align::Center => (extent - length) * 0.5,
@@ -247,12 +317,12 @@ fn offset(align: Align, extent: f32, length: f32) -> f32 {
     }
 }
 
-/// Standard `UDim2` resolution: the size is a fraction of the parent plus a
-/// pixel offset, the position the same against the parent's own corner, and
-/// `AnchorPoint` then slides the box back by that fraction of its own size —
-/// the default `(0, 0)` putting the element's top-left corner on `Position`.
-fn place(position: Span, size: Span, anchor: [f32; 2], parent: &Rect) -> Rect {
-    let extent = size.against(parent.size());
+/// Standard `UDim2` resolution: `extent` is the size every size modifier has
+/// already had its say on, the position is a fraction of the parent plus a
+/// pixel offset against the parent's own corner, and `AnchorPoint` then slides
+/// the box back by that fraction of its own size — the default `(0, 0)`
+/// putting the element's top-left corner on `Position`.
+pub(super) fn place(position: Span, extent: [f32; 2], anchor: [f32; 2], parent: &Rect) -> Rect {
     let origin = position.against(parent.size());
 
     Rect {
@@ -260,32 +330,5 @@ fn place(position: Span, size: Span, anchor: [f32; 2], parent: &Rect) -> Rect {
         y: parent.y + origin[1] - anchor[1] * extent[1],
         width: extent[0],
         height: extent[1],
-    }
-}
-
-fn painted(fill: &Fill, rect: &Rect) -> Painted {
-    Painted {
-        asset: fill.asset.clone(),
-        tint: fill.tint,
-        alpha: fill.alpha,
-        repeat: match fill.tiling {
-            Tiling::Stretch => [1.0, 1.0],
-            // A tile bigger than the box repeats less than once, which is
-            // Roblox's own behaviour: `TileSize` is a size, not a count.
-            Tiling::Tile { size } => {
-                let tile = size.against(rect.size());
-                [ratio(rect.width, tile[0]), ratio(rect.height, tile[1])]
-            }
-        },
-    }
-}
-
-/// How many tiles of `tile` pixels fit across `extent`. A non-positive tile
-/// would repeat infinitely often, so it falls back to a single stretch.
-fn ratio(extent: f32, tile: f32) -> f32 {
-    if tile > 0.0 {
-        extent / tile
-    } else {
-        1.0
     }
 }

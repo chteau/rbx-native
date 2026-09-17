@@ -18,6 +18,7 @@ mod label;
 mod presence;
 mod pump;
 mod quality;
+mod scroll;
 mod stats;
 
 use std::cell::Cell;
@@ -39,8 +40,9 @@ use crate::transform::{self, Targets, Transform};
 use crate::{display, pacing};
 use frame::{device_pixels, render_image, Viewport};
 use gizmo::Drag;
-use input::{camera_key, chorded, tool_key, wheel_notches, Layout};
+use input::{camera_key, chorded, tool_key, Layout};
 use pump::Pump;
+pub(crate) use scroll::{scrolled, Scroll};
 
 // How long a speed change stays on screen, matching the standalone viewer's
 // title bar.
@@ -152,6 +154,11 @@ pub(crate) enum ViewportAction {
     /// just began and a hover box hanging over the gesture would look
     /// broken.
     Hover { ray: Option<Ray>, alt: bool },
+    /// The wheel rolled over a `ScrollingFrame` of a `ScreenGui`: `Shell`
+    /// moves its `CanvasPosition` (see `shell::scroll`). Not an edit —
+    /// Studio's own scroll is not undoable either — so it never goes near
+    /// the undo stack, the way a camera pose does not.
+    Scrolled(Scroll),
 }
 
 impl EventEmitter<ViewportAction> for WorkspaceView {}
@@ -202,6 +209,10 @@ pub(crate) struct WorkspaceView {
     drag_stepped_at: Option<Instant>,
     /// When the hover ray was last actually resolved, for `hover::due`.
     hover_resolved_at: Option<Instant>,
+    /// The one wheel event `RBX_STUDIO_SCROLL` asks for (see [`scroll`]),
+    /// held until the first frame is up: the render thread can only hit-test
+    /// an overlay it has laid out, which it does on that first draw.
+    debug_wheel: Option<([f32; 2], input::Wheel)>,
     /// The panel's place in the window, in physical pixels. Written during
     /// layout and read afterwards, which is why it is shared rather than passed:
     /// both happen on the UI thread, never at the same time.
@@ -336,6 +347,7 @@ impl WorkspaceView {
             drag_pending: None,
             drag_stepped_at: None,
             hover_resolved_at: None,
+            debug_wheel: scroll::debug_wheel(),
             viewport: Rc::new(Cell::new(Viewport::default())),
             sized: (0, 0),
             // Assumed visible until `advance` first has a chance to find out
@@ -414,6 +426,7 @@ impl WorkspaceView {
         let mut latest = None;
         let mut pose = None;
         let mut warnings = Vec::new();
+        let mut scrolls = Vec::new();
         while let Some(ready) = self.pump.poll() {
             speed = Some(ready.speed);
             level = Some(ready.level);
@@ -436,6 +449,7 @@ impl WorkspaceView {
                 self.meshes = meshes;
             }
             warnings.extend(ready.warnings);
+            scrolls.extend(ready.scrolls);
         }
 
         self.show_speed(speed, now, cx);
@@ -445,6 +459,14 @@ impl WorkspaceView {
         }
         if let Some((pixels, size)) = latest {
             self.show_frame(pixels, size, window, cx);
+            // A frame is up, so the overlay it carries has been laid out:
+            // the injected wheel can find a frame under it from here on.
+            if let Some((at, wheel)) = self.debug_wheel.take() {
+                self.pump.wheel(at, wheel, wheel.notches);
+            }
+        }
+        for scroll in scrolls {
+            cx.emit(ViewportAction::Scrolled(scroll));
         }
         if let Some(pose) = pose {
             cx.emit(PoseSynced(pose));
@@ -766,9 +788,11 @@ impl Render for WorkspaceView {
                     });
                 }
             }))
-            .on_scroll_wheel(cx.listener(|view, event: &ScrollWheelEvent, _, _| {
-                let notches = wheel_notches(event.delta);
-                view.pump.input(CameraInput::Wheel { notches });
+            // Not straight to the camera: a `ScrollingFrame` under the
+            // cursor takes the notch first (see `scroll`).
+            .on_scroll_wheel(cx.listener(|view, event: &ScrollWheelEvent, window, _| {
+                let scale = window.scale_factor();
+                view.wheel(event.position, event.delta, event.modifiers.shift, scale);
             }))
             .on_key_down(cx.listener(|view, event: &KeyDownEvent, _, cx| {
                 view.key(&event.keystroke, true, cx);

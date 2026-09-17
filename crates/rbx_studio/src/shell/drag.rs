@@ -47,6 +47,7 @@ impl Shell {
                 held,
             } => self.pick_in_viewport(*ray, *cycling, *extend, *held, cx),
             ViewportAction::Hover { ray, alt } => self.hover_in_viewport(*ray, *alt, cx),
+            ViewportAction::Scrolled(scroll) => self.scroll_canvas(scroll, cx),
             ViewportAction::Moved {
                 moves,
                 first,

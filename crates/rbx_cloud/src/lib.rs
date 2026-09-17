@@ -11,6 +11,7 @@ mod experiences;
 mod games;
 mod introspect;
 mod publish;
+mod retry;
 mod universes;
 
 pub use api_key::ApiKey;

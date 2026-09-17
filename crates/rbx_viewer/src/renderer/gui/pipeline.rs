@@ -14,7 +14,10 @@ pub(super) struct ViewportRaw {
     pub(super) padding: [f32; 2],
 }
 
-/// One corner of a rectangle, already in viewport pixels.
+/// One corner of a rectangle, already in viewport pixels, plus what the
+/// fragment needs to shape it: the rounded box it belongs to, described in
+/// that box's own unrotated frame so `Rotation` never enters the maths, and
+/// the gradient ramp multiplied into it.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Pod, Zeroable)]
 pub(super) struct VertexRaw {
@@ -22,14 +25,64 @@ pub(super) struct VertexRaw {
     pub(super) uv: [f32; 2],
     pub(super) color: [f32; 3],
     pub(super) alpha: f32,
+    /// The vertex relative to the box centre, before `Rotation`.
+    pub(super) local: [f32; 2],
+    pub(super) half: [f32; 2],
+    /// Top-left first, then clockwise.
+    pub(super) radii: [f32; 4],
+    /// The signed distances from the box outline the fragment is kept
+    /// between, so one shader covers a fill (`[-∞, 0]`) and a stroke band.
+    pub(super) band: [f32; 2],
+    /// `GuiGradient::origin` then `::axis`.
+    pub(super) gradient: [f32; 4],
+    /// The ramp's row in the gradient texture, negative for none.
+    pub(super) gradient_row: f32,
+    /// [`mode`]: the line join, gradient kind and tile mode packed together.
+    pub(super) mode: u32,
 }
 
-const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
+const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 11] = wgpu::vertex_attr_array![
     0 => Float32x2,
     1 => Float32x2,
     2 => Float32x3,
     3 => Float32,
+    4 => Float32x2,
+    5 => Float32x2,
+    6 => Float32x4,
+    7 => Float32x2,
+    8 => Float32x4,
+    9 => Float32,
+    10 => Uint32,
 ];
+
+/// Three two-bit enum ordinals in one attribute: bits 0–1 the
+/// `LineJoinMode`, 2–3 the `GradientType`, 4–5 the `GradientTileMode` — the
+/// same ordinals the shader unpacks.
+pub(super) fn mode(join: u32, kind: u32, tile: u32) -> u32 {
+    (join & 3) | (kind & 3) << 2 | (tile & 3) << 4
+}
+
+/// The format the GUI pass renders through: the non-sRGB twin of whatever the
+/// target really is. Roblox composites its 2D layer in the display's *encoded*
+/// space — a frame at `BackgroundTransparency` 0.5 halves the encoded pixel
+/// behind it, not the linear light it stands for — and the only way to stop
+/// the hardware decoding, blending and re-encoding around that is to attach a
+/// view that claims no encoding at all. The shader then emits the encoding
+/// itself (`gui.wgsl`'s `linear_to_srgb`), the bytes in the texture are
+/// unchanged, and anything that samples the target afterwards still decodes
+/// correctly.
+pub(super) fn encoded(format: wgpu::TextureFormat) -> wgpu::TextureFormat {
+    format.remove_srgb_suffix()
+}
+
+/// The view [`encoded`] asks for. `texture` must have been created with that
+/// format in its `view_formats` (a surface, with it in the configuration).
+pub(super) fn encoded_view(texture: &wgpu::Texture) -> wgpu::TextureView {
+    texture.create_view(&wgpu::TextureViewDescriptor {
+        format: Some(encoded(texture.format())),
+        ..Default::default()
+    })
+}
 
 /// Straight alpha, unlike every other blended pass in this renderer: a GUI
 /// rectangle is composited over a finished, opaque frame rather than added
@@ -56,11 +109,14 @@ pub(super) fn viewport_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
 /// Built for the *display* format and a single sample, not for the scene's HDR
 /// target: the overlay is drawn after the resolve, so a quality level that
 /// changes the scene's sample count never has to rebuild it.
+///
+/// `gradient_layout` is bind group 2, the baked `UIGradient` ramps.
 pub(super) fn create_pipeline(
     device: &wgpu::Device,
     format: wgpu::TextureFormat,
     viewport_layout: &wgpu::BindGroupLayout,
     image_layout: &wgpu::BindGroupLayout,
+    gradient_layout: &wgpu::BindGroupLayout,
 ) -> wgpu::RenderPipeline {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("rbxview gui"),
@@ -68,7 +124,11 @@ pub(super) fn create_pipeline(
     });
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("rbxview gui"),
-        bind_group_layouts: &[Some(viewport_layout), Some(image_layout)],
+        bind_group_layouts: &[
+            Some(viewport_layout),
+            Some(image_layout),
+            Some(gradient_layout),
+        ],
         immediate_size: 0,
     });
     let buffers = [Some(wgpu::VertexBufferLayout {

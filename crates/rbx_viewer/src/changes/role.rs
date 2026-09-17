@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
-use crate::scene::{descendants, EffectKind};
+use crate::scene::{descendants, descendants_of, EffectKind};
 
 /// What one instance is to the picture: which of the renderer's passes an
 /// edit to it has to reach. Decided by class alone, so it can be decided
@@ -85,7 +85,27 @@ impl Role {
         if is("SurfaceAppearance") {
             return Role::Appearance;
         }
-        if is("GuiBase") || is("UIBase") {
+        // The styling family (`StyleBase` covers `StyleSheet`/`StyleRule`;
+        // `StyleDerive`/`StyleLink` hang off `Instance` directly) never
+        // draws, but every GUI tree is planned through it — see
+        // `scene::gui::style` — so an edit to a rule has to reach the same
+        // pass an edit to the styled `Frame` would. A sheet lives outside
+        // any `ScreenGui`, so `gui_changed`'s walk up from it finds no
+        // canvas and replans them all, which is what a sheet's reach
+        // demands.
+        //
+        // `StarterGui` is no `GuiBase`, but `ShowDevelopmentGui` decides
+        // whether anything under it is drawn at all (see
+        // `scene::gui::plan::starter`), so toggling it has to re-plan the
+        // GUI. The service sits outside every canvas, so `gui_changed`'s
+        // walk up from it finds none and re-plans both lists.
+        if is("GuiBase")
+            || is("UIBase")
+            || is("StarterGui")
+            || is("StyleBase")
+            || is("StyleDerive")
+            || is("StyleLink")
+        {
             return Role::Gui;
         }
         if is("MaterialVariant") || is("MaterialService") {
@@ -93,6 +113,24 @@ impl Role {
         }
         Role::Inert
     }
+}
+
+/// Whether `referent`'s own subtree holds anything a GUI pass draws.
+///
+/// The question an instance with no role of its own has to answer as it
+/// moves: a GUI tree is planned from its `ScreenGui`/`BillboardGui`/
+/// `SurfaceGui` down, and a plain container is allowed to sit anywhere in
+/// one (see `scene::gui::plan::Group`), so a `Folder` of frames dragged out
+/// of an overlay leaves that overlay still drawing them unless it is
+/// re-planned too. The walk stops at the first element found, which for a
+/// container that holds no GUI at all is the price of the whole subtree —
+/// paid only on a reparent, and only for a class the renderer draws nothing
+/// from.
+pub(crate) fn holds_gui(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> bool {
+    descendants_of(dom, referent).any(|descendant| {
+        dom.get(descendant)
+            .is_some_and(|instance| Role::of(database, instance.class()) == Role::Gui)
+    })
 }
 
 /// One instance the scene was built from, as remembered for the moment it
@@ -184,11 +222,21 @@ mod tests {
             ("BlockMesh", Role::MeshChild),
             ("SurfaceAppearance", Role::Appearance),
             ("ScreenGui", Role::Gui),
+            // Not drawn itself, but `ShowDevelopmentGui` hides every screen
+            // and canvas beneath it.
+            ("StarterGui", Role::Gui),
             ("SurfaceGui", Role::Gui),
             ("BillboardGui", Role::Gui),
             ("Frame", Role::Gui),
             ("ImageLabel", Role::Gui),
             ("UIListLayout", Role::Gui),
+            // Nothing in the styling family draws by itself, but the GUI
+            // plan is read through it, so an edit to one has to rebuild the
+            // GUI the way an edit to a `Frame` does.
+            ("StyleSheet", Role::Gui),
+            ("StyleRule", Role::Gui),
+            ("StyleDerive", Role::Gui),
+            ("StyleLink", Role::Gui),
             ("MaterialVariant", Role::Material),
             ("MaterialService", Role::Material),
         ] {
@@ -217,6 +265,28 @@ mod tests {
         ] {
             assert_eq!(Role::of(&database, class), Role::Inert, "{class}");
         }
+    }
+
+    // The GUI plan walks through plain containers, so one of them leaving a
+    // `ScreenGui` takes a whole overlay's worth of elements with it — which
+    // `Headless::left` can only know by looking inside.
+    #[test]
+    fn a_container_that_holds_gui_elements_says_so() {
+        let database = ReflectionDatabase::embedded();
+        let mut dom = WeakDom::new();
+        let screen = dom.new_instance("ScreenGui", "ScreenGui", None);
+        let hud = dom.new_instance("Folder", "Hud", Some(screen));
+        let nested = dom.new_instance("Folder", "Nested", Some(hud));
+        let frame = dom.new_instance("Frame", "Frame", Some(nested));
+        let props = dom.new_instance("Folder", "Props", Some(screen));
+        dom.new_instance("Part", "Part", Some(props));
+
+        assert!(holds_gui(&dom, &database, hud));
+        assert!(holds_gui(&dom, &database, nested));
+        // The element itself, not only a container above it.
+        assert!(holds_gui(&dom, &database, frame));
+        // A folder of parts is no reason to re-plan a GUI.
+        assert!(!holds_gui(&dom, &database, props));
     }
 
     #[test]

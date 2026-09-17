@@ -548,6 +548,27 @@ fn vector2_edits_as_two_labeled_fields() {
 }
 
 #[test]
+fn font_face_edits_as_family_weight_and_style_fields() {
+    let face = Font {
+        family: "rbxasset://fonts/families/FredokaOne.json".to_owned(),
+        weight: 600,
+        style: FontStyle::Normal,
+        cached_face_id: Some("stale".to_owned()),
+    };
+    assert_eq!(
+        edit_kind("FontFace", Variant::Font(face)),
+        Some(EditKind::Fields {
+            labels: &["Family", "Weight", "Style"],
+            values: vec![
+                "FredokaOne".to_owned(),
+                "SemiBold".to_owned(),
+                "Normal".to_owned()
+            ],
+        })
+    );
+}
+
+#[test]
 fn udim2_edits_as_four_labeled_fields() {
     let position = UDim2 {
         x: UDim {

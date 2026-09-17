@@ -106,6 +106,42 @@ pub(crate) fn wheel_notches(delta: ScrollDelta) -> f32 {
     }
 }
 
+/// A scroll event as a `ScrollingFrame` reads it: which axis of its canvas
+/// it moves (0 across, 1 down) and by how many notches, positive away from
+/// the user or to the right.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Wheel {
+    pub(crate) axis: usize,
+    pub(crate) notches: f32,
+}
+
+/// An ordinary wheel scrolls down the canvas; a sideways wheel or touchpad
+/// swipe scrolls across, and so does `Shift` with the ordinary wheel — the
+/// desktop convention, since most mice have no second wheel.
+pub(crate) fn wheel_scroll(delta: ScrollDelta, shift: bool) -> Wheel {
+    let (x, y) = match delta {
+        ScrollDelta::Lines(lines) => (lines.x / LINES_PER_NOTCH, lines.y / LINES_PER_NOTCH),
+        ScrollDelta::Pixels(pixels) => (
+            f32::from(pixels.x) / PIXELS_PER_NOTCH,
+            f32::from(pixels.y) / PIXELS_PER_NOTCH,
+        ),
+    };
+    match (y != 0.0, shift) {
+        (true, false) => Wheel {
+            axis: 1,
+            notches: y,
+        },
+        (true, true) => Wheel {
+            axis: 0,
+            notches: y,
+        },
+        (false, _) => Wheel {
+            axis: 0,
+            notches: x,
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use gpui_kit::{point, px};
@@ -242,6 +278,19 @@ mod tests {
         let pixels = wheel_notches(ScrollDelta::Pixels(point(px(0.0), px(PIXELS_PER_NOTCH))));
 
         assert_eq!(lines.signum(), pixels.signum());
+    }
+
+    // A frame reads the same event on the axis it moves: down by default,
+    // across for a sideways wheel, and across for Shift with the ordinary
+    // wheel — on the wheel's own notches, not the (absent) sideways ones.
+    #[test]
+    fn a_frame_reads_the_wheel_on_the_axis_it_moves() {
+        let down = wheel_scroll(ScrollDelta::Lines(point(0.0, -3.0)), false);
+        assert_eq!((down.axis, down.notches), (1, -1.0));
+        let across = wheel_scroll(ScrollDelta::Pixels(point(px(120.0), px(0.0))), false);
+        assert_eq!((across.axis, across.notches), (0, 2.0));
+        let shifted = wheel_scroll(ScrollDelta::Lines(point(0.0, 6.0)), true);
+        assert_eq!((shifted.axis, shifted.notches), (0, 2.0));
     }
 
     // Horizontal scrolling is not a camera control: a sideways swipe must not

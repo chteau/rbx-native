@@ -22,7 +22,10 @@
 //! ends with, the same aid for a group drag; `RBX_STUDIO_RESIZE=<dx>,<dy>,<dz>`
 //! grows the selected part by that much along its own axes through the path
 //! a Scale drag ends with, the same aid for the Scale tool (see
-//! `shell::drag::debug` for both).
+//! `shell::drag::debug` for both). `RBX_STUDIO_SCROLL=<x>,<y>,<dx>,<dy>`
+//! rolls the wheel once over viewport pixel `(x, y)` by that many notches
+//! once the first frame is up, the same aid for scrolling a `ScrollingFrame`
+//! drawn in the viewport (see `workspace_view::scroll`).
 //! `RBX_STUDIO_OPEN_SCRIPT=<name>[,<name>...]` opens each named
 //! `Script`/`LocalScript`/`ModuleScript` in the Script Editor panel exactly as
 //! double-clicking its Explorer row would — the same aid, for the script
@@ -47,6 +50,7 @@ mod script_editor;
 mod settings;
 mod settle;
 mod shell;
+mod style_editor;
 mod transform;
 mod workspace_view;
 

@@ -1,7 +1,8 @@
-//! Unit tests for [`super`]: scissor conversion, border bands and run merging.
+//! Unit tests for [`super`]: scissor conversion, border bands and run merging;
+//! [`modifiers`] for what a `UICorner`/`UIStroke`/`UIGradient` puts on a vertex.
 
 use super::*;
-use crate::scene::{GuiElement, Painted};
+use crate::scene::{GuiElement, GuiGroup, GuiGroupTint, GuiImageScale, Painted};
 
 fn rect(x: f32, y: f32, width: f32, height: f32) -> GuiRect {
     GuiRect {
@@ -20,11 +21,30 @@ fn element(rect: GuiRect, clip: Option<GuiRect>) -> GuiElement {
         background: [1.0, 0.0, 0.0],
         background_alpha: 1.0,
         border: None,
+        border_inset: 0.0,
+        z_index: 1,
         image: None,
+        corner_radii: [0.0; 4],
+        strokes: Vec::new(),
+        gradient: None,
+        text: None,
+        viewport: None,
+        group: None,
+        scroll: None,
     }
 }
 
 const VIEWPORT: (u32, u32) = (800, 600);
+
+/// [`super::build`] for elements with no text, which need no typesetter of
+/// their own. Shadows the glob import above.
+fn build(
+    elements: &[GuiElement],
+    textures: &HashMap<AssetRef, Slot>,
+    target: (u32, u32),
+) -> (Vec<VertexRaw>, Vec<Run>, Rows) {
+    super::build(elements, textures, target, &mut Typesetter::new())
+}
 
 #[test]
 fn a_clip_rounds_outwards_so_no_seam_shows_along_its_own_edge() {
@@ -72,7 +92,7 @@ fn an_element_clipped_away_entirely_contributes_no_vertices() {
         Some(rect(900.0, 900.0, 10.0, 10.0)),
     )];
 
-    let (vertices, runs) = build(&elements, &HashMap::new(), VIEWPORT);
+    let (vertices, runs, _) = build(&elements, &HashMap::new(), VIEWPORT);
 
     assert!(vertices.is_empty());
     assert!(runs.is_empty());
@@ -90,12 +110,27 @@ fn a_border_covers_each_corner_exactly_once() {
 }
 
 #[test]
+fn border_mode_moves_the_bands_across_the_edge_without_moving_the_box() {
+    let box_ = rect(100.0, 100.0, 50.0, 20.0);
+
+    // `Middle` straddles the edge: half the width each side of it.
+    let middle = outline(&inset(&box_, 2.0), 4.0);
+    assert_eq!(middle[0], rect(98.0, 98.0, 54.0, 4.0));
+    assert_eq!(middle[1], rect(98.0, 118.0, 54.0, 4.0));
+
+    // `Inset` sits wholly inside, its outer edge on the box's own.
+    let inner = outline(&inset(&box_, 4.0), 4.0);
+    assert_eq!(inner[0], rect(100.0, 100.0, 50.0, 4.0));
+    assert_eq!(inner[1], rect(100.0, 116.0, 50.0, 4.0));
+}
+
+#[test]
 fn a_transparent_background_hides_the_border_with_it() {
     let mut hidden = element(rect(0.0, 0.0, 10.0, 10.0), None);
     hidden.background_alpha = 0.0;
     hidden.border = Some((2.0, [0.0, 0.0, 0.0]));
 
-    let (vertices, _) = build(&[hidden], &HashMap::new(), VIEWPORT);
+    let (vertices, _, _) = build(&[hidden], &HashMap::new(), VIEWPORT);
 
     assert!(vertices.is_empty());
 }
@@ -105,7 +140,7 @@ fn a_background_and_its_border_are_five_quads_in_one_run() {
     let mut outlined = element(rect(0.0, 0.0, 10.0, 10.0), None);
     outlined.border = Some((1.0, [0.0, 0.0, 0.0]));
 
-    let (vertices, runs) = build(&[outlined], &HashMap::new(), VIEWPORT);
+    let (vertices, runs, _) = build(&[outlined], &HashMap::new(), VIEWPORT);
 
     assert_eq!(vertices.len(), 5 * 6);
     assert_eq!(runs.len(), 1);
@@ -123,27 +158,54 @@ fn consecutive_elements_sharing_a_texture_and_a_scissor_merge_into_one_run() {
         ),
     ];
 
-    let (_, runs) = build(&elements, &HashMap::new(), VIEWPORT);
+    let (_, runs, _) = build(&elements, &HashMap::new(), VIEWPORT);
 
     assert_eq!(runs.len(), 2);
     assert_eq!(runs[0].range, 0..12);
     assert_eq!(runs[1].range, 12..18);
 }
 
-#[test]
-fn an_image_whose_asset_never_downloaded_leaves_only_its_background() {
-    let mut label = element(rect(0.0, 0.0, 10.0, 10.0), None);
-    label.image = Some(Painted {
-        asset: AssetRef::Id(7),
+fn stretch_image(asset: AssetRef) -> Painted {
+    Painted {
+        asset,
         tint: [1.0, 1.0, 1.0],
         alpha: 1.0,
         repeat: [1.0, 1.0],
-    });
+        scale: GuiImageScale::Stretch,
+        rect_offset: [0.0, 0.0],
+        rect_size: [0.0, 0.0],
+        pixelated: false,
+    }
+}
 
-    let (vertices, runs) = build(&[label], &HashMap::new(), VIEWPORT);
+#[test]
+fn an_image_whose_asset_never_downloaded_leaves_only_its_background() {
+    let mut label = element(rect(0.0, 0.0, 10.0, 10.0), None);
+    label.image = Some(stretch_image(AssetRef::Id(7)));
+
+    let (vertices, runs, _) = build(&[label], &HashMap::new(), VIEWPORT);
 
     assert_eq!(vertices.len(), 6);
     assert_eq!(runs.len(), 1);
+}
+
+#[test]
+fn an_image_that_is_not_to_be_had_draws_the_placeholder_once_that_is() {
+    let mut label = element(rect(0.0, 0.0, 10.0, 10.0), None);
+    label.image = Some(stretch_image(AssetRef::Id(7)));
+    let textures = HashMap::from([(
+        crate::scene::gui_image_placeholder(),
+        Slot {
+            linear: 3,
+            nearest: 4,
+            size: [64.0, 64.0],
+        },
+    )]);
+
+    let (vertices, runs, _) = build(&[label], &textures, VIEWPORT);
+
+    assert_eq!(vertices.len(), 12);
+    assert_eq!(runs[1].texture, 3);
 }
 
 #[test]
@@ -151,14 +213,20 @@ fn a_tiled_image_carries_its_repeat_count_into_the_uvs() {
     let mut label = element(rect(0.0, 0.0, 300.0, 200.0), None);
     label.background_alpha = 0.0;
     label.image = Some(Painted {
-        asset: AssetRef::Id(7),
-        tint: [1.0, 1.0, 1.0],
-        alpha: 1.0,
+        scale: GuiImageScale::Tile,
         repeat: [3.0, 2.0],
+        ..stretch_image(AssetRef::Id(7))
     });
-    let textures = HashMap::from([(AssetRef::Id(7), 1)]);
+    let textures = HashMap::from([(
+        AssetRef::Id(7),
+        Slot {
+            linear: 1,
+            nearest: 2,
+            size: [64.0, 64.0],
+        },
+    )]);
 
-    let (vertices, runs) = build(&[label], &textures, VIEWPORT);
+    let (vertices, runs, _) = build(&[label], &textures, VIEWPORT);
 
     assert_eq!(runs[0].texture, 1);
     let corners: Vec<[f32; 2]> = vertices.iter().map(|vertex| vertex.uv).collect();
@@ -167,10 +235,32 @@ fn a_tiled_image_carries_its_repeat_count_into_the_uvs() {
 }
 
 #[test]
+fn a_pixelated_image_draws_through_the_nearest_slot_instead_of_linear() {
+    let mut label = element(rect(0.0, 0.0, 10.0, 10.0), None);
+    label.background_alpha = 0.0;
+    label.image = Some(Painted {
+        pixelated: true,
+        ..stretch_image(AssetRef::Id(7))
+    });
+    let textures = HashMap::from([(
+        AssetRef::Id(7),
+        Slot {
+            linear: 1,
+            nearest: 2,
+            size: [64.0, 64.0],
+        },
+    )]);
+
+    let (_, runs, _) = build(&[label], &textures, VIEWPORT);
+
+    assert_eq!(runs[0].texture, 2);
+}
+
+#[test]
 fn a_zero_sized_element_draws_nothing() {
     let elements = [element(rect(10.0, 10.0, 0.0, 50.0), None)];
 
-    let (vertices, _) = build(&elements, &HashMap::new(), VIEWPORT);
+    let (vertices, _, _) = build(&elements, &HashMap::new(), VIEWPORT);
 
     assert!(vertices.is_empty());
 }
@@ -206,7 +296,7 @@ fn a_rotated_quad_stays_centred_on_the_unrotated_rects_centre() {
     let mut spun = element(rect(0.0, 0.0, 20.0, 10.0), None);
     spun.rotation = 90.0;
 
-    let (vertices, _) = build(&[spun], &HashMap::new(), VIEWPORT);
+    let (vertices, _, _) = build(&[spun], &HashMap::new(), VIEWPORT);
 
     let centre_x = vertices.iter().map(|v| v.position[0]).sum::<f32>() / vertices.len() as f32;
     let centre_y = vertices.iter().map(|v| v.position[1]).sum::<f32>() / vertices.len() as f32;
@@ -235,7 +325,7 @@ fn a_rotated_borders_bands_turn_about_the_elements_centre_too() {
     bordered.rotation = 90.0;
     bordered.border = Some((4.0, [0.0, 0.0, 0.0]));
 
-    let (vertices, _) = build(&[bordered], &HashMap::new(), VIEWPORT);
+    let (vertices, _, _) = build(&[bordered], &HashMap::new(), VIEWPORT);
     // The background is the first quad (6 vertices); every vertex after that
     // is one of the four border bands.
     let border = &vertices[6..];
@@ -261,3 +351,55 @@ fn a_rotated_borders_bands_turn_about_the_elements_centre_too() {
         .fold(f32::MIN, f32::max);
     assert!((max_y - min_y - 28.0).abs() < 1e-3);
 }
+
+fn grouped(alpha: f32, texture: Option<usize>) -> GuiElement {
+    let mut element = element(rect(10.0, 20.0, 100.0, 50.0), None);
+    element.group = Some(GuiGroup {
+        tint: GuiGroupTint {
+            color: [1.0, 0.5, 0.0],
+            alpha,
+        },
+        descendants: 2,
+        texture,
+    });
+    element
+}
+
+// A group the renderer has not flattened — because its tint is the default,
+// or because it is marked but never baked — is its own background and
+// nothing more, exactly like a `Frame`.
+#[test]
+fn an_unflattened_group_draws_like_a_plain_frame() {
+    let group = grouped(1.0, None);
+    let plain = element(rect(10.0, 20.0, 100.0, 50.0), None);
+
+    let (vertices, runs, _) = build(&[group], &HashMap::new(), VIEWPORT);
+    let (expected, _, _) = build(&[plain], &HashMap::new(), VIEWPORT);
+
+    assert_eq!(vertices, expected);
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].texture, WHITE);
+}
+
+// A flattened group is one quad sampling its baked texture, tinted and
+// faded by the group rather than by its own background.
+#[test]
+fn a_flattened_group_is_one_textured_quad_in_the_groups_tint() {
+    let group = grouped(0.5, Some(7));
+
+    let (vertices, runs, _) = build(&[group], &HashMap::new(), VIEWPORT);
+
+    assert_eq!(vertices.len(), 6);
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].texture, 7);
+    assert_eq!(runs[0].range, 0..6);
+    for vertex in &vertices {
+        assert_eq!(vertex.color, [1.0, 0.5, 0.0]);
+        assert_eq!(vertex.alpha, 0.5);
+    }
+    // The texture is sampled whole across the box.
+    assert_eq!(vertices[0].uv, [0.0, 0.0]);
+    assert_eq!(vertices[4].uv, [1.0, 1.0]);
+}
+
+mod modifiers;

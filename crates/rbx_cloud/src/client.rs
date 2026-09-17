@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use crate::api_key::ApiKey;
 use crate::error::CloudError;
+use crate::retry;
 
 const USER_AGENT: &str = concat!("rbx-native/", env!("CARGO_PKG_VERSION"));
 
@@ -62,22 +63,31 @@ impl Client {
     /// Like [`get_raw`](Self::get_raw), but lets the caller add query
     /// parameters through ureq's own builder so values (e.g. an opaque
     /// pagination cursor) are percent-encoded correctly.
+    ///
+    /// A GET is safe to repeat, so a rate limit or a dropped connection is
+    /// retried here rather than surfaced — see [`retry`]. `configure` is
+    /// therefore `Fn`: it builds a fresh request per attempt.
     pub(crate) fn get_with(
         &self,
         url: &str,
         with_key: bool,
         follow_redirects: bool,
-        configure: impl FnOnce(GetBuilder) -> GetBuilder,
+        configure: impl Fn(GetBuilder) -> GetBuilder,
     ) -> Result<RawResponse, CloudError> {
-        let mut req = self.agent.get(url);
-        if with_key {
-            req = req.header("x-api-key", self.require_api_key()?.as_str());
-        }
-        req = configure(req);
-        if !follow_redirects {
-            req = req.config().max_redirects(0).build();
-        }
-        run(req.call())
+        // The key is never part of `what`, and the query string is dropped:
+        // the retry line it may end up in goes to stderr.
+        let what = url.split('?').next().unwrap_or(url);
+        retry::idempotent(what, || {
+            let mut req = self.agent.get(url);
+            if with_key {
+                req = req.header("x-api-key", self.require_api_key()?.as_str());
+            }
+            req = configure(req);
+            if !follow_redirects {
+                req = req.config().max_redirects(0).build();
+            }
+            run(req.call())
+        })
     }
 
     pub(crate) fn post_json_raw<T: serde::Serialize>(

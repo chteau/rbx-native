@@ -36,12 +36,13 @@ mod translucent;
 use glam::Mat3;
 
 use crate::camera::{Camera, Frustum, Viewpoint};
+use crate::fonts::Library;
 use crate::gizmo::{arm_length, basis, Faces, Gizmo, Handles, Kind, Shape};
 use crate::lighting::{Lighting, LocalLight};
 use crate::load::Answered;
 use crate::pick::Selected;
 use crate::quality::QualityProfile;
-use crate::scene::{Bounds, Scene};
+use crate::scene::{Bounds, Scene, ScrollTarget};
 use crate::textures::Decor;
 use beam::Beams;
 use cull::MainCull;
@@ -86,6 +87,9 @@ pub(crate) struct World<'a> {
     /// thread that draws: see `load::Answered`, whose "no answer yet" is what
     /// keeps a pass from writing an effect off before its texture lands.
     pub(crate) images: &'a Answered,
+    /// Every font face the GUI trees' text needs, as far as the loader has
+    /// it — see `load::Loaded::resolve_fonts`. Same reasoning as `images`.
+    pub(crate) fonts: &'a Library,
 }
 
 /// Coordinates rendering to any target (window surface or offscreen texture).
@@ -191,6 +195,7 @@ impl Renderer {
             lighting,
             lights,
             images,
+            fonts,
         } = world;
         // Every scene pass draws into the HDR target rather than into the
         // caller's: only the resolve at the end of `draw` knows `format`.
@@ -255,6 +260,9 @@ impl Renderer {
         let selection = Selection::new(device, target, &layout, placements.clone());
         let hover = Hover::new(device, target, &layout, placements);
         let draggers = Draggers::new(device, target, &layout);
+        // Before the GUI pass, which shades a `ViewportFrame`'s parts with
+        // the very same arrays.
+        let materials = Materials::new(device, queue, &material_layout, scene.materials(), quality);
 
         Renderer {
             opaque,
@@ -265,7 +273,6 @@ impl Renderer {
             lights: allowed,
             env,
             meshes,
-            materials: Materials::new(device, queue, &material_layout, scene.materials(), quality),
             shaped: Shaped::new(device, scene.parts()),
             translucent: Translucent::new(device, scene.parts()),
             filemesh: filemesh::FileMeshes::new(
@@ -309,9 +316,12 @@ impl Renderer {
                 format,
                 target,
                 (scene.gui_screens(), scene.gui_spaces()),
+                (&material_layout, &materials.bind_group),
                 images,
+                fonts,
                 quality,
             ),
+            materials,
             lighting_buffer,
             lights_buffer,
             light_shadows_buffer,
@@ -354,6 +364,13 @@ impl Renderer {
     /// they change with every camera move, not only when the tool does.
     pub(crate) fn set_gizmo(&mut self, gizmo: Option<Gizmo>) {
         self.gizmo = gizmo;
+    }
+
+    /// The `ScrollingFrame` of the screen overlay the wheel over `point` (in
+    /// pixels of the last frame drawn) would scroll along `axis` — see
+    /// `scene::gui::scroll_target`.
+    pub(crate) fn gui_scroll_target(&self, point: [f32; 2], axis: usize) -> Option<ScrollTarget> {
+        self.gui.scroll_target(point, axis)
     }
 
     /// Where this frame's draggers sit, or `None` when no transform tool is
@@ -411,7 +428,7 @@ impl Renderer {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        target: &wgpu::TextureView,
+        target: &wgpu::Texture,
         size: (u32, u32),
         from: Viewpoint,
     ) {
@@ -563,10 +580,20 @@ impl Renderer {
 
         // The scene is HDR and unclamped until here: the bloom, the grade and
         // the tone map all live in the resolve.
-        self.post.resolve(&mut encoder, target);
+        self.post
+            .resolve(&mut encoder, &target.create_view(&Default::default()));
         // After the resolve, not before it: a `ScreenGui` is an overlay, so
-        // bloom, depth of field and the tone map must leave it alone.
-        self.gui.draw(device, queue, &mut encoder, target, size);
+        // bloom, depth of field and the tone map must leave it alone. It takes
+        // the texture rather than a view because it composites through a
+        // non-sRGB one of its own (see `renderer::gui::pipeline::encoded`).
+        self.gui.draw(
+            device,
+            queue,
+            &mut encoder,
+            target,
+            size,
+            &self.materials.bind_group,
+        );
 
         queue.submit(std::iter::once(encoder.finish()));
     }

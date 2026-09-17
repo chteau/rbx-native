@@ -63,6 +63,18 @@ impl Instance {
         &mut self.properties
     }
 
+    /// The instance's attributes, decoded from the `AttributesSerialize` blob
+    /// the property map holds verbatim. Decoded per call rather than cached:
+    /// only style sheets read it, and only once per plan.
+    pub fn attributes(&self) -> BTreeMap<String, Variant> {
+        crate::attributes::decode(self.properties.get("AttributesSerialize"))
+    }
+
+    /// The instance's `CollectionService` tags.
+    pub fn tags(&self) -> Vec<&str> {
+        crate::attributes::tags(self.properties.get("Tags"))
+    }
+
     pub fn children(&self) -> &[Ref] {
         &self.children
     }

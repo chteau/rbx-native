@@ -5,7 +5,7 @@ mod flags;
 mod geometry;
 mod sequence;
 
-pub use asset::{Content, Font, FontStyle, UniqueId};
+pub use asset::{Content, Font, FontStyle, UniqueId, FONT_UNKNOWN};
 pub use flags::{Axes, Faces};
 pub use geometry::{
     CFrameData, Color3Data, PhysicalProperties, Rect, UDim, UDim2, Vector2Data, Vector3Data,

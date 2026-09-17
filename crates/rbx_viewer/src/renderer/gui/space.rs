@@ -15,10 +15,12 @@ use glam::{Mat4, Vec3};
 
 use super::atlas::Atlas;
 use super::paint::Painter;
+use super::text::Typesetter;
+use super::viewport::Viewports;
 use crate::renderer::pipeline::Target;
 use crate::renderer::post::Targets;
 use crate::renderer::texture;
-use crate::scene::{gui_canvas_layout, GuiAnchor, SpaceGui};
+use crate::scene::{gui_canvas_layout_with, GuiAnchor, SpaceGui};
 use pipeline::{CameraRaw, VertexRaw};
 
 /// Canvases are painted in this format rather than in the display's: the
@@ -36,6 +38,10 @@ struct Canvas {
 struct Item {
     anchor: GuiAnchor,
     always_on_top: bool,
+    /// `Brightness`/`LightInfluence` folded into one factor by the scene.
+    brightness: f32,
+    /// `MaxDistance`, the eye distance past which this canvas is not drawn.
+    max_distance: f32,
     canvas: usize,
 }
 
@@ -59,12 +65,16 @@ pub(super) struct Space {
 }
 
 impl Space {
+    /// `shared` is what a bake draws with — the image atlas, the typesetter
+    /// and the `ViewportFrame` pass, whose textures sample `materials`.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         target: Target,
         viewport_layout: &wgpu::BindGroupLayout,
-        atlas: &Atlas,
+        shared: (&mut Atlas, &mut Typesetter, &mut Viewports),
+        materials: &wgpu::BindGroup,
         spaces: &[SpaceGui],
     ) -> Self {
         let camera_layout = pipeline::camera_layout(device);
@@ -99,7 +109,7 @@ impl Space {
             vertices: None,
             vertex_capacity: 0,
         };
-        space.rebuild(device, queue, viewport_layout, atlas, spaces);
+        space.rebuild(device, queue, viewport_layout, shared, materials, spaces);
         space
     }
 
@@ -111,7 +121,8 @@ impl Space {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         viewport_layout: &wgpu::BindGroupLayout,
-        atlas: &Atlas,
+        (atlas, fonts, viewports): (&mut Atlas, &mut Typesetter, &mut Viewports),
+        materials: &wgpu::BindGroup,
         spaces: &[SpaceGui],
     ) {
         self.canvases.clear();
@@ -133,10 +144,23 @@ impl Space {
             ..Default::default()
         });
         let mut painter = self.painter.take().unwrap_or_else(|| {
-            Painter::new(device, CANVAS_FORMAT, viewport_layout, &atlas.image_layout)
+            Painter::new(
+                device,
+                queue,
+                CANVAS_FORMAT,
+                viewport_layout,
+                &atlas.image_layout,
+            )
         });
-        for gui in spaces {
-            let canvas = bake(device, queue, &mut painter, atlas, gui);
+        for (index, gui) in spaces.iter().enumerate() {
+            let canvas = bake(
+                device,
+                queue,
+                &mut painter,
+                (atlas, fonts, viewports),
+                (materials, index),
+                gui,
+            );
             self.canvases.push(Canvas {
                 bind_group: self.bind(device, &canvas, &sampler),
                 texture: canvas,
@@ -144,6 +168,8 @@ impl Space {
             self.items.push(Item {
                 anchor: gui.anchor,
                 always_on_top: gui.always_on_top,
+                brightness: gui.brightness,
+                max_distance: gui.max_distance,
                 canvas: self.canvases.len() - 1,
             });
         }
@@ -239,8 +265,15 @@ impl Space {
                 .iter()
                 .filter(|item| item.always_on_top == always_on_top)
             {
+                if !quad::within(&item.anchor, eye, item.max_distance) {
+                    continue;
+                }
                 let start = vertices.len() as u32;
-                quad::vertices(quad::corners(&item.anchor, eye), &mut vertices);
+                quad::vertices(
+                    quad::corners(&item.anchor, eye),
+                    item.brightness,
+                    &mut vertices,
+                );
                 runs.push((item.canvas, always_on_top, start..vertices.len() as u32));
             }
         }
@@ -294,11 +327,14 @@ impl Space {
 ///
 /// Submitted on the spot rather than folded into the frame encoder: the canvas
 /// is a one-off, and `Renderer::new` has no encoder of its own to borrow.
+/// `index` keeps this canvas' `ViewportFrame` textures apart from every
+/// other's in the shared atlas.
 fn bake(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     painter: &mut Painter,
-    atlas: &Atlas,
+    (atlas, fonts, viewports): (&mut Atlas, &mut Typesetter, &mut Viewports),
+    (materials, index): (&wgpu::BindGroup, usize),
     gui: &SpaceGui,
 ) -> wgpu::Texture {
     let size = (gui.canvas[0].max(1.0) as u32, gui.canvas[1].max(1.0) as u32);
@@ -314,17 +350,25 @@ fn bake(
         dimension: wgpu::TextureDimension::D2,
         format: CANVAS_FORMAT,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-        view_formats: &[],
+        // Painted through the non-sRGB twin so the tree composites onto itself
+        // in encoded space, exactly as the screen overlay does; the bytes that
+        // land are still the sRGB encoding this format promises, so the
+        // in-world pass sampling the canvas decodes them as before.
+        view_formats: &[super::pipeline::encoded(CANVAS_FORMAT)],
     });
-    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let view = super::pipeline::encoded_view(&texture);
 
-    painter.prepare(
+    let mut elements = gui_canvas_layout_with(gui, fonts);
+    viewports.bake_all(
         device,
         queue,
-        &gui_canvas_layout(gui),
-        atlas.slot_of(),
-        size,
+        materials,
+        atlas,
+        &format!("canvas/{index}"),
+        &mut elements,
     );
+    painter.prepare(device, queue, &elements, atlas.slot_of(), size, fonts);
+    atlas.sync_glyphs(device, queue, &mut fonts.atlas);
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("rbxview gui canvas"),
     });

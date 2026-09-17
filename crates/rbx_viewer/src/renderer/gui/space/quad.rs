@@ -10,6 +10,19 @@ use glam::Vec3;
 use super::pipeline::VertexRaw;
 use crate::scene::GuiAnchor;
 
+/// Whether the eye is near enough for `MaxDistance` to let the canvas draw.
+///
+/// Measured to the canvas' own centre, the only point a `BillboardGui` has;
+/// the property is a pop-in threshold rather than a precise cut, and the docs
+/// describe it as a distance "from the camera".
+pub(super) fn within(anchor: &GuiAnchor, eye: Vec3, max_distance: f32) -> bool {
+    let centre = match *anchor {
+        GuiAnchor::Surface { corners } => corners.iter().sum::<Vec3>() / 4.0,
+        GuiAnchor::Billboard { origin, .. } => origin,
+    };
+    eye.distance(centre) <= max_distance
+}
+
 /// The canvas rectangle in image order: top-left, top-right, bottom-right,
 /// bottom-left.
 pub(super) fn corners(anchor: &GuiAnchor, eye: Vec3) -> [Vec3; 4] {
@@ -20,12 +33,16 @@ pub(super) fn corners(anchor: &GuiAnchor, eye: Vec3) -> [Vec3; 4] {
             size,
             view_offset,
             world_offset,
+            size_offset,
         } => {
             let (right, up, forward) = basis(origin, eye);
+            // `SizeOffset` shifts the quad by that fraction of its own size,
+            // which is what makes `0.5, 0.5` anchor the billboard at its
+            // bottom left rather than its centre.
             let centre = origin
                 + world_offset
-                + right * view_offset.x
-                + up * view_offset.y
+                + right * (view_offset.x + size_offset[0] * size[0])
+                + up * (view_offset.y + size_offset[1] * size[1])
                 + forward * view_offset.z;
             let half_x = right * (size[0] * 0.5);
             let half_y = up * (size[1] * 0.5);
@@ -61,11 +78,12 @@ fn non_zero(axis: Vec3, fallback: Vec3) -> Vec3 {
 
 /// Two triangles covering `corners`, wound the same way a screen-space GUI
 /// quad is (see `renderer::gui::quads::quad`) so the canvas is not mirrored.
-pub(super) fn vertices(corners: [Vec3; 4], into: &mut Vec<VertexRaw>) {
+pub(super) fn vertices(corners: [Vec3; 4], brightness: f32, into: &mut Vec<VertexRaw>) {
     let uvs = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
     let corner = |index: usize| VertexRaw {
         position: corners[index].to_array(),
         uv: uvs[index],
+        brightness,
     };
     into.extend([
         corner(0),
@@ -89,6 +107,7 @@ mod tests {
             size,
             view_offset,
             world_offset,
+            size_offset: [0.0, 0.0],
         }
     }
 
@@ -156,12 +175,41 @@ mod tests {
     fn the_two_triangles_cover_the_quad_in_image_order() {
         let fixed = [Vec3::X, Vec3::Y, Vec3::Z, Vec3::ZERO];
         let mut built = Vec::new();
-        vertices(fixed, &mut built);
+        vertices(fixed, 1.0, &mut built);
         assert_eq!(built.len(), 6);
         assert_eq!(built[0].uv, [0.0, 0.0]);
         assert_eq!(built[1].uv, [1.0, 0.0]);
         assert_eq!(built[2].uv, [0.0, 1.0]);
         assert_eq!(built[4].uv, [1.0, 1.0]);
         assert_eq!(built[0].position, Vec3::X.to_array());
+    }
+
+    #[test]
+    fn size_offset_shifts_the_quad_by_a_fraction_of_its_own_size() {
+        // `0.5, 0.5` "will anchor at the bottom left", so the origin has to
+        // land on the quad's bottom-left corner.
+        let anchor = GuiAnchor::Billboard {
+            origin: Vec3::ZERO,
+            size: [4.0, 2.0],
+            view_offset: Vec3::ZERO,
+            world_offset: Vec3::ZERO,
+            size_offset: [0.5, 0.5],
+        };
+        assert_eq!(corners(&anchor, EYE)[3], Vec3::ZERO);
+    }
+
+    #[test]
+    fn max_distance_cuts_a_canvas_off_beyond_its_limit() {
+        let anchor = billboard([1.0, 1.0], Vec3::ZERO, Vec3::ZERO);
+        assert!(within(&anchor, EYE, 10.0));
+        assert!(!within(&anchor, EYE, 9.0));
+        assert!(within(&anchor, EYE, f32::INFINITY));
+    }
+
+    #[test]
+    fn brightness_rides_on_every_vertex_of_the_quad() {
+        let mut built = Vec::new();
+        vertices([Vec3::X, Vec3::Y, Vec3::Z, Vec3::ZERO], 4.0, &mut built);
+        assert!(built.iter().all(|vertex| vertex.brightness == 4.0));
     }
 }

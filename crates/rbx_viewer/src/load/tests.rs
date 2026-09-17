@@ -56,6 +56,7 @@ fn textures_only() -> Toggles {
         materials: false,
         lights: false,
         clock_time: None,
+        show_development_gui: false,
     }
 }
 
@@ -199,6 +200,7 @@ fn from_dom_reflects_a_property_mutated_after_the_file_was_read() {
         materials: false,
         lights: false,
         clock_time: None,
+        show_development_gui: false,
     };
 
     let part = crate::scene::descendants(&dom)
@@ -251,6 +253,7 @@ fn resolving_again_with_nothing_new_changes_nothing() {
         materials: false,
         lights: false,
         clock_time: None,
+        show_development_gui: false,
     };
     let mut resident = Resident::default();
     let mut loaded = Loaded::from_dom(&dom, &database, toggles, &mut resident).expect("load");
@@ -269,4 +272,116 @@ fn resolving_again_with_nothing_new_changes_nothing() {
         instances
     );
     assert_eq!(loaded.world().decor.groups.len(), groups);
+}
+
+/// A source with one font family in it and nothing else: the family JSON
+/// under its `rbxasset://` path and the single face it names.
+struct FontShelf;
+
+impl Source for FontShelf {
+    fn image(&self, reference: &AssetRef) -> Result<crate::assets::Image, crate::assets::Failure> {
+        Err(not_here(reference))
+    }
+
+    fn mesh(&self, reference: &AssetRef) -> Result<rbx_mesh::Mesh, crate::assets::Failure> {
+        Err(not_here(reference))
+    }
+
+    fn bytes(&self, reference: &AssetRef) -> Result<Vec<u8>, crate::assets::Failure> {
+        match reference {
+            AssetRef::Native(path) if path == "fonts/families/Shelf.json" => Ok(br#"{
+                "name": "Shelf",
+                "faces": [
+                    {"name": "Regular", "weight": 400, "style": "normal", "assetId": "rbxasset://fonts/Shelf-Regular.ttf"},
+                    {"name": "Bold", "weight": 700, "style": "normal", "assetId": "rbxasset://fonts/Shelf-Bold.ttf"}
+                ]
+            }"#
+            .to_vec()),
+            AssetRef::Native(path) if path == "fonts/Shelf-Bold.ttf" => Ok(vec![7, 0, 0]),
+            _ => Err(not_here(reference)),
+        }
+    }
+}
+
+fn not_here(reference: &AssetRef) -> crate::assets::Failure {
+    crate::assets::Failure {
+        warning: format!("{reference:?}: not on the shelf"),
+        transient: false,
+    }
+}
+
+/// [`dom_with_unresolvable_decal`] plus a `ScreenGui` holding one bold
+/// `TextLabel` in the shelf's family.
+fn dom_with_a_text_label() -> WeakDom {
+    let mut dom = dom_with_unresolvable_decal();
+    let starter = Ref::new(9200);
+    dom.insert(Instance::new(starter, "StarterGui", "StarterGui"));
+    dom.set_parent(starter, None);
+    let screen = Ref::new(9201);
+    dom.insert(Instance::new(screen, "ScreenGui", "ScreenGui"));
+    dom.set_parent(screen, Some(starter));
+    let label = Ref::new(9202);
+    let mut label_instance = Instance::new(label, "TextLabel", "TextLabel");
+    let properties = label_instance.properties_mut();
+    properties.insert("Text".to_string(), Variant::String("bold".to_string()));
+    properties.insert(
+        "FontFace".to_string(),
+        Variant::Font(rbx_dom::Font {
+            family: "rbxasset://fonts/families/Shelf.json".to_string(),
+            weight: 700,
+            style: rbx_dom::FontStyle::Normal,
+            cached_face_id: None,
+        }),
+    );
+    dom.insert(label_instance);
+    dom.set_parent(label, Some(screen));
+    dom
+}
+
+// A font is two fetches deep — the family's JSON, then the face it names —
+// and a streaming loader has to carry the request across two landings: the
+// first resolve asks for the family, the resolve after it lands asks for the
+// face, and only the resolve after *that* has bytes for the renderer.
+#[test]
+fn a_streaming_load_lands_a_font_family_and_then_its_face() {
+    let database = ReflectionDatabase::embedded();
+    let dom = dom_with_a_text_label();
+    let mut resident = Resident::fed_by(std::sync::Arc::new(FontShelf));
+    let nothing = Toggles {
+        textures: false,
+        materials: false,
+        lights: false,
+        clock_time: None,
+        show_development_gui: false,
+    };
+    let bold = crate::fonts::Face::named("Shelf", 700, false);
+    let patience = std::time::Duration::from_secs(5);
+
+    let mut loaded = Loaded::from_dom(&dom, &database, nothing, &mut resident).expect("load");
+    assert!(loaded.world().fonts.families.is_empty());
+    assert!(loaded.world().fonts.bytes_of(&bold).is_none());
+
+    let landed = resident.settle(patience);
+    assert!(
+        loaded.wants_any(&landed.references),
+        "the family was asked for"
+    );
+    loaded.resolve(&mut resident);
+    assert_eq!(loaded.world().fonts.families.len(), 1);
+    assert!(loaded.world().fonts.bytes_of(&bold).is_none());
+
+    let landed = resident.settle(patience);
+    assert!(
+        loaded.wants_any(&landed.references),
+        "the face was asked for"
+    );
+    loaded.resolve(&mut resident);
+    let (asset, bytes) = loaded
+        .world()
+        .fonts
+        .bytes_of(&bold)
+        .expect("the face is in");
+    assert_eq!(asset, &AssetRef::Native("fonts/Shelf-Bold.ttf".to_string()));
+    assert_eq!(bytes.as_slice(), &[7, 0, 0]);
+    assert_eq!(resident.in_flight(), 0, "the regular face was never wanted");
 }

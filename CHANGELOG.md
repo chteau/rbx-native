@@ -42,6 +42,56 @@
   already used: a place that sets it to 0 renders matte with full, vivid
   colours as Studio does, instead of a broad white highlight washing the
   greens toward grey, while a place at 1 keeps the full highlight. — @chteau
+- **GUI — full `GuiObject` compatibility (`feat/gui-full-guiobject-compatibility`).**
+  The viewer's `ScreenGui`/`BillboardGui`/`SurfaceGui` trees now render the
+  rest of what a real place puts in them. `TextLabel`/`TextButton`/`TextBox`
+  draw their text, shaped with `cosmic-text` (already in the tree under
+  GPUI) in Roblox's own font families, fetched from the Studio content
+  package at runtime like textures are and falling back to a system font
+  until they land; `TextScaled`, wrapping, both alignments, rich text,
+  strokes, truncation and a `TextBox`'s placeholder included. `ImageButton`
+  and every image `ScaleType`, sub-rects and pixelated resampling.
+  `UICorner`, `UIStroke` and `UIGradient` through an SDF rounded box and a
+  gradient ramp in the GUI shader, so corners clip and gradients tint the
+  background, image and text alike. `UIPadding`, `UIScale`, the aspect,
+  size and text-size constraints, `AutomaticSize`, `SizeConstraint`, the
+  `BorderMode`s, `ScreenInsets` and `ZIndexBehavior.Global`; nested
+  `Rotation` composes the way `AbsoluteRotation` says. The layout family:
+  `UIListLayout` flex and wrapping, `UIFlexItem`, `UIGridLayout`,
+  `UITableLayout`. A `StyleSheet`/`StyleRule`/`StyleLink` engine — a real
+  selector parser and cascade, derives and tokens, the rule properties
+  decoded from the `PropertiesSerialize` attribute blob — and a Style
+  Editor panel in `rbxstudio` that edits sheets, rules and their properties
+  with the viewport following live. Every behaviour was checked against
+  `Roblox/creator-docs`; where a page is silent the code says so. — @chteau
+- **GUI parity fixes on the same branch.** Text now measures like Studio's:
+  `TextSize` is the line box, the glyph em a fixed 1/1.2 of it (measured
+  against Studio captures of three families), and a family lacking the
+  requested weight shapes in its closest face instead of a system font —
+  which is why FindTheCode lost Fredoka One. Translucent frames read as
+  dark as Studio's: the overlay composites in encoded space through a
+  non-sRGB view of the target. A `Folder` inside a `ScreenGui` no longer
+  swallows its subtree, and is the layout scope the docs describe.
+  `ScrollingFrame`, `CanvasGroup`, `ViewportFrame` and `UIPageLayout` draw
+  as themselves, and every property of `StarterGui`'s 45 GUI classes is
+  either implemented or documented as having no still-frame effect. Against a
+  Studio capture of a third place: a `ScrollingFrame`'s scale-sized children
+  resolve against a canvas no smaller than the window (so rows inside an
+  automatic canvas no longer collapse), a wrapping list's gap between lines is
+  `Padding`'s share of the cross axis, and every enabled `UIStroke` on an
+  object draws, lowest `ZIndex` first. `StarterGui.ShowDevelopmentGui` is
+  honoured (with a `rbxview --show-development-gui` override), text weights
+  and styles a family lacks are synthesised (a fake-bold dilation and a
+  slant) rather than silently drawn Regular, editing `Font` writes the
+  matching `FontFace` and back, `FontFace` is editable in the Properties
+  panel, an `ImageLabel` whose image never lands draws Studio's own
+  placeholder, `SpawnLocation`'s decal loads from the catalogue, and an
+  asset fetch refused with 429 or a gateway error is retried with backoff
+  (the keyed asset route allows 1000 requests a minute per key owner) and
+  re-queued by the editor's loader instead of leaving the label blank. The
+  mouse wheel over a `ScrollingFrame` in the viewport scrolls it, as Studio's
+  edit view does, without entering the undo stack; the wheel anywhere else
+  still moves the camera. — @chteau
 
 
 ## 2026-09-16

@@ -15,6 +15,7 @@ use rbx_reflection::ReflectionDatabase;
 pub(crate) use fetcher::Source;
 pub(crate) use resident::{Answered, Resident};
 
+use crate::fonts::Library;
 use crate::lighting::{self, Lighting, LocalLight};
 use crate::renderer::World;
 use crate::scene::{Placement, Scene};
@@ -44,13 +45,38 @@ pub fn read_place(path: &Path) -> Result<WeakDom, String> {
     Ok(dom)
 }
 
-/// What a load is allowed to download, and the hour its sky is lit at.
+/// What a load is allowed to download, the hour its sky is lit at, and the
+/// one place property a command line may force.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Toggles {
     pub(crate) textures: bool,
     pub(crate) materials: bool,
     pub(crate) lights: bool,
     pub(crate) clock_time: Option<f32>,
+    /// Force every `StarterGui.ShowDevelopmentGui` on — see
+    /// [`show_development_gui`]. Only [`Loaded::read`] can honour it: it is
+    /// an edit of the tree, and every other entry point owns the DOM it
+    /// hands in and shows the place as saved.
+    pub(crate) show_development_gui: bool,
+}
+
+/// Turns `ShowDevelopmentGui` on for every `StarterGui` in `dom`, so a place
+/// that saved the flag off still shows its screens — what `rbxview`'s
+/// `--show-development-gui` asks for, since the flag is a Studio view toggle
+/// and a screenshot is often wanted of what a player would see.
+pub(crate) fn show_development_gui(dom: &mut WeakDom) {
+    // A service is never subclassed, so the exact class name is the whole
+    // test and no reflection database is needed here. Collected first
+    // because the walk borrows the DOM the writes need.
+    let services: Vec<Ref> = crate::scene::descendants(dom)
+        .filter(|&referent| {
+            dom.get(referent)
+                .is_some_and(|instance| instance.class() == "StarterGui")
+        })
+        .collect();
+    for service in services {
+        let _ = dom.set_property(service, "ShowDevelopmentGui", rbx_dom::Variant::Bool(true));
+    }
 }
 
 /// A place file turned into the four pieces every render path needs.
@@ -79,6 +105,10 @@ pub(crate) struct Loaded {
     /// rather than inside those passes so that no pass ever resolves an asset
     /// on the thread that draws.
     images: Answered,
+    /// Every font face the GUI trees' text asked for, as far as the loader
+    /// has answered: a two-stage fetch (the family's JSON, then the face file
+    /// it names) that the renderer's typesetter reads its faces out of.
+    fonts: Library,
     toggles: Toggles,
     /// Every reference this place has asked the loader for. What
     /// `Headless` checks a landing against before re-resolving anything: a
@@ -102,7 +132,10 @@ impl Loaded {
     /// [`rbx_reflection::ReflectionDatabase::embedded`]), and re-parsing it on
     /// every edit is pure waste.
     pub(crate) fn read(path: &Path, toggles: Toggles) -> Result<Self, String> {
-        let dom = read_place(path)?;
+        let mut dom = read_place(path)?;
+        if toggles.show_development_gui {
+            show_development_gui(&mut dom);
+        }
         let database = ReflectionDatabase::embedded();
         Self::from_dom(&dom, &database, toggles, &mut Resident::default())
             .map_err(|err| format!("nothing to show in {path:?}: {err}"))
@@ -146,6 +179,7 @@ impl Loaded {
             lighting: Lighting::from_dom(dom, database, toggles.clock_time),
             lights: Vec::new(),
             images: Answered::default(),
+            fonts: Library::default(),
             toggles,
             wanted: Vec::new(),
             warnings: Vec::new(),
@@ -242,6 +276,7 @@ impl Loaded {
             lighting: &self.lighting,
             lights: &self.lights,
             images: &self.images,
+            fonts: &self.fonts,
         }
     }
 }

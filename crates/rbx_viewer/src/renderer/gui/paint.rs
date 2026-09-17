@@ -9,8 +9,11 @@ use std::collections::HashMap;
 
 use rbx_assets::AssetRef;
 
+use super::atlas::Slot;
+use super::gradient::Table;
 use super::pipeline::{self, VertexRaw, ViewportRaw};
 use super::quads::{self, Run};
+use super::text::Typesetter;
 use crate::scene::GuiElement;
 
 pub(super) struct Painter {
@@ -21,15 +24,19 @@ pub(super) struct Painter {
     /// Grown, never shrunk — same reasoning as `renderer::trail::Trails`.
     vertex_capacity: usize,
     runs: Vec<Run>,
+    /// Bind group 2: the `UIGradient` ramps the last build baked.
+    gradients: Table,
 }
 
 impl Painter {
     pub(super) fn new(
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         format: wgpu::TextureFormat,
         viewport_layout: &wgpu::BindGroupLayout,
         image_layout: &wgpu::BindGroupLayout,
     ) -> Self {
+        let gradients = Table::new(device, queue);
         let viewport_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rbxview gui viewport"),
             size: std::mem::size_of::<ViewportRaw>() as wgpu::BufferAddress,
@@ -46,25 +53,39 @@ impl Painter {
         });
 
         Painter {
-            pipeline: pipeline::create_pipeline(device, format, viewport_layout, image_layout),
+            pipeline: pipeline::create_pipeline(
+                device,
+                // Not `format` itself: the pass is attached through a
+                // non-sRGB view of it so the blend happens on encoded values
+                // (see `pipeline::encoded`).
+                pipeline::encoded(format),
+                viewport_layout,
+                image_layout,
+                &gradients.layout,
+            ),
             viewport_buffer,
             viewport_bind_group,
             vertices: None,
             vertex_capacity: 0,
             runs: Vec::new(),
+            gradients,
         }
     }
 
     /// Turns `elements` into the quads a target of `size` pixels wants, and
     /// uploads them. Must not run inside a render pass: it writes the very
     /// buffers [`Painter::draw`] reads.
+    ///
+    /// The glyphs the text quads sample land in `fonts`' atlas, which the
+    /// caller uploads afterwards (see `Atlas::sync_glyphs`).
     pub(super) fn prepare(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         elements: &[GuiElement],
-        slot_of: &HashMap<AssetRef, usize>,
+        slot_of: &HashMap<AssetRef, Slot>,
         size: (u32, u32),
+        fonts: &mut Typesetter,
     ) {
         queue.write_buffer(
             &self.viewport_buffer,
@@ -75,8 +96,9 @@ impl Painter {
             }),
         );
 
-        let (vertices, runs) = quads::build(elements, slot_of, size);
+        let (vertices, runs, rows) = quads::build(elements, slot_of, size, fonts);
         self.runs = runs;
+        self.gradients.upload(device, queue, &rows);
         if vertices.is_empty() {
             return;
         }
@@ -131,6 +153,7 @@ impl Painter {
         };
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.viewport_bind_group, &[]);
+        pass.set_bind_group(2, self.gradients.bind_group(), &[]);
         pass.set_vertex_buffer(0, buffer.slice(..));
         for run in &self.runs {
             let Some(group) = textures.get(run.texture) else {
@@ -149,3 +172,6 @@ impl Painter {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

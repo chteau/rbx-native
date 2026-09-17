@@ -10,15 +10,26 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use rbx_assets::{
-    decode_image, AssetCache, AssetError, AssetFetcher, AssetRef, AssetResolver, FetchError,
-    NativeContent,
+    decode_image, AssetCache, AssetError, AssetFetcher, AssetKind, AssetRef, AssetResolver,
+    FetchError, NativeContent,
 };
 use rbx_cloud::{ApiKey, Client, CloudError};
 
 use crate::load::Source;
 
-/// Roblox allows 3000 asset requests a minute; six in flight keeps a place with
-/// a few dozen textures fast while staying an order of magnitude below that.
+/// Six in flight keeps a place with a few dozen textures fast.
+///
+/// The ceiling it has to respect is the Open Cloud one, which the keyed asset
+/// route reports as `x-ratelimit-limit: 1000, 1000;w=60` — a thousand requests
+/// a minute, shared across every key an owner holds. A private asset costs one
+/// of those (the anonymous 401 and the CDN download are other hosts), and six
+/// workers turning them around in a few hundred milliseconds each sit just
+/// under that rate, so only a place with more than about a thousand private
+/// assets — or a second tool on the same key — crosses it. Roblox publishes no
+/// per-endpoint number for this route and warns that undocumented limits apply
+/// besides (creator-docs `content/en-us/cloud/reference/rate-limits.md`), so
+/// the defence that matters is `rbx_cloud`'s backoff on the 429, not a smaller
+/// pool that would slow every load for the sake of the rare one.
 pub(crate) const WORKERS: usize = 6;
 
 /// A decoded image, tightly packed RGBA8, top row first.
@@ -51,11 +62,25 @@ impl AssetFetcher for CloudFetcher {
 /// An asset that is not there to be had is a different answer from a
 /// request that did not complete: the first is final (see [`Failure`]), the
 /// second is worth asking again.
+///
+/// The line is where the status came from. A 4xx is the service's verdict on
+/// this request — the asset is gone, or the key does not cover it — and the
+/// next load asks with the same key and hears the same thing. A 5xx, a rate
+/// limit `rbx_cloud` already backed off on four times (see its `retry`
+/// module) and a transport error are all about the moment.
 fn fetch_error(id: u64, err: CloudError) -> FetchError {
     match err {
         CloudError::Http {
             status: 404 | 410, ..
         } => FetchError::NotFound(id),
+        // 408 is the one 4xx that says "ask again": the request timed out
+        // on the way, not on its merits.
+        CloudError::Http { status, .. } if (400..500).contains(&status) && status != 408 => {
+            FetchError::Refused {
+                id,
+                message: format!("HTTP {status}"),
+            }
+        }
         err => FetchError::Other {
             id,
             message: err.to_string(),
@@ -96,6 +121,7 @@ fn transient(err: &AssetError) -> bool {
         AssetError::Fetch(FetchError::Other { .. }) => true,
         AssetError::Empty
         | AssetError::Fetch(FetchError::NotFound(_))
+        | AssetError::Fetch(FetchError::Refused { .. })
         | AssetError::UnknownNativePackage(..)
         | AssetError::NativeFileNotFound(_)
         | AssetError::Zip(_)
@@ -288,7 +314,14 @@ fn resolver() -> Result<AssetResolver, String> {
 fn fetch_image(resolver: &AssetResolver, reference: &AssetRef) -> Result<Image, Failure> {
     let failed = |err: AssetError| Failure::resolving(reference, &err);
 
-    let asset = resolver.resolve(reference).map_err(failed)?;
+    let mut asset = resolver.resolve(reference).map_err(failed)?;
+    // A decal id where an image id was meant: the catalogue hands back a
+    // one-instance model whose `Texture` names the actual image, and Roblox
+    // itself follows that one hop for an `Image`/`Texture` property. One hop
+    // only — a model pointing at a model is left as the decode error it is.
+    if let Some(inner) = wrapped_image(&asset) {
+        asset = resolver.resolve(&inner).map_err(failed)?;
+    }
     let decoded = decode_image(&asset).map_err(failed)?;
 
     let (width, height) = decoded.dimensions();
@@ -297,6 +330,28 @@ fn fetch_image(resolver: &AssetResolver, reference: &AssetRef) -> Result<Image, 
         height,
         pixels: decoded.into_raw(),
     })
+}
+
+/// The image a `Decal`/`Texture` model asset wraps, if `asset` is one: the
+/// first `Texture` (or `Image`) content reference found in it.
+fn wrapped_image(asset: &rbx_assets::Asset) -> Option<AssetRef> {
+    let dom = match asset.kind {
+        AssetKind::RobloxXmlModel => {
+            rbx_xml::deserialize(std::str::from_utf8(&asset.bytes).ok()?).ok()?
+        }
+        AssetKind::RobloxBinaryModel => rbx_binary::deserialize(&asset.bytes).ok()?,
+        _ => return None,
+    };
+    let inner = crate::scene::descendants(&dom)
+        .filter_map(|referent| dom.get(referent))
+        .find_map(|instance| {
+            let properties = instance.properties();
+            let value = properties
+                .get("Texture")
+                .or_else(|| properties.get("Image"))?;
+            AssetRef::parse(crate::textures::asset_uri(value)?).ok()
+        });
+    inner.filter(|inner| *inner != AssetRef::Empty)
 }
 
 fn fetch_mesh(resolver: &AssetResolver, reference: &AssetRef) -> Result<rbx_mesh::Mesh, Failure> {
@@ -442,6 +497,25 @@ pub(crate) mod tests {
     // whether the answer is about this machine or about the asset — see
     // `Failure`. `TestPlace.rbxl` names a `SpawnLocation.png` its content
     // package does not hold, and each ask is a 200 ms package scan.
+    // The catalogue's image for a `SpawnLocation` decal, and Studio's own
+    // `ImageLabel` placeholder, are both published as a `Decal` model that
+    // names the real image — the shape the store gives every "decal id".
+    #[test]
+    fn a_decal_model_asset_names_the_image_it_wraps() {
+        let xml = r#"<roblox version="4"><Item class="Decal" referent="RBX0"><Properties><string name="Name">Decal</string><Content name="Texture"><url>http://www.roblox.com/asset/?id=6891610105</url></Content></Properties></Item></roblox>"#;
+        let asset = rbx_assets::Asset {
+            bytes: xml.as_bytes().to_vec(),
+            kind: AssetKind::RobloxXmlModel,
+        };
+        assert_eq!(wrapped_image(&asset), Some(AssetRef::Id(6891610105)));
+
+        let png = rbx_assets::Asset {
+            bytes: vec![0x89, b'P', b'N', b'G'],
+            kind: AssetKind::Png,
+        };
+        assert_eq!(wrapped_image(&png), None);
+    }
+
     #[test]
     fn only_a_failure_of_the_machine_is_transient() {
         assert!(transient(&AssetError::Cache(
@@ -454,23 +528,65 @@ pub(crate) mod tests {
         })));
 
         assert!(!transient(&AssetError::Fetch(FetchError::NotFound(1))));
+        assert!(!transient(&AssetError::Fetch(FetchError::Refused {
+            id: 1,
+            message: "HTTP 403".to_string(),
+        })));
         assert!(!transient(&AssetError::NativeFileNotFound(
             "textures/SpawnLocation.png".to_string()
         )));
         assert!(!transient(&AssetError::ImageDecode("bad".to_string())));
     }
 
+    fn http(status: u16) -> CloudError {
+        CloudError::Http {
+            status,
+            url: "https://example.com/x".to_string(),
+        }
+    }
+
     #[test]
     fn a_404_from_the_cloud_is_not_found_and_everything_else_is_other() {
-        let gone = CloudError::Http {
-            status: 404,
-            url: "https://example.com/x".to_string(),
-        };
-        assert!(matches!(fetch_error(7, gone), FetchError::NotFound(7)));
+        assert!(matches!(fetch_error(7, http(404)), FetchError::NotFound(7)));
+        assert!(matches!(fetch_error(7, http(410)), FetchError::NotFound(7)));
 
         let down = CloudError::Transport("connection reset".to_string());
         assert!(matches!(
             fetch_error(7, down),
+            FetchError::Other { id: 7, .. }
+        ));
+    }
+
+    // The keyed route's refusals: a 403 means this key does not cover the
+    // asset, and the next load asks with the same key. A 429 or a 5xx got
+    // through `rbx_cloud`'s retries and is still the moment's fault.
+    #[test]
+    fn a_verdict_on_the_request_is_permanent_and_an_outage_is_not() {
+        for status in [400, 401, 403, 409, 422] {
+            assert!(
+                matches!(
+                    fetch_error(7, http(status)),
+                    FetchError::Refused { id: 7, .. }
+                ),
+                "HTTP {status} should be final"
+            );
+        }
+
+        for status in [408, 500, 502, 503] {
+            assert!(
+                matches!(
+                    fetch_error(7, http(status)),
+                    FetchError::Other { id: 7, .. }
+                ),
+                "HTTP {status} should be worth asking again"
+            );
+        }
+
+        let limited = CloudError::RateLimited {
+            retry_after: Some(5),
+        };
+        assert!(matches!(
+            fetch_error(7, limited),
             FetchError::Other { id: 7, .. }
         ));
     }
