@@ -21,6 +21,7 @@ mod scripts;
 mod selection;
 mod toolbar;
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -93,6 +94,13 @@ pub(crate) struct Shell {
     /// pixel, and only an actual change is worth a command down to the
     /// render thread.
     hovered: Option<Ref>,
+    /// Every part the selection covers — the selected parts and every part
+    /// beneath a selected `Model`: exactly the referents a drag writes, kept
+    /// so `shell::command::refresh_for` can tell a drag's own writes from
+    /// an edit to something else without walking the tree per mouse move.
+    /// Re-read whenever the draggers' targets are (see
+    /// `Shell::sync_viewport_selection`, `Shell::reflect_changes`).
+    covered: HashSet<Ref>,
     /// Every script open in the Script Editor panel; see `shell::scripts`.
     scripts: ScriptEditor,
     properties_scroll: ScrollHandle,
@@ -258,6 +266,7 @@ impl Shell {
             edits: edit::Edits::default(),
             selection: Selection::new(selected),
             hovered: None,
+            covered: HashSet::new(),
             scripts: ScriptEditor::default(),
             properties_scroll: ScrollHandle::new(),
             dock_area,

@@ -546,8 +546,26 @@ impl WorkspaceView {
         self.drag.is_some()
     }
 
-    pub(super) fn end_drag(&mut self) {
+    /// Applies the latest recorded cursor position to the drag in progress
+    /// — see `render`'s `on_mouse_move` handler for why the two are apart.
+    pub(super) fn step_drag(
+        &mut self,
+        window: &gpui_kit::Window,
+        cx: &mut gpui_kit::Context<Self>,
+    ) {
+        if let Some((position, modifiers)) = self.drag_pending.take() {
+            let scale = window.scale_factor();
+            self.drag_to(position, modifiers, scale, cx);
+        }
+    }
+
+    /// The button coming up: the last cursor position the frame gate has
+    /// not applied yet is applied first, so the part lands exactly where it
+    /// was let go rather than a frame short of it.
+    pub(super) fn end_drag(&mut self, window: &gpui_kit::Window, cx: &mut gpui_kit::Context<Self>) {
+        self.step_drag(window, cx);
         self.drag = None;
+        self.drag_stepped_at = None;
         // A grab `Shell` has not answered yet is answered by the release:
         // nothing is held any more.
         self.pending_grab = None;

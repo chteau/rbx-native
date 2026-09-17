@@ -192,6 +192,12 @@ pub(crate) struct WorkspaceView {
     /// cursor leaving the panel (`render`'s `on_hover`) — or a throttled
     /// move would otherwise un-clear it a moment later.
     hover_pending: Option<Point<Pixels>>,
+    /// The cursor's latest position and modifiers while a drag is held, not
+    /// yet applied to the part — applied by `advance` at most once per
+    /// frame, and by the release (see `gizmo::WorkspaceView::end_drag`).
+    drag_pending: Option<(Point<Pixels>, Modifiers)>,
+    /// When the drag in progress last stepped, for that once-per-frame gate.
+    drag_stepped_at: Option<Instant>,
     /// When the hover ray was last actually resolved, for `hover::due`.
     hover_resolved_at: Option<Instant>,
     /// The panel's place in the window, in physical pixels. Written during
@@ -325,6 +331,8 @@ impl WorkspaceView {
             lock: PointerLock::new(),
             looking: false,
             hover_pending: None,
+            drag_pending: None,
+            drag_stepped_at: None,
             hover_resolved_at: None,
             viewport: Rc::new(Cell::new(Viewport::default())),
             sized: (0, 0),
@@ -459,6 +467,17 @@ impl WorkspaceView {
                 self.hover_resolved_at = Some(now);
             } else {
                 self.hover_pending = Some(position);
+            }
+        }
+        // Same gate as the hover above: the latest cursor position wins,
+        // once per frame — see the `on_mouse_move` handler in `render`.
+        if self.drag_pending.is_some() {
+            let elapsed = self
+                .drag_stepped_at
+                .map(|at| now.saturating_duration_since(at));
+            if hover::due(elapsed, self.interval) {
+                self.step_drag(window, cx);
+                self.drag_stepped_at = Some(now);
             }
         }
 
@@ -676,13 +695,13 @@ impl Render for WorkspaceView {
             )
             .on_mouse_up(
                 MouseButton::Left,
-                cx.listener(|view, _: &MouseUpEvent, _, _| view.end_drag()),
+                cx.listener(|view, _: &MouseUpEvent, window, cx| view.end_drag(window, cx)),
             )
             // A drag released off the panel still ends it, or the part would
             // keep following the cursor with nothing to let go of it.
             .on_mouse_up_out(
                 MouseButton::Left,
-                cx.listener(|view, _: &MouseUpEvent, _, _| view.end_drag()),
+                cx.listener(|view, _: &MouseUpEvent, window, cx| view.end_drag(window, cx)),
             )
             .on_mouse_down(
                 MouseButton::Right,
@@ -704,10 +723,16 @@ impl Render for WorkspaceView {
                     view.end_look();
                 }),
             )
-            .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, window, cx| {
+            .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, _, _| {
+                // Recorded, not applied: the step itself runs in `advance`,
+                // at most once per frame (see `gizmo::Drag`'s doc and
+                // `WorkspaceView::step_drag`), the way a hover is. A mouse
+                // reports far more moves than the display draws, and each
+                // step writes every carried part into the DOM and reflects
+                // it — for a large Model, milliseconds the UI thread cannot
+                // spend a thousand times a second.
                 if view.dragging() {
-                    let scale = window.scale_factor();
-                    view.drag_to(event.position, event.modifiers, scale, cx);
+                    view.drag_pending = Some((event.position, event.modifiers));
                     return;
                 }
                 view.mouse_moved(event.position);

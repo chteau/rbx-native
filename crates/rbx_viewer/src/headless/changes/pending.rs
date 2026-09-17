@@ -26,6 +26,14 @@ pub(super) struct Pending {
     /// part that moved can only have carried a canvas.
     pub(super) screens: bool,
     pub(super) spaces: bool,
+    /// An `Attachment` moved, came or went. What hangs off one — a `Beam`
+    /// or `Trail` end, a `Light` — is re-planned only if the scene has any
+    /// of that kind at all (see [`Pending::attachment_due`]): attachments
+    /// are everywhere in a real place (every weld, every constraint), and
+    /// re-walking the whole DOM for a beam plan that is empty before and
+    /// after is what made dragging any model cost a full-place walk per
+    /// mouse move.
+    pub(super) attachments: bool,
 }
 
 impl Pending {
@@ -44,9 +52,14 @@ impl Pending {
     /// An `Attachment` moved, came or went: it can be the endpoint of any
     /// number of beams and trails, and the anchor of a light.
     pub(super) fn attachment(&mut self) {
-        self.effect(EffectKind::Beams);
-        self.effect(EffectKind::Trails);
-        self.lights = true;
+        self.attachments = true;
+    }
+
+    /// Whether a plan that attachments feed (a beam, a trail, the local
+    /// lights) is due: asked for outright, or an attachment moved while the
+    /// scene actually holds some of that kind (`any_now`).
+    pub(super) fn attachment_due(&self, asked: bool, any_now: bool) -> bool {
+        asked || (self.attachments && any_now)
     }
 }
 
@@ -97,7 +110,10 @@ impl Patcher<'_> {
             self.offscreen
                 .with_renderer(|renderer, _, _| renderer.set_lighting(lighting));
         }
-        if self.pending.lights {
+        if self
+            .pending
+            .attachment_due(self.pending.lights, !self.loaded.lights().is_empty())
+        {
             // The same list a full build collects, off the same centre —
             // which only matters past `MAX_LOCAL_LIGHTS`, where it decides
             // which lights are kept.
@@ -114,7 +130,15 @@ impl Patcher<'_> {
             }
         }
         for kind in [EffectKind::Particles, EffectKind::Beams, EffectKind::Trails] {
-            if !self.pending.effects[Pending::slot(kind)] {
+            let any_now = match kind {
+                EffectKind::Particles => false,
+                EffectKind::Beams => !self.loaded.scene().beams().is_empty(),
+                EffectKind::Trails => !self.loaded.scene().trails().is_empty(),
+            };
+            if !self
+                .pending
+                .attachment_due(self.pending.effects[Pending::slot(kind)], any_now)
+            {
                 continue;
             }
             self.loaded.scene_mut().replan_effect(dom, database, kind);
@@ -170,5 +194,29 @@ impl Patcher<'_> {
             self.loaded.also_wants(&images);
             self.resident.images(&images);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_attachment_move_replans_only_what_the_scene_already_has() {
+        let mut pending = Pending::default();
+        pending.attachment();
+        assert!(pending.attachment_due(false, true), "a beam exists to move");
+        assert!(
+            !pending.attachment_due(false, false),
+            "no beam, nothing to re-plan"
+        );
+        assert!(
+            pending.attachment_due(true, false),
+            "asked for outright, planned regardless"
+        );
+        assert!(
+            !Pending::default().attachment_due(false, true),
+            "nothing moved at all"
+        );
     }
 }

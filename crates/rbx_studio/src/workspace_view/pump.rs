@@ -451,17 +451,48 @@ fn drain(commands: &Receiver<Command>, mut rendering: Rendering<'_>, idle: bool)
         }
     }
 
+    let mut queued = Vec::new();
     loop {
         match commands.try_recv() {
-            Ok(command) => {
-                if !apply(command, &mut rendering) {
-                    return false;
-                }
-            }
-            Err(TryRecvError::Empty) => return true,
+            Ok(command) => queued.push(command),
+            Err(TryRecvError::Empty) => break,
             Err(TryRecvError::Disconnected) => return false,
         }
     }
+    for command in coalesce(queued) {
+        if !apply(command, &mut rendering) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Folds every run of consecutive [`Command::Changes`] into one, keeping
+/// everything else where it was.
+///
+/// A drag sends one change batch per mouse-move event, and a mouse reports
+/// far more of those than the display draws frames — up to a thousand a
+/// second. Each batch is a hint about *which* instances to re-read from the
+/// mirror (see `Headless::apply_changes`), never a value, so applying the
+/// union once is the same picture as applying each in turn — while the
+/// per-batch cost that does not scale with the edit (the effect, GUI and
+/// light plans a moved part's children invalidate) is paid once a frame
+/// instead of once a move. Without this a place big enough for those plans
+/// to cost a few milliseconds fell behind the mouse and stayed there for
+/// the whole gesture. Snapshots keep their order, so the mirror ends up
+/// where the last batch left it.
+fn coalesce(commands: Vec<Command>) -> Vec<Command> {
+    let mut folded: Vec<Command> = Vec::with_capacity(commands.len());
+    for command in commands {
+        match (folded.last_mut(), command) {
+            (Some(Command::Changes(snapshots, changes)), Command::Changes(more, further)) => {
+                snapshots.extend(more);
+                changes.extend(further);
+            }
+            (_, command) => folded.push(command),
+        }
+    }
+    folded
 }
 
 fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {

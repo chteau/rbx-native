@@ -75,6 +75,7 @@ impl Shell {
     /// reselecting.
     pub(super) fn sync_viewport_selection(&mut self, cx: &mut Context<Self>) {
         let (outline, targets) = shown(&self.dom, &self.database, self.selection.all());
+        self.covered = targets.iter().map(|target| target.referent).collect();
         self.viewport.update(cx, |viewport, _| {
             viewport.set_selection(&outline);
             viewport.set_targets(targets);
