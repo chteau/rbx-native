@@ -236,6 +236,62 @@ fn an_automatic_canvas_grows_to_hold_the_children() {
     );
 }
 
+/// A 200 × 300 scrolling frame with a zero `CanvasSize`, an automatic
+/// vertical canvas and `rows` children each `{1, 0}, {0.3, 0}`, stacked by
+/// scale.
+fn scale_rows(dom: &mut WeakDom, gui: Ref, rows: i32) -> Ref {
+    let frame = scrolling_frame(dom, gui, udim2(0.0, 0, 0.0, 0), udim2(0.0, 200, 0.0, 300));
+    dom.set_property(frame, "AutomaticCanvasSize", Variant::Enum(2))
+        .unwrap();
+    for row in 0..rows {
+        super::frame(
+            dom,
+            frame,
+            udim2(0.0, 0, 0.3 * row as f32, 0),
+            udim2(1.0, 0, 0.3, 0),
+        );
+    }
+    frame
+}
+
+#[test]
+fn scale_sized_children_of_an_automatic_canvas_resolve_against_the_window() {
+    let (mut dom, gui) = screen_gui();
+    scale_rows(&mut dom, gui, 3);
+
+    let elements = resolve(&screens(&dom), VIEWPORT);
+
+    // A zero canvas is no smaller than the window on either axis, so a row
+    // is 30% of the 300px window — and the whole 200px wide, though nothing
+    // is automatic along X.
+    for row in 0..3 {
+        assert_eq!(
+            elements[1 + row].rect,
+            rect(0.0, 90.0 * row as f32, 200.0, 90.0)
+        );
+    }
+    // Three rows come to 270px: the canvas grew to that, and fits.
+    assert!(bars(&elements, 3).is_empty());
+}
+
+#[test]
+fn an_automatic_canvas_grown_past_the_window_leaves_the_rows_their_size() {
+    let (mut dom, gui) = screen_gui();
+    scale_rows(&mut dom, gui, 4);
+
+    let elements = resolve(&screens(&dom), VIEWPORT);
+
+    // Four rows are 360px of content in a 300px window: the canvas overflows
+    // and a bar shows, but a row is still 30% of the window, not of the
+    // canvas it made.
+    assert_eq!(elements[4].rect, rect(0.0, 270.0, 200.0, 90.0));
+    let bars = bars(&elements, 4);
+    assert_eq!(bars.len(), 3);
+    // The thumb is the window's share of the 360px canvas: 300 * 300 / 360.
+    let length: f32 = bars.iter().map(|bar| bar.rect.height).sum();
+    assert_eq!(length, 250.0);
+}
+
 #[test]
 fn the_thumb_sits_at_the_positions_share_of_the_slack() {
     let (mut dom, gui) = screen_gui();

@@ -7,7 +7,9 @@
 //! what the three bar images are — but no geometry beyond that. What is
 //! decided here, and nowhere in the docs: `CanvasSize`'s scale is a fraction
 //! of the *window* (the docs' inset diagram has a 100% canvas meeting the bar
-//! "edge-to-edge", which only the window makes true); a thumb is the window's
+//! "edge-to-edge", which only the window makes true); the children resolve
+//! against that canvas but never against less than the window (see
+//! [`content_box`]); a thumb is the window's
 //! share of the canvas along the track, at the canvas position's share of the
 //! slack; a bar's track is the window's span along its axis; the two end caps
 //! are `ScrollBarThickness` square, shrinking to share a thumb shorter than
@@ -51,11 +53,12 @@ pub(super) fn scroll(
     into: &mut Vec<Element>,
 ) {
     let window = window(node, scrolling, frame, measure);
+    let content = content_box(scrolling, window.rect.size());
     let canvas = Rect {
         x: window.rect.x - window.position[0],
         y: window.rect.y - window.position[1],
-        width: window.canvas[0],
-        height: window.canvas[1],
+        width: content[0],
+        height: content[1],
     };
     children(
         Scope {
@@ -197,6 +200,20 @@ pub(super) fn window(
     }
 }
 
+/// The box the children resolve their scale against: the canvas as
+/// `CanvasSize` sets it, but no smaller than the window along either axis.
+///
+/// The docs never say which box a child's scale is a fraction of. A
+/// `CanvasSize` of zero with scale-sized children is the common way to build
+/// a frame that only scrolls once `AutomaticCanvasSize` makes it, and those
+/// children fill the window in Studio — on the automatic axis too, where the
+/// grown canvas cannot be the answer: a row 30% of a canvas that in turn grows
+/// to hold the rows never settles.
+fn content_box(scrolling: &Scrolling, window: [f32; 2]) -> [f32; 2] {
+    let canvas = scrolling.canvas_size.against(window);
+    [canvas[0].max(window[0]), canvas[1].max(window[1])]
+}
+
 /// `AbsoluteCanvasSize`: "the maximum of the `CanvasSize` property and the
 /// size of the children if `AutomaticCanvasSize` is set to something other
 /// than `None`" — per axis, since the enum names them separately.
@@ -208,7 +225,12 @@ fn canvas_extent(
 ) -> [f32; 2] {
     let mut canvas = scrolling.canvas_size.against(window);
     if scrolling.automatic_canvas != [false, false] {
-        let content = sizing::content_extent(node, canvas, scrolling.automatic_canvas, measure);
+        let content = sizing::content_extent(
+            node,
+            content_box(scrolling, window),
+            scrolling.automatic_canvas,
+            measure,
+        );
         for axis in 0..2 {
             if scrolling.automatic_canvas[axis] {
                 canvas[axis] = canvas[axis].max(content[axis]);

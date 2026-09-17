@@ -26,7 +26,17 @@ pub(super) fn extent(node: &Node, parent: [f32; 2], measure: &mut dyn TextMeasur
     }
 
     if node.automatic_size != [false, false] {
-        let content = content_extent(node, size, node.automatic_size, measure);
+        // Along an automatic axis the element's own size is what is being
+        // worked out, so the box the children are measured in is zero wide
+        // there and a child sized or positioned by scale contributes only its
+        // offsets. The docs describe neither that circularity nor what a
+        // scale-sized child should do, and this is the only reading that
+        // terminates.
+        let probe = [0, 1].map(|axis| match node.automatic_size[axis] {
+            true => 0.0,
+            false => size[axis],
+        });
+        let content = content_extent(node, probe, node.automatic_size, measure);
         for axis in 0..2 {
             if node.automatic_size[axis] {
                 size[axis] = size[axis].max(content[axis]);
@@ -66,24 +76,16 @@ fn inset(rect: &Rect, sides: &[f32; 4]) -> Rect {
     }
 }
 
-/// How much room this element's content asks for, `UIPadding` included.
-///
-/// Along an `automatic` axis the element's own size is what is being worked
-/// out (`AutomaticSize`, or a `ScrollingFrame`'s `AutomaticCanvasSize`), so
-/// the box the children resolve against is zero wide there and a child sized
-/// or positioned by scale contributes only its offsets. The docs describe
-/// neither that circularity nor what a scale-sized child should do, and this
-/// is the only reading that terminates.
+/// How much room this element's content asks for, `UIPadding` included, with
+/// the children measured inside a box of `probe` pixels — which box that is
+/// along an `automatic` axis (`AutomaticSize`, or a `ScrollingFrame`'s
+/// `AutomaticCanvasSize`) is the caller's call, since the two differ.
 pub(super) fn content_extent(
     node: &Node,
-    size: [f32; 2],
+    probe: [f32; 2],
     automatic: [bool; 2],
     measure: &mut dyn TextMeasure,
 ) -> [f32; 2] {
-    let probe = [
-        if automatic[0] { 0.0 } else { size[0] },
-        if automatic[1] { 0.0 } else { size[1] },
-    ];
     let sides = node
         .constraints
         .padding
@@ -122,10 +124,10 @@ pub(super) fn content_extent(
     ]
 }
 
-/// `layout` with its flex turned off along every automatic axis: a probe box
-/// is zero wide there, and `Fill` would shrink every child into it — the
-/// docs say a flex layout "fills the space available", and along an axis
-/// the container takes from its content there is no such space yet.
+/// `layout` with its flex turned off along every automatic axis: the docs say
+/// a flex layout "fills the space available", and along an axis the container
+/// takes from its content there is no such space yet — a zero-wide probe box
+/// would have `Fill` shrink every child into it.
 fn relaxed(layout: Layout, automatic: [bool; 2]) -> Layout {
     let Layout::List(mut list) = layout else {
         return layout;
