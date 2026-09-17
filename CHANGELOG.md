@@ -21,6 +21,17 @@
   effect kinds the scene actually has, and a Model drag no longer re-walks
   the whole workspace for the free-drag neighbour boxes each frame. The
   sun's specular highlight on plastic is a touch stronger. — @chteau
+- **Follow-up viewport fixes on the same branch.** A `MeshPart` or
+  `UnionOperation` now shows its selection outline and transform gizmo — both
+  read the renderer's placement map, which dropped a mesh part's box the
+  moment its mesh became resident (a patch removed it, and a full rebuild
+  reseeded from the filtered `placements`); both keep the mesh part's own
+  bounding box now. Plain-hovering a model outlines the model as one box
+  rather than every child, and the selection box is no longer occluded by
+  geometry (it reads as a control, drawn on top). Beams no longer twist into
+  a bend on a low-segment curve — the ribbon takes its width from the
+  polyline, not the analytic tangent — and are affected by `LightInfluence`,
+  dimming with the scene at night. — @chteau
 
 
 ## 2026-09-16
