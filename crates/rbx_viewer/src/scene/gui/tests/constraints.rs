@@ -310,11 +310,15 @@ fn automatic_size_grows_only_the_axes_it_names_and_never_below_the_size() {
 fn automatic_size_counts_a_list_layouts_run_and_the_padding_around_it() {
     let (mut dom, gui) = screen_gui();
     let parent = frame(&mut dom, gui, udim2(0.0, 0, 0.0, 0), udim2(0.0, 0, 0.0, 0));
-    dom.set_property(parent, "AutomaticSize", Variant::Enum(2))
+    dom.set_property(parent, "AutomaticSize", Variant::Enum(3))
         .unwrap();
     padding(&mut dom, parent, 0.0, 5);
     let list = component(&mut dom, parent, "UIListLayout");
     dom.set_property(list, "FillDirection", Variant::Enum(1))
+        .unwrap();
+    // Left-aligned, so the run starts on the padded box's own corner and any
+    // double-counting of the left padding would show in the width.
+    dom.set_property(list, "HorizontalAlignment", Variant::Enum(1))
         .unwrap();
     dom.set_property(list, "Padding", udim(0.0, 4)).unwrap();
     for _ in 0..3 {
@@ -326,8 +330,9 @@ fn automatic_size_counts_a_list_layouts_run_and_the_padding_around_it() {
         );
     }
 
-    // Three 20px items, two 4px gaps, 5px of padding above and below.
-    assert_eq!(rects(&dom)[0].height, 78.0);
+    // Three 20px items, two 4px gaps, 5px of padding on every side.
+    let rect = rects(&dom)[0];
+    assert_eq!((rect.width, rect.height), (30.0, 78.0));
 }
 
 #[test]

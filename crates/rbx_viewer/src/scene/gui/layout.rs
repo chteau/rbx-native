@@ -129,9 +129,15 @@ pub(crate) fn resolve_canvas(gui: &SpaceGui) -> Vec<Element> {
         &gui.roots,
         gui.list.as_ref(),
         &frame,
-        Context::default(),
+        Context {
+            global_z_index: gui.global_z_index,
+            ..Context::default()
+        },
         &mut elements,
     );
+    if gui.global_z_index {
+        elements.sort_by_key(|element| element.z_index);
+    }
     elements
 }
 

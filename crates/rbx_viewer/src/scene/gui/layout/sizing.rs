@@ -83,15 +83,15 @@ fn content_extent(node: &Node, size: [f32; 2]) -> [f32; 2] {
         .padding
         .as_ref()
         .map_or([0.0; 4], |padding| padding.against(probe));
-    let inner = inset(
-        &Rect {
-            x: 0.0,
-            y: 0.0,
-            width: probe[0],
-            height: probe[1],
-        },
-        &sides,
-    );
+    // At the origin, not where the padding would actually put it: the
+    // children's extent is measured from the padded box's own corner and the
+    // padding is added back on both sides below.
+    let inner = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: (probe[0] - sides[0] - sides[1]).max(0.0),
+        height: (probe[1] - sides[2] - sides[3]).max(0.0),
+    };
 
     // The content's own bounding box, which a centred `UIListLayout` can put
     // partly left of the origin once the box it centres in is zero wide.

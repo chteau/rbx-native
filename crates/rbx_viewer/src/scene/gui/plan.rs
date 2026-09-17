@@ -15,7 +15,7 @@ mod constraints;
 mod props;
 
 use constraints::{automatic_size, border_mode, constraints, size_axes};
-pub(super) use constraints::{Aspect, Border, Constraints, SizeAxes};
+pub(super) use constraints::{global_z_index, Aspect, Border, Constraints, SizeAxes};
 use props::{alpha, color, degrees, enum_of};
 pub(super) use props::{flag, integer, span, vector2};
 
