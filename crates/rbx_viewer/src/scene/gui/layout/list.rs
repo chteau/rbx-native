@@ -52,7 +52,10 @@ pub(super) fn stacked(
     };
     // The lines are spread across the other axis by the same arithmetic, each
     // asking for the tallest (widest) item on it. Roblox names no separate
-    // property for the gap between lines, so `Padding` serves for both.
+    // property for the gap between lines, so `Padding` serves for both — its
+    // scale "a percentage of the parent's size in the current direction",
+    // which between lines is the cross axis.
+    let line_padding = list.padding.0 * extent[across] + list.padding.1;
     let stretch = list.cross_flex == Flex::Fill;
     let bands: Vec<Flexed> = lines
         .iter()
@@ -67,7 +70,7 @@ pub(super) fn stacked(
         .collect();
     let (bands, _) = spread(
         &bands,
-        padding,
+        line_padding,
         extent[across],
         list.cross_flex,
         cross_align,

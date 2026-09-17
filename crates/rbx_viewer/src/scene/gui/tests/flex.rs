@@ -223,6 +223,37 @@ fn wraps_moves_an_item_that_no_longer_fits_onto_a_second_line() {
 }
 
 #[test]
+fn a_scale_padding_between_wrapped_lines_is_a_share_of_the_cross_axis() {
+    let (mut dom, gui) = screen_gui();
+    let layout = flex_list(&mut dom, gui, false);
+    dom.set_property(layout, "Wraps", Variant::Bool(true))
+        .unwrap();
+    dom.set_property(
+        layout,
+        "Padding",
+        Variant::UDim(UDim {
+            scale: 0.1,
+            offset: 0,
+        }),
+    )
+    .unwrap();
+    for _ in 0..3 {
+        frame(
+            &mut dom,
+            gui,
+            udim2(0.0, 0, 0.0, 0),
+            udim2(0.0, 300, 0.0, 40),
+        );
+    }
+
+    // Along the 800 px line the padding is 80 px; the gap below it is the
+    // same scale of the 600 px height, "the parent's size in the current
+    // direction" — 60 px, not 80.
+    let origins: Vec<[f32; 2]> = rects(&dom).iter().map(|rect| [rect.x, rect.y]).collect();
+    assert_eq!(origins, [[0.0, 0.0], [380.0, 0.0], [0.0, 100.0]]);
+}
+
+#[test]
 fn without_wraps_a_line_overflows_rather_than_breaking() {
     let (mut dom, gui) = screen_gui();
     flex_list(&mut dom, gui, false);
