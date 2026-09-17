@@ -13,6 +13,10 @@
 //! [`layout`] whole — the only thing that differs is the pixel rect the tree
 //! resolves against, and where that rect ends up.
 //!
+//! [`style`] runs before all of it: a `StyleLink` applies a `StyleSheet`'s
+//! rules to the tree it sits in, so [`plan`] reads each instance's properties
+//! through that view rather than straight off the DOM.
+//!
 //! # What is not read here
 //! Text itself: a `TextLabel`/`TextButton`/`TextBox` draws its background and
 //! border like a `Frame`, but its glyphs need font loading and shaping, which
