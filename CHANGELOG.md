@@ -31,7 +31,10 @@
   geometry (it reads as a control, drawn on top). Beams no longer twist into
   a bend on a low-segment curve — the ribbon takes its width from the
   polyline, not the analytic tangent — and are affected by `LightInfluence`,
-  dimming with the scene at night. — @chteau
+  dimming with the scene at night. Alt-hover now previews the part Alt-click
+  cycling would select next rather than always the nearest hit, so a child
+  reached by cycling — the case when the camera sits inside a parent part —
+  is previewed before it is picked. — @chteau
 
 
 ## 2026-09-16
