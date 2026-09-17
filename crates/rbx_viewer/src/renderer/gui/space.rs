@@ -37,6 +37,10 @@ struct Canvas {
 struct Item {
     anchor: GuiAnchor,
     always_on_top: bool,
+    /// `Brightness`/`LightInfluence` folded into one factor by the scene.
+    brightness: f32,
+    /// `MaxDistance`, the eye distance past which this canvas is not drawn.
+    max_distance: f32,
     canvas: usize,
 }
 
@@ -153,6 +157,8 @@ impl Space {
             self.items.push(Item {
                 anchor: gui.anchor,
                 always_on_top: gui.always_on_top,
+                brightness: gui.brightness,
+                max_distance: gui.max_distance,
                 canvas: self.canvases.len() - 1,
             });
         }
@@ -248,8 +254,15 @@ impl Space {
                 .iter()
                 .filter(|item| item.always_on_top == always_on_top)
             {
+                if !quad::within(&item.anchor, eye, item.max_distance) {
+                    continue;
+                }
                 let start = vertices.len() as u32;
-                quad::vertices(quad::corners(&item.anchor, eye), &mut vertices);
+                quad::vertices(
+                    quad::corners(&item.anchor, eye),
+                    item.brightness,
+                    &mut vertices,
+                );
                 runs.push((item.canvas, always_on_top, start..vertices.len() as u32));
             }
         }

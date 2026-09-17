@@ -18,6 +18,7 @@ mod grid;
 mod image;
 mod list;
 mod modifiers;
+mod page;
 mod sizing;
 mod table;
 
@@ -133,6 +134,10 @@ pub(crate) fn resolve_with(
             None,
             Context {
                 global_z_index: screen.global_z_index,
+                // `ClipToDeviceSafeArea` scissors the whole screen to the
+                // canvas the insets leave, exactly as an ancestor's
+                // `ClipsDescendants` would.
+                clip: screen.clip_to_safe_area.then_some(frame),
                 ..Context::default()
             },
             measure,

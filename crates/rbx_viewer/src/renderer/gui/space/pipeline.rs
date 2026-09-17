@@ -20,11 +20,17 @@ pub(super) struct CameraRaw {
 pub(super) struct VertexRaw {
     pub(super) position: [f32; 3],
     pub(super) uv: [f32; 2],
+    /// What the sampled canvas colour is multiplied by — `Brightness` under
+    /// `LightInfluence`, see `scene::gui::space::brightness`. Per vertex
+    /// rather than in a uniform because every canvas of a pass shares one
+    /// vertex buffer and one bind group slot.
+    pub(super) brightness: f32,
 }
 
-const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] = wgpu::vertex_attr_array![
+const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![
     0 => Float32x3,
     1 => Float32x2,
+    2 => Float32,
 ];
 
 /// The same depth bias decals carry, and for the same reason: a `SurfaceGui`

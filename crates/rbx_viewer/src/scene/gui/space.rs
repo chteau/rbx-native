@@ -47,6 +47,14 @@ const FIXED_SIZE: u32 = 0;
 /// texture no adapter will allocate, and nothing is legible past this anyway.
 const MAX_CANVAS: f32 = 2048.0;
 
+/// `Brightness`'s own documented ceiling: "can be set to any number between 0
+/// and 1000".
+const MAX_BRIGHTNESS: f32 = 1000.0;
+
+/// `SurfaceGui.MaxDistance`'s default, which a tree built in code falls back
+/// to; a `BillboardGui` has no limit by default.
+const SURFACE_MAX_DISTANCE: f32 = 1000.0;
+
 /// Where a canvas' rectangle sits in the world.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum Anchor {
@@ -61,6 +69,10 @@ pub(crate) enum Anchor {
         view_offset: Vec3,
         /// `StudsOffsetWorldSpace`, along the global axes.
         world_offset: Vec3,
+        /// `SizeOffset`: a shift in units of the billboard's own size, along
+        /// the camera's right and up axes — "a 2D offset in size-relative
+        /// units that acts like an anchor point" (`BillboardGui.SizeOffset`).
+        size_offset: [f32; 2],
     },
     /// A fixed quad on one face of a part: exactly the rectangle a stretched
     /// `Decal` on that face covers (see [`crate::textures`]), pushed out along
@@ -82,6 +94,12 @@ pub(crate) struct SpaceGui {
     pub(crate) canvas: [f32; 2],
     /// `AlwaysOnTop`: drawn without a depth test, over the whole scene.
     pub(crate) always_on_top: bool,
+    /// What the canvas' colour is scaled by before it is composited — see
+    /// [`brightness`].
+    pub(crate) brightness: f32,
+    /// `MaxDistance`: how far the eye may be before the canvas stops being
+    /// drawn at all. Infinite where the property means "no limit".
+    pub(crate) max_distance: f32,
     pub(crate) anchor: Anchor,
     /// `ZIndexBehavior.Global`, which a `BillboardGui`/`SurfaceGui` carries
     /// like any other `LayerCollector`.
@@ -112,9 +130,6 @@ impl SpaceGui {
 /// `placements` is what both are measured against: a canvas hangs off the part
 /// as the scene actually drew it, so a part that never made it in (a
 /// `MeshPart` replaced by real geometry, say) carries no canvas.
-///
-/// TODO: `Brightness`, `LightInfluence`, `MaxDistance` and the container's own
-/// `ClipsDescendants`.
 pub(crate) fn plan(
     dom: &WeakDom,
     database: &ReflectionDatabase,
@@ -223,6 +238,7 @@ fn read(
                     size,
                     view_offset: vector3(properties, "StudsOffset"),
                     world_offset: vector3(properties, "StudsOffsetWorldSpace"),
+                    size_offset: vector2(properties, "SizeOffset"),
                 },
             )
         }
@@ -243,7 +259,9 @@ fn read(
     Some(SpaceGui {
         adornee,
         canvas,
-        always_on_top: flag(properties, "AlwaysOnTop", false),
+        always_on_top: always_on_top(properties),
+        brightness: brightness(properties),
+        max_distance: max_distance(properties, billboard),
         anchor,
         global_z_index: global_z_index(properties),
         list: layout_of(
@@ -254,6 +272,47 @@ fn read(
         ),
         roots,
     })
+}
+
+fn always_on_top(properties: &BTreeMap<String, Variant>) -> bool {
+    flag(properties, "AlwaysOnTop", false)
+}
+
+/// `Brightness` under `LightInfluence`, as the factor the canvas' colour is
+/// multiplied by.
+///
+/// "Determines the factor by which the container's light is scaled when
+/// `LightInfluence` is 0 ... `Brightness` ... has no effect when either
+/// `LightInfluence` is 1 or `AlwaysOnTop` is true"
+/// (`BillboardGui.Brightness`, `SurfaceGui.Brightness`), and `LightInfluence`
+/// itself runs "from 0 to 1 ... 1 means that surrounding lighting has complete
+/// control over the appearance". This viewer has no per-canvas light probe, so
+/// full influence is taken as the canvas' own colours unscaled and the two are
+/// mixed across the range.
+fn brightness(properties: &BTreeMap<String, Variant>) -> f32 {
+    if always_on_top(properties) {
+        return 1.0;
+    }
+    let influence = float(properties, "LightInfluence", 0.0).clamp(0.0, 1.0);
+    let brightness = float(properties, "Brightness", 1.0).clamp(0.0, MAX_BRIGHTNESS);
+    brightness + (1.0 - brightness) * influence
+}
+
+/// `MaxDistance` in studs, `f32::INFINITY` where there is no limit.
+///
+/// "A value of 0 ... means there is no limit and it will render infinitely far
+/// away" (`BillboardGui.MaxDistance`); a billboard's own default is `inf` and
+/// a `SurfaceGui`'s is 1000 ("the default value of 1000 works fine for most
+/// cases").
+fn max_distance(properties: &BTreeMap<String, Variant>, billboard: bool) -> f32 {
+    let default = match billboard {
+        true => f32::INFINITY,
+        false => SURFACE_MAX_DISTANCE,
+    };
+    match float(properties, "MaxDistance", default) {
+        limit if limit <= 0.0 => f32::INFINITY,
+        limit => limit,
+    }
 }
 
 /// What the canvas hangs off: `Adornee` where it points at a live instance,
