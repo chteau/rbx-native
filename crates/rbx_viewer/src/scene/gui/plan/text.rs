@@ -10,11 +10,11 @@ mod rich;
 use std::collections::BTreeMap;
 
 use rbx_assets::AssetRef;
-use rbx_dom::{FontStyle, Variant};
+use rbx_dom::{Font, FontStyle, Variant};
 
 use super::props::{alpha, color, enum_of, flag, float, integer, string};
 use super::Align;
-use crate::fonts::{Face, REGULAR};
+use crate::fonts::Face;
 
 /// Roblox's own default `TextColor3`, `Color3.fromRGB(27, 42, 53)` — the
 /// same as its default `BorderColor3`. A place file serializes the property,
@@ -206,83 +206,25 @@ pub(super) fn text(
 /// `FontFace` where the place carries one; the legacy `Font` enum otherwise,
 /// which older places serialize alone.
 fn face(properties: &BTreeMap<String, Variant>) -> Face {
-    if let Some(Variant::Font(font)) = properties.get("FontFace") {
-        if let Ok(family) = AssetRef::parse(&font.family) {
-            if family != AssetRef::Empty {
-                return Face {
-                    family,
-                    weight: font.weight,
-                    italic: font.style == FontStyle::Italic,
-                };
-            }
-        }
-    }
-    match properties.get("Font") {
-        Some(&Variant::Enum(legacy)) => legacy_face(legacy),
-        _ => Face::default(),
-    }
-}
-
-/// `Enum.Font` → family, as `Datatype.Font.fromEnum`'s table in Roblox's docs
-/// lays it out (with `Arial*` → Arimo and `Gotham*` → Montserrat from the
-/// enum page's own notes). The docs say nothing about weights: these follow
-/// the enum names, `Bold` being 700, `Light` 300 and so on.
-pub(super) fn legacy_face(font: u32) -> Face {
-    let (family, weight, italic) = match font {
-        0 => ("LegacyArial", REGULAR, false),
-        1 => ("Arimo", REGULAR, false),
-        2 => ("Arimo", 700, false),
-        3 => ("SourceSansPro", REGULAR, false),
-        4 => ("SourceSansPro", 700, false),
-        5 => ("SourceSansPro", 300, false),
-        6 => ("SourceSansPro", REGULAR, true),
-        7 => ("AccanthisADFStd", REGULAR, false),
-        8 => ("Guru", REGULAR, false),
-        9 => ("ComicNeueAngular", REGULAR, false),
-        10 => ("Inconsolata", REGULAR, false),
-        11 => ("HighwayGothic", REGULAR, false),
-        12 => ("Zekton", REGULAR, false),
-        13 => ("PressStart2P", REGULAR, false),
-        14 => ("Balthazar", REGULAR, false),
-        15 => ("RomanAntique", REGULAR, false),
-        16 => ("SourceSansPro", 600, false),
-        17 => ("Montserrat", REGULAR, false),
-        18 => ("Montserrat", 500, false),
-        19 => ("Montserrat", 700, false),
-        20 => ("Montserrat", 900, false),
-        21 => ("AmaticSC", REGULAR, false),
-        22 => ("Bangers", REGULAR, false),
-        23 => ("Creepster", REGULAR, false),
-        24 => ("DenkOne", REGULAR, false),
-        25 => ("Fondamento", REGULAR, false),
-        26 => ("FredokaOne", REGULAR, false),
-        27 => ("GrenzeGotisch", REGULAR, false),
-        28 => ("IndieFlower", REGULAR, false),
-        29 => ("JosefinSans", REGULAR, false),
-        30 => ("Jura", REGULAR, false),
-        31 => ("Kalam", REGULAR, false),
-        32 => ("LuckiestGuy", REGULAR, false),
-        33 => ("Merriweather", REGULAR, false),
-        34 => ("Michroma", REGULAR, false),
-        35 => ("Nunito", REGULAR, false),
-        36 => ("Oswald", REGULAR, false),
-        37 => ("PatrickHand", REGULAR, false),
-        38 => ("PermanentMarker", REGULAR, false),
-        39 => ("Roboto", REGULAR, false),
-        40 => ("RobotoCondensed", REGULAR, false),
-        41 => ("RobotoMono", REGULAR, false),
-        42 => ("Sarpanch", REGULAR, false),
-        43 => ("SpecialElite", REGULAR, false),
-        44 => ("TitilliumWeb", REGULAR, false),
-        45 => ("Ubuntu", REGULAR, false),
-        46 => ("BuilderSans", REGULAR, false),
-        47 => ("BuilderSans", 500, false),
-        48 => ("BuilderSans", 700, false),
-        49 => ("BuilderSans", 800, false),
-        50 => ("Arimo", REGULAR, false),
-        51 => ("Arimo", 700, false),
-        // `Unknown` (100), and anything a newer client may add.
-        _ => return Face::default(),
+    let face_of = |font: &Font| {
+        let family = AssetRef::parse(&font.family).ok()?;
+        (family != AssetRef::Empty).then_some(Face {
+            family,
+            weight: font.weight,
+            italic: font.style == FontStyle::Italic,
+        })
     };
-    Face::named(family, weight, italic)
+    let stored = match properties.get("FontFace") {
+        Some(Variant::Font(font)) => face_of(font),
+        _ => None,
+    };
+    stored
+        .or_else(|| match properties.get("Font") {
+            // `Enum.Font` → face, as `Datatype.Font.fromEnum`'s table in
+            // Roblox's docs lays it out; `Unknown` and anything newer fall
+            // to the default.
+            Some(&Variant::Enum(legacy)) => Font::from_legacy(legacy).as_ref().and_then(face_of),
+            _ => None,
+        })
+        .unwrap_or_default()
 }

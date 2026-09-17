@@ -11,10 +11,12 @@ mod atlas;
 use std::collections::{HashMap, HashSet};
 
 use cosmic_text::{
-    Align, Attrs, Buffer, CacheKey, Color, Ellipsize, FontSystem, Metrics, Shaping, Style,
-    SwashCache, UnderlineStyle, Weight, Wrap,
+    Align, Angle, Attrs, Buffer, CacheKey, CacheKeyFlags, Color, Ellipsize, FontSystem, Metrics,
+    Shaping, Style, SwashCache, SwashImage, Transform, UnderlineStyle, Weight, Wrap,
 };
 use rbx_assets::AssetRef;
+use swash::scale::{Render, ScaleContext, Source, StrikeWith};
+use swash::zeno::{Format, Vector};
 
 pub(super) use atlas::{Glyph, GlyphAtlas};
 
@@ -35,9 +37,31 @@ use crate::scene::{gui_span_face, GuiText, GuiTextMeasure};
 /// apart at the sizes the fixtures draw it. One constant fits all three.
 const LINE_EM: f32 = 1.2;
 
+/// `Enum.FontWeight.SemiBold`: from here up a face is bold — Roblox's docs on
+/// `Font.Bold` say it "becomes `true` if the weight is `SemiBold` or thicker"
+/// — so a request at or past it on a family whose nearest face falls short
+/// is served by dilating that face's outlines. The docs say nothing about
+/// how Studio serves such a weight; that it synthesises one is measured
+/// (Fredoka One, a single-face family, at 600: strokes half again as thick).
+const SEMI_BOLD: u16 = 600;
+
+/// How far each side of an outline moves out for a synthesised bold, in
+/// ems: FreeType's classic `FT_GlyphSlot_Embolden` strength, which against a
+/// Studio capture of Fredoka One at 600 lands the chevrons' stroke within a
+/// pixel.
+const FAKE_BOLD_EM: f32 = 1.0 / 24.0;
+
+/// Asks [`Typesetter::glyph`] for the dilated outline. cosmic-text has no
+/// such flag of its own (it synthesises italic, not bold); this is a bit it
+/// leaves unused, carried through shaping untouched to the glyph's cache
+/// key, which is what tells one glyph's bitmap from another.
+const FAKE_BOLD: CacheKeyFlags = CacheKeyFlags::from_bits_retain(1 << 8);
+
 pub(super) struct Typesetter {
     system: FontSystem,
     cache: SwashCache,
+    /// For the glyphs [`SwashCache`] cannot draw: the synthesised bold ones.
+    scaler: ScaleContext,
     pub(super) atlas: GlyphAtlas,
     /// Family JSON reference → the faces of it that have landed, under the
     /// family name fontdb filed them by, which is the name inside the face
@@ -55,6 +79,7 @@ impl Typesetter {
         Typesetter {
             system: FontSystem::new(),
             cache: SwashCache::new(),
+            scaler: ScaleContext::new(),
             atlas: GlyphAtlas::new(),
             families: HashMap::new(),
             loaded: HashSet::new(),
@@ -191,8 +216,45 @@ impl Typesetter {
         if let Some(known) = self.atlas.get(&key) {
             return known;
         }
+        if key.flags.contains(FAKE_BOLD) {
+            let image = self.embolden(key);
+            return self.atlas.insert(key, image.as_ref());
+        }
         let image = self.cache.get_image(&mut self.system, key).as_ref();
         self.atlas.insert(key, image)
+    }
+
+    /// The glyph as `SwashCache` would draw it — same sources, hinting and
+    /// synthesised slant — with every outline pushed out `FAKE_BOLD_EM` of
+    /// the em first. Roblox's own faces are static, so the variable-weight
+    /// axis cosmic-text would also set is left alone.
+    ///
+    /// ponytail: the advances stay the face's own, so a run of synthesised
+    /// bold sits `FAKE_BOLD_EM` tighter than Studio's; add the strength to
+    /// each flagged glyph's advance in `shape` if that ever shows.
+    fn embolden(&mut self, key: CacheKey) -> Option<SwashImage> {
+        let font = self.system.get_font(key.font_id, key.font_weight)?;
+        let size = f32::from_bits(key.font_size_bits);
+        let mut scaler = self
+            .scaler
+            .builder(font.as_swash())
+            .size(size)
+            .hint(true)
+            .build();
+        Render::new(&[
+            Source::ColorOutline(0),
+            Source::ColorBitmap(StrikeWith::BestFit),
+            Source::Outline,
+        ])
+        .format(Format::Alpha)
+        .offset(Vector::new(key.x_bin.as_float(), key.y_bin.as_float()))
+        .transform(
+            key.flags
+                .contains(CacheKeyFlags::FAKE_ITALIC)
+                .then(|| Transform::skew(Angle::from_degrees(14.0), Angle::from_degrees(0.0))),
+        )
+        .embolden(size * FAKE_BOLD_EM)
+        .render(&mut scaler, key.glyph_id)
     }
 }
 
@@ -215,30 +277,41 @@ fn metrics(size: f32, line_height: f32) -> Metrics {
 }
 
 /// The attributes one face shapes with: the family by the name fontdb knows
-/// it under, at the weight and style of the face that landed nearest the
-/// request — cosmic-text serves a weight only from a face of exactly that
-/// weight, so asked for the 700 a family lacks it would pass over the
-/// family's lone 400 face for a system font. The sans-serif fallback, at the
+/// it under, at the weight of the face that landed nearest the request —
+/// cosmic-text serves a weight only from a face of exactly that weight, so
+/// asked for the 700 a family lacks it would pass over the family's lone 400
+/// face for a system font. What that face cannot give is synthesised, as
+/// Studio does: the style stays the requested one (cosmic-text slants a face
+/// that has no italic of its own), and a bold weight on a face short of
+/// [`SEMI_BOLD`] asks for [`FAKE_BOLD`]. The sans-serif fallback, at the
 /// requested weight, while the family is unknown.
 fn attrs<'a>(families: &'a HashMap<AssetRef, Family>, face: &Face) -> Attrs<'a> {
     let landed = families
         .get(&face.family)
         .and_then(|family| Some((family, family.closest(face.weight, face.italic)?)));
-    let (family, weight, italic) = match landed {
+    let (family, weight, flags) = match landed {
         Some((family, entry)) => (
             cosmic_text::Family::Name(&family.name),
             entry.weight,
-            entry.italic,
+            match face.weight >= SEMI_BOLD && entry.weight < SEMI_BOLD {
+                true => FAKE_BOLD,
+                false => CacheKeyFlags::empty(),
+            },
         ),
-        None => (cosmic_text::Family::SansSerif, face.weight, face.italic),
+        None => (
+            cosmic_text::Family::SansSerif,
+            face.weight,
+            CacheKeyFlags::empty(),
+        ),
     };
     Attrs::new()
         .family(family)
         .weight(Weight(weight))
-        .style(match italic {
+        .style(match face.italic {
             true => Style::Italic,
             false => Style::Normal,
         })
+        .cache_key_flags(flags)
 }
 
 fn quantised(color: [f32; 3], alpha: f32) -> Color {
@@ -256,123 +329,4 @@ pub(super) fn unquantised(color: Color) -> ([f32; 3], f32) {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::sync::Arc;
-
-    use super::*;
-    use crate::fonts::Entry;
-    use crate::scene::{GuiAlign, GuiTextSpan};
-
-    fn plain(face: Face, size: f32) -> GuiText {
-        GuiText {
-            spans: vec![GuiTextSpan::plain("Ag")],
-            color: [1.0; 3],
-            alpha: 1.0,
-            size,
-            scaled: false,
-            wrapped: false,
-            x_align: GuiAlign::Start,
-            y_align: GuiAlign::Start,
-            face,
-            line_height: 1.0,
-            stroke: None,
-            truncate: false,
-            max_graphemes: None,
-            automatic: [false, false],
-            size_bounds: None,
-        }
-    }
-
-    /// A typesetter that believes `family` has landed with one upright face
-    /// of `weight` — with no font file at all, which the attributes and
-    /// metrics a shape asks for never need.
-    fn believing(family: &AssetRef, weight: u16) -> Typesetter {
-        let mut fonts = Typesetter::new();
-        fonts.families.insert(
-            family.clone(),
-            Family {
-                name: "Believed".to_string(),
-                faces: vec![Entry {
-                    weight,
-                    italic: false,
-                    asset: AssetRef::Native("fonts/Believed.ttf".to_string()),
-                }],
-            },
-        );
-        fonts
-    }
-
-    // Roblox's docs make `TextSize` the line height; the em is a fifth
-    // smaller, for a `<font size>` as much as for the base size, and
-    // `LineHeight` spaces the lines without touching the em.
-    #[test]
-    fn text_size_is_the_line_box_and_the_em_a_fifth_smaller() {
-        let face = Face::named("Believed", 400, false);
-        let mut fonts = believing(&face.family, 400);
-        let mut text = plain(face, 24.0);
-        text.spans.push(GuiTextSpan {
-            size: Some(12.0),
-            ..GuiTextSpan::plain("small")
-        });
-        text.line_height = 1.5;
-
-        let buffer = fonts.shape(&text, 24.0, None, None);
-        assert_eq!(buffer.metrics(), Metrics::new(20.0, 36.0));
-        let spans = buffer.lines[0].attrs_list();
-        assert_eq!(spans.get_span(0).metrics_opt, None, "the buffer's own");
-        assert_eq!(
-            spans.get_span(2).metrics_opt,
-            Some(Metrics::new(10.0, 18.0).into()),
-            "a <font size> is a line box too"
-        );
-    }
-
-    // A family with a single regular face serves a bold request with that
-    // face, as Roblox does, rather than with some bold system font.
-    #[test]
-    fn a_weight_the_family_lacks_shapes_in_the_face_that_landed() {
-        let face = Face::named("Believed", 700, false);
-        let mut fonts = believing(&face.family, 400);
-
-        let buffer = fonts.shape(&plain(face, 24.0), 24.0, None, None);
-        let attrs = buffer.lines[0].attrs_list().get_span(0);
-        assert_eq!(attrs.family, cosmic_text::Family::Name("Believed"));
-        assert_eq!(attrs.weight, Weight(400));
-
-        // Only a family that never landed keeps the request as asked, for
-        // the fallback to make of what it can.
-        let unknown = Face::named("Unknown", 700, false);
-        let buffer = fonts.shape(&plain(unknown, 24.0), 24.0, None, None);
-        let attrs = buffer.lines[0].attrs_list().get_span(0);
-        assert_eq!(attrs.family, cosmic_text::Family::SansSerif);
-        assert_eq!(attrs.weight, Weight(700));
-    }
-
-    // A face file that will not parse — a truncated download, a cloud asset
-    // that turned out not to be a font — must not be taken as the family: its
-    // text keeps shaping in the fallback, and the file is not tried again.
-    #[test]
-    fn a_face_that_is_not_a_font_is_never_adopted() {
-        let face = Face::named("Shelf", 400, false);
-        let asset = AssetRef::Native("fonts/Shelf-Regular.ttf".to_string());
-        let mut library = Library::default();
-        library.families.insert(
-            face.family.clone(),
-            Family {
-                name: "Shelf".to_string(),
-                faces: vec![Entry {
-                    weight: 400,
-                    italic: false,
-                    asset: asset.clone(),
-                }],
-            },
-        );
-        library.faces.insert(asset.clone(), Arc::new(vec![1, 2, 3]));
-        let mut fonts = Typesetter::new();
-
-        assert!(!fonts.adopt(&library, std::slice::from_ref(&face)));
-        assert!(!fonts.knows(&face));
-        assert!(fonts.loaded.contains(&asset), "not worth a second try");
-        assert!(!fonts.adopt(&library, std::slice::from_ref(&face)));
-    }
-}
+mod tests;
