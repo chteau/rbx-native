@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-09-17
+
+- **A batch of viewport editor fixes (`fix/overall-bug-fixes`).** Undo/redo
+  and other shortcuts now work with the 3D view focused rather than steering
+  the camera (`z` is the forward key, so Ctrl+Z used to fly forward on
+  AZERTY), and a Move drag reaches the undo stack again — it opened its
+  history entry on the gesture's first *sample*, which a 1-stud grid rounds
+  to nothing, so the whole drag landed outside undo. AZERTY's unshifted
+  digit row reaches the tool shortcuts too. A Move-tool click on a part in
+  front of the selection now selects it instead of dragging the selection
+  behind it. The Move/Scale stud increment snaps Scale as well as Move, and
+  the Rotate increment is live (Alt+R jumps to it). Scale and Rotate act on
+  a whole multi-selection, centred on its bounds, not just the anchor part.
+  The hover outline previews what a click would select — the whole model
+  plain, one part with Alt held — and both the selection and hover outlines
+  are now thick screen-space lines instead of a one-pixel hairline. Dragging
+  a Model with many children no longer freezes the viewport: consecutive
+  change batches fold to one per frame, an attachment move re-plans only the
+  effect kinds the scene actually has, and a Model drag no longer re-walks
+  the whole workspace for the free-drag neighbour boxes each frame. The
+  sun's specular highlight on plastic is a touch stronger. — @chteau
+
+
 ## 2026-09-16
 
 - **Undo/redo of a Scale drag no longer reloads the scene.** The fast path
