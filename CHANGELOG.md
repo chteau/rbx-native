@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-09-18
+
+- **Dock panel chrome lost on a restored layout.** `register_panels`'s
+  builder — the path every panel is rebuilt through once a saved dock
+  layout exists, i.e. every launch after the first — wrapped the rebuilt
+  panel in a bare `Arc::new(panel)` instead of `panel_handle(panel)`. Both
+  compile (`Entity<P>` already satisfies the trait object the registry
+  asks for), but only the latter is downcastable back to `PanelHandle`,
+  which is what the tab bar needs to recover a panel's dropdown menu and
+  zoom control. That silently dropped the Viewport panel's "Orthographic"
+  toggle and disabled every panel's "Zoom In" the moment a saved layout was
+  restored. Fixed to use the same `panel_handle` helper `build()`'s
+  first-launch path already used correctly, with a regression test that
+  drives a saved-layout round trip and asserts on the `PanelHandle::of`
+  recovery directly. — @chteau
+
 ## 2026-09-17
 
 - **A batch of viewport editor fixes (`fix/overall-bug-fixes`).** Undo/redo

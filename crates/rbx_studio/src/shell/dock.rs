@@ -254,7 +254,6 @@ pub(super) fn build(
 /// This must be called before calling `dock_area.load()` for layout restoration to work.
 pub(super) fn register_panels(_dock_area: Entity<DockArea>, shell: Entity<Shell>, cx: &mut App) {
     use gpui_kit::component::dock::register_panel;
-    use std::sync::Arc;
 
     // Register every section panel so it can be reconstructed from saved state.
     for section in &[
@@ -269,7 +268,15 @@ pub(super) fn register_panels(_dock_area: Entity<DockArea>, shell: Entity<Shell>
         let shell_clone = shell.clone();
         register_panel(cx, section.name(), move |_context, _window, cx| {
             let panel = cx.new(|cx| SectionPanel::new(shell_clone.clone(), section, cx));
-            Arc::new(panel)
+            // A bare `Arc::new(panel)` compiles here too — `Entity<P>` already
+            // satisfies `PanelView` through `gpui_base`'s own blanket impl —
+            // but it is not a `PanelHandle`, so `PanelHandle::of` (what the
+            // tab bar downcasts through to recover a panel's dropdown menu
+            // and zoom control, see `gpui_component::dock::tab_panel`) comes
+            // back `None` for every panel rebuilt this way. `panel_handle` is
+            // the same helper `build()` above already uses for exactly this
+            // reason.
+            panel_handle(panel)
         });
     }
 }
@@ -351,33 +358,4 @@ fn locate(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::Section;
-
-    // `panel_name` documents that its value must never change once chosen
-    // (it will be the persisted layout's panel key once settings land), so
-    // this is worth locking down even though the rest of this module needs a
-    // live GPUI window to exercise.
-    #[test]
-    fn every_section_has_a_distinct_stable_name() {
-        let names = [
-            Section::Viewport.name(),
-            Section::Explorer.name(),
-            Section::Properties.name(),
-            Section::Output.name(),
-            Section::Scripts.name(),
-            Section::StyleEditor.name(),
-        ];
-        assert_eq!(
-            names,
-            [
-                "Viewport",
-                "Explorer",
-                "Properties",
-                "Output",
-                "Script Editor",
-                "Style Editor"
-            ]
-        );
-    }
-}
+mod tests;
