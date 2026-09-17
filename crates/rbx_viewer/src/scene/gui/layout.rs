@@ -273,10 +273,12 @@ pub(in crate::scene::gui) fn emit(
                 referent: node.referent,
                 rect: window.rect,
                 clip: context.clip,
-                range: [0, 1].map(|axis| match scrolling.enabled && scrolling.direction[axis] {
-                    true => (window.canvas[axis] - window.rect.size()[axis]).max(0.0),
-                    false => 0.0,
-                }),
+                range: [0, 1].map(
+                    |axis| match scrolling.enabled && scrolling.direction[axis] {
+                        true => (window.canvas[axis] - window.rect.size()[axis]).max(0.0),
+                        false => 0.0,
+                    },
+                ),
             });
         }
         None => children(

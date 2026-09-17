@@ -247,7 +247,10 @@ impl Gui {
             );
             // Before the flatten below, which folds a `CanvasGroup`'s subtree
             // away: a list inside a group still scrolls.
-            self.windows = elements.iter().filter_map(|element| element.scroll).collect();
+            self.windows = elements
+                .iter()
+                .filter_map(|element| element.scroll)
+                .collect();
             self.viewports.bake_all(
                 device,
                 queue,
@@ -377,7 +380,10 @@ mod tests {
             &fonts,
             &quality,
         );
-        assert!(gui.scroll_target([50.0, 50.0], 1).is_none(), "not laid out yet");
+        assert!(
+            gui.scroll_target([50.0, 50.0], 1).is_none(),
+            "not laid out yet"
+        );
 
         let size = (400, 300);
         let display = device.create_texture(&wgpu::TextureDescriptor {

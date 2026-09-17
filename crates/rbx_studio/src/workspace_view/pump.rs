@@ -20,7 +20,9 @@ use rbx_dom::{Change, Snapshot, WeakDom};
 use rbx_viewer::pick::{Meshes, Selected};
 use rbx_viewer::{Applied, CameraInput, Gizmo, Headless, Pose, QualityLevel};
 
+use super::input::Wheel;
 use super::quality::Quality;
+use super::scroll::Scroll;
 use super::stats::Stats;
 
 /// How long the thread sleeps between checks while the panel is not visible.
@@ -39,6 +41,15 @@ const POSE_SYNC_INTERVAL: Duration = Duration::from_millis(200);
 
 enum Command {
     Input(CameraInput),
+    /// A wheel event at `at`, in the frame's pixels: scrolls the
+    /// `ScrollingFrame` under it if one can take `scroll` (reported back
+    /// through [`Ready::scrolls`]), else steps the camera by `camera`
+    /// notches — see `super::scroll`.
+    Wheel {
+        at: [f32; 2],
+        scroll: Wheel,
+        camera: f32,
+    },
     Size((u32, u32)),
     Quality(QualityLevel),
     Orthographic(bool),
@@ -90,6 +101,10 @@ pub(super) struct Ready {
     /// `pose`, but unlike `pose` this is never throttled: a warning is worth
     /// showing the moment it exists, not on a sampled interval.
     pub(super) warnings: Vec<String>,
+    /// Every wheel notch since the previous tick that landed on a scrolling
+    /// frame (see [`Command::Wheel`]), oldest first. Never throttled, like
+    /// `warnings`: the UI thread owns the DOM the scroll is written to.
+    pub(super) scrolls: Vec<Scroll>,
 }
 
 pub(super) struct Pump {
@@ -143,6 +158,11 @@ impl Pump {
 
     pub(super) fn input(&self, event: CameraInput) {
         let _ = self.commands.send(Command::Input(event));
+    }
+
+    /// A wheel event at `at` — see [`Command::Wheel`].
+    pub(super) fn wheel(&self, at: [f32; 2], scroll: Wheel, camera: f32) {
+        let _ = self.commands.send(Command::Wheel { at, scroll, camera });
     }
 
     pub(super) fn resize(&self, size: (u32, u32)) {
@@ -243,6 +263,7 @@ fn run(
     // True to begin with: the scene the thread opened with is as new to the
     // UI thread as any rebuilt one.
     let mut rebuilt = true;
+    let mut scrolls = Vec::new();
 
     loop {
         if !drain(
@@ -254,6 +275,7 @@ fn run(
                 size: &mut size,
                 visible: &mut visible,
                 rebuilt: &mut rebuilt,
+                scrolls: &mut scrolls,
             },
             idle,
         ) {
@@ -290,8 +312,14 @@ fn run(
         // and was swapped into it — both mean new geometry to pick against.
         let meshes = (std::mem::take(&mut rebuilt) | viewer.pick_meshes_changed())
             .then(|| viewer.pick_meshes());
+        let scrolled = std::mem::take(&mut scrolls);
 
-        if (frame.is_some() || told || pose.is_some() || !warnings.is_empty() || meshes.is_some())
+        if (frame.is_some()
+            || told
+            || pose.is_some()
+            || !warnings.is_empty()
+            || meshes.is_some()
+            || !scrolled.is_empty())
             && frames
                 .send(Ready {
                     pixels: frame.map(|frame| frame.pixels),
@@ -302,6 +330,7 @@ fn run(
                     view,
                     meshes,
                     warnings,
+                    scrolls: scrolled,
                 })
                 .is_err()
         {
@@ -434,6 +463,9 @@ struct Rendering<'a> {
     /// reports the geometry the UI thread now has to pick against — see
     /// [`Ready::meshes`].
     rebuilt: &'a mut bool,
+    /// The wheel notches that landed on a scrolling frame this tick, for
+    /// [`Ready::scrolls`].
+    scrolls: &'a mut Vec<Scroll>,
 }
 
 /// Applies everything the UI thread has asked for, blocking for the first order
@@ -498,6 +530,14 @@ fn coalesce(commands: Vec<Command>) -> Vec<Command> {
 fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
     match command {
         Command::Input(event) => rendering.viewer.input(event),
+        Command::Wheel { at, scroll, camera } => {
+            match rendering.viewer.gui_scroll_target(at, scroll.axis) {
+                Some(target) => rendering.scrolls.push(Scroll::of(target, scroll)),
+                None => rendering
+                    .viewer
+                    .input(CameraInput::Wheel { notches: camera }),
+            }
+        }
         Command::Size(new) => *rendering.size = new,
         Command::Quality(mode) => rendering.quality.set(mode, rendering.viewer),
         Command::Orthographic(orthographic) => rendering.viewer.set_orthographic(orthographic),

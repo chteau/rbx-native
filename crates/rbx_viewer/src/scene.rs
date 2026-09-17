@@ -36,19 +36,19 @@ pub(crate) use bounds::{of_part, Bounds};
 pub(crate) use filemesh::{
     fit_of as file_mesh_fit, AlphaMode, Appearance, Resolved, ResolvedInstance,
 };
-pub(crate) use gui::{
-    resolve_canvas_with as gui_canvas_layout_with, resolve_with as gui_layout_with,
-    scroll_target as gui_scroll_target, span_face as gui_span_face, Align as GuiAlign, Anchor as GuiAnchor, Element as GuiElement,
-    GradientKind as GuiGradientKind, GradientPx as GuiGradient, Grouped as GuiGroup,
-    ImageScale as GuiImageScale, Join as GuiJoin, Painted, PixelRect as GuiPixelRect,
-    Rect as GuiRect, Screen as GuiScreen, ScrollWindow as GuiScrollWindow, SpaceGui,
-    Text as GuiText, TextMeasure as GuiTextMeasure, Tile as GuiTile, Typeset as GuiTypeset,
-    ViewCamera as GuiViewCamera, Viewport as GuiViewport,
-};
 pub use gui::ScrollTarget;
 #[cfg(test)]
 pub(crate) use gui::{
     plan as gui_plan, GroupTint as GuiGroupTint, StrokePx as GuiStroke, TextSpan as GuiTextSpan,
+};
+pub(crate) use gui::{
+    resolve_canvas_with as gui_canvas_layout_with, resolve_with as gui_layout_with,
+    scroll_target as gui_scroll_target, span_face as gui_span_face, Align as GuiAlign,
+    Anchor as GuiAnchor, Element as GuiElement, GradientKind as GuiGradientKind,
+    GradientPx as GuiGradient, Grouped as GuiGroup, ImageScale as GuiImageScale, Join as GuiJoin,
+    Painted, PixelRect as GuiPixelRect, Rect as GuiRect, Screen as GuiScreen,
+    ScrollWindow as GuiScrollWindow, SpaceGui, Text as GuiText, TextMeasure as GuiTextMeasure,
+    Tile as GuiTile, Typeset as GuiTypeset, ViewCamera as GuiViewCamera, Viewport as GuiViewport,
 };
 pub(crate) use identity::PartId;
 pub(crate) use material::{Catalog, Kind, Maps, Slot};

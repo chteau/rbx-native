@@ -441,7 +441,9 @@ fn the_frame_leaves_its_window_and_reach_behind_for_the_wheel() {
         .unwrap();
 
     let elements = resolve(&screens(&dom), VIEWPORT);
-    let scroll = elements[0].scroll.expect("a ScrollingFrame leaves a window");
+    let scroll = elements[0]
+        .scroll
+        .expect("a ScrollingFrame leaves a window");
     assert_eq!(scroll.referent, frame);
     assert_eq!(scroll.rect, rect(0.0, 0.0, 200.0 - THICKNESS as f32, 100.0));
     assert_eq!(scroll.clip, None);
