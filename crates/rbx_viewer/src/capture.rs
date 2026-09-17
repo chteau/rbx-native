@@ -175,7 +175,7 @@ impl Offscreen {
 
         let queued = Instant::now();
         self.renderer
-            .draw(&self.device, &self.queue, target.view(), size, from);
+            .draw(&self.device, &self.queue, target.texture(), size, from);
         let pending = target.copy(&self.device, &self.queue);
         let render = queued.elapsed();
 

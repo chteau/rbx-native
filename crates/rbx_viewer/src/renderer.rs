@@ -417,7 +417,7 @@ impl Renderer {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        target: &wgpu::TextureView,
+        target: &wgpu::Texture,
         size: (u32, u32),
         from: Viewpoint,
     ) {
@@ -569,9 +569,12 @@ impl Renderer {
 
         // The scene is HDR and unclamped until here: the bloom, the grade and
         // the tone map all live in the resolve.
-        self.post.resolve(&mut encoder, target);
+        self.post
+            .resolve(&mut encoder, &target.create_view(&Default::default()));
         // After the resolve, not before it: a `ScreenGui` is an overlay, so
-        // bloom, depth of field and the tone map must leave it alone.
+        // bloom, depth of field and the tone map must leave it alone. It takes
+        // the texture rather than a view because it composites through a
+        // non-sRGB one of its own (see `renderer::gui::pipeline::encoded`).
         self.gui.draw(device, queue, &mut encoder, target, size);
 
         queue.submit(std::iter::once(encoder.finish()));

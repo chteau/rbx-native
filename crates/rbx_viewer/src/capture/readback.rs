@@ -18,7 +18,6 @@ const SLOTS: usize = 2;
 /// makes a continuously redrawn embedded view affordable.
 pub(super) struct Target {
     texture: wgpu::Texture,
-    view: wgpu::TextureView,
     readback: [wgpu::Buffer; SLOTS],
     /// Which buffer the next copy goes to. The other one is where the frame
     /// being handed back this very moment lives.
@@ -48,9 +47,10 @@ impl Target {
             dimension: wgpu::TextureDimension::D2,
             format: FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
+            // The GUI overlay composites through the non-sRGB twin of this
+            // format (see `renderer::gui::pipeline::encoded`).
+            view_formats: &[FORMAT.remove_srgb_suffix()],
         });
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let bytes = u64::from(padded_row(size.0 * BYTES_PER_PIXEL)) * u64::from(size.1);
         let readback = std::array::from_fn(|_| {
             device.create_buffer(&wgpu::BufferDescriptor {
@@ -63,7 +63,6 @@ impl Target {
 
         Target {
             texture,
-            view,
             readback,
             next: 0,
             size,
@@ -74,8 +73,10 @@ impl Target {
         self.size
     }
 
-    pub(super) fn view(&self) -> &wgpu::TextureView {
-        &self.view
+    /// What the renderer draws into. The texture rather than a view: the GUI
+    /// overlay needs to make one of its own in the non-sRGB twin format.
+    pub(super) fn texture(&self) -> &wgpu::Texture {
+        &self.texture
     }
 
     /// Queues the copy out of the drawn texture and asks for its mapping.

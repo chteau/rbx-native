@@ -122,6 +122,21 @@ fn ramp_position(p: vec2<f32>, g: vec4<f32>, kind: u32) -> f32 {
     return 0.5 + dot(d, g.zw);
 }
 
+// The exact inverse of `scene::srgb_to_linear`.
+//
+// The pass renders through a *non-sRGB* view of the display target (see
+// `pipeline::encoded`), so the hardware neither decodes the destination nor
+// re-encodes what is written: the fixed-function blend runs on whatever this
+// returns. Encoding here is therefore what makes a `BackgroundTransparency`
+// of 0.5 halve the *encoded* pixel behind it, which is how Roblox composites
+// its 2D layer — blending in linear light leaves every translucent frame
+// visibly lighter than Studio's.
+fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    let low = c * 12.92;
+    let high = 1.055 * pow(max(c, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.4)) - 0.055;
+    return select(high, low, c <= vec3<f32>(0.04045 / 12.92));
+}
+
 // `GradientTileMode`: 0 clamp, 1 repeat, 2 mirror.
 fn tiled(t: f32, tile: u32) -> f32 {
     if tile == 1u {
@@ -164,5 +179,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Straight (non-premultiplied) alpha: the pipeline's blend state is
     // (SrcAlpha, OneMinusSrcAlpha), which is what Roblox's own
     // `BackgroundTransparency`/`ImageTransparency` compose as.
-    return vec4<f32>(sampled.rgb * color, sampled.a * alpha);
+    //
+    // The tint, the ramp and the image sample all meet in linear light
+    // (vertex colours are linearized by `scene::gui::plan`, and both textures
+    // are `*Srgb` formats the sampler decodes); only the result is encoded,
+    // once, for the blend. Alpha is untouched — coverage and transparency are
+    // already the linear quantities the blend wants.
+    return vec4<f32>(linear_to_srgb(sampled.rgb * color), sampled.a * alpha);
 }

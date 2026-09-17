@@ -324,9 +324,13 @@ fn bake(
         dimension: wgpu::TextureDimension::D2,
         format: CANVAS_FORMAT,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-        view_formats: &[],
+        // Painted through the non-sRGB twin so the tree composites onto itself
+        // in encoded space, exactly as the screen overlay does; the bytes that
+        // land are still the sRGB encoding this format promises, so the
+        // in-world pass sampling the canvas decodes them as before.
+        view_formats: &[super::pipeline::encoded(CANVAS_FORMAT)],
     });
-    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let view = super::pipeline::encoded_view(&texture);
 
     painter.prepare(
         device,
