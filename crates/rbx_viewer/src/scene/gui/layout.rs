@@ -21,8 +21,8 @@ mod modifiers;
 mod sizing;
 mod table;
 
+use arrange::sorted;
 pub(crate) use arrange::{arrange, Arranged};
-use arrange::{content_size, sorted};
 use image::painted;
 pub(crate) use image::{ImageScale, Painted};
 pub(crate) use modifiers::{GradientPx, StrokePx};
@@ -248,7 +248,6 @@ fn children(
     let arranged = match given {
         Some(rects) => Arranged {
             rects: rects.to_vec(),
-            size: content_size(rects),
             cells: None,
         },
         None => arrange(nodes, layout, parent, measure),

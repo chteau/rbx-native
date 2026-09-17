@@ -31,7 +31,7 @@ pub(crate) use image::PixelRect;
 pub(crate) use layouts::Align;
 pub(super) use layouts::{layout_of, Flex, FlexItem, Grid, Layout, LineAlign, List, Table};
 use props::{alpha, color, degrees, enum_of};
-pub(super) use props::{flag, integer, span, vector2};
+pub(super) use props::{flag, float, integer, span, vector2};
 pub(crate) use stroke::Join;
 pub(super) use stroke::{Stroke, StrokePosition};
 #[cfg(test)]
@@ -256,6 +256,8 @@ fn element(
         return None;
     }
 
+    let constraints = constraints(dom, database, styles, instance.children());
+
     Some(Node {
         name: instance.name().to_string(),
         layout_order: integer(properties, "LayoutOrder", 0),
@@ -272,10 +274,15 @@ fn element(
         z_index: integer(properties, "ZIndex", 1),
         automatic_size: automatic_size(properties),
         size_constraint: size_axes(properties),
-        constraints: constraints(dom, database, instance.children()),
+        constraints,
         fill: fill(properties),
-        text: is_text(database, class)
-            .then(|| text::text(properties, database.is_subclass_of(class, TEXT_BOX_CLASS))),
+        text: is_text(database, class).then(|| {
+            text::text(
+                properties,
+                database.is_subclass_of(class, TEXT_BOX_CLASS),
+                constraints.text_size_bounds,
+            )
+        }),
         list: layout_of(dom, database, styles, instance.children()),
         flex: layouts::flex_item(dom, database, styles, instance.children()),
         corner: corner::read(dom, database, styles, instance.children()),

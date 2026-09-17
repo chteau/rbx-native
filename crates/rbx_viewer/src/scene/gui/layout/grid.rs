@@ -16,7 +16,7 @@ pub(super) fn grid(
     grid: &Grid,
     parent: &Rect,
     _measure: &mut dyn TextMeasure,
-) -> (Vec<Rect>, [f32; 2]) {
+) -> Vec<Rect> {
     let extent = parent.size();
     let cell = grid.cell.against(extent);
     let padding = grid.cell_padding.against(extent);
@@ -67,7 +67,7 @@ pub(super) fn grid(
             height: cell[1],
         };
     }
-    (rects, content)
+    rects
 }
 
 /// How many cells of `cell` pixels, `padding` apart, fit across `extent`.

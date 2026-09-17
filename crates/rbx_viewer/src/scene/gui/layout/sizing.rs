@@ -14,7 +14,7 @@
 //! 5. `UISizeConstraint`, a hard pixel clamp, last so nothing can push the
 //!    element back outside `MinSize`/`MaxSize`.
 
-use super::super::plan::{Aspect, Node};
+use super::super::plan::{Aspect, Flex, Layout, Node};
 use super::{Rect, TextMeasure};
 
 /// The element's final pixel size inside a parent box of `parent` pixels.
@@ -102,7 +102,8 @@ fn content_extent(node: &Node, size: [f32; 2], measure: &mut dyn TextMeasure) ->
         let size = text.size.clamp(min, max.max(min));
         measure.measure(text, size, super::text::wrap_width(text, &inner))
     });
-    for rect in super::arrange(&node.children, node.list.as_ref(), &inner, measure).rects {
+    let layout = node.list.map(|layout| relaxed(layout, node.automatic_size));
+    for rect in super::arrange(&node.children, layout.as_ref(), &inner, measure).rects {
         low[0] = low[0].min(rect.x);
         low[1] = low[1].min(rect.y);
         high[0] = high[0].max(rect.x + rect.width);
@@ -113,6 +114,24 @@ fn content_extent(node: &Node, size: [f32; 2], measure: &mut dyn TextMeasure) ->
         high[0] - low[0] + sides[0] + sides[1],
         high[1] - low[1] + sides[2] + sides[3],
     ]
+}
+
+/// `layout` with its flex turned off along every automatic axis: a probe box
+/// is zero wide there, and `Fill` would shrink every child into it — the
+/// docs say a flex layout "fills the space available", and along an axis
+/// the container takes from its content there is no such space yet.
+fn relaxed(layout: Layout, automatic: [bool; 2]) -> Layout {
+    let Layout::List(mut list) = layout else {
+        return layout;
+    };
+    let along = usize::from(list.vertical);
+    if automatic[along] {
+        list.flex = Flex::None;
+    }
+    if automatic[1 - along] {
+        list.cross_flex = Flex::None;
+    }
+    Layout::List(list)
 }
 
 /// `UIAspectRatioConstraint`: the dominant axis keeps the size it already had

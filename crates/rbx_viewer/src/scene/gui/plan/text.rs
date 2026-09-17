@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use rbx_assets::AssetRef;
 use rbx_dom::{FontStyle, Variant};
 
-use super::props::{alpha, color, enum_of, flag, integer};
+use super::props::{alpha, color, enum_of, flag, float, integer, string};
 use super::Align;
 use crate::fonts::{Face, REGULAR};
 
@@ -109,8 +109,6 @@ pub(crate) struct Text {
     pub(crate) automatic: [bool; 2],
     /// `UITextSizeConstraint`'s (`MinTextSize`, `MaxTextSize`), which bounds
     /// the size `TextScaled` searches and clamps a plain `TextSize` too.
-    /// Always `None` here: the constraint is a sibling `UIComponent`, read
-    /// wherever the rest of that family is, and filled in from there.
     pub(crate) size_bounds: Option<(f32, f32)>,
 }
 
@@ -151,7 +149,11 @@ pub(crate) fn span_face(base: &Face, span: &Span) -> Face {
 
 /// Reads a text object's properties. `text_box` selects the `TextBox` rule:
 /// an empty `Text` shows `PlaceholderText` in `PlaceholderColor3` instead.
-pub(super) fn text(properties: &BTreeMap<String, Variant>, text_box: bool) -> Text {
+pub(super) fn text(
+    properties: &BTreeMap<String, Variant>,
+    text_box: bool,
+    size_bounds: Option<(f32, f32)>,
+) -> Text {
     let mut content = string(properties, "Text");
     let mut tint = color(properties, "TextColor3", DEFAULT_TEXT);
     if text_box && content.is_empty() {
@@ -197,7 +199,7 @@ pub(super) fn text(properties: &BTreeMap<String, Variant>, text_box: bool) -> Te
         truncate: enum_of(properties, "TextTruncate", TRUNCATE_NONE) != TRUNCATE_NONE,
         max_graphemes: usize::try_from(integer(properties, "MaxVisibleGraphemes", -1)).ok(),
         automatic: [automatic & AUTOMATIC_X != 0, automatic & AUTOMATIC_Y != 0],
-        size_bounds: None,
+        size_bounds,
     }
 }
 
@@ -283,24 +285,4 @@ pub(super) fn legacy_face(font: u32) -> Face {
         _ => return Face::default(),
     };
     Face::named(family, weight, italic)
-}
-
-fn string(properties: &BTreeMap<String, Variant>, name: &str) -> String {
-    match properties.get(name) {
-        Some(Variant::String(value)) => value.clone(),
-        _ => String::new(),
-    }
-}
-
-fn float(properties: &BTreeMap<String, Variant>, name: &str, default: f32) -> f32 {
-    let raw = match properties.get(name) {
-        Some(&Variant::Float32(value)) => value,
-        Some(&Variant::Float64(value)) => value as f32,
-        Some(&Variant::Int32(value)) => value as f32,
-        _ => default,
-    };
-    match raw.is_finite() {
-        true => raw,
-        false => default,
-    }
 }

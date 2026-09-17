@@ -102,16 +102,14 @@ pub(super) fn table(
     Laid {
         rects,
         cells: cell_rects,
-        size: content,
     }
 }
 
-/// What a table comes to: the siblings' rects, each sibling's cells' rects in
-/// its own child order, and `AbsoluteContentSize`.
+/// What a table comes to: the siblings' rects and each sibling's cells' rects
+/// in its own child order.
 pub(super) struct Laid {
     pub(super) rects: Vec<Rect>,
     pub(super) cells: Vec<Vec<Rect>>,
-    pub(super) size: [f32; 2],
 }
 
 /// A rect from minor-then-major coordinates, back in x/y.

@@ -180,7 +180,12 @@ fn build_once(
                     strokes.push(text::Stroke {
                         color: stroke.color,
                         alpha: stroke.alpha,
-                        thickness: stroke.band[1] - stroke.band[0],
+                        // `StrokeSizingMode.ScaledSize`: "if stroke is on
+                        // text, thickness is relative to font size".
+                        thickness: match stroke.scaled {
+                            true => stroke.thickness * typeset.size,
+                            false => stroke.thickness,
+                        },
                     });
                 }
             }

@@ -213,6 +213,8 @@ mod tests {
                 band: [0.0, 3.0],
                 join: GuiJoin::Round,
                 on_text: false,
+                thickness: 3.0,
+                scaled: false,
             }),
             gradient: Some(GuiGradient {
                 color: ColorSequence {

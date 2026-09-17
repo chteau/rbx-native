@@ -16,7 +16,7 @@ use rbx_dom::{Instance, Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use super::plan::{
-    collect_assets, collect_fonts, elements, flag, global_z_index, layout_of, span, vector2,
+    collect_assets, collect_fonts, elements, flag, float, global_z_index, layout_of, span, vector2,
     Layout, Node,
 };
 use super::style::Styled;
@@ -229,7 +229,7 @@ fn read(
         false => {
             let placement = context.placements.get(&adornee)?;
             let face = face(properties);
-            let corners = face_corners(face, placement, number(properties, "ZOffset", 0.0));
+            let corners = face_corners(face, placement, float(properties, "ZOffset", 0.0));
             (
                 surface_canvas(properties, face_studs(&corners)),
                 Anchor::Surface { corners },
@@ -297,7 +297,7 @@ pub(super) fn surface_canvas(
     let raw = match properties.get("SizingMode") {
         Some(&Variant::Enum(FIXED_SIZE)) => vector2(properties, "CanvasSize"),
         _ => {
-            let density = number(properties, "PixelsPerStud", PIXELS_PER_STUD);
+            let density = float(properties, "PixelsPerStud", PIXELS_PER_STUD);
             face_studs.map(|studs| studs * density)
         }
     };
@@ -383,18 +383,6 @@ fn vector3(properties: &BTreeMap<String, Variant>, name: &str) -> Vec3 {
     match properties.get(name) {
         Some(Variant::Vector3(value)) => Vec3::new(value.x, value.y, value.z),
         _ => Vec3::ZERO,
-    }
-}
-
-fn number(properties: &BTreeMap<String, Variant>, name: &str, default: f32) -> f32 {
-    let raw = match properties.get(name) {
-        Some(&Variant::Float32(value)) => value,
-        Some(&Variant::Float64(value)) => value as f32,
-        _ => return default,
-    };
-    match raw.is_finite() {
-        true => raw,
-        false => default,
     }
 }
 

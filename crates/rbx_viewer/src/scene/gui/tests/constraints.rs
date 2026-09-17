@@ -398,3 +398,31 @@ fn a_text_elements_own_content_size_grows_the_box_beside_its_children() {
     let rect = crate::scene::gui::resolve_with(&screens(&dom), VIEWPORT, &mut Fixed)[0].rect;
     assert_eq!((rect.width, rect.height), (180.0, 90.0));
 }
+
+#[test]
+fn automatic_size_under_a_fill_flex_list_takes_the_items_own_sizes() {
+    let (mut dom, gui) = screen_gui();
+    let parent = frame(&mut dom, gui, udim2(0.0, 0, 0.0, 0), udim2(0.0, 0, 0.0, 0));
+    dom.set_property(parent, "AutomaticSize", Variant::Enum(3))
+        .unwrap();
+    let list = component(&mut dom, parent, "UIListLayout");
+    dom.set_property(list, "FillDirection", Variant::Enum(1))
+        .unwrap();
+    // `Fill` on both axes: against a box that is still zero wide, the items
+    // would otherwise be shrunk to nothing and the container measure zero.
+    dom.set_property(list, "HorizontalFlex", Variant::Enum(1))
+        .unwrap();
+    dom.set_property(list, "VerticalFlex", Variant::Enum(1))
+        .unwrap();
+    for width in [120, 160] {
+        frame(
+            &mut dom,
+            parent,
+            udim2(0.0, 0, 0.0, 0),
+            udim2(0.0, width, 0.0, 24),
+        );
+    }
+
+    let rect = rects(&dom)[0];
+    assert_eq!((rect.width, rect.height), (160.0, 48.0));
+}

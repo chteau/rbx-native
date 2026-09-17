@@ -367,3 +367,24 @@ fn an_unmeasured_resolve_keeps_text_size_as_written() {
         }
     );
 }
+
+#[test]
+fn a_ui_text_size_constraint_bounds_the_text_beside_it() {
+    let (mut dom, gui) = screen_gui();
+    let referent = label(&mut dom, gui, "TextLabel", "abcd");
+    dom.set_property(referent, "TextScaled", Variant::Bool(true))
+        .unwrap();
+    let constraint = dom.new_instance(
+        "UITextSizeConstraint",
+        "UITextSizeConstraint",
+        Some(referent),
+    );
+    dom.set_property(constraint, "MinTextSize", Variant::Int32(5))
+        .unwrap();
+    dom.set_property(constraint, "MaxTextSize", Variant::Int32(10))
+        .unwrap();
+
+    // `Fixed` would fit "abcd" at 40px in a 100x20 box; the constraint caps it.
+    let scaled = resolve_with(&screens(&dom), VIEWPORT, &mut Fixed);
+    assert_eq!(scaled[0].text.as_ref().unwrap().size, 10.0);
+}

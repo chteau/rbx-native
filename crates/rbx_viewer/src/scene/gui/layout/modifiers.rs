@@ -17,6 +17,12 @@ pub(crate) struct StrokePx {
     /// See `plan::Stroke::on_text`: the box painter leaves such a stroke to
     /// the text renderer.
     pub(crate) on_text: bool,
+    /// `Thickness` as written, and whether `StrokeSizingMode.ScaledSize` is
+    /// on: `band` already scaled it by the box's shorter side, but on text
+    /// the docs make it "relative to font size" instead, which only the text
+    /// renderer knows.
+    pub(crate) thickness: f32,
+    pub(crate) scaled: bool,
 }
 
 /// A `UIGradient` with its geometry turned into what a fragment needs to
@@ -70,6 +76,8 @@ pub(super) fn stroke(stroke: &Stroke, size: [f32; 2]) -> StrokePx {
         band: [inner + shift, outer + shift],
         join: stroke.join,
         on_text: stroke.on_text,
+        thickness: stroke.thickness,
+        scaled: stroke.scaled,
     }
 }
 

@@ -10,7 +10,8 @@ use std::collections::BTreeMap;
 use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
-use super::{enum_of, flag, integer, span, Span};
+use super::props::udim as udim_of;
+use super::{enum_of, flag, float, integer, span, Span};
 use crate::scene::gui::style::Styled;
 
 /// Every layout class this viewer resolves. Roblox honours exactly one layout
@@ -194,8 +195,8 @@ pub(in crate::scene::gui) fn flex_item(
         2 => (0.0, 1.0),
         3 => (1.0, 1.0),
         4 => (
-            number(properties, "GrowRatio").max(0.0),
-            number(properties, "ShrinkRatio").max(0.0),
+            float(properties, "GrowRatio", 0.0).max(0.0),
+            float(properties, "ShrinkRatio", 0.0).max(0.0),
         ),
         _ => (0.0, 0.0),
     };
@@ -294,10 +295,7 @@ fn line_align(properties: &BTreeMap<String, Variant>) -> LineAlign {
 
 /// One `UDim`, zero where absent.
 fn udim(properties: &BTreeMap<String, Variant>, name: &str) -> (f32, f32) {
-    match properties.get(name) {
-        Some(Variant::UDim(value)) => (value.scale, value.offset as f32),
-        _ => (0.0, 0.0),
-    }
+    udim_of(properties, name).unwrap_or((0.0, 0.0))
 }
 
 /// A `UDim2` whose absence means a non-zero pixel default rather than zero,
@@ -309,14 +307,5 @@ fn udim2_or(properties: &BTreeMap<String, Variant>, name: &str, offset: [f32; 2]
             scale: [0.0, 0.0],
             offset,
         },
-    }
-}
-
-/// A `float` property, 0 where absent.
-fn number(properties: &BTreeMap<String, Variant>, name: &str) -> f32 {
-    match properties.get(name) {
-        Some(&Variant::Float32(value)) => value,
-        Some(&Variant::Float64(value)) => value as f32,
-        _ => 0.0,
     }
 }

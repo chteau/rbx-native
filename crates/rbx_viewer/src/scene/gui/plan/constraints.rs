@@ -11,7 +11,8 @@ use std::collections::BTreeMap;
 use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
-use super::props::{enum_of, integer, vector2};
+use super::props::{enum_of, float, integer, udim, vector2};
+use crate::scene::gui::style::Styled;
 
 /// `UIPadding`, four `UDim`s that shrink the box this element's children —
 /// and any layout arranging them — resolve against.
@@ -127,6 +128,7 @@ pub(in crate::scene::gui) struct Constraints {
 pub(in crate::scene::gui) fn constraints(
     dom: &WeakDom,
     database: &ReflectionDatabase,
+    styles: &Styled,
     children: &[Ref],
 ) -> Constraints {
     let mut found = Constraints::default();
@@ -134,7 +136,7 @@ pub(in crate::scene::gui) fn constraints(
         let Some(instance) = dom.get(child) else {
             continue;
         };
-        let properties = instance.properties();
+        let properties = styles.properties_of(instance);
         // `UIComponent.Enabled` does not exist; a constraint is disabled by
         // being removed. Only the class matters.
         match instance.class() {
@@ -142,7 +144,7 @@ pub(in crate::scene::gui) fn constraints(
                 found.padding = Some(padding(properties));
             }
             "UIScale" if found.scale.is_none() => {
-                found.scale = Some(scalar(properties, "Scale", 1.0));
+                found.scale = Some(float(properties, "Scale", 1.0));
             }
             "UISizeConstraint" if found.size_bounds.is_none() => {
                 found.size_bounds = Some(SizeBounds {
@@ -158,7 +160,7 @@ pub(in crate::scene::gui) fn constraints(
                 ));
             }
             class if database.is_subclass_of(class, "UIAspectRatioConstraint") => {
-                let ratio = scalar(properties, "AspectRatio", 1.0);
+                let ratio = float(properties, "AspectRatio", 1.0);
                 // "This value must be greater than 0"; a place that broke that
                 // rule would otherwise divide by zero below.
                 if found.aspect.is_none() && ratio > 0.0 {
@@ -205,27 +207,17 @@ pub(in crate::scene::gui) fn border_mode(properties: &BTreeMap<String, Variant>)
 
 fn padding(properties: &BTreeMap<String, Variant>) -> Padding {
     Padding {
-        left: udim(properties, "PaddingLeft"),
-        right: udim(properties, "PaddingRight"),
-        top: udim(properties, "PaddingTop"),
-        bottom: udim(properties, "PaddingBottom"),
+        left: side(properties, "PaddingLeft"),
+        right: side(properties, "PaddingRight"),
+        top: side(properties, "PaddingTop"),
+        bottom: side(properties, "PaddingBottom"),
     }
 }
 
-fn udim(properties: &BTreeMap<String, Variant>, name: &str) -> (f32, f32) {
-    match properties.get(name) {
-        Some(Variant::UDim(value)) => (value.scale, value.offset as f32),
-        _ => (0.0, 0.0),
-    }
-}
-
-fn scalar(properties: &BTreeMap<String, Variant>, name: &str, default: f32) -> f32 {
-    match properties.get(name) {
-        Some(&Variant::Float32(value)) => value,
-        Some(&Variant::Float64(value)) => value as f32,
-        Some(&Variant::Int32(value)) => value as f32,
-        _ => default,
-    }
+/// One side of a `UIPadding`, no padding at all where the property is
+/// missing.
+fn side(properties: &BTreeMap<String, Variant>, name: &str) -> (f32, f32) {
+    udim(properties, name).unwrap_or((0.0, 0.0))
 }
 
 /// A `Vector2` size limit, each axis unbounded where the property is missing.

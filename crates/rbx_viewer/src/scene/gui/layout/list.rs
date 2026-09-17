@@ -5,7 +5,7 @@
 //! is on. Both axes are laid out by the same [`spread`]: a line of items on
 //! the fill axis, and the lines themselves on the cross axis.
 
-use super::arrange::{content_size, ordered};
+use super::arrange::ordered;
 use super::{offset, Rect, TextMeasure};
 use crate::scene::gui::plan::{Align, Flex, FlexItem, LineAlign, List, Node};
 
@@ -31,7 +31,7 @@ pub(super) fn stacked(
     list: &List,
     parent: &Rect,
     measure: &mut dyn TextMeasure,
-) -> (Vec<Rect>, [f32; 2]) {
+) -> Vec<Rect> {
     let extent = parent.size();
     let along = usize::from(list.vertical);
     let across = 1 - along;
@@ -117,8 +117,7 @@ pub(super) fn stacked(
         }
     }
 
-    let size = content_size(&rects);
-    (rects, size)
+    rects
 }
 
 /// An item's grow:shrink ratios. Its own `UIFlexItem` wins where it has one,

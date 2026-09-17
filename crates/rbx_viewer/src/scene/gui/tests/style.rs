@@ -36,6 +36,11 @@ fn blob(entries: &[(&str, Variant)]) -> Variant {
                     bytes.extend(channel.to_le_bytes());
                 }
             }
+            Variant::UDim(value) => {
+                bytes.push(0x09);
+                bytes.extend(value.scale.to_le_bytes());
+                bytes.extend(value.offset.to_le_bytes());
+            }
             Variant::UDim2(value) => {
                 bytes.push(0x0a);
                 for axis in [value.x, value.y] {
@@ -124,6 +129,37 @@ fn a_rule_sets_a_property_the_instance_carries_itself() {
     let styled = one_frame("Frame", &[("Size", udim2(0.0, 120, 0.0, 40))]);
 
     assert_eq!(styled[0].rect.size(), [120.0, 40.0]);
+}
+
+#[test]
+fn a_rule_reaches_a_ui_component_like_any_other_instance() {
+    let (mut dom, gui) = screen_gui();
+    let parent = frame(
+        &mut dom,
+        gui,
+        udim2(0.0, 0, 0.0, 0),
+        udim2(0.0, 100, 0.0, 100),
+    );
+    dom.new_instance("UIPadding", "UIPadding", Some(parent));
+    let zero = udim2(0.0, 0, 0.0, 0);
+    frame(&mut dom, parent, zero, udim2(1.0, 0, 1.0, 0));
+    let sheet = sheet(&mut dom);
+    rule(
+        &mut dom,
+        sheet,
+        "UIPadding",
+        &[(
+            "PaddingLeft",
+            Variant::UDim(UDim {
+                scale: 0.0,
+                offset: 10,
+            }),
+        )],
+    );
+    link(&mut dom, gui, sheet);
+
+    let child = resolve(&screens(&dom), VIEWPORT)[1].rect;
+    assert_eq!((child.x, child.width), (10.0, 90.0));
 }
 
 #[test]
