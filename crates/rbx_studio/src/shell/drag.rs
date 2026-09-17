@@ -46,7 +46,7 @@ impl Shell {
                 extend,
                 held,
             } => self.pick_in_viewport(*ray, *cycling, *extend, *held, cx),
-            ViewportAction::Hover(ray) => self.hover_in_viewport(*ray, cx),
+            ViewportAction::Hover { ray, alt } => self.hover_in_viewport(*ray, *alt, cx),
             ViewportAction::Moved {
                 moves,
                 first,
@@ -74,32 +74,43 @@ impl Shell {
     /// to click" cue (see `ViewportAction::Hover`'s own doc comment for what
     /// `None` means).
     ///
-    /// Takes the nearest hit directly rather than going through
-    /// `selection::from_click`'s walk up to an enclosing `Model`: hovering is
-    /// never a click, Studio's "select the model" convention has nothing to
-    /// answer for here, and a `Model`/`Folder` referent has no placement for
-    /// the outline machinery to draw a box around in the first place (see
-    /// `rbx_viewer::renderer::hover`).
-    fn hover_in_viewport(&mut self, ray: Option<Ray>, cx: &mut Context<Self>) {
+    /// Resolves the outline exactly as a click would (see
+    /// `selection::from_click`): plain, the whole enclosing `Model`'s parts,
+    /// so the cue previews what a click selects; with `alt`, the single part
+    /// under the cursor, what `Alt`-click's cycling lands on. A hover that
+    /// only ever showed the raw nearest part told a Studio user the wrong
+    /// thing about a plain click on a model, and showed nothing extra when
+    /// they held `Alt` to reach a child.
+    ///
+    /// The parts the current selection already covers are dropped: a hover
+    /// box drawn right under the selection's own outline adds nothing (see
+    /// `Shell::selection_changed` for the other half of this, the selection
+    /// changing out from under a still-hovered part).
+    fn hover_in_viewport(&mut self, ray: Option<Ray>, alt: bool, cx: &mut Context<Self>) {
         let meshes = self.viewport.read(cx).meshes().clone();
-        let hovered = ray
-            .and_then(|ray| {
-                pick::parts_along(&self.dom, &self.database, &meshes, ray)
-                    .into_iter()
-                    .next()
+        let covered = self.covered.clone();
+        let hovered: Vec<Ref> = ray
+            .map(|ray| {
+                let hits = pick::parts_along(&self.dom, &self.database, &meshes, ray);
+                match selection::from_click(&self.dom, &self.database, &hits, None, alt) {
+                    // A plain click resolves to a `Model`, whose parts are
+                    // what the outline draws; an `Alt` click resolves to one
+                    // part, which stands for itself. Either goes through the
+                    // same `pick::selection` the real outline is built from.
+                    Some(referent) => selection::outlined(&self.dom, &self.database, &[referent])
+                        .iter()
+                        .flat_map(|entry| entry.parts().to_vec())
+                        .filter(|part| !covered.contains(part))
+                        .collect(),
+                    None => Vec::new(),
+                }
             })
-            // Hovering the part that is already selected would draw a second,
-            // near-identical box right under the selection's own outline for
-            // no visible gain, so it is suppressed rather than layered under
-            // it — see `Shell::selection_changed` for the other half of this,
-            // the case where the selection changes out from under a
-            // still-hovered part rather than the other way around.
-            .filter(|referent| !self.selected_all().contains(referent));
+            .unwrap_or_default();
 
         if hovered == self.hovered {
             return;
         }
-        self.hovered = hovered;
+        self.hovered = hovered.clone();
         self.viewport
             .update(cx, |viewport, _| viewport.set_hover(hovered));
     }

@@ -199,7 +199,10 @@ impl Selection {
             &Surface {
                 cull: None,
                 compare: wgpu::CompareFunction::GreaterEqual,
-                topology: wgpu::PrimitiveTopology::LineList,
+                // Screen-space quads, two triangles an edge, not a `LineList`:
+                // the outline is expanded to a real pixel width in the vertex
+                // shader (see `selection.wgsl`).
+                topology: wgpu::PrimitiveTopology::TriangleList,
                 ..Surface::new(
                     "rbxview selection",
                     SHADER,

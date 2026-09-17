@@ -35,10 +35,11 @@ pub(crate) struct View {
     /// renderer has no DOM to resolve a bare referent against.
     pub(crate) selected: Vec<Selected>,
     /// The "about to click" cue's outline — see `renderer::hover::Hover`.
-    /// Unlike `selected`, at most one referent, since a cursor is only ever
-    /// over one part at a time; `None` while `rbxview` runs, which never asks
-    /// for a hover outline in the first place.
-    pub(crate) hovered: Option<Ref>,
+    /// Every part the outline covers: one for a hovered part, all of a
+    /// hovered `Model`'s (what a plain click would select). Empty while
+    /// `rbxview` runs, which never asks for a hover outline in the first
+    /// place.
+    pub(crate) hovered: Vec<Ref>,
     /// `None` whenever no transform tool is active, which is every `rbxview`
     /// frame: the standalone viewer edits nothing.
     pub(crate) gizmo: Option<Gizmo>,
@@ -52,10 +53,10 @@ impl View {
         self.selected.extend_from_slice(selected);
     }
 
-    /// Replaces the hovered referent, `None` included — unlike `select`,
-    /// there is only ever one to replace.
-    pub(crate) fn set_hover(&mut self, referent: Option<Ref>) {
-        self.hovered = referent;
+    /// Replaces the hovered outline — the parts a hover covers, empty to
+    /// clear it.
+    pub(crate) fn set_hover(&mut self, referents: Vec<Ref>) {
+        self.hovered = referents;
     }
 
     pub(crate) fn set_gizmo(&mut self, gizmo: Option<Gizmo>) {
@@ -83,7 +84,7 @@ mod tests {
         let view = View::default();
 
         assert!(view.selected.is_empty());
-        assert_eq!(view.hovered, None);
+        assert!(view.hovered.is_empty());
         assert_eq!(view.gizmo, None);
         assert!(!view.orthographic);
     }
@@ -109,19 +110,19 @@ mod tests {
     #[test]
     fn hovering_replaces_rather_than_accumulates() {
         let mut view = View::default();
-        view.set_hover(Some(Ref::new(1)));
-        view.set_hover(Some(Ref::new(2)));
+        view.set_hover(vec![Ref::new(1)]);
+        view.set_hover(vec![Ref::new(2)]);
 
-        assert_eq!(view.hovered, Some(Ref::new(2)));
+        assert_eq!(view.hovered, vec![Ref::new(2)]);
     }
 
     #[test]
     fn hovering_nothing_clears_the_outline() {
         let mut view = View::default();
-        view.set_hover(Some(Ref::new(1)));
-        view.set_hover(None);
+        view.set_hover(vec![Ref::new(1)]);
+        view.set_hover(Vec::new());
 
-        assert_eq!(view.hovered, None);
+        assert!(view.hovered.is_empty());
     }
 
     /// The regression this type exists for: everything the editor asked for
@@ -135,7 +136,7 @@ mod tests {
         let mut view = View::default();
         view.set_orthographic(true);
         view.select(&[part(9)]);
-        view.set_hover(Some(Ref::new(7)));
+        view.set_hover(vec![Ref::new(7)]);
         view.set_gizmo(Some(Gizmo {
             kind: Kind::Rotate,
             local: true,
@@ -151,7 +152,7 @@ mod tests {
 
         assert!(view.orthographic);
         assert_eq!(view.selected, [part(9)]);
-        assert_eq!(view.hovered, Some(Ref::new(7)));
+        assert_eq!(view.hovered, vec![Ref::new(7)]);
         assert_eq!(
             view.gizmo,
             Some(Gizmo {

@@ -141,15 +141,17 @@ pub(crate) enum ViewportAction {
     },
     /// A transform-toolbar shortcut typed over the view.
     Tool(transform::Action),
-    /// Cursor motion with nothing held: `Shell` resolves whatever `BasePart`
-    /// is nearest under the ray and outlines it, distinctly from the
-    /// selection outline — Studio's "about to click" cue (see
-    /// `rbx_viewer::renderer::hover`). `None` clears the outline outright
+    /// Cursor motion with nothing held: `Shell` resolves what is under the
+    /// ray and outlines it, distinctly from the selection outline — Studio's
+    /// "about to click" cue (see `rbx_viewer::renderer::hover`). `alt` is the
+    /// selection-cycling modifier held, so the outline previews what a click
+    /// would land on: the whole enclosing `Model` plain, the single part
+    /// under the cursor with `Alt`. `ray` `None` clears the outline outright
     /// rather than leaving it to resolve to nothing on its own: the cursor
     /// left the panel (see `render`'s `on_hover`), or a drag or camera look
     /// just began and a hover box hanging over the gesture would look
     /// broken.
-    Hover(Option<Ray>),
+    Hover { ray: Option<Ray>, alt: bool },
 }
 
 impl EventEmitter<ViewportAction> for WorkspaceView {}
@@ -191,7 +193,7 @@ pub(crate) struct WorkspaceView {
     /// starting (`gizmo::press`), a look starting (`begin_look`), and the
     /// cursor leaving the panel (`render`'s `on_hover`) — or a throttled
     /// move would otherwise un-clear it a moment later.
-    hover_pending: Option<Point<Pixels>>,
+    hover_pending: Option<(Point<Pixels>, Modifiers)>,
     /// The cursor's latest position and modifiers while a drag is held, not
     /// yet applied to the part — applied by `advance` at most once per
     /// frame, and by the release (see `gizmo::WorkspaceView::end_drag`).
@@ -457,16 +459,16 @@ impl WorkspaceView {
         // time this resolves, so recording the position on every move but
         // only casting the ray here keeps that cost tied to frames drawn
         // rather than input events reported.
-        if let Some(position) = self.hover_pending.take() {
+        if let Some((position, modifiers)) = self.hover_pending.take() {
             let elapsed = self
                 .hover_resolved_at
                 .map(|at| now.saturating_duration_since(at));
             if hover::due(elapsed, self.interval) {
                 let scale = window.scale_factor();
-                self.hover_moved(position, scale, cx);
+                self.hover_moved(position, modifiers, scale, cx);
                 self.hover_resolved_at = Some(now);
             } else {
-                self.hover_pending = Some(position);
+                self.hover_pending = Some((position, modifiers));
             }
         }
         // Same gate as the hover above: the latest cursor position wins,
@@ -529,7 +531,10 @@ impl WorkspaceView {
         // `self.looking` above rather than `self.lock.holds()` — the lock
         // never actually engages on Wayland), so nothing else would clear it.
         self.hover_pending = None;
-        cx.emit(ViewportAction::Hover(None));
+        cx.emit(ViewportAction::Hover {
+            ray: None,
+            alt: false,
+        });
 
         if let (Some(id), Some(centre)) = (
             pointer_lock::window_id(window),
@@ -745,7 +750,7 @@ impl Render for WorkspaceView {
                 // Recording the position is cheap; the raycast itself is
                 // throttled in `advance` (see `hover::due`), not run here.
                 if !hover::suppressed(view.looking) {
-                    view.hover_pending = Some(event.position);
+                    view.hover_pending = Some((event.position, event.modifiers));
                 }
             }))
             // The cursor leaving the panel altogether never fires another
@@ -755,7 +760,10 @@ impl Render for WorkspaceView {
             .on_hover(cx.listener(|view, hovering: &bool, _, cx| {
                 if !hovering {
                     view.hover_pending = None;
-                    cx.emit(ViewportAction::Hover(None));
+                    cx.emit(ViewportAction::Hover {
+                        ray: None,
+                        alt: false,
+                    });
                 }
             }))
             .on_scroll_wheel(cx.listener(|view, event: &ScrollWheelEvent, _, _| {
@@ -775,6 +783,16 @@ impl Render for WorkspaceView {
                     key: rbx_viewer::CameraKey::Slow,
                     pressed: event.modifiers.shift,
                 });
+                // Alt toggles what a click would land on (the whole model, or
+                // one part inside it), so the "about to click" outline has to
+                // re-resolve the moment Alt is pressed or released, without
+                // waiting for the cursor to move. Re-queued at the last known
+                // position; suppressed mid-look exactly as an ordinary move is.
+                if !hover::suppressed(view.looking) {
+                    if let Some(position) = view.cursor {
+                        view.hover_pending = Some((position, event.modifiers));
+                    }
+                }
             }))
             .when_some(self.frame.clone(), |this, frame| {
                 this.child(img(frame).size_full().object_fit(ObjectFit::Fill))

@@ -345,8 +345,8 @@ impl Renderer {
 
     /// Replaces the hover outline, rebuilding its tiny vertex buffer right
     /// away rather than waiting for the next `draw`. `None` clears it.
-    pub(crate) fn set_hover(&mut self, device: &wgpu::Device, referent: Option<Ref>) {
-        self.hover.set(device, referent);
+    pub(crate) fn set_hover(&mut self, device: &wgpu::Device, referents: Vec<Ref>) {
+        self.hover.set(device, referents);
     }
 
     /// Shows or hides the transform tool's draggers over whatever is
@@ -439,7 +439,8 @@ impl Renderer {
         let aspect = size.0 as f32 / size.1 as f32;
         let eye = self.camera.eye_position(from);
         let view_projection = self.camera.view_projection(from, aspect);
-        self.frame.write(queue, &view_projection);
+        let viewport = glam::Vec2::new(size.0 as f32, size.1 as f32);
+        self.frame.write(queue, &view_projection, viewport);
         // The main pass's own visibility test: tight to the camera's frustum
         // and this level's render distance. The shadow pass below never uses
         // this — see `Fit::visible` — so a caster it culls can still land a
@@ -480,13 +481,13 @@ impl Renderer {
 
         let rotation_only = self.camera.view_rotation_projection(from, aspect);
         if let Some(sky) = &self.sky {
-            sky.camera.write(queue, &rotation_only);
+            sky.camera.write(queue, &rotation_only, viewport);
         }
         if let Some(stars) = &self.stars {
-            stars.camera.write(queue, &rotation_only);
+            stars.camera.write(queue, &rotation_only, viewport);
         }
         if let Some(bodies) = &self.bodies {
-            bodies.camera.write(queue, &rotation_only);
+            bodies.camera.write(queue, &rotation_only, viewport);
         }
         // The same matrix the sun disc itself is drawn with, so the god-rays
         // in the resolve can never point anywhere the disc is not.

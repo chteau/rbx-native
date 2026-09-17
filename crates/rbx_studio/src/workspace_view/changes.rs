@@ -13,10 +13,10 @@ impl WorkspaceView {
         self.pump.select(selected.to_vec());
     }
 
-    /// Forwards the hovered part (or `None`, clearing it), forcing one frame
-    /// even at rest — the same reason `set_selection` above does.
-    pub(crate) fn set_hover(&mut self, referent: Option<Ref>) {
-        self.pump.hover(referent);
+    /// Forwards the parts a hover covers (empty to clear it), forcing one
+    /// frame even at rest — the same reason `set_selection` above does.
+    pub(crate) fn set_hover(&mut self, referents: Vec<Ref>) {
+        self.pump.hover(referents);
     }
 
     /// Reflects one edit's `Change` log in the render thread's scene, every

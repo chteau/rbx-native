@@ -93,7 +93,7 @@ pub(crate) struct Shell {
     /// above, purely to dedupe: the viewport reports cursor motion on every
     /// pixel, and only an actual change is worth a command down to the
     /// render thread.
-    hovered: Option<Ref>,
+    hovered: Vec<Ref>,
     /// Every part the selection covers — the selected parts and every part
     /// beneath a selected `Model`: exactly the referents a drag writes, kept
     /// so `shell::command::refresh_for` can tell a drag's own writes from
@@ -265,7 +265,7 @@ impl Shell {
             properties,
             edits: edit::Edits::default(),
             selection: Selection::new(selected),
-            hovered: None,
+            hovered: Vec::new(),
             covered: HashSet::new(),
             scripts: ScriptEditor::default(),
             properties_scroll: ScrollHandle::new(),
@@ -454,11 +454,12 @@ impl Shell {
         // apply here too, immediately.
         let stale_hover = self
             .hovered
-            .is_some_and(|hovered| self.selection.all().contains(&hovered));
+            .iter()
+            .any(|hovered| self.covered.contains(hovered));
         if stale_hover {
             self.viewport
-                .update(cx, |viewport, _| viewport.set_hover(None));
-            self.hovered = None;
+                .update(cx, |viewport, _| viewport.set_hover(Vec::new()));
+            self.hovered.clear();
         }
         // Whatever just stopped being selected becomes one of the neighbours
         // a drag can settle against, and whatever just started stops being

@@ -270,9 +270,9 @@ impl Headless {
     ///
     /// Same idle-skipping caveat as `set_selection`: force a frame afterwards
     /// if the host's render loop only draws on camera movement.
-    pub fn set_hover(&mut self, referent: Option<Ref>) {
-        self.view.set_hover(referent);
-        self.offscreen.set_hover(referent);
+    pub fn set_hover(&mut self, referents: Vec<Ref>) {
+        self.view.set_hover(referents.clone());
+        self.offscreen.set_hover(referents);
     }
 
     /// Draws the transform tool's axis draggers over the selected part, or

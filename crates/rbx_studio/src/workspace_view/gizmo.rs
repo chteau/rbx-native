@@ -208,11 +208,15 @@ impl WorkspaceView {
     pub(super) fn hover_moved(
         &mut self,
         position: Point<Pixels>,
+        modifiers: Modifiers,
         scale: f32,
         cx: &mut gpui_kit::Context<Self>,
     ) {
         let ray = self.cursor_ray(position, scale);
-        cx.emit(ViewportAction::Hover(ray));
+        cx.emit(ViewportAction::Hover {
+            ray,
+            alt: modifiers.alt,
+        });
     }
 
     /// Where the Move and Rotate arms stand this frame, anchored on the same
@@ -307,7 +311,10 @@ impl WorkspaceView {
         self.held = self.targets.clone();
         self.dragged = false;
         self.hover_pending = None;
-        cx.emit(ViewportAction::Hover(None));
+        cx.emit(ViewportAction::Hover {
+            ray: None,
+            alt: false,
+        });
     }
 
     /// `Shell`'s answer to a pick sent with `held`: what the cursor is over

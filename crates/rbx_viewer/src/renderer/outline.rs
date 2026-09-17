@@ -47,18 +47,31 @@ const EDGES: [(usize, usize); 12] = [
     (3, 7),
 ];
 
+/// One corner of an edge's screen-space quad: this endpoint, the edge's other
+/// endpoint (so the vertex shader can find the on-screen direction of the
+/// line), and which side of the line to push out to — see `outline.wgsl`,
+/// concatenated into both `selection.wgsl` and `hover.wgsl`. A `LineList`
+/// would draw at one hairline pixel with no width control at all (wgpu's line
+/// width is fixed at 1 and WebGPU has none); expanding each edge into two
+/// triangles in screen space is what gives the outline a real, camera-
+/// independent thickness, the way Studio's own selection box has.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub(super) struct Vertex {
     position: [f32; 3],
+    other: [f32; 3],
+    side: f32,
 }
+
+const ATTRIBUTES: [wgpu::VertexAttribute; 3] =
+    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32];
 
 impl Vertex {
     pub(super) const fn layout() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &wgpu::vertex_attr_array![0 => Float32x3],
+            attributes: &ATTRIBUTES,
         }
     }
 }
@@ -66,16 +79,49 @@ impl Vertex {
 /// The 12 edges (24 vertices) of one part's oriented bounding box: the unit
 /// cube's corners carried through its model matrix, which already scales them
 /// to the part's `Size`.
-pub(super) fn edges(model: Mat4) -> [Vertex; 24] {
+/// The six vertices — two triangles — of one edge's screen-space quad, from
+/// endpoint `a` to endpoint `b`. Each carries its own end, the far end, and a
+/// side; `outline.wgsl` turns the pair into a ribbon of constant pixel width.
+/// A corner on `a` names `b` as its `other` and vice versa, so the shader
+/// reads the same on-screen line direction from both ends.
+fn quad(a: Vec3, b: Vec3) -> [Vertex; 6] {
+    let av: [f32; 3] = a.into();
+    let bv: [f32; 3] = b.into();
+    let al = Vertex {
+        position: av,
+        other: bv,
+        side: 1.0,
+    };
+    let ar = Vertex {
+        position: av,
+        other: bv,
+        side: -1.0,
+    };
+    let bl = Vertex {
+        position: bv,
+        other: av,
+        side: -1.0,
+    };
+    let br = Vertex {
+        position: bv,
+        other: av,
+        side: 1.0,
+    };
+    [al, ar, bl, ar, br, bl]
+}
+
+/// Every edge of the box `model` carries, as screen-space quads — 12 edges,
+/// six vertices each.
+pub(super) fn edges(model: Mat4) -> [Vertex; 72] {
     let corners = CORNERS.map(|corner| model.transform_point3(corner));
-    let mut vertices = [Vertex { position: [0.0; 3] }; 24];
+    let mut vertices = [Vertex {
+        position: [0.0; 3],
+        other: [0.0; 3],
+        side: 0.0,
+    }; 72];
     for (edge, (a, b)) in EDGES.iter().enumerate() {
-        vertices[edge * 2] = Vertex {
-            position: corners[*a].into(),
-        };
-        vertices[edge * 2 + 1] = Vertex {
-            position: corners[*b].into(),
-        };
+        let quad = quad(corners[*a], corners[*b]);
+        vertices[edge * 6..edge * 6 + 6].copy_from_slice(&quad);
     }
     vertices
 }
@@ -105,10 +151,10 @@ mod tests {
     }
 
     #[test]
-    fn a_box_has_twelve_edges_and_twenty_four_vertices() {
+    fn a_box_has_twelve_edges_of_six_vertices_each() {
         let vertices = edges(Mat4::IDENTITY);
-        assert_eq!(vertices.len(), 24);
-        // 12 edges, each contributing exactly one pair of endpoints.
+        // 12 edges, each a screen-space quad of two triangles.
+        assert_eq!(vertices.len(), 72);
         assert_eq!(EDGES.len(), 12);
     }
 
@@ -143,7 +189,7 @@ mod tests {
         placements.insert(Ref::new(1), placement(Mat4::IDENTITY));
 
         let vertices = vertices_for(&placements, &[Ref::new(1)]);
-        assert_eq!(vertices.len(), 24);
+        assert_eq!(vertices.len(), 72);
     }
 
     #[test]

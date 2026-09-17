@@ -57,7 +57,7 @@ fn a_part_referent_draws_its_box() {
     placements.insert(Ref::new(1), placement(Mat4::IDENTITY));
 
     let vertices = vertices_for(&placements, &[part(1)]);
-    assert_eq!(vertices.len(), 24);
+    assert_eq!(vertices.len(), 72);
 }
 
 #[test]
@@ -80,7 +80,7 @@ fn a_model_is_outlined_by_one_box_around_every_part_beneath_it() {
 
     // One box for the whole model, not one per part.
     let vertices = vertices_for(&placements, std::slice::from_ref(&selected));
-    assert_eq!(vertices.len(), 24);
+    assert_eq!(vertices.len(), 72);
 
     // Spanning -3 to 5 in x and -1 to 1 in y and z: the union of two
     // two-stud cubes three studs and five studs from the origin.
@@ -213,7 +213,7 @@ fn a_part_with_parts_under_it_keeps_its_own_oriented_box() {
     placements.insert(sight, cube(Vec3::new(9.0, 0.0, 0.0)));
 
     assert_eq!(box_of(&placements, &selected), Some(turned));
-    assert_eq!(vertices_for(&placements, &[selected]).len(), 24);
+    assert_eq!(vertices_for(&placements, &[selected]).len(), 72);
 }
 
 /// A model selected together with one of its own parts is one box, not two
@@ -232,7 +232,7 @@ fn a_model_and_a_part_inside_it_draw_one_box() {
         placements.insert(referent, cube(Vec3::new(index as f32 * 6.0, 0.0, 0.0)));
     }
 
-    assert_eq!(vertices_for(&placements, &selected).len(), 24);
+    assert_eq!(vertices_for(&placements, &selected).len(), 72);
 }
 
 /// What a drag of a whole model costs: each of its parts arrives through
