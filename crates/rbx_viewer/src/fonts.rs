@@ -120,6 +120,7 @@ impl Library {
     }
 
     /// The face file's bytes, once both stages of the fetch have landed.
+    #[cfg(test)]
     pub(crate) fn bytes_of(&self, face: &Face) -> Option<(&AssetRef, &Arc<Vec<u8>>)> {
         let asset = &self.entry_of(face)?.asset;
         Some((asset, self.faces.get(asset)?))

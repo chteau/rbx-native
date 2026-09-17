@@ -52,26 +52,43 @@ impl Typesetter {
     pub(super) fn adopt(&mut self, library: &Library, wanted: &[Face]) -> bool {
         let mut added = false;
         for face in wanted {
-            let Some((asset, bytes)) = library.bytes_of(face) else {
+            let Some(entry) = library.entry_of(face) else {
                 continue;
             };
-            if !self.loaded.insert(asset.clone()) {
+            let Some(bytes) = library.faces.get(&entry.asset) else {
+                continue;
+            };
+            if !self.loaded.insert(entry.asset.clone()) {
                 continue;
             }
             let db = self.system.db_mut();
-            let before = db.len();
+            let known: HashSet<_> = db.faces().map(|info| info.id).collect();
             db.load_font_data(bytes.to_vec());
-            // Matched by the name the face carries in its own tables, which
-            // is only near the JSON's ("Gotham SSm" for `GothamSSm.json`):
-            // the face just filed is asked for it.
-            let name = db
+            let fresh: Vec<_> = db
                 .faces()
-                .nth(before)
-                .and_then(|info| info.families.first())
-                .map(|(name, _)| name.clone());
-            if let Some(name) = name {
-                self.families.insert(face.family.clone(), name);
-                added = true;
+                .filter(|info| !known.contains(&info.id))
+                .cloned()
+                .collect();
+            for mut info in fresh {
+                // The family JSON, not the face's own OS/2 table, says what a
+                // face weighs: Roblox's `GothamSSm-Bold.otf` calls itself
+                // regular and its Book face lighter still, so matched on the
+                // tables a 400 request lands on Bold. Re-filed under the
+                // JSON's weight and style, `FontFace.weight` picks the face
+                // Roblox picks. The family name does come from the tables
+                // ("Gotham SSm" for `GothamSSm.json`), being what fontdb
+                // matches on.
+                db.remove_face(info.id);
+                info.weight = Weight(entry.weight);
+                info.style = match entry.italic {
+                    true => Style::Italic,
+                    false => Style::Normal,
+                };
+                if let Some((name, _)) = info.families.first() {
+                    self.families.insert(face.family.clone(), name.clone());
+                    added = true;
+                }
+                db.push_face_info(info);
             }
         }
         added
