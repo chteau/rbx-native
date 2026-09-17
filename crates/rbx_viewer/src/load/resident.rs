@@ -32,6 +32,11 @@
 //! keystroke that names a new `MeshId` must not put a download between two
 //! frames.
 //!
+//! It also does not wait for the *next load* to retry a transient failure the
+//! way the blocking path does: it has a tick to put a late arrival on, so a
+//! rate-limited image is asked about again a few seconds later and appears
+//! by itself. See [`RETRIES`].
+//!
 //! A [`Resident::default`] one resolves in the caller's own thread, progress
 //! line and all, and is what `rbxview`'s one-shot screenshot and its windowed
 //! load use: neither has a next frame to stream into, so there is nothing to
@@ -39,14 +44,31 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-#[cfg(test)]
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rbx_assets::AssetRef;
 
 use super::fetcher::{Fetcher, Landed, Want};
 use crate::assets::{self, Failure, Image, Keyed};
 use crate::scene::UnionEvaluations;
+
+/// How many times a streaming loader asks again about one reference that
+/// failed for a reason of the moment, before it gives up until the next load.
+///
+/// Waiting for the next reload is right for the blocking path, which has
+/// nowhere to put a late arrival; a viewport does — [`Resident::poll`] runs
+/// every tick and its caller rebuilds what settled. An editor left open on a
+/// place whose images tripped the Open Cloud rate limit should fill them in
+/// by itself, not stay half-blank until somebody edits something.
+const RETRIES: u32 = 2;
+
+/// The asset endpoints ask for five seconds (`retry-after: 5`) and
+/// `rbx_cloud` has already waited out several of those by the time a failure
+/// reaches here, so this is another five on top rather than a guess. It does
+/// not pretend to cover a quota window that has gone badly over — nothing a
+/// viewport can do in one tick would — only to catch the common case, where
+/// the load merely crossed the line at the end.
+const RETRY_DELAY: Duration = Duration::from_secs(5);
 
 /// Every decoded asset a place has asked for so far. Behind `Arc`s where the
 /// scene keeps its own handle (see `scene::filemesh::Resolved`,
@@ -185,22 +207,38 @@ impl Resident {
 
         let mut settled = Settled::default();
         for landed in fetcher.drain() {
-            let (reference, warning) = match landed {
-                Landed::Image(reference, result) => self.images.land(reference, result),
-                Landed::Mesh(reference, result) => self.meshes.land(reference, result),
-                Landed::Bytes(reference, result) => self.bytes.land(reference, result),
+            let landed = match landed {
+                Landed::Image(reference, result) => {
+                    self.images.land(reference, result, Want::Image)
+                }
+                Landed::Mesh(reference, result) => self.meshes.land(reference, result, Want::Mesh),
+                Landed::Bytes(reference, result) => self.bytes.land(reference, result, Want::Bytes),
+            };
+            // A reference waiting on a retry has not settled: saying it had
+            // would have the caller re-resolve a scene nothing changed in.
+            let Some((reference, warning)) = landed else {
+                continue;
             };
             settled.references.push(reference);
             settled.warnings.extend(warning);
         }
+
+        let now = Instant::now();
+        self.images.requeue(now, fetcher);
+        self.meshes.requeue(now, fetcher);
+        self.bytes.requeue(now, fetcher);
         settled
     }
 
     /// Whether anything is still on its way. Drives the one-off swap-in the
     /// moment a place has finished loading, and tells a test when to stop
     /// waiting.
+    ///
+    /// A reference waiting out its [`RETRY_DELAY`] counts: it has not been
+    /// answered, and a caller that stops when nothing is in flight would
+    /// stop just short of the answer.
     pub(crate) fn in_flight(&self) -> usize {
-        self.images.in_flight.len() + self.meshes.in_flight.len() + self.bytes.in_flight.len()
+        self.images.outstanding() + self.meshes.outstanding() + self.bytes.outstanding()
     }
 
     /// Blocks until nothing is in flight or `timeout` runs out, filing
@@ -235,6 +273,22 @@ impl Resident {
         self.images.forget(reference);
         self.meshes.forget(reference);
         self.bytes.forget(reference);
+    }
+
+    /// Brings every pending retry due at once, so a test proves the requeue
+    /// without sleeping out [`RETRY_DELAY`] three times over.
+    #[cfg(test)]
+    pub(crate) fn hurry_retries(&mut self) {
+        let now = Instant::now();
+        for (_, _, at) in self
+            .images
+            .retry
+            .iter_mut()
+            .chain(self.meshes.retry.iter_mut())
+            .chain(self.bytes.retry.iter_mut())
+        {
+            *at = now;
+        }
     }
 
     /// Drops every remembered transient failure, so the next ask for it
@@ -274,6 +328,13 @@ struct Table<T> {
     /// References to answer as absent *without* requesting, exactly once
     /// more — see [`Table::forget`].
     skipped: Vec<AssetRef>,
+    /// Transient failures to ask about again, and the moment each is due.
+    /// Kept out of `entries` meanwhile, so the reference reads as still
+    /// coming rather than as failed.
+    retry: Vec<(AssetRef, Want, Instant)>,
+    /// How often each reference has already been asked again this load,
+    /// against [`RETRIES`].
+    retried: HashMap<AssetRef, u32>,
 }
 
 impl<T> Default for Table<T> {
@@ -283,6 +344,8 @@ impl<T> Default for Table<T> {
             in_flight: Vec::new(),
             warned: Vec::new(),
             skipped: Vec::new(),
+            retry: Vec::new(),
+            retried: HashMap::new(),
         }
     }
 }
@@ -291,6 +354,13 @@ impl<T> Table<T> {
     fn forget_failures(&mut self) {
         self.entries
             .retain(|_, result| !matches!(result, Err(failure) if failure.transient));
+        // A new load is a new budget: whatever was down last time gets the
+        // full set of tries again.
+        self.retried.clear();
+    }
+
+    fn outstanding(&self) -> usize {
+        self.in_flight.len() + self.retry.len()
     }
 }
 
@@ -353,6 +423,8 @@ impl<T: Clone> Table<T> {
                 }
                 // Tried and failed: asking again would fail again.
                 Some(Err(_)) => {}
+                // Already waiting out a retry — see [`Table::land`].
+                None if self.retry.iter().any(|(held, ..)| *held == reference) => {}
                 None => match self.skipped.iter().position(|held| *held == reference) {
                     Some(at) => {
                         self.skipped.remove(at);
@@ -373,12 +445,29 @@ impl<T: Clone> Table<T> {
     }
 
     /// Files one finished request, reporting its warning the first time only.
+    ///
+    /// `None` when the result was a transient failure this reference still
+    /// has tries left for: nothing is filed, the reference goes back on the
+    /// queue after [`RETRY_DELAY`] (see [`Table::requeue`]), and no warning
+    /// is said about a failure that may yet turn into an image.
     fn land(
         &mut self,
         reference: AssetRef,
         result: Result<T, Failure>,
-    ) -> (AssetRef, Option<String>) {
+        want: Want,
+    ) -> Option<(AssetRef, Option<String>)> {
         self.in_flight.retain(|held| *held != reference);
+
+        if matches!(&result, Err(failure) if failure.transient) {
+            let used = self.retried.entry(reference.clone()).or_insert(0);
+            if *used < RETRIES {
+                *used += 1;
+                self.retry
+                    .push((reference, want, Instant::now() + RETRY_DELAY));
+                return None;
+            }
+        }
+
         let warning = match &result {
             Err(failure) if !self.warned.contains(&reference) => {
                 self.warned.push(reference.clone());
@@ -387,7 +476,22 @@ impl<T: Clone> Table<T> {
             _ => None,
         };
         self.entries.insert(reference.clone(), result);
-        (reference, warning)
+        Some((reference, warning))
+    }
+
+    /// Puts every retry that has come due back on the fetcher's queue.
+    fn requeue(&mut self, now: Instant, fetcher: &Fetcher) {
+        let mut due = Vec::new();
+        self.retry.retain(|(reference, want, at)| {
+            if *at <= now {
+                due.push((reference.clone(), *want));
+                return false;
+            }
+            true
+        });
+        for (reference, want) in due {
+            self.request(reference, want, fetcher);
+        }
     }
 
     /// Drops what `reference` decoded to and skips the *next* request for it.
@@ -400,6 +504,7 @@ impl<T: Clone> Table<T> {
     fn forget(&mut self, reference: &AssetRef) {
         self.entries.remove(reference);
         self.warned.retain(|held| held != reference);
+        self.retry.retain(|(held, ..)| held != reference);
         if !self.skipped.contains(reference) {
             self.skipped.push(reference.clone());
         }

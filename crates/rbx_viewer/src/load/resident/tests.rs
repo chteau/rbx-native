@@ -1,9 +1,11 @@
 use std::cell::Cell;
 use std::sync::atomic::Ordering;
+use std::sync::Mutex;
 
 use super::*;
 use crate::assets::Failure;
 use crate::load::fetcher::tests::Counted;
+use crate::load::fetcher::Source;
 
 fn failure(warning: &str, transient: bool) -> Failure {
     Failure {
@@ -308,4 +310,169 @@ fn forgetting_a_reference_makes_the_next_ask_fetch_it_again() {
 
     assert_eq!(source.resolved.load(Ordering::Relaxed), 2);
     assert_eq!(resident.images(&[AssetRef::Id(2)]).0.len(), 1);
+}
+
+/// A source that fails a reference the way a rate limit does — transiently —
+/// for its first `flaky` asks and then answers it, counting every ask.
+struct Flaky {
+    flaky: usize,
+    asked: Mutex<HashMap<AssetRef, usize>>,
+}
+
+impl Flaky {
+    fn new(flaky: usize) -> Arc<Self> {
+        Arc::new(Flaky {
+            flaky,
+            asked: Mutex::new(HashMap::new()),
+        })
+    }
+
+    fn answer<T>(&self, reference: &AssetRef, value: T) -> Result<T, Failure> {
+        let mut asked = self.asked.lock().unwrap();
+        let count = asked.entry(reference.clone()).or_insert(0);
+        *count += 1;
+        if *count > self.flaky {
+            Ok(value)
+        } else {
+            Err(failure("asset 2: rate limited", true))
+        }
+    }
+
+    fn asks(&self, reference: &AssetRef) -> usize {
+        self.asked
+            .lock()
+            .unwrap()
+            .get(reference)
+            .copied()
+            .unwrap_or(0)
+    }
+}
+
+impl Source for Arc<Flaky> {
+    fn image(&self, reference: &AssetRef) -> Result<Image, Failure> {
+        self.answer(
+            reference,
+            Image {
+                width: 1,
+                height: 1,
+                pixels: vec![255; 4],
+            },
+        )
+    }
+
+    fn mesh(&self, _reference: &AssetRef) -> Result<rbx_mesh::Mesh, Failure> {
+        unreachable!("these tests only ask for images")
+    }
+
+    fn bytes(&self, _reference: &AssetRef) -> Result<Vec<u8>, Failure> {
+        unreachable!("these tests only ask for images")
+    }
+}
+
+fn flaky(flaky: usize) -> (Resident, Arc<Flaky>) {
+    let source = Flaky::new(flaky);
+    (
+        Resident::fed_by(Arc::new(Arc::clone(&source))),
+        Arc::clone(&source),
+    )
+}
+
+/// Settles, bringing each pending retry due rather than sleeping it out,
+/// until every try this load allows is spent.
+///
+/// Not [`Resident::settle`]: that waits for `in_flight` to drain, which a
+/// reference parked on its [`RETRY_DELAY`] never does on its own.
+fn settle_retrying(resident: &mut Resident) -> Vec<String> {
+    let deadline = Instant::now() + PATIENCE;
+    let mut warnings = Vec::new();
+    while resident.in_flight() > 0 && Instant::now() < deadline {
+        resident.hurry_retries();
+        warnings.extend(resident.poll().warnings);
+    }
+    warnings
+}
+
+// The bug this is here for: a burst of keyed asset requests trips Open
+// Cloud's per-minute limit, some images come back rate-limited, and a
+// viewport that filed those as failures left them blank until the next
+// reload.
+#[test]
+fn a_rate_limited_image_is_asked_about_again_and_lands() {
+    let (mut resident, source) = flaky(1);
+    resident.images(&[AssetRef::Id(2)]);
+
+    let warnings = settle_retrying(&mut resident);
+
+    assert!(
+        warnings.is_empty(),
+        "a retry that works says nothing: {warnings:?}"
+    );
+    assert_eq!(source.asks(&AssetRef::Id(2)), 2);
+    assert_eq!(resident.images(&[AssetRef::Id(2)]).0.len(), 1);
+    assert_eq!(resident.in_flight(), 0);
+}
+
+// While a retry is pending the reference is still coming, not failed: a
+// scene re-resolved in between must neither queue a second fetch for it nor
+// be told it will never arrive.
+#[test]
+fn a_reference_waiting_on_a_retry_is_neither_refetched_nor_reported_failed() {
+    let (mut resident, source) = flaky(1);
+    resident.images(&[AssetRef::Id(2)]);
+    // Poll, without hurrying, until the first ask has failed into the retry
+    // queue: `in_flight` counts both, so it is the source that says which.
+    while source.asks(&AssetRef::Id(2)) == 0 {
+        resident.poll();
+    }
+    resident.poll();
+
+    assert_eq!(resident.in_flight(), 1, "still outstanding, as a retry");
+    assert!(!resident.image_failed(&AssetRef::Id(2)));
+    assert!(resident.answered(&[AssetRef::Id(2)]).is_empty());
+    assert!(resident.images(&[AssetRef::Id(2)]).0.is_empty());
+    assert_eq!(source.asks(&AssetRef::Id(2)), 1, "no second fetch queued");
+}
+
+// The cap: an endpoint that stays down must not have the viewport asking
+// about it every few seconds for the life of the session.
+#[test]
+fn a_reference_that_keeps_failing_gives_up_after_the_retry_cap() {
+    let (mut resident, source) = flaky(usize::MAX);
+    resident.images(&[AssetRef::Id(2)]);
+
+    let warnings = settle_retrying(&mut resident);
+
+    assert_eq!(warnings, vec!["asset 2: rate limited".to_string()]);
+    assert_eq!(source.asks(&AssetRef::Id(2)) as u32, RETRIES + 1);
+    assert!(resident.image_failed(&AssetRef::Id(2)));
+    assert_eq!(resident.in_flight(), 0);
+}
+
+// The budget is per load, like the blocking path's one retry: the next load
+// gets the full set of tries again.
+#[test]
+fn the_next_load_restores_the_retry_budget() {
+    let (mut resident, source) = flaky(usize::MAX);
+    resident.images(&[AssetRef::Id(2)]);
+    settle_retrying(&mut resident);
+    let spent = source.asks(&AssetRef::Id(2));
+
+    resident.forget_failures();
+    resident.images(&[AssetRef::Id(2)]);
+    settle_retrying(&mut resident);
+
+    assert_eq!(source.asks(&AssetRef::Id(2)), spent * 2);
+}
+
+// A permanent failure keeps its old shape: filed at once, warned about
+// once, never asked again.
+#[test]
+fn a_permanent_failure_is_still_never_retried() {
+    let (mut resident, source) = streaming();
+    resident.images(&[AssetRef::Id(3)]);
+
+    let warnings = settle_retrying(&mut resident);
+
+    assert_eq!(warnings, vec!["asset 3: odd".to_string()]);
+    assert_eq!(source.resolved.load(Ordering::Relaxed), 1);
 }
