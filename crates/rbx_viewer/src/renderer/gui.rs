@@ -186,7 +186,12 @@ impl Gui {
 
         self.screens = screens.to_vec();
         self.built = None;
-        self.windows.clear();
+        // The wheel's hit list is deliberately left standing: the draw below
+        // replaces it wholesale, and until then one layout's worth of stale
+        // windows is far better than none. A scroll writes `CanvasPosition`
+        // and comes straight back here as a change, so clearing it would
+        // drop every notch of a fast scroll that arrived in the same batch
+        // — and a dropped notch is not nothing, it is the camera zooming.
         self.space.rebuild(
             device,
             queue,
@@ -236,6 +241,9 @@ impl Gui {
         materials: &wgpu::BindGroup,
     ) {
         if self.screens.is_empty() {
+            // Nothing to draw and nothing to scroll: the overlay is gone,
+            // so the windows `rebuild` left standing have to go with it.
+            self.windows.clear();
             return;
         }
         if self.built != Some(size) {
@@ -425,6 +433,38 @@ mod tests {
             &device,
             &queue,
             (&screens(&fitted), &[]),
+            &materials.bind_group,
+            &images,
+            &fonts,
+            &quality,
+        );
+        // Standing until the draw that replaces them, not cleared: a scroll
+        // writes `CanvasPosition`, which comes back as a rebuild, and the
+        // next notch of the same flick must still find the frame.
+        assert!(
+            gui.scroll_target([50.0, 50.0], 1).is_some(),
+            "stale, not gone"
+        );
+        draw(&mut gui);
+        assert!(gui.scroll_target([50.0, 50.0], 1).is_none());
+
+        // An overlay that goes away takes them with it, since a screenless
+        // draw has no layout to replace them with.
+        gui.rebuild(
+            &device,
+            &queue,
+            (&screens(&dom), &[]),
+            &materials.bind_group,
+            &images,
+            &fonts,
+            &quality,
+        );
+        draw(&mut gui);
+        assert!(gui.scroll_target([50.0, 50.0], 1).is_some());
+        gui.rebuild(
+            &device,
+            &queue,
+            (&[], &[]),
             &materials.bind_group,
             &images,
             &fonts,
