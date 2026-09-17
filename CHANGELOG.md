@@ -79,7 +79,16 @@
   resolve against a canvas no smaller than the window (so rows inside an
   automatic canvas no longer collapse), a wrapping list's gap between lines is
   `Padding`'s share of the cross axis, and every enabled `UIStroke` on an
-  object draws, lowest `ZIndex` first. — @chteau
+  object draws, lowest `ZIndex` first. `StarterGui.ShowDevelopmentGui` is
+  honoured (with a `rbxview --show-development-gui` override), text weights
+  and styles a family lacks are synthesised (a fake-bold dilation and a
+  slant) rather than silently drawn Regular, editing `Font` writes the
+  matching `FontFace` and back, `FontFace` is editable in the Properties
+  panel, an `ImageLabel` whose image never lands draws Studio's own
+  placeholder, `SpawnLocation`'s decal loads from the catalogue, and an
+  asset fetch refused with 429 or a gateway error is retried with backoff
+  (the keyed asset route allows 1000 requests a minute per key owner) and
+  re-queued by the editor's loader instead of leaving the label blank. — @chteau
 
 
 ## 2026-09-16

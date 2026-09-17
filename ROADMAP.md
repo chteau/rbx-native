@@ -155,10 +155,13 @@ Roblox's own engine.
     tree can hold was audited against the API dump and the docs (384
     properties): each is implemented, or documented as having no
     still-frame effect (`Active`, `Selectable`, `AutoButtonColor`, the
-    selection/navigation family, `VideoFrame` playback…). Deliberately
-    not honoured: `StarterGui.ShowDevelopmentGui`, a Studio *view* toggle
-    a player never sees — the viewer draws the play view, and a real
-    Studio capture of a place saving it `false` shows the GUI. Known gaps:
+    selection/navigation family, `VideoFrame` playback…).
+    `StarterGui.ShowDevelopmentGui` is honoured as the Studio view toggle
+    the docs describe: `false` hides every screen and canvas under the
+    service (a `ScreenGui` elsewhere — a copy under `Workspace`, say — is
+    unaffected), toggling it in the editor re-plans live, and
+    `rbxview --show-development-gui` overrides it for a player's-eye
+    screenshot. Known gaps:
     the deprecated `FrameStyle`/`ButtonStyle` skins (client assets),
     `TextDirection`/`OpenTypeFeatures`, `BillboardGui.ExtentsOffset*`.
     Several `UIStroke`s on one object draw in `ZIndex` order.
