@@ -801,18 +801,35 @@ against `Roblox/creator-docs` rather than assumed:
   viewport is always the 3D `Workspace` scene; editing a `ScreenGui`'s
   layout means selecting its descendants through the Explorer tree alone,
   with no direct on-screen manipulation and a real risk of misclicking
-  into a `Workspace` part instead of the UI element you meant to touch. A
-  separate 2D editing surface (real Studio's own "UI Editor" mode is the
-  reference point) that shows only the selected `ScreenGui`'s layout,
-  scaled to a chosen device resolution, with drag/resize handles on
-  `GuiObject`s directly — genuinely separate from accidentally nudging a
-  `BasePart` in the 3D view. GUI rendering is now reasonably complete
-  (see "What's been implemented" → Renderer → GUI), so there is something
-  to edit interactively. Direction decided: **no UI editing in the 3D
-  viewport at all.** The Style Editor panel gets two tabs — the existing
-  style-sheet editor, and a second, Figma-like design tab that edits the
-  selected `ScreenGui`'s `GuiObject`s on a 2D canvas of their own (drag,
-  resize, align, with the Properties panel following the selection).
+  into a `Workspace` part instead of the UI element you meant to touch.
+  GUI rendering is now reasonably complete (see "What's been implemented"
+  → Renderer → GUI), so there is something to edit interactively.
+  Direction decided, in this shape:
+  - **Never in the 3D viewport.** The main viewport keeps *showing* every
+    enabled `ScreenGui` over the scene, as it does today, but never edits
+    one; a click there stays a 3D click.
+  - **The Style Editor panel grows a second tab, "Design"**, beside the
+    existing style-sheet tab. Opening it swaps the whole dock layout for
+    a UI-editing layout (the Explorer, Properties, Output and Script
+    Editor docks hide; the 3D viewport hides), and closing it restores
+    the previous layout.
+  - That layout is three docks, Figma-style. **Left**: the `StarterGui`
+    tree, with a picker for *which* `ScreenGui` is being edited — one at
+    a time, rather than every enabled screen drawn over one another the
+    way the runtime overlay must. **Middle**: a 2D canvas that renders
+    only the chosen `ScreenGui` (no 3D scene behind it, a neutral
+    backdrop), at a *chosen resolution* — a list of device/window presets
+    plus a free width×height — so a layout's responsiveness can be checked
+    by switching resolutions without leaving the tab. **Right**: the
+    Properties panel for the selected `GuiObject`, following the canvas
+    selection like the Explorer's does today.
+  - Then the basic Figma-like editing on that canvas: click to select
+    (respecting `ZIndex` and hierarchy), drag to move, handles to resize,
+    snapping/alignment guides against siblings and the parent, keyboard
+    nudging, multi-select — each writing `Position`/`Size`/`AnchorPoint`
+    through the same undo history every other edit uses, so the main
+    viewport's overlay follows live. Real Studio's own "UI Editor" mode
+    is the reference point for what the handles do.
 - [ ] 📋 **3D asset import and round-trip through Roblox**, i.e. import a
   local `.fbx`/`.obj`/`.gltf` (drag-and-drop or
   `Insert > Model/Mesh/Image`), upload it to Roblox as a real asset via
