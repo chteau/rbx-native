@@ -23,6 +23,7 @@ mod pipeline;
 mod quads;
 mod space;
 mod text;
+mod viewport;
 
 use glam::{Mat4, Vec3};
 
@@ -36,6 +37,7 @@ use atlas::Atlas;
 use paint::Painter;
 use space::Space;
 use text::Typesetter;
+use viewport::Viewports;
 
 pub(super) struct Gui {
     atlas: Atlas,
@@ -54,12 +56,17 @@ pub(super) struct Gui {
     /// tree out. Re-read from the profile by every [`Gui::rebuild`], so a
     /// level switched between two scenes takes.
     enabled: bool,
+    /// The pass that bakes a `ViewportFrame`'s 3D content into the texture
+    /// its quad samples, on screen or on a canvas.
+    viewports: Viewports,
 }
 
 impl Gui {
     /// `images` is what the loader decoded for the trees' `ImageLabel`s
     /// (see `Decor::gui`) and `fonts` what it fetched for their text; this
-    /// pass downloads nothing of its own.
+    /// pass downloads nothing of its own. `materials` is the renderer's
+    /// material arrays, bound with `material_layout`: what a `ViewportFrame`'s
+    /// parts are shaded with.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
         device: &wgpu::Device,
@@ -67,6 +74,7 @@ impl Gui {
         format: wgpu::TextureFormat,
         target: Target,
         (screens, spaces): (&[GuiScreen], &[SpaceGui]),
+        (material_layout, materials): (&wgpu::BindGroupLayout, &wgpu::BindGroup),
         images: &Answered,
         fonts: &Library,
         quality: &QualityProfile,
@@ -76,13 +84,14 @@ impl Gui {
         let viewport_layout = pipeline::viewport_layout(device);
         let screen_painter =
             Painter::new(device, queue, format, &viewport_layout, &atlas.image_layout);
+        let mut viewports = Viewports::new(device, queue, material_layout, quality);
         let space = Space::new(
             device,
             queue,
             target,
             &viewport_layout,
-            &mut atlas,
-            &mut text,
+            (&mut atlas, &mut text, &mut viewports),
+            materials,
             &[],
         );
 
@@ -95,8 +104,17 @@ impl Gui {
             space,
             viewport_layout,
             enabled: quality.gui,
+            viewports,
         };
-        gui.rebuild(device, queue, (screens, spaces), images, fonts, quality);
+        gui.rebuild(
+            device,
+            queue,
+            (screens, spaces),
+            materials,
+            images,
+            fonts,
+            quality,
+        );
         gui
     }
 
@@ -104,11 +122,13 @@ impl Gui {
     /// and every image the atlas already holds (see [`Atlas::extend`]): the
     /// overlay is laid out again on the next frame, the canvases are baked
     /// again here.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn rebuild(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         (screens, spaces): (&[GuiScreen], &[SpaceGui]),
+        materials: &wgpu::BindGroup,
         images: &Answered,
         fonts: &Library,
         quality: &QualityProfile,
@@ -152,8 +172,8 @@ impl Gui {
             device,
             queue,
             &self.viewport_layout,
-            &mut self.atlas,
-            &mut self.text,
+            (&mut self.atlas, &mut self.text, &mut self.viewports),
+            materials,
             spaces,
         );
     }
@@ -180,8 +200,10 @@ impl Gui {
             .draw(device, queue, encoder, targets, eye, view_projection);
     }
 
-    /// Lays the screens out for `size` if that is new, then paints every
-    /// rectangle over `target` in one load-preserving pass.
+    /// Lays the screens out for `size` if that is new — baking every
+    /// `ViewportFrame` at the pixel size it came to, which is why
+    /// `materials` is needed here — then paints every rectangle over
+    /// `target` in one load-preserving pass.
     ///
     /// The texture, not a view of it: the overlay composites in encoded space
     /// and so attaches its own non-sRGB view (see `pipeline::encoded`).
@@ -192,16 +214,25 @@ impl Gui {
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::Texture,
         size: (u32, u32),
+        materials: &wgpu::BindGroup,
     ) {
         if self.screens.is_empty() {
             return;
         }
         if self.built != Some(size) {
             self.built = Some(size);
-            let elements = gui_layout_with(
+            let mut elements = gui_layout_with(
                 &self.screens,
                 [size.0 as f32, size.1 as f32],
                 &mut self.text,
+            );
+            self.viewports.bake_all(
+                device,
+                queue,
+                materials,
+                &mut self.atlas,
+                "screen",
+                &mut elements,
             );
             self.screen.prepare(
                 device,
@@ -225,6 +256,8 @@ impl Gui {
 
 #[cfg(test)]
 mod tests {
+    use rbx_reflection::ReflectionDatabase;
+
     use super::*;
     use crate::quality::QualityLevel;
 
@@ -248,22 +281,47 @@ mod tests {
         let format = wgpu::TextureFormat::Rgba8UnormSrgb;
 
         let fonts = Library::default();
+        let material_layout = crate::renderer::material::layout(&device);
+        let materials = crate::renderer::material::Materials::new(
+            &device,
+            &queue,
+            &material_layout,
+            &crate::scene::Catalog::new(&rbx_dom::WeakDom::new(), &ReflectionDatabase::embedded()),
+            &on,
+        );
         let mut gui = Gui::new(
             &device,
             &queue,
             format,
             target,
             (&[], &[]),
+            (&material_layout, &materials.bind_group),
             &images,
             &fonts,
             &off,
         );
         assert!(!gui.enabled);
 
-        gui.rebuild(&device, &queue, (&[], &[]), &images, &fonts, &on);
+        gui.rebuild(
+            &device,
+            &queue,
+            (&[], &[]),
+            &materials.bind_group,
+            &images,
+            &fonts,
+            &on,
+        );
         assert!(gui.enabled);
 
-        gui.rebuild(&device, &queue, (&[], &[]), &images, &fonts, &off);
+        gui.rebuild(
+            &device,
+            &queue,
+            (&[], &[]),
+            &materials.bind_group,
+            &images,
+            &fonts,
+            &off,
+        );
         assert!(!gui.enabled);
     }
 }

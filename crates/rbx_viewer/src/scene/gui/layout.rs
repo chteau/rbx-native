@@ -7,7 +7,7 @@
 
 mod text;
 
-use super::plan::{Align, Layout, Node, Screen, Span};
+use super::plan::{Align, Layout, Node, Screen, Span, Viewport};
 use super::space::SpaceGui;
 // Reaches all the way to `renderer::gui::quads::image`, unlike everything
 // else `plan` hands this module — see the type's own doc comment.
@@ -90,6 +90,10 @@ pub(crate) struct Element {
     pub(crate) gradient: Option<GradientPx>,
     /// A text object's text, drawn over the background and image.
     pub(crate) text: Option<Typeset>,
+    /// A `ViewportFrame`'s 3D content. The renderer bakes it to a texture of
+    /// `rect`'s pixel size and fills `image` in with it, so it lands over the
+    /// background exactly as an `ImageLabel`'s image would.
+    pub(crate) viewport: Option<Viewport>,
 }
 
 /// Every element of every screen, in paint order: `DisplayOrder` first, then
@@ -302,6 +306,7 @@ fn emit(
             .as_ref()
             .map(|gradient| modifiers::gradient(gradient, rect.size())),
         text,
+        viewport: node.viewport.clone(),
     });
 
     // Roblox's own docs describe two modes here, gated on the (NotScriptable,

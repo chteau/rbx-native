@@ -17,6 +17,7 @@ mod layouts;
 mod props;
 mod stroke;
 mod text;
+mod viewport;
 
 use constraints::{automatic_size, border_mode, constraints, size_axes};
 pub(super) use constraints::{global_z_index, Aspect, Border, Constraints, SizeAxes};
@@ -37,8 +38,11 @@ pub(super) use stroke::{Stroke, StrokePosition};
 #[cfg(test)]
 pub(crate) use text::Span as TextSpan;
 pub(crate) use text::{span_face, Text};
+pub(super) use viewport::each_part as each_viewport_part;
+pub(crate) use viewport::{ViewCamera, Viewport};
 
 use crate::fonts::Face;
+use crate::scene::{Catalog, Part};
 
 const SCREEN_CLASS: &str = "ScreenGui";
 const ELEMENT_CLASS: &str = "GuiObject";
@@ -110,6 +114,9 @@ pub(super) struct Node {
     pub(super) corner: Option<Corner>,
     pub(super) stroke: Option<Stroke>,
     pub(super) gradient: Option<Gradient>,
+    /// A `ViewportFrame`'s 3D content, rendered into a texture the box then
+    /// shows like an image.
+    pub(super) viewport: Option<Viewport>,
     pub(super) children: Vec<Node>,
 }
 
@@ -119,6 +126,9 @@ impl Node {
     pub(super) fn paints(&self) -> bool {
         self.background_alpha > 0.0
             || self.fill.as_ref().is_some_and(|fill| fill.alpha > 0.0)
+            || self.viewport.as_ref().is_some_and(|viewport| {
+                viewport.alpha > 0.0 && viewport.camera.is_some() && !viewport.parts.is_empty()
+            })
             || self.stroke.is_some_and(|stroke| stroke.alpha > 0.0)
             || self.text.as_ref().is_some_and(Text::visible)
             || self.children.iter().any(Node::paints)
@@ -154,6 +164,13 @@ impl Screen {
             collect_fonts(root, into);
         }
     }
+
+    /// Every `ViewportFrame` part on the screen — see `viewport::each_part`.
+    pub(crate) fn viewport_parts(&mut self, apply: &mut impl FnMut(&mut Part)) {
+        for root in &mut self.roots {
+            viewport::each_part(root, apply);
+        }
+    }
 }
 
 pub(super) fn collect_fonts(node: &Node, into: &mut Vec<Face>) {
@@ -181,11 +198,18 @@ pub(super) fn collect_assets(node: &Node, into: &mut Vec<AssetRef>) {
 /// The walk is its own recursion rather than [`crate::scene::descendants`]:
 /// that iterator pops off a stack and so visits children backwards, while a
 /// GUI's paint order among equal `ZIndex` siblings is exactly tree order.
-pub(crate) fn plan(dom: &WeakDom, database: &ReflectionDatabase) -> Vec<Screen> {
+///
+/// `materials` is the scene's catalog, which a `ViewportFrame`'s parts take
+/// their layers from (see [`viewport`]).
+pub(crate) fn plan(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    materials: &mut Catalog,
+) -> Vec<Screen> {
     let styles = Styled::new(dom);
     let mut screens = Vec::new();
     for &root in dom.root_refs() {
-        gather(dom, database, &styles, root, &mut screens);
+        gather(dom, database, &styles, materials, root, &mut screens);
     }
     screens
 }
@@ -194,6 +218,7 @@ fn gather(
     dom: &WeakDom,
     database: &ReflectionDatabase,
     styles: &Styled,
+    materials: &mut Catalog,
     referent: Ref,
     into: &mut Vec<Screen>,
 ) {
@@ -208,7 +233,7 @@ fn gather(
                 top_inset: constraints::top_bar_inset(properties),
                 global_z_index: constraints::global_z_index(properties),
                 list: layout_of(dom, database, styles, instance.children()),
-                roots: elements(dom, database, styles, instance.children()),
+                roots: elements(dom, database, styles, materials, instance.children()),
             });
         }
         // A `ScreenGui` never nests inside another, and its own children are
@@ -216,7 +241,7 @@ fn gather(
         return;
     }
     for &child in instance.children() {
-        gather(dom, database, styles, child, into);
+        gather(dom, database, styles, materials, child, into);
     }
 }
 
@@ -224,11 +249,12 @@ pub(super) fn elements(
     dom: &WeakDom,
     database: &ReflectionDatabase,
     styles: &Styled,
+    materials: &mut Catalog,
     children: &[Ref],
 ) -> Vec<Node> {
     children
         .iter()
-        .filter_map(|&child| element(dom, database, styles, child))
+        .filter_map(|&child| element(dom, database, styles, materials, child))
         .collect()
 }
 
@@ -241,6 +267,7 @@ fn element(
     dom: &WeakDom,
     database: &ReflectionDatabase,
     styles: &Styled,
+    materials: &mut Catalog,
     referent: Ref,
 ) -> Option<Node> {
     let instance = dom.get(referent)?;
@@ -294,7 +321,8 @@ fn element(
             is_text(database, class),
         ),
         gradient: gradient::read(dom, database, styles, instance.children()),
-        children: elements(dom, database, styles, instance.children()),
+        viewport: viewport::read(dom, database, instance, properties, materials),
+        children: elements(dom, database, styles, materials, instance.children()),
     })
 }
 

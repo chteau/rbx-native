@@ -28,6 +28,7 @@ fn element(rect: GuiRect, clip: Option<GuiRect>) -> GuiElement {
         stroke: None,
         gradient: None,
         text: None,
+        viewport: None,
     }
 }
 

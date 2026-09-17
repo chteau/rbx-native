@@ -162,6 +162,7 @@ impl Renderer {
             device,
             queue,
             (scene.gui_screens(), scene.gui_spaces()),
+            &self.materials.bind_group,
             images,
             fonts,
             &quality,

@@ -259,6 +259,52 @@ impl Atlas {
         }
     }
 
+    /// Binds a texture the renderer produced rather than downloaded — a baked
+    /// `ViewportFrame` — under `key`, replacing in place whatever the key
+    /// held before so a re-bake never grows the group list. Both samplings
+    /// share the one group: nothing produced here is ever `Pixelated`.
+    pub(super) fn adopt(
+        &mut self,
+        device: &wgpu::Device,
+        key: AssetRef,
+        texture: &wgpu::Texture,
+        sampler: &wgpu::Sampler,
+    ) -> Slot {
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("rbxview gui adopted texture"),
+            layout: &self.image_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
+            ],
+        });
+        let size = [texture.width() as f32, texture.height() as f32];
+        let slot = match self.slot_of.get(&key) {
+            Some(held) => {
+                self.groups[held.linear] = group;
+                Slot { size, ..*held }
+            }
+            None => {
+                let index = self.groups.len();
+                self.groups.push(group);
+                Slot {
+                    linear: index,
+                    nearest: index,
+                    size,
+                }
+            }
+        };
+        self.slot_of.insert(key, slot);
+        slot
+    }
+
     pub(super) fn groups(&self) -> &[wgpu::BindGroup] {
         &self.groups
     }

@@ -42,7 +42,7 @@ pub(crate) use gui::{
     GradientKind as GuiGradientKind, GradientPx as GuiGradient, ImageScale as GuiImageScale,
     Join as GuiJoin, Painted, PixelRect as GuiPixelRect, Rect as GuiRect, Screen as GuiScreen,
     SpaceGui, Text as GuiText, TextMeasure as GuiTextMeasure, Tile as GuiTile,
-    Typeset as GuiTypeset,
+    Typeset as GuiTypeset, ViewCamera as GuiViewCamera, Viewport as GuiViewport,
 };
 #[cfg(test)]
 pub(crate) use gui::{StrokePx as GuiStroke, TextSpan as GuiTextSpan};
@@ -81,7 +81,7 @@ const FORCE_FIELD_ALPHA: f32 = 0.5;
 /// renderer rather than a borrow, so the caller is free of `Scene`'s own
 /// borrow by the time it reaches into `Renderer`/`Offscreen`, both behind
 /// other fields.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Part {
     pub(crate) kind: ShapeKind,
     /// Which texture-array layer shades it, and how — see `scene::material`.
@@ -244,6 +244,9 @@ impl Scene {
             .enumerate()
             .map(|(index, part)| (part.referent(), Standing::whole(index)))
             .collect();
+        // After the workspace, the file meshes and the unions have claimed
+        // their layers: a `ViewportFrame`'s parts share the catalog.
+        let gui = gui::plan(dom, database, &mut materials);
         let mut scene = Scene {
             parts,
             standing,
@@ -256,7 +259,7 @@ impl Scene {
             emitters: Vec::new(),
             beams: Vec::new(),
             trails: Vec::new(),
-            gui: gui::plan(dom, database),
+            gui,
             gui_spaces: Vec::new(),
             union_plan,
             unions_resolved: union::Merged::default(),
@@ -267,7 +270,7 @@ impl Scene {
         // `SurfaceGui`'s canvas covers one face of the part as drawn.
         let placements = scene.placements();
         scene.emitters = particles::plan(dom, database, &placements);
-        scene.gui_spaces = gui::plan_space(dom, database, &placements);
+        scene.gui_spaces = gui::plan_space(dom, database, &placements, &mut scene.materials);
         // A beam resolves its own attachment chain straight off the DOM
         // instead (see `scene::beam::attachment`), so it needs no placement.
         scene.beams = beam::plan(dom, database);
@@ -373,6 +376,16 @@ impl Scene {
         }
         for instance in &mut self.resolved_file_meshes.instances {
             instance.material = self.materials.slot(instance.material.layer);
+        }
+        // A `ViewportFrame`'s parts point at the same layers, so they go
+        // plastic-then-textured on the same schedule.
+        let materials = &self.materials;
+        let mut reslot = |part: &mut Part| part.material = materials.slot(part.material.layer);
+        for screen in &mut self.gui {
+            screen.viewport_parts(&mut reslot);
+        }
+        for gui in &mut self.gui_spaces {
+            gui.viewport_parts(&mut reslot);
         }
     }
 
