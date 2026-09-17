@@ -20,6 +20,8 @@ fn element(rect: GuiRect, clip: Option<GuiRect>) -> GuiElement {
         background: [1.0, 0.0, 0.0],
         background_alpha: 1.0,
         border: None,
+        border_inset: 0.0,
+        z_index: 1,
         image: None,
     }
 }
@@ -87,6 +89,21 @@ fn a_border_covers_each_corner_exactly_once() {
     assert_eq!(bands[1], rect(98.0, 120.0, 54.0, 2.0));
     assert_eq!(bands[2], rect(98.0, 100.0, 2.0, 20.0));
     assert_eq!(bands[3], rect(150.0, 100.0, 2.0, 20.0));
+}
+
+#[test]
+fn border_mode_moves_the_bands_across_the_edge_without_moving_the_box() {
+    let box_ = rect(100.0, 100.0, 50.0, 20.0);
+
+    // `Middle` straddles the edge: half the width each side of it.
+    let middle = outline(&inset(&box_, 2.0), 4.0);
+    assert_eq!(middle[0], rect(98.0, 98.0, 54.0, 4.0));
+    assert_eq!(middle[1], rect(98.0, 118.0, 54.0, 4.0));
+
+    // `Inset` sits wholly inside, its outer edge on the box's own.
+    let inner = outline(&inset(&box_, 4.0), 4.0);
+    assert_eq!(inner[0], rect(100.0, 100.0, 50.0, 4.0));
+    assert_eq!(inner[1], rect(100.0, 116.0, 50.0, 4.0));
 }
 
 #[test]

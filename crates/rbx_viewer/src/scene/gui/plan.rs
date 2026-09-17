@@ -11,8 +11,11 @@ use rbx_reflection::ReflectionDatabase;
 
 use crate::textures::asset_uri;
 
+mod constraints;
 mod props;
 
+use constraints::{automatic_size, border_mode, constraints, size_axes};
+pub(super) use constraints::{Aspect, Border, Constraints, SizeAxes};
 use props::{alpha, color, degrees, enum_of};
 pub(super) use props::{flag, integer, span, vector2};
 
@@ -108,14 +111,24 @@ pub(super) struct Node {
     pub(super) rotation: f32,
     pub(super) background: [f32; 3],
     pub(super) background_alpha: f32,
-    /// `BorderSizePixel`, drawn just outside the box: `BorderMode.Outline` is
-    /// the default and the only mode reproduced.
-    ///
-    /// TODO: `BorderMode.Middle`/`Inset` place the same outline differently.
+    /// `BorderSizePixel`, in pixels; where the band sits relative to the box
+    /// is [`Node::border_mode`]'s business.
     pub(super) border: f32,
     pub(super) border_color: [f32; 3],
+    pub(super) border_mode: Border,
     pub(super) clips: bool,
     pub(super) z_index: i32,
+    /// `AutomaticSize`, per axis: the element grows along that axis until it
+    /// contains its children, its `Size` acting as a lower bound.
+    pub(super) automatic_size: [bool; 2],
+    /// `SizeConstraint`, which parent axis each `Size` scale is taken against.
+    pub(super) size_constraint: SizeAxes,
+    /// What this element's own `UIComponent` children say about its size.
+    pub(super) constraints: Constraints,
+    /// Content this element holds that is not a child node — a text element's
+    /// own measured bounds. Counted alongside the children's extent when
+    /// [`Node::automatic_size`] grows the box.
+    pub(super) content_size: Option<[f32; 2]>,
     pub(super) fill: Option<Fill>,
     /// The `UIListLayout` among this node's children, arranging them.
     pub(super) list: Option<List>,
@@ -137,6 +150,12 @@ impl Node {
 #[derive(Clone)]
 pub(crate) struct Screen {
     pub(super) display_order: i32,
+    /// `ScreenInsets`: pixels of the viewport's top edge the canvas gives up
+    /// to Roblox's top bar.
+    pub(super) top_inset: f32,
+    /// `ZIndexBehavior.Global`, where `ZIndex` orders every descendant of the
+    /// screen against every other rather than only its own siblings.
+    pub(super) global_z_index: bool,
     pub(super) list: Option<List>,
     pub(super) roots: Vec<Node>,
 }
@@ -183,6 +202,8 @@ fn gather(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref, into: &mu
         if flag(properties, "Enabled", true) {
             into.push(Screen {
                 display_order: integer(properties, "DisplayOrder", 0),
+                top_inset: constraints::top_bar_inset(properties),
+                global_z_index: constraints::global_z_index(properties),
                 list: list_layout(dom, database, instance.children()),
                 roots: elements(dom, database, instance.children()),
             });
@@ -237,8 +258,13 @@ fn element(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> Optio
         background_alpha: alpha(properties, "BackgroundTransparency"),
         border: integer(properties, "BorderSizePixel", 1).max(0) as f32,
         border_color: color(properties, "BorderColor3", DEFAULT_BORDER),
+        border_mode: border_mode(properties),
         clips: flag(properties, "ClipsDescendants", false),
         z_index: integer(properties, "ZIndex", 1),
+        automatic_size: automatic_size(properties),
+        size_constraint: size_axes(properties),
+        constraints: constraints(dom, database, instance.children()),
+        content_size: None,
         fill: fill(properties),
         list: list_layout(dom, database, instance.children()),
         children: elements(dom, database, instance.children()),
