@@ -65,16 +65,3 @@ pub(in crate::scene::gui::layout) fn ordered(nodes: &[Node], by_name: bool) -> V
     }
     order
 }
-
-/// Sibling indices in paint order. Stable for the same reason screens are.
-///
-/// Under `ZIndexBehavior.Global` the siblings are left in tree order: that is
-/// the hierarchy order the screen-wide sort breaks ties with, and reordering
-/// them here would interleave their subtrees wrongly.
-pub(super) fn sorted(nodes: &[Node], global_z_index: bool) -> Vec<usize> {
-    let mut order: Vec<usize> = (0..nodes.len()).collect();
-    if !global_z_index {
-        order.sort_by_key(|&index| nodes[index].z_index);
-    }
-    order
-}

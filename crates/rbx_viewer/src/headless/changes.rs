@@ -18,7 +18,7 @@ use rbx_reflection::ReflectionDatabase;
 
 use super::Headless;
 use crate::capture::Offscreen;
-use crate::changes::{fold, Applied, Known, Rebuild, Role, Roles, Touched};
+use crate::changes::{fold, holds_gui, Applied, Known, Rebuild, Role, Roles, Touched};
 use crate::load::{Loaded, Resident, Toggles};
 use crate::scene::{descendants_of, Bounds, PartSync};
 use crate::textures;
@@ -138,6 +138,14 @@ impl Patcher<'_> {
         match role {
             Some(Role::MeshChild | Role::Appearance) => self.sync_parent_part(old_parent),
             Some(Role::Gui) => {
+                self.gui_changed(Some(old_parent));
+                Ok(())
+            }
+            // A `Folder` (or any other plain container) draws nothing itself,
+            // yet a GUI tree may hang off one, and the whole subtree moves
+            // with it — so the container it left is stale for the same
+            // reason a `Frame`'s would be.
+            Some(_) if holds_gui(dom, self.database, moved) => {
                 self.gui_changed(Some(old_parent));
                 Ok(())
             }

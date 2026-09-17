@@ -16,8 +16,8 @@ use rbx_dom::{Instance, Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use super::plan::{
-    collect_assets, collect_fonts, elements, flag, float, global_z_index, layout_of, span, vector2,
-    Layout, Node,
+    collect_assets_of, collect_fonts_of, elements, flag, float, global_z_index, layout_of, span,
+    vector2, Group, Layout, Node,
 };
 use super::style::Styled;
 use crate::fonts::Face;
@@ -89,21 +89,18 @@ pub(crate) struct SpaceGui {
     pub(super) global_z_index: bool,
     pub(super) list: Option<Layout>,
     pub(super) roots: Vec<Node>,
+    pub(super) groups: Vec<Group>,
 }
 
 impl SpaceGui {
     /// Every image the canvas wants, in first-seen paint order.
     pub(crate) fn assets(&self, into: &mut Vec<AssetRef>) {
-        for root in &self.roots {
-            collect_assets(root, into);
-        }
+        collect_assets_of(&self.roots, &self.groups, into);
     }
 
     /// Every font face the canvas' text wants, in first-seen paint order.
     pub(crate) fn fonts(&self, into: &mut Vec<Face>) {
-        for root in &self.roots {
-            collect_fonts(root, into);
-        }
+        collect_fonts_of(&self.roots, &self.groups, into);
     }
 
     /// Every `ViewportFrame` part on the canvas — see `Screen::viewport_parts`.
@@ -220,7 +217,7 @@ fn read(
         return None;
     }
     let adornee = adornee(context.dom, properties, parent)?;
-    let roots = elements(
+    let (roots, groups) = elements(
         context.dom,
         context.database,
         context.styles,
@@ -229,7 +226,7 @@ fn read(
     );
     // A tree that paints nothing is every `SurfaceGui` holding only
     // transparent text in practice; allocating it a canvas is pure waste.
-    if !roots.iter().any(Node::paints) {
+    if !roots.iter().any(Node::paints) && !groups.iter().any(Group::paints) {
         return None;
     }
 
@@ -274,6 +271,7 @@ fn read(
             instance.children(),
         ),
         roots,
+        groups,
     })
 }
 

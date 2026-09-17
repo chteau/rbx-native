@@ -482,3 +482,22 @@ fn a_canvas_resolves_udim2_against_its_own_pixels_not_a_viewport() {
     assert_eq!(elements[0].rect.width, 800.0);
     assert_eq!(elements[0].rect.height, 600.0);
 }
+
+#[test]
+fn a_canvas_reaches_the_elements_under_a_folder() {
+    let (mut dom, gui, placements) = fixture("SurfaceGui", Vec3::ONE);
+    let group = dom.new_instance("Folder", "Group", Some(gui));
+    filled(&mut dom, group);
+    dom.set_property(gui, "SizingMode", Variant::Enum(FIXED_SIZE))
+        .unwrap();
+    dom.set_property(gui, "CanvasSize", vector2_of(800.0, 600.0))
+        .unwrap();
+
+    // The folder neither hides the label from the "does this paint anything"
+    // test that decides whether the canvas is worth allocating, nor stands
+    // between it and the canvas the label sizes against.
+    let elements = resolve_canvas(&planned(&dom, &placements)[0]);
+    assert_eq!(elements.len(), 1);
+    assert_eq!(elements[0].rect.width, 800.0);
+    assert_eq!(elements[0].rect.height, 600.0);
+}

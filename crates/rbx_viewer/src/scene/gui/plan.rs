@@ -118,6 +118,9 @@ pub(super) struct Node {
     /// shows like an image.
     pub(super) viewport: Option<Viewport>,
     pub(super) children: Vec<Node>,
+    /// The non-`GuiObject` containers among this node's children, and what
+    /// they hold — see [`Group`].
+    pub(super) groups: Vec<Group>,
 }
 
 impl Node {
@@ -132,6 +135,53 @@ impl Node {
             || self.stroke.is_some_and(|stroke| stroke.alpha > 0.0)
             || self.text.as_ref().is_some_and(Text::visible)
             || self.children.iter().any(Node::paints)
+            || self.groups.iter().any(Group::paints)
+    }
+}
+
+/// What one non-`GuiObject` instance inside a GUI tree — a `Folder`, or a
+/// `Configuration`, a `ModuleScript`, anything — contributes to the picture.
+///
+/// Roblox draws a `GuiObject` whose ancestry reaches a `ScreenGui`/
+/// `BillboardGui`/`SurfaceGui` however many plain instances sit in between,
+/// so such an instance is walked *through* rather than being an end to the
+/// tree. It has no box of its own, so its contents resolve against the
+/// container above it — the nearest `GuiBase2d` — and they paint where it
+/// sits among its siblings.
+///
+/// It is not simply transparent, though. Roblox's `Folder` page: "Each
+/// `Folder` in your UI hierarchy can define its own `UILayout`
+/// (`UIListLayout`, `UIGridLayout`, `UIPageLayout`, `UITableLayout`), or use
+/// a default position-based layout. [...] `Folder` contents are exempt from
+/// the effects of a `UILayout` sibling." So the contents are a layout scope
+/// of their own: arranged by [`Group::layout`] where there is one and by
+/// their own `Position`/`Size` where there is not, and never an item of the
+/// container's layout.
+#[derive(Clone)]
+pub(super) struct Group {
+    /// Where the instance sat among the container's children, as an index
+    /// into its `children`: the contents paint in its place, so tree order
+    /// survives a container that is not drawn.
+    pub(super) at: usize,
+    /// The `UILayout` hung directly off this instance, arranging its own
+    /// contents against the container's rect.
+    pub(super) layout: Option<Layout>,
+    pub(super) children: Vec<Node>,
+    /// Non-`GuiObject` containers nested inside this one — a `Folder` in a
+    /// `Folder` is a layout scope inside a layout scope.
+    pub(super) groups: Vec<Group>,
+}
+
+impl Group {
+    pub(super) fn paints(&self) -> bool {
+        self.children.iter().any(Node::paints) || self.groups.iter().any(Group::paints)
+    }
+
+    /// Whether this group holds nothing drawable at all, in which case the
+    /// plan is better off without it: every `LocalScript` and value object in
+    /// a GUI tree would otherwise become an empty layout scope.
+    fn is_empty(&self) -> bool {
+        self.children.is_empty() && self.groups.is_empty()
     }
 }
 
@@ -148,21 +198,18 @@ pub(crate) struct Screen {
     pub(super) global_z_index: bool,
     pub(super) list: Option<Layout>,
     pub(super) roots: Vec<Node>,
+    pub(super) groups: Vec<Group>,
 }
 
 impl Screen {
     /// Every image the screen wants, in first-seen paint order.
     pub(crate) fn assets(&self, into: &mut Vec<AssetRef>) {
-        for root in &self.roots {
-            collect_assets(root, into);
-        }
+        collect_assets_of(&self.roots, &self.groups, into);
     }
 
     /// Every font face the screen's text wants, in first-seen paint order.
     pub(crate) fn fonts(&self, into: &mut Vec<Face>) {
-        for root in &self.roots {
-            collect_fonts(root, into);
-        }
+        collect_fonts_of(&self.roots, &self.groups, into);
     }
 
     /// Every `ViewportFrame` part on the screen — see `viewport::each_part`.
@@ -173,24 +220,38 @@ impl Screen {
     }
 }
 
-pub(super) fn collect_fonts(node: &Node, into: &mut Vec<Face>) {
-    if let Some(text) = &node.text {
-        text.faces(into);
+pub(super) fn collect_fonts_of(nodes: &[Node], groups: &[Group], into: &mut Vec<Face>) {
+    for node in nodes {
+        collect_fonts(node, into);
     }
-    for child in &node.children {
-        collect_fonts(child, into);
+    for group in groups {
+        collect_fonts_of(&group.children, &group.groups, into);
     }
 }
 
-pub(super) fn collect_assets(node: &Node, into: &mut Vec<AssetRef>) {
+fn collect_fonts(node: &Node, into: &mut Vec<Face>) {
+    if let Some(text) = &node.text {
+        text.faces(into);
+    }
+    collect_fonts_of(&node.children, &node.groups, into);
+}
+
+pub(super) fn collect_assets_of(nodes: &[Node], groups: &[Group], into: &mut Vec<AssetRef>) {
+    for node in nodes {
+        collect_assets(node, into);
+    }
+    for group in groups {
+        collect_assets_of(&group.children, &group.groups, into);
+    }
+}
+
+fn collect_assets(node: &Node, into: &mut Vec<AssetRef>) {
     if let Some(fill) = &node.fill {
         if !into.contains(&fill.asset) {
             into.push(fill.asset.clone());
         }
     }
-    for child in &node.children {
-        collect_assets(child, into);
-    }
+    collect_assets_of(&node.children, &node.groups, into);
 }
 
 /// Every enabled `ScreenGui` in the DOM, in the order the tree holds them.
@@ -228,12 +289,14 @@ fn gather(
     if database.is_subclass_of(instance.class(), SCREEN_CLASS) {
         let properties = styles.properties_of(instance);
         if flag(properties, "Enabled", true) {
+            let (roots, groups) = elements(dom, database, styles, materials, instance.children());
             into.push(Screen {
                 display_order: integer(properties, "DisplayOrder", 0),
                 top_inset: constraints::top_bar_inset(properties),
                 global_z_index: constraints::global_z_index(properties),
                 list: layout_of(dom, database, styles, instance.children()),
-                roots: elements(dom, database, styles, materials, instance.children()),
+                roots,
+                groups,
             });
         }
         // A `ScreenGui` never nests inside another, and its own children are
@@ -245,17 +308,42 @@ fn gather(
     }
 }
 
+/// What one container holds: its own `GuiObject` children in tree order, and
+/// a [`Group`] for every non-`GuiObject` child that holds elements of its own.
 pub(super) fn elements(
     dom: &WeakDom,
     database: &ReflectionDatabase,
     styles: &Styled,
     materials: &mut Catalog,
     children: &[Ref],
-) -> Vec<Node> {
-    children
-        .iter()
-        .filter_map(|&child| element(dom, database, styles, materials, child))
-        .collect()
+) -> (Vec<Node>, Vec<Group>) {
+    let mut nodes = Vec::new();
+    let mut groups = Vec::new();
+    for &child in children {
+        let Some(instance) = dom.get(child) else {
+            continue;
+        };
+        // The class is asked here rather than left to `element`, which also
+        // answers `None` for a `Visible = false` element — a subtree Roblox
+        // hides whole, and that must not be walked around.
+        if database.is_subclass_of(instance.class(), ELEMENT_CLASS) {
+            if let Some(node) = element(dom, database, styles, materials, child) {
+                nodes.push(node);
+            }
+            continue;
+        }
+        let (children, groups_of) = elements(dom, database, styles, materials, instance.children());
+        let group = Group {
+            at: nodes.len(),
+            layout: layout_of(dom, database, styles, instance.children()),
+            children,
+            groups: groups_of,
+        };
+        if !group.is_empty() {
+            groups.push(group);
+        }
+    }
+    (nodes, groups)
 }
 
 /// One `GuiObject` read into a [`Node`], or `None` where it is not drawable.
@@ -284,6 +372,7 @@ fn element(
     }
 
     let constraints = constraints(dom, database, styles, instance.children());
+    let (children, groups) = elements(dom, database, styles, materials, instance.children());
 
     Some(Node {
         name: instance.name().to_string(),
@@ -322,7 +411,8 @@ fn element(
         ),
         gradient: gradient::read(dom, database, styles, instance.children()),
         viewport: viewport::read(dom, database, instance, properties, materials),
-        children: elements(dom, database, styles, materials, instance.children()),
+        children,
+        groups,
     })
 }
 

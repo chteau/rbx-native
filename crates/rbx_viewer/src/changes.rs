@@ -14,7 +14,7 @@ use std::collections::HashMap;
 
 use rbx_dom::{Change, Ref};
 
-pub(crate) use role::{Known, Role, Roles};
+pub(crate) use role::{holds_gui, Known, Role, Roles};
 
 /// What `Headless::apply_changes` did with a change log.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
