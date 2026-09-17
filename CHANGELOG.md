@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-09-18
+
+- **Output dock: a Show Timestamp toggle and per-kind row color/icon**
+  (`feat/output-timestamp-kind-styling`). Ships the not-sandbox-dependent
+  half of the Output window roadmap bullet: a **Show Timestamp** toggle in
+  the Output panel's overflow menu (next to Explorer's and Viewport's own
+  toggles) prints each row's `HH:MM:SS.SSS` timestamp, captured at push
+  time regardless of whether it's shown (`OutputEntry::timestamp`). Rows
+  no longer share one plain `✕`/`✓` marker — `print`/a successful run now
+  reads in the default text color with a check icon, `warn` in orange with
+  an alert icon, `error` in red with an X icon (`OutputEntry::kind`,
+  `RowKind`, `shell/output.rs`). Left open: the duplicate-display gap
+  between `command_bar::Feedback`'s own label and the Output dock row,
+  `TestService.Message`'s blue/info kind (needs the sandbox), and the rest
+  of that roadmap bullet's sandbox-dependent half. — @chteau
+
 ## 2026-09-17
 
 - **A batch of viewport editor fixes (`fix/overall-bug-fixes`).** Undo/redo

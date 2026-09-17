@@ -149,7 +149,10 @@ impl ComponentPanel for SectionPanel {
     /// into the panel's own overflow menu (see `Shell::show_all_services` /
     /// `Shell::set_show_all_services`); Viewport's own "Orthographic" toggle
     /// (see `Shell::orthographic` / `Shell::set_orthographic`) lives the same
-    /// way, next to the quality dropdown already in its title bar.
+    /// way, next to the quality dropdown already in its title bar. Output's
+    /// "Show Timestamp" toggle (`Shell::output_show_timestamps`) lives here
+    /// too rather than crowding the level-filter/Clear row `output_controls`
+    /// already puts in that panel's title bar.
     fn dropdown_menu(
         &mut self,
         menu: PopupMenu,
@@ -180,6 +183,19 @@ impl ComponentPanel for SectionPanel {
                             shell.update(cx, |shell, cx| {
                                 let next = !shell.orthographic();
                                 shell.set_orthographic(next, cx);
+                            });
+                        }),
+                )
+            }
+            Section::Output => {
+                let checked = shell.read(cx).output_show_timestamps;
+                menu.item(
+                    PopupMenuItem::new("Show Timestamp")
+                        .checked(checked)
+                        .on_click(move |_, _, cx| {
+                            shell.update(cx, |shell, cx| {
+                                shell.output_show_timestamps = !shell.output_show_timestamps;
+                                cx.notify();
                             });
                         }),
                 )

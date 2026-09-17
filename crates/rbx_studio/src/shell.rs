@@ -123,6 +123,10 @@ pub(crate) struct Shell {
     output: output::OutputLog,
     /// Which levels the Output panel currently shows; see `shell::output`.
     output_filter: output::OutputFilter,
+    /// Whether Output rows print their `HH:MM:SS.SSS` timestamp; toggled from
+    /// the panel's overflow menu (see `shell::dock`'s `dropdown_menu`). Not
+    /// persisted — resets to off each launch, same as `output_filter` above.
+    output_show_timestamps: bool,
     output_scroll: ScrollHandle,
     /// The file `self.dom` was opened from and its on-disk format; see
     /// `shell::save`. Ctrl+S always writes back here, in this format,
@@ -283,6 +287,7 @@ impl Shell {
             command_bar,
             output: output::OutputLog::default(),
             output_filter: output::OutputFilter::default(),
+            output_show_timestamps: false,
             output_scroll: ScrollHandle::new(),
             path,
             format,
