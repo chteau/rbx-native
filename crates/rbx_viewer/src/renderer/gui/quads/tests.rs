@@ -2,7 +2,7 @@
 //! [`modifiers`] for what a `UICorner`/`UIStroke`/`UIGradient` puts on a vertex.
 
 use super::*;
-use crate::scene::{GuiElement, GuiImageScale, Painted};
+use crate::scene::{GuiElement, GuiGroup, GuiGroupTint, GuiImageScale, Painted};
 
 fn rect(x: f32, y: f32, width: f32, height: f32) -> GuiRect {
     GuiRect {
@@ -28,6 +28,7 @@ fn element(rect: GuiRect, clip: Option<GuiRect>) -> GuiElement {
         stroke: None,
         gradient: None,
         text: None,
+        group: None,
     }
 }
 
@@ -328,6 +329,56 @@ fn a_rotated_borders_bands_turn_about_the_elements_centre_too() {
         .map(|v| v.position[1])
         .fold(f32::MIN, f32::max);
     assert!((max_y - min_y - 28.0).abs() < 1e-3);
+}
+
+fn grouped(alpha: f32, texture: Option<usize>) -> GuiElement {
+    let mut element = element(rect(10.0, 20.0, 100.0, 50.0), None);
+    element.group = Some(GuiGroup {
+        tint: GuiGroupTint {
+            color: [1.0, 0.5, 0.0],
+            alpha,
+        },
+        descendants: 2,
+        texture,
+    });
+    element
+}
+
+// A group the renderer has not flattened — because its tint is the default,
+// or because it is marked but never baked — is its own background and
+// nothing more, exactly like a `Frame`.
+#[test]
+fn an_unflattened_group_draws_like_a_plain_frame() {
+    let group = grouped(1.0, None);
+    let plain = element(rect(10.0, 20.0, 100.0, 50.0), None);
+
+    let (vertices, runs, _) = build(&[group], &HashMap::new(), VIEWPORT);
+    let (expected, _, _) = build(&[plain], &HashMap::new(), VIEWPORT);
+
+    assert_eq!(vertices, expected);
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].texture, WHITE);
+}
+
+// A flattened group is one quad sampling its baked texture, tinted and
+// faded by the group rather than by its own background.
+#[test]
+fn a_flattened_group_is_one_textured_quad_in_the_groups_tint() {
+    let group = grouped(0.5, Some(7));
+
+    let (vertices, runs, _) = build(&[group], &HashMap::new(), VIEWPORT);
+
+    assert_eq!(vertices.len(), 6);
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].texture, 7);
+    assert_eq!(runs[0].range, 0..6);
+    for vertex in &vertices {
+        assert_eq!(vertex.color, [1.0, 0.5, 0.0]);
+        assert_eq!(vertex.alpha, 0.5);
+    }
+    // The texture is sampled whole across the box.
+    assert_eq!(vertices[0].uv, [0.0, 0.0]);
+    assert_eq!(vertices[4].uv, [1.0, 1.0]);
 }
 
 mod modifiers;

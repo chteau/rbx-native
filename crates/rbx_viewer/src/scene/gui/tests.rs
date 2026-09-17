@@ -8,7 +8,8 @@
 //! `UIConstraint` family, `AutomaticSize` and `SizeConstraint`), [`placement`]
 //! for the rest of what decides where a box lands (nested rotation,
 //! `BorderMode`, `ScreenInsets` and `ZIndexBehavior`), [`modifiers`] for
-//! `UICorner`/`UIStroke`/`UIGradient` and [`style`] for the `StyleSheet`
+//! `UICorner`/`UIStroke`/`UIGradient`, [`scrolling`] for `ScrollingFrame`,
+//! [`group`] for `CanvasGroup` and [`style`] for the `StyleSheet`
 //! engine.
 //!
 //! The fixtures every test builds on live here, in the parent.
@@ -74,10 +75,12 @@ mod clips;
 mod constraints;
 mod flex;
 mod grid;
+mod group;
 mod layout;
 mod modifiers;
 mod placement;
 mod properties;
+mod scrolling;
 mod style;
 mod table;
 mod text;

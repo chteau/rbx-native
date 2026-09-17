@@ -7,7 +7,7 @@
 
 mod text;
 
-use super::plan::{Align, Layout, Node, Screen, Span};
+use super::plan::{Align, Group, Layout, Node, Screen, Span};
 use super::space::SpaceGui;
 // Reaches all the way to `renderer::gui::quads::image`, unlike everything
 // else `plan` hands this module — see the type's own doc comment.
@@ -18,6 +18,7 @@ mod grid;
 mod image;
 mod list;
 mod modifiers;
+mod scrolling;
 mod sizing;
 mod table;
 
@@ -40,6 +41,26 @@ pub(crate) struct Rect {
 impl Rect {
     pub(crate) fn size(&self) -> [f32; 2] {
         [self.width, self.height]
+    }
+
+    /// This box carried `degrees` clockwise around `pivot`: its centre turns,
+    /// its extent does not, which is all an axis-aligned box can say about
+    /// a rotation — the element's own turn about that centre is
+    /// [`Element::rotation`]'s.
+    pub(crate) fn turned(&self, degrees: f32, pivot: [f32; 2]) -> Rect {
+        if degrees == 0.0 {
+            return *self;
+        }
+        // Same clockwise convention as the renderer's own rotation, y running
+        // down the screen.
+        let (sin, cos) = degrees.to_radians().sin_cos();
+        let dx = self.x + self.width * 0.5 - pivot[0];
+        let dy = self.y + self.height * 0.5 - pivot[1];
+        Rect {
+            x: pivot[0] + dx * cos - dy * sin - self.width * 0.5,
+            y: pivot[1] + dx * sin + dy * cos - self.height * 0.5,
+            ..*self
+        }
     }
 
     /// The overlap of two boxes, empty (zero-sized) where they do not meet —
@@ -90,6 +111,22 @@ pub(crate) struct Element {
     pub(crate) gradient: Option<GradientPx>,
     /// A text object's text, drawn over the background and image.
     pub(crate) text: Option<Typeset>,
+    /// A `CanvasGroup` whose subtree the renderer is to flatten before
+    /// tinting; `None` for every other element, and for a group under
+    /// `ZIndexBehavior.Global`.
+    pub(crate) group: Option<Grouped>,
+}
+
+/// A `CanvasGroup`'s tint and the run of elements it applies to.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Grouped {
+    pub(crate) tint: Group,
+    /// How many elements straight after the group's own are its subtree,
+    /// contiguous because siblings are emitted depth-first.
+    pub(crate) descendants: usize,
+    /// The texture slot the renderer baked the subtree into, once it has;
+    /// the layout leaves it `None`.
+    pub(crate) texture: Option<usize>,
 }
 
 /// Every element of every screen, in paint order: `DisplayOrder` first, then
@@ -212,19 +249,7 @@ impl Context {
     /// carries the whole box around that ancestor's centre, and only then does
     /// the child turn about its own.
     fn carried(&self, rect: Rect) -> Rect {
-        if self.angle == 0.0 {
-            return rect;
-        }
-        // Same clockwise convention as the renderer's own rotation, y running
-        // down the screen.
-        let (sin, cos) = self.angle.to_radians().sin_cos();
-        let dx = rect.x + rect.width * 0.5 - self.pivot[0];
-        let dy = rect.y + rect.height * 0.5 - self.pivot[1];
-        Rect {
-            x: self.pivot[0] + dx * cos - dy * sin - rect.width * 0.5,
-            y: self.pivot[1] + dx * sin + dy * cos - rect.height * 0.5,
-            ..rect
-        }
+        rect.turned(self.angle, self.pivot)
     }
 }
 
@@ -282,6 +307,7 @@ fn emit(
         .map(|text| text::typeset(text, &mut rect, measure));
     let corner_radii = modifiers::radii(node.corner.as_ref(), rect.size());
     let rounded = corner_radii.iter().any(|&radius| radius > 0.0);
+    let start = into.len();
     into.push(Element {
         rect,
         clip: context.clip,
@@ -302,6 +328,7 @@ fn emit(
             .as_ref()
             .map(|gradient| modifiers::gradient(gradient, rect.size())),
         text,
+        group: None,
     });
 
     // Roblox's own docs describe two modes here, gated on the (NotScriptable,
@@ -313,28 +340,44 @@ fn emit(
     // matches what is actually drawn on screen.
     let rotated = context.rotated || node.rotation != 0.0;
     let angle = context.angle + node.rotation;
-    children(
-        &node.children,
-        node.list.as_ref(),
-        &sizing::padded(node, &rect),
-        cells,
-        Context {
-            clip: match node.clips && !rotated {
-                true => Some(context.clip.map_or(rect, |outer| outer.intersect(&rect))),
-                false => context.clip,
-            },
-            rotated,
-            angle,
-            // Once this element turns, its children turn about *its* centre.
-            pivot: match angle == 0.0 {
-                true => context.pivot,
-                false => [rect.x + rect.width * 0.5, rect.y + rect.height * 0.5],
-            },
-            ..context
+    let inner = Context {
+        clip: match node.clips && !rotated {
+            true => Some(context.clip.map_or(rect, |outer| outer.intersect(&rect))),
+            false => context.clip,
         },
-        measure,
-        into,
-    );
+        rotated,
+        angle,
+        // Once this element turns, its children turn about *its* centre.
+        pivot: match angle == 0.0 {
+            true => context.pivot,
+            false => [rect.x + rect.width * 0.5, rect.y + rect.height * 0.5],
+        },
+        ..context
+    };
+    match &node.scrolling {
+        Some(scrolling) => scrolling::scroll(node, scrolling, &rect, cells, inner, measure, into),
+        None => children(
+            &node.children,
+            node.list.as_ref(),
+            &sizing::padded(node, &rect),
+            cells,
+            inner,
+            measure,
+            into,
+        ),
+    }
+
+    // "Descendants of `CanvasGroup` will be rendered as a flattened texture
+    // only when the ancestor `LayerCollector` has its `ZIndexBehavior` set to
+    // `Sibling`" — which is also the only mode that leaves them contiguous
+    // behind the group here, since [`resolve`] re-sorts a `Global` screen.
+    if let Some(tint) = node.group.filter(|_| !context.global_z_index) {
+        into[start].group = Some(Grouped {
+            tint,
+            descendants: into.len() - start - 1,
+            texture: None,
+        });
+    }
 }
 
 /// Where a run of `length` starts inside `extent` for one alignment.

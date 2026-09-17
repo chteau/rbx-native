@@ -35,9 +35,11 @@ pub(crate) use layout::StrokePx;
 #[cfg(test)]
 pub(crate) use layout::{resolve, resolve_canvas};
 pub(crate) use layout::{
-    resolve_canvas_with, resolve_with, Element, GradientPx, ImageScale, Painted, PixelRect, Rect,
-    TextMeasure, Typeset,
+    resolve_canvas_with, resolve_with, Element, GradientPx, Grouped, ImageScale, Painted,
+    PixelRect, Rect, TextMeasure, Typeset,
 };
+#[cfg(test)]
+pub(crate) use plan::Group;
 #[cfg(test)]
 pub(crate) use plan::TextSpan;
 pub(crate) use plan::{plan, span_face, Align, GradientKind, Join, Screen, Text, Tile};

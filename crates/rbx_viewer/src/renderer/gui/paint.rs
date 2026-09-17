@@ -235,6 +235,7 @@ mod tests {
                 tile: GuiTile::Clamp,
             }),
             text: None,
+            group: None,
         };
         let size = (64, 48);
         painter.prepare(
