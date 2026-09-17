@@ -564,3 +564,30 @@ fn a_canvas_reaches_the_elements_under_a_folder() {
     assert_eq!(elements[0].rect.width, 800.0);
     assert_eq!(elements[0].rect.height, 600.0);
 }
+
+/// "Determines whether the contents of `StarterGui` is visible in Studio"
+/// (`StarterGui.ShowDevelopmentGui`) — its contents being the canvases too,
+/// not just the screens, and nothing outside the service.
+#[test]
+fn a_hidden_starter_gui_takes_only_its_own_canvases_out() {
+    let mut dom = WeakDom::new();
+    let workspace = dom.new_instance("Workspace", "Workspace", None);
+    let part = dom.new_instance("Part", "Part", Some(workspace));
+    let placements = HashMap::from([(part, placement(Vec3::splat(2.0)))]);
+    let on_the_part = dom.new_instance("SurfaceGui", "SurfaceGui", Some(part));
+    filled(&mut dom, on_the_part);
+    let starter = dom.new_instance("StarterGui", "StarterGui", None);
+    let hidden = dom.new_instance("SurfaceGui", "Hidden", Some(starter));
+    dom.set_property(hidden, "Adornee", Variant::Ref(part))
+        .unwrap();
+    filled(&mut dom, hidden);
+
+    assert_eq!(planned(&dom, &placements).len(), 2);
+
+    dom.set_property(starter, "ShowDevelopmentGui", Variant::Bool(false))
+        .unwrap();
+
+    let planned = planned(&dom, &placements);
+    assert_eq!(planned.len(), 1);
+    assert_eq!(planned[0].adornee, part);
+}

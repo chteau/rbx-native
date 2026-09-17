@@ -56,6 +56,7 @@ fn textures_only() -> Toggles {
         materials: false,
         lights: false,
         clock_time: None,
+        show_development_gui: false,
     }
 }
 
@@ -199,6 +200,7 @@ fn from_dom_reflects_a_property_mutated_after_the_file_was_read() {
         materials: false,
         lights: false,
         clock_time: None,
+        show_development_gui: false,
     };
 
     let part = crate::scene::descendants(&dom)
@@ -251,6 +253,7 @@ fn resolving_again_with_nothing_new_changes_nothing() {
         materials: false,
         lights: false,
         clock_time: None,
+        show_development_gui: false,
     };
     let mut resident = Resident::default();
     let mut loaded = Loaded::from_dom(&dom, &database, toggles, &mut resident).expect("load");
@@ -349,6 +352,7 @@ fn a_streaming_load_lands_a_font_family_and_then_its_face() {
         materials: false,
         lights: false,
         clock_time: None,
+        show_development_gui: false,
     };
     let bold = crate::fonts::Face::named("Shelf", 700, false);
     let patience = std::time::Duration::from_secs(5);

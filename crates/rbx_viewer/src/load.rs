@@ -45,13 +45,37 @@ pub fn read_place(path: &Path) -> Result<WeakDom, String> {
     Ok(dom)
 }
 
-/// What a load is allowed to download, and the hour its sky is lit at.
+/// What a load is allowed to download, the hour its sky is lit at, and the
+/// one place property a command line may force.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Toggles {
     pub(crate) textures: bool,
     pub(crate) materials: bool,
     pub(crate) lights: bool,
     pub(crate) clock_time: Option<f32>,
+    /// Force every `StarterGui.ShowDevelopmentGui` on — see
+    /// [`show_development_gui`]. Only [`Loaded::read`] can honour it: it is
+    /// an edit of the tree, and every other entry point owns the DOM it
+    /// hands in and shows the place as saved.
+    pub(crate) show_development_gui: bool,
+}
+
+/// Turns `ShowDevelopmentGui` on for every `StarterGui` in `dom`, so a place
+/// that saved the flag off still shows its screens — what `rbxview`'s
+/// `--show-development-gui` asks for, since the flag is a Studio view toggle
+/// and a screenshot is often wanted of what a player would see.
+pub(crate) fn show_development_gui(dom: &mut WeakDom) {
+    let services: Vec<Ref> = crate::scene::descendants(dom)
+        .filter(|&referent| {
+            dom.get(referent)
+                .is_some_and(|instance| instance.class() == "StarterGui")
+        })
+        .collect();
+    for service in services {
+        // A service is never subclassed, so the exact class name is the
+        // whole test and no reflection database is needed here.
+        let _ = dom.set_property(service, "ShowDevelopmentGui", rbx_dom::Variant::Bool(true));
+    }
 }
 
 /// A place file turned into the four pieces every render path needs.
@@ -107,7 +131,10 @@ impl Loaded {
     /// [`rbx_reflection::ReflectionDatabase::embedded`]), and re-parsing it on
     /// every edit is pure waste.
     pub(crate) fn read(path: &Path, toggles: Toggles) -> Result<Self, String> {
-        let dom = read_place(path)?;
+        let mut dom = read_place(path)?;
+        if toggles.show_development_gui {
+            show_development_gui(&mut dom);
+        }
         let database = ReflectionDatabase::embedded();
         Self::from_dom(&dom, &database, toggles, &mut Resident::default())
             .map_err(|err| format!("nothing to show in {path:?}: {err}"))

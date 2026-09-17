@@ -17,6 +17,7 @@ mod layouts;
 mod node;
 mod props;
 mod scrolling;
+mod starter;
 mod stroke;
 mod text;
 mod viewport;
@@ -41,6 +42,7 @@ pub(super) use props::{flag, float, integer, span, vector2};
 #[cfg(test)]
 pub(super) use scrolling::Inset;
 pub(super) use scrolling::Scrolling;
+pub(super) use starter::hides_contents;
 pub(crate) use stroke::Join;
 pub(super) use stroke::{Stroke, StrokePosition};
 #[cfg(test)]
@@ -99,6 +101,11 @@ fn gather(
     let Some(instance) = dom.get(referent) else {
         return;
     };
+    // This viewer draws a place the way Studio's edit view does, so a
+    // `StarterGui` told to hide its contents hides them here too.
+    if hides_contents(database, instance) {
+        return;
+    }
     if database.is_subclass_of(instance.class(), SCREEN_CLASS) {
         let properties = styles.properties_of(instance);
         if flag(properties, "Enabled", true) {

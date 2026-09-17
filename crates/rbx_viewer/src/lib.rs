@@ -102,5 +102,6 @@ fn toggles(options: &Options) -> Toggles {
         materials: options.materials(),
         lights: options.lights(),
         clock_time: options.clock_time(),
+        show_development_gui: options.show_development_gui(),
     }
 }

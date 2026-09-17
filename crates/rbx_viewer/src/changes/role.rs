@@ -93,7 +93,18 @@ impl Role {
         // any `ScreenGui`, so `gui_changed`'s walk up from it finds no
         // canvas and replans them all, which is what a sheet's reach
         // demands.
-        if is("GuiBase") || is("UIBase") || is("StyleBase") || is("StyleDerive") || is("StyleLink")
+        //
+        // `StarterGui` is no `GuiBase`, but `ShowDevelopmentGui` decides
+        // whether anything under it is drawn at all (see
+        // `scene::gui::plan::starter`), so toggling it has to re-plan the
+        // GUI. The service sits outside every canvas, so `gui_changed`'s
+        // walk up from it finds none and re-plans both lists.
+        if is("GuiBase")
+            || is("UIBase")
+            || is("StarterGui")
+            || is("StyleBase")
+            || is("StyleDerive")
+            || is("StyleLink")
         {
             return Role::Gui;
         }
@@ -211,6 +222,9 @@ mod tests {
             ("BlockMesh", Role::MeshChild),
             ("SurfaceAppearance", Role::Appearance),
             ("ScreenGui", Role::Gui),
+            // Not drawn itself, but `ShowDevelopmentGui` hides every screen
+            // and canvas beneath it.
+            ("StarterGui", Role::Gui),
             ("SurfaceGui", Role::Gui),
             ("BillboardGui", Role::Gui),
             ("Frame", Role::Gui),

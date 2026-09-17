@@ -31,6 +31,7 @@ pub struct Options {
     beams: bool,
     trails: bool,
     gui: bool,
+    show_development_gui: bool,
     orbit: bool,
     speed: Option<f32>,
     sensitivity: f32,
@@ -55,6 +56,7 @@ impl Options {
         let mut beams = true;
         let mut trails = true;
         let mut gui = true;
+        let mut show_development_gui = false;
         let mut orbit = false;
         let mut speed = None;
         let mut sensitivity = DEFAULT_SENSITIVITY;
@@ -78,6 +80,7 @@ impl Options {
                 "--no-beams" => beams = false,
                 "--no-trails" => trails = false,
                 "--no-gui" => gui = false,
+                "--show-development-gui" => show_development_gui = true,
                 "--orbit" => orbit = true,
                 "--speed" => speed = Some(parse_positive(&value(&mut args, &arg)?)?),
                 "--sensitivity" => sensitivity = parse_positive(&value(&mut args, &arg)?)?,
@@ -109,6 +112,7 @@ impl Options {
             beams,
             trails,
             gui,
+            show_development_gui,
             orbit,
             speed,
             sensitivity,
@@ -124,7 +128,7 @@ impl Options {
              \x20              [--yaw <degrees>] [--pitch <degrees>]\n\
              \x20              [--eye X,Y,Z --look-at X,Y,Z] [--no-textures] [--no-materials]\n\
              \x20              [--no-lights] [--no-particles] [--no-beams] [--no-trails]\n\
-             \x20              [--no-gui]\n\
+             \x20              [--no-gui] [--show-development-gui]\n\
              \x20              [--orbit] [--speed <studs/s>] [--sensitivity <deg/px>]\n\
              \x20              [--clock-time <hours>] [--quality <auto|1..21>]\n\
              \x20              [--orthographic]\n\
@@ -145,6 +149,10 @@ impl Options {
              \x20 --no-beams    skip every Beam and downloading their textures\n\
              \x20 --no-trails   skip every Trail and downloading their textures\n\
              \x20 --no-gui      skip every ScreenGui, BillboardGui and SurfaceGui\n\
+             \x20 --show-development-gui\n\
+             \x20               draw the contents of StarterGui even where the place\n\
+             \x20               saved ShowDevelopmentGui off: that property hides them\n\
+             \x20               in Studio's edit view, which is what this viewer shows\n\
              \x20 --orbit       auto-orbit the scene until the first input, instead of\n\
              \x20               spawning the free camera at its center right away\n\
              \x20 --speed       free camera speed in studs/second (default {}, or scene\n\
@@ -230,6 +238,12 @@ impl Options {
 
     pub(crate) fn gui(&self) -> bool {
         self.gui
+    }
+
+    /// Whether to force `StarterGui.ShowDevelopmentGui` on — see
+    /// `crate::load::show_development_gui`.
+    pub(crate) fn show_development_gui(&self) -> bool {
+        self.show_development_gui
     }
 
     pub(crate) fn orbit(&self) -> bool {
