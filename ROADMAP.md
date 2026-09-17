@@ -422,6 +422,16 @@ Roblox's own engine.
 - [ ] 📋 `Light.Shadows` for `PointLight` (needs 6-face shadow maps; done
   for `SpotLight`/`SurfaceLight`).
 - [ ] 📋 Neon/`ForceField` shimmer, `Glass` refraction — currently flat.
+- [ ] 📋 **Throttle the renderer while the window is not focused.** The
+  viewport renders at the display's full rate whether or not anyone is
+  looking at it, which is wasted GPU/CPU (and fan noise, and battery on a
+  laptop) the moment the editor sits behind another window. When the
+  editor window loses focus, cap the render loop at 25–30 fps (a setting,
+  with those two as the presets); restore the full rate on the first
+  focus/input event so nothing feels sluggish coming back. Real Studio
+  does the same. The pacing code already exists (`shell::pacing` and the
+  viewer's `app::pacing`); this is a second target rate keyed off the
+  window's focus state, not a new loop.
 - [ ] 📋 **An FPS/frame-time readout**, matching real Studio's own
   performance-debugging surface rather than inventing a new one: Studio's
   `Window > Performance > Stats` toggles a debug stats overlay, and
@@ -830,6 +840,22 @@ against `Roblox/creator-docs` rather than assumed:
     through the same undo history every other edit uses, so the main
     viewport's overlay follows live. Real Studio's own "UI Editor" mode
     is the reference point for what the handles do.
+  - **`ViewportFrame` authoring, in the same Design tab.** Setting one up
+    in real Studio is notoriously painful: the `Camera` has to be created
+    and parented by hand, its `CFrame` typed in or scripted, the model
+    cloned under the frame, and every adjustment means re-running that
+    dance with no live preview. Here a `ViewportFrame` selected on the
+    canvas gets its own editing surface — its own window, or a large
+    pop-out from the Design tab, since it needs room a dock does not have —
+    that renders the frame's contents exactly as the viewer's
+    `ViewportFrame` support draws them, with a free-flight camera whose
+    pose is written straight to the frame's `CurrentCamera` (created on
+    the spot if the frame has none), an "insert from Workspace" action
+    that clones a selected `Model`/`BasePart` under the frame, framing
+    ("fit the model") buttons, and the frame's `Ambient`/`LightColor`/
+    `LightDirection`/`ImageColor3`/`ImageTransparency` beside it with the
+    result updating live. Every write goes through the undo history like
+    the rest of the tab.
 - [ ] 📋 **3D asset import and round-trip through Roblox**, i.e. import a
   local `.fbx`/`.obj`/`.gltf` (drag-and-drop or
   `Insert > Model/Mesh/Image`), upload it to Roblox as a real asset via
