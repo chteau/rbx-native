@@ -7,6 +7,8 @@
 //! regrouping by texture the way the ribbon passes do would reorder the paint
 //! and is not available here.
 
+mod text;
+
 use std::collections::HashMap;
 use std::ops::Range;
 
@@ -15,6 +17,7 @@ use rbx_assets::AssetRef;
 use super::atlas::Slot;
 use super::gradient::Rows;
 use super::pipeline::VertexRaw;
+use super::text::Typesetter;
 use crate::scene::{GuiElement, GuiRect};
 
 mod image;
@@ -49,6 +52,25 @@ pub(super) fn build(
     elements: &[GuiElement],
     textures: &HashMap<AssetRef, Slot>,
     target: (u32, u32),
+    fonts: &mut Typesetter,
+) -> (Vec<VertexRaw>, Vec<Run>, Rows) {
+    loop {
+        let generation = fonts.atlas.generation();
+        let built = build_once(elements, textures, target, fonts);
+        // The glyph atlas grew part-way through and every UV handed out
+        // before that names the old packing: once more over the same
+        // elements, every glyph now cached. Growth is bounded, so this ends.
+        if fonts.atlas.generation() == generation {
+            return built;
+        }
+    }
+}
+
+fn build_once(
+    elements: &[GuiElement],
+    textures: &HashMap<AssetRef, Slot>,
+    target: (u32, u32),
+    fonts: &mut Typesetter,
 ) -> (Vec<VertexRaw>, Vec<Run>, Rows) {
     let mut vertices = Vec::new();
     let mut runs: Vec<Run> = Vec::new();
@@ -145,6 +167,39 @@ pub(super) fn build(
                 quad(&rect, UV_WHOLE, &paint, &shape, &spin, &mut vertices);
                 extend(&mut runs, WHITE, scissor, start..vertices.len());
             }
+        }
+
+        // Last, over the background and the image, as Roblox layers a text
+        // object. A `UIStroke` in `ApplyStrokeMode.Contextual` on a text
+        // object outlines the glyphs like `TextStrokeColor3` does, at its
+        // own `Thickness`.
+        if let Some(typeset) = &element.text {
+            let mut strokes = text::strokes(&typeset.text);
+            if let Some(stroke) = &element.stroke {
+                if stroke.on_text && stroke.alpha > 0.0 {
+                    strokes.push(text::Stroke {
+                        color: stroke.color,
+                        alpha: stroke.alpha,
+                        thickness: stroke.band[1] - stroke.band[0],
+                    });
+                }
+            }
+            let paint = Paint {
+                color: typeset.text.color,
+                alpha: typeset.text.alpha,
+                band: FILL,
+                gradient,
+            };
+            text::emit(
+                &element.rect,
+                typeset,
+                &strokes,
+                (&paint, &fill, &spin),
+                scissor,
+                fonts,
+                &mut vertices,
+                &mut runs,
+            );
         }
     }
 

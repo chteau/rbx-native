@@ -15,6 +15,7 @@ use rbx_reflection::ReflectionDatabase;
 pub(crate) use fetcher::Source;
 pub(crate) use resident::{Answered, Resident};
 
+use crate::fonts::Library;
 use crate::lighting::{self, Lighting, LocalLight};
 use crate::renderer::World;
 use crate::scene::{Placement, Scene};
@@ -79,6 +80,10 @@ pub(crate) struct Loaded {
     /// rather than inside those passes so that no pass ever resolves an asset
     /// on the thread that draws.
     images: Answered,
+    /// Every font face the GUI trees' text asked for, as far as the loader
+    /// has answered: a two-stage fetch (the family's JSON, then the face file
+    /// it names) that the renderer's typesetter reads its faces out of.
+    fonts: Library,
     toggles: Toggles,
     /// Every reference this place has asked the loader for. What
     /// `Headless` checks a landing against before re-resolving anything: a
@@ -146,6 +151,7 @@ impl Loaded {
             lighting: Lighting::from_dom(dom, database, toggles.clock_time),
             lights: Vec::new(),
             images: Answered::default(),
+            fonts: Library::default(),
             toggles,
             wanted: Vec::new(),
             warnings: Vec::new(),
@@ -242,6 +248,7 @@ impl Loaded {
             lighting: &self.lighting,
             lights: &self.lights,
             images: &self.images,
+            fonts: &self.fonts,
         }
     }
 }

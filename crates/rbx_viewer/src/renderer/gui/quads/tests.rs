@@ -27,10 +27,21 @@ fn element(rect: GuiRect, clip: Option<GuiRect>) -> GuiElement {
         corner_radii: [0.0; 4],
         stroke: None,
         gradient: None,
+        text: None,
     }
 }
 
 const VIEWPORT: (u32, u32) = (800, 600);
+
+/// [`super::build`] for elements with no text, which need no typesetter of
+/// their own. Shadows the glob import above.
+fn build(
+    elements: &[GuiElement],
+    textures: &HashMap<AssetRef, Slot>,
+    target: (u32, u32),
+) -> (Vec<VertexRaw>, Vec<Run>, Rows) {
+    super::build(elements, textures, target, &mut Typesetter::new())
+}
 
 #[test]
 fn a_clip_rounds_outwards_so_no_seam_shows_along_its_own_edge() {

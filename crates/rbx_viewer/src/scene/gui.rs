@@ -17,14 +17,13 @@
 //! rules to the tree it sits in, so [`plan`] reads each instance's properties
 //! through that view rather than straight off the DOM.
 //!
-//! # What is not read here
-//! Text itself: a `TextLabel`/`TextButton`/`TextBox` draws its background and
-//! border like a `Frame`, but its glyphs need font loading and shaping, which
-//! is a dependency decision this viewer has not made. Of the `UIComponent`
-//! family the layouts are read (see [`plan::Layout`]) along with `UIFlexItem`,
-//! everything that changes an element's size — `UIPadding`, `UIScale`, the
-//! `UIConstraint` classes — and the appearance modifiers `UICorner`,
-//! `UIStroke` and `UIGradient`.
+//! Text (`TextLabel`/`TextButton`/`TextBox`) is read into [`plan::Text`] and
+//! measured through [`layout::TextMeasure`], which the renderer's typesetter
+//! implements: shaping needs a font system, and none lives here. Of the
+//! `UIComponent` family the layouts are read (see [`plan::Layout`]) along
+//! with `UIFlexItem`, everything that changes an element's size —
+//! `UIPadding`, `UIScale`, the `UIConstraint` classes — and the appearance
+//! modifiers `UICorner`, `UIStroke` and `UIGradient`.
 
 mod layout;
 mod plan;
@@ -33,10 +32,15 @@ mod style;
 
 #[cfg(test)]
 pub(crate) use layout::StrokePx;
+#[cfg(test)]
+pub(crate) use layout::{resolve, resolve_canvas};
 pub(crate) use layout::{
-    resolve, resolve_canvas, Element, GradientPx, ImageScale, Painted, PixelRect, Rect,
+    resolve_canvas_with, resolve_with, Element, GradientPx, ImageScale, Painted, PixelRect, Rect,
+    TextMeasure, Typeset,
 };
-pub(crate) use plan::{plan, GradientKind, Join, Screen, Tile};
+#[cfg(test)]
+pub(crate) use plan::TextSpan;
+pub(crate) use plan::{plan, span_face, Align, GradientKind, Join, Screen, Text, Tile};
 pub(crate) use space::{plan as plan_space, Anchor, SpaceGui};
 
 #[cfg(test)]

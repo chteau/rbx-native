@@ -16,6 +16,7 @@ mod image;
 mod layouts;
 mod props;
 mod stroke;
+mod text;
 
 use constraints::{automatic_size, border_mode, constraints, size_axes};
 pub(super) use constraints::{global_z_index, Aspect, Border, Constraints, SizeAxes};
@@ -27,16 +28,25 @@ pub(super) use image::{Fill, ScaleMode};
 // Reaches all the way to `renderer::gui::quads::image`, unlike `Fill`/
 // `ScaleMode` above — see the type's own doc comment.
 pub(crate) use image::PixelRect;
-pub(super) use layouts::{layout_of, Align, Flex, FlexItem, Grid, Layout, LineAlign, List, Table};
+pub(crate) use layouts::Align;
+pub(super) use layouts::{layout_of, Flex, FlexItem, Grid, Layout, LineAlign, List, Table};
 use props::{alpha, color, degrees, enum_of};
 pub(super) use props::{flag, integer, span, vector2};
 pub(crate) use stroke::Join;
 pub(super) use stroke::{Stroke, StrokePosition};
+#[cfg(test)]
+pub(crate) use text::Span as TextSpan;
+pub(crate) use text::{span_face, Text};
+
+use crate::fonts::Face;
 
 const SCREEN_CLASS: &str = "ScreenGui";
 const ELEMENT_CLASS: &str = "GuiObject";
-/// The classes whose `UIStroke` outlines glyphs rather than the box.
+/// The three text classes share every text property, so one reader serves
+/// all of them — and their `UIStroke` outlines glyphs rather than the box;
+/// only the `TextBox` placeholder rule tells them apart.
 const TEXT_CLASSES: [&str; 3] = ["TextLabel", "TextButton", "TextBox"];
+const TEXT_BOX_CLASS: &str = "TextBox";
 
 /// Roblox's own default `BorderColor3`, `Color3.fromRGB(27, 42, 53)`. Only
 /// ever seen on a tree built in code: a place file serializes the property.
@@ -61,11 +71,6 @@ impl Span {
 
 /// One `GuiObject` and everything under it, `Visible = false` subtrees already
 /// pruned away.
-///
-/// Text (`TextLabel`/`TextButton`/`TextBox`) is read like any other box: its
-/// background and border draw, the glyphs do not.
-///
-/// TODO: render text once a font stack is chosen.
 #[derive(Clone)]
 pub(super) struct Node {
     /// Only read for `SortOrder.Name` under a [`List`].
@@ -93,11 +98,10 @@ pub(super) struct Node {
     pub(super) size_constraint: SizeAxes,
     /// What this element's own `UIComponent` children say about its size.
     pub(super) constraints: Constraints,
-    /// Content this element holds that is not a child node — a text element's
-    /// own measured bounds. Counted alongside the children's extent when
-    /// [`Node::automatic_size`] grows the box.
-    pub(super) content_size: Option<[f32; 2]>,
     pub(super) fill: Option<Fill>,
+    /// The text of a `TextLabel`/`TextButton`/`TextBox`, drawn over the
+    /// background and image.
+    pub(super) text: Option<Text>,
     /// The layout among this node's children, arranging them.
     pub(super) list: Option<Layout>,
     /// A `UIFlexItem` of this node's own, flexing it inside its parent's
@@ -116,6 +120,7 @@ impl Node {
         self.background_alpha > 0.0
             || self.fill.as_ref().is_some_and(|fill| fill.alpha > 0.0)
             || self.stroke.is_some_and(|stroke| stroke.alpha > 0.0)
+            || self.text.as_ref().is_some_and(Text::visible)
             || self.children.iter().any(Node::paints)
     }
 }
@@ -141,6 +146,22 @@ impl Screen {
         for root in &self.roots {
             collect_assets(root, into);
         }
+    }
+
+    /// Every font face the screen's text wants, in first-seen paint order.
+    pub(crate) fn fonts(&self, into: &mut Vec<Face>) {
+        for root in &self.roots {
+            collect_fonts(root, into);
+        }
+    }
+}
+
+pub(super) fn collect_fonts(node: &Node, into: &mut Vec<Face>) {
+    if let Some(text) = &node.text {
+        text.faces(into);
+    }
+    for child in &node.children {
+        collect_fonts(child, into);
     }
 }
 
@@ -252,8 +273,9 @@ fn element(
         automatic_size: automatic_size(properties),
         size_constraint: size_axes(properties),
         constraints: constraints(dom, database, instance.children()),
-        content_size: None,
         fill: fill(properties),
+        text: is_text(database, class)
+            .then(|| text::text(properties, database.is_subclass_of(class, TEXT_BOX_CLASS))),
         list: layout_of(dom, database, styles, instance.children()),
         flex: layouts::flex_item(dom, database, styles, instance.children()),
         corner: corner::read(dom, database, styles, instance.children()),

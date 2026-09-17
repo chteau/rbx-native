@@ -5,12 +5,17 @@
 //! siblings stack along, and a *minor* axis, the one their cells run along.
 //! `MajorAxis.RowMajor` makes the major axis Y; `ColumnMajor` swaps the two.
 
-use super::{offset, ordered, Rect};
+use super::{offset, ordered, Rect, TextMeasure};
 use crate::scene::gui::plan::{Node, Table};
 
 /// One rect per sibling, one rect per cell of each sibling (in that sibling's
 /// own child order), and the extent the table covers.
-pub(super) fn table(nodes: &[Node], table: &Table, parent: &Rect) -> Laid {
+pub(super) fn table(
+    nodes: &[Node],
+    table: &Table,
+    parent: &Rect,
+    measure: &mut dyn TextMeasure,
+) -> Laid {
     let extent = parent.size();
     let padding = table.padding.against(extent);
     let major = usize::from(table.row_major);
@@ -33,14 +38,14 @@ pub(super) fn table(nodes: &[Node], table: &Table, parent: &Rect) -> Laid {
     let mut majors = vec![0.0f32; order.len()];
     for (slot, &row) in order.iter().enumerate() {
         for (column, &cell) in cells[row].iter().enumerate() {
-            let size = super::sizing::extent(&nodes[row].children[cell], extent);
+            let size = super::sizing::extent(&nodes[row].children[cell], extent, measure);
             minors[column] = minors[column].max(size[minor]);
             majors[slot] = majors[slot].max(size[major]);
         }
         if cells[row].is_empty() {
             // A sibling with no cells of its own still takes up a band, and
             // its own `Size` is the only thing left to measure it by.
-            majors[slot] = super::sizing::extent(&nodes[row], extent)[major];
+            majors[slot] = super::sizing::extent(&nodes[row], extent, measure)[major];
         }
     }
 

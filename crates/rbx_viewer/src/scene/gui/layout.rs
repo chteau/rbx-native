@@ -5,6 +5,8 @@
 //! which is the frame `UDim2` itself is written in; the renderer is what turns
 //! them into clip space.
 
+mod text;
+
 use rbx_assets::AssetRef;
 
 use super::plan::{Align, Fill, Layout, Node, ScaleMode, Screen, Span};
@@ -18,6 +20,8 @@ mod list;
 mod modifiers;
 mod sizing;
 mod table;
+
+pub(crate) use text::{TextMeasure, Typeset};
 
 pub(crate) use modifiers::{GradientPx, StrokePx};
 
@@ -115,12 +119,29 @@ pub(crate) struct Element {
     pub(crate) corner_radii: [f32; 4],
     pub(crate) stroke: Option<StrokePx>,
     pub(crate) gradient: Option<GradientPx>,
+    /// A text object's text, drawn over the background and image.
+    pub(crate) text: Option<Typeset>,
 }
 
 /// Every element of every screen, in paint order: `DisplayOrder` first, then
 /// `ZIndex` among siblings, then tree order — and a child always over its
 /// parent, which is what `ZIndexBehavior.Sibling` (the default) means.
+///
+/// Text is laid out at `TextSize` as is, unmeasured: what a test with no font
+/// system wants, and what the renderer never calls — see [`resolve_with`].
+#[cfg(test)]
 pub(crate) fn resolve(screens: &[Screen], viewport: [f32; 2]) -> Vec<Element> {
+    resolve_with(screens, viewport, &mut text::Unmeasured)
+}
+
+/// [`resolve`] with the text measured by `measure` — what the renderer calls,
+/// so `TextScaled` and an `AutomaticSize` text box come out at the size the
+/// glyphs will actually take.
+pub(crate) fn resolve_with(
+    screens: &[Screen],
+    viewport: [f32; 2],
+    measure: &mut dyn TextMeasure,
+) -> Vec<Element> {
     let mut order: Vec<&Screen> = screens.iter().collect();
     // Stable, so two screens sharing a `DisplayOrder` keep the order the DOM
     // holds them in rather than an arbitrary one.
@@ -145,6 +166,7 @@ pub(crate) fn resolve(screens: &[Screen], viewport: [f32; 2]) -> Vec<Element> {
                 global_z_index: screen.global_z_index,
                 ..Context::default()
             },
+            measure,
             &mut elements,
         );
         if screen.global_z_index {
@@ -161,7 +183,13 @@ pub(crate) fn resolve(screens: &[Screen], viewport: [f32; 2]) -> Vec<Element> {
 /// canvas instead of the viewport: a container drawn into an offscreen texture
 /// is a viewport of `canvas` pixels as far as a `UDim2` is concerned, which is
 /// the whole reason this and [`resolve`] are one code path.
+#[cfg(test)]
 pub(crate) fn resolve_canvas(gui: &SpaceGui) -> Vec<Element> {
+    resolve_canvas_with(gui, &mut text::Unmeasured)
+}
+
+/// [`resolve_canvas`] with the text measured — see [`resolve_with`].
+pub(crate) fn resolve_canvas_with(gui: &SpaceGui, measure: &mut dyn TextMeasure) -> Vec<Element> {
     let frame = canvas(gui.canvas);
     let mut elements = Vec::new();
     children(
@@ -173,6 +201,7 @@ pub(crate) fn resolve_canvas(gui: &SpaceGui) -> Vec<Element> {
             global_z_index: gui.global_z_index,
             ..Context::default()
         },
+        measure,
         &mut elements,
     );
     if gui.global_z_index {
@@ -247,10 +276,15 @@ pub(crate) struct Arranged {
 
 /// Places `nodes` inside `parent` under `layout`, or by their own `Position`
 /// and `Size` where there is none.
-pub(crate) fn arrange(nodes: &[Node], layout: Option<&Layout>, parent: &Rect) -> Arranged {
+pub(crate) fn arrange(
+    nodes: &[Node],
+    layout: Option<&Layout>,
+    parent: &Rect,
+    measure: &mut dyn TextMeasure,
+) -> Arranged {
     match layout {
         Some(Layout::List(spec)) => {
-            let (rects, size) = list::stacked(nodes, spec, parent);
+            let (rects, size) = list::stacked(nodes, spec, parent, measure);
             Arranged {
                 rects,
                 size,
@@ -258,7 +292,7 @@ pub(crate) fn arrange(nodes: &[Node], layout: Option<&Layout>, parent: &Rect) ->
             }
         }
         Some(Layout::Grid(spec)) => {
-            let (rects, size) = grid::grid(nodes, spec, parent);
+            let (rects, size) = grid::grid(nodes, spec, parent, measure);
             Arranged {
                 rects,
                 size,
@@ -266,7 +300,7 @@ pub(crate) fn arrange(nodes: &[Node], layout: Option<&Layout>, parent: &Rect) ->
             }
         }
         Some(Layout::Table(spec)) => {
-            let laid = table::table(nodes, spec, parent);
+            let laid = table::table(nodes, spec, parent, measure);
             Arranged {
                 rects: laid.rects,
                 size: laid.size,
@@ -279,7 +313,7 @@ pub(crate) fn arrange(nodes: &[Node], layout: Option<&Layout>, parent: &Rect) ->
                 .map(|node| {
                     place(
                         node.position,
-                        sizing::extent(node, parent.size()),
+                        sizing::extent(node, parent.size(), measure),
                         node.anchor,
                         parent,
                     )
@@ -309,6 +343,7 @@ fn children(
     parent: &Rect,
     given: Option<&[Rect]>,
     context: Context,
+    measure: &mut dyn TextMeasure,
     into: &mut Vec<Element>,
 ) {
     let arranged = match given {
@@ -317,7 +352,7 @@ fn children(
             size: content_size(rects),
             cells: None,
         },
-        None => arrange(nodes, layout, parent),
+        None => arrange(nodes, layout, parent, measure),
     };
     for index in sorted(nodes, context.global_z_index) {
         let cells = arranged.cells.as_ref().map(|cells| &cells[index][..]);
@@ -326,6 +361,7 @@ fn children(
             context.carried(arranged.rects[index]),
             cells,
             context,
+            measure,
             into,
         );
     }
@@ -379,8 +415,16 @@ fn emit(
     rect: Rect,
     cells: Option<&[Rect]>,
     context: Context,
+    measure: &mut dyn TextMeasure,
     into: &mut Vec<Element>,
 ) {
+    // Settled before the children are placed: an `AutomaticSize` text box
+    // grows here, and its children resolve against the grown box.
+    let mut rect = rect;
+    let text = node
+        .text
+        .as_ref()
+        .map(|text| text::typeset(text, &mut rect, measure));
     let corner_radii = modifiers::radii(node.corner.as_ref(), rect.size());
     let rounded = corner_radii.iter().any(|&radius| radius > 0.0);
     into.push(Element {
@@ -402,6 +446,7 @@ fn emit(
             .gradient
             .as_ref()
             .map(|gradient| modifiers::gradient(gradient, rect.size())),
+        text,
     });
 
     // Roblox's own docs describe two modes here, gated on the (NotScriptable,
@@ -432,6 +477,7 @@ fn emit(
             },
             ..context
         },
+        measure,
         into,
     );
 }

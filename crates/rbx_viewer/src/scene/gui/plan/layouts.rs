@@ -29,7 +29,7 @@ pub(in crate::scene::gui) enum Layout {
 /// other. `Start` is Left/Top, `End` Right/Bottom; the two Roblox enums share
 /// ordinals (Center = 0, Left/Top = 1, Right/Bottom = 2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::scene::gui) enum Align {
+pub(crate) enum Align {
     Center,
     Start,
     End,

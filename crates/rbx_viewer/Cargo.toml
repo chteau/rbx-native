@@ -35,3 +35,10 @@ glam = "0.33"
 bytemuck = { version = "1.25", features = ["derive"] }
 pollster = "1.0"
 png = "0.18"
+# Text shaping and glyph rasterisation for `TextLabel`/`TextButton`/`TextBox`
+# (see `renderer::gui::text`). Already in `Cargo.lock` through the editor's
+# GPUI, so this pins the same version rather than adding one.
+cosmic-text = "0.19"
+# Roblox describes a font family as a small JSON file (`fonts/families/*.json`,
+# see `fonts::Family`); already in `Cargo.lock` through `rbx_cloud`.
+serde_json = "1"

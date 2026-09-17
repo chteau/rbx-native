@@ -18,6 +18,7 @@
 use rbx_assets::AssetRef;
 
 use super::{Loaded, Resident};
+use crate::fonts::Family;
 use crate::textures::Decor;
 
 impl Loaded {
@@ -36,6 +37,7 @@ impl Loaded {
         warnings.extend(self.resolve_materials(resident));
         warnings.extend(self.resolve_decor(resident));
         self.resolve_effect_images(resident);
+        self.resolve_fonts(resident);
         warnings
     }
 
@@ -159,6 +161,45 @@ impl Loaded {
         self.want(&references);
         resident.images(&references);
         self.images = resident.answered(&references);
+    }
+
+    /// Asks for the fonts the GUI trees' text wants, in the two stages a
+    /// Roblox font takes: a family is a JSON file listing its faces, and only
+    /// once that is in is it known which face file a weight and style come to
+    /// (see `fonts::Family::closest`). A streaming loader answers the first
+    /// stage on one landing and the second on the next; a blocking one runs
+    /// both here.
+    ///
+    /// Warnings are dropped like the effect images' are: a face that will not
+    /// download leaves its text in the typesetter's fallback face, which is
+    /// what a missing font looks like in Roblox too.
+    pub(crate) fn resolve_fonts(&mut self, resident: &mut Resident) {
+        let faces = self.scene.gui_fonts();
+        let families: Vec<AssetRef> = faces
+            .iter()
+            .map(|face| face.family.clone())
+            .filter(|family| !self.fonts.families.contains_key(family))
+            .collect();
+        self.want(&families);
+        let (answered, _) = resident.bytes(&families);
+        for (reference, bytes) in answered {
+            if let Some(family) = Family::parse(&bytes) {
+                self.fonts.families.insert(reference, family);
+            }
+        }
+
+        let files: Vec<AssetRef> = faces
+            .iter()
+            .filter_map(|face| Some(self.fonts.entry_of(face)?.asset.clone()))
+            .filter(|file| !self.fonts.faces.contains_key(file))
+            .collect();
+        self.want(&files);
+        let (answered, _) = resident.bytes(&files);
+        for (reference, bytes) in answered {
+            self.fonts
+                .faces
+                .insert(reference, std::sync::Arc::new(bytes));
+        }
     }
 
     fn want(&mut self, references: &[AssetRef]) {

@@ -1,6 +1,6 @@
 //! `UIGridLayout` placement: uniform cells filled a line at a time.
 
-use super::{offset, ordered, Rect};
+use super::{offset, ordered, Rect, TextMeasure};
 use crate::scene::gui::plan::{Grid, Node};
 
 /// One rect per node in `nodes`'s own order, plus the extent the grid covers.
@@ -10,7 +10,12 @@ use crate::scene::gui::plan::{Grid, Node};
 /// `UISizeConstraint`/`UIAspectRatioConstraint` on an item, letting it span
 /// several cells; constraints are another module's business, so a cell here is
 /// always exactly one cell.
-pub(super) fn grid(nodes: &[Node], grid: &Grid, parent: &Rect) -> (Vec<Rect>, [f32; 2]) {
+pub(super) fn grid(
+    nodes: &[Node],
+    grid: &Grid,
+    parent: &Rect,
+    _measure: &mut dyn TextMeasure,
+) -> (Vec<Rect>, [f32; 2]) {
     let extent = parent.size();
     let cell = grid.cell.against(extent);
     let padding = grid.cell_padding.against(extent);

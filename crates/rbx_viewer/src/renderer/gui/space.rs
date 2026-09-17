@@ -15,10 +15,11 @@ use glam::{Mat4, Vec3};
 
 use super::atlas::Atlas;
 use super::paint::Painter;
+use super::text::Typesetter;
 use crate::renderer::pipeline::Target;
 use crate::renderer::post::Targets;
 use crate::renderer::texture;
-use crate::scene::{gui_canvas_layout, GuiAnchor, SpaceGui};
+use crate::scene::{gui_canvas_layout_with, GuiAnchor, SpaceGui};
 use pipeline::{CameraRaw, VertexRaw};
 
 /// Canvases are painted in this format rather than in the display's: the
@@ -64,7 +65,8 @@ impl Space {
         queue: &wgpu::Queue,
         target: Target,
         viewport_layout: &wgpu::BindGroupLayout,
-        atlas: &Atlas,
+        atlas: &mut Atlas,
+        fonts: &mut Typesetter,
         spaces: &[SpaceGui],
     ) -> Self {
         let camera_layout = pipeline::camera_layout(device);
@@ -99,7 +101,7 @@ impl Space {
             vertices: None,
             vertex_capacity: 0,
         };
-        space.rebuild(device, queue, viewport_layout, atlas, spaces);
+        space.rebuild(device, queue, viewport_layout, atlas, fonts, spaces);
         space
     }
 
@@ -111,7 +113,8 @@ impl Space {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         viewport_layout: &wgpu::BindGroupLayout,
-        atlas: &Atlas,
+        atlas: &mut Atlas,
+        fonts: &mut Typesetter,
         spaces: &[SpaceGui],
     ) {
         self.canvases.clear();
@@ -142,7 +145,7 @@ impl Space {
             )
         });
         for gui in spaces {
-            let canvas = bake(device, queue, &mut painter, atlas, gui);
+            let canvas = bake(device, queue, &mut painter, atlas, fonts, gui);
             self.canvases.push(Canvas {
                 bind_group: self.bind(device, &canvas, &sampler),
                 texture: canvas,
@@ -304,7 +307,8 @@ fn bake(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     painter: &mut Painter,
-    atlas: &Atlas,
+    atlas: &mut Atlas,
+    fonts: &mut Typesetter,
     gui: &SpaceGui,
 ) -> wgpu::Texture {
     let size = (gui.canvas[0].max(1.0) as u32, gui.canvas[1].max(1.0) as u32);
@@ -327,10 +331,12 @@ fn bake(
     painter.prepare(
         device,
         queue,
-        &gui_canvas_layout(gui),
+        &gui_canvas_layout_with(gui, fonts),
         atlas.slot_of(),
         size,
+        fonts,
     );
+    atlas.sync_glyphs(device, queue, &mut fonts.atlas);
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("rbxview gui canvas"),
     });

@@ -15,10 +15,10 @@
 //!    element back outside `MinSize`/`MaxSize`.
 
 use super::super::plan::{Aspect, Node};
-use super::Rect;
+use super::{Rect, TextMeasure};
 
 /// The element's final pixel size inside a parent box of `parent` pixels.
-pub(super) fn extent(node: &Node, parent: [f32; 2]) -> [f32; 2] {
+pub(super) fn extent(node: &Node, parent: [f32; 2], measure: &mut dyn TextMeasure) -> [f32; 2] {
     let mut size = node.size.against(node.size_constraint.against(parent));
 
     if let Some(scale) = node.constraints.scale {
@@ -26,7 +26,7 @@ pub(super) fn extent(node: &Node, parent: [f32; 2]) -> [f32; 2] {
     }
 
     if node.automatic_size != [false, false] {
-        let content = content_extent(node, size);
+        let content = content_extent(node, size, measure);
         for axis in 0..2 {
             if node.automatic_size[axis] {
                 size[axis] = size[axis].max(content[axis]);
@@ -73,7 +73,7 @@ fn inset(rect: &Rect, sides: &[f32; 4]) -> Rect {
 /// sized or positioned by scale contributes only its offsets. The docs
 /// describe neither that circularity nor what a scale-sized child should do,
 /// and this is the only reading that terminates.
-fn content_extent(node: &Node, size: [f32; 2]) -> [f32; 2] {
+fn content_extent(node: &Node, size: [f32; 2], measure: &mut dyn TextMeasure) -> [f32; 2] {
     let probe = [
         if node.automatic_size[0] { 0.0 } else { size[0] },
         if node.automatic_size[1] { 0.0 } else { size[1] },
@@ -93,11 +93,16 @@ fn content_extent(node: &Node, size: [f32; 2]) -> [f32; 2] {
         height: (probe[1] - sides[2] - sides[3]).max(0.0),
     };
 
-    // The content's own bounding box, which a centred `UIListLayout` can put
-    // partly left of the origin once the box it centres in is zero wide.
+    // A text object's own glyphs count as content too, measured at the size
+    // they will be drawn — `TextScaled` has no box to scale into yet, so it
+    // is read as `TextSize` here.
     let mut low = [0.0f32; 2];
-    let mut high = node.content_size.unwrap_or([0.0; 2]);
-    for rect in super::arrange(&node.children, node.list.as_ref(), &inner).rects {
+    let mut high = node.text.as_ref().map_or([0.0; 2], |text| {
+        let (min, max) = text.size_bounds.unwrap_or((text.size, text.size));
+        let size = text.size.clamp(min, max.max(min));
+        measure.measure(text, size, super::text::wrap_width(text, &inner))
+    });
+    for rect in super::arrange(&node.children, node.list.as_ref(), &inner, measure).rects {
         low[0] = low[0].min(rect.x);
         low[1] = low[1].min(rect.y);
         high[0] = high[0].max(rect.x + rect.width);

@@ -80,3 +80,4 @@ mod placement;
 mod properties;
 mod style;
 mod table;
+mod text;

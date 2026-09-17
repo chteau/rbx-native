@@ -13,6 +13,7 @@ use super::atlas::Slot;
 use super::gradient::Table;
 use super::pipeline::{self, VertexRaw, ViewportRaw};
 use super::quads::{self, Run};
+use super::text::Typesetter;
 use crate::scene::GuiElement;
 
 pub(super) struct Painter {
@@ -71,6 +72,9 @@ impl Painter {
     /// Turns `elements` into the quads a target of `size` pixels wants, and
     /// uploads them. Must not run inside a render pass: it writes the very
     /// buffers [`Painter::draw`] reads.
+    ///
+    /// The glyphs the text quads sample land in `fonts`' atlas, which the
+    /// caller uploads afterwards (see `Atlas::sync_glyphs`).
     pub(super) fn prepare(
         &mut self,
         device: &wgpu::Device,
@@ -78,6 +82,7 @@ impl Painter {
         elements: &[GuiElement],
         slot_of: &HashMap<AssetRef, Slot>,
         size: (u32, u32),
+        fonts: &mut Typesetter,
     ) {
         queue.write_buffer(
             &self.viewport_buffer,
@@ -88,7 +93,7 @@ impl Painter {
             }),
         );
 
-        let (vertices, runs, rows) = quads::build(elements, slot_of, size);
+        let (vertices, runs, rows) = quads::build(elements, slot_of, size, fonts);
         self.runs = runs;
         self.gradients.upload(device, queue, &rows);
         if vertices.is_empty() {
@@ -227,9 +232,17 @@ mod tests {
                 kind: GuiGradientKind::Linear,
                 tile: GuiTile::Clamp,
             }),
+            text: None,
         };
         let size = (64, 48);
-        painter.prepare(&device, &queue, &[element], &HashMap::new(), size);
+        painter.prepare(
+            &device,
+            &queue,
+            &[element],
+            &HashMap::new(),
+            size,
+            &mut Typesetter::new(),
+        );
 
         let target = device.create_texture(&wgpu::TextureDescriptor {
             label: None,

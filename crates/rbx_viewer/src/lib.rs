@@ -23,6 +23,7 @@ mod capture;
 mod changes;
 mod cli;
 mod controller;
+mod fonts;
 pub mod gizmo;
 mod gpu;
 mod headless;

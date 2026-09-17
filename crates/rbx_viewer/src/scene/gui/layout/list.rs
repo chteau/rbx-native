@@ -5,7 +5,7 @@
 //! is on. Both axes are laid out by the same [`spread`]: a line of items on
 //! the fill axis, and the lines themselves on the cross axis.
 
-use super::{content_size, offset, ordered, Rect};
+use super::{content_size, offset, ordered, Rect, TextMeasure};
 use crate::scene::gui::plan::{Align, Flex, FlexItem, LineAlign, List, Node};
 
 /// Slack big enough to swallow the float error a scale-resolved size carries,
@@ -25,7 +25,12 @@ struct Flexed {
 /// along the fill axis with `Padding` between them, and resized only where
 /// flex says so. `Position` and `AnchorPoint` are ignored, as Roblox ignores
 /// them.
-pub(super) fn stacked(nodes: &[Node], list: &List, parent: &Rect) -> (Vec<Rect>, [f32; 2]) {
+pub(super) fn stacked(
+    nodes: &[Node],
+    list: &List,
+    parent: &Rect,
+    measure: &mut dyn TextMeasure,
+) -> (Vec<Rect>, [f32; 2]) {
     let extent = parent.size();
     let along = usize::from(list.vertical);
     let across = 1 - along;
@@ -35,7 +40,7 @@ pub(super) fn stacked(nodes: &[Node], list: &List, parent: &Rect) -> (Vec<Rect>,
     // line's free space is handed out.
     let basis: Vec<[f32; 2]> = nodes
         .iter()
-        .map(|node| super::sizing::extent(node, extent))
+        .map(|node| super::sizing::extent(node, extent, measure))
         .collect();
     let order = ordered(nodes, list.by_name);
     let lines = wrap(&order, &basis, along, padding, extent[along], list.wraps);

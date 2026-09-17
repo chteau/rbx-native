@@ -360,8 +360,14 @@ fn a_child_sized_by_scale_along_an_automatic_axis_contributes_only_its_offset() 
 #[test]
 fn a_text_elements_own_content_size_grows_the_box_beside_its_children() {
     let (mut dom, gui) = screen_gui();
-    let parent = frame(&mut dom, gui, udim2(0.0, 0, 0.0, 0), udim2(0.0, 0, 0.0, 0));
+    let parent = dom.new_instance("TextLabel", "TextLabel", Some(gui));
+    dom.set_property(parent, "Size", udim2(0.0, 0, 0.0, 0))
+        .unwrap();
     dom.set_property(parent, "AutomaticSize", Variant::Enum(3))
+        .unwrap();
+    dom.set_property(parent, "Text", Variant::String("Twelve chars".to_string()))
+        .unwrap();
+    dom.set_property(parent, "TextSize", Variant::Float32(30.0))
         .unwrap();
     frame(
         &mut dom,
@@ -370,10 +376,25 @@ fn a_text_elements_own_content_size_grows_the_box_beside_its_children() {
         udim2(0.0, 10, 0.0, 90),
     );
 
-    // The hook the text side fills in once it has measured its own glyphs.
-    let mut planned = screens(&dom);
-    planned[0].roots[0].content_size = Some([120.0, 30.0]);
+    // Half the text size per character, one line: twelve characters at 30px
+    // measure 180 by 30.
+    struct Fixed;
+    impl crate::scene::gui::TextMeasure for Fixed {
+        fn measure(
+            &mut self,
+            text: &crate::scene::gui::Text,
+            size: f32,
+            _: Option<f32>,
+        ) -> [f32; 2] {
+            let characters: usize = text
+                .spans
+                .iter()
+                .map(|span| span.text.chars().count())
+                .sum();
+            [characters as f32 * size * 0.5, size]
+        }
+    }
 
-    let rect = resolve(&planned, VIEWPORT)[0].rect;
-    assert_eq!((rect.width, rect.height), (120.0, 90.0));
+    let rect = crate::scene::gui::resolve_with(&screens(&dom), VIEWPORT, &mut Fixed)[0].rect;
+    assert_eq!((rect.width, rect.height), (180.0, 90.0));
 }
