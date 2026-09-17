@@ -54,4 +54,5 @@ mod flex;
 mod grid;
 mod layout;
 mod properties;
+mod style;
 mod table;

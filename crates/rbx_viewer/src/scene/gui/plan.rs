@@ -9,6 +9,7 @@ use rbx_assets::AssetRef;
 use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
+use super::style::Styled;
 use crate::textures::asset_uri;
 
 mod layouts;
@@ -144,24 +145,31 @@ pub(super) fn collect_assets(node: &Node, into: &mut Vec<AssetRef>) {
 /// that iterator pops off a stack and so visits children backwards, while a
 /// GUI's paint order among equal `ZIndex` siblings is exactly tree order.
 pub(crate) fn plan(dom: &WeakDom, database: &ReflectionDatabase) -> Vec<Screen> {
+    let styles = Styled::new(dom);
     let mut screens = Vec::new();
     for &root in dom.root_refs() {
-        gather(dom, database, root, &mut screens);
+        gather(dom, database, &styles, root, &mut screens);
     }
     screens
 }
 
-fn gather(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref, into: &mut Vec<Screen>) {
+fn gather(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    styles: &Styled,
+    referent: Ref,
+    into: &mut Vec<Screen>,
+) {
     let Some(instance) = dom.get(referent) else {
         return;
     };
     if database.is_subclass_of(instance.class(), SCREEN_CLASS) {
-        let properties = instance.properties();
+        let properties = styles.properties_of(instance);
         if flag(properties, "Enabled", true) {
             into.push(Screen {
                 display_order: integer(properties, "DisplayOrder", 0),
-                list: layout_of(dom, database, instance.children()),
-                roots: elements(dom, database, instance.children()),
+                list: layout_of(dom, database, styles, instance.children()),
+                roots: elements(dom, database, styles, instance.children()),
             });
         }
         // A `ScreenGui` never nests inside another, and its own children are
@@ -169,18 +177,19 @@ fn gather(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref, into: &mu
         return;
     }
     for &child in instance.children() {
-        gather(dom, database, child, into);
+        gather(dom, database, styles, child, into);
     }
 }
 
 pub(super) fn elements(
     dom: &WeakDom,
     database: &ReflectionDatabase,
+    styles: &Styled,
     children: &[Ref],
 ) -> Vec<Node> {
     children
         .iter()
-        .filter_map(|&child| element(dom, database, child))
+        .filter_map(|&child| element(dom, database, styles, child))
         .collect()
 }
 
@@ -189,14 +198,19 @@ pub(super) fn elements(
 /// A class this viewer has no special handling for still becomes a node: an
 /// unknown `GuiObject` subclass draws its background like a `Frame` rather
 /// than vanishing.
-fn element(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> Option<Node> {
+fn element(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    styles: &Styled,
+    referent: Ref,
+) -> Option<Node> {
     let instance = dom.get(referent)?;
     let class = instance.class();
     if !database.is_subclass_of(class, ELEMENT_CLASS) {
         return None;
     }
 
-    let properties = instance.properties();
+    let properties = styles.properties_of(instance);
     // Roblox hides a whole subtree behind an invisible ancestor, so the
     // children never have to be read at all.
     if !flag(properties, "Visible", true) {
@@ -217,9 +231,9 @@ fn element(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> Optio
         clips: flag(properties, "ClipsDescendants", false),
         z_index: integer(properties, "ZIndex", 1),
         fill: fill(properties),
-        list: layout_of(dom, database, instance.children()),
-        flex: layouts::flex_item(dom, database, instance.children()),
-        children: elements(dom, database, instance.children()),
+        list: layout_of(dom, database, styles, instance.children()),
+        flex: layouts::flex_item(dom, database, styles, instance.children()),
+        children: elements(dom, database, styles, instance.children()),
     })
 }
 

@@ -16,6 +16,7 @@ use rbx_dom::{Instance, Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use super::plan::{collect_assets, elements, flag, layout_of, span, vector2, Layout, Node};
+use super::style::Styled;
 use crate::scene::beam::{world_cframe, ParentMap};
 use crate::scene::Placement;
 use crate::textures::NormalId;
@@ -107,9 +108,11 @@ pub(crate) fn plan(
 ) -> Vec<SpaceGui> {
     let parents = ParentMap::build(dom);
     let kinds = RefCell::new(HashMap::new());
+    let styles = Styled::new(dom);
     let context = Context {
         dom,
         database,
+        styles: &styles,
         parents: &parents,
         placements,
         kinds: &kinds,
@@ -127,6 +130,7 @@ pub(crate) fn plan(
 struct Context<'a> {
     dom: &'a WeakDom,
     database: &'a ReflectionDatabase,
+    styles: &'a Styled,
     parents: &'a ParentMap<'a>,
     placements: &'a HashMap<Ref, Placement>,
     /// Each class met so far, as `(billboard, surface)`: the walk asks the
@@ -177,12 +181,17 @@ fn read(
     parent: Option<Ref>,
     billboard: bool,
 ) -> Option<SpaceGui> {
-    let properties = instance.properties();
+    let properties = context.styles.properties_of(instance);
     if !flag(properties, "Enabled", true) {
         return None;
     }
     let adornee = adornee(context.dom, properties, parent)?;
-    let roots = elements(context.dom, context.database, instance.children());
+    let roots = elements(
+        context.dom,
+        context.database,
+        context.styles,
+        instance.children(),
+    );
     // A tree that paints nothing is every `SurfaceGui` holding only
     // transparent text in practice; allocating it a canvas is pure waste.
     if !roots.iter().any(Node::paints) {
@@ -222,7 +231,12 @@ fn read(
         canvas,
         always_on_top: flag(properties, "AlwaysOnTop", false),
         anchor,
-        list: layout_of(context.dom, context.database, instance.children()),
+        list: layout_of(
+            context.dom,
+            context.database,
+            context.styles,
+            instance.children(),
+        ),
         roots,
     })
 }

@@ -11,6 +11,7 @@ use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use super::{enum_of, flag, integer, span, Span};
+use crate::scene::gui::style::Styled;
 
 /// Every layout class this viewer resolves. Roblox honours exactly one layout
 /// per container, so a node holds at most one of these.
@@ -145,11 +146,12 @@ const SORT_LAYOUT_ORDER: u32 = 2;
 pub(in crate::scene::gui) fn layout_of(
     dom: &WeakDom,
     database: &ReflectionDatabase,
+    styles: &Styled,
     children: &[Ref],
 ) -> Option<Layout> {
     children.iter().find_map(|&child| {
         let instance = dom.get(child)?;
-        let properties = instance.properties();
+        let properties = styles.properties_of(instance);
         let class = instance.class();
         if is(database, class, LIST_CLASS) {
             Some(Layout::List(list(properties)))
@@ -178,13 +180,14 @@ fn is(database: &ReflectionDatabase, class: &str, target: &str) -> bool {
 pub(in crate::scene::gui) fn flex_item(
     dom: &WeakDom,
     database: &ReflectionDatabase,
+    styles: &Styled,
     children: &[Ref],
 ) -> Option<FlexItem> {
     let item = children.iter().find_map(|&child| {
         let instance = dom.get(child)?;
         is(database, instance.class(), FLEX_ITEM_CLASS).then_some(instance)
     })?;
-    let properties = item.properties();
+    let properties = styles.properties_of(item);
     // `FlexMode` as a grow:shrink pair, per `UIFlexItem.FlexMode`'s own docs.
     let (grow, shrink) = match enum_of(properties, "FlexMode", 0) {
         1 => (1.0, 0.0),
