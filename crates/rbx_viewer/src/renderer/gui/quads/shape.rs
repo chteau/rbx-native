@@ -49,7 +49,7 @@ pub(super) fn center(rect: &GuiRect) -> [f32; 2] {
 /// plain quad passes so the fragment's signed distance is always deep inside.
 /// Modest, so that `band`'s own far edge (`FILL`) keeps a comfortable margin
 /// within `f32` precision.
-const UNBOUNDED: f32 = 1.0e4;
+pub(super) const UNBOUNDED: f32 = 1.0e4;
 
 /// The band of a fill: everything inside the outline, nothing outside.
 pub(super) const FILL: [f32; 2] = [-1.0e5, 0.0];
@@ -101,12 +101,17 @@ pub(super) struct Paint<'a> {
     pub(super) gradient: Option<(usize, &'a GuiGradient)>,
 }
 
-/// Two triangles covering `rect`, the image repeating `repeat` times across
-/// it and every corner turned by `spin` — an identity `Spin` (zero rotation)
-/// leaves them exactly where `rect` puts them.
+/// The UV corners of a quad sampling a whole texture once — every background,
+/// border band and stroke, which sample the flat white texel.
+pub(super) const UV_WHOLE: ([f32; 2], [f32; 2]) = ([0.0, 0.0], [1.0, 1.0]);
+
+/// Two triangles covering `rect`, its corners sampling from `uv.0` to `uv.1`
+/// (a `Tile` reaches past `1` to repeat, relying on the atlas's `Repeat`
+/// address mode) and every corner turned by `spin` — an identity `Spin` (zero
+/// rotation) leaves them exactly where `rect` puts them.
 pub(super) fn quad(
     rect: &GuiRect,
-    repeat: [f32; 2],
+    uv: ([f32; 2], [f32; 2]),
     paint: &Paint,
     shape: &Shape,
     spin: &Spin,
@@ -145,10 +150,11 @@ pub(super) fn quad(
         mode,
     };
 
-    let top_left = corner([left, top], [0.0, 0.0]);
-    let top_right = corner([right, top], [repeat[0], 0.0]);
-    let bottom_left = corner([left, bottom], [0.0, repeat[1]]);
-    let bottom_right = corner([right, bottom], repeat);
+    let (uv0, uv1) = uv;
+    let top_left = corner([left, top], [uv0[0], uv0[1]]);
+    let top_right = corner([right, top], [uv1[0], uv0[1]]);
+    let bottom_left = corner([left, bottom], [uv0[0], uv1[1]]);
+    let bottom_right = corner([right, bottom], [uv1[0], uv1[1]]);
     into.extend([
         top_left,
         top_right,

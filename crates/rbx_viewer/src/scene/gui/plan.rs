@@ -3,18 +3,16 @@
 //! offset until [`super::layout`] is handed a pixel rect to resolve it
 //! against.
 
-use std::collections::BTreeMap;
-
 use rbx_assets::AssetRef;
-use rbx_dom::{Instance, Ref, Variant, WeakDom};
+use rbx_dom::{Instance, Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use super::style::Styled;
-use crate::textures::asset_uri;
 
 mod constraints;
 mod corner;
 mod gradient;
+mod image;
 mod layouts;
 mod props;
 mod stroke;
@@ -24,6 +22,11 @@ pub(super) use constraints::{global_z_index, Aspect, Border, Constraints, SizeAx
 pub(super) use corner::Corner;
 pub(super) use gradient::Gradient;
 pub(crate) use gradient::{GradientKind, Tile};
+use image::fill;
+pub(super) use image::{Fill, ScaleMode};
+// Reaches all the way to `renderer::gui::quads::image`, unlike `Fill`/
+// `ScaleMode` above — see the type's own doc comment.
+pub(crate) use image::PixelRect;
 pub(super) use layouts::{layout_of, Align, Flex, FlexItem, Grid, Layout, LineAlign, List, Table};
 use props::{alpha, color, degrees, enum_of};
 pub(super) use props::{flag, integer, span, vector2};
@@ -54,26 +57,6 @@ impl Span {
             self.scale[1] * size[1] + self.offset[1],
         ]
     }
-}
-
-/// How an `ImageLabel`'s image covers its box.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) enum Tiling {
-    Stretch,
-    /// `ScaleType.Tile`: the image repeats every `size`, itself a `UDim2`
-    /// resolved against the element's own box rather than its parent's.
-    Tile {
-        size: Span,
-    },
-}
-
-/// An `ImageLabel`'s image, before it is known whether it downloaded.
-#[derive(Debug, Clone, PartialEq)]
-pub(super) struct Fill {
-    pub(super) asset: AssetRef,
-    pub(super) tint: [f32; 3],
-    pub(super) alpha: f32,
-    pub(super) tiling: Tiling,
 }
 
 /// One `GuiObject` and everything under it, `Visible = false` subtrees already
@@ -307,31 +290,3 @@ fn modifiers<'a>(
             .then_some(instance)
     })
 }
-
-/// The image of anything carrying one, told apart by the property rather than
-/// by class name so `ImageButton` lands here beside `ImageLabel`.
-///
-/// TODO: `ScaleType.Slice`/`Fit`/`Crop` and `ImageRectOffset`/`ImageRectSize`
-/// are all read as a plain stretch. `GuiObject.Rotation` (shared with the
-/// element's background and border) is handled in `super::layout`.
-fn fill(properties: &BTreeMap<String, Variant>) -> Option<Fill> {
-    let asset = AssetRef::parse(asset_uri(properties.get("Image")?)?).ok()?;
-    if asset == AssetRef::Empty {
-        return None;
-    }
-
-    Some(Fill {
-        asset,
-        tint: color(properties, "ImageColor3", [1.0, 1.0, 1.0]),
-        alpha: alpha(properties, "ImageTransparency"),
-        tiling: match properties.get("ScaleType") {
-            Some(&Variant::Enum(TILE_SCALE_TYPE)) => Tiling::Tile {
-                size: span(properties, "TileSize"),
-            },
-            _ => Tiling::Stretch,
-        },
-    })
-}
-
-/// `Enum.ScaleType.Tile`'s ordinal.
-const TILE_SCALE_TYPE: u32 = 2;

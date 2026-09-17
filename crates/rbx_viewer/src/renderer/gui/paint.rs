@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 use rbx_assets::AssetRef;
 
+use super::atlas::Slot;
 use super::gradient::Table;
 use super::pipeline::{self, VertexRaw, ViewportRaw};
 use super::quads::{self, Run};
@@ -75,7 +76,7 @@ impl Painter {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         elements: &[GuiElement],
-        slot_of: &HashMap<AssetRef, usize>,
+        slot_of: &HashMap<AssetRef, Slot>,
         size: (u32, u32),
     ) {
         queue.write_buffer(

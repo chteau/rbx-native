@@ -34,16 +34,15 @@ pub(crate) use bounds::{of_part, Bounds};
 pub(crate) use filemesh::{
     fit_of as file_mesh_fit, AlphaMode, Appearance, Resolved, ResolvedInstance,
 };
+#[cfg(test)]
+pub(crate) use gui::StrokePx as GuiStroke;
 pub(crate) use gui::{
     resolve as gui_layout, resolve_canvas as gui_canvas_layout, Anchor as GuiAnchor,
     Element as GuiElement, GradientKind as GuiGradientKind, GradientPx as GuiGradient,
-    Join as GuiJoin, Rect as GuiRect, Screen as GuiScreen, SpaceGui, Tile as GuiTile,
+    ImageScale as GuiImageScale, Join as GuiJoin, Painted, PixelRect as GuiPixelRect,
+    Rect as GuiRect, Screen as GuiScreen, SpaceGui, Tile as GuiTile,
 };
 pub(crate) use identity::PartId;
-// Only a test (`renderer::gui::quads`'s) names an element's image directly;
-// everything else reaches one through `GuiElement::image`.
-#[cfg(test)]
-pub(crate) use gui::{Painted, StrokePx as GuiStroke};
 pub(crate) use material::{Catalog, Kind, Maps, Slot};
 pub(crate) use particles::sequence::{eval_color, eval_number};
 pub(crate) use particles::{Emitter, Simulation};

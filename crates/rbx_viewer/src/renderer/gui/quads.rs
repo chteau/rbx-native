@@ -12,13 +12,15 @@ use std::ops::Range;
 
 use rbx_assets::AssetRef;
 
+use super::atlas::Slot;
 use super::gradient::Rows;
 use super::pipeline::VertexRaw;
 use crate::scene::{GuiElement, GuiRect};
 
+mod image;
 mod shape;
 
-use shape::{center, grown, outline, quad, Paint, Shape, Spin, FILL};
+use shape::{center, grown, outline, quad, Paint, Shape, Spin, FILL, UV_WHOLE};
 
 /// The slot every untextured rectangle — a background, a border — samples: a
 /// single white texel, so one pipeline covers both.
@@ -45,7 +47,7 @@ pub(super) struct Run {
 /// their vertices refer to by row.
 pub(super) fn build(
     elements: &[GuiElement],
-    textures: &HashMap<AssetRef, usize>,
+    textures: &HashMap<AssetRef, Slot>,
     target: (u32, u32),
 ) -> (Vec<VertexRaw>, Vec<Run>, Rows) {
     let mut vertices = Vec::new();
@@ -81,14 +83,7 @@ pub(super) fn build(
                 band: FILL,
                 gradient,
             };
-            quad(
-                &element.rect,
-                [1.0, 1.0],
-                &paint,
-                &fill,
-                &spin,
-                &mut vertices,
-            );
+            quad(&element.rect, UV_WHOLE, &paint, &fill, &spin, &mut vertices);
             // Roblox ties the outline to `BackgroundTransparency`: a frame
             // with no background shows no border either.
             if let Some((width, color)) = element.border {
@@ -97,7 +92,7 @@ pub(super) fn build(
                 // as the background — not each band's own, or a rotated
                 // border would fly apart from the box it outlines.
                 for side in outline(&inset(&element.rect, element.border_inset), width) {
-                    quad(&side, [1.0, 1.0], &paint, &fill, &spin, &mut vertices);
+                    quad(&side, UV_WHOLE, &paint, &fill, &spin, &mut vertices);
                 }
             }
         }
@@ -106,8 +101,12 @@ pub(super) fn build(
         if let Some(image) = &element.image {
             // Never downloaded, or the fetch failed: Roblox draws nothing at
             // all for an image it cannot load, so neither does this.
-            if let Some(&texture) = textures.get(&image.asset) {
+            if let Some(slot) = textures.get(&image.asset) {
                 if image.alpha > 0.0 {
+                    let texture = match image.pixelated {
+                        true => slot.nearest,
+                        false => slot.linear,
+                    };
                     let start = vertices.len();
                     let paint = Paint {
                         color: image.tint,
@@ -115,9 +114,10 @@ pub(super) fn build(
                         band: FILL,
                         gradient,
                     };
-                    quad(
+                    image::build(
                         &element.rect,
-                        image.repeat,
+                        image,
+                        slot.size,
                         &paint,
                         &fill,
                         &spin,
@@ -142,7 +142,7 @@ pub(super) fn build(
                 };
                 let shape = Shape::of(element);
                 let rect = grown(&element.rect, stroke.band);
-                quad(&rect, [1.0, 1.0], &paint, &shape, &spin, &mut vertices);
+                quad(&rect, UV_WHOLE, &paint, &shape, &spin, &mut vertices);
                 extend(&mut runs, WHITE, scissor, start..vertices.len());
             }
         }
