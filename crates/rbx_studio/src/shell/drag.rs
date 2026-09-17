@@ -10,7 +10,7 @@ use glam::{Mat3, Mat4, Vec3};
 use gpui_kit::*;
 use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
 use rbx_viewer::gizmo;
-use rbx_viewer::pick::{self, Ray};
+use rbx_viewer::pick::{self, Ray, Selected};
 
 use crate::properties;
 use crate::settle::{self, Settle};
@@ -89,21 +89,23 @@ impl Shell {
     fn hover_in_viewport(&mut self, ray: Option<Ray>, alt: bool, cx: &mut Context<Self>) {
         let meshes = self.viewport.read(cx).meshes().clone();
         let covered = self.covered.clone();
-        let hovered: Vec<Ref> = ray
-            .map(|ray| {
+        let hovered: Vec<Selected> = ray
+            .and_then(|ray| {
                 let hits = pick::parts_along(&self.dom, &self.database, &meshes, ray);
-                match selection::from_click(&self.dom, &self.database, &hits, None, alt) {
-                    // A plain click resolves to a `Model`, whose parts are
-                    // what the outline draws; an `Alt` click resolves to one
-                    // part, which stands for itself. Either goes through the
-                    // same `pick::selection` the real outline is built from.
-                    Some(referent) => selection::outlined(&self.dom, &self.database, &[referent])
-                        .iter()
-                        .flat_map(|entry| entry.parts().to_vec())
-                        .filter(|part| !covered.contains(part))
-                        .collect(),
-                    None => Vec::new(),
-                }
+                // A plain click resolves to a `Model`, an `Alt` click to the
+                // one part under the cursor. The outline is built from that
+                // one referent through the same `pick::selection` the real
+                // selection uses, so a model hover is one aggregate box and a
+                // part hover is its own — never a box per child.
+                let referent = selection::from_click(&self.dom, &self.database, &hits, None, alt)?;
+                selection::outlined(&self.dom, &self.database, &[referent])
+                    .into_iter()
+                    // A hover entirely inside the current selection adds only a
+                    // second box right under the selection's own outline, so it
+                    // is dropped (see `Shell::selection_changed` for the other
+                    // half of this).
+                    .find(|entry| entry.parts().iter().any(|part| !covered.contains(part)))
+                    .map(|entry| vec![entry])
             })
             .unwrap_or_default();
 

@@ -20,8 +20,6 @@
 //! cannot quietly drop one of these — whatever it does or does not happen to
 //! keep of the renderer's own copy.
 
-use rbx_dom::Ref;
-
 use crate::gizmo::Gizmo;
 use crate::pick::Selected;
 
@@ -35,11 +33,10 @@ pub(crate) struct View {
     /// renderer has no DOM to resolve a bare referent against.
     pub(crate) selected: Vec<Selected>,
     /// The "about to click" cue's outline — see `renderer::hover::Hover`.
-    /// Every part the outline covers: one for a hovered part, all of a
-    /// hovered `Model`'s (what a plain click would select). Empty while
-    /// `rbxview` runs, which never asks for a hover outline in the first
-    /// place.
-    pub(crate) hovered: Vec<Ref>,
+    /// One entry per hovered instance (a model as its aggregate box, a part
+    /// as its own), what a click would select. Empty while `rbxview` runs,
+    /// which never asks for a hover outline in the first place.
+    pub(crate) hovered: Vec<Selected>,
     /// `None` whenever no transform tool is active, which is every `rbxview`
     /// frame: the standalone viewer edits nothing.
     pub(crate) gizmo: Option<Gizmo>,
@@ -53,10 +50,10 @@ impl View {
         self.selected.extend_from_slice(selected);
     }
 
-    /// Replaces the hovered outline — the parts a hover covers, empty to
+    /// Replaces the hovered outline — the instances a hover covers, empty to
     /// clear it.
-    pub(crate) fn set_hover(&mut self, referents: Vec<Ref>) {
-        self.hovered = referents;
+    pub(crate) fn set_hover(&mut self, selected: Vec<Selected>) {
+        self.hovered = selected;
     }
 
     pub(crate) fn set_gizmo(&mut self, gizmo: Option<Gizmo>) {
@@ -72,6 +69,7 @@ impl View {
 mod tests {
     use super::*;
     use crate::gizmo::Kind;
+    use rbx_dom::Ref;
 
     fn part(referent: u32) -> Selected {
         Selected::part(Ref::new(referent))
@@ -110,16 +108,16 @@ mod tests {
     #[test]
     fn hovering_replaces_rather_than_accumulates() {
         let mut view = View::default();
-        view.set_hover(vec![Ref::new(1)]);
-        view.set_hover(vec![Ref::new(2)]);
+        view.set_hover(vec![Selected::part(Ref::new(1))]);
+        view.set_hover(vec![Selected::part(Ref::new(2))]);
 
-        assert_eq!(view.hovered, vec![Ref::new(2)]);
+        assert_eq!(view.hovered, vec![Selected::part(Ref::new(2))]);
     }
 
     #[test]
     fn hovering_nothing_clears_the_outline() {
         let mut view = View::default();
-        view.set_hover(vec![Ref::new(1)]);
+        view.set_hover(vec![Selected::part(Ref::new(1))]);
         view.set_hover(Vec::new());
 
         assert!(view.hovered.is_empty());
@@ -136,7 +134,7 @@ mod tests {
         let mut view = View::default();
         view.set_orthographic(true);
         view.select(&[part(9)]);
-        view.set_hover(vec![Ref::new(7)]);
+        view.set_hover(vec![Selected::part(Ref::new(7))]);
         view.set_gizmo(Some(Gizmo {
             kind: Kind::Rotate,
             local: true,
@@ -152,7 +150,7 @@ mod tests {
 
         assert!(view.orthographic);
         assert_eq!(view.selected, [part(9)]);
-        assert_eq!(view.hovered, vec![Ref::new(7)]);
+        assert_eq!(view.hovered, vec![Selected::part(Ref::new(7))]);
         assert_eq!(
             view.gizmo,
             Some(Gizmo {

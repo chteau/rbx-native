@@ -129,7 +129,7 @@ fn boxed(scene: &mut Scene, dom: &WeakDom, referent: u32) -> Part {
 
 fn meshed(scene: &mut Scene, dom: &WeakDom, referent: u32) -> usize {
     match resync(scene, dom, referent).map(|sync| sync.drawn) {
-        Ok(Drawn::Mesh(index)) => index,
+        Ok(Drawn::Mesh { index, .. }) => index,
         other => panic!("expected a mesh instance, got {other:?}"),
     }
 }

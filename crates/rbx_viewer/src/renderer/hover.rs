@@ -13,9 +13,10 @@ use std::collections::HashMap;
 use rbx_dom::Ref;
 use wgpu::util::DeviceExt;
 
+use crate::pick::Selected;
 use crate::scene::Placement;
 
-use super::outline::{vertices_for, Vertex};
+use super::outline::{box_edges, Vertex};
 use super::pipeline::{self, Surface, Target};
 
 const SHADER: &str = include_str!("hover.wgsl");
@@ -31,10 +32,11 @@ pub(super) struct Hover {
     /// traded for keeping the two outlines' GPU state independent rather than
     /// threading a shared placements map through both.
     placements: HashMap<Ref, Placement>,
-    /// What [`Hover::set`] last outlined — the parts the hover covers, so a
+    /// What [`Hover::set`] last outlined — the instance(s) the hover covers,
+    /// each drawn as one box (a model's aggregate bounds, a part's own), so a
     /// placement that moves under the cursor (see [`Hover::place`]) can redraw
     /// it.
-    referents: Vec<Ref>,
+    selected: Vec<Selected>,
     vertices: Option<wgpu::Buffer>,
     count: u32,
 }
@@ -71,17 +73,17 @@ impl Hover {
         Hover {
             pipeline,
             placements,
-            referents: Vec::new(),
+            selected: Vec::new(),
             vertices: None,
             count: 0,
         }
     }
 
-    /// Rebuilds the outline around `referents`, replacing whatever was hovered
+    /// Rebuilds the outline around `selected`, replacing whatever was hovered
     /// before. An empty list clears it.
-    pub(super) fn set(&mut self, device: &wgpu::Device, referents: Vec<Ref>) {
-        self.referents = referents;
-        let vertices = vertices_for(&self.placements, &self.referents);
+    pub(super) fn set(&mut self, device: &wgpu::Device, selected: Vec<Selected>) {
+        self.selected = selected;
+        let vertices = box_edges(&self.placements, &self.selected);
         self.count = vertices.len() as u32;
         self.vertices = (!vertices.is_empty()).then(|| {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -97,9 +99,17 @@ impl Hover {
     /// one currently hovered.
     pub(super) fn place(&mut self, device: &wgpu::Device, referent: Ref, placement: Placement) {
         self.placements.insert(referent, placement);
-        if self.referents.contains(&referent) {
-            self.set(device, self.referents.clone());
+        if self.covers(referent) {
+            self.set(device, self.selected.clone());
         }
+    }
+
+    /// Whether one part is inside anything the hover currently outlines — a
+    /// hovered part itself, or one beneath a hovered model.
+    fn covers(&self, referent: Ref) -> bool {
+        self.selected
+            .iter()
+            .any(|entry| entry.parts().contains(&referent))
     }
 
     /// Forgets where one part was drawn — it stopped drawing as a box (a mesh
@@ -107,14 +117,12 @@ impl Hover {
     /// hovered: a box drawn around a part that no longer exists would
     /// otherwise linger until the cursor moves onto something else.
     pub(super) fn remove(&mut self, device: &wgpu::Device, referent: Ref) {
-        if self.placements.remove(&referent).is_some() && self.referents.contains(&referent) {
-            let kept = self
-                .referents
-                .iter()
-                .copied()
-                .filter(|&r| r != referent)
-                .collect();
-            self.set(device, kept);
+        // Only the placement is forgotten; the hovered entries stand, so the
+        // box simply drops that part until it draws as a box again. A mesh
+        // part keeps its placement now (see `renderer::patch`), so this is the
+        // genuine gone/off-Workspace case rather than a mesh finishing loading.
+        if self.placements.remove(&referent).is_some() && self.covers(referent) {
+            self.set(device, self.selected.clone());
         }
     }
 
@@ -157,11 +165,18 @@ mod tests {
         placements.insert(Ref::new(1), placement(Mat4::IDENTITY));
         placements.insert(Ref::new(2), placement(Mat4::IDENTITY));
 
-        assert_eq!(vertices_for(&placements, &[Ref::new(1)]).len(), 72);
         assert_eq!(
-            vertices_for(&placements, &[Ref::new(1), Ref::new(2)]).len(),
+            box_edges(&placements, &[Selected::part(Ref::new(1))]).len(),
+            72
+        );
+        assert_eq!(
+            box_edges(
+                &placements,
+                &[Selected::part(Ref::new(1)), Selected::part(Ref::new(2))]
+            )
+            .len(),
             144
         );
-        assert!(vertices_for(&placements, &[]).is_empty());
+        assert!(box_edges(&placements, &[]).is_empty());
     }
 }

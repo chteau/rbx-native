@@ -12,6 +12,8 @@ use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3};
 use rbx_dom::Ref;
 
+use crate::gizmo;
+use crate::pick::Selected;
 use crate::scene::Placement;
 
 /// Half the unit cube's side, matching `renderer::mesh`'s own box extent: a
@@ -129,11 +131,50 @@ pub(super) fn edges(model: Mat4) -> [Vertex; 72] {
 /// Every named referent's edges, in order — a referent with no placement (not
 /// a `BasePart`) contributes nothing, whether it names a `Folder`, a service,
 /// or a `Model` with no aggregate box of its own yet.
-pub(super) fn vertices_for(placements: &HashMap<Ref, Placement>, referents: &[Ref]) -> Vec<Vertex> {
-    referents
+/// Every model matrix one selected/hovered instance covers, in the order
+/// `crate::pick::parts_of` resolved them — a part the scene never built (one
+/// outside `Workspace`) drops out here.
+pub(super) fn models_of<'a>(
+    placements: &'a HashMap<Ref, Placement>,
+    entry: &'a Selected,
+) -> impl Iterator<Item = Mat4> + 'a {
+    entry
+        .parts()
         .iter()
         .filter_map(|referent| placements.get(referent))
-        .flat_map(|placement| edges(placement.model))
+        .map(|placement| placement.model)
+}
+
+/// The single box drawn around one instance, or `None` when it covers no
+/// drawn geometry at all.
+///
+/// A part keeps its own oriented box, which hugs it however it is turned. A
+/// container has no orientation to hug it with, so it gets the world-axis
+/// -aligned box around everything beneath it — one box for the whole thing,
+/// not one per part, because that extent is what Studio calls a model's
+/// bounding box and what the Move gizmo already stands in the middle of (see
+/// `gizmo::bounds_of`). Shared by the selection and hover outlines so both
+/// draw a model as one box rather than a mess of per-part ones.
+pub(super) fn box_of(placements: &HashMap<Ref, Placement>, entry: &Selected) -> Option<Mat4> {
+    if entry.is_part() {
+        return Some(placements.get(&entry.referent())?.model);
+    }
+    let (min, max) = gizmo::bounds_of(models_of(placements, entry))?;
+    // The unit cube `edges` carries through spans [-0.5, 0.5], so the box's
+    // full extent is its scale, exactly as a part's `Size` is.
+    Some(Mat4::from_translation((min + max) * 0.5) * Mat4::from_scale(max - min))
+}
+
+/// Every instance's edges, in order — one box each, and nothing at all for a
+/// container with no drawable geometry under it.
+pub(super) fn box_edges(
+    placements: &HashMap<Ref, Placement>,
+    selected: &[Selected],
+) -> Vec<Vertex> {
+    selected
+        .iter()
+        .filter_map(|entry| box_of(placements, entry))
+        .flat_map(edges)
         .collect()
 }
 
@@ -179,7 +220,7 @@ mod tests {
         // Stands for a `Folder`, a service, or a `Model`: none of them are a
         // `BasePart`, so `Scene::placements` never has an entry for one.
         let placements = HashMap::new();
-        let vertices = vertices_for(&placements, &[Ref::new(1)]);
+        let vertices = box_edges(&placements, &[Selected::part(Ref::new(1))]);
         assert!(vertices.is_empty());
     }
 
@@ -188,14 +229,14 @@ mod tests {
         let mut placements = HashMap::new();
         placements.insert(Ref::new(1), placement(Mat4::IDENTITY));
 
-        let vertices = vertices_for(&placements, &[Ref::new(1)]);
+        let vertices = box_edges(&placements, &[Selected::part(Ref::new(1))]);
         assert_eq!(vertices.len(), 72);
     }
 
     #[test]
     fn naming_nothing_draws_nothing() {
         let placements = HashMap::new();
-        let vertices = vertices_for(&placements, &[]);
+        let vertices = box_edges(&placements, &[]);
         assert!(vertices.is_empty());
     }
 }

@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use rbx_dom::{Change, Ref, Snapshot, WeakDom};
+use rbx_dom::{Change, Snapshot, WeakDom};
 use rbx_viewer::pick::{Meshes, Selected};
 use rbx_viewer::{Applied, CameraInput, Gizmo, Headless, Pose, QualityLevel};
 
@@ -45,7 +45,7 @@ enum Command {
     Selection(Vec<Selected>),
     /// The "about to click" cue — see `Headless::set_hover`. `None` clears
     /// it, the way an empty `Selection` clears the selection outline.
-    Hover(Vec<Ref>),
+    Hover(Vec<Selected>),
     /// Which transform tool's draggers to draw over the selection, if any —
     /// see `Headless::set_gizmo`.
     Gizmo(Option<Gizmo>),
@@ -166,8 +166,8 @@ impl Pump {
 
     /// Outlines the hovered part in the viewport, distinctly from the
     /// selection — `None` clears it.
-    pub(super) fn hover(&self, referents: Vec<Ref>) {
-        let _ = self.commands.send(Command::Hover(referents));
+    pub(super) fn hover(&self, selected: Vec<Selected>) {
+        let _ = self.commands.send(Command::Hover(selected));
     }
 
     /// Shows or hides the transform tool's draggers over the selection.
@@ -502,7 +502,7 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::Quality(mode) => rendering.quality.set(mode, rendering.viewer),
         Command::Orthographic(orthographic) => rendering.viewer.set_orthographic(orthographic),
         Command::Selection(selected) => rendering.viewer.set_selection(&selected),
-        Command::Hover(referents) => rendering.viewer.set_hover(referents),
+        Command::Hover(selected) => rendering.viewer.set_hover(selected),
         Command::Gizmo(gizmo) => rendering.viewer.set_gizmo(gizmo),
         Command::Changes(snapshots, changes) => {
             rendering.mirror.mirror(snapshots);

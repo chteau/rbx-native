@@ -34,7 +34,6 @@ mod trail;
 mod translucent;
 
 use glam::Mat3;
-use rbx_dom::Ref;
 
 use crate::camera::{Camera, Frustum, Viewpoint};
 use crate::gizmo::{arm_length, basis, Faces, Gizmo, Handles, Kind, Shape};
@@ -345,8 +344,8 @@ impl Renderer {
 
     /// Replaces the hover outline, rebuilding its tiny vertex buffer right
     /// away rather than waiting for the next `draw`. `None` clears it.
-    pub(crate) fn set_hover(&mut self, device: &wgpu::Device, referents: Vec<Ref>) {
-        self.hover.set(device, referents);
+    pub(crate) fn set_hover(&mut self, device: &wgpu::Device, selected: Vec<Selected>) {
+        self.hover.set(device, selected);
     }
 
     /// Shows or hides the transform tool's draggers over whatever is

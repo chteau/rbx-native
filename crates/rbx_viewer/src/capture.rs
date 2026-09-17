@@ -7,7 +7,6 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use glam::Vec3;
-use rbx_dom::Ref;
 
 use crate::camera::{self, Camera, Viewpoint};
 use crate::gizmo::Gizmo;
@@ -109,8 +108,8 @@ impl Offscreen {
 
     /// Replaces the hover outline box, rebuilding its tiny vertex buffer
     /// right away.
-    pub(crate) fn set_hover(&mut self, referents: Vec<Ref>) {
-        self.renderer.set_hover(&self.device, referents);
+    pub(crate) fn set_hover(&mut self, selected: Vec<Selected>) {
+        self.renderer.set_hover(&self.device, selected);
     }
 
     /// Shows or hides the transform tool's draggers over the selection.

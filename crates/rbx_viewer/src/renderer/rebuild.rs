@@ -138,7 +138,13 @@ impl Renderer {
             (_, field) => Stars::new(device, self.target, &self.frame_layout, shared, field),
         };
 
-        self.selection.rebuild(device, scene.placements());
+        // `all_placements`, not `placements`: the selection outline draws a
+        // mesh part (a `MeshPart`, or a union carved into one) by its own
+        // bounding box, so it needs the suppressed box placements that the
+        // filtered `placements` drops — the same map `Renderer::new` seeds it
+        // with. Without this a full rebuild (an asset streaming in, a beam or
+        // particle resolving) stripped every mesh part's outline and gizmo.
+        self.selection.rebuild(device, scene.all_placements());
         self.shaped = Shaped::new(device, scene.parts());
         self.translucent = Translucent::new(device, scene.parts());
         self.filemesh
