@@ -31,8 +31,32 @@ const SINGULAR: f32 = 1e-12;
 /// so clicking while the camera sits inside a part still selects it.
 pub(super) fn hit(kind: ShapeKind, model: Mat4, ray: Ray) -> Option<f32> {
     let local = Local::of(model, ray)?;
-    let (origin, direction) = (local.origin, local.direction);
-    let span = match kind {
+    let span = span_of(kind, local.origin, local.direction)?;
+    Some(span.first_ahead()? / local.per_stud)
+}
+
+/// The distance a click or hover orders this shape by, which is [`hit`]'s own
+/// answer except when the ray *starts inside* the shape: a part the camera
+/// sits inside is around the camera, not in front of it, so it is ordered by
+/// where the ray *leaves* it rather than by `0`. That puts it after whatever
+/// stands in front, letting `Alt`-cycling — and a plain click — reach a child
+/// the camera is looking at directly, instead of always landing on the part
+/// the camera happens to be inside first.
+pub(super) fn hit_key(kind: ShapeKind, model: Mat4, ray: Ray) -> Option<f32> {
+    let local = Local::of(model, ray)?;
+    let span = span_of(kind, local.origin, local.direction)?;
+    let key = if span.entry >= 0.0 {
+        span.entry
+    } else {
+        span.exit
+    };
+    (key >= 0.0).then_some(key / local.per_stud)
+}
+
+/// The span of `ray` (in the shape's own space) inside the shape, or `None`
+/// when the ray misses it.
+fn span_of(kind: ShapeKind, origin: Vec3, direction: Vec3) -> Option<Span> {
+    match kind {
         // A truss is drawn as a lattice, but Studio selects it by its whole
         // extent too: clicking through a gap between its bars still picks it.
         ShapeKind::Box | ShapeKind::Truss { .. } => cube(origin, direction),
@@ -50,8 +74,7 @@ pub(super) fn hit(kind: ShapeKind, model: Mat4, ray: Ray) -> Option<f32> {
         ShapeKind::CornerWedge => cube(origin, direction)
             .and_then(|span| span.clip(half_space(origin, direction, Vec3::new(0.0, 1.0, 1.0))))
             .and_then(|span| span.clip(half_space(origin, direction, Vec3::new(-1.0, 1.0, 0.0)))),
-    };
-    Some(span?.first_ahead()? / local.per_stud)
+    }
 }
 
 /// `ray` moved into the space a unit solid is defined in.
