@@ -13,6 +13,13 @@
 //! Properties panel already use (see [`Shell::apply_style_edit`]), so undo,
 //! the Explorer and the live viewport all see a styling edit the way they see
 //! any other.
+//!
+//! `RBX_STUDIO_STYLE_EDITOR` brings this panel's tab to the front at startup,
+//! and — given a `Prop=value` — applies that edit to whatever `StyleRule`
+//! `RBX_STUDIO_SELECT` selected, through this same commit path. A debugging
+//! aid, like the other `RBX_STUDIO_*` variables: the panel starts stacked
+//! behind the Viewport, and nothing else can click its tab on the editor's
+//! behalf (see `AGENTS.md`'s safety rules).
 
 use std::collections::HashMap;
 
@@ -34,6 +41,10 @@ use super::Shell;
 /// step the Explorer's tree rows use.
 const INDENT: f32 = 12.0;
 const LABEL_WIDTH: f32 = 150.0;
+
+/// Read once at startup by `Shell::new`; documented in this module's doc
+/// comment.
+pub(crate) const STYLE_EDITOR_VARIABLE: &str = "RBX_STUDIO_STYLE_EDITOR";
 
 /// What committing one of the panel's text fields writes.
 #[derive(Clone)]
@@ -116,6 +127,36 @@ impl Shell {
     pub(crate) fn reveal_style_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         super::dock::reveal_style_editor(&self.dock_area, window, cx);
         cx.notify();
+    }
+
+    /// `RBX_STUDIO_STYLE_EDITOR[=Prop=value]`: documented in this module's
+    /// doc comment. A value with no `=`, a selection that is not a
+    /// `StyleRule`, or a rejected edit only shows the panel — this is a
+    /// screenshot aid, not user input, and must never crash a debugging
+    /// session.
+    pub(super) fn apply_debug_style_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Ok(spec) = std::env::var(STYLE_EDITOR_VARIABLE) else {
+            return;
+        };
+        self.reveal_style_editor(window, cx);
+
+        let Some((name, value)) = spec.split_once('=') else {
+            return;
+        };
+        let Some(rule) = self.selected().filter(|&reference| {
+            self.dom
+                .get(reference)
+                .is_some_and(|instance| instance.class() == style_editor::RULE_CLASS)
+        }) else {
+            return;
+        };
+        let (name, value) = (name.trim().to_owned(), value.trim().to_owned());
+        self.apply_style_edit(
+            move |dom, database| {
+                style_editor::set_rule_property(dom, database, rule, &name, &value)
+            },
+            cx,
+        );
     }
 
     fn style_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {

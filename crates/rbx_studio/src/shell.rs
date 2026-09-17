@@ -388,6 +388,11 @@ impl Shell {
         // a screenshot aid proving a just-applied mutation was reverted.
         shell.apply_debug_undo(cx);
 
+        // `RBX_STUDIO_STYLE_EDITOR` (see `shell::style_panel`): after the
+        // selection blocks above, so the edit it may carry lands on whatever
+        // `StyleRule` they selected.
+        shell.apply_debug_style_editor(window, cx);
+
         // `RBX_STUDIO_SAVE_AS` (see `shell::save`): applied last of all, so a
         // script can prove Ctrl+S round-trips whatever every block above just
         // mutated.
