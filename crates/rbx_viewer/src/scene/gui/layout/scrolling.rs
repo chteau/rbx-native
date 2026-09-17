@@ -51,7 +51,7 @@ pub(super) fn scroll(
     context: Context,
     measure: &mut dyn TextMeasure,
     into: &mut Vec<Element>,
-) {
+) -> Window {
     let window = window(node, scrolling, frame, measure);
     let content = content_box(scrolling, window.rect.size());
     let canvas = Rect {
@@ -140,9 +140,11 @@ pub(super) fn scroll(
                 gradient: None,
                 text: None,
                 group: None,
+                scroll: None,
             });
         }
     }
+    window
 }
 
 /// Settles the window against the frame.

@@ -31,6 +31,7 @@ fn boxed(x: f32, y: f32, width: f32, height: f32, alpha: f32) -> GuiElement {
         gradient: None,
         text: None,
         group: None,
+        scroll: None,
         viewport: None,
     }
 }

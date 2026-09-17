@@ -30,6 +30,7 @@ fn element(rect: GuiRect, clip: Option<GuiRect>) -> GuiElement {
         text: None,
         viewport: None,
         group: None,
+        scroll: None,
     }
 }
 

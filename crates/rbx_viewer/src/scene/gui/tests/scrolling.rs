@@ -429,3 +429,57 @@ fn scrolling_direction_keeps_the_other_axis_bar_away() {
         .unwrap();
     assert!(bars(&resolve(&screens(&dom), VIEWPORT), 0).is_empty());
 }
+
+// What a host's wheel hit-tests against: the window (not the frame), and the
+// reach along each axis the frame may actually scroll.
+#[test]
+fn the_frame_leaves_its_window_and_reach_behind_for_the_wheel() {
+    let (mut dom, gui) = screen_gui();
+    let frame = window(&mut dom, gui);
+    canvas(&mut dom, frame, 400, 300);
+    dom.set_property(frame, "VerticalScrollBarInset", Variant::Enum(2))
+        .unwrap();
+
+    let elements = resolve(&screens(&dom), VIEWPORT);
+    let scroll = elements[0]
+        .scroll
+        .expect("a ScrollingFrame leaves a window");
+    assert_eq!(scroll.referent, frame);
+    assert_eq!(scroll.rect, rect(0.0, 0.0, 200.0 - THICKNESS as f32, 100.0));
+    assert_eq!(scroll.clip, None);
+    assert_eq!(scroll.range, [400.0 - 188.0, 200.0]);
+    assert!(bars(&elements, 0).iter().all(|bar| bar.scroll.is_none()));
+
+    dom.set_property(frame, "ScrollingDirection", Variant::Enum(2))
+        .unwrap();
+    let y_only = resolve(&screens(&dom), VIEWPORT)[0].scroll.unwrap();
+    assert_eq!(y_only.range, [0.0, 200.0]);
+
+    dom.set_property(frame, "ScrollingEnabled", Variant::Bool(false))
+        .unwrap();
+    let disabled = resolve(&screens(&dom), VIEWPORT)[0].scroll.unwrap();
+    assert_eq!(disabled.range, [0.0, 0.0], "off, however big the canvas");
+}
+
+// A list inside a list is clipped to the outer window, and its own window
+// carries that clip so a wheel over where it *would* be finds nothing.
+#[test]
+fn a_nested_frame_carries_its_parents_window_as_its_clip() {
+    let (mut dom, gui) = screen_gui();
+    let outer = window(&mut dom, gui);
+    canvas(&mut dom, outer, 200, 300);
+    let inner = scrolling_frame(
+        &mut dom,
+        outer,
+        udim2(0.0, 0, 0.0, 150),
+        udim2(0.0, 100, 0.0, 100),
+    );
+    canvas(&mut dom, inner, 100, 500);
+
+    let elements = resolve(&screens(&dom), VIEWPORT);
+    let nested = elements[1].scroll.unwrap();
+    assert_eq!(nested.referent, inner);
+    assert_eq!(nested.rect, rect(0.0, 150.0, 100.0, 100.0));
+    assert_eq!(nested.clip, Some(rect(0.0, 0.0, 200.0, 100.0)));
+    assert_eq!(nested.range, [0.0, 400.0]);
+}

@@ -18,6 +18,7 @@ mod rows;
 mod save;
 mod script_panel;
 mod scripts;
+mod scroll;
 mod selection;
 mod style_panel;
 mod toolbar;

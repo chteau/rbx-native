@@ -51,6 +51,7 @@ pub use headless::Headless;
 pub use input::{CameraInput, CameraKey};
 pub use load::read_place;
 pub use quality::{FrameRateManager, QualityLevel};
+pub use scene::ScrollTarget;
 
 use glam::Vec3;
 use load::{Loaded, Toggles};
