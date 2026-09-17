@@ -245,6 +245,12 @@ pub(crate) struct WorkspaceView {
     /// The projection mode the user last picked from the Viewport panel's
     /// overflow menu (see `Shell::set_orthographic`).
     orthographic: bool,
+    /// Whether the corner label shows `pump.stats()`'s frame rate — the
+    /// Viewport panel overflow menu's Stats toggle, next to Orthographic
+    /// (see `Shell::set_stats_shown`). Session-only: real Studio's own
+    /// `Window > Performance > Stats` doesn't persist across restarts
+    /// either.
+    stats_shown: bool,
     /// The transform toolbar's state, pushed down from `Shell` (see
     /// [`WorkspaceView::set_transform`]).
     transform: Transform,
@@ -364,6 +370,7 @@ impl WorkspaceView {
             quality,
             level: QualityLevel::MAX,
             orthographic,
+            stats_shown: false,
             transform: Transform::default(),
             targets: Targets::default(),
             neighbours: Vec::new(),
@@ -679,11 +686,29 @@ impl WorkspaceView {
         cx.notify();
     }
 
+    /// Turns the corner label's frame-rate readout on or off — see
+    /// `Shell::set_stats_shown`. Pure UI-thread state, unlike quality or
+    /// projection above: `pump.stats()` is already updated by the render
+    /// thread regardless, so nothing about what it draws needs to change.
+    pub(crate) fn set_stats_shown(&mut self, shown: bool, cx: &mut Context<Self>) {
+        if shown == self.stats_shown {
+            return;
+        }
+
+        self.stats_shown = shown;
+        cx.notify();
+    }
+
     /// What the corner label reads: the speed is passed only while its moment
-    /// on screen lasts.
+    /// on screen lasts, the frame rate only while the Stats toggle is on —
+    /// and `0.0` (no full second counted yet) reads the same as off.
     fn status_label(&self) -> SharedString {
         let speed = self.speed_shown_until.map(|_| self.speed);
-        label::status(self.quality, self.level, speed)
+        let fps = self
+            .stats_shown
+            .then(|| self.pump.stats().latest_fps())
+            .filter(|fps| *fps > 0.0);
+        label::status(self.quality, self.level, fps, speed)
     }
 }
 

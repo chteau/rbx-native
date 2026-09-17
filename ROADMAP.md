@@ -480,16 +480,20 @@ Roblox's own engine.
   does the same. The pacing code already exists (`shell::pacing` and the
   viewer's `app::pacing`); this is a second target rate keyed off the
   window's focus state, not a new loop.
-- [ ] 📋 **An FPS/frame-time readout**, matching real Studio's own
+- [x] 🚧 **An FPS/frame-time readout**, matching real Studio's own
   performance-debugging surface rather than inventing a new one: Studio's
   `Window > Performance > Stats` toggles a debug stats overlay, and
   `Ctrl`+`F6` opens the MicroProfiler directly for a per-system frame-time
-  breakdown. Today's viewport corner label (`rbxstudio`) and title bar
-  (`rbxview`) show quality level and flight speed but no frame rate or
-  frame time at all, even though the render thread already measures frame
-  timing internally to drive automatic quality scaling (see "What's been
-  implemented" above) — the number already exists, it just isn't shown
-  anywhere yet.
+  breakdown. `rbxstudio`'s viewport corner label gets a "Stats" toggle next
+  to the existing Orthographic one, in the Viewport panel's own overflow
+  menu (this editor has no `Window` menu yet) — switching it on adds the
+  render thread's last-measured fps and frame time to the label already
+  showing quality level and flight speed, reusing the same per-second
+  numbers `workspace_view::stats` already computed to drive automatic
+  quality scaling rather than a second timing mechanism. Still open:
+  `rbxview`'s standalone title bar shows quality level and flight speed the
+  same way and has no equivalent readout yet — a separate binary, out of
+  scope here.
 - [ ] 📋 **A 5th "Transform" toolbar button** appears in Studio's current
   toolbar (see the owner-provided screenshot) alongside the now-implemented
   Select/Move/Scale/Rotate (see "What's been implemented" → Editor), but

@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-18
+
+- **A frame rate readout in the viewport corner label.** Real Studio's own
+  performance surface is a toggle (`Window > Performance > Stats`), not an
+  always-on display, so `rbxstudio`'s Viewport panel overflow menu gets a
+  "Stats" checkbox next to the existing Orthographic one; switching it on
+  adds the render thread's last-measured fps and frame time to the corner
+  label already showing quality level and flight speed. No new timing
+  mechanism — it reads the same per-second numbers `workspace_view::stats`
+  already computed to drive automatic quality scaling, just exposed to the
+  UI thread instead of only ever printed to stderr. — @chteau
+
 ## 2026-09-17
 
 - **A batch of viewport editor fixes (`fix/overall-bug-fixes`).** Undo/redo

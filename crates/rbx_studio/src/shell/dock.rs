@@ -173,6 +173,8 @@ impl ComponentPanel for SectionPanel {
             }
             Section::Viewport => {
                 let checked = shell.read(cx).orthographic();
+                let stats_checked = shell.read(cx).stats_shown();
+                let stats_shell = shell.clone();
                 menu.item(
                     PopupMenuItem::new("Orthographic")
                         .checked(checked)
@@ -183,6 +185,17 @@ impl ComponentPanel for SectionPanel {
                             });
                         }),
                 )
+                // Real Studio's own toggle is `Window > Performance > Stats`;
+                // this editor has no `Window` menu yet, so it sits next to
+                // the viewport's other debug affordance instead.
+                .item(PopupMenuItem::new("Stats").checked(stats_checked).on_click(
+                    move |_, _, cx| {
+                        stats_shell.update(cx, |shell, cx| {
+                            let next = !shell.stats_shown();
+                            shell.set_stats_shown(next, cx);
+                        });
+                    },
+                ))
             }
             _ => menu,
         }
