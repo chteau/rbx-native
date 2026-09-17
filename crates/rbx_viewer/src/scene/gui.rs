@@ -38,6 +38,7 @@ pub(crate) use layout::{
     resolve_canvas_with, resolve_with, Element, GradientPx, Grouped, ImageScale, Painted,
     PixelRect, Rect, TextMeasure, Typeset,
 };
+pub(crate) use plan::image_placeholder as gui_image_placeholder;
 #[cfg(test)]
 pub(crate) use plan::GroupTint;
 #[cfg(test)]

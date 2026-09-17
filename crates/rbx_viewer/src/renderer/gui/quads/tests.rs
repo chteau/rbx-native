@@ -189,6 +189,25 @@ fn an_image_whose_asset_never_downloaded_leaves_only_its_background() {
 }
 
 #[test]
+fn an_image_that_is_not_to_be_had_draws_the_placeholder_once_that_is() {
+    let mut label = element(rect(0.0, 0.0, 10.0, 10.0), None);
+    label.image = Some(stretch_image(AssetRef::Id(7)));
+    let textures = HashMap::from([(
+        crate::scene::gui_image_placeholder(),
+        Slot {
+            linear: 3,
+            nearest: 4,
+            size: [64.0, 64.0],
+        },
+    )]);
+
+    let (vertices, runs, _) = build(&[label], &textures, VIEWPORT);
+
+    assert_eq!(vertices.len(), 12);
+    assert_eq!(runs[1].texture, 3);
+}
+
+#[test]
 fn a_tiled_image_carries_its_repeat_count_into_the_uvs() {
     let mut label = element(rect(0.0, 0.0, 300.0, 200.0), None);
     label.background_alpha = 0.0;

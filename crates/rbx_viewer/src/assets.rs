@@ -10,8 +10,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use rbx_assets::{
-    decode_image, AssetCache, AssetError, AssetFetcher, AssetRef, AssetResolver, FetchError,
-    NativeContent,
+    decode_image, AssetCache, AssetError, AssetFetcher, AssetKind, AssetRef, AssetResolver,
+    FetchError, NativeContent,
 };
 use rbx_cloud::{ApiKey, Client, CloudError};
 
@@ -288,7 +288,14 @@ fn resolver() -> Result<AssetResolver, String> {
 fn fetch_image(resolver: &AssetResolver, reference: &AssetRef) -> Result<Image, Failure> {
     let failed = |err: AssetError| Failure::resolving(reference, &err);
 
-    let asset = resolver.resolve(reference).map_err(failed)?;
+    let mut asset = resolver.resolve(reference).map_err(failed)?;
+    // A decal id where an image id was meant: the catalogue hands back a
+    // one-instance model whose `Texture` names the actual image, and Roblox
+    // itself follows that one hop for an `Image`/`Texture` property. One hop
+    // only — a model pointing at a model is left as the decode error it is.
+    if let Some(inner) = wrapped_image(&asset) {
+        asset = resolver.resolve(&inner).map_err(failed)?;
+    }
     let decoded = decode_image(&asset).map_err(failed)?;
 
     let (width, height) = decoded.dimensions();
@@ -297,6 +304,28 @@ fn fetch_image(resolver: &AssetResolver, reference: &AssetRef) -> Result<Image, 
         height,
         pixels: decoded.into_raw(),
     })
+}
+
+/// The image a `Decal`/`Texture` model asset wraps, if `asset` is one: the
+/// first `Texture` (or `Image`) content reference found in it.
+fn wrapped_image(asset: &rbx_assets::Asset) -> Option<AssetRef> {
+    let dom = match asset.kind {
+        AssetKind::RobloxXmlModel => {
+            rbx_xml::deserialize(std::str::from_utf8(&asset.bytes).ok()?).ok()?
+        }
+        AssetKind::RobloxBinaryModel => rbx_binary::deserialize(&asset.bytes).ok()?,
+        _ => return None,
+    };
+    let inner = crate::scene::descendants(&dom)
+        .filter_map(|referent| dom.get(referent))
+        .find_map(|instance| {
+            let properties = instance.properties();
+            let value = properties
+                .get("Texture")
+                .or_else(|| properties.get("Image"))?;
+            AssetRef::parse(crate::textures::asset_uri(value)?).ok()
+        });
+    inner.filter(|inner| *inner != AssetRef::Empty)
 }
 
 fn fetch_mesh(resolver: &AssetResolver, reference: &AssetRef) -> Result<rbx_mesh::Mesh, Failure> {
@@ -442,6 +471,25 @@ pub(crate) mod tests {
     // whether the answer is about this machine or about the asset — see
     // `Failure`. `TestPlace.rbxl` names a `SpawnLocation.png` its content
     // package does not hold, and each ask is a 200 ms package scan.
+    // The catalogue's image for a `SpawnLocation` decal, and Studio's own
+    // `ImageLabel` placeholder, are both published as a `Decal` model that
+    // names the real image — the shape the store gives every "decal id".
+    #[test]
+    fn a_decal_model_asset_names_the_image_it_wraps() {
+        let xml = r#"<roblox version="4"><Item class="Decal" referent="RBX0"><Properties><string name="Name">Decal</string><Content name="Texture"><url>http://www.roblox.com/asset/?id=6891610105</url></Content></Properties></Item></roblox>"#;
+        let asset = rbx_assets::Asset {
+            bytes: xml.as_bytes().to_vec(),
+            kind: AssetKind::RobloxXmlModel,
+        };
+        assert_eq!(wrapped_image(&asset), Some(AssetRef::Id(6891610105)));
+
+        let png = rbx_assets::Asset {
+            bytes: vec![0x89, b'P', b'N', b'G'],
+            kind: AssetKind::Png,
+        };
+        assert_eq!(wrapped_image(&png), None);
+    }
+
     #[test]
     fn only_a_failure_of_the_machine_is_transient() {
         assert!(transient(&AssetError::Cache(

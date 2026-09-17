@@ -18,7 +18,7 @@ use super::atlas::Slot;
 use super::gradient::Rows;
 use super::pipeline::VertexRaw;
 use super::text::Typesetter;
-use crate::scene::{GuiElement, GuiRect};
+use crate::scene::{gui_image_placeholder, GuiElement, GuiRect};
 
 mod image;
 mod shape;
@@ -138,9 +138,13 @@ fn build_once(
         }
 
         if let Some(image) = &element.image {
-            // Never downloaded, or the fetch failed: Roblox draws nothing at
-            // all for an image it cannot load, so neither does this.
-            if let Some(slot) = textures.get(&image.asset) {
+            // Never downloaded, failed, or still on its way: the placeholder
+            // Studio gives an image-less label stands in — and where even
+            // that has not landed, nothing draws.
+            let slot = textures
+                .get(&image.asset)
+                .or_else(|| textures.get(&gui_image_placeholder()));
+            if let Some(slot) = slot {
                 if image.alpha > 0.0 {
                     let texture = match image.pixelated {
                         true => slot.nearest,

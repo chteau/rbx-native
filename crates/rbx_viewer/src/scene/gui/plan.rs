@@ -33,7 +33,7 @@ pub(crate) use node::Screen;
 pub(in crate::scene::gui) use node::{collect_assets_of, collect_fonts_of, Group, Node, Span};
 // Reaches all the way to `renderer::gui::quads::image`, unlike `Fill`/
 // `ScaleMode` above — see the type's own doc comment.
-pub(crate) use image::PixelRect;
+pub(crate) use image::{placeholder as image_placeholder, PixelRect};
 pub(crate) use layouts::Align;
 pub(super) use layouts::{layout_of, Flex, FlexItem, Grid, Layout, LineAlign, List, Page, Table};
 use props::{alpha, color, degrees, enum_of};

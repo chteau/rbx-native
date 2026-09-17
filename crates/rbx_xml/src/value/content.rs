@@ -9,7 +9,10 @@ use crate::xml_tree::Node;
 pub(crate) fn content(node: &Node, ctx: &Ctx<'_>) -> Variant {
     let value = if node.child("null").is_some() {
         Content::None
-    } else if let Some(uri) = node.child("uri") {
+    } else if let Some(uri) = node.child("uri").or_else(|| node.child("url")) {
+        // `url` is the child the older `ContentId` spelling used, and what a
+        // catalogue model asset (a `Decal` wrapper) still carries under a
+        // `Content` tag: same string, same meaning.
         Content::Uri(uri.text_trim().to_owned())
     } else if let Some(reference) = node.child("Ref") {
         // An unresolved referent is the same as no source at all: the property
@@ -85,6 +88,26 @@ mod tests {
         assert_eq!(
             content(&node, &ctx(&referents, &shared)),
             Variant::Content(Content::Object(target))
+        );
+    }
+
+    #[test]
+    fn content_url_child_is_uri_like_the_legacy_spelling() {
+        let node = Node {
+            tag: "Content".into(),
+            children: vec![Node {
+                tag: "url".into(),
+                text: "http://www.roblox.com/asset/?id=6891610105".into(),
+                ..Node::default()
+            }],
+            ..Node::default()
+        };
+        let (referents, shared) = (HashMap::new(), HashMap::new());
+        assert_eq!(
+            content(&node, &ctx(&referents, &shared)),
+            Variant::Content(Content::Uri(
+                "http://www.roblox.com/asset/?id=6891610105".to_owned()
+            ))
         );
     }
 

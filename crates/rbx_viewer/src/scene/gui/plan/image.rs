@@ -57,6 +57,16 @@ pub(in crate::scene::gui) enum ScaleMode {
 }
 
 /// `Enum.ScaleType`'s ordinals, straight off `enums/ScaleType.yaml`.
+/// What an `ImageLabel`/`ImageButton` shows where its own image is not to be
+/// had — never downloaded, failed, or still on its way: the same placeholder
+/// Studio gives a fresh `ImageLabel` (`ImageLabel.Image`'s own default).
+pub(crate) const PLACEHOLDER: &str = "textures/ui/GuiImagePlaceholder.png";
+
+/// [`PLACEHOLDER`] as the reference the loader is asked for.
+pub(crate) fn placeholder() -> AssetRef {
+    AssetRef::Native(PLACEHOLDER.to_string())
+}
+
 const STRETCH: u32 = 0;
 const SLICE: u32 = 1;
 const TILE: u32 = 2;

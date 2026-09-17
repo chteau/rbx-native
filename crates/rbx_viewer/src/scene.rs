@@ -36,6 +36,7 @@ pub(crate) use bounds::{of_part, Bounds};
 pub(crate) use filemesh::{
     fit_of as file_mesh_fit, AlphaMode, Appearance, Resolved, ResolvedInstance,
 };
+pub(crate) use gui::gui_image_placeholder;
 pub(crate) use gui::{
     resolve_canvas_with as gui_canvas_layout_with, resolve_with as gui_layout_with,
     span_face as gui_span_face, Align as GuiAlign, Anchor as GuiAnchor, Element as GuiElement,
@@ -341,6 +342,11 @@ impl Scene {
         }
         for gui in &self.gui_spaces {
             gui.assets(&mut references);
+        }
+        // Wanted only once something has an image to fall back from: a place
+        // with no `ImageLabel` at all never downloads it.
+        if !references.is_empty() {
+            references.push(gui_image_placeholder());
         }
         references
     }
