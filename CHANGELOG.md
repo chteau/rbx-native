@@ -34,7 +34,10 @@
   dimming with the scene at night. Alt-hover now previews the part Alt-click
   cycling would select next rather than always the nearest hit, so a child
   reached by cycling — the case when the camera sits inside a parent part —
-  is previewed before it is picked. — @chteau
+  is previewed before it is picked. A part the camera sits inside no longer
+  swallows every click and hover — it is ordered by where the ray leaves it,
+  so an Alt-hover or Alt-click reaches a child in front of it directly,
+  without selecting the enclosing part first. — @chteau
 
 
 ## 2026-09-16
