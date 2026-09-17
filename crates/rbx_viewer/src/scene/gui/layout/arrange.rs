@@ -3,7 +3,7 @@
 //! [`super`]'s; this only answers with rects.
 
 use super::super::plan::{Layout, Node};
-use super::{grid, list, place, sizing, table, Rect, TextMeasure};
+use super::{grid, list, page, place, sizing, table, Rect, TextMeasure};
 
 /// What a layout comes to: one rect per sibling in the tree's own order.
 pub(crate) struct Arranged {
@@ -28,6 +28,10 @@ pub(crate) fn arrange(
         },
         Some(Layout::Grid(spec)) => Arranged {
             rects: grid::grid(nodes, spec, parent, measure),
+            cells: None,
+        },
+        Some(Layout::Page(spec)) => Arranged {
+            rects: page::pages(nodes, spec, parent),
             cells: None,
         },
         Some(Layout::Table(spec)) => {

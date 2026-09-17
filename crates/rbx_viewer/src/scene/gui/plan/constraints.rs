@@ -262,6 +262,26 @@ pub(in crate::scene::gui) fn top_bar_inset(properties: &BTreeMap<String, Variant
 /// `TopbarSafeInsets`.
 const CORE_UI_SAFE_INSETS: u32 = 2;
 const TOPBAR_SAFE_INSETS: u32 = 3;
+/// `Enum.ScreenInsets.None`.
+const NO_INSETS: u32 = 0;
+
+/// `ScreenGui.ClipToDeviceSafeArea`: whether the screen's descendants are
+/// scissored to the safe area the insets leave.
+///
+/// "If this property is `true`, all `GuiObject` descendants of the `ScreenGui`
+/// will be clipped to the device's safe area"; it defaults to true, and "will
+/// be ignored if you set `ScreenInsets` to `None`, as doing so implies that
+/// you intentionally want to disregard the device's safe insets"
+/// (`ScreenGui.ClipToDeviceSafeArea`). `IgnoreGuiInset` is the legacy spelling
+/// of that same opt-out (see [`top_bar_inset`]).
+pub(in crate::scene::gui) fn clip_to_safe_area(properties: &BTreeMap<String, Variant>) -> bool {
+    if super::props::flag(properties, "IgnoreGuiInset", false)
+        || enum_of(properties, "ScreenInsets", CORE_UI_SAFE_INSETS) == NO_INSETS
+    {
+        return false;
+    }
+    super::props::flag(properties, "ClipToDeviceSafeArea", true)
+}
 
 /// `LayerCollector.ZIndexBehavior.Global`, where `ZIndex` is compared across
 /// every descendant rather than among siblings. `Sibling` (1) is the default.

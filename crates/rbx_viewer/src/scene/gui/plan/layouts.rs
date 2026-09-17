@@ -16,14 +16,12 @@ use crate::scene::gui::style::Styled;
 
 /// Every layout class this viewer resolves. Roblox honours exactly one layout
 /// per container, so a node holds at most one of these.
-///
-/// TODO: `UIPageLayout`, which shows one child at a time and animates between
-/// them; neither the page transition nor `CurrentPage`'s referent is read.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(in crate::scene::gui) enum Layout {
     List(List),
     Grid(Grid),
     Table(Table),
+    Page(Page),
 }
 
 /// Where a layout puts its content along one axis, or each item across the
@@ -128,9 +126,29 @@ pub(in crate::scene::gui) struct Table {
     pub(in crate::scene::gui) by_name: bool,
 }
 
+/// A `UIPageLayout`: "positions sibling UI elements as full-size pages in a
+/// single row or column" (`UIPageLayout`), one of which is on screen.
+///
+/// Everything else the class carries — `Animated`, `EasingStyle`,
+/// `EasingDirection`, `TweenTime`, `Circular` and the three input switches —
+/// only shapes a transition between pages, and a still frame catches none.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(in crate::scene::gui) struct Page {
+    pub(in crate::scene::gui) vertical: bool,
+    /// `Padding`, a `UDim` resolved against the parent's extent along the
+    /// fill direction — the gap between one page and the next.
+    pub(in crate::scene::gui) padding: (f32, f32),
+    pub(in crate::scene::gui) by_name: bool,
+    /// `CurrentPage`'s referent. `None` where the property names nothing,
+    /// which the docs settle: "If no page has been explicitly navigated to,
+    /// it defaults to the first visible `GuiObject` sibling in layout order."
+    pub(in crate::scene::gui) current: Option<Ref>,
+}
+
 const LIST_CLASS: &str = "UIListLayout";
 const GRID_CLASS: &str = "UIGridLayout";
 const TABLE_CLASS: &str = "UITableLayout";
+const PAGE_CLASS: &str = "UIPageLayout";
 const FLEX_ITEM_CLASS: &str = "UIFlexItem";
 
 /// `Enum.FillDirection.Vertical`; `Horizontal` is 0.
@@ -160,6 +178,8 @@ pub(in crate::scene::gui) fn layout_of(
             Some(Layout::Grid(grid(properties)))
         } else if is(database, class, TABLE_CLASS) {
             Some(Layout::Table(table(properties)))
+        } else if is(database, class, PAGE_CLASS) {
+            Some(Layout::Page(page(dom, properties)))
         } else {
             None
         }
@@ -257,6 +277,20 @@ fn table(properties: &BTreeMap<String, Variant>) -> Table {
         horizontal: align(properties, "HorizontalAlignment"),
         vertical_align: align(properties, "VerticalAlignment"),
         by_name: by_name(properties),
+    }
+}
+
+fn page(dom: &WeakDom, properties: &BTreeMap<String, Variant>) -> Page {
+    Page {
+        // Unlike every other `UIGridStyleLayout`, a page layout's own default
+        // fill direction is Horizontal — a row of pages.
+        vertical: enum_of(properties, "FillDirection", 0) == FILL_VERTICAL,
+        padding: udim(properties, "Padding"),
+        by_name: by_name(properties),
+        current: match properties.get("CurrentPage") {
+            Some(&Variant::Ref(referent)) if dom.get(referent).is_some() => Some(referent),
+            _ => None,
+        },
     }
 }
 

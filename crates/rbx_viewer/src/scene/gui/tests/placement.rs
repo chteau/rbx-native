@@ -90,6 +90,49 @@ fn ignore_gui_inset_gives_the_whole_viewport_back() {
     assert_eq!((rect.y, rect.height), (0.0, VIEWPORT[1]));
 }
 
+/// A frame reaching above the safe area, so the clip either bites or does not.
+fn spilling(dom: &mut WeakDom, gui: Ref) {
+    dom.set_property(gui, "ScreenInsets", Variant::Enum(2))
+        .unwrap();
+    frame(dom, gui, udim2(0.0, 0, 0.0, -20), udim2(1.0, 0, 0.0, 100));
+}
+
+#[test]
+fn clip_to_device_safe_area_scissors_the_screen_to_the_inset_canvas() {
+    let (mut dom, gui) = screen_gui();
+    spilling(&mut dom, gui);
+
+    let clip = resolve(&screens(&dom), VIEWPORT)[0].clip.expect("clipped");
+    assert_eq!(clip.y, 36.0);
+    assert_eq!(clip.height, VIEWPORT[1] - 36.0);
+}
+
+#[test]
+fn clip_to_device_safe_area_off_lets_the_screen_spill_past_the_inset() {
+    let (mut dom, gui) = screen_gui();
+    spilling(&mut dom, gui);
+    dom.set_property(gui, "ClipToDeviceSafeArea", Variant::Bool(false))
+        .unwrap();
+
+    assert!(resolve(&screens(&dom), VIEWPORT)[0].clip.is_none());
+}
+
+/// "This property will be ignored if you set `ScreenInsets` to `None`."
+#[test]
+fn screen_insets_none_ignores_the_safe_area_clip() {
+    let (mut dom, gui) = screen_gui();
+    frame(
+        &mut dom,
+        gui,
+        udim2(0.0, 0, 0.0, -20),
+        udim2(1.0, 0, 0.0, 100),
+    );
+    dom.set_property(gui, "ClipToDeviceSafeArea", Variant::Bool(true))
+        .unwrap();
+
+    assert!(resolve(&screens(&dom), VIEWPORT)[0].clip.is_none());
+}
+
 #[test]
 fn a_global_z_index_screen_sorts_descendants_against_each_other() {
     let (mut dom, gui) = screen_gui();

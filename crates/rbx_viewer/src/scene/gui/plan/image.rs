@@ -81,7 +81,15 @@ pub(in crate::scene::gui) struct Fill {
 }
 
 pub(in crate::scene::gui) fn fill(properties: &BTreeMap<String, Variant>) -> Option<Fill> {
-    let asset = AssetRef::parse(asset_uri(properties.get("Image")?)?).ok()?;
+    // `ImageContent` is the `Content`-typed property Studio now saves the
+    // picture under; `Image` is the `ContentId` spelling every older place
+    // carries, and a file written by a recent Studio holds both with only one
+    // of them filled in.
+    let uri = ["Image", "ImageContent"]
+        .iter()
+        .filter_map(|name| asset_uri(properties.get(*name)?))
+        .find(|uri| !uri.is_empty())?;
+    let asset = AssetRef::parse(uri).ok()?;
     if asset == AssetRef::Empty {
         return None;
     }

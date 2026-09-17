@@ -469,6 +469,68 @@ fn always_on_top_is_carried_through() {
 }
 
 #[test]
+fn brightness_scales_the_canvas_unless_light_takes_over_or_it_sits_on_top() {
+    let cases = [
+        // (Brightness, LightInfluence, AlwaysOnTop) -> factor.
+        (4.0, 0.0, false, 4.0),
+        (4.0, 1.0, false, 1.0),
+        (4.0, 0.5, false, 2.5),
+        (4.0, 0.0, true, 1.0),
+        (0.0, 0.0, false, 0.0),
+    ];
+    for (brightness, influence, on_top, expected) in cases {
+        let (mut dom, gui, placements) = fixture("SurfaceGui", Vec3::ONE);
+        filled(&mut dom, gui);
+        dom.set_property(gui, "Brightness", Variant::Float32(brightness))
+            .unwrap();
+        dom.set_property(gui, "LightInfluence", Variant::Float32(influence))
+            .unwrap();
+        dom.set_property(gui, "AlwaysOnTop", Variant::Bool(on_top))
+            .unwrap();
+        assert_eq!(planned(&dom, &placements)[0].brightness, expected);
+    }
+}
+
+#[test]
+fn max_distance_defaults_differ_and_zero_means_no_limit() {
+    for (class, default) in [("SurfaceGui", 1000.0), ("BillboardGui", f32::INFINITY)] {
+        let (mut dom, gui, placements) = fixture(class, Vec3::ONE);
+        filled(&mut dom, gui);
+        // A billboard with no `Size` has no canvas to place at all.
+        dom.set_property(gui, "Size", udim2(2.0, 0, 2.0, 0))
+            .unwrap();
+        assert_eq!(planned(&dom, &placements)[0].max_distance, default);
+
+        dom.set_property(gui, "MaxDistance", Variant::Float32(0.0))
+            .unwrap();
+        assert_eq!(
+            planned(&dom, &placements)[0].max_distance,
+            f32::INFINITY,
+            "{class} with MaxDistance 0"
+        );
+
+        dom.set_property(gui, "MaxDistance", Variant::Float32(25.0))
+            .unwrap();
+        assert_eq!(planned(&dom, &placements)[0].max_distance, 25.0);
+    }
+}
+
+#[test]
+fn size_offset_reaches_the_billboard_anchor() {
+    let (mut dom, gui, placements) = fixture("BillboardGui", Vec3::ONE);
+    filled(&mut dom, gui);
+    dom.set_property(gui, "Size", udim2(2.0, 0, 2.0, 0))
+        .unwrap();
+    dom.set_property(gui, "SizeOffset", vector2_of(0.5, -0.25))
+        .unwrap();
+
+    match planned(&dom, &placements)[0].anchor {
+        Anchor::Billboard { size_offset, .. } => assert_eq!(size_offset, [0.5, -0.25]),
+        other => panic!("expected a billboard, got {other:?}"),
+    }
+}
+
+#[test]
 fn a_canvas_resolves_udim2_against_its_own_pixels_not_a_viewport() {
     let (mut dom, gui, placements) = fixture("SurfaceGui", Vec3::ONE);
     filled(&mut dom, gui);

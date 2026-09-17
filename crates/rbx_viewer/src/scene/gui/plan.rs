@@ -30,7 +30,7 @@ pub(super) use image::{Fill, ScaleMode};
 // `ScaleMode` above — see the type's own doc comment.
 pub(crate) use image::PixelRect;
 pub(crate) use layouts::Align;
-pub(super) use layouts::{layout_of, Flex, FlexItem, Grid, Layout, LineAlign, List, Table};
+pub(super) use layouts::{layout_of, Flex, FlexItem, Grid, Layout, LineAlign, List, Page, Table};
 use props::{alpha, color, degrees, enum_of};
 pub(super) use props::{flag, float, integer, span, vector2};
 pub(crate) use stroke::Join;
@@ -77,6 +77,10 @@ impl Span {
 /// pruned away.
 #[derive(Clone)]
 pub(super) struct Node {
+    /// What this node was read from, so a property that names a *sibling*
+    /// rather than describing the instance itself — `UIPageLayout.CurrentPage`
+    /// — can be matched back to the node it points at.
+    pub(super) referent: Ref,
     /// Only read for `SortOrder.Name` under a [`List`].
     pub(super) name: String,
     pub(super) layout_order: i32,
@@ -196,6 +200,9 @@ pub(crate) struct Screen {
     /// `ZIndexBehavior.Global`, where `ZIndex` orders every descendant of the
     /// screen against every other rather than only its own siblings.
     pub(super) global_z_index: bool,
+    /// `ClipToDeviceSafeArea`: whether the canvas also scissors its contents
+    /// rather than only offsetting them.
+    pub(super) clip_to_safe_area: bool,
     pub(super) list: Option<Layout>,
     pub(super) roots: Vec<Node>,
     pub(super) groups: Vec<Group>,
@@ -294,6 +301,7 @@ fn gather(
                 display_order: integer(properties, "DisplayOrder", 0),
                 top_inset: constraints::top_bar_inset(properties),
                 global_z_index: constraints::global_z_index(properties),
+                clip_to_safe_area: constraints::clip_to_safe_area(properties),
                 list: layout_of(dom, database, styles, instance.children()),
                 roots,
                 groups,
@@ -375,6 +383,7 @@ fn element(
     let (children, groups) = elements(dom, database, styles, materials, instance.children());
 
     Some(Node {
+        referent,
         name: instance.name().to_string(),
         layout_order: integer(properties, "LayoutOrder", 0),
         position: span(properties, "Position"),
