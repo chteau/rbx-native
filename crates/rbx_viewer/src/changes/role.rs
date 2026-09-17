@@ -85,7 +85,16 @@ impl Role {
         if is("SurfaceAppearance") {
             return Role::Appearance;
         }
-        if is("GuiBase") || is("UIBase") {
+        // The styling family (`StyleBase` covers `StyleSheet`/`StyleRule`;
+        // `StyleDerive`/`StyleLink` hang off `Instance` directly) never
+        // draws, but every GUI tree is planned through it — see
+        // `scene::gui::style` — so an edit to a rule has to reach the same
+        // pass an edit to the styled `Frame` would. A sheet lives outside
+        // any `ScreenGui`, so `gui_changed`'s walk up from it finds no
+        // canvas and replans them all, which is what a sheet's reach
+        // demands.
+        if is("GuiBase") || is("UIBase") || is("StyleBase") || is("StyleDerive") || is("StyleLink")
+        {
             return Role::Gui;
         }
         if is("MaterialVariant") || is("MaterialService") {
@@ -189,6 +198,13 @@ mod tests {
             ("Frame", Role::Gui),
             ("ImageLabel", Role::Gui),
             ("UIListLayout", Role::Gui),
+            // Nothing in the styling family draws by itself, but the GUI
+            // plan is read through it, so an edit to one has to rebuild the
+            // GUI the way an edit to a `Frame` does.
+            ("StyleSheet", Role::Gui),
+            ("StyleRule", Role::Gui),
+            ("StyleDerive", Role::Gui),
+            ("StyleLink", Role::Gui),
             ("MaterialVariant", Role::Material),
             ("MaterialService", Role::Material),
         ] {

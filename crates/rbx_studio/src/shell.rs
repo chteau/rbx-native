@@ -19,6 +19,7 @@ mod save;
 mod script_panel;
 mod scripts;
 mod selection;
+mod style_panel;
 mod toolbar;
 
 use std::collections::HashSet;
@@ -105,6 +106,10 @@ pub(crate) struct Shell {
     /// Every script open in the Script Editor panel; see `shell::scripts`.
     scripts: ScriptEditor,
     properties_scroll: ScrollHandle,
+    /// The Style Editor panel's open fields and last error; see
+    /// `shell::style_panel`.
+    style_edits: style_panel::StyleEdits,
+    style_scroll: ScrollHandle,
     dock_area: Entity<DockArea>,
     quality: Entity<SelectState<QualityOptions>>,
     /// The canonical, mutable tree a Command Bar script runs against; see
@@ -270,6 +275,8 @@ impl Shell {
             covered: HashSet::new(),
             scripts: ScriptEditor::default(),
             properties_scroll: ScrollHandle::new(),
+            style_edits: style_panel::StyleEdits::default(),
+            style_scroll: ScrollHandle::new(),
             dock_area,
             quality: selector,
             dom,

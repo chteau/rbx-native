@@ -35,6 +35,18 @@ impl From<u8> for FontStyle {
     }
 }
 
+/// The ordinal `FontStyle` was read from, which is what the attribute and
+/// binary formats both store — see `attributes::encode`.
+impl From<FontStyle> for u8 {
+    fn from(style: FontStyle) -> Self {
+        match style {
+            FontStyle::Normal => 0,
+            FontStyle::Italic => 1,
+            FontStyle::Other(raw) => raw,
+        }
+    }
+}
+
 /// A font face: a family asset plus the weight and slant selected inside it.
 ///
 /// `weight` is the raw `Enum.FontWeight` value, which is the numeric weight itself

@@ -1,4 +1,5 @@
-//! Decoding of the attribute blob Roblox packs into a single string property.
+//! The attribute blob Roblox packs into a single string property, read by
+//! [`decode`] and written back by [`encode`].
 //!
 //! `AttributesSerialize` (instance attributes) and `StyleRule`'s
 //! `PropertiesSerialize` share one format: a `u32` count followed by that many
@@ -189,6 +190,145 @@ impl Cursor<'_> {
     }
 }
 
+/// The blob [`decode`] would read back as `attributes`, or `None` when one of
+/// the values has no type id here.
+///
+/// `enum_type` names the enum a [`Variant::Enum`] belongs to: the format
+/// writes that name beside the ordinal and `Variant::Enum` only carries the
+/// ordinal, so the caller — which knows the class the property sits on — has
+/// to supply it. An enum whose name it cannot give is refused rather than
+/// written with an empty one, since nothing here can say whether Roblox's own
+/// reader needs it.
+///
+/// Every value is written in the same little-endian layout `decode`'s cursor
+/// reads, so the pair round-trips byte for byte for a blob this module
+/// understands whole.
+pub fn encode(
+    attributes: &BTreeMap<String, Variant>,
+    enum_type: impl Fn(&str) -> Option<String>,
+) -> Option<Vec<u8>> {
+    let mut out = Vec::new();
+    out.extend((attributes.len() as u32).to_le_bytes());
+    for (name, value) in attributes {
+        string(&mut out, name);
+        write(&mut out, value, || enum_type(name))?;
+    }
+    Some(out)
+}
+
+fn string(out: &mut Vec<u8>, text: &str) {
+    out.extend((text.len() as u32).to_le_bytes());
+    out.extend(text.as_bytes());
+}
+
+fn udim(out: &mut Vec<u8>, value: &UDim) {
+    out.extend(value.scale.to_le_bytes());
+    out.extend(value.offset.to_le_bytes());
+}
+
+fn vector2(out: &mut Vec<u8>, value: &Vector2Data) {
+    out.extend(value.x.to_le_bytes());
+    out.extend(value.y.to_le_bytes());
+}
+
+fn color3(out: &mut Vec<u8>, value: &Color3Data) {
+    out.extend(value.r.to_le_bytes());
+    out.extend(value.g.to_le_bytes());
+    out.extend(value.b.to_le_bytes());
+}
+
+/// One value, its type id first — the exact inverse of `Cursor::value`.
+fn write(out: &mut Vec<u8>, value: &Variant, enum_type: impl Fn() -> Option<String>) -> Option<()> {
+    match value {
+        Variant::String(text) => {
+            out.push(0x02);
+            string(out, text);
+        }
+        Variant::Bool(flag) => out.extend([0x03, u8::from(*flag)]),
+        Variant::Int32(number) => {
+            out.push(0x04);
+            out.extend(number.to_le_bytes());
+        }
+        Variant::Float32(number) => {
+            out.push(0x05);
+            out.extend(number.to_le_bytes());
+        }
+        Variant::Float64(number) => {
+            out.push(0x06);
+            out.extend(number.to_le_bytes());
+        }
+        Variant::UDim(value) => {
+            out.push(0x09);
+            udim(out, value);
+        }
+        Variant::UDim2(value) => {
+            out.push(0x0A);
+            udim(out, &value.x);
+            udim(out, &value.y);
+        }
+        Variant::BrickColor(index) => {
+            out.push(0x0E);
+            out.extend(index.to_le_bytes());
+        }
+        Variant::Color3(value) => {
+            out.push(0x0F);
+            color3(out, value);
+        }
+        Variant::Vector2(value) => {
+            out.push(0x10);
+            vector2(out, value);
+        }
+        Variant::Vector3(value) => {
+            out.push(0x11);
+            out.extend(value.x.to_le_bytes());
+            out.extend(value.y.to_le_bytes());
+            out.extend(value.z.to_le_bytes());
+        }
+        Variant::Enum(ordinal) => {
+            out.push(0x15);
+            string(out, &enum_type()?);
+            out.extend(ordinal.to_le_bytes());
+        }
+        Variant::NumberSequence(sequence) => {
+            out.push(0x17);
+            out.extend((sequence.keypoints.len() as u32).to_le_bytes());
+            for keypoint in &sequence.keypoints {
+                out.extend(keypoint.envelope.to_le_bytes());
+                out.extend(keypoint.time.to_le_bytes());
+                out.extend(keypoint.value.to_le_bytes());
+            }
+        }
+        Variant::ColorSequence(sequence) => {
+            out.push(0x19);
+            out.extend((sequence.keypoints.len() as u32).to_le_bytes());
+            for keypoint in &sequence.keypoints {
+                out.extend(keypoint.envelope.to_le_bytes());
+                out.extend(keypoint.time.to_le_bytes());
+                color3(out, &keypoint.color);
+            }
+        }
+        Variant::NumberRange(range) => {
+            out.push(0x1B);
+            out.extend(range.min.to_le_bytes());
+            out.extend(range.max.to_le_bytes());
+        }
+        Variant::Rect(rect) => {
+            out.push(0x1C);
+            vector2(out, &rect.min);
+            vector2(out, &rect.max);
+        }
+        Variant::Font(font) => {
+            out.push(0x21);
+            out.extend(font.weight.to_le_bytes());
+            out.push(u8::from(font.style));
+            string(out, &font.family);
+            string(out, font.cached_face_id.as_deref().unwrap_or(""));
+        }
+        _ => return None,
+    }
+    Some(())
+}
+
 /// The `CollectionService` tags of an instance: the `Tags` property is the tag
 /// names run together, separated by NUL bytes.
 pub fn tags(value: Option<&Variant>) -> Vec<&str> {
@@ -341,6 +481,146 @@ mod tests {
     #[test]
     fn a_truncated_blob_decodes_to_nothing() {
         assert!(decode(Some(&blob(&REAL_STYLE_RULE[..20]))).is_empty());
+    }
+
+    /// `encode` is the inverse of `decode` for every type the cursor reads —
+    /// the blob, not just the map, so a re-encoded property is byte for byte
+    /// what Studio would have written.
+    #[test]
+    fn every_type_the_decoder_reads_round_trips_through_encode() {
+        let attributes: BTreeMap<String, Variant> = [
+            ("AString", Variant::String("hi".into())),
+            ("Bool", Variant::Bool(true)),
+            ("Int", Variant::Int32(-7)),
+            ("Float", Variant::Float32(0.25)),
+            ("Double", Variant::Float64(0.125)),
+            (
+                "Dim",
+                Variant::UDim(UDim {
+                    scale: 0.5,
+                    offset: 10,
+                }),
+            ),
+            (
+                "Dim2",
+                Variant::UDim2(UDim2 {
+                    x: UDim {
+                        scale: 1.0,
+                        offset: 0,
+                    },
+                    y: UDim {
+                        scale: 0.5,
+                        offset: -4,
+                    },
+                }),
+            ),
+            ("Brick", Variant::BrickColor(280)),
+            (
+                "Colour",
+                Variant::Color3(Color3Data {
+                    r: 1.0,
+                    g: 0.0,
+                    b: 0.5,
+                }),
+            ),
+            ("Two", Variant::Vector2(Vector2Data { x: 0.5, y: 1.0 })),
+            (
+                "Three",
+                Variant::Vector3(Vector3Data {
+                    x: 1.0,
+                    y: 2.0,
+                    z: 3.0,
+                }),
+            ),
+            ("Member", Variant::Enum(3)),
+            (
+                "Numbers",
+                Variant::NumberSequence(NumberSequence {
+                    keypoints: vec![
+                        NumberSequenceKeypoint {
+                            envelope: 0.0,
+                            time: 0.0,
+                            value: 1.0,
+                        },
+                        NumberSequenceKeypoint {
+                            envelope: 0.25,
+                            time: 1.0,
+                            value: 0.0,
+                        },
+                    ],
+                }),
+            ),
+            (
+                "Colours",
+                Variant::ColorSequence(ColorSequence {
+                    keypoints: vec![ColorSequenceKeypoint {
+                        envelope: 0.0,
+                        time: 0.5,
+                        color: Color3Data {
+                            r: 0.0,
+                            g: 1.0,
+                            b: 0.0,
+                        },
+                    }],
+                }),
+            ),
+            (
+                "Range",
+                Variant::NumberRange(NumberRange { min: 0.0, max: 8.0 }),
+            ),
+            (
+                "Box",
+                Variant::Rect(Rect {
+                    min: Vector2Data { x: 0.0, y: 1.0 },
+                    max: Vector2Data { x: 2.0, y: 3.0 },
+                }),
+            ),
+            (
+                "Face",
+                Variant::Font(Font {
+                    family: "Sans".into(),
+                    weight: 700,
+                    style: FontStyle::Italic,
+                    cached_face_id: Some("rbxasset://x".into()),
+                }),
+            ),
+        ]
+        .into_iter()
+        .map(|(name, value)| (name.to_owned(), value))
+        .collect();
+
+        let bytes = encode(&attributes, |_| Some("Font".to_owned())).expect("encodable");
+
+        assert_eq!(decode(Some(&blob(&bytes))), attributes);
+    }
+
+    /// The blob a re-encode writes is the same bytes Studio wrote, not just
+    /// the same map — what makes writing one back to `PropertiesSerialize`
+    /// safe.
+    #[test]
+    fn a_studio_written_rule_re_encodes_to_the_same_bytes() {
+        let decoded = decode(Some(&blob(REAL_STYLE_RULE)));
+
+        assert_eq!(encode(&decoded, |_| None).as_deref(), Some(REAL_STYLE_RULE));
+    }
+
+    /// `Variant::Enum` carries no enum name, so one the caller cannot name
+    /// is refused rather than written with an empty name that Roblox's own
+    /// reader may or may not accept.
+    #[test]
+    fn an_enum_with_no_type_name_is_refused() {
+        let attributes = BTreeMap::from([("Member".to_owned(), Variant::Enum(1))]);
+
+        assert_eq!(encode(&attributes, |_| None), None);
+    }
+
+    /// A value the cursor never produces (`decode` stops at an unknown type
+    /// id) has no id to write either.
+    #[test]
+    fn a_type_the_decoder_cannot_read_cannot_be_encoded() {
+        let attributes = BTreeMap::from([("Where".to_owned(), Variant::Ref(crate::Ref::new(1)))]);
+
+        assert_eq!(encode(&attributes, |_| Some("Font".to_owned())), None);
     }
 
     #[test]
