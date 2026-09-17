@@ -42,6 +42,28 @@
   already used: a place that sets it to 0 renders matte with full, vivid
   colours as Studio does, instead of a broad white highlight washing the
   greens toward grey, while a place at 1 keeps the full highlight. — @chteau
+- **GUI — full `GuiObject` compatibility (`feat/gui-full-guiobject-compatibility`).**
+  The viewer's `ScreenGui`/`BillboardGui`/`SurfaceGui` trees now render the
+  rest of what a real place puts in them. `TextLabel`/`TextButton`/`TextBox`
+  draw their text, shaped with `cosmic-text` (already in the tree under
+  GPUI) in Roblox's own font families, fetched from the Studio content
+  package at runtime like textures are and falling back to a system font
+  until they land; `TextScaled`, wrapping, both alignments, rich text,
+  strokes, truncation and a `TextBox`'s placeholder included. `ImageButton`
+  and every image `ScaleType`, sub-rects and pixelated resampling.
+  `UICorner`, `UIStroke` and `UIGradient` through an SDF rounded box and a
+  gradient ramp in the GUI shader, so corners clip and gradients tint the
+  background, image and text alike. `UIPadding`, `UIScale`, the aspect,
+  size and text-size constraints, `AutomaticSize`, `SizeConstraint`, the
+  `BorderMode`s, `ScreenInsets` and `ZIndexBehavior.Global`; nested
+  `Rotation` composes the way `AbsoluteRotation` says. The layout family:
+  `UIListLayout` flex and wrapping, `UIFlexItem`, `UIGridLayout`,
+  `UITableLayout`. A `StyleSheet`/`StyleRule`/`StyleLink` engine — a real
+  selector parser and cascade, derives and tokens, the rule properties
+  decoded from the `PropertiesSerialize` attribute blob — and a Style
+  Editor panel in `rbxstudio` that edits sheets, rules and their properties
+  with the viewport following live. Every behaviour was checked against
+  `Roblox/creator-docs`; where a page is silent the code says so. — @chteau
 
 
 ## 2026-09-16

@@ -58,7 +58,71 @@ Roblox's own engine.
 - [x] Effects: `ParticleEmitter` (CPU simulation + billboards), `Beam`,
   `Trail`.
 - [x] GUI containers: `ScreenGui`/`Frame`/`ImageLabel`, `BillboardGui`,
-  `SurfaceGui` — see [What's planned](#gui--full-guiobject-compatibility) for text.
+  `SurfaceGui`.
+- [x] GUI — full `GuiObject` compatibility (every class below checked
+  against `Roblox/creator-docs`; where the docs are silent the code says so
+  in a comment rather than presenting a guess as verified):
+  - **Text**: `TextLabel`/`TextButton`/`TextBox` draw their glyphs, shaped
+    with `cosmic-text` (already in the tree under GPUI). Roblox's own font
+    families are fetched at runtime from the Studio content package the way
+    textures already are — the family JSON, then the closest face by
+    weight/style — never shipped; a system font stands in until they land
+    or where a face needs an API key. `FontFace` and the legacy `Font` enum,
+    `TextSize`/`TextScaled`/`TextWrapped`, both alignments, `LineHeight`,
+    `TextStrokeColor3`/`Transparency`, `RichText` (`<b>`, `<i>`, `<u>`,
+    `<s>`, `<br/>`, `<font>`; other tags stripped), `TextTruncate`,
+    `MaxVisibleGraphemes`, a `TextBox`'s placeholder, and `AutomaticSize`
+    on a text object. Approximations, each commented: a text stroke is the
+    glyphs drawn again in the eight neighbouring pixel offsets (Roblox
+    publishes no algorithm), `TextTruncate.SplitWord` truncates like
+    `AtEnd`, and `MaxVisibleGraphemes` counts `char`s rather than grapheme
+    clusters.
+  - `ImageButton`, plus every `ScaleType` (`Slice` with `SliceCenter`/
+    `SliceScale`, `Fit`, `Crop`, `Tile`), `ImageRectOffset`/`ImageRectSize`
+    and `ResampleMode.Pixelated`. `Tile` combined with an image sub-rect
+    tiles the whole image (a wrapping sampler cannot repeat a window into
+    it) — the docs describe no such combination.
+  - `GuiObject.Rotation` composed the way `GuiBase2d.AbsoluteRotation`
+    implies: a rotated element carries its children around its own centre,
+    then each turns about its own. `ClipsDescendants` is still a no-op
+    under any rotation, per the docs' default
+    `ClipsDescendantsSupportsRotation` mode.
+  - `UIGradient` — `Color`/`Transparency` sequences, `Rotation`, `Offset`,
+    `Scale`, `Type` (`Linear`/`Radial`/`Conical`) and `TileMode`, applied
+    to the background, the image and the text alike through a gradient
+    ramp texture the GUI shader samples.
+  - `UICorner` (per-corner radii, an anti-aliased rounded-box SDF in the
+    shader that clips the background, image and text), `UIStroke` (`Border`
+    and `Contextual` — a text object's contextual stroke outlines its
+    glyphs — with `Thickness`, `Transparency`, `LineJoinMode`,
+    `BorderStrokePosition`/`BorderOffset`, `StrokeSizingMode`; one stroke
+    per element, a gradient inside a stroke not read), `UIPadding`.
+  - Layout: `UIListLayout` with `HorizontalFlex`/`VerticalFlex`, `Wraps`
+    and `ItemLineAlignment`, `UIFlexItem`, `UIGridLayout`, `UITableLayout`.
+    `UIPageLayout` is not read (one page at a time, animated).
+  - Sizing: `UIScale`, `UIAspectRatioConstraint` (both `AspectType`s, both
+    `DominantAxis`), `UISizeConstraint`, `UITextSizeConstraint`,
+    `AutomaticSize` (children extent, a layout's `AbsoluteContentSize`,
+    a text object's own bounds), `SizeConstraint`, `BorderMode`
+    (`Middle`/`Inset`), `ScreenGui.ScreenInsets`/`IgnoreGuiInset` (the top
+    bar reserved at 36 px — no Roblox page states the number, it is one
+    named constant) and `ZIndexBehavior.Global`.
+  - `StyleSheet`/`StyleRule`/`StyleLink`/`StyleDerive` — the selector
+    engine (class, `.Tag`, `#Name`, `>` and `>>` combinators, `,` lists,
+    nested rules merged into their parent's selector), `Priority` then
+    document order, derives flattened in priority order, `$Token`s
+    resolved along the derive chain, and `StyleRule.Properties` decoded
+    from (and written back to) the `PropertiesSerialize` attribute blob,
+    verified byte-for-byte against a Studio-written file. State selectors
+    (`:Hover`…), `@Query`, `::UIComponent` phantom instances and property
+    transitions parse but never apply: a still frame has no input. A matching
+    rule always wins over the instance's own value, since a saved place
+    cannot tell an explicit override from a default. Real Studio's **Style
+    Editor** panel has its equivalent in `rbxstudio` (View ⟩ Style Editor):
+    every sheet, its derives and rules, the selector/priority/properties
+    editable in place through the undo history, with the viewport
+    re-rendering on every edit; sheet tokens and `StyleQuery` are not
+    editable there yet.
 - [x] Free-flight camera (WASD + mouse look + wheel), exponentially-eased
   movement (mouse look itself stays unfiltered).
 - [x] Orthographic camera mode — toggled from the Viewport panel's overflow
@@ -564,63 +628,6 @@ Roblox's own engine.
   sources, physics/pathfinding visualization, scroll speed). Treat this as
   a genuine rbx-native addition, not a claim that it matches Studio.
 
-#### GUI — full `GuiObject` compatibility
-`ScreenGui`/`Frame`/`ImageLabel`/`BillboardGui`/`SurfaceGui` render today
-(see "What's been implemented"); everything below is the rest of what a
-real Studio UI needs. All classes below checked against
-`Roblox/creator-docs` — real, current, non-deprecated.
-
-- [ ] 📋 **Text**: `TextLabel`/`TextButton`/`TextBox` — blocked on picking a
-  text-shaping dependency (e.g. `cosmic-text`), not yet chosen. The biggest
-  single item in this whole list; everything else here is comparatively
-  small.
-- [ ] 📋 `ImageButton` — the image-based sibling of `TextButton`, not yet
-  scoped anywhere (easy to lose track of next to `TextButton`, but a
-  distinct class).
-- [x] 🚧 `GuiObject.Rotation` applied in rendering: the element's background,
-  border and image all turn together about the element's own centre, never
-  its `AnchorPoint` — Roblox's own docs for the property are explicit you
-  can't move that pivot. `ClipsDescendants` is ignored wherever the element
-  or any ancestor has a non-zero `Rotation`, matching the same primary
-  source's description of the two as incompatible — but only in the mode
-  that source describes as the default: `StarterGui.ClipsDescendantsSupportsRotation`
-  (a `RolloutState`, `NotScriptable`) gates a *second* mode where enabled
-  clipping works correctly against rotated shapes instead, which this
-  renderer doesn't read or model at all — the flag isn't scriptable, so
-  there's nothing in a DOM to read regardless. Still open: a rotated
-  element's children aren't carried around with it the way Roblox's
-  cumulative `GuiBase2d.AbsoluteRotation` implies real Studio composes
-  nested rotations — each element only ever turns about its own centre by
-  its own `Rotation`.
-- [ ] 📋 `UIGradient` — `Color` (`ColorSequence`), `Transparency`
-  (`NumberSequence`), `Rotation`, `Offset`, `Scale`, and a `Type` enum
-  (`Linear`/`Radial`/`Conical`) plus `TileMode` — not just a linear
-  gradient, worth getting the enum right from the start rather than
-  hardcoding linear and bolting the rest on later.
-- [ ] 📋 `UIStroke` (outline on text/UI borders), `UICorner` (rounded-corner
-  deformation — note this is a deliberate style exception the "no rounded
-  corners" convention this project's *own* editor UI follows doesn't apply
-  to, since it's rendering someone else's `ScreenGui`, not `rbxstudio`'s
-  chrome), `UIPadding`.
-- [ ] 📋 Layout: `UIListLayout` (already noted), `UIGridLayout`,
-  `UITableLayout`, `UIFlexItem` (flex behavior inside a `UIListLayout`).
-- [ ] 📋 Sizing constraints: `UIScale`, `UIAspectRatioConstraint`,
-  `UISizeConstraint`, `UITextSizeConstraint`.
-- [ ] 📋 `StyleSheet`/`StyleRule`/`StyleLink` — Roblox's CSS-like UI theming
-  system: a `StyleLink` parented under a tree root (e.g. a `ScreenGui`)
-  applies one `StyleSheet`'s `StyleRule` children to it, each rule's
-  `Selector` a CSS-like string (class/tag/state/combinators — Roblox's own
-  example: `.Container > ImageLabel.BlueOnHover:Hover`) with a `Priority`
-  for conflicts, and sheets can derive from other sheets
-  (`StyleSheet:SetDerives`). A real selector-matching engine, not a small
-  add-on to the items above — worth scoping as its own effort once the
-  rest of GUI rendering is solid, not bundled in with it. Real Studio
-  authors these through a dedicated **Style Editor** panel (`Window` ⟩
-  **UI** tab, per `studio/ui-overview.md`), not raw property editing —
-  worth an equivalent panel once the underlying `StyleSheet`/`StyleRule`
-  engine above exists, rather than expecting someone to hand-write
-  selector strings in the Properties panel.
-
 #### Properties panel — remaining type editors
 - [ ] 📋 **Layout/UX pass on the panel itself**, separate from the
   per-type editor work below. Reported directly from real use, not yet
@@ -799,9 +806,9 @@ against `Roblox/creator-docs` rather than assumed:
   reference point) that shows only the selected `ScreenGui`'s layout,
   scaled to a chosen device resolution, with drag/resize handles on
   `GuiObject`s directly — genuinely separate from accidentally nudging a
-  `BasePart` in the 3D view. Depends on GUI rendering being reasonably
-  complete first (see "GUI — full `GuiObject` compatibility") since
-  there's not much to edit interactively before then.
+  `BasePart` in the 3D view. GUI rendering is now reasonably complete
+  (see "What's been implemented" → Renderer → GUI), so there is something
+  to edit interactively.
 - [ ] 📋 **3D asset import and round-trip through Roblox**, i.e. import a
   local `.fbx`/`.obj`/`.gltf` (drag-and-drop or
   `Insert > Model/Mesh/Image`), upload it to Roblox as a real asset via
