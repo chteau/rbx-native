@@ -161,7 +161,9 @@ Roblox's own engine.
     service (a `ScreenGui` elsewhere — a copy under `Workspace`, say — is
     unaffected), toggling it in the editor re-plans live, and
     `rbxview --show-development-gui` overrides it for a player's-eye
-    screenshot. Known gaps:
+    screenshot. The mouse wheel over a `ScrollingFrame` in the editor's
+    viewport scrolls its canvas rather than the camera (viewing, not
+    editing, so it never enters the undo stack). Known gaps:
     the deprecated `FrameStyle`/`ButtonStyle` skins (client assets),
     `TextDirection`/`OpenTypeFeatures`, `BillboardGui.ExtentsOffset*`.
     Several `UIStroke`s on one object draw in `ZIndex` order.

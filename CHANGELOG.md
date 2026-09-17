@@ -88,7 +88,10 @@
   placeholder, `SpawnLocation`'s decal loads from the catalogue, and an
   asset fetch refused with 429 or a gateway error is retried with backoff
   (the keyed asset route allows 1000 requests a minute per key owner) and
-  re-queued by the editor's loader instead of leaving the label blank. — @chteau
+  re-queued by the editor's loader instead of leaving the label blank. The
+  mouse wheel over a `ScrollingFrame` in the viewport scrolls it, as Studio's
+  edit view does, without entering the undo stack; the wheel anywhere else
+  still moves the camera. — @chteau
 
 
 ## 2026-09-16
