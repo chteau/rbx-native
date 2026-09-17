@@ -23,6 +23,7 @@
 mod layout;
 mod plan;
 mod space;
+mod style;
 
 #[cfg(test)]
 pub(crate) use layout::Painted;
