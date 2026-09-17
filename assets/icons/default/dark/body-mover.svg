@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- body-mover.svg - tile 14 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>body-mover</title>
+  <path d="M6,14 L10.5,9.5 C13,7 13,4 13,4 C13,4 10,4 7.5,6.5 L3,11 Z" fill="#A6B2C0"/>
+  <circle cx="9.5" cy="6.5" r="1.4" fill="#7A8794"/>
+  <path d="M3,11 L1.5,10.2 L2.8,13.4 L6,14 L5.2,12.5 Z" fill="#F6CE4B"/>
+</svg>

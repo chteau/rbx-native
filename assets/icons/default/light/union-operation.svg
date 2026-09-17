@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- union-operation.svg - tile 73 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>union-operation</title>
+  <path d="M8,1.5 L14,5 L14,11.5 L8,15 L2,11.5 L2,5 Z" fill="#5C6773"/>
+  <path d="M8,1.5 L14,5 L8,8.5 L2,5 Z" fill="#3E4752"/>
+</svg>

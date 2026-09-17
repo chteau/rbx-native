@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- universal-constraint.svg - tile 123 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>universal-constraint</title>
+  <circle cx="8" cy="8" r="3.4" fill="#63AEF5"/>
+  <g fill="#A6B2C0">
+    <rect x="7.3" y="1" width="1.4" height="3.5"/>
+    <rect x="11.5" y="7.3" width="3.5" height="1.4"/>
+    <rect x="7.3" y="11.5" width="1.4" height="3.5"/>
+    <rect x="1" y="7.3" width="3.5" height="1.4"/>
+  </g>
+</svg>

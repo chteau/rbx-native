@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- proximity-prompt.svg - tile 124 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>proximity-prompt</title>
+  <rect x="6.8" y="1.5" width="2.4" height="6" rx="0.8" fill="#1A4E88"/>
+  <path d="M4,9 L9,9 L11,11 L11,13.5 L6,13.5 C4.5,13.5 4,12.5 4,11.5 Z" fill="#2C74C0"/>
+</svg>

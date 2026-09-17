@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- network-replicator.svg - tile 29 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>network-replicator</title>
+  <rect x="1" y="1.4" width="5.4" height="5.4" rx="1.2" fill="#1A4E88"/>
+  <rect x="9.6" y="9.2" width="5.4" height="5.4" rx="1.2" fill="#2C74C0"/>
+  <path d="M7.2,4.1 L12.3,4.1 L12.3,7" fill="none" stroke="#2C74C0" stroke-width="1.4" stroke-linecap="round"/>
+  <path d="M12.3,8.9 L10.9,6.4 L13.7,6.4 Z" fill="#2C74C0"/>
+  <path d="M8.8,11.9 L3.7,11.9 L3.7,9" fill="none" stroke="#1A4E88" stroke-width="1.4" stroke-linecap="round"/>
+  <path d="M3.7,7.1 L5.1,9.6 L2.3,9.6 Z" fill="#1A4E88"/>
+</svg>

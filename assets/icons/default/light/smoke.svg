@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- smoke.svg - tile 59 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>smoke</title>
+  <g fill="#5C6773">
+    <circle cx="6" cy="10" r="4"/>
+    <circle cx="9.5" cy="8.5" r="3.2"/>
+    <circle cx="5" cy="6.5" r="2.6"/>
+    <circle cx="10.5" cy="11.5" r="2.4"/>
+  </g>
+</svg>

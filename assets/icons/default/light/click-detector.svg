@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- click-detector.svg - tile 41 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>click-detector</title>
+  <g fill="none" stroke="#3E4752" stroke-width="1.4">
+    <path d="M9,10 L14,10"/>
+    <path d="M8,12.5 L14,12.5"/>
+    <path d="M9,15 L13,15"/>
+  </g>
+  <path d="M2,1 L2,11 L4.3,9 L5.8,12.5 L7.3,11.8 L5.9,8.3 L9,8 Z" fill="#5C6773"/>
+</svg>

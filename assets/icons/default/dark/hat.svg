@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- hat.svg - tile 45 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>hat</title>
+  <ellipse cx="8" cy="12.5" rx="6.5" ry="1.6" fill="#63AEF5"/>
+  <path d="M4.5,12 C4.5,6 6,3 8,3 C10,3 11.5,6 11.5,12 Z" fill="#3C7FC4"/>
+</svg>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- message.svg - tile 33 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>message</title>
+  <rect x="1.5" y="2.5" width="13" height="8.5" rx="3" fill="#0B7F8D"/>
+  <path d="M4,11 L4,14 L7.2,11 Z" fill="#0B7F8D"/>
+</svg>

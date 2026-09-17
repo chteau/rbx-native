@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- material-variant.svg - tile 130 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>material-variant</title>
+  <circle cx="9" cy="9" r="5.5" fill="#2C74C0"/>
+  <circle cx="7" cy="7" r="1.4" fill="#1A4E88" opacity="0.6"/>
+  <g transform="translate(-0.6,-1.2) scale(0.55)">
+    <circle cx="9" cy="9" r="5.5" fill="#2C74C0"/>
+    <circle cx="7" cy="7" r="1.4" fill="#1A4E88" opacity="0.6"/>
+  </g>
+</svg>

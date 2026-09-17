@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- hinge-plate.svg - tile 82 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>hinge-plate</title>
+  <path d="M2.6,2.4 L2.6,10 L10.4,10" fill="none" stroke="#63AEF5" stroke-width="2.4" stroke-linecap="round"/>
+  <circle cx="2.6" cy="10" r="1.6" fill="none" stroke="#1E242B" stroke-width="1"/>
+</svg>

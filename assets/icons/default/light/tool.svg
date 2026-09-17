@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- tool.svg - tile 17 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>tool</title>
+  <path d="M2,3 L6,7" stroke="#B87710" stroke-width="2" stroke-linecap="round"/>
+  <rect x="1" y="1.5" width="2.4" height="2.4" fill="#8A570B" transform="rotate(-45 2.2 2.7)"/>
+  <path d="M13,3 L9,7" stroke="#3E4752" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M13.5,1.5 C15,1.5 15,3.5 13.8,4 L12,5 L10.6,3.6 L11.6,1.8 C12.1,1.6 13,1.4 13.5,1.5 Z" fill="#5C6773"/>
+  <path d="M3.5,12.5 L8.5,7.5" stroke="#5C6773" stroke-width="1.8"/>
+</svg>

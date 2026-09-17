@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- player.svg - tile 12 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>player</title>
+  <rect x="4.6" y="1.8" width="6.8" height="5.8" rx="1" fill="#FBD34B"/>
+  <rect x="2.6" y="8.8" width="10.8" height="5.4" rx="1.2" fill="#63AEF5"/>
+</svg>

@@ -1,6 +1,12 @@
 /target
 shots/
 
+# Working notes for the icon kit (spec + style references) — not part of the
+# shipped icon set, and due to be superseded once Studio gets real icon/theme
+# pack support (see ROADMAP.md); no need to track their churn until then.
+/assets/icons/README.md
+/assets/icons/styles/
+
 # Claude Code's own local, session-specific state — machine/session
 # metadata (PIDs, timestamps, local permission grants) that must never be
 # shared between contributors. `.claude/skills/` is real project tooling

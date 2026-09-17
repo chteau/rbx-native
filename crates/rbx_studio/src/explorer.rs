@@ -10,7 +10,7 @@ use gpui_kit::component::tree::TreeItem;
 use gpui_kit::{RenderImage, SharedString};
 use rbx_dom::{Ref, WeakDom};
 
-use crate::class_icons::{self, SpriteSheet};
+use crate::class_icons;
 
 pub(crate) mod reparent;
 
@@ -105,8 +105,8 @@ struct Node {
     children: Vec<Node>,
 }
 
-/// A row's icon: Studio's own sprite when its class is documented and the
-/// sheet downloaded, a Lucide stand-in otherwise.
+/// A row's icon: this project's own icon, rasterized from the kit (see
+/// `class_icons`), when its class is covered; a Lucide stand-in otherwise.
 #[derive(Clone)]
 pub(crate) enum ClassIcon {
     Sprite(Arc<RenderImage>),
@@ -124,14 +124,14 @@ pub(crate) struct Explorer {
 }
 
 impl Explorer {
-    pub(crate) fn from_dom(dom: &WeakDom, sheet: Option<&SpriteSheet>) -> Self {
+    pub(crate) fn from_dom(dom: &WeakDom) -> Self {
         let mut icons = HashMap::new();
         // Every instance of a class shares one icon; resolving it once per
         // class rather than once per instance keeps a place with thousands of
-        // parts from slicing the same tile thousands of times.
+        // parts from repeating the same lookup thousands of times.
         let mut per_class = HashMap::new();
         let roots = roots(dom);
-        let all_items = items(&roots, sheet, &mut per_class, &mut icons);
+        let all_items = items(&roots, &mut per_class, &mut icons);
         let default_items = roots
             .iter()
             .zip(all_items.iter())
@@ -262,7 +262,6 @@ fn is_default_visible(class: &str) -> bool {
 
 fn items(
     nodes: &[Node],
-    sheet: Option<&SpriteSheet>,
     per_class: &mut HashMap<String, ClassIcon>,
     icons: &mut HashMap<SharedString, ClassIcon>,
 ) -> Vec<TreeItem> {
@@ -272,33 +271,19 @@ fn items(
             let id = item_id(Ref::new(node.id));
             let class_icon = per_class
                 .entry(node.class.clone())
-                .or_insert_with(|| resolve_icon(&node.class, sheet))
+                .or_insert_with(|| resolve_icon(&node.class))
                 .clone();
             icons.insert(id.clone(), class_icon);
 
-            TreeItem::new(id, node.name.clone()).children(items(
-                &node.children,
-                sheet,
-                per_class,
-                icons,
-            ))
+            TreeItem::new(id, node.name.clone()).children(items(&node.children, per_class, icons))
         })
         .collect()
 }
 
-/// Studio's own icon for `class`, sliced from `sheet` when it downloaded and
-/// the class carries a documented `ExplorerImageIndex`; the Lucide stand-in
-/// otherwise (no sheet, or a class newer than the mirrored metadata).
-fn resolve_icon(class: &str, sheet: Option<&SpriteSheet>) -> ClassIcon {
-    // Short-circuit on a missing sheet: `tile_index` now fetches the class
-    // icon table over the network on first use, so without this, every call
-    // (sheet or not) would pay for that fetch instead of only the ones that
-    // could actually use its result.
-    let sprite = sheet.and_then(|sheet| {
-        class_icons::tile_index(class).and_then(|index| class_icons::tile(sheet, index))
-    });
-
-    match sprite {
+/// This project's own icon for `class` (see `class_icons`) when the kit
+/// covers it, the Lucide stand-in otherwise.
+fn resolve_icon(class: &str) -> ClassIcon {
+    match class_icons::icon_tile(class) {
         Some(image) => ClassIcon::Sprite(image),
         None => ClassIcon::Lucide(icon(class)),
     }

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- surface-selection.svg - tile 55 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>surface-selection</title>
+  <path d="M8,2 L14,5.5 L14,11.5 L8,15 L2,11.5 L2,5.5 Z" fill="none" stroke="#A6B2C0" stroke-width="1"/>
+  <path d="M8,8.5 L8,2 M8,8.5 L14,11.5 M8,8.5 L2,11.5" fill="none" stroke="#A6B2C0" stroke-width="1"/>
+  <path d="M8,8.5 L14,5.5 L14,11.5 L8,15 Z" fill="#F3B44A" opacity="0.35"/>
+</svg>

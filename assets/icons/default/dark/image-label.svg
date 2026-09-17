@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- image-label.svg - tile 49 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>image-label</title>
+  <rect x="1" y="1" width="14" height="14" rx="1.2" fill="#BC97F0"/>
+  <rect x="2.4" y="2.4" width="11.2" height="11.2" fill="#2E6A96"/>
+  <path d="M2.4,10 L5.6,6.6 L8,9 L10.4,5.8 L13.6,9.4 L13.6,13.6 L2.4,13.6 Z" fill="#4ACE6B"/>
+</svg>

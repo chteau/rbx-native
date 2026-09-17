@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- sparkles.svg - tile 42 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>sparkles</title>
+  <path d="M8,2 L9.2,6.8 L14,8 L9.2,9.2 L8,14 L6.8,9.2 L2,8 L6.8,6.8 Z" fill="#C02E78"/>
+  <g fill="none" stroke="#8C1F57" stroke-width="1.1" stroke-linecap="round">
+    <path d="M12.5,2.5 L12.5,5 M11.25,3.75 L13.75,3.75"/>
+    <path d="M12,11.5 L12,13.5 M11,12.5 L13,12.5"/>
+  </g>
+</svg>

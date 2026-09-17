@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- localization-table.svg - tile 97 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>localization-table</title>
+  <rect x="1.5" y="1.5" width="13" height="13" rx="1" fill="none" stroke="#2C74C0" stroke-width="1"/>
+  <rect x="1.5" y="1.5" width="13" height="3" fill="#1C8D3E"/>
+  <g stroke="#2C74C0" stroke-width="0.9">
+    <line x1="1.5" y1="8" x2="14.5" y2="8"/>
+    <line x1="1.5" y1="11.5" x2="14.5" y2="11.5"/>
+    <line x1="6" y1="4.5" x2="6" y2="14.5"/>
+    <line x1="10.5" y1="4.5" x2="10.5" y2="14.5"/>
+  </g>
+</svg>

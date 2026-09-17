@@ -63,7 +63,6 @@ use rbx_reflection::ReflectionDatabase;
 use rbx_viewer::{Headless, QualityLevel};
 
 use camera::PlaceCamera;
-use class_icons::SpriteSheet;
 use explorer::Explorer;
 use properties::Properties;
 use save::Format;
@@ -108,8 +107,10 @@ fn main() {
     let show_all_services = settings.show_all_services;
     let orthographic = settings.orthographic;
 
-    // The full Lucide catalog: the explorer's class icons are well outside the
-    // default bundle the components themselves use.
+    // The full Lucide catalog: the menu bar's icons are well outside the
+    // default bundle the components themselves use. The Explorer's own class
+    // icons are rasterized straight from `class_icons`'s embedded SVGs, not
+    // painted through this asset source at all — see its own doc comment.
     let app = gpui_kit::application().with_assets(gpui_kit::assets::AllAssets);
     app.run(move |cx| {
         gpui_kit::init(cx);
@@ -154,10 +155,6 @@ struct Place {
     /// Cloned once per run into a fresh `rbx_lua::Runtime`, which takes
     /// ownership of its copy.
     database: ReflectionDatabase,
-    /// Kept for the Explorer's post-script rebuild; a missing sheet is a
-    /// warning, not a load failure — every rebuild then falls back to Lucide
-    /// icons class by class, same as the first build (see `Explorer::from_dom`).
-    icons: Option<SpriteSheet>,
     /// Where Ctrl+S writes back to, and in which format — see `save`.
     /// `rbx_viewer::read_place` sniffs the same bytes internally but does not
     /// expose its choice, so `load` sniffs them a second time here rather
@@ -170,18 +167,16 @@ fn load(path: &Path, select: Option<&str>) -> Result<Place, String> {
     let bytes = std::fs::read(path).map_err(|err| format!("failed to read {path:?}: {err}"))?;
     let format = Format::sniff(&bytes);
     let dom = rbx_viewer::read_place(path)?;
-    let icons = class_icons::load_sheet();
     let database = ReflectionDatabase::embedded();
 
     Ok(Place {
-        explorer: Explorer::from_dom(&dom, icons.as_ref()),
+        explorer: Explorer::from_dom(&dom),
         selected: select.and_then(|name| explorer::find_by_name(&dom, name)),
         camera: PlaceCamera::from_dom(&dom),
         viewer: Headless::load(path, true)?,
         properties: Properties::new(database.clone()),
         dom,
         database,
-        icons,
         path: path.to_path_buf(),
         format,
     })

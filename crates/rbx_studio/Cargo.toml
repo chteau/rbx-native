@@ -33,13 +33,17 @@ rbx_viewer = { path = "../rbx_viewer" }
 # Same reasoning as `rbx_binary` above: `save` sniffs and writes XML place
 # files with this crate's already-tested `is_xml`/`serialize`.
 rbx_xml = { path = "../rbx_xml" }
-# Parses (and re-serializes for the on-disk cache) the `ClassName ->
-# ExplorerImageIndex` table scanned out of ReflectionMetadata.xml at runtime.
+# Dock layout and editor settings, persisted to disk as JSON.
 serde_json = "1"
-# Own HTTP GET for ReflectionMetadata.xml: a plain GitHub raw URL, not a
-# `rbxasset://` reference AssetResolver knows how to resolve. Same version
-# rbx_assets already pins, so this adds no new dependency version to the tree.
-ureq = "3"
+# This project's own class icons (`class_icons::DefaultIcons`), embedded at
+# compile time from `assets/icons/default/dark` — same version gpui-kit-assets
+# already pins for its own Lucide catalog, so this adds no new dependency
+# version to the tree.
+rust-embed = { version = "8", features = ["interpolate-folder-path"] }
+# Rasterizes those SVGs into the sprite the Explorer paints; GPUI itself
+# vendors this exact version to rasterize its own `svg()` icons, so this adds
+# no new dependency version to the tree.
+resvg = "0.46"
 # GPUI's own handle type: the X11 window id the pointer lock warps in comes out
 # of it, so a second copy of the crate would not typecheck.
 raw-window-handle = "0.6"

@@ -39,7 +39,6 @@ use rbx_reflection::ReflectionDatabase;
 use rbx_viewer::pick::Selected;
 use rbx_viewer::QualityLevel;
 
-use crate::class_icons::SpriteSheet;
 use crate::command_bar::{self, CommandBar};
 use crate::explorer::Explorer;
 use crate::history::{History, DEFAULT_CAP};
@@ -119,7 +118,6 @@ pub(crate) struct Shell {
     /// Whole-DOM snapshots either side of `self.dom`; see `shell::history`.
     history: History,
     database: ReflectionDatabase,
-    icons: Option<SpriteSheet>,
     command_bar: CommandBar,
     /// Every Command Bar run, success or failure; see `shell::output`.
     output: output::OutputLog,
@@ -160,7 +158,6 @@ impl Shell {
             viewer,
             dom,
             database,
-            icons,
             path,
             format,
         } = place;
@@ -283,7 +280,6 @@ impl Shell {
             dom,
             history: History::new(DEFAULT_CAP),
             database,
-            icons,
             command_bar,
             output: output::OutputLog::default(),
             output_filter: output::OutputFilter::default(),

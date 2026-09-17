@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- shirt.svg - tile 43 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>shirt</title>
+  <path d="M5,2 L2,4 L3.2,6.5 L4.5,5.6 L4.5,14 L11.5,14 L11.5,5.6 L12.8,6.5 L14,4 L11,2 C11,3 9.6,3.6 8,3.6 C6.4,3.6 5,3 5,2 Z" fill="#63AEF5"/>
+  <line x1="8" y1="4" x2="8" y2="14" stroke="#3C7FC4" stroke-width="1"/>
+  <g fill="#3C7FC4">
+    <circle cx="8" cy="6" r="0.5"/>
+    <circle cx="8" cy="8.5" r="0.5"/>
+    <circle cx="8" cy="11" r="0.5"/>
+  </g>
+</svg>

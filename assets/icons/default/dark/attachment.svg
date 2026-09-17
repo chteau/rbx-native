@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- attachment.svg - tile 81 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>attachment</title>
+  <rect x="4" y="6" width="8" height="6" rx="1.5" fill="#A6B2C0"/>
+  <g fill="#7A8794">
+    <rect x="6" y="2" width="1.4" height="5"/>
+    <rect x="8.6" y="2" width="1.4" height="5"/>
+  </g>
+</svg>

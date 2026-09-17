@@ -1,8 +1,7 @@
 //! Shared conversion from decoded RGBA8 pixels into an image GPUI can paint.
 //!
-//! Both the 3D viewport's readback frames and the Explorer's sliced class
-//! icons go through this: GPUI's texture atlas expects BGRA, so the swap only
-//! needs writing (and testing) once.
+//! The 3D viewport's readback frames go through this: GPUI's texture atlas
+//! expects BGRA, so the swap only needs writing (and testing) once.
 
 use std::sync::Arc;
 

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- sphere-handle-adornment.svg - tile 112 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>sphere-handle-adornment</title>
+  <path d="M8,14 L8,9 M4,14 L12,14" fill="none" stroke="#7A8794" stroke-width="1.4" stroke-linecap="round"/>
+  <g fill="#63AEF5">
+    <circle cx="8" cy="6" r="3"/>
+  </g>
+</svg>

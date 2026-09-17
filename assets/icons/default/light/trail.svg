@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- trail.svg - tile 93 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>trail</title>
+  <path d="M1.5,9 L3.5,5.5 L6,6.5 L6,10.5 L3,11.5 Z" fill="#6B5E8C"/>
+  <path d="M6,7.5 L14.5,3 L14.5,5.3 Z" fill="#B87710"/>
+  <path d="M6,8.5 L14.5,7 L14.5,9 Z" fill="#A5790A"/>
+  <path d="M6,9.5 L14.5,10.7 L14.5,12.7 Z" fill="#A87C25"/>
+</svg>

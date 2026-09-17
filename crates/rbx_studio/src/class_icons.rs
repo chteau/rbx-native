@@ -1,336 +1,408 @@
-//! Real Roblox Studio class icons, sliced out of `ClassImages.PNG` — the same
-//! 16x16-per-tile sprite sheet Studio's own Explorer draws from.
+//! This project's own class icons — flat, multi-colour SVGs shipped in
+//! `assets/icons/default/dark` (spec'd in `assets/icons/README.md`, gitignored
+//! working notes, not a shipped asset) — replacing the sprite sheet Roblox's
+//! own Studio ships, which this project no longer downloads or draws.
 //!
-//! The `ClassName -> tile index` table is Roblox's own `ExplorerImageIndex`
-//! metadata. It ships in `ReflectionMetadata.xml` rather than in a content
-//! package, so it is scanned out of the tracker's mirror
-//! (<https://raw.githubusercontent.com/MaximumADHD/Roblox-Client-Tracker/roblox/ReflectionMetadata.xml>,
-//! already credited in this project's `README.md`) at runtime and cached
-//! locally, exactly like `ClassImages.PNG` itself: nothing derived from
-//! Roblox's own files is embedded in the binary or committed to this
-//! repository.
+//! Rasterized ourselves with `resvg` rather than painted through GPUI's own
+//! `svg()` element: that element is a monochrome icon renderer (it always
+//! recolors its SVG to one flat `text_color`, discarding whatever fill the
+//! file itself carries — fine for Lucide's single-color glyphs, wrong for
+//! this kit's palette), so the sliced-sprite path the old Roblox sheet used
+//! (`render_image::to_render_image`, painted with `img()`) is kept and fed
+//! from a rasterized SVG instead of a downloaded PNG tile.
+//!
+//! Only the dark set is wired up: the icon kit also ships a `light` folder
+//! (same filenames) and an editor setting to switch between them, plus a
+//! setting to swap in a different icon pack entirely, are both still on
+//! `ROADMAP.md` under "Icon and theme packs" — not implemented yet.
 
-use std::collections::HashMap;
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 
 use gpui_kit::RenderImage;
-use rbx_assets::{decode_image, AssetCache, AssetRef, AssetResolver, MemoryFetcher, NativeContent};
+use resvg::tiny_skia::{Pixmap, Transform};
+use resvg::usvg::{Options, Tree};
 
 use crate::render_image::to_render_image;
 
-const TILE_SIZE: u32 = 16;
-const SHEET_PATH: &str = "textures/ClassImages.PNG";
-const REFLECTION_METADATA_URL: &str = "https://raw.githubusercontent.com/MaximumADHD/Roblox-Client-Tracker/roblox/ReflectionMetadata.xml";
-/// Cached alongside `ClassImages.PNG` (via [`AssetCache::get_native`] /
-/// [`AssetCache::put_native`]) under its own subdirectory, so the distilled
-/// index is never mistaken for a raw content-package path.
-const CLASS_ICONS_CACHE_PATH: &str = "reflection/class_icons.json";
+/// Every SVG in `assets/icons/default/dark`, embedded at compile time.
+#[derive(rust_embed::RustEmbed)]
+#[folder = "$CARGO_MANIFEST_DIR/../../assets/icons/default/dark"]
+struct DefaultIcons;
 
-static CLASS_ICONS: LazyLock<HashMap<String, u16>> = LazyLock::new(load_class_icons);
+/// Every icon in the kit is authored on a 16x16 `viewBox` (see
+/// `assets/icons/README.md`'s "Canvas" section); rasterized at 2x for a
+/// sharp downscale to the Explorer's `CLASS_ICON_SIZE`.
+const ICON_VIEWBOX: f32 = 16.0;
+const RENDER_SIZE: u32 = 32;
 
-/// The decoded `ClassImages.PNG` sprite sheet, kept as plain RGBA8 so a tile
-/// can be sliced out of it on demand.
-pub(crate) struct SpriteSheet {
-    pixels: Vec<u8>,
-    width: u32,
-    height: u32,
+/// `ClassName -> icon slug`, extracted from the class icon kit's own spec
+/// (`assets/icons/README.md`'s "Tiles" section, which lists each SVG's
+/// filename against the classes it covers) — 300 classes onto 137 of the
+/// kit's 147 tiles; a class missing here falls back to a Lucide glyph
+/// (`explorer::icon`), same as a class undocumented in Roblox's own sheet
+/// used to.
+const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
+    ("Accessory", "accessory"),
+    ("AccessoryDescription", "humanoid-description"),
+    ("Accoutrement", "accessory"),
+    ("Actor", "actor"),
+    ("AdGui", "ad-gui"),
+    ("AdPortal", "ad-portal"),
+    ("AlignOrientation", "align-orientation"),
+    ("AlignPosition", "align-position"),
+    ("AngularVelocity", "angular-velocity"),
+    ("Animation", "animation"),
+    ("AnimationController", "animation"),
+    ("AnimationTrack", "animation"),
+    ("Animator", "animation"),
+    ("ArcHandles", "arc-handles"),
+    ("Atmosphere", "sky"),
+    ("Attachment", "attachment"),
+    ("AudioAnalyzer", "sound"),
+    ("AudioChannelMixer", "sound"),
+    ("AudioChannelSplitter", "sound"),
+    ("AudioChorus", "sound"),
+    ("AudioCompressor", "sound"),
+    ("AudioDeviceInput", "sound"),
+    ("AudioDeviceOutput", "sound"),
+    ("AudioDistortion", "sound"),
+    ("AudioEcho", "sound"),
+    ("AudioEmitter", "sound"),
+    ("AudioEqualizer", "sound"),
+    ("AudioFDNReverb", "sound"),
+    ("AudioFader", "sound"),
+    ("AudioFilter", "sound"),
+    ("AudioFlanger", "sound"),
+    ("AudioGate", "sound"),
+    ("AudioLimiter", "sound"),
+    ("AudioListener", "sound"),
+    ("AudioPitchShifter", "sound"),
+    ("AudioPlayer", "sound"),
+    ("AudioRecorder", "sound"),
+    ("AudioReverb", "sound"),
+    ("AudioSpeechToText", "sound"),
+    ("AudioStreamReader", "sound"),
+    ("AudioStreamWriter", "sound"),
+    ("AudioTextToSpeech", "sound"),
+    ("AudioTremolo", "sound"),
+    ("AudioWindSynthesizer", "sound"),
+    ("AuroraScript", "module-script"),
+    ("Backpack", "backpack"),
+    ("BallSocketConstraint", "ball-socket-constraint"),
+    ("Beam", "beam"),
+    ("BillboardGui", "surface-gui"),
+    ("BindableEvent", "bindable-event"),
+    ("BindableFunction", "bindable-function"),
+    ("BlockMesh", "mesh"),
+    ("BloomEffect", "post-effect"),
+    ("BlurEffect", "post-effect"),
+    ("BodyAngularVelocity", "body-mover"),
+    ("BodyForce", "body-mover"),
+    ("BodyGyro", "body-mover"),
+    ("BodyPartDescription", "humanoid-description"),
+    ("BodyPosition", "body-mover"),
+    ("BodyThrust", "body-mover"),
+    ("BodyVelocity", "body-mover"),
+    ("Bone", "bone"),
+    ("BoolValue", "value"),
+    ("BoxHandleAdornment", "box-handle-adornment"),
+    ("BrickColorValue", "value"),
+    ("CFrameValue", "value"),
+    ("Camera", "camera"),
+    ("CanvasGroup", "frame"),
+    ("ChannelTabsConfiguration", "chat-window-configuration"),
+    ("CharacterMesh", "animation"),
+    ("Chat", "message"),
+    ("ChatInputBarConfiguration", "chat-input-bar-configuration"),
+    ("ChatService", "message"),
+    ("ChatWindowConfiguration", "chat-window-configuration"),
+    ("ChorusSoundEffect", "sound-effect"),
+    ("ClickDetector", "click-detector"),
+    ("Clouds", "sky"),
+    ("Color3Value", "value"),
+    ("ColorCorrectionEffect", "post-effect"),
+    ("ColorGradingEffect", "post-effect"),
+    ("CompressorSoundEffect", "sound-effect"),
+    ("ConeHandleAdornment", "cone-handle-adornment"),
+    ("Configuration", "configuration"),
+    ("Constraint", "ball-socket-constraint"),
+    ("CoreGui", "gui-container"),
+    ("CorePackages", "backpack"),
+    ("CornerWedgePart", "part"),
+    ("CustomEvent", "value"),
+    ("CustomEventReceiver", "value"),
+    ("CylinderHandleAdornment", "cylinder-handle-adornment"),
+    ("CylinderMesh", "mesh"),
+    ("CylindricalConstraint", "cylindrical-constraint"),
+    ("Debris", "debris"),
+    ("Decal", "decal"),
+    ("DepthOfFieldEffect", "post-effect"),
+    ("Dialog", "dialog"),
+    ("DialogChoice", "dialog-choice"),
+    ("DistortionSoundEffect", "sound-effect"),
+    ("DoubleConstrainedValue", "value"),
+    ("DragDetector", "click-detector"),
+    ("EchoSoundEffect", "sound-effect"),
+    ("EqualizerSoundEffect", "sound-effect"),
+    ("Explosion", "explosion"),
+    ("FaceControls", "face-controls"),
+    ("Fire", "fire"),
+    ("Flag", "flag"),
+    ("FlagStand", "flag-stand"),
+    ("FlangeSoundEffect", "sound-effect"),
+    ("FloorWire", "value"),
+    ("Folder", "folder"),
+    ("ForceField", "force-field"),
+    ("Frame", "frame"),
+    ("GeneratedFolder", "folder"),
+    ("GuiButton", "image-button"),
+    ("GuiMain", "screen-gui"),
+    ("HandRigDescription", "handles"),
+    ("Handles", "handles"),
+    ("Hat", "hat"),
+    ("Highlight", "highlight"),
+    ("HingeConstraint", "hinge-constraint"),
+    ("Hint", "message"),
+    ("HopperBin", "hopper-bin"),
+    ("Humanoid", "humanoid"),
+    ("HumanoidDescription", "humanoid-description"),
+    ("HumanoidRigDescription", "handles"),
+    ("IKControl", "handles"),
+    ("ImageButton", "image-button"),
+    ("ImageHandleAdornment", "image-handle-adornment"),
+    ("ImageLabel", "image-label"),
+    ("IntConstrainedValue", "value"),
+    ("IntValue", "value"),
+    ("JointInstance", "weld"),
+    ("Keyframe", "animation"),
+    ("KeyframeMarker", "animation"),
+    ("Light", "light"),
+    ("Lighting", "light"),
+    ("LineForce", "line-force"),
+    ("LineHandleAdornment", "line-handle-adornment"),
+    ("LinearVelocity", "linear-velocity"),
+    ("LocalScript", "local-script"),
+    ("LocalizationService", "localization-service"),
+    ("LocalizationTable", "localization-table"),
+    ("MakeupDescription", "humanoid-description"),
+    ("MarketplaceService", "gui-container"),
+    ("MaterialService", "material-service"),
+    ("MaterialVariant", "material-variant"),
+    ("MeshPart", "union-operation"),
+    ("Message", "message"),
+    ("Model", "model"),
+    ("ModuleScript", "module-script"),
+    ("Motor6D", "motor6d"),
+    ("NegateOperation", "negate-operation"),
+    ("NetworkClient", "network-client"),
+    ("NetworkReplicator", "network-replicator"),
+    ("NetworkServer", "network-server"),
+    ("NoCollisionConstraint", "no-collision-constraint"),
+    ("NumberPose", "animation"),
+    ("NumberValue", "value"),
+    ("ObjectValue", "value"),
+    ("PackageLink", "package-link"),
+    ("Pants", "pants"),
+    ("ParallelRampPart", "part"),
+    ("Part", "part"),
+    ("PartPairLasso", "lasso"),
+    ("ParticleEmitter", "particle-emitter"),
+    ("PathfindingLink", "pathfinding-link"),
+    ("PathfindingModifier", "pathfinding-modifier"),
+    ("PitchShiftSoundEffect", "sound-effect"),
+    ("Plane", "plane-constraint"),
+    ("PlaneConstraint", "plane-constraint"),
+    ("Platform", "seat"),
+    ("PlatformLibraries", "gui-container"),
+    ("Player", "player"),
+    ("PlayerGui", "gui-container"),
+    ("PlayerScripts", "player-scripts"),
+    ("Players", "players"),
+    ("Plugin", "ball-socket-constraint"),
+    ("PluginDebugService", "gui-container"),
+    ("PluginGuiService", "gui-container"),
+    ("PointLight", "light"),
+    ("Pose", "animation"),
+    ("PoseBase", "animation"),
+    ("Preloaded", "replicated-storage"),
+    ("PrismPart", "part"),
+    ("PrismaticConstraint", "prismatic-constraint"),
+    ("ProximityPrompt", "proximity-prompt"),
+    ("PyramidHandleAdornment", "pyramid-handle-adornment"),
+    ("PyramidPart", "part"),
+    ("RayValue", "value"),
+    ("RemoteEvent", "remote-event"),
+    ("RemoteFunction", "remote-function"),
+    ("RenderingTest", "camera"),
+    ("ReplicatedFirst", "replicated-storage"),
+    ("ReplicatedStorage", "replicated-storage"),
+    ("ReverbSoundEffect", "sound-effect"),
+    ("RightAngleRampPart", "part"),
+    ("RigidConstraint", "rigid-constraint"),
+    ("RobloxPluginGuiService", "gui-container"),
+    ("RocketPropulsion", "body-mover"),
+    ("RodConstraint", "rod-constraint"),
+    ("RopeConstraint", "rope-constraint"),
+    ("ScreenGui", "screen-gui"),
+    ("Script", "script"),
+    ("ScrollingFrame", "frame"),
+    ("Seat", "seat"),
+    ("SelectionBox", "selection-box"),
+    ("SelectionPartLasso", "lasso"),
+    ("SelectionPointLasso", "lasso"),
+    ("SelectionSphere", "selection-box"),
+    ("ServerScriptService", "server-script-service"),
+    ("ServerStorage", "server-storage"),
+    ("Shirt", "shirt"),
+    ("ShirtGraphic", "shirt-graphic"),
+    ("SkateboardPlatform", "seat"),
+    ("Sky", "sky"),
+    ("SlidingBallConstraint", "prismatic-constraint"),
+    ("Smoke", "smoke"),
+    ("Snap", "weld"),
+    ("Sound", "sound"),
+    ("SoundGroup", "sound-group"),
+    ("SoundService", "sound-service"),
+    ("Sparkles", "sparkles"),
+    ("SpawnLocation", "spawn-location"),
+    ("SpecialMesh", "mesh"),
+    ("SphereHandleAdornment", "sphere-handle-adornment"),
+    ("SpotLight", "light"),
+    ("SpringConstraint", "spring-constraint"),
+    ("StandalonePluginScripts", "player-scripts"),
+    ("StarterCharacterScripts", "player-scripts"),
+    ("StarterGear", "backpack"),
+    ("StarterGui", "gui-container"),
+    ("StarterPack", "backpack"),
+    ("StarterPlayer", "starter-player"),
+    ("StarterPlayerScripts", "player-scripts"),
+    ("Status", "model"),
+    ("StringValue", "value"),
+    ("SunRaysEffect", "post-effect"),
+    ("SurfaceAppearance", "texture"),
+    ("SurfaceGui", "surface-gui"),
+    ("SurfaceGuiBase", "surface-gui"),
+    ("SurfaceLight", "light"),
+    ("SurfaceSelection", "surface-selection"),
+    ("Team", "team"),
+    ("Teams", "teams"),
+    ("Terrain", "terrain"),
+    ("TerrainDetail", "terrain-detail"),
+    ("TerrainRegion", "terrain"),
+    ("TestService", "test-service"),
+    ("TextBox", "text-button"),
+    ("TextButton", "text-button"),
+    ("TextChannel", "text-channel"),
+    ("TextChatCommand", "text-chat-command"),
+    ("TextChatService", "text-chat-service"),
+    ("TextLabel", "text-label"),
+    ("TextSource", "text-source"),
+    ("Texture", "texture"),
+    ("Tool", "tool"),
+    ("Torque", "angular-velocity"),
+    ("TorsionSpringConstraint", "torsion-spring-constraint"),
+    ("TouchTransmitter", "force-field"),
+    ("Trail", "trail"),
+    ("TremoloSoundEffect", "sound-effect"),
+    ("TrussPart", "part"),
+    ("UIAspectRatioConstraint", "ui-constraint"),
+    ("UICorner", "ui-constraint"),
+    ("UIDragDetector", "click-detector"),
+    ("UIFlexItem", "ui-constraint"),
+    ("UIGradient", "ui-constraint"),
+    ("UIGridLayout", "ui-constraint"),
+    ("UIListLayout", "ui-constraint"),
+    ("UIPadding", "ui-constraint"),
+    ("UIPageLayout", "ui-constraint"),
+    ("UIScale", "ui-constraint"),
+    ("UIShadow", "ui-constraint"),
+    ("UISizeConstraint", "ui-constraint"),
+    ("UIStroke", "ui-constraint"),
+    ("UITableLayout", "ui-constraint"),
+    ("UITextSizeConstraint", "ui-constraint"),
+    ("UnionOperation", "union-operation"),
+    ("UniversalConstraint", "universal-constraint"),
+    ("UnreliableRemoteEvent", "remote-event"),
+    ("ValueBase", "value"),
+    ("Vector3Value", "value"),
+    ("VectorForce", "vector-force"),
+    ("VehicleSeat", "seat"),
+    ("VideoDisplay", "sound"),
+    ("VideoFrame", "video-frame"),
+    ("VideoPlayer", "sound"),
+    ("ViewportFrame", "image-button"),
+    ("VoiceChatService", "voice-chat-service"),
+    ("WedgePart", "part"),
+    ("Weld", "weld"),
+    ("WeldConstraint", "weld-constraint"),
+    ("Wire", "sound"),
+    ("WireframeHandleAdornment", "actor"),
+    ("Workspace", "workspace"),
+    ("WorldModel", "workspace"),
+    ("WrapDeformer", "wrap-target"),
+    ("WrapLayer", "wrap-layer"),
+    ("WrapTarget", "wrap-target"),
+];
+
+/// The rasterized icon for `class`, or `None` for a class the icon kit
+/// doesn't cover (falls back to a Lucide glyph — see `explorer::resolve_icon`)
+/// or whose SVG failed to parse (a build-time invariant, not a runtime one:
+/// every file under `assets/icons/default/dark` is checked by this module's
+/// own tests).
+pub(crate) fn icon_tile(class: &str) -> Option<Arc<RenderImage>> {
+    let slug = CLASS_ICON_SLUGS.iter().find(|(name, _)| *name == class)?.1;
+    let file = DefaultIcons::get(&format!("{slug}.svg"))?;
+    rasterize(&file.data)
 }
 
-/// Downloads and decodes the sprite sheet through the same native-content
-/// pipeline `rbx_viewer` uses for `rbxasset://` textures.
-///
-/// `None` on any failure (no network, a changed CDN layout, ...): every class
-/// then falls back to its Lucide stand-in rather than the whole place
-/// refusing to load, matching how a missing per-asset texture is already
-/// handled.
-pub(crate) fn load_sheet() -> Option<SpriteSheet> {
-    let cache = AssetCache::new(None).ok()?;
-    let native = NativeContent::new(cache.native_packages_dir());
-    // Only ever asked to resolve a native path below; a real network fetcher
-    // is not reachable from here and not needed for it.
-    let resolver = AssetResolver::new(cache, Box::new(MemoryFetcher::new()), native);
+/// Renders `svg` (a 16x16-`viewBox` document) to a square RGBA tile.
+fn rasterize(svg: &[u8]) -> Option<Arc<RenderImage>> {
+    let tree = Tree::from_data(svg, &Options::default()).ok()?;
+    let mut pixmap = Pixmap::new(RENDER_SIZE, RENDER_SIZE)?;
+    let scale = RENDER_SIZE as f32 / ICON_VIEWBOX;
+    resvg::render(
+        &tree,
+        Transform::from_scale(scale, scale),
+        &mut pixmap.as_mut(),
+    );
 
-    let reference = AssetRef::Native(SHEET_PATH.to_string());
-    let asset = match resolver.resolve(&reference) {
-        Ok(asset) => asset,
-        Err(err) => {
-            eprintln!("rbxstudio: no class icons ({err})");
-            return None;
-        }
-    };
-    let decoded = match decode_image(&asset) {
-        Ok(decoded) => decoded,
-        Err(err) => {
-            eprintln!("rbxstudio: no class icons ({err})");
-            return None;
-        }
-    };
+    // `Pixmap` is premultiplied alpha; `to_render_image`'s consumers (decoded
+    // PNG tiles, wgpu readback frames) are not, and the anti-aliased edges
+    // every glyph here has would come out darkened without this.
+    let straight: Vec<u8> = pixmap
+        .pixels()
+        .iter()
+        .flat_map(|pixel| {
+            let demultiplied = pixel.demultiply();
+            [
+                demultiplied.red(),
+                demultiplied.green(),
+                demultiplied.blue(),
+                demultiplied.alpha(),
+            ]
+        })
+        .collect();
 
-    let (width, height) = decoded.dimensions();
-    Some(SpriteSheet {
-        pixels: decoded.into_raw(),
-        width,
-        height,
-    })
-}
-
-/// Loads the `ClassName -> ExplorerImageIndex` table from the local cache,
-/// fetching and distilling Roblox's metadata mirror on a cache miss.
-///
-/// Empty on any failure (no network, a changed file layout, a cache write
-/// error, ...): every class then falls back to its Lucide stand-in, exactly
-/// like [`load_sheet`] already does for the sprite sheet itself.
-fn load_class_icons() -> HashMap<String, u16> {
-    let cache = match AssetCache::new(None) {
-        Ok(cache) => cache,
-        Err(err) => {
-            eprintln!("rbxstudio: no class icons ({err})");
-            return HashMap::new();
-        }
-    };
-
-    if let Some(bytes) = cache.get_native(CLASS_ICONS_CACHE_PATH) {
-        match serde_json::from_slice(&bytes) {
-            Ok(table) => return table,
-            // A stale/corrupt cache entry shouldn't strand the user without
-            // icons forever — fall through and refetch instead.
-            Err(err) => eprintln!("rbxstudio: cached class icons unreadable ({err}), refetching"),
-        }
-    }
-
-    let xml = match http_get_text(REFLECTION_METADATA_URL) {
-        Ok(xml) => xml,
-        Err(err) => {
-            eprintln!("rbxstudio: no class icons ({err})");
-            return HashMap::new();
-        }
-    };
-
-    let table = extract_class_icons(&xml);
-    match serde_json::to_vec(&table) {
-        Ok(bytes) => {
-            if let Err(err) = cache.put_native(CLASS_ICONS_CACHE_PATH, &bytes) {
-                eprintln!("rbxstudio: could not cache class icons ({err})");
-            }
-        }
-        Err(err) => eprintln!("rbxstudio: could not serialize class icons ({err})"),
-    }
-    table
-}
-
-/// Mirrors `rbx_assets::native`'s own `http_get_text`: this crate needs its
-/// own GET because the metadata mirror is a plain GitHub raw URL, not a
-/// `rbxasset://` reference `AssetResolver` knows how to resolve.
-fn http_get_text(url: &str) -> Result<String, String> {
-    let mut response = ureq::get(url).call().map_err(|err| err.to_string())?;
-    response
-        .body_mut()
-        .read_to_string()
-        .map_err(|err| err.to_string())
-}
-
-/// Scans `xml` for every `ReflectionMetadataClass` block and pulls out its
-/// `Name`/`ExplorerImageIndex` pair, skipping blocks missing either one.
-///
-/// Property order inside a block is not guaranteed, and most blocks nest
-/// further `Item`s (per-member metadata) after their own properties — see
-/// [`find_matching_close_tag`] for why the block boundary can't just be the
-/// first `</Item>` encountered.
-fn extract_class_icons(xml: &str) -> HashMap<String, u16> {
-    const BLOCK_MARKER: &str = "<Item class=\"ReflectionMetadataClass\">";
-
-    let mut icons = HashMap::new();
-    let mut cursor = 0;
-    while let Some(offset) = xml[cursor..].find(BLOCK_MARKER) {
-        let block_start = cursor + offset + BLOCK_MARKER.len();
-        let Some(block_end) = find_matching_close_tag(xml, block_start) else {
-            break; // Unbalanced tail: nothing more to safely parse.
-        };
-        let block = &xml[block_start..block_end];
-        let name = extract_string_property(block, "Name");
-        let index = extract_string_property(block, "ExplorerImageIndex")
-            .and_then(|raw| raw.parse::<u16>().ok());
-        if let (Some(name), Some(index)) = (name, index) {
-            icons.insert(name, index);
-        }
-        cursor = block_end;
-    }
-    icons
-}
-
-/// Finds the `</Item>` that closes the `<Item>` opened just before `from`,
-/// by tracking nested opens/closes instead of assuming the first `</Item>`
-/// seen is the one that matches — class blocks routinely nest further
-/// `<Item>`s (member metadata) before their own closing tag.
-fn find_matching_close_tag(xml: &str, from: usize) -> Option<usize> {
-    let mut depth = 1u32;
-    let mut pos = from;
-    loop {
-        let next_open = xml[pos..].find("<Item").map(|i| pos + i);
-        let next_close = xml[pos..].find("</Item>").map(|i| pos + i);
-        match (next_open, next_close) {
-            (Some(open), Some(close)) if open < close => {
-                depth += 1;
-                pos = open + "<Item".len();
-            }
-            (_, Some(close)) => {
-                pos = close + "</Item>".len();
-                depth -= 1;
-                if depth == 0 {
-                    return Some(pos);
-                }
-            }
-            _ => return None,
-        }
-    }
-}
-
-/// Reads `<string name="{key}">value</string>` out of a block, wherever it
-/// falls among the block's other properties.
-fn extract_string_property(block: &str, key: &str) -> Option<String> {
-    let marker = format!("<string name=\"{key}\">");
-    let start = block.find(&marker)? + marker.len();
-    let end = start + block[start..].find("</string>")?;
-    Some(block[start..end].to_string())
-}
-
-/// The tile index Roblox documents for `class`, or `None` for a class the
-/// mirrored metadata does not cover (undocumented, or newer than the mirror,
-/// or unreachable this run).
-pub(crate) fn tile_index(class: &str) -> Option<u16> {
-    CLASS_ICONS.get(class).copied()
-}
-
-/// Slices tile `index` out of `sheet`, ready for GPUI to paint.
-///
-/// `None` if `index` is past the sheet's own tile count — only possible if
-/// the distilled table and the downloaded sheet disagree (a future Studio
-/// version adding tiles or classes independently of the other).
-pub(crate) fn tile(sheet: &SpriteSheet, index: u16) -> Option<Arc<RenderImage>> {
-    let tiles = sheet.width / TILE_SIZE;
-    if u32::from(index) >= tiles {
-        return None;
-    }
-
-    let x0 = u32::from(index) * TILE_SIZE;
-    let stride = sheet.width as usize * 4;
-    let mut pixels = Vec::with_capacity(TILE_SIZE as usize * TILE_SIZE as usize * 4);
-    for y in 0..sheet.height.min(TILE_SIZE) {
-        let row_start = y as usize * stride + x0 as usize * 4;
-        let row_end = row_start + TILE_SIZE as usize * 4;
-        pixels.extend_from_slice(&sheet.pixels[row_start..row_end]);
-    }
-
-    to_render_image(pixels, TILE_SIZE, TILE_SIZE)
+    to_render_image(straight, RENDER_SIZE, RENDER_SIZE)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// Every slug this module names must actually be a file `DefaultIcons`
+    /// embeds, and every embedded file must parse and rasterize — a build-time
+    /// invariant on the (gitignored, hand-authored) icon kit, checked here so
+    /// a bad SVG fails `cargo test` rather than silently blanking an icon.
     #[test]
-    fn extracts_name_and_index_when_both_present() {
-        let xml = r#"
-            <Item class="ReflectionMetadataClass">
-              <Properties>
-                <string name="Name">Actor</string>
-                <string name="ExplorerImageIndex">113</string>
-              </Properties>
-            </Item>
-        "#;
-        assert_eq!(extract_class_icons(xml).get("Actor"), Some(&113));
-    }
-
-    #[test]
-    fn skips_classes_missing_explorer_image_index() {
-        let xml = r#"
-            <Item class="ReflectionMetadataClass">
-              <Properties>
-                <string name="Name">Undocumented</string>
-              </Properties>
-            </Item>
-        "#;
-        assert_eq!(extract_class_icons(xml).get("Undocumented"), None);
-    }
-
-    #[test]
-    fn property_order_within_a_block_does_not_matter() {
-        let xml = r#"
-            <Item class="ReflectionMetadataClass">
-              <Properties>
-                <string name="ExplorerImageIndex">19</string>
-                <string name="Name">Workspace</string>
-              </Properties>
-            </Item>
-        "#;
-        assert_eq!(extract_class_icons(xml).get("Workspace"), Some(&19));
-    }
-
-    /// Mirrors the real file's shape for classes with members: a nested
-    /// `<Item>` for per-member metadata, closing before the class block
-    /// itself does. A naive "first `</Item>` wins" scan would truncate the
-    /// class block early and, worse, misreport the next class's boundaries.
-    #[test]
-    fn nested_item_blocks_do_not_confuse_block_boundaries() {
-        let xml = r#"
-            <Item class="ReflectionMetadataClass">
-              <Properties>
-                <string name="Name">BindableFunction</string>
-                <string name="ExplorerImageIndex">66</string>
-              </Properties>
-              <Item class="ReflectionMetadataYieldFunctions">
-                <Item class="ReflectionMetadataMember">
-                  <Properties>
-                    <string name="Name">Invoke</string>
-                  </Properties>
-                </Item>
-              </Item>
-            </Item>
-            <Item class="ReflectionMetadataClass">
-              <Properties>
-                <string name="Name">BindableEvent</string>
-                <string name="ExplorerImageIndex">67</string>
-              </Properties>
-            </Item>
-        "#;
-        let icons = extract_class_icons(xml);
-        assert_eq!(icons.get("BindableFunction"), Some(&66));
-        assert_eq!(icons.get("BindableEvent"), Some(&67));
-        assert_eq!(icons.get("Invoke"), None);
-    }
-
-    /// A hand-built two-tile sheet: solid red then solid blue, so slicing can
-    /// be checked without a real download.
-    fn two_tile_sheet() -> SpriteSheet {
-        let mut pixels = Vec::new();
-        for _ in 0..TILE_SIZE {
-            for _ in 0..TILE_SIZE {
-                pixels.extend_from_slice(&[255, 0, 0, 255]);
-            }
-            for _ in 0..TILE_SIZE {
-                pixels.extend_from_slice(&[0, 0, 255, 255]);
-            }
+    fn every_mapped_slug_rasterizes() {
+        for (class, slug) in CLASS_ICON_SLUGS {
+            let file = DefaultIcons::get(&format!("{slug}.svg"))
+                .unwrap_or_else(|| panic!("{class} names slug {slug:?}, no such file"));
+            assert!(
+                rasterize(&file.data).is_some(),
+                "{slug}.svg ({class}) failed to rasterize"
+            );
         }
-        SpriteSheet {
-            pixels,
-            width: TILE_SIZE * 2,
-            height: TILE_SIZE,
-        }
-    }
-
-    #[test]
-    fn slices_the_requested_tile_not_the_whole_sheet() {
-        let sheet = two_tile_sheet();
-        // BGRA-swapped by to_render_image: red (255,0,0) becomes (0,0,255).
-        let red = tile(&sheet, 0).expect("first tile");
-        assert_eq!(red.as_bytes(0).unwrap()[0..4], [0, 0, 255, 255]);
-        let blue = tile(&sheet, 1).expect("second tile");
-        assert_eq!(blue.as_bytes(0).unwrap()[0..4], [255, 0, 0, 255]);
-    }
-
-    #[test]
-    fn an_index_past_the_sheet_has_no_tile() {
-        let sheet = two_tile_sheet();
-        assert!(tile(&sheet, 2).is_none());
     }
 }

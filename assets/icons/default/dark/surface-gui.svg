@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- surface-gui.svg - tile 64 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>surface-gui</title>
+  <path d="M2,9 L9,4 L13.5,7 L6.5,12 Z" fill="#F58AC2" opacity="0.55"/>
+  <rect x="3" y="2" width="11" height="8" rx="1" fill="#31373E" stroke="#BC97F0" stroke-width="1.2"/>
+  <rect x="3" y="2" width="11" height="2.4" rx="1" fill="#BC97F0"/>
+</svg>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- debris.svg - tile 30 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>debris</title>
+  <rect x="7" y="1" width="2" height="2" fill="#F6CE4B"/>
+  <rect x="10.5" y="3.5" width="2" height="2" fill="#F3B44A"/>
+  <rect x="2.5" y="6" width="2" height="2" fill="#F58579"/>
+  <rect x="5.5" y="7" width="2" height="2" fill="#8FD9A8"/>
+  <rect x="8.5" y="7.5" width="2" height="2" fill="#4ACE6B"/>
+  <rect x="11.5" y="7" width="2" height="2" fill="#63AEF5"/>
+  <rect x="3" y="10.5" width="2" height="2" fill="#3C7FC4"/>
+  <rect x="6" y="11.5" width="2" height="2" fill="#F58AC2"/>
+  <rect x="9" y="11.5" width="2" height="2" fill="#D25A90"/>
+</svg>

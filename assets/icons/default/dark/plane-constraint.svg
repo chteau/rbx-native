@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- plane-constraint.svg - tile 134 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>plane-constraint</title>
+  <path d="M8,2 L14,8 L8,14 L2,8 Z" fill="#63AEF5"/>
+  <rect x="1.2" y="7" width="2" height="2" rx="0.4" fill="#F58579"/>
+</svg>

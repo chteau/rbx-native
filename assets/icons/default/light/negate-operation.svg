@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- negate-operation.svg - tile 72 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>negate-operation</title>
+  <path d="M8,1.5 L14,5 L14,11.5 L8,15 L2,11.5 L2,5 Z" fill="#C33A2F" opacity="0.55"/>
+  <path d="M8,1.5 L14,5 L8,8.5 L2,5 Z" fill="#8E2A22" opacity="0.55"/>
+</svg>

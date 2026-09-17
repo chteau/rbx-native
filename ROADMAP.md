@@ -244,9 +244,13 @@ Roblox's own engine.
   than writing out a PNG with textures still mid-upload.
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
-- [x] Explorer: real Roblox class icons (fetched at runtime, never
-  committed), default service filter with a "show all" toggle, selection
-  with a viewport highlight, instance insert/delete.
+- [x] Explorer: this project's own flat, from-scratch class icon kit
+  (`assets/icons/default/dark`, 300 classes onto 137 tiles, spec'd in
+  `assets/icons/README.md`) rasterized and painted per row
+  (`class_icons.rs`), with Lucide glyphs as the fallback for anything the
+  kit doesn't cover — Roblox's own sprite sheet is no longer downloaded or
+  drawn anywhere in the editor. Default service filter with a "show all"
+  toggle, selection with a viewport highlight, instance insert/delete.
 - [x] Properties panel: real per-type widgets (checkbox, colour picker,
   enum dropdown, numeric fields for vectors/CFrame position), grouped into
   collapsible categories matching Roblox's own Properties panel, live —
@@ -1121,6 +1125,30 @@ against `Roblox/creator-docs` rather than assumed:
   through the same real-property DOM mutation any other editor action
   does, not a shortcut that could write something a saved place file
   can't actually represent.
+- [ ] 📋 **Icon and theme packs — the editor's look stops being hardcoded.**
+  The Explorer's class icons are now this project's own icon kit rather than
+  Roblox's downloaded sheet (see "What's been implemented" above), but only
+  one pack, one variant, is wired up: `assets/icons/default/dark`, embedded
+  at compile time and always used. The kit ships an equal-sized
+  `assets/icons/default/light` variant that nothing reads yet, and
+  colours/spacing/fonts elsewhere are still Rust constants throughout
+  `rbx_studio`/`gpui_kit`. Planned:
+  - An **editor setting for dark/light icons**: picks between
+    `assets/icons/default/dark` and `.../light`, dark by default, without a
+    rebuild — the settings panel's own version of `settings.rs`'s existing
+    quality/service-visibility persistence.
+  - Swapping in a **different icon pack** entirely: a directory (or bundle)
+    of SVGs named by `ClassName`/tile-role, loaded instead of the built-in
+    set at startup, with the existing Lucide fallback still covering
+    anything a pack leaves out.
+  - A **theme** format: the editor's palette (panel/accent/text colours,
+    maybe spacing) as data, not compiled-in constants, switchable without
+    a rebuild.
+  - Both icon packs and themes user-installable side-by-side (a
+    themes/icons directory under the same cache root
+    `rbx_assets::AssetCache` already owns) so people can publish and swap
+    packs without forking the project — the actual goal behind spec'ing a
+    from-scratch icon kit in the first place.
 
 ### Play / Test workflow
 - [ ] 📋 The sandbox-place design (private per-developer place, injected

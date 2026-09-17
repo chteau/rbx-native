@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- text-channel.svg - tile 140 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>text-channel</title>
+  <rect x="1.5" y="2.5" width="13" height="8.5" rx="3" fill="#3FCBDB"/>
+  <path d="M4,11 L4,14 L7.2,11 Z" fill="#3FCBDB"/>
+  <g transform="translate(4,2.75) scale(0.5)">
+    <circle cx="5.5" cy="8" r="1" fill="#1E242B"/>
+    <circle cx="8" cy="8" r="1" fill="#1E242B"/>
+    <circle cx="10.5" cy="8" r="1" fill="#1E242B"/>
+  </g>
+</svg>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- mesh.svg - tile 8 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>mesh</title>
+  <circle cx="8" cy="8" r="6.5" fill="#A6B2C0"/>
+  <g fill="none" stroke="#7A8794" stroke-width="1">
+    <ellipse cx="8" cy="8" rx="6.5" ry="2.2"/>
+    <ellipse cx="8" cy="8" rx="6.5" ry="4.4"/>
+  </g>
+  <g fill="#F58AC2">
+    <circle cx="5.5" cy="6" r="0.7"/>
+    <circle cx="8.5" cy="5" r="0.7"/>
+    <circle cx="11" cy="7" r="0.7"/>
+    <circle cx="6" cy="9.5" r="0.7"/>
+    <circle cx="9.5" cy="10" r="0.7"/>
+    <circle cx="11.5" cy="10.5" r="0.7"/>
+  </g>
+</svg>

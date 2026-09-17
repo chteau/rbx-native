@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- particle-emitter.svg - tile 80 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>particle-emitter</title>
+  <path d="M5,14 L11,14 L8,9 Z" fill="#CBD4DF"/>
+  <g transform="translate(1.5,2.5) scale(0.5)">
+    <path d="M8,2 L9.2,6.8 L14,8 L9.2,9.2 L8,14 L6.8,9.2 L2,8 L6.8,6.8 Z" fill="#63AEF5"/>
+    <g fill="none" stroke="#3C7FC4" stroke-width="1.1" stroke-linecap="round">
+      <path d="M12.5,2.5 L12.5,5 M11.25,3.75 L13.75,3.75"/>
+      <path d="M12,11.5 L12,13.5 M11,12.5 L13,12.5"/>
+    </g>
+  </g>
+  <g transform="translate(5.5,0.8) scale(0.5)">
+    <path d="M8,2 L9.2,6.8 L14,8 L9.2,9.2 L8,14 L6.8,9.2 L2,8 L6.8,6.8 Z" fill="#63AEF5"/>
+    <g fill="none" stroke="#3C7FC4" stroke-width="1.1" stroke-linecap="round">
+      <path d="M12.5,2.5 L12.5,5 M11.25,3.75 L13.75,3.75"/>
+      <path d="M12,11.5 L12,13.5 M11,12.5 L13,12.5"/>
+    </g>
+  </g>
+  <g transform="translate(8.8,3.4) scale(0.5)">
+    <path d="M8,2 L9.2,6.8 L14,8 L9.2,9.2 L8,14 L6.8,9.2 L2,8 L6.8,6.8 Z" fill="#63AEF5"/>
+    <g fill="none" stroke="#3C7FC4" stroke-width="1.1" stroke-linecap="round">
+      <path d="M12.5,2.5 L12.5,5 M11.25,3.75 L13.75,3.75"/>
+      <path d="M12,11.5 L12,13.5 M11,12.5 L13,12.5"/>
+    </g>
+  </g>
+</svg>

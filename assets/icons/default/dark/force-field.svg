@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- force-field.svg - tile 37 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>force-field</title>
+  <g fill="#4ACE6B">
+    <path d="M4,1 L6.5,3.5 L5.5,4.5 L4,3 L2.5,4.5 L1.5,3.5 Z"/>
+    <path d="M12,1 L14.5,3.5 L13.5,4.5 L12,3 L10.5,4.5 L9.5,3.5 Z"/>
+    <path d="M4,9 L6.5,11.5 L5.5,12.5 L4,11 L2.5,12.5 L1.5,11.5 Z"/>
+    <path d="M12,9 L14.5,11.5 L13.5,12.5 L12,11 L10.5,12.5 L9.5,11.5 Z"/>
+  </g>
+</svg>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- motor6d.svg - tile 106 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>motor6d</title>
+  <g fill="none" stroke="#5C6773" stroke-width="1.6" stroke-linecap="round">
+    <path d="M5.4,4 A4,4 0 0 0 5.4,12"/>
+    <path d="M10.6,4 A4,4 0 0 1 10.6,12"/>
+  </g>
+  <rect x="5.4" y="7" width="5.2" height="2" rx="0.4" fill="#2C74C0"/>
+</svg>

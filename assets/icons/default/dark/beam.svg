@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- beam.svg - tile 96 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>beam</title>
+  <g fill="#F6CE4B">
+    <circle cx="4" cy="12" r="2.4"/>
+    <rect x="3.3" y="8.5" width="1.4" height="2.6" transform="rotate(20 4 12)"/>
+    <rect x="3.3" y="8.5" width="1.4" height="2.6" transform="rotate(-20 4 12)"/>
+    <rect x="3.3" y="8.5" width="1.4" height="2.6" transform="rotate(60 4 12)"/>
+  </g>
+  <path d="M5,11 L15,1 L14,4 L6,13 Z" fill="#F3B44A"/>
+</svg>

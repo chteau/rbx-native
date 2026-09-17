@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- cylinder-handle-adornment.svg - tile 109 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>cylinder-handle-adornment</title>
+  <path d="M8,14 L8,9 M4,14 L12,14" fill="none" stroke="#3E4752" stroke-width="1.4" stroke-linecap="round"/>
+  <g fill="#2C74C0">
+    <rect x="5.5" y="3" width="5" height="6" rx="2.2"/>
+  </g>
+</svg>

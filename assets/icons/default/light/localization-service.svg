@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- localization-service.svg - tile 92 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>localization-service</title>
+  <circle cx="8" cy="8" r="6" fill="#1C3A5E"/>
+  <clipPath id="globe-localization">
+    <circle cx="8" cy="8" r="6"/>
+  </clipPath>
+  <g clip-path="url(#globe-localization)" fill="none" stroke="#5C6773" stroke-width="1.1">
+    <ellipse cx="8" cy="8" rx="2.3" ry="6"/>
+    <line x1="2" y1="8" x2="14" y2="8"/>
+  </g>
+  <g transform="translate(0.6,0.3) scale(0.8)">
+    <path d="M2.5,0.5 C0.9,0.5 -0.2,1.8 -0.2,3.3 C-0.2,5.1 2.5,8 2.5,8 C2.5,8 5.2,5.1 5.2,3.3 C5.2,1.8 4.1,0.5 2.5,0.5 Z" fill="#B87710"/>
+    <circle cx="2.5" cy="3.3" r="1" fill="#FFFFFF"/>
+  </g>
+</svg>

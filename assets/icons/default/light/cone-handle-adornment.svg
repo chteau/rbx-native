@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- cone-handle-adornment.svg - tile 110 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>cone-handle-adornment</title>
+  <path d="M8,14 L8,9 M4,14 L12,14" fill="none" stroke="#3E4752" stroke-width="1.4" stroke-linecap="round"/>
+  <g fill="#2C74C0">
+    <path d="M8,3 L11,9 L5,9 Z"/>
+  </g>
+</svg>

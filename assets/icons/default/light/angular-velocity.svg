@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- angular-velocity.svg - tile 103 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>angular-velocity</title>
+  <circle cx="8" cy="8" r="3" fill="#C33A2F" opacity="0.5"/>
+  <path d="M2.6,10.6 A6,6 0 1 0 8,2" fill="none" stroke="#2C74C0" stroke-width="1.6" stroke-linecap="round"/>
+  <path d="M7.4,0.3 L10.4,2 L7.4,3.7 Z" fill="#2C74C0"/>
+</svg>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- text-chat-command.svg - tile 138 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>text-chat-command</title>
+  <rect x="1.5" y="2.5" width="13" height="8.5" rx="3" fill="#3FCBDB"/>
+  <path d="M4,11 L4,14 L7.2,11 Z" fill="#3FCBDB"/>
+  <g transform="translate(4,2.75) scale(0.5)">
+    <path d="M9.5,3.5 L6.5,12.5 M7.5,8 L11,8" fill="none" stroke="#1E242B" stroke-width="1.6" stroke-linecap="round"/>
+  </g>
+</svg>

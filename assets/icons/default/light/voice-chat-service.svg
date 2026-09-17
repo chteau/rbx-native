@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- voice-chat-service.svg - tile 136 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>voice-chat-service</title>
+  <g transform="translate(-1.6,1.2) scale(0.62)">
+    <rect x="4.6" y="1.8" width="6.8" height="5.8" rx="1" fill="#B37E00"/>
+    <rect x="2.6" y="8.8" width="10.8" height="5.4" rx="1.2" fill="#3E4752"/>
+  </g>
+  <g fill="#C02E78">
+    <rect x="9.5" y="10" width="1.8" height="4" rx="0.4"/>
+    <rect x="11.9" y="7" width="1.8" height="7" rx="0.4"/>
+    <rect x="14.3" y="4" width="1.7" height="10" rx="0.4"/>
+  </g>
+</svg>

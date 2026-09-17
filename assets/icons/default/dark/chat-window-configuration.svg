@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- chat-window-configuration.svg - tile 141 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>chat-window-configuration</title>
+  <g transform="translate(0,0) scale(0.8)">
+    <rect x="3" y="2" width="11" height="8" rx="1" fill="#31373E" stroke="#3FCBDB" stroke-width="1.2"/>
+    <rect x="3" y="2" width="11" height="2.4" rx="1" fill="#3FCBDB"/>
+  </g>
+  <g transform="translate(7,7) scale(0.45)">
+    <rect x="1.5" y="2.5" width="13" height="8.5" rx="3" fill="#2497A6"/>
+    <path d="M4,11 L4,14 L7.2,11 Z" fill="#2497A6"/>
+  </g>
+</svg>

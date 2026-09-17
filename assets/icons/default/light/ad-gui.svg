@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ad-gui.svg - tile 145 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>ad-gui</title>
+  <rect x="1.5" y="2" width="13" height="8" rx="1" fill="#1C3A5E"/>
+  <rect x="2.3" y="2.6" width="11.4" height="6.8" fill="#DCE8F3"/>
+  <g fill="#3E4752">
+    <circle cx="4" cy="2.2" r="0.7"/>
+    <circle cx="8" cy="2.2" r="0.7"/>
+    <circle cx="12" cy="2.2" r="0.7"/>
+  </g>
+  <rect x="7" y="10" width="2" height="5" fill="#3E4752"/>
+</svg>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- post-effect.svg - tile 83 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>post-effect</title>
+  <g fill="#63AEF5">
+    <path d="M8,8 L8,2.3 A5.7,5.7 0 0 1 12.9,5.15 Z"/>
+    <path d="M8,8 L12.9,5.15 A5.7,5.7 0 0 1 12.9,10.85 Z" fill="#3C7FC4"/>
+    <path d="M8,8 L12.9,10.85 A5.7,5.7 0 0 1 8,13.7 Z"/>
+    <path d="M8,8 L8,13.7 A5.7,5.7 0 0 1 3.1,10.85 Z" fill="#3C7FC4"/>
+    <path d="M8,8 L3.1,10.85 A5.7,5.7 0 0 1 3.1,5.15 Z"/>
+    <path d="M8,8 L3.1,5.15 A5.7,5.7 0 0 1 8,2.3 Z" fill="#3C7FC4"/>
+  </g>
+  <circle cx="8" cy="8" r="1.8" fill="#31373E"/>
+</svg>

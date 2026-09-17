@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- accessory.svg - tile 32 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>accessory</title>
+  <path d="M9.5,1.5 L14,13.5 L3,12 Z" fill="#2C74C0"/>
+  <g fill="#1A4E88">
+    <circle cx="9" cy="6" r="0.8"/>
+    <circle cx="11.5" cy="9" r="0.8"/>
+    <circle cx="7" cy="9.5" r="0.8"/>
+    <circle cx="10.5" cy="12" r="0.8"/>
+  </g>
+</svg>

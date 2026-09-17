@@ -5946,9 +5946,10 @@ dependencies = [
  "rbx_reflection",
  "rbx_viewer",
  "rbx_xml",
+ "resvg 0.46.0",
+ "rust-embed",
  "serde",
  "serde_json",
- "ureq",
  "x11rb",
 ]
 

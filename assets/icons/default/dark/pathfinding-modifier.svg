@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- pathfinding-modifier.svg - tile 128 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>pathfinding-modifier</title>
+  <rect x="1.2" y="5" width="9.6" height="9.4" rx="1.2" fill="#63AEF5" opacity="0.45"/>
+  <path d="M2,13.2 C7,13.2 6.4,3.4 14,3.4" fill="none" stroke="#63AEF5" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="2.2,1.8"/>
+  <circle cx="2.2" cy="13.2" r="1.7" fill="#3C7FC4"/>
+  <circle cx="13.6" cy="3.4" r="1.7" fill="#3C7FC4"/>
+</svg>

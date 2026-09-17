@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- align-position.svg - tile 99 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>align-position</title>
+  <g fill="#2C74C0">
+    <rect x="6.8" y="6.8" width="2.4" height="2.4" rx="0.4"/>
+    <path d="M8,1 L6.2,4.5 L9.8,4.5 Z"/>
+    <path d="M8,1 L6.2,4.5 L9.8,4.5 Z" transform="rotate(90 8 8)"/>
+    <path d="M8,1 L6.2,4.5 L9.8,4.5 Z" transform="rotate(180 8 8)"/>
+    <path d="M8,1 L6.2,4.5 L9.8,4.5 Z" transform="rotate(270 8 8)"/>
+  </g>
+  <g transform="translate(11,1) scale(0.28)">
+    <g fill="none" stroke="#C02E78" stroke-width="1.7">
+      <rect x="1.5" y="5" width="7.5" height="6.5" rx="3.2"/>
+      <rect x="7" y="5" width="7.5" height="6.5" rx="3.2"/>
+    </g>
+  </g>
+</svg>

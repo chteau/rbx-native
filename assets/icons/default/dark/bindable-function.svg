@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- bindable-function.svg - tile 66 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>bindable-function</title>
+  <path d="M8,1.5 L14,5 L14,11.5 L8,15 L2,11.5 L2,5 Z" fill="#BC97F0"/>
+  <path d="M8,1.5 L14,5 L8,8.5 L2,5 Z" fill="#9B72D4"/>
+</svg>

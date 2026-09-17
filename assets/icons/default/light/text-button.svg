@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- text-button.svg - tile 51 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>text-button</title>
+  <rect x="1" y="4" width="14" height="8" rx="2" fill="#7743C4"/>
+  <text x="8" y="9.6" font-family="sans-serif" font-weight="700" font-size="4.6" text-anchor="middle" fill="#FFFFFF">TXT</text>
+</svg>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- pin-disc.svg - tile 116 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>pin-disc</title>
+  <path d="M3,13 L8,3" stroke="#2C74C0" stroke-width="2.2" stroke-linecap="round"/>
+  <circle cx="8" cy="3" r="1.8" fill="#1A4E88"/>
+  <circle cx="12.5" cy="12.5" r="2" fill="#C02E78"/>
+</svg>

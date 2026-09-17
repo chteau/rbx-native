@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- window-stack.svg - tile 27 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>window-stack</title>
+  <rect x="5" y="5" width="10" height="7.5" rx="0.8" fill="#3C7FC4"/>
+  <rect x="3" y="3" width="10" height="7.5" rx="0.8" fill="#63AEF5" opacity="0.85"/>
+  <rect x="1" y="1" width="10" height="7.5" rx="0.8" fill="#31373E" stroke="#63AEF5" stroke-width="1.1"/>
+  <rect x="1" y="1" width="10" height="2.4" rx="0.8" fill="#63AEF5"/>
+</svg>

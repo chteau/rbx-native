@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- torsion-spring-constraint.svg - tile 125 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>torsion-spring-constraint</title>
+  <g fill="none" stroke="#63AEF5" stroke-width="1.2" stroke-linecap="round">
+    <path d="M1.5,9 A5.5,5.5 0 1 1 11.45,12.23"/>
+    <path d="M3.4,9 A3.6,3.6 0 1 1 9.9,11.1"/>
+    <path d="M5,9 A2,2 0 1 1 8.6,10.2"/>
+  </g>
+  <line x1="11.45" y1="12.23" x2="14.1" y2="14.3" stroke="#63AEF5" stroke-width="1.4" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- prismatic-constraint.svg - tile 88 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>prismatic-constraint</title>
+  <g fill="none" stroke="#63AEF5" stroke-width="1.6" stroke-linecap="round">
+    <path d="M2,14 L14,2"/>
+    <path d="M14,2 L14,5.5 M14,2 L10.5,2"/>
+  </g>
+  <path d="M4,12 L4,9 L7,9" fill="none" stroke="#3C7FC4" stroke-width="1.2"/>
+  <path d="M2,14 L14,2" fill="none" stroke="#4ACE6B" stroke-width="1" stroke-dasharray="1.4,1.4" opacity="0.9"/>
+</svg>

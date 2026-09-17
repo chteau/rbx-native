@@ -97,19 +97,17 @@ fn instances_keep_their_children_in_file_order() {
 #[test]
 fn every_instance_gets_an_icon_by_its_referent() {
     let mut dom = WeakDom::new();
-    let lighting = insert(&mut dom, 7, "Lighting", "Lighting");
-    let sky = insert(&mut dom, 8, "Sky", "Sky");
-    dom.set_parent(sky, Some(lighting));
+    // Part: covered by the icon kit. BodyColors: a real class the kit doesn't
+    // claim a tile for, which is what this test is about (one icon per
+    // referent, covered or not).
+    let part = insert(&mut dom, 7, "Part", "Part");
+    let colors = insert(&mut dom, 8, "BodyColors", "BodyColors");
+    dom.set_parent(colors, Some(part));
 
-    // No sheet: every class falls back to its Lucide stand-in, which is what
-    // this test is about (one icon per referent, not the sprite pipeline).
-    let explorer = Explorer::from_dom(&dom, None);
+    let explorer = Explorer::from_dom(&dom);
 
     assert_eq!(explorer.items(true).len(), 1);
-    assert!(matches!(
-        explorer.icon(&"7".into()),
-        ClassIcon::Lucide(IconName::Lightbulb)
-    ));
+    assert!(matches!(explorer.icon(&"7".into()), ClassIcon::Sprite(_)));
     assert!(matches!(
         explorer.icon(&"8".into()),
         ClassIcon::Lucide(IconName::CircleDot)
@@ -132,8 +130,9 @@ fn an_unknown_class_falls_back_to_the_default_icon() {
 }
 
 #[test]
-fn resolve_icon_without_a_sheet_is_always_lucide() {
-    assert!(is_lucide(&resolve_icon("Script", None)));
+fn resolve_icon_prefers_the_icon_kit_over_the_lucide_fallback() {
+    assert!(matches!(resolve_icon("Script"), ClassIcon::Sprite(_)));
+    assert!(is_lucide(&resolve_icon("BodyColors")));
 }
 
 #[test]
@@ -164,7 +163,7 @@ fn the_default_view_drops_noisy_services_the_full_view_keeps() {
     insert(&mut dom, 2, "HttpService", "HttpService");
     insert(&mut dom, 3, "MyFolder", "MyFolder");
 
-    let explorer = Explorer::from_dom(&dom, None);
+    let explorer = Explorer::from_dom(&dom);
 
     let labels = |show_all| -> Vec<String> {
         explorer
@@ -196,7 +195,7 @@ fn a_nested_instance_is_found_by_referent_even_under_a_hidden_root() {
     dom.set_parent(child, Some(http));
     dom.set_parent(baseplate, Some(workspace));
 
-    let explorer = Explorer::from_dom(&dom, None);
+    let explorer = Explorer::from_dom(&dom);
 
     assert_eq!(
         explorer.item(baseplate).map(|item| item.label),

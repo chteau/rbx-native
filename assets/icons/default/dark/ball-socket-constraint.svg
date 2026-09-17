@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ball-socket-constraint.svg - tile 86 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>ball-socket-constraint</title>
+  <path d="M5,3 A6,6 0 0 0 5,13" fill="none" stroke="#7A8794" stroke-width="1.6" stroke-linecap="round"/>
+  <rect x="9.7" y="2.5" width="1.6" height="4" rx="0.6" fill="#63AEF5"/>
+  <circle cx="10.5" cy="8" r="3" fill="#63AEF5"/>
+</svg>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- highlight.svg - tile 133 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>highlight</title>
+  <path d="M4,3 C1,6 1,10 4,13 C6,11 6,5 4,3 Z" fill="#D25A90"/>
+  <path d="M8,4 C5.5,7 5.5,11 8,14 C9.7,12 9.7,6 8,4 Z" fill="#F58AC2"/>
+</svg>

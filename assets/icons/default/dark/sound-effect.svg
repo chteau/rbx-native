@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- sound-effect.svg - tile 84 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>sound-effect</title>
+  <g fill="#F58AC2">
+    <rect x="2.4" y="5.5" width="1.4" height="5" rx="0.6"/>
+    <rect x="5.2" y="4" width="1.4" height="8" rx="0.6"/>
+    <rect x="10.4" y="4" width="1.4" height="8" rx="0.6"/>
+    <rect x="13.2" y="5.5" width="1.4" height="5" rx="0.6"/>
+  </g>
+  <line x1="8" y1="2.5" x2="8" y2="13.5" stroke="#F58579" stroke-width="1.2"/>
+</svg>

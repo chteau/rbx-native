@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- pin-cloud-grey.svg - tile 118 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>pin-cloud-grey</title>
+  <path d="M3,13 L8,3" stroke="#A6B2C0" stroke-width="2.2" stroke-linecap="round"/>
+  <circle cx="8" cy="3" r="1.8" fill="#7A8794"/>
+  <g fill="#7A8794">
+    <circle cx="11" cy="11.6" r="1.8"/>
+    <circle cx="13" cy="12.6" r="1.4"/>
+    <circle cx="12" cy="14" r="1.6"/>
+  </g>
+</svg>

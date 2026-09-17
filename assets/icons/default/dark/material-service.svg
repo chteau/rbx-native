@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- material-service.svg - tile 131 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>material-service</title>
+  <circle cx="6.5" cy="8" r="3.2" fill="#63AEF5"/>
+  <g fill="#63AEF5" stroke="#3C7FC4" stroke-width="1">
+    <line x1="9.5" y1="7" x2="12.5" y2="5"/>
+    <circle cx="12.8" cy="4.7" r="1"/>
+    <line x1="9.5" y1="9" x2="12.5" y2="11"/>
+    <circle cx="12.8" cy="11.3" r="1"/>
+  </g>
+  <circle cx="12" cy="12.5" r="2.2" fill="none" stroke="#63AEF5" stroke-width="1.2"/>
+</svg>

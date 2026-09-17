@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- dialog-choice.svg - tile 63 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>dialog-choice</title>
+  <rect x="1.5" y="2.5" width="13" height="8.5" rx="3" fill="#3FCBDB"/>
+  <path d="M4,11 L4,14 L7.2,11 Z" fill="#3FCBDB"/>
+  <text x="8" y="8.8" font-family="sans-serif" font-weight="700" font-size="5" text-anchor="middle" fill="#2497A6">123</text>
+</svg>

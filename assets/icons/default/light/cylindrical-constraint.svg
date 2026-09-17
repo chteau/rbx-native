@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- cylindrical-constraint.svg - tile 95 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>cylindrical-constraint</title>
+  <line x1="3" y1="13" x2="13" y2="3" stroke="#2C74C0" stroke-width="3.2" stroke-linecap="round"/>
+  <circle cx="8" cy="8" r="1.6" fill="none" stroke="#FFFFFF" stroke-width="1" opacity="0.9"/>
+  <line x1="3" y1="13" x2="13" y2="3" stroke="#1C8D3E" stroke-width="1" stroke-dasharray="1.2,1.2"/>
+</svg>

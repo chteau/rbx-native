@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- network-server.svg - tile 15 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>network-server</title>
+  <g>
+    <rect x="1.5" y="2.5" width="6" height="5" rx="0.6" fill="#3E4752"/>
+    <rect x="2.4" y="3.4" width="4.2" height="3.2" fill="#0B7F8D"/>
+    <rect x="3.7" y="7.5" width="1.6" height="1.2" fill="#3E4752"/>
+    <rect x="2.2" y="8.7" width="4.4" height="1" rx="0.3" fill="#3E4752"/>
+  </g>
+  <g transform="translate(7,0)">
+    <rect x="1.5" y="2.5" width="6" height="5" rx="0.6" fill="#3E4752"/>
+    <rect x="2.4" y="3.4" width="4.2" height="3.2" fill="#0B7F8D"/>
+    <rect x="3.7" y="7.5" width="1.6" height="1.2" fill="#3E4752"/>
+    <rect x="2.2" y="8.7" width="4.4" height="1" rx="0.3" fill="#3E4752"/>
+  </g>
+  <path d="M4.5,9.7 L4.5,12 L11.5,12 L11.5,9.7" fill="none" stroke="#2B3440" stroke-width="1.3"/>
+  <rect x="7.2" y="12" width="1.6" height="1.6" fill="#A5790A"/>
+</svg>

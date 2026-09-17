@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- frame.svg - tile 48 - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>frame</title>
+  <rect x="1" y="1" width="14" height="14" rx="1" fill="#9B72D4"/>
+  <rect x="3.2" y="3.2" width="9.6" height="9.6" fill="#31373E"/>
+</svg>

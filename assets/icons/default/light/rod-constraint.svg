@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- rod-constraint.svg - tile 90 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>rod-constraint</title>
+  <line x1="3" y1="13" x2="13" y2="3" stroke="#2C74C0" stroke-width="2.6" stroke-linecap="round"/>
+</svg>

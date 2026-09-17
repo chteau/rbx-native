@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- no-collision-constraint.svg - tile 105 - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>no-collision-constraint</title>
+  <g fill="none" stroke="#2C74C0" stroke-width="1.7">
+    <rect x="1.5" y="5" width="7.5" height="6.5" rx="3.2"/>
+    <rect x="7" y="5" width="7.5" height="6.5" rx="3.2"/>
+  </g>
+  <line x1="1.5" y1="14.5" x2="14.5" y2="1.5" stroke="#C33A2F" stroke-width="1.4"/>
+</svg>
