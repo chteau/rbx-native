@@ -15,7 +15,7 @@ use rbx_assets::AssetRef;
 use rbx_dom::{Instance, Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
-use super::plan::{collect_assets, elements, flag, list_layout, span, vector2, List, Node};
+use super::plan::{collect_assets, elements, flag, layout_of, span, vector2, Layout, Node};
 use crate::scene::beam::{world_cframe, ParentMap};
 use crate::scene::Placement;
 use crate::textures::NormalId;
@@ -78,7 +78,7 @@ pub(crate) struct SpaceGui {
     /// `AlwaysOnTop`: drawn without a depth test, over the whole scene.
     pub(crate) always_on_top: bool,
     pub(crate) anchor: Anchor,
-    pub(super) list: Option<List>,
+    pub(super) list: Option<Layout>,
     pub(super) roots: Vec<Node>,
 }
 
@@ -222,7 +222,7 @@ fn read(
         canvas,
         always_on_top: flag(properties, "AlwaysOnTop", false),
         anchor,
-        list: list_layout(context.dom, context.database, instance.children()),
+        list: layout_of(context.dom, context.database, instance.children()),
         roots,
     })
 }

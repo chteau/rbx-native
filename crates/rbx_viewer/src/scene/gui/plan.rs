@@ -11,14 +11,15 @@ use rbx_reflection::ReflectionDatabase;
 
 use crate::textures::asset_uri;
 
+mod layouts;
 mod props;
 
+pub(super) use layouts::{layout_of, Align, Flex, FlexItem, Grid, Layout, LineAlign, List, Table};
 use props::{alpha, color, degrees, enum_of};
 pub(super) use props::{flag, integer, span, vector2};
 
 const SCREEN_CLASS: &str = "ScreenGui";
 const ELEMENT_CLASS: &str = "GuiObject";
-const LIST_LAYOUT_CLASS: &str = "UIListLayout";
 
 /// Roblox's own default `BorderColor3`, `Color3.fromRGB(27, 42, 53)`. Only
 /// ever seen on a tree built in code: a place file serializes the property.
@@ -61,33 +62,6 @@ pub(super) struct Fill {
     pub(super) tiling: Tiling,
 }
 
-/// Where a `UIListLayout` puts its stack along one axis, or each item across
-/// the other. `Start` is Left/Top, `End` Right/Bottom; the two Roblox enums
-/// share ordinals (Center = 0, Left/Top = 1, Right/Bottom = 2).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Align {
-    Center,
-    Start,
-    End,
-}
-
-/// A `UIListLayout` read off its siblings: they are stacked along one axis in
-/// a sort order of their own, their `Position` ignored and their `Size` kept.
-///
-/// TODO: the flex family (`HorizontalFlex`/`VerticalFlex`, `Wraps`,
-/// `ItemLineAlignment`) and `UIGridLayout`/`UIPageLayout`/`UITableLayout`.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct List {
-    pub(super) vertical: bool,
-    /// `Padding`, a `UDim` resolved against the parent's extent along the
-    /// fill direction.
-    pub(super) padding: (f32, f32),
-    pub(super) horizontal: Align,
-    pub(super) vertical_align: Align,
-    /// `SortOrder.Name`; otherwise `LayoutOrder`, ties in tree order.
-    pub(super) by_name: bool,
-}
-
 /// One `GuiObject` and everything under it, `Visible = false` subtrees already
 /// pruned away.
 ///
@@ -117,8 +91,11 @@ pub(super) struct Node {
     pub(super) clips: bool,
     pub(super) z_index: i32,
     pub(super) fill: Option<Fill>,
-    /// The `UIListLayout` among this node's children, arranging them.
-    pub(super) list: Option<List>,
+    /// The layout among this node's children, arranging them.
+    pub(super) list: Option<Layout>,
+    /// A `UIFlexItem` of this node's own, flexing it inside its parent's
+    /// `UIListLayout`.
+    pub(super) flex: Option<FlexItem>,
     pub(super) children: Vec<Node>,
 }
 
@@ -137,7 +114,7 @@ impl Node {
 #[derive(Clone)]
 pub(crate) struct Screen {
     pub(super) display_order: i32,
-    pub(super) list: Option<List>,
+    pub(super) list: Option<Layout>,
     pub(super) roots: Vec<Node>,
 }
 
@@ -183,7 +160,7 @@ fn gather(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref, into: &mu
         if flag(properties, "Enabled", true) {
             into.push(Screen {
                 display_order: integer(properties, "DisplayOrder", 0),
-                list: list_layout(dom, database, instance.children()),
+                list: layout_of(dom, database, instance.children()),
                 roots: elements(dom, database, instance.children()),
             });
         }
@@ -240,51 +217,10 @@ fn element(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> Optio
         clips: flag(properties, "ClipsDescendants", false),
         z_index: integer(properties, "ZIndex", 1),
         fill: fill(properties),
-        list: list_layout(dom, database, instance.children()),
+        list: layout_of(dom, database, instance.children()),
+        flex: layouts::flex_item(dom, database, instance.children()),
         children: elements(dom, database, instance.children()),
     })
-}
-
-/// The first `UIListLayout` among `children`, which is the one Roblox honours
-/// when several are present.
-pub(super) fn list_layout(
-    dom: &WeakDom,
-    database: &ReflectionDatabase,
-    children: &[Ref],
-) -> Option<List> {
-    let layout = children.iter().find_map(|&child| {
-        let instance = dom.get(child)?;
-        database
-            .is_subclass_of(instance.class(), LIST_LAYOUT_CLASS)
-            .then_some(instance)
-    })?;
-    let properties = layout.properties();
-    let padding = match properties.get("Padding") {
-        Some(Variant::UDim(value)) => (value.scale, value.offset as f32),
-        _ => (0.0, 0.0),
-    };
-    Some(List {
-        vertical: enum_of(properties, "FillDirection", FILL_VERTICAL) == FILL_VERTICAL,
-        padding,
-        horizontal: align(properties, "HorizontalAlignment"),
-        vertical_align: align(properties, "VerticalAlignment"),
-        by_name: enum_of(properties, "SortOrder", SORT_LAYOUT_ORDER) == SORT_NAME,
-    })
-}
-
-/// `Enum.FillDirection.Vertical`; `Horizontal` is 0.
-const FILL_VERTICAL: u32 = 1;
-/// `Enum.SortOrder.Name` and `Enum.SortOrder.LayoutOrder` (the default).
-const SORT_NAME: u32 = 0;
-const SORT_LAYOUT_ORDER: u32 = 2;
-
-/// `HorizontalAlignment`/`VerticalAlignment`, both defaulting to Center.
-fn align(properties: &BTreeMap<String, Variant>, name: &str) -> Align {
-    match enum_of(properties, name, 0) {
-        1 => Align::Start,
-        2 => Align::End,
-        _ => Align::Center,
-    }
 }
 
 /// The image of anything carrying one, told apart by the property rather than

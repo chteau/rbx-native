@@ -7,8 +7,12 @@
 
 use rbx_assets::AssetRef;
 
-use super::plan::{Align, Fill, List, Node, Screen, Span, Tiling};
+use super::plan::{Align, Fill, Layout, Node, Screen, Span, Tiling};
 use super::space::SpaceGui;
+
+mod grid;
+mod list;
+mod table;
 
 /// A screen-space box in pixels, top-left origin.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -87,6 +91,7 @@ pub(crate) fn resolve(screens: &[Screen], viewport: [f32; 2]) -> Vec<Element> {
             screen.list.as_ref(),
             &frame,
             None,
+            None,
             false,
             &mut elements,
         );
@@ -106,6 +111,7 @@ pub(crate) fn resolve_canvas(gui: &SpaceGui) -> Vec<Element> {
         gui.list.as_ref(),
         &frame,
         None,
+        None,
         false,
         &mut elements,
     );
@@ -122,27 +128,129 @@ fn canvas(size: [f32; 2]) -> Rect {
     }
 }
 
+/// What a layout comes to: one rect per sibling in the tree's own order and
+/// the extent the laid-out content covers, which is
+/// `UIGridStyleLayout.AbsoluteContentSize`.
+pub(crate) struct Arranged {
+    pub(crate) rects: Vec<Rect>,
+    /// `AbsoluteContentSize`. Nothing in this module needs it — it exists for
+    /// `AutomaticSize`, which sizes a container to the content its layout
+    /// came to.
+    #[allow(dead_code)]
+    pub(crate) size: [f32; 2],
+    /// `UITableLayout` only: where each sibling's own children go, since a
+    /// table lays out its cells rather than leaving them to their row.
+    cells: Option<Vec<Vec<Rect>>>,
+}
+
+/// Places `nodes` inside `parent` under `layout`, or by their own `Position`
+/// and `Size` where there is none.
+pub(crate) fn arrange(nodes: &[Node], layout: Option<&Layout>, parent: &Rect) -> Arranged {
+    match layout {
+        Some(Layout::List(spec)) => {
+            let (rects, size) = list::stacked(nodes, spec, parent);
+            Arranged {
+                rects,
+                size,
+                cells: None,
+            }
+        }
+        Some(Layout::Grid(spec)) => {
+            let (rects, size) = grid::grid(nodes, spec, parent);
+            Arranged {
+                rects,
+                size,
+                cells: None,
+            }
+        }
+        Some(Layout::Table(spec)) => {
+            let laid = table::table(nodes, spec, parent);
+            Arranged {
+                rects: laid.rects,
+                size: laid.size,
+                cells: Some(laid.cells),
+            }
+        }
+        None => {
+            let rects: Vec<Rect> = nodes
+                .iter()
+                .map(|node| place(node.position, node.size, node.anchor, parent))
+                .collect();
+            let size = content_size(&rects);
+            Arranged {
+                rects,
+                size,
+                cells: None,
+            }
+        }
+    }
+}
+
 /// Places every sibling inside `parent`, then emits them in paint order.
 ///
-/// The two orders are distinct: a `UIListLayout` decides where a sibling
-/// sits, `ZIndex` decides which one is drawn over the other.
+/// The two orders are distinct: a layout decides where a sibling sits,
+/// `ZIndex` decides which one is drawn over the other.
+///
+/// `given` is the one exception to a sibling being placed here at all: a
+/// `UITableLayout` sizes its cells, which are its siblings' children, so it
+/// hands them down ready-made.
 fn children(
     nodes: &[Node],
-    list: Option<&List>,
+    layout: Option<&Layout>,
     parent: &Rect,
+    given: Option<&[Rect]>,
     clip: Option<Rect>,
     rotated: bool,
     into: &mut Vec<Element>,
 ) {
-    let rects = match list {
-        Some(list) => stacked(nodes, list, parent),
-        None => nodes
-            .iter()
-            .map(|node| place(node.position, node.size, node.anchor, parent))
-            .collect(),
+    let arranged = match given {
+        Some(rects) => Arranged {
+            rects: rects.to_vec(),
+            size: content_size(rects),
+            cells: None,
+        },
+        None => arrange(nodes, layout, parent),
     };
     for index in sorted(nodes) {
-        emit(&nodes[index], rects[index], clip, rotated, into);
+        let cells = arranged.cells.as_ref().map(|cells| &cells[index][..]);
+        emit(
+            &nodes[index],
+            arranged.rects[index],
+            cells,
+            clip,
+            rotated,
+            into,
+        );
+    }
+}
+
+/// Sibling indices in the order a layout walks them: `SortOrder.Name`, or
+/// `LayoutOrder` with ties in tree order — stable, so equal orders keep the
+/// order they were added to the parent in.
+pub(super) fn ordered(nodes: &[Node], by_name: bool) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..nodes.len()).collect();
+    match by_name {
+        true => order.sort_by(|&a, &b| nodes[a].name.cmp(&nodes[b].name)),
+        false => order.sort_by_key(|&index| nodes[index].layout_order),
+    }
+    order
+}
+
+/// The extent a run of rects covers: `AbsoluteContentSize`, which the docs
+/// describe as the space the elements take up "including any padding created
+/// by the grid".
+pub(super) fn content_size(rects: &[Rect]) -> [f32; 2] {
+    let mut low = [f32::INFINITY; 2];
+    let mut high = [f32::NEG_INFINITY; 2];
+    for rect in rects {
+        low[0] = low[0].min(rect.x);
+        low[1] = low[1].min(rect.y);
+        high[0] = high[0].max(rect.x + rect.width);
+        high[1] = high[1].max(rect.y + rect.height);
+    }
+    match rects.is_empty() {
+        true => [0.0, 0.0],
+        false => [high[0] - low[0], high[1] - low[1]],
     }
 }
 
@@ -153,7 +261,14 @@ fn sorted(nodes: &[Node]) -> Vec<usize> {
     order
 }
 
-fn emit(node: &Node, rect: Rect, clip: Option<Rect>, rotated: bool, into: &mut Vec<Element>) {
+fn emit(
+    node: &Node,
+    rect: Rect,
+    cells: Option<&[Rect]>,
+    clip: Option<Rect>,
+    rotated: bool,
+    into: &mut Vec<Element>,
+) {
     into.push(Element {
         rect,
         clip,
@@ -180,66 +295,15 @@ fn emit(node: &Node, rect: Rect, clip: Option<Rect>, rotated: bool, into: &mut V
         &node.children,
         node.list.as_ref(),
         &rect,
+        cells,
         inner,
         rotated,
         into,
     );
 }
 
-/// `UIListLayout` placement, one rect per node in `nodes`'s own order: the
-/// siblings keep their `Size`, are sorted, and are laid end to end along the
-/// fill axis with `Padding` between them. `Position` and `AnchorPoint` are
-/// ignored, as Roblox ignores them.
-fn stacked(nodes: &[Node], list: &List, parent: &Rect) -> Vec<Rect> {
-    let extent = parent.size();
-    let sizes: Vec<[f32; 2]> = nodes.iter().map(|node| node.size.against(extent)).collect();
-    let along = usize::from(list.vertical);
-    let across = 1 - along;
-
-    let mut order: Vec<usize> = (0..nodes.len()).collect();
-    match list.by_name {
-        true => order.sort_by(|&a, &b| nodes[a].name.cmp(&nodes[b].name)),
-        // Stable: equal `LayoutOrder`s keep tree order, which is what "added
-        // sooner to the parent" comes to in a saved place.
-        false => order.sort_by_key(|&index| nodes[index].layout_order),
-    }
-
-    let padding = list.padding.0 * extent[along] + list.padding.1;
-    let total = sizes.iter().map(|size| size[along]).sum::<f32>()
-        + padding * nodes.len().saturating_sub(1) as f32;
-    let (stack, item) = match list.vertical {
-        true => (list.vertical_align, list.horizontal),
-        false => (list.horizontal, list.vertical_align),
-    };
-
-    let mut rects = vec![
-        Rect {
-            x: 0.0,
-            y: 0.0,
-            width: 0.0,
-            height: 0.0
-        };
-        nodes.len()
-    ];
-    let mut cursor = offset(stack, extent[along], total);
-    for index in order {
-        let size = sizes[index];
-        let mut origin = [0.0; 2];
-        origin[along] = cursor;
-        origin[across] = offset(item, extent[across], size[across]);
-        rects[index] = Rect {
-            x: parent.x + origin[0],
-            y: parent.y + origin[1],
-            width: size[0],
-            height: size[1],
-        };
-        cursor += size[along] + padding;
-    }
-    rects
-}
-
 /// Where a run of `length` starts inside `extent` for one alignment.
-fn offset(align: Align, extent: f32, length: f32) -> f32 {
+pub(super) fn offset(align: Align, extent: f32, length: f32) -> f32 {
     match align {
         Align::Start => 0.0,
         Align::Center => (extent - length) * 0.5,

@@ -1,7 +1,9 @@
 //! Unit tests for [`super`], split by what they exercise: [`layout`] for
-//! `UDim2` resolution, paint ordering and `UIListLayout` stacking, [`clips`]
-//! for `ClipsDescendants` and its incompatibility with `Rotation`,
-//! [`properties`] for what is read out of a DOM in the first place.
+//! `UDim2` resolution, paint ordering and plain `UIListLayout` stacking,
+//! [`flex`] for that layout's flex family, [`grid`] and [`table`] for the
+//! other two layout classes, [`clips`] for `ClipsDescendants` and its
+//! incompatibility with `Rotation`, [`properties`] for what is read out of a
+//! DOM in the first place.
 //!
 //! The fixtures every test builds on live here, in the parent.
 
@@ -48,5 +50,8 @@ fn screens(dom: &WeakDom) -> Vec<Screen> {
 }
 
 mod clips;
+mod flex;
+mod grid;
 mod layout;
 mod properties;
+mod table;
