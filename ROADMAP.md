@@ -808,7 +808,11 @@ against `Roblox/creator-docs` rather than assumed:
   `GuiObject`s directly — genuinely separate from accidentally nudging a
   `BasePart` in the 3D view. GUI rendering is now reasonably complete
   (see "What's been implemented" → Renderer → GUI), so there is something
-  to edit interactively.
+  to edit interactively. Direction decided: **no UI editing in the 3D
+  viewport at all.** The Style Editor panel gets two tabs — the existing
+  style-sheet editor, and a second, Figma-like design tab that edits the
+  selected `ScreenGui`'s `GuiObject`s on a 2D canvas of their own (drag,
+  resize, align, with the Properties panel following the selection).
 - [ ] 📋 **3D asset import and round-trip through Roblox**, i.e. import a
   local `.fbx`/`.obj`/`.gltf` (drag-and-drop or
   `Insert > Model/Mesh/Image`), upload it to Roblox as a real asset via
