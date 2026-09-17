@@ -159,9 +159,9 @@ Roblox's own engine.
     not honoured: `StarterGui.ShowDevelopmentGui`, a Studio *view* toggle
     a player never sees — the viewer draws the play view, and a real
     Studio capture of a place saving it `false` shows the GUI. Known gaps:
-    the deprecated `FrameStyle`/`ButtonStyle` skins (client assets), a
-    second `UIStroke` on one element, `TextDirection`/`OpenTypeFeatures`,
-    `BillboardGui.ExtentsOffset*`.
+    the deprecated `FrameStyle`/`ButtonStyle` skins (client assets),
+    `TextDirection`/`OpenTypeFeatures`, `BillboardGui.ExtentsOffset*`.
+    Several `UIStroke`s on one object draw in `ZIndex` order.
 - [x] Free-flight camera (WASD + mouse look + wheel), exponentially-eased
   movement (mouse look itself stays unfiltered).
 - [x] Orthographic camera mode — toggled from the Viewport panel's overflow

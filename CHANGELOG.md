@@ -74,7 +74,12 @@
   swallows its subtree, and is the layout scope the docs describe.
   `ScrollingFrame`, `CanvasGroup`, `ViewportFrame` and `UIPageLayout` draw
   as themselves, and every property of `StarterGui`'s 45 GUI classes is
-  either implemented or documented as having no still-frame effect. — @chteau
+  either implemented or documented as having no still-frame effect. Against a
+  Studio capture of a third place: a `ScrollingFrame`'s scale-sized children
+  resolve against a canvas no smaller than the window (so rows inside an
+  automatic canvas no longer collapse), a wrapping list's gap between lines is
+  `Padding`'s share of the cross axis, and every enabled `UIStroke` on an
+  object draws, lowest `ZIndex` first. — @chteau
 
 
 ## 2026-09-16
