@@ -121,7 +121,12 @@ fn clip_to_device_safe_area_off_lets_the_screen_spill_past_the_inset() {
 #[test]
 fn screen_insets_none_ignores_the_safe_area_clip() {
     let (mut dom, gui) = screen_gui();
-    frame(&mut dom, gui, udim2(0.0, 0, 0.0, -20), udim2(1.0, 0, 0.0, 100));
+    frame(
+        &mut dom,
+        gui,
+        udim2(0.0, 0, 0.0, -20),
+        udim2(1.0, 0, 0.0, 100),
+    );
     dom.set_property(gui, "ClipToDeviceSafeArea", Variant::Bool(true))
         .unwrap();
 

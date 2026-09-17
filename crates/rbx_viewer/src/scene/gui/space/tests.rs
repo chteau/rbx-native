@@ -491,7 +491,8 @@ fn max_distance_defaults_differ_and_zero_means_no_limit() {
         let (mut dom, gui, placements) = fixture(class, Vec3::ONE);
         filled(&mut dom, gui);
         // A billboard with no `Size` has no canvas to place at all.
-        dom.set_property(gui, "Size", udim2(2.0, 0, 2.0, 0)).unwrap();
+        dom.set_property(gui, "Size", udim2(2.0, 0, 2.0, 0))
+            .unwrap();
         assert_eq!(planned(&dom, &placements)[0].max_distance, default);
 
         dom.set_property(gui, "MaxDistance", Variant::Float32(0.0))
@@ -512,7 +513,8 @@ fn max_distance_defaults_differ_and_zero_means_no_limit() {
 fn size_offset_reaches_the_billboard_anchor() {
     let (mut dom, gui, placements) = fixture("BillboardGui", Vec3::ONE);
     filled(&mut dom, gui);
-    dom.set_property(gui, "Size", udim2(2.0, 0, 2.0, 0)).unwrap();
+    dom.set_property(gui, "Size", udim2(2.0, 0, 2.0, 0))
+        .unwrap();
     dom.set_property(gui, "SizeOffset", vector2_of(0.5, -0.25))
         .unwrap();
 
