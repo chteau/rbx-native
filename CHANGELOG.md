@@ -37,7 +37,11 @@
   is previewed before it is picked. A part the camera sits inside no longer
   swallows every click and hover — it is ordered by where the ray leaves it,
   so an Alt-hover or Alt-click reaches a child in front of it directly,
-  without selecting the enclosing part first. — @chteau
+  without selecting the enclosing part first. The sun's specular highlight is
+  now scaled by EnvironmentSpecularScale, the dial the environment reflection
+  already used: a place that sets it to 0 renders matte with full, vivid
+  colours as Studio does, instead of a broad white highlight washing the
+  greens toward grey, while a place at 1 keeps the full highlight. — @chteau
 
 
 ## 2026-09-16
