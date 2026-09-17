@@ -14,6 +14,10 @@ use crate::scene::gui::plan::{Node, Page};
 /// at rest, so the run is shifted to put `CurrentPage` exactly over the
 /// container and its neighbours just outside — which is what the container's
 /// own `ClipsDescendants` then hides.
+///
+/// `HorizontalAlignment`/`VerticalAlignment`, inherited from
+/// `UIGridStyleLayout`, have nothing to align here: a page already covers the
+/// container on both axes, so there is no free space to push it around in.
 pub(super) fn pages(nodes: &[Node], page: &Page, parent: &Rect) -> Vec<Rect> {
     let order = ordered(nodes, page.by_name);
     let along = usize::from(page.vertical);
