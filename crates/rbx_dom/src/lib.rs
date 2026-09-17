@@ -3,6 +3,7 @@
 //! Provides a weak reference-based tree structure that maps directly onto
 //! the binary file format without circular strong references.
 
+pub mod attributes;
 mod change;
 mod dom;
 mod error;
