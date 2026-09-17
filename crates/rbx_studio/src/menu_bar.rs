@@ -17,9 +17,11 @@
 //! command must fire no matter what currently has focus).
 //!
 //! Everything this editor cannot do yet — New, Open…, Save As…, Publish to
-//! Roblox…, Cut/Copy/Paste, Insert Object…, and the whole View menu — stays a
-//! visibly disabled item rather than a click that silently does nothing
-//! while looking live.
+//! Roblox…, Cut/Copy/Paste, Insert Object… — stays a visibly disabled item
+//! rather than a click that silently does nothing while looking live. The one
+//! live View item is Style Editor: Roblox puts that panel under `Window` ⟩ UI
+//! (`studio/ui-overview.md`), and this editor's menus are File/Edit/Model/View,
+//! so it goes under View.
 
 use gpui_kit::component::menu::AppMenuBar;
 use gpui_kit::component::{ActiveTheme, GlobalState};
@@ -36,6 +38,7 @@ actions!(
         MenuInsertPart,
         MenuInsertFolder,
         MenuDeleteInstance,
+        MenuStyleEditor,
         /// Shared by every item below that has no real handler yet; always
         /// paired with `.disabled(true)` (see `menus`), so `PopupMenu` never
         /// lets a click reach it — `install_actions` still gives it a no-op
@@ -70,8 +73,10 @@ pub(crate) fn bar(menu_bar: &Entity<AppMenuBar>, cx: &App) -> impl IntoElement {
 
 /// The menu structure itself. File and Edit hold this editor's real
 /// commands (see this module's doc comment); Model holds the two quick
-/// inserts `shell::keys` already binds to Ctrl+Shift+P/F. View is entirely
-/// placeholder — there is no per-panel show/hide command to wire it to yet.
+/// inserts `shell::keys` already binds to Ctrl+Shift+P/F. View's Explorer,
+/// Properties and Command Bar items stay placeholders — those panels have no
+/// show/hide command to wire them to yet — while Style Editor brings its own
+/// dock tab to the front (see `shell::dock::reveal_style_editor`).
 fn menus() -> Vec<OwnedMenu> {
     vec![
         Menu::new("File")
@@ -110,6 +115,8 @@ fn menus() -> Vec<OwnedMenu> {
                 MenuItem::action("Explorer", MenuPlaceholder).disabled(true),
                 MenuItem::action("Properties", MenuPlaceholder).disabled(true),
                 MenuItem::action("Command Bar", MenuPlaceholder).disabled(true),
+                MenuItem::separator(),
+                MenuItem::action("Style Editor", MenuStyleEditor),
             ])
             .owned(),
     ]
@@ -155,6 +162,21 @@ fn install_actions(shell: Entity<Shell>, cx: &mut App) {
         let shell = shell.clone();
         move |_: &MenuDeleteInstance, cx| {
             shell.update(cx, |shell, cx| shell.delete_selected(cx));
+        }
+    });
+    // The one item here that needs a `Window`: raising a dock tab moves a
+    // panel, and `App::on_action` hands this handler only an `App`. The
+    // active window is this app's only window.
+    cx.on_action({
+        let shell = shell.clone();
+        move |_: &MenuStyleEditor, cx| {
+            let Some(window) = cx.active_window() else {
+                return;
+            };
+            let shell = shell.clone();
+            let _ = window.update(cx, move |_, window, cx| {
+                shell.update(cx, |shell, cx| shell.reveal_style_editor(window, cx));
+            });
         }
     });
     cx.on_action(move |_: &MenuPlaceholder, _cx| {});

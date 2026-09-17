@@ -102,7 +102,7 @@ pub(crate) fn commit(
 
 /// Parses `text` into a value shaped like `current`. `class`/`prop_name` are
 /// only needed to resolve an `Enum`'s item names through `db`.
-fn parse(
+pub(crate) fn parse(
     current: &Variant,
     db: &ReflectionDatabase,
     class: &str,

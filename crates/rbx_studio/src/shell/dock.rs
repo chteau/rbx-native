@@ -26,6 +26,7 @@ enum Section {
     Properties,
     Output,
     Scripts,
+    StyleEditor,
 }
 
 impl Section {
@@ -36,6 +37,7 @@ impl Section {
             Section::Properties => "Properties",
             Section::Output => "Output",
             Section::Scripts => "Script Editor",
+            Section::StyleEditor => "Style Editor",
         }
     }
 }
@@ -75,6 +77,7 @@ impl Render for SectionPanel {
             Section::Properties => shell.properties(window, cx).into_any_element(),
             Section::Output => shell.output_panel(cx).into_any_element(),
             Section::Scripts => shell.script_editor(window, cx).into_any_element(),
+            Section::StyleEditor => shell.style_editor(window, cx).into_any_element(),
         })
     }
 }
@@ -100,7 +103,7 @@ impl ComponentPanel for SectionPanel {
         let label = match self.section {
             Section::Viewport => self.shell.read(cx).title(),
             Section::Properties => self.shell.read(cx).properties_title(),
-            Section::Explorer | Section::Output | Section::Scripts => {
+            Section::Explorer | Section::Output | Section::Scripts | Section::StyleEditor => {
                 SharedString::from(self.section.name())
             }
         };
@@ -201,7 +204,8 @@ pub(super) fn build(
     let explorer = cx.new(|cx| SectionPanel::new(shell.clone(), Section::Explorer, cx));
     let properties = cx.new(|cx| SectionPanel::new(shell.clone(), Section::Properties, cx));
     let output = cx.new(|cx| SectionPanel::new(shell.clone(), Section::Output, cx));
-    let scripts = cx.new(|cx| SectionPanel::new(shell, Section::Scripts, cx));
+    let scripts = cx.new(|cx| SectionPanel::new(shell.clone(), Section::Scripts, cx));
+    let styles = cx.new(|cx| SectionPanel::new(shell, Section::StyleEditor, cx));
 
     area.update(cx, |area, cx| {
         area.set_center(
@@ -216,7 +220,8 @@ pub(super) fn build(
                         .child(
                             DockLayout::tabs()
                                 .panel_view(panel_handle(viewport), cx)
-                                .panel_view(panel_handle(scripts), cx),
+                                .panel_view(panel_handle(scripts), cx)
+                                .panel_view(panel_handle(styles), cx),
                             None,
                         )
                         .child(
@@ -258,6 +263,7 @@ pub(super) fn register_panels(_dock_area: Entity<DockArea>, shell: Entity<Shell>
         Section::Properties,
         Section::Output,
         Section::Scripts,
+        Section::StyleEditor,
     ] {
         let section = *section;
         let shell_clone = shell.clone();
@@ -280,7 +286,18 @@ pub(super) fn register_panels(_dock_area: Entity<DockArea>, shell: Entity<Shell>
 /// caching its id is what makes this keep working after a saved layout has
 /// been restored, which rebuilds the panels as new entities.
 pub(super) fn reveal_scripts(area: &Entity<DockArea>, window: &mut Window, cx: &mut App) {
-    let Some((panel, node, ix)) = locate(area, Section::Scripts.name(), cx) else {
+    reveal(area, Section::Scripts.name(), window, cx);
+}
+
+/// [`reveal_scripts`] for the Style Editor panel, which the View menu opens
+/// the same way (Roblox puts it under `Window` ⟩ UI, per
+/// `studio/ui-overview.md`; this editor's menus are File/Edit/Model/View).
+pub(super) fn reveal_style_editor(area: &Entity<DockArea>, window: &mut Window, cx: &mut App) {
+    reveal(area, Section::StyleEditor.name(), window, cx);
+}
+
+fn reveal(area: &Entity<DockArea>, name: &str, window: &mut Window, cx: &mut App) {
+    let Some((panel, node, ix)) = locate(area, name, cx) else {
         return;
     };
     area.update(cx, |area, cx| {
@@ -349,6 +366,7 @@ mod tests {
             Section::Properties.name(),
             Section::Output.name(),
             Section::Scripts.name(),
+            Section::StyleEditor.name(),
         ];
         assert_eq!(
             names,
@@ -357,7 +375,8 @@ mod tests {
                 "Explorer",
                 "Properties",
                 "Output",
-                "Script Editor"
+                "Script Editor",
+                "Style Editor"
             ]
         );
     }
