@@ -15,7 +15,9 @@ use rbx_assets::AssetRef;
 use rbx_dom::{Instance, Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
-use super::plan::{collect_assets, elements, flag, layout_of, span, vector2, Layout, Node};
+use super::plan::{
+    collect_assets, elements, flag, global_z_index, layout_of, span, vector2, Layout, Node,
+};
 use super::style::Styled;
 use crate::scene::beam::{world_cframe, ParentMap};
 use crate::scene::Placement;
@@ -79,6 +81,9 @@ pub(crate) struct SpaceGui {
     /// `AlwaysOnTop`: drawn without a depth test, over the whole scene.
     pub(crate) always_on_top: bool,
     pub(crate) anchor: Anchor,
+    /// `ZIndexBehavior.Global`, which a `BillboardGui`/`SurfaceGui` carries
+    /// like any other `LayerCollector`.
+    pub(super) global_z_index: bool,
     pub(super) list: Option<Layout>,
     pub(super) roots: Vec<Node>,
 }
@@ -231,6 +236,7 @@ fn read(
         canvas,
         always_on_top: flag(properties, "AlwaysOnTop", false),
         anchor,
+        global_z_index: global_z_index(properties),
         list: layout_of(
             context.dom,
             context.database,

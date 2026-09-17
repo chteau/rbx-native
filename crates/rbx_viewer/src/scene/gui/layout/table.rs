@@ -33,14 +33,14 @@ pub(super) fn table(nodes: &[Node], table: &Table, parent: &Rect) -> Laid {
     let mut majors = vec![0.0f32; order.len()];
     for (slot, &row) in order.iter().enumerate() {
         for (column, &cell) in cells[row].iter().enumerate() {
-            let size = nodes[row].children[cell].size.against(extent);
+            let size = super::sizing::extent(&nodes[row].children[cell], extent);
             minors[column] = minors[column].max(size[minor]);
             majors[slot] = majors[slot].max(size[major]);
         }
         if cells[row].is_empty() {
             // A sibling with no cells of its own still takes up a band, and
             // its own `Size` is the only thing left to measure it by.
-            majors[slot] = nodes[row].size.against(extent)[major];
+            majors[slot] = super::sizing::extent(&nodes[row], extent)[major];
         }
     }
 

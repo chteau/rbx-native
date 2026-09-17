@@ -33,7 +33,10 @@ pub(super) fn stacked(nodes: &[Node], list: &List, parent: &Rect) -> (Vec<Rect>,
 
     // Each sibling's flex basis: the size it asks for before any of the
     // line's free space is handed out.
-    let basis: Vec<[f32; 2]> = nodes.iter().map(|node| node.size.against(extent)).collect();
+    let basis: Vec<[f32; 2]> = nodes
+        .iter()
+        .map(|node| super::sizing::extent(node, extent))
+        .collect();
     let order = ordered(nodes, list.by_name);
     let lines = wrap(&order, &basis, along, padding, extent[along], list.wraps);
 

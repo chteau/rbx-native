@@ -21,8 +21,10 @@
 //! Text itself: a `TextLabel`/`TextButton`/`TextBox` draws its background and
 //! border like a `Frame`, but its glyphs need font loading and shaping, which
 //! is a dependency decision this viewer has not made. Of the `UIComponent`
-//! family the layouts are read (see [`plan::Layout`]) along with `UIFlexItem`;
-//! the rest — `UIPadding`, `UIScale`, `UICorner`, `UIStroke`… — are not.
+//! family the layouts are read (see [`plan::Layout`]) along with `UIFlexItem`,
+//! everything that changes an element's size — `UIPadding`, `UIScale`, the
+//! `UIConstraint` classes — and the appearance modifiers `UICorner`,
+//! `UIStroke` and `UIGradient`.
 
 mod layout;
 mod plan;

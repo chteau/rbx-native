@@ -198,6 +198,8 @@ mod tests {
             background_alpha: 1.0,
             border: None,
             image: None,
+            border_inset: 0.0,
+            z_index: 1,
             corner_radii: [8.0; 4],
             stroke: Some(GuiStroke {
                 color: [0.0; 3],

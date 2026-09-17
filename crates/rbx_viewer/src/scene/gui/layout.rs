@@ -13,6 +13,7 @@ use super::space::SpaceGui;
 mod grid;
 mod list;
 mod modifiers;
+mod sizing;
 mod table;
 
 pub(crate) use modifiers::{GradientPx, StrokePx};
@@ -67,7 +68,10 @@ pub(crate) struct Element {
     /// The scissor rect inherited from the nearest `ClipsDescendants`
     /// ancestor, if any. Already intersected down the whole chain.
     pub(crate) clip: Option<Rect>,
-    /// `Rotation`, degrees clockwise around `rect`'s own centre.
+    /// `AbsoluteRotation`: degrees clockwise around `rect`'s own centre, this
+    /// element's `Rotation` plus every ancestor's. `rect` has already been
+    /// carried around those ancestors' centres, so turning it about its own
+    /// is all that is left to do.
     pub(crate) rotation: f32,
     pub(crate) background: [f32; 3],
     pub(crate) background_alpha: f32,
@@ -75,6 +79,11 @@ pub(crate) struct Element {
     /// — or for any rounded box, since a square outline around one is not
     /// what a `UICorner` shows; the docs say nothing about the two together.
     pub(crate) border: Option<(f32, [f32; 3])>,
+    /// How far inside `rect` the border's outer edge sits, per `BorderMode`.
+    pub(crate) border_inset: f32,
+    /// `ZIndex`, kept so a `ZIndexBehavior.Global` screen can sort its whole
+    /// flattened tree by it after the fact.
+    pub(crate) z_index: i32,
     pub(crate) image: Option<Painted>,
     /// `UICorner` in pixels, top-left first then clockwise; all zero without.
     pub(crate) corner_radii: [f32; 4],
@@ -86,8 +95,6 @@ pub(crate) struct Element {
 /// `ZIndex` among siblings, then tree order — and a child always over its
 /// parent, which is what `ZIndexBehavior.Sibling` (the default) means.
 pub(crate) fn resolve(screens: &[Screen], viewport: [f32; 2]) -> Vec<Element> {
-    let frame = canvas(viewport);
-
     let mut order: Vec<&Screen> = screens.iter().collect();
     // Stable, so two screens sharing a `DisplayOrder` keep the order the DOM
     // holds them in rather than an arbitrary one.
@@ -95,15 +102,31 @@ pub(crate) fn resolve(screens: &[Screen], viewport: [f32; 2]) -> Vec<Element> {
 
     let mut elements = Vec::new();
     for screen in order {
+        // `ScreenInsets`: the canvas starts below the top bar, and is that
+        // much shorter, so a `{1, 0}` child still reaches the bottom edge.
+        let frame = Rect {
+            y: screen.top_inset,
+            height: (viewport[1] - screen.top_inset).max(0.0),
+            ..canvas(viewport)
+        };
+        let start = elements.len();
         children(
             &screen.roots,
             screen.list.as_ref(),
             &frame,
             None,
-            None,
-            false,
+            Context {
+                global_z_index: screen.global_z_index,
+                ..Context::default()
+            },
             &mut elements,
         );
+        if screen.global_z_index {
+            // "Sorts all descendants according to the ZIndex, then breaks ties
+            // using the hierarchy order": the walk above already emitted them
+            // in hierarchy order, so a stable sort is the whole of it.
+            elements[start..].sort_by_key(|element| element.z_index);
+        }
     }
     elements
 }
@@ -120,10 +143,15 @@ pub(crate) fn resolve_canvas(gui: &SpaceGui) -> Vec<Element> {
         gui.list.as_ref(),
         &frame,
         None,
-        None,
-        false,
+        Context {
+            global_z_index: gui.global_z_index,
+            ..Context::default()
+        },
         &mut elements,
     );
+    if gui.global_z_index {
+        elements.sort_by_key(|element| element.z_index);
+    }
     elements
 }
 
@@ -134,6 +162,45 @@ fn canvas(size: [f32; 2]) -> Rect {
         y: 0.0,
         width: size[0],
         height: size[1],
+    }
+}
+
+/// What an element hands down to the subtree under it.
+#[derive(Debug, Clone, Copy, Default)]
+struct Context {
+    /// The scissor rect inherited from the nearest `ClipsDescendants`
+    /// ancestor, already intersected down the whole chain.
+    clip: Option<Rect>,
+    /// Whether this element or any ancestor carries a non-zero `Rotation`,
+    /// which is what turns `ClipsDescendants` off.
+    rotated: bool,
+    /// The ancestors' cumulative `AbsoluteRotation`, and the screen point it
+    /// turns about — the nearest rotated ancestor's own centre.
+    angle: f32,
+    pivot: [f32; 2],
+    /// `ZIndexBehavior.Global`, where siblings are emitted in tree order and
+    /// [`resolve`] sorts the whole screen by `ZIndex` afterwards.
+    global_z_index: bool,
+}
+
+impl Context {
+    /// Where a child's axis-aligned box actually lands: an ancestor's rotation
+    /// carries the whole box around that ancestor's centre, and only then does
+    /// the child turn about its own.
+    fn carried(&self, rect: Rect) -> Rect {
+        if self.angle == 0.0 {
+            return rect;
+        }
+        // Same clockwise convention as the renderer's own rotation, y running
+        // down the screen.
+        let (sin, cos) = self.angle.to_radians().sin_cos();
+        let dx = rect.x + rect.width * 0.5 - self.pivot[0];
+        let dy = rect.y + rect.height * 0.5 - self.pivot[1];
+        Rect {
+            x: self.pivot[0] + dx * cos - dy * sin - rect.width * 0.5,
+            y: self.pivot[1] + dx * sin + dy * cos - rect.height * 0.5,
+            ..rect
+        }
     }
 }
 
@@ -183,7 +250,14 @@ pub(crate) fn arrange(nodes: &[Node], layout: Option<&Layout>, parent: &Rect) ->
         None => {
             let rects: Vec<Rect> = nodes
                 .iter()
-                .map(|node| place(node.position, node.size, node.anchor, parent))
+                .map(|node| {
+                    place(
+                        node.position,
+                        sizing::extent(node, parent.size()),
+                        node.anchor,
+                        parent,
+                    )
+                })
                 .collect();
             let size = content_size(&rects);
             Arranged {
@@ -208,8 +282,7 @@ fn children(
     layout: Option<&Layout>,
     parent: &Rect,
     given: Option<&[Rect]>,
-    clip: Option<Rect>,
-    rotated: bool,
+    context: Context,
     into: &mut Vec<Element>,
 ) {
     let arranged = match given {
@@ -220,14 +293,13 @@ fn children(
         },
         None => arrange(nodes, layout, parent),
     };
-    for index in sorted(nodes) {
+    for index in sorted(nodes, context.global_z_index) {
         let cells = arranged.cells.as_ref().map(|cells| &cells[index][..]);
         emit(
             &nodes[index],
-            arranged.rects[index],
+            context.carried(arranged.rects[index]),
             cells,
-            clip,
-            rotated,
+            context,
             into,
         );
     }
@@ -264,9 +336,15 @@ pub(super) fn content_size(rects: &[Rect]) -> [f32; 2] {
 }
 
 /// Sibling indices in paint order. Stable for the same reason screens are.
-fn sorted(nodes: &[Node]) -> Vec<usize> {
+///
+/// Under `ZIndexBehavior.Global` the siblings are left in tree order: that is
+/// the hierarchy order the screen-wide sort breaks ties with, and reordering
+/// them here would interleave their subtrees wrongly.
+fn sorted(nodes: &[Node], global_z_index: bool) -> Vec<usize> {
     let mut order: Vec<usize> = (0..nodes.len()).collect();
-    order.sort_by_key(|&index| nodes[index].z_index);
+    if !global_z_index {
+        order.sort_by_key(|&index| nodes[index].z_index);
+    }
     order
 }
 
@@ -274,19 +352,20 @@ fn emit(
     node: &Node,
     rect: Rect,
     cells: Option<&[Rect]>,
-    clip: Option<Rect>,
-    rotated: bool,
+    context: Context,
     into: &mut Vec<Element>,
 ) {
     let corner_radii = modifiers::radii(node.corner.as_ref(), rect.size());
     let rounded = corner_radii.iter().any(|&radius| radius > 0.0);
     into.push(Element {
         rect,
-        clip,
-        rotation: node.rotation,
+        clip: context.clip,
+        rotation: context.angle + node.rotation,
         background: node.background,
         background_alpha: node.background_alpha,
         border: (node.border > 0.0 && !rounded).then_some((node.border, node.border_color)),
+        border_inset: node.border_mode.inset(node.border),
+        z_index: node.z_index,
         image: node.fill.as_ref().map(|fill| painted(fill, &rect)),
         corner_radii,
         stroke: node
@@ -306,18 +385,27 @@ fn emit(
     // all — a non-zero `Rotation` on this element or any ancestor makes
     // `ClipsDescendants` a no-op rather than clipping to a box that no longer
     // matches what is actually drawn on screen.
-    let rotated = rotated || node.rotation != 0.0;
-    let inner = match node.clips && !rotated {
-        true => Some(clip.map_or(rect, |outer| outer.intersect(&rect))),
-        false => clip,
-    };
+    let rotated = context.rotated || node.rotation != 0.0;
+    let angle = context.angle + node.rotation;
     children(
         &node.children,
         node.list.as_ref(),
-        &rect,
+        &sizing::padded(node, &rect),
         cells,
-        inner,
-        rotated,
+        Context {
+            clip: match node.clips && !rotated {
+                true => Some(context.clip.map_or(rect, |outer| outer.intersect(&rect))),
+                false => context.clip,
+            },
+            rotated,
+            angle,
+            // Once this element turns, its children turn about *its* centre.
+            pivot: match angle == 0.0 {
+                true => context.pivot,
+                false => [rect.x + rect.width * 0.5, rect.y + rect.height * 0.5],
+            },
+            ..context
+        },
         into,
     );
 }
@@ -331,12 +419,12 @@ pub(super) fn offset(align: Align, extent: f32, length: f32) -> f32 {
     }
 }
 
-/// Standard `UDim2` resolution: the size is a fraction of the parent plus a
-/// pixel offset, the position the same against the parent's own corner, and
-/// `AnchorPoint` then slides the box back by that fraction of its own size —
-/// the default `(0, 0)` putting the element's top-left corner on `Position`.
-fn place(position: Span, size: Span, anchor: [f32; 2], parent: &Rect) -> Rect {
-    let extent = size.against(parent.size());
+/// Standard `UDim2` resolution: `extent` is the size every size modifier has
+/// already had its say on, the position is a fraction of the parent plus a
+/// pixel offset against the parent's own corner, and `AnchorPoint` then slides
+/// the box back by that fraction of its own size — the default `(0, 0)`
+/// putting the element's top-left corner on `Position`.
+fn place(position: Span, extent: [f32; 2], anchor: [f32; 2], parent: &Rect) -> Rect {
     let origin = position.against(parent.size());
 
     Rect {

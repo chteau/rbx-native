@@ -96,7 +96,7 @@ pub(super) fn build(
                 // The bands are rotated about the element's own centre, same
                 // as the background — not each band's own, or a rotated
                 // border would fly apart from the box it outlines.
-                for side in outline(&element.rect, width) {
+                for side in outline(&inset(&element.rect, element.border_inset), width) {
                     quad(&side, [1.0, 1.0], &paint, &fill, &spin, &mut vertices);
                 }
             }
@@ -167,6 +167,18 @@ fn extend(runs: &mut Vec<Run>, texture: usize, scissor: Option<Scissor>, range: 
             scissor,
             range,
         }),
+    }
+}
+
+/// The box a border's bands are grown outward from: the element's own rect
+/// for `BorderMode.Outline`, pulled in half a width for `Middle` and a full
+/// width for `Inset`, so the bands straddle or sit inside the edge instead.
+fn inset(rect: &GuiRect, by: f32) -> GuiRect {
+    GuiRect {
+        x: rect.x + by,
+        y: rect.y + by,
+        width: (rect.width - 2.0 * by).max(0.0),
+        height: (rect.height - 2.0 * by).max(0.0),
     }
 }
 
