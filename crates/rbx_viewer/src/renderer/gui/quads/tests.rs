@@ -1,4 +1,5 @@
-//! Unit tests for [`super`]: scissor conversion, border bands and run merging.
+//! Unit tests for [`super`]: scissor conversion, border bands and run merging;
+//! [`modifiers`] for what a `UICorner`/`UIStroke`/`UIGradient` puts on a vertex.
 
 use super::*;
 use crate::scene::{GuiElement, Painted};
@@ -21,6 +22,9 @@ fn element(rect: GuiRect, clip: Option<GuiRect>) -> GuiElement {
         background_alpha: 1.0,
         border: None,
         image: None,
+        corner_radii: [0.0; 4],
+        stroke: None,
+        gradient: None,
     }
 }
 
@@ -72,7 +76,7 @@ fn an_element_clipped_away_entirely_contributes_no_vertices() {
         Some(rect(900.0, 900.0, 10.0, 10.0)),
     )];
 
-    let (vertices, runs) = build(&elements, &HashMap::new(), VIEWPORT);
+    let (vertices, runs, _) = build(&elements, &HashMap::new(), VIEWPORT);
 
     assert!(vertices.is_empty());
     assert!(runs.is_empty());
@@ -95,7 +99,7 @@ fn a_transparent_background_hides_the_border_with_it() {
     hidden.background_alpha = 0.0;
     hidden.border = Some((2.0, [0.0, 0.0, 0.0]));
 
-    let (vertices, _) = build(&[hidden], &HashMap::new(), VIEWPORT);
+    let (vertices, _, _) = build(&[hidden], &HashMap::new(), VIEWPORT);
 
     assert!(vertices.is_empty());
 }
@@ -105,7 +109,7 @@ fn a_background_and_its_border_are_five_quads_in_one_run() {
     let mut outlined = element(rect(0.0, 0.0, 10.0, 10.0), None);
     outlined.border = Some((1.0, [0.0, 0.0, 0.0]));
 
-    let (vertices, runs) = build(&[outlined], &HashMap::new(), VIEWPORT);
+    let (vertices, runs, _) = build(&[outlined], &HashMap::new(), VIEWPORT);
 
     assert_eq!(vertices.len(), 5 * 6);
     assert_eq!(runs.len(), 1);
@@ -123,7 +127,7 @@ fn consecutive_elements_sharing_a_texture_and_a_scissor_merge_into_one_run() {
         ),
     ];
 
-    let (_, runs) = build(&elements, &HashMap::new(), VIEWPORT);
+    let (_, runs, _) = build(&elements, &HashMap::new(), VIEWPORT);
 
     assert_eq!(runs.len(), 2);
     assert_eq!(runs[0].range, 0..12);
@@ -140,7 +144,7 @@ fn an_image_whose_asset_never_downloaded_leaves_only_its_background() {
         repeat: [1.0, 1.0],
     });
 
-    let (vertices, runs) = build(&[label], &HashMap::new(), VIEWPORT);
+    let (vertices, runs, _) = build(&[label], &HashMap::new(), VIEWPORT);
 
     assert_eq!(vertices.len(), 6);
     assert_eq!(runs.len(), 1);
@@ -158,7 +162,7 @@ fn a_tiled_image_carries_its_repeat_count_into_the_uvs() {
     });
     let textures = HashMap::from([(AssetRef::Id(7), 1)]);
 
-    let (vertices, runs) = build(&[label], &textures, VIEWPORT);
+    let (vertices, runs, _) = build(&[label], &textures, VIEWPORT);
 
     assert_eq!(runs[0].texture, 1);
     let corners: Vec<[f32; 2]> = vertices.iter().map(|vertex| vertex.uv).collect();
@@ -170,7 +174,7 @@ fn a_tiled_image_carries_its_repeat_count_into_the_uvs() {
 fn a_zero_sized_element_draws_nothing() {
     let elements = [element(rect(10.0, 10.0, 0.0, 50.0), None)];
 
-    let (vertices, _) = build(&elements, &HashMap::new(), VIEWPORT);
+    let (vertices, _, _) = build(&elements, &HashMap::new(), VIEWPORT);
 
     assert!(vertices.is_empty());
 }
@@ -206,7 +210,7 @@ fn a_rotated_quad_stays_centred_on_the_unrotated_rects_centre() {
     let mut spun = element(rect(0.0, 0.0, 20.0, 10.0), None);
     spun.rotation = 90.0;
 
-    let (vertices, _) = build(&[spun], &HashMap::new(), VIEWPORT);
+    let (vertices, _, _) = build(&[spun], &HashMap::new(), VIEWPORT);
 
     let centre_x = vertices.iter().map(|v| v.position[0]).sum::<f32>() / vertices.len() as f32;
     let centre_y = vertices.iter().map(|v| v.position[1]).sum::<f32>() / vertices.len() as f32;
@@ -235,7 +239,7 @@ fn a_rotated_borders_bands_turn_about_the_elements_centre_too() {
     bordered.rotation = 90.0;
     bordered.border = Some((4.0, [0.0, 0.0, 0.0]));
 
-    let (vertices, _) = build(&[bordered], &HashMap::new(), VIEWPORT);
+    let (vertices, _, _) = build(&[bordered], &HashMap::new(), VIEWPORT);
     // The background is the first quad (6 vertices); every vertex after that
     // is one of the four border bands.
     let border = &vertices[6..];
@@ -261,3 +265,5 @@ fn a_rotated_borders_bands_turn_about_the_elements_centre_too() {
         .fold(f32::MIN, f32::max);
     assert!((max_y - min_y - 28.0).abs() < 1e-3);
 }
+
+mod modifiers;

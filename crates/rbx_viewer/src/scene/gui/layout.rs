@@ -10,6 +10,10 @@ use rbx_assets::AssetRef;
 use super::plan::{Align, Fill, List, Node, Screen, Span, Tiling};
 use super::space::SpaceGui;
 
+mod modifiers;
+
+pub(crate) use modifiers::{GradientPx, StrokePx};
+
 /// A screen-space box in pixels, top-left origin.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Rect {
@@ -64,9 +68,15 @@ pub(crate) struct Element {
     pub(crate) rotation: f32,
     pub(crate) background: [f32; 3],
     pub(crate) background_alpha: f32,
-    /// `BorderSizePixel` and `BorderColor3`, `None` for a zero-width border.
+    /// `BorderSizePixel` and `BorderColor3`, `None` for a zero-width border
+    /// — or for any rounded box, since a square outline around one is not
+    /// what a `UICorner` shows; the docs say nothing about the two together.
     pub(crate) border: Option<(f32, [f32; 3])>,
     pub(crate) image: Option<Painted>,
+    /// `UICorner` in pixels, top-left first then clockwise; all zero without.
+    pub(crate) corner_radii: [f32; 4],
+    pub(crate) stroke: Option<StrokePx>,
+    pub(crate) gradient: Option<GradientPx>,
 }
 
 /// Every element of every screen, in paint order: `DisplayOrder` first, then
@@ -154,14 +164,25 @@ fn sorted(nodes: &[Node]) -> Vec<usize> {
 }
 
 fn emit(node: &Node, rect: Rect, clip: Option<Rect>, rotated: bool, into: &mut Vec<Element>) {
+    let corner_radii = modifiers::radii(node.corner.as_ref(), rect.size());
+    let rounded = corner_radii.iter().any(|&radius| radius > 0.0);
     into.push(Element {
         rect,
         clip,
         rotation: node.rotation,
         background: node.background,
         background_alpha: node.background_alpha,
-        border: (node.border > 0.0).then_some((node.border, node.border_color)),
+        border: (node.border > 0.0 && !rounded).then_some((node.border, node.border_color)),
         image: node.fill.as_ref().map(|fill| painted(fill, &rect)),
+        corner_radii,
+        stroke: node
+            .stroke
+            .as_ref()
+            .map(|stroke| modifiers::stroke(stroke, rect.size())),
+        gradient: node
+            .gradient
+            .as_ref()
+            .map(|gradient| modifiers::gradient(gradient, rect.size())),
     });
 
     // Roblox's own docs describe two modes here, gated on the (NotScriptable,

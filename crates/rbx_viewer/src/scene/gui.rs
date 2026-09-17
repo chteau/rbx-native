@@ -26,8 +26,10 @@ mod space;
 
 #[cfg(test)]
 pub(crate) use layout::Painted;
-pub(crate) use layout::{resolve, resolve_canvas, Element, Rect};
-pub(crate) use plan::{plan, Screen};
+#[cfg(test)]
+pub(crate) use layout::StrokePx;
+pub(crate) use layout::{resolve, resolve_canvas, Element, GradientPx, Rect};
+pub(crate) use plan::{plan, GradientKind, Join, Screen, Tile};
 pub(crate) use space::{plan as plan_space, Anchor, SpaceGui};
 
 #[cfg(test)]

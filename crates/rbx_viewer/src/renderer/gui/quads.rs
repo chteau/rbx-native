@@ -12,8 +12,13 @@ use std::ops::Range;
 
 use rbx_assets::AssetRef;
 
+use super::gradient::Rows;
 use super::pipeline::VertexRaw;
 use crate::scene::{GuiElement, GuiRect};
+
+mod shape;
+
+use shape::{center, grown, outline, quad, Paint, Shape, Spin, FILL};
 
 /// The slot every untextured rectangle — a background, a border — samples: a
 /// single white texel, so one pipeline covers both.
@@ -36,14 +41,16 @@ pub(super) struct Run {
     pub(super) range: Range<u32>,
 }
 
-/// Every rectangle of every element, in paint order.
+/// Every rectangle of every element, in paint order, and the gradient ramps
+/// their vertices refer to by row.
 pub(super) fn build(
     elements: &[GuiElement],
     textures: &HashMap<AssetRef, usize>,
     target: (u32, u32),
-) -> (Vec<VertexRaw>, Vec<Run>) {
+) -> (Vec<VertexRaw>, Vec<Run>, Rows) {
     let mut vertices = Vec::new();
     let mut runs: Vec<Run> = Vec::new();
+    let mut rows = Rows::default();
 
     for element in elements {
         let scissor = match &element.clip {
@@ -60,61 +67,88 @@ pub(super) fn build(
         }
 
         let spin = Spin::new(element.rotation, center(&element.rect));
+        let fill = Shape::fill_of(element);
+        let gradient = element
+            .gradient
+            .as_ref()
+            .map(|gradient| (rows.row(gradient), gradient));
 
         let start = vertices.len();
         if element.background_alpha > 0.0 {
+            let paint = Paint {
+                color: element.background,
+                alpha: element.background_alpha,
+                band: FILL,
+                gradient,
+            };
             quad(
                 &element.rect,
                 [1.0, 1.0],
-                element.background,
-                element.background_alpha,
+                &paint,
+                &fill,
                 &spin,
                 &mut vertices,
             );
             // Roblox ties the outline to `BackgroundTransparency`: a frame
             // with no background shows no border either.
             if let Some((width, color)) = element.border {
+                let paint = Paint { color, ..paint };
                 // The bands are rotated about the element's own centre, same
                 // as the background — not each band's own, or a rotated
                 // border would fly apart from the box it outlines.
                 for side in outline(&element.rect, width) {
-                    quad(
-                        &side,
-                        [1.0, 1.0],
-                        color,
-                        element.background_alpha,
-                        &spin,
-                        &mut vertices,
-                    );
+                    quad(&side, [1.0, 1.0], &paint, &fill, &spin, &mut vertices);
                 }
             }
         }
         extend(&mut runs, WHITE, scissor, start..vertices.len());
 
-        let Some(image) = &element.image else {
-            continue;
-        };
-        let Some(&texture) = textures.get(&image.asset) else {
-            // Never downloaded, or the fetch failed. Roblox draws nothing at
+        if let Some(image) = &element.image {
+            // Never downloaded, or the fetch failed: Roblox draws nothing at
             // all for an image it cannot load, so neither does this.
-            continue;
-        };
-        if image.alpha <= 0.0 {
-            continue;
+            if let Some(&texture) = textures.get(&image.asset) {
+                if image.alpha > 0.0 {
+                    let start = vertices.len();
+                    let paint = Paint {
+                        color: image.tint,
+                        alpha: image.alpha,
+                        band: FILL,
+                        gradient,
+                    };
+                    quad(
+                        &element.rect,
+                        image.repeat,
+                        &paint,
+                        &fill,
+                        &spin,
+                        &mut vertices,
+                    );
+                    extend(&mut runs, texture, scissor, start..vertices.len());
+                }
+            }
         }
-        let start = vertices.len();
-        quad(
-            &element.rect,
-            image.repeat,
-            image.tint,
-            image.alpha,
-            &spin,
-            &mut vertices,
-        );
-        extend(&mut runs, texture, scissor, start..vertices.len());
+
+        // Over the image, and — unlike the border — independent of the
+        // background: the docs give `UIStroke.Transparency` its own life so
+        // a box can be "hollow", an outline and nothing else.
+        if let Some(stroke) = &element.stroke {
+            if !stroke.on_text && stroke.alpha > 0.0 {
+                let start = vertices.len();
+                let paint = Paint {
+                    color: stroke.color,
+                    alpha: stroke.alpha,
+                    band: stroke.band,
+                    gradient: None,
+                };
+                let shape = Shape::of(element);
+                let rect = grown(&element.rect, stroke.band);
+                quad(&rect, [1.0, 1.0], &paint, &shape, &spin, &mut vertices);
+                extend(&mut runs, WHITE, scissor, start..vertices.len());
+            }
+        }
     }
 
-    (vertices, runs)
+    (vertices, runs, rows)
 }
 
 /// Appends to the last run where it shares this one's texture and scissor,
@@ -134,113 +168,6 @@ fn extend(runs: &mut Vec<Run>, texture: usize, scissor: Option<Scissor>, range: 
             range,
         }),
     }
-}
-
-/// `GuiObject.Rotation` about one fixed pivot, shared by every quad an
-/// element contributes (background, border bands, image) so they turn
-/// together as a rigid box — Roblox gives no way to rotate about anything but
-/// the element's own centre, so that is the only pivot this ever takes.
-struct Spin {
-    sin: f32,
-    cos: f32,
-    pivot: [f32; 2],
-}
-
-impl Spin {
-    fn new(degrees: f32, pivot: [f32; 2]) -> Self {
-        // Positive `Rotation` turns clockwise on screen: Roblox's own style
-        // docs describe a transition *to* a negative rotation as turning a
-        // button counterclockwise (content/en-us/ui/styling/editor.md), and
-        // this coordinate space already has y increasing downward, so the
-        // ordinary (cos, sin; -sin, cos) rotation matrix needs no extra flip.
-        let radians = degrees.to_radians();
-        Spin {
-            sin: radians.sin(),
-            cos: radians.cos(),
-            pivot,
-        }
-    }
-
-    fn apply(&self, point: [f32; 2]) -> [f32; 2] {
-        let dx = point[0] - self.pivot[0];
-        let dy = point[1] - self.pivot[1];
-        [
-            self.pivot[0] + dx * self.cos - dy * self.sin,
-            self.pivot[1] + dx * self.sin + dy * self.cos,
-        ]
-    }
-}
-
-fn center(rect: &GuiRect) -> [f32; 2] {
-    [rect.x + rect.width * 0.5, rect.y + rect.height * 0.5]
-}
-
-/// Two triangles covering `rect`, the image repeating `repeat` times across
-/// it and every corner turned by `spin` — an identity `Spin` (zero rotation)
-/// leaves them exactly where `rect` puts them.
-fn quad(
-    rect: &GuiRect,
-    repeat: [f32; 2],
-    color: [f32; 3],
-    alpha: f32,
-    spin: &Spin,
-    into: &mut Vec<VertexRaw>,
-) {
-    let left = rect.x;
-    let top = rect.y;
-    let right = rect.x + rect.width;
-    let bottom = rect.y + rect.height;
-    let corner = |position: [f32; 2], uv: [f32; 2]| VertexRaw {
-        position: spin.apply(position),
-        uv,
-        color,
-        alpha,
-    };
-
-    let top_left = corner([left, top], [0.0, 0.0]);
-    let top_right = corner([right, top], [repeat[0], 0.0]);
-    let bottom_left = corner([left, bottom], [0.0, repeat[1]]);
-    let bottom_right = corner([right, bottom], repeat);
-    into.extend([
-        top_left,
-        top_right,
-        bottom_left,
-        top_right,
-        bottom_right,
-        bottom_left,
-    ]);
-}
-
-/// The four bands of a `BorderMode.Outline` border, which sits just outside
-/// the element rather than eating into it. The two horizontal bands run the
-/// full outer width so the corners are covered exactly once.
-fn outline(rect: &GuiRect, width: f32) -> [GuiRect; 4] {
-    [
-        GuiRect {
-            x: rect.x - width,
-            y: rect.y - width,
-            width: rect.width + 2.0 * width,
-            height: width,
-        },
-        GuiRect {
-            x: rect.x - width,
-            y: rect.y + rect.height,
-            width: rect.width + 2.0 * width,
-            height: width,
-        },
-        GuiRect {
-            x: rect.x - width,
-            y: rect.y,
-            width,
-            height: rect.height,
-        },
-        GuiRect {
-            x: rect.x + rect.width,
-            y: rect.y,
-            width,
-            height: rect.height,
-        },
-    ]
 }
 
 /// A clip rectangle rounded out to whole pixels and clamped to the target,

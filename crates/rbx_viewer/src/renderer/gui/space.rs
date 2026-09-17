@@ -133,7 +133,13 @@ impl Space {
             ..Default::default()
         });
         let mut painter = self.painter.take().unwrap_or_else(|| {
-            Painter::new(device, CANVAS_FORMAT, viewport_layout, &atlas.image_layout)
+            Painter::new(
+                device,
+                queue,
+                CANVAS_FORMAT,
+                viewport_layout,
+                &atlas.image_layout,
+            )
         });
         for gui in spaces {
             let canvas = bake(device, queue, &mut painter, atlas, gui);

@@ -6,19 +6,29 @@
 use std::collections::BTreeMap;
 
 use rbx_assets::AssetRef;
-use rbx_dom::{Ref, Variant, WeakDom};
+use rbx_dom::{Instance, Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use crate::textures::asset_uri;
 
+mod corner;
+mod gradient;
 mod props;
+mod stroke;
 
+pub(super) use corner::Corner;
+pub(super) use gradient::Gradient;
+pub(crate) use gradient::{GradientKind, Tile};
 use props::{alpha, color, degrees, enum_of};
 pub(super) use props::{flag, integer, span, vector2};
+pub(crate) use stroke::Join;
+pub(super) use stroke::{Stroke, StrokePosition};
 
 const SCREEN_CLASS: &str = "ScreenGui";
 const ELEMENT_CLASS: &str = "GuiObject";
 const LIST_LAYOUT_CLASS: &str = "UIListLayout";
+/// The classes whose `UIStroke` outlines glyphs rather than the box.
+const TEXT_CLASSES: [&str; 3] = ["TextLabel", "TextButton", "TextBox"];
 
 /// Roblox's own default `BorderColor3`, `Color3.fromRGB(27, 42, 53)`. Only
 /// ever seen on a tree built in code: a place file serializes the property.
@@ -119,6 +129,9 @@ pub(super) struct Node {
     pub(super) fill: Option<Fill>,
     /// The `UIListLayout` among this node's children, arranging them.
     pub(super) list: Option<List>,
+    pub(super) corner: Option<Corner>,
+    pub(super) stroke: Option<Stroke>,
+    pub(super) gradient: Option<Gradient>,
     pub(super) children: Vec<Node>,
 }
 
@@ -128,6 +141,7 @@ impl Node {
     pub(super) fn paints(&self) -> bool {
         self.background_alpha > 0.0
             || self.fill.as_ref().is_some_and(|fill| fill.alpha > 0.0)
+            || self.stroke.is_some_and(|stroke| stroke.alpha > 0.0)
             || self.children.iter().any(Node::paints)
     }
 }
@@ -241,7 +255,32 @@ fn element(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> Optio
         z_index: integer(properties, "ZIndex", 1),
         fill: fill(properties),
         list: list_layout(dom, database, instance.children()),
+        corner: corner::read(dom, database, instance.children()),
+        stroke: stroke::read(dom, database, instance.children(), is_text(database, class)),
+        gradient: gradient::read(dom, database, instance.children()),
         children: elements(dom, database, instance.children()),
+    })
+}
+
+fn is_text(database: &ReflectionDatabase, class: &str) -> bool {
+    TEXT_CLASSES
+        .iter()
+        .any(|text| database.is_subclass_of(class, text))
+}
+
+/// The children of `class` (or a subclass) among `children`, in tree order —
+/// the pool every "first `UICorner`/`UIStroke`/`UIGradient`" is drawn from.
+fn modifiers<'a>(
+    dom: &'a WeakDom,
+    database: &'a ReflectionDatabase,
+    children: &'a [Ref],
+    class: &'a str,
+) -> impl Iterator<Item = &'a Instance> + 'a {
+    children.iter().filter_map(move |&child| {
+        let instance = dom.get(child)?;
+        database
+            .is_subclass_of(instance.class(), class)
+            .then_some(instance)
     })
 }
 
