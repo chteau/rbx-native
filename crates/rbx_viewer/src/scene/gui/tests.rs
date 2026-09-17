@@ -8,7 +8,8 @@
 //! `UIConstraint` family, `AutomaticSize` and `SizeConstraint`), [`placement`]
 //! for the rest of what decides where a box lands (nested rotation,
 //! `BorderMode`, `ScreenInsets` and `ZIndexBehavior`), [`modifiers`] for
-//! `UICorner`/`UIStroke`/`UIGradient` and [`style`] for the `StyleSheet`
+//! `UICorner`/`UIStroke`/`UIGradient`, [`containers`] for the non-`GuiObject`
+//! instances a GUI tree is allowed to hold and [`style`] for the `StyleSheet`
 //! engine.
 //!
 //! The fixtures every test builds on live here, in the parent.
@@ -72,6 +73,7 @@ fn rects(dom: &WeakDom) -> Vec<Rect> {
 
 mod clips;
 mod constraints;
+mod containers;
 mod flex;
 mod grid;
 mod layout;

@@ -220,16 +220,58 @@ fn gather(
     }
 }
 
+/// Every `GuiObject` a container holds, in tree order.
+///
+/// Not only its direct children: Roblox draws a `GuiObject` whose ancestry
+/// reaches a `ScreenGui`/`BillboardGui`/`SurfaceGui` however many plain
+/// instances sit in between, so a `Folder` (or a `Configuration`, or a
+/// `ModuleScript` someone hung a template off) is walked *through* rather
+/// than being an end to the tree. Its contents take its own place among its
+/// siblings and resolve against this container, which is the nearest
+/// `GuiBase2d` they have.
+///
+/// What such an instance does *not* do is take part in the picture itself:
+/// it has no box to position against, no `Visible` to hide the subtree with
+/// and no `ZIndex` of its own, and a `UICorner`/`UIStroke`/`UIListLayout`
+/// under it modifies it — a non-`GuiObject` — so it changes nothing. One
+/// exception is documented: "Each `Folder` in your UI hierarchy can define
+/// its own `UILayout` [...] `Folder` contents are exempt from the effects of
+/// a `UILayout` sibling" (`Folder`'s own class page). Neither half of that
+/// is modelled here — a folder's contents are arranged exactly as if they
+/// were the container's own children.
 pub(super) fn elements(
     dom: &WeakDom,
     database: &ReflectionDatabase,
     styles: &Styled,
     children: &[Ref],
 ) -> Vec<Node> {
-    children
-        .iter()
-        .filter_map(|&child| element(dom, database, styles, child))
-        .collect()
+    let mut nodes = Vec::new();
+    gather_elements(dom, database, styles, children, &mut nodes);
+    nodes
+}
+
+fn gather_elements(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    styles: &Styled,
+    children: &[Ref],
+    into: &mut Vec<Node>,
+) {
+    for &child in children {
+        let Some(instance) = dom.get(child) else {
+            continue;
+        };
+        // The class is asked here rather than left to `element`, which also
+        // answers `None` for a `Visible = false` element — a subtree Roblox
+        // hides whole, and that must not be descended into.
+        if database.is_subclass_of(instance.class(), ELEMENT_CLASS) {
+            if let Some(node) = element(dom, database, styles, child) {
+                into.push(node);
+            }
+        } else {
+            gather_elements(dom, database, styles, instance.children(), into);
+        }
+    }
 }
 
 /// One `GuiObject` read into a [`Node`], or `None` where it is not drawable.
