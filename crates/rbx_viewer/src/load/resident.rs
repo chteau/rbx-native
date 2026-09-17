@@ -62,9 +62,12 @@ use crate::scene::UnionEvaluations;
 /// by itself, not stay half-blank until somebody edits something.
 const RETRIES: u32 = 2;
 
-/// Long enough for a rate-limit window to turn over — the asset endpoints
-/// answer a 429 with `retry-after: 5`, and `rbx_cloud` has already waited out
-/// several of those by the time a failure gets here.
+/// The asset endpoints ask for five seconds (`retry-after: 5`) and
+/// `rbx_cloud` has already waited out several of those by the time a failure
+/// reaches here, so this is another five on top rather than a guess. It does
+/// not pretend to cover a quota window that has gone badly over — nothing a
+/// viewport can do in one tick would — only to catch the common case, where
+/// the load merely crossed the line at the end.
 const RETRY_DELAY: Duration = Duration::from_secs(5);
 
 /// Every decoded asset a place has asked for so far. Behind `Arc`s where the
@@ -230,6 +233,7 @@ impl Resident {
     /// Whether anything is still on its way. Drives the one-off swap-in the
     /// moment a place has finished loading, and tells a test when to stop
     /// waiting.
+    ///
     /// A reference waiting out its [`RETRY_DELAY`] counts: it has not been
     /// answered, and a caller that stops when nothing is in flight would
     /// stop just short of the answer.
