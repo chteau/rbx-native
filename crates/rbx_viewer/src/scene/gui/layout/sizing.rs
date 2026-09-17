@@ -26,7 +26,7 @@ pub(super) fn extent(node: &Node, parent: [f32; 2], measure: &mut dyn TextMeasur
     }
 
     if node.automatic_size != [false, false] {
-        let content = content_extent(node, size, measure);
+        let content = content_extent(node, size, node.automatic_size, measure);
         for axis in 0..2 {
             if node.automatic_size[axis] {
                 size[axis] = size[axis].max(content[axis]);
@@ -68,15 +68,21 @@ fn inset(rect: &Rect, sides: &[f32; 4]) -> Rect {
 
 /// How much room this element's content asks for, `UIPadding` included.
 ///
-/// Along an automatic axis the element's own size is what is being worked out,
-/// so the box the children resolve against is zero wide there and a child
-/// sized or positioned by scale contributes only its offsets. The docs
-/// describe neither that circularity nor what a scale-sized child should do,
-/// and this is the only reading that terminates.
-fn content_extent(node: &Node, size: [f32; 2], measure: &mut dyn TextMeasure) -> [f32; 2] {
+/// Along an `automatic` axis the element's own size is what is being worked
+/// out (`AutomaticSize`, or a `ScrollingFrame`'s `AutomaticCanvasSize`), so
+/// the box the children resolve against is zero wide there and a child sized
+/// or positioned by scale contributes only its offsets. The docs describe
+/// neither that circularity nor what a scale-sized child should do, and this
+/// is the only reading that terminates.
+pub(super) fn content_extent(
+    node: &Node,
+    size: [f32; 2],
+    automatic: [bool; 2],
+    measure: &mut dyn TextMeasure,
+) -> [f32; 2] {
     let probe = [
-        if node.automatic_size[0] { 0.0 } else { size[0] },
-        if node.automatic_size[1] { 0.0 } else { size[1] },
+        if automatic[0] { 0.0 } else { size[0] },
+        if automatic[1] { 0.0 } else { size[1] },
     ];
     let sides = node
         .constraints
@@ -102,7 +108,7 @@ fn content_extent(node: &Node, size: [f32; 2], measure: &mut dyn TextMeasure) ->
         let size = text.size.clamp(min, max.max(min));
         measure.measure(text, size, super::text::wrap_width(text, &inner))
     });
-    let layout = node.list.map(|layout| relaxed(layout, node.automatic_size));
+    let layout = node.list.map(|layout| relaxed(layout, automatic));
     for rect in super::arrange(&node.children, layout.as_ref(), &inner, measure).rects {
         low[0] = low[0].min(rect.x);
         low[1] = low[1].min(rect.y);

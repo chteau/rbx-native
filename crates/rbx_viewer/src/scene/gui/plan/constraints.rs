@@ -185,7 +185,16 @@ const DOMINANT_HEIGHT: u32 = 1;
 /// `Enum.AutomaticSize`, read as one flag per axis: `X` is 1, `Y` is 2 and
 /// `XY` is 3, so the ordinal is a bit field.
 pub(in crate::scene::gui) fn automatic_size(properties: &BTreeMap<String, Variant>) -> [bool; 2] {
-    let value = enum_of(properties, "AutomaticSize", 0);
+    automatic_axes(properties, "AutomaticSize")
+}
+
+/// An `Enum.AutomaticSize` property as its two axes: `X` is 1, `Y` 2, `XY`
+/// 3 — a bit mask, which `ScrollingFrame.AutomaticCanvasSize` shares.
+pub(in crate::scene::gui) fn automatic_axes(
+    properties: &BTreeMap<String, Variant>,
+    name: &str,
+) -> [bool; 2] {
+    let value = enum_of(properties, name, 0);
     [value & 1 != 0, value & 2 != 0]
 }
 

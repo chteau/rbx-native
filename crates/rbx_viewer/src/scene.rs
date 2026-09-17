@@ -39,13 +39,13 @@ pub(crate) use filemesh::{
 pub(crate) use gui::{
     resolve_canvas_with as gui_canvas_layout_with, resolve_with as gui_layout_with,
     span_face as gui_span_face, Align as GuiAlign, Anchor as GuiAnchor, Element as GuiElement,
-    GradientKind as GuiGradientKind, GradientPx as GuiGradient, ImageScale as GuiImageScale,
-    Join as GuiJoin, Painted, PixelRect as GuiPixelRect, Rect as GuiRect, Screen as GuiScreen,
-    SpaceGui, Text as GuiText, TextMeasure as GuiTextMeasure, Tile as GuiTile,
-    Typeset as GuiTypeset, ViewCamera as GuiViewCamera, Viewport as GuiViewport,
+    GradientKind as GuiGradientKind, GradientPx as GuiGradient, Grouped as GuiGroup,
+    ImageScale as GuiImageScale, Join as GuiJoin, Painted, PixelRect as GuiPixelRect,
+    Rect as GuiRect, Screen as GuiScreen, SpaceGui, Text as GuiText, TextMeasure as GuiTextMeasure,
+    Tile as GuiTile, Typeset as GuiTypeset, ViewCamera as GuiViewCamera, Viewport as GuiViewport,
 };
 #[cfg(test)]
-pub(crate) use gui::{StrokePx as GuiStroke, TextSpan as GuiTextSpan};
+pub(crate) use gui::{GroupTint as GuiGroupTint, StrokePx as GuiStroke, TextSpan as GuiTextSpan};
 pub(crate) use identity::PartId;
 pub(crate) use material::{Catalog, Kind, Maps, Slot};
 pub(crate) use particles::sequence::{eval_color, eval_number};

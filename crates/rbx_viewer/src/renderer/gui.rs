@@ -18,6 +18,7 @@
 
 mod atlas;
 mod gradient;
+mod group;
 mod paint;
 mod pipeline;
 mod quads;
@@ -34,6 +35,7 @@ use crate::load::Answered;
 use crate::quality::QualityProfile;
 use crate::scene::{gui_layout_with, GuiScreen, SpaceGui};
 use atlas::Atlas;
+use group::Baked;
 use paint::Painter;
 use space::Space;
 use text::Typesetter;
@@ -45,9 +47,16 @@ pub(super) struct Gui {
     /// quad, on screen or on a canvas.
     text: Typesetter,
     screen: Painter,
+    /// The display format the overlay paints in — and so the format every
+    /// `CanvasGroup` is flattened in, since the same painter does both.
+    format: wgpu::TextureFormat,
     screens: Vec<GuiScreen>,
     /// The viewport the overlay was laid out for; a different one rebuilds it.
     built: Option<(u32, u32)>,
+    /// The flattened `CanvasGroup`s of the current overlay, and every
+    /// texture its runs can name (the atlas' slots first, then those).
+    baked: Baked,
+    bindings: Vec<wgpu::BindGroup>,
     space: Space,
     /// Bind group 0's layout for both painters, kept for the canvas painter a
     /// rebuild may still have to build (see `Space::rebuild`).
@@ -99,8 +108,11 @@ impl Gui {
             atlas,
             text,
             screen: screen_painter,
+            format,
             screens: Vec::new(),
             built: None,
+            baked: Baked::new(device),
+            bindings: Vec::new(),
             space,
             viewport_layout,
             enabled: quality.gui,
@@ -234,6 +246,19 @@ impl Gui {
                 "screen",
                 &mut elements,
             );
+            self.baked.clear();
+            let elements = group::flatten(
+                &mut group::Bake {
+                    device,
+                    queue,
+                    painter: &mut self.screen,
+                    atlas: &mut self.atlas,
+                    fonts: &mut self.text,
+                    format: self.format,
+                    baked: &mut self.baked,
+                },
+                elements,
+            );
             self.screen.prepare(
                 device,
                 queue,
@@ -243,12 +268,13 @@ impl Gui {
                 &mut self.text,
             );
             self.atlas.sync_glyphs(device, queue, &mut self.text.atlas);
+            self.bindings = self.baked.bindings(&self.atlas);
         }
         self.screen.draw(
             encoder,
             &pipeline::encoded_view(target),
             wgpu::LoadOp::Load,
-            self.atlas.groups(),
+            &self.bindings,
             size,
         );
     }

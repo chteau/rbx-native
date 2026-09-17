@@ -98,7 +98,24 @@ fn build_once(
             .map(|gradient| (rows.row(gradient), gradient));
 
         let start = vertices.len();
-        if element.background_alpha > 0.0 {
+        if let Some((group, slot)) = element
+            .group
+            .and_then(|group| group.texture.map(|slot| (group, slot)))
+        {
+            // A flattened `CanvasGroup`: its background and whole subtree
+            // are already the texture (see `super::group`), drawn once with
+            // the group's own tint — and shaped and shaded like any image,
+            // which is how a `UICorner`/`UIGradient` under a group "apply
+            // to the whole group" (docs).
+            let paint = Paint {
+                color: group.tint.color,
+                alpha: group.tint.alpha,
+                band: FILL,
+                gradient,
+            };
+            quad(&element.rect, UV_WHOLE, &paint, &fill, &spin, &mut vertices);
+            extend(&mut runs, slot, scissor, start..vertices.len());
+        } else if element.background_alpha > 0.0 {
             let paint = Paint {
                 color: element.background,
                 alpha: element.background_alpha,
@@ -117,8 +134,8 @@ fn build_once(
                     quad(&side, UV_WHOLE, &paint, &fill, &spin, &mut vertices);
                 }
             }
+            extend(&mut runs, WHITE, scissor, start..vertices.len());
         }
-        extend(&mut runs, WHITE, scissor, start..vertices.len());
 
         if let Some(image) = &element.image {
             // Never downloaded, or the fetch failed: Roblox draws nothing at

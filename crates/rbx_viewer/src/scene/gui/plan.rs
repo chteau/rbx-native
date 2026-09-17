@@ -12,9 +12,11 @@ use super::style::Styled;
 mod constraints;
 mod corner;
 mod gradient;
+mod group;
 mod image;
 mod layouts;
 mod props;
+mod scrolling;
 mod stroke;
 mod text;
 mod viewport;
@@ -24,6 +26,7 @@ pub(super) use constraints::{global_z_index, Aspect, Border, Constraints, SizeAx
 pub(super) use corner::Corner;
 pub(super) use gradient::Gradient;
 pub(crate) use gradient::{GradientKind, Tile};
+pub(crate) use group::GroupTint;
 use image::fill;
 pub(super) use image::{Fill, ScaleMode};
 // Reaches all the way to `renderer::gui::quads::image`, unlike `Fill`/
@@ -33,6 +36,9 @@ pub(crate) use layouts::Align;
 pub(super) use layouts::{layout_of, Flex, FlexItem, Grid, Layout, LineAlign, List, Page, Table};
 use props::{alpha, color, degrees, enum_of};
 pub(super) use props::{flag, float, integer, span, vector2};
+#[cfg(test)]
+pub(super) use scrolling::Inset;
+pub(super) use scrolling::Scrolling;
 pub(crate) use stroke::Join;
 pub(super) use stroke::{Stroke, StrokePosition};
 #[cfg(test)]
@@ -51,6 +57,10 @@ const ELEMENT_CLASS: &str = "GuiObject";
 /// only the `TextBox` placeholder rule tells them apart.
 const TEXT_CLASSES: [&str; 3] = ["TextLabel", "TextButton", "TextBox"];
 const TEXT_BOX_CLASS: &str = "TextBox";
+const SCROLLING_CLASS: &str = "ScrollingFrame";
+/// "`CanvasGroup` always has `ClipsDescendants` set to `true`" (docs), so
+/// the property is not even read for one.
+const GROUP_CLASS: &str = "CanvasGroup";
 
 /// Roblox's own default `BorderColor3`, `Color3.fromRGB(27, 42, 53)`. Only
 /// ever seen on a tree built in code: a place file serializes the property.
@@ -121,6 +131,10 @@ pub(super) struct Node {
     /// A `ViewportFrame`'s 3D content, rendered into a texture the box then
     /// shows like an image.
     pub(super) viewport: Option<Viewport>,
+    /// What makes a `ScrollingFrame` more than a `Frame`.
+    pub(super) scrolling: Option<Scrolling>,
+    /// A `CanvasGroup`'s tint over its flattened subtree.
+    pub(super) group: Option<GroupTint>,
     pub(super) children: Vec<Node>,
     /// The non-`GuiObject` containers among this node's children, and what
     /// they hold — see [`Group`].
@@ -138,6 +152,12 @@ impl Node {
             })
             || self.stroke.is_some_and(|stroke| stroke.alpha > 0.0)
             || self.text.as_ref().is_some_and(Text::visible)
+            // A fixed `CanvasSize` can overflow an empty frame, and the bar
+            // that shows for it is paint of its own.
+            || self
+                .scrolling
+                .as_ref()
+                .is_some_and(|scrolling| scrolling.thickness > 0.0 && scrolling.bar_alpha > 0.0)
             || self.children.iter().any(Node::paints)
             || self.groups.iter().any(Group::paints)
     }
@@ -256,6 +276,14 @@ fn collect_assets(node: &Node, into: &mut Vec<AssetRef>) {
     if let Some(fill) = &node.fill {
         if !into.contains(&fill.asset) {
             into.push(fill.asset.clone());
+        }
+    }
+    if let Some(scrolling) = &node.scrolling {
+        let images = &scrolling.images;
+        for asset in [&images.top, &images.mid, &images.bottom] {
+            if !into.contains(asset) {
+                into.push(asset.clone());
+            }
         }
     }
     collect_assets_of(&node.children, &node.groups, into);
@@ -381,6 +409,9 @@ fn element(
 
     let constraints = constraints(dom, database, styles, instance.children());
     let (children, groups) = elements(dom, database, styles, materials, instance.children());
+    let group = database
+        .is_subclass_of(class, GROUP_CLASS)
+        .then(|| group::group(properties));
 
     Some(Node {
         referent,
@@ -395,7 +426,7 @@ fn element(
         border: integer(properties, "BorderSizePixel", 1).max(0) as f32,
         border_color: color(properties, "BorderColor3", DEFAULT_BORDER),
         border_mode: border_mode(properties),
-        clips: flag(properties, "ClipsDescendants", false),
+        clips: group.is_some() || flag(properties, "ClipsDescendants", false),
         z_index: integer(properties, "ZIndex", 1),
         automatic_size: automatic_size(properties),
         size_constraint: size_axes(properties),
@@ -420,6 +451,10 @@ fn element(
         ),
         gradient: gradient::read(dom, database, styles, instance.children()),
         viewport: viewport::read(dom, database, instance, properties, materials),
+        scrolling: database
+            .is_subclass_of(class, SCROLLING_CLASS)
+            .then(|| scrolling::scrolling(properties)),
+        group,
         children,
         groups,
     })

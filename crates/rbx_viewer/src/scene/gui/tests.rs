@@ -9,7 +9,8 @@
 //! for the rest of what decides where a box lands (nested rotation,
 //! `BorderMode`, `ScreenInsets` and `ZIndexBehavior`), [`modifiers`] for
 //! `UICorner`/`UIStroke`/`UIGradient`, [`containers`] for the non-`GuiObject`
-//! instances a GUI tree is allowed to hold and [`style`] for the `StyleSheet`
+//! instances a GUI tree is allowed to hold, [`scrolling`] for `ScrollingFrame`,
+//! [`group`] for `CanvasGroup` and [`style`] for the `StyleSheet`
 //! engine.
 //!
 //! The fixtures every test builds on live here, in the parent.
@@ -79,11 +80,13 @@ mod constraints;
 mod containers;
 mod flex;
 mod grid;
+mod group;
 mod layout;
 mod modifiers;
 mod pages;
 mod placement;
 mod properties;
+mod scrolling;
 mod style;
 mod table;
 mod text;
