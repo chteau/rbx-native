@@ -9,8 +9,12 @@ use rbx_assets::AssetRef;
 use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
-use crate::scene::srgb_to_linear;
 use crate::textures::asset_uri;
+
+mod props;
+
+use props::{alpha, color, degrees, enum_of};
+pub(super) use props::{flag, integer, span, vector2};
 
 const SCREEN_CLASS: &str = "ScreenGui";
 const ELEMENT_CLASS: &str = "GuiObject";
@@ -283,13 +287,6 @@ fn align(properties: &BTreeMap<String, Variant>, name: &str) -> Align {
     }
 }
 
-fn enum_of(properties: &BTreeMap<String, Variant>, name: &str, default: u32) -> u32 {
-    match properties.get(name) {
-        Some(&Variant::Enum(value)) => value,
-        _ => default,
-    }
-}
-
 /// The image of anything carrying one, told apart by the property rather than
 /// by class name so `ImageButton` lands here beside `ImageLabel`.
 ///
@@ -317,71 +314,3 @@ fn fill(properties: &BTreeMap<String, Variant>) -> Option<Fill> {
 
 /// `Enum.ScaleType.Tile`'s ordinal.
 const TILE_SCALE_TYPE: u32 = 2;
-
-pub(super) fn span(properties: &BTreeMap<String, Variant>, name: &str) -> Span {
-    match properties.get(name) {
-        Some(Variant::UDim2(value)) => Span {
-            scale: [value.x.scale, value.y.scale],
-            offset: [value.x.offset as f32, value.y.offset as f32],
-        },
-        _ => Span::default(),
-    }
-}
-
-pub(super) fn vector2(properties: &BTreeMap<String, Variant>, name: &str) -> [f32; 2] {
-    match properties.get(name) {
-        Some(Variant::Vector2(value)) => [value.x, value.y],
-        _ => [0.0, 0.0],
-    }
-}
-
-/// A `Color3` linearized, since the display target re-encodes on write — same
-/// reasoning as [`crate::scene::srgb_to_linear`]'s own callers.
-fn color(properties: &BTreeMap<String, Variant>, name: &str, default: [f32; 3]) -> [f32; 3] {
-    let raw = match properties.get(name) {
-        Some(Variant::Color3(value)) => [value.r, value.g, value.b],
-        Some(&Variant::Color3uint8 { r, g, b }) => {
-            [r, g, b].map(|channel| f32::from(channel) / 255.0)
-        }
-        _ => default,
-    };
-    raw.map(srgb_to_linear)
-}
-
-/// `Rotation`, 0 degrees (unrotated) where the property is missing.
-fn degrees(properties: &BTreeMap<String, Variant>, name: &str) -> f32 {
-    match properties.get(name) {
-        Some(Variant::Float32(value)) => *value,
-        Some(Variant::Float64(value)) => *value as f32,
-        _ => 0.0,
-    }
-}
-
-/// `1 - Transparency`, 1 (fully opaque) where the property is missing.
-fn alpha(properties: &BTreeMap<String, Variant>, name: &str) -> f32 {
-    let transparency = match properties.get(name) {
-        Some(Variant::Float32(value)) => *value,
-        Some(Variant::Float64(value)) => *value as f32,
-        _ => 0.0,
-    };
-    if transparency.is_finite() {
-        1.0 - transparency.clamp(0.0, 1.0)
-    } else {
-        1.0
-    }
-}
-
-pub(super) fn flag(properties: &BTreeMap<String, Variant>, name: &str, default: bool) -> bool {
-    match properties.get(name) {
-        Some(&Variant::Bool(value)) => value,
-        _ => default,
-    }
-}
-
-pub(super) fn integer(properties: &BTreeMap<String, Variant>, name: &str, default: i32) -> i32 {
-    match properties.get(name) {
-        Some(&Variant::Int32(value)) => value,
-        Some(&Variant::Float32(value)) => value as i32,
-        _ => default,
-    }
-}
