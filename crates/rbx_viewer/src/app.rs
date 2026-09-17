@@ -147,6 +147,10 @@ impl Viewer<'_> {
         if let Some(srgb) = capabilities.formats.iter().find(|f| f.is_srgb()) {
             config.format = *srgb;
         }
+        // The GUI overlay attaches the non-sRGB twin of that format so it can
+        // composite in encoded space (see `renderer::gui::pipeline::encoded`),
+        // and a view of a format the configuration never listed is rejected.
+        config.view_formats = vec![config.format.remove_srgb_suffix()];
         surface.configure(&device, &config);
 
         let renderer = Renderer::new(&device, &queue, config.format, self.world, &self.profile);
@@ -302,13 +306,10 @@ impl Active {
             }
         };
 
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
         self.renderer.draw(
             &self.device,
             &self.queue,
-            &view,
+            &frame.texture,
             (self.config.width, self.config.height),
             from,
         );

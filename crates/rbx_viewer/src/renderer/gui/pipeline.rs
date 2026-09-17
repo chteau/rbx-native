@@ -62,6 +62,28 @@ pub(super) fn mode(join: u32, kind: u32, tile: u32) -> u32 {
     (join & 3) | (kind & 3) << 2 | (tile & 3) << 4
 }
 
+/// The format the GUI pass renders through: the non-sRGB twin of whatever the
+/// target really is. Roblox composites its 2D layer in the display's *encoded*
+/// space — a frame at `BackgroundTransparency` 0.5 halves the encoded pixel
+/// behind it, not the linear light it stands for — and the only way to stop
+/// the hardware decoding, blending and re-encoding around that is to attach a
+/// view that claims no encoding at all. The shader then emits the encoding
+/// itself (`gui.wgsl`'s `linear_to_srgb`), the bytes in the texture are
+/// unchanged, and anything that samples the target afterwards still decodes
+/// correctly.
+pub(super) fn encoded(format: wgpu::TextureFormat) -> wgpu::TextureFormat {
+    format.remove_srgb_suffix()
+}
+
+/// The view [`encoded`] asks for. `texture` must have been created with that
+/// format in its `view_formats` (a surface, with it in the configuration).
+pub(super) fn encoded_view(texture: &wgpu::Texture) -> wgpu::TextureView {
+    texture.create_view(&wgpu::TextureViewDescriptor {
+        format: Some(encoded(texture.format())),
+        ..Default::default()
+    })
+}
+
 /// Straight alpha, unlike every other blended pass in this renderer: a GUI
 /// rectangle is composited over a finished, opaque frame rather than added
 /// into an HDR buffer, so there is no `LightEmission` to route through the

@@ -55,7 +55,10 @@ impl Painter {
         Painter {
             pipeline: pipeline::create_pipeline(
                 device,
-                format,
+                // Not `format` itself: the pass is attached through a
+                // non-sRGB view of it so the blend happens on encoded values
+                // (see `pipeline::encoded`).
+                pipeline::encoded(format),
                 viewport_layout,
                 image_layout,
                 &gradients.layout,
@@ -171,121 +174,4 @@ impl Painter {
 }
 
 #[cfg(test)]
-mod tests {
-    use rbx_dom::{Color3Data, ColorSequence, ColorSequenceKeypoint, NumberSequence};
-
-    use super::*;
-    use crate::renderer::texture;
-    use crate::scene::{GuiGradient, GuiGradientKind, GuiJoin, GuiRect, GuiStroke, GuiTile};
-
-    // The pipeline has to accept the vertex layout the quads emit, and a
-    // rounded, stroked, shaded element has to make it through a whole
-    // prepare-and-draw — which is the one thing a CPU-side test cannot say.
-    #[test]
-    fn a_rounded_stroked_shaded_element_draws_through_the_pipeline() {
-        let Some((device, queue)) = crate::gpu::for_tests() else {
-            return;
-        };
-        let format = wgpu::TextureFormat::Rgba8UnormSrgb;
-        let viewport_layout = pipeline::viewport_layout(&device);
-        let image_layout = texture::layout(&device);
-        let mut painter = Painter::new(&device, &queue, format, &viewport_layout, &image_layout);
-
-        let element = GuiElement {
-            rect: GuiRect {
-                x: 8.0,
-                y: 8.0,
-                width: 48.0,
-                height: 32.0,
-            },
-            clip: None,
-            rotation: 30.0,
-            background: [1.0, 1.0, 1.0],
-            background_alpha: 1.0,
-            border: None,
-            image: None,
-            border_inset: 0.0,
-            z_index: 1,
-            corner_radii: [8.0; 4],
-            stroke: Some(GuiStroke {
-                color: [0.0; 3],
-                alpha: 1.0,
-                band: [0.0, 3.0],
-                join: GuiJoin::Round,
-                on_text: false,
-                thickness: 3.0,
-                scaled: false,
-            }),
-            gradient: Some(GuiGradient {
-                color: ColorSequence {
-                    keypoints: vec![ColorSequenceKeypoint {
-                        time: 0.0,
-                        color: Color3Data {
-                            r: 1.0,
-                            g: 0.0,
-                            b: 0.0,
-                        },
-                        envelope: 0.0,
-                    }],
-                },
-                transparency: NumberSequence { keypoints: vec![] },
-                origin: [0.0, 0.0],
-                axis: [1.0 / 48.0, 0.0],
-                kind: GuiGradientKind::Linear,
-                tile: GuiTile::Clamp,
-            }),
-            text: None,
-        };
-        let size = (64, 48);
-        painter.prepare(
-            &device,
-            &queue,
-            &[element],
-            &HashMap::new(),
-            size,
-            &mut Typesetter::new(),
-        );
-
-        let target = device.create_texture(&wgpu::TextureDescriptor {
-            label: None,
-            size: wgpu::Extent3d {
-                width: size.0,
-                height: size.1,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-        let view = target.create_view(&wgpu::TextureViewDescriptor::default());
-        let white = texture::Uploaded::color(
-            &device,
-            &queue,
-            &crate::assets::Image {
-                width: 1,
-                height: 1,
-                pixels: vec![255; 4],
-            },
-        );
-        let sampler = texture::sampler(&device, wgpu::AddressMode::Repeat, 1);
-        let groups = [white.bind(&device, &image_layout, &sampler, 1)];
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
-        painter.draw(
-            &mut encoder,
-            &view,
-            wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-            &groups,
-            size,
-        );
-        queue.submit(std::iter::once(encoder.finish()));
-        device
-            .poll(wgpu::PollType::Wait {
-                submission_index: None,
-                timeout: None,
-            })
-            .expect("the GPU never caught up");
-    }
-}
+mod tests;

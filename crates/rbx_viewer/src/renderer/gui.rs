@@ -182,12 +182,15 @@ impl Gui {
 
     /// Lays the screens out for `size` if that is new, then paints every
     /// rectangle over `target` in one load-preserving pass.
+    ///
+    /// The texture, not a view of it: the overlay composites in encoded space
+    /// and so attaches its own non-sRGB view (see `pipeline::encoded`).
     pub(super) fn draw(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        target: &wgpu::TextureView,
+        target: &wgpu::Texture,
         size: (u32, u32),
     ) {
         if self.screens.is_empty() {
@@ -212,7 +215,7 @@ impl Gui {
         }
         self.screen.draw(
             encoder,
-            target,
+            &pipeline::encoded_view(target),
             wgpu::LoadOp::Load,
             self.atlas.groups(),
             size,
