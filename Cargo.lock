@@ -5970,6 +5970,7 @@ dependencies = [
  "rbx_reflection",
  "rbx_xml",
  "serde_json",
+ "swash",
  "wgpu 30.0.1",
  "winit",
 ]

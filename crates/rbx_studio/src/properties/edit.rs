@@ -9,6 +9,10 @@ use rbx_dom::{
 };
 use rbx_reflection::ReflectionDatabase;
 
+mod font;
+
+use font::{font_text, parse_font, synced};
+
 /// `Name` is not a key in `Instance::properties()` — the panel synthesizes a
 /// row for it and [`commit`] routes it to `WeakDom::set_name` instead of
 /// `set_property`.
@@ -62,6 +66,7 @@ pub(crate) fn edit_text(value: &Variant) -> Option<String> {
             frame.position.x, frame.position.y, frame.position.z
         )),
         Variant::NumberRange(range) => Some(format!("{}, {}", range.min, range.max)),
+        Variant::Font(font) => Some(font_text(font)),
         _ => None,
     }
 }
@@ -96,8 +101,18 @@ pub(crate) fn commit(
         .clone();
 
     let value = parse(&current, db, &class, prop_name, text)?;
-    dom.set_property(reference, prop_name, value)
-        .map_err(|err| err.to_string())
+    // A saved place carries both `Font` and `FontFace`, and the viewer draws
+    // the face; the enum edit would otherwise change nothing on screen.
+    let partner =
+        synced(prop_name, &value).filter(|(name, _)| instance.properties().contains_key(*name));
+    let previous = dom
+        .set_property(reference, prop_name, value)
+        .map_err(|err| err.to_string())?;
+    if let Some((name, value)) = partner {
+        dom.set_property(reference, name, value)
+            .map_err(|err| err.to_string())?;
+    }
+    Ok(previous)
 }
 
 /// Parses `text` into a value shaped like `current`. `class`/`prop_name` are
@@ -161,6 +176,7 @@ pub(crate) fn parse(
                 max: n[1],
             }))
         }
+        Variant::Font(_) => parse_font(text).map(Variant::Font),
         other => Err(format!("{} is read-only", type_name(other))),
     }
 }
@@ -328,7 +344,6 @@ fn type_name(value: &Variant) -> &'static str {
         Variant::PhysicalProperties(_) => "PhysicalProperties",
         Variant::SharedString(_) => "SharedString",
         Variant::UniqueId(_) => "UniqueId",
-        Variant::Font(_) => "Font",
         Variant::SecurityCapabilities(_) => "SecurityCapabilities",
         Variant::Content(_) => "Content",
         Variant::Unknown { .. } => "Unknown",
