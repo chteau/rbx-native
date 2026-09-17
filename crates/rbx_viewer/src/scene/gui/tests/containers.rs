@@ -137,13 +137,20 @@ fn an_invisible_frame_hides_a_subtree_hung_off_a_folder() {
     assert!(resolve(&screens(&dom), VIEWPORT).is_empty());
 }
 
-#[test]
-fn a_ui_list_layout_under_a_folder_arranges_nothing() {
-    let (mut dom, gui) = screen_gui();
-    let group = folder(&mut dom, gui, "Group");
-    let list = dom.new_instance("UIListLayout", "UIListLayout", Some(group));
+/// A vertical `UIListLayout` under `parent`, at Roblox's default (centred)
+/// alignment.
+fn list_layout(dom: &mut WeakDom, parent: Ref) -> Ref {
+    let list = dom.new_instance("UIListLayout", "UIListLayout", Some(parent));
     dom.set_property(list, "FillDirection", Variant::Enum(1))
         .unwrap();
+    list
+}
+
+#[test]
+fn a_ui_list_layout_under_a_folder_arranges_the_folders_contents() {
+    let (mut dom, gui) = screen_gui();
+    let group = folder(&mut dom, gui, "Group");
+    list_layout(&mut dom, group);
     for _ in 0..2 {
         frame(
             &mut dom,
@@ -153,21 +160,17 @@ fn a_ui_list_layout_under_a_folder_arranges_nothing() {
         );
     }
 
-    // A `UIComponent` modifies its parent, and a `Folder` is not a
-    // `GuiObject` — so nothing stacks and both frames stay at the origin.
-    // (Roblox's `Folder` page does document a folder-owned `UILayout`
-    // arranging the folder's contents; that is not modelled — see
-    // `plan::elements`.)
+    // "Each `Folder` in your UI hierarchy can define its own `UILayout`": the
+    // two frames stack, centred in the screen — the box the folder's layout
+    // works in is the container's, the folder having none of its own.
     let origins: Vec<[f32; 2]> = rects(&dom).iter().map(|rect| [rect.x, rect.y]).collect();
-    assert_eq!(origins, [[0.0, 0.0], [0.0, 0.0]]);
+    assert_eq!(origins, [[375.0, 250.0], [375.0, 300.0]]);
 }
 
 #[test]
-fn a_folders_contents_are_arranged_by_the_containers_own_layout() {
+fn a_folders_contents_are_exempt_from_the_containers_layout() {
     let (mut dom, gui) = screen_gui();
-    let list = dom.new_instance("UIListLayout", "UIListLayout", Some(gui));
-    dom.set_property(list, "FillDirection", Variant::Enum(1))
-        .unwrap();
+    list_layout(&mut dom, gui);
     frame(
         &mut dom,
         gui,
@@ -182,12 +185,67 @@ fn a_folders_contents_are_arranged_by_the_containers_own_layout() {
         udim2(0.0, 50, 0.0, 50),
     );
 
-    // Stacked one under the other — the default alignment centres the run of
-    // 100 px in the 600 px canvas. Deliberately *not* Roblox's documented
-    // exemption of folder contents from a sibling `UILayout`; see
-    // `plan::elements`.
-    let tops: Vec<f32> = rects(&dom).iter().map(|rect| rect.y).collect();
-    assert_eq!(tops, [250.0, 300.0]);
+    // "`Folder` contents are exempt from the effects of a `UILayout`
+    // sibling": the screen's own child is the only item the list has, and so
+    // is centred alone; the folder's child keeps its own `Position` and is
+    // not stacked under it.
+    let origins: Vec<[f32; 2]> = rects(&dom).iter().map(|rect| [rect.x, rect.y]).collect();
+    assert_eq!(origins, [[375.0, 275.0], [0.0, 0.0]]);
+}
+
+#[test]
+fn a_folder_inside_a_folder_is_a_layout_scope_inside_a_layout_scope() {
+    let (mut dom, gui) = screen_gui();
+    let outer = folder(&mut dom, gui, "Outer");
+    list_layout(&mut dom, outer);
+    frame(
+        &mut dom,
+        outer,
+        udim2(0.0, 0, 0.0, 0),
+        udim2(0.0, 50, 0.0, 50),
+    );
+    let inner = folder(&mut dom, outer, "Inner");
+    frame(
+        &mut dom,
+        inner,
+        udim2(0.0, 0, 0.0, 100),
+        udim2(0.0, 50, 0.0, 50),
+    );
+
+    // The inner folder's content is exempt from the outer folder's list the
+    // same way it would be from a frame's, and resolves against the same
+    // container box.
+    let origins: Vec<[f32; 2]> = rects(&dom).iter().map(|rect| [rect.x, rect.y]).collect();
+    assert_eq!(origins, [[375.0, 275.0], [0.0, 100.0]]);
+}
+
+#[test]
+fn a_folders_contents_do_not_grow_an_automatic_size_container() {
+    let (mut dom, gui) = screen_gui();
+    let box_ = frame(
+        &mut dom,
+        gui,
+        udim2(0.0, 0, 0.0, 0),
+        udim2(0.0, 10, 0.0, 10),
+    );
+    // `AutomaticSize.XY`.
+    dom.set_property(box_, "AutomaticSize", Variant::Enum(3))
+        .unwrap();
+    let group = folder(&mut dom, box_, "Group");
+    frame(
+        &mut dom,
+        group,
+        udim2(0.0, 0, 0.0, 0),
+        udim2(0.0, 200, 0.0, 200),
+    );
+
+    // `AutomaticSize` is documented as fitting "child contents", and a
+    // folder's contents are not children of the box — nor are they part of
+    // the run a layout would report as `AbsoluteContentSize`, which is "how
+    // much space the elements of the grid are taking up". So the box keeps
+    // its own 10 x 10 and the content simply overflows it, the way an
+    // absolutely positioned child of a shrink-wrapped box does.
+    assert_eq!(rects(&dom)[0].size(), [10.0, 10.0]);
 }
 
 #[test]

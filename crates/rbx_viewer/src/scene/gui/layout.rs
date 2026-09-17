@@ -7,7 +7,7 @@
 
 mod text;
 
-use super::plan::{Align, Layout, Node, Screen, Span};
+use super::plan::{Align, Group, Layout, Node, Screen, Span};
 use super::space::SpaceGui;
 // Reaches all the way to `renderer::gui::quads::image`, unlike everything
 // else `plan` hands this module — see the type's own doc comment.
@@ -21,7 +21,6 @@ mod modifiers;
 mod sizing;
 mod table;
 
-use arrange::sorted;
 pub(crate) use arrange::{arrange, Arranged};
 use image::painted;
 pub(crate) use image::{ImageScale, Painted};
@@ -127,8 +126,11 @@ pub(crate) fn resolve_with(
         };
         let start = elements.len();
         children(
-            &screen.roots,
-            screen.list.as_ref(),
+            Scope {
+                nodes: &screen.roots,
+                groups: &screen.groups,
+                layout: screen.list.as_ref(),
+            },
             &frame,
             None,
             Context {
@@ -162,8 +164,11 @@ pub(crate) fn resolve_canvas_with(gui: &SpaceGui, measure: &mut dyn TextMeasure)
     let frame = canvas(gui.canvas);
     let mut elements = Vec::new();
     children(
-        &gui.roots,
-        gui.list.as_ref(),
+        Scope {
+            nodes: &gui.roots,
+            groups: &gui.groups,
+            layout: gui.list.as_ref(),
+        },
         &frame,
         None,
         Context {
@@ -228,6 +233,34 @@ impl Context {
     }
 }
 
+/// One box's worth of contents to place: the elements themselves, the layout
+/// arranging them, and the scopes any plain instances among them open — see
+/// [`Group`].
+#[derive(Clone, Copy)]
+struct Scope<'a> {
+    nodes: &'a [Node],
+    groups: &'a [Group],
+    layout: Option<&'a Layout>,
+}
+
+impl<'a> Scope<'a> {
+    fn of(group: &'a Group) -> Self {
+        Scope {
+            nodes: &group.children,
+            groups: &group.groups,
+            layout: group.layout.as_ref(),
+        }
+    }
+}
+
+/// One element about to be emitted, with the rect its own layout scope gave
+/// it — and the cells a `UITableLayout` in that scope handed down.
+struct Placed<'a> {
+    node: &'a Node,
+    rect: Rect,
+    cells: Option<Vec<Rect>>,
+}
+
 /// Places every sibling inside `parent`, then emits them in paint order.
 ///
 /// The two orders are distinct: a layout decides where a sibling sits,
@@ -237,31 +270,67 @@ impl Context {
 /// `UITableLayout` sizes its cells, which are its siblings' children, so it
 /// hands them down ready-made.
 fn children(
-    nodes: &[Node],
-    layout: Option<&Layout>,
+    scope: Scope<'_>,
     parent: &Rect,
     given: Option<&[Rect]>,
     context: Context,
     measure: &mut dyn TextMeasure,
     into: &mut Vec<Element>,
 ) {
+    let mut placed = Vec::with_capacity(scope.nodes.len());
+    place_scope(scope, parent, given, measure, &mut placed);
+    // Stable, so siblings sharing a `ZIndex` keep tree order. Under
+    // `ZIndexBehavior.Global` they are left in tree order outright: that is
+    // the hierarchy order the screen-wide sort breaks ties with, and
+    // reordering them here would interleave their subtrees wrongly.
+    if !context.global_z_index {
+        placed.sort_by_key(|item| item.node.z_index);
+    }
+    for item in placed {
+        emit(
+            item.node,
+            context.carried(item.rect),
+            item.cells.as_deref(),
+            context,
+            measure,
+            into,
+        );
+    }
+}
+
+/// One layout scope's worth of placement, appended to `into` in tree order.
+///
+/// A [`Group`] is a scope of its own inside the same `parent` box: its
+/// contents are arranged by the group's own layout, never by `layout`, and
+/// they land where the group sits among `nodes` so that a container which is
+/// not itself drawn still leaves its contents in tree order.
+fn place_scope<'a>(
+    scope: Scope<'a>,
+    parent: &Rect,
+    given: Option<&[Rect]>,
+    measure: &mut dyn TextMeasure,
+    into: &mut Vec<Placed<'a>>,
+) {
     let arranged = match given {
         Some(rects) => Arranged {
             rects: rects.to_vec(),
             cells: None,
         },
-        None => arrange(nodes, layout, parent, measure),
+        None => arrange(scope.nodes, scope.layout, parent, measure),
     };
-    for index in sorted(nodes, context.global_z_index) {
-        let cells = arranged.cells.as_ref().map(|cells| &cells[index][..]);
-        emit(
-            &nodes[index],
-            context.carried(arranged.rects[index]),
-            cells,
-            context,
-            measure,
-            into,
-        );
+    let mut next = 0;
+    for index in 0..=scope.nodes.len() {
+        while let Some(group) = scope.groups.get(next).filter(|group| group.at <= index) {
+            place_scope(Scope::of(group), parent, None, measure, into);
+            next += 1;
+        }
+        if index < scope.nodes.len() {
+            into.push(Placed {
+                node: &scope.nodes[index],
+                rect: arranged.rects[index],
+                cells: arranged.cells.as_ref().map(|cells| cells[index].clone()),
+            });
+        }
     }
 }
 
@@ -314,8 +383,11 @@ fn emit(
     let rotated = context.rotated || node.rotation != 0.0;
     let angle = context.angle + node.rotation;
     children(
-        &node.children,
-        node.list.as_ref(),
+        Scope {
+            nodes: &node.children,
+            groups: &node.groups,
+            layout: node.list.as_ref(),
+        },
         &sizing::padded(node, &rect),
         cells,
         Context {
