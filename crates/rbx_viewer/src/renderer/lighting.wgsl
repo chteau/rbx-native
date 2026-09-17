@@ -70,9 +70,13 @@ struct LightingUniform {
 // primary-source derivation — Roblox publishes no formula for it — so it is
 // empirically tuned instead: low enough that an upward face reflecting the
 // sky never reads as a mirror, high enough that a curved part shows a real
-// highlight against the sun the way Studio's does.
+// highlight against the sun the way Studio's does. Raised from an earlier
+// 0.2 toward a stronger sun highlight — the maintainer's own reading against
+// Studio was that 0.2 sat too flat — while staying below the point a flat
+// upward face starts to read as a mirror (verified on the material-sample
+// fixture, which does not blow out at this value).
 const PLASTIC_SHININESS: f32 = 30.0;
-const PLASTIC_SPEC_STRENGTH: f32 = 0.2;
+const PLASTIC_SPEC_STRENGTH: f32 = 0.28;
 const PLASTIC_ROUGHNESS: f32 = 0.25;
 
 // Roblox samples its environment probe at `(0.089 + roughness * 0.911) * 5`,
