@@ -1,5 +1,5 @@
 use rbx_dom::{
-    CFrameData, Color3Data, Font, FontStyle, Instance, NumberRange, UDim, UDim2, Vector2Data,
+    CFrameData, Color3Data, Font, FontStyle, Instance, NumberRange, Rect, UDim, UDim2, Vector2Data,
     Vector3Data,
 };
 
@@ -256,6 +256,29 @@ fn udim_and_udim2_read_scale_then_offset_pairs() {
     });
     assert_eq!(parse_as(&udim2, "0, 10, 1, 20"), Ok(expected.clone()));
     assert_eq!(parse_as(&udim2, "{0, 10}, {1, 20}"), Ok(expected));
+}
+
+#[test]
+fn rect_round_trips_through_edit_text_and_parse() {
+    let rect = Variant::Rect(Rect {
+        min: Vector2Data { x: 1.0, y: 2.0 },
+        max: Vector2Data { x: 3.0, y: 4.0 },
+    });
+
+    assert_eq!(edit_text(&rect), Some("1, 2, 3, 4".to_owned()));
+    assert_eq!(parse_as(&rect, "1, 2, 3, 4"), Ok(rect));
+}
+
+#[test]
+fn rect_rejects_the_wrong_count_of_numbers() {
+    let rect = Variant::Rect(Rect {
+        min: Vector2Data { x: 0.0, y: 0.0 },
+        max: Vector2Data { x: 0.0, y: 0.0 },
+    });
+    assert_eq!(
+        parse_as(&rect, "1, 2, 3"),
+        Err("expected 4 comma-separated numbers, got 3".to_owned())
+    );
 }
 
 #[test]

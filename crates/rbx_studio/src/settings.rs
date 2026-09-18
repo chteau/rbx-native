@@ -1,7 +1,8 @@
 //! Persisted Studio preferences: the graphics quality dropdown, the
-//! Explorer's "show all services" checkbox, and the Viewport's orthographic
-//! toggle, so a relaunch reopens where the user left off rather than always
-//! at the hardcoded defaults.
+//! Explorer's "show all services" checkbox, the Viewport's orthographic
+//! toggle, its orientation indicator toggle, and the Explorer's icon pack
+//! (dark/light), so a relaunch reopens where the user left off rather than
+//! always at the hardcoded defaults.
 //!
 //! Mirrors `rbx_assets::AssetCache`'s directory convention (`$XDG_CONFIG_HOME`,
 //! falling back to `~/.config` or, on Windows, `%APPDATA%`, all under an
@@ -13,12 +14,24 @@ use std::path::{Path, PathBuf};
 
 use rbx_viewer::QualityLevel;
 
+use crate::class_icons::IconPack;
+use crate::pacing::UnfocusedFps;
+
 /// What persists across a relaunch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Settings {
     pub(crate) quality: QualityLevel,
     pub(crate) show_all_services: bool,
     pub(crate) orthographic: bool,
+    /// The viewport's top-right orientation indicator — see
+    /// `crate::workspace_view::orientation`. Defaults on: it's meant to read
+    /// as an always-there convention (the way Blender's own gizmo is), not
+    /// an opt-in debug overlay.
+    pub(crate) axis_indicator: bool,
+    pub(crate) icon_pack: IconPack,
+    /// The render loop's frame rate cap while the window is unfocused — see
+    /// `pacing::FocusPacing`.
+    pub(crate) unfocused_fps: UnfocusedFps,
 }
 
 impl Default for Settings {
@@ -29,6 +42,9 @@ impl Default for Settings {
             quality: QualityLevel::Automatic,
             show_all_services: false,
             orthographic: false,
+            axis_indicator: true,
+            icon_pack: IconPack::Dark,
+            unfocused_fps: UnfocusedFps::DEFAULT,
         }
     }
 }
@@ -123,11 +139,39 @@ fn load_from(path: &Path) -> Settings {
         .get("orthographic")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
+    let axis_indicator = value
+        .get("axis_indicator")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let icon_pack = value
+        .get("icon_pack")
+        .and_then(|v| v.as_str())
+        .and_then(parse_icon_pack)
+        .unwrap_or_default();
+    let unfocused_fps = value
+        .get("unfocused_fps")
+        .and_then(|v| v.as_u64())
+        .map(parse_unfocused_fps)
+        .unwrap_or(UnfocusedFps::DEFAULT);
 
     Settings {
         quality,
         show_all_services,
         orthographic,
+        axis_indicator,
+        icon_pack,
+        unfocused_fps,
+    }
+}
+
+/// Any value other than exactly 25 falls back to the default preset rather
+/// than erroring — a hand-edited or future-version settings file must not
+/// stop the editor from opening.
+fn parse_unfocused_fps(fps: u64) -> UnfocusedFps {
+    if fps == u64::from(UnfocusedFps::Fps25.fps()) {
+        UnfocusedFps::Fps25
+    } else {
+        UnfocusedFps::DEFAULT
     }
 }
 
@@ -136,8 +180,11 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "quality": format_quality(settings.quality),
         "show_all_services": settings.show_all_services,
         "orthographic": settings.orthographic,
+        "axis_indicator": settings.axis_indicator,
+        "icon_pack": format_icon_pack(settings.icon_pack),
+        "unfocused_fps": settings.unfocused_fps.fps(),
     });
-    // A two-field object always serializes; nothing here can fail.
+    // A fixed-shape object always serializes; nothing here can fail.
     let bytes = serde_json::to_vec_pretty(&value).expect("settings JSON always serializes");
     write_atomic(path, &bytes)
 }
@@ -150,6 +197,21 @@ fn format_quality(quality: QualityLevel) -> String {
     match quality {
         QualityLevel::Automatic => "Automatic".to_string(),
         QualityLevel::Level(level) => format!("Level{level:02}"),
+    }
+}
+
+fn format_icon_pack(pack: IconPack) -> &'static str {
+    match pack {
+        IconPack::Dark => "Dark",
+        IconPack::Light => "Light",
+    }
+}
+
+fn parse_icon_pack(s: &str) -> Option<IconPack> {
+    match s {
+        "Dark" => Some(IconPack::Dark),
+        "Light" => Some(IconPack::Light),
+        _ => None,
     }
 }
 
@@ -239,9 +301,35 @@ mod tests {
             quality: QualityLevel::Level(7),
             show_all_services: true,
             orthographic: true,
+            axis_indicator: false,
+            icon_pack: IconPack::Light,
+            unfocused_fps: UnfocusedFps::Fps25,
         };
         save_to(&settings, &path).unwrap();
         assert_eq!(load_from(&path), settings);
+    }
+
+    #[test]
+    fn a_settings_file_from_before_the_axis_indicator_toggle_existed_defaults_it_on() {
+        let path = temp_settings_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            br#"{"quality": "Automatic", "show_all_services": false}"#,
+        )
+        .unwrap();
+
+        assert!(load_from(&path).axis_indicator);
+    }
+
+    #[test]
+    fn unfocused_fps_falls_back_to_default_for_anything_but_25() {
+        let path = temp_settings_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, br#"{"unfocused_fps": 30}"#).unwrap();
+        assert_eq!(load_from(&path).unfocused_fps, UnfocusedFps::Fps30);
+        std::fs::write(&path, br#"{"unfocused_fps": 999}"#).unwrap();
+        assert_eq!(load_from(&path).unfocused_fps, UnfocusedFps::DEFAULT);
     }
 
     #[test]
@@ -331,5 +419,20 @@ mod tests {
             let mode = QualityLevel::Level(level);
             assert_eq!(format_quality(mode).parse::<QualityLevel>(), Ok(mode));
         }
+    }
+
+    #[test]
+    fn icon_pack_string_form_round_trips_both_variants() {
+        for pack in [IconPack::Dark, IconPack::Light] {
+            assert_eq!(parse_icon_pack(format_icon_pack(pack)), Some(pack));
+        }
+    }
+
+    #[test]
+    fn an_unrecognized_icon_pack_string_falls_back_to_default_on_load() {
+        let path = temp_settings_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, br#"{"icon_pack": "Sepia"}"#).unwrap();
+        assert_eq!(load_from(&path).icon_pack, IconPack::Dark);
     }
 }

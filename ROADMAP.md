@@ -242,6 +242,19 @@ Roblox's own engine.
   path has no next frame to spread across, so it drains any remaining
   upload immediately (`Renderer::finish_loading`) before capturing rather
   than writing out a PNG with textures still mid-upload.
+- [x] **An orientation/axis indicator in the corner of the viewport**
+  (top-right) — six small coloured, lettered dots (`Right`/`Left`/`Top`/
+  `Bottom`/`Front`/`Back`, red/green/blue per axis, the same colours the
+  Move/Rotate/Scale gizmo already uses), positioned by projecting the free
+  camera's current basis (`rbx_viewer::Pose::basis`) rather than a literal
+  3D cube mesh — the same flat 2D approach Blender's own gizmo actually
+  draws with. Toggleable off from the Viewport panel's overflow menu
+  (`Orientation Indicator`, next to `Orthographic`), on by default and
+  persisted the same way. As flagged when this was picked up: a genuine
+  rbx-native addition inspired by Blender/SketchUp/3ds Max conventions, not
+  a claim that Studio itself has one. Click-to-snap-camera-to-a-face (real
+  in those other tools) is deliberately not implemented — this is a static,
+  informational indicator only.
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: this project's own flat, from-scratch class icon kit
@@ -349,10 +362,21 @@ Roblox's own engine.
   - **Placement**: directly under the File/Edit/Model/View menu bar and
     above the viewport dock, matching the owner's reference screenshot.
   - **Still open**: the 5th "Transform" toolbar button visible in Studio's
-    current toolbar; group/ungroup operations; and a plain click landing
-    on a `Model` — unlike cycling's raw parts, a `Model` has no `CFrame`/
-    `Size` of its own for the gizmo to read, so it draws neither an
-    outline nor a gizmo today (all under "What's planned" → Renderer).
+    current toolbar; and a plain click landing on a `Model` — unlike
+    cycling's raw parts, a `Model` has no `CFrame`/`Size` of its own for
+    the gizmo to read, so it draws neither an outline nor a gizmo today
+    (all under "What's planned" → Renderer).
+
+- [x] **Group/ungroup operations** — `Ctrl+G` (or Model ⟩ Group) wraps the
+  current selection in one new `Model`, parented where the selection
+  itself was; `Ctrl+Shift+G` (or Model ⟩ Ungroup) unwraps a selected
+  `Model` back into its own parent and removes it. A selection spanning
+  more than one parent refuses Group cleanly rather than picking one
+  arbitrarily; ungrouping something that isn't a `Model`, or an empty one,
+  is a clean no-op. Each is one undo step regardless of how many instances
+  it moves. Out of scope, matching real Studio's own separate Pivot tools
+  (see "What's planned" → Renderer): the new `Model` gets no computed
+  `PrimaryPart` or pivot, just Roblox's own empty-pivot default.
 
 - [x] **A real script editor** — double-clicking a `Script`, `LocalScript`
   or `ModuleScript` in the Explorer opens it in the Script Editor dock
@@ -382,6 +406,39 @@ Roblox's own engine.
     debugging, and new-script templates. With focus in an editor, Ctrl+Z
     is the editor's own text undo rather than the place's history — the
     split Studio makes — and Edit > Undo still reaches the latter.
+- [x] **Throttled render loop while the window is unfocused.** Losing OS
+  focus (`gpui`'s window activation) caps the viewport's render thread —
+  not just the UI thread's own poll rate — to a user-chosen preset, 25 or
+  30 fps (`pacing::UnfocusedFps`, next to the quality dropdown in the
+  Viewport panel's overflow menu); the first focus or input event
+  (`pacing::FocusPacing::mark_input`) restores the full display rate
+  immediately, ahead of whatever window-activation event may still be in
+  flight, so nothing feels sluggish coming back. Persisted the same way
+  the quality level and projection mode already are.
+
+- [x] **Colour-coded Explorer folders** — a `Folder` can carry a colour tag,
+  edited through a synthetic "Explorer Colour" row the Properties panel
+  adds only for a `Folder` (reusing the same `EditKind::Color` widget and
+  `Name`-row precedent `properties.rs`/`properties/edit.rs` already had).
+  Shown two ways on its Explorer row: the row's own icon is recolored to
+  the tag (`class_icons::tint` flattens the already-rasterized bitmap to
+  the tag colour, keeping each pixel's alpha, and `explorer::items` caches
+  one tinted bitmap per colour per rebuild rather than per instance), and
+  its hover/selected background and selection outline use the tag colour
+  too, faded, instead of the theme's default blue (`shell/rows.rs` paints
+  a tagged row's own chrome, bypassing the vendored `ListItem`'s hardcoded
+  hover/selected colours — it has no per-instance override for either).
+  Kept entirely out of the saved place file, per this bullet's own
+  reasoning: a local, per-place store (`folder_colors.rs`, keyed by the
+  place's file path and the folder's Explorer path) rather than an
+  invented `Folder` property a real Studio session would trip over.
+  `Folder`-only, not "any instance" — the hedge in this bullet's original
+  wording, deliberately not chased. **Known limitation**: keyed by
+  Explorer path rather than a stable id (a `Ref` regenerates on every
+  load), so renaming or moving a tagged folder orphans its tag; a
+  load-time prune keeps orphaned entries from accumulating forever, but
+  does not carry the tag across the rename (see the `ponytail:` comment in
+  `folder_colors.rs`).
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -433,15 +490,17 @@ Roblox's own engine.
   locally-hosted code-completion API instead — but that's a distinct,
   lower-priority idea worth its own decision on which backend (if any),
   not a default this project should ship opinionated about.
-- [ ] 📋 **New-script templates** — inserting a `Script`/`LocalScript`/
-  `ModuleScript` today starts from an empty `Source`; real Studio offers a
-  small set of starting points instead (a plain server script, a
-  `ModuleScript` returning a table, an OOP class module with a `.new()`
-  constructor and metatable). Worth a small, user-extensible template set
-  rather than hardcoding a fixed list — most useful once the script editor
-  above exists (a template matters a lot more with somewhere real to edit
-  it), though the underlying "insert with starter source" mechanic doesn't
-  strictly depend on it.
+- [x] 🚧 **New-script templates** — the Model menu now has real
+  `Insert Script`/`Insert LocalScript`/`Insert ModuleScript`/
+  `Insert ModuleScript (Class)` entries (there was previously no menu item
+  or shortcut to insert a script at all), each seeding the new instance's
+  `Source` with a starter template instead of leaving it empty: a plain
+  `print("Hello, world!")` for `Script`/`LocalScript`, a `ModuleScript`
+  returning a table, and a `ModuleScript (Class)` with a `.new()`
+  constructor over a metatable. What's still open: the template set is
+  hardcoded (four `const` strings), not the user-extensible set this
+  bullet originally asked for — that's a materially bigger feature (storage
+  and an editing UI for user-defined templates) left for later.
 - [ ] 📋 **Optional, bundled `Fragment` UI framework.** [`Fragment`](https://github.com/chteau/Fragment)
   (MIT, single-file Luau `ModuleScript`, React-inspired: local/global
   state, contexts, reusable components over plain `GuiObject`s) offered as
@@ -470,26 +529,20 @@ Roblox's own engine.
 - [ ] 📋 `Light.Shadows` for `PointLight` (needs 6-face shadow maps; done
   for `SpotLight`/`SurfaceLight`).
 - [ ] 📋 Neon/`ForceField` shimmer, `Glass` refraction — currently flat.
-- [ ] 📋 **Throttle the renderer while the window is not focused.** The
-  viewport renders at the display's full rate whether or not anyone is
-  looking at it, which is wasted GPU/CPU (and fan noise, and battery on a
-  laptop) the moment the editor sits behind another window. When the
-  editor window loses focus, cap the render loop at 25–30 fps (a setting,
-  with those two as the presets); restore the full rate on the first
-  focus/input event so nothing feels sluggish coming back. Real Studio
-  does the same. The pacing code already exists (`shell::pacing` and the
-  viewer's `app::pacing`); this is a second target rate keyed off the
-  window's focus state, not a new loop.
-- [ ] 📋 **An FPS/frame-time readout**, matching real Studio's own
+- [x] 🚧 **An FPS/frame-time readout**, matching real Studio's own
   performance-debugging surface rather than inventing a new one: Studio's
   `Window > Performance > Stats` toggles a debug stats overlay, and
   `Ctrl`+`F6` opens the MicroProfiler directly for a per-system frame-time
-  breakdown. Today's viewport corner label (`rbxstudio`) and title bar
-  (`rbxview`) show quality level and flight speed but no frame rate or
-  frame time at all, even though the render thread already measures frame
-  timing internally to drive automatic quality scaling (see "What's been
-  implemented" above) — the number already exists, it just isn't shown
-  anywhere yet.
+  breakdown. `rbxstudio`'s viewport corner label gets a "Stats" toggle next
+  to the existing Orthographic one, in the Viewport panel's own overflow
+  menu (this editor has no `Window` menu yet) — switching it on adds the
+  render thread's last-measured fps and frame time to the label already
+  showing quality level and flight speed, reusing the same per-second
+  numbers `workspace_view::stats` already computed to drive automatic
+  quality scaling rather than a second timing mechanism. Still open:
+  `rbxview`'s standalone title bar shows quality level and flight speed the
+  same way and has no equivalent readout yet — a separate binary, out of
+  scope here.
 - [ ] 📋 **A 5th "Transform" toolbar button** appears in Studio's current
   toolbar (see the owner-provided screenshot) alongside the now-implemented
   Select/Move/Scale/Rotate (see "What's been implemented" → Editor), but
@@ -538,11 +591,17 @@ Roblox's own engine.
     existing meaning (invert the current snap state) on every other tool,
     so it needs its own resolution, not a blind rebind. — see
     `F3XTeam/RBX-Building-Tools`'s `Tools/Resize.lua`.
-  - **A live stud-count readout while a Move/Scale drag is in progress**
+  - [x] **A live stud-count readout while a Move/Scale drag is in progress**
     (e.g. a floating "12" near the handle showing studs moved/grown so
     far) — genuinely useful, not documented as a specific Studio feature
-    either way; would need its own small on-screen label wired to the
-    drag's own already-known delta.
+    either way. A small label follows the cursor while a drag is held,
+    reading the straight-line distance moved so far for a Move, or the
+    dragged axis's growth (or shrink) in studs for a Scale — both to two
+    decimal places, matching Studio's own numeric-field precision. Reads
+    the same delta `gizmo.rs`'s own drag math already computes for the
+    part itself (see `workspace_view::readout`), so there is nothing new
+    to keep in sync. A Rotate-angle readout was a natural follow-on but is
+    out of this bullet's own scope and hasn't been added.
   - **`Tab` to "summon" the gizmo's handles to the cursor** — this one
     *is* real, current native Studio behavior (2021 "Pivot Points" beta
     update): holding `Tab` moves the active tool's handles to the cursor's
@@ -609,10 +668,6 @@ Roblox's own engine.
   `BasePart.PivotOffset` exposed to the Command Bar and scripts generally
   (today's Luau DataModel has no pivot-specific API at all), not just the
   interactive tool, since real Studio exposes both.
-- [ ] 📋 **Group/ungroup operations** (wrap the selected instances into a
-  `Model`, or unwrap one back into its parent) — selecting several
-  instances at once is done (see "What's been implemented" → Editor);
-  grouping/ungrouping them is not.
 - [ ] 📋 **Full DOM editing from the Explorer**, beyond today's plain
   insert/delete:
   - A `+` icon on each row to insert a child instance directly, without
@@ -681,17 +736,6 @@ Roblox's own engine.
   `.../contributors` — distinct from the publish endpoint above and not
   yet wired into `rbx_cloud` at all; worth treating as its own follow-up
   rather than assuming the existing client already covers it.
-- [ ] 📋 **An orientation/axis indicator in the corner of the viewport**
-  (top-right, per the owner's reference) — a small `Front`/`Back`/`Left`/
-  `Right`/`Top`/`Bottom` cube or similar, colour-coded per axis, toggleable
-  off. Flagged honestly: this is a common convention in other 3D tools
-  (Blender's own axis gizmo, SketchUp/3ds Max's ViewCube), but nothing in
-  `Roblox/creator-docs`' viewport documentation describes Studio itself
-  having one — the closest documented feature is the unrelated
-  "Visualization Options" menu in the same corner (UI overlays, light
-  sources, physics/pathfinding visualization, scroll speed). Treat this as
-  a genuine rbx-native addition, not a claim that it matches Studio.
-
 #### Properties panel — remaining type editors
 - [ ] 📋 **Layout/UX pass on the panel itself**, separate from the
   per-type editor work below. Reported directly from real use, not yet
@@ -709,8 +753,13 @@ Roblox's own engine.
   text these currently fall back to. The most valuable of the types
   explicitly left as text tonight, given how much of the GUI/particle work
   above depends on authoring these comfortably.
-- [ ] 📋 `Rect`, `PhysicalProperties`, `Font` — smaller, same "still
-  read-only text" status.
+- [x] 🚧 `Rect`, `PhysicalProperties`, `Font` — smaller, same "still
+  read-only text" status. `Rect` now edits as four labeled fields
+  (`crates/rbx_studio/src/properties/edit.rs`). `Font` turned out to
+  already be fully editable before this item was picked up (the roadmap
+  text describing it was stale). `PhysicalProperties` is still read-only —
+  it's a real enum (`Default`/`Custom` with five fields), bigger scope than
+  the other two, and remains open.
 - [ ] 📋 **Widgets that better match how Studio actually renders specific
   types**, rather than a generic fallback — verified against the real API
   dump and the current code, not assumed:
@@ -986,14 +1035,6 @@ against `Roblox/creator-docs` rather than assumed:
 - [ ] 📋 **Native Git integration** — a real panel in `rbxstudio` (diff view,
   stage/commit, branch switch), not relying on the user's own external git
   client. Not scoped in any detail yet.
-- [ ] 📋 **Colour-coded Explorer folders.** Another devforum request from
-  the same category ("Colored folders!") — let a `Folder` (and perhaps any
-  instance) carry a colour tag shown as a tint on its Explorer icon/row,
-  purely a local editor convenience (there's no such real Roblox
-  `Folder` property, so this would need to live in rbx-native's own
-  settings/metadata, not the saved place file, to avoid inventing a fake
-  property that would confuse a real Studio session opening the same
-  place).
 - [ ] 📋 User settings file (service visibility defaults,
   default quality, sandbox naming for Play) beyond what's already
   persisted — and, worth folding into the same effort rather than treating
@@ -1131,18 +1172,16 @@ against `Roblox/creator-docs` rather than assumed:
   through the same real-property DOM mutation any other editor action
   does, not a shortcut that could write something a saved place file
   can't actually represent.
-- [ ] 📋 **Icon and theme packs — the editor's look stops being hardcoded.**
+- [x] 🚧 **Icon and theme packs — the editor's look stops being hardcoded.**
   The Explorer's class icons are now this project's own icon kit rather than
-  Roblox's downloaded sheet (see "What's been implemented" above), but only
-  one pack, one variant, is wired up: `assets/icons/default/dark`, embedded
-  at compile time and always used. The kit ships an equal-sized
-  `assets/icons/default/light` variant that nothing reads yet, and
-  colours/spacing/fonts elsewhere are still Rust constants throughout
-  `rbx_studio`/`gpui_kit`. Planned:
-  - An **editor setting for dark/light icons**: picks between
-    `assets/icons/default/dark` and `.../light`, dark by default, without a
-    rebuild — the settings panel's own version of `settings.rs`'s existing
-    quality/service-visibility persistence.
+  Roblox's downloaded sheet (see "What's been implemented" above). Both
+  variants, `assets/icons/default/dark` and `.../light`, are now embedded
+  at compile time, and an **editor setting for dark/light icons** — a
+  "Light Icons" checkbox in the Explorer panel's own overflow menu, next to
+  "Show all services" — picks between them at runtime, dark by default,
+  without a rebuild, persisted the same way `settings.rs`'s existing
+  quality/service-visibility settings are. Colours/spacing/fonts elsewhere
+  are still Rust constants throughout `rbx_studio`/`gpui_kit` — still open:
   - Swapping in a **different icon pack** entirely: a directory (or bundle)
     of SVGs named by `ClassName`/tile-role, loaded instead of the built-in
     set at startup, with the existing Lucide fallback still covering
@@ -1216,28 +1255,23 @@ against `Roblox/creator-docs` rather than assumed:
   dock rather than dropping it; no dedicated
   "Warnings" `OutputFilter` bucket; no distinct visual marker for a
   warning row versus a successful Command Bar run.
-- [ ] 📋 **Output window: real Studio's filter/display feature set**,
+- [x] 🚧 **Output window: real Studio's filter/display feature set**,
   checked against `studio/output.md` rather than assumed. Only part of
   this depends on the sandbox above — the rest is buildable against what
   the Command Bar and app warnings already put in the dock today:
-  - **Not sandbox-dependent, reported directly from real use**: every
-    Command Bar run's own immediate feedback shows twice today — once in
-    the small label `command_bar::Feedback` renders above the input box,
-    and again as a permanent row in the Output dock once
-    `shell::command::run_command` logs it — instead of the dock being the
-    one place to look, the way Studio's own Output window is. Rows also
-    carry no timestamp, and only distinguish error from everything else
-    (a plain `✕`/`✓` marker, `danger` color on error only) even though
-    `command_bar::Feedback` already has a distinct `Warning` variant
-    (`OutputEntry`/`Feedback`, `shell/output.rs`) — a pushed warning renders
-    identically to a successful run. Real Studio's Output window docs
-    confirm both gaps are real, specific features to match rather than
-    invent: a **Show Timestamp** toggle prints a per-row timestamp in
-    `HH:MM:SS.SSS`, and its four message kinds each get their own color —
-    `print` in the default/black text color, `warn` in orange, `error` in
-    red, and `TestService.Message` in blue (this last one has no
-    equivalent here yet) — each pairing naturally with its own icon
-    (error/warning/info/output) rather than the current binary marker.
+  - **Not sandbox-dependent, reported directly from real use**: shipped —
+    a **Show Timestamp** toggle, in the Output panel's own overflow menu
+    next to Explorer's and Viewport's toggles (`Shell::output_show_timestamps`,
+    `shell/dock.rs`), prints a per-row timestamp in `HH:MM:SS.SSS`; rows now
+    carry a per-kind color and icon in place of the old plain `✕`/`✓`
+    marker — `print`/a successful run in the default text color with a
+    check icon, `warn` in orange with an alert icon, `error` in red with an
+    X icon (`OutputEntry::kind`/`RowKind`, `shell/output.rs`). Still open:
+    `TestService.Message`'s blue/info kind, which needs the sandbox before
+    anything here can produce it; and the duplicate-display gap itself —
+    every Command Bar run's own immediate feedback still shows twice, once
+    in `command_bar::Feedback`'s own label and again as the Output dock's
+    permanent row — left untouched.
   - **Sandbox-dependent**: filtering by **context** (`Client`/`Server`/
     `User Plugin`) only means something once the sandbox's client/server
     split exists to produce it; **Show Context** and **Show Source**

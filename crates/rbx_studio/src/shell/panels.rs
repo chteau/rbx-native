@@ -41,6 +41,9 @@ impl Shell {
         // selected row, so a `Shift`/`Ctrl`/`Cmd`-click multi-selection would
         // otherwise light up just the anchor.
         let selected: Vec<Ref> = self.selected_all().to_vec();
+        // Every tagged `Folder`'s colour, resolved once up front rather than
+        // per row — see `shell::folder_color::folder_tints`.
+        let tints = self.folder_tints();
 
         div()
             .id("explorer-tree")
@@ -53,10 +56,11 @@ impl Shell {
                     .item(move |index, entry, _, _, _| {
                         let item = entry.item();
                         let icon = explorer.icon(&item.id);
+                        let tint = tints.get(&item.id).copied();
                         // A row whose id does not read back as a referent has
                         // nothing to drag or drop onto; it still has to draw.
                         let Some(reference) = explorer::item_ref(&item.id) else {
-                            return row(index, entry, false, icon).into_any_element();
+                            return row(index, entry, false, icon, tint);
                         };
                         let highlighted = selected.contains(&reference);
                         let dragged = DraggedInstances::new(&selected, reference, &item.label);
@@ -65,7 +69,7 @@ impl Shell {
                             index,
                             reference,
                             dragged,
-                            row(index, entry, highlighted, icon),
+                            row(index, entry, highlighted, icon, tint),
                         )
                     })
                     .list_style(StyleRefinement::default().flex_grow_1().size_full())
@@ -101,7 +105,11 @@ impl Shell {
         let filtering = !filter.trim().is_empty();
         let rows = self
             .selected()
-            .map(|reference| self.properties.rows_matching(&self.dom, reference, &filter))
+            .map(|reference| {
+                let folder_color = self.folder_color(reference);
+                self.properties
+                    .rows_matching(&self.dom, reference, &filter, folder_color)
+            })
             .unwrap_or_default();
 
         // Built up front — needs `&mut self` to create or reuse each row's
