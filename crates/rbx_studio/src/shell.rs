@@ -61,8 +61,7 @@ use selection::{outlined, Selection};
 use toolbar::snap::SnapFields;
 
 const EXPLORER_WIDTH: f32 = 320.0;
-const PROPERTIES_HEIGHT: f32 = 200.0;
-const OUTPUT_HEIGHT: f32 = 180.0;
+const PROPERTIES_WIDTH: f32 = 320.0;
 const QUALITY_WIDTH: f32 = 104.0;
 
 /// The graphics quality dropdown's list: plain labels, since the mode a label
@@ -760,6 +759,12 @@ impl Shell {
 }
 
 impl Render for Shell {
+    /// The transform toolbar (`shell::toolbar`) has no row of its own here —
+    /// it renders inside the Viewport tab's own title row instead (see
+    /// `shell::dock`'s `title_suffix`), so the dock's own Viewport/Script/
+    /// Style tab strip is the first thing under the menu bar, the way a
+    /// ribbon-style Studio redesign puts its document tabs directly under
+    /// the window chrome rather than under a separate toolbar strip.
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .size_full()
@@ -772,7 +777,6 @@ impl Render for Shell {
                 shell.handle_shell_key(&event.keystroke, window, cx);
             }))
             .child(crate::menu_bar::bar(&self.menu_bar, cx))
-            .child(self.toolbar(cx))
             .child(
                 div()
                     .flex_1()

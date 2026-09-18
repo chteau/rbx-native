@@ -148,10 +148,14 @@ dockable panel chrome — don't reflexively pull them onto the panel palette:
 ## 7. Dock/panel structure
 
 The dock (`shell/dock.rs`) has exactly six sections: Viewport, Explorer,
-Properties, Output, Scripts, Style Editor — grouped as tabs today
-(Viewport+Scripts+StyleEditor on top-left, Output bottom-left,
-Explorer+Properties stacked on the right), matching a conventional
-grouped-tab IDE layout (VS Code, JetBrains, Studio itself).
+Properties, Output, Scripts, Style Editor — three side-by-side columns
+today: **Properties tabbed with Output** on the left, **Viewport tabbed
+with Scripts and Style Editor** in the middle (the "document" tabs — see
+§8), **Explorer** alone on the right. This is `dock.rs::build`'s one
+`h_split` of three `tabs()` groups — a deliberate three-column layout
+(Properties/Output left, Explorer right) rather than the two-column,
+stacked-panel arrangement an earlier pass shipped, chosen to match a
+ribbon-style Studio redesign reference the maintainer supplied.
 **Rearranging which sections tab together, or which side of the split they
 sit on, is fair game for a UX-driven change** — `dock.rs::build` is the one
 function that decides it. **Adding a *new* dock section is a bigger,
@@ -159,7 +163,33 @@ structurally-visible decision** (new persisted layout state, a new
 `Section` variant, a new place for the maintainer to reason about) and
 should go through the roadmap rather than ride along inside a theming pass.
 
-## 8. Verifying a visual change
+## 8. The document tab row, and what lives in it
+
+The Viewport/Scripts/Style-Editor tab strip is the first thing under the
+menu bar — no separate toolbar row sits above it. The transform toolbar
+(Select/Move/Scale/Rotate, snap, Align — `shell/toolbar.rs`) and the
+graphics-quality dropdown both render *inside* the Viewport tab's own title
+row instead, via `ComponentPanel::title_suffix` in `dock.rs` (the same
+mechanism Output's filter/Clear controls and Viewport's own overflow menu
+already used). **If a tab's title-row controls start to feel cramped**
+(a narrow window, a long tool list), trimming what's *in* the suffix is the
+right fix before reintroducing a separate full-width toolbar row — a
+second row pushes the tab strip back down from directly under the menu bar,
+which is the thing this arrangement exists to avoid.
+
+**Tool buttons use an icon, not a text label**, with the name as a
+`.tooltip(...)` instead (`shell/toolbar.rs::tool_icon` maps each `Tool` to
+a Lucide `IconName` — check what a candidate icon actually depicts before
+picking it: Lucide's own `Scale` is a balance/weighing-scale glyph, not a
+resize one, which is why the Scale tool uses `Scale3d` instead). Reserve
+this icon-only treatment for a small, fixed set of frequently-used tools a
+user learns once; a rarely-used or one-off action is still better served by
+a labelled button — an unlabelled icon nobody has memorized yet is a
+lookup cost, not a saving (Nielsen's "recognition over recall" cuts both
+ways here:
+[nngroup.com/articles/ten-usability-heuristics](https://www.nngroup.com/articles/ten-usability-heuristics/)).
+
+## 9. Verifying a visual change
 
 No shortcut around `agents/AGENTS.md`'s existing rule: build the real
 `rbxstudio` binary and look at a screenshot, for every change this file

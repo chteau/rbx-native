@@ -1,5 +1,7 @@
-//! The transform toolbar: the strip of tool buttons directly under the menu
-//! bar and above the dock, where Studio's own is (see `Render for Shell`).
+//! The transform toolbar: the strip of tool buttons that renders inside the
+//! Viewport tab's own title row (see `shell::dock`'s `title_suffix`), the
+//! way a ribbon-style Studio redesign keeps its tools alongside its document
+//! tabs rather than in a separate strip underneath them.
 //!
 //! Select, Move, Scale and Rotate are all live.
 //!
@@ -8,8 +10,9 @@
 //! and documents no distinct tool behind it, so there is nothing here to
 //! implement against yet.
 
+use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::{h_flex, ActiveTheme, Selectable as _, Sizable as _};
+use gpui_kit::component::{h_flex, ActiveTheme, Icon, Selectable as _, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
@@ -26,6 +29,20 @@ pub(crate) mod snap;
 /// `AGENTS.md`'s safety rules), exactly as `RBX_STUDIO_SELECT` and
 /// `RBX_STUDIO_EDIT` already stand in for a click and a keystroke elsewhere.
 pub(super) const TOOL_VARIABLE: &str = "RBX_STUDIO_TOOL";
+
+/// The Lucide glyph standing in for each tool's name on its own button — see
+/// `toolbar`'s `.tooltip(...)` for where the name itself still shows up.
+fn tool_icon(tool: Tool) -> IconName {
+    match tool {
+        Tool::Select => IconName::MousePointer2,
+        Tool::Move => IconName::Move,
+        // Lucide's own "Scale" is a balance/weighing-scale glyph, not a
+        // resize one — `Scale3d` is the one that actually reads as this
+        // tool.
+        Tool::Scale => IconName::Scale3d,
+        Tool::Rotate => IconName::RotateCw,
+    }
+}
 
 impl Shell {
     /// Applies [`TOOL_VARIABLE`], if it is set to anything this understands.
@@ -77,23 +94,20 @@ impl Shell {
         }
     }
 
-    /// The strip itself.
+    /// The strip itself — embedded in the Viewport tab's own title row (see
+    /// `shell::dock`'s `title_suffix`), so it takes no height/border of its
+    /// own here and leans on that row's chrome instead.
     pub(super) fn toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let active = self.transform.tool;
         let local = self.transform.local;
 
         h_flex()
-            .w_full()
-            .h(px(36.))
-            .flex_none()
             .items_center()
             .gap_1()
-            .px_3()
-            .border_b_1()
-            .border_color(cx.theme().border)
             .children(Tool::ALL.map(|tool| {
                 Button::new(("transform-tool", tool as usize))
-                    .label(format!("{} ({})", tool.label(), tool.shortcut()))
+                    .icon(Icon::new(tool_icon(tool)))
+                    .tooltip(format!("{} ({})", tool.label(), tool.shortcut()))
                     .xsmall()
                     .selected(active == tool)
                     .on_click(cx.listener(move |shell, _, _, cx| {
