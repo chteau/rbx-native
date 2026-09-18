@@ -22,7 +22,7 @@ use rbx_viewer::snap;
 
 use crate::transform::{Target, Tool};
 
-use super::{ViewportAction, WorkspaceView};
+use super::{readout, ViewportAction, WorkspaceView};
 use crate::settle::Settle;
 
 /// `BasePart.Size`'s documented range: "the individual dimensions (length,
@@ -310,6 +310,7 @@ impl WorkspaceView {
         self.drag = Some(drag);
         self.held = self.targets.clone();
         self.dragged = false;
+        self.drag_readout = None;
         self.hover_pending = None;
         cx.emit(ViewportAction::Hover {
             ray: None,
@@ -445,6 +446,11 @@ impl WorkspaceView {
         let Some(anchor) = self.targets.anchor() else {
             return;
         };
+        // `position` is reused below as a match binding name for the part's
+        // own new world-space placement (`Change::Position`), which shadows
+        // this screen-space one for the length of that arm — kept under its
+        // own name so the readout can still place itself against it there.
+        let cursor = position;
         // Read per move rather than latched at the grab: Studio's Shift is
         // held and released mid-drag, and the part follows it either way.
         let Some((drag, change)) = advance(drag, ray, self.landing(modifiers.shift)) else {
@@ -472,6 +478,16 @@ impl WorkspaceView {
                 // gesture, and the DOM's answer only comes back through
                 // `set_targets` once `Shell` has applied it.
                 let moves = self.targets.translate(position - anchor.position());
+                // The distance is measured from where the anchor stood at
+                // the grab (`self.held`, frozen since `begin`), not from this
+                // step's own previous position — "studs moved so far" means
+                // the whole gesture's travel, not one step's worth of it.
+                self.drag_readout = self.held.anchor().map(|start| {
+                    (
+                        readout::position(cursor, self.viewport.get().origin, scale),
+                        readout::moved((position - start.position()).length()),
+                    )
+                });
                 cx.emit(ViewportAction::Moved {
                     moves,
                     first,
@@ -491,6 +507,16 @@ impl WorkspaceView {
                     return;
                 };
                 self.targets.set_anchor(moved);
+                // How far the dragged axis has grown since the grab, on the
+                // same one component `Drag::Size` was grabbed on — `drag`
+                // still carries it unchanged (`advance` returns `Drag::Size`
+                // as-is, see its own match arm).
+                if let (Drag::Size { component, .. }, Some(start)) = (drag, self.held.anchor()) {
+                    self.drag_readout = Some((
+                        readout::position(cursor, self.viewport.get().origin, scale),
+                        readout::grown(size[component] - start.size()[component]),
+                    ));
+                }
                 cx.emit(ViewportAction::Resized {
                     parts: vec![(referent, size, position)],
                     first,
@@ -502,6 +528,17 @@ impl WorkspaceView {
                 let Some((_, first)) = stepped(anchor, change, &mut self.dragged) else {
                     return;
                 };
+                // The box's own growth along the dragged axis, in studs —
+                // `extent` is `Drag::Box`'s length at the grab, unchanged
+                // since (`advance` returns `Drag::Box` as-is, see its own
+                // match arm), so `factor` applied to it is the whole
+                // gesture's growth, not one step's.
+                if let Drag::Box { extent, .. } = drag {
+                    self.drag_readout = Some((
+                        readout::position(cursor, self.viewport.get().origin, scale),
+                        readout::grown((factor - 1.0) * extent),
+                    ));
+                }
                 let held = self.held.clone();
                 let parts = self.targets.scale_about(&held, pivot, factor);
                 cx.emit(ViewportAction::Resized { parts, first });
