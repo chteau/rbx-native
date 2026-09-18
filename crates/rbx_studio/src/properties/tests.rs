@@ -180,7 +180,10 @@ fn scalars_print_plainly_and_strings_quoted() {
     assert_eq!(formatted("Count", Variant::Int32(-3)), "-3");
     assert_eq!(formatted("Big", Variant::Int64(1 << 40)), "1099511627776");
     assert_eq!(formatted("Reflectance", Variant::Float32(0.0)), "0");
-    assert_eq!(formatted("BackParamA", Variant::Float32(-0.5)), "-0.5");
+    // Not `BackParamA`: that name is real on `BasePart` and, as of the
+    // Hidden/read-only filtering below, tagged `Hidden` in the dump — this
+    // assertion only cares about plain `Float32` formatting.
+    assert_eq!(formatted("BevelAmount", Variant::Float32(-0.5)), "-0.5");
     assert_eq!(formatted("Precise", Variant::Float64(2.5)), "2.5");
     assert_eq!(
         formatted("CollisionGroup", Variant::String("Default".into())),
@@ -394,8 +397,11 @@ fn ui_dimensions_use_roblox_brace_notation() {
         "{0.5, 10}"
     );
     assert_eq!(
+        // Not `Position`: that name is real on `BasePart` and tagged
+        // `Hidden` in the dump, so the row wouldn't exist to format — this
+        // assertion only cares about plain `UDim2` formatting.
         formatted(
-            "Position",
+            "GuiPosition",
             Variant::UDim2(UDim2 {
                 x: UDim {
                     scale: 0.0,
@@ -516,7 +522,10 @@ fn color3_edits_as_0_255_channels_matching_the_read_only_display() {
         b: 1.0,
     };
     assert_eq!(
-        edit_kind("Color", Variant::Color3(color)),
+        // Not `Color`: that name is real on `BasePart` and, per the dump's
+        // Serialization, not saveable — read-only there now, which this
+        // assertion isn't testing.
+        edit_kind("TintColor", Variant::Color3(color)),
         Some(EditKind::Color {
             r: 0,
             g: 128,
@@ -547,7 +556,10 @@ fn color3uint8_edits_its_stored_bytes_directly() {
 #[test]
 fn brick_color_stays_a_text_field_with_no_bundled_palette() {
     assert_eq!(
-        edit_kind("BrickColor", Variant::BrickColor(194)),
+        // Not `BrickColor`: that name is real on `BasePart` and, per the
+        // dump's Serialization, not saveable — read-only there now, which
+        // this assertion isn't testing.
+        edit_kind("LegacyBrickColor", Variant::BrickColor(194)),
         Some(EditKind::Text("194".to_owned()))
     );
 }
@@ -578,7 +590,11 @@ fn vector3_and_cframe_edit_as_three_labeled_fields() {
         values: vec!["1".to_owned(), "2".to_owned(), "3".to_owned()],
     });
 
-    assert_eq!(edit_kind("Size", Variant::Vector3(vector)), expected);
+    // Not `Size`: that name is real on `BasePart` and, per the dump's
+    // Serialization, not saveable — read-only there now, which this
+    // assertion isn't testing (see `a_non_hidden_non_serializable_property_
+    // still_shows_but_has_no_edit_affordance` for that behaviour).
+    assert_eq!(edit_kind("Extents", Variant::Vector3(vector)), expected);
 
     let frame = CFrameData {
         position: vector,
@@ -654,7 +670,10 @@ fn udim2_edits_as_four_labeled_fields() {
         },
     };
     assert_eq!(
-        edit_kind("Position", Variant::UDim2(position)),
+        // Not `Position`: that name is real on `BasePart` and tagged
+        // `Hidden` in the dump, so the row wouldn't exist at all — this
+        // assertion only cares about plain `UDim2` field-splitting.
+        edit_kind("GuiPosition", Variant::UDim2(position)),
         Some(EditKind::Fields {
             labels: &["X Scale", "X Offset", "Y Scale", "Y Offset"],
             values: vec![
@@ -749,6 +768,76 @@ fn a_non_script_string_property_is_still_editable_here() {
         .find(|row| row.name == "Value")
         .expect("the Value row");
     assert_eq!(editable.edit, Some(EditKind::Text("x".to_owned())));
+}
+
+#[test]
+fn hidden_properties_never_appear_as_rows_at_all() {
+    // Position/Orientation are tagged Hidden in the real dump: Studio only
+    // exposes them through the dedicated Position/Orientation UI, never as
+    // a raw property row — not even a read-only one.
+    let rows = instance_of(
+        "Part",
+        &[
+            ("Position", Variant::Vector3(vector3(1.0, 2.0, 3.0))),
+            ("Orientation", Variant::Vector3(vector3(0.0, 0.0, 0.0))),
+        ],
+    )
+    .rows(part());
+
+    assert!(!rows.iter().any(|row| row.name == "Position"));
+    assert!(!rows.iter().any(|row| row.name == "Orientation"));
+}
+
+#[test]
+fn a_non_hidden_non_serializable_property_still_shows_but_has_no_edit_affordance() {
+    // BasePart.Size is not Hidden but Serialization.CanSave is false in the
+    // real dump (Studio derives it rather than storing it directly): the
+    // row must stay, just without an edit widget.
+    let row = instance_of(
+        "Part",
+        &[("Size", Variant::Vector3(vector3(4.0, 1.0, 2.0)))],
+    )
+    .rows(part())
+    .into_iter()
+    .find(|row| row.name == "Size")
+    .expect("the Size row");
+
+    assert_eq!(row.edit, None);
+}
+
+#[test]
+fn cframe_stays_visible_and_editable_after_hidden_filtering() {
+    // The property this codebase actually uses in place of the not-yet-built
+    // Position/Orientation UI: it must not get caught by the Hidden filter
+    // just because Position/Orientation (which it stands in for) did.
+    let frame = CFrameData {
+        position: vector3(0.0, 5.0, 0.0),
+        rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+    };
+    let row = instance_of("Part", &[("CFrame", Variant::CFrame(frame))])
+        .rows(part())
+        .into_iter()
+        .find(|row| row.name == "CFrame")
+        .expect("the CFrame row");
+
+    assert_eq!(
+        row.edit,
+        Some(EditKind::Fields {
+            labels: &["X", "Y", "Z"],
+            values: vec!["0".to_owned(), "5".to_owned(), "0".to_owned()],
+        })
+    );
+}
+
+#[test]
+fn an_ordinary_property_is_unaffected_by_hidden_or_read_only_filtering() {
+    let row = instance_of("Part", &[("Name", Variant::String("Baseplate".into()))])
+        .rows(part())
+        .into_iter()
+        .find(|row| row.name == "Name")
+        .expect("the Name row");
+
+    assert_eq!(row.edit, Some(EditKind::Text("Baseplate".to_owned())));
 }
 
 #[test]

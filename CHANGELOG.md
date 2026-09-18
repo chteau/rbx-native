@@ -117,6 +117,15 @@
   dialog. Not shipped: the docs' own "dynamically previewing the point of
   alignment before confirming" — this Align commits immediately, with no
   live preview. — @chteau
+- **Properties panel hides properties Studio itself never shows.**
+  `rbx_reflection`'s `PropertyDescriptor` now carries the API dump's
+  per-property `Tags` and `Serialization` (`CanLoad`/`CanSave`); the
+  Properties panel filters out anything tagged `Hidden` entirely (e.g.
+  `BasePart.Position`/`Orientation`, exposed only through the not-yet-built
+  Position/Orientation UI — `CFrame`'s own row is still the editable
+  stand-in) and renders a non-`Hidden` property Studio can't save back or
+  tags `ReadOnly` (e.g. `BasePart.Size`) with no edit widget instead of
+  hiding it. — @chteau
 
 ## 2026-09-17
 

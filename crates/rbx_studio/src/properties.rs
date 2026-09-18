@@ -118,6 +118,10 @@ impl Properties {
         let mut rows: Vec<PropertyRow> = instance
             .properties()
             .iter()
+            // Real Studio never lists a `Hidden`-tagged property at all —
+            // e.g. `BasePart.Position`/`Orientation`, exposed only through
+            // the dedicated Position/Orientation UI — not even read-only.
+            .filter(|(name, _)| !self.is_hidden(class, name))
             .map(|(name, value)| PropertyRow {
                 name: name.clone(),
                 value: self.format(dom, class, name, value),
@@ -181,6 +185,24 @@ impl Properties {
             .unwrap_or_else(|| UNCATEGORIZED.to_owned())
     }
 
+    /// Whether the reflection dump tags `class.name` `Hidden` — an unreflected
+    /// property (the dump has never heard of it) defaults to shown, same as
+    /// every other tag-driven default in this codebase.
+    fn is_hidden(&self, class: &str, name: &str) -> bool {
+        self.db
+            .resolve_property(class, name)
+            .is_some_and(|property| property.is_hidden())
+    }
+
+    /// Whether `class.name` should render with no edit affordance — see
+    /// [`rbx_reflection::PropertyDescriptor::is_read_only`]. An unreflected
+    /// property defaults to editable, same as [`Self::is_hidden`].
+    fn is_read_only(&self, class: &str, name: &str) -> bool {
+        self.db
+            .resolve_property(class, name)
+            .is_some_and(|property| property.is_read_only())
+    }
+
     /// Which widget `value` should edit through; `None` keeps the row
     /// read-only, same as when `edit::edit_text` itself returns `None`.
     fn edit_kind(&self, class: &str, name: &str, value: &Variant) -> Option<EditKind> {
@@ -190,6 +212,15 @@ impl Properties {
         // would silently eat a script's trailing newline. The row stays,
         // read-only, showing the source's size like any other long string.
         if name == source::SOURCE_PROPERTY && source::is_script_class(&self.db, class) {
+            return None;
+        }
+
+        // A property the dump says Studio can't save back (or explicitly
+        // marks ReadOnly) gets the same no-edit-affordance treatment as any
+        // other type this panel doesn't understand — e.g. `BasePart.Size`,
+        // which stays visible but read-only (Studio derives it from the
+        // mesh/CFrame rather than storing it directly).
+        if self.is_read_only(class, name) {
             return None;
         }
 

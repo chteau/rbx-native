@@ -269,6 +269,24 @@ Roblox's own engine.
   collapsible categories matching Roblox's own Properties panel, live —
   reflects DOM mutations from any source (script, undo/redo, the camera
   moving) without a manual refresh.
+- [x] Properties panel hides properties Studio itself never shows:
+  `rbx_reflection`'s `PropertyDescriptor` now carries the dump's
+  per-property `Tags` and `Serialization` (`CanLoad`/`CanSave`), and the
+  panel filters out anything tagged `Hidden` entirely — e.g.
+  `BasePart.Position`/`Orientation`, which Studio only exposes through a
+  dedicated Position/Orientation UI this project hasn't built yet, so
+  `CFrame`'s own row stays the stand-in and stays fully editable. A
+  non-`Hidden` property the dump says Studio can't save back
+  (`CanSave: false`) or tags `ReadOnly` — e.g. `BasePart.Size` — still shows,
+  just with no edit widget (the same "no edit affordance" treatment this
+  panel already used for a type it doesn't understand). `Deprecated` is now
+  captured in `tags` too but deliberately left unacted on: `Roblox/
+  creator-docs` documents individually-deprecated properties (e.g.
+  `BodyForce.force`) as real, still-readable API surface rather than
+  something Studio's own panel hides outright, and there's no confirmed
+  signal that a merely-`Deprecated`, non-`Hidden` property disappears from
+  real Studio's panel — left for a follow-up once that's actually verified
+  rather than guessed.
 - [x] Command Bar (Luau against the live DataModel) with an Output dock:
   run history, Clear, a success/error filter, click-to-recall a past
   command.
@@ -807,19 +825,6 @@ Roblox's own engine.
   noting real Studio can't do this at all to an already-uploaded mesh
   asset it doesn't own the source file for; this project, which controls
   its own import pipeline end to end, genuinely can.
-- [ ] 📋 **Hide properties Studio itself never shows.** The API dump carries
-  real per-property `Tags` (confirmed by inspection: `Hidden`, `Deprecated`,
-  `ReadOnly`, `NotReplicated`, e.g. `BasePart.Position`/`Orientation` are
-  tagged `Hidden` since Studio only exposes them through the dedicated
-  Position/Orientation UI described above, not as a raw property row) and a
-  `Serialization` field (`CanLoad`/`CanSave`) that real Studio's Properties
-  panel uses to decide what to list at all. `rbx_reflection`'s
-  `PropertyDescriptor` doesn't capture any of this yet (`name`/`value_type`/
-  `category` only, see `crates/rbx_reflection/src/class.rs`) — today every
-  property with a value shows up, including ones real Studio would never
-  display. Needs threading `Tags`/`Serialization` through the reflection
-  database and filtering (or at least visually distinguishing read-only
-  rows) in the Properties panel to match.
 
 #### Animation
 Two genuinely different feasibility tiers here, easy to conflate — verified

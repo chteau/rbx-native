@@ -199,6 +199,49 @@ mod tests {
     }
 
     #[test]
+    fn hidden_and_not_serializable_properties_parse_their_tags_and_serialization() {
+        let db = database();
+
+        // Position/Orientation are tagged Hidden since Studio only exposes
+        // them through the dedicated Position/Orientation UI, not as a raw
+        // property row — and the dump marks both non-serializable too.
+        let position = db.resolve_property("BasePart", "Position").unwrap();
+        assert!(position.tags.iter().any(|tag| tag == "Hidden"));
+        assert!(position.is_hidden());
+        assert!(!position.can_load);
+        assert!(!position.can_save);
+        assert!(position.is_read_only());
+    }
+
+    #[test]
+    fn cframe_carries_no_tags_and_is_fully_serializable() {
+        let db = database();
+
+        // This is exactly the distinction that matters: CFrame is this
+        // project's own stand-in for the not-yet-built Position/Orientation
+        // UI, so it must stay visible and editable after Hidden filtering.
+        let cframe = db.resolve_property("BasePart", "CFrame").unwrap();
+        assert!(cframe.tags.is_empty());
+        assert!(!cframe.is_hidden());
+        assert!(cframe.can_load);
+        assert!(cframe.can_save);
+        assert!(!cframe.is_read_only());
+    }
+
+    #[test]
+    fn read_only_can_come_from_either_the_tag_or_serialization_alone() {
+        let db = database();
+
+        // Instance.Parent: CanSave is false but the dump never tags it
+        // ReadOnly — the two signals are independent, both must count.
+        let parent = db.resolve_property("Instance", "Parent").unwrap();
+        assert!(!parent.is_hidden());
+        assert!(parent.can_load);
+        assert!(!parent.can_save);
+        assert!(parent.is_read_only());
+    }
+
+    #[test]
     fn subclass_walks_the_whole_superclass_chain() {
         let db = database();
 
