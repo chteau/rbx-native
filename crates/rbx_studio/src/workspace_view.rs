@@ -901,43 +901,90 @@ impl Render for WorkspaceView {
 /// Placed opposite the quality/speed corner label (bottom-left) rather than
 /// colliding with it, and styled the same way: a small, semi-transparent
 /// dark chip, not a heavier panel that competes with the 3D view underneath.
+/// Half the indicator's own square, in px — where a face's unit-radius
+/// centre/corner offsets (see `orientation::Face`) land once scaled and
+/// re-centred inside the widget.
+const CUBE_SIZE: f32 = 96.0;
+const CUBE_HALF: f32 = CUBE_SIZE / 2.0;
+/// A face corner's worst-case reach is `sqrt(3)` times this (a cube viewed
+/// corner-on) — `CUBE_HALF` above leaves headroom for that without doing the
+/// exact trig, and `overflow_hidden` below is the actual guarantee.
+const CUBE_RADIUS: f32 = 24.0;
+const CUBE_LABEL_WIDTH: f32 = 40.0;
+const CUBE_LABEL_HEIGHT: f32 = 14.0;
+
 fn orientation_indicator(pose: Pose) -> impl IntoElement {
-    const SIZE: f32 = 84.0;
-    const CENTER: f32 = SIZE / 2.0;
-    const AXIS_RADIUS: f32 = 30.0;
-    const DOT: f32 = 17.0;
+    let faces = orientation::visible_faces(pose);
 
     div()
         .absolute()
         .top_2()
         .right_2()
-        .size(px(SIZE))
+        .size(px(CUBE_SIZE))
+        .overflow_hidden()
         .rounded_full()
         .bg(rgba(0x14151ab0))
-        .children(orientation::marks(pose).map(|mark| {
-            let x = CENTER + mark.x * AXIS_RADIUS - DOT / 2.0;
-            let y = CENTER + mark.y * AXIS_RADIUS - DOT / 2.0;
-            div()
-                .absolute()
-                .top(px(y))
-                .left(px(x))
-                .size(px(DOT))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded_full()
-                .bg(rgb(mark.color))
-                // The three axes roughly behind the camera dim rather than
-                // disappear — still readable at a glance, the way Blender's
-                // own gizmo fades its own hidden-side labels instead of
-                // hiding them outright.
-                .when(!mark.front, |dot| dot.opacity(0.4))
-                .text_size(px(9.0))
-                .text_color(rgb(0x0c0d0f))
-                // Just the initial: the dot is 17px across, and colour plus
-                // screen position already carry most of the meaning. `Bottom`
-                // and `Back` are the one collision (both `B`) — left as is,
-                // since they're never the same colour (green vs. blue).
-                .child(&mark.label[..1])
-        }))
+        .child(cube_faces(faces))
+        .children(faces.map(cube_label))
+}
+
+/// The up-to-three visible faces themselves: filled quadrilaterals painted
+/// straight into the scene (`PathBuilder`/`Window::paint_path`), since a
+/// plain `div()` can only ever be an axis-aligned rectangle — a rotated cube
+/// face is a parallelogram. The same technique this project's own chart
+/// components (`gpui_kit::component`'s plot shapes) already use for an
+/// arbitrary filled polygon, not a new drawing mechanism.
+fn cube_faces(faces: [orientation::Face; 3]) -> impl IntoElement {
+    canvas(
+        |_, _, _| (),
+        move |bounds, _, window, _| {
+            let center = bounds.center();
+            for face in faces {
+                let corners: Vec<_> = face
+                    .corners
+                    .iter()
+                    .map(|&(x, y)| {
+                        point(
+                            center.x + px(x * CUBE_RADIUS),
+                            center.y + px(y * CUBE_RADIUS),
+                        )
+                    })
+                    .collect();
+                let mut builder = PathBuilder::fill();
+                builder.add_polygon(&corners, true);
+                // A face that landed exactly edge-on (see
+                // `orientation::visible_faces`'s doc) tessellates to nothing
+                // rather than erroring — degenerate input, not invalid input.
+                if let Ok(path) = builder.build() {
+                    window.paint_path(path, rgb(face.color));
+                }
+            }
+        },
+    )
+    .size_full()
+}
+
+/// One face's direction name, centred over its own (painted separately —
+/// see `cube_faces`) quadrilateral.
+fn cube_label(face: orientation::Face) -> impl IntoElement {
+    let x = CUBE_HALF + face.center.0 * CUBE_RADIUS - CUBE_LABEL_WIDTH / 2.0;
+    let y = CUBE_HALF + face.center.1 * CUBE_RADIUS - CUBE_LABEL_HEIGHT / 2.0;
+
+    div()
+        .absolute()
+        .top(px(y))
+        .left(px(x))
+        .w(px(CUBE_LABEL_WIDTH))
+        .h(px(CUBE_LABEL_HEIGHT))
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_size(px(10.0))
+        .text_color(rgb(0x0c0d0f))
+        // A face's own fill already shrinks to nothing as it turns edge-on
+        // (see `orientation::visible_faces`'s doc); this label is a fixed
+        // size regardless, so it fades the same way rather than floating,
+        // full-size and full-opacity, over a sliver too thin to back it.
+        .opacity(face.prominence)
+        .child(face.label)
 }
