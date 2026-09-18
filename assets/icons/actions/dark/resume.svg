@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- resume.svg - action icon kit, dark theme -->
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-  <title>resume</title>
-  <rect x="3" y="3" width="2" height="10" rx="0.6" fill="#278A3D" opacity="0.5"/>
-  <rect x="6.5" y="3" width="2" height="10" rx="0.6" fill="#278A3D" opacity="0.5"/>
-  <path d="M7,2.5 L14,8 L7,13.5 Z" fill="#3FB558"/>
-</svg>

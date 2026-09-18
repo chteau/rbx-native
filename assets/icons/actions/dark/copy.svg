@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- copy.svg - action icon kit, dark theme -->
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-  <title>copy</title>
-  <rect x="3" y="3" width="8" height="10" rx="1" fill="#5E6A78"/>
-  <rect x="5" y="1" width="8" height="10" rx="1" fill="#8A97A6"/>
-</svg>

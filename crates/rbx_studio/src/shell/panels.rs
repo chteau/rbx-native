@@ -16,7 +16,7 @@ use crate::explorer;
 use crate::properties::{group_by_category, EditKind};
 
 use super::reparent::{draggable_row, DraggedInstances};
-use super::rows::{property_row, property_row_control, render_editor, row};
+use super::rows::{guide_mask, property_row, property_row_control, render_editor, row};
 use super::Shell;
 
 impl Shell {
@@ -44,6 +44,15 @@ impl Shell {
         // Every tagged `Folder`'s colour, resolved once up front rather than
         // per row — see `shell::folder_color::folder_tints`.
         let tints = self.folder_tints();
+        // §3.2's guides are a property of the whole visible list, not of one
+        // row: computed once here, read per row below.
+        let depths: Vec<usize> = {
+            let tree = self.tree.read(cx);
+            (0..)
+                .map_while(|index| tree.entry(index).map(|entry| entry.depth()))
+                .collect()
+        };
+        let guides = guide_mask(&depths);
 
         div()
             .id("explorer-tree")
@@ -53,14 +62,15 @@ impl Shell {
             }))
             .child(
                 base::Tree::new(&self.tree)
-                    .item(move |index, entry, _, _, cx| {
+                    .item(move |index, entry, _, _, _| {
+                        let guide = guides.get(index).copied().unwrap_or_default();
                         let item = entry.item();
                         let icon = explorer.icon(&item.id);
                         let tint = tints.get(&item.id).copied();
                         // A row whose id does not read back as a referent has
                         // nothing to drag or drop onto; it still has to draw.
                         let Some(reference) = explorer::item_ref(&item.id) else {
-                            return row(index, entry, false, icon, tint, cx);
+                            return row(index, entry, false, icon, tint, guide);
                         };
                         let highlighted = selected.contains(&reference);
                         let dragged = DraggedInstances::new(&selected, reference, &item.label);
@@ -69,7 +79,7 @@ impl Shell {
                             index,
                             reference,
                             dragged,
-                            row(index, entry, highlighted, icon, tint, cx),
+                            row(index, entry, highlighted, icon, tint, guide),
                         )
                     })
                     .list_style(StyleRefinement::default().flex_grow_1().size_full())
@@ -121,7 +131,7 @@ impl Shell {
             let mut children = Vec::with_capacity(category_rows.len());
             for row in &category_rows {
                 let element = match &row.edit {
-                    None => property_row(row, cx).into_any_element(),
+                    None => property_row(row).into_any_element(),
                     // No persistent entity: a checkbox commits straight
                     // through the same textual path (`shell::Shell::commit_row`)
                     // every other widget uses, via `cx.entity()` since a
@@ -140,12 +150,12 @@ impl Shell {
                                     handle
                                         .update(cx, |shell, cx| shell.commit_row(&name, text, cx));
                                 });
-                        property_row_control(row, checkbox, None, cx).into_any_element()
+                        property_row_control(row, checkbox, None).into_any_element()
                     }
                     Some(kind) => {
                         let (widget, error) = self.edit_row(row, kind, window, cx);
-                        let control = render_editor(widget, cx);
-                        property_row_control(row, control, error.as_deref(), cx).into_any_element()
+                        let control = render_editor(widget);
+                        property_row_control(row, control, error.as_deref()).into_any_element()
                     }
                 };
                 children.push(element);

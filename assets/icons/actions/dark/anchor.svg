@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- anchor.svg - action icon kit, dark theme -->
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-  <title>anchor</title>
-  <circle cx="8" cy="3.2" r="1.5" fill="#8A97A6"/>
-  <rect x="7.3" y="4.5" width="1.4" height="9" fill="#8A97A6"/>
-  <path d="M3,9 C3,12.5 5.5,14.5 8,14.5 C10.5,14.5 13,12.5 13,9" fill="none" stroke="#8A97A6" stroke-width="1.6" stroke-linecap="round"/>
-  <rect x="4" y="7.3" width="8" height="1.4" fill="#8A97A6"/>
-</svg>

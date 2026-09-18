@@ -1,242 +1,230 @@
 # UX & Visual Design Guidelines
 
-Rules for anyone (human or agent) touching `rbx_studio`'s look: palette,
-spacing, radius, typography, and the dock/panel layout. Companion to
-[GUIDELINES.md](GUIDELINES.md) (Rust style) and [SPECS.md](SPECS.md)
-(architecture) — this one is about how the editor should *look and feel*,
-not how its code is organized. `agents/AGENTS.md`'s "Verifying a change"
-section still governs *how* a visual change gets checked (build the binary,
-look at a real screenshot); this file is about what that screenshot should
-show.
+Rules for anyone — human or agent — touching how `rbx_studio` looks.
+Companion to [GUIDELINES.md](GUIDELINES.md) (Rust style) and
+[SPECS.md](SPECS.md) (architecture): this one is about what the editor
+should look and feel like. `agents/AGENTS.md`'s "Verifying a change" section
+still governs *how* a visual change is checked (build the binary, look at a
+real screenshot); this file is about what that screenshot should show.
 
-## 1. Tokens, not literals
+**The one rule everything else follows:** every colour, radius, spacing
+step, elevation, duration and text style comes from
+[`crates/rbx_studio/src/tokens.rs`](crates/rbx_studio/src/tokens.rs). A
+literal `rgb(0x…)` or `px(13.)` in chrome is a bug — it drifts the moment a
+token changes. If no token fits, add one there, named for what it is for.
 
-`rbx_studio` themes through `gpui_kit::component`'s `Theme`
-(`cx.theme()...`), configured at startup by `install_theme` in
-`crates/rbx_studio/src/main.rs` from
-[`assets/themes/dark-soft.json`](assets/themes/dark-soft.json) — a
-`ThemeSet`/`ThemeConfig` JSON file in the toolkit's own format (any key left
-out falls back to the toolkit's stock dark theme, so the file only needs to
-list what this editor actually overrides).
+## 1. Where the design comes from
 
-- **Reach for an existing `cx.theme()` field before writing a hex literal.**
-  `background`, `border`, `sidebar.*`, `tab.*`, `muted.*`, `accent.*`,
-  `selection`/`list.active.*`, `ring`, `popover.*` are all set in
-  `dark-soft.json` and read automatically by every stock `gpui_kit`
-  component (`ListItem`, `Button`, `Input`, `DockArea`, tabs, scrollbars,
-  resize handles). Changing the palette almost always means editing that one
-  JSON file, not chasing call sites.
-- **A raw `rgb(0x...)`/`rgba(0x...)` literal in panel/dock/toolbar chrome is
-  a bug**, not a style choice — it silently drifts from the theme the next
-  time the palette changes. The one deliberate exception is
-  `workspace_view.rs`'s viewport HUD (status chip, drag readout, the
-  orientation cube) — see §6.
-- Custom-drawn chrome that can't go through a stock component (e.g. a tagged
-  Explorer row's own hover/selected paint in `shell/rows.rs::tagged_row`)
-  should still pull *individual* values from `cx.theme()` (radius, the
-  row's own tag colour) rather than inventing new constants.
+The discipline is borrowed from [Vercel's Geist design
+system](https://vercel.com/geist/introduction): a fixed radius scale, a
+base-4 spacing scale, and "shadow-as-border" elevation — a 1px ring drawn
+*as a shadow* plus a soft blur layer, instead of a hard `border` that takes
+up layout space and can shift what it outlines.
 
-## 2. Palette
+What is deliberately **not** borrowed is Geist's light, monochrome,
+tight-and-flat look. This editor diverges on purpose: a dark desaturated
+palette, rounder radii, softer and blurrier shadows, and elastic rather than
+minimal motion. Borrow Geist's *rigour*, not its appearance.
 
-Dark only (`rbxstudio` hardcodes `ThemeMode::Dark`; there is no light theme
-to keep in sync). The ramp in `dark-soft.json` is deliberately shallow and
-neutral:
+## 2. Tokens
 
-| Token | Value | Role |
+| Group | Tokens | Notes |
 |---|---|---|
-| `background` / `title_bar.background` | `#1a1a1a` | Floor of the ramp — window chrome, menu bar. Never go darker than this. |
-| `sidebar.background` | `#1e1e1e` | Explorer/Properties panel body. |
-| `tab_bar.background` | `#202020` | Inactive tab strip. |
-| `popover.background` | `#242424` | Menus, dropdowns — one step "raised" above the panel it opens from. |
-| `muted.background` | `#262626` | Hover/secondary surface. |
-| `border` / `sidebar.border` | `#2b2b2b` | Seams — see §3, deliberately low-contrast. |
-| `foreground` | `#e8e8e6` | Primary text. Never go lighter than roughly `#f0f0f0`. |
-| `muted.foreground` | `#9c9c9a` | Secondary text/labels (Property names, tab labels). |
-| `ring` / `selection.background` / `list.active.*` | `#4d8dff` / `#3b82f6` | The one saturated hue — see §4. |
+| Surfaces | `bg_0` `#16171A` → `bg_3` `#2A2B33`, `bg_viewport` `#101114` | shell → panel → hover → pressed. The viewport is darker than any panel, so the render reads as a window cut into the shell |
+| Borders | `border_soft` (white 6%), `border_mid` (10%) | soft = decorative seam, mid = functional edge. See §4 |
+| Text | `text_primary` `text_secondary` `text_disabled` `text_error` | |
+| Accent | `accent` `#6C8CFF`, `accent_soft_bg`, `accent_soft_bg_hover` | the only saturated hue in the editor |
+| Radius | `RADIUS_XS` 4 · `SM` 8 · `MD` 12 · `LG` 16 · `PILL` | xs chips, sm buttons/inputs/menu items, md ribbon groups/popovers, lg panels/menu containers, pill = the committed tab |
+| Spacing | `SPACE_1` 4 → `SPACE_4` 16 | base-4. Need more? Double, and add the token |
+| Elevation | `elevation_1` ribbon · `elevation_2` menus/popovers · `elevation_3(Cast)` dock panels | `Cast` points the blur *away* from the viewport: the left column throws right, the right column throws left, a bottom dock throws up |
+| Motion | `DURATION_MENU`, `easing_soft` | one-shot entrances only — see §9 |
+| Type | `UI_LABEL_*`, `SECTION_HEADER_*`, `TREE_ROW_*`, `INPUT_VALUE_*` | `SECTION_HEADER` is uppercased at the call site; GPUI has no `text-transform` |
 
-If a redesign needs a darker/lighter floor or ceiling, change these two rows
-together (`background` and `foreground`) and re-check every contrast pair in
-§3 — don't nudge one without the other.
+Tokens with nothing to bind to were **left out rather than parked as
+decoration** — no modal elevation until there's a modal, no press-curve
+until GPUI can transform an element. Re-adding one means implementing what
+it's for.
 
-## 3. Contrast: two different bars for two different jobs
+## 3. Structure: Rows A–D
 
-Text and *functional* UI elements are held to WCAG 2.1 AA
-([nngroup.com/articles/ten-usability-heuristics](https://www.nngroup.com/articles/ten-usability-heuristics/),
-[w3.org/WAI/WCAG21/Understanding/contrast-minimum](https://www.w3.org/WAI/WCAG21/Understanding/contrast-minimum.html)):
+```
+Shell (v_flex)
+├─ MenuBar              h 32   bg-0            File / Edit / Model / View
+├─ ROW A  DocumentTabs  h 40   bg-0            + the open document's own controls, right-aligned
+├─ ROW B  RibbonTabs    h 36   bg-0            Home | Model | Test
+├─ ROW C  Ribbon        h 88   bg-1  elev-1    groups for Row B's active tab
+├─ ROW D  Workspace     flex-1
+│   ├─ Properties   w 280 (200–420)  radius-lg top  elev-3 cast right
+│   ├─ ⇔ handle     4px hit / 1px rest / 2px hover, col-resize
+│   ├─ Centre       flex-1: document (bg-viewport) over Output
+│   │   └─ Output   h 160 (80–400) or 32 collapsed, radius-md top, elev-3 cast up
+│   ├─ ⇔ handle
+│   └─ Explorer     w 260 (200–420)  radius-lg top  elev-3 cast left
+└─ CommandBar           h 32   bg-0
+```
 
-- **Text**: ≥ 4.5:1 against its background (≥ 3:1 for large/bold text).
-  Every text/background pair in the palette above clears 5.2:1 or better —
-  keep it that way when editing colours.
-- **Functional non-text elements** — input borders, the focus `ring`,
-  button outlines, anything a user has to *locate* to interact with — need
-  ≥ 3:1 against their surroundings
-  ([w3.org/WAI/WCAG21/Understanding/non-text-contrast](https://www.w3.org/WAI/WCAG21/Understanding/non-text-contrast.html)).
-  `ring` (`#4d8dff` on `#1e1e1e`) sits at 5.2:1 — don't soften it to match
-  the decorative seams below.
+**The independence rule.** Explorer, Properties and Output are built once in
+`Shell::new` and rendered unconditionally as Row D children. Row A swaps
+*only* the centre column's contents; Row B swaps *only* Row C's groups.
+Neither can unmount a panel, so scroll positions and selections have nowhere
+to get lost. Keep it that way: if a panel ever becomes conditional on a tab,
+that rule is broken and the bug it causes (a reset scroll, a lost selection)
+will look like a mystery rather than a layout change.
 
-**Decorative panel/row seams are a deliberate exception, not an oversight.**
-`border`/`sidebar.border` (`#2b2b2b`) against `sidebar.background`
-(`#1e1e1e`) is ~1.2:1 — intentionally close to invisible. This is the
-"hard 1px border → soft luminance-step" softening a real IDE dark theme
-wants (VS Code, JetBrains, Zed all do this for panel-to-panel and row
-dividers); it does not need to, and should not, meet the 3:1 non-text bar,
-because it isn't identifying an interactive control — it's just telling two
-static regions apart. **Don't "fix" this contrast as an accessibility bug**
-without checking which of the two categories above it actually falls into
-first.
+**Row D is hand-rolled, not a `DockArea`.** It was one until this pass;
+fixed columns with their own min/max, per-corner radii, directional
+elevation and 4px handles can't be expressed through the toolkit's dock, so
+that dependency went away — and with it, dragging panels to rearrange them
+and the persisted dock layout. Re-adding rearrangeable docks is a real
+feature to spec, not a refactor to sneak in.
 
-## 4. Accent discipline
+## 4. Contrast: two bars, two jobs
 
-One saturated hue exists in the whole theme (`#3b82f6`/`#4d8dff`, a
-moderate blue), reserved for: the selection highlight
-(`selection.background`, `list.active.*`), the focus `ring`, and — if a
-future change adds one — an active-tab indicator. `accent.background` itself
-is intentionally *neutral* (`#2a2a2a`, a plain hover shade), not the
-saturated blue — don't repoint it at the accent hue, that's exactly the
-"saturated colour used everywhere" problem this theme exists to fix.
-Everything else (icons, secondary buttons, borders) stays desaturated grey.
-The 3D viewport's own selection outline (yellow, `rbx_viewer`) is a
-separate, Studio-parity colour and out of scope here — see §6.
+Text and *functional* elements meet WCAG 2.1 AA; decorative seams
+deliberately don't, and that's not a bug.
 
-Semantic colours (`danger`, `warning`, `info`, `success` — property-edit
-error text, validation states) inherit the toolkit's stock values via
-`dark-soft.json`'s fallback (§1) rather than being redefined; don't add a
-project-specific danger/warning red without a reason `cx.theme().danger`
-can't already cover.
+Measured on the shipped tokens (`tokens::tests` asserts these, so they can't
+silently regress):
 
-## 5. Spacing, radius, density
+| Pair | Ratio | Bar |
+|---|---|---|
+| `text_primary` on bg-0/1/2/3 | 14.65 / 13.76 / 12.79 / 11.50 | AA text (4.5) ✓ |
+| `text_secondary` on bg-0/1/2/3 | 6.40 / 6.02 / 5.59 / 5.03 | AA text ✓ (floor is 3.0 for UI text) |
+| `accent` on `accent_soft_bg` over bg-0 / bg-1 | 4.96 / 4.62 | AA text ✓ — the active-tab label case |
+| `text_error` on bg-1 | 6.07 | AA text ✓ |
+| `text_disabled` on bg-1 | 2.46 | exempt: WCAG excludes disabled controls |
+| `border_mid` seam on bg-1 | 1.35 | decorative — see below |
 
-`gpui_kit`'s spacing/radius helpers (`.px_2()`, `.py_1p5()`, `.gap_1()`,
-`.rounded(cx.theme().radius)`, ...) follow a fixed Tailwind-style scale —
-there is no separate "density" theme knob these custom-drawn widgets read
-(`SpacingTokens`/`RadiusTokens` exist in the toolkit's Base layer but only
-stock components consume them automatically). Practical rules:
+A panel seam or a row divider is **not** a "user interface component" under
+WCAG 1.4.11 — it separates two static regions, and every serious dark IDE
+draws it this quiet. An *input's* boundary is a different question: it's
+identified by its `bg_3` fill against the panel (1.20:1), its `border_mid`
+outline (1.35:1), and the accent border at focus (5.48:1) stacked together,
+not by any one of them. **Don't "fix" the seam contrast**; do keep the fill
+step and the focus accent, which is what actually carries identification.
 
-- **Grow padding by moving to the next scale step**, not by hand-picking a
-  pixel value — `py_1()` → `py_1p5()` (4px → 6px, +50%) rather than
-  `.py(px(5.))`. A discrete +50-100% step reads as "less dense" without
-  inventing a number nothing else in the file uses.
-- **Toolbar buttons and list/tree rows (Explorer, Properties)** are the
-  bullet this padding pass targets — see `shell/rows.rs`
-  (`row`/`property_row`/`property_row_control`/`tagged_row`) and
-  `shell/toolbar.rs`. Other panels (Style Editor, Output) weren't touched by
-  that pass; match their existing density unless a specific task calls for
-  changing them too.
-- **Radius**: `cx.theme().radius` (5px) is the standard for general
-  elements — buttons, list rows, tagged-row selection outlines.
-  `cx.theme().radius_lg` (8px, the toolkit default, left unset in
-  `dark-soft.json`) is for large surfaces — dialogs, notifications, popovers
-  a whole panel's worth of chrome. Don't hand-write a radius literal; both
-  are theme fields for a reason (a future theme/pack swap should be able to
-  change them without a code edit).
+## 5. Icons: two kits, no overlap
 
-## 6. What this theme does *not* cover
+- **[`ui_icons`](crates/rbx_studio/src/ui_icons.rs)** (`assets/icons/ui/`) —
+  *affordances*: tools, commands, menu entries, chevrons. 24x24 canvas,
+  outline, `fill="none"`, `stroke="currentColor"`, round caps and joins.
+  They must be `currentColor` line art because every state matrix below
+  re-tints them; a colour baked into the file would survive hover, disabled
+  and active alike.
+- **[`class_icons`](crates/rbx_studio/src/class_icons.rs)**
+  (`assets/icons/default/`) — *identity*: what a `Part`, `Folder` or
+  `Script` is. Flat, multi-colour, never re-tinted, because the colour *is*
+  the identity. Explorer rows only.
 
-Two areas are a **different, deliberately distinct visual language** from
-dockable panel chrome — don't reflexively pull them onto the panel palette:
+A ribbon tile that inserts a `Part` uses the **UI** kit: the tile is an
+affordance that happens to insert a Part, and it has to go grey when
+disabled — which a class icon can't do.
 
-- **The 3D viewport's own HUD** (`workspace_view.rs`: the quality/speed
-  corner chip, the drag readout, the axis-orientation cube). These paint
-  directly over an arbitrary, unpredictable 3D scene rather than a flat
-  panel background, so they use their own semi-transparent dark chips
-  (already documented in that file) instead of `cx.theme()` panel tokens —
-  a panel-coloured chip can disappear against a same-toned part of the
-  scene behind it in a way a panel never has to worry about.
-- **The 3D selection outline colour** (`rbx_viewer`, yellow) — a
-  Studio-parity choice, unrelated to the 2D editor theme.
+Stroke widths are authored so the rendered stroke lands where it should once
+GPUI scales the asset: `2.0` on the 24-unit canvas renders as 1.5px at the
+kit's dominant 18px size; chevrons use `3.0` to land at 1.25px when drawn at
+10px. Adding an icon means adding the file first — `ui_icons`' tests fail on
+a name with no file, on unparseable SVG, and on any hardcoded colour.
 
-## 7. Dock/panel structure
+## 6. Interaction state matrices
 
-The dock (`shell/dock.rs`) has exactly six sections: Viewport, Explorer,
-Properties, Output, Scripts, Style Editor — three side-by-side columns:
-**Properties** alone on the left, **Viewport tabbed with Scripts and Style
-Editor** in the middle with **Output** docked under that same column (a
-`v_split`, not a fourth tab — Output belongs only under the viewport, like
-real Studio's own Output window, not spanning under Properties/Explorer
-too), **Explorer** alone on the right. This is `dock.rs::build`'s one
-`h_split` of Properties / (Viewport-tabs over Output) / Explorer — chosen to
-match a ribbon-style Studio redesign reference the maintainer supplied.
-**Rearranging which sections tab together, or which side of the split they
-sit on, is fair game for a UX-driven change** — `dock.rs::build` is the one
-function that decides it. **Adding a *new* dock section is a bigger,
-structurally-visible decision** (new persisted layout state, a new
-`Section` variant, a new place for the maintainer to reason about) and
-should go through the roadmap rather than ride along inside a theming pass.
-**Whenever `dock.rs::build` changes, delete `~/.config/rbx-native/
-dock_layout_v3.json` before screenshotting** — the dock persists whatever
-arrangement it last saw, so a stale save silently hides the very change
-you're trying to verify.
+Every interactive element implements the same five-state vocabulary. Reuse
+the existing builders (`chrome::tab`, `chrome::icon_button`, `ribbon::tile`,
+`toolbar::tool_button`, `menu::item`) rather than writing a sixth variant.
 
-**The Viewport/Script Editor/Style Editor tab strip is the first thing
-under the menu bar, full stop** — nothing else renders between them. That's
-why the ribbon (§8) is *not* a `Shell`-level row: `dock.rs`'s own tab strip
-is drawn by the `DockArea` itself, so anything Shell rendered above it would
-push it down. Instead `SectionPanel::render`, for exactly the Viewport/
-Scripts/StyleEditor sections, prepends `shell.ribbon(cx)` to each panel's
-own content — see that function's doc comment. Keep this in mind before
-"simplifying" the ribbon back to a single `Shell`-level row: it would put a
-row between the menu bar and the tab strip again, which is the thing this
-arrangement exists to avoid.
+| State | Treatment |
+|---|---|
+| Default | transparent bg, `text_secondary` |
+| Hover | `bg_2`, `text_primary` |
+| Pressed | `bg_3` |
+| Active/committed | `accent_soft_bg` + `accent` (tabs also switch to `RADIUS_PILL` and semibold) |
+| Disabled | `text_disabled`, `cursor_not_allowed`, no hover/press, not clickable |
+| Focus | `focus_ring(surface)` — a 2px gap of the surface colour, then the accent glow |
 
-## 8. The ribbon
+Two rules worth stating outright:
 
-`shell/ribbon.rs` is a real grouped ribbon (Clipboard, Tools, Insert, File,
-Edit, Test, Viewport Settings, across three category tabs — Home, Model,
-Test, see below), rendered by `dock.rs` as described in §7. Read its module
-doc comment before adding or changing a button; the short version:
+- **Shape carries the committed state, not just colour.** An active tab is a
+  pill; a hovered one is a rounded rectangle. Someone who reads shape faster
+  than tint still sees which tab is open.
+- **Disabled beats absent.** A command Studio has that this editor doesn't
+  yet stays visible and greyed, with a tooltip saying so — the same rule
+  `menu_bar`'s Cut/Copy/Paste already follow. Seeing the shape of what
+  belongs somewhere is worth more than a shorter ribbon.
 
-- **Only wire a button to a real action this editor already has.**
-  Everything else stays `.disabled(true)` with a tooltip saying so
-  (`ribbon::disabled_tile`) — the same rule `menu_bar`'s Cut/Copy/Paste
-  already follow, extended to every group. A disabled tile is not dead
-  weight: it's how a user (or reviewer) sees the *shape* of what real
-  Studio offers here without this editor claiming to have it.
-- **A tile is an icon over a caption**, built from a plain `Button` with
-  custom `.child(...)` content rather than `.icon()`/`.label()` (those two
-  lay out side by side, not stacked — see `ribbon::tile`'s own doc comment).
-  Reuse `ribbon::tile`/`ribbon::disabled_tile`/`ribbon::class_tile` rather
-  than hand-rolling a new tile shape.
-- **No Lucide glyph, anywhere in this module.** This editor's own icon kit
-  (`action_icons`, `assets/icons/actions/{dark,light}` — a sibling to the
-  `ClassName`-keyed kit `class_icons` already has, same rasterizer, same
-  flat two-tone SVG style) covers every ribbon action. A tile that inserts a
-  specific Roblox class (Part/Script/UI) uses that class's own icon instead
-  (`ribbon::class_tile` → `class_icons::icon_tile`) — the same icon the
-  Explorer already shows for it, so Insert and the Explorer agree on what a
-  `Part` looks like. **Adding a new tile means drawing its SVG first**
-  (16x16 canvas, flat two-tone fills, both `dark`/`light` variants — see
-  `assets/icons/README.md`'s design system and the existing action icons
-  for shapes/colours already established), not reaching for `IconName`.
-- **Every group is captioned, and so is the tab bar above it** — Home/
-  Model/Test, real Studio's own pattern for a ribbon too wide to fit one
-  page. Adding a fourth tab (Avatar/UI/Script/Plugins, matching real
-  Studio's further tabs) needs real distinct content to justify it first —
-  see the module doc comment's reasoning; don't add an empty page for
-  visual completeness alone.
-- **Check a tab's content actually fits the column it renders in** — the
-  ribbon lives inside the Viewport tab's own content area (see §7), which
-  is narrower than the full window (`EXPLORER_WIDTH`/`PROPERTIES_WIDTH` on
-  either side of it), not the full-window row an earlier pass had. A tab
-  page that needs `overflow_x_scrollbar()` to be fully seen in an ordinary
-  window is a sign that page is carrying too many groups — split it further
-  rather than leaning on the scrollbar as the primary way to see it.
-- **This project's own additions (the graphics-quality dropdown) don't go
-  in the ribbon** — it stays in the Viewport tab's own title row
-  (`ComponentPanel::title_suffix` in `dock.rs`), since it isn't a Studio
-  ribbon feature and doesn't belong under a Studio-named group.
+## 7. The ribbon
 
-## 9. Verifying a visual change
+Read [`shell/ribbon.rs`](crates/rbx_studio/src/shell/ribbon.rs)'s module doc
+before changing a button. In short:
 
-No shortcut around `agents/AGENTS.md`'s existing rule: build the real
-`rbxstudio` binary and look at a screenshot, for every change this file
-covers. A few things specific to this kind of change:
+- **Two button shapes, deliberately.** Tools are 32x32 icon buttons packed
+  tight — modes you flip between constantly and know by shape, where a label
+  would be noise. Everything else is a 56x64 tile (icon over label) — the
+  word is what you scan for on a command you reach for occasionally.
+- **Three pages** (Home / Model / Test), because seven groups don't fit the
+  centre column at an ordinary width. A real ribbon pages; it doesn't shrink
+  until nothing is legible. **If a page needs a scrollbar to be fully seen,
+  it's carrying too many groups — split it.** Real Studio's further tabs
+  (Avatar/UI/Script/Plugins) aren't built: there's no distinct content for
+  them, and an empty page is worse than an absent one.
+- **This project's own additions don't go in the ribbon.** The graphics
+  quality dropdown lives beside the document tabs, because it belongs to the
+  open document, not under a Studio-named group.
 
-- **Check a tagged Explorer row, not just a plain one** — `shell/rows.rs`'s
-  tagged-folder path paints its own hover/selected chrome independently of
-  `ListItem`, so a theme change can silently miss it (see §1's last bullet).
-- **Check hover and selected state, not just the resting screenshot** — most
-  of what changes (accent, seam contrast) only shows up in an interactive
-  state.
+## 8. Menus and popovers
+
+[`shell/menu.rs`](crates/rbx_studio/src/shell/menu.rs) owns the dropdown:
+container `RADIUS_LG` against item `RADIUS_SM` so items visibly float
+inside, 8px padding, 32px rows, 2px between them, `elevation_2`.
+
+Menus are **controlled** — which one is open lives on `Shell::open_menu`,
+not inside the popover. That's what lets an item close its own menu, and
+guarantees two can't be open at once. The toolkit's `Popover` is still doing
+the hard parts underneath: anchoring, outside-click dismissal, layering.
+
+## 9. Motion
+
+GPUI has **no property transitions** and **no element transform**. Hover and
+press states therefore change instantly, and there is no `scale()` press
+feedback anywhere — `bg_3` does that job. What *is* available is one-shot
+`with_animation`, which takes a custom easing curve: menus and popovers fade
+in over `DURATION_MENU` on `easing_soft` with a 4px settle.
+
+Don't try to fake transitions with per-frame state. An instant hover is
+honest; a hand-rolled 220ms colour lerp driven by notifications is a
+performance bug waiting to happen next to a viewport rendering at 75fps.
+
+## 10. Known deviations from the design spec
+
+Every one of these is a GPUI or toolkit limit, not a shortcut:
+
+| Spec | What shipped | Why |
+|---|---|---|
+| `scale(0.98)` press feedback | `bg_3` pressed background | GPUI's style system has no transform |
+| 120/220ms hover & colour transitions | instant state changes | no property transitions in GPUI |
+| `:focus-visible` (keyboard only) | focus ring on any focus | GPUI's focus doesn't distinguish input source |
+| Focus ring on *every* interactive element | Row A/B tabs, ribbon tiles, tool buttons, panel icon buttons, and every toolkit control (theme `ring`) | menu rows and tree rows have no focus handle — keyboard nav inside a menu is the toolkit's job and this menu is hand-built |
+| Keyboard arrow-nav within menus | not implemented | chose §5.4/5.5's exact geometry over the stock `PopupMenu` that has nav; the trade is recorded here rather than hidden |
+| Tooltip 4px triangle pointer, 500ms delay | toolkit tooltip (no pointer, toolkit's own delay) | hover timing, flipping and layering are already solved there; a hand-rolled overlay would re-solve them worse |
+| Letter-spacing (0.04em on section headers) | uppercase only | GPUI has no letter-spacing |
+| Inter / JetBrains Mono | used **if installed**; else the platform UI font | the theme takes one family name, not a CSS stack, so `install_fonts` checks what the text system actually has. Neither is installed on the dev machine — it renders in Noto Sans |
+| Disabled items at 40% opacity | `text_disabled` at full opacity | `text_disabled` is already the dim end of the ramp; 40% on top lands at 1.3:1, which is invisible rather than unavailable |
+| §1.3 unsaved-document dot | not implemented | the editor has no dirty-state tracking to bind it to |
+| §5.1 spinner geometry (16px, hover-revealed) | toolkit `NumberInput`'s own spinners | close, but component-owned |
+| §5.5 100ms selection flash | flash lasts the press | tying it to the press means it can't outlive the menu it confirms |
+| §3.2 guides as one absolute overlay | drawn per row | the tree is virtualised; rows are the only thing that exists to hang a line on |
+
+## 11. Verifying a visual change
+
+`agents/AGENTS.md`'s rule stands: build `rbxstudio`, look at a screenshot.
+Specifics for this kind of change:
+
+- **Screenshot every state in the matrix you touched**, not just the resting
+  one — hover, pressed, active and disabled are where the work is.
+- **Drive the app for real.** Menus, popovers, resize handles and the Output
+  collapse can't be checked from a resting screenshot; synthesise the
+  clicks (X11 `XTest` works — see the project's own screenshot recipe).
 - **A before/after pair beats a single screenshot** for anything touching
-  the palette — it's the only way a reviewer can tell "softer" from "just
-  different."
+  the palette. It's the only way a reviewer can tell "softer" from "just
+  different".
+- **Run the token tests** (`cargo test -p rbx_studio tokens::`) after
+  touching a colour: contrast is asserted, not eyeballed.

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- corner-wedge.svg - UI icon kit: outline, currentColor, 24x24 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+     fill="none" stroke="currentColor" stroke-width="2.0"
+     stroke-linecap="round" stroke-linejoin="round">
+  <title>corner-wedge</title>
+  <path d="M4 19.5 H20 L4 6.5 Z"/><path d="M4 19.5 L8 16.5 L20 19.5"/>
+</svg>

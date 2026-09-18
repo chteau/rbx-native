@@ -1234,46 +1234,41 @@ against `Roblox/creator-docs` rather than assumed:
     screenshot of one representative panel (the Explorer, or a popup like
     Store/Upgrades) for review before it rolls out app-wide.
 
-  Shipped: the deliverable itself (`assets/themes/dark-soft.json`, a
-  `ThemeSet`/`ThemeConfig` JSON the toolkit's own theming already knows how
-  to load — see `crates/rbx_studio/src/main.rs::install_theme`), the
-  palette (`#1a1a1a`/`#e8e8e6` floor/ceiling), panel separation via a
-  low-luminance-step `border` token rather than a redrawn shadow, 5px radius
-  on buttons/rows/panels, +30-50% padding on toolbar buttons and Explorer/
-  Properties rows, and accent colour reserved to the selection highlight/
-  focus ring. Dock/panel structure now matches a maintainer-supplied
-  ribbon-style reference: **Properties** alone on the left, **Output**
-  docked under the Viewport/Script Editor/Style Editor tab strip (that tab
-  strip is the first thing under the menu bar — see below), **Explorer**
-  alone on the right. A real grouped ribbon (`shell/ribbon.rs`: Clipboard,
-  Tools, Insert, File, Edit, Test, Viewport Settings, paged across three
-  category tabs — Home, Model, Test, each sized to fit an ordinary window
-  without a scrollbar) replaces the old plain-text toolbar row, rendered as
-  the first thing *inside* the Viewport/Script Editor/Style Editor tab
-  content so the tab strip itself stays directly under the menu bar with
-  nothing in between. Select/Move/Scale/Rotate and every other button this
-  editor already has a real handler for (Group/Ungroup, Insert Part/Script/
-  UI) are live tiles; everything Studio's own ribbon has that this editor
-  doesn't yet (Cut/Copy/Paste/Duplicate, Play/Run/Resume/Stop/Team/Exit,
-  Material/Color/Lock/Anchor, Toolbox, Import, Game Settings/Device/Show UI)
-  stays a visibly disabled tile with a tooltip saying so, the same rule
-  `menu_bar`'s own disabled items already follow. Every ribbon icon —
-  including Select/Move/Scale/Rotate/Copy/Cut/Paste and the rest of the
-  generic-action tiles — is this project's own hand-authored SVG
-  (`action_icons`, `assets/icons/actions/`), not a Lucide glyph; a tile that
-  inserts a Roblox class (Part/Script/UI) uses that class's own icon from
-  the existing `class_icons` kit instead. See `UX_GUIDELINES.md` §§7-8 for
-  the exact arrangement and the tile/icon conventions. **Still open**: an
-  active-tab indicator and bold section-header text — today's dock tab
-  titles are deliberately small/muted rather than bold, a considered choice
-  from earlier work (see `shell/dock.rs::title_style`'s own comment) this
-  PR didn't reverse without checking with the maintainer first; also, this
-  ships one built-in theme, not yet the user-installable side-by-side theme
-  packs the item above this one still lists as open, and the ribbon's own
-  Home/Model/Test tabs don't attempt real Studio's further Avatar/UI/
-  Script/Plugins tabs — no distinct content for them yet (see
-  `shell/ribbon.rs`'s own doc comment for why that's a deliberate scope
-  cut, not an oversight).
+  Shipped: a real design-token module
+  (`crates/rbx_studio/src/tokens.rs`) every piece of chrome reads from —
+  colours, radii, a base-4 spacing scale, layered "shadow-as-border"
+  elevations, easing curves and text styles — with the palette also
+  expressed as a `ThemeSet`/`ThemeConfig` JSON
+  (`assets/themes/dark-soft.json`) so the toolkit's own widgets follow it
+  without a rebuild. Borrowed from Vercel's Geist design system:
+  its token discipline and shadow-as-border elevation, explicitly not its
+  light, flat aesthetic. Contrast is asserted in tests rather than
+  eyeballed (primary text 11.5-14.7:1, secondary 5.0-6.4:1, the accent
+  active-tab case 4.6:1 — all clearing WCAG AA).
+
+  The shell was rebuilt around that: **Row A** document tabs (Viewport /
+  Script Editor / Style Editor) directly under the menu bar, **Row B** the
+  ribbon's own category tabs, **Row C** the ribbon, **Row D** a
+  three-column workspace — Properties left, the open document over Output
+  in the middle, Explorer right — with hand-rolled resize handles, a
+  collapsible Output dock, and per-panel corner radii and directional
+  elevation shadows. The Explorer grew hierarchy guide lines. The ribbon's
+  menus (Insert Part/Script/GUI) are hand-built to the spec's geometry.
+  Every icon in that chrome is this project's own 24px outline
+  `currentColor` kit (`assets/icons/ui/`, `ui_icons`), which is what lets
+  a tool tint itself per state; the multi-colour `class_icons` kit stays
+  where identity matters, in the Explorer.
+
+  **Still open**: `gpui` has no property transitions and no element
+  transform, so hover/press changes are instant and press feedback is a
+  background change rather than a scale; keyboard arrow-navigation inside
+  the hand-built menus, and focus rings on menu/tree rows, aren't wired;
+  and the dock's drag-to-rearrange and persisted layout went away with the
+  `DockArea` the fixed shell replaced — re-adding rearrangeable docks is
+  its own feature, not a refactor. `UX_GUIDELINES.md` §10 lists every
+  deviation with its reason. This also still ships one built-in theme
+  rather than the user-installable theme packs the item above this one
+  lists as open.
 
 ### Play / Test workflow
 - [ ] 📋 The sandbox-place design (private per-developer place, injected

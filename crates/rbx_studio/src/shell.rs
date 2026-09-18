@@ -4,15 +4,15 @@
 //! dragged to another edge or stacked as tabs.
 
 mod align;
+mod chrome;
 mod command;
-mod dock;
-mod dock_layout;
 mod drag;
 mod edit;
 mod folder_color;
 mod group;
 mod history;
 mod keys;
+mod menu;
 mod output;
 mod panels;
 mod quality;
@@ -26,17 +26,18 @@ mod scroll;
 mod selection;
 mod style_panel;
 mod toolbar;
+mod tooltip;
+mod workspace;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use gpui_kit::component::dock::DockArea;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::menu::AppMenuBar;
 use gpui_kit::component::select::{SearchableVec, Select, SelectEvent, SelectState};
 use gpui_kit::component::tree::TreeState;
-use gpui_kit::component::{h_flex, v_flex, ActiveTheme, IndexPath, Sizable};
+use gpui_kit::component::{h_flex, v_flex, IndexPath, Sizable};
 use gpui_kit::*;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
@@ -54,16 +55,16 @@ use crate::properties::Properties;
 use crate::save::Format;
 use crate::script_editor::ScriptEditor;
 use crate::settings::Settings;
+use crate::tokens;
 use crate::transform::{Targets, Transform};
 use crate::workspace_view::{AssetWarnings, Opened, PoseSynced, ViewportAction, WorkspaceView};
 use crate::Place;
+use chrome::{Document, Drag};
+use menu::MenuId;
 use quality::{quality_labels, quality_row};
 use selection::{outlined, Selection};
 use toolbar::snap::SnapFields;
 
-const EXPLORER_WIDTH: f32 = 320.0;
-const PROPERTIES_WIDTH: f32 = 320.0;
-const OUTPUT_HEIGHT: f32 = 180.0;
 const QUALITY_WIDTH: f32 = 104.0;
 
 /// The graphics quality dropdown's list: plain labels, since the mode a label
@@ -136,7 +137,6 @@ pub(crate) struct Shell {
     /// `shell::style_panel`.
     style_edits: style_panel::StyleEdits,
     style_scroll: ScrollHandle,
-    dock_area: Entity<DockArea>,
     quality: Entity<SelectState<QualityOptions>>,
     /// The canonical, mutable tree a Command Bar script runs against; see
     /// `Place::dom`.
@@ -176,8 +176,24 @@ pub(crate) struct Shell {
     /// back on Home too, and there's nothing here worth writing to
     /// `settings` over.
     ribbon_tab: ribbon::Tab,
+    /// Which editor the centre column shows (Row A). Switching it swaps
+    /// *only* that column's contents — see `shell::workspace`.
+    document: Document,
+    /// Which dropdown is open, if any. Held here rather than inside each
+    /// popover so that opening one closes the last, and so a menu item can
+    /// close the menu it was clicked in (see `shell::menu`).
+    open_menu: Option<MenuId>,
+    /// The three column/dock sizes the user can drag, and the drag in
+    /// progress if there is one. Session-only, like the rest of the
+    /// layout: the dock layout used to be persisted, and restoring a saved
+    /// one is a feature to redo deliberately rather than inherit.
+    properties_width: f32,
+    explorer_width: f32,
+    output_height: f32,
+    output_collapsed: bool,
+    drag: Option<Drag>,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
-    _subscriptions: [Subscription; 10],
+    _subscriptions: [Subscription; 11],
 }
 
 impl Shell {
@@ -243,11 +259,6 @@ impl Shell {
             }
         });
 
-        // The dock area's panels render by calling back into `Shell` (see
-        // `shell::dock`), so it needs this entity's own handle before the
-        // struct exists — valid as soon as `cx.new` starts building it.
-        let dock_area = dock::build(cx.entity(), window, cx);
-
         let initial_outline = outlined(&dom, &database, &Vec::from_iter(selected));
         let viewport = cx.new(|cx| {
             let opened = Opened {
@@ -286,22 +297,13 @@ impl Shell {
         });
 
         // Built last of Shell::new's entities: its `Action` handlers close
-        // over `cx.entity()`, so `Shell` must already be constructible (valid
-        // as soon as `cx.new` starts building it, same as `dock_area` above).
+        // over `cx.entity()`, so `Shell` must already be constructible —
+        // valid as soon as `cx.new` starts building it.
         let menu_bar = crate::menu_bar::build(cx.entity(), cx);
 
-        // Subscribe to dock layout changes so they're saved immediately, not just
-        // when other settings are toggled. This is the actual trigger for the
-        // dock-persistence feature to work when users rearrange panels.
-        let dock_layout_changed = cx.subscribe(&dock_area, |shell, _, event, cx| {
-            use gpui_kit::component::dock::DockEvent;
-            if matches!(event, DockEvent::LayoutChanged) {
-                shell.save_settings(cx);
-            }
-        });
-
         let transform = Transform::default();
-        let (snap_fields, [translate_typed, rotate_typed]) = SnapFields::new(transform, window, cx);
+        let (snap_fields, [translate_typed, rotate_typed, translate_stepped, rotate_stepped]) =
+            SnapFields::new(transform, window, cx);
 
         let initial_targets = Targets::read(&dom, &database, &Vec::from_iter(selected));
         let mut shell = Shell {
@@ -328,7 +330,6 @@ impl Shell {
             properties_scroll: ScrollHandle::new(),
             style_edits: style_panel::StyleEdits::default(),
             style_scroll: ScrollHandle::new(),
-            dock_area,
             quality: selector,
             dom,
             history: History::new(DEFAULT_CAP),
@@ -345,6 +346,13 @@ impl Shell {
             snap_fields,
             align: AlignOptions::default(),
             ribbon_tab: ribbon::Tab::default(),
+            document: Document::default(),
+            open_menu: None,
+            properties_width: workspace::PROPERTIES_WIDTH,
+            explorer_width: workspace::EXPLORER_WIDTH,
+            output_height: workspace::OUTPUT_HEIGHT,
+            output_collapsed: false,
+            drag: None,
             _subscriptions: [
                 picked,
                 clicked,
@@ -355,7 +363,8 @@ impl Shell {
                 asset_warnings,
                 translate_typed,
                 rotate_typed,
-                dock_layout_changed,
+                translate_stepped,
+                rotate_stepped,
             ],
         };
 
@@ -367,18 +376,6 @@ impl Shell {
             .viewport
             .update(cx, |viewport, _| viewport.set_targets(initial_targets));
         shell.sync_snap_neighbours(cx);
-
-        // Register panel types so the dock can restore them from saved state.
-        // The panel names must match those in shell::dock::Section::name().
-        dock::register_panels(shell.dock_area.clone(), cx.entity(), cx);
-
-        // Restore the saved dock layout if one exists, falling back to the default
-        // if loading fails or the file doesn't exist.
-        if let Some(layout) = dock_layout::load() {
-            let _ = shell
-                .dock_area
-                .update(cx, |area, cx| area.load(layout, window, cx));
-        }
 
         // `RBX_STUDIO_TOOL` (see `shell::toolbar`). Before the Command Bar
         // block below rather than after it: a script's reload rebuilds the
@@ -457,7 +454,7 @@ impl Shell {
         // `RBX_STUDIO_STYLE_EDITOR` (see `shell::style_panel`): after the
         // selection blocks above, so the edit it may carry lands on whatever
         // `StyleRule` they selected.
-        shell.apply_debug_style_editor(window, cx);
+        shell.apply_debug_style_editor(cx);
 
         // `RBX_STUDIO_SAVE_AS` (see `shell::save`): applied last of all, so a
         // script can prove Ctrl+S round-trips whatever every block above just
@@ -562,7 +559,7 @@ impl Shell {
         self.viewport
             .update(cx, |viewport, cx| viewport.set_quality(mode, cx));
         self.quality_choice = mode;
-        self.save_settings(cx);
+        self.save_settings();
     }
 
     /// Whether the Explorer lists every root, for the dock's Explorer menu
@@ -592,7 +589,7 @@ impl Shell {
             tree.set_selected_item(selected.as_ref(), cx);
         });
         cx.notify();
-        self.save_settings(cx);
+        self.save_settings();
     }
 
     /// Whether the viewport's main camera is orthographic, for the dock's
@@ -612,7 +609,7 @@ impl Shell {
         self.viewport.update(cx, |viewport, cx| {
             viewport.set_orthographic(orthographic, cx)
         });
-        self.save_settings(cx);
+        self.save_settings();
     }
 
     /// Whether the viewport's orientation indicator draws, for the dock's
@@ -632,7 +629,7 @@ impl Shell {
         self.axis_indicator = shown;
         self.viewport
             .update(cx, |viewport, cx| viewport.set_axis_indicator(shown, cx));
-        self.save_settings(cx);
+        self.save_settings();
     }
 
     /// Which icon pack the Explorer draws, for the dock's Explorer menu item
@@ -655,7 +652,7 @@ impl Shell {
                 .set_icon_pack(pack, &self.folder_colors, &self.path),
         );
         cx.notify();
-        self.save_settings(cx);
+        self.save_settings();
     }
 
     /// Whether the viewport's corner label shows its frame-rate readout, for
@@ -694,7 +691,7 @@ impl Shell {
         self.unfocused_fps = unfocused_fps;
         self.viewport
             .update(cx, |viewport, _| viewport.set_unfocused_fps(unfocused_fps));
-        self.save_settings(cx);
+        self.save_settings();
     }
 
     /// Writes the current quality pick, Explorer visibility, projection mode,
@@ -704,7 +701,7 @@ impl Shell {
     /// debouncing; a write failure (e.g. no writable config directory) is
     /// not fatal and is silently dropped — losing a preference write is
     /// better than interrupting the editor over it.
-    fn save_settings(&self, cx: &App) {
+    fn save_settings(&self) {
         let settings = Settings {
             quality: self.quality_choice,
             show_all_services: self.show_all_services,
@@ -716,16 +713,10 @@ impl Shell {
         let _ = settings.save();
 
         // Save the current dock layout state
-        let layout = self.dock_area.read(cx).dump(cx);
-        dock_layout::save(&layout);
     }
 
     /// The place file's name, shown as the dock's own Viewport tab title
     /// (see `shell::dock`) now that the viewport no longer draws a fake one.
-    pub(super) fn title(&self) -> SharedString {
-        self.title.clone()
-    }
-
     /// The graphics-quality dropdown, relocated from the viewport's old fake
     /// tab bar into the dock's real Viewport title bar via `Panel::title_suffix`
     /// (see `shell::dock`) — the natural surviving home for a per-view control
@@ -739,12 +730,11 @@ impl Shell {
         )
     }
 
-    fn viewport(&self, cx: &App) -> impl IntoElement {
-        div()
-            .size_full()
-            .border_t_1()
-            .border_color(cx.theme().border)
-            .child(self.viewport.clone())
+    /// The 3D view itself. No border: Row D's panels are told apart from it
+    /// by their own elevation and surface, not by a line (see
+    /// `UX_GUIDELINES.md` §3).
+    pub(super) fn viewport(&self) -> impl IntoElement {
+        div().size_full().child(self.viewport.clone())
     }
 
     fn explorer(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -767,15 +757,20 @@ impl Shell {
 }
 
 impl Render for Shell {
-    /// No ribbon row here — `shell::dock`'s `SectionPanel` renders it
-    /// (`shell::ribbon`) as the first thing inside the Viewport/Script/Style
-    /// tab content, directly under that tab strip, so the tab strip itself
-    /// stays the first thing under the menu bar rather than a ribbon row
-    /// pushing it down. See `UX_GUIDELINES.md` §8 for the layout this
-    /// mirrors.
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    /// The shell, top to bottom: menu bar, document tabs (Row A), the
+    /// ribbon's category tabs (Row B), the ribbon itself (Row C), the
+    /// three-column workspace (Row D), and the Command Bar.
+    ///
+    /// The resize drags are handled here rather than on the handles
+    /// themselves: a pointer moving faster than the frame rate leaves the
+    /// 4px handle between two frames, and a listener that only fires while
+    /// the pointer is still over the handle would drop the drag. This
+    /// container spans the window, so it can't be outrun.
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
             .size_full()
+            .bg(tokens::bg_0())
+            .text_color(tokens::text_primary())
             // Ctrl+S here rather than on one panel (contrast `instance_tree`'s
             // own `on_key_down`): a key event bubbles up from whatever holds
             // focus, and every panel — Explorer, Properties, viewport,
@@ -784,13 +779,22 @@ impl Render for Shell {
             .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
                 shell.handle_shell_key(&event.keystroke, window, cx);
             }))
-            .child(crate::menu_bar::bar(&self.menu_bar, cx))
-            .child(
-                div()
-                    .flex_1()
-                    .overflow_hidden()
-                    .child(self.dock_area.clone()),
+            .on_mouse_move(cx.listener(|shell, event: &MouseMoveEvent, _, cx| {
+                shell.drag_resize(event.position, cx);
+            }))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|shell, _: &MouseUpEvent, _, cx| shell.end_resize(cx)),
             )
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|shell, _: &MouseUpEvent, _, cx| shell.end_resize(cx)),
+            )
+            .child(crate::menu_bar::bar(&self.menu_bar, cx))
+            .child(self.document_tabs(cx))
+            .child(self.ribbon_tabs(cx))
+            .child(self.ribbon(cx))
+            .child(self.workspace(window, cx))
             .child(self.command_bar.render(cx))
     }
 }

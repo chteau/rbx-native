@@ -1,63 +1,57 @@
-//! The ribbon: the row of grouped, labelled icon buttons directly under the
-//! Viewport/Script Editor/Style Editor tab strip (see `shell::dock`'s
-//! `SectionPanel::render`, which is what actually places it there — this
-//! module only builds the element), matching the grouped/captioned layout
-//! of a maintainer-supplied ribbon-style Studio redesign reference (see
-//! `UX_GUIDELINES.md` §8).
+//! **Row C** — the ribbon strip: grouped, captioned commands for whichever
+//! category tab Row B has selected (Row B itself lives in `shell::chrome`,
+//! since it is a tab row like Row A's, not ribbon content).
 //!
-//! Every group mirrors a real Studio Home-ribbon group (Clipboard, Tools,
-//! Insert, File, Edit, Test, Viewport Settings) by name and rough button
-//! set, but only wires a button to a real action when this editor already
-//! has one to call — see `menu_bar`'s own doc comment for the same rule
-//! applied to the dropdown menus. A button with no real action yet stays
-//! visibly `.disabled(true)` with a tooltip saying so, exactly like
-//! `menu_bar`'s Cut/Copy/Paste, rather than a click that silently does
-//! nothing.
+//! Two button shapes, and the difference is deliberate:
 //!
-//! Split across three category [`Tab`]s (Home, Model, Test) rather than one
-//! long scrolling row: seven groups' worth of big tiles don't fit an
-//! ordinary window width at once — and once the ribbon moved to living
-//! inside the (narrower) tab content area instead of spanning the whole
-//! window (see `shell::dock`'s doc comment above), even two tabs still
-//! needed a scrollbar in an ordinary window. A real Studio ribbon solves
-//! this by paging, not by shrinking, so this one pages too: Home carries
-//! Clipboard+Tools (the two groups used constantly), Model carries
-//! Insert+File+Edit (object-editing, used less often), Test carries
-//! Test+Viewport Settings. Real Studio's further tabs (Avatar/UI/Script/
-//! Plugins) aren't built — this editor has no distinct content for them
-//! yet, and an empty tab page is worse than no tab, not better; add one
-//! when a real feature needs it, the same rule `AGENTS.md` asks for
-//! everywhere else.
+//! - **Tools** are 32x32 icon buttons packed tight (§2). They are modes you
+//!   flip between constantly and already know by shape, so a label under
+//!   each one would be noise you read past forever.
+//! - **Everything else** is a 56x64 tile: icon over label (§5.2). These are
+//!   commands you reach for occasionally, where the word is what you're
+//!   actually scanning for.
 //!
-//! Every icon comes from this project's own action icon kit
-//! (`action_icons::action_icon`, `assets/icons/actions/` — sibling to the
-//! `ClassName`-keyed kit in `class_icons`) or, for the three Insert tiles
-//! that literally insert a Roblox class, that class's own icon
-//! (`class_tile`). No Lucide glyph is used anywhere in this module — this
-//! editor's own icon kit is its visual identity, not a generic one shared
-//! with every other app the underlying GUI toolkit renders. Adding a new
-//! tile means adding its SVG to `assets/icons/actions/{dark,light}` first
-//! (16x16 canvas, flat two-tone fills — see `assets/icons/README.md`'s
-//! design system, and the existing files for the shapes it already
-//! defines), not reaching for `IconName`.
+//! A tile is only clickable when this editor has a real handler behind it.
+//! Everything Studio's ribbon offers that this editor doesn't do yet stays
+//! visibly disabled with a tooltip saying so, rather than vanishing —
+//! seeing the shape of what belongs here is worth more than a shorter
+//! ribbon, and it's the same rule `menu_bar`'s greyed items already follow.
+//!
+//! Every icon comes from [`crate::ui_icons`], never from the toolkit's
+//! stock glyph set: the state matrices below re-tint icons per state, which
+//! only works on `currentColor` line art.
 
-use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::scroll::ScrollableElement as _;
-use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Disableable as _, Selectable as _};
+use gpui_kit::component::{h_flex, v_flex};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use crate::action_icons::action_icon;
-use crate::class_icons::{self, IconPack};
+use crate::tokens;
+use crate::ui_icons;
 
+use super::menu::{self, MenuId};
 use super::Shell;
 
-const TILE_SIZE: f32 = 56.0;
-const TILE_ICON_SIZE: f32 = 20.0;
+/// Ribbon height (§4.1 Row C). Enough for a 64px tile plus its group
+/// caption underneath, and no more.
+const RIBBON_HEIGHT: Pixels = px(88.);
+const TILE_WIDTH: Pixels = px(56.);
+const TILE_HEIGHT: Pixels = px(64.);
+const TILE_ICON: Pixels = px(24.);
+/// §2.1: the tool buttons' own, tighter geometry.
+pub(super) const TOOL_BUTTON: Pixels = px(32.);
+pub(super) const TOOL_ICON: Pixels = px(18.);
 
-/// The ribbon's own category tabs — see this module's doc comment for why
-/// there are only these three.
+/// The ribbon's category tabs. Home carries what you touch constantly,
+/// Model what edits objects, Test what runs them — the split exists because
+/// all seven groups at once do not fit the centre column at an ordinary
+/// window width, and paging is how a real ribbon solves that rather than
+/// shrinking everything until it stops being legible.
+///
+/// Real Studio's further tabs (Avatar/UI/Script/Plugins) aren't here: this
+/// editor has no distinct content for them, and an empty page is worse than
+/// an absent one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(super) enum Tab {
+pub(crate) enum Tab {
     #[default]
     Home,
     Model,
@@ -65,9 +59,9 @@ pub(super) enum Tab {
 }
 
 impl Tab {
-    const ALL: [Tab; 3] = [Tab::Home, Tab::Model, Tab::Test];
+    pub(super) const ALL: [Tab; 3] = [Tab::Home, Tab::Model, Tab::Test];
 
-    fn label(self) -> &'static str {
+    pub(super) fn label(self) -> &'static str {
         match self {
             Tab::Home => "Home",
             Tab::Model => "Model",
@@ -78,305 +72,270 @@ impl Tab {
 
 impl Shell {
     pub(super) fn ribbon(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let active_tab = self.ribbon_tab;
-        let pack = self.icon_pack();
-
-        // Built up front, one group at a time: each of these needs `cx` as
-        // `&mut Context<Self>` (for `cx.listener(...)`), which can't overlap
-        // with `group()`'s own `&App` borrow of the same `cx` inside one
-        // expression.
-        let page: AnyElement = match active_tab {
-            // Clipboard + Tools alone: Tools' own tile row plus the snap
-            // fields and Align popover already run wide, so Home stops
-            // there rather than also carrying Insert/Edit — three tabs
-            // this narrow beats two tabs that still need a scrollbar in an
-            // ordinary window.
-            Tab::Home => {
-                let tools = self.tools_group_content(cx);
-                h_flex()
-                    .id("ribbon-home")
-                    .flex_none()
-                    .items_stretch()
-                    .gap_1()
-                    .px_2()
-                    .py_1()
-                    .overflow_x_scrollbar()
-                    .child(group(cx, "Clipboard", clipboard_tiles(pack)))
-                    .child(divider(cx))
-                    .child(group(cx, "Tools", tools))
-                    .into_any_element()
-            }
-            Tab::Model => {
-                let insert = self.insert_tiles(cx, pack);
-                let edit = self.edit_tiles(cx, pack);
-                h_flex()
-                    .id("ribbon-model")
-                    .flex_none()
-                    .items_stretch()
-                    .gap_1()
-                    .px_2()
-                    .py_1()
-                    .overflow_x_scrollbar()
-                    .child(group(cx, "Insert", insert))
-                    .child(divider(cx))
-                    .child(group(cx, "File", file_tiles(pack)))
-                    .child(divider(cx))
-                    .child(group(cx, "Edit", edit))
-                    .into_any_element()
-            }
-            Tab::Test => h_flex()
-                .id("ribbon-test")
-                .flex_none()
-                .items_stretch()
-                .gap_1()
-                .px_2()
-                .py_1()
-                .overflow_x_scrollbar()
-                .child(group(cx, "Test", test_tiles(pack)))
-                .child(divider(cx))
-                .child(group(
-                    cx,
-                    "Viewport Settings",
-                    viewport_settings_tiles(pack),
-                ))
-                .into_any_element(),
+        let page: Vec<AnyElement> = match self.ribbon_tab {
+            Tab::Home => vec![
+                group("Clipboard", clipboard_tiles()),
+                group("Tools", self.tools(cx)),
+            ],
+            Tab::Model => vec![
+                group("Insert", self.insert_tiles(cx)),
+                group("File", file_tiles()),
+                group("Edit", self.edit_tiles(cx)),
+            ],
+            Tab::Test => vec![
+                group("Test", test_tiles()),
+                group("Viewport Settings", viewport_settings_tiles()),
+            ],
         };
 
-        v_flex()
-            .id("ribbon")
+        h_flex()
             .w_full()
+            .h(RIBBON_HEIGHT)
             .flex_none()
-            .border_b_1()
-            .border_color(cx.theme().border)
-            .child(h_flex().gap_1().px_2().pt_1().children(Tab::ALL.map(|tab| {
-                Button::new(("ribbon-tab", tab as usize))
-                    .ghost()
-                    .label(tab.label())
-                    .selected(tab == active_tab)
-                    .on_click(cx.listener(move |shell, _, _, cx| {
-                        shell.ribbon_tab = tab;
-                        cx.notify();
-                    }))
-            })))
-            .child(page)
+            .items_stretch()
+            .gap(tokens::SPACE_4)
+            .px(tokens::SPACE_3)
+            .py(tokens::SPACE_1)
+            .bg(tokens::bg_1())
+            .shadow(tokens::elevation_1())
+            .children(page)
     }
 
-    /// Part/Script/UI (`ScreenGui`) all reuse `Shell::insert_instance` —
-    /// the same generic insert `menu_bar`'s Model menu already drives — so
-    /// this group's real buttons are three more entry points into that one
-    /// path, not new logic. Toolbox stays disabled: it needs Roblox's
-    /// Creator Store catalog, which `ROADMAP.md` already marks impossible
-    /// without Roblox's own engine.
-    fn insert_tiles(&self, cx: &mut Context<Self>, pack: IconPack) -> impl IntoElement {
-        h_flex()
-            .gap_1()
-            .child(
-                class_tile("ribbon-insert-part", "Part", pack, "Part")
-                    .on_click(cx.listener(|shell, _, _, cx| shell.insert_instance("Part", cx))),
-            )
-            .child(
-                class_tile("ribbon-insert-script", "Script", pack, "Script")
-                    .on_click(cx.listener(|shell, _, _, cx| shell.insert_instance("Script", cx))),
-            )
-            .child(
-                class_tile("ribbon-insert-ui", "ScreenGui", pack, "UI").on_click(
-                    cx.listener(|shell, _, _, cx| shell.insert_instance("ScreenGui", cx)),
-                ),
-            )
-            .child(disabled_tile(
-                "ribbon-insert-toolbox",
-                "toolbox",
-                pack,
-                "Toolbox",
-            ))
+    /// §2 — the transform tools, their snap popover, and Align.
+    fn tools(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let mut tools = self.tool_buttons(cx);
+        tools.push(self.snap_popover(cx).into_any_element());
+        tools.push(self.align_control(cx).into_any_element());
+        tools
     }
 
-    /// Group/Ungroup reuse `shell::group`'s existing Ctrl+G/Ctrl+Shift+G
-    /// handlers — the same ones `menu_bar`'s Model menu already calls.
-    /// Material/Color/Lock/Anchor stay disabled: each is already reachable
-    /// through the Properties panel (`Material`, `Color`, `Locked`,
-    /// `Anchored`), and a one-click ribbon shortcut for them is real new
-    /// plumbing (apply to a whole selection, not just the Properties
-    /// panel's single edited instance) this pass doesn't add.
-    fn edit_tiles(&self, cx: &mut Context<Self>, pack: IconPack) -> impl IntoElement {
-        h_flex()
-            .gap_1()
-            .child(disabled_tile(
-                "ribbon-edit-material",
-                "material",
-                pack,
-                "Material",
-            ))
-            .child(disabled_tile("ribbon-edit-color", "color", pack, "Color"))
-            .child(
-                tile("ribbon-edit-group", "duplicate", pack, "Group")
-                    .on_click(cx.listener(|shell, _, _, cx| shell.group_selected(cx))),
-            )
-            .child(
-                tile("ribbon-edit-ungroup", "copy", pack, "Ungroup")
-                    .on_click(cx.listener(|shell, _, _, cx| shell.ungroup_selected(cx))),
-            )
-            .child(disabled_tile("ribbon-edit-lock", "lock", pack, "Lock"))
-            .child(disabled_tile(
-                "ribbon-edit-anchor",
-                "anchor",
-                pack,
-                "Anchor",
-            ))
+    /// §5.7 — the three insert menus. Every item routes through the same
+    /// `Shell::insert_instance` the Model menu already uses, so a ribbon
+    /// click and a menu-bar click are the same code path.
+    fn insert_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let part = menu::dropdown(
+            self,
+            MenuId::InsertPart,
+            super::chrome::Trigger::new(dropdown_tile("ribbon-insert-part", "part", "Part")),
+            vec![
+                insert_item("Block", "block", "Part"),
+                insert_item("Sphere", "sphere", "Part"),
+                insert_item("Wedge", "wedge", "WedgePart"),
+                insert_item("Corner Wedge", "corner-wedge", "CornerWedgePart"),
+                insert_item("Cylinder", "cylinder", "Part"),
+            ],
+            cx,
+        );
+        let script = menu::dropdown(
+            self,
+            MenuId::InsertScript,
+            super::chrome::Trigger::new(dropdown_tile("ribbon-insert-script", "script", "Script")),
+            vec![
+                insert_item("Script", "script", "Script"),
+                insert_item("Local Script", "local-script", "LocalScript"),
+                insert_item("Module Script", "module-script", "ModuleScript"),
+            ],
+            cx,
+        );
+        let gui = menu::dropdown(
+            self,
+            MenuId::InsertGui,
+            super::chrome::Trigger::new(dropdown_tile("ribbon-insert-gui", "gui", "UI")),
+            vec![
+                insert_item("ScreenGui", "screen-gui", "ScreenGui"),
+                insert_item("SurfaceGui", "surface-gui", "SurfaceGui"),
+                // Roblox's own ad surface: it needs a Creator-Dashboard ad
+                // unit behind it to mean anything, which this editor has no
+                // way to provision.
+                menu::item("AdGui").icon("ad-gui").disabled(),
+                insert_item("BillboardGui", "billboard-gui", "BillboardGui"),
+            ],
+            cx,
+        );
+
+        vec![
+            part.into_any_element(),
+            script.into_any_element(),
+            gui.into_any_element(),
+            // Roblox's Creator Store catalog — out of reach without Roblox's
+            // own engine (see `ROADMAP.md`).
+            disabled_tile("ribbon-toolbox", "toolbox", "Toolbox").into_any_element(),
+        ]
+    }
+
+    /// Group/Ungroup are live (`shell::group`, the same Ctrl+G/Ctrl+Shift+G
+    /// handlers the Model menu calls). Material/Colour/Lock/Anchor are all
+    /// reachable through the Properties panel today; a one-click ribbon
+    /// version has to apply across a whole selection, which is real new
+    /// plumbing rather than a second button on an existing path.
+    fn edit_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        vec![
+            disabled_tile("ribbon-material", "material", "Material").into_any_element(),
+            disabled_tile("ribbon-color", "color", "Color").into_any_element(),
+            tile("ribbon-group", "group", "Group")
+                .on_click(cx.listener(|shell, _, _, cx| shell.group_selected(cx)))
+                .into_any_element(),
+            tile("ribbon-ungroup", "ungroup", "Ungroup")
+                .on_click(cx.listener(|shell, _, _, cx| shell.ungroup_selected(cx)))
+                .into_any_element(),
+            disabled_tile("ribbon-lock", "lock", "Lock").into_any_element(),
+            disabled_tile("ribbon-anchor", "anchor", "Anchor").into_any_element(),
+        ]
     }
 }
 
 /// Cut/Copy/Paste match `menu_bar`'s own disabled Edit-menu items exactly —
-/// same missing feature, same reason; Duplicate has no menu-bar equivalent
-/// yet either.
-fn clipboard_tiles(pack: IconPack) -> impl IntoElement {
-    h_flex()
-        .gap_1()
-        .child(disabled_tile("ribbon-copy", "copy", pack, "Copy"))
-        .child(disabled_tile("ribbon-paste", "paste", pack, "Paste"))
-        .child(disabled_tile("ribbon-cut", "cut", pack, "Cut"))
-        .child(disabled_tile(
-            "ribbon-duplicate",
-            "duplicate",
-            pack,
-            "Duplicate",
-        ))
+/// same missing feature, same reason. Duplicate has no menu-bar twin yet.
+fn clipboard_tiles() -> Vec<AnyElement> {
+    [
+        ("copy", "Copy"),
+        ("paste", "Paste"),
+        ("cut", "Cut"),
+        ("duplicate", "Duplicate"),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, (icon, label))| {
+        disabled_tile(("ribbon-clipboard", index), icon, label).into_any_element()
+    })
+    .collect()
 }
 
-/// Asset import (meshes/models from disk) isn't implemented.
-fn file_tiles(pack: IconPack) -> impl IntoElement {
-    h_flex().child(disabled_tile("ribbon-import", "import", pack, "Import"))
+/// Importing meshes and models off disk isn't implemented.
+fn file_tiles() -> Vec<AnyElement> {
+    vec![disabled_tile("ribbon-import", "import", "Import").into_any_element()]
 }
 
-/// None of Play/Run/Resume/Stop/Team/Exit exist yet — `ROADMAP.md`'s own
-/// Play/Test workflow section still lists the sandbox-place design this
-/// would need as open.
-fn test_tiles(pack: IconPack) -> impl IntoElement {
-    h_flex()
-        .gap_1()
-        .child(disabled_tile("ribbon-play", "play", pack, "Play"))
-        .child(disabled_tile("ribbon-run", "run", pack, "Run"))
-        .child(disabled_tile("ribbon-resume", "resume", pack, "Resume"))
-        .child(disabled_tile("ribbon-stop", "stop", pack, "Stop"))
-        .child(disabled_tile("ribbon-team", "team", pack, "Team"))
-        .child(disabled_tile("ribbon-exit", "exit", pack, "Exit"))
+/// `ROADMAP.md`'s Play/Test section still lists the sandbox-place design
+/// all of these would need as open.
+fn test_tiles() -> Vec<AnyElement> {
+    [
+        ("play", "Play"),
+        ("run", "Run"),
+        ("resume", "Resume"),
+        ("stop", "Stop"),
+        ("team", "Team"),
+        ("exit", "Exit"),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, (icon, label))| {
+        disabled_tile(("ribbon-test", index), icon, label).into_any_element()
+    })
+    .collect()
 }
 
-/// Game Settings/Device preview/Show UI toggle are all Studio dialogs this
-/// editor doesn't have yet. The viewport's own real graphics-quality
-/// dropdown stays where it already lived (the Viewport tab's own title row,
-/// see `shell::dock`'s `title_suffix`) rather than moving in here — it's
-/// this project's own addition, not a Studio ribbon feature, so it doesn't
-/// belong under a Studio-named group.
-fn viewport_settings_tiles(pack: IconPack) -> impl IntoElement {
-    h_flex()
-        .gap_1()
-        .child(disabled_tile(
-            "ribbon-game-settings",
-            "game-settings",
-            pack,
-            "Game Settings",
-        ))
-        .child(disabled_tile("ribbon-device", "device", pack, "Device"))
-        .child(disabled_tile("ribbon-show-ui", "show-ui", pack, "Show UI"))
+/// The viewport's own real control — the graphics-quality dropdown — is not
+/// here: it lives beside the document tabs (Row A), because it belongs to
+/// the open document rather than to a Studio-named ribbon group.
+fn viewport_settings_tiles() -> Vec<AnyElement> {
+    [
+        ("game-settings", "Game Settings"),
+        ("device", "Device"),
+        ("show-ui", "Show UI"),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, (icon, label))| {
+        disabled_tile(("ribbon-viewport", index), icon, label).into_any_element()
+    })
+    .collect()
 }
 
-/// A group's whole cluster of tiles/controls, captioned underneath —
-/// `content` is usually a row of [`tile`]s, but the Tools group mixes those
-/// with the existing snap/Align controls, which is faithful to the
-/// reference ribbon's own Tools group (big tool tiles beside a small Mode
-/// dropdown and two checkboxes).
-fn group(cx: &App, label: &'static str, content: impl IntoElement) -> impl IntoElement {
+fn insert_item(label: &'static str, icon: &'static str, class: &'static str) -> menu::Item {
+    menu::item(label)
+        .icon(icon)
+        .on_click(move |shell, cx| shell.insert_instance(class, cx))
+}
+
+/// A group: its controls, then its caption underneath.
+fn group(label: &'static str, content: Vec<AnyElement>) -> AnyElement {
     v_flex()
-        .h_full()
         .flex_none()
+        .h_full()
         .items_center()
         .justify_between()
-        .gap_1()
-        .child(h_flex().flex_1().items_center().gap_1().child(content))
+        .child(
+            h_flex()
+                .flex_1()
+                .items_center()
+                .gap(tokens::SPACE_1)
+                .children(content),
+        )
         .child(
             div()
-                .text_size(px(10.))
-                .text_color(cx.theme().muted_foreground)
-                .child(label),
+                .text_size(tokens::SECTION_HEADER_SIZE)
+                .line_height(tokens::SECTION_HEADER_LINE_HEIGHT)
+                .font_weight(tokens::SECTION_HEADER_WEIGHT)
+                .text_color(tokens::text_secondary())
+                .child(label.to_uppercase()),
         )
+        .into_any_element()
 }
 
-fn divider(cx: &App) -> impl IntoElement {
-    div()
+/// §5.2's tile: icon over label, one hit target.
+pub(super) fn tile(id: impl Into<ElementId>, icon: &str, label: &'static str) -> Stateful<Div> {
+    base_tile(id, icon, label, true)
+}
+
+/// The same tile for something this editor can't do yet: greyed, not
+/// clickable, and honest about why on hover.
+pub(super) fn disabled_tile(
+    id: impl Into<ElementId>,
+    icon: &str,
+    label: &'static str,
+) -> Stateful<Div> {
+    base_tile(id, icon, label, false)
+}
+
+/// A tile that opens a menu: §5.2's chevron sits at the icon zone's
+/// bottom-right, and the whole tile is one hit target — no split click
+/// zones, so there's no way to miss the arrow and get the wrong action.
+fn dropdown_tile(id: impl Into<ElementId>, icon: &str, label: &'static str) -> Stateful<Div> {
+    base_tile(id, icon, label, true).child(
+        div()
+            .absolute()
+            .right(px(2.))
+            .top(px(22.))
+            .child(ui_icons::icon("chevron-down").size(px(10.))),
+    )
+}
+
+fn base_tile(
+    id: impl Into<ElementId>,
+    icon: &str,
+    label: &'static str,
+    enabled: bool,
+) -> Stateful<Div> {
+    v_flex()
+        .id(id.into())
+        .relative()
         .flex_none()
-        .w(px(1.))
-        .h(px(TILE_SIZE))
-        .bg(cx.theme().border)
-}
-
-/// A big square tile: an icon over a caption, the reference ribbon's own
-/// button shape — built from a plain [`Button`] with custom `.child(...)`
-/// content instead of `.icon()`/`.label()`, since those two lay out side by
-/// side rather than stacked (see `gpui_component`'s own `Button` render:
-/// `.icon()`/`.label()` join the same horizontal row `.children()`
-/// appends to). `action` is a bare filename stem under
-/// `assets/icons/actions/{dark,light}` (see `action_icons`), not a Lucide
-/// name.
-pub(super) fn tile(
-    id: impl Into<ElementId>,
-    action: &str,
-    pack: IconPack,
-    label: &'static str,
-) -> Button {
-    glyph_tile(id, action_icon(action, pack), label)
-}
-
-/// [`tile`], but with this project's own class icon (`class_icons::icon_tile`
-/// — the same rasterized kit the Explorer's own rows use) for a tile that
-/// inserts a specific Roblox class, instead of an action-kit icon.
-fn class_tile(
-    id: impl Into<ElementId>,
-    class: &str,
-    pack: IconPack,
-    label: &'static str,
-) -> Button {
-    glyph_tile(id, class_icons::icon_tile(class, pack), label)
-}
-
-fn glyph_tile(
-    id: impl Into<ElementId>,
-    sprite: Option<std::sync::Arc<RenderImage>>,
-    label: &'static str,
-) -> Button {
-    let glyph: AnyElement = match sprite {
-        Some(sprite) => img(sprite).size(px(TILE_ICON_SIZE)).into_any_element(),
-        // Reached only if an SVG this module names is missing or fails to
-        // parse — a build-time invariant `action_icons`'/`class_icons`' own
-        // tests already check, so a blank tile here would mean one of those
-        // tests should have failed first.
-        None => div().size(px(TILE_ICON_SIZE)).into_any_element(),
-    };
-    Button::new(id)
-        .ghost()
-        .w(px(TILE_SIZE))
-        .h(px(TILE_SIZE))
-        .tooltip(label)
-        .child(
-            v_flex()
-                .items_center()
-                .justify_center()
-                .gap_0p5()
-                .child(glyph)
-                .child(div().text_size(px(10.)).child(label)),
-        )
-}
-
-/// A tile for a feature this editor doesn't have yet: disabled, with a
-/// tooltip that says so rather than repeating the bare label — the same
-/// treatment `menu_bar`'s Cut/Copy/Paste already get.
-fn disabled_tile(
-    id: impl Into<ElementId>,
-    action: &str,
-    pack: IconPack,
-    label: &'static str,
-) -> impl IntoElement {
-    tile(id, action, pack, label)
-        .disabled(true)
-        .tooltip(format!("{label} — not implemented yet"))
+        // §7.2: the ribbon's own controls follow the two tab rows, left to
+        // right, sharing one band so the order survives a page switch.
+        .when(enabled, |this| {
+            this.tab_index(super::chrome::RIBBON_CONTROL_INDEX)
+                .focus(|this| this.shadow(tokens::focus_ring(tokens::bg_1())))
+        })
+        .w(TILE_WIDTH)
+        .h(TILE_HEIGHT)
+        .pt(tokens::SPACE_2)
+        .gap(tokens::SPACE_1)
+        .items_center()
+        .rounded(tokens::RADIUS_SM)
+        .text_size(tokens::UI_LABEL_SIZE)
+        .line_height(tokens::UI_LABEL_LINE_HEIGHT)
+        .map(|this| {
+            if enabled {
+                this.cursor_pointer()
+                    .text_color(tokens::text_secondary())
+                    .hover(|this| this.bg(tokens::bg_2()).text_color(tokens::text_primary()))
+                    .active(|this| this.bg(tokens::bg_3()))
+            } else {
+                this.cursor_not_allowed()
+                    .text_color(tokens::text_disabled())
+            }
+        })
+        .child(ui_icons::icon(icon).size(TILE_ICON))
+        .child(div().truncate().child(label))
 }

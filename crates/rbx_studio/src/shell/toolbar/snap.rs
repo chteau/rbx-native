@@ -15,17 +15,17 @@
 //! would say less than a visibly disabled one.
 
 use gpui_kit::component::checkbox::Checkbox;
-use gpui_kit::component::input::{Input, InputEvent, InputState};
-use gpui_kit::component::{h_flex, ActiveTheme, Sizable as _};
+use gpui_kit::component::input::{
+    InputEvent, InputState, NumberInput, NumberInputEvent, StepAction,
+};
+use gpui_kit::component::{v_flex, Sizable as _};
 use gpui_kit::*;
 
+use crate::tokens;
 use crate::transform::{self, Action, Snap, SnapKind};
 
 use super::super::Shell;
-
-/// How wide an increment field is. Enough for "0.001" or "180" without the
-/// strip's buttons being pushed off the end of a narrow window.
-const FIELD_WIDTH: Pixels = px(52.);
+use super::{field_label, snap_container};
 
 /// The live text of both increment fields.
 ///
@@ -45,7 +45,7 @@ impl SnapFields {
         transform: crate::transform::Transform,
         window: &mut Window,
         cx: &mut Context<Shell>,
-    ) -> (Self, [Subscription; 2]) {
+    ) -> (Self, [Subscription; 4]) {
         let fields = SnapFields {
             translate: field(transform.translate, window, cx),
             rotate: field(transform.rotate, window, cx),
@@ -53,6 +53,8 @@ impl SnapFields {
         let subscriptions = [
             watch(&fields.translate, SnapKind::Translate, cx),
             watch(&fields.rotate, SnapKind::Rotate, cx),
+            watch_steps(&fields.translate, SnapKind::Translate, window, cx),
+            watch_steps(&fields.rotate, SnapKind::Rotate, window, cx),
         ];
         (fields, subscriptions)
     }
@@ -95,31 +97,68 @@ fn watch(input: &Entity<InputState>, kind: SnapKind, cx: &mut Context<Shell>) ->
     })
 }
 
+/// The spinner buttons §5.1 puts on a numeric field. One press is one
+/// increment step: the fields hold a snap size, and doubling or halving it
+/// is what a user reaching for the arrows actually wants — 1, 2, 4 studs,
+/// not 1, 1.01, 1.02.
+fn watch_steps(
+    input: &Entity<InputState>,
+    kind: SnapKind,
+    window: &mut Window,
+    cx: &mut Context<Shell>,
+) -> Subscription {
+    // `subscribe_in` rather than `subscribe`: writing the stepped value back
+    // into the field needs a `Window`, and a plain subscription has none.
+    cx.subscribe_in(
+        input,
+        window,
+        move |shell, input, event: &NumberInputEvent, window, cx| {
+            let NumberInputEvent::Step(action) = event;
+            let current = match kind {
+                SnapKind::Translate => shell.transform.translate.increment,
+                SnapKind::Rotate => shell.transform.rotate.increment,
+            };
+            let next = match action {
+                StepAction::Increment => current * 2.,
+                StepAction::Decrement => current / 2.,
+            }
+            .clamp(0.001, 360.);
+
+            shell.transform_action(Action::SetIncrement(kind, next), cx);
+            input.update(cx, |state, cx| {
+                state.set_value(format!("{next}"), window, cx);
+            });
+        },
+    )
+}
+
 impl Shell {
-    /// The checkbox-and-field pairs, for the toolbar strip to sit after its
-    /// tool buttons.
-    pub(super) fn snap_controls(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        h_flex()
-            .items_center()
-            .gap_2()
-            .children(SnapKind::ALL.map(|kind| self.snap_control(kind, cx)))
+    /// §2.4's popover body: one labelled field per snap unit, stacked.
+    ///
+    /// The enable checkbox rides on the label rather than sitting beside
+    /// the field, so the row reads as one thing ("Move/Scale snapping, at
+    /// this increment") instead of two controls that happen to be adjacent.
+    pub(super) fn snap_fields_popover(&self, cx: &mut Context<Self>) -> AnyElement {
+        snap_container(
+            SnapKind::ALL
+                .map(|kind| self.snap_field(kind, cx).into_any_element())
+                .into_iter()
+                .collect(),
+        )
     }
 
-    fn snap_control(&self, kind: SnapKind, cx: &mut Context<Self>) -> impl IntoElement {
+    fn snap_field(&self, kind: SnapKind, cx: &mut Context<Self>) -> impl IntoElement {
         let snap = match kind {
             SnapKind::Translate => self.transform.translate,
             SnapKind::Rotate => self.transform.rotate,
         };
-        // Everything about the rotate pair is live except what it would act
-        // on; see this module's own header.
         let handle = cx.entity();
 
-        h_flex()
-            .items_center()
-            .gap_1()
-            .child(
+        v_flex()
+            .w_full()
+            .child(field_label(
                 Checkbox::new(SharedString::from(format!("snap-on-{}", kind.label())))
-                    .label(kind.label())
+                    .label(format!("{} ({})", kind.label(), kind.unit()))
                     .checked(snap.enabled)
                     .xsmall()
                     .on_click(move |_, _, cx| {
@@ -127,17 +166,14 @@ impl Shell {
                             shell.transform_action(Action::ToggleSnap(kind), cx);
                         });
                     }),
-            )
+            ))
             .child(
                 div()
-                    .w(FIELD_WIDTH)
-                    .child(Input::new(self.snap_fields.of(kind)).xsmall()),
-            )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(kind.unit()),
+                    .w_full()
+                    .text_size(tokens::INPUT_VALUE_SIZE)
+                    .line_height(tokens::INPUT_VALUE_LINE_HEIGHT)
+                    .font_weight(tokens::INPUT_VALUE_WEIGHT)
+                    .child(NumberInput::new(self.snap_fields.of(kind)).small()),
             )
     }
 }

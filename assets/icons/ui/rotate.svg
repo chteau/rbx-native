@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- rotate.svg - UI icon kit: outline, currentColor, 24x24 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+     fill="none" stroke="currentColor" stroke-width="2.0"
+     stroke-linecap="round" stroke-linejoin="round">
+  <title>rotate</title>
+  <path d="M20.5 12A8.5 8.5 0 1 1 12 3.5c2.4 0 4.7.95 6.4 2.6L20.5 8.1"/><path d="M20.5 3.5v5h-5"/>
+</svg>

@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- select.svg - action icon kit, light theme -->
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-  <title>select</title>
-  <path d="M4,2 L4,14 L7,11 L9.2,15 L11,14 L8.8,10 L13,10 Z" fill="#4A5568" stroke="#2D3748" stroke-width="0.6" stroke-linejoin="round"/>
-</svg>

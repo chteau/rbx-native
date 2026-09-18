@@ -126,8 +126,8 @@ impl Shell {
 
     /// Brings the panel's dock tab to the front, wherever the layout puts it
     /// — the View menu's Style Editor item (see `crate::menu_bar`).
-    pub(crate) fn reveal_style_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        super::dock::reveal_style_editor(&self.dock_area, window, cx);
+    pub(crate) fn reveal_style_editor(&mut self, cx: &mut Context<Self>) {
+        self.document = super::chrome::Document::StyleEditor;
         cx.notify();
     }
 
@@ -135,14 +135,14 @@ impl Shell {
     /// doc comment. A selection that is not a `StyleRule`, or a rejected
     /// value, does nothing — this is a screenshot aid, not user input, and
     /// must never crash a debugging session.
-    pub(super) fn apply_debug_style_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn apply_debug_style_editor(&mut self, cx: &mut Context<Self>) {
         let Ok(spec) = std::env::var(STYLE_EDITOR_VARIABLE) else {
             return;
         };
         let Some((name, value)) = spec.split_once('=') else {
             // No edit to apply: the whole point of the variable is then to
             // raise the tab for a screenshot of the panel itself.
-            self.reveal_style_editor(window, cx);
+            self.reveal_style_editor(cx);
             return;
         };
         let Some(rule) = self.selected().filter(|&reference| {

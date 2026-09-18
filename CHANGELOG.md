@@ -2,31 +2,27 @@
 
 ## 2026-09-18
 
-- **Softened the editor's visual theme, and rebuilt its toolbar as a real
-  ribbon with this project's own icon kit.** Panels went from near-black/
-  near-white flat blocks with hard borders and tight padding to a muted
-  grey ramp (`#1a1a1a` floor), low-contrast luminance-step seams instead of
-  hard 1px lines, 5px corner radius, more breathing room in the Explorer/
-  Properties rows, and a single saturated accent reserved for selection/
-  focus rather than sprinkled everywhere. Ships as a real `ThemeSet`/
-  `ThemeConfig` JSON file (`assets/themes/dark-soft.json`) the toolkit's own
-  theming loads at startup, not compiled-in constants. The dock moved to a
-  three-column layout matching a ribbon-style Studio redesign — Properties
-  alone on the left, Output docked under the Viewport tab strip, Explorer
-  alone on the right — with that tab strip now the first thing under the
-  menu bar. The old plain-text toolbar row is now a real grouped ribbon
-  (`shell/ribbon.rs`: Clipboard, Tools, Insert, File, Edit, Test, Viewport
-  Settings, paged across Home/Model/Test tabs so each page fits an ordinary
-  window without scrolling) of big icon-over-caption tiles, rendered
-  directly under that tab strip. Every ribbon icon is this project's own
-  hand-authored SVG (`action_icons`, a sibling to the Explorer's existing
-  class icon kit) — no Lucide glyphs anywhere in the ribbon; a tile that
-  inserts a Roblox class (Part/Script/UI) uses that class's own icon.
-  Every button this editor doesn't actually implement yet (Cut/Copy/Paste,
-  Play/Run/Stop, Material/Color/Lock/Anchor, Toolbox, Import, ...) stays
-  visibly disabled with a tooltip rather than a dead click. New
-  `UX_GUIDELINES.md` for keeping future visual changes consistent with all
-  of this. — @chteau
+- **Rebuilt the editor's UI on a real design-token system.** Every colour,
+  radius, spacing step, elevation, easing curve and text style now comes
+  from one module (`tokens.rs`), with the palette mirrored into the
+  toolkit's own theme file so stock widgets follow it too. The discipline
+  (fixed radius scale, base-4 spacing, "shadow-as-border" layered
+  elevation) is borrowed from Vercel's Geist; the dark, rounder, softer
+  look deliberately isn't. Contrast is now a test rather than a judgement
+  call — primary text clears 11.5:1 on every surface, secondary 5.0:1, and
+  the accent-on-accent active-tab case 4.6:1.
+  The shell was rebuilt around it: document tabs directly under the menu
+  bar, the ribbon's category tabs under those, the ribbon under those, and
+  a three-column workspace (Properties, document over Output, Explorer)
+  with real resize handles, a collapsible Output dock, per-panel corner
+  radii and directional elevation. Explorer rows grew hierarchy guides.
+  Every piece of chrome is drawn from this project's own 24px outline icon
+  kit, which is what lets an icon tint itself per state; the multi-colour
+  class-icon kit stays in the Explorer, where the colour is the identity.
+  Replacing the toolkit's `DockArea` with that fixed shell is what made the
+  layout expressible — it also means panels can no longer be dragged to
+  rearrange, and the saved dock layout is gone; `UX_GUIDELINES.md` §10
+  records that along with every other deviation. — @chteau
 - **Throttle the viewport's render loop while the editor window is
   unfocused.** The render thread paced itself to the display's full refresh
   rate no matter whether anyone was looking, burning GPU/CPU (and battery,

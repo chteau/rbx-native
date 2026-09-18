@@ -38,7 +38,6 @@
 //! format it was opened in; `RBX_STUDIO_SAVE_AS=<path>` redirects one such
 //! save to a scratch path instead (see `save`).
 
-mod action_icons;
 mod align;
 mod camera;
 mod class_icons;
@@ -58,7 +57,9 @@ mod settings;
 mod settle;
 mod shell;
 mod style_editor;
+mod tokens;
 mod transform;
+mod ui_icons;
 mod workspace_view;
 
 use std::path::{Path, PathBuf};
@@ -190,6 +191,28 @@ fn install_theme(cx: &mut App) {
         .cloned()
     {
         Theme::global_mut(cx).dark_theme = theme;
+    }
+    install_fonts(cx);
+}
+
+/// Points the theme at the design system's own font stack, for whichever of
+/// its families this machine actually has.
+///
+/// The theme takes one family name, not a CSS-style stack with fallbacks,
+/// and a name that isn't installed is used as-is rather than falling
+/// through — so the fallback has to happen here, by asking the text system
+/// what exists before naming anything. A machine with neither family keeps
+/// the platform UI font, which is the right answer and not a failure.
+fn install_fonts(cx: &mut App) {
+    let installed = cx.text_system().all_font_names();
+    let has = |family: &str| installed.iter().any(|name| name == family);
+
+    let theme = Theme::global_mut(cx);
+    if has(tokens::FONT_FAMILY_UI) {
+        theme.font_family = tokens::FONT_FAMILY_UI.into();
+    }
+    if has(tokens::FONT_FAMILY_MONO) {
+        theme.mono_font_family = tokens::FONT_FAMILY_MONO.into();
     }
 }
 

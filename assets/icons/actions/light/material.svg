@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- material.svg - action icon kit, light theme -->
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-  <title>material</title>
-  <rect x="2" y="6" width="7" height="7" rx="1" fill="#2D3748"/>
-  <rect x="5.5" y="3" width="7" height="7" rx="1" fill="#4A5568"/>
-</svg>

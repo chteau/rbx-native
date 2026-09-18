@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- run.svg - action icon kit, light theme -->
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-  <title>run</title>
-  <rect x="2" y="2" width="12" height="9" rx="1" fill="#1B4570"/>
-  <path d="M6,4.2 L11,6.5 L6,8.8 Z" fill="#2A5F91"/>
-  <rect x="6" y="12.5" width="4" height="1.4" rx="0.5" fill="#1B4570"/>
-</svg>

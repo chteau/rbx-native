@@ -87,7 +87,7 @@ pub(crate) fn bar(menu_bar: &Entity<AppMenuBar>, cx: &App) -> impl IntoElement {
 /// Group/Ungroup (`shell::group`, Ctrl+G/Ctrl+Shift+G). View's Explorer,
 /// Properties and Command Bar items stay placeholders — those panels have no
 /// show/hide command to wire them to yet — while Style Editor brings its own
-/// dock tab to the front (see `shell::dock::reveal_style_editor`).
+/// Style Editor document to the front (see `shell::style_panel`).
 fn menus() -> Vec<OwnedMenu> {
     vec![
         Menu::new("File")
@@ -229,8 +229,8 @@ fn install_actions(shell: Entity<Shell>, cx: &mut App) {
                 return;
             };
             let shell = shell.clone();
-            let _ = window.update(cx, move |_, window, cx| {
-                shell.update(cx, |shell, cx| shell.reveal_style_editor(window, cx));
+            let _ = window.update(cx, move |_, _window, cx| {
+                shell.update(cx, |shell, cx| shell.reveal_style_editor(cx));
             });
         }
     });

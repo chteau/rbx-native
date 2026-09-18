@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- show-ui.svg - action icon kit, dark theme -->
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-  <title>show-ui</title>
-  <path d="M1,8 C3,4 13,4 15,8 C13,12 3,12 1,8 Z" fill="#29B6C6"/>
-  <circle cx="8" cy="8" r="2.3" fill="#1C8C99"/>
-</svg>
