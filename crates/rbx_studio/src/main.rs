@@ -106,6 +106,7 @@ fn main() {
     let title = SharedString::from(file_name(&path));
     let show_all_services = settings.show_all_services;
     let orthographic = settings.orthographic;
+    let axis_indicator = settings.axis_indicator;
 
     // The full Lucide catalog: the menu bar's icons are well outside the
     // default bundle the components themselves use. The Explorer's own class
@@ -126,6 +127,7 @@ fn main() {
                         quality,
                         show_all_services,
                         orthographic,
+                        axis_indicator,
                         window,
                         cx,
                     )

@@ -172,14 +172,26 @@ impl ComponentPanel for SectionPanel {
                 )
             }
             Section::Viewport => {
-                let checked = shell.read(cx).orthographic();
+                let orthographic = shell.read(cx).orthographic();
+                let axis_indicator = shell.read(cx).axis_indicator();
+                let axis_indicator_shell = shell.clone();
                 menu.item(
                     PopupMenuItem::new("Orthographic")
-                        .checked(checked)
+                        .checked(orthographic)
                         .on_click(move |_, _, cx| {
                             shell.update(cx, |shell, cx| {
                                 let next = !shell.orthographic();
                                 shell.set_orthographic(next, cx);
+                            });
+                        }),
+                )
+                .item(
+                    PopupMenuItem::new("Orientation Indicator")
+                        .checked(axis_indicator)
+                        .on_click(move |_, _, cx| {
+                            axis_indicator_shell.update(cx, |shell, cx| {
+                                let next = !shell.axis_indicator();
+                                shell.set_axis_indicator(next, cx);
                             });
                         }),
                 )

@@ -82,6 +82,10 @@ pub(crate) struct Shell {
     /// perspective. Persisted (see `settings`); every write goes through
     /// [`Shell::save_settings`].
     orthographic: bool,
+    /// Whether the viewport's top-right orientation indicator draws at all.
+    /// Persisted the same way `orthographic` is, for the same reason: it's
+    /// meant to be a durable preference, not a per-session debug switch.
+    axis_indicator: bool,
     search: Entity<InputState>,
     filter: Entity<InputState>,
     properties: Properties,
@@ -141,12 +145,19 @@ pub(crate) struct Shell {
 }
 
 impl Shell {
+    // One more persisted viewport preference (`axis_indicator`) pushed this
+    // past clippy's default threshold; every parameter is a genuinely
+    // distinct piece of the editor's starting state, so splitting them into
+    // a config struct would only move the same count into a type nothing
+    // else needs.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         title: impl Into<SharedString>,
         place: Place,
         quality: QualityLevel,
         show_all_services: bool,
         orthographic: bool,
+        axis_indicator: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -212,6 +223,7 @@ impl Shell {
                 camera,
                 quality,
                 orthographic,
+                axis_indicator,
                 initial_outline,
                 window,
                 cx,
@@ -264,6 +276,7 @@ impl Shell {
             show_all_services,
             quality_choice: quality,
             orthographic,
+            axis_indicator,
             search: cx.new(|cx| InputState::new(window, cx).placeholder("Search")),
             filter,
             properties,
@@ -546,6 +559,26 @@ impl Shell {
         self.save_settings(cx);
     }
 
+    /// Whether the viewport's orientation indicator draws, for the dock's
+    /// Viewport menu item to render its checked state — see
+    /// `set_axis_indicator`.
+    pub(super) fn axis_indicator(&self) -> bool {
+        self.axis_indicator
+    }
+
+    /// Shows or hides the top-right orientation indicator — see
+    /// `WorkspaceView::set_axis_indicator`.
+    fn set_axis_indicator(&mut self, shown: bool, cx: &mut Context<Self>) {
+        if shown == self.axis_indicator {
+            return;
+        }
+
+        self.axis_indicator = shown;
+        self.viewport
+            .update(cx, |viewport, cx| viewport.set_axis_indicator(shown, cx));
+        self.save_settings(cx);
+    }
+
     /// Writes the current quality pick, Explorer visibility, and projection mode
     /// to disk. Also saves the current dock layout. A settings file is tiny,
     /// so this runs synchronously on every change rather than debouncing;
@@ -557,6 +590,7 @@ impl Shell {
             quality: self.quality_choice,
             show_all_services: self.show_all_services,
             orthographic: self.orthographic,
+            axis_indicator: self.axis_indicator,
         };
         let _ = settings.save();
 

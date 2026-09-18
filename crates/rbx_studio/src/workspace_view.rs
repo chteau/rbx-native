@@ -15,6 +15,7 @@ mod gizmo;
 mod hover;
 mod input;
 mod label;
+mod orientation;
 mod presence;
 mod pump;
 mod quality;
@@ -245,6 +246,9 @@ pub(crate) struct WorkspaceView {
     /// The projection mode the user last picked from the Viewport panel's
     /// overflow menu (see `Shell::set_orthographic`).
     orthographic: bool,
+    /// Whether the top-right orientation indicator draws at all — the
+    /// Viewport panel's overflow menu again (see `Shell::set_axis_indicator`).
+    axis_indicator: bool,
     /// The transform toolbar's state, pushed down from `Shell` (see
     /// [`WorkspaceView::set_transform`]).
     transform: Transform,
@@ -285,11 +289,16 @@ pub(crate) struct WorkspaceView {
 }
 
 impl WorkspaceView {
+    // Same call as `Shell::new`'s: one more persisted viewport preference
+    // (`axis_indicator`) over clippy's default threshold, each one a
+    // genuinely distinct piece of a fresh view's starting state.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         opened: Opened,
         camera: Option<PlaceCamera>,
         quality: QualityLevel,
         orthographic: bool,
+        axis_indicator: bool,
         selected: Vec<Selected>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -364,6 +373,7 @@ impl WorkspaceView {
             quality,
             level: QualityLevel::MAX,
             orthographic,
+            axis_indicator,
             transform: Transform::default(),
             targets: Targets::default(),
             neighbours: Vec::new(),
@@ -679,6 +689,18 @@ impl WorkspaceView {
         cx.notify();
     }
 
+    /// Shows or hides the top-right orientation indicator — purely a local
+    /// draw toggle, unlike `set_orthographic`: nothing about the camera or
+    /// the render thread changes, so this never touches `self.pump`.
+    pub(crate) fn set_axis_indicator(&mut self, shown: bool, cx: &mut Context<Self>) {
+        if shown == self.axis_indicator {
+            return;
+        }
+
+        self.axis_indicator = shown;
+        cx.notify();
+    }
+
     /// What the corner label reads: the speed is passed only while its moment
     /// on screen lasts.
     fn status_label(&self) -> SharedString {
@@ -861,5 +883,61 @@ impl Render for WorkspaceView {
                     .text_color(rgb(0xe4e5e9))
                     .child(self.status_label()),
             )
+            // No pose yet (the very first frame or two, before the render
+            // thread's first `Ready` lands — see `self.view`'s own doc) draws
+            // nothing rather than a widget with no orientation to show.
+            .when_some(self.view.filter(|_| self.axis_indicator), |this, pose| {
+                this.child(orientation_indicator(pose))
+            })
     }
+}
+
+/// The top-right orientation indicator: six coloured, labelled dots at each
+/// world axis's current screen direction — see `orientation`'s module doc for
+/// why this is a flat 2D projection rather than a 3D gizmo mesh, and the
+/// roadmap item it implements for why it's an rbx-native addition rather
+/// than a Studio-parity claim.
+///
+/// Placed opposite the quality/speed corner label (bottom-left) rather than
+/// colliding with it, and styled the same way: a small, semi-transparent
+/// dark chip, not a heavier panel that competes with the 3D view underneath.
+fn orientation_indicator(pose: Pose) -> impl IntoElement {
+    const SIZE: f32 = 84.0;
+    const CENTER: f32 = SIZE / 2.0;
+    const AXIS_RADIUS: f32 = 30.0;
+    const DOT: f32 = 17.0;
+
+    div()
+        .absolute()
+        .top_2()
+        .right_2()
+        .size(px(SIZE))
+        .rounded_full()
+        .bg(rgba(0x14151ab0))
+        .children(orientation::marks(pose).map(|mark| {
+            let x = CENTER + mark.x * AXIS_RADIUS - DOT / 2.0;
+            let y = CENTER + mark.y * AXIS_RADIUS - DOT / 2.0;
+            div()
+                .absolute()
+                .top(px(y))
+                .left(px(x))
+                .size(px(DOT))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded_full()
+                .bg(rgb(mark.color))
+                // The three axes roughly behind the camera dim rather than
+                // disappear — still readable at a glance, the way Blender's
+                // own gizmo fades its own hidden-side labels instead of
+                // hiding them outright.
+                .when(!mark.front, |dot| dot.opacity(0.4))
+                .text_size(px(9.0))
+                .text_color(rgb(0x0c0d0f))
+                // Just the initial: the dot is 17px across, and colour plus
+                // screen position already carry most of the meaning. `Bottom`
+                // and `Back` are the one collision (both `B`) — left as is,
+                // since they're never the same colour (green vs. blue).
+                .child(&mark.label[..1])
+        }))
 }

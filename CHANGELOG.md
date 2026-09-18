@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-18
+
+- **A top-right orientation indicator for the viewport.** Six small
+  coloured, lettered dots (`Right`/`Left`/`Top`/`Bottom`/`Front`/`Back`,
+  red/green/blue per axis like the transform gizmo already uses) track the
+  free camera's current orientation, projected from `Pose::basis` rather
+  than drawn as a literal 3D cube — the same flat 2D trick Blender's own
+  gizmo uses. Toggleable from the Viewport panel's overflow menu, on by
+  default and persisted like `Orthographic`. An original rbx-native
+  addition (Blender/SketchUp/3ds Max convention), not a Studio-parity
+  claim — nothing in Roblox's own viewport documentation describes Studio
+  having one. — @chteau
+
 ## 2026-09-17
 
 - **A batch of viewport editor fixes (`fix/overall-bug-fixes`).** Undo/redo

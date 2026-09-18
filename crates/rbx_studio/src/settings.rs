@@ -1,7 +1,7 @@
 //! Persisted Studio preferences: the graphics quality dropdown, the
-//! Explorer's "show all services" checkbox, and the Viewport's orthographic
-//! toggle, so a relaunch reopens where the user left off rather than always
-//! at the hardcoded defaults.
+//! Explorer's "show all services" checkbox, the Viewport's orthographic
+//! toggle, and its orientation indicator toggle, so a relaunch reopens where
+//! the user left off rather than always at the hardcoded defaults.
 //!
 //! Mirrors `rbx_assets::AssetCache`'s directory convention (`$XDG_CONFIG_HOME`,
 //! falling back to `~/.config` or, on Windows, `%APPDATA%`, all under an
@@ -19,6 +19,11 @@ pub(crate) struct Settings {
     pub(crate) quality: QualityLevel,
     pub(crate) show_all_services: bool,
     pub(crate) orthographic: bool,
+    /// The viewport's top-right orientation indicator — see
+    /// `crate::workspace_view::orientation`. Defaults on: it's meant to read
+    /// as an always-there convention (the way Blender's own gizmo is), not
+    /// an opt-in debug overlay.
+    pub(crate) axis_indicator: bool,
 }
 
 impl Default for Settings {
@@ -29,6 +34,7 @@ impl Default for Settings {
             quality: QualityLevel::Automatic,
             show_all_services: false,
             orthographic: false,
+            axis_indicator: true,
         }
     }
 }
@@ -123,11 +129,16 @@ fn load_from(path: &Path) -> Settings {
         .get("orthographic")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
+    let axis_indicator = value
+        .get("axis_indicator")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
 
     Settings {
         quality,
         show_all_services,
         orthographic,
+        axis_indicator,
     }
 }
 
@@ -136,6 +147,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "quality": format_quality(settings.quality),
         "show_all_services": settings.show_all_services,
         "orthographic": settings.orthographic,
+        "axis_indicator": settings.axis_indicator,
     });
     // A two-field object always serializes; nothing here can fail.
     let bytes = serde_json::to_vec_pretty(&value).expect("settings JSON always serializes");
@@ -239,9 +251,23 @@ mod tests {
             quality: QualityLevel::Level(7),
             show_all_services: true,
             orthographic: true,
+            axis_indicator: false,
         };
         save_to(&settings, &path).unwrap();
         assert_eq!(load_from(&path), settings);
+    }
+
+    #[test]
+    fn a_settings_file_from_before_the_axis_indicator_toggle_existed_defaults_it_on() {
+        let path = temp_settings_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            br#"{"quality": "Automatic", "show_all_services": false}"#,
+        )
+        .unwrap();
+
+        assert!(load_from(&path).axis_indicator);
     }
 
     #[test]

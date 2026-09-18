@@ -110,6 +110,28 @@ pub struct Pose {
 }
 
 impl Pose {
+    /// This pose's own right-handed basis: `forward` is where it looks
+    /// (exactly [`direction`]'s answer), `right`/`up` complete a frame around
+    /// world-space `Vec3::Y` as up. What the viewport's orientation indicator
+    /// (`rbx_studio::workspace_view::orientation`) projects the six world
+    /// axes into screen space with, so that widget never derives camera
+    /// rotation on its own. Mathematically degenerate only staring exactly
+    /// straight up or down (`pitch` at ±90°, where `forward` runs parallel to
+    /// world up and their cross product is zero): `right` falls back to
+    /// world `+X` rather than propagating a zero/NaN vector, the same
+    /// fallback [`look_at_pose`] uses for its own degenerate case. In
+    /// practice a `pitch` that merely rounds to ±90° in `f32` still leaves
+    /// the cross product a tiny but nonzero vector, so it normalizes on its
+    /// own (to whichever of `±X` the rounding residue happens to land on)
+    /// rather than actually reaching this fallback — either way the result
+    /// stays finite and unit-length, which is the guarantee that matters.
+    pub fn basis(&self) -> (Vec3, Vec3, Vec3) {
+        let forward = direction(self.yaw, self.pitch);
+        let right = forward.cross(Vec3::Y).normalize_or(Vec3::X);
+        let up = right.cross(forward);
+        (forward, right, up)
+    }
+
     /// The matrix a frame flown from this pose is drawn with, at this aspect
     /// ratio and projection mode.
     ///
