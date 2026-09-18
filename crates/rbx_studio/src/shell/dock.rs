@@ -16,6 +16,8 @@ use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::component::ActiveTheme;
 use gpui_kit::*;
 
+use crate::pacing::UnfocusedFps;
+
 use super::{Shell, EXPLORER_WIDTH, OUTPUT_HEIGHT, PROPERTIES_HEIGHT};
 
 /// Which of Shell's three sections a [`SectionPanel`] delegates to.
@@ -148,8 +150,10 @@ impl ComponentPanel for SectionPanel {
     /// Explorer's "Show all services" toggle, moved off the search row and
     /// into the panel's own overflow menu (see `Shell::show_all_services` /
     /// `Shell::set_show_all_services`); Viewport's own "Orthographic" toggle
-    /// (see `Shell::orthographic` / `Shell::set_orthographic`) lives the same
-    /// way, next to the quality dropdown already in its title bar.
+    /// (see `Shell::orthographic` / `Shell::set_orthographic`) and its
+    /// "Cap frame rate at 25 fps when unfocused" toggle (see
+    /// `Shell::unfocused_fps`) live the same way, next to the quality
+    /// dropdown already in its title bar.
     fn dropdown_menu(
         &mut self,
         menu: PopupMenu,
@@ -173,6 +177,8 @@ impl ComponentPanel for SectionPanel {
             }
             Section::Viewport => {
                 let checked = shell.read(cx).orthographic();
+                let unfocused_fps_shell = shell.clone();
+                let unfocused_fps_checked = shell.read(cx).unfocused_fps() == UnfocusedFps::Fps25;
                 menu.item(
                     PopupMenuItem::new("Orthographic")
                         .checked(checked)
@@ -180,6 +186,20 @@ impl ComponentPanel for SectionPanel {
                             shell.update(cx, |shell, cx| {
                                 let next = !shell.orthographic();
                                 shell.set_orthographic(next, cx);
+                            });
+                        }),
+                )
+                .item(
+                    PopupMenuItem::new("Cap frame rate at 25 fps when unfocused")
+                        .checked(unfocused_fps_checked)
+                        .on_click(move |_, _, cx| {
+                            unfocused_fps_shell.update(cx, |shell, cx| {
+                                let next = if shell.unfocused_fps() == UnfocusedFps::Fps25 {
+                                    UnfocusedFps::Fps30
+                                } else {
+                                    UnfocusedFps::Fps25
+                                };
+                                shell.set_unfocused_fps(next, cx);
                             });
                         }),
                 )

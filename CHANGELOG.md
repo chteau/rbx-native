@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-18
+
+- **Throttle the viewport's render loop while the editor window is
+  unfocused.** The render thread paced itself to the display's full refresh
+  rate no matter whether anyone was looking, burning GPU/CPU (and battery,
+  and fan noise) the moment the editor sat behind another window. Losing OS
+  focus now caps it to a user-chosen preset, 25 or 30 fps — a toggle next to
+  the viewport's quality dropdown, persisted like the rest of Settings — and
+  the first focus or input event restores the full rate immediately, ahead
+  of whatever window-activation event may still be in flight, so coming back
+  never feels sluggish. — @chteau
+
 ## 2026-09-17
 
 - **A batch of viewport editor fixes (`fix/overall-bug-fixes`).** Undo/redo
