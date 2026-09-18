@@ -1125,18 +1125,16 @@ against `Roblox/creator-docs` rather than assumed:
   through the same real-property DOM mutation any other editor action
   does, not a shortcut that could write something a saved place file
   can't actually represent.
-- [ ] 📋 **Icon and theme packs — the editor's look stops being hardcoded.**
+- [x] 🚧 **Icon and theme packs — the editor's look stops being hardcoded.**
   The Explorer's class icons are now this project's own icon kit rather than
-  Roblox's downloaded sheet (see "What's been implemented" above), but only
-  one pack, one variant, is wired up: `assets/icons/default/dark`, embedded
-  at compile time and always used. The kit ships an equal-sized
-  `assets/icons/default/light` variant that nothing reads yet, and
-  colours/spacing/fonts elsewhere are still Rust constants throughout
-  `rbx_studio`/`gpui_kit`. Planned:
-  - An **editor setting for dark/light icons**: picks between
-    `assets/icons/default/dark` and `.../light`, dark by default, without a
-    rebuild — the settings panel's own version of `settings.rs`'s existing
-    quality/service-visibility persistence.
+  Roblox's downloaded sheet (see "What's been implemented" above). Both
+  variants, `assets/icons/default/dark` and `.../light`, are now embedded
+  at compile time, and an **editor setting for dark/light icons** — a
+  "Light Icons" checkbox in the Explorer panel's own overflow menu, next to
+  "Show all services" — picks between them at runtime, dark by default,
+  without a rebuild, persisted the same way `settings.rs`'s existing
+  quality/service-visibility settings are. Colours/spacing/fonts elsewhere
+  are still Rust constants throughout `rbx_studio`/`gpui_kit` — still open:
   - Swapping in a **different icon pack** entirely: a directory (or bundle)
     of SVGs named by `ClassName`/tile-role, loaded instead of the built-in
     set at startup, with the existing Lucide fallback still covering
