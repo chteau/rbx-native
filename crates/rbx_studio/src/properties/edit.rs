@@ -4,7 +4,7 @@
 //! lives on `Instance` itself rather than in its property map).
 
 use rbx_dom::{
-    CFrameData, Color3Data, NumberRange, Ref, UDim, UDim2, Variant, Vector2Data, Vector3Data,
+    CFrameData, Color3Data, NumberRange, Rect, Ref, UDim, UDim2, Variant, Vector2Data, Vector3Data,
     WeakDom,
 };
 use rbx_reflection::ReflectionDatabase;
@@ -74,6 +74,10 @@ pub(crate) fn edit_text(value: &Variant) -> Option<String> {
             frame.position.x, frame.position.y, frame.position.z
         )),
         Variant::NumberRange(range) => Some(format!("{}, {}", range.min, range.max)),
+        Variant::Rect(rect) => Some(format!(
+            "{}, {}, {}, {}",
+            rect.min.x, rect.min.y, rect.max.x, rect.max.y
+        )),
         Variant::Font(font) => Some(font_text(font)),
         _ => None,
     }
@@ -182,6 +186,13 @@ pub(crate) fn parse(
             Ok(Variant::NumberRange(NumberRange {
                 min: n[0],
                 max: n[1],
+            }))
+        }
+        Variant::Rect(_) => {
+            let n = parse_numbers(text, 4)?;
+            Ok(Variant::Rect(Rect {
+                min: Vector2Data { x: n[0], y: n[1] },
+                max: Vector2Data { x: n[2], y: n[3] },
             }))
         }
         Variant::Font(_) => parse_font(text).map(Variant::Font),

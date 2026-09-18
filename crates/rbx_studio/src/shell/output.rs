@@ -6,7 +6,14 @@
 //! or failure, to the [`OutputLog`] `Shell` owns; this module renders that
 //! log as the Output panel's body plus its title-bar controls (filter, Clear)
 //! — see `shell::dock`'s `Section::Output` for how the panel itself is wired
-//! into the dock.
+//! into the dock, including its "Show Timestamp" toggle
+//! (`Shell::output_show_timestamps`), which lives in that overflow menu
+//! alongside Explorer's and Viewport's own toggles rather than in this
+//! panel's own title-bar row. Each row's icon and color come from its
+//! `row_kind::RowKind` — a plain `✕`/`✓` marker used to be the only
+//! distinction between error and everything else; now `print`/success,
+//! `warn` and `error` each read distinctly, matching real Studio's Output
+//! window.
 //!
 //! Clicking a logged entry recalls its source back into the Command Bar
 //! (see [`Shell::recall_command`]) instead of Studio's own Up/Down-through-history:
@@ -16,14 +23,20 @@
 //! than working with it. A clickable list gets the same "browse and recall"
 //! behaviour without the fight.
 
+use std::time::SystemTime;
+
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::scroll::ScrollableElement as _;
-use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Selectable as _, Sizable};
+use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Icon, Selectable as _, Sizable};
 use gpui_kit::*;
 
 use crate::command_bar::Feedback;
 
+use row_kind::{format_timestamp, RowColor, RowKind};
+
 use super::Shell;
+
+mod row_kind;
 
 /// How many runs the log keeps before dropping the oldest. Unlike
 /// `History`'s 50 (whole-DOM snapshots, genuinely expensive to keep many of),
@@ -46,6 +59,11 @@ const WARNING_SOURCE: &str = "warning";
 pub(crate) struct OutputEntry {
     source: String,
     feedback: Feedback,
+    /// Captured unconditionally at [`OutputEntry::new`] time — cheap to keep
+    /// on every entry — but only ever painted when the Output panel's own
+    /// "Show Timestamp" toggle (`Shell::output_show_timestamps`) is on; see
+    /// [`OutputEntry::timestamp_label`].
+    timestamp: SystemTime,
 }
 
 impl OutputEntry {
@@ -53,11 +71,17 @@ impl OutputEntry {
         OutputEntry {
             source: source.to_string(),
             feedback,
+            timestamp: SystemTime::now(),
         }
     }
 
     pub(crate) fn is_error(&self) -> bool {
         self.feedback.is_error()
+    }
+
+    /// Which color/icon family this row paints with — see `row_kind::RowKind`.
+    pub(crate) fn kind(&self) -> RowKind {
+        RowKind::of(&self.feedback)
     }
 
     pub(crate) fn source(&self) -> &str {
@@ -66,6 +90,10 @@ impl OutputEntry {
 
     fn truncated_source(&self) -> SharedString {
         truncate(&self.source, SOURCE_MAX_LEN)
+    }
+
+    fn timestamp_label(&self) -> SharedString {
+        format_timestamp(self.timestamp)
     }
 }
 
@@ -223,6 +251,7 @@ impl Shell {
     /// clickable to recall its source (see [`Shell::recall_command`]).
     pub(super) fn output_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let filter = self.output_filter;
+        let show_timestamp = self.output_show_timestamps;
         let entries: Vec<&OutputEntry> = self.output.filtered(filter).collect();
 
         let list = if entries.is_empty() {
@@ -239,7 +268,7 @@ impl Shell {
         } else {
             let mut rows = v_flex().flex_1();
             for (index, entry) in entries.into_iter().enumerate() {
-                rows = rows.child(output_row(entry, index, cx));
+                rows = rows.child(output_row(entry, index, show_timestamp, cx));
             }
             rows
         };
@@ -260,19 +289,30 @@ impl Shell {
     }
 }
 
-/// One row of the log: a coloured marker for success/error, the truncated
-/// source that was run, and the result label — clicking anywhere on the row
-/// recalls that source into the Command Bar.
-fn output_row(entry: &OutputEntry, index: usize, cx: &mut Context<Shell>) -> impl IntoElement {
-    let color = if entry.is_error() {
-        cx.theme().danger
-    } else {
-        cx.theme().success
+/// One row of the log: a per-kind icon (see `row_kind::RowKind`), optionally
+/// that entry's timestamp, the truncated source that was run, and the result
+/// label — clicking anywhere on the row recalls that source into the Command
+/// Bar.
+fn output_row(
+    entry: &OutputEntry,
+    index: usize,
+    show_timestamp: bool,
+    cx: &mut Context<Shell>,
+) -> impl IntoElement {
+    let kind = entry.kind();
+    let color = match kind.color() {
+        RowColor::Default => None,
+        RowColor::Warning => Some(cx.theme().warning),
+        RowColor::Danger => Some(cx.theme().danger),
     };
-    let marker = if entry.is_error() { "✕" } else { "✓" };
+    let icon = Icon::new(kind.icon()).small();
+    let icon = match color {
+        Some(color) => icon.text_color(color),
+        None => icon,
+    };
     let source = entry.source().to_string();
 
-    h_flex()
+    let mut row = h_flex()
         .id(format!("output-entry-{index}"))
         .w_full()
         .gap_2()
@@ -281,156 +321,25 @@ fn output_row(entry: &OutputEntry, index: usize, cx: &mut Context<Shell>) -> imp
         .on_click(cx.listener(move |shell, _, window, cx| {
             shell.recall_command(&source, window, cx);
         }))
-        .child(div().text_xs().text_color(color).child(marker))
-        .child(div().flex_1().text_xs().child(entry.truncated_source()))
-        .child(
+        .child(icon);
+
+    if show_timestamp {
+        row = row.child(
             div()
                 .text_xs()
-                .text_color(color)
-                .child(entry.feedback.label()),
-        )
+                .text_color(cx.theme().muted_foreground)
+                .child(entry.timestamp_label()),
+        );
+    }
+
+    let mut result_label = div().text_xs().child(entry.feedback.label());
+    if let Some(color) = color {
+        result_label = result_label.text_color(color);
+    }
+
+    row.child(div().flex_1().text_xs().child(entry.truncated_source()))
+        .child(result_label)
 }
 
 #[cfg(test)]
-mod tests {
-    // Not `use super::*;`: the parent module's `use gpui_kit::*;` re-exports
-    // `gpui::test`, which would then shadow `std`'s `#[test]` here and expand
-    // every plain test below through GPUI's randomized-test machinery instead
-    // — see `shell::dock`'s own test module for the same guard.
-    use super::{OutputEntry, OutputFilter, OutputLog, CAP, SOURCE_MAX_LEN};
-    use crate::command_bar::Feedback;
-
-    fn output(text: &str) -> Feedback {
-        Feedback::from_run(Ok(vec![text.to_string()]))
-    }
-
-    fn error(text: &str) -> Feedback {
-        Feedback::from_run(Err(text.to_string()))
-    }
-
-    #[test]
-    fn a_fresh_log_is_empty() {
-        let log = OutputLog::default();
-        assert!(log.is_empty());
-        assert_eq!(log.len(), 0);
-    }
-
-    #[test]
-    fn pushed_entries_come_back_oldest_first() {
-        let mut log = OutputLog::default();
-        log.push("print(1)", output("1"));
-        log.push("print(2)", output("2"));
-
-        let sources: Vec<&str> = log
-            .filtered(OutputFilter::All)
-            .map(|e| e.source())
-            .collect();
-        assert_eq!(sources, vec!["print(1)", "print(2)"]);
-    }
-
-    #[test]
-    fn clear_empties_the_log() {
-        let mut log = OutputLog::default();
-        log.push("print(1)", output("1"));
-        log.clear();
-        assert!(log.is_empty());
-    }
-
-    #[test]
-    fn pushing_past_the_cap_drops_the_oldest_entry() {
-        let mut log = OutputLog::default();
-        for i in 0..CAP + 5 {
-            log.push(&format!("print({i})"), output("x"));
-        }
-
-        assert_eq!(log.len(), CAP);
-        let first = log.filtered(OutputFilter::All).next().unwrap();
-        // The five oldest (0..5) should have been dropped to stay at CAP.
-        assert_eq!(first.source(), "print(5)");
-    }
-
-    #[test]
-    fn filter_output_only_hides_errors() {
-        let mut log = OutputLog::default();
-        log.push("ok", output("done"));
-        log.push("bad", error("boom"));
-
-        let sources: Vec<&str> = log
-            .filtered(OutputFilter::Output)
-            .map(|e| e.source())
-            .collect();
-        assert_eq!(sources, vec!["ok"]);
-    }
-
-    #[test]
-    fn filter_errors_only_hides_output() {
-        let mut log = OutputLog::default();
-        log.push("ok", output("done"));
-        log.push("bad", error("boom"));
-
-        let sources: Vec<&str> = log
-            .filtered(OutputFilter::Errors)
-            .map(|e| e.source())
-            .collect();
-        assert_eq!(sources, vec!["bad"]);
-    }
-
-    #[test]
-    fn filter_all_shows_everything() {
-        let mut log = OutputLog::default();
-        log.push("ok", output("done"));
-        log.push("bad", error("boom"));
-
-        assert_eq!(log.filtered(OutputFilter::All).count(), 2);
-    }
-
-    #[test]
-    fn an_entry_reports_its_own_error_state() {
-        let ok_entry = OutputEntry::new("ok", output("done"));
-        let err_entry = OutputEntry::new("bad", error("boom"));
-        assert!(!ok_entry.is_error());
-        assert!(err_entry.is_error());
-    }
-
-    #[test]
-    fn a_long_source_is_truncated_with_an_ellipsis() {
-        let entry = OutputEntry::new(&"x".repeat(SOURCE_MAX_LEN + 20), output("done"));
-        let label = entry.truncated_source();
-        assert_eq!(label.chars().count(), SOURCE_MAX_LEN + 1);
-        assert!(label.ends_with('…'));
-    }
-
-    #[test]
-    fn filter_default_is_all() {
-        assert_eq!(OutputFilter::default(), OutputFilter::All);
-    }
-
-    #[test]
-    fn a_pushed_warning_is_not_treated_as_an_error() {
-        let mut log = OutputLog::default();
-        log.push_warning("asset 1: fetching asset 1 failed");
-
-        let entry = log.filtered(OutputFilter::All).next().unwrap();
-        assert!(!entry.is_error());
-    }
-
-    #[test]
-    fn a_warning_shows_under_all_and_output_but_never_errors() {
-        let mut log = OutputLog::default();
-        log.push_warning("boom");
-
-        assert_eq!(log.filtered(OutputFilter::All).count(), 1);
-        assert_eq!(log.filtered(OutputFilter::Output).count(), 1);
-        assert_eq!(log.filtered(OutputFilter::Errors).count(), 0);
-    }
-
-    #[test]
-    fn pushing_warnings_past_the_cap_drops_the_oldest() {
-        let mut log = OutputLog::default();
-        for i in 0..CAP + 5 {
-            log.push_warning(&format!("warning {i}"));
-        }
-
-        assert_eq!(log.len(), CAP);
-    }
-}
+mod tests;

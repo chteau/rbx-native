@@ -233,8 +233,19 @@ pub(crate) struct WorkspaceView {
     visible: bool,
     missed_paints: u32,
     frame: Option<Arc<RenderImage>>,
-    /// One display refresh: the budget a frame is given.
+    /// One display refresh: the budget a frame is given while the window is
+    /// focused. Fixed for the life of the view — see `pacing` for the
+    /// unfocused cap this and the window's focus state combine into.
+    full_interval: Duration,
+    /// What the render loop is currently paced to: `full_interval` while
+    /// focused, or the capped unfocused rate otherwise — see [`pacing::FocusPacing`].
+    /// Drives the UI thread's own poll delay (`advance`'s return value) and
+    /// the hover/drag gates below; pushed to the render thread itself
+    /// through `Pump::set_interval` whenever `pacing` says it changed.
     interval: Duration,
+    /// Whether the window currently has OS focus, and the unfocused fps
+    /// preset — see [`pacing::FocusPacing`].
+    pacing: pacing::FocusPacing,
     speed: f32,
     speed_shown_until: Option<Instant>,
     /// The quality mode the user picked, and the level the render thread last
@@ -245,6 +256,12 @@ pub(crate) struct WorkspaceView {
     /// The projection mode the user last picked from the Viewport panel's
     /// overflow menu (see `Shell::set_orthographic`).
     orthographic: bool,
+    /// Whether the corner label shows `pump.stats()`'s frame rate — the
+    /// Viewport panel overflow menu's Stats toggle, next to Orthographic
+    /// (see `Shell::set_stats_shown`). Session-only: real Studio's own
+    /// `Window > Performance > Stats` doesn't persist across restarts
+    /// either.
+    stats_shown: bool,
     /// The transform toolbar's state, pushed down from `Shell` (see
     /// [`WorkspaceView::set_transform`]).
     transform: Transform,
@@ -285,11 +302,13 @@ pub(crate) struct WorkspaceView {
 }
 
 impl WorkspaceView {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         opened: Opened,
         camera: Option<PlaceCamera>,
         quality: QualityLevel,
         orthographic: bool,
+        unfocused_fps: pacing::UnfocusedFps,
         selected: Vec<Selected>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -304,7 +323,12 @@ impl WorkspaceView {
         viewer.set_selection(&selected);
         viewer.set_orthographic(orthographic);
 
-        let interval = pacing::frame_interval(display::refresh_hz());
+        let full_interval = pacing::frame_interval(display::refresh_hz());
+        let pacing = pacing::FocusPacing::new(unfocused_fps);
+        // A freshly opened window is focused (see `FocusPacing::new`), so the
+        // loop opens at the full rate; `pacing` only starts mattering once
+        // something blurs or deactivates it.
+        let interval = pacing.interval(full_interval);
         let speed = viewer.speed();
         cx.spawn_in(window, async move |view, cx| {
             let mut delay = interval;
@@ -330,10 +354,16 @@ impl WorkspaceView {
             view.end_look();
         });
         // Alt-tabbing away never blurs the focus handle, so the window's own
-        // activation is watched too.
+        // activation is watched too — and, since it's the authoritative OS
+        // focus signal (unlike the in-app `focus` handle above), it's also
+        // what drives the render-rate throttle (see `pacing`).
         let deactivated = cx.observe_window_activation(window, |view, window, _| {
-            if !window.is_window_active() {
+            let active = window.is_window_active();
+            if !active {
                 view.end_look();
+            }
+            if view.pacing.set_active(active) {
+                view.retarget_pacing();
             }
         });
 
@@ -358,12 +388,15 @@ impl WorkspaceView {
             visible: true,
             missed_paints: 0,
             frame: None,
+            full_interval,
             interval,
+            pacing,
             speed,
             speed_shown_until: None,
             quality,
             level: QualityLevel::MAX,
             orthographic,
+            stats_shown: false,
             transform: Transform::default(),
             targets: Targets::default(),
             neighbours: Vec::new(),
@@ -679,11 +712,61 @@ impl WorkspaceView {
         cx.notify();
     }
 
+    /// Turns the corner label's frame-rate readout on or off — see
+    /// `Shell::set_stats_shown`. Pure UI-thread state, unlike quality or
+    /// projection above: `pump.stats()` is already updated by the render
+    /// thread regardless, so nothing about what it draws needs to change.
+    pub(crate) fn set_stats_shown(&mut self, shown: bool, cx: &mut Context<Self>) {
+        if shown == self.stats_shown {
+            return;
+        }
+
+        self.stats_shown = shown;
+        cx.notify();
+    }
+
+    /// Switches which unfocused preset `pacing` caps the render loop to —
+    /// see `Shell::set_unfocused_fps`. No visible effect while focused, so
+    /// unlike `set_quality`/`set_orthographic` this never needs `cx.notify`.
+    pub(crate) fn set_unfocused_fps(&mut self, unfocused: pacing::UnfocusedFps) {
+        if self.pacing.set_unfocused(unfocused) {
+            self.retarget_pacing();
+        }
+    }
+
+    /// Any keyboard or mouse input reaching the viewport counts as regaining
+    /// the user's attention — see `pacing::FocusPacing::mark_input`. Called
+    /// from every input handler in `render` below, so the throttle from
+    /// before an unfocused window's activation event lands doesn't also
+    /// delay the very input that's supposed to end it.
+    fn note_input(&mut self) {
+        if self.pacing.mark_input() {
+            self.retarget_pacing();
+        }
+    }
+
+    /// Recomputes the render loop's target interval from the current focus
+    /// state and pushes it to both halves of the loop: `self.interval` (read
+    /// by `advance`'s own poll delay and the hover/drag gates) and the render
+    /// thread itself (the actual throttle — see `Pump::set_interval`).
+    fn retarget_pacing(&mut self) {
+        let next = self.pacing.interval(self.full_interval);
+        if next != self.interval {
+            self.interval = next;
+            self.pump.set_interval(next);
+        }
+    }
+
     /// What the corner label reads: the speed is passed only while its moment
-    /// on screen lasts.
+    /// on screen lasts, the frame rate only while the Stats toggle is on —
+    /// and `0.0` (no full second counted yet) reads the same as off.
     fn status_label(&self) -> SharedString {
         let speed = self.speed_shown_until.map(|_| self.speed);
-        label::status(self.quality, self.level, speed)
+        let fps = self
+            .stats_shown
+            .then(|| self.pump.stats().latest_fps())
+            .filter(|fps| *fps > 0.0);
+        label::status(self.quality, self.level, fps, speed)
     }
 }
 
@@ -715,6 +798,7 @@ impl Render for WorkspaceView {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|view, event: &MouseDownEvent, window, cx| {
+                    view.note_input();
                     window.focus(&view.focus, cx);
                     let scale = window.scale_factor();
                     view.press(event.position, event.modifiers, scale, cx);
@@ -733,6 +817,7 @@ impl Render for WorkspaceView {
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(|view, _: &MouseDownEvent, window, cx| {
+                    view.note_input();
                     view.begin_look(window, cx);
                 }),
             )
@@ -751,6 +836,7 @@ impl Render for WorkspaceView {
                 }),
             )
             .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, _, _| {
+                view.note_input();
                 // Recorded, not applied: the step itself runs in `advance`,
                 // at most once per frame (see `gizmo::Drag`'s doc and
                 // `WorkspaceView::step_drag`), the way a hover is. A mouse
@@ -791,10 +877,12 @@ impl Render for WorkspaceView {
             // Not straight to the camera: a `ScrollingFrame` under the
             // cursor takes the notch first (see `scroll`).
             .on_scroll_wheel(cx.listener(|view, event: &ScrollWheelEvent, window, _| {
+                view.note_input();
                 let scale = window.scale_factor();
                 view.wheel(event.position, event.delta, event.modifiers.shift, scale);
             }))
             .on_key_down(cx.listener(|view, event: &KeyDownEvent, _, cx| {
+                view.note_input();
                 view.key(&event.keystroke, true, cx);
             }))
             .on_key_up(cx.listener(|view, event: &KeyUpEvent, _, cx| {
@@ -803,6 +891,7 @@ impl Render for WorkspaceView {
             // Shift alone never arrives as a keystroke: modifiers are reported
             // on their own, and Shift is Studio's precision modifier.
             .on_modifiers_changed(cx.listener(|view, event: &ModifiersChangedEvent, _, _| {
+                view.note_input();
                 view.pump.input(CameraInput::Key {
                     key: rbx_viewer::CameraKey::Slow,
                     pressed: event.modifiers.shift,

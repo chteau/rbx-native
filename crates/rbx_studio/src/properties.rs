@@ -213,6 +213,7 @@ impl Properties {
             // so it shares Vector3's 3-field shape.
             Variant::Vector3(_) | Variant::CFrame(_) => fields(&["X", "Y", "Z"], &text),
             Variant::UDim2(_) => fields(&["X Scale", "X Offset", "Y Scale", "Y Offset"], &text),
+            Variant::Rect(_) => fields(&["Min X", "Min Y", "Max X", "Max Y"], &text),
             // A family name, a `FontWeight` name and `Normal`/`Italic`, typed:
             // the fonts package that could list the families lives in the
             // viewer, and a weight's nine names are quicker typed than picked.
