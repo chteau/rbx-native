@@ -83,6 +83,12 @@ pub(crate) struct Shell {
     /// perspective. Persisted (see `settings`); every write goes through
     /// [`Shell::save_settings`].
     orthographic: bool,
+    /// Whether the viewport's corner label shows its frame-rate readout —
+    /// the Stats toggle, next to Orthographic in the same overflow menu (see
+    /// `shell::dock`). Session-only, unlike the two settings above: real
+    /// Studio's own `Window > Performance > Stats` doesn't persist across
+    /// restarts either, so this one lazily doesn't bother with `settings`.
+    stats_shown: bool,
     /// The render loop's frame rate cap while the window is unfocused (see
     /// `pacing::FocusPacing`). Persisted (see `settings`); every write goes
     /// through [`Shell::save_settings`].
@@ -272,6 +278,7 @@ impl Shell {
             show_all_services,
             quality_choice: quality,
             orthographic,
+            stats_shown: false,
             unfocused_fps,
             search: cx.new(|cx| InputState::new(window, cx).placeholder("Search")),
             filter,
@@ -553,6 +560,25 @@ impl Shell {
             viewport.set_orthographic(orthographic, cx)
         });
         self.save_settings(cx);
+    }
+
+    /// Whether the viewport's corner label shows its frame-rate readout, for
+    /// the dock's Viewport menu item (see `shell::dock`) to render its
+    /// checked state.
+    pub(super) fn stats_shown(&self) -> bool {
+        self.stats_shown
+    }
+
+    /// Flips the viewport corner label's Stats readout on or off — see
+    /// `WorkspaceView::set_stats_shown`.
+    fn set_stats_shown(&mut self, shown: bool, cx: &mut Context<Self>) {
+        if shown == self.stats_shown {
+            return;
+        }
+
+        self.stats_shown = shown;
+        self.viewport
+            .update(cx, |viewport, cx| viewport.set_stats_shown(shown, cx));
     }
 
     /// The frame rate preset the render loop caps itself to while the window

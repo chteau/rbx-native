@@ -177,6 +177,8 @@ impl ComponentPanel for SectionPanel {
             }
             Section::Viewport => {
                 let checked = shell.read(cx).orthographic();
+                let stats_checked = shell.read(cx).stats_shown();
+                let stats_shell = shell.clone();
                 let unfocused_fps_shell = shell.clone();
                 let unfocused_fps_checked = shell.read(cx).unfocused_fps() == UnfocusedFps::Fps25;
                 menu.item(
@@ -189,6 +191,17 @@ impl ComponentPanel for SectionPanel {
                             });
                         }),
                 )
+                // Real Studio's own toggle is `Window > Performance > Stats`;
+                // this editor has no `Window` menu yet, so it sits next to
+                // the viewport's other debug affordance instead.
+                .item(PopupMenuItem::new("Stats").checked(stats_checked).on_click(
+                    move |_, _, cx| {
+                        stats_shell.update(cx, |shell, cx| {
+                            let next = !shell.stats_shown();
+                            shell.set_stats_shown(next, cx);
+                        });
+                    },
+                ))
                 .item(
                     PopupMenuItem::new("Cap frame rate at 25 fps when unfocused")
                         .checked(unfocused_fps_checked)
