@@ -87,6 +87,10 @@ pub(crate) struct Shell {
     /// perspective. Persisted (see `settings`); every write goes through
     /// [`Shell::save_settings`].
     orthographic: bool,
+    /// Whether the viewport's top-right orientation indicator draws at all.
+    /// Persisted the same way `orthographic` is, for the same reason: it's
+    /// meant to be a durable preference, not a per-session debug switch.
+    axis_indicator: bool,
     /// Which of the class icon kit's two variants the Explorer draws.
     /// Persisted (see `settings`); every write goes through
     /// [`Shell::save_settings`].
@@ -166,7 +170,6 @@ pub(crate) struct Shell {
 }
 
 impl Shell {
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         title: impl Into<SharedString>,
         place: Place,
@@ -178,6 +181,7 @@ impl Shell {
             quality,
             show_all_services,
             orthographic,
+            axis_indicator,
             icon_pack,
             unfocused_fps,
         } = settings;
@@ -244,6 +248,7 @@ impl Shell {
                 camera,
                 quality,
                 orthographic,
+                axis_indicator,
                 unfocused_fps,
                 initial_outline,
                 window,
@@ -297,6 +302,7 @@ impl Shell {
             show_all_services,
             quality_choice: quality,
             orthographic,
+            axis_indicator,
             icon_pack,
             stats_shown: false,
             unfocused_fps,
@@ -589,6 +595,26 @@ impl Shell {
         self.save_settings(cx);
     }
 
+    /// Whether the viewport's orientation indicator draws, for the dock's
+    /// Viewport menu item to render its checked state — see
+    /// `set_axis_indicator`.
+    pub(super) fn axis_indicator(&self) -> bool {
+        self.axis_indicator
+    }
+
+    /// Shows or hides the top-right orientation indicator — see
+    /// `WorkspaceView::set_axis_indicator`.
+    fn set_axis_indicator(&mut self, shown: bool, cx: &mut Context<Self>) {
+        if shown == self.axis_indicator {
+            return;
+        }
+
+        self.axis_indicator = shown;
+        self.viewport
+            .update(cx, |viewport, cx| viewport.set_axis_indicator(shown, cx));
+        self.save_settings(cx);
+    }
+
     /// Which icon pack the Explorer draws, for the dock's Explorer menu item
     /// (see `shell::dock`) to render its checked state.
     pub(super) fn icon_pack(&self) -> IconPack {
@@ -652,17 +678,18 @@ impl Shell {
     }
 
     /// Writes the current quality pick, Explorer visibility, projection mode,
-    /// icon pack, and unfocused frame rate preset to disk. Also saves the
-    /// current dock layout. A settings file is tiny, so this runs
-    /// synchronously on every change rather than debouncing; a write failure
-    /// (e.g. no writable config directory) is not fatal and is silently
-    /// dropped — losing a preference write is better than interrupting the
-    /// editor over it.
+    /// orientation indicator toggle, icon pack, and unfocused frame rate
+    /// preset to disk. Also saves the current dock layout. A settings file
+    /// is tiny, so this runs synchronously on every change rather than
+    /// debouncing; a write failure (e.g. no writable config directory) is
+    /// not fatal and is silently dropped — losing a preference write is
+    /// better than interrupting the editor over it.
     fn save_settings(&self, cx: &App) {
         let settings = Settings {
             quality: self.quality_choice,
             show_all_services: self.show_all_services,
             orthographic: self.orthographic,
+            axis_indicator: self.axis_indicator,
             icon_pack: self.icon_pack,
             unfocused_fps: self.unfocused_fps,
         };

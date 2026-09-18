@@ -242,6 +242,19 @@ Roblox's own engine.
   path has no next frame to spread across, so it drains any remaining
   upload immediately (`Renderer::finish_loading`) before capturing rather
   than writing out a PNG with textures still mid-upload.
+- [x] **An orientation/axis indicator in the corner of the viewport**
+  (top-right) — six small coloured, lettered dots (`Right`/`Left`/`Top`/
+  `Bottom`/`Front`/`Back`, red/green/blue per axis, the same colours the
+  Move/Rotate/Scale gizmo already uses), positioned by projecting the free
+  camera's current basis (`rbx_viewer::Pose::basis`) rather than a literal
+  3D cube mesh — the same flat 2D approach Blender's own gizmo actually
+  draws with. Toggleable off from the Viewport panel's overflow menu
+  (`Orientation Indicator`, next to `Orthographic`), on by default and
+  persisted the same way. As flagged when this was picked up: a genuine
+  rbx-native addition inspired by Blender/SketchUp/3ds Max conventions, not
+  a claim that Studio itself has one. Click-to-snap-camera-to-a-face (real
+  in those other tools) is deliberately not implemented — this is a static,
+  informational indicator only.
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: this project's own flat, from-scratch class icon kit
@@ -711,17 +724,6 @@ Roblox's own engine.
   `.../contributors` — distinct from the publish endpoint above and not
   yet wired into `rbx_cloud` at all; worth treating as its own follow-up
   rather than assuming the existing client already covers it.
-- [ ] 📋 **An orientation/axis indicator in the corner of the viewport**
-  (top-right, per the owner's reference) — a small `Front`/`Back`/`Left`/
-  `Right`/`Top`/`Bottom` cube or similar, colour-coded per axis, toggleable
-  off. Flagged honestly: this is a common convention in other 3D tools
-  (Blender's own axis gizmo, SketchUp/3ds Max's ViewCube), but nothing in
-  `Roblox/creator-docs`' viewport documentation describes Studio itself
-  having one — the closest documented feature is the unrelated
-  "Visualization Options" menu in the same corner (UI overlays, light
-  sources, physics/pathfinding visualization, scroll speed). Treat this as
-  a genuine rbx-native addition, not a claim that it matches Studio.
-
 #### Properties panel — remaining type editors
 - [ ] 📋 **Layout/UX pass on the panel itself**, separate from the
   per-type editor work below. Reported directly from real use, not yet

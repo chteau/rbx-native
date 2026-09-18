@@ -87,6 +87,18 @@
   runtime, no rebuild needed, dark by default. Persisted in
   `settings.json` alongside quality and service visibility, so a relaunch
   keeps whichever you picked. — @chteau
+- **A top-right orientation indicator for the viewport.** Reads as an actual
+  cube: up to three visible faces render as flat coloured parallelograms
+  tiling around their shared corner (or one square face-on), each labeled
+  `Right`/`Left`/`Top`/`Bottom`/`Front`/`Back` and coloured per axis like the
+  transform gizmo already uses. Projected from `Pose::basis` as a flat 2D
+  isometric-cube trick — the same one Blender's own gizmo uses — rather than
+  a literal 3D render, so it tracks the free camera's current orientation
+  live with no extra render pass. Toggleable from the Viewport panel's
+  overflow menu, on by default and persisted like `Orthographic`. An
+  original rbx-native addition (Blender/SketchUp/3ds Max convention), not a
+  Studio-parity claim — nothing in Roblox's own viewport documentation
+  describes Studio having one. — @chteau
 
 ## 2026-09-17
 

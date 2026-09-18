@@ -153,8 +153,9 @@ impl ComponentPanel for SectionPanel {
     /// `Shell::show_all_services` / `Shell::set_show_all_services` and
     /// `Shell::icon_pack` / `Shell::set_icon_pack`); Viewport's own
     /// "Orthographic" toggle (see `Shell::orthographic` /
-    /// `Shell::set_orthographic`), its Stats toggle, and its "Cap frame rate
-    /// at 25 fps when unfocused" toggle (see `Shell::unfocused_fps`) all live
+    /// `Shell::set_orthographic`), its Orientation Indicator toggle (see
+    /// `Shell::axis_indicator`), its Stats toggle, and its "Cap frame rate at
+    /// 25 fps when unfocused" toggle (see `Shell::unfocused_fps`) all live
     /// the same way, next to the quality dropdown already in its title bar.
     /// Output's "Show Timestamp" toggle (`Shell::output_show_timestamps`)
     /// lives here too rather than crowding the level-filter/Clear row
@@ -197,18 +198,30 @@ impl ComponentPanel for SectionPanel {
                 )
             }
             Section::Viewport => {
-                let checked = shell.read(cx).orthographic();
+                let orthographic = shell.read(cx).orthographic();
+                let axis_indicator = shell.read(cx).axis_indicator();
+                let axis_indicator_shell = shell.clone();
                 let stats_checked = shell.read(cx).stats_shown();
                 let stats_shell = shell.clone();
                 let unfocused_fps_shell = shell.clone();
                 let unfocused_fps_checked = shell.read(cx).unfocused_fps() == UnfocusedFps::Fps25;
                 menu.item(
                     PopupMenuItem::new("Orthographic")
-                        .checked(checked)
+                        .checked(orthographic)
                         .on_click(move |_, _, cx| {
                             shell.update(cx, |shell, cx| {
                                 let next = !shell.orthographic();
                                 shell.set_orthographic(next, cx);
+                            });
+                        }),
+                )
+                .item(
+                    PopupMenuItem::new("Orientation Indicator")
+                        .checked(axis_indicator)
+                        .on_click(move |_, _, cx| {
+                            axis_indicator_shell.update(cx, |shell, cx| {
+                                let next = !shell.axis_indicator();
+                                shell.set_axis_indicator(next, cx);
                             });
                         }),
                 )

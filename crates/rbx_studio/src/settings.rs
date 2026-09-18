@@ -1,7 +1,8 @@
 //! Persisted Studio preferences: the graphics quality dropdown, the
 //! Explorer's "show all services" checkbox, the Viewport's orthographic
-//! toggle, and the Explorer's icon pack (dark/light), so a relaunch reopens
-//! where the user left off rather than always at the hardcoded defaults.
+//! toggle, its orientation indicator toggle, and the Explorer's icon pack
+//! (dark/light), so a relaunch reopens where the user left off rather than
+//! always at the hardcoded defaults.
 //!
 //! Mirrors `rbx_assets::AssetCache`'s directory convention (`$XDG_CONFIG_HOME`,
 //! falling back to `~/.config` or, on Windows, `%APPDATA%`, all under an
@@ -22,6 +23,11 @@ pub(crate) struct Settings {
     pub(crate) quality: QualityLevel,
     pub(crate) show_all_services: bool,
     pub(crate) orthographic: bool,
+    /// The viewport's top-right orientation indicator — see
+    /// `crate::workspace_view::orientation`. Defaults on: it's meant to read
+    /// as an always-there convention (the way Blender's own gizmo is), not
+    /// an opt-in debug overlay.
+    pub(crate) axis_indicator: bool,
     pub(crate) icon_pack: IconPack,
     /// The render loop's frame rate cap while the window is unfocused — see
     /// `pacing::FocusPacing`.
@@ -36,6 +42,7 @@ impl Default for Settings {
             quality: QualityLevel::Automatic,
             show_all_services: false,
             orthographic: false,
+            axis_indicator: true,
             icon_pack: IconPack::Dark,
             unfocused_fps: UnfocusedFps::DEFAULT,
         }
@@ -132,6 +139,10 @@ fn load_from(path: &Path) -> Settings {
         .get("orthographic")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
+    let axis_indicator = value
+        .get("axis_indicator")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
     let icon_pack = value
         .get("icon_pack")
         .and_then(|v| v.as_str())
@@ -147,6 +158,7 @@ fn load_from(path: &Path) -> Settings {
         quality,
         show_all_services,
         orthographic,
+        axis_indicator,
         icon_pack,
         unfocused_fps,
     }
@@ -168,6 +180,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "quality": format_quality(settings.quality),
         "show_all_services": settings.show_all_services,
         "orthographic": settings.orthographic,
+        "axis_indicator": settings.axis_indicator,
         "icon_pack": format_icon_pack(settings.icon_pack),
         "unfocused_fps": settings.unfocused_fps.fps(),
     });
@@ -288,11 +301,25 @@ mod tests {
             quality: QualityLevel::Level(7),
             show_all_services: true,
             orthographic: true,
+            axis_indicator: false,
             icon_pack: IconPack::Light,
             unfocused_fps: UnfocusedFps::Fps25,
         };
         save_to(&settings, &path).unwrap();
         assert_eq!(load_from(&path), settings);
+    }
+
+    #[test]
+    fn a_settings_file_from_before_the_axis_indicator_toggle_existed_defaults_it_on() {
+        let path = temp_settings_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            br#"{"quality": "Automatic", "show_all_services": false}"#,
+        )
+        .unwrap();
+
+        assert!(load_from(&path).axis_indicator);
     }
 
     #[test]
