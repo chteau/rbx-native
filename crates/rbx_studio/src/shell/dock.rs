@@ -13,13 +13,13 @@ use gpui_kit::component::dock::{
     PaneRef, Panel as ComponentPanel, PanelEvent, PanelId, TitleStyle,
 };
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
-use gpui_kit::component::{h_flex, ActiveTheme};
+use gpui_kit::component::ActiveTheme;
 use gpui_kit::*;
 
 use crate::class_icons::IconPack;
 use crate::pacing::UnfocusedFps;
 
-use super::{Shell, EXPLORER_WIDTH, PROPERTIES_WIDTH};
+use super::{Shell, EXPLORER_WIDTH, OUTPUT_HEIGHT, PROPERTIES_WIDTH};
 
 /// Which of Shell's three sections a [`SectionPanel`] delegates to.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -128,27 +128,18 @@ impl ComponentPanel for SectionPanel {
         })
     }
 
-    /// The transform toolbar (Select/Move/Scale/Rotate, snap, Align) and the
-    /// graphics-quality dropdown both live in the Viewport tab's own row now
-    /// — see `shell.rs`'s `Render` doc for why: putting them here, alongside
-    /// the Viewport/Script/Style tabs themselves, is what keeps the tab
-    /// strip the first thing under the menu bar rather than a separate strip
-    /// stacked under a toolbar row (see `Shell::quality_control` and
-    /// `Shell::toolbar`).
+    /// The graphics-quality dropdown, now that the Viewport panel no longer
+    /// draws its own fake tab bar to hold it (see `Shell::quality_control`).
+    /// The transform toolbar lives in the ribbon's "Tools" group instead
+    /// (see `shell::ribbon`), not here — it applies to the whole editor's
+    /// transform state, not just this one tab.
     fn title_suffix(
         &mut self,
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<impl IntoElement> {
         match self.section {
-            Section::Viewport => Some(self.shell.update(cx, |shell, cx| {
-                h_flex()
-                    .items_center()
-                    .gap_3()
-                    .child(shell.toolbar(cx).into_any_element())
-                    .child(shell.quality_control().into_any_element())
-                    .into_any_element()
-            })),
+            Section::Viewport => Some(self.shell.read(cx).quality_control().into_any_element()),
             // Output's own controls (filter, Clear) need a mutable `Context<Shell>`
             // to wire their click handlers (see `Shell::output_controls`), unlike
             // Viewport's dropdown above which only reads state here.
@@ -281,13 +272,11 @@ impl ComponentPanel for SectionPanel {
     }
 }
 
-/// Builds the dock area with the default arrangement — Properties tabbed
-/// with Output on the left, Viewport tabbed with the Script/Style editors in
-/// the middle, Explorer alone on the right — three side-by-side columns
-/// rather than the old two-column-of-stacked-panels layout, closer to how a
-/// ribbon-style Studio redesign groups its own docks (see the ROADMAP's
-/// "Soften the editor's visual theme"). Rearrangeable by dragging like
-/// before.
+/// Builds the dock area with the default arrangement — Properties alone on
+/// the left, Viewport (tabbed with the Script/Style editors) over Output in
+/// the middle, Explorer alone on the right — matching a maintainer-supplied
+/// ribbon-style Studio redesign reference (see `UX_GUIDELINES.md` §7).
+/// Rearrangeable by dragging like before.
 pub(super) fn build(
     shell: Entity<Shell>,
     window: &mut Window,
@@ -306,16 +295,28 @@ pub(super) fn build(
         area.set_center(
             DockLayout::h_split()
                 .child(
-                    DockLayout::tabs()
-                        .panel_view(panel_handle(properties), cx)
-                        .panel_view(panel_handle(output), cx),
+                    DockLayout::tabs().panel_view(panel_handle(properties), cx),
                     Some(px(PROPERTIES_WIDTH)),
                 )
                 .child(
-                    DockLayout::tabs()
-                        .panel_view(panel_handle(viewport), cx)
-                        .panel_view(panel_handle(scripts), cx)
-                        .panel_view(panel_handle(styles), cx),
+                    // A `v_split` rather than `DockPlacement::Bottom`: that
+                    // placement spans the whole area under the Properties
+                    // and Explorer columns too (see `gpui_base::dock::
+                    // dock_area`'s `center_frame` doc), but Output belongs
+                    // only under the viewport, like Roblox Studio's own
+                    // Output window.
+                    DockLayout::v_split()
+                        .child(
+                            DockLayout::tabs()
+                                .panel_view(panel_handle(viewport), cx)
+                                .panel_view(panel_handle(scripts), cx)
+                                .panel_view(panel_handle(styles), cx),
+                            None,
+                        )
+                        .child(
+                            DockLayout::tabs().panel_view(panel_handle(output), cx),
+                            Some(px(OUTPUT_HEIGHT)),
+                        ),
                     None,
                 )
                 .child(

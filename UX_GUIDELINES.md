@@ -148,46 +148,64 @@ dockable panel chrome — don't reflexively pull them onto the panel palette:
 ## 7. Dock/panel structure
 
 The dock (`shell/dock.rs`) has exactly six sections: Viewport, Explorer,
-Properties, Output, Scripts, Style Editor — three side-by-side columns
-today: **Properties tabbed with Output** on the left, **Viewport tabbed
-with Scripts and Style Editor** in the middle (the "document" tabs — see
-§8), **Explorer** alone on the right. This is `dock.rs::build`'s one
-`h_split` of three `tabs()` groups — a deliberate three-column layout
-(Properties/Output left, Explorer right) rather than the two-column,
-stacked-panel arrangement an earlier pass shipped, chosen to match a
-ribbon-style Studio redesign reference the maintainer supplied.
+Properties, Output, Scripts, Style Editor — three side-by-side columns:
+**Properties** alone on the left, **Viewport tabbed with Scripts and Style
+Editor** in the middle with **Output** docked under that same column (a
+`v_split`, not a fourth tab — Output belongs only under the viewport, like
+real Studio's own Output window, not spanning under Properties/Explorer
+too), **Explorer** alone on the right. This is `dock.rs::build`'s one
+`h_split` of Properties / (Viewport-tabs over Output) / Explorer — chosen to
+match a ribbon-style Studio redesign reference the maintainer supplied.
 **Rearranging which sections tab together, or which side of the split they
 sit on, is fair game for a UX-driven change** — `dock.rs::build` is the one
 function that decides it. **Adding a *new* dock section is a bigger,
 structurally-visible decision** (new persisted layout state, a new
 `Section` variant, a new place for the maintainer to reason about) and
 should go through the roadmap rather than ride along inside a theming pass.
+**Whenever `dock.rs::build` changes, delete `~/.config/rbx-native/
+dock_layout_v3.json` before screenshotting** — the dock persists whatever
+arrangement it last saw, so a stale save silently hides the very change
+you're trying to verify.
 
-## 8. The document tab row, and what lives in it
+## 8. The ribbon
 
-The Viewport/Scripts/Style-Editor tab strip is the first thing under the
-menu bar — no separate toolbar row sits above it. The transform toolbar
-(Select/Move/Scale/Rotate, snap, Align — `shell/toolbar.rs`) and the
-graphics-quality dropdown both render *inside* the Viewport tab's own title
-row instead, via `ComponentPanel::title_suffix` in `dock.rs` (the same
-mechanism Output's filter/Clear controls and Viewport's own overflow menu
-already used). **If a tab's title-row controls start to feel cramped**
-(a narrow window, a long tool list), trimming what's *in* the suffix is the
-right fix before reintroducing a separate full-width toolbar row — a
-second row pushes the tab strip back down from directly under the menu bar,
-which is the thing this arrangement exists to avoid.
+`shell/ribbon.rs` is a real grouped ribbon (Clipboard, Tools, Insert, File,
+Edit, Test, Viewport Settings — one row, horizontally scrollable, not a
+Model/View/Test/Plugins *tab* switcher: see that module's own doc comment
+for why a second ribbon page isn't built), directly under the menu bar —
+no separate plain-text toolbar row sits above it or between it and the tab
+strip below. Read its module doc comment before adding or changing a
+button; the short version:
 
-**Tool buttons use an icon, not a text label**, with the name as a
-`.tooltip(...)` instead (`shell/toolbar.rs::tool_icon` maps each `Tool` to
-a Lucide `IconName` — check what a candidate icon actually depicts before
-picking it: Lucide's own `Scale` is a balance/weighing-scale glyph, not a
-resize one, which is why the Scale tool uses `Scale3d` instead). Reserve
-this icon-only treatment for a small, fixed set of frequently-used tools a
-user learns once; a rarely-used or one-off action is still better served by
-a labelled button — an unlabelled icon nobody has memorized yet is a
-lookup cost, not a saving (Nielsen's "recognition over recall" cuts both
-ways here:
-[nngroup.com/articles/ten-usability-heuristics](https://www.nngroup.com/articles/ten-usability-heuristics/)).
+- **Only wire a button to a real action this editor already has.**
+  Everything else stays `.disabled(true)` with a tooltip saying so
+  (`ribbon::disabled_tile`) — the same rule `menu_bar`'s Cut/Copy/Paste
+  already follow, extended to every group. A disabled tile is not dead
+  weight: it's how a user (or reviewer) sees the *shape* of what real
+  Studio offers here without this editor claiming to have it.
+- **A tile is an icon over a caption**, built from a plain `Button` with
+  custom `.child(...)` content rather than `.icon()`/`.label()` (those two
+  lay out side by side, not stacked — see `ribbon::tile`'s own doc comment).
+  Reuse `ribbon::tile`/`ribbon::disabled_tile`/`ribbon::class_tile` rather
+  than hand-rolling a new tile shape.
+- **Use this project's own class icon kit before a Lucide glyph**, for any
+  button that inserts or represents a specific Roblox class —
+  `ribbon::class_tile` wraps `class_icons::icon_tile` (the same rasterized
+  kit the Explorer's own rows use) with a Lucide fallback. A pure UI action
+  with no Roblox-class equivalent (Select, Copy, Play, ...) uses a Lucide
+  `IconName` directly — check what a candidate icon actually depicts before
+  picking it (Lucide's own `Scale` is a balance/weighing-scale glyph, not a
+  resize one, which is why the Scale tool uses `Scale3d` instead).
+- **Reserve icon-only tiles for the ribbon's own small, fixed button set**,
+  not general UI — a rarely-used or one-off action is better served by a
+  labelled button elsewhere; an unlabelled icon nobody has memorized yet is
+  a lookup cost, not a saving (Nielsen's "recognition over recall" cuts both
+  ways here:
+  [nngroup.com/articles/ten-usability-heuristics](https://www.nngroup.com/articles/ten-usability-heuristics/)).
+- **This project's own additions (the graphics-quality dropdown) don't go
+  in the ribbon** — it stays in the Viewport tab's own title row
+  (`ComponentPanel::title_suffix` in `dock.rs`), since it isn't a Studio
+  ribbon feature and doesn't belong under a Studio-named group.
 
 ## 9. Verifying a visual change
 

@@ -1,7 +1,6 @@
-//! The transform toolbar: the strip of tool buttons that renders inside the
-//! Viewport tab's own title row (see `shell::dock`'s `title_suffix`), the
-//! way a ribbon-style Studio redesign keeps its tools alongside its document
-//! tabs rather than in a separate strip underneath them.
+//! The transform toolbar: the Tools group's own content, inside
+//! `shell::ribbon`'s "Tools" group (see that module's doc comment for the
+//! ribbon as a whole).
 //!
 //! Select, Move, Scale and Rotate are all live.
 //!
@@ -12,12 +11,13 @@
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::{h_flex, ActiveTheme, Icon, Selectable as _, Sizable as _};
+use gpui_kit::component::{h_flex, ActiveTheme, Selectable as _, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::transform::{Action, SnapKind, Tool};
 
+use super::ribbon;
 use super::Shell;
 
 pub(crate) mod snap;
@@ -94,10 +94,13 @@ impl Shell {
         }
     }
 
-    /// The strip itself — embedded in the Viewport tab's own title row (see
-    /// `shell::dock`'s `title_suffix`), so it takes no height/border of its
-    /// own here and leans on that row's chrome instead.
-    pub(super) fn toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    /// The ribbon's "Tools" group content (see `shell::ribbon`): the four
+    /// transform tools as big tiles, then the same local-orientation toggle,
+    /// snap fields and Align popover the old toolbar row already had —
+    /// those three stay their existing compact widgets rather than becoming
+    /// tiles themselves, matching the reference ribbon's own Tools group
+    /// (big tool tiles beside a small Mode dropdown and two checkboxes).
+    pub(super) fn tools_group_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let active = self.transform.tool;
         let local = self.transform.local;
 
@@ -105,14 +108,16 @@ impl Shell {
             .items_center()
             .gap_1()
             .children(Tool::ALL.map(|tool| {
-                Button::new(("transform-tool", tool as usize))
-                    .icon(Icon::new(tool_icon(tool)))
-                    .tooltip(format!("{} ({})", tool.label(), tool.shortcut()))
-                    .xsmall()
-                    .selected(active == tool)
-                    .on_click(cx.listener(move |shell, _, _, cx| {
-                        shell.transform_action(Action::Use(tool), cx);
-                    }))
+                ribbon::tile(
+                    ("ribbon-tool", tool as usize),
+                    tool_icon(tool),
+                    tool.label(),
+                )
+                .tooltip(format!("{} ({})", tool.label(), tool.shortcut()))
+                .selected(active == tool)
+                .on_click(cx.listener(move |shell, _, _, cx| {
+                    shell.transform_action(Action::Use(tool), cx);
+                }))
             }))
             .child(
                 Button::new("transform-local")

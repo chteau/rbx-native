@@ -2,21 +2,26 @@
 
 ## 2026-09-18
 
-- **Softened the editor's visual theme, and reshuffled its dock layout.**
-  Panels went from near-black/near-white flat blocks with hard borders and
-  tight padding to a muted grey ramp (`#1a1a1a` floor), low-contrast
-  luminance-step seams instead of hard 1px lines, 5px corner radius, more
-  breathing room in the Explorer/Properties rows and toolbar, and a single
+- **Softened the editor's visual theme, and rebuilt its toolbar as a real
+  ribbon.** Panels went from near-black/near-white flat blocks with hard
+  borders and tight padding to a muted grey ramp (`#1a1a1a` floor),
+  low-contrast luminance-step seams instead of hard 1px lines, 5px corner
+  radius, more breathing room in the Explorer/Properties rows, and a single
   saturated accent reserved for selection/focus rather than sprinkled
   everywhere. Ships as a real `ThemeSet`/`ThemeConfig` JSON file
   (`assets/themes/dark-soft.json`) the toolkit's own theming loads at
-  startup, not compiled-in constants. The dock also moved to a three-column
-  layout closer to a ribbon-style Studio redesign — Properties tabbed with
-  Output on the left, Explorer on the right — and the Select/Move/Scale/
-  Rotate toolbar now uses an icon per tool (tooltip for the name) and lives
-  in the Viewport tab strip's own row, directly under the menu bar rather
-  than a separate row beneath it. New `UX_GUIDELINES.md` for keeping future
-  visual changes consistent with all of this. — @chteau
+  startup, not compiled-in constants. The dock moved to a three-column
+  layout matching a ribbon-style Studio redesign — Properties alone on the
+  left, Output docked under the Viewport tab strip, Explorer alone on the
+  right — and the old plain-text toolbar row is now a real grouped ribbon
+  (`shell/ribbon.rs`: Clipboard, Tools, Insert, File, Edit, Test, Viewport
+  Settings) of big icon-over-caption tiles directly under the menu bar,
+  using this project's own class icon kit for Part/Script/UI and Lucide
+  glyphs elsewhere; every button this editor doesn't actually implement yet
+  (Cut/Copy/Paste, Play/Run/Stop, Material/Color/Lock/Anchor, Toolbox,
+  Import, ...) stays visibly disabled with a tooltip rather than a dead
+  click. New `UX_GUIDELINES.md` for keeping future visual changes
+  consistent with all of this. — @chteau
 - **Throttle the viewport's render loop while the editor window is
   unfocused.** The render thread paced itself to the display's full refresh
   rate no matter whether anyone was looking, burning GPU/CPU (and battery,
