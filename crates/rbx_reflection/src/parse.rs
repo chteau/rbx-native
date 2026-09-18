@@ -42,12 +42,28 @@ struct RawMember {
     // than fail deserialization for them.
     #[serde(rename = "Category", default)]
     category: String,
+    #[serde(rename = "Tags", default)]
+    tags: Vec<String>,
+    // Same story as Category: only Property members carry a Serialization
+    // object, so a Function/Event/Callback member falls back to the default
+    // (both flags false, never read since those members are filtered out
+    // before a PropertyDescriptor is built).
+    #[serde(rename = "Serialization", default)]
+    serialization: RawSerialization,
 }
 
 #[derive(Deserialize)]
 struct RawValueType {
     #[serde(rename = "Name")]
     name: String,
+}
+
+#[derive(Deserialize, Default)]
+struct RawSerialization {
+    #[serde(rename = "CanLoad", default)]
+    can_load: bool,
+    #[serde(rename = "CanSave", default)]
+    can_save: bool,
 }
 
 #[derive(Deserialize)]
@@ -92,6 +108,9 @@ fn convert_class(raw: RawClass) -> ClassDescriptor {
                 name: member.name,
                 value_type: value_type.name,
                 category: member.category,
+                tags: member.tags,
+                can_load: member.serialization.can_load,
+                can_save: member.serialization.can_save,
             })
         })
         .collect();
