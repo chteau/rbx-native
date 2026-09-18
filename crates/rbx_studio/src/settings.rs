@@ -1,7 +1,7 @@
 //! Persisted Studio preferences: the graphics quality dropdown, the
-//! Explorer's "show all services" checkbox, and the Viewport's orthographic
-//! toggle, so a relaunch reopens where the user left off rather than always
-//! at the hardcoded defaults.
+//! Explorer's "show all services" checkbox, the Viewport's orthographic
+//! toggle, and the Explorer's icon pack (dark/light), so a relaunch reopens
+//! where the user left off rather than always at the hardcoded defaults.
 //!
 //! Mirrors `rbx_assets::AssetCache`'s directory convention (`$XDG_CONFIG_HOME`,
 //! falling back to `~/.config` or, on Windows, `%APPDATA%`, all under an
@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 
 use rbx_viewer::QualityLevel;
 
+use crate::class_icons::IconPack;
 use crate::pacing::UnfocusedFps;
 
 /// What persists across a relaunch.
@@ -21,6 +22,7 @@ pub(crate) struct Settings {
     pub(crate) quality: QualityLevel,
     pub(crate) show_all_services: bool,
     pub(crate) orthographic: bool,
+    pub(crate) icon_pack: IconPack,
     /// The render loop's frame rate cap while the window is unfocused — see
     /// `pacing::FocusPacing`.
     pub(crate) unfocused_fps: UnfocusedFps,
@@ -34,6 +36,7 @@ impl Default for Settings {
             quality: QualityLevel::Automatic,
             show_all_services: false,
             orthographic: false,
+            icon_pack: IconPack::Dark,
             unfocused_fps: UnfocusedFps::DEFAULT,
         }
     }
@@ -129,6 +132,11 @@ fn load_from(path: &Path) -> Settings {
         .get("orthographic")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
+    let icon_pack = value
+        .get("icon_pack")
+        .and_then(|v| v.as_str())
+        .and_then(parse_icon_pack)
+        .unwrap_or_default();
     let unfocused_fps = value
         .get("unfocused_fps")
         .and_then(|v| v.as_u64())
@@ -139,6 +147,7 @@ fn load_from(path: &Path) -> Settings {
         quality,
         show_all_services,
         orthographic,
+        icon_pack,
         unfocused_fps,
     }
 }
@@ -159,9 +168,10 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "quality": format_quality(settings.quality),
         "show_all_services": settings.show_all_services,
         "orthographic": settings.orthographic,
+        "icon_pack": format_icon_pack(settings.icon_pack),
         "unfocused_fps": settings.unfocused_fps.fps(),
     });
-    // A two-field object always serializes; nothing here can fail.
+    // A fixed-shape object always serializes; nothing here can fail.
     let bytes = serde_json::to_vec_pretty(&value).expect("settings JSON always serializes");
     write_atomic(path, &bytes)
 }
@@ -174,6 +184,21 @@ fn format_quality(quality: QualityLevel) -> String {
     match quality {
         QualityLevel::Automatic => "Automatic".to_string(),
         QualityLevel::Level(level) => format!("Level{level:02}"),
+    }
+}
+
+fn format_icon_pack(pack: IconPack) -> &'static str {
+    match pack {
+        IconPack::Dark => "Dark",
+        IconPack::Light => "Light",
+    }
+}
+
+fn parse_icon_pack(s: &str) -> Option<IconPack> {
+    match s {
+        "Dark" => Some(IconPack::Dark),
+        "Light" => Some(IconPack::Light),
+        _ => None,
     }
 }
 
@@ -263,6 +288,7 @@ mod tests {
             quality: QualityLevel::Level(7),
             show_all_services: true,
             orthographic: true,
+            icon_pack: IconPack::Light,
             unfocused_fps: UnfocusedFps::Fps25,
         };
         save_to(&settings, &path).unwrap();
@@ -366,5 +392,20 @@ mod tests {
             let mode = QualityLevel::Level(level);
             assert_eq!(format_quality(mode).parse::<QualityLevel>(), Ok(mode));
         }
+    }
+
+    #[test]
+    fn icon_pack_string_form_round_trips_both_variants() {
+        for pack in [IconPack::Dark, IconPack::Light] {
+            assert_eq!(parse_icon_pack(format_icon_pack(pack)), Some(pack));
+        }
+    }
+
+    #[test]
+    fn an_unrecognized_icon_pack_string_falls_back_to_default_on_load() {
+        let path = temp_settings_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, br#"{"icon_pack": "Sepia"}"#).unwrap();
+        assert_eq!(load_from(&path).icon_pack, IconPack::Dark);
     }
 }

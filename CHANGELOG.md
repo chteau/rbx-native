@@ -80,6 +80,13 @@
   returning a table, and the `(Class)` variant a `.new()` constructor over a
   metatable. The template set is hardcoded for now, not the user-extensible
   set `ROADMAP.md`'s own wording asked for — @chteau
+- **Dark/light Explorer icons, a persisted setting.** The class icon kit's
+  `light` variant was shipped but nothing read it; both `dark` and `light`
+  are now embedded, and a "Light Icons" checkbox in the Explorer panel's
+  overflow menu (next to "Show all services") swaps between them at
+  runtime, no rebuild needed, dark by default. Persisted in
+  `settings.json` alongside quality and service visibility, so a relaunch
+  keeps whichever you picked. — @chteau
 
 ## 2026-09-17
 

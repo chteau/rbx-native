@@ -41,6 +41,7 @@ use rbx_reflection::ReflectionDatabase;
 use rbx_viewer::pick::Selected;
 use rbx_viewer::QualityLevel;
 
+use crate::class_icons::IconPack;
 use crate::command_bar::{self, CommandBar};
 use crate::explorer::Explorer;
 use crate::folder_colors::FolderColors;
@@ -86,6 +87,10 @@ pub(crate) struct Shell {
     /// perspective. Persisted (see `settings`); every write goes through
     /// [`Shell::save_settings`].
     orthographic: bool,
+    /// Which of the class icon kit's two variants the Explorer draws.
+    /// Persisted (see `settings`); every write goes through
+    /// [`Shell::save_settings`].
+    icon_pack: IconPack,
     /// Whether the viewport's corner label shows its frame-rate readout —
     /// the Stats toggle, next to Orthographic in the same overflow menu (see
     /// `shell::dock`). Session-only, unlike the two settings above: real
@@ -165,13 +170,17 @@ impl Shell {
     pub(crate) fn new(
         title: impl Into<SharedString>,
         place: Place,
-        quality: QualityLevel,
-        show_all_services: bool,
-        orthographic: bool,
-        unfocused_fps: UnfocusedFps,
+        settings: Settings,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let Settings {
+            quality,
+            show_all_services,
+            orthographic,
+            icon_pack,
+            unfocused_fps,
+        } = settings;
         let Place {
             explorer,
             properties,
@@ -288,6 +297,7 @@ impl Shell {
             show_all_services,
             quality_choice: quality,
             orthographic,
+            icon_pack,
             stats_shown: false,
             unfocused_fps,
             search: cx.new(|cx| InputState::new(window, cx).placeholder("Search")),
@@ -579,6 +589,29 @@ impl Shell {
         self.save_settings(cx);
     }
 
+    /// Which icon pack the Explorer draws, for the dock's Explorer menu item
+    /// (see `shell::dock`) to render its checked state.
+    pub(super) fn icon_pack(&self) -> IconPack {
+        self.icon_pack
+    }
+
+    /// Re-resolves every Explorer row's icon for `pack` in place — the tree's
+    /// rows and their expansion state are untouched, only which sprite each
+    /// one points at changes (see `Explorer::set_icon_pack`).
+    fn set_icon_pack(&mut self, pack: IconPack, cx: &mut Context<Self>) {
+        if pack == self.icon_pack {
+            return;
+        }
+
+        self.icon_pack = pack;
+        self.explorer = Rc::new(
+            self.explorer
+                .set_icon_pack(pack, &self.folder_colors, &self.path),
+        );
+        cx.notify();
+        self.save_settings(cx);
+    }
+
     /// Whether the viewport's corner label shows its frame-rate readout, for
     /// the dock's Viewport menu item (see `shell::dock`) to render its
     /// checked state.
@@ -619,16 +652,18 @@ impl Shell {
     }
 
     /// Writes the current quality pick, Explorer visibility, projection mode,
-    /// and unfocused frame rate preset to disk. Also saves the current dock
-    /// layout. A settings file is tiny, so this runs synchronously on every
-    /// change rather than debouncing; a write failure (e.g. no writable
-    /// config directory) is not fatal and is silently dropped — losing a
-    /// preference write is better than interrupting the editor over it.
+    /// icon pack, and unfocused frame rate preset to disk. Also saves the
+    /// current dock layout. A settings file is tiny, so this runs
+    /// synchronously on every change rather than debouncing; a write failure
+    /// (e.g. no writable config directory) is not fatal and is silently
+    /// dropped — losing a preference write is better than interrupting the
+    /// editor over it.
     fn save_settings(&self, cx: &App) {
         let settings = Settings {
             quality: self.quality_choice,
             show_all_services: self.show_all_services,
             orthographic: self.orthographic,
+            icon_pack: self.icon_pack,
             unfocused_fps: self.unfocused_fps,
         };
         let _ = settings.save();

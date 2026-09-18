@@ -41,7 +41,7 @@ pub(crate) fn tint(image: &RenderImage, color: (u8, u8, u8)) -> Option<Arc<Rende
 #[cfg(test)]
 mod tests {
     use super::tint;
-    use crate::class_icons::icon_tile;
+    use crate::class_icons::{icon_tile, IconPack};
 
     /// The folder tile's own two shades (see `assets/icons/default/dark/
     /// folder.svg`) both become the tag colour; fully transparent pixels
@@ -49,7 +49,7 @@ mod tests {
     /// every pixel's own alpha survives unchanged.
     #[test]
     fn tint_flattens_every_opaque_pixel_to_the_tag_colour_and_keeps_alpha() {
-        let folder = icon_tile("Folder").expect("the folder tile rasterizes");
+        let folder = icon_tile("Folder", IconPack::Dark).expect("the folder tile rasterizes");
         let tinted = tint(&folder, (10, 20, 30)).expect("tinting a real tile never fails");
 
         let before = folder.as_bytes(0).unwrap();
@@ -76,7 +76,7 @@ mod tests {
 
     #[test]
     fn tint_preserves_the_source_images_dimensions() {
-        let folder = icon_tile("Folder").expect("the folder tile rasterizes");
+        let folder = icon_tile("Folder", IconPack::Dark).expect("the folder tile rasterizes");
         let tinted = tint(&folder, (255, 0, 0)).expect("tinting a real tile never fails");
 
         assert_eq!(folder.size(0).width, tinted.size(0).width);

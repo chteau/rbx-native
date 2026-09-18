@@ -68,6 +68,7 @@ use rbx_reflection::ReflectionDatabase;
 use rbx_viewer::{Headless, QualityLevel};
 
 use camera::PlaceCamera;
+use class_icons::IconPack;
 use explorer::Explorer;
 use folder_colors::FolderColors;
 use properties::Properties;
@@ -97,12 +98,19 @@ fn main() {
             std::process::exit(2);
         }
     };
+    // The CLI's own `--quality` wins over the persisted one from here on;
+    // `Shell::new` takes the whole struct rather than one parameter per
+    // field, so this is the one place that resolved value has to land.
+    let settings = Settings {
+        quality,
+        ..settings
+    };
 
     // Parsing and the asset downloads both block; running them before the
     // window exists keeps the UI thread from ever stalling on the network.
     println!("loading {}…", path.display());
     let select = std::env::var(SELECT_VARIABLE).ok();
-    let place = match load(&path, select.as_deref()) {
+    let place = match load(&path, select.as_deref(), settings.icon_pack) {
         Ok(place) => place,
         Err(message) => {
             eprintln!("rbxstudio: {message}");
@@ -110,9 +118,6 @@ fn main() {
         }
     };
     let title = SharedString::from(file_name(&path));
-    let show_all_services = settings.show_all_services;
-    let orthographic = settings.orthographic;
-    let unfocused_fps = settings.unfocused_fps;
 
     // The full Lucide catalog: the menu bar's icons are well outside the
     // default bundle the components themselves use. The Explorer's own class
@@ -126,18 +131,7 @@ fn main() {
         cx.spawn(async move |cx| {
             let options = cx.update(|cx| window_options(&title, cx));
             cx.open_window(options, |window, cx| {
-                let shell = cx.new(|cx| {
-                    Shell::new(
-                        title,
-                        place,
-                        quality,
-                        show_all_services,
-                        orthographic,
-                        unfocused_fps,
-                        window,
-                        cx,
-                    )
-                });
+                let shell = cx.new(|cx| Shell::new(title, place, settings, window, cx));
                 cx.new(|cx| Root::new(shell, window, cx))
             })
             .expect("failed to open the main window");
@@ -176,7 +170,7 @@ struct Place {
     folder_colors: FolderColors,
 }
 
-fn load(path: &Path, select: Option<&str>) -> Result<Place, String> {
+fn load(path: &Path, select: Option<&str>, icon_pack: IconPack) -> Result<Place, String> {
     let bytes = std::fs::read(path).map_err(|err| format!("failed to read {path:?}: {err}"))?;
     let format = Format::sniff(&bytes);
     let dom = rbx_viewer::read_place(path)?;
@@ -188,7 +182,7 @@ fn load(path: &Path, select: Option<&str>) -> Result<Place, String> {
     }
 
     Ok(Place {
-        explorer: Explorer::from_dom(&dom, &folder_colors, path),
+        explorer: Explorer::from_dom(&dom, icon_pack, &folder_colors, path),
         selected: select.and_then(|name| explorer::find_by_name(&dom, name)),
         camera: PlaceCamera::from_dom(&dom),
         viewer: Headless::load(path, true)?,

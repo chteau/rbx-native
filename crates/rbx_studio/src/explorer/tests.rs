@@ -25,7 +25,7 @@ fn no_tags() -> (FolderColors, PathBuf) {
 
 fn from_dom(dom: &WeakDom) -> Explorer {
     let (colors, place) = no_tags();
-    Explorer::from_dom(dom, &colors, &place)
+    Explorer::from_dom(dom, IconPack::Dark, &colors, &place)
 }
 
 fn names(nodes: &[Node]) -> Vec<&str> {
@@ -148,8 +148,35 @@ fn an_unknown_class_falls_back_to_the_default_icon() {
 
 #[test]
 fn resolve_icon_prefers_the_icon_kit_over_the_lucide_fallback() {
-    assert!(matches!(resolve_icon("Script"), ClassIcon::Sprite(_)));
-    assert!(is_lucide(&resolve_icon("BodyColors")));
+    assert!(matches!(
+        resolve_icon("Script", IconPack::Dark),
+        ClassIcon::Sprite(_)
+    ));
+    assert!(is_lucide(&resolve_icon("BodyColors", IconPack::Dark)));
+}
+
+#[test]
+fn set_icon_pack_swaps_every_row_s_sprite_without_touching_its_tree_item() {
+    let mut dom = WeakDom::new();
+    insert(&mut dom, 1, "Part", "Baseplate");
+
+    let (colors, place) = no_tags();
+    let dark = Explorer::from_dom(&dom, IconPack::Dark, &colors, &place);
+    let dark_bytes = match dark.icon(&"1".into()) {
+        ClassIcon::Sprite(image) => image.as_bytes(0).map(<[u8]>::to_vec),
+        ClassIcon::Lucide(_) => None,
+    };
+
+    let light = dark.set_icon_pack(IconPack::Light, &colors, &place);
+    let light_bytes = match light.icon(&"1".into()) {
+        ClassIcon::Sprite(image) => image.as_bytes(0).map(<[u8]>::to_vec),
+        ClassIcon::Lucide(_) => None,
+    };
+
+    assert!(dark_bytes.is_some() && light_bytes.is_some());
+    assert_ne!(dark_bytes, light_bytes);
+    // The row itself (id, label, children) is unaffected by the pack swap.
+    assert_eq!(dark.items(true)[0].label, light.items(true)[0].label);
 }
 
 #[test]
@@ -235,7 +262,7 @@ fn a_tagged_folders_icon_is_recolored_to_its_tag() {
     colors.set(&place, "Tagged", (200, 60, 60));
 
     let untagged = from_dom(&dom);
-    let tagged = Explorer::from_dom(&dom, &colors, &place);
+    let tagged = Explorer::from_dom(&dom, IconPack::Dark, &colors, &place);
 
     let (ClassIcon::Sprite(untagged_icon), ClassIcon::Sprite(tagged_icon)) = (
         untagged.icon(&item_id(folder)),
@@ -258,7 +285,7 @@ fn an_untagged_folder_under_a_place_with_other_tags_keeps_its_plain_icon() {
     colors.set(&place, "Elsewhere", (200, 60, 60));
 
     let plain_explorer = from_dom(&dom);
-    let mixed_explorer = Explorer::from_dom(&dom, &colors, &place);
+    let mixed_explorer = Explorer::from_dom(&dom, IconPack::Dark, &colors, &place);
 
     let (ClassIcon::Sprite(plain_bytes), ClassIcon::Sprite(mixed_bytes)) = (
         plain_explorer.icon(&item_id(plain)),
