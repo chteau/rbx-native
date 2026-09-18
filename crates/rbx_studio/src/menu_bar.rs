@@ -9,10 +9,11 @@
 //! Every item that maps to something the editor can already do dispatches
 //! the same [`gpui::Action`] its keyboard shortcut resolves to, straight into
 //! `Shell`'s existing, already-tested handler — Save (`shell::save`),
-//! Undo/Redo (`shell::history`), Insert Part/Folder and Delete
-//! (`shell::keys`) — through one global `App::on_action` registration per
-//! action (see [`install_actions`]). A menu click never focuses anything
-//! first, so these are global rather than wired into the element tree: the
+//! Undo/Redo (`shell::history`), Insert Part/Folder/Script/LocalScript/
+//! ModuleScript and Delete (`shell::keys`) — through one global
+//! `App::on_action` registration per action (see [`install_actions`]). A menu
+//! click never focuses anything first, so these are global rather than wired
+//! into the element tree: the
 //! same requirement `Shell::handle_shell_key` already has for Ctrl+S/Z/Y (a
 //! command must fire no matter what currently has focus).
 //!
@@ -37,6 +38,10 @@ actions!(
         MenuRedo,
         MenuInsertPart,
         MenuInsertFolder,
+        MenuInsertScript,
+        MenuInsertLocalScript,
+        MenuInsertModuleScript,
+        MenuInsertModuleScriptClass,
         MenuDeleteInstance,
         MenuStyleEditor,
         /// Shared by every item below that has no real handler yet; always
@@ -73,10 +78,14 @@ pub(crate) fn bar(menu_bar: &Entity<AppMenuBar>, cx: &App) -> impl IntoElement {
 
 /// The menu structure itself. File and Edit hold this editor's real
 /// commands (see this module's doc comment); Model holds the two quick
-/// inserts `shell::keys` already binds to Ctrl+Shift+P/F. View's Explorer,
-/// Properties and Command Bar items stay placeholders — those panels have no
-/// show/hide command to wire them to yet — while Style Editor brings its own
-/// dock tab to the front (see `shell::dock::reveal_style_editor`).
+/// inserts `shell::keys` already binds to Ctrl+Shift+P/F, plus the three
+/// script classes and the OOP `ModuleScript` variant — Roblox itself offers
+/// `Script`/`LocalScript`/`ModuleScript` as distinct inserts, so this matches
+/// that rather than collapsing them into one generic "Insert Script".
+/// View's Explorer, Properties and Command Bar items stay placeholders —
+/// those panels have no show/hide command to wire them to yet — while Style
+/// Editor brings its own dock tab to the front (see
+/// `shell::dock::reveal_style_editor`).
 fn menus() -> Vec<OwnedMenu> {
     vec![
         Menu::new("File")
@@ -106,6 +115,11 @@ fn menus() -> Vec<OwnedMenu> {
             .items(vec![
                 MenuItem::action("Insert Part", MenuInsertPart),
                 MenuItem::action("Insert Folder", MenuInsertFolder),
+                MenuItem::separator(),
+                MenuItem::action("Insert Script", MenuInsertScript),
+                MenuItem::action("Insert LocalScript", MenuInsertLocalScript),
+                MenuItem::action("Insert ModuleScript", MenuInsertModuleScript),
+                MenuItem::action("Insert ModuleScript (Class)", MenuInsertModuleScriptClass),
                 MenuItem::separator(),
                 MenuItem::action("Insert Object…", MenuPlaceholder).disabled(true),
             ])
@@ -156,6 +170,30 @@ fn install_actions(shell: Entity<Shell>, cx: &mut App) {
         let shell = shell.clone();
         move |_: &MenuInsertFolder, cx| {
             shell.update(cx, |shell, cx| shell.insert_instance("Folder", cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
+        move |_: &MenuInsertScript, cx| {
+            shell.update(cx, |shell, cx| shell.insert_instance("Script", cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
+        move |_: &MenuInsertLocalScript, cx| {
+            shell.update(cx, |shell, cx| shell.insert_instance("LocalScript", cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
+        move |_: &MenuInsertModuleScript, cx| {
+            shell.update(cx, |shell, cx| shell.insert_instance("ModuleScript", cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
+        move |_: &MenuInsertModuleScriptClass, cx| {
+            shell.update(cx, |shell, cx| shell.insert_class_module(cx));
         }
     });
     cx.on_action({
