@@ -382,6 +382,15 @@ Roblox's own engine.
     debugging, and new-script templates. With focus in an editor, Ctrl+Z
     is the editor's own text undo rather than the place's history — the
     split Studio makes — and Edit > Undo still reaches the latter.
+- [x] **Throttled render loop while the window is unfocused.** Losing OS
+  focus (`gpui`'s window activation) caps the viewport's render thread —
+  not just the UI thread's own poll rate — to a user-chosen preset, 25 or
+  30 fps (`pacing::UnfocusedFps`, next to the quality dropdown in the
+  Viewport panel's overflow menu); the first focus or input event
+  (`pacing::FocusPacing::mark_input`) restores the full display rate
+  immediately, ahead of whatever window-activation event may still be in
+  flight, so nothing feels sluggish coming back. Persisted the same way
+  the quality level and projection mode already are.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -470,16 +479,6 @@ Roblox's own engine.
 - [ ] 📋 `Light.Shadows` for `PointLight` (needs 6-face shadow maps; done
   for `SpotLight`/`SurfaceLight`).
 - [ ] 📋 Neon/`ForceField` shimmer, `Glass` refraction — currently flat.
-- [ ] 📋 **Throttle the renderer while the window is not focused.** The
-  viewport renders at the display's full rate whether or not anyone is
-  looking at it, which is wasted GPU/CPU (and fan noise, and battery on a
-  laptop) the moment the editor sits behind another window. When the
-  editor window loses focus, cap the render loop at 25–30 fps (a setting,
-  with those two as the presets); restore the full rate on the first
-  focus/input event so nothing feels sluggish coming back. Real Studio
-  does the same. The pacing code already exists (`shell::pacing` and the
-  viewer's `app::pacing`); this is a second target rate keyed off the
-  window's focus state, not a new loop.
 - [x] 🚧 **An FPS/frame-time readout**, matching real Studio's own
   performance-debugging surface rather than inventing a new one: Studio's
   `Window > Performance > Stats` toggles a debug stats overlay, and

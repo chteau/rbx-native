@@ -42,6 +42,7 @@ use rbx_viewer::QualityLevel;
 use crate::command_bar::{self, CommandBar};
 use crate::explorer::Explorer;
 use crate::history::{History, DEFAULT_CAP};
+use crate::pacing::UnfocusedFps;
 use crate::properties::Properties;
 use crate::save::Format;
 use crate::script_editor::ScriptEditor;
@@ -88,6 +89,10 @@ pub(crate) struct Shell {
     /// Studio's own `Window > Performance > Stats` doesn't persist across
     /// restarts either, so this one lazily doesn't bother with `settings`.
     stats_shown: bool,
+    /// The render loop's frame rate cap while the window is unfocused (see
+    /// `pacing::FocusPacing`). Persisted (see `settings`); every write goes
+    /// through [`Shell::save_settings`].
+    unfocused_fps: UnfocusedFps,
     search: Entity<InputState>,
     filter: Entity<InputState>,
     properties: Properties,
@@ -147,12 +152,14 @@ pub(crate) struct Shell {
 }
 
 impl Shell {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         title: impl Into<SharedString>,
         place: Place,
         quality: QualityLevel,
         show_all_services: bool,
         orthographic: bool,
+        unfocused_fps: UnfocusedFps,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -218,6 +225,7 @@ impl Shell {
                 camera,
                 quality,
                 orthographic,
+                unfocused_fps,
                 initial_outline,
                 window,
                 cx,
@@ -271,6 +279,7 @@ impl Shell {
             quality_choice: quality,
             orthographic,
             stats_shown: false,
+            unfocused_fps,
             search: cx.new(|cx| InputState::new(window, cx).placeholder("Search")),
             filter,
             properties,
@@ -572,17 +581,38 @@ impl Shell {
             .update(cx, |viewport, cx| viewport.set_stats_shown(shown, cx));
     }
 
-    /// Writes the current quality pick, Explorer visibility, and projection mode
-    /// to disk. Also saves the current dock layout. A settings file is tiny,
-    /// so this runs synchronously on every change rather than debouncing;
-    /// a write failure (e.g. no writable config directory) is not fatal and is
-    /// silently dropped — losing a preference write is better than interrupting
-    /// the editor over it.
+    /// The frame rate preset the render loop caps itself to while the window
+    /// is unfocused, for the dock's Viewport menu item (see `shell::dock`)
+    /// to render its checked state.
+    pub(super) fn unfocused_fps(&self) -> UnfocusedFps {
+        self.unfocused_fps
+    }
+
+    /// Switches the unfocused frame rate preset — see
+    /// `WorkspaceView::set_unfocused_fps`.
+    fn set_unfocused_fps(&mut self, unfocused_fps: UnfocusedFps, cx: &mut Context<Self>) {
+        if unfocused_fps == self.unfocused_fps {
+            return;
+        }
+
+        self.unfocused_fps = unfocused_fps;
+        self.viewport
+            .update(cx, |viewport, _| viewport.set_unfocused_fps(unfocused_fps));
+        self.save_settings(cx);
+    }
+
+    /// Writes the current quality pick, Explorer visibility, projection mode,
+    /// and unfocused frame rate preset to disk. Also saves the current dock
+    /// layout. A settings file is tiny, so this runs synchronously on every
+    /// change rather than debouncing; a write failure (e.g. no writable
+    /// config directory) is not fatal and is silently dropped — losing a
+    /// preference write is better than interrupting the editor over it.
     fn save_settings(&self, cx: &App) {
         let settings = Settings {
             quality: self.quality_choice,
             show_all_services: self.show_all_services,
             orthographic: self.orthographic,
+            unfocused_fps: self.unfocused_fps,
         };
         let _ = settings.save();
 
