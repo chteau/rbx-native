@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-18
+
+- **Group/ungroup operations.** `Ctrl+G` (or Model ⟩ Group) wraps the
+  current selection in one new `Model`, parented where the selection itself
+  was — refused cleanly, rather than guessing, when the selection spans more
+  than one parent. `Ctrl+Shift+G` (or Model ⟩ Ungroup) unwraps a selected
+  `Model` back into its own parent and removes it; a non-`Model` or an empty
+  one is a no-op. Both are one undo step regardless of how many instances
+  move. — @chteau
+
 ## 2026-09-17
 
 - **A batch of viewport editor fixes (`fix/overall-bug-fixes`).** Undo/redo

@@ -349,10 +349,21 @@ Roblox's own engine.
   - **Placement**: directly under the File/Edit/Model/View menu bar and
     above the viewport dock, matching the owner's reference screenshot.
   - **Still open**: the 5th "Transform" toolbar button visible in Studio's
-    current toolbar; group/ungroup operations; and a plain click landing
-    on a `Model` — unlike cycling's raw parts, a `Model` has no `CFrame`/
-    `Size` of its own for the gizmo to read, so it draws neither an
-    outline nor a gizmo today (all under "What's planned" → Renderer).
+    current toolbar; and a plain click landing on a `Model` — unlike
+    cycling's raw parts, a `Model` has no `CFrame`/`Size` of its own for
+    the gizmo to read, so it draws neither an outline nor a gizmo today
+    (all under "What's planned" → Renderer).
+
+- [x] **Group/ungroup operations** — `Ctrl+G` (or Model ⟩ Group) wraps the
+  current selection in one new `Model`, parented where the selection
+  itself was; `Ctrl+Shift+G` (or Model ⟩ Ungroup) unwraps a selected
+  `Model` back into its own parent and removes it. A selection spanning
+  more than one parent refuses Group cleanly rather than picking one
+  arbitrarily; ungrouping something that isn't a `Model`, or an empty one,
+  is a clean no-op. Each is one undo step regardless of how many instances
+  it moves. Out of scope, matching real Studio's own separate Pivot tools
+  (see "What's planned" → Renderer): the new `Model` gets no computed
+  `PrimaryPart` or pivot, just Roblox's own empty-pivot default.
 
 - [x] **A real script editor** — double-clicking a `Script`, `LocalScript`
   or `ModuleScript` in the Explorer opens it in the Script Editor dock
@@ -603,10 +614,6 @@ Roblox's own engine.
   `BasePart.PivotOffset` exposed to the Command Bar and scripts generally
   (today's Luau DataModel has no pivot-specific API at all), not just the
   interactive tool, since real Studio exposes both.
-- [ ] 📋 **Group/ungroup operations** (wrap the selected instances into a
-  `Model`, or unwrap one back into its parent) — selecting several
-  instances at once is done (see "What's been implemented" → Editor);
-  grouping/ungrouping them is not.
 - [ ] 📋 **Full DOM editing from the Explorer**, beyond today's plain
   insert/delete:
   - A `+` icon on each row to insert a child instance directly, without

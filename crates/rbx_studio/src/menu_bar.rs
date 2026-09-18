@@ -10,11 +10,12 @@
 //! the same [`gpui::Action`] its keyboard shortcut resolves to, straight into
 //! `Shell`'s existing, already-tested handler — Save (`shell::save`),
 //! Undo/Redo (`shell::history`), Insert Part/Folder and Delete
-//! (`shell::keys`) — through one global `App::on_action` registration per
-//! action (see [`install_actions`]). A menu click never focuses anything
-//! first, so these are global rather than wired into the element tree: the
-//! same requirement `Shell::handle_shell_key` already has for Ctrl+S/Z/Y (a
-//! command must fire no matter what currently has focus).
+//! (`shell::keys`), Group/Ungroup (`shell::group`) — through one global
+//! `App::on_action` registration per action (see [`install_actions`]). A menu
+//! click never focuses anything first, so these are global rather than wired
+//! into the element tree: the same requirement `Shell::handle_shell_key`
+//! already has for Ctrl+S/Z/Y/G (a command must fire no matter what
+//! currently has focus).
 //!
 //! Everything this editor cannot do yet — New, Open…, Save As…, Publish to
 //! Roblox…, Cut/Copy/Paste, Insert Object… — stays a visibly disabled item
@@ -38,6 +39,8 @@ actions!(
         MenuInsertPart,
         MenuInsertFolder,
         MenuDeleteInstance,
+        MenuGroup,
+        MenuUngroup,
         MenuStyleEditor,
         /// Shared by every item below that has no real handler yet; always
         /// paired with `.disabled(true)` (see `menus`), so `PopupMenu` never
@@ -73,10 +76,11 @@ pub(crate) fn bar(menu_bar: &Entity<AppMenuBar>, cx: &App) -> impl IntoElement {
 
 /// The menu structure itself. File and Edit hold this editor's real
 /// commands (see this module's doc comment); Model holds the two quick
-/// inserts `shell::keys` already binds to Ctrl+Shift+P/F. View's Explorer,
-/// Properties and Command Bar items stay placeholders — those panels have no
-/// show/hide command to wire them to yet — while Style Editor brings its own
-/// dock tab to the front (see `shell::dock::reveal_style_editor`).
+/// inserts `shell::keys` already binds to Ctrl+Shift+P/F, plus Group/Ungroup
+/// (`shell::group`, Ctrl+G/Ctrl+Shift+G). View's Explorer, Properties and
+/// Command Bar items stay placeholders — those panels have no show/hide
+/// command to wire them to yet — while Style Editor brings its own dock tab
+/// to the front (see `shell::dock::reveal_style_editor`).
 fn menus() -> Vec<OwnedMenu> {
     vec![
         Menu::new("File")
@@ -108,6 +112,9 @@ fn menus() -> Vec<OwnedMenu> {
                 MenuItem::action("Insert Folder", MenuInsertFolder),
                 MenuItem::separator(),
                 MenuItem::action("Insert Object…", MenuPlaceholder).disabled(true),
+                MenuItem::separator(),
+                MenuItem::action("Group", MenuGroup),
+                MenuItem::action("Ungroup", MenuUngroup),
             ])
             .owned(),
         Menu::new("View")
@@ -162,6 +169,18 @@ fn install_actions(shell: Entity<Shell>, cx: &mut App) {
         let shell = shell.clone();
         move |_: &MenuDeleteInstance, cx| {
             shell.update(cx, |shell, cx| shell.delete_selected(cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
+        move |_: &MenuGroup, cx| {
+            shell.update(cx, |shell, cx| shell.group_selected(cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
+        move |_: &MenuUngroup, cx| {
+            shell.update(cx, |shell, cx| shell.ungroup_selected(cx));
         }
     });
     // The one item here that needs a `Window`: raising a dock tab moves a
