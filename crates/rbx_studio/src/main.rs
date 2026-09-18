@@ -38,6 +38,7 @@
 //! format it was opened in; `RBX_STUDIO_SAVE_AS=<path>` redirects one such
 //! save to a scratch path instead (see `save`).
 
+mod align;
 mod camera;
 mod class_icons;
 mod command_bar;

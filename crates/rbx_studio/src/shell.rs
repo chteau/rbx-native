@@ -3,6 +3,7 @@
 //! Explorer and Properties stacked on the right — but any of the four can be
 //! dragged to another edge or stacked as tabs.
 
+mod align;
 mod command;
 mod dock;
 mod dock_layout;
@@ -41,6 +42,7 @@ use rbx_reflection::ReflectionDatabase;
 use rbx_viewer::pick::Selected;
 use rbx_viewer::QualityLevel;
 
+use crate::align::Options as AlignOptions;
 use crate::class_icons::IconPack;
 use crate::command_bar::{self, CommandBar};
 use crate::explorer::Explorer;
@@ -165,6 +167,9 @@ pub(crate) struct Shell {
     transform: Transform,
     /// The two snap increment fields' live text — see `shell::toolbar::snap`.
     snap_fields: SnapFields,
+    /// The Align tool's current toggles (axes, Min/Center/Max, World/Local,
+    /// Selection Bounds/Active Object) — see `crate::align`/`shell::align`.
+    align: AlignOptions,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
     _subscriptions: [Subscription; 10],
 }
@@ -332,6 +337,7 @@ impl Shell {
             folder_colors,
             transform,
             snap_fields,
+            align: AlignOptions::default(),
             _subscriptions: [
                 picked,
                 clicked,
@@ -385,6 +391,13 @@ impl Shell {
         if let Ok(spec) = std::env::var(crate::SELECT_VARIABLE) {
             shell.apply_debug_select(&spec, cx);
         }
+
+        // `RBX_STUDIO_ALIGN` (see `shell::align`): applied right after
+        // selection, so it aligns whatever the file itself or
+        // `RBX_STUDIO_SELECT` just selected — a screenshot aid for the Align
+        // tool, since nothing else can click its popover on the editor's
+        // behalf.
+        shell.apply_debug_align(cx);
 
         // `RBX_STUDIO_DRAG` (see `shell::drag::debug`): applied right after
         // selection, so it moves whatever the file itself or

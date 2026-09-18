@@ -105,6 +105,18 @@
   growth (or shrink) in studs for a Scale — an rbx-native addition, not a
   Studio-parity claim. Reuses `gizmo.rs`'s own already-known drag delta
   rather than recomputing it. — @chteau
+- **Align tool.** Studio's real Model-tab Align tool (checked against
+  `studio/align-tool.md`, not the Move/Scale/Rotate gizmos): moves the
+  selected objects' own Min/Center/Max bound on each toggled X/Y/Z axis to
+  match a reference value, in World or Local space, relative to either the
+  whole selection's collective bounding box or a fixed Active Object (the
+  last-selected instance, outlined by staying put while everything else
+  moves to meet it). A selected `Model` moves as one rigid body, matching
+  the docs' "keeping the model intact." Lives in a small popover on the
+  transform toolbar (Move/Scale/Rotate's own strip) rather than a new
+  dialog. Not shipped: the docs' own "dynamically previewing the point of
+  alignment before confirming" — this Align commits immediately, with no
+  live preview. — @chteau
 
 ## 2026-09-17
 
