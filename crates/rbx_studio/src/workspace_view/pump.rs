@@ -51,6 +51,10 @@ enum Command {
         camera: f32,
     },
     Size((u32, u32)),
+    /// A new frame budget to pace the loop to — see `crate::pacing::FocusPacing`.
+    /// Sent whenever the window's focus state (or the unfocused rate setting)
+    /// changes, never on a plain tick.
+    Interval(Duration),
     Quality(QualityLevel),
     Orthographic(bool),
     Selection(Vec<Selected>),
@@ -169,6 +173,14 @@ impl Pump {
         let _ = self.commands.send(Command::Size(size));
     }
 
+    /// Retargets the render thread's own pacing — the actual throttle: unlike
+    /// the UI thread's polling delay (`WorkspaceView::advance`'s return
+    /// value), this is what stops the GPU render and readback themselves from
+    /// running at the display's full rate while the window is unfocused.
+    pub(super) fn set_interval(&self, interval: Duration) {
+        let _ = self.commands.send(Command::Interval(interval));
+    }
+
     /// Switches the graphics quality mode, `Automatic` included.
     pub(super) fn quality(&self, mode: QualityLevel) {
         let _ = self.commands.send(Command::Quality(mode));
@@ -246,6 +258,15 @@ fn run(
     opened: Opened,
 ) {
     let Opened { interval, quality } = opened;
+    let mut interval = interval;
+    // ponytail: `Quality`'s automatic-level target (`target_hz`) is fixed at
+    // this full-focus budget for the thread's whole life, even once
+    // `Command::Interval` later slows `interval` itself down while
+    // unfocused — Automatic then keeps sizing the level for the display's
+    // full rate rather than the looser unfocused one, which only leaves
+    // headroom on the table, never breaks anything. Upgrade path: fold the
+    // new budget into `quality` too wherever `Command::Interval` is applied,
+    // the way `Command::Quality` already reaches `quality.set`.
     let mut quality = Quality::new(quality, interval, &mut viewer);
     let mut size = (0, 0);
     let mut visible = true;
@@ -276,6 +297,7 @@ fn run(
                 visible: &mut visible,
                 rebuilt: &mut rebuilt,
                 scrolls: &mut scrolls,
+                interval: &mut interval,
             },
             idle,
         ) {
@@ -466,6 +488,11 @@ struct Rendering<'a> {
     /// The wheel notches that landed on a scrolling frame this tick, for
     /// [`Ready::scrolls`].
     scrolls: &'a mut Vec<Scroll>,
+    /// The budget the loop is currently pacing itself to — see
+    /// [`Command::Interval`]. Note: this is only the *pacing* budget;
+    /// `quality`'s automatic-level target stays fixed to the rate `Quality::new`
+    /// opened with, not to this — see this module's `run` for why that's fine.
+    interval: &'a mut Duration,
 }
 
 /// Applies everything the UI thread has asked for, blocking for the first order
@@ -539,6 +566,7 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
             }
         }
         Command::Size(new) => *rendering.size = new,
+        Command::Interval(new) => *rendering.interval = new,
         Command::Quality(mode) => rendering.quality.set(mode, rendering.viewer),
         Command::Orthographic(orthographic) => rendering.viewer.set_orthographic(orthographic),
         Command::Selection(selected) => rendering.viewer.set_selection(&selected),
