@@ -1,7 +1,7 @@
 use rbx_dom::{
     Axes, CFrameData, Color3Data, Content, Faces, Font, FontStyle, Instance, NumberRange,
-    NumberSequence, NumberSequenceKeypoint, PhysicalProperties, UDim, UDim2, UniqueId, Vector2Data,
-    Vector3Data,
+    NumberSequence, NumberSequenceKeypoint, PhysicalProperties, Rect, UDim, UDim2, UniqueId,
+    Vector2Data, Vector3Data,
 };
 
 use super::*;
@@ -543,6 +543,26 @@ fn vector2_edits_as_two_labeled_fields() {
         Some(EditKind::Fields {
             labels: &["X", "Y"],
             values: vec!["1.5".to_owned(), "-2".to_owned()],
+        })
+    );
+}
+
+#[test]
+fn rect_edits_as_four_labeled_fields() {
+    let slice_center = Rect {
+        min: Vector2Data { x: 1.0, y: 2.0 },
+        max: Vector2Data { x: 3.0, y: 4.0 },
+    };
+    assert_eq!(
+        edit_kind("SliceCenter", Variant::Rect(slice_center)),
+        Some(EditKind::Fields {
+            labels: &["Min X", "Min Y", "Max X", "Max Y"],
+            values: vec![
+                "1".to_owned(),
+                "2".to_owned(),
+                "3".to_owned(),
+                "4".to_owned()
+            ],
         })
     );
 }

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-18
+
+- **The Properties panel's `Rect` rows are editable.** `SliceCenter` and
+  other `Rect`-typed properties used to fall back to read-only text; they
+  now edit as four labeled fields (`Min X`/`Min Y`/`Max X`/`Max Y`), the
+  same pattern `Vector2`/`UDim2` already used. — @chteau
+
 ## 2026-09-17
 
 - **A batch of viewport editor fixes (`fix/overall-bug-fixes`).** Undo/redo
