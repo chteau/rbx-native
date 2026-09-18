@@ -150,10 +150,13 @@ impl ComponentPanel for SectionPanel {
     /// Explorer's "Show all services" toggle, moved off the search row and
     /// into the panel's own overflow menu (see `Shell::show_all_services` /
     /// `Shell::set_show_all_services`); Viewport's own "Orthographic" toggle
-    /// (see `Shell::orthographic` / `Shell::set_orthographic`) and its
-    /// "Cap frame rate at 25 fps when unfocused" toggle (see
-    /// `Shell::unfocused_fps`) live the same way, next to the quality
-    /// dropdown already in its title bar.
+    /// (see `Shell::orthographic` / `Shell::set_orthographic`), its Stats
+    /// toggle, and its "Cap frame rate at 25 fps when unfocused" toggle (see
+    /// `Shell::unfocused_fps`) all live the same way, next to the quality
+    /// dropdown already in its title bar. Output's "Show Timestamp" toggle
+    /// (`Shell::output_show_timestamps`) lives here too rather than crowding
+    /// the level-filter/Clear row `output_controls` already puts in that
+    /// panel's title bar.
     fn dropdown_menu(
         &mut self,
         menu: PopupMenu,
@@ -213,6 +216,19 @@ impl ComponentPanel for SectionPanel {
                                     UnfocusedFps::Fps25
                                 };
                                 shell.set_unfocused_fps(next, cx);
+                            });
+                        }),
+                )
+            }
+            Section::Output => {
+                let checked = shell.read(cx).output_show_timestamps;
+                menu.item(
+                    PopupMenuItem::new("Show Timestamp")
+                        .checked(checked)
+                        .on_click(move |_, _, cx| {
+                            shell.update(cx, |shell, cx| {
+                                shell.output_show_timestamps = !shell.output_show_timestamps;
+                                cx.notify();
                             });
                         }),
                 )

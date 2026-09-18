@@ -1213,28 +1213,23 @@ against `Roblox/creator-docs` rather than assumed:
   dock rather than dropping it; no dedicated
   "Warnings" `OutputFilter` bucket; no distinct visual marker for a
   warning row versus a successful Command Bar run.
-- [ ] 📋 **Output window: real Studio's filter/display feature set**,
+- [x] 🚧 **Output window: real Studio's filter/display feature set**,
   checked against `studio/output.md` rather than assumed. Only part of
   this depends on the sandbox above — the rest is buildable against what
   the Command Bar and app warnings already put in the dock today:
-  - **Not sandbox-dependent, reported directly from real use**: every
-    Command Bar run's own immediate feedback shows twice today — once in
-    the small label `command_bar::Feedback` renders above the input box,
-    and again as a permanent row in the Output dock once
-    `shell::command::run_command` logs it — instead of the dock being the
-    one place to look, the way Studio's own Output window is. Rows also
-    carry no timestamp, and only distinguish error from everything else
-    (a plain `✕`/`✓` marker, `danger` color on error only) even though
-    `command_bar::Feedback` already has a distinct `Warning` variant
-    (`OutputEntry`/`Feedback`, `shell/output.rs`) — a pushed warning renders
-    identically to a successful run. Real Studio's Output window docs
-    confirm both gaps are real, specific features to match rather than
-    invent: a **Show Timestamp** toggle prints a per-row timestamp in
-    `HH:MM:SS.SSS`, and its four message kinds each get their own color —
-    `print` in the default/black text color, `warn` in orange, `error` in
-    red, and `TestService.Message` in blue (this last one has no
-    equivalent here yet) — each pairing naturally with its own icon
-    (error/warning/info/output) rather than the current binary marker.
+  - **Not sandbox-dependent, reported directly from real use**: shipped —
+    a **Show Timestamp** toggle, in the Output panel's own overflow menu
+    next to Explorer's and Viewport's toggles (`Shell::output_show_timestamps`,
+    `shell/dock.rs`), prints a per-row timestamp in `HH:MM:SS.SSS`; rows now
+    carry a per-kind color and icon in place of the old plain `✕`/`✓`
+    marker — `print`/a successful run in the default text color with a
+    check icon, `warn` in orange with an alert icon, `error` in red with an
+    X icon (`OutputEntry::kind`/`RowKind`, `shell/output.rs`). Still open:
+    `TestService.Message`'s blue/info kind, which needs the sandbox before
+    anything here can produce it; and the duplicate-display gap itself —
+    every Command Bar run's own immediate feedback still shows twice, once
+    in `command_bar::Feedback`'s own label and again as the Output dock's
+    permanent row — left untouched.
   - **Sandbox-dependent**: filtering by **context** (`Client`/`Server`/
     `User Plugin`) only means something once the sandbox's client/server
     split exists to produce it; **Show Context** and **Show Source**
