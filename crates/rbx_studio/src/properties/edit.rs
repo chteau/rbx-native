@@ -4,7 +4,7 @@
 //! lives on `Instance` itself rather than in its property map).
 
 use rbx_dom::{
-    CFrameData, Color3Data, NumberRange, Ref, UDim, UDim2, Variant, Vector2Data, Vector3Data,
+    CFrameData, Color3Data, NumberRange, Rect, Ref, UDim, UDim2, Variant, Vector2Data, Vector3Data,
     WeakDom,
 };
 use rbx_reflection::ReflectionDatabase;
@@ -17,6 +17,14 @@ use font::{font_text, parse_font, synced};
 /// row for it and [`commit`] routes it to `WeakDom::set_name` instead of
 /// `set_property`.
 pub(crate) const NAME_PROPERTY: &str = "Name";
+
+/// Not a real Roblox `Folder` property at all — see `crate::folder_colors`.
+/// `Properties::rows` synthesizes this row only for a `Folder`, and
+/// `shell::folder_color::commit_folder_color` routes its commit to that
+/// module's local store instead of reaching this file's [`commit`] at all;
+/// spelled distinctly (capitalized, spaced) so nobody mistakes it for a real
+/// dump property.
+pub(crate) const FOLDER_COLOR_PROPERTY: &str = "Explorer Colour";
 
 /// The text an editable row's `Input` starts with: always round-trips through
 /// [`parse`], which is why it can differ from the read-only column's
@@ -66,6 +74,10 @@ pub(crate) fn edit_text(value: &Variant) -> Option<String> {
             frame.position.x, frame.position.y, frame.position.z
         )),
         Variant::NumberRange(range) => Some(format!("{}, {}", range.min, range.max)),
+        Variant::Rect(rect) => Some(format!(
+            "{}, {}, {}, {}",
+            rect.min.x, rect.min.y, rect.max.x, rect.max.y
+        )),
         Variant::Font(font) => Some(font_text(font)),
         _ => None,
     }
@@ -174,6 +186,13 @@ pub(crate) fn parse(
             Ok(Variant::NumberRange(NumberRange {
                 min: n[0],
                 max: n[1],
+            }))
+        }
+        Variant::Rect(_) => {
+            let n = parse_numbers(text, 4)?;
+            Ok(Variant::Rect(Rect {
+                min: Vector2Data { x: n[0], y: n[1] },
+                max: Vector2Data { x: n[2], y: n[3] },
             }))
         }
         Variant::Font(_) => parse_font(text).map(Variant::Font),
