@@ -9,6 +9,7 @@ mod dock_layout;
 mod drag;
 mod edit;
 mod folder_color;
+mod group;
 mod history;
 mod keys;
 mod output;
@@ -402,6 +403,11 @@ impl Shell {
         // Explorer delete/insert debug aids (see `shell::keys`): applied
         // last, so an insert can parent under whatever is already selected.
         shell.apply_debug_explorer_action(cx);
+
+        // `RBX_STUDIO_GROUP` / `RBX_STUDIO_UNGROUP` (see `shell::group`):
+        // applied right after, so a group can wrap whatever the blocks above
+        // just selected or inserted.
+        shell.apply_debug_group(cx);
 
         // `RBX_STUDIO_OPEN_SCRIPT` (see `shell::scripts`): after the Command
         // Bar block above, so a script that block just created can be opened.

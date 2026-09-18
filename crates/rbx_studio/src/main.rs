@@ -30,6 +30,10 @@
 //! `Script`/`LocalScript`/`ModuleScript` in the Script Editor panel exactly as
 //! double-clicking its Explorer row would — the same aid, for the script
 //! editor and its Luau highlighting (see `shell::scripts`).
+//! `RBX_STUDIO_GROUP=1` wraps the current selection in a new `Model` exactly
+//! as `Ctrl+G` would; `RBX_STUDIO_UNGROUP=1` unwraps it back out exactly as
+//! `Ctrl+Shift+G` would — the same aid, for the Explorer's Group/Ungroup
+//! (see `shell::group`).
 //! Ctrl+S writes the place back to the file it was opened from, in the
 //! format it was opened in; `RBX_STUDIO_SAVE_AS=<path>` redirects one such
 //! save to a scratch path instead (see `save`).
