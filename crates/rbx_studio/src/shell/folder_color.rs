@@ -5,7 +5,11 @@
 //! `properties::edit::commit`'s `NAME_PROPERTY` branch applies to `Name`,
 //! just routed here rather than there, since the store (and the place path
 //! that keys it) lives on `Shell`, not on a bare `WeakDom` — and collecting
-//! every tagged `Folder`'s current tint for the Explorer tree to paint.
+//! every tagged `Folder`'s current tint for the Explorer tree's hover/
+//! selected row painting (`shell::rows::row`). The row's *icon* is a
+//! separate, cheaper path: `explorer::items` bakes the recolored bitmap in
+//! once per rebuild via `class_icons::tint`, rather than looking anything
+//! up here per render.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -34,7 +38,9 @@ impl Shell {
 
     /// Every tagged `Folder`'s current tint, keyed the way `explorer::item_id`
     /// keys a tree row — what `shell::panels::instance_tree` looks a row's
-    /// tint up by (see `shell::rows::row`).
+    /// tint up by, to paint that row's hover/selected state with it instead
+    /// of the theme's default (see `shell::rows::row`; the row's *icon* is
+    /// recolored separately, baked in at `explorer::items` build time).
     pub(super) fn folder_tints(&self) -> HashMap<SharedString, Rgb> {
         let mut tints = HashMap::new();
         collect_tints(

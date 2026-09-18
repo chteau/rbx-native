@@ -386,18 +386,26 @@ Roblox's own engine.
 - [x] **Colour-coded Explorer folders** — a `Folder` can carry a colour tag,
   edited through a synthetic "Explorer Colour" row the Properties panel
   adds only for a `Folder` (reusing the same `EditKind::Color` widget and
-  `Name`-row precedent `properties.rs`/`properties/edit.rs` already had),
-  shown as a small tint swatch on its Explorer row (`shell/rows.rs`). Kept
-  entirely out of the saved place file, per this bullet's own reasoning: a
-  local, per-place store (`folder_colors.rs`, keyed by the place's file
-  path and the folder's Explorer path) rather than an invented `Folder`
-  property a real Studio session would trip over. `Folder`-only, not "any
-  instance" — the hedge in this bullet's original wording, deliberately
-  not chased. **Known limitation**: keyed by Explorer path rather than a
-  stable id (a `Ref` regenerates on every load), so renaming or moving a
-  tagged folder orphans its tag; a load-time prune keeps orphaned entries
-  from accumulating forever, but does not carry the tag across the rename
-  (see the `ponytail:` comment in `folder_colors.rs`).
+  `Name`-row precedent `properties.rs`/`properties/edit.rs` already had).
+  Shown two ways on its Explorer row: the row's own icon is recolored to
+  the tag (`class_icons::tint` flattens the already-rasterized bitmap to
+  the tag colour, keeping each pixel's alpha, and `explorer::items` caches
+  one tinted bitmap per colour per rebuild rather than per instance), and
+  its hover/selected background and selection outline use the tag colour
+  too, faded, instead of the theme's default blue (`shell/rows.rs` paints
+  a tagged row's own chrome, bypassing the vendored `ListItem`'s hardcoded
+  hover/selected colours — it has no per-instance override for either).
+  Kept entirely out of the saved place file, per this bullet's own
+  reasoning: a local, per-place store (`folder_colors.rs`, keyed by the
+  place's file path and the folder's Explorer path) rather than an
+  invented `Folder` property a real Studio session would trip over.
+  `Folder`-only, not "any instance" — the hedge in this bullet's original
+  wording, deliberately not chased. **Known limitation**: keyed by
+  Explorer path rather than a stable id (a `Ref` regenerates on every
+  load), so renaming or moving a tagged folder orphans its tag; a
+  load-time prune keeps orphaned entries from accumulating forever, but
+  does not carry the tag across the rename (see the `ponytail:` comment in
+  `folder_colors.rs`).
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.

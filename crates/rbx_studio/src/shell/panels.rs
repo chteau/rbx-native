@@ -60,7 +60,7 @@ impl Shell {
                         // A row whose id does not read back as a referent has
                         // nothing to drag or drop onto; it still has to draw.
                         let Some(reference) = explorer::item_ref(&item.id) else {
-                            return row(index, entry, false, icon, tint).into_any_element();
+                            return row(index, entry, false, icon, tint);
                         };
                         let highlighted = selected.contains(&reference);
                         let dragged = DraggedInstances::new(&selected, reference, &item.label);

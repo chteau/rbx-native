@@ -5,8 +5,10 @@
 - **Colour-coded Explorer folders.** A `Folder` can now carry a colour tag,
   set through a synthetic "Explorer Colour" row the Properties panel shows
   only for a `Folder` (the same `Name`-row trick and colour-picker widget
-  the panel already had — no new UI), and shown as a small tint swatch on
-  its Explorer row. The tag lives in its own local, per-place store
+  the panel already had — no new UI). The tag recolors the folder's own
+  Explorer icon, and its row's hover/selected background and selection
+  outline read as the tag colour (faded) instead of the theme's default
+  blue. The tag lives in its own local, per-place store
   (`folder_colors.json`) rather than the saved place file — there's no real
   Roblox `Folder` property for it, so a real Studio session opening the
   same place never sees an invented one. Keyed by the folder's Explorer

@@ -182,7 +182,7 @@ fn load(path: &Path, select: Option<&str>) -> Result<Place, String> {
     }
 
     Ok(Place {
-        explorer: Explorer::from_dom(&dom),
+        explorer: Explorer::from_dom(&dom, &folder_colors, path),
         selected: select.and_then(|name| explorer::find_by_name(&dom, name)),
         camera: PlaceCamera::from_dom(&dom),
         viewer: Headless::load(path, true)?,
