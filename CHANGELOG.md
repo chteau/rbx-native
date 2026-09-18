@@ -46,6 +46,10 @@
   between `command_bar::Feedback`'s own label and the Output dock row,
   `TestService.Message`'s blue/info kind (needs the sandbox), and the rest
   of that roadmap bullet's sandbox-dependent half. — @chteau
+- **The Properties panel's `Rect` rows are editable.** `SliceCenter` and
+  other `Rect`-typed properties used to fall back to read-only text; they
+  now edit as four labeled fields (`Min X`/`Min Y`/`Max X`/`Max Y`), the
+  same pattern `Vector2`/`UDim2` already used. — @chteau
 
 ## 2026-09-17
 

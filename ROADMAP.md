@@ -706,8 +706,13 @@ Roblox's own engine.
   text these currently fall back to. The most valuable of the types
   explicitly left as text tonight, given how much of the GUI/particle work
   above depends on authoring these comfortably.
-- [ ] 📋 `Rect`, `PhysicalProperties`, `Font` — smaller, same "still
-  read-only text" status.
+- [x] 🚧 `Rect`, `PhysicalProperties`, `Font` — smaller, same "still
+  read-only text" status. `Rect` now edits as four labeled fields
+  (`crates/rbx_studio/src/properties/edit.rs`). `Font` turned out to
+  already be fully editable before this item was picked up (the roadmap
+  text describing it was stale). `PhysicalProperties` is still read-only —
+  it's a real enum (`Default`/`Custom` with five fields), bigger scope than
+  the other two, and remains open.
 - [ ] 📋 **Widgets that better match how Studio actually renders specific
   types**, rather than a generic fallback — verified against the real API
   dump and the current code, not assumed:
