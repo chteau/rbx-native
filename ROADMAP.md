@@ -382,6 +382,15 @@ Roblox's own engine.
     debugging, and new-script templates. With focus in an editor, Ctrl+Z
     is the editor's own text undo rather than the place's history — the
     split Studio makes — and Edit > Undo still reaches the latter.
+- [x] **Throttled render loop while the window is unfocused.** Losing OS
+  focus (`gpui`'s window activation) caps the viewport's render thread —
+  not just the UI thread's own poll rate — to a user-chosen preset, 25 or
+  30 fps (`pacing::UnfocusedFps`, next to the quality dropdown in the
+  Viewport panel's overflow menu); the first focus or input event
+  (`pacing::FocusPacing::mark_input`) restores the full display rate
+  immediately, ahead of whatever window-activation event may still be in
+  flight, so nothing feels sluggish coming back. Persisted the same way
+  the quality level and projection mode already are.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -470,26 +479,20 @@ Roblox's own engine.
 - [ ] 📋 `Light.Shadows` for `PointLight` (needs 6-face shadow maps; done
   for `SpotLight`/`SurfaceLight`).
 - [ ] 📋 Neon/`ForceField` shimmer, `Glass` refraction — currently flat.
-- [ ] 📋 **Throttle the renderer while the window is not focused.** The
-  viewport renders at the display's full rate whether or not anyone is
-  looking at it, which is wasted GPU/CPU (and fan noise, and battery on a
-  laptop) the moment the editor sits behind another window. When the
-  editor window loses focus, cap the render loop at 25–30 fps (a setting,
-  with those two as the presets); restore the full rate on the first
-  focus/input event so nothing feels sluggish coming back. Real Studio
-  does the same. The pacing code already exists (`shell::pacing` and the
-  viewer's `app::pacing`); this is a second target rate keyed off the
-  window's focus state, not a new loop.
-- [ ] 📋 **An FPS/frame-time readout**, matching real Studio's own
+- [x] 🚧 **An FPS/frame-time readout**, matching real Studio's own
   performance-debugging surface rather than inventing a new one: Studio's
   `Window > Performance > Stats` toggles a debug stats overlay, and
   `Ctrl`+`F6` opens the MicroProfiler directly for a per-system frame-time
-  breakdown. Today's viewport corner label (`rbxstudio`) and title bar
-  (`rbxview`) show quality level and flight speed but no frame rate or
-  frame time at all, even though the render thread already measures frame
-  timing internally to drive automatic quality scaling (see "What's been
-  implemented" above) — the number already exists, it just isn't shown
-  anywhere yet.
+  breakdown. `rbxstudio`'s viewport corner label gets a "Stats" toggle next
+  to the existing Orthographic one, in the Viewport panel's own overflow
+  menu (this editor has no `Window` menu yet) — switching it on adds the
+  render thread's last-measured fps and frame time to the label already
+  showing quality level and flight speed, reusing the same per-second
+  numbers `workspace_view::stats` already computed to drive automatic
+  quality scaling rather than a second timing mechanism. Still open:
+  `rbxview`'s standalone title bar shows quality level and flight speed the
+  same way and has no equivalent readout yet — a separate binary, out of
+  scope here.
 - [ ] 📋 **A 5th "Transform" toolbar button** appears in Studio's current
   toolbar (see the owner-provided screenshot) alongside the now-implemented
   Select/Move/Scale/Rotate (see "What's been implemented" → Editor), but
@@ -1215,28 +1218,23 @@ against `Roblox/creator-docs` rather than assumed:
   dock rather than dropping it; no dedicated
   "Warnings" `OutputFilter` bucket; no distinct visual marker for a
   warning row versus a successful Command Bar run.
-- [ ] 📋 **Output window: real Studio's filter/display feature set**,
+- [x] 🚧 **Output window: real Studio's filter/display feature set**,
   checked against `studio/output.md` rather than assumed. Only part of
   this depends on the sandbox above — the rest is buildable against what
   the Command Bar and app warnings already put in the dock today:
-  - **Not sandbox-dependent, reported directly from real use**: every
-    Command Bar run's own immediate feedback shows twice today — once in
-    the small label `command_bar::Feedback` renders above the input box,
-    and again as a permanent row in the Output dock once
-    `shell::command::run_command` logs it — instead of the dock being the
-    one place to look, the way Studio's own Output window is. Rows also
-    carry no timestamp, and only distinguish error from everything else
-    (a plain `✕`/`✓` marker, `danger` color on error only) even though
-    `command_bar::Feedback` already has a distinct `Warning` variant
-    (`OutputEntry`/`Feedback`, `shell/output.rs`) — a pushed warning renders
-    identically to a successful run. Real Studio's Output window docs
-    confirm both gaps are real, specific features to match rather than
-    invent: a **Show Timestamp** toggle prints a per-row timestamp in
-    `HH:MM:SS.SSS`, and its four message kinds each get their own color —
-    `print` in the default/black text color, `warn` in orange, `error` in
-    red, and `TestService.Message` in blue (this last one has no
-    equivalent here yet) — each pairing naturally with its own icon
-    (error/warning/info/output) rather than the current binary marker.
+  - **Not sandbox-dependent, reported directly from real use**: shipped —
+    a **Show Timestamp** toggle, in the Output panel's own overflow menu
+    next to Explorer's and Viewport's toggles (`Shell::output_show_timestamps`,
+    `shell/dock.rs`), prints a per-row timestamp in `HH:MM:SS.SSS`; rows now
+    carry a per-kind color and icon in place of the old plain `✕`/`✓`
+    marker — `print`/a successful run in the default text color with a
+    check icon, `warn` in orange with an alert icon, `error` in red with an
+    X icon (`OutputEntry::kind`/`RowKind`, `shell/output.rs`). Still open:
+    `TestService.Message`'s blue/info kind, which needs the sandbox before
+    anything here can produce it; and the duplicate-display gap itself —
+    every Command Bar run's own immediate feedback still shows twice, once
+    in `command_bar::Feedback`'s own label and again as the Output dock's
+    permanent row — left untouched.
   - **Sandbox-dependent**: filtering by **context** (`Client`/`Server`/
     `User Plugin`) only means something once the sandbox's client/server
     split exists to produce it; **Show Context** and **Show Source**
