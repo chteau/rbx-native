@@ -1,0 +1,47 @@
+{
+  "name": "rbx-native",
+  "author": "rbx-native",
+  "themes": [
+    {
+      "name": "rbx-native Dark",
+      "mode": "dark",
+      "radius": 5,
+      "colors": {
+        "background": "#1a1a1a",
+        "foreground": "#e8e8e6",
+        "border": "#2b2b2b",
+        "input.border": "#333333",
+        "muted.background": "#262626",
+        "muted.foreground": "#9c9c9a",
+        "popover.background": "#242424",
+        "popover.foreground": "#e8e8e6",
+        "accent.background": "#2a2a2a",
+        "accent.foreground": "#e8e8e6",
+        "sidebar.background": "#1e1e1e",
+        "sidebar.foreground": "#d4d4d2",
+        "sidebar.border": "#2b2b2b",
+        "sidebar.accent.background": "#2a2a2a",
+        "sidebar.accent.foreground": "#e8e8e6",
+        "tab_bar.background": "#202020",
+        "tab.background": "#202020",
+        "tab.foreground": "#9c9c9a",
+        "tab.active.background": "#1e1e1e",
+        "tab.active.foreground": "#e8e8e6",
+        "table.background": "#1e1e1e",
+        "table.even.background": "#212121",
+        "table.row.border": "#262626",
+        "table.hover.background": "#262626",
+        "table.head.background": "#202020",
+        "table.head.foreground": "#9c9c9a",
+        "ring": "#4d8dff",
+        "selection.background": "#3b82f6",
+        "list.active.background": "#3b82f6",
+        "list.active.border": "#3b82f6",
+        "scrollbar.thumb.background": "#3a3a3a",
+        "scrollbar.thumb.hover.background": "#454545",
+        "title_bar.background": "#1a1a1a",
+        "title_bar.border": "#2b2b2b"
+      }
+    }
+  ]
+}

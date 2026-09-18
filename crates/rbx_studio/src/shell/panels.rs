@@ -53,14 +53,14 @@ impl Shell {
             }))
             .child(
                 base::Tree::new(&self.tree)
-                    .item(move |index, entry, _, _, _| {
+                    .item(move |index, entry, _, _, cx| {
                         let item = entry.item();
                         let icon = explorer.icon(&item.id);
                         let tint = tints.get(&item.id).copied();
                         // A row whose id does not read back as a referent has
                         // nothing to drag or drop onto; it still has to draw.
                         let Some(reference) = explorer::item_ref(&item.id) else {
-                            return row(index, entry, false, icon, tint);
+                            return row(index, entry, false, icon, tint, cx);
                         };
                         let highlighted = selected.contains(&reference);
                         let dragged = DraggedInstances::new(&selected, reference, &item.label);
@@ -69,7 +69,7 @@ impl Shell {
                             index,
                             reference,
                             dragged,
-                            row(index, entry, highlighted, icon, tint),
+                            row(index, entry, highlighted, icon, tint, cx),
                         )
                     })
                     .list_style(StyleRefinement::default().flex_grow_1().size_full())

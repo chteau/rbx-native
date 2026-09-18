@@ -42,6 +42,7 @@ pub(super) fn row(
     selected: bool,
     icon: ClassIcon,
     tint: Option<(u8, u8, u8)>,
+    cx: &App,
 ) -> AnyElement {
     let item = entry.item();
     let chevron = if entry.is_expanded() {
@@ -56,7 +57,7 @@ pub(super) fn row(
 
     let content = h_flex()
         .gap_1p5()
-        .py_0p5()
+        .py_1()
         .pl(px(entry.depth() as f32 * INDENT))
         .text_sm()
         .child(
@@ -75,7 +76,7 @@ pub(super) fn row(
             .selected(selected)
             .child(content)
             .into_any_element(),
-        Some(color) => tagged_row(index, selected, color, content),
+        Some(color) => tagged_row(index, selected, color, content, cx),
     }
 }
 
@@ -98,13 +99,14 @@ fn tagged_row(
     selected: bool,
     color: (u8, u8, u8),
     content: impl IntoElement,
+    cx: &App,
 ) -> AnyElement {
     let container = h_flex()
         .id(index)
         .relative()
         .items_center()
         .gap_x_1()
-        .py_1()
+        .py_1p5()
         .px_3()
         .child(content);
 
@@ -115,15 +117,18 @@ fn tagged_row(
             .left_0()
             .right_0()
             .bottom_0()
+            .rounded(cx.theme().radius)
             .border_1()
             .border_color(tag_color(color, u8::MAX));
         container
+            .rounded(cx.theme().radius)
             .bg(tag_color(color, SELECTED_ALPHA))
             .child(outline)
             .into_any_element()
     } else {
         let hover_bg = tag_color(color, HOVER_ALPHA);
         container
+            .rounded(cx.theme().radius)
             .hover(move |this| this.bg(hover_bg))
             .into_any_element()
     }
@@ -144,7 +149,7 @@ pub(super) fn property_row(row: &PropertyRow, cx: &App) -> impl IntoElement {
     h_flex()
         .w_full()
         .px_2()
-        .py_1()
+        .py_1p5()
         .gap_2()
         .text_xs()
         .border_b_1()
@@ -179,7 +184,7 @@ pub(super) fn property_row_control(
     v_flex()
         .w_full()
         .px_2()
-        .py_1()
+        .py_1p5()
         .gap_1()
         .text_xs()
         .border_b_1()

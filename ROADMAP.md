@@ -1199,7 +1199,7 @@ against `Roblox/creator-docs` rather than assumed:
     `rbx_assets::AssetCache` already owns) so people can publish and swap
     packs without forking the project — the actual goal behind spec'ing a
     from-scratch icon kit in the first place.
-- [ ] 📋 **Soften the editor's visual theme — calmer and lower-contrast,
+- [x] 🚧 **Soften the editor's visual theme — calmer and lower-contrast,
   closer to real Studio but gentler.** Today's panels are high-contrast
   flat blocks: near-pure black/white backgrounds, hard 1px borders, sharp
   rectangular corners, tight padding, saturated colour used everywhere
@@ -1233,6 +1233,25 @@ against `Roblox/creator-docs` rather than assumed:
     the theme format the item above calls for — plus a before/after
     screenshot of one representative panel (the Explorer, or a popup like
     Store/Upgrades) for review before it rolls out app-wide.
+
+  Shipped: the deliverable itself (`assets/themes/dark-soft.json`, a
+  `ThemeSet`/`ThemeConfig` JSON the toolkit's own theming already knows how
+  to load — see `crates/rbx_studio/src/main.rs::install_theme`), the
+  palette (`#1a1a1a`/`#e8e8e6` floor/ceiling), panel separation via a
+  low-luminance-step `border` token rather than a redrawn shadow, 5px radius
+  on buttons/rows/panels, +30-50% padding on toolbar buttons and Explorer/
+  Properties rows, and accent colour reserved to the selection highlight/
+  focus ring. Dock/panel structure was reviewed against the reference
+  concept's grouped-tab style and kept as-is — the existing arrangement
+  (Viewport+Scripts+StyleEditor tabbed, Output tabbed below it, Explorer+
+  Properties tabbed on the right) already matches that pattern; see
+  `UX_GUIDELINES.md` §7 for the reasoning. **Still open**: an active-tab
+  indicator and bold section-header text — today's dock tab titles are
+  deliberately small/muted rather than bold, a considered choice from
+  earlier work (see `shell/dock.rs::title_style`'s own comment) this PR
+  didn't reverse without checking with the maintainer first; also, this
+  ships one built-in theme, not yet the user-installable side-by-side theme
+  packs the item above this one still lists as open.
 
 ### Play / Test workflow
 - [ ] 📋 The sandbox-place design (private per-developer place, injected

@@ -62,7 +62,7 @@ mod workspace_view;
 
 use std::path::{Path, PathBuf};
 
-use gpui_kit::component::{Root, Theme, ThemeMode};
+use gpui_kit::component::{Root, Theme, ThemeMode, ThemeRegistry};
 use gpui_kit::*;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
@@ -127,6 +127,7 @@ fn main() {
     let app = gpui_kit::application().with_assets(gpui_kit::assets::AllAssets);
     app.run(move |cx| {
         gpui_kit::init(cx);
+        install_theme(cx);
         Theme::change(ThemeMode::Dark, None, cx);
 
         cx.spawn(async move |cx| {
@@ -169,6 +170,26 @@ struct Place {
     /// lazily on first use, since the Explorer's own tints are baked in by
     /// `shell::folder_color::folder_tints` from the moment the window opens.
     folder_colors: FolderColors,
+}
+
+/// Swaps GPUI Kit's stock near-black dark theme for this editor's own
+/// lower-contrast palette (`assets/themes/dark-soft.json`), before
+/// [`Theme::change`] below activates it. The file follows GPUI Kit's own
+/// `ThemeSet`/`ThemeConfig` JSON format (any key this leaves unset falls
+/// back to the stock dark theme), so a future user-installable theme pack
+/// can drop a file in the same shape next to it without new plumbing here.
+fn install_theme(cx: &mut App) {
+    const THEME: &str = include_str!("../../../assets/themes/dark-soft.json");
+    ThemeRegistry::global_mut(cx)
+        .load_themes_from_str(THEME)
+        .expect("assets/themes/dark-soft.json is valid ThemeSet JSON");
+    if let Some(theme) = ThemeRegistry::global(cx)
+        .themes()
+        .get("rbx-native Dark")
+        .cloned()
+    {
+        Theme::global_mut(cx).dark_theme = theme;
+    }
 }
 
 fn load(path: &Path, select: Option<&str>, icon_pack: IconPack) -> Result<Place, String> {
@@ -257,8 +278,26 @@ fn file_name(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::{file_name, parse};
+    use gpui_kit::component::{ThemeMode, ThemeSet};
     use rbx_viewer::QualityLevel;
     use std::path::{Path, PathBuf};
+
+    /// Guards `install_theme`'s `include_str!` + `.expect(...)`: a change to
+    /// `assets/themes/dark-soft.json` that breaks its `ThemeSet` shape (a
+    /// typo in a key, invalid JSON) would otherwise only surface as a panic
+    /// the first time `rbxstudio` actually starts.
+    #[test]
+    fn the_bundled_theme_file_parses_as_a_dark_theme_named_for_this_project() {
+        const THEME: &str = include_str!("../../../assets/themes/dark-soft.json");
+        let theme_set: ThemeSet =
+            serde_json::from_str(THEME).expect("assets/themes/dark-soft.json is valid JSON");
+        let theme = theme_set
+            .themes
+            .iter()
+            .find(|theme| theme.name == "rbx-native Dark")
+            .expect("a theme named \"rbx-native Dark\"");
+        assert_eq!(theme.mode, ThemeMode::Dark);
+    }
 
     fn arguments(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| value.to_string()).collect()

@@ -84,11 +84,11 @@ impl Shell {
 
         h_flex()
             .w_full()
-            .h(px(32.))
+            .h(px(36.))
             .flex_none()
             .items_center()
             .gap_1()
-            .px_2()
+            .px_3()
             .border_b_1()
             .border_color(cx.theme().border)
             .children(Tool::ALL.map(|tool| {

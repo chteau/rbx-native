@@ -2,6 +2,16 @@
 
 ## 2026-09-18
 
+- **Softened the editor's visual theme.** Panels went from near-black/near-
+  white flat blocks with hard borders and tight padding to a muted grey
+  ramp (`#1a1a1a` floor), low-contrast luminance-step seams instead of hard
+  1px lines, 5px corner radius, more breathing room in the Explorer/
+  Properties rows and toolbar, and a single saturated accent reserved for
+  selection/focus rather than sprinkled everywhere. Ships as a real
+  `ThemeSet`/`ThemeConfig` JSON file (`assets/themes/dark-soft.json`) the
+  toolkit's own theming loads at startup, not compiled-in constants, plus a
+  new `UX_GUIDELINES.md` for keeping future visual changes consistent
+  with it. — @chteau
 - **Throttle the viewport's render loop while the editor window is
   unfocused.** The render thread paced itself to the display's full refresh
   rate no matter whether anyone was looking, burning GPU/CPU (and battery,

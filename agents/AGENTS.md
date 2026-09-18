@@ -79,6 +79,10 @@ automatically; other tools should follow the same document directly.
   build-and-test job on Windows, on every branch. It's your safety net for
   the platform you're not on, not a reason to skip running the gate
   yourself on the one you are.
+- When touching `rbx_studio`'s look (palette, spacing, radius, dock layout),
+  follow [`UX_GUIDELINES.md`](../UX_GUIDELINES.md) at the repo root — it has
+  the token names to reuse, the contrast bar for text versus decorative
+  seams, and what's deliberately out of scope (the 3D viewport HUD).
 - When you're changing rendering, lighting, or anything visual, a passing
   test suite is necessary but not sufficient — build the relevant binary and
   actually look at a screenshot before claiming something is fixed. This
