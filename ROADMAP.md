@@ -382,6 +382,15 @@ Roblox's own engine.
     debugging, and new-script templates. With focus in an editor, Ctrl+Z
     is the editor's own text undo rather than the place's history — the
     split Studio makes — and Edit > Undo still reaches the latter.
+- [x] **Throttled render loop while the window is unfocused.** Losing OS
+  focus (`gpui`'s window activation) caps the viewport's render thread —
+  not just the UI thread's own poll rate — to a user-chosen preset, 25 or
+  30 fps (`pacing::UnfocusedFps`, next to the quality dropdown in the
+  Viewport panel's overflow menu); the first focus or input event
+  (`pacing::FocusPacing::mark_input`) restores the full display rate
+  immediately, ahead of whatever window-activation event may still be in
+  flight, so nothing feels sluggish coming back. Persisted the same way
+  the quality level and projection mode already are.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -470,26 +479,20 @@ Roblox's own engine.
 - [ ] 📋 `Light.Shadows` for `PointLight` (needs 6-face shadow maps; done
   for `SpotLight`/`SurfaceLight`).
 - [ ] 📋 Neon/`ForceField` shimmer, `Glass` refraction — currently flat.
-- [ ] 📋 **Throttle the renderer while the window is not focused.** The
-  viewport renders at the display's full rate whether or not anyone is
-  looking at it, which is wasted GPU/CPU (and fan noise, and battery on a
-  laptop) the moment the editor sits behind another window. When the
-  editor window loses focus, cap the render loop at 25–30 fps (a setting,
-  with those two as the presets); restore the full rate on the first
-  focus/input event so nothing feels sluggish coming back. Real Studio
-  does the same. The pacing code already exists (`shell::pacing` and the
-  viewer's `app::pacing`); this is a second target rate keyed off the
-  window's focus state, not a new loop.
-- [ ] 📋 **An FPS/frame-time readout**, matching real Studio's own
+- [x] 🚧 **An FPS/frame-time readout**, matching real Studio's own
   performance-debugging surface rather than inventing a new one: Studio's
   `Window > Performance > Stats` toggles a debug stats overlay, and
   `Ctrl`+`F6` opens the MicroProfiler directly for a per-system frame-time
-  breakdown. Today's viewport corner label (`rbxstudio`) and title bar
-  (`rbxview`) show quality level and flight speed but no frame rate or
-  frame time at all, even though the render thread already measures frame
-  timing internally to drive automatic quality scaling (see "What's been
-  implemented" above) — the number already exists, it just isn't shown
-  anywhere yet.
+  breakdown. `rbxstudio`'s viewport corner label gets a "Stats" toggle next
+  to the existing Orthographic one, in the Viewport panel's own overflow
+  menu (this editor has no `Window` menu yet) — switching it on adds the
+  render thread's last-measured fps and frame time to the label already
+  showing quality level and flight speed, reusing the same per-second
+  numbers `workspace_view::stats` already computed to drive automatic
+  quality scaling rather than a second timing mechanism. Still open:
+  `rbxview`'s standalone title bar shows quality level and flight speed the
+  same way and has no equivalent readout yet — a separate binary, out of
+  scope here.
 - [ ] 📋 **A 5th "Transform" toolbar button** appears in Studio's current
   toolbar (see the owner-provided screenshot) alongside the now-implemented
   Select/Move/Scale/Rotate (see "What's been implemented" → Editor), but
