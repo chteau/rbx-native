@@ -2,8 +2,8 @@
 //! [`Shell::handle_shell_key`] on the outer container rather than on one
 //! panel like `shell::keys` does for the Explorer — a save must go through no
 //! matter which widget currently holds focus). `handle_shell_key` is also the
-//! dispatch point `shell::history` reuses for Ctrl+Z/Ctrl+Y, rather than a
-//! second `on_key_down`.
+//! dispatch point `shell::history` reuses for Ctrl+Z/Ctrl+Y and `shell::group`
+//! for Ctrl+G/Ctrl+Shift+G, rather than a second `on_key_down`.
 
 use gpui_kit::{Context, Keystroke, Window};
 
@@ -25,6 +25,7 @@ impl Shell {
             self.save(cx);
         }
         self.handle_history_key(keystroke, window, cx);
+        self.handle_group_key(keystroke, cx);
     }
 
     /// Writes the current DOM back to the file it was opened from, in the

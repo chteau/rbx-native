@@ -53,3 +53,10 @@ x11rb = { version = "0.13", features = ["randr", "xfixes"] }
 
 # Dock layout state serialization — uses same version serde_json brings in.
 serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+# GPUI's headless test window/entity harness (`#[gpui_kit::test]`,
+# `TestAppContext`), for the dock registration regression test in
+# `shell/dock/tests.rs`. Test-only: `dev-dependencies` features never reach
+# the shipped binary.
+gpui-kit = { version = "0.6", features = ["test-support"] }

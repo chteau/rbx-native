@@ -696,3 +696,78 @@ fn frustum_corners_places_the_far_corners_at_the_requested_distance_when_orthogr
         );
     }
 }
+
+#[test]
+fn basis_facing_flat_down_minus_z_is_the_textbook_frame() {
+    let pose = Pose {
+        position: Vec3::ZERO,
+        yaw: 0.0,
+        pitch: 0.0,
+        fov_degrees: FIELD_OF_VIEW_DEGREES,
+        ortho_scale: 1.0,
+    };
+
+    let (forward, right, up) = pose.basis();
+
+    assert!(forward.abs_diff_eq(-Vec3::Z, 1e-5));
+    assert!(right.abs_diff_eq(Vec3::X, 1e-5));
+    assert!(up.abs_diff_eq(Vec3::Y, 1e-5));
+}
+
+#[test]
+fn basis_stays_orthonormal_and_right_handed_at_an_arbitrary_pose() {
+    let pose = Pose {
+        position: Vec3::ZERO,
+        yaw: 1.1,
+        pitch: -0.4,
+        fov_degrees: FIELD_OF_VIEW_DEGREES,
+        ortho_scale: 1.0,
+    };
+
+    let (forward, right, up) = pose.basis();
+
+    for axis in [forward, right, up] {
+        assert!((axis.length() - 1.0).abs() < 1e-5);
+    }
+    assert!(forward.dot(right).abs() < 1e-5);
+    assert!(forward.dot(up).abs() < 1e-5);
+    assert!(right.dot(up).abs() < 1e-5);
+    // Right-handed frame: right × up points back at the camera, the
+    // opposite of forward (which points into the scene) — the same relation
+    // `up = right.cross(forward)` establishes algebraically.
+    assert!(right.cross(up).abs_diff_eq(-forward, 1e-5));
+}
+
+#[test]
+fn basis_never_degenerates_looking_straight_up_or_down() {
+    // `f32::consts::FRAC_PI_2` itself already rounds a hair past true π/2, so
+    // `pitch.cos()` lands on a tiny nonzero value rather than exactly 0 —
+    // this exercises the same near-zero cross product `Pose::basis`'s
+    // fallback guards against, whichever of the two paths (its own fallback,
+    // or a tiny-but-nonzero vector normalizing on its own) actually runs for
+    // a given float rounding.
+    for pitch in [
+        std::f32::consts::FRAC_PI_2,
+        -std::f32::consts::FRAC_PI_2,
+        std::f32::consts::FRAC_PI_2 - 1e-4,
+        -std::f32::consts::FRAC_PI_2 + 1e-4,
+    ] {
+        let pose = Pose {
+            position: Vec3::ZERO,
+            yaw: 0.3,
+            pitch,
+            fov_degrees: FIELD_OF_VIEW_DEGREES,
+            ortho_scale: 1.0,
+        };
+
+        let (forward, right, up) = pose.basis();
+
+        for axis in [forward, right, up] {
+            assert!(axis.is_finite(), "pitch {pitch}: {axis} is not finite");
+            assert!(
+                (axis.length() - 1.0).abs() < 1e-4,
+                "pitch {pitch}: {axis} is not unit length"
+            );
+        }
+    }
+}

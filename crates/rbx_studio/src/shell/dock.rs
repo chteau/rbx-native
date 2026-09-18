@@ -16,6 +16,9 @@ use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::component::ActiveTheme;
 use gpui_kit::*;
 
+use crate::class_icons::IconPack;
+use crate::pacing::UnfocusedFps;
+
 use super::{Shell, EXPLORER_WIDTH, OUTPUT_HEIGHT, PROPERTIES_HEIGHT};
 
 /// Which of Shell's three sections a [`SectionPanel`] delegates to.
@@ -145,11 +148,18 @@ impl ComponentPanel for SectionPanel {
         }
     }
 
-    /// Explorer's "Show all services" toggle, moved off the search row and
-    /// into the panel's own overflow menu (see `Shell::show_all_services` /
-    /// `Shell::set_show_all_services`); Viewport's own "Orthographic" toggle
-    /// (see `Shell::orthographic` / `Shell::set_orthographic`) lives the same
-    /// way, next to the quality dropdown already in its title bar.
+    /// Explorer's "Show all services" and "Light Icons" toggles, moved off
+    /// the search row and into the panel's own overflow menu (see
+    /// `Shell::show_all_services` / `Shell::set_show_all_services` and
+    /// `Shell::icon_pack` / `Shell::set_icon_pack`); Viewport's own
+    /// "Orthographic" toggle (see `Shell::orthographic` /
+    /// `Shell::set_orthographic`), its Orientation Indicator toggle (see
+    /// `Shell::axis_indicator`), its Stats toggle, and its "Cap frame rate at
+    /// 25 fps when unfocused" toggle (see `Shell::unfocused_fps`) all live
+    /// the same way, next to the quality dropdown already in its title bar.
+    /// Output's "Show Timestamp" toggle (`Shell::output_show_timestamps`)
+    /// lives here too rather than crowding the level-filter/Clear row
+    /// `output_controls` already puts in that panel's title bar.
     fn dropdown_menu(
         &mut self,
         menu: PopupMenu,
@@ -160,26 +170,96 @@ impl ComponentPanel for SectionPanel {
         match self.section {
             Section::Explorer => {
                 let checked = shell.read(cx).show_all_services();
+                let show_all_shell = shell.clone();
+                let icon_pack_checked = shell.read(cx).icon_pack() == IconPack::Light;
                 menu.item(
                     PopupMenuItem::new("Show all services")
                         .checked(checked)
                         .on_click(move |_, _, cx| {
-                            shell.update(cx, |shell, cx| {
+                            show_all_shell.update(cx, |shell, cx| {
                                 let next = !shell.show_all_services();
                                 shell.set_show_all_services(next, cx);
                             });
                         }),
                 )
+                .item(
+                    PopupMenuItem::new("Light Icons")
+                        .checked(icon_pack_checked)
+                        .on_click(move |_, _, cx| {
+                            shell.update(cx, |shell, cx| {
+                                let next = if shell.icon_pack() == IconPack::Light {
+                                    IconPack::Dark
+                                } else {
+                                    IconPack::Light
+                                };
+                                shell.set_icon_pack(next, cx);
+                            });
+                        }),
+                )
             }
             Section::Viewport => {
-                let checked = shell.read(cx).orthographic();
+                let orthographic = shell.read(cx).orthographic();
+                let axis_indicator = shell.read(cx).axis_indicator();
+                let axis_indicator_shell = shell.clone();
+                let stats_checked = shell.read(cx).stats_shown();
+                let stats_shell = shell.clone();
+                let unfocused_fps_shell = shell.clone();
+                let unfocused_fps_checked = shell.read(cx).unfocused_fps() == UnfocusedFps::Fps25;
                 menu.item(
                     PopupMenuItem::new("Orthographic")
-                        .checked(checked)
+                        .checked(orthographic)
                         .on_click(move |_, _, cx| {
                             shell.update(cx, |shell, cx| {
                                 let next = !shell.orthographic();
                                 shell.set_orthographic(next, cx);
+                            });
+                        }),
+                )
+                .item(
+                    PopupMenuItem::new("Orientation Indicator")
+                        .checked(axis_indicator)
+                        .on_click(move |_, _, cx| {
+                            axis_indicator_shell.update(cx, |shell, cx| {
+                                let next = !shell.axis_indicator();
+                                shell.set_axis_indicator(next, cx);
+                            });
+                        }),
+                )
+                // Real Studio's own toggle is `Window > Performance > Stats`;
+                // this editor has no `Window` menu yet, so it sits next to
+                // the viewport's other debug affordance instead.
+                .item(PopupMenuItem::new("Stats").checked(stats_checked).on_click(
+                    move |_, _, cx| {
+                        stats_shell.update(cx, |shell, cx| {
+                            let next = !shell.stats_shown();
+                            shell.set_stats_shown(next, cx);
+                        });
+                    },
+                ))
+                .item(
+                    PopupMenuItem::new("Cap frame rate at 25 fps when unfocused")
+                        .checked(unfocused_fps_checked)
+                        .on_click(move |_, _, cx| {
+                            unfocused_fps_shell.update(cx, |shell, cx| {
+                                let next = if shell.unfocused_fps() == UnfocusedFps::Fps25 {
+                                    UnfocusedFps::Fps30
+                                } else {
+                                    UnfocusedFps::Fps25
+                                };
+                                shell.set_unfocused_fps(next, cx);
+                            });
+                        }),
+                )
+            }
+            Section::Output => {
+                let checked = shell.read(cx).output_show_timestamps;
+                menu.item(
+                    PopupMenuItem::new("Show Timestamp")
+                        .checked(checked)
+                        .on_click(move |_, _, cx| {
+                            shell.update(cx, |shell, cx| {
+                                shell.output_show_timestamps = !shell.output_show_timestamps;
+                                cx.notify();
                             });
                         }),
                 )
@@ -254,7 +334,6 @@ pub(super) fn build(
 /// This must be called before calling `dock_area.load()` for layout restoration to work.
 pub(super) fn register_panels(_dock_area: Entity<DockArea>, shell: Entity<Shell>, cx: &mut App) {
     use gpui_kit::component::dock::register_panel;
-    use std::sync::Arc;
 
     // Register every section panel so it can be reconstructed from saved state.
     for section in &[
@@ -269,7 +348,15 @@ pub(super) fn register_panels(_dock_area: Entity<DockArea>, shell: Entity<Shell>
         let shell_clone = shell.clone();
         register_panel(cx, section.name(), move |_context, _window, cx| {
             let panel = cx.new(|cx| SectionPanel::new(shell_clone.clone(), section, cx));
-            Arc::new(panel)
+            // A bare `Arc::new(panel)` compiles here too — `Entity<P>` already
+            // satisfies `PanelView` through `gpui_base`'s own blanket impl —
+            // but it is not a `PanelHandle`, so `PanelHandle::of` (what the
+            // tab bar downcasts through to recover a panel's dropdown menu
+            // and zoom control, see `gpui_component::dock::tab_panel`) comes
+            // back `None` for every panel rebuilt this way. `panel_handle` is
+            // the same helper `build()` above already uses for exactly this
+            // reason.
+            panel_handle(panel)
         });
     }
 }
@@ -351,33 +438,4 @@ fn locate(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::Section;
-
-    // `panel_name` documents that its value must never change once chosen
-    // (it will be the persisted layout's panel key once settings land), so
-    // this is worth locking down even though the rest of this module needs a
-    // live GPUI window to exercise.
-    #[test]
-    fn every_section_has_a_distinct_stable_name() {
-        let names = [
-            Section::Viewport.name(),
-            Section::Explorer.name(),
-            Section::Properties.name(),
-            Section::Output.name(),
-            Section::Scripts.name(),
-            Section::StyleEditor.name(),
-        ];
-        assert_eq!(
-            names,
-            [
-                "Viewport",
-                "Explorer",
-                "Properties",
-                "Output",
-                "Script Editor",
-                "Style Editor"
-            ]
-        );
-    }
-}
+mod tests;

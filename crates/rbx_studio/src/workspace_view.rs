@@ -15,9 +15,11 @@ mod gizmo;
 mod hover;
 mod input;
 mod label;
+mod orientation;
 mod presence;
 mod pump;
 mod quality;
+mod readout;
 mod scroll;
 mod stats;
 
@@ -233,8 +235,19 @@ pub(crate) struct WorkspaceView {
     visible: bool,
     missed_paints: u32,
     frame: Option<Arc<RenderImage>>,
-    /// One display refresh: the budget a frame is given.
+    /// One display refresh: the budget a frame is given while the window is
+    /// focused. Fixed for the life of the view — see `pacing` for the
+    /// unfocused cap this and the window's focus state combine into.
+    full_interval: Duration,
+    /// What the render loop is currently paced to: `full_interval` while
+    /// focused, or the capped unfocused rate otherwise — see [`pacing::FocusPacing`].
+    /// Drives the UI thread's own poll delay (`advance`'s return value) and
+    /// the hover/drag gates below; pushed to the render thread itself
+    /// through `Pump::set_interval` whenever `pacing` says it changed.
     interval: Duration,
+    /// Whether the window currently has OS focus, and the unfocused fps
+    /// preset — see [`pacing::FocusPacing`].
+    pacing: pacing::FocusPacing,
     speed: f32,
     speed_shown_until: Option<Instant>,
     /// The quality mode the user picked, and the level the render thread last
@@ -245,6 +258,15 @@ pub(crate) struct WorkspaceView {
     /// The projection mode the user last picked from the Viewport panel's
     /// overflow menu (see `Shell::set_orthographic`).
     orthographic: bool,
+    /// Whether the top-right orientation indicator draws at all — the
+    /// Viewport panel's overflow menu again (see `Shell::set_axis_indicator`).
+    axis_indicator: bool,
+    /// Whether the corner label shows `pump.stats()`'s frame rate — the
+    /// Viewport panel overflow menu's Stats toggle, next to Orthographic
+    /// (see `Shell::set_stats_shown`). Session-only: real Studio's own
+    /// `Window > Performance > Stats` doesn't persist across restarts
+    /// either.
+    stats_shown: bool,
     /// The transform toolbar's state, pushed down from `Shell` (see
     /// [`WorkspaceView::set_transform`]).
     transform: Transform,
@@ -280,16 +302,26 @@ pub(crate) struct WorkspaceView {
     /// Whether the drag in progress has actually moved the part yet, which is
     /// what tells `Shell` which move opens the gesture's one undo step.
     dragged: bool,
+    /// Where the live stud-count readout sits and what it reads, as of the
+    /// current drag's last step — see `gizmo::WorkspaceView::drag_to` and
+    /// `readout.rs`. Reset to `None` at the start of every drag (`gizmo::
+    /// WorkspaceView::begin`) so a stale number never survives into the next
+    /// gesture; `render` only ever shows it while `dragging()` is true, so a
+    /// value left over from the drag just released is simply never painted.
+    drag_readout: Option<(Point<Pixels>, SharedString)>,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
     _subscriptions: [Subscription; 2],
 }
 
 impl WorkspaceView {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         opened: Opened,
         camera: Option<PlaceCamera>,
         quality: QualityLevel,
         orthographic: bool,
+        axis_indicator: bool,
+        unfocused_fps: pacing::UnfocusedFps,
         selected: Vec<Selected>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -304,7 +336,12 @@ impl WorkspaceView {
         viewer.set_selection(&selected);
         viewer.set_orthographic(orthographic);
 
-        let interval = pacing::frame_interval(display::refresh_hz());
+        let full_interval = pacing::frame_interval(display::refresh_hz());
+        let pacing = pacing::FocusPacing::new(unfocused_fps);
+        // A freshly opened window is focused (see `FocusPacing::new`), so the
+        // loop opens at the full rate; `pacing` only starts mattering once
+        // something blurs or deactivates it.
+        let interval = pacing.interval(full_interval);
         let speed = viewer.speed();
         cx.spawn_in(window, async move |view, cx| {
             let mut delay = interval;
@@ -330,10 +367,16 @@ impl WorkspaceView {
             view.end_look();
         });
         // Alt-tabbing away never blurs the focus handle, so the window's own
-        // activation is watched too.
+        // activation is watched too — and, since it's the authoritative OS
+        // focus signal (unlike the in-app `focus` handle above), it's also
+        // what drives the render-rate throttle (see `pacing`).
         let deactivated = cx.observe_window_activation(window, |view, window, _| {
-            if !window.is_window_active() {
+            let active = window.is_window_active();
+            if !active {
                 view.end_look();
+            }
+            if view.pacing.set_active(active) {
+                view.retarget_pacing();
             }
         });
 
@@ -358,12 +401,16 @@ impl WorkspaceView {
             visible: true,
             missed_paints: 0,
             frame: None,
+            full_interval,
             interval,
+            pacing,
             speed,
             speed_shown_until: None,
             quality,
             level: QualityLevel::MAX,
             orthographic,
+            axis_indicator,
+            stats_shown: false,
             transform: Transform::default(),
             targets: Targets::default(),
             neighbours: Vec::new(),
@@ -373,6 +420,7 @@ impl WorkspaceView {
             pending_grab: None,
             held: Targets::default(),
             dragged: false,
+            drag_readout: None,
             _subscriptions: [blur, deactivated],
         }
     }
@@ -679,11 +727,73 @@ impl WorkspaceView {
         cx.notify();
     }
 
+    /// Shows or hides the top-right orientation indicator — purely a local
+    /// draw toggle, unlike `set_orthographic`: nothing about the camera or
+    /// the render thread changes, so this never touches `self.pump`.
+    pub(crate) fn set_axis_indicator(&mut self, shown: bool, cx: &mut Context<Self>) {
+        if shown == self.axis_indicator {
+            return;
+        }
+
+        self.axis_indicator = shown;
+        cx.notify();
+    }
+
+    /// Turns the corner label's frame-rate readout on or off — see
+    /// `Shell::set_stats_shown`. Pure UI-thread state, unlike quality or
+    /// projection above: `pump.stats()` is already updated by the render
+    /// thread regardless, so nothing about what it draws needs to change.
+    pub(crate) fn set_stats_shown(&mut self, shown: bool, cx: &mut Context<Self>) {
+        if shown == self.stats_shown {
+            return;
+        }
+
+        self.stats_shown = shown;
+        cx.notify();
+    }
+
+    /// Switches which unfocused preset `pacing` caps the render loop to —
+    /// see `Shell::set_unfocused_fps`. No visible effect while focused, so
+    /// unlike `set_quality`/`set_orthographic` this never needs `cx.notify`.
+    pub(crate) fn set_unfocused_fps(&mut self, unfocused: pacing::UnfocusedFps) {
+        if self.pacing.set_unfocused(unfocused) {
+            self.retarget_pacing();
+        }
+    }
+
+    /// Any keyboard or mouse input reaching the viewport counts as regaining
+    /// the user's attention — see `pacing::FocusPacing::mark_input`. Called
+    /// from every input handler in `render` below, so the throttle from
+    /// before an unfocused window's activation event lands doesn't also
+    /// delay the very input that's supposed to end it.
+    fn note_input(&mut self) {
+        if self.pacing.mark_input() {
+            self.retarget_pacing();
+        }
+    }
+
+    /// Recomputes the render loop's target interval from the current focus
+    /// state and pushes it to both halves of the loop: `self.interval` (read
+    /// by `advance`'s own poll delay and the hover/drag gates) and the render
+    /// thread itself (the actual throttle — see `Pump::set_interval`).
+    fn retarget_pacing(&mut self) {
+        let next = self.pacing.interval(self.full_interval);
+        if next != self.interval {
+            self.interval = next;
+            self.pump.set_interval(next);
+        }
+    }
+
     /// What the corner label reads: the speed is passed only while its moment
-    /// on screen lasts.
+    /// on screen lasts, the frame rate only while the Stats toggle is on —
+    /// and `0.0` (no full second counted yet) reads the same as off.
     fn status_label(&self) -> SharedString {
         let speed = self.speed_shown_until.map(|_| self.speed);
-        label::status(self.quality, self.level, speed)
+        let fps = self
+            .stats_shown
+            .then(|| self.pump.stats().latest_fps())
+            .filter(|fps| *fps > 0.0);
+        label::status(self.quality, self.level, fps, speed)
     }
 }
 
@@ -715,6 +825,7 @@ impl Render for WorkspaceView {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|view, event: &MouseDownEvent, window, cx| {
+                    view.note_input();
                     window.focus(&view.focus, cx);
                     let scale = window.scale_factor();
                     view.press(event.position, event.modifiers, scale, cx);
@@ -733,6 +844,7 @@ impl Render for WorkspaceView {
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(|view, _: &MouseDownEvent, window, cx| {
+                    view.note_input();
                     view.begin_look(window, cx);
                 }),
             )
@@ -751,6 +863,7 @@ impl Render for WorkspaceView {
                 }),
             )
             .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, _, _| {
+                view.note_input();
                 // Recorded, not applied: the step itself runs in `advance`,
                 // at most once per frame (see `gizmo::Drag`'s doc and
                 // `WorkspaceView::step_drag`), the way a hover is. A mouse
@@ -791,10 +904,12 @@ impl Render for WorkspaceView {
             // Not straight to the camera: a `ScrollingFrame` under the
             // cursor takes the notch first (see `scroll`).
             .on_scroll_wheel(cx.listener(|view, event: &ScrollWheelEvent, window, _| {
+                view.note_input();
                 let scale = window.scale_factor();
                 view.wheel(event.position, event.delta, event.modifiers.shift, scale);
             }))
             .on_key_down(cx.listener(|view, event: &KeyDownEvent, _, cx| {
+                view.note_input();
                 view.key(&event.keystroke, true, cx);
             }))
             .on_key_up(cx.listener(|view, event: &KeyUpEvent, _, cx| {
@@ -803,6 +918,7 @@ impl Render for WorkspaceView {
             // Shift alone never arrives as a keystroke: modifiers are reported
             // on their own, and Shift is Studio's precision modifier.
             .on_modifiers_changed(cx.listener(|view, event: &ModifiersChangedEvent, _, _| {
+                view.note_input();
                 view.pump.input(CameraInput::Key {
                     key: rbx_viewer::CameraKey::Slow,
                     pressed: event.modifiers.shift,
@@ -861,5 +977,128 @@ impl Render for WorkspaceView {
                     .text_color(rgb(0xe4e5e9))
                     .child(self.status_label()),
             )
+            // Only while a drag is actually moving something — see
+            // `drag_readout`'s own doc for why a stale value never leaks
+            // into a gesture that hasn't stepped yet.
+            .when_some(
+                self.dragging().then(|| self.drag_readout.clone()).flatten(),
+                |this, (position, text)| {
+                    this.child(
+                        div()
+                            .absolute()
+                            .left(position.x)
+                            .top(position.y)
+                            .px_2()
+                            .py_0p5()
+                            .bg(rgba(0x14151ae0))
+                            .text_xs()
+                            .text_color(rgb(0xe4e5e9))
+                            .child(text),
+                    )
+                },
+            )
+            // No pose yet (the very first frame or two, before the render
+            // thread's first `Ready` lands — see `self.view`'s own doc) draws
+            // nothing rather than a widget with no orientation to show.
+            .when_some(self.view.filter(|_| self.axis_indicator), |this, pose| {
+                this.child(orientation_indicator(pose))
+            })
     }
+}
+
+/// The top-right orientation indicator: six coloured, labelled dots at each
+/// world axis's current screen direction — see `orientation`'s module doc for
+/// why this is a flat 2D projection rather than a 3D gizmo mesh, and the
+/// roadmap item it implements for why it's an rbx-native addition rather
+/// than a Studio-parity claim.
+///
+/// Placed opposite the quality/speed corner label (bottom-left) rather than
+/// colliding with it, and styled the same way: a small, semi-transparent
+/// dark chip, not a heavier panel that competes with the 3D view underneath.
+/// Half the indicator's own square, in px — where a face's unit-radius
+/// centre/corner offsets (see `orientation::Face`) land once scaled and
+/// re-centred inside the widget.
+const CUBE_SIZE: f32 = 96.0;
+const CUBE_HALF: f32 = CUBE_SIZE / 2.0;
+/// A face corner's worst-case reach is `sqrt(3)` times this (a cube viewed
+/// corner-on) — `CUBE_HALF` above leaves headroom for that without doing the
+/// exact trig, and `overflow_hidden` below is the actual guarantee.
+const CUBE_RADIUS: f32 = 24.0;
+const CUBE_LABEL_WIDTH: f32 = 40.0;
+const CUBE_LABEL_HEIGHT: f32 = 14.0;
+
+fn orientation_indicator(pose: Pose) -> impl IntoElement {
+    let faces = orientation::visible_faces(pose);
+
+    div()
+        .absolute()
+        .top_2()
+        .right_2()
+        .size(px(CUBE_SIZE))
+        .overflow_hidden()
+        .rounded_full()
+        .bg(rgba(0x14151ab0))
+        .child(cube_faces(faces))
+        .children(faces.map(cube_label))
+}
+
+/// The up-to-three visible faces themselves: filled quadrilaterals painted
+/// straight into the scene (`PathBuilder`/`Window::paint_path`), since a
+/// plain `div()` can only ever be an axis-aligned rectangle — a rotated cube
+/// face is a parallelogram. The same technique this project's own chart
+/// components (`gpui_kit::component`'s plot shapes) already use for an
+/// arbitrary filled polygon, not a new drawing mechanism.
+fn cube_faces(faces: [orientation::Face; 3]) -> impl IntoElement {
+    canvas(
+        |_, _, _| (),
+        move |bounds, _, window, _| {
+            let center = bounds.center();
+            for face in faces {
+                let corners: Vec<_> = face
+                    .corners
+                    .iter()
+                    .map(|&(x, y)| {
+                        point(
+                            center.x + px(x * CUBE_RADIUS),
+                            center.y + px(y * CUBE_RADIUS),
+                        )
+                    })
+                    .collect();
+                let mut builder = PathBuilder::fill();
+                builder.add_polygon(&corners, true);
+                // A face that landed exactly edge-on (see
+                // `orientation::visible_faces`'s doc) tessellates to nothing
+                // rather than erroring — degenerate input, not invalid input.
+                if let Ok(path) = builder.build() {
+                    window.paint_path(path, rgb(face.color));
+                }
+            }
+        },
+    )
+    .size_full()
+}
+
+/// One face's direction name, centred over its own (painted separately —
+/// see `cube_faces`) quadrilateral.
+fn cube_label(face: orientation::Face) -> impl IntoElement {
+    let x = CUBE_HALF + face.center.0 * CUBE_RADIUS - CUBE_LABEL_WIDTH / 2.0;
+    let y = CUBE_HALF + face.center.1 * CUBE_RADIUS - CUBE_LABEL_HEIGHT / 2.0;
+
+    div()
+        .absolute()
+        .top(px(y))
+        .left(px(x))
+        .w(px(CUBE_LABEL_WIDTH))
+        .h(px(CUBE_LABEL_HEIGHT))
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_size(px(10.0))
+        .text_color(rgb(0x0c0d0f))
+        // A face's own fill already shrinks to nothing as it turns edge-on
+        // (see `orientation::visible_faces`'s doc); this label is a fixed
+        // size regardless, so it fades the same way rather than floating,
+        // full-size and full-opacity, over a sliver too thin to back it.
+        .opacity(face.prominence)
+        .child(face.label)
 }

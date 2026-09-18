@@ -9,6 +9,7 @@ use rbx_reflection::ReflectionDatabase;
 use crate::script_editor::source;
 
 pub(crate) mod edit;
+mod folder_row;
 
 /// Above this, a string no longer reads on a one-line row and only its size is
 /// worth showing.
@@ -99,8 +100,16 @@ impl Properties {
     }
 
     /// Every property of the instance, sorted by name; nothing for a reference
-    /// the DOM no longer holds.
-    pub(crate) fn rows(&self, dom: &WeakDom, reference: Ref) -> Vec<PropertyRow> {
+    /// the DOM no longer holds. `folder_color` is this instance's tag from
+    /// `crate::folder_colors::FolderColors`, if any — a filesystem-backed
+    /// store this panel never reaches into itself (see `shell::folder_color`)
+    /// — used only to seed the synthetic `Folder` colour row below.
+    pub(crate) fn rows(
+        &self,
+        dom: &WeakDom,
+        reference: Ref,
+        folder_color: Option<(u8, u8, u8)>,
+    ) -> Vec<PropertyRow> {
         let Some(instance) = dom.get(reference) else {
             return Vec::new();
         };
@@ -141,6 +150,14 @@ impl Properties {
             });
         }
 
+        if let Some(row) = folder_row::row(
+            class,
+            self.category(class, edit::FOLDER_COLOR_PROPERTY),
+            folder_color,
+        ) {
+            rows.push(row);
+        }
+
         rows.sort_by(|left, right| left.name.cmp(&right.name));
         rows
     }
@@ -151,8 +168,9 @@ impl Properties {
         dom: &WeakDom,
         reference: Ref,
         filter: &str,
+        folder_color: Option<(u8, u8, u8)>,
     ) -> Vec<PropertyRow> {
-        let mut rows = self.rows(dom, reference);
+        let mut rows = self.rows(dom, reference, folder_color);
         rows.retain(|row| matches(&row.name, filter));
         rows
     }
@@ -226,6 +244,7 @@ impl Properties {
             // so it shares Vector3's 3-field shape.
             Variant::Vector3(_) | Variant::CFrame(_) => fields(&["X", "Y", "Z"], &text),
             Variant::UDim2(_) => fields(&["X Scale", "X Offset", "Y Scale", "Y Offset"], &text),
+            Variant::Rect(_) => fields(&["Min X", "Min Y", "Max X", "Max Y"], &text),
             // A family name, a `FontWeight` name and `Normal`/`Italic`, typed:
             // the fonts package that could list the families lives in the
             // viewer, and a weight's nine names are quicker typed than picked.

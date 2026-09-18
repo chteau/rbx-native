@@ -27,7 +27,7 @@ mod debug;
 /// numbers and a rotation nine, and `properties::edit::commit` carries the
 /// half that was left out through untouched — which is what keeps a dragged
 /// part facing the way it was, and a turned one standing where it was.
-const CFRAME_PROPERTY: &str = "CFrame";
+pub(super) const CFRAME_PROPERTY: &str = "CFrame";
 /// Roblox's binary format spells `BasePart.Size` lowercase, which is the name
 /// the DOM keeps — see `rbx_viewer::pick::model_of`, which reads the same pair.
 const SIZE_PROPERTY: &str = "size";
@@ -413,7 +413,8 @@ impl Shell {
 }
 
 /// The three-number text `properties::edit::parse` reads a `Vector3` — or a
-/// `CFrame`'s position — back out of.
-fn vector(value: Vec3) -> String {
+/// `CFrame`'s position — back out of. `pub(super)`: also `shell::align`'s own
+/// position writes, which commit through this exact same text-shaped path.
+pub(super) fn vector(value: Vec3) -> String {
     format!("{}, {}, {}", value.x, value.y, value.z)
 }

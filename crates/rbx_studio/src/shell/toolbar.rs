@@ -125,5 +125,7 @@ impl Shell {
             // to the right of the transform tools they apply to.
             .child(div().w(px(1.)).h(px(18.)).bg(cx.theme().border).mx_2())
             .child(self.snap_controls(cx))
+            .child(div().w(px(1.)).h(px(18.)).bg(cx.theme().border).mx_2())
+            .child(self.align_controls(cx))
     }
 }

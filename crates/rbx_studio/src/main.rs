@@ -30,15 +30,21 @@
 //! `Script`/`LocalScript`/`ModuleScript` in the Script Editor panel exactly as
 //! double-clicking its Explorer row would — the same aid, for the script
 //! editor and its Luau highlighting (see `shell::scripts`).
+//! `RBX_STUDIO_GROUP=1` wraps the current selection in a new `Model` exactly
+//! as `Ctrl+G` would; `RBX_STUDIO_UNGROUP=1` unwraps it back out exactly as
+//! `Ctrl+Shift+G` would — the same aid, for the Explorer's Group/Ungroup
+//! (see `shell::group`).
 //! Ctrl+S writes the place back to the file it was opened from, in the
 //! format it was opened in; `RBX_STUDIO_SAVE_AS=<path>` redirects one such
 //! save to a scratch path instead (see `save`).
 
+mod align;
 mod camera;
 mod class_icons;
 mod command_bar;
 mod display;
 mod explorer;
+mod folder_colors;
 mod history;
 mod menu_bar;
 mod pacing;
@@ -63,7 +69,9 @@ use rbx_reflection::ReflectionDatabase;
 use rbx_viewer::{Headless, QualityLevel};
 
 use camera::PlaceCamera;
+use class_icons::IconPack;
 use explorer::Explorer;
+use folder_colors::FolderColors;
 use properties::Properties;
 use save::Format;
 use settings::Settings;
@@ -91,12 +99,19 @@ fn main() {
             std::process::exit(2);
         }
     };
+    // The CLI's own `--quality` wins over the persisted one from here on;
+    // `Shell::new` takes the whole struct rather than one parameter per
+    // field, so this is the one place that resolved value has to land.
+    let settings = Settings {
+        quality,
+        ..settings
+    };
 
     // Parsing and the asset downloads both block; running them before the
     // window exists keeps the UI thread from ever stalling on the network.
     println!("loading {}…", path.display());
     let select = std::env::var(SELECT_VARIABLE).ok();
-    let place = match load(&path, select.as_deref()) {
+    let place = match load(&path, select.as_deref(), settings.icon_pack) {
         Ok(place) => place,
         Err(message) => {
             eprintln!("rbxstudio: {message}");
@@ -104,8 +119,6 @@ fn main() {
         }
     };
     let title = SharedString::from(file_name(&path));
-    let show_all_services = settings.show_all_services;
-    let orthographic = settings.orthographic;
 
     // The full Lucide catalog: the menu bar's icons are well outside the
     // default bundle the components themselves use. The Explorer's own class
@@ -119,17 +132,7 @@ fn main() {
         cx.spawn(async move |cx| {
             let options = cx.update(|cx| window_options(&title, cx));
             cx.open_window(options, |window, cx| {
-                let shell = cx.new(|cx| {
-                    Shell::new(
-                        title,
-                        place,
-                        quality,
-                        show_all_services,
-                        orthographic,
-                        window,
-                        cx,
-                    )
-                });
+                let shell = cx.new(|cx| Shell::new(title, place, settings, window, cx));
                 cx.new(|cx| Root::new(shell, window, cx))
             })
             .expect("failed to open the main window");
@@ -161,16 +164,26 @@ struct Place {
     /// than widening that crate's public surface for this.
     path: PathBuf,
     format: Format,
+    /// This place's `Folder` colour tags — see `folder_colors`. Loaded here
+    /// (and pruned of any entry whose folder no longer resolves) rather than
+    /// lazily on first use, since the Explorer's own tints are baked in by
+    /// `shell::folder_color::folder_tints` from the moment the window opens.
+    folder_colors: FolderColors,
 }
 
-fn load(path: &Path, select: Option<&str>) -> Result<Place, String> {
+fn load(path: &Path, select: Option<&str>, icon_pack: IconPack) -> Result<Place, String> {
     let bytes = std::fs::read(path).map_err(|err| format!("failed to read {path:?}: {err}"))?;
     let format = Format::sniff(&bytes);
     let dom = rbx_viewer::read_place(path)?;
     let database = ReflectionDatabase::embedded();
 
+    let mut folder_colors = FolderColors::load();
+    if folder_colors.prune(path, &dom) {
+        let _ = folder_colors.save();
+    }
+
     Ok(Place {
-        explorer: Explorer::from_dom(&dom),
+        explorer: Explorer::from_dom(&dom, icon_pack, &folder_colors, path),
         selected: select.and_then(|name| explorer::find_by_name(&dom, name)),
         camera: PlaceCamera::from_dom(&dom),
         viewer: Headless::load(path, true)?,
@@ -179,6 +192,7 @@ fn load(path: &Path, select: Option<&str>) -> Result<Place, String> {
         database,
         path: path.to_path_buf(),
         format,
+        folder_colors,
     })
 }
 
