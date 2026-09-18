@@ -2,6 +2,74 @@
 
 ## 2026-09-18
 
+- **Throttle the viewport's render loop while the editor window is
+  unfocused.** The render thread paced itself to the display's full refresh
+  rate no matter whether anyone was looking, burning GPU/CPU (and battery,
+  and fan noise) the moment the editor sat behind another window. Losing OS
+  focus now caps it to a user-chosen preset, 25 or 30 fps — a toggle next to
+  the viewport's quality dropdown, persisted like the rest of Settings — and
+  the first focus or input event restores the full rate immediately, ahead
+  of whatever window-activation event may still be in flight, so coming back
+  never feels sluggish. — @chteau
+- **Dock panel chrome lost on a restored layout.** `register_panels`'s
+  builder — the path every panel is rebuilt through once a saved dock
+  layout exists, i.e. every launch after the first — wrapped the rebuilt
+  panel in a bare `Arc::new(panel)` instead of `panel_handle(panel)`. Both
+  compile (`Entity<P>` already satisfies the trait object the registry
+  asks for), but only the latter is downcastable back to `PanelHandle`,
+  which is what the tab bar needs to recover a panel's dropdown menu and
+  zoom control. That silently dropped the Viewport panel's "Orthographic"
+  toggle and disabled every panel's "Zoom In" the moment a saved layout was
+  restored. Fixed to use the same `panel_handle` helper `build()`'s
+  first-launch path already used correctly, with a regression test that
+  drives a saved-layout round trip and asserts on the `PanelHandle::of`
+  recovery directly. — @chteau
+- **A frame rate readout in the viewport corner label.** Real Studio's own
+  performance surface is a toggle (`Window > Performance > Stats`), not an
+  always-on display, so `rbxstudio`'s Viewport panel overflow menu gets a
+  "Stats" checkbox next to the existing Orthographic one; switching it on
+  adds the render thread's last-measured fps and frame time to the corner
+  label already showing quality level and flight speed. No new timing
+  mechanism — it reads the same per-second numbers `workspace_view::stats`
+  already computed to drive automatic quality scaling, just exposed to the
+  UI thread instead of only ever printed to stderr. — @chteau
+- **Output dock: a Show Timestamp toggle and per-kind row color/icon**
+  (`feat/output-timestamp-kind-styling`). Ships the not-sandbox-dependent
+  half of the Output window roadmap bullet: a **Show Timestamp** toggle in
+  the Output panel's overflow menu (next to Explorer's and Viewport's own
+  toggles) prints each row's `HH:MM:SS.SSS` timestamp, captured at push
+  time regardless of whether it's shown (`OutputEntry::timestamp`). Rows
+  no longer share one plain `✕`/`✓` marker — `print`/a successful run now
+  reads in the default text color with a check icon, `warn` in orange with
+  an alert icon, `error` in red with an X icon (`OutputEntry::kind`,
+  `RowKind`, `shell/output.rs`). Left open: the duplicate-display gap
+  between `command_bar::Feedback`'s own label and the Output dock row,
+  `TestService.Message`'s blue/info kind (needs the sandbox), and the rest
+  of that roadmap bullet's sandbox-dependent half. — @chteau
+- **The Properties panel's `Rect` rows are editable.** `SliceCenter` and
+  other `Rect`-typed properties used to fall back to read-only text; they
+  now edit as four labeled fields (`Min X`/`Min Y`/`Max X`/`Max Y`), the
+  same pattern `Vector2`/`UDim2` already used. — @chteau
+- **Colour-coded Explorer folders.** A `Folder` can now carry a colour tag,
+  set through a synthetic "Explorer Colour" row the Properties panel shows
+  only for a `Folder` (the same `Name`-row trick and colour-picker widget
+  the panel already had — no new UI). The tag recolors the folder's own
+  Explorer icon, and its row's hover/selected background and selection
+  outline read as the tag colour (faded) instead of the theme's default
+  blue. The tag lives in its own local, per-place store
+  (`folder_colors.json`) rather than the saved place file — there's no real
+  Roblox `Folder` property for it, so a real Studio session opening the
+  same place never sees an invented one. Keyed by the folder's Explorer
+  path rather than a `Ref` (which regenerates on load), so a rename or move
+  currently orphans the tag; a load-time prune at least keeps those
+  orphaned entries from piling up forever. — @chteau
+- **Group/ungroup operations.** `Ctrl+G` (or Model ⟩ Group) wraps the
+  current selection in one new `Model`, parented where the selection itself
+  was — refused cleanly, rather than guessing, when the selection spans more
+  than one parent. `Ctrl+Shift+G` (or Model ⟩ Ungroup) unwraps a selected
+  `Model` back into its own parent and removes it; a non-`Model` or an empty
+  one is a no-op. Both are one undo step regardless of how many instances
+  move. — @chteau
 - **New-script templates, and a way to insert a script at all.** The Model
   menu had no way to insert a `Script`/`LocalScript`/`ModuleScript` —
   `Insert Object…` was a disabled placeholder — so `Insert Script`,
