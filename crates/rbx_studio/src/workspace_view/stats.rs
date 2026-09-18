@@ -12,7 +12,7 @@
 //! full frame rate through a view that visibly stutters.
 
 use std::env;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 const STATS_VARIABLE: &str = "RBX_STUDIO_STATS";
@@ -32,6 +32,12 @@ pub(super) struct Stats {
     /// Nanoseconds since the last line was printed, against a start the whole
     /// process shares so both threads can read the same clock without one.
     opened: AtomicU64,
+    /// The last second's frame rate, as `f32` bits — kept regardless of
+    /// [`enabled`], since the corner label's Stats toggle (see
+    /// `WorkspaceView::set_stats_shown`) is a separate on/off switch from the
+    /// stderr dump this module otherwise gates on a debug build or
+    /// `RBX_STUDIO_STATS=1`. `0.0` until the first full second is in.
+    latest_fps: AtomicU32,
 }
 
 impl Stats {
@@ -74,7 +80,13 @@ impl Stats {
         let readback = self.readback.swap(0, Ordering::Relaxed);
         let uploads = self.uploads.swap(0, Ordering::Relaxed);
         let upload = self.upload.swap(0, Ordering::Relaxed);
-        if frames == 0 || !enabled() {
+        if frames == 0 {
+            return;
+        }
+
+        self.latest_fps
+            .store(fps(frames, elapsed).to_bits(), Ordering::Relaxed);
+        if !enabled() {
             return;
         }
 
@@ -104,6 +116,12 @@ impl Stats {
         }
 
         elapsed
+    }
+
+    /// The frame rate `report` last measured, for the corner label's Stats
+    /// toggle to show — see the field.
+    pub(super) fn latest_fps(&self) -> f32 {
+        f32::from_bits(self.latest_fps.load(Ordering::Relaxed))
     }
 }
 
@@ -139,6 +157,12 @@ fn nanos(duration: Duration) -> u64 {
     u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
 }
 
+/// Frames per second over a reporting window — shared by the stderr line
+/// below and [`Stats::latest_fps`], so both read the same number.
+fn fps(frames: u64, elapsed: Duration) -> f32 {
+    frames as f32 / elapsed.as_secs_f32()
+}
+
 /// The one line a second, averages per frame and the rate they came at.
 fn line(
     counted: Counted,
@@ -147,12 +171,12 @@ fn line(
     interval: Duration,
     level: u8,
 ) -> String {
-    let fps = counted.frames as f32 / elapsed.as_secs_f32();
+    let rate = fps(counted.frames, elapsed);
     let shown = counted.uploads as f32 / elapsed.as_secs_f32();
     let cap = 1.0 / interval.as_secs_f32();
 
     format!(
-        "{fps:.0}/{cap:.0} fps · shown {shown:.0}/s · Q{level} · render {} · readback {} · upload {}",
+        "{rate:.0}/{cap:.0} fps · shown {shown:.0}/s · Q{level} · render {} · readback {} · upload {}",
         average(totals.render, counted.frames),
         average(totals.readback, counted.frames),
         average(totals.upload, counted.uploads),
@@ -171,7 +195,7 @@ fn average(total: u64, count: u64) -> String {
 mod tests {
     use std::time::Duration;
 
-    use super::{average, line, Counted, Totals};
+    use super::{average, fps, line, Counted, Totals};
 
     #[test]
     fn the_line_reads_as_a_rate_against_its_cap_a_level_and_three_averages() {
@@ -223,5 +247,14 @@ mod tests {
     fn nothing_counted_averages_to_nothing_rather_than_to_zero() {
         assert_eq!(average(0, 0), "n/a");
         assert_eq!(average(5_000_000, 2), "2.5 ms");
+    }
+
+    // What `Stats::latest_fps` stores — the same rate `line` prints, computed
+    // by the one function both read, so the corner label's toggle and the
+    // stderr dump can never disagree.
+    #[test]
+    fn fps_is_frames_over_the_window_they_were_counted_in() {
+        assert_eq!(fps(60, Duration::from_secs(1)), 60.0);
+        assert_eq!(fps(30, Duration::from_millis(1500)), 20.0);
     }
 }

@@ -2,18 +2,63 @@
 //! subtree, or insert a quick `Part`/`Folder` under it. Both push through the
 //! same DOM take/put-back path `shell::command` already uses for scripts.
 //!
-//! `RBX_STUDIO_DELETE=1` and `RBX_STUDIO_INSERT=Part|Folder` apply one of
-//! these once, right after startup, through the exact path a keypress would
-//! use — debugging aids for a screenshot, since nothing else can send a
-//! keystroke to the Explorer on the editor's behalf (see `AGENTS.md`'s
-//! safety rules).
+//! `RBX_STUDIO_DELETE=1` and `RBX_STUDIO_INSERT=Part|Folder|Script|
+//! LocalScript|ModuleScript` apply one of these once, right after startup,
+//! through the exact path a keypress would use — debugging aids for a
+//! screenshot, since nothing else can send a keystroke to the Explorer on
+//! the editor's behalf (see `AGENTS.md`'s safety rules).
 
 use gpui_kit::{Context, Keystroke, Modifiers};
 use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
+use rbx_reflection::ReflectionDatabase;
 
 use crate::explorer;
+use crate::script_editor::source;
 
 use super::Shell;
+
+/// `Script`/`LocalScript`'s starter `Source`. Roblox's own default new-script
+/// text is this one line; a `LocalScript` differs from a `Script` only in
+/// where it runs, not in what's worth starting from, so both share it (see
+/// `default_template`).
+const SCRIPT_TEMPLATE: &str = "print(\"Hello, world!\")\n";
+
+/// `ModuleScript`'s starter `Source`: a module returning a plain table, the
+/// shape most Luau modules start from before they need anything fancier.
+const MODULE_TEMPLATE: &str = "local module = {}\n\nreturn module\n";
+
+/// The OOP starter "Insert ModuleScript (Class)" seeds a new `ModuleScript`
+/// with (see `Shell::insert_class_module`): a `.new()` constructor over a
+/// metatable, the idiomatic shape for a module that models a class rather
+/// than a namespace of functions.
+const MODULE_CLASS_TEMPLATE: &str = concat!(
+    "local ClassName = {}\n",
+    "ClassName.__index = ClassName\n",
+    "\n",
+    "function ClassName.new()\n",
+    "\tlocal self = setmetatable({}, ClassName)\n",
+    "\treturn self\n",
+    "end\n",
+    "\n",
+    "return ClassName\n",
+);
+
+/// The starter `Source` `insert_instance` writes for a freshly inserted
+/// `class`, or `None` for anything that isn't a script — `Part`'s own
+/// defaults and every other class stay untouched, exactly as before this
+/// existed. `ModuleScript` gets [`MODULE_TEMPLATE`]; every other script class
+/// (`Script`, `LocalScript`, and any future `LuaSourceContainer` subclass)
+/// gets [`SCRIPT_TEMPLATE`].
+fn default_template(database: &ReflectionDatabase, class: &str) -> Option<&'static str> {
+    if !source::is_script_class(database, class) {
+        return None;
+    }
+    Some(if class == "ModuleScript" {
+        MODULE_TEMPLATE
+    } else {
+        SCRIPT_TEMPLATE
+    })
+}
 
 /// Read once at startup by `Shell::new`; documented in this module's doc
 /// comment.
@@ -100,13 +145,40 @@ impl Shell {
     }
 
     /// Inserts a new `class` instance under the current selection, or under
-    /// `Workspace` when nothing is selected. Roblox parents almost anything
-    /// almost anywhere in practice, so this stays permissive rather than
-    /// special-casing classes that cannot sensibly take children — the two
-    /// quick-insert keys only ever pass `"Part"` or `"Folder"` here anyway.
-    /// `pub(crate)`: also `menu_bar`'s Insert Part/Folder items' entry point,
-    /// so a menu click runs the exact same path the quick-insert keys do.
+    /// `Workspace` when nothing is selected, seeded with `class`'s starter
+    /// `Source` if it's a script (see [`default_template`]). Roblox parents
+    /// almost anything almost anywhere in practice, so this stays permissive
+    /// rather than special-casing classes that cannot sensibly take
+    /// children — the two quick-insert keys only ever pass `"Part"` or
+    /// `"Folder"` here anyway. `pub(crate)`: also `menu_bar`'s Insert
+    /// Part/Folder/Script/LocalScript/ModuleScript items' entry point, so a
+    /// menu click runs the exact same path the quick-insert keys do.
     pub(crate) fn insert_instance(&mut self, class: &str, cx: &mut Context<Self>) {
+        let template = default_template(&self.database, class);
+        self.insert_instance_with_source(class, template, cx);
+    }
+
+    /// "Insert ModuleScript (Class)" (see `menu_bar`): the one script insert
+    /// that picks a specific template rather than the per-class default
+    /// [`insert_instance`](Self::insert_instance) uses — the OOP starter
+    /// `ROADMAP.md`'s "New-script templates" entry asks for alongside the
+    /// plain-table default `ModuleScript` otherwise gets.
+    pub(crate) fn insert_class_module(&mut self, cx: &mut Context<Self>) {
+        self.insert_instance_with_source("ModuleScript", Some(MODULE_CLASS_TEMPLATE), cx);
+    }
+
+    /// Shared by [`insert_instance`](Self::insert_instance) and
+    /// [`insert_class_module`](Self::insert_class_module): inserts `class`
+    /// and, when `source` is `Some`, writes it to the new instance's
+    /// `Source` through `script_editor::source::write` — the same path a
+    /// script tab's own edits commit through, so undo, Ctrl+S and the
+    /// script editor need to know nothing about how the instance got here.
+    fn insert_instance_with_source(
+        &mut self,
+        class: &str,
+        source: Option<&str>,
+        cx: &mut Context<Self>,
+    ) {
         let parent = self
             .selected()
             .or_else(|| explorer::find_by_name(&self.dom, "Workspace"));
@@ -118,11 +190,15 @@ impl Shell {
         if class == "Part" {
             apply_part_defaults(&mut dom, reference);
         }
+        if let Some(text) = source {
+            crate::script_editor::source::write(&mut dom, reference, text);
+        }
         self.dom = dom;
         // An insert logs a `Change::Added` plus, for a `Part`, a dozen
-        // `Property` writes for its defaults, all on that same new instance:
-        // one instance for the viewport to build however many writes set it
-        // up, and one to take out again when this is undone.
+        // `Property` writes for its defaults (or, for a script, one `Source`
+        // write), all on that same new instance: one instance for the
+        // viewport to build however many writes set it up, and one to take
+        // out again when this is undone.
         let changes = self.dom.take_changes();
 
         self.rebuild_explorer(cx);
@@ -132,13 +208,17 @@ impl Shell {
         cx.notify();
     }
 
-    /// `RBX_STUDIO_DELETE=1` / `RBX_STUDIO_INSERT=Part|Folder`: documented in
-    /// this module's doc comment. An unrecognized class is silently ignored,
-    /// like `RBX_STUDIO_EDIT`'s malformed specs — a screenshot aid, not user
-    /// input, and must never crash a debugging session.
+    /// `RBX_STUDIO_DELETE=1` / `RBX_STUDIO_INSERT=Part|Folder|Script|...`:
+    /// documented in this module's doc comment. An unrecognized class is
+    /// silently ignored, like `RBX_STUDIO_EDIT`'s malformed specs — a
+    /// screenshot aid, not user input, and must never crash a debugging
+    /// session.
     pub(super) fn apply_debug_explorer_action(&mut self, cx: &mut Context<Self>) {
         if let Ok(class) = std::env::var(INSERT_VARIABLE) {
-            if class == "Part" || class == "Folder" {
+            let recognized = class == "Part"
+                || class == "Folder"
+                || source::is_script_class(&self.database, &class);
+            if recognized {
                 self.insert_instance(&class, cx);
             }
         }
@@ -305,5 +385,97 @@ mod tests {
             instance.properties().get("CFrame"),
             Some(Variant::CFrame(_))
         ));
+    }
+
+    fn database() -> ReflectionDatabase {
+        ReflectionDatabase::embedded()
+    }
+
+    /// Counts unmatched `function`/`do` openers against `end` closers by
+    /// whitespace-splitting the template into tokens — no full Luau parser is
+    /// needed to catch a template with a stray or missing `end`.
+    fn opens_and_ends(template: &str) -> (usize, usize) {
+        let opens = template
+            .split_whitespace()
+            .filter(|token| *token == "function" || *token == "do")
+            .count();
+        let ends = template
+            .split_whitespace()
+            .filter(|token| *token == "end")
+            .count();
+        (opens, ends)
+    }
+
+    #[test]
+    fn a_non_script_class_gets_no_template() {
+        let db = database();
+        for class in ["Part", "Folder", "Model"] {
+            assert_eq!(default_template(&db, class), None);
+        }
+    }
+
+    #[test]
+    fn module_script_gets_the_table_template_others_get_the_plain_script_template() {
+        let db = database();
+        assert_eq!(default_template(&db, "ModuleScript"), Some(MODULE_TEMPLATE));
+        assert_eq!(default_template(&db, "Script"), Some(SCRIPT_TEMPLATE));
+        assert_eq!(default_template(&db, "LocalScript"), Some(SCRIPT_TEMPLATE));
+    }
+
+    #[test]
+    fn inserting_each_script_class_seeds_a_non_empty_starter_source() {
+        let db = database();
+        for class in ["Script", "LocalScript", "ModuleScript"] {
+            let mut dom = WeakDom::new();
+            let reference = dom.new_instance(class, class, None);
+            let template = default_template(&db, class).expect("a script class has a template");
+            assert!(source::write(&mut dom, reference, template));
+
+            let text = source::read(&dom, reference).expect("Source was just written");
+            assert!(
+                !text.trim().is_empty(),
+                "{class}'s starter text must not be empty"
+            );
+        }
+    }
+
+    #[test]
+    fn inserting_a_part_gets_no_source_property() {
+        let mut dom = WeakDom::new();
+        let part = dom.new_instance("Part", "Part", None);
+        apply_part_defaults(&mut dom, part);
+
+        assert_eq!(default_template(&database(), "Part"), None);
+        assert_eq!(
+            dom.get(part)
+                .expect("just inserted")
+                .properties()
+                .get(source::SOURCE_PROPERTY),
+            None,
+            "a Part must never get a Source property"
+        );
+    }
+
+    #[test]
+    fn the_class_module_template_differs_from_the_plain_one() {
+        assert_ne!(MODULE_CLASS_TEMPLATE, MODULE_TEMPLATE);
+    }
+
+    #[test]
+    fn the_class_module_template_is_an_idiomatic_oop_stub() {
+        assert!(MODULE_CLASS_TEMPLATE.contains("setmetatable"));
+        assert!(MODULE_CLASS_TEMPLATE.contains("__index"));
+        assert!(MODULE_CLASS_TEMPLATE.contains(".new("));
+    }
+
+    #[test]
+    fn every_template_has_balanced_function_do_end_blocks() {
+        for template in [SCRIPT_TEMPLATE, MODULE_TEMPLATE, MODULE_CLASS_TEMPLATE] {
+            let (opens, ends) = opens_and_ends(template);
+            assert_eq!(
+                opens, ends,
+                "unbalanced function/do/end in template: {template:?}"
+            );
+        }
     }
 }
