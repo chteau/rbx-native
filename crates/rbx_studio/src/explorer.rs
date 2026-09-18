@@ -3,6 +3,7 @@
 
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 
 use gpui_kit::assets::IconName;
@@ -11,6 +12,7 @@ use gpui_kit::{RenderImage, SharedString};
 use rbx_dom::{Ref, WeakDom};
 
 use crate::class_icons::{self, IconPack};
+use crate::folder_colors::{FolderColors, FOLDER_CLASS};
 
 pub(crate) mod reparent;
 
@@ -102,6 +104,11 @@ struct Node {
     id: u32,
     class: String,
     name: String,
+    /// This instance's own `crate::folder_colors::path_of` — computed once
+    /// here rather than re-walked per row, since only `items` (building the
+    /// tinted icon for a tagged `Folder`) needs it and it no longer has a
+    /// live `&WeakDom` to walk by the time it runs.
+    path: String,
     children: Vec<Node>,
 }
 
@@ -126,18 +133,44 @@ pub(crate) struct Explorer {
     /// tree's own `TreeItem`s (and their expansion state) never need to
     /// change for that, only which sprite each row's icon points at.
     classes: HashMap<SharedString, String>,
+    /// Every row's own `crate::folder_colors::path_of`, kept alongside
+    /// `classes` so [`Explorer::set_icon_pack`] can re-tint a tagged
+    /// `Folder`'s icon for the other pack without re-walking `dom` either.
+    paths: HashMap<SharedString, String>,
 }
 
 impl Explorer {
-    pub(crate) fn from_dom(dom: &WeakDom, pack: IconPack) -> Self {
+    /// `folder_colors`/`place` are only consulted for a `Folder` node, to
+    /// bake a tagged one's tinted icon (see `class_icons::tint`) into
+    /// `icons` right here — computed once per rebuild rather than once per
+    /// render, and shared (via `tinted`) across every folder that happens to
+    /// carry the same tag colour.
+    pub(crate) fn from_dom(
+        dom: &WeakDom,
+        pack: IconPack,
+        folder_colors: &FolderColors,
+        place: &Path,
+    ) -> Self {
         let mut icons = HashMap::new();
         let mut classes = HashMap::new();
+        let mut paths = HashMap::new();
         // Every instance of a class shares one icon; resolving it once per
         // class rather than once per instance keeps a place with thousands of
         // parts from repeating the same lookup thousands of times.
         let mut per_class = HashMap::new();
+        let mut tinted = HashMap::new();
         let roots = roots(dom);
-        let all_items = items(&roots, &mut per_class, &mut icons, &mut classes, pack);
+        let all_items = items(
+            &roots,
+            &mut per_class,
+            &mut icons,
+            &mut classes,
+            &mut paths,
+            pack,
+            folder_colors,
+            place,
+            &mut tinted,
+        );
         let default_items = roots
             .iter()
             .zip(all_items.iter())
@@ -150,14 +183,25 @@ impl Explorer {
             all_items,
             icons,
             classes,
+            paths,
         }
     }
 
     /// Re-resolves every row's icon for `pack`, keeping the same `TreeItem`s
     /// (so expansion/selection state, which lives on them, survives) and the
-    /// same `classes` map this was built from.
-    pub(crate) fn set_icon_pack(&self, pack: IconPack) -> Explorer {
+    /// same `classes`/`paths` maps this was built from. Re-applies a tagged
+    /// `Folder`'s tint on top of the freshly resolved pack icon — `tint`
+    /// overwrites every non-transparent pixel with the tag colour regardless
+    /// of which pack it started from, but the untinted base icon still has
+    /// to come from the pack just switched to.
+    pub(crate) fn set_icon_pack(
+        &self,
+        pack: IconPack,
+        folder_colors: &FolderColors,
+        place: &Path,
+    ) -> Explorer {
         let mut per_class = HashMap::new();
+        let mut tinted = HashMap::new();
         let icons = self
             .classes
             .iter()
@@ -166,6 +210,20 @@ impl Explorer {
                     .entry(class.clone())
                     .or_insert_with(|| resolve_icon(class, pack))
                     .clone();
+                let icon = if class == FOLDER_CLASS {
+                    self.paths
+                        .get(id)
+                        .and_then(|path| folder_colors.get(place, path))
+                        .map(|color| {
+                            tinted
+                                .entry(color)
+                                .or_insert_with(|| tint_icon(&icon, color))
+                                .clone()
+                        })
+                        .unwrap_or(icon)
+                } else {
+                    icon
+                };
                 (id.clone(), icon)
             })
             .collect();
@@ -175,6 +233,7 @@ impl Explorer {
             all_items: self.all_items.clone(),
             icons,
             classes: self.classes.clone(),
+            paths: self.paths.clone(),
         }
     }
 
@@ -240,26 +299,36 @@ fn roots(dom: &WeakDom) -> Vec<Node> {
     let mut roots: Vec<Node> = dom
         .root_refs()
         .iter()
-        .filter_map(|reference| node(dom, *reference))
+        .filter_map(|reference| node(dom, *reference, ""))
         .collect();
     sort_roots(&mut roots);
     roots
 }
 
-fn node(dom: &WeakDom, reference: Ref) -> Option<Node> {
+/// `parent_path` is the already-built `crate::folder_colors::path_of` of
+/// `reference`'s parent (empty at a root), so the whole tree's paths cost one
+/// walk down rather than one walk up per node.
+fn node(dom: &WeakDom, reference: Ref, parent_path: &str) -> Option<Node> {
     let instance = dom.get(reference)?;
+    let name = instance.name().to_string();
+    let path = if parent_path.is_empty() {
+        name.clone()
+    } else {
+        format!("{parent_path}.{name}")
+    };
 
     Some(Node {
         id: reference.value(),
         class: instance.class().to_string(),
-        name: instance.name().to_string(),
+        name,
         // Children keep the file's order, which is the order Studio shows them
         // in for the services that matter (Camera and Terrain before the parts).
         children: instance
             .children()
             .iter()
-            .filter_map(|child| node(dom, *child))
+            .filter_map(|child| node(dom, *child, &path))
             .collect(),
+        path,
     })
 }
 
@@ -292,12 +361,20 @@ fn is_default_visible(class: &str) -> bool {
     rank(class).is_some() || !KNOWN_SERVICES.contains(&class)
 }
 
+/// `tinted` caches one recolored icon per tag colour actually in use this
+/// rebuild, so two folders sharing a tag share one rasterized bitmap instead
+/// of each paying `class_icons::tint`'s own byte-buffer pass.
+#[allow(clippy::too_many_arguments)]
 fn items(
     nodes: &[Node],
     per_class: &mut HashMap<String, ClassIcon>,
     icons: &mut HashMap<SharedString, ClassIcon>,
     classes: &mut HashMap<SharedString, String>,
+    paths: &mut HashMap<SharedString, String>,
     pack: IconPack,
+    folder_colors: &FolderColors,
+    place: &Path,
+    tinted: &mut HashMap<(u8, u8, u8), ClassIcon>,
 ) -> Vec<TreeItem> {
     nodes
         .iter()
@@ -307,18 +384,52 @@ fn items(
                 .entry(node.class.clone())
                 .or_insert_with(|| resolve_icon(&node.class, pack))
                 .clone();
+            let class_icon = if node.class == FOLDER_CLASS {
+                folder_colors
+                    .get(place, &node.path)
+                    .map(|color| {
+                        tinted
+                            .entry(color)
+                            .or_insert_with(|| tint_icon(&class_icon, color))
+                            .clone()
+                    })
+                    .unwrap_or(class_icon)
+            } else {
+                class_icon
+            };
             icons.insert(id.clone(), class_icon);
             classes.insert(id.clone(), node.class.clone());
+            paths.insert(id.clone(), node.path.clone());
 
             TreeItem::new(id, node.name.clone()).children(items(
                 &node.children,
                 per_class,
                 icons,
                 classes,
+                paths,
                 pack,
+                folder_colors,
+                place,
+                tinted,
             ))
         })
         .collect()
+}
+
+/// A tagged `Folder`'s own icon, recolored to its tag — see
+/// `class_icons::tint`. Falls back to `icon` itself (untinted) for the
+/// Lucide stand-in, which is not something this project rasterizes and so
+/// has no bitmap to recolor; unreached in practice today, since the icon kit
+/// always covers `Folder` (`class_icons::CLASS_ICON_SLUGS`), but a class
+/// whose only icon is a glyph should degrade to that glyph rather than panic
+/// if the kit ever stops covering it.
+fn tint_icon(icon: &ClassIcon, color: (u8, u8, u8)) -> ClassIcon {
+    match icon {
+        ClassIcon::Sprite(image) => class_icons::tint(image, color)
+            .map(ClassIcon::Sprite)
+            .unwrap_or_else(|| icon.clone()),
+        ClassIcon::Lucide(_) => icon.clone(),
+    }
 }
 
 /// This project's own icon for `class` from `pack` (see `class_icons`) when

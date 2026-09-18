@@ -26,6 +26,9 @@ use resvg::usvg::{Options, Tree};
 
 use crate::render_image::to_render_image;
 
+mod tint;
+pub(crate) use tint::tint;
+
 /// Every SVG in `assets/icons/default/dark`, embedded at compile time.
 #[derive(rust_embed::RustEmbed)]
 #[folder = "$CARGO_MANIFEST_DIR/../../assets/icons/default/dark"]

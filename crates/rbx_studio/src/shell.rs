@@ -8,6 +8,8 @@ mod dock;
 mod dock_layout;
 mod drag;
 mod edit;
+mod folder_color;
+mod group;
 mod history;
 mod keys;
 mod output;
@@ -42,7 +44,9 @@ use rbx_viewer::QualityLevel;
 use crate::class_icons::IconPack;
 use crate::command_bar::{self, CommandBar};
 use crate::explorer::Explorer;
+use crate::folder_colors::FolderColors;
 use crate::history::{History, DEFAULT_CAP};
+use crate::pacing::UnfocusedFps;
 use crate::properties::Properties;
 use crate::save::Format;
 use crate::script_editor::ScriptEditor;
@@ -87,6 +91,16 @@ pub(crate) struct Shell {
     /// Persisted (see `settings`); every write goes through
     /// [`Shell::save_settings`].
     icon_pack: IconPack,
+    /// Whether the viewport's corner label shows its frame-rate readout —
+    /// the Stats toggle, next to Orthographic in the same overflow menu (see
+    /// `shell::dock`). Session-only, unlike the two settings above: real
+    /// Studio's own `Window > Performance > Stats` doesn't persist across
+    /// restarts either, so this one lazily doesn't bother with `settings`.
+    stats_shown: bool,
+    /// The render loop's frame rate cap while the window is unfocused (see
+    /// `pacing::FocusPacing`). Persisted (see `settings`); every write goes
+    /// through [`Shell::save_settings`].
+    unfocused_fps: UnfocusedFps,
     search: Entity<InputState>,
     filter: Entity<InputState>,
     properties: Properties,
@@ -128,12 +142,18 @@ pub(crate) struct Shell {
     output: output::OutputLog,
     /// Which levels the Output panel currently shows; see `shell::output`.
     output_filter: output::OutputFilter,
+    /// Whether Output rows print their `HH:MM:SS.SSS` timestamp; toggled from
+    /// the panel's overflow menu (see `shell::dock`'s `dropdown_menu`). Not
+    /// persisted — resets to off each launch, same as `output_filter` above.
+    output_show_timestamps: bool,
     output_scroll: ScrollHandle,
     /// The file `self.dom` was opened from and its on-disk format; see
     /// `shell::save`. Ctrl+S always writes back here, in this format,
     /// regardless of what the tree currently looks like.
     path: PathBuf,
     format: Format,
+    /// This place's `Folder` colour tags; see `shell::folder_color`.
+    folder_colors: FolderColors,
     /// Which transform tool the toolbar has active, and whether its draggers
     /// follow the part's own axes — see `crate::transform`. Owned here because
     /// the toolbar renders from it; pushed down to the viewport, which
@@ -146,6 +166,7 @@ pub(crate) struct Shell {
 }
 
 impl Shell {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         title: impl Into<SharedString>,
         place: Place,
@@ -158,6 +179,7 @@ impl Shell {
             show_all_services,
             orthographic,
             icon_pack,
+            unfocused_fps,
         } = settings;
         let Place {
             explorer,
@@ -169,6 +191,7 @@ impl Shell {
             database,
             path,
             format,
+            folder_colors,
         } = place;
         let items = explorer.items(show_all_services);
 
@@ -221,6 +244,7 @@ impl Shell {
                 camera,
                 quality,
                 orthographic,
+                unfocused_fps,
                 initial_outline,
                 window,
                 cx,
@@ -274,6 +298,8 @@ impl Shell {
             quality_choice: quality,
             orthographic,
             icon_pack,
+            stats_shown: false,
+            unfocused_fps,
             search: cx.new(|cx| InputState::new(window, cx).placeholder("Search")),
             filter,
             properties,
@@ -293,9 +319,11 @@ impl Shell {
             command_bar,
             output: output::OutputLog::default(),
             output_filter: output::OutputFilter::default(),
+            output_show_timestamps: false,
             output_scroll: ScrollHandle::new(),
             path,
             format,
+            folder_colors,
             transform,
             snap_fields,
             _subscriptions: [
@@ -385,6 +413,11 @@ impl Shell {
         // Explorer delete/insert debug aids (see `shell::keys`): applied
         // last, so an insert can parent under whatever is already selected.
         shell.apply_debug_explorer_action(cx);
+
+        // `RBX_STUDIO_GROUP` / `RBX_STUDIO_UNGROUP` (see `shell::group`):
+        // applied right after, so a group can wrap whatever the blocks above
+        // just selected or inserted.
+        shell.apply_debug_group(cx);
 
         // `RBX_STUDIO_OPEN_SCRIPT` (see `shell::scripts`): after the Command
         // Bar block above, so a script that block just created can be opened.
@@ -571,23 +604,67 @@ impl Shell {
         }
 
         self.icon_pack = pack;
-        self.explorer = Rc::new(self.explorer.set_icon_pack(pack));
+        self.explorer = Rc::new(
+            self.explorer
+                .set_icon_pack(pack, &self.folder_colors, &self.path),
+        );
         cx.notify();
         self.save_settings(cx);
     }
 
+    /// Whether the viewport's corner label shows its frame-rate readout, for
+    /// the dock's Viewport menu item (see `shell::dock`) to render its
+    /// checked state.
+    pub(super) fn stats_shown(&self) -> bool {
+        self.stats_shown
+    }
+
+    /// Flips the viewport corner label's Stats readout on or off — see
+    /// `WorkspaceView::set_stats_shown`.
+    fn set_stats_shown(&mut self, shown: bool, cx: &mut Context<Self>) {
+        if shown == self.stats_shown {
+            return;
+        }
+
+        self.stats_shown = shown;
+        self.viewport
+            .update(cx, |viewport, cx| viewport.set_stats_shown(shown, cx));
+    }
+
+    /// The frame rate preset the render loop caps itself to while the window
+    /// is unfocused, for the dock's Viewport menu item (see `shell::dock`)
+    /// to render its checked state.
+    pub(super) fn unfocused_fps(&self) -> UnfocusedFps {
+        self.unfocused_fps
+    }
+
+    /// Switches the unfocused frame rate preset — see
+    /// `WorkspaceView::set_unfocused_fps`.
+    fn set_unfocused_fps(&mut self, unfocused_fps: UnfocusedFps, cx: &mut Context<Self>) {
+        if unfocused_fps == self.unfocused_fps {
+            return;
+        }
+
+        self.unfocused_fps = unfocused_fps;
+        self.viewport
+            .update(cx, |viewport, _| viewport.set_unfocused_fps(unfocused_fps));
+        self.save_settings(cx);
+    }
+
     /// Writes the current quality pick, Explorer visibility, projection mode,
-    /// and icon pack to disk. Also saves the current dock layout. A settings
-    /// file is tiny, so this runs synchronously on every change rather than
-    /// debouncing; a write failure (e.g. no writable config directory) is not
-    /// fatal and is silently dropped — losing a preference write is better
-    /// than interrupting the editor over it.
+    /// icon pack, and unfocused frame rate preset to disk. Also saves the
+    /// current dock layout. A settings file is tiny, so this runs
+    /// synchronously on every change rather than debouncing; a write failure
+    /// (e.g. no writable config directory) is not fatal and is silently
+    /// dropped — losing a preference write is better than interrupting the
+    /// editor over it.
     fn save_settings(&self, cx: &App) {
         let settings = Settings {
             quality: self.quality_choice,
             show_all_services: self.show_all_services,
             orthographic: self.orthographic,
             icon_pack: self.icon_pack,
+            unfocused_fps: self.unfocused_fps,
         };
         let _ = settings.save();
 

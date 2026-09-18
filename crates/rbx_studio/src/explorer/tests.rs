@@ -1,4 +1,8 @@
+use std::path::PathBuf;
+
 use rbx_dom::Instance;
+
+use crate::folder_colors::FolderColors;
 
 use super::*;
 
@@ -7,8 +11,21 @@ fn node(class: &str, name: &str) -> Node {
         id: 0,
         class: class.to_string(),
         name: name.to_string(),
+        path: name.to_string(),
         children: Vec::new(),
     }
+}
+
+/// No place ever tags a folder in these tests — a fixed empty store and an
+/// arbitrary place path, since nothing here exercises tag lookup itself
+/// (that's `explorer_folder_tint_tests` below).
+fn no_tags() -> (FolderColors, PathBuf) {
+    (FolderColors::default(), PathBuf::from("/tmp/test.rbxl"))
+}
+
+fn from_dom(dom: &WeakDom) -> Explorer {
+    let (colors, place) = no_tags();
+    Explorer::from_dom(dom, IconPack::Dark, &colors, &place)
 }
 
 fn names(nodes: &[Node]) -> Vec<&str> {
@@ -104,7 +121,7 @@ fn every_instance_gets_an_icon_by_its_referent() {
     let colors = insert(&mut dom, 8, "BodyColors", "BodyColors");
     dom.set_parent(colors, Some(part));
 
-    let explorer = Explorer::from_dom(&dom, IconPack::Dark);
+    let explorer = from_dom(&dom);
 
     assert_eq!(explorer.items(true).len(), 1);
     assert!(matches!(explorer.icon(&"7".into()), ClassIcon::Sprite(_)));
@@ -143,13 +160,14 @@ fn set_icon_pack_swaps_every_row_s_sprite_without_touching_its_tree_item() {
     let mut dom = WeakDom::new();
     insert(&mut dom, 1, "Part", "Baseplate");
 
-    let dark = Explorer::from_dom(&dom, IconPack::Dark);
+    let (colors, place) = no_tags();
+    let dark = Explorer::from_dom(&dom, IconPack::Dark, &colors, &place);
     let dark_bytes = match dark.icon(&"1".into()) {
         ClassIcon::Sprite(image) => image.as_bytes(0).map(<[u8]>::to_vec),
         ClassIcon::Lucide(_) => None,
     };
 
-    let light = dark.set_icon_pack(IconPack::Light);
+    let light = dark.set_icon_pack(IconPack::Light, &colors, &place);
     let light_bytes = match light.icon(&"1".into()) {
         ClassIcon::Sprite(image) => image.as_bytes(0).map(<[u8]>::to_vec),
         ClassIcon::Lucide(_) => None,
@@ -189,7 +207,7 @@ fn the_default_view_drops_noisy_services_the_full_view_keeps() {
     insert(&mut dom, 2, "HttpService", "HttpService");
     insert(&mut dom, 3, "MyFolder", "MyFolder");
 
-    let explorer = Explorer::from_dom(&dom, IconPack::Dark);
+    let explorer = from_dom(&dom);
 
     let labels = |show_all| -> Vec<String> {
         explorer
@@ -221,7 +239,7 @@ fn a_nested_instance_is_found_by_referent_even_under_a_hidden_root() {
     dom.set_parent(child, Some(http));
     dom.set_parent(baseplate, Some(workspace));
 
-    let explorer = Explorer::from_dom(&dom, IconPack::Dark);
+    let explorer = from_dom(&dom);
 
     assert_eq!(
         explorer.item(baseplate).map(|item| item.label),
@@ -232,6 +250,51 @@ fn a_nested_instance_is_found_by_referent_even_under_a_hidden_root() {
         Some("Hidden".into())
     );
     assert!(explorer.item(Ref::new(99)).is_none());
+}
+
+#[test]
+fn a_tagged_folders_icon_is_recolored_to_its_tag() {
+    let mut dom = WeakDom::new();
+    let folder = insert(&mut dom, 1, "Folder", "Tagged");
+
+    let mut colors = FolderColors::default();
+    let place = PathBuf::from("/tmp/tagged.rbxl");
+    colors.set(&place, "Tagged", (200, 60, 60));
+
+    let untagged = from_dom(&dom);
+    let tagged = Explorer::from_dom(&dom, IconPack::Dark, &colors, &place);
+
+    let (ClassIcon::Sprite(untagged_icon), ClassIcon::Sprite(tagged_icon)) = (
+        untagged.icon(&item_id(folder)),
+        tagged.icon(&item_id(folder)),
+    ) else {
+        panic!("Folder is always covered by the icon kit");
+    };
+
+    assert_ne!(untagged_icon.as_bytes(0), tagged_icon.as_bytes(0));
+}
+
+#[test]
+fn an_untagged_folder_under_a_place_with_other_tags_keeps_its_plain_icon() {
+    let mut dom = WeakDom::new();
+    let plain = insert(&mut dom, 1, "Folder", "Plain");
+    insert(&mut dom, 2, "Folder", "Elsewhere");
+
+    let mut colors = FolderColors::default();
+    let place = PathBuf::from("/tmp/tagged.rbxl");
+    colors.set(&place, "Elsewhere", (200, 60, 60));
+
+    let plain_explorer = from_dom(&dom);
+    let mixed_explorer = Explorer::from_dom(&dom, IconPack::Dark, &colors, &place);
+
+    let (ClassIcon::Sprite(plain_bytes), ClassIcon::Sprite(mixed_bytes)) = (
+        plain_explorer.icon(&item_id(plain)),
+        mixed_explorer.icon(&item_id(plain)),
+    ) else {
+        panic!("Folder is always covered by the icon kit");
+    };
+
+    assert_eq!(plain_bytes.as_bytes(0), mixed_bytes.as_bytes(0));
 }
 
 #[test]

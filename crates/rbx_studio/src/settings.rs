@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use rbx_viewer::QualityLevel;
 
 use crate::class_icons::IconPack;
+use crate::pacing::UnfocusedFps;
 
 /// What persists across a relaunch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,6 +23,9 @@ pub(crate) struct Settings {
     pub(crate) show_all_services: bool,
     pub(crate) orthographic: bool,
     pub(crate) icon_pack: IconPack,
+    /// The render loop's frame rate cap while the window is unfocused — see
+    /// `pacing::FocusPacing`.
+    pub(crate) unfocused_fps: UnfocusedFps,
 }
 
 impl Default for Settings {
@@ -33,6 +37,7 @@ impl Default for Settings {
             show_all_services: false,
             orthographic: false,
             icon_pack: IconPack::Dark,
+            unfocused_fps: UnfocusedFps::DEFAULT,
         }
     }
 }
@@ -132,12 +137,29 @@ fn load_from(path: &Path) -> Settings {
         .and_then(|v| v.as_str())
         .and_then(parse_icon_pack)
         .unwrap_or_default();
+    let unfocused_fps = value
+        .get("unfocused_fps")
+        .and_then(|v| v.as_u64())
+        .map(parse_unfocused_fps)
+        .unwrap_or(UnfocusedFps::DEFAULT);
 
     Settings {
         quality,
         show_all_services,
         orthographic,
         icon_pack,
+        unfocused_fps,
+    }
+}
+
+/// Any value other than exactly 25 falls back to the default preset rather
+/// than erroring — a hand-edited or future-version settings file must not
+/// stop the editor from opening.
+fn parse_unfocused_fps(fps: u64) -> UnfocusedFps {
+    if fps == u64::from(UnfocusedFps::Fps25.fps()) {
+        UnfocusedFps::Fps25
+    } else {
+        UnfocusedFps::DEFAULT
     }
 }
 
@@ -147,6 +169,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "show_all_services": settings.show_all_services,
         "orthographic": settings.orthographic,
         "icon_pack": format_icon_pack(settings.icon_pack),
+        "unfocused_fps": settings.unfocused_fps.fps(),
     });
     // A fixed-shape object always serializes; nothing here can fail.
     let bytes = serde_json::to_vec_pretty(&value).expect("settings JSON always serializes");
@@ -266,9 +289,20 @@ mod tests {
             show_all_services: true,
             orthographic: true,
             icon_pack: IconPack::Light,
+            unfocused_fps: UnfocusedFps::Fps25,
         };
         save_to(&settings, &path).unwrap();
         assert_eq!(load_from(&path), settings);
+    }
+
+    #[test]
+    fn unfocused_fps_falls_back_to_default_for_anything_but_25() {
+        let path = temp_settings_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, br#"{"unfocused_fps": 30}"#).unwrap();
+        assert_eq!(load_from(&path).unfocused_fps, UnfocusedFps::Fps30);
+        std::fs::write(&path, br#"{"unfocused_fps": 999}"#).unwrap();
+        assert_eq!(load_from(&path).unfocused_fps, UnfocusedFps::DEFAULT);
     }
 
     #[test]
