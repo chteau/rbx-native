@@ -16,6 +16,8 @@ use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::component::ActiveTheme;
 use gpui_kit::*;
 
+use crate::class_icons::IconPack;
+
 use super::{Shell, EXPLORER_WIDTH, OUTPUT_HEIGHT, PROPERTIES_HEIGHT};
 
 /// Which of Shell's three sections a [`SectionPanel`] delegates to.
@@ -145,11 +147,13 @@ impl ComponentPanel for SectionPanel {
         }
     }
 
-    /// Explorer's "Show all services" toggle, moved off the search row and
-    /// into the panel's own overflow menu (see `Shell::show_all_services` /
-    /// `Shell::set_show_all_services`); Viewport's own "Orthographic" toggle
-    /// (see `Shell::orthographic` / `Shell::set_orthographic`) lives the same
-    /// way, next to the quality dropdown already in its title bar.
+    /// Explorer's "Show all services" and "Light Icons" toggles, moved off
+    /// the search row and into the panel's own overflow menu (see
+    /// `Shell::show_all_services` / `Shell::set_show_all_services` and
+    /// `Shell::icon_pack` / `Shell::set_icon_pack`); Viewport's own
+    /// "Orthographic" toggle (see `Shell::orthographic` /
+    /// `Shell::set_orthographic`) lives the same way, next to the quality
+    /// dropdown already in its title bar.
     fn dropdown_menu(
         &mut self,
         menu: PopupMenu,
@@ -160,13 +164,29 @@ impl ComponentPanel for SectionPanel {
         match self.section {
             Section::Explorer => {
                 let checked = shell.read(cx).show_all_services();
+                let show_all_shell = shell.clone();
+                let icon_pack_checked = shell.read(cx).icon_pack() == IconPack::Light;
                 menu.item(
                     PopupMenuItem::new("Show all services")
                         .checked(checked)
                         .on_click(move |_, _, cx| {
-                            shell.update(cx, |shell, cx| {
+                            show_all_shell.update(cx, |shell, cx| {
                                 let next = !shell.show_all_services();
                                 shell.set_show_all_services(next, cx);
+                            });
+                        }),
+                )
+                .item(
+                    PopupMenuItem::new("Light Icons")
+                        .checked(icon_pack_checked)
+                        .on_click(move |_, _, cx| {
+                            shell.update(cx, |shell, cx| {
+                                let next = if shell.icon_pack() == IconPack::Light {
+                                    IconPack::Dark
+                                } else {
+                                    IconPack::Light
+                                };
+                                shell.set_icon_pack(next, cx);
                             });
                         }),
                 )

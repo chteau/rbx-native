@@ -104,7 +104,7 @@ fn every_instance_gets_an_icon_by_its_referent() {
     let colors = insert(&mut dom, 8, "BodyColors", "BodyColors");
     dom.set_parent(colors, Some(part));
 
-    let explorer = Explorer::from_dom(&dom);
+    let explorer = Explorer::from_dom(&dom, IconPack::Dark);
 
     assert_eq!(explorer.items(true).len(), 1);
     assert!(matches!(explorer.icon(&"7".into()), ClassIcon::Sprite(_)));
@@ -131,8 +131,34 @@ fn an_unknown_class_falls_back_to_the_default_icon() {
 
 #[test]
 fn resolve_icon_prefers_the_icon_kit_over_the_lucide_fallback() {
-    assert!(matches!(resolve_icon("Script"), ClassIcon::Sprite(_)));
-    assert!(is_lucide(&resolve_icon("BodyColors")));
+    assert!(matches!(
+        resolve_icon("Script", IconPack::Dark),
+        ClassIcon::Sprite(_)
+    ));
+    assert!(is_lucide(&resolve_icon("BodyColors", IconPack::Dark)));
+}
+
+#[test]
+fn set_icon_pack_swaps_every_row_s_sprite_without_touching_its_tree_item() {
+    let mut dom = WeakDom::new();
+    insert(&mut dom, 1, "Part", "Baseplate");
+
+    let dark = Explorer::from_dom(&dom, IconPack::Dark);
+    let dark_bytes = match dark.icon(&"1".into()) {
+        ClassIcon::Sprite(image) => image.as_bytes(0).map(<[u8]>::to_vec),
+        ClassIcon::Lucide(_) => None,
+    };
+
+    let light = dark.set_icon_pack(IconPack::Light);
+    let light_bytes = match light.icon(&"1".into()) {
+        ClassIcon::Sprite(image) => image.as_bytes(0).map(<[u8]>::to_vec),
+        ClassIcon::Lucide(_) => None,
+    };
+
+    assert!(dark_bytes.is_some() && light_bytes.is_some());
+    assert_ne!(dark_bytes, light_bytes);
+    // The row itself (id, label, children) is unaffected by the pack swap.
+    assert_eq!(dark.items(true)[0].label, light.items(true)[0].label);
 }
 
 #[test]
@@ -163,7 +189,7 @@ fn the_default_view_drops_noisy_services_the_full_view_keeps() {
     insert(&mut dom, 2, "HttpService", "HttpService");
     insert(&mut dom, 3, "MyFolder", "MyFolder");
 
-    let explorer = Explorer::from_dom(&dom);
+    let explorer = Explorer::from_dom(&dom, IconPack::Dark);
 
     let labels = |show_all| -> Vec<String> {
         explorer
@@ -195,7 +221,7 @@ fn a_nested_instance_is_found_by_referent_even_under_a_hidden_root() {
     dom.set_parent(child, Some(http));
     dom.set_parent(baseplate, Some(workspace));
 
-    let explorer = Explorer::from_dom(&dom);
+    let explorer = Explorer::from_dom(&dom, IconPack::Dark);
 
     assert_eq!(
         explorer.item(baseplate).map(|item| item.label),

@@ -229,7 +229,7 @@ impl Shell {
     /// Properties panel's own edit path (see `shell::edit`), since renaming
     /// an instance moves its row the same way a script's rename would.
     pub(super) fn rebuild_explorer(&mut self, cx: &mut Context<Self>) {
-        let explorer = Explorer::from_dom(&self.dom);
+        let explorer = Explorer::from_dom(&self.dom, self.icon_pack);
         let items = explorer.items(self.show_all_services);
         // A rename, reparent or destroy can invalidate the selection; kept
         // only if its referent still resolves in the rebuilt tree.

@@ -10,7 +10,7 @@ use gpui_kit::component::tree::TreeItem;
 use gpui_kit::{RenderImage, SharedString};
 use rbx_dom::{Ref, WeakDom};
 
-use crate::class_icons;
+use crate::class_icons::{self, IconPack};
 
 pub(crate) mod reparent;
 
@@ -121,17 +121,23 @@ pub(crate) struct Explorer {
     /// Every root the file has, for the "show all services" toggle.
     all_items: Vec<TreeItem>,
     icons: HashMap<SharedString, ClassIcon>,
+    /// Every row's class, kept alongside `icons` so [`Explorer::set_icon_pack`]
+    /// can re-resolve icons for the other pack without re-walking `dom` — the
+    /// tree's own `TreeItem`s (and their expansion state) never need to
+    /// change for that, only which sprite each row's icon points at.
+    classes: HashMap<SharedString, String>,
 }
 
 impl Explorer {
-    pub(crate) fn from_dom(dom: &WeakDom) -> Self {
+    pub(crate) fn from_dom(dom: &WeakDom, pack: IconPack) -> Self {
         let mut icons = HashMap::new();
+        let mut classes = HashMap::new();
         // Every instance of a class shares one icon; resolving it once per
         // class rather than once per instance keeps a place with thousands of
         // parts from repeating the same lookup thousands of times.
         let mut per_class = HashMap::new();
         let roots = roots(dom);
-        let all_items = items(&roots, &mut per_class, &mut icons);
+        let all_items = items(&roots, &mut per_class, &mut icons, &mut classes, pack);
         let default_items = roots
             .iter()
             .zip(all_items.iter())
@@ -143,6 +149,32 @@ impl Explorer {
             default_items,
             all_items,
             icons,
+            classes,
+        }
+    }
+
+    /// Re-resolves every row's icon for `pack`, keeping the same `TreeItem`s
+    /// (so expansion/selection state, which lives on them, survives) and the
+    /// same `classes` map this was built from.
+    pub(crate) fn set_icon_pack(&self, pack: IconPack) -> Explorer {
+        let mut per_class = HashMap::new();
+        let icons = self
+            .classes
+            .iter()
+            .map(|(id, class)| {
+                let icon = per_class
+                    .entry(class.clone())
+                    .or_insert_with(|| resolve_icon(class, pack))
+                    .clone();
+                (id.clone(), icon)
+            })
+            .collect();
+
+        Explorer {
+            default_items: self.default_items.clone(),
+            all_items: self.all_items.clone(),
+            icons,
+            classes: self.classes.clone(),
         }
     }
 
@@ -264,6 +296,8 @@ fn items(
     nodes: &[Node],
     per_class: &mut HashMap<String, ClassIcon>,
     icons: &mut HashMap<SharedString, ClassIcon>,
+    classes: &mut HashMap<SharedString, String>,
+    pack: IconPack,
 ) -> Vec<TreeItem> {
     nodes
         .iter()
@@ -271,19 +305,26 @@ fn items(
             let id = item_id(Ref::new(node.id));
             let class_icon = per_class
                 .entry(node.class.clone())
-                .or_insert_with(|| resolve_icon(&node.class))
+                .or_insert_with(|| resolve_icon(&node.class, pack))
                 .clone();
             icons.insert(id.clone(), class_icon);
+            classes.insert(id.clone(), node.class.clone());
 
-            TreeItem::new(id, node.name.clone()).children(items(&node.children, per_class, icons))
+            TreeItem::new(id, node.name.clone()).children(items(
+                &node.children,
+                per_class,
+                icons,
+                classes,
+                pack,
+            ))
         })
         .collect()
 }
 
-/// This project's own icon for `class` (see `class_icons`) when the kit
-/// covers it, the Lucide stand-in otherwise.
-fn resolve_icon(class: &str) -> ClassIcon {
-    match class_icons::icon_tile(class) {
+/// This project's own icon for `class` from `pack` (see `class_icons`) when
+/// the kit covers it, the Lucide stand-in otherwise.
+fn resolve_icon(class: &str, pack: IconPack) -> ClassIcon {
+    match class_icons::icon_tile(class, pack) {
         Some(image) => ClassIcon::Sprite(image),
         None => ClassIcon::Lucide(icon(class)),
     }

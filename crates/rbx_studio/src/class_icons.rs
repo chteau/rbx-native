@@ -1,7 +1,8 @@
 //! This project's own class icons — flat, multi-colour SVGs shipped in
-//! `assets/icons/default/dark` (spec'd in `assets/icons/README.md`, gitignored
-//! working notes, not a shipped asset) — replacing the sprite sheet Roblox's
-//! own Studio ships, which this project no longer downloads or draws.
+//! `assets/icons/default/dark` and `assets/icons/default/light` (spec'd in
+//! `assets/icons/README.md`, gitignored working notes, not a shipped asset)
+//! — replacing the sprite sheet Roblox's own Studio ships, which this
+//! project no longer downloads or draws.
 //!
 //! Rasterized ourselves with `resvg` rather than painted through GPUI's own
 //! `svg()` element: that element is a monochrome icon renderer (it always
@@ -11,10 +12,11 @@
 //! (`render_image::to_render_image`, painted with `img()`) is kept and fed
 //! from a rasterized SVG instead of a downloaded PNG tile.
 //!
-//! Only the dark set is wired up: the icon kit also ships a `light` folder
-//! (same filenames) and an editor setting to switch between them, plus a
-//! setting to swap in a different icon pack entirely, are both still on
-//! `ROADMAP.md` under "Icon and theme packs" — not implemented yet.
+//! Both variants are embedded at compile time; [`IconPack`] (an editor
+//! setting, see `settings::Settings::icon_pack`) only picks which one
+//! [`icon_tile`] reads from — no rebuild needed to switch. Swapping in a
+//! different icon pack entirely is still on `ROADMAP.md` under "Icon and
+//! theme packs" — not implemented yet.
 
 use std::sync::Arc;
 
@@ -28,6 +30,23 @@ use crate::render_image::to_render_image;
 #[derive(rust_embed::RustEmbed)]
 #[folder = "$CARGO_MANIFEST_DIR/../../assets/icons/default/dark"]
 struct DefaultIcons;
+
+/// Every SVG in `assets/icons/default/light`, embedded at compile time
+/// alongside [`DefaultIcons`] — [`IconPack`] picks between the two at
+/// lookup time, so both ship in the binary regardless of which is active.
+#[derive(rust_embed::RustEmbed)]
+#[folder = "$CARGO_MANIFEST_DIR/../../assets/icons/default/light"]
+struct LightIcons;
+
+/// Which of the kit's two equal-sized variants is currently drawn — a
+/// persisted editor setting (see `settings::Settings::icon_pack`), not a
+/// build-time choice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum IconPack {
+    #[default]
+    Dark,
+    Light,
+}
 
 /// Every icon in the kit is authored on a 16x16 `viewBox` (see
 /// `assets/icons/README.md`'s "Canvas" section); rasterized at 2x for a
@@ -344,14 +363,17 @@ const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
     ("WrapTarget", "wrap-target"),
 ];
 
-/// The rasterized icon for `class`, or `None` for a class the icon kit
-/// doesn't cover (falls back to a Lucide glyph — see `explorer::resolve_icon`)
-/// or whose SVG failed to parse (a build-time invariant, not a runtime one:
-/// every file under `assets/icons/default/dark` is checked by this module's
-/// own tests).
-pub(crate) fn icon_tile(class: &str) -> Option<Arc<RenderImage>> {
+/// The rasterized icon for `class` from the requested `pack`, or `None` for
+/// a class the icon kit doesn't cover (falls back to a Lucide glyph — see
+/// `explorer::resolve_icon`) or whose SVG failed to parse (a build-time
+/// invariant, not a runtime one: every file under both `assets/icons/default`
+/// variants is checked by this module's own tests).
+pub(crate) fn icon_tile(class: &str, pack: IconPack) -> Option<Arc<RenderImage>> {
     let slug = CLASS_ICON_SLUGS.iter().find(|(name, _)| *name == class)?.1;
-    let file = DefaultIcons::get(&format!("{slug}.svg"))?;
+    let file = match pack {
+        IconPack::Dark => DefaultIcons::get(&format!("{slug}.svg")),
+        IconPack::Light => LightIcons::get(&format!("{slug}.svg")),
+    }?;
     rasterize(&file.data)
 }
 
@@ -390,19 +412,31 @@ fn rasterize(svg: &[u8]) -> Option<Arc<RenderImage>> {
 mod tests {
     use super::*;
 
-    /// Every slug this module names must actually be a file `DefaultIcons`
-    /// embeds, and every embedded file must parse and rasterize — a build-time
-    /// invariant on the (gitignored, hand-authored) icon kit, checked here so
-    /// a bad SVG fails `cargo test` rather than silently blanking an icon.
+    /// Every slug this module names must actually be a file both
+    /// `DefaultIcons` and `LightIcons` embed, and every embedded file must
+    /// parse and rasterize — a build-time invariant on the (gitignored,
+    /// hand-authored) icon kit, checked here so a bad SVG fails `cargo test`
+    /// rather than silently blanking an icon.
     #[test]
-    fn every_mapped_slug_rasterizes() {
+    fn every_mapped_slug_rasterizes_in_both_packs() {
         for (class, slug) in CLASS_ICON_SLUGS {
-            let file = DefaultIcons::get(&format!("{slug}.svg"))
-                .unwrap_or_else(|| panic!("{class} names slug {slug:?}, no such file"));
-            assert!(
-                rasterize(&file.data).is_some(),
-                "{slug}.svg ({class}) failed to rasterize"
-            );
+            for pack in [IconPack::Dark, IconPack::Light] {
+                assert!(
+                    icon_tile(class, pack).is_some(),
+                    "{slug}.svg ({class}) failed to rasterize in {pack:?}"
+                );
+            }
         }
+    }
+
+    /// The whole point of `IconPack`: the same class looks up a different
+    /// file, and thus different pixels, depending on which pack is asked
+    /// for — `part.svg` deliberately uses different fill colours between the
+    /// `dark` and `light` folders (see `assets/icons/default/*/part.svg`).
+    #[test]
+    fn icon_tile_reads_from_the_requested_pack() {
+        let dark = icon_tile("Part", IconPack::Dark).expect("Part is covered by the icon kit");
+        let light = icon_tile("Part", IconPack::Light).expect("Part is covered by the icon kit");
+        assert_ne!(dark.as_bytes(0), light.as_bytes(0));
     }
 }
