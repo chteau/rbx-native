@@ -574,7 +574,7 @@ Roblox's own engine.
     light-blue outline with no shape-conformance spec published — so matching
     the true silhouette still needs checking against a real Studio instance
     rather than guessing.
-- [ ] 📋 **Align tool**, matching Studio's real Model-tab tool (checked
+- [x] 🚧 **Align tool**, matching Studio's real Model-tab tool (checked
   against `studio/align-tool.md` rather than assumed, not the transform
   gizmos under "What's been implemented" → Editor). Aligns the selected
   objects' **Min**/**Center**/**Max** bounds
@@ -586,7 +586,13 @@ Roblox's own engine.
   a single object to itself is a no-op; multi-selection is now implemented
   (see "What's been implemented" → Editor), so that dependency is
   satisfied. Self-contained geometry math over whatever's already selected;
-  no new dependency.
+  no new dependency. Shipped: Min/Center/Max, X/Y/Z, World/Local, Selection
+  Bounds/Active Object, a selected `Model` moving as one rigid body (the
+  docs' "keeping the model intact"), and a compact popover on the
+  transform toolbar rather than a full dialog. **Still open**: the docs'
+  "dynamically previewing the point of alignment before confirming" — this
+  editor's Align commits immediately, with no live preview while the
+  toggles are being set.
 - [ ] 📋 **Pivot tools**, matching Studio's real Model-tab **Edit Pivot**/
   **Reset** tools (checked against `studio/pivot-tools.md`). Today's
   transform gizmos (see "What's been implemented" → Editor) move/rotate/
