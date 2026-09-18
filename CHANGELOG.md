@@ -99,6 +99,12 @@
   original rbx-native addition (Blender/SketchUp/3ds Max convention), not a
   Studio-parity claim — nothing in Roblox's own viewport documentation
   describes Studio having one. — @chteau
+- **A live stud-count readout during a Move or Scale drag.** A small label
+  now follows the cursor while a transform-gizmo drag is held, reading the
+  straight-line distance moved so far for a Move, or the dragged axis's
+  growth (or shrink) in studs for a Scale — an rbx-native addition, not a
+  Studio-parity claim. Reuses `gizmo.rs`'s own already-known drag delta
+  rather than recomputing it. — @chteau
 
 ## 2026-09-17
 

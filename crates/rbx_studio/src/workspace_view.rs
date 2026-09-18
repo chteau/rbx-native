@@ -19,6 +19,7 @@ mod orientation;
 mod presence;
 mod pump;
 mod quality;
+mod readout;
 mod scroll;
 mod stats;
 
@@ -301,6 +302,13 @@ pub(crate) struct WorkspaceView {
     /// Whether the drag in progress has actually moved the part yet, which is
     /// what tells `Shell` which move opens the gesture's one undo step.
     dragged: bool,
+    /// Where the live stud-count readout sits and what it reads, as of the
+    /// current drag's last step — see `gizmo::WorkspaceView::drag_to` and
+    /// `readout.rs`. Reset to `None` at the start of every drag (`gizmo::
+    /// WorkspaceView::begin`) so a stale number never survives into the next
+    /// gesture; `render` only ever shows it while `dragging()` is true, so a
+    /// value left over from the drag just released is simply never painted.
+    drag_readout: Option<(Point<Pixels>, SharedString)>,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
     _subscriptions: [Subscription; 2],
 }
@@ -412,6 +420,7 @@ impl WorkspaceView {
             pending_grab: None,
             held: Targets::default(),
             dragged: false,
+            drag_readout: None,
             _subscriptions: [blur, deactivated],
         }
     }
@@ -967,6 +976,26 @@ impl Render for WorkspaceView {
                     .text_xs()
                     .text_color(rgb(0xe4e5e9))
                     .child(self.status_label()),
+            )
+            // Only while a drag is actually moving something — see
+            // `drag_readout`'s own doc for why a stale value never leaks
+            // into a gesture that hasn't stepped yet.
+            .when_some(
+                self.dragging().then(|| self.drag_readout.clone()).flatten(),
+                |this, (position, text)| {
+                    this.child(
+                        div()
+                            .absolute()
+                            .left(position.x)
+                            .top(position.y)
+                            .px_2()
+                            .py_0p5()
+                            .bg(rgba(0x14151ae0))
+                            .text_xs()
+                            .text_color(rgb(0xe4e5e9))
+                            .child(text),
+                    )
+                },
             )
             // No pose yet (the very first frame or two, before the render
             // thread's first `Ready` lands — see `self.view`'s own doc) draws
