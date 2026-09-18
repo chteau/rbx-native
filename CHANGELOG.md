@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-18
+
+- **A live stud-count readout during a Move or Scale drag.** A small label
+  now follows the cursor while a transform-gizmo drag is held, reading the
+  straight-line distance moved so far for a Move, or the dragged axis's
+  growth (or shrink) in studs for a Scale — an rbx-native addition, not a
+  Studio-parity claim. Reuses `gizmo.rs`'s own already-known drag delta
+  rather than recomputing it. — @chteau
+
 ## 2026-09-17
 
 - **A batch of viewport editor fixes (`fix/overall-bug-fixes`).** Undo/redo

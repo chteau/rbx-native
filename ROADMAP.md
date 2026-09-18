@@ -538,11 +538,17 @@ Roblox's own engine.
     existing meaning (invert the current snap state) on every other tool,
     so it needs its own resolution, not a blind rebind. — see
     `F3XTeam/RBX-Building-Tools`'s `Tools/Resize.lua`.
-  - **A live stud-count readout while a Move/Scale drag is in progress**
+  - [x] **A live stud-count readout while a Move/Scale drag is in progress**
     (e.g. a floating "12" near the handle showing studs moved/grown so
     far) — genuinely useful, not documented as a specific Studio feature
-    either way; would need its own small on-screen label wired to the
-    drag's own already-known delta.
+    either way. A small label follows the cursor while a drag is held,
+    reading the straight-line distance moved so far for a Move, or the
+    dragged axis's growth (or shrink) in studs for a Scale — both to two
+    decimal places, matching Studio's own numeric-field precision. Reads
+    the same delta `gizmo.rs`'s own drag math already computes for the
+    part itself (see `workspace_view::readout`), so there is nothing new
+    to keep in sync. A Rotate-angle readout was a natural follow-on but is
+    out of this bullet's own scope and hasn't been added.
   - **`Tab` to "summon" the gizmo's handles to the cursor** — this one
     *is* real, current native Studio behavior (2021 "Pivot Points" beta
     update): holding `Tab` moves the active tool's handles to the cursor's
