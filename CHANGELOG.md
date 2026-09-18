@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-18
+
+- **Colour-coded Explorer folders.** A `Folder` can now carry a colour tag,
+  set through a synthetic "Explorer Colour" row the Properties panel shows
+  only for a `Folder` (the same `Name`-row trick and colour-picker widget
+  the panel already had — no new UI), and shown as a small tint swatch on
+  its Explorer row. The tag lives in its own local, per-place store
+  (`folder_colors.json`) rather than the saved place file — there's no real
+  Roblox `Folder` property for it, so a real Studio session opening the
+  same place never sees an invented one. Keyed by the folder's Explorer
+  path rather than a `Ref` (which regenerates on load), so a rename or move
+  currently orphans the tag; a load-time prune at least keeps those
+  orphaned entries from piling up forever. — @chteau
+
 ## 2026-09-17
 
 - **A batch of viewport editor fixes (`fix/overall-bug-fixes`).** Undo/redo

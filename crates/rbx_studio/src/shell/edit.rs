@@ -284,6 +284,14 @@ impl Shell {
             .selected()
             .ok_or_else(|| "nothing is selected".to_string())?;
 
+        // Not a DOM write — see `shell::folder_color`; skips undo history
+        // and `WeakDom::set_property` entirely.
+        if name == properties::edit::FOLDER_COLOR_PROPERTY {
+            let result = self.commit_folder_color(reference, text, cx);
+            self.scroll_to_row(reference, name);
+            return result;
+        }
+
         // See `shell::history`: snapshotted before the write below.
         self.push_history();
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
@@ -309,7 +317,8 @@ impl Shell {
     /// nothing can scroll it into frame for a screenshot afterwards — see
     /// `AGENTS.md`'s ban on synthetic input.
     fn scroll_to_row(&self, reference: rbx_dom::Ref, name: &str) {
-        let rows = self.properties.rows(&self.dom, reference);
+        let folder_color = self.folder_color(reference);
+        let rows = self.properties.rows(&self.dom, reference, folder_color);
         if let Some(index) = rows.iter().position(|row| row.name == name) {
             self.properties_scroll.scroll_to_item(index);
         }

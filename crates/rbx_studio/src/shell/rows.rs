@@ -21,10 +21,19 @@ const INDENT: f32 = 12.0;
 const CHEVRON_WIDTH: f32 = 14.0;
 const CLASS_ICON_SIZE: f32 = 14.0;
 const PROPERTY_NAME_WIDTH: f32 = 130.0;
+const TINT_SWATCH_SIZE: f32 = 8.0;
 
 /// One instance: its depth as indentation, a chevron when it has children, the
 /// class icon and the instance's name; highlighted when it is the selection.
-pub(super) fn row(index: usize, entry: &TreeEntry, selected: bool, icon: ClassIcon) -> ListItem {
+/// `tint` is a tagged `Folder`'s colour (see `crate::folder_colors`), shown as
+/// a small swatch beside its icon — `None` for every other row.
+pub(super) fn row(
+    index: usize,
+    entry: &TreeEntry,
+    selected: bool,
+    icon: ClassIcon,
+    tint: Option<(u8, u8, u8)>,
+) -> ListItem {
     let item = entry.item();
     let chevron = if entry.is_expanded() {
         IconName::ChevronDown
@@ -51,8 +60,24 @@ pub(super) fn row(index: usize, entry: &TreeEntry, selected: bool, icon: ClassIc
                     }),
             )
             .child(class_icon)
+            .when_some(tint, |this, (r, g, b)| {
+                this.child(
+                    div()
+                        .size(px(TINT_SWATCH_SIZE))
+                        .rounded_full()
+                        .flex_shrink_0()
+                        .bg(tint_color(r, g, b)),
+                )
+            })
             .child(item.label.clone()),
     )
+}
+
+/// A tagged `Folder`'s stored sRGB byte triplet as the swatch's own fill —
+/// the same 0-255, non-linear-light space `properties::color3` already
+/// displays these in.
+fn tint_color(r: u8, g: u8, b: u8) -> Rgba {
+    rgb(((r as u32) << 16) | ((g as u32) << 8) | b as u32)
 }
 
 /// `Name = value` as two columns: the name fixed so values line up, the value

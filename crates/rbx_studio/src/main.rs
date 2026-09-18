@@ -39,6 +39,7 @@ mod class_icons;
 mod command_bar;
 mod display;
 mod explorer;
+mod folder_colors;
 mod history;
 mod menu_bar;
 mod pacing;
@@ -64,6 +65,7 @@ use rbx_viewer::{Headless, QualityLevel};
 
 use camera::PlaceCamera;
 use explorer::Explorer;
+use folder_colors::FolderColors;
 use properties::Properties;
 use save::Format;
 use settings::Settings;
@@ -161,6 +163,11 @@ struct Place {
     /// than widening that crate's public surface for this.
     path: PathBuf,
     format: Format,
+    /// This place's `Folder` colour tags — see `folder_colors`. Loaded here
+    /// (and pruned of any entry whose folder no longer resolves) rather than
+    /// lazily on first use, since the Explorer's own tints are baked in by
+    /// `shell::folder_color::folder_tints` from the moment the window opens.
+    folder_colors: FolderColors,
 }
 
 fn load(path: &Path, select: Option<&str>) -> Result<Place, String> {
@@ -168,6 +175,11 @@ fn load(path: &Path, select: Option<&str>) -> Result<Place, String> {
     let format = Format::sniff(&bytes);
     let dom = rbx_viewer::read_place(path)?;
     let database = ReflectionDatabase::embedded();
+
+    let mut folder_colors = FolderColors::load();
+    if folder_colors.prune(path, &dom) {
+        let _ = folder_colors.save();
+    }
 
     Ok(Place {
         explorer: Explorer::from_dom(&dom),
@@ -179,6 +191,7 @@ fn load(path: &Path, select: Option<&str>) -> Result<Place, String> {
         database,
         path: path.to_path_buf(),
         format,
+        folder_colors,
     })
 }
 

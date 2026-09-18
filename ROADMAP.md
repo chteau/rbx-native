@@ -383,6 +383,22 @@ Roblox's own engine.
     is the editor's own text undo rather than the place's history — the
     split Studio makes — and Edit > Undo still reaches the latter.
 
+- [x] **Colour-coded Explorer folders** — a `Folder` can carry a colour tag,
+  edited through a synthetic "Explorer Colour" row the Properties panel
+  adds only for a `Folder` (reusing the same `EditKind::Color` widget and
+  `Name`-row precedent `properties.rs`/`properties/edit.rs` already had),
+  shown as a small tint swatch on its Explorer row (`shell/rows.rs`). Kept
+  entirely out of the saved place file, per this bullet's own reasoning: a
+  local, per-place store (`folder_colors.rs`, keyed by the place's file
+  path and the folder's Explorer path) rather than an invented `Folder`
+  property a real Studio session would trip over. `Folder`-only, not "any
+  instance" — the hedge in this bullet's original wording, deliberately
+  not chased. **Known limitation**: keyed by Explorer path rather than a
+  stable id (a `Ref` regenerates on every load), so renaming or moving a
+  tagged folder orphans its tag; a load-time prune keeps orphaned entries
+  from accumulating forever, but does not carry the tag across the rename
+  (see the `ponytail:` comment in `folder_colors.rs`).
+
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
 - [x] Windows — asset cache and settings now fall back to
@@ -980,14 +996,6 @@ against `Roblox/creator-docs` rather than assumed:
 - [ ] 📋 **Native Git integration** — a real panel in `rbxstudio` (diff view,
   stage/commit, branch switch), not relying on the user's own external git
   client. Not scoped in any detail yet.
-- [ ] 📋 **Colour-coded Explorer folders.** Another devforum request from
-  the same category ("Colored folders!") — let a `Folder` (and perhaps any
-  instance) carry a colour tag shown as a tint on its Explorer icon/row,
-  purely a local editor convenience (there's no such real Roblox
-  `Folder` property, so this would need to live in rbx-native's own
-  settings/metadata, not the saved place file, to avoid inventing a fake
-  property that would confuse a real Studio session opening the same
-  place).
 - [ ] 📋 User settings file (service visibility defaults,
   default quality, sandbox naming for Play) beyond what's already
   persisted — and, worth folding into the same effort rather than treating
