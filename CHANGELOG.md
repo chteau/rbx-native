@@ -70,6 +70,16 @@
   `Model` back into its own parent and removes it; a non-`Model` or an empty
   one is a no-op. Both are one undo step regardless of how many instances
   move. — @chteau
+- **New-script templates, and a way to insert a script at all.** The Model
+  menu had no way to insert a `Script`/`LocalScript`/`ModuleScript` —
+  `Insert Object…` was a disabled placeholder — so `Insert Script`,
+  `Insert LocalScript`, `Insert ModuleScript` and
+  `Insert ModuleScript (Class)` are now real menu items. Each seeds the new
+  instance's `Source` with a starter template instead of an empty string: a
+  plain `print("Hello, world!")` for `Script`/`LocalScript`, a `ModuleScript`
+  returning a table, and the `(Class)` variant a `.new()` constructor over a
+  metatable. The template set is hardcoded for now, not the user-extensible
+  set `ROADMAP.md`'s own wording asked for — @chteau
 
 ## 2026-09-17
 

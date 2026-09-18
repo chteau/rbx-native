@@ -477,15 +477,17 @@ Roblox's own engine.
   locally-hosted code-completion API instead — but that's a distinct,
   lower-priority idea worth its own decision on which backend (if any),
   not a default this project should ship opinionated about.
-- [ ] 📋 **New-script templates** — inserting a `Script`/`LocalScript`/
-  `ModuleScript` today starts from an empty `Source`; real Studio offers a
-  small set of starting points instead (a plain server script, a
-  `ModuleScript` returning a table, an OOP class module with a `.new()`
-  constructor and metatable). Worth a small, user-extensible template set
-  rather than hardcoding a fixed list — most useful once the script editor
-  above exists (a template matters a lot more with somewhere real to edit
-  it), though the underlying "insert with starter source" mechanic doesn't
-  strictly depend on it.
+- [x] 🚧 **New-script templates** — the Model menu now has real
+  `Insert Script`/`Insert LocalScript`/`Insert ModuleScript`/
+  `Insert ModuleScript (Class)` entries (there was previously no menu item
+  or shortcut to insert a script at all), each seeding the new instance's
+  `Source` with a starter template instead of leaving it empty: a plain
+  `print("Hello, world!")` for `Script`/`LocalScript`, a `ModuleScript`
+  returning a table, and a `ModuleScript (Class)` with a `.new()`
+  constructor over a metatable. What's still open: the template set is
+  hardcoded (four `const` strings), not the user-extensible set this
+  bullet originally asked for — that's a materially bigger feature (storage
+  and an editing UI for user-defined templates) left for later.
 - [ ] 📋 **Optional, bundled `Fragment` UI framework.** [`Fragment`](https://github.com/chteau/Fragment)
   (MIT, single-file Luau `ModuleScript`, React-inspired: local/global
   state, contexts, reusable components over plain `GuiObject`s) offered as
