@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- import.svg - action icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>import</title>
+  <path d="M8,2 L8,9 M8,9 L5,6 M8,9 L11,6" stroke="#4A90D9" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M2.5,10.5 L2.5,12.5 C2.5,13.3 3.2,14 4,14 L12,14 C12.8,14 13.5,13.3 13.5,12.5 L13.5,10.5" fill="none" stroke="#4A90D9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

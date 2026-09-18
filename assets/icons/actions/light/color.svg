@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- color.svg - action icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>color</title>
+  <path d="M8,2 C4.1,2 1,5 1,8.5 C1,11.5 3.2,13 5.5,13 L6.3,13 C7,13 7.5,12.6 7.5,12 C7.5,11.6 7.3,11.3 7.1,11 C6.9,10.7 6.8,10.5 6.8,10.1 C6.8,9.4 7.4,8.9 8.1,8.9 L10.5,8.9 C12.9,8.9 15,7.1 15,5.2 C15,3.2 12,2 8,2 Z" fill="#4A5568"/>
+  <circle cx="4.3" cy="6.6" r="1" fill="#E2574C"/>
+  <circle cx="6.8" cy="4.6" r="1" fill="#3FB558"/>
+  <circle cx="10.2" cy="4.8" r="1" fill="#4A90D9"/>
+  <circle cx="12.2" cy="6.9" r="1" fill="#F4C430"/>
+</svg>

@@ -3,25 +3,30 @@
 ## 2026-09-18
 
 - **Softened the editor's visual theme, and rebuilt its toolbar as a real
-  ribbon.** Panels went from near-black/near-white flat blocks with hard
-  borders and tight padding to a muted grey ramp (`#1a1a1a` floor),
-  low-contrast luminance-step seams instead of hard 1px lines, 5px corner
-  radius, more breathing room in the Explorer/Properties rows, and a single
-  saturated accent reserved for selection/focus rather than sprinkled
-  everywhere. Ships as a real `ThemeSet`/`ThemeConfig` JSON file
-  (`assets/themes/dark-soft.json`) the toolkit's own theming loads at
-  startup, not compiled-in constants. The dock moved to a three-column
-  layout matching a ribbon-style Studio redesign — Properties alone on the
-  left, Output docked under the Viewport tab strip, Explorer alone on the
-  right — and the old plain-text toolbar row is now a real grouped ribbon
+  ribbon with this project's own icon kit.** Panels went from near-black/
+  near-white flat blocks with hard borders and tight padding to a muted
+  grey ramp (`#1a1a1a` floor), low-contrast luminance-step seams instead of
+  hard 1px lines, 5px corner radius, more breathing room in the Explorer/
+  Properties rows, and a single saturated accent reserved for selection/
+  focus rather than sprinkled everywhere. Ships as a real `ThemeSet`/
+  `ThemeConfig` JSON file (`assets/themes/dark-soft.json`) the toolkit's own
+  theming loads at startup, not compiled-in constants. The dock moved to a
+  three-column layout matching a ribbon-style Studio redesign — Properties
+  alone on the left, Output docked under the Viewport tab strip, Explorer
+  alone on the right — with that tab strip now the first thing under the
+  menu bar. The old plain-text toolbar row is now a real grouped ribbon
   (`shell/ribbon.rs`: Clipboard, Tools, Insert, File, Edit, Test, Viewport
-  Settings) of big icon-over-caption tiles directly under the menu bar,
-  using this project's own class icon kit for Part/Script/UI and Lucide
-  glyphs elsewhere; every button this editor doesn't actually implement yet
-  (Cut/Copy/Paste, Play/Run/Stop, Material/Color/Lock/Anchor, Toolbox,
-  Import, ...) stays visibly disabled with a tooltip rather than a dead
-  click. New `UX_GUIDELINES.md` for keeping future visual changes
-  consistent with all of this. — @chteau
+  Settings, paged across Home/Model/Test tabs so each page fits an ordinary
+  window without scrolling) of big icon-over-caption tiles, rendered
+  directly under that tab strip. Every ribbon icon is this project's own
+  hand-authored SVG (`action_icons`, a sibling to the Explorer's existing
+  class icon kit) — no Lucide glyphs anywhere in the ribbon; a tile that
+  inserts a Roblox class (Part/Script/UI) uses that class's own icon.
+  Every button this editor doesn't actually implement yet (Cut/Copy/Paste,
+  Play/Run/Stop, Material/Color/Lock/Anchor, Toolbox, Import, ...) stays
+  visibly disabled with a tooltip rather than a dead click. New
+  `UX_GUIDELINES.md` for keeping future visual changes consistent with all
+  of this. — @chteau
 - **Throttle the viewport's render loop while the editor window is
   unfocused.** The render thread paced itself to the display's full refresh
   rate no matter whether anyone was looking, burning GPU/CPU (and battery,

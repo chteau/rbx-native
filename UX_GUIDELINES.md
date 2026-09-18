@@ -167,15 +167,23 @@ dock_layout_v3.json` before screenshotting** — the dock persists whatever
 arrangement it last saw, so a stale save silently hides the very change
 you're trying to verify.
 
+**The Viewport/Script Editor/Style Editor tab strip is the first thing
+under the menu bar, full stop** — nothing else renders between them. That's
+why the ribbon (§8) is *not* a `Shell`-level row: `dock.rs`'s own tab strip
+is drawn by the `DockArea` itself, so anything Shell rendered above it would
+push it down. Instead `SectionPanel::render`, for exactly the Viewport/
+Scripts/StyleEditor sections, prepends `shell.ribbon(cx)` to each panel's
+own content — see that function's doc comment. Keep this in mind before
+"simplifying" the ribbon back to a single `Shell`-level row: it would put a
+row between the menu bar and the tab strip again, which is the thing this
+arrangement exists to avoid.
+
 ## 8. The ribbon
 
 `shell/ribbon.rs` is a real grouped ribbon (Clipboard, Tools, Insert, File,
-Edit, Test, Viewport Settings — one row, horizontally scrollable, not a
-Model/View/Test/Plugins *tab* switcher: see that module's own doc comment
-for why a second ribbon page isn't built), directly under the menu bar —
-no separate plain-text toolbar row sits above it or between it and the tab
-strip below. Read its module doc comment before adding or changing a
-button; the short version:
+Edit, Test, Viewport Settings, across three category tabs — Home, Model,
+Test, see below), rendered by `dock.rs` as described in §7. Read its module
+doc comment before adding or changing a button; the short version:
 
 - **Only wire a button to a real action this editor already has.**
   Everything else stays `.disabled(true)` with a tooltip saying so
@@ -188,20 +196,30 @@ button; the short version:
   lay out side by side, not stacked — see `ribbon::tile`'s own doc comment).
   Reuse `ribbon::tile`/`ribbon::disabled_tile`/`ribbon::class_tile` rather
   than hand-rolling a new tile shape.
-- **Use this project's own class icon kit before a Lucide glyph**, for any
-  button that inserts or represents a specific Roblox class —
-  `ribbon::class_tile` wraps `class_icons::icon_tile` (the same rasterized
-  kit the Explorer's own rows use) with a Lucide fallback. A pure UI action
-  with no Roblox-class equivalent (Select, Copy, Play, ...) uses a Lucide
-  `IconName` directly — check what a candidate icon actually depicts before
-  picking it (Lucide's own `Scale` is a balance/weighing-scale glyph, not a
-  resize one, which is why the Scale tool uses `Scale3d` instead).
-- **Reserve icon-only tiles for the ribbon's own small, fixed button set**,
-  not general UI — a rarely-used or one-off action is better served by a
-  labelled button elsewhere; an unlabelled icon nobody has memorized yet is
-  a lookup cost, not a saving (Nielsen's "recognition over recall" cuts both
-  ways here:
-  [nngroup.com/articles/ten-usability-heuristics](https://www.nngroup.com/articles/ten-usability-heuristics/)).
+- **No Lucide glyph, anywhere in this module.** This editor's own icon kit
+  (`action_icons`, `assets/icons/actions/{dark,light}` — a sibling to the
+  `ClassName`-keyed kit `class_icons` already has, same rasterizer, same
+  flat two-tone SVG style) covers every ribbon action. A tile that inserts a
+  specific Roblox class (Part/Script/UI) uses that class's own icon instead
+  (`ribbon::class_tile` → `class_icons::icon_tile`) — the same icon the
+  Explorer already shows for it, so Insert and the Explorer agree on what a
+  `Part` looks like. **Adding a new tile means drawing its SVG first**
+  (16x16 canvas, flat two-tone fills, both `dark`/`light` variants — see
+  `assets/icons/README.md`'s design system and the existing action icons
+  for shapes/colours already established), not reaching for `IconName`.
+- **Every group is captioned, and so is the tab bar above it** — Home/
+  Model/Test, real Studio's own pattern for a ribbon too wide to fit one
+  page. Adding a fourth tab (Avatar/UI/Script/Plugins, matching real
+  Studio's further tabs) needs real distinct content to justify it first —
+  see the module doc comment's reasoning; don't add an empty page for
+  visual completeness alone.
+- **Check a tab's content actually fits the column it renders in** — the
+  ribbon lives inside the Viewport tab's own content area (see §7), which
+  is narrower than the full window (`EXPLORER_WIDTH`/`PROPERTIES_WIDTH` on
+  either side of it), not the full-window row an earlier pass had. A tab
+  page that needs `overflow_x_scrollbar()` to be fully seen in an ordinary
+  window is a sign that page is carrying too many groups — split it further
+  rather than leaning on the scrollbar as the primary way to see it.
 - **This project's own additions (the graphics-quality dropdown) don't go
   in the ribbon** — it stays in the Viewport tab's own title row
   (`ComponentPanel::title_suffix` in `dock.rs`), since it isn't a Studio

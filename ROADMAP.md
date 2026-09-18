@@ -1243,28 +1243,37 @@ against `Roblox/creator-docs` rather than assumed:
   Properties rows, and accent colour reserved to the selection highlight/
   focus ring. Dock/panel structure now matches a maintainer-supplied
   ribbon-style reference: **Properties** alone on the left, **Output**
-  docked under the Viewport/Script Editor/Style Editor tab strip, **Explorer**
+  docked under the Viewport/Script Editor/Style Editor tab strip (that tab
+  strip is the first thing under the menu bar — see below), **Explorer**
   alone on the right. A real grouped ribbon (`shell/ribbon.rs`: Clipboard,
-  Tools, Insert, File, Edit, Test, Viewport Settings — big icon-over-caption
-  tiles, horizontally scrollable) replaces the old plain-text toolbar row,
-  directly under the menu bar. Select/Move/Scale/Rotate and every other
-  button this editor already has a real handler for (Group/Ungroup, Insert
-  Part/Script/UI) are live tiles using this project's own class icon kit
-  where one applies; everything Studio's own ribbon has that this editor
+  Tools, Insert, File, Edit, Test, Viewport Settings, paged across three
+  category tabs — Home, Model, Test, each sized to fit an ordinary window
+  without a scrollbar) replaces the old plain-text toolbar row, rendered as
+  the first thing *inside* the Viewport/Script Editor/Style Editor tab
+  content so the tab strip itself stays directly under the menu bar with
+  nothing in between. Select/Move/Scale/Rotate and every other button this
+  editor already has a real handler for (Group/Ungroup, Insert Part/Script/
+  UI) are live tiles; everything Studio's own ribbon has that this editor
   doesn't yet (Cut/Copy/Paste/Duplicate, Play/Run/Resume/Stop/Team/Exit,
   Material/Color/Lock/Anchor, Toolbox, Import, Game Settings/Device/Show UI)
   stays a visibly disabled tile with a tooltip saying so, the same rule
-  `menu_bar`'s own disabled items already follow. See `UX_GUIDELINES.md`
-  §§7-8 for the exact arrangement and the tile/icon conventions. **Still
-  open**: an active-tab indicator and bold section-header text — today's
-  dock tab titles are deliberately small/muted rather than bold, a
-  considered choice from earlier work (see `shell/dock.rs::title_style`'s
-  own comment) this PR didn't reverse without checking with the maintainer
-  first; also, this ships one built-in theme, not yet the user-installable
-  side-by-side theme packs the item above this one still lists as open, and
-  the ribbon is one "Home" page — no Model/View/Test/Plugins page switcher
-  (see `shell/ribbon.rs`'s own doc comment for why that's a deliberate
-  scope cut, not an oversight).
+  `menu_bar`'s own disabled items already follow. Every ribbon icon —
+  including Select/Move/Scale/Rotate/Copy/Cut/Paste and the rest of the
+  generic-action tiles — is this project's own hand-authored SVG
+  (`action_icons`, `assets/icons/actions/`), not a Lucide glyph; a tile that
+  inserts a Roblox class (Part/Script/UI) uses that class's own icon from
+  the existing `class_icons` kit instead. See `UX_GUIDELINES.md` §§7-8 for
+  the exact arrangement and the tile/icon conventions. **Still open**: an
+  active-tab indicator and bold section-header text — today's dock tab
+  titles are deliberately small/muted rather than bold, a considered choice
+  from earlier work (see `shell/dock.rs::title_style`'s own comment) this
+  PR didn't reverse without checking with the maintainer first; also, this
+  ships one built-in theme, not yet the user-installable side-by-side theme
+  packs the item above this one still lists as open, and the ribbon's own
+  Home/Model/Test tabs don't attempt real Studio's further Avatar/UI/
+  Script/Plugins tabs — no distinct content for them yet (see
+  `shell/ribbon.rs`'s own doc comment for why that's a deliberate scope
+  cut, not an oversight).
 
 ### Play / Test workflow
 - [ ] 📋 The sandbox-place design (private per-developer place, injected

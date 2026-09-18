@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- exit.svg - action icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>exit</title>
+  <rect x="2" y="2" width="6" height="12" rx="0.8" fill="#2D3748"/>
+  <path d="M7,8 L13,8 M13,8 L10.2,5.2 M13,8 L10.2,10.8" stroke="#4A5568" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

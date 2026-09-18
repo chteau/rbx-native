@@ -9,7 +9,6 @@
 //! and documents no distinct tool behind it, so there is nothing here to
 //! implement against yet.
 
-use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{h_flex, ActiveTheme, Selectable as _, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -30,17 +29,15 @@ pub(crate) mod snap;
 /// `RBX_STUDIO_EDIT` already stand in for a click and a keystroke elsewhere.
 pub(super) const TOOL_VARIABLE: &str = "RBX_STUDIO_TOOL";
 
-/// The Lucide glyph standing in for each tool's name on its own button — see
-/// `toolbar`'s `.tooltip(...)` for where the name itself still shows up.
-fn tool_icon(tool: Tool) -> IconName {
+/// The action-icon-kit name (see `shell::ribbon`, `action_icons`) standing
+/// in for each tool's name on its own button — see `tools_group_content`'s
+/// `.tooltip(...)` for where the name itself still shows up.
+fn tool_icon(tool: Tool) -> &'static str {
     match tool {
-        Tool::Select => IconName::MousePointer2,
-        Tool::Move => IconName::Move,
-        // Lucide's own "Scale" is a balance/weighing-scale glyph, not a
-        // resize one — `Scale3d` is the one that actually reads as this
-        // tool.
-        Tool::Scale => IconName::Scale3d,
-        Tool::Rotate => IconName::RotateCw,
+        Tool::Select => "select",
+        Tool::Move => "move",
+        Tool::Scale => "scale",
+        Tool::Rotate => "rotate",
     }
 }
 
@@ -103,6 +100,7 @@ impl Shell {
     pub(super) fn tools_group_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let active = self.transform.tool;
         let local = self.transform.local;
+        let pack = self.icon_pack();
 
         h_flex()
             .items_center()
@@ -111,6 +109,7 @@ impl Shell {
                 ribbon::tile(
                     ("ribbon-tool", tool as usize),
                     tool_icon(tool),
+                    pack,
                     tool.label(),
                 )
                 .tooltip(format!("{} ({})", tool.label(), tool.shortcut()))

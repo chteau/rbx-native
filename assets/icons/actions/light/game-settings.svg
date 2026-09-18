@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- game-settings.svg - action icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>game-settings</title>
+  <circle cx="8" cy="8" r="5" fill="#4A5568"/>
+  <g fill="#4A5568">
+    <rect x="7.2" y="1.7" width="1.6" height="2.2" rx="0.3"/>
+    <rect x="7.2" y="1.7" width="1.6" height="2.2" rx="0.3" transform="rotate(60 8 8)"/>
+    <rect x="7.2" y="1.7" width="1.6" height="2.2" rx="0.3" transform="rotate(120 8 8)"/>
+    <rect x="7.2" y="1.7" width="1.6" height="2.2" rx="0.3" transform="rotate(180 8 8)"/>
+    <rect x="7.2" y="1.7" width="1.6" height="2.2" rx="0.3" transform="rotate(240 8 8)"/>
+    <rect x="7.2" y="1.7" width="1.6" height="2.2" rx="0.3" transform="rotate(300 8 8)"/>
+  </g>
+  <circle cx="8" cy="8" r="1.8" fill="#2D3748"/>
+</svg>

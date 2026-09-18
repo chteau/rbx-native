@@ -381,7 +381,11 @@ pub(crate) fn icon_tile(class: &str, pack: IconPack) -> Option<Arc<RenderImage>>
 }
 
 /// Renders `svg` (a 16x16-`viewBox` document) to a square RGBA tile.
-fn rasterize(svg: &[u8]) -> Option<Arc<RenderImage>> {
+///
+/// `pub(crate)`: also `action_icons`'s own rasterizer, for the ribbon's
+/// action-icon kit (`assets/icons/actions`) — same 16x16 canvas, same
+/// premultiplied-alpha fixup, no reason for a second copy of either.
+pub(crate) fn rasterize(svg: &[u8]) -> Option<Arc<RenderImage>> {
     let tree = Tree::from_data(svg, &Options::default()).ok()?;
     let mut pixmap = Pixmap::new(RENDER_SIZE, RENDER_SIZE)?;
     let scale = RENDER_SIZE as f32 / ICON_VIEWBOX;

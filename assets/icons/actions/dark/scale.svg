@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- scale.svg - action icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>scale</title>
+  <g fill="none" stroke="#8A97A6" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M2,10 L2,14 L6,14"/>
+    <path d="M14,6 L14,2 L10,2"/>
+    <path d="M2,14 L7,9"/>
+    <path d="M14,2 L9,7"/>
+  </g>
+</svg>

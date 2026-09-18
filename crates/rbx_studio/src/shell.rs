@@ -171,6 +171,11 @@ pub(crate) struct Shell {
     /// The Align tool's current toggles (axes, Min/Center/Max, World/Local,
     /// Selection Bounds/Active Object) — see `crate::align`/`shell::align`.
     align: AlignOptions,
+    /// Which of the ribbon's own category tabs is showing — see
+    /// `shell::ribbon`. Session-only: real Studio's own ribbon always opens
+    /// back on Home too, and there's nothing here worth writing to
+    /// `settings` over.
+    ribbon_tab: ribbon::Tab,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
     _subscriptions: [Subscription; 10],
 }
@@ -339,6 +344,7 @@ impl Shell {
             transform,
             snap_fields,
             align: AlignOptions::default(),
+            ribbon_tab: ribbon::Tab::default(),
             _subscriptions: [
                 picked,
                 clicked,
@@ -761,9 +767,11 @@ impl Shell {
 }
 
 impl Render for Shell {
-    /// The ribbon (`shell::ribbon`) sits directly under the menu bar, in
-    /// place of the old plain-text toolbar row — see that module's doc
-    /// comment for why, and `UX_GUIDELINES.md` §8 for the layout this
+    /// No ribbon row here — `shell::dock`'s `SectionPanel` renders it
+    /// (`shell::ribbon`) as the first thing inside the Viewport/Script/Style
+    /// tab content, directly under that tab strip, so the tab strip itself
+    /// stays the first thing under the menu bar rather than a ribbon row
+    /// pushing it down. See `UX_GUIDELINES.md` §8 for the layout this
     /// mirrors.
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         v_flex()
@@ -777,7 +785,6 @@ impl Render for Shell {
                 shell.handle_shell_key(&event.keystroke, window, cx);
             }))
             .child(crate::menu_bar::bar(&self.menu_bar, cx))
-            .child(self.ribbon(cx))
             .child(
                 div()
                     .flex_1()

@@ -13,7 +13,7 @@ use gpui_kit::component::dock::{
     PaneRef, Panel as ComponentPanel, PanelEvent, PanelId, TitleStyle,
 };
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
-use gpui_kit::component::ActiveTheme;
+use gpui_kit::component::{v_flex, ActiveTheme};
 use gpui_kit::*;
 
 use crate::class_icons::IconPack;
@@ -72,15 +72,46 @@ impl Focusable for SectionPanel {
 impl EventEmitter<PanelEvent> for SectionPanel {}
 
 impl Render for SectionPanel {
+    /// Viewport/Scripts/StyleEditor each get the ribbon (`shell::ribbon`)
+    /// prepended to their own content, rather than Shell rendering it once
+    /// above the whole dock area — that's what keeps this trio's shared tab
+    /// strip (drawn by the dock itself, above whichever of the three is
+    /// active) the first thing under the menu bar, with the ribbon directly
+    /// under *that*, matching a maintainer-supplied reference. Duplicating
+    /// the one `self.ribbon(cx)` call three times costs nothing real: it
+    /// reads the same `Shell` state each time and paints identically
+    /// regardless of which of the three tabs is actually showing it.
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let section = self.section;
         self.shell.update(cx, |shell, cx| match section {
-            Section::Viewport => shell.viewport(cx).into_any_element(),
+            Section::Viewport => v_flex()
+                .size_full()
+                .child(shell.ribbon(cx))
+                .child(div().flex_1().overflow_hidden().child(shell.viewport(cx)))
+                .into_any_element(),
             Section::Explorer => shell.explorer(cx).into_any_element(),
             Section::Properties => shell.properties(window, cx).into_any_element(),
             Section::Output => shell.output_panel(cx).into_any_element(),
-            Section::Scripts => shell.script_editor(window, cx).into_any_element(),
-            Section::StyleEditor => shell.style_editor(window, cx).into_any_element(),
+            Section::Scripts => v_flex()
+                .size_full()
+                .child(shell.ribbon(cx))
+                .child(
+                    div()
+                        .flex_1()
+                        .overflow_hidden()
+                        .child(shell.script_editor(window, cx)),
+                )
+                .into_any_element(),
+            Section::StyleEditor => v_flex()
+                .size_full()
+                .child(shell.ribbon(cx))
+                .child(
+                    div()
+                        .flex_1()
+                        .overflow_hidden()
+                        .child(shell.style_editor(window, cx)),
+                )
+                .into_any_element(),
         })
     }
 }
