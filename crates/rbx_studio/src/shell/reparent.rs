@@ -13,7 +13,6 @@
 //! none either, because a place has no user-orderable sibling order to
 //! rearrange — see `explorer::reparent`'s own module comment.
 
-use gpui_kit::component::list::ListItem;
 use gpui_kit::component::ActiveTheme;
 use gpui_kit::*;
 use rbx_dom::Ref;
@@ -89,7 +88,7 @@ pub(super) fn draggable_row(
     index: usize,
     target: Ref,
     dragged: DraggedInstances,
-    row: ListItem,
+    row: AnyElement,
 ) -> AnyElement {
     div()
         .id(("explorer-drag", index))

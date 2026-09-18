@@ -24,7 +24,11 @@ struct Fixture {
 
 impl Fixture {
     fn rows(&self, reference: Ref) -> Vec<PropertyRow> {
-        self.properties.rows(&self.dom, reference)
+        self.properties.rows(&self.dom, reference, None)
+    }
+
+    fn rows_with_folder_color(&self, reference: Ref, color: (u8, u8, u8)) -> Vec<PropertyRow> {
+        self.properties.rows(&self.dom, reference, Some(color))
     }
 
     fn title(&self, reference: Ref) -> Option<String> {
@@ -32,7 +36,8 @@ impl Fixture {
     }
 
     fn rows_matching(&self, reference: Ref, filter: &str) -> Vec<PropertyRow> {
-        self.properties.rows_matching(&self.dom, reference, filter)
+        self.properties
+            .rows_matching(&self.dom, reference, filter, None)
     }
 }
 
@@ -119,6 +124,54 @@ fn rows_come_sorted_by_name() {
 #[test]
 fn a_missing_instance_has_no_rows() {
     assert!(properties(&[]).rows(Ref::new(99)).is_empty());
+}
+
+#[test]
+fn a_folder_gets_the_synthetic_explorer_colour_row() {
+    let rows = instance_of("Folder", &[]).rows(part());
+    let row = rows
+        .iter()
+        .find(|row| row.name == edit::FOLDER_COLOR_PROPERTY)
+        .expect("Explorer Colour row");
+    // Untagged: seeded white, the same "no tint" the Explorer itself shows.
+    assert_eq!(
+        row.edit,
+        Some(EditKind::Color {
+            r: 255,
+            g: 255,
+            b: 255
+        })
+    );
+}
+
+#[test]
+fn a_non_folder_never_gets_the_synthetic_explorer_colour_row() {
+    for class in ["Part", "Model", "Workspace", "Script"] {
+        let rows = instance_of(class, &[]).rows(part());
+        assert!(
+            rows.iter()
+                .all(|row| row.name != edit::FOLDER_COLOR_PROPERTY),
+            "{class} should not carry an Explorer Colour row"
+        );
+    }
+}
+
+#[test]
+fn a_folders_explorer_colour_row_seeds_from_the_passed_in_tag() {
+    let rows = instance_of("Folder", &[]).rows_with_folder_color(part(), (10, 20, 30));
+    let row = rows
+        .iter()
+        .find(|row| row.name == edit::FOLDER_COLOR_PROPERTY)
+        .expect("Explorer Colour row");
+    assert_eq!(
+        row.edit,
+        Some(EditKind::Color {
+            r: 10,
+            g: 20,
+            b: 30
+        })
+    );
+    assert_eq!(row.value, "(10, 20, 30)");
 }
 
 #[test]

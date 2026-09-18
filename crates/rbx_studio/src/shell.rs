@@ -8,6 +8,7 @@ mod dock;
 mod dock_layout;
 mod drag;
 mod edit;
+mod folder_color;
 mod history;
 mod keys;
 mod output;
@@ -41,6 +42,7 @@ use rbx_viewer::QualityLevel;
 
 use crate::command_bar::{self, CommandBar};
 use crate::explorer::Explorer;
+use crate::folder_colors::FolderColors;
 use crate::history::{History, DEFAULT_CAP};
 use crate::pacing::UnfocusedFps;
 use crate::properties::Properties;
@@ -144,6 +146,8 @@ pub(crate) struct Shell {
     /// regardless of what the tree currently looks like.
     path: PathBuf,
     format: Format,
+    /// This place's `Folder` colour tags; see `shell::folder_color`.
+    folder_colors: FolderColors,
     /// Which transform tool the toolbar has active, and whether its draggers
     /// follow the part's own axes — see `crate::transform`. Owned here because
     /// the toolbar renders from it; pushed down to the viewport, which
@@ -177,6 +181,7 @@ impl Shell {
             database,
             path,
             format,
+            folder_colors,
         } = place;
         let items = explorer.items(show_all_services);
 
@@ -307,6 +312,7 @@ impl Shell {
             output_scroll: ScrollHandle::new(),
             path,
             format,
+            folder_colors,
             transform,
             snap_fields,
             _subscriptions: [

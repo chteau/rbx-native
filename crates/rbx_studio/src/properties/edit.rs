@@ -18,6 +18,14 @@ use font::{font_text, parse_font, synced};
 /// `set_property`.
 pub(crate) const NAME_PROPERTY: &str = "Name";
 
+/// Not a real Roblox `Folder` property at all — see `crate::folder_colors`.
+/// `Properties::rows` synthesizes this row only for a `Folder`, and
+/// `shell::folder_color::commit_folder_color` routes its commit to that
+/// module's local store instead of reaching this file's [`commit`] at all;
+/// spelled distinctly (capitalized, spaced) so nobody mistakes it for a real
+/// dump property.
+pub(crate) const FOLDER_COLOR_PROPERTY: &str = "Explorer Colour";
+
 /// The text an editable row's `Input` starts with: always round-trips through
 /// [`parse`], which is why it can differ from the read-only column's
 /// rbxdump-style text (that one must match the dump byte for byte; this one
