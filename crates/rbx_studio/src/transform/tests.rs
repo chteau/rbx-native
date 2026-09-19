@@ -293,6 +293,7 @@ fn block() -> Target {
             Vec3::new(3.0, 4.0, -5.0).extend(1.0),
         ),
         sphere: false,
+        cylinder: false,
     }
 }
 
@@ -594,6 +595,7 @@ fn part_at(referent: u32, position: Vec3, size: Vec3) -> Target {
         referent: Ref::new(referent),
         model: Mat4::from_translation(position) * Mat4::from_scale(size),
         sphere: false,
+        cylinder: false,
     }
 }
 

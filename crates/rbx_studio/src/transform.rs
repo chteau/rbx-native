@@ -259,6 +259,15 @@ pub(crate) struct Target {
     /// `shell::keys::apply_part_defaults` for why only `Part` itself ever
     /// carries one.
     pub(crate) sphere: bool,
+    /// Whether this resolves to a real `Part.Shape == Cylinder` right now —
+    /// same reasoning and same read as `sphere`, checked against
+    /// `resolved_shape_label`'s `"CylinderX"` rather than the legacy
+    /// mesh-child `"CylinderY"` case (`rbx_viewer::scene::shape::part_type`):
+    /// `Enum.PartType.Cylinder` always draws with its length along the
+    /// part's own local X, round in Y/Z — a fixed convention, not something
+    /// read per-instance, which is why nothing here stores *which* axis is
+    /// which.
+    pub(crate) cylinder: bool,
 }
 
 impl Target {
@@ -273,10 +282,12 @@ impl Target {
         referent: Option<Ref>,
     ) -> Option<Self> {
         let referent = referent?;
+        let shape = rbx_viewer::resolved_shape_label(dom, database, referent);
         Some(Target {
             referent,
             model: rbx_viewer::pick::model_of(dom, referent)?,
-            sphere: rbx_viewer::resolved_shape_label(dom, database, referent) == Some("Ball"),
+            sphere: shape == Some("Ball"),
+            cylinder: shape == Some("CylinderX"),
         })
     }
 

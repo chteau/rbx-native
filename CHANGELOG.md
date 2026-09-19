@@ -263,6 +263,16 @@
   current snap state" here on every tool; `Alt` is provably free at the
   moment a handle is grabbed. `Cylinder`'s and Wedge/CornerWedge's own
   cases are still open. — @chteau
+- **`Alt`-dragging a Cylinder's round handle keeps its end circular.** The
+  same lock the Ball got now covers `Cylinder`: grab either of the two axes
+  forming its round end and both grow together; grab its length axis
+  instead and nothing extra happens, since nothing else is meant to grow
+  alongside a cylinder's length. Which axis is which wasn't guessed at —
+  `rbx_viewer::scene::shape::part_type` already fixes `Enum.PartType.
+  Cylinder` to draw with its length on local X, round in Y/Z, matching
+  Roblox's real engine geometry, and the lock reuses that existing fact
+  rather than determining it a second time. Wedge/CornerWedge's own case
+  is still open. — @chteau
 
 ## 2026-09-18
 

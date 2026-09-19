@@ -295,6 +295,7 @@ fn block() -> Target {
         referent: Ref::new(1),
         model: Mat4::from_scale(Vec3::new(2.0, 1.0, 4.0)),
         sphere: false,
+        cylinder: false,
     }
 }
 
@@ -304,6 +305,15 @@ fn block() -> Target {
 fn ball() -> Target {
     Target {
         sphere: true,
+        ..block()
+    }
+}
+
+/// A cylinder of the same footprint as [`block`] — its length along local X
+/// (see `Target::cylinder`'s own doc comment), round in Y/Z.
+fn cylinder() -> Target {
+    Target {
+        cylinder: true,
         ..block()
     }
 }
@@ -335,6 +345,7 @@ fn grabbed_x_face() -> Drag {
         size: Vec3::new(2.0, 1.0, 4.0),
         component: 0,
         sphere: false,
+        cylinder: false,
     }
 }
 
@@ -397,6 +408,7 @@ fn a_locked_ball_grows_all_three_axes_by_the_same_amount() {
         size: Vec3::new(2.0, 1.0, 4.0),
         component: 0,
         sphere: true,
+        cylinder: false,
     };
     let (_, change) = advance(drag, looking_at(4.0, 0.0), free()).expect("the axis is across");
 
@@ -429,6 +441,7 @@ fn a_locked_ball_still_stops_at_the_size_ceiling() {
         size: Vec3::new(2.0, MAX_SIZE - 1.0, 4.0),
         component: 0,
         sphere: true,
+        cylinder: false,
     };
     // Ask for far more growth than Y has room for.
     let (_, change) = advance(drag, looking_at(5000.0, 0.0), free()).expect("across the view");
@@ -438,6 +451,100 @@ fn a_locked_ball_still_stops_at_the_size_ceiling() {
     };
     assert!((size.x - MAX_SIZE).abs() < 1e-4, "X: {}", size.x);
     assert!((size.y - MAX_SIZE).abs() < 1e-4, "Y clamped: {}", size.y);
+}
+
+#[test]
+fn grabbing_a_cylinders_round_handle_with_alt_held_locks_the_drag() {
+    // The +Y face of a 2x1x4 block, half of its 1-stud height out.
+    let target = cylinder();
+    let drag = grab_face(&faces(target), target, looking_at(0.0, 0.5), true).expect("the +Y ball");
+
+    let Drag::Size {
+        component,
+        cylinder,
+        ..
+    } = drag
+    else {
+        panic!("expected a resize, got {drag:?}");
+    };
+    assert_eq!(component, 1, "grabbed the Y face");
+    assert!(
+        cylinder,
+        "a Cylinder's round handle grabbed with Alt should lock"
+    );
+}
+
+#[test]
+fn grabbing_a_cylinders_length_handle_never_locks_even_with_alt_held() {
+    // The +X face -- the length axis -- has no partner to lock with.
+    let target = cylinder();
+    let drag = grab_face(&faces(target), target, looking_at(1.0, 0.0), true).expect("the +X ball");
+
+    let Drag::Size {
+        component,
+        cylinder,
+        ..
+    } = drag
+    else {
+        panic!("expected a resize, got {drag:?}");
+    };
+    assert_eq!(component, 0, "grabbed the X (length) face");
+    assert!(cylinder, "the lock is still recorded on the drag itself");
+    // What matters is that `advance` does nothing extra with it -- see
+    // `a_locked_cylinders_length_handle_grows_only_the_length` below.
+}
+
+#[test]
+fn a_locked_cylinders_round_handle_grows_its_partner_axis_too() {
+    // Grabbed on the +Y face of a 2x1x4 cylinder, half a stud out --
+    // pulling the cursor to y = 2.5 is 2 studs of travel.
+    let drag = Drag::Size {
+        origin: Vec3::ZERO,
+        axis: Vec3::Y,
+        grabbed: 0.5,
+        size: Vec3::new(2.0, 1.0, 4.0),
+        component: 1,
+        sphere: false,
+        cylinder: true,
+    };
+    let (_, change) = advance(drag, looking_at(0.0, 2.5), free()).expect("the axis is across");
+
+    let Change::Size { size, position } = change else {
+        panic!("expected a resize, got {change:?}");
+    };
+    // Y and Z (the round pair) both grew by the same 2 studs; X (the
+    // length) is untouched.
+    assert!(
+        (size - Vec3::new(2.0, 3.0, 6.0)).length() < 1e-4,
+        "{size:?}"
+    );
+    assert!(
+        (position - Vec3::new(0.0, 1.0, 0.0)).length() < 1e-4,
+        "{position:?}"
+    );
+}
+
+#[test]
+fn a_locked_cylinders_length_handle_grows_only_the_length() {
+    // Grabbed on the +X (length) face -- locking has nothing to do here,
+    // since nothing else is meant to grow alongside the length.
+    let drag = Drag::Size {
+        origin: Vec3::ZERO,
+        axis: Vec3::X,
+        grabbed: 1.0,
+        size: Vec3::new(2.0, 1.0, 4.0),
+        component: 0,
+        sphere: false,
+        cylinder: true,
+    };
+    let (_, change) = advance(drag, looking_at(4.0, 0.0), free()).expect("the axis is across");
+
+    let Change::Size { size, .. } = change else {
+        panic!("expected a resize, got {change:?}");
+    };
+    // Identical to the unlocked case (`a_scale_drag_touches_only_the_axis_it_was_grabbed_on`):
+    // only X changed.
+    assert_eq!((size.y, size.z), (1.0, 4.0));
 }
 
 #[test]
@@ -474,6 +581,7 @@ fn a_turned_parts_ball_resizes_the_face_it_actually_sits_on() {
             Vec3::ZERO,
         ),
         sphere: false,
+        cylinder: false,
     };
     let drag = grab_face(&faces(target), target, looking_at(0.0, 1.0), false).expect("the +X ball");
 
@@ -501,6 +609,7 @@ fn pointing_at_no_ball_grabs_no_resize() {
         referent: Ref::new(1),
         model: Mat4::from_scale(Vec3::splat(40.0)),
         sphere: false,
+        cylinder: false,
     };
     assert_eq!(
         grab_face(&faces(target), target, looking_at(8.0, 8.0), false),
@@ -606,6 +715,7 @@ fn a_scale_handle_on_the_far_face_grows_the_part_the_other_way() {
         size: Vec3::new(2.0, 1.0, 4.0),
         component: 0,
         sphere: false,
+        cylinder: false,
     };
 
     assert_eq!(
