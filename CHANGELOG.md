@@ -253,6 +253,16 @@
   already. `Color3`/enum property rows, the snap increments, `ColorPicker`
   and the menu bar remain mouse-only; each needs its own follow-up, laid
   out in the roadmap bullet this partly closes. — @chteau
+- **Holding `Alt` while dragging a Ball's Scale handle keeps it round.**
+  Dragging any Scale handle used to grow only the one axis grabbed, same as
+  any other part — fine for a block, but it turns a sphere oval. `Alt` now
+  locks the drag to grow all three axes together (`Size + (d,d,d)`),
+  modeled on Building Tools by F3X's own `Resize.lua` rather than native
+  Studio, which gives Scale no shape-specific behavior at all. `Alt` was
+  picked over F3X's own `Shift` because `Shift` already means "invert the
+  current snap state" here on every tool; `Alt` is provably free at the
+  moment a handle is grabbed. `Cylinder`'s and Wedge/CornerWedge's own
+  cases are still open. — @chteau
 
 ## 2026-09-18
 

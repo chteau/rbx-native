@@ -250,6 +250,15 @@ pub(crate) fn parse_increment(text: &str) -> Option<f32> {
 pub(crate) struct Target {
     pub(crate) referent: Ref,
     pub(crate) model: Mat4,
+    /// Whether this resolves to a `Ball` right now — read once, here, rather
+    /// than re-resolved on every drag step: a Scale drag holds a `Target`
+    /// snapshotted at the grab (see `Drag::Size`), and a part's `Shape`
+    /// cannot change mid-gesture anyway. Reuses `rbx_viewer`'s own shape
+    /// resolution (`resolved_shape_label`) rather than a second, possibly-
+    /// diverging check of the `Shape` property — see
+    /// `shell::keys::apply_part_defaults` for why only `Part` itself ever
+    /// carries one.
+    pub(crate) sphere: bool,
 }
 
 impl Target {
@@ -258,11 +267,16 @@ impl Target {
     /// service, a `Model`) has no `CFrame` or `Size` of its own to write, so
     /// it never becomes a target itself — [`Targets::read`] resolves one to
     /// the parts beneath it instead.
-    pub(crate) fn read(dom: &WeakDom, referent: Option<Ref>) -> Option<Self> {
+    pub(crate) fn read(
+        dom: &WeakDom,
+        database: &ReflectionDatabase,
+        referent: Option<Ref>,
+    ) -> Option<Self> {
         let referent = referent?;
         Some(Target {
             referent,
             model: rbx_viewer::pick::model_of(dom, referent)?,
+            sphere: rbx_viewer::resolved_shape_label(dom, database, referent) == Some("Ball"),
         })
     }
 
@@ -385,7 +399,7 @@ impl Targets {
             pick::selection(dom, database, referents)
                 .iter()
                 .flat_map(|entry| entry.parts())
-                .filter_map(|&part| Target::read(dom, Some(part)))
+                .filter_map(|&part| Target::read(dom, database, Some(part)))
                 .collect(),
         )
     }

@@ -94,6 +94,14 @@ pub(super) enum Drag {
         /// Which component of `size` this axis is — `Size` is expressed in the
         /// part's own frame, so the axis alone does not say.
         component: usize,
+        /// Whether the part is a `Ball` *and* `Alt` was held at the grab: the
+        /// other two components grow by the same amount as `component` does,
+        /// keeping it round, instead of only the one axis actually pulled.
+        /// Decided once here rather than re-read live each step — the shape
+        /// cannot change mid-gesture, and freezing the choice at the grab
+        /// matches how `component` itself is already fixed for the gesture's
+        /// whole duration.
+        sphere: bool,
     },
     /// One of the Scale tool's balls is held on a *group's* box (see
     /// `gizmo::scale_box`): the box's centre, the world axis pointing out
@@ -276,7 +284,7 @@ impl WorkspaceView {
         if self.transform.drags() {
             // A handle is the gizmo's own, drawn over everything: grabbing
             // one needs no second opinion.
-            if let Some(drag) = self.grab_handle(ray) {
+            if let Some(drag) = self.grab_handle(ray, modifiers.alt) {
                 self.begin(drag, cx);
                 return;
             }
@@ -338,14 +346,14 @@ impl WorkspaceView {
     /// What this ray grabs on the gizmo itself, if anything: a Move arrow, a
     /// Scale face, a Rotate ring — never a part's body, which is
     /// [`WorkspaceView::grab_body`]'s own question.
-    fn grab_handle(&self, ray: Ray) -> Option<Drag> {
+    fn grab_handle(&self, ray: Ray, lock_sphere: bool) -> Option<Drag> {
         let handles = self.handles()?;
         let anchor = self.targets.anchor()?;
         match self.transform.tool {
             Tool::Select => None,
             Tool::Move => self.grab_axis(&handles, ray),
             Tool::Scale if self.targets.len() > 1 => grab_box(&self.faces()?, ray),
-            Tool::Scale => grab_face(&self.faces()?, anchor, ray),
+            Tool::Scale => grab_face(&self.faces()?, anchor, ray, lock_sphere),
             Tool::Rotate => {
                 let axis = handles.grab_ring(ray)?;
                 let frame = handles.ring_frame(axis);
@@ -714,7 +722,12 @@ impl WorkspaceView {
 /// part's own faces, and `BasePart.Size` is expressed along exactly those axes
 /// — so the handle names the component that stretches outright, whichever way
 /// the world/local toggle stands.
-fn grab_face(faces: &Faces, target: Target, ray: Ray) -> Option<Drag> {
+///
+/// `lock_sphere` is `Alt` at the moment of the grab (see `press`) — free to
+/// repurpose here because a click that reaches a handle at all never reads
+/// `Alt` for anything else (unlike a click that falls through to a pick,
+/// where it means "cycle selection").
+fn grab_face(faces: &Faces, target: Target, ray: Ray, lock_sphere: bool) -> Option<Drag> {
     let (grabbed, sign) = faces.grab(ray)?;
     // Pointing out through the grabbed face, so dragging away from the part
     // always grows it.
@@ -724,6 +737,7 @@ fn grab_face(faces: &Faces, target: Target, ray: Ray) -> Option<Drag> {
     Some(Drag::Size {
         origin,
         axis,
+        sphere: target.sphere && lock_sphere,
         grabbed: gizmo::along_axis(origin, axis, ray)?,
         size: target.size(),
         component: grabbed as usize,
@@ -800,6 +814,7 @@ pub(super) fn advance(drag: Drag, ray: Ray, landing: Landing) -> Option<(Drag, C
             grabbed,
             size,
             component,
+            sphere,
         } => {
             let travelled = snap::round_to(
                 gizmo::along_axis(origin, axis, ray)? - grabbed,
@@ -813,6 +828,23 @@ pub(super) fn advance(drag: Drag, ray: Ray, landing: Landing) -> Option<(Drag, C
             // a drag that has run into either end of the range stops moving
             // the part as well as stops resizing it.
             let grown = resized[component] - size[component];
+            if sphere {
+                // The other two axes grow by the same amount, with no
+                // position term of their own: nothing anchors either of
+                // their two faces the way `component`'s opposite face is
+                // anchored above, so growing the size alone is what keeps
+                // the ball centred on both of them. Clamped independently,
+                // since a ball dragged from an already-uneven size (its
+                // Y or Z started closer to `MAX_SIZE` than X did) can still
+                // run out of room on one axis before another — a corner
+                // case worth a comment, not a reason to hold every axis to
+                // whichever one clamps first.
+                for other in 0..3 {
+                    if other != component {
+                        resized[other] = (size[other] + grown).clamp(MIN_SIZE, MAX_SIZE);
+                    }
+                }
+            }
             Some((
                 drag,
                 Change::Size {
