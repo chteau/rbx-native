@@ -166,8 +166,48 @@ personally verify.
 
 ```sh
 git push -u origin <branch-name>
-gh pr create --title "…" --body "…"
+
+# Everyone who has a commit on the branch, as GitHub logins rather than git
+# author emails — the compare API resolves one to the other, and only works
+# once the branch is pushed, which is why it comes after the push.
+assignees=$(gh api "repos/{owner}/{repo}/compare/dev...<branch-name>" \
+  --jq '[.commits[].author.login] | map(select(. != null)) | unique | join(",")')
+
+gh pr create --title "…" --body "…" \
+  --assignee "$assignees" --label "<see below>"
 ```
+
+**Assign everyone who has a commit on the branch**, not just yourself. A
+branch here is not always one agent's — step 4 above exists precisely
+because another agent or the maintainer may already have pushed to it — and
+the assignee list is how the maintainer sees at a glance who to ask about
+which part. Two things to check rather than assume: a commit whose author
+email is not linked to any GitHub account resolves to `null` (filtered out
+above, and worth fixing at the source rather than shrugging at), and GitHub
+*ignores* an assignee who has no access to the repository instead of
+failing, so read back what the PR actually got. `gh pr edit <n>
+--add-assignee <login>` fixes either afterwards.
+
+**Pick the label that matches the work**, from the four this repository uses
+on pull requests — the rest of `gh label list` is issue triage, not for PRs:
+
+- `accessibility` — a barrier affecting people with disabilities:
+  keyboard-only reachability, contrast, target size, motion, anything
+  measured against a WCAG criterion. It wins over `enhancement` when both
+  would fit, because it is the one that makes this work findable later.
+- `bug` — something that was meant to work and didn't. A flaky test or a
+  red CI run is a bug in the test, not an enhancement to it.
+- `documentation` — a change whose deliverable is prose: this file,
+  `agents/AGENTS.md`, `README.md`, `SPECS.md`, a roadmap-only pass with no
+  code behind it.
+- `enhancement` — behaviour that was never there before. The honest default,
+  but do not let it become the automatic answer: it is simply wrong for the
+  three above.
+
+A `ROADMAP.md` checkoff and a `CHANGELOG.md` entry riding along with code
+(both required, below) do not make a PR `documentation` — label it by the
+work it actually does. `gh pr edit <n> --add-label <name>` corrects a label
+after the fact.
 
 Fill in `.github/PULL_REQUEST_TEMPLATE.md` for real — what changed and why,
 how it was verified (test output; a screenshot or short screen recording

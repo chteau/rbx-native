@@ -1,6 +1,6 @@
 use rbx_dom::{
-    CFrameData, Color3Data, Font, FontStyle, Instance, NumberRange, Rect, UDim, UDim2, Vector2Data,
-    Vector3Data,
+    CFrameData, Color3Data, Font, FontStyle, Instance, NumberRange, PhysicalProperties, Rect, UDim,
+    UDim2, Vector2Data, Vector3Data,
 };
 
 use super::*;
@@ -324,6 +324,68 @@ fn rect_round_trips_through_edit_text_and_parse() {
 
     assert_eq!(edit_text(&rect), Some("1, 2, 3, 4".to_owned()));
     assert_eq!(parse_as(&rect, "1, 2, 3, 4"), Ok(rect));
+}
+
+/// `Default` carries no numbers of its own, so the fields under the unticked
+/// box have to be seeded from somewhere — and an empty editor that commits
+/// zeroes the moment it is ticked would be worse than useless.
+#[test]
+fn default_physical_properties_seed_their_fields_from_the_plastic_defaults() {
+    let default = Variant::PhysicalProperties(PhysicalProperties::Default);
+    assert_eq!(edit_text(&default), Some("0.7, 0.3, 0.5, 1, 1".to_owned()));
+}
+
+#[test]
+fn custom_physical_properties_round_trip_through_edit_text_and_parse() {
+    let custom = Variant::PhysicalProperties(PhysicalProperties::Custom {
+        density: 2.5,
+        friction: 0.4,
+        elasticity: 0.1,
+        friction_weight: 3.0,
+        elasticity_weight: 0.25,
+    });
+
+    assert_eq!(
+        edit_text(&custom),
+        Some("2.5, 0.4, 0.1, 3, 0.25".to_owned())
+    );
+    assert_eq!(parse_as(&custom, "2.5, 0.4, 0.1, 3, 0.25"), Ok(custom));
+}
+
+/// The box is the enum: ticking it gives the value five numbers to hold,
+/// unticking it hands the physics back to the material. Neither is the other
+/// written differently, which is why unticking does not simply zero them.
+#[test]
+fn the_custom_box_switches_between_the_two_forms_rather_than_editing_numbers() {
+    let default = Variant::PhysicalProperties(PhysicalProperties::Default);
+    assert_eq!(
+        parse_as(&default, "true"),
+        Ok(Variant::PhysicalProperties(DEFAULT_PHYSICAL))
+    );
+
+    let custom = Variant::PhysicalProperties(PhysicalProperties::Custom {
+        density: 2.5,
+        friction: 0.4,
+        elasticity: 0.1,
+        friction_weight: 3.0,
+        elasticity_weight: 0.25,
+    });
+    assert_eq!(
+        parse_as(&custom, "false"),
+        Ok(Variant::PhysicalProperties(PhysicalProperties::Default))
+    );
+    // Re-ticking keeps the numbers the value already had, rather than
+    // resetting to the plastic defaults.
+    assert_eq!(parse_as(&custom, "true"), Ok(custom));
+}
+
+#[test]
+fn physical_properties_reject_the_wrong_count_of_numbers() {
+    let default = Variant::PhysicalProperties(PhysicalProperties::Default);
+    assert_eq!(
+        parse_as(&default, "1, 2, 3, 4"),
+        Err("expected 5 comma-separated numbers, got 4".to_owned())
+    );
 }
 
 #[test]

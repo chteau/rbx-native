@@ -851,13 +851,22 @@ Roblox's own engine.
   text these currently fall back to. The most valuable of the types
   explicitly left as text tonight, given how much of the GUI/particle work
   above depends on authoring these comfortably.
-- [x] 🚧 `Rect`, `PhysicalProperties`, `Font` — smaller, same "still
-  read-only text" status. `Rect` now edits as four labeled fields
-  (`crates/rbx_studio/src/properties/edit.rs`). `Font` turned out to
-  already be fully editable before this item was picked up (the roadmap
-  text describing it was stale). `PhysicalProperties` is still read-only —
-  it's a real enum (`Default`/`Custom` with five fields), bigger scope than
-  the other two, and remains open.
+- [x] `Rect`, `PhysicalProperties`, `Font` — all three edit now, where all
+  three used to be read-only text. `Rect` is four labeled fields; `Font`
+  turned out to already be editable before this item was picked up (the
+  roadmap text describing it was stale); `PhysicalProperties` was the one
+  that needed a shape rather than a field list, being a real enum rather
+  than a struct.
+  It reuses `EditKind::Optional` — the checkbox-over-an-editor shape
+  `OptionalCFrame` already had — because the two read the same way even
+  though they mean different things: a `Default` carries no numbers at all
+  (the engine derives them from the material), so the five fields appear
+  only under a ticked **Custom** box, which is also how Studio presents it.
+  That is why the checkbox now carries its own caption instead of the one
+  fixed "Has value" wording. Unticking returns the value to `Default`
+  rather than zeroing the numbers, and the fields under an unticked box are
+  seeded from Roblox's `Plastic` defaults (`0.7 / 0.3 / 0.5 / 1 / 1`) so
+  ticking it never commits a row of zeroes.
 - [ ] 📋 **Widgets that better match how Studio actually renders specific
   types**, rather than a generic fallback — verified against the real API
   dump and the current code, not assumed:

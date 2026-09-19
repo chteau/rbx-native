@@ -198,7 +198,7 @@ impl Shell {
                             // An optional's present/absent checkbox commits
                             // through the same one-flag path, so the factory
                             // below hands it `true`/`false` unchanged.
-                            super::edit::RowEditor::Optional(present, _) => vec![*present],
+                            super::edit::RowEditor::Optional(present, ..) => vec![*present],
                             _ => Vec::new(),
                         };
                         let handle = cx.entity();
