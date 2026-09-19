@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use crate::asset_ref::AssetRef;
 use crate::cache::AssetCache;
 use crate::error::{AssetError, FetchError};
-use crate::native::NativeContent;
+use crate::native::{Fetched, NativeContent};
 use crate::sniff::{sniff, AssetKind};
 
 /// Resolved asset bytes, together with their sniffed format.
@@ -72,15 +72,17 @@ impl AssetResolver {
         if let Some(bytes) = self.cache.get_native(path) {
             return Ok(bytes);
         }
-        let bytes = match self.native.fetch(path) {
-            Ok(bytes) => bytes,
+        let Fetched { bytes, source } = match self.native.fetch(path) {
+            Ok(fetched) => fetched,
             Err(AssetError::NativeFileNotFound(_)) => match substitute_for(path) {
                 Some(id) => return self.resolve_id(id),
                 None => return Err(AssetError::NativeFileNotFound(path.to_string())),
             },
             Err(other) => return Err(other),
         };
-        self.cache.put_native(path, &bytes)?;
+        if source.is_cacheable() {
+            self.cache.put_native(path, &bytes)?;
+        }
         Ok(bytes)
     }
 }

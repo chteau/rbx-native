@@ -47,10 +47,12 @@
   nothing is ever written to that folder. A real install keeps the default
   skybox panels under `PlatformContent\pc\textures\` rather than `content\`,
   so both are searched; without that, a place with no `Sky` rendered a
-  black background offline. The path in an `rbxasset://` reference comes
+  black background offline. What it reads is not kept in the asset cache,
+  so a stale copy from an older version folder can't become the permanent
+  answer once the CDN is back. The path in an `rbxasset://` reference comes
   from a place file, so one that could step outside the install folder
-  (`..`, a drive letter, a backslash) is refused rather than read. —
-  @jleeclient
+  (`..`, a drive letter, a backslash) or name a Windows device (`NUL`,
+  `CON`) is refused rather than read. — @jleeclient
 
 ## 2026-09-19
 

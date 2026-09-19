@@ -546,10 +546,14 @@ Roblox's own engine.
   install), so `content\textures\` alone would still have left a place with
   no `Sky` black when offline. The CDN stays the primary source; this is
   tried after it and the Sober fallback have both failed, and never writes
-  to or installs anything. The path comes from a place file, so unlike the
-  zip-backed fallbacks it is refused outright when it contains `..`, `\`,
-  `:`, an empty or `.` segment, or a root or drive prefix, rather than
-  handed to the filesystem.
+  to or installs anything. What it reads is deliberately not kept in the
+  asset cache either: that cache is keyed by path alone, so a copy taken
+  from an old version folder would otherwise become the permanent answer
+  for that path once the CDN is back. The path comes from a place file, so
+  unlike the zip-backed fallbacks it is refused outright when it contains
+  `..`, `\`, `:`, an empty or `.` segment, a root or drive prefix, or a
+  Windows device name (`NUL`, `CON`, `COM1`…), rather than handed to the
+  filesystem.
 
 ## What's planned
 
