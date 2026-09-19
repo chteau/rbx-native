@@ -16,9 +16,11 @@ mod feedback;
 mod run;
 
 use gpui_kit::component::input::{Input, InputState};
-use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Sizable};
+use gpui_kit::component::{h_flex, v_flex, Sizable};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
+
+use crate::tokens;
 
 pub(crate) use feedback::Feedback;
 pub(crate) use run::run;
@@ -51,28 +53,54 @@ impl CommandBar {
 
     /// The bar as it sits at the bottom of the window: the last run's outcome
     /// above the input, full width.
-    pub(crate) fn render(&self, cx: &App) -> impl IntoElement {
+    /// The bar as it sits at the bottom of the window. The design frame has
+    /// no command bar, so this borrows a dock's own furniture — the 5px
+    /// inset and the `chrome` field — rather than inventing a third look
+    /// for the one row at the bottom of the window.
+    pub(crate) fn render(&self, tab_index: isize, _: &App) -> impl IntoElement {
         let label = self.feedback.label();
         let color = if self.feedback.is_error() {
-            cx.theme().danger
+            tokens::text_error()
         } else {
-            cx.theme().muted_foreground
+            tokens::text_placeholder()
         };
 
         v_flex()
             .w_full()
-            .border_t_1()
-            .border_color(cx.theme().border)
+            .flex_none()
+            .p(px(5.))
+            .gap(px(4.))
+            // On the docks' own surface, not the window's black ground: the
+            // field inside is the same `chrome` every property field is,
+            // and against black it read as a strip rather than as an input.
+            .bg(tokens::dock())
+            .border_t(px(1.))
+            .border_color(tokens::divider())
+            .text_size(tokens::text_sm())
+            .line_height(tokens::line_sm())
             .when(!label.is_empty(), |this| {
-                this.child(
-                    h_flex()
-                        .px_2()
-                        .pt_1()
-                        .text_xs()
-                        .text_color(color)
-                        .child(label),
-                )
+                this.child(h_flex().px(px(8.)).text_color(color).child(label))
             })
-            .child(div().px_2().py_1().child(Input::new(&self.input).small()))
+            // The same field every other input in the editor is: one
+            // height, one radius, one surface. It used to be 22px tall with
+            // its own padding, which made the one row people type into the
+            // odd one out.
+            .child(
+                div()
+                    .w_full()
+                    .h(tokens::input_height())
+                    .px(tokens::input_padding())
+                    .flex()
+                    .items_center()
+                    .rounded(tokens::RADIUS)
+                    .bg(tokens::chrome())
+                    .child(
+                        Input::new(&self.input)
+                            .appearance(false)
+                            .with_size(tokens::field_size())
+                            .h(tokens::input_height())
+                            .tab_index(tab_index),
+                    ),
+            )
     }
 }

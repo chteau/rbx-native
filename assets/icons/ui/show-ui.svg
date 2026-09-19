@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- show-ui.svg - UI icon kit: outline, currentColor, 24x24 -->
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
-     fill="none" stroke="currentColor" stroke-width="2.0"
-     stroke-linecap="round" stroke-linejoin="round">
-  <title>show-ui</title>
-  <path d="M2.2 12S6 5.6 12 5.6 21.8 12 21.8 12 18 18.4 12 18.4 2.2 12 2.2 12z"/><circle cx="12" cy="12" r="3.1"/>
-</svg>

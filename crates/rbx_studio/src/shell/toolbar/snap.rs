@@ -170,9 +170,8 @@ impl Shell {
             .child(
                 div()
                     .w_full()
-                    .text_size(tokens::INPUT_VALUE_SIZE)
-                    .line_height(tokens::INPUT_VALUE_LINE_HEIGHT)
-                    .font_weight(tokens::INPUT_VALUE_WEIGHT)
+                    .text_size(tokens::text_sm())
+                    .line_height(tokens::line_sm())
                     .child(NumberInput::new(self.snap_fields.of(kind)).small()),
             )
     }

@@ -2,21 +2,20 @@
 //! (kept under 400 lines per `AGENTS.md`) since both are self-contained
 //! render methods called back into from `shell::dock`'s panel builder.
 
-use std::collections::HashSet;
-
-use gpui_kit::component::accordion::Accordion;
-use gpui_kit::component::checkbox::Checkbox;
-use gpui_kit::component::input::Input;
 use gpui_kit::component::scroll::ScrollableElement as _;
-use gpui_kit::component::{v_flex, ActiveTheme, Sizable};
+use gpui_kit::component::v_flex;
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_dom::Ref;
 
 use crate::explorer;
 use crate::properties::{group_by_category, EditKind};
+use crate::tokens;
 
 use super::reparent::{draggable_row, DraggedInstances};
-use super::rows::{guide_mask, property_row, property_row_control, render_editor, row};
+use super::rows::{
+    checkbox, guide_mask, property_row, property_row_control, render_editor, row, section_header,
+};
 use super::Shell;
 
 impl Shell {
@@ -54,39 +53,64 @@ impl Shell {
         };
         let guides = guide_mask(&depths);
 
-        div()
-            .id("explorer-tree")
-            .size_full()
-            .on_key_down(cx.listener(|shell, event: &KeyDownEvent, _, cx| {
-                shell.handle_explorer_key(&event.keystroke, cx);
-            }))
-            .child(
-                base::Tree::new(&self.tree)
-                    .item(move |index, entry, _, _, _| {
-                        let guide = guides.get(index).copied().unwrap_or_default();
-                        let item = entry.item();
-                        let icon = explorer.icon(&item.id);
-                        let tint = tints.get(&item.id).copied();
-                        // A row whose id does not read back as a referent has
-                        // nothing to drag or drop onto; it still has to draw.
-                        let Some(reference) = explorer::item_ref(&item.id) else {
-                            return row(index, entry, false, icon, tint, guide);
-                        };
-                        let highlighted = selected.contains(&reference);
-                        let dragged = DraggedInstances::new(&selected, reference, &item.label);
-                        draggable_row(
-                            &shell,
-                            index,
-                            reference,
-                            dragged,
-                            row(index, entry, highlighted, icon, tint, guide),
-                        )
-                    })
-                    .list_style(StyleRefinement::default().flex_grow_1().size_full())
-                    .relative()
-                    .size_full(),
-            )
-            .vertical_scrollbar(&scroll_handle)
+        let tree_focus = self.tree_focus_handle.clone();
+        self.tab_order.register(&tree_focus);
+        let tree_entity = self.tree.clone();
+
+        super::tree_keys::intercept_arrows(
+            div()
+                .id("explorer-tree")
+                .size_full()
+                // The tree's keyboard door. `TreeState` owns its own focus
+                // handle privately and never puts it in the tab order, so
+                // the whole APG contract below was reachable by mouse only.
+                // This wrapper is the stop; focusing it hands focus
+                // straight on to the tree, which is what puts the toolkit's
+                // `Tree` key context on the dispatch path.
+                .track_focus(&tree_focus)
+                .on_click(cx.listener(move |_, _, window, cx| {
+                    tree_entity.update(cx, |tree, cx| tree.focus(window, cx));
+                }))
+                // Home, End and type-ahead arrive as plain keystrokes, so
+                // they are caught here; the arrows arrive as actions and are
+                // caught by `intercept_arrows` (see `shell::tree_keys`).
+                .capture_key_down(cx.listener(|shell, event: &KeyDownEvent, _, cx| {
+                    if shell.handle_tree_key(&event.keystroke, cx) {
+                        cx.stop_propagation();
+                    }
+                }))
+                .on_key_down(cx.listener(|shell, event: &KeyDownEvent, _, cx| {
+                    shell.handle_explorer_key(&event.keystroke, cx);
+                }))
+                .child(
+                    base::Tree::new(&self.tree)
+                        .item(move |index, entry, _, _, _| {
+                            let guide = guides.get(index).copied().unwrap_or_default();
+                            let item = entry.item();
+                            let icon = explorer.icon(&item.id);
+                            let tint = tints.get(&item.id).copied();
+                            // A row whose id does not read back as a referent has
+                            // nothing to drag or drop onto; it still has to draw.
+                            let Some(reference) = explorer::item_ref(&item.id) else {
+                                return row(index, entry, false, icon, tint, guide);
+                            };
+                            let highlighted = selected.contains(&reference);
+                            let dragged = DraggedInstances::new(&selected, reference, &item.label);
+                            draggable_row(
+                                &shell,
+                                index,
+                                reference,
+                                dragged,
+                                row(index, entry, highlighted, icon, tint, guide),
+                            )
+                        })
+                        .list_style(StyleRefinement::default().flex_grow_1().size_full())
+                        .relative()
+                        .size_full(),
+                )
+                .vertical_scrollbar(&scroll_handle),
+            cx,
+        )
     }
 
     /// The dock's displayed title for the Properties panel (see
@@ -113,6 +137,11 @@ impl Shell {
     ) -> impl IntoElement {
         let filter = self.filter.read(cx).value();
         let filtering = !filter.trim().is_empty();
+        // One Tab stop for the whole panel; Up/Down move between its
+        // headers and checkboxes. Opened before the rows are built and
+        // closed after, since how many controls there are depends on what
+        // is selected.
+        self.properties_nav.begin(&self.tab_order, None, cx);
         let rows = self
             .selected()
             .map(|reference| {
@@ -141,21 +170,75 @@ impl Shell {
                     Some(EditKind::Bool(flag)) => {
                         let handle = cx.entity();
                         let name = row.name.clone();
-                        let checkbox =
-                            Checkbox::new(SharedString::from(format!("prop-bool-{}", row.name)))
-                                .checked(*flag)
-                                .xsmall()
-                                .on_click(move |checked, _, cx| {
-                                    let text = if *checked { "true" } else { "false" };
+                        let flag = *flag;
+                        let control = self.properties_nav.claim(
+                            checkbox(
+                                SharedString::from(format!("prop-bool-{}", row.name)),
+                                flag,
+                                move |_, _, cx| {
+                                    let text = if flag { "false" } else { "true" };
+                                    let name = name.clone();
                                     handle
                                         .update(cx, |shell, cx| shell.commit_row(&name, text, cx));
-                                });
-                        property_row_control(row, checkbox, None).into_any_element()
+                                },
+                            ),
+                            cx,
+                        );
+                        property_row_control(row, control, false, None).into_any_element()
                     }
                     Some(kind) => {
+                        let tab_index = self.tab_order.next();
                         let (widget, error) = self.edit_row(row, kind, window, cx);
-                        let control = render_editor(widget);
-                        property_row_control(row, control, error.as_deref()).into_any_element()
+                        let composite = widget.is_composite();
+                        // A flag's click has to rewrite the *whole* set, so
+                        // the row hands the renderer a factory that knows
+                        // the current flags and which one moved.
+                        let flags = match &widget {
+                            super::edit::RowEditor::Flags(_, values) => values.clone(),
+                            _ => Vec::new(),
+                        };
+                        let handle = cx.entity();
+                        let name = row.name.clone();
+                        // Starting a scrub needs the property's name and
+                        // which field moved; the value itself is read off
+                        // the field at mouse-down (see `shell::scrub`).
+                        let scrub_handle = cx.entity();
+                        let scrub_name = row.name.clone();
+                        let on_scrub: super::rows::OnScrub =
+                            std::rc::Rc::new(move |index, kind| {
+                                let handle = scrub_handle.clone();
+                                let name = scrub_name.clone();
+                                Box::new(move |event: &MouseDownEvent, _, cx| {
+                                    let name = name.clone();
+                                    handle.update(cx, |shell, cx| {
+                                        shell.begin_scrub(&name, index, kind, event.position.x, cx);
+                                    });
+                                })
+                            });
+                        let control = render_editor(
+                            tab_index,
+                            widget,
+                            move |index, checked| {
+                                let mut next = flags.clone();
+                                next[index] = !checked;
+                                let text = next
+                                    .iter()
+                                    .map(|flag| flag.to_string())
+                                    .collect::<Vec<_>>()
+                                    .join(", ");
+                                let handle = handle.clone();
+                                let name = name.clone();
+                                Box::new(move |_, _, cx| {
+                                    let name = name.clone();
+                                    let text = text.clone();
+                                    handle
+                                        .update(cx, |shell, cx| shell.commit_row(&name, &text, cx));
+                                })
+                            },
+                            on_scrub,
+                        );
+                        property_row_control(row, control, composite, error.as_deref())
+                            .into_any_element()
                     }
                 };
                 children.push(element);
@@ -163,60 +246,77 @@ impl Shell {
             sections.push((category, children));
         }
 
-        let categories: Vec<String> = sections
-            .iter()
-            .map(|(category, _)| category.clone())
-            .collect();
+        self.properties_nav.finish();
         let handle = cx.entity();
-        let toggled_categories = categories.clone();
-        let mut accordion = Accordion::new("properties-categories")
-            .multiple(true)
-            // The vendored `Accordion` renders itself `size_full()`: left
-            // alone, it clips to whatever height the scroll container below
-            // hands it instead of growing past it, so the container never
-            // sees an overflow to scroll — nothing past that height was ever
-            // reachable. `h_auto()` lets it take its natural content height
-            // instead, which is what makes the container's own
-            // `overflow_y_scroll` below have something to scroll.
-            .h_auto()
-            .on_toggle_click(move |open_indices: &[usize], _, cx| {
-                let open: HashSet<usize> = open_indices.iter().copied().collect();
-                let collapsed: HashSet<String> = toggled_categories
-                    .iter()
-                    .enumerate()
-                    .filter(|(index, _)| !open.contains(index))
-                    .map(|(_, category)| category.clone())
-                    .collect();
-                handle.update(cx, |shell, cx| {
-                    shell.set_collapsed_categories(collapsed, cx)
-                });
-            });
-        for (category, children) in sections {
-            let open = filtering || !self.is_category_collapsed(&category);
-            accordion = accordion.item(move |item| {
-                item.title(SharedString::from(category))
-                    .open(open)
-                    .children(children)
-            });
-        }
 
         v_flex()
             .size_full()
-            .border_t_1()
-            .border_color(cx.theme().border)
-            .child(
-                div()
-                    .p_1()
-                    .my_1()
-                    .child(Input::new(&self.filter).small().py_1()),
-            )
+            .gap(tokens::row_gap())
+            .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
+                if shell.properties_nav.key(&event.keystroke, window, cx) {
+                    cx.stop_propagation();
+                    cx.notify();
+                }
+            }))
+            .child(super::workspace::search_field(
+                self.tab_order.next(),
+                &self.filter,
+            ))
             .child(
                 div()
                     .id("properties-rows")
                     .flex_1()
                     .overflow_y_scroll()
                     .track_scroll(&self.properties_scroll)
-                    .child(accordion)
+                    .child(
+                        v_flex()
+                            .w_full()
+                            // Gestalt proximity, as four ratios: the gap
+                            // between categories is the largest in the
+                            // panel, then header-to-first-row, then
+                            // row-to-row, then label-to-input. Flatten any
+                            // one of them into its neighbour and the panel
+                            // stops reading as groups at all.
+                            .gap(tokens::group_gap())
+                            // Bottom only. A matching top pad stacked on
+                            // the gap under the search field and left the
+                            // first category floating a long way down the
+                            // panel; the list needs air *after* it, not
+                            // before.
+                            .pb(tokens::panel_padding())
+                            .children(sections.into_iter().map(|(category, children)| {
+                                // A filter forces every section open, so a
+                                // match is never hidden behind a collapsed
+                                // one.
+                                let open = filtering || !self.is_category_collapsed(&category);
+                                let handle = handle.clone();
+                                let name = category.clone();
+                                v_flex()
+                                    .w_full()
+                                    .child(self.properties_nav.claim(
+                                        section_header(
+                                            SharedString::from(category),
+                                            open,
+                                            move |_, _, cx| {
+                                                let name = name.clone();
+                                                handle.update(cx, |shell, cx| {
+                                                    shell.toggle_category(&name, cx)
+                                                });
+                                            },
+                                        ),
+                                        cx,
+                                    ))
+                                    .when(open, |this| {
+                                        this.child(
+                                            v_flex()
+                                                .w_full()
+                                                .pt(tokens::section_gap())
+                                                .gap(tokens::row_gap())
+                                                .children(children),
+                                        )
+                                    })
+                            })),
+                    )
                     .vertical_scrollbar(&self.properties_scroll),
             )
     }

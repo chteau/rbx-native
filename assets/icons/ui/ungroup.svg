@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- ungroup.svg - UI icon kit: outline, currentColor, 24x24 -->
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
-     fill="none" stroke="currentColor" stroke-width="2.0"
-     stroke-linecap="round" stroke-linejoin="round">
-  <title>ungroup</title>
-  <rect x="2.5" y="2.5" width="9" height="9" rx="1.6"/><rect x="12.5" y="12.5" width="9" height="9" rx="1.6"/><path d="M13.5 7h2.5M18.5 7H21M7 13.5V16M7 18.5V21"/>
-</svg>

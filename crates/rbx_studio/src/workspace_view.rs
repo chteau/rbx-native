@@ -1006,63 +1006,102 @@ impl Render for WorkspaceView {
     }
 }
 
-/// The top-right orientation indicator: six coloured, labelled dots at each
-/// world axis's current screen direction — see `orientation`'s module doc for
-/// why this is a flat 2D projection rather than a 3D gizmo mesh, and the
-/// roadmap item it implements for why it's an rbx-native addition rather
-/// than a Studio-parity claim.
+/// The top-right orientation indicator: a translucent sphere with the three
+/// world axes' orbital rings through it and a small cube at its centre.
+///
+/// Still a flat 2D overlay rather than a 3D mesh — see `orientation`'s
+/// module doc. The depth cue is entirely in the drawing order and the
+/// dimming: each ring's far half is painted first and faded, then the
+/// sphere's own wash, then the cube, then each ring's near half at full
+/// strength. That is what makes a ring read as passing *through* the
+/// sphere rather than lying on it.
 ///
 /// Placed opposite the quality/speed corner label (bottom-left) rather than
-/// colliding with it, and styled the same way: a small, semi-transparent
-/// dark chip, not a heavier panel that competes with the 3D view underneath.
+/// colliding with it.
 /// Half the indicator's own square, in px — where a face's unit-radius
 /// centre/corner offsets (see `orientation::Face`) land once scaled and
 /// re-centred inside the widget.
 const CUBE_SIZE: f32 = 96.0;
 const CUBE_HALF: f32 = CUBE_SIZE / 2.0;
-/// A face corner's worst-case reach is `sqrt(3)` times this (a cube viewed
-/// corner-on) — `CUBE_HALF` above leaves headroom for that without doing the
-/// exact trig, and `overflow_hidden` below is the actual guarantee.
-const CUBE_RADIUS: f32 = 24.0;
-const CUBE_LABEL_WIDTH: f32 = 40.0;
+/// The sphere the rings orbit, and the cube tucked inside it. The cube is
+/// deliberately well under the sphere so the rings have somewhere to pass.
+const SPHERE_RADIUS: f32 = 30.0;
+const CUBE_RADIUS: f32 = 11.0;
+const RING_WIDTH: f32 = 1.6;
+const CUBE_LABEL_WIDTH: f32 = 16.0;
 const CUBE_LABEL_HEIGHT: f32 = 14.0;
+/// How far out of the sphere an axis's name sits.
+const LABEL_RADIUS: f32 = 39.0;
 
 fn orientation_indicator(pose: Pose) -> impl IntoElement {
     let faces = orientation::visible_faces(pose);
+    let rings = orientation::axis_rings(pose);
+    let labels = orientation::axis_labels(pose);
+
+    // Which world face the camera is most square-on to. The rings and the
+    // cube show the *orientation*; this says it in words, which is the only
+    // form of it a screen reader or a hover can use.
+    let facing = faces
+        .iter()
+        .max_by(|a, b| a.prominence.total_cmp(&b.prominence))
+        .map(|face| face.label)
+        .unwrap_or("Orientation");
+    let facing = SharedString::from(format!("Looking at: {facing}"));
 
     div()
+        .id("orientation-indicator")
         .absolute()
         .top_2()
         .right_2()
         .size(px(CUBE_SIZE))
         .overflow_hidden()
-        .rounded_full()
-        .bg(rgba(0x14151ab0))
-        .child(cube_faces(faces))
-        .children(faces.map(cube_label))
+        .tooltip(move |window, cx| {
+            gpui_kit::component::tooltip::Tooltip::new(facing.clone()).build(window, cx)
+        })
+        .child(orientation_sphere(rings, faces))
+        .children(labels.map(axis_label))
 }
 
-/// The up-to-three visible faces themselves: filled quadrilaterals painted
-/// straight into the scene (`PathBuilder`/`Window::paint_path`), since a
-/// plain `div()` can only ever be an axis-aligned rectangle — a rotated cube
-/// face is a parallelogram. The same technique this project's own chart
-/// components (`gpui_kit::component`'s plot shapes) already use for an
-/// arbitrary filled polygon, not a new drawing mechanism.
-fn cube_faces(faces: [orientation::Face; 3]) -> impl IntoElement {
+/// Everything painted rather than laid out: the rings, the sphere's body,
+/// and the cube.
+fn orientation_sphere(
+    rings: [orientation::Ring; 3],
+    faces: [orientation::Face; 3],
+) -> impl IntoElement {
     canvas(
         |_, _, _| (),
         move |bounds, _, window, _| {
             let center = bounds.center();
-            for face in faces {
+            let at = |(x, y): (f32, f32), radius: f32| {
+                point(center.x + px(x * radius), center.y + px(y * radius))
+            };
+
+            // The half of each ring behind the sphere, dimmed.
+            for ring in &rings {
+                stroke_arc(window, &ring.far, ring.color, 0.35, center);
+            }
+
+            // The sphere's body: a flat wash and a rim, which is as much
+            // volume as a 2D overlay can honestly claim.
+            let mut body = PathBuilder::fill();
+            body.add_polygon(&circle(center, SPHERE_RADIUS), true);
+            if let Ok(path) = body.build() {
+                window.paint_path(path, rgba(0x5b8fd44d));
+            }
+            let mut rim = PathBuilder::stroke(px(1.0));
+            rim.add_polygon(&circle(center, SPHERE_RADIUS), true);
+            if let Ok(path) = rim.build() {
+                window.paint_path(path, rgba(0x9dc4ff66));
+            }
+
+            // The cube, pale rather than per-face-coloured: the rings carry
+            // the axis colours now, and three more saturated faces inside
+            // them turned the whole thing into a smudge.
+            for face in &faces {
                 let corners: Vec<_> = face
                     .corners
                     .iter()
-                    .map(|&(x, y)| {
-                        point(
-                            center.x + px(x * CUBE_RADIUS),
-                            center.y + px(y * CUBE_RADIUS),
-                        )
-                    })
+                    .map(|&corner| at(corner, CUBE_RADIUS))
                     .collect();
                 let mut builder = PathBuilder::fill();
                 builder.add_polygon(&corners, true);
@@ -1070,19 +1109,95 @@ fn cube_faces(faces: [orientation::Face; 3]) -> impl IntoElement {
                 // `orientation::visible_faces`'s doc) tessellates to nothing
                 // rather than erroring — degenerate input, not invalid input.
                 if let Ok(path) = builder.build() {
-                    window.paint_path(path, rgb(face.color));
+                    window.paint_path(path, cube_face(face));
                 }
+            }
+
+            // …and the half in front of it, at full strength.
+            for ring in &rings {
+                stroke_arc(window, &ring.near, ring.color, 1.0, center);
             }
         },
     )
     .size_full()
 }
 
-/// One face's direction name, centred over its own (painted separately —
-/// see `cube_faces`) quadrilateral.
-fn cube_label(face: orientation::Face) -> impl IntoElement {
-    let x = CUBE_HALF + face.center.0 * CUBE_RADIUS - CUBE_LABEL_WIDTH / 2.0;
-    let y = CUBE_HALF + face.center.1 * CUBE_RADIUS - CUBE_LABEL_HEIGHT / 2.0;
+/// One cube face's fill: a pale blue, brightened by how square-on the face
+/// is and tinted a little toward its own axis colour.
+///
+/// Pale rather than fully axis-coloured, because the rings around it now
+/// carry the axis colours — three saturated faces inside three saturated
+/// rings turned the whole thing into a smudge. The tint is just enough that
+/// the top face still reads as the green one.
+fn cube_face(face: &orientation::Face) -> Rgba {
+    const PALE: (f32, f32, f32) = (0.80, 0.86, 0.96);
+    const TINT: f32 = 0.22;
+
+    let axis: Rgba = rgb(face.color);
+    // `prominence` is 0 edge-on and 1 dead-on; the range keeps even a
+    // glancing face visible rather than letting it go black.
+    let light = 0.62 + 0.38 * face.prominence;
+    let mix = |pale: f32, axis: f32| (pale * (1. - TINT) + axis * TINT) * light;
+
+    Rgba {
+        r: mix(PALE.0, axis.r),
+        g: mix(PALE.1, axis.g),
+        b: mix(PALE.2, axis.b),
+        a: 0.95,
+    }
+}
+
+/// One arc of a ring, as an open polyline at `alpha` of its own colour.
+fn stroke_arc(
+    window: &mut Window,
+    arc: &[(f32, f32)],
+    color: u32,
+    alpha: f32,
+    center: Point<Pixels>,
+) {
+    if arc.len() < 2 {
+        return;
+    }
+    let points: Vec<_> = arc
+        .iter()
+        .map(|&(x, y)| {
+            point(
+                center.x + px(x * SPHERE_RADIUS),
+                center.y + px(y * SPHERE_RADIUS),
+            )
+        })
+        .collect();
+
+    let mut builder = PathBuilder::stroke(px(RING_WIDTH));
+    builder.add_polygon(&points, false);
+    if let Ok(path) = builder.build() {
+        let mut tint = rgb(color);
+        tint.a = alpha;
+        window.paint_path(path, tint);
+    }
+}
+
+/// The sphere's outline, as a polygon fine enough to read as a circle.
+fn circle(center: Point<Pixels>, radius: f32) -> Vec<Point<Pixels>> {
+    (0..64)
+        .map(|step| {
+            let angle = step as f32 / 64.0 * std::f32::consts::TAU;
+            point(
+                center.x + px(angle.cos() * radius),
+                center.y + px(angle.sin() * radius),
+            )
+        })
+        .collect()
+}
+
+/// One axis's name, out past the sphere at that axis's own screen
+/// direction, faded as the axis turns away from the camera.
+fn axis_label(label: orientation::AxisLabel) -> impl IntoElement {
+    let x = CUBE_HALF + label.at.0 * LABEL_RADIUS - CUBE_LABEL_WIDTH / 2.0;
+    let y = CUBE_HALF + label.at.1 * LABEL_RADIUS - CUBE_LABEL_HEIGHT / 2.0;
+    // Never fully transparent: an axis pointing straight away from the
+    // camera still has a direction worth knowing.
+    let opacity = 0.45 + 0.55 * (label.depth * 0.5 + 0.5);
 
     div()
         .absolute()
@@ -1093,12 +1208,9 @@ fn cube_label(face: orientation::Face) -> impl IntoElement {
         .flex()
         .items_center()
         .justify_center()
-        .text_size(px(10.0))
-        .text_color(rgb(0x0c0d0f))
-        // A face's own fill already shrinks to nothing as it turns edge-on
-        // (see `orientation::visible_faces`'s doc); this label is a fixed
-        // size regardless, so it fades the same way rather than floating,
-        // full-size and full-opacity, over a sliver too thin to back it.
-        .opacity(face.prominence)
-        .child(face.label)
+        .text_size(px(11.))
+        .font_weight(FontWeight::BOLD)
+        .text_color(rgb(label.color))
+        .opacity(opacity)
+        .child(label.text)
 }

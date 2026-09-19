@@ -18,7 +18,7 @@ use crate::class_icons::IconPack;
 use crate::pacing::UnfocusedFps;
 
 /// What persists across a relaunch.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Settings {
     pub(crate) quality: QualityLevel,
     pub(crate) show_all_services: bool,
@@ -32,6 +32,11 @@ pub(crate) struct Settings {
     /// The render loop's frame rate cap while the window is unfocused — see
     /// `pacing::FocusPacing`.
     pub(crate) unfocused_fps: UnfocusedFps,
+    /// The UI scale — one multiplier over every font size *and* the boxes
+    /// they sit in (`tokens::font_scale`). This is how a native app meets
+    /// WCAG 1.4.4's 200% resize, since there is no browser zoom to lean on;
+    /// the range is Blender's Resolution Scale range, for the same reason.
+    pub(crate) font_scale: f32,
 }
 
 impl Default for Settings {
@@ -45,6 +50,7 @@ impl Default for Settings {
             axis_indicator: true,
             icon_pack: IconPack::Dark,
             unfocused_fps: UnfocusedFps::DEFAULT,
+            font_scale: 1.,
         }
     }
 }
@@ -153,6 +159,18 @@ fn load_from(path: &Path) -> Settings {
         .and_then(|v| v.as_u64())
         .map(parse_unfocused_fps)
         .unwrap_or(UnfocusedFps::DEFAULT);
+    // Clamped rather than rejected: a hand-edited 10.0 should open the
+    // editor at 2x, not refuse to read the rest of the file.
+    let font_scale = value
+        .get("font_scale")
+        .and_then(|v| v.as_f64())
+        .map(|scale| {
+            (scale as f32).clamp(
+                crate::tokens::FONT_SCALE_RANGE.0,
+                crate::tokens::FONT_SCALE_RANGE.1,
+            )
+        })
+        .unwrap_or(1.);
 
     Settings {
         quality,
@@ -161,6 +179,7 @@ fn load_from(path: &Path) -> Settings {
         axis_indicator,
         icon_pack,
         unfocused_fps,
+        font_scale,
     }
 }
 
@@ -183,6 +202,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "axis_indicator": settings.axis_indicator,
         "icon_pack": format_icon_pack(settings.icon_pack),
         "unfocused_fps": settings.unfocused_fps.fps(),
+        "font_scale": settings.font_scale,
     });
     // A fixed-shape object always serializes; nothing here can fail.
     let bytes = serde_json::to_vec_pretty(&value).expect("settings JSON always serializes");
@@ -304,6 +324,7 @@ mod tests {
             axis_indicator: false,
             icon_pack: IconPack::Light,
             unfocused_fps: UnfocusedFps::Fps25,
+            font_scale: 1.25,
         };
         save_to(&settings, &path).unwrap();
         assert_eq!(load_from(&path), settings);
@@ -434,5 +455,37 @@ mod tests {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, br#"{"icon_pack": "Sepia"}"#).unwrap();
         assert_eq!(load_from(&path).icon_pack, IconPack::Dark);
+    }
+
+    /// The UI scale is the app's answer to WCAG 1.4.4, so a settings file
+    /// someone has hand-edited to something absurd must still open the
+    /// editor — at the nearest usable scale, not at 10x and not at the
+    /// default that silently discards what they asked for.
+    #[test]
+    fn a_font_scale_outside_the_supported_range_is_clamped_rather_than_dropped() {
+        let path = temp_settings_path();
+        std::fs::create_dir_all(path.parent().expect("settings path has a parent"))
+            .expect("create temp dir");
+        std::fs::write(&path, br#"{"font_scale": 10.0, "show_all_services": true}"#)
+            .expect("write settings");
+
+        let settings = load_from(&path);
+        assert_eq!(settings.font_scale, crate::tokens::FONT_SCALE_RANGE.1);
+        assert!(
+            settings.show_all_services,
+            "an out-of-range scale must not stop the rest of the file being read"
+        );
+    }
+
+    #[test]
+    fn a_font_scale_round_trips_through_save_and_load() {
+        let path = temp_settings_path();
+        let settings = Settings {
+            font_scale: 1.5,
+            ..Settings::default()
+        };
+
+        save_to(&settings, &path).expect("save settings");
+        assert_eq!(load_from(&path).font_scale, 1.5);
     }
 }

@@ -25,10 +25,11 @@
 //! so it goes under View.
 
 use gpui_kit::component::menu::AppMenuBar;
-use gpui_kit::component::{ActiveTheme, GlobalState};
+use gpui_kit::component::GlobalState;
 use gpui_kit::*;
 
 use crate::shell::Shell;
+use crate::tokens;
 
 actions!(
     menu_bar,
@@ -63,18 +64,21 @@ pub(crate) fn build(shell: Entity<Shell>, cx: &mut App) -> Entity<AppMenuBar> {
     AppMenuBar::new(cx)
 }
 
-/// The bar as it sits at the top of the window: a fixed height and a bottom
-/// border, the same treatment the Command Bar gets at the other end of the
-/// window (see `command_bar::CommandBar::render`) — `AppMenuBar`'s own
-/// `size_full()` needs a definite height to fill, or it either collapses to
-/// nothing or grows to cover the dock area below it in a flex column.
-pub(crate) fn bar(menu_bar: &Entity<AppMenuBar>, cx: &App) -> impl IntoElement {
+/// The bar as it sits under the title bar: the frame's own 24px strip, and
+/// the one surface in the whole design lighter than its neighbours — which
+/// is what separates it from the black above it without a border.
+///
+/// `AppMenuBar`'s own `size_full()` needs a definite height to fill, or it
+/// either collapses to nothing or grows to cover the rows below it in a
+/// flex column.
+pub(crate) fn bar(menu_bar: &Entity<AppMenuBar>) -> impl IntoElement {
     div()
         .w_full()
-        .h(px(32.))
+        .h(tokens::menu_bar_height())
         .flex_none()
-        .border_b_1()
-        .border_color(cx.theme().border)
+        .bg(tokens::menu_bar())
+        .text_size(tokens::text_md())
+        .line_height(tokens::line_md())
         .child(menu_bar.clone())
 }
 

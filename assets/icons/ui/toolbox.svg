@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- toolbox.svg - UI icon kit: outline, currentColor, 24x24 -->
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
-     fill="none" stroke="currentColor" stroke-width="2.0"
-     stroke-linecap="round" stroke-linejoin="round">
-  <title>toolbox</title>
-  <rect x="2.5" y="7.5" width="19" height="13" rx="2"/><path d="M8.5 7.5V5.5a1.8 1.8 0 0 1 1.8-1.8h3.4a1.8 1.8 0 0 1 1.8 1.8v2"/><path d="M2.5 13.5h19M10 13.5h4"/>
-</svg>

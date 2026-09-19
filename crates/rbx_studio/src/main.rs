@@ -52,6 +52,7 @@ mod pointer_lock;
 mod properties;
 mod render_image;
 mod save;
+mod scale;
 mod script_editor;
 mod settings;
 mod settle;
@@ -59,7 +60,6 @@ mod shell;
 mod style_editor;
 mod tokens;
 mod transform;
-mod ui_icons;
 mod workspace_view;
 
 use std::path::{Path, PathBuf};
@@ -130,6 +130,8 @@ fn main() {
     app.run(move |cx| {
         gpui_kit::init(cx);
         install_theme(cx);
+        scale::install(cx);
+        shell::install_key_bindings(cx);
         Theme::change(ThemeMode::Dark, None, cx);
 
         cx.spawn(async move |cx| {
@@ -246,10 +248,17 @@ fn window_options(title: &SharedString, cx: &App) -> WindowOptions {
 
     WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
+        // The editor draws its own title bar (see `shell::chrome::topbar`),
+        // so the window manager is asked not to. The title itself still
+        // goes through `TitlebarOptions`: that is what names the window in
+        // a taskbar, an alt-tab switcher and a screenshot tool, none of
+        // which can read the row this app paints for itself.
         titlebar: Some(TitlebarOptions {
             title: Some(title.clone()),
+            appears_transparent: true,
             ..Default::default()
         }),
+        window_decorations: Some(WindowDecorations::Client),
         ..Default::default()
     }
 }

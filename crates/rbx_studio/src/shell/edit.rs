@@ -23,7 +23,7 @@ use gpui_kit::component::IndexPath;
 use gpui_kit::*;
 use rbx_dom::WeakDom;
 
-use crate::properties::{self, edit::NAME_PROPERTY, EditKind, PropertyRow};
+use crate::properties::{self, edit::NAME_PROPERTY, EditKind, Field, FieldGroup, PropertyRow};
 
 use super::Shell;
 
@@ -43,9 +43,42 @@ pub(super) enum RowEditor {
     /// One `Input` per label, in the same order as `EditKind::Fields`'
     /// `labels` — carried alongside so `shell::rows` can pair each field
     /// with its caption without reaching back into `EditKind`.
-    Fields(&'static [&'static str], Vec<Entity<InputState>>),
+    Fields(&'static [Field], Vec<Entity<InputState>>),
+    /// The same inputs, but split into captioned lines — see
+    /// `properties::FieldGroup`. One flat list, in group order, because the
+    /// commit path joins them all into one string regardless.
+    Groups(&'static [FieldGroup], Vec<Entity<InputState>>),
+    /// A checkbox per named flag, and the flags as they currently stand.
+    /// No entities: a checkbox has no editing state of its own, so the row
+    /// commits straight from the click (see `shell::panels`).
+    Flags(&'static [&'static str], Vec<bool>),
     Color(Entity<ColorPickerState>),
     Enum(Entity<SelectState<EnumOptions>>),
+}
+
+impl RowEditor {
+    /// The `InputState` behind one numeric field of this editor, if it has
+    /// one there.
+    pub(super) fn field(&self, index: usize) -> Option<&Entity<InputState>> {
+        match self {
+            RowEditor::Fields(_, inputs) | RowEditor::Groups(_, inputs) => inputs.get(index),
+            _ => None,
+        }
+    }
+
+    /// Whether this editor needs the row's **whole width** rather than its
+    /// value column.
+    ///
+    /// A `CFrame` is six numbers under two captions; a `Rect` is four. The
+    /// value column is 140px narrower than the dock, which is not enough
+    /// for any of them — so a composite value drops to its own line under
+    /// the property's name, the way Studio lays the same values out.
+    pub(super) fn is_composite(&self) -> bool {
+        matches!(
+            self,
+            RowEditor::Fields(..) | RowEditor::Groups(..) | RowEditor::Flags(..)
+        )
+    }
 }
 
 /// One row's open editor: its widget, the subscriptions that react to it,
@@ -167,7 +200,7 @@ impl Shell {
                 let subscription = self.commit_on_change(&input, name, cx);
                 (RowEditor::Text(input), vec![subscription])
             }
-            EditKind::Fields { labels, values } => {
+            EditKind::Fields { fields, values } => {
                 let mut inputs = Vec::with_capacity(values.len());
                 let mut subscriptions = Vec::with_capacity(values.len());
                 for seed in values {
@@ -176,7 +209,23 @@ impl Shell {
                     subscriptions.push(self.commit_on_change(&input, name.clone(), cx));
                     inputs.push(input);
                 }
-                (RowEditor::Fields(labels, inputs), subscriptions)
+                (RowEditor::Fields(fields, inputs), subscriptions)
+            }
+            EditKind::Groups { groups, values } => {
+                let mut inputs = Vec::with_capacity(values.len());
+                let mut subscriptions = Vec::with_capacity(values.len());
+                for seed in values {
+                    let input =
+                        cx.new(|cx| InputState::new(window, cx).default_value(seed.clone()));
+                    subscriptions.push(self.commit_on_change(&input, name.clone(), cx));
+                    inputs.push(input);
+                }
+                (RowEditor::Groups(groups, inputs), subscriptions)
+            }
+            // Each flag commits the whole set, because the DOM's value is
+            // one bit field — there is no "set only this side" write.
+            EditKind::Flags { labels, values } => {
+                (RowEditor::Flags(labels, values.clone()), Vec::new())
             }
             EditKind::Color { r, g, b } => {
                 let value = rgb_to_hsla(*r, *g, *b);
@@ -242,7 +291,7 @@ impl Shell {
         };
         let text = match &edit.widget {
             RowEditor::Text(input) => input.read(cx).value().to_string(),
-            RowEditor::Fields(_, inputs) => inputs
+            RowEditor::Fields(_, inputs) | RowEditor::Groups(_, inputs) => inputs
                 .iter()
                 .map(|input| input.read(cx).value().to_string())
                 .collect::<Vec<_>>()
@@ -250,9 +299,18 @@ impl Shell {
             // Color and Enum commit straight from their own event instead
             // (see `build_row_widget`); an `Input` subscription never fires
             // for them.
-            RowEditor::Color(_) | RowEditor::Enum(_) => return,
+            RowEditor::Color(_) | RowEditor::Enum(_) | RowEditor::Flags(..) => return,
         };
         self.commit_row(name, &text, cx);
+    }
+
+    /// One open row's numeric field, for the drag in `shell::scrub`.
+    pub(super) fn field_input(&self, property: &str, index: usize) -> Option<Entity<InputState>> {
+        self.edits
+            .rows
+            .get(property)
+            .and_then(|edit| edit.widget.field(index))
+            .cloned()
     }
 
     /// Writes one row's text into the DOM and either drops the row's editor
@@ -331,13 +389,11 @@ impl Shell {
         self.edits.collapsed.contains(category)
     }
 
-    /// Replaces the whole collapsed-category set, from an accordion click.
-    pub(super) fn set_collapsed_categories(
-        &mut self,
-        collapsed: HashSet<String>,
-        cx: &mut Context<Self>,
-    ) {
-        self.edits.collapsed = collapsed;
+    /// Collapses or re-opens one section, from a click on its header.
+    pub(super) fn toggle_category(&mut self, category: &str, cx: &mut Context<Self>) {
+        if !self.edits.collapsed.remove(category) {
+            self.edits.collapsed.insert(category.to_owned());
+        }
         cx.notify();
     }
 

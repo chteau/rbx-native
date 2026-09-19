@@ -24,6 +24,15 @@ impl Shell {
         if let Some(Action::Save) = save::action_for(&keystroke.key, keystroke.modifiers) {
             self.save(cx);
         }
+        if let Some(scale) = crate::scale::action_for_keystroke(keystroke) {
+            self.set_font_scale(scale.apply(crate::tokens::font_scale()), cx);
+        }
+        // No keyboard traps: Escape closes whichever menu is open, from
+        // anywhere, and this handler sits on the window's own root so it
+        // cannot be out of reach of one (WCAG 2.1.2).
+        if keystroke.key == "escape" && self.open_menu.take().is_some() {
+            cx.notify();
+        }
         self.handle_history_key(keystroke, window, cx);
         self.handle_group_key(keystroke, cx);
     }

@@ -1,13 +1,12 @@
-//! The editor's own dropdown menus (§5.4/§5.5): the container that floats
-//! under a trigger, and the rows inside it.
+//! The editor's own dropdown menus: the container that floats under a
+//! trigger, and the rows inside it.
 //!
 //! Hand-built rather than `gpui_component`'s stock `PopupMenu` because the
-//! spec pins the geometry — a 16px container radius against 8px item
-//! radius, so items visibly float inside their container; 32px rows; 8px
-//! padding; 2px between rows — and none of that is reachable from outside
-//! that component. What is reused is the stock [`Popover`], which already
-//! owns the hard parts: anchoring, outside-click dismissal, and layering
-//! above everything else in the window.
+//! design pins the geometry — one 3px radius everywhere, 24px rows, 9px
+//! labels — and none of that is reachable from outside that component.
+//! What is reused is the stock [`Popover`], which already owns the hard
+//! parts: anchoring, outside-click dismissal, and layering above everything
+//! else in the window.
 //!
 //! Menus are *controlled*: which one is open lives on [`Shell::open_menu`],
 //! not inside the popover. That is what lets an item close its own menu
@@ -15,13 +14,13 @@
 
 use std::rc::Rc;
 
+use gpui_kit::assets::IconName;
 use gpui_kit::component::popover::Popover;
-use gpui_kit::component::{h_flex, v_flex};
+use gpui_kit::component::{h_flex, v_flex, Icon};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::tokens;
-use crate::ui_icons;
 
 use super::Shell;
 
@@ -55,7 +54,7 @@ type Action = Rc<dyn Fn(&mut Shell, &mut Context<Shell>)>;
 /// One row. Built with the `with_*` chain rather than a struct literal so a
 /// plain item stays a one-liner at the call site.
 pub(super) struct Item {
-    icon: Option<&'static str>,
+    icon: Option<IconName>,
     label: SharedString,
     enabled: bool,
     checked: bool,
@@ -73,7 +72,7 @@ pub(super) fn item(label: impl Into<SharedString>) -> Item {
 }
 
 impl Item {
-    pub(super) fn icon(mut self, icon: &'static str) -> Self {
+    pub(super) fn icon(mut self, icon: IconName) -> Self {
         self.icon = Some(icon);
         self
     }
@@ -131,10 +130,10 @@ pub(super) fn dropdown(
         .content(move |_, _, _| container(handle.clone(), &items))
 }
 
-/// §5.8 — the menu arrives rather than appearing: a short fade with a 4px
-/// settle, on the "liquid" ease-out every other motion in the editor uses.
-/// GPUI has no transform, so the spec's accompanying `scale(0.98)` is a
-/// translation only (see `UX_GUIDELINES.md` §10).
+/// The menu arrives rather than appearing: a short fade with a 4px settle,
+/// on the ease-out every other motion in the editor uses. GPUI has no
+/// element transform, so this is a translation only (see
+/// `UX_GUIDELINES.md`'s deviation list).
 fn container(shell: Entity<Shell>, items: &[Item]) -> impl IntoElement {
     menu_surface(shell, items).with_animation(
         "menu-open",
@@ -146,13 +145,11 @@ fn container(shell: Entity<Shell>, items: &[Item]) -> impl IntoElement {
 fn menu_surface(shell: Entity<Shell>, items: &[Item]) -> Div {
     v_flex()
         .min_w(px(180.))
-        .p(tokens::SPACE_2)
-        .gap(px(2.))
-        .bg(tokens::bg_2())
-        .rounded(tokens::RADIUS_LG)
-        .border_1()
-        .border_color(tokens::border_mid())
-        .shadow(tokens::elevation_2())
+        .p(px(4.))
+        .gap(px(1.))
+        .bg(tokens::chrome())
+        .rounded(tokens::RADIUS)
+        .shadow(tokens::elevation())
         .children(
             items
                 .iter()
@@ -161,7 +158,7 @@ fn menu_surface(shell: Entity<Shell>, items: &[Item]) -> Div {
         )
 }
 
-/// One menu row, in every state §5.5 asks for.
+/// One menu row, in every state it has.
 ///
 /// The selection "flash" is the pressed style rather than a fixed 100ms
 /// timer: holding the button paints `accent-soft-bg`, releasing runs the
@@ -176,20 +173,20 @@ fn row(shell: Entity<Shell>, index: usize, item: &Item) -> impl IntoElement {
     h_flex()
         .id(("menu-item", index))
         .w_full()
-        .h(px(32.))
+        .h(px(24.))
         .flex_none()
         .items_center()
-        .gap(tokens::SPACE_2)
-        .px(tokens::SPACE_2)
-        .rounded(tokens::RADIUS_SM)
-        .text_size(tokens::UI_LABEL_SIZE)
-        .line_height(tokens::UI_LABEL_LINE_HEIGHT)
+        .gap(px(6.))
+        .px(px(8.))
+        .rounded(tokens::RADIUS)
+        .text_size(tokens::text_sm())
+        .line_height(tokens::line_sm())
         .map(|this| {
             if enabled {
                 this.cursor_pointer()
-                    .text_color(tokens::text_primary())
-                    .hover(|this| this.bg(tokens::bg_3()))
-                    .active(|this| this.bg(tokens::accent_soft_bg()))
+                    .text_color(tokens::text_strong())
+                    .hover(|this| this.bg(tokens::hover()))
+                    .active(|this| this.bg(tokens::selection()))
             } else {
                 // `text-disabled` alone, not the spec's further 40% opacity
                 // on top of it: the token is already the dim end of the
@@ -200,11 +197,11 @@ fn row(shell: Entity<Shell>, index: usize, item: &Item) -> impl IntoElement {
             }
         })
         .when_some(item.icon, |this, icon| {
-            this.child(ui_icons::icon(icon).size(px(18.)))
+            this.child(Icon::new(icon).size(px(12.)))
         })
         .child(div().flex_1().child(label))
         .when(item.checked, |this| {
-            this.child(ui_icons::icon("check").size(px(14.)))
+            this.child(Icon::new(IconName::Check).size(px(10.)))
         })
         .when(enabled, |this| {
             this.on_click(move |_, _, cx| {

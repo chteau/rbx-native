@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- anchor.svg - UI icon kit: outline, currentColor, 24x24 -->
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
-     fill="none" stroke="currentColor" stroke-width="2.0"
-     stroke-linecap="round" stroke-linejoin="round">
-  <title>anchor</title>
-  <circle cx="12" cy="4.6" r="2.1"/><path d="M12 6.7V21M6 11h12M3.8 13.8a8.2 8.2 0 0 0 16.4 0"/>
-</svg>

@@ -6,30 +6,45 @@
 //! open or which page Row B has selected, which is what makes the
 //! independence rule hold by construction: switching either tab cannot
 //! unmount a panel, so a scroll position or a selection has nowhere to get
-//! lost (see `UX_GUIDELINES.md` §7).
+//! lost (see `UX_GUIDELINES.md`).
+//!
+//! The frame fixes both side docks at 228px. They are draggable here
+//! anyway — a place file's instance names are not 228px wide just because
+//! the design's were — but they start there, and the handle that widens
+//! them draws nothing until it is pointed at.
 
-use gpui_kit::component::{h_flex, v_flex};
+use gpui_kit::assets::IconName;
+use gpui_kit::component::input::Input;
+use gpui_kit::component::{h_flex, v_flex, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::class_icons::IconPack;
 use crate::pacing::UnfocusedFps;
-use crate::tokens::{self, Cast};
+use crate::tokens;
 
 use super::chrome::{self, Document, Drag, Handle};
 use super::menu::{self, MenuId};
 use super::Shell;
 
-pub(super) const EXPLORER_WIDTH: f32 = 260.;
-pub(super) const PROPERTIES_WIDTH: f32 = 280.;
-pub(super) const OUTPUT_HEIGHT: f32 = 160.;
+/// What a dock starts at. The frame fixes both at 228px against a 9px
+/// label; this shell sets text at 14px, so the label column — and with it
+/// the dock — is wider (see `tokens::dock_width`).
+pub(super) fn explorer_width() -> f32 {
+    tokens::dock_width()
+}
+
+pub(super) fn properties_width() -> f32 {
+    tokens::dock_width()
+}
+
+pub(super) const OUTPUT_HEIGHT: f32 = 180.;
 /// A column may not be dragged outside this range; past either end the
 /// panel stops being usable rather than merely small.
-const COLUMN_RANGE: (f32, f32) = (200., 420.);
+const COLUMN_RANGE: (f32, f32) = (200., 560.);
 const OUTPUT_RANGE: (f32, f32) = (80., 400.);
-/// A collapsed Output dock is exactly its own header — enough to find and
-/// re-open, and nothing else.
-const OUTPUT_COLLAPSED_HEIGHT: f32 = 32.;
+/// The most of the window's width one side dock may occupy.
+const MAX_DOCK_SHARE: f32 = 0.28;
 
 impl Shell {
     pub(super) fn workspace(
@@ -37,22 +52,33 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + 'static {
-        let properties = self.properties_panel(window, cx);
+        // At 2x the UI scale a 300px dock becomes 600, and two of them
+        // leave a 1600px window ~350px of viewport. The scale is meant to
+        // make the editor readable, not to squeeze out the thing being
+        // edited, so a dock may never take more than this share of the
+        // window however big its own tokens have grown.
+        let limit = f32::from(window.viewport_size().width) * MAX_DOCK_SHARE;
+        self.properties_width = self.properties_width.min(limit);
+        self.explorer_width = self.explorer_width.min(limit);
+
+        let properties = self.properties_dock(window, cx);
         let document = self.document_content(window, cx);
         let output = self.output_dock(cx);
-        let explorer = self.explorer_panel(cx);
+        let explorer = self.explorer_dock(cx);
+        let overlay = self.viewport_overlay(cx);
+        let showing_viewport = self.document == Document::Viewport;
 
         h_flex()
             .w_full()
             .flex_1()
             .overflow_hidden()
-            .bg(tokens::bg_0())
+            .bg(tokens::black())
             .child(
-                div()
-                    .flex_none()
+                dock_column()
                     .w(px(self.properties_width))
-                    .h_full()
-                    .child(chrome::panel(Cast::Right, tokens::RADIUS_LG, properties)),
+                    .border_r(px(1.))
+                    .border_color(tokens::divider())
+                    .child(properties),
             )
             .child(self.handle(Handle::Properties, cx))
             .child(
@@ -61,39 +87,43 @@ impl Shell {
                     .h_full()
                     .overflow_hidden()
                     .child(
-                        div()
+                        v_flex()
+                            .relative()
                             .flex_1()
                             .overflow_hidden()
-                            .bg(tokens::bg_viewport())
-                            .child(document),
+                            .child(document)
+                            // The viewport's own settings have no home in
+                            // the frame's chrome — they belong to the open
+                            // document, not to a dock — so they float in its
+                            // corner, the way every 3D editor's view
+                            // controls do. Top *left*: the orientation
+                            // indicator already owns the other one.
+                            .when(showing_viewport, |this| this.child(overlay)),
                     )
                     .when(!self.output_collapsed, |this| {
                         this.child(self.handle(Handle::Output, cx))
                     })
                     .child(
-                        div()
+                        v_flex()
                             .flex_none()
                             .w_full()
-                            .h(px(self.output_dock_height()))
-                            .child(chrome::panel(Cast::Up, tokens::RADIUS_MD, output)),
+                            .bg(tokens::dock())
+                            .border_t(px(1.))
+                            .border_color(tokens::divider())
+                            .when(!self.output_collapsed, |this| {
+                                this.h(px(self.output_height))
+                            })
+                            .child(output),
                     ),
             )
             .child(self.handle(Handle::Explorer, cx))
             .child(
-                div()
-                    .flex_none()
+                dock_column()
                     .w(px(self.explorer_width))
-                    .h_full()
-                    .child(chrome::panel(Cast::Left, tokens::RADIUS_LG, explorer)),
+                    .border_l(px(1.))
+                    .border_color(tokens::divider())
+                    .child(explorer),
             )
-    }
-
-    fn output_dock_height(&self) -> f32 {
-        if self.output_collapsed {
-            OUTPUT_COLLAPSED_HEIGHT
-        } else {
-            self.output_height
-        }
     }
 
     /// Whichever editor Row A has open. This is the *only* thing Row A
@@ -106,7 +136,7 @@ impl Shell {
         }
     }
 
-    fn explorer_panel(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn explorer_dock(&self, cx: &mut Context<Self>) -> AnyElement {
         let show_all = self.show_all_services();
         let light_icons = self.icon_pack() == IconPack::Light;
         let overflow = menu::dropdown(
@@ -114,7 +144,7 @@ impl Shell {
             MenuId::ExplorerOverflow,
             chrome::Trigger::new(chrome::icon_button(
                 "explorer-overflow",
-                "more",
+                IconName::Ellipsis,
                 "Explorer settings",
             )),
             vec![
@@ -137,25 +167,41 @@ impl Shell {
 
         v_flex()
             .size_full()
-            .child(chrome::panel_header("Explorer".into(), overflow))
-            .child(div().flex_1().overflow_hidden().child(self.explorer(cx)))
+            .overflow_hidden()
+            .child(chrome::dock_tabs(
+                "Explorer".into(),
+                Some(overflow.into_any_element()),
+            ))
+            .child(chrome::dock_content(
+                v_flex()
+                    .size_full()
+                    .gap(px(10.))
+                    .child(search_field(self.tab_order.next(), &self.search))
+                    .child(
+                        div()
+                            .flex_1()
+                            .overflow_hidden()
+                            .child(self.instance_tree(cx)),
+                    ),
+            ))
             .into_any_element()
     }
 
-    fn properties_panel(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    fn properties_dock(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let title = self.properties_title();
         let rows = self.properties(window, cx);
 
         v_flex()
             .size_full()
-            .child(chrome::panel_header(title, div()))
-            .child(div().flex_1().overflow_hidden().child(rows))
+            .overflow_hidden()
+            .child(chrome::dock_tabs(title, None))
+            .child(chrome::dock_content(rows))
             .into_any_element()
     }
 
     /// Output keeps its filter/Clear strip and its own settings menu, and
-    /// gains the collapse toggle §4.1 asks for: collapsed, the dock is its
-    /// header and nothing else.
+    /// collapses to exactly its own tab strip — enough to find and re-open,
+    /// and nothing else.
     fn output_dock(&self, cx: &mut Context<Self>) -> AnyElement {
         let timestamps = self.output_show_timestamps;
         let collapsed = self.output_collapsed;
@@ -164,7 +210,7 @@ impl Shell {
             MenuId::OutputOverflow,
             chrome::Trigger::new(chrome::icon_button(
                 "output-overflow",
-                "more",
+                IconName::Ellipsis,
                 "Output settings",
             )),
             vec![menu::item("Show Timestamp")
@@ -177,17 +223,18 @@ impl Shell {
         );
 
         let controls = h_flex()
+            .flex_none()
             .items_center()
-            .gap(tokens::SPACE_1)
+            .gap(px(4.))
             .child(self.output_controls(cx))
             .child(overflow)
             .child(
                 chrome::icon_button(
                     "output-collapse",
                     if collapsed {
-                        "chevron-up"
+                        IconName::ChevronUp
                     } else {
-                        "chevron-down"
+                        IconName::ChevronDown
                     },
                     if collapsed {
                         "Expand Output"
@@ -203,33 +250,35 @@ impl Shell {
 
         v_flex()
             .size_full()
-            .child(chrome::panel_header("Output".into(), controls))
+            .overflow_hidden()
+            .child(chrome::dock_tabs(
+                "Output".into(),
+                Some(controls.into_any_element()),
+            ))
             .when(!collapsed, |this| {
-                this.child(
+                this.child(chrome::dock_content(
                     div()
-                        .flex_1()
+                        .size_full()
                         .overflow_hidden()
                         .child(self.output_panel(cx)),
-                )
+                ))
             })
             .into_any_element()
     }
 
-    /// The viewport's own settings, which used to hang off the dock's
-    /// Viewport tab. They belong to the document, so Row A carries them
-    /// (see `chrome::document_tabs`).
-    pub(super) fn viewport_menu(&self, cx: &mut Context<Self>) -> impl IntoElement + 'static {
+    /// The viewport's own settings, floating in its top-right corner.
+    fn viewport_overlay(&self, cx: &mut Context<Self>) -> AnyElement {
         let orthographic = self.orthographic();
         let axis_indicator = self.axis_indicator();
         let stats = self.stats_shown();
         let capped = self.unfocused_fps() == UnfocusedFps::Fps25;
 
-        menu::dropdown(
+        let overflow = menu::dropdown(
             self,
             MenuId::ViewportOverflow,
             chrome::Trigger::new(chrome::icon_button(
                 "viewport-overflow",
-                "more",
+                IconName::Ellipsis,
                 "Viewport settings",
             )),
             vec![
@@ -254,7 +303,21 @@ impl Shell {
                     }),
             ],
             cx,
-        )
+        );
+
+        h_flex()
+            .absolute()
+            .top(px(8.))
+            .left(px(8.))
+            .items_center()
+            .gap(px(4.))
+            .p(px(4.))
+            .rounded(tokens::RADIUS)
+            .bg(tokens::chrome())
+            .shadow(tokens::elevation())
+            .child(self.quality_control())
+            .child(overflow)
+            .into_any_element()
     }
 
     fn handle(&self, handle: Handle, cx: &mut Context<Self>) -> AnyElement {
@@ -318,4 +381,48 @@ impl Shell {
             cx.notify();
         }
     }
+}
+
+/// One side dock's column: its own surface, a step off the window's black
+/// ground, plus the hairline that says where it ends.
+///
+/// The frame paints docks the same black as everything behind them, which
+/// makes three docks and the window one undifferentiated field — you cannot
+/// see where the Explorer stops and the viewport starts. This is the
+/// deliberate departure from it.
+fn dock_column() -> Div {
+    v_flex().flex_none().h_full().bg(tokens::dock())
+}
+
+/// A dock's search field: the frame's own, which is a field with a centred
+/// placeholder and no border at all — the surface change is the affordance.
+///
+/// The toolkit `Input` keeps the caret, selection and IME handling; its own
+/// chrome is switched off so this container can be the frame's.
+pub(super) fn search_field(
+    tab_index: isize,
+    state: &Entity<gpui_kit::component::input::InputState>,
+) -> impl IntoElement {
+    h_flex()
+        .w_full()
+        .h(tokens::input_height())
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .px(px(8.))
+        .rounded(tokens::RADIUS)
+        .bg(tokens::chrome())
+        .text_size(tokens::text_sm())
+        .line_height(tokens::line_sm())
+        .text_color(tokens::text_strong())
+        .child(
+            Input::new(state)
+                .appearance(false)
+                .with_size(tokens::field_size())
+                .h(tokens::input_height())
+                // Without this the field sits at the toolkit's default
+                // index 0 and sorts ahead of every region — a search box
+                // reached before the menu bar.
+                .tab_index(tab_index),
+        )
 }

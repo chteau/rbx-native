@@ -586,7 +586,7 @@ fn an_unresolved_enum_falls_back_to_its_raw_ordinal_as_text() {
 fn vector3_and_cframe_edit_as_three_labeled_fields() {
     let vector = vector3(1.0, 2.0, 3.0);
     let expected = Some(EditKind::Fields {
-        labels: &["X", "Y", "Z"],
+        fields: VECTOR3,
         values: vec!["1".to_owned(), "2".to_owned(), "3".to_owned()],
     });
 
@@ -595,14 +595,31 @@ fn vector3_and_cframe_edit_as_three_labeled_fields() {
     // assertion isn't testing (see `a_non_hidden_non_serializable_property_
     // still_shows_but_has_no_edit_affordance` for that behaviour).
     assert_eq!(edit_kind("Extents", Variant::Vector3(vector)), expected);
+}
 
+/// A `CFrame` is two captioned lines, not one — its rotation is as editable
+/// as its position (see `edit::orientation`).
+#[test]
+fn cframe_edits_as_a_position_and_an_orientation() {
     let frame = CFrameData {
-        position: vector,
+        position: Vector3Data {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+        },
         rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
     };
-    // Position only — a `CFrame`'s rotation has no field row (see
-    // `edit::edit_text`).
-    assert_eq!(edit_kind("CFrame", Variant::CFrame(frame)), expected);
+
+    let Some(EditKind::Groups { groups, values }) = edit_kind("CFrame", Variant::CFrame(frame))
+    else {
+        panic!("a CFrame should edit as captioned groups");
+    };
+
+    assert_eq!(
+        groups.iter().map(|group| group.caption).collect::<Vec<_>>(),
+        ["Position", "Orientation"]
+    );
+    assert_eq!(values, ["1", "2", "3", "0", "0", "0"]);
 }
 
 #[test]
@@ -610,7 +627,7 @@ fn vector2_edits_as_two_labeled_fields() {
     assert_eq!(
         edit_kind("Offset", Variant::Vector2(Vector2Data { x: 1.5, y: -2.0 })),
         Some(EditKind::Fields {
-            labels: &["X", "Y"],
+            fields: VECTOR2,
             values: vec!["1.5".to_owned(), "-2".to_owned()],
         })
     );
@@ -625,7 +642,7 @@ fn rect_edits_as_four_labeled_fields() {
     assert_eq!(
         edit_kind("SliceCenter", Variant::Rect(slice_center)),
         Some(EditKind::Fields {
-            labels: &["Min X", "Min Y", "Max X", "Max Y"],
+            fields: RECT,
             values: vec![
                 "1".to_owned(),
                 "2".to_owned(),
@@ -647,7 +664,7 @@ fn font_face_edits_as_family_weight_and_style_fields() {
     assert_eq!(
         edit_kind("FontFace", Variant::Font(face)),
         Some(EditKind::Fields {
-            labels: &["Family", "Weight", "Style"],
+            fields: FONT,
             values: vec![
                 "FredokaOne".to_owned(),
                 "SemiBold".to_owned(),
@@ -675,7 +692,7 @@ fn udim2_edits_as_four_labeled_fields() {
         // assertion only cares about plain `UDim2` field-splitting.
         edit_kind("GuiPosition", Variant::UDim2(position)),
         Some(EditKind::Fields {
-            labels: &["X Scale", "X Offset", "Y Scale", "Y Offset"],
+            fields: UDIM2,
             values: vec![
                 "0".to_owned(),
                 "4".to_owned(),
@@ -820,13 +837,10 @@ fn cframe_stays_visible_and_editable_after_hidden_filtering() {
         .find(|row| row.name == "CFrame")
         .expect("the CFrame row");
 
-    assert_eq!(
-        row.edit,
-        Some(EditKind::Fields {
-            labels: &["X", "Y", "Z"],
-            values: vec!["0".to_owned(), "5".to_owned(), "0".to_owned()],
-        })
-    );
+    let Some(EditKind::Groups { values, .. }) = row.edit else {
+        panic!("a CFrame should still edit as captioned groups after filtering");
+    };
+    assert_eq!(values, ["0", "5", "0", "0", "0", "0"]);
 }
 
 #[test]

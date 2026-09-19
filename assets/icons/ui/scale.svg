@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- scale.svg - UI icon kit: outline, currentColor, 24x24 -->
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
-     fill="none" stroke="currentColor" stroke-width="2.0"
-     stroke-linecap="round" stroke-linejoin="round">
-  <title>scale</title>
-  <path d="M4 14 V20 H10 M20 10 V4 H14 M4 20 L10.5 13.5 M20 4 L13.5 10.5"/>
-</svg>

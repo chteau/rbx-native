@@ -18,11 +18,17 @@ mod panels;
 mod quality;
 mod reparent;
 mod ribbon;
+mod roving;
+
+pub(crate) use roving::install as install_key_bindings;
+mod tree_keys;
+
 mod rows;
 mod save;
 mod script_panel;
 mod scripts;
 mod scroll;
+mod scrub;
 mod selection;
 mod style_panel;
 mod toolbar;
@@ -33,11 +39,11 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::menu::AppMenuBar;
 use gpui_kit::component::select::{SearchableVec, Select, SelectEvent, SelectState};
 use gpui_kit::component::tree::TreeState;
-use gpui_kit::component::{h_flex, v_flex, IndexPath, Sizable};
+use gpui_kit::component::{v_flex, IndexPath, Sizable};
 use gpui_kit::*;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
@@ -65,7 +71,11 @@ use quality::{quality_labels, quality_row};
 use selection::{outlined, Selection};
 use toolbar::snap::SnapFields;
 
-const QUALITY_WIDTH: f32 = 104.0;
+/// The quality dropdown's width. Scaled like every other size, or its
+/// longest label ("Automatic") is clipped the moment the UI scale grows.
+fn quality_width() -> Pixels {
+    tokens::scaled_width(132.)
+}
 
 /// The graphics quality dropdown's list: plain labels, since the mode a label
 /// stands for is read back out of the label itself.
@@ -109,6 +119,28 @@ pub(crate) struct Shell {
     /// `pacing::FocusPacing`). Persisted (see `settings`); every write goes
     /// through [`Shell::save_settings`].
     unfocused_fps: UnfocusedFps,
+    /// The three composite widgets that are one Tab stop each: the
+    /// document tab strip, the ribbon's category tabs, and the ribbon's own
+    /// controls. See `shell::roving`.
+    document_nav: roving::Roving,
+    ribbon_tabs_nav: roving::Roving,
+    ribbon_nav: roving::Roving,
+    /// The Properties panel's own group. Without it every section header
+    /// and every checkbox is its own Tab stop — measured at 32 presses to
+    /// get from the panel back to the ribbon, which defeats the entire
+    /// point of Tab moving between regions.
+    properties_nav: roving::Roving,
+    /// The window's Tab order, handed out afresh every render — see
+    /// `shell::roving::TabOrder`.
+    tab_order: roving::TabOrder,
+    /// The Explorer tree's keyboard door: the wrapper that holds the
+    /// Explorer's place in the Tab order and hands focus on to the tree
+    /// itself, whose own handle the toolkit keeps private.
+    tree_focus_handle: FocusHandle,
+    /// A numeric field being dragged — see `shell::scrub`.
+    scrub: Option<scrub::Scrub>,
+    /// The Explorer's type-ahead buffer — see `shell::tree_keys`.
+    typeahead: tree_keys::Typeahead,
     search: Entity<InputState>,
     filter: Entity<InputState>,
     properties: Properties,
@@ -193,7 +225,7 @@ pub(crate) struct Shell {
     output_collapsed: bool,
     drag: Option<Drag>,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
-    _subscriptions: [Subscription; 11],
+    _subscriptions: [Subscription; 12],
 }
 
 impl Shell {
@@ -211,7 +243,11 @@ impl Shell {
             axis_indicator,
             icon_pack,
             unfocused_fps,
+            font_scale,
         } = settings;
+        // Before anything renders: every size token is read through this,
+        // so a scale applied after the first frame would flash.
+        tokens::set_font_scale(font_scale);
         let Place {
             explorer,
             properties,
@@ -232,6 +268,26 @@ impl Shell {
         });
         let picked = cx.subscribe(&selector, |shell, _, event: &SelectEvent<_>, cx| {
             shell.pick_quality(event, cx);
+        });
+
+        // Tab lands on the Explorer's wrapper; this hands focus straight on
+        // to the tree inside it, which is what activates the toolkit's
+        // `Tree` key context and makes the arrow contract reachable at all.
+        // The wrapper never keeps focus for more than an instant.
+        let tree_focus_handle = cx.focus_handle();
+        let tree_focused = cx.on_focus_in(&tree_focus_handle, window, |shell, window, cx| {
+            let tree = shell.tree.clone();
+            tree.update(cx, |tree, cx| {
+                tree.focus(window, cx);
+                // The APG's "on focus" rule: a tree with nothing selected
+                // puts the cursor on its first node. Without this, arriving
+                // by Tab lands on a tree with no visible position at all —
+                // the keys work, but there is nothing to see them working
+                // on.
+                if tree.selected_index().is_none() {
+                    tree.set_selected_index(Some(0), cx);
+                }
+            });
         });
 
         let preselected = selected.and_then(|reference| explorer.item(reference));
@@ -319,6 +375,14 @@ impl Shell {
             icon_pack,
             stats_shown: false,
             unfocused_fps,
+            document_nav: roving::Roving::horizontal(),
+            ribbon_tabs_nav: roving::Roving::horizontal(),
+            ribbon_nav: roving::Roving::horizontal(),
+            properties_nav: roving::Roving::vertical(),
+            tab_order: roving::TabOrder::default(),
+            scrub: None,
+            tree_focus_handle,
+            typeahead: tree_keys::Typeahead::default(),
             search: cx.new(|cx| InputState::new(window, cx).placeholder("Search")),
             filter,
             properties,
@@ -348,12 +412,13 @@ impl Shell {
             ribbon_tab: ribbon::Tab::default(),
             document: Document::default(),
             open_menu: None,
-            properties_width: workspace::PROPERTIES_WIDTH,
-            explorer_width: workspace::EXPLORER_WIDTH,
+            properties_width: workspace::properties_width(),
+            explorer_width: workspace::explorer_width(),
             output_height: workspace::OUTPUT_HEIGHT,
             output_collapsed: false,
             drag: None,
             _subscriptions: [
+                tree_focused,
                 picked,
                 clicked,
                 filtered,
@@ -592,6 +657,24 @@ impl Shell {
         self.save_settings();
     }
 
+    /// Applies a new UI scale and persists it.
+    ///
+    /// Every size token is read through `tokens::font_scale`, so this one
+    /// call re-lays-out the whole window — which is the point: WCAG 1.4.4
+    /// asks for text at 200% *without loss of content or functionality*,
+    /// and text that grew while its row didn't would lose exactly that.
+    pub(super) fn set_font_scale(&mut self, scale: f32, cx: &mut Context<Self>) {
+        if !tokens::set_font_scale(scale) {
+            return;
+        }
+        // The docks are sized in state, not in tokens, so they have to be
+        // re-derived or a 2x scale leaves a 300px dock holding 600px rows.
+        self.properties_width = workspace::properties_width();
+        self.explorer_width = workspace::explorer_width();
+        self.save_settings();
+        cx.notify();
+    }
+
     /// Whether the viewport's main camera is orthographic, for the dock's
     /// Viewport menu item (see `shell::dock`) to render its checked state.
     pub(super) fn orthographic(&self) -> bool {
@@ -709,6 +792,7 @@ impl Shell {
             axis_indicator: self.axis_indicator,
             icon_pack: self.icon_pack,
             unfocused_fps: self.unfocused_fps,
+            font_scale: tokens::font_scale(),
         };
         let _ = settings.save();
 
@@ -721,11 +805,19 @@ impl Shell {
     /// tab bar into the dock's real Viewport title bar via `Panel::title_suffix`
     /// (see `shell::dock`) — the natural surviving home for a per-view control
     /// once that hand-rolled strip is gone.
+    /// The graphics-quality dropdown, in the same box every other field in
+    /// the editor wears (`rows::field_box`) rather than in the toolkit's
+    /// own chrome — it is a select like any other, and looked like a
+    /// visitor from a different application floating over the viewport.
     pub(super) fn quality_control(&self) -> impl IntoElement {
-        div().px_1().w(px(QUALITY_WIDTH)).child(
+        rows::select_box().w(quality_width()).child(
             Select::new(&self.quality)
-                .xsmall()
-                .menu_width(px(QUALITY_WIDTH))
+                .appearance(false)
+                .with_size(tokens::field_size())
+                .h_full()
+                .py_0()
+                .pt(tokens::select_inset())
+                .menu_width(quality_width())
                 .accessibility_label("Graphics quality"),
         )
     }
@@ -736,28 +828,19 @@ impl Shell {
     pub(super) fn viewport(&self) -> impl IntoElement {
         div().size_full().child(self.viewport.clone())
     }
+}
 
-    fn explorer(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        v_flex()
-            .size_full()
-            .child(
-                h_flex().items_center().gap_1().p_1().my_1().child(
-                    div()
-                        .flex_1()
-                        .child(Input::new(&self.search).small().py_1()),
-                ),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .overflow_hidden()
-                    .child(self.instance_tree(cx)),
-            )
+impl Shell {
+    /// Tab and Shift+Tab, walking this window's own order — see
+    /// `roving::TabOrder::step` for why GPUI's cannot be used.
+    fn step_focus(&self, backwards: bool, window: &mut Window, cx: &mut App) {
+        self.tab_order.step(backwards, window, cx);
     }
 }
 
 impl Render for Shell {
-    /// The shell, top to bottom: menu bar, document tabs (Row A), the
+    /// The shell, top to bottom: the title bar, the menu strip, document
+    /// tabs (Row A), the
     /// ribbon's category tabs (Row B), the ribbon itself (Row C), the
     /// three-column workspace (Row D), and the Command Bar.
     ///
@@ -767,34 +850,70 @@ impl Render for Shell {
     /// the pointer is still over the handle would drop the drag. This
     /// container spans the window, so it can't be outrun.
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Deliberately no seeded focus. Seeding it *programmatically* is
+        // what left a cold start with focus somewhere and no ring anywhere:
+        // `focus_visible` only paints for keyboard-driven focus, so a
+        // seeded one is invisible by construction and the first Tab becomes
+        // a guess. With every stop numbered in reading order, the first Tab
+        // is already predictable on its own — which is all the APG's
+        // entry-point rule actually asks for.
+        self.tab_order.restart();
         v_flex()
             .size_full()
-            .bg(tokens::bg_0())
-            .text_color(tokens::text_primary())
+            .bg(tokens::black())
+            .font_family(tokens::FONT_FAMILY_UI)
+            .text_color(tokens::text_strong())
             // Ctrl+S here rather than on one panel (contrast `instance_tree`'s
             // own `on_key_down`): a key event bubbles up from whatever holds
             // focus, and every panel — Explorer, Properties, viewport,
             // Command Bar — sits below this container, so a save works no
             // matter which one is focused.
+            // Tab and Shift+Tab, in the *capture* phase, before anything
+            // else can eat them.
+            //
+            // The toolkit binds them on its own `Root` — but a focused text
+            // input consumes Tab first, so focus starting in the Command
+            // Bar (which is where it starts) could never leave it with the
+            // keyboard. That is a keyboard trap (WCAG 2.1.2), not a
+            // cosmetic problem: every region below is unreachable without a
+            // mouse until this runs. None of this app's inputs is
+            // multi-line, so Tab has nothing else it could usefully mean.
+            .key_context(roving::CONTEXT)
+            .on_action(cx.listener(|shell, _: &roving::FocusNext, window, cx| {
+                shell.step_focus(false, window, cx);
+                cx.notify();
+            }))
+            .on_action(cx.listener(|shell, _: &roving::FocusPrev, window, cx| {
+                shell.step_focus(true, window, cx);
+                cx.notify();
+            }))
             .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
                 shell.handle_shell_key(&event.keystroke, window, cx);
             }))
-            .on_mouse_move(cx.listener(|shell, event: &MouseMoveEvent, _, cx| {
+            .on_mouse_move(cx.listener(|shell, event: &MouseMoveEvent, window, cx| {
                 shell.drag_resize(event.position, cx);
+                shell.drag_scrub(event.position.x, event.modifiers, window, cx);
             }))
             .on_mouse_up(
                 MouseButton::Left,
-                cx.listener(|shell, _: &MouseUpEvent, _, cx| shell.end_resize(cx)),
+                cx.listener(|shell, _: &MouseUpEvent, _, cx| {
+                    shell.end_resize(cx);
+                    shell.scrub = None;
+                }),
             )
             .on_mouse_up_out(
                 MouseButton::Left,
-                cx.listener(|shell, _: &MouseUpEvent, _, cx| shell.end_resize(cx)),
+                cx.listener(|shell, _: &MouseUpEvent, _, cx| {
+                    shell.end_resize(cx);
+                    shell.scrub = None;
+                }),
             )
-            .child(crate::menu_bar::bar(&self.menu_bar, cx))
+            .child(self.topbar(cx))
+            .child(crate::menu_bar::bar(&self.menu_bar))
             .child(self.document_tabs(cx))
             .child(self.ribbon_tabs(cx))
             .child(self.ribbon(cx))
             .child(self.workspace(window, cx))
-            .child(self.command_bar.render(cx))
+            .child(self.command_bar.render(self.tab_order.next(), cx))
     }
 }

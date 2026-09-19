@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- ad-gui.svg - UI icon kit: outline, currentColor, 24x24 -->
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
-     fill="none" stroke="currentColor" stroke-width="2.0"
-     stroke-linecap="round" stroke-linejoin="round">
-  <title>ad-gui</title>
-  <rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M7.5 15.5 L10 8.5 L12.5 15.5 M8.4 13.4h3.2"/><path d="M15 15.5V8.5h1.8a3.5 3.5 0 0 1 0 7z"/>
-</svg>
