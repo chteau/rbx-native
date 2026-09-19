@@ -14,6 +14,7 @@ fn part_at(referent: u32, position: Vec3, size: Vec3) -> Target {
         referent: Ref::new(referent),
         model: Mat4::from_translation(position) * Mat4::from_scale(size),
         sphere: false,
+        cylinder: false,
     }
 }
 
@@ -31,6 +32,7 @@ fn turned_part_at(referent: u32, position: Vec3, size: Vec3) -> Target {
             position.extend(1.0),
         ),
         sphere: false,
+        cylinder: false,
     }
 }
 

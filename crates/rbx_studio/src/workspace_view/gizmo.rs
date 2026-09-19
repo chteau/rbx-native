@@ -102,6 +102,11 @@ pub(super) enum Drag {
         /// matches how `component` itself is already fixed for the gesture's
         /// whole duration.
         sphere: bool,
+        /// The same freeze as `sphere`, for a `Cylinder`: `Alt` locks its
+        /// round Y/Z pair together when either is the one grabbed. Grabbing
+        /// its length axis (X, `component == 0`) is unaffected either way —
+        /// nothing else is meant to grow together with the length.
+        cylinder: bool,
     },
     /// One of the Scale tool's balls is held on a *group's* box (see
     /// `gizmo::scale_box`): the box's centre, the world axis pointing out
@@ -346,14 +351,14 @@ impl WorkspaceView {
     /// What this ray grabs on the gizmo itself, if anything: a Move arrow, a
     /// Scale face, a Rotate ring — never a part's body, which is
     /// [`WorkspaceView::grab_body`]'s own question.
-    fn grab_handle(&self, ray: Ray, lock_sphere: bool) -> Option<Drag> {
+    fn grab_handle(&self, ray: Ray, lock_shape: bool) -> Option<Drag> {
         let handles = self.handles()?;
         let anchor = self.targets.anchor()?;
         match self.transform.tool {
             Tool::Select => None,
             Tool::Move => self.grab_axis(&handles, ray),
             Tool::Scale if self.targets.len() > 1 => grab_box(&self.faces()?, ray),
-            Tool::Scale => grab_face(&self.faces()?, anchor, ray, lock_sphere),
+            Tool::Scale => grab_face(&self.faces()?, anchor, ray, lock_shape),
             Tool::Rotate => {
                 let axis = handles.grab_ring(ray)?;
                 let frame = handles.ring_frame(axis);
@@ -727,7 +732,7 @@ impl WorkspaceView {
 /// repurpose here because a click that reaches a handle at all never reads
 /// `Alt` for anything else (unlike a click that falls through to a pick,
 /// where it means "cycle selection").
-fn grab_face(faces: &Faces, target: Target, ray: Ray, lock_sphere: bool) -> Option<Drag> {
+fn grab_face(faces: &Faces, target: Target, ray: Ray, lock_shape: bool) -> Option<Drag> {
     let (grabbed, sign) = faces.grab(ray)?;
     // Pointing out through the grabbed face, so dragging away from the part
     // always grows it.
@@ -737,7 +742,8 @@ fn grab_face(faces: &Faces, target: Target, ray: Ray, lock_sphere: bool) -> Opti
     Some(Drag::Size {
         origin,
         axis,
-        sphere: target.sphere && lock_sphere,
+        sphere: target.sphere && lock_shape,
+        cylinder: target.cylinder && lock_shape,
         grabbed: gizmo::along_axis(origin, axis, ray)?,
         size: target.size(),
         component: grabbed as usize,
@@ -815,6 +821,7 @@ pub(super) fn advance(drag: Drag, ray: Ray, landing: Landing) -> Option<(Drag, C
             size,
             component,
             sphere,
+            cylinder,
         } => {
             let travelled = snap::round_to(
                 gizmo::along_axis(origin, axis, ray)? - grabbed,
@@ -844,6 +851,15 @@ pub(super) fn advance(drag: Drag, ray: Ray, landing: Landing) -> Option<(Drag, C
                         resized[other] = (size[other] + grown).clamp(MIN_SIZE, MAX_SIZE);
                     }
                 }
+            }
+            if cylinder && component != 0 {
+                // `component` is 1 (Y) or 2 (Z) — the round pair, since a
+                // Cylinder's length always sits on the part's own X (see
+                // `Target::cylinder`'s own doc comment). Grabbing X itself
+                // (`component == 0`) leaves this branch untouched, which is
+                // exactly right: the length has no partner to grow with.
+                let other = if component == 1 { 2 } else { 1 };
+                resized[other] = (size[other] + grown).clamp(MIN_SIZE, MAX_SIZE);
             }
             Some((
                 drag,
