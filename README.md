@@ -55,7 +55,7 @@ This builds the whole workspace. Individual binaries:
 | `rbxdump` | `rbx_parser_cli` | Reads a `.rbxm`/`.rbxl`/`.rbxlx`/`.rbxmx` file and prints its instance tree; `--roundtrip <file>` is a continuous-verification tool that re-serializes a file and diffs the result against the original. |
 | `rbxlua` | `rbx_parser_cli` | Runs a Luau script against a place file from the command line (`rbxlua place.rbxl script.luau [--out out.rbxl] [--print-changes]`). |
 | `rbxview` | `rbx_viewer` | A standalone 3D viewer for a place/model file (`rbxview place.rbxl [--screenshot out.png]`). |
-| `rbxstudio` | `rbx_studio` | The desktop editor. |
+| `rbxstudio` | `rbx_studio` | The desktop editor (`rbxstudio [--select <name-or-path>] [--run <script.luau>] [--verbose] <place>`; `--help` lists them all). |
 | `rbxcloud` | `rbx_cloud` | An Open Cloud CLI (`whoami`/`list`/`download`/`asset`). |
 
 A debug build (`cargo build`) works too, but the renderer and editor are

@@ -504,6 +504,21 @@ Roblox's own engine.
   the literal class `"Part"` to any `BasePart` subclass. One test per
   menu item asserts both the inserted instance's class and its resolved
   `ShapeKind`.
+- [x] A scriptable command line for `rbxstudio` itself (`cli.rs`):
+  `--select <target>[,<target>...]` selects instances once the place is
+  open — a target being either an Explorer path anchored at a root
+  (`Workspace.Model.Part`) or a bare name, which matches the first
+  instance called that anywhere — `--run <script.luau>` runs a file
+  against the place exactly as pasting it into the Command Bar would,
+  `--verbose` narrates startup on stdout, and `--help` prints the lot.
+  Enough to drive a GUI session from a CI job or a wrapper script without
+  a human clicking through the Explorer first. The two older
+  `RBX_STUDIO_SELECT`/`RBX_STUDIO_RUN` variables still work unchanged —
+  they're how the rest of the screenshot aids are spelled — and a flag
+  wins over its variable when both are set. Deliberately not matched from
+  real Studio's own CLI: `--placeId`/`--universeId`/`--task`, which are
+  tied to Roblox's published-place identifiers rather than to a local
+  file, per this bullet's own reasoning when it was planned.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -1305,21 +1320,6 @@ against `Roblox/creator-docs` rather than assumed:
   settings; the rest would only ever apply to instance properties already
   in the local place file, worth being clear about which is which rather
   than implying the dialog reaches further than it can.
-- [ ] 📋 **A scriptable command-line interface for `rbxstudio` itself.**
-  Real Studio has one (`studio/command-line-interface.md`): launch flags
-  to open a specific place/version at a specific task
-  (`--placeId`/`--universeId`/`--task EditPlace`), focus a given instance
-  on load (`--targetInstanceId`), and pipe verbose logs to stdout. Real
-  Studio's version is inherently tied to Roblox's own published-place
-  identifiers, which doesn't map onto this project's local-file-first
-  workflow — the useful equivalent here is flags that open a **local**
-  `.rbxl`/`.rbxm` at a given path, optionally focused on a given instance
-  by name/path and optionally running a given `.luau` script against it
-  headlessly (the existing `rbxlua` CLI runner already does the headless-
-  script half; this is about `rbxstudio` itself gaining the same
-  scriptability for its GUI session). Useful for CI screenshots, repeat
-  -testing a specific scene, and tooling that wants to drive the editor
-  without a human clicking through the Explorer first.
 - [ ] 📋 **An MCP server exposing the live editor session**, matching the
   shape (not the exact tool surface) of Roblox's own built-in Studio MCP
   server (checked against `studio/mcp.md` rather than assumed — real,
