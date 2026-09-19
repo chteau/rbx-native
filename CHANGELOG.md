@@ -2,6 +2,13 @@
 
 ## 2026-09-20
 
+- **The Output log is searchable.** A box in the Output tab's title bar,
+  next to the level filter, hides every row that does not mention what you
+  typed — matched against both the command and the result beside it, and
+  case-insensitively, because nobody searching a log for an error types it
+  the way the error did. It narrows *within* the level filter rather than
+  replacing it: Errors plus a query still means errors. — @chteau
+
 - **An absent `OptionalCFrame` can be given a value, and a present one
   cleared.** `Model.WorldPivotData` is the only property the DOM can hold
   that is legitimately *nothing* rather than wrong, and the Properties

@@ -1505,7 +1505,12 @@ against `Roblox/creator-docs` rather than assumed:
     carry a per-kind color and icon in place of the old plain `✕`/`✓`
     marker — `print`/a successful run in the default text color with a
     check icon, `warn` in orange with an alert icon, `error` in red with an
-    X icon (`OutputEntry::kind`/`RowKind`, `shell/output.rs`). Still open:
+    X icon (`OutputEntry::kind`/`RowKind`, `shell/output.rs`). **Free-text
+    search over the log** is shipped too — a box in the Output tab's own
+    title bar, beside the level filter, matching case-insensitively against
+    both halves of what a row shows (the command and the result) and
+    narrowing *within* the level filter rather than replacing it
+    (`OutputLog::filtered`). Still open:
     `TestService.Message`'s blue/info kind, which needs the sandbox before
     anything here can produce it; and the duplicate-display gap itself —
     every Command Bar run's own immediate feedback still shows twice, once
@@ -1516,8 +1521,9 @@ against `Roblox/creator-docs` rather than assumed:
     split exists to produce it; **Show Context** and **Show Source**
     (script name + line number) toggles are the same story, since neither
     a Command Bar run nor an app warning carries a script/line origin
-    today. Free-text search over the log, and whether logged tables show
-    expanded by default, apply to both halves equally.
+    today. Whether logged tables show expanded by default applies to both
+    halves equally, and is the piece of this bullet that does not need the
+    sandbox first.
 - [ ] ⚠️ **Device Simulator equivalent** — real Studio's tool
   (`studio/device-simulator.md`, itself currently in beta on Roblox's
   side) previews an experience's UI at a chosen phone/desktop/console/
