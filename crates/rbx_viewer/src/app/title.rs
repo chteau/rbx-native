@@ -21,12 +21,11 @@ pub(super) fn title(name: &str, fps: Option<f32>, speed: Option<i64>) -> String 
     format!("{name} — {}", parts.join(" \u{b7} "))
 }
 
-/// `rbxstudio`'s own fps/frame-time formatting (`workspace_view::label::status`),
-/// duplicated by hand rather than imported: the two live in separate crates
-/// with `rbx_studio` depending on `rbx_viewer`, never the other way round, so
-/// there is no shared crate for a one-line format string to live in that would
-/// be worth the dependency.
-fn readout(fps: f32) -> String {
+/// The one-line fps/frame-time format both `rbxview`'s title and `rbxstudio`'s
+/// corner label read the same way — `rbx_studio` depends on `rbx_viewer`, never
+/// the other way round, so this lives here and `workspace_view::label::status`
+/// calls it rather than keeping its own copy of the format string.
+pub fn readout(fps: f32) -> String {
     format!("{fps:.0} fps\u{b7}{:.1} ms", 1000.0 / fps)
 }
 

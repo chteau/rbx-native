@@ -8,7 +8,7 @@ mod fps;
 mod input;
 mod pacing;
 mod quality;
-mod title;
+pub(crate) mod title;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
