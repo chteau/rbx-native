@@ -84,6 +84,15 @@ pub(super) struct Clipped {
 /// it no longer resolves. `Variant`'s own clone is already a full, owned
 /// copy — nothing in it is a shared reference — so the result shares no
 /// state with `dom` at all.
+///
+/// `reference` itself is snapshotted regardless of its own `Archivable`
+/// property — real Studio's Copy/Duplicate "ignore its own `Archivable`"
+/// the same way, unlike `Instance:Clone()` — but a *descendant* that is not
+/// `Archivable` is skipped along with everything under it, matching
+/// `Archivable`'s own docs ("determines if an instance **and its
+/// descendants** can be cloned"). Checked once per child, before recursing,
+/// so a skipped subtree is never walked at all rather than walked and
+/// discarded.
 fn snapshot(dom: &WeakDom, reference: Ref) -> Option<Clipped> {
     let instance = dom.get(reference)?;
     Some(Clipped {
@@ -94,9 +103,16 @@ fn snapshot(dom: &WeakDom, reference: Ref) -> Option<Clipped> {
         children: instance
             .children()
             .iter()
+            .filter(|&&child| dom.get(child).is_some_and(|i| archivable(i.properties())))
             .filter_map(|&child| snapshot(dom, child))
             .collect(),
     })
+}
+
+/// `Archivable`'s documented default is `true`; only an explicit `false`
+/// excludes an instance from a copy.
+fn archivable(properties: &BTreeMap<String, Variant>) -> bool {
+    !matches!(properties.get("Archivable"), Some(Variant::Bool(false)))
 }
 
 /// Every entry of `selected` this editor will copy, duplicate or let
@@ -125,10 +141,19 @@ fn copyable(dom: &WeakDom, database: &ReflectionDatabase, selected: &[Ref]) -> V
 /// `Variant::Ref`/`Content::Object` from an earlier sibling to a later one
 /// still resolves to that later one's fresh copy (see [`remap`]) however
 /// the tree is shaped, not just for a parent pointing at a child.
+///
+/// The root's own `Archivable` is then forced to `true`, regardless of what
+/// `node` carried — the other half of the same real-Studio rule [`snapshot`]
+/// applies on the way in: the original's `Archivable` never gates whether
+/// the *root* of a copy happens, but the copy itself is always `Archivable`.
+/// Nothing below the root needs the same treatment: every descendant that
+/// made it into `node` at all already passed [`archivable`], so it was
+/// already `true` (or absent, which reads the same way).
 fn materialize(dom: &mut WeakDom, node: &Clipped, parent: Option<Ref>) -> Ref {
     let mut map = HashMap::new();
     let root = create(dom, node, parent, &mut map);
     write_properties(dom, node, &map);
+    let _ = dom.set_property(root, "Archivable", Variant::Bool(true));
     root
 }
 
@@ -351,6 +376,57 @@ mod tests {
         assert_eq!(clipped.children.len(), 1);
         assert_eq!(clipped.children[0].name, "A");
         assert_eq!(clipped.children[0].children[0].name, "B");
+    }
+
+    #[test]
+    fn a_non_archivable_descendant_and_its_own_subtree_are_excluded() {
+        let mut dom = WeakDom::new();
+        let model = dom.new_instance("Model", "Model", None);
+        dom.new_instance("Part", "Kept", Some(model));
+        let skipped = dom.new_instance("Part", "Skipped", Some(model));
+        dom.set_property(skipped, "Archivable", Variant::Bool(false))
+            .unwrap();
+        dom.new_instance("Part", "GrandchildOfSkipped", Some(skipped));
+
+        let clipped = snapshot(&dom, model).unwrap();
+        assert_eq!(clipped.children.len(), 1, "only the archivable child");
+        assert_eq!(clipped.children[0].name, "Kept");
+    }
+
+    #[test]
+    fn a_non_archivable_root_is_still_copied() {
+        // Real Studio's Copy/Duplicate ignore the copied instance's *own*
+        // Archivable — unlike `Instance:Clone()`, which would refuse it —
+        // so this only applies to descendants, never to the thing that was
+        // actually selected and copied.
+        let mut dom = WeakDom::new();
+        let part = dom.new_instance("Part", "Part", None);
+        dom.set_property(part, "Archivable", Variant::Bool(false))
+            .unwrap();
+
+        let clipped = snapshot(&dom, part);
+        assert!(clipped.is_some());
+    }
+
+    #[test]
+    fn the_copy_is_always_archivable_even_if_the_original_was_not() {
+        let mut dom = WeakDom::new();
+        let part = dom.new_instance("Part", "Part", None);
+        dom.set_property(part, "Archivable", Variant::Bool(false))
+            .unwrap();
+
+        let clipped = snapshot(&dom, part).unwrap();
+        let copy = materialize(&mut dom, &clipped, None);
+
+        assert_eq!(
+            dom.get(copy).unwrap().properties().get("Archivable"),
+            Some(&Variant::Bool(true))
+        );
+        // The original is untouched — only the copy was forced.
+        assert_eq!(
+            dom.get(part).unwrap().properties().get("Archivable"),
+            Some(&Variant::Bool(false))
+        );
     }
 
     #[test]
