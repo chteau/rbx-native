@@ -310,8 +310,12 @@ impl Shell {
     }
 }
 
-/// Cut/Copy/Paste match `menu_bar`'s own disabled Edit-menu items exactly —
-/// same missing feature, same reason. Duplicate has no menu-bar twin yet.
+/// Copy/Paste/Duplicate are live in `menu_bar`'s Edit menu and on
+/// `Ctrl+C`/`V`/`D` (`shell::clipboard`); Cut stays a disabled placeholder
+/// there too. These ribbon tiles are left as visibly-disabled placeholders
+/// regardless — a live tile needs its own hover/active styling
+/// (`base_tile`'s `enabled` branch), which is ribbon-specific work this
+/// keyboard-and-menu-scoped change doesn't take on.
 fn clipboard() -> Vec<AnyElement> {
     vec![
         disabled_tile("ribbon-copy", IconName::Copy, "Copy").into_any_element(),
