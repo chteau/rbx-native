@@ -147,8 +147,33 @@ impl Sober {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{Mutex, MutexGuard, PoisonError};
 
     static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    /// Held by every test here that spawns a process.
+    ///
+    /// Linux refuses to `exec` a file that anybody currently has open for
+    /// writing (`ETXTBSY`), and a `fork` inherits the parent's descriptors —
+    /// so a child spawned while another thread is still inside `fs::write`
+    /// holds that write descriptor open across its own `exec`. One test below
+    /// writes the fake `flatpak` it then runs and another spawns a process of
+    /// its own; run in parallel, as the default harness does, the write and
+    /// the fork interleave every so often and the exec fails, leaving
+    /// `is_installed_via` to report "not installed" from a spawn error rather
+    /// than from output it parsed. It failed exactly once that way in CI on a
+    /// commit whose other run of the same code passed.
+    ///
+    /// Serialising the spawns closes the window without a sleep or a retry.
+    /// Any test added here that spawns a process belongs behind this too.
+    static SPAWN: Mutex<()> = Mutex::new(());
+
+    /// A poisoned lock means some other test panicked, which is its own
+    /// failure to report — it must not turn every test that follows into a
+    /// second one.
+    fn spawn_lock() -> MutexGuard<'static, ()> {
+        SPAWN.lock().unwrap_or_else(PoisonError::into_inner)
+    }
 
     fn temp_dir() -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -185,6 +210,7 @@ mod tests {
     /// binary that cannot exist, so `Command` fails to spawn.
     #[test]
     fn is_installed_via_missing_binary_is_false_not_a_panic() {
+        let _spawn = spawn_lock();
         assert!(!Sober::is_installed_via(
             "definitely-not-a-real-binary-rbx-sober-test"
         ));
@@ -201,6 +227,10 @@ mod tests {
     #[test]
     fn is_installed_via_parses_a_matching_application_line() {
         use std::os::unix::fs::PermissionsExt;
+
+        // Held across the write as well as the run: the write is the half of
+        // this that another thread's `fork` can poison (see [`SPAWN`]).
+        let _spawn = spawn_lock();
 
         let dir = temp_dir();
         std::fs::create_dir_all(&dir).unwrap();

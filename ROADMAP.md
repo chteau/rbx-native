@@ -1004,36 +1004,32 @@ against `Roblox/creator-docs` rather than assumed:
   rearrangement is inaccessible. The drag is then a pure addition rather
   than a rewrite; doing it first means building it against three hardcoded
   slots and throwing it away.
-- [ ] 🚧 **`Select`, `ColorPicker`, `NumberInput` and the menu bar are not
-  in the Tab order — a WCAG 2.1.1 (Keyboard, Level A) failure.** None of
-  those toolkit components exposes a way to set a tab index, so the editor's
-  own registry (`shell::roving::TabOrder`) cannot place them and they stay
-  mouse-only. In practice that means every `Color3` property, the snap
-  increments and every menu are unreachable without a pointer.
-  This is a toolkit limitation rather than a design decision, and the fix is
-  known: wrap each in a focusable element of our own that forwards focus to
-  the widget on `focus_in`, exactly as the Explorer's tree door already does
-  (`shell::panels::instance_tree`). `ColorPicker` and `AppMenuBar` still
-  need checking. The menu bar may instead want the usual desktop answer —
-  F10/Alt to enter it — which is a different job.
-  **The graphics-quality dropdown is fixed**: `SelectState` already
-  implements `Focusable`, and its own `focus_handle` is the same one
-  `Select::focus` itself calls, so no wrapper or forwarding subscription was
-  needed there — `shell::Shell::quality_control` just records that handle
-  in `TabOrder` directly. `NumberInput` wraps an `InputState`, which has the
-  same shape (`Focusable`, and its own `.focus`), so the identical one-line
-  fix applies wherever a `NumberInput` is a single, stable, long-lived
-  widget rather than one rebuilt per property row per selection — the snap
-  increments (`shell::toolbar::snap`) are the only current `NumberInput`
-  use in the editor and are not yet done. Every `Select` used for an
-  ordinary, per-row property value (`Color3`, an enum) is a widget rebuilt
-  fresh per row per selection change, not a single long-lived one, so it
-  needs the handle registered at creation time rather than once at
-  startup — a different, larger piece of the same fix, also not yet done.
-  Listed as its own item because it is the most serious accessibility gap
-  left in the editor, and because shipping it open was a deliberate,
-  reviewed choice rather than an oversight (see `UX_GUIDELINES.md` §1's
-  conformance section and §11).
+- [ ] 🚧 **The menu bar is not keyboard-reachable — the last of the WCAG
+  2.1.1 (Keyboard, Level A) gap.** `Select`, `ColorPicker` and `NumberInput`
+  are done: every `Color3` swatch, every enum dropdown and both snap
+  increments are Tab stops now, so what is left of this item is
+  `AppMenuBar` alone.
+  None of the three needed the focusable wrapper this entry used to
+  describe. Each one's state entity — `SelectState`, `ColorPickerState`,
+  `InputState` — already implements `Focusable`, and the handle it hands out
+  is the same one the widget's own `.focus` uses, so recording that handle
+  in `shell::roving::TabOrder` *is* the fix: there is nothing to forward
+  focus to once Tab lands on it. The graphics-quality dropdown had already
+  proved the shape (`shell::Shell::quality_control`); this pass applied it
+  to the rest.
+  Two registration sites, because the widgets have two lifetimes. The snap
+  increments (`shell::toolbar::snap`) register while their popover's body is
+  built, so the stops appear and disappear with the popover rather than
+  standing for controls nobody can see. Every per-row `Select` and
+  `ColorPicker` (`shell::rows::render_editor`) registers per row per render,
+  since a property row's widget is rebuilt whenever the selection changes —
+  a longer thread than the one-off case, which is why `render_editor` now
+  takes the window's order and an `&mut App` alongside the `tab_index` it
+  already took.
+  The menu bar is a different job and deliberately not folded in: the
+  desktop answer is F10/Alt to enter it, not a Tab stop, and the entry stays
+  open until that exists (see `UX_GUIDELINES.md` §1's conformance section
+  and §11).
 - [ ] 📋 **The accessibility work the reference guidance calls Stage 2 and
   Stage 3, minus what already shipped.** Stage 1 is met and asserted in
   tests; these are the rest, each small enough to ride along with other
@@ -1520,7 +1516,12 @@ against `Roblox/creator-docs` rather than assumed:
     carry a per-kind color and icon in place of the old plain `✕`/`✓`
     marker — `print`/a successful run in the default text color with a
     check icon, `warn` in orange with an alert icon, `error` in red with an
-    X icon (`OutputEntry::kind`/`RowKind`, `shell/output.rs`). Still open:
+    X icon (`OutputEntry::kind`/`RowKind`, `shell/output.rs`). **Free-text
+    search over the log** is shipped too — a box in the Output tab's own
+    title bar, beside the level filter, matching case-insensitively against
+    both halves of what a row shows (the command and the result) and
+    narrowing *within* the level filter rather than replacing it
+    (`OutputLog::filtered`). Still open:
     `TestService.Message`'s blue/info kind, which needs the sandbox before
     anything here can produce it; and the duplicate-display gap itself —
     every Command Bar run's own immediate feedback still shows twice, once
@@ -1531,8 +1532,9 @@ against `Roblox/creator-docs` rather than assumed:
     split exists to produce it; **Show Context** and **Show Source**
     (script name + line number) toggles are the same story, since neither
     a Command Bar run nor an app warning carries a script/line origin
-    today. Free-text search over the log, and whether logged tables show
-    expanded by default, apply to both halves equally.
+    today. Whether logged tables show expanded by default applies to both
+    halves equally, and is the piece of this bullet that does not need the
+    sandbox first.
 - [ ] ⚠️ **Device Simulator equivalent** — real Studio's tool
   (`studio/device-simulator.md`, itself currently in beta on Roblox's
   side) previews an experience's UI at a chosen phone/desktop/console/

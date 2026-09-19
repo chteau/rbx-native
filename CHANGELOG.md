@@ -2,6 +2,23 @@
 
 ## 2026-09-20
 
+- **Dropdowns, colour swatches and the snap increments can be reached with
+  Tab.** Every enum property, every `Color3` and both snap-increment fields
+  were mouse-only — a WCAG 2.1.1 (Keyboard, Level A) failure, and the one
+  the guidelines named as the most serious thing still open. They are Tab
+  stops now, in the same reading order as everything around them. The fix
+  turned out not to need the focusable wrapper it had been scoped as: each
+  widget's state already exposes the focus handle its own keyboard path
+  uses, so the window's Tab order just records it. The menu bar is still
+  out, and wants F10/Alt rather than a Tab stop. — @chteau
+
+- **The Output log is searchable.** A box in the Output tab's title bar,
+  next to the level filter, hides every row that does not mention what you
+  typed — matched against both the command and the result beside it, and
+  case-insensitively, because nobody searching a log for an error types it
+  the way the error did. It narrows *within* the level filter rather than
+  replacing it: Errors plus a query still means errors. — @chteau
+
 - **An absent `OptionalCFrame` can be given a value, and a present one
   cleared.** `Model.WorldPivotData` is the only property the DOM can hold
   that is legitimately *nothing* rather than wrong, and the Properties

@@ -29,7 +29,7 @@ fn pushed_entries_come_back_oldest_first() {
     log.push("print(2)", output("2"));
 
     let sources: Vec<&str> = log
-        .filtered(OutputFilter::All)
+        .filtered(OutputFilter::All, "")
         .map(|e| e.source())
         .collect();
     assert_eq!(sources, vec!["print(1)", "print(2)"]);
@@ -51,7 +51,7 @@ fn pushing_past_the_cap_drops_the_oldest_entry() {
     }
 
     assert_eq!(log.len(), CAP);
-    let first = log.filtered(OutputFilter::All).next().unwrap();
+    let first = log.filtered(OutputFilter::All, "").next().unwrap();
     // The five oldest (0..5) should have been dropped to stay at CAP.
     assert_eq!(first.source(), "print(5)");
 }
@@ -63,7 +63,7 @@ fn filter_output_only_hides_errors() {
     log.push("bad", error("boom"));
 
     let sources: Vec<&str> = log
-        .filtered(OutputFilter::Output)
+        .filtered(OutputFilter::Output, "")
         .map(|e| e.source())
         .collect();
     assert_eq!(sources, vec!["ok"]);
@@ -76,7 +76,7 @@ fn filter_errors_only_hides_output() {
     log.push("bad", error("boom"));
 
     let sources: Vec<&str> = log
-        .filtered(OutputFilter::Errors)
+        .filtered(OutputFilter::Errors, "")
         .map(|e| e.source())
         .collect();
     assert_eq!(sources, vec!["bad"]);
@@ -88,7 +88,7 @@ fn filter_all_shows_everything() {
     log.push("ok", output("done"));
     log.push("bad", error("boom"));
 
-    assert_eq!(log.filtered(OutputFilter::All).count(), 2);
+    assert_eq!(log.filtered(OutputFilter::All, "").count(), 2);
 }
 
 #[test]
@@ -117,7 +117,7 @@ fn a_pushed_warning_is_not_treated_as_an_error() {
     let mut log = OutputLog::default();
     log.push_warning("asset 1: fetching asset 1 failed");
 
-    let entry = log.filtered(OutputFilter::All).next().unwrap();
+    let entry = log.filtered(OutputFilter::All, "").next().unwrap();
     assert!(!entry.is_error());
 }
 
@@ -126,9 +126,9 @@ fn a_warning_shows_under_all_and_output_but_never_errors() {
     let mut log = OutputLog::default();
     log.push_warning("boom");
 
-    assert_eq!(log.filtered(OutputFilter::All).count(), 1);
-    assert_eq!(log.filtered(OutputFilter::Output).count(), 1);
-    assert_eq!(log.filtered(OutputFilter::Errors).count(), 0);
+    assert_eq!(log.filtered(OutputFilter::All, "").count(), 1);
+    assert_eq!(log.filtered(OutputFilter::Output, "").count(), 1);
+    assert_eq!(log.filtered(OutputFilter::Errors, "").count(), 0);
 }
 
 #[test]
@@ -153,4 +153,63 @@ fn an_entry_carries_a_timestamp() {
 fn an_entrys_kind_matches_its_feedback() {
     let entry = OutputEntry::new("bad", error("boom"));
     assert_eq!(entry.kind(), RowKind::Error);
+}
+
+// --- the search box ---------------------------------------------------
+
+/// Empty means "no narrowing", not "nothing matches" — the box sits on top of
+/// the level filter rather than beside it.
+#[test]
+fn an_empty_query_keeps_every_entry() {
+    let mut log = OutputLog::default();
+    log.push("print(1)", output("1"));
+    log.push("oops()", error("attempt to call a nil value"));
+
+    assert_eq!(log.filtered(OutputFilter::All, "").count(), 2);
+}
+
+/// Both halves of the row are searchable, because both are on screen: the
+/// command that was run and the result printed beside it.
+#[test]
+fn a_query_matches_the_source_or_the_result() {
+    let mut log = OutputLog::default();
+    log.push("print(1)", output("hello"));
+    log.push("workspace:FindFirstChild('Baseplate')", output("nil"));
+
+    let by_source: Vec<&str> = log
+        .filtered(OutputFilter::All, "findfirstchild")
+        .map(|e| e.source())
+        .collect();
+    assert_eq!(by_source, vec!["workspace:FindFirstChild('Baseplate')"]);
+
+    let by_result: Vec<&str> = log
+        .filtered(OutputFilter::All, "hello")
+        .map(|e| e.source())
+        .collect();
+    assert_eq!(by_result, vec!["print(1)"]);
+}
+
+/// Nobody searching a log for an error types it the way the error did.
+#[test]
+fn a_query_ignores_case() {
+    let mut log = OutputLog::default();
+    log.push("Workspace", output("Instance"));
+
+    assert_eq!(log.filtered(OutputFilter::All, "workspace").count(), 1);
+    assert_eq!(log.filtered(OutputFilter::All, "INSTANCE").count(), 1);
+}
+
+/// The two narrow together rather than either one winning: an error that
+/// matches the text is still hidden under the Output level, and an output row
+/// that does not match the text is still hidden under a query.
+#[test]
+fn the_search_narrows_within_the_level_filter_rather_than_replacing_it() {
+    let mut log = OutputLog::default();
+    log.push("boom()", error("boom"));
+    log.push("print('boom')", output("boom"));
+
+    assert_eq!(log.filtered(OutputFilter::All, "boom").count(), 2);
+    assert_eq!(log.filtered(OutputFilter::Errors, "boom").count(), 1);
+    assert_eq!(log.filtered(OutputFilter::Output, "boom").count(), 1);
+    assert_eq!(log.filtered(OutputFilter::Output, "nothing").count(), 0);
 }
