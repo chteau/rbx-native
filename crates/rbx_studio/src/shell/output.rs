@@ -55,6 +55,12 @@ const SOURCE_MAX_LEN: usize = 80;
 /// this is what shows in the row's source column instead.
 const WARNING_SOURCE: &str = "warning";
 
+/// How wide the search box sits in the Output tab's own title bar. Narrow on
+/// purpose: it shares that strip with the run count, three filter buttons and
+/// Clear, and a box wide enough to read a whole command back would push them
+/// off it.
+const SEARCH_WIDTH: f32 = 140.0;
+
 /// One run's worth of history: what was typed and what it did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct OutputEntry {
@@ -87,6 +93,22 @@ impl OutputEntry {
 
     pub(crate) fn source(&self) -> &str {
         &self.source
+    }
+
+    /// Whether this entry answers a free-text search, matched against both
+    /// halves of what the row actually shows — the command that was run and
+    /// the result beside it. Case-insensitive, because nobody searching a log
+    /// for `attempt to index nil` types it the way the error did.
+    ///
+    /// An empty query matches everything rather than nothing: the box is a
+    /// narrowing on top of the level filter, not a second thing to satisfy.
+    fn matches_query(&self, query: &str) -> bool {
+        if query.is_empty() {
+            return true;
+        }
+        let query = query.to_lowercase();
+        self.source.to_lowercase().contains(&query)
+            || self.feedback.label().to_lowercase().contains(&query)
     }
 
     fn truncated_source(&self) -> SharedString {
@@ -180,10 +202,18 @@ impl OutputLog {
         self.entries.len()
     }
 
-    pub(crate) fn filtered(&self, filter: OutputFilter) -> impl Iterator<Item = &OutputEntry> {
+    /// The entries the panel draws: the level filter, then the search box's
+    /// text narrowing what survives it. `query` is taken already trimmed —
+    /// the caller reads it off an `InputState`, where a trailing space is a
+    /// keystroke in progress rather than part of what is being looked for.
+    pub(crate) fn filtered<'a>(
+        &'a self,
+        filter: OutputFilter,
+        query: &'a str,
+    ) -> impl Iterator<Item = &'a OutputEntry> {
         self.entries
             .iter()
-            .filter(move |entry| filter.matches(entry))
+            .filter(move |entry| filter.matches(entry) && entry.matches_query(query))
     }
 }
 
@@ -206,8 +236,9 @@ impl Shell {
     }
 
     /// The title-bar controls for the Output tab (see `shell::dock`'s
-    /// `title_suffix`): the level filter and the Clear button, in the same
-    /// spot the Viewport tab's graphics-quality dropdown lives.
+    /// `title_suffix`): the search box, the level filter and the Clear
+    /// button, in the same spot the Viewport tab's graphics-quality dropdown
+    /// lives.
     pub(super) fn output_controls(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let current = self.output_filter;
         h_flex()
@@ -220,6 +251,18 @@ impl Shell {
                     .line_height(tokens::line_sm())
                     .text_color(tokens::text_placeholder())
                     .child(format!("{} runs", self.output.len())),
+            )
+            // No subscription behind it: the value is read straight off the
+            // `InputState` at render, the same way the Properties panel's
+            // own filter box is (`shell::panels`).
+            .child(
+                div()
+                    .flex_none()
+                    .w(px(SEARCH_WIDTH))
+                    .child(super::workspace::search_field(
+                        self.tab_order.next(),
+                        &self.output_search,
+                    )),
             )
             .children(
                 [
@@ -253,7 +296,8 @@ impl Shell {
     pub(super) fn output_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let filter = self.output_filter;
         let show_timestamp = self.output_show_timestamps;
-        let entries: Vec<&OutputEntry> = self.output.filtered(filter).collect();
+        let query = self.output_search.read(cx).value().trim().to_lowercase();
+        let entries: Vec<&OutputEntry> = self.output.filtered(filter, &query).collect();
 
         let list = if entries.is_empty() {
             v_flex().flex_1().p_2().child(

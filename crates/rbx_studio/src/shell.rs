@@ -200,6 +200,10 @@ pub(crate) struct Shell {
     /// persisted — resets to off each launch, same as `output_filter` above.
     output_show_timestamps: bool,
     output_scroll: ScrollHandle,
+    /// The Output tab's free-text search box. Session-only and unpersisted,
+    /// like `output_filter` beside it — a log you are still reading is not a
+    /// setting.
+    output_search: Entity<InputState>,
     /// The file `self.dom` was opened from and its on-disk format; see
     /// `shell::save`. Ctrl+S always writes back here, in this format,
     /// regardless of what the tree currently looks like.
@@ -435,6 +439,7 @@ impl Shell {
             output_filter: output::OutputFilter::default(),
             output_show_timestamps: false,
             output_scroll: ScrollHandle::new(),
+            output_search: cx.new(|cx| InputState::new(window, cx).placeholder("Search")),
             path,
             format,
             folder_colors,
