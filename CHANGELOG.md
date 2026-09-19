@@ -2,6 +2,16 @@
 
 ## 2026-09-19
 
+- **`rbxview`'s title bar now shows fps and frame time**, closing the one
+  leftover on the FPS/frame-time readout item: `rbxstudio`'s viewport
+  corner label got its "Stats" toggle a while back, but the standalone
+  viewer's title bar had no equivalent. It reuses the same wall-clock `dt`
+  the redraw loop already measures for camera motion (a small `FrameRate`
+  just averages it over a rolling one-second window — no second timing
+  mechanism), and formats the reading exactly the way `rbxstudio`'s corner
+  label does. Always on rather than behind a toggle: `rbxview` has no menu
+  to put one in, and this is the least machinery that shows it. — @chteau
+
 - **A collapsed property category reads as a tile.** The category headers
   in the Properties panel carry their own fill now, one step above the
   dock and rounded like everything else that has a surface, and the gap
@@ -181,6 +191,20 @@
   `agents/dock-rearrangement.md` rather than a half-built version in the
   shell. — @chteau
 
+- **Fixed the Part insert menu always inserting a block.** Block, Sphere
+  and Cylinder all inserted a bare `Part` and never wrote its `shape`
+  property, so the renderer resolved all three to `ShapeKind::Box`; Wedge
+  and Corner Wedge passed their own classes but got none of a new part's
+  size, colour or material defaults, since those were gated on the
+  literal class `"Part"`. `shape` (`Enum.PartType`) now travels alongside
+  the class for the three that share it, and the defaults gate widened to
+  any `BasePart` subclass. One test per menu item asserts both the
+  inserted instance's class and its resolved `ShapeKind`. — @chteau
+- **`rbxview`'s title bar now shows fps/frame time**, alongside the flight
+  speed it already showed, closing the one leftover on the FPS/frame-time
+  readout item. Shares the same one-line format `rbxstudio`'s corner label
+  uses (`rbx_viewer::fps_readout`) rather than a second copy of it. —
+  @chteau
 - **Copy, Paste and Duplicate work now** (`Ctrl+C`/`V`/`D`, and the Edit
   menu's items — Cut stays a placeholder). The clipboard is this window's
   own, not the system one, and a copy is a genuine deep clone: descendants
@@ -189,7 +213,10 @@
   original. Paste always targets `Workspace`, matching creator-docs;
   Duplicate stays in the original's own parent. Services refuse to be
   copied, pasted or duplicated, the same way Group/Ungroup already refuse
-  them. — @chteau
+  them. A non-`Archivable` descendant (and its own subtree) is excluded
+  from what gets copied, and the copy is always `Archivable` regardless of
+  the original, matching `Instance.Archivable`'s own documented rule. —
+  @chteau
 
 ## 2026-09-18
 
