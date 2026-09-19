@@ -133,9 +133,20 @@ pub(crate) fn window_id(window: &Window) -> Option<u32> {
     let handle = raw_window_handle::HasWindowHandle::window_handle(window).ok()?;
     match handle.as_raw() {
         RawWindowHandle::Xcb(handle) => Some(handle.window.get()),
-        RawWindowHandle::Xlib(handle) => u32::try_from(handle.window).ok(),
+        RawWindowHandle::Xlib(handle) => narrow_x11_id(handle.window),
         _ => None,
     }
+}
+
+/// Narrows a C `unsigned long` X id to the 32 bits the protocol gives one.
+///
+/// Xlib's `Window` is 64 bits wide on LP64 and 32 on Windows and 32-bit Unix, so
+/// this is a real range check on the first and an identity on the rest. Written
+/// over `TryInto` it is the same code on every target, where a concrete
+/// `u32::try_from` is a same-type conversion clippy rejects wherever the widths
+/// happen to match.
+fn narrow_x11_id<T: TryInto<u32>>(id: T) -> Option<u32> {
+    id.try_into().ok()
 }
 
 /// Whether the session is one the X11 lock may talk to.
@@ -143,6 +154,7 @@ pub(crate) fn window_id(window: &Window) -> Option<u32> {
 /// A Wayland session usually answers on `DISPLAY` too, through Xwayland, where
 /// the warp would move a pointer the compositor does not follow — so it is ruled
 /// out by the environment rather than by whether the connection succeeds.
+#[cfg(target_os = "linux")]
 fn x11_session(session: Option<&str>, wayland: Option<&str>) -> bool {
     if wayland.is_some_and(|display| !display.is_empty()) {
         return false;
@@ -153,7 +165,9 @@ fn x11_session(session: Option<&str>, wayland: Option<&str>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{x11_session, Tracker};
+    #[cfg(target_os = "linux")]
+    use super::x11_session;
+    use super::{narrow_x11_id, Tracker};
 
     const WINDOW: u32 = 0x42;
     const CENTRE: (i16, i16) = (750, 450);
@@ -210,6 +224,18 @@ mod tests {
         assert_eq!(tracker.moved((0, 0)), None);
     }
 
+    // Xlib hands the id over as a C `unsigned long`, whatever width that is on
+    // the target: a wide one that does not fit the protocol's 32 bits names no
+    // window, and a narrow one always fits.
+    #[test]
+    fn an_xlib_id_is_narrowed_to_the_protocols_width() {
+        assert_eq!(narrow_x11_id(WINDOW), Some(WINDOW));
+        assert_eq!(narrow_x11_id(u64::from(WINDOW)), Some(WINDOW));
+        assert_eq!(narrow_x11_id(u64::from(u32::MAX)), Some(u32::MAX));
+        assert_eq!(narrow_x11_id(u64::from(u32::MAX) + 1), None);
+    }
+
+    #[cfg(target_os = "linux")]
     #[test]
     fn only_an_x11_session_is_locked() {
         assert!(x11_session(Some("x11"), None));
