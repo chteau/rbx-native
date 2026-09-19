@@ -609,22 +609,26 @@ Roblox's own engine.
   noted, **Building Tools by F3X** — a widely-used third-party Studio
   plugin, not native Studio — since some of what was asked for turns out
   to be F3X's own convention rather than something Studio itself does:
-  - **Scale handles that lock a Ball/Cylinder to a round cross-section**:
-    dragging any Scale handle on a Ball currently grows only the one axis
-    grabbed, same as any other part, which turns a sphere oval. Native
-    Studio's own docs give Scale no shape-specific behavior at all —
-    `BasePart.Size` is three independent numbers regardless of `Shape` —
-    so this isn't a Studio-parity gap so much as a genuinely useful
-    addition modeled on F3X's real, open-source `Resize.lua`: grabbing a
-    Ball's handle grows all three axes together (`Size + (d,d,d)`, keeping
-    it a sphere); on a `Cylinder`, only the two axes forming its circular
-    cross-section grow together while the length axis scales alone.
-    Wedge/CornerWedge weren't confirmed to have their own case in F3X's
-    source and need a closer read before assuming one; plain `Part`s and
-    `MeshPart`s keep today's per-axis behavior either way. Requested as a
-    `Shift`-held modifier during Scale — note this collides with `Shift`'s
-    existing meaning (invert the current snap state) on every other tool,
-    so it needs its own resolution, not a blind rebind. — see
+  - [x] 🚧 **Scale handles that lock a Ball/Cylinder to a round
+    cross-section**: dragging any Scale handle on a Ball used to grow only
+    the one axis grabbed, same as any other part, which turned a sphere
+    oval. Native Studio's own docs give Scale no shape-specific behavior at
+    all — `BasePart.Size` is three independent numbers regardless of
+    `Shape` — so this isn't a Studio-parity gap so much as a genuinely
+    useful addition modeled on F3X's real, open-source `Resize.lua`.
+    **Ball is done**: holding `Alt` while dragging a Ball's Scale handle now
+    grows all three axes together (`Size + (d,d,d)`, keeping it a sphere).
+    `Shift` was the modifier F3X itself uses and the one this bullet
+    originally asked for, but it already means "invert the current snap
+    state" on every other tool in this editor — `Alt` was picked instead
+    because it is provably inert at the exact moment a Scale handle is
+    grabbed (it only means "cycle selection" on a click that falls through
+    to a *pick*, a branch a handle grab never reaches), not because it
+    matches F3X. **Still open**: `Cylinder`'s two-axes-together case — its
+    real cross-section axes need confirming against F3X's source before
+    assuming which two — and Wedge/CornerWedge, which weren't confirmed to
+    have their own case in F3X's source at all. Plain `Part`s and
+    `MeshPart`s keep today's per-axis behavior regardless. — see
     `F3XTeam/RBX-Building-Tools`'s `Tools/Resize.lua`.
   - [x] **A live stud-count readout while a Move/Scale drag is in progress**
     (e.g. a floating "12" near the handle showing studs moved/grown so

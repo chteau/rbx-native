@@ -259,7 +259,7 @@ fn a_target_reads_a_parts_placement_out_of_the_dom() {
         }),
     );
 
-    let target = Target::read(&dom, Some(part)).expect("a part has a placement");
+    let target = Target::read(&dom, &database(), Some(part)).expect("a part has a placement");
     assert_eq!(target.referent, part);
     assert!((target.position() - Vec3::new(3.0, 4.0, -5.0)).length() < 1e-4);
     // The part's own X axis points along world -Z after that turn, and still
@@ -274,8 +274,8 @@ fn something_with_no_placement_is_no_target() {
     let mut dom = WeakDom::new();
     let folder = dom.new_instance("Folder", "Folder", None);
 
-    assert_eq!(Target::read(&dom, Some(folder)), None);
-    assert_eq!(Target::read(&dom, None), None);
+    assert_eq!(Target::read(&dom, &database(), Some(folder)), None);
+    assert_eq!(Target::read(&dom, &database(), None), None);
 }
 
 /// The three placements a drag can put a part in are all built back out of the
@@ -292,6 +292,7 @@ fn block() -> Target {
             (orientation.z_axis * size.z).extend(0.0),
             Vec3::new(3.0, 4.0, -5.0).extend(1.0),
         ),
+        sphere: false,
     }
 }
 
@@ -592,6 +593,7 @@ fn part_at(referent: u32, position: Vec3, size: Vec3) -> Target {
     Target {
         referent: Ref::new(referent),
         model: Mat4::from_translation(position) * Mat4::from_scale(size),
+        sphere: false,
     }
 }
 

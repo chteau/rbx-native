@@ -294,6 +294,17 @@ fn block() -> Target {
     Target {
         referent: Ref::new(1),
         model: Mat4::from_scale(Vec3::new(2.0, 1.0, 4.0)),
+        sphere: false,
+    }
+}
+
+/// A ball of the same footprint as [`block`] — same referent and starting
+/// size, only its `sphere` flag differs — so a test can compare the two
+/// shapes' behavior directly under an identical grab.
+fn ball() -> Target {
+    Target {
+        sphere: true,
+        ..block()
     }
 }
 
@@ -323,6 +334,7 @@ fn grabbed_x_face() -> Drag {
         grabbed: 1.0,
         size: Vec3::new(2.0, 1.0, 4.0),
         component: 0,
+        sphere: false,
     }
 }
 
@@ -331,15 +343,108 @@ fn grabbing_a_ball_opens_a_resize_of_the_face_it_stands_on() {
     // The block is 2 studs wide, so its +X ball stands at x = 1, and that is
     // where the drag is grabbed.
     let target = block();
-    let drag = grab_face(&faces(target), target, looking_at(1.0, 0.0)).expect("the +X ball");
+    let drag = grab_face(&faces(target), target, looking_at(1.0, 0.0), false).expect("the +X ball");
 
     assert_eq!(drag, grabbed_x_face());
 }
 
 #[test]
+fn grabbing_a_balls_handle_with_alt_held_locks_the_drag_to_round() {
+    let target = ball();
+    let drag = grab_face(&faces(target), target, looking_at(1.0, 0.0), true).expect("the +X ball");
+
+    let Drag::Size { sphere, .. } = drag else {
+        panic!("expected a resize, got {drag:?}");
+    };
+    assert!(sphere, "a Ball grabbed with Alt held should lock");
+}
+
+#[test]
+fn grabbing_a_balls_handle_without_alt_behaves_exactly_as_before() {
+    let target = ball();
+    let drag = grab_face(&faces(target), target, looking_at(1.0, 0.0), false).expect("the +X ball");
+
+    let Drag::Size { sphere, .. } = drag else {
+        panic!("expected a resize, got {drag:?}");
+    };
+    assert!(!sphere, "Alt not held means today's plain per-axis resize");
+}
+
+#[test]
+fn alt_does_nothing_on_a_shape_that_is_not_a_ball() {
+    // The modifier alone is not the lock -- it only ever matters together
+    // with `Target::sphere`, which a plain block never sets.
+    let target = block();
+    let drag = grab_face(&faces(target), target, looking_at(1.0, 0.0), true).expect("the +X ball");
+
+    let Drag::Size { sphere, .. } = drag else {
+        panic!("expected a resize, got {drag:?}");
+    };
+    assert!(
+        !sphere,
+        "Alt cannot lock a shape that isn't round to begin with"
+    );
+}
+
+#[test]
+fn a_locked_ball_grows_all_three_axes_by_the_same_amount() {
+    // Grabbed on the +X face of a 2x1x4 ball, one stud out (half the 2-stud
+    // width) -- pulling the cursor to x = 4 is 3 studs of travel.
+    let drag = Drag::Size {
+        origin: Vec3::ZERO,
+        axis: Vec3::X,
+        grabbed: 1.0,
+        size: Vec3::new(2.0, 1.0, 4.0),
+        component: 0,
+        sphere: true,
+    };
+    let (_, change) = advance(drag, looking_at(4.0, 0.0), free()).expect("the axis is across");
+
+    let Change::Size { size, position } = change else {
+        panic!("expected a resize, got {change:?}");
+    };
+    // Every axis grew by the same 3 studs the grabbed one did, per the
+    // roadmap's own `Size + (d, d, d)` description of this feature.
+    assert!(
+        (size - Vec3::new(5.0, 4.0, 7.0)).length() < 1e-4,
+        "{size:?}"
+    );
+    // Only the grabbed axis moves the part's centre -- the same half-growth
+    // rule an ordinary (non-locked) resize already follows, and the reason
+    // the other two axes grow evenly on both sides instead of on just one.
+    assert!(
+        (position - Vec3::new(1.5, 0.0, 0.0)).length() < 1e-4,
+        "{position:?}"
+    );
+}
+
+#[test]
+fn a_locked_ball_still_stops_at_the_size_ceiling() {
+    // Y starts far closer to MAX_SIZE than X does, so it hits the ceiling
+    // first -- growing it exactly as far as X grew would overshoot.
+    let drag = Drag::Size {
+        origin: Vec3::ZERO,
+        axis: Vec3::X,
+        grabbed: 1.0,
+        size: Vec3::new(2.0, MAX_SIZE - 1.0, 4.0),
+        component: 0,
+        sphere: true,
+    };
+    // Ask for far more growth than Y has room for.
+    let (_, change) = advance(drag, looking_at(5000.0, 0.0), free()).expect("across the view");
+
+    let Change::Size { size, .. } = change else {
+        panic!("expected a resize, got {change:?}");
+    };
+    assert!((size.x - MAX_SIZE).abs() < 1e-4, "X: {}", size.x);
+    assert!((size.y - MAX_SIZE).abs() < 1e-4, "Y clamped: {}", size.y);
+}
+
+#[test]
 fn grabbing_the_ball_on_the_far_face_resizes_the_part_the_other_way() {
     let target = block();
-    let drag = grab_face(&faces(target), target, looking_at(-1.0, 0.0)).expect("the -X ball");
+    let drag =
+        grab_face(&faces(target), target, looking_at(-1.0, 0.0), false).expect("the -X ball");
 
     let Drag::Size {
         axis, component, ..
@@ -368,8 +473,9 @@ fn a_turned_parts_ball_resizes_the_face_it_actually_sits_on() {
             Quat::from_rotation_z(std::f32::consts::FRAC_PI_2),
             Vec3::ZERO,
         ),
+        sphere: false,
     };
-    let drag = grab_face(&faces(target), target, looking_at(0.0, 1.0)).expect("the +X ball");
+    let drag = grab_face(&faces(target), target, looking_at(0.0, 1.0), false).expect("the +X ball");
 
     let Drag::Size {
         axis,
@@ -394,9 +500,10 @@ fn pointing_at_no_ball_grabs_no_resize() {
     let target = Target {
         referent: Ref::new(1),
         model: Mat4::from_scale(Vec3::splat(40.0)),
+        sphere: false,
     };
     assert_eq!(
-        grab_face(&faces(target), target, looking_at(8.0, 8.0)),
+        grab_face(&faces(target), target, looking_at(8.0, 8.0), false),
         None
     );
 }
@@ -406,7 +513,7 @@ fn pointing_at_no_ball_grabs_no_resize() {
 #[test]
 fn a_ball_grabbed_where_it_is_drawn_resizes_from_there() {
     let target = block();
-    let drag = grab_face(&faces(target), target, looking_at(1.0, 0.0)).expect("the +X ball");
+    let drag = grab_face(&faces(target), target, looking_at(1.0, 0.0), false).expect("the +X ball");
 
     let (_, change) = advance(drag, looking_at(4.0, 0.0), free()).expect("the drag has an answer");
     assert_eq!(
@@ -498,6 +605,7 @@ fn a_scale_handle_on_the_far_face_grows_the_part_the_other_way() {
         grabbed: 1.0,
         size: Vec3::new(2.0, 1.0, 4.0),
         component: 0,
+        sphere: false,
     };
 
     assert_eq!(

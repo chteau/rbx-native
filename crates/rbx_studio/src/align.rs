@@ -192,7 +192,7 @@ pub(crate) fn read_entries(
             entry
                 .parts()
                 .iter()
-                .filter_map(|&part| Target::read(dom, Some(part)))
+                .filter_map(|&part| Target::read(dom, database, Some(part)))
                 .collect()
         })
         .collect()
