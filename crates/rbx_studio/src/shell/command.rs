@@ -59,17 +59,19 @@ impl Shell {
             .map(str::trim)
             .filter(|target| !target.is_empty());
         if let Some(first) = targets.next() {
-            match self.select_target(first, cx) {
-                true => launch.say(format!("--select: {first}")),
-                false => unresolved.push(first.to_owned()),
+            if self.select_target(first, cx) {
+                launch.say(format!("--select: {first}"));
+            } else {
+                unresolved.push(first.to_owned());
             }
         }
         // Every target after the first adds to whatever is selected by then,
         // including when the first itself resolved to nothing.
         for target in targets {
-            match self.extend_target(target, cx) {
-                true => launch.say(format!("--select: {target}")),
-                false => unresolved.push(target.to_owned()),
+            if self.extend_target(target, cx) {
+                launch.say(format!("--select: {target}"));
+            } else {
+                unresolved.push(target.to_owned());
             }
         }
         unresolved
