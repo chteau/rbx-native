@@ -37,6 +37,24 @@ pub(crate) struct Settings {
     /// WCAG 1.4.4's 200% resize, since there is no browser zoom to lean on;
     /// the range is Blender's Resolution Scale range, for the same reason.
     pub(crate) font_scale: f32,
+    /// Raises the minimum pointer target from WCAG 2.5.8's 24px floor to
+    /// 2.5.5's 44px one — Blender's "editor-area padding" idea, which its
+    /// own manual describes as improving usability "on pen tablets, touch
+    /// screens, or for users with visual or physical accessibility issues".
+    pub(crate) large_targets: bool,
+    /// Whether to suppress motion. `None` follows the desktop's own
+    /// setting; `Some` is an explicit choice made in the View menu, because
+    /// an accessibility preference that can only be set with an environment
+    /// variable is not a setting anybody has.
+    pub(crate) reduce_motion: Option<bool>,
+    /// The dock layout, so it survives a relaunch — the reference doc's
+    /// Stage 2 item 9. Not a separate file: a layout is a preference like
+    /// any other, and a second persistence path is a second thing to keep
+    /// in step.
+    pub(crate) properties_width: f32,
+    pub(crate) explorer_width: f32,
+    pub(crate) output_height: f32,
+    pub(crate) output_collapsed: bool,
 }
 
 impl Default for Settings {
@@ -51,6 +69,15 @@ impl Default for Settings {
             icon_pack: IconPack::Dark,
             unfocused_fps: UnfocusedFps::DEFAULT,
             font_scale: 1.,
+            large_targets: false,
+            reduce_motion: None,
+            // Zero means "whatever the shell's own default is" — the
+            // defaults live with the layout in `shell::workspace`, and
+            // duplicating them here is how the two drift apart.
+            properties_width: 0.,
+            explorer_width: 0.,
+            output_height: 0.,
+            output_collapsed: false,
         }
     }
 }
@@ -172,6 +199,15 @@ fn load_from(path: &Path) -> Settings {
         })
         .unwrap_or(1.);
 
+    let number = |key: &str| {
+        value
+            .get(key)
+            .and_then(|v| v.as_f64())
+            .map(|n| n as f32)
+            .filter(|n| n.is_finite() && *n > 0.)
+            .unwrap_or(0.)
+    };
+
     Settings {
         quality,
         show_all_services,
@@ -180,6 +216,18 @@ fn load_from(path: &Path) -> Settings {
         icon_pack,
         unfocused_fps,
         font_scale,
+        large_targets: value
+            .get("large_targets")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        reduce_motion: value.get("reduce_motion").and_then(|v| v.as_bool()),
+        properties_width: number("properties_width"),
+        explorer_width: number("explorer_width"),
+        output_height: number("output_height"),
+        output_collapsed: value
+            .get("output_collapsed")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
     }
 }
 
@@ -203,6 +251,12 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "icon_pack": format_icon_pack(settings.icon_pack),
         "unfocused_fps": settings.unfocused_fps.fps(),
         "font_scale": settings.font_scale,
+        "large_targets": settings.large_targets,
+        "reduce_motion": settings.reduce_motion,
+        "properties_width": settings.properties_width,
+        "explorer_width": settings.explorer_width,
+        "output_height": settings.output_height,
+        "output_collapsed": settings.output_collapsed,
     });
     // A fixed-shape object always serializes; nothing here can fail.
     let bytes = serde_json::to_vec_pretty(&value).expect("settings JSON always serializes");
@@ -325,6 +379,7 @@ mod tests {
             icon_pack: IconPack::Light,
             unfocused_fps: UnfocusedFps::Fps25,
             font_scale: 1.25,
+            ..Settings::default()
         };
         save_to(&settings, &path).unwrap();
         assert_eq!(load_from(&path), settings);
@@ -487,5 +542,59 @@ mod tests {
 
         save_to(&settings, &path).expect("save settings");
         assert_eq!(load_from(&path).font_scale, 1.5);
+    }
+
+    /// The dock layout is the one preference a user can wreck by accident
+    /// — a column dragged to four pixels wide saves that way — so "Reset
+    /// Layout" exists, and a saved layout has to actually come back.
+    #[test]
+    fn a_dock_layout_round_trips_and_a_missing_one_falls_back() {
+        let path = temp_settings_path();
+        let settings = Settings {
+            properties_width: 412.5,
+            explorer_width: 260.,
+            output_height: 95.,
+            output_collapsed: true,
+            large_targets: true,
+            reduce_motion: Some(true),
+            ..Settings::default()
+        };
+
+        save_to(&settings, &path).expect("save settings");
+        let read = load_from(&path);
+        assert_eq!(read.properties_width, 412.5);
+        assert_eq!(read.output_height, 95.);
+        assert!(read.output_collapsed);
+        assert!(read.large_targets);
+        assert_eq!(read.reduce_motion, Some(true));
+
+        // Nothing saved reads as zero, which is the shell's cue to use its
+        // own defaults rather than collapsing every dock to nothing.
+        let empty = temp_settings_path();
+        std::fs::create_dir_all(empty.parent().expect("a parent")).expect("create dir");
+        std::fs::write(&empty, b"{}").expect("write settings");
+        let read = load_from(&empty);
+        assert_eq!(read.properties_width, 0.);
+        assert_eq!(
+            read.reduce_motion, None,
+            "no recorded choice means follow the desktop, not 'off'"
+        );
+    }
+
+    /// A hand-edited file must not be able to collapse the editor.
+    #[test]
+    fn a_nonsense_dock_size_falls_back_instead_of_being_used() {
+        let path = temp_settings_path();
+        std::fs::create_dir_all(path.parent().expect("a parent")).expect("create dir");
+        std::fs::write(
+            &path,
+            br#"{"properties_width": -50, "explorer_width": 0, "output_height": 1e400}"#,
+        )
+        .expect("write settings");
+
+        let read = load_from(&path);
+        assert_eq!(read.properties_width, 0., "a negative width is not a width");
+        assert_eq!(read.explorer_width, 0.);
+        assert_eq!(read.output_height, 0., "nor is an infinity");
     }
 }

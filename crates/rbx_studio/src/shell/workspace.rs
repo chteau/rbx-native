@@ -43,6 +43,17 @@ pub(super) const OUTPUT_HEIGHT: f32 = 180.;
 /// panel stops being usable rather than merely small.
 const COLUMN_RANGE: (f32, f32) = (200., 560.);
 const OUTPUT_RANGE: (f32, f32) = (80., 400.);
+/// A persisted dock size, or the default when nothing was saved. Zero is
+/// the "nothing was saved" marker (see `Settings`), which also rejects the
+/// NaN and negative values a hand-edited file could otherwise inject.
+pub(super) fn saved_or_default(saved: f32, default: f32) -> f32 {
+    if saved > 0. {
+        saved
+    } else {
+        default
+    }
+}
+
 /// The most of the window's width one side dock may occupy.
 const MAX_DOCK_SHARE: f32 = 0.28;
 
@@ -244,6 +255,7 @@ impl Shell {
                 )
                 .on_click(cx.listener(|shell, _, _, cx| {
                     shell.output_collapsed = !shell.output_collapsed;
+                    shell.save_settings();
                     cx.notify();
                 })),
             );
@@ -376,8 +388,12 @@ impl Shell {
         cx.notify();
     }
 
+    /// Saved on *release*, not on every frame of the drag: a resize is one
+    /// decision, and writing the settings file sixty times a second to
+    /// record its intermediate states would be absurd.
     pub(super) fn end_resize(&mut self, cx: &mut Context<Self>) {
         if self.drag.take().is_some() {
+            self.save_settings();
             cx.notify();
         }
     }

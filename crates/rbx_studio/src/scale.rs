@@ -72,6 +72,9 @@ pub(crate) fn action_for_keystroke(keystroke: &Keystroke) -> Option<Scale> {
 ///
 /// GPUI never learns this by itself — no backend calls `set_reduce_motion`
 /// — so somebody has to ask, and this is that somebody.
+/// Runs before the window exists, so a `Settings::reduce_motion` of `None`
+/// simply leaves this answer standing — the desktop is the default, and an
+/// explicit choice in the View menu overrides it.
 pub(crate) fn install(cx: &mut App) {
     let reduced = detect_reduced_motion();
     cx.set_reduce_motion(reduced);

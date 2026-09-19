@@ -304,10 +304,31 @@ pub(crate) fn scaled_width(base: f32) -> Pixels {
     scaled(base)
 }
 
-/// WCAG 2.5.8's minimum pointer target. A *floor*, not a design value: it
-/// is what the criterion requires regardless of what anyone has set the
-/// scale to.
+/// WCAG 2.5.8's minimum pointer target, and 2.5.5's enhanced one. Floors,
+/// not design values: what the criteria require regardless of what anyone
+/// has set the scale to.
 const TARGET_FLOOR: f32 = 24.;
+const TARGET_FLOOR_LARGE: f32 = 44.;
+
+static LARGE_TARGETS: AtomicBool = AtomicBool::new(false);
+
+/// Whether the enhanced target floor is in force.
+pub(crate) fn large_targets() -> bool {
+    LARGE_TARGETS.load(Ordering::Relaxed)
+}
+
+/// Returns whether the setting actually changed.
+pub(crate) fn set_large_targets(large: bool) -> bool {
+    LARGE_TARGETS.swap(large, Ordering::Relaxed) != large
+}
+
+fn target_floor() -> f32 {
+    if large_targets() {
+        TARGET_FLOOR_LARGE
+    } else {
+        TARGET_FLOOR
+    }
+}
 
 /// [`scaled`] for anything a pointer has to hit, which therefore may grow
 /// with the scale but may never shrink below [`TARGET_FLOOR`].
@@ -319,7 +340,7 @@ const TARGET_FLOOR: f32 = 24.;
 /// freely and asserted the floor only at 1.0x, which is a test that cannot
 /// fail.
 fn scaled_target(base: f32) -> Pixels {
-    px((base * font_scale()).max(TARGET_FLOOR))
+    px((base * font_scale()).max(target_floor()))
 }
 
 // ------------------------------------------------------------------- type
@@ -514,7 +535,7 @@ pub(crate) fn checkbox_target() -> Pixels {
 
 /// The smallest square any icon-only button is allowed to be.
 pub(crate) fn hit_target() -> Pixels {
-    scaled_target(TARGET_FLOOR)
+    scaled_target(target_floor())
 }
 
 // ---------------------------------------------------- properties  spacing

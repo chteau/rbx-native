@@ -40,20 +40,82 @@ means extending the frame's own vocabulary (its surfaces, its 3px radius),
 never inventing a second one.
 
 **Accessibility floors come from WCAG 2.1/2.2 and the WAI-ARIA APG**, via
-this project's own compiled reference (`UIANDUX.md`, kept outside the repo).
+this project's compiled reference (`UIANDUX.md`, kept outside the repo).
 Where the two sources disagree, the floor wins and the deviation is recorded
-in §10 — that has happened exactly twice, and both are listed there: the
-frame's 9px body text, and its borderless unticked checkbox.
+in §11.
 
-The floors that are hard-coded, all asserted in `tokens::tests`:
+### The numbers, and where each comes from
 
-| Thing | Floor | Source |
+| Thing | Floor | Criterion |
 |---|---|---|
-| Body text vs its surface | 4.5:1 | 1.4.3 AA |
-| Control edges, focus ring, tool accents | 3:1 | 1.4.11 AA |
-| Focus indicator | solid 2px, outset, 3:1 both sides | 2.4.13 (AAA, taken anyway) |
-| Pointer target | 24×24 | 2.5.8 AA |
-| UI scale range | reaches 200% | 1.4.4 AA |
+| Body text vs its surface | **4.5:1** | 1.4.3 Contrast (Minimum), AA |
+| Large text (≥24px, or ≥18.66px bold) | 3:1 | 1.4.3, AA |
+| Control edges, focus ring, state fills, tool accents | **3:1** | 1.4.11 Non-text Contrast, AA |
+| Focus indicator | **solid 2px**, outset, 3:1 against *both* the control and its background | 2.4.13 Focus Appearance |
+| Pointer target | **24×24** (44×44 with Large Click Targets on) | 2.5.8 Target Size (Minimum), AA / 2.5.5, AAA |
+| Text resize | reaches **200%** | 1.4.4 Resize Text, AA |
+
+Two things about that table are easy to get wrong, and the reference calls
+them out specifically:
+
+- **2.4.13 is AAA, not AA.** The only AA focus rule is 2.4.7 Focus Visible,
+  which sets no numbers at all; 2.4.11 Focus Not Obscured is the other AA
+  one. Plenty of secondary sources mislabel the measurable ≥2px/3:1 spec as
+  "2.4.11". This project takes the AAA number anyway, because it is cheap to
+  hit and "visible" without one is an opinion.
+- **These are CSS reference pixels, not device pixels.** They map to GPUI's
+  logical pixels — which is exactly why every size in `tokens.rs` is a
+  function of the UI scale rather than a constant.
+
+### How a native app is held to a web standard
+
+WCAG is written for web content. Applying it to desktop software is accepted
+practice and required of software by EN 301 549, but two criteria have no
+literal native equivalent, so this is the interpretation — stated here
+because the reference asks for it to be documented rather than assumed:
+
+- **1.4.4 Resize Text (200%)** has no browser zoom to lean on. The
+  settings-based UI scale *is* the mechanism: 0.5×–2.0×, persisted, over
+  fonts and the boxes they sit in together. Blender's Resolution Scale model
+  and range, for Blender's reason — text that grows while its row does not
+  is a clipped UI, not a larger one.
+- **1.4.10 Reflow (320px)** is not met literally and is not meant to be. The
+  criterion explicitly exempts "interfaces where it is necessary to keep
+  toolbars in view while manipulating content", which is this editor
+  exactly. What stands in for it is that nothing is *lost* as things grow:
+  the ribbon scrolls rather than dropping buttons, and a dock is capped at a
+  share of the window so it cannot squeeze the viewport out.
+
+### Conformance, honestly
+
+The reference's Stage 1 is the non-negotiable AA baseline; Stage 2 is the
+native-app accommodations; Stage 3 is polish. This is where the editor
+actually stands — including where it does not.
+
+**Stage 1 — all six met.** Text contrast, non-text contrast, the focus
+indicator, target sizes, never-colour-alone, and the keyboard model. The
+first four are asserted in `tokens::tests` rather than eyeballed, and the
+target-size test runs at **every** scale, not just at 1.0× where none of
+those tokens can fail.
+
+**Stage 2 — met, with one gap.** The UI scale (item 7) is there; the
+reference's separate editor/viewport font size is not, and is not missed
+yet. Large Click Targets and a Reduce Motion toggle (item 8) live in the
+View menu, the latter overriding a desktop preference read at startup.
+Dock sizes and the Output dock's collapsed state persist, with a Reset
+Layout command beside them (item 9) — named layouts do not exist.
+
+**Stage 3 — not started.** No high-contrast theme (item 10), no command
+palette (item 12). Item 11's 44×44 is reachable through Large Click
+Targets but is not the default on primary controls.
+
+**The one Level A gap, stated plainly:** a handful of toolkit components —
+`Select`, `ColorPicker`, `NumberInput`, and the menu bar — expose no way to
+set a tab index, so they are not in the Tab order and are mouse-only. That
+is WCAG 2.1.1 Keyboard, Level A, and it is the most serious thing still
+open here. It is a toolkit limitation, not a design decision, and the fix is
+a focusable wrapper per widget that forwards focus the way the Explorer's
+tree door already does.
 
 ## 2. Tokens
 
@@ -91,7 +153,9 @@ sit in, because text that grows while its row doesn't is not a larger UI,
 it is a clipped one. The range is Blender's too (0.5×–2.0×), reachable with
 Ctrl+= / Ctrl+− / Ctrl+0 and persisted in `Settings`. `hit_target()` is the
 one exception: it is a WCAG floor rather than a design value, so it never
-shrinks below 24 even at 0.5×.
+shrinks below 24 even at 0.5× — and **View → Large Click Targets** raises
+that floor to 2.5.5's 44px for pen, touch and motor-impaired use, which is
+Blender's "editor-area padding" idea under a clearer name.
 
 `tokens::tests` asserts the palette rather than trusting it — see §4.
 
@@ -105,12 +169,12 @@ Shell (v_flex)
 ├─ ROW B  RibbonTabs h 28 dock        Home · Avatar · UI · Script · Model · Test · Plugins
 ├─ ROW C  Ribbon   h 80   chrome      p5 gap10, groups for Row B's active tab, scrolls at high UI scale
 ├─ ROW D  Workspace flex-1  black
-│   ├─ Properties   w 300   DockTabs + p5 content, on `dock`
+│   ├─ Properties   w 300 (persisted)  DockTabs + p5 content, on `dock`
 │   ├─ ⇔ handle     4px hit on the dock's own surface — no black slot
 │   ├─ Centre       flex-1: document (+ its floating controls) over Output
 │   │   └─ Output   h 160 (80–400), or its 33px tab strip alone when collapsed
 │   ├─ ⇔ handle
-│   └─ Explorer     w 300   DockTabs + p5 content, on `dock`
+│   └─ Explorer     w 300 (persisted)  DockTabs + p5 content, on `dock`
 └─ CommandBar      auto    black      a dock's own 5px inset and chrome field
 ```
 
@@ -133,9 +197,17 @@ will look like a mystery rather than a layout change.
 
 **Row D is hand-rolled, not a `DockArea`.** Fixed columns with their own
 min/max and 4px handles can't be expressed through the toolkit's dock, so
-that dependency went away — and with it, dragging panels to rearrange them
-and the persisted dock layout. Re-adding rearrangeable docks is a real
-feature to spec, not a refactor to sneak in.
+that dependency went away — and with it, dragging panels to rearrange them.
+Re-adding that is a real feature to spec, not a refactor to sneak in; the
+design is in [`agents/dock-rearrangement.md`](agents/dock-rearrangement.md).
+
+**Dock sizes persist, and there is a way back.** Column widths, the Output
+dock's height and whether it is collapsed all land in `Settings` on release
+— not on every frame of a drag, which would write the file sixty times a
+second to record states nobody chose. **View → Reset Layout** is the
+companion every persisted layout needs: a column dragged to four pixels
+wide is saved that way, and without a reset the only way out is to find and
+delete the settings file.
 
 **A dock is a tab strip over an inset body.** `chrome::dock_tabs` draws the
 strip: one `chrome` pill hugging its own title on the dock's black ground,
@@ -361,12 +433,16 @@ size change on its own fixed box, so the label beneath it doesn't move.
 What *is* available is one-shot `with_animation`: menus fade in over
 `DURATION_MENU` on `easing_soft` with a 4px settle.
 
-**Reduce motion is honoured** (WCAG 2.3.3). GPUI owns the flag and
-`with_animation` already respects it, but no backend ever sets it — so
-`scale::install` asks the desktop once at startup (GSettings'
+**Reduce motion is honoured** (WCAG 2.3.3), from two places. GPUI owns the
+flag and `with_animation` already respects it, but no backend ever sets it
+— so `scale::install` asks the desktop once at startup (GSettings'
 `enable-animations`, overridable with `RBX_STUDIO_REDUCE_MOTION`) and sets
 both GPUI's copy and `tokens`' mirror, which is what a styling callback can
-reach.
+reach. **View → Reduce Motion** then overrides that and persists, because a
+desktop setting is a sensible default and not a verdict: somebody may want
+this editor calm on a machine that animates everything else, and an
+accessibility preference reachable only through an environment variable is
+not a setting anyone has.
 
 Don't try to fake transitions with per-frame state. An instant hover is
 honest; a hand-rolled colour lerp driven by notifications is a performance
@@ -396,9 +472,9 @@ to lie — not a shortcut:
 | Drag-to-rearrange docks | not implemented | needs a layout tree in place of three hardcoded slots — see [`agents/dock-rearrangement.md`](agents/dock-rearrangement.md) |
 | Focus ring on menu rows and tree rows | not present | neither has a focus handle; the tree's belongs to the toolkit and is not exposed |
 | Menu bar: File · Edit · View · Plugins · Test · Window · Help | File · Edit · Model · View | the other three have no commands behind them; an empty menu is worse than an absent one, and the menu bar's own greyed items already carry "not yet" |
-| Close "×" on document and dock tabs | drawn on document tabs, absent on dock tabs | a document here is a view of one open place, not a file that closes independently; a dock's panel can't close at all |
+| Close "×" on document and dock tabs | absent on both | a document here is a view of the one open place, not a file that closes independently, and a dock's panel can't close at all. A mark that does nothing is a control that lies |
 | "+" at the end of a tab strip | disabled on the document strip, replaced by the dock's overflow menu on a dock strip | the editor has no notion of a new document, and its docks hold one panel each |
-| Fixed 228px docks with no handles | 228px by default, draggable 180–480 | a place file's instance names are not 228px wide just because the design's were. The handle draws nothing until it is pointed at |
+| Fixed 228px docks with no handles | 300px by default, draggable 200–560, persisted, with Reset Layout | a place file's instance names are not 228px wide just because the design's were, and the wider label column follows from 14px text. The handle draws nothing until it is pointed at |
 | Half-pixel (0.5px) tab borders | 1px | GPUI draws whole pixels |
 | Centred search placeholder | left-aligned | the toolkit `Input` owns its own text alignment |
 | Ribbon stack of three rows | two, where the design's third has no command behind it | a third empty row is decoration |
@@ -412,6 +488,9 @@ to lie — not a shortcut:
 | An unsaved-document dot | not implemented | the editor has no dirty-state tracking to bind it to |
 | Hierarchy guides as one absolute overlay | drawn per row | the tree is virtualised; rows are the only thing that exists to hang a line on |
 | Keyboard focus visually distinct from selection in the Explorer | they are the same row | `TreeState` tracks one `selected_ix` and nothing else; splitting them means replacing the toolkit's tree |
+| Every control in the Tab order | `Select`, `ColorPicker`, `NumberInput` and the menu bar are mouse-only | **a Level A gap (2.1.1 Keyboard)**, not a trade-off: those toolkit components expose no way to set a tab index. The fix is a focusable wrapper per widget forwarding focus, as the Explorer's tree door already does |
+| A separate editor/viewport font size | one UI scale over everything | the reference notes VS Code splits them; nothing here needs a text size independent of its chrome yet |
+| Named dock layouts | one layout, plus Reset | sizes persist and can be restored; saving several under names is a feature, not a floor |
 
 ## 12. Verifying a visual change
 

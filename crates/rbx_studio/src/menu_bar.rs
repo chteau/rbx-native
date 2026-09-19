@@ -47,6 +47,9 @@ actions!(
         MenuGroup,
         MenuUngroup,
         MenuStyleEditor,
+        MenuReduceMotion,
+        MenuLargeTargets,
+        MenuResetLayout,
         /// Shared by every item below that has no real handler yet; always
         /// paired with `.disabled(true)` (see `menus`), so `PopupMenu` never
         /// lets a click reach it — `install_actions` still gives it a no-op
@@ -140,6 +143,14 @@ fn menus() -> Vec<OwnedMenu> {
                 MenuItem::action("Command Bar", MenuPlaceholder).disabled(true),
                 MenuItem::separator(),
                 MenuItem::action("Style Editor", MenuStyleEditor),
+                MenuItem::separator(),
+                // The accessibility settings the reference guidance calls
+                // for a native app to expose itself rather than inherit
+                // silently. The UI scale is here too, as its shortcuts.
+                MenuItem::action("Reduce Motion", MenuReduceMotion),
+                MenuItem::action("Large Click Targets", MenuLargeTargets),
+                MenuItem::separator(),
+                MenuItem::action("Reset Layout", MenuResetLayout),
             ])
             .owned(),
     ]
@@ -155,6 +166,24 @@ fn install_actions(shell: Entity<Shell>, cx: &mut App) {
         let shell = shell.clone();
         move |_: &MenuSave, cx| {
             shell.update(cx, |shell, cx| shell.save(cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
+        move |_: &MenuReduceMotion, cx| {
+            shell.update(cx, |shell, cx| shell.toggle_reduce_motion(cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
+        move |_: &MenuLargeTargets, cx| {
+            shell.update(cx, |shell, cx| shell.toggle_large_targets(cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
+        move |_: &MenuResetLayout, cx| {
+            shell.update(cx, |shell, cx| shell.reset_layout(cx));
         }
     });
     cx.on_action({

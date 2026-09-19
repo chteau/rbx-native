@@ -137,6 +137,8 @@ pub(crate) struct Shell {
     /// Explorer's place in the Tab order and hands focus on to the tree
     /// itself, whose own handle the toolkit keeps private.
     tree_focus_handle: FocusHandle,
+    /// An explicit reduce-motion choice, or `None` to follow the desktop.
+    reduce_motion: Option<bool>,
     /// A numeric field being dragged — see `shell::scrub`.
     scrub: Option<scrub::Scrub>,
     /// The Explorer's type-ahead buffer — see `shell::tree_keys`.
@@ -244,10 +246,21 @@ impl Shell {
             icon_pack,
             unfocused_fps,
             font_scale,
+            large_targets,
+            reduce_motion,
+            properties_width,
+            explorer_width,
+            output_height,
+            output_collapsed,
         } = settings;
-        // Before anything renders: every size token is read through this,
-        // so a scale applied after the first frame would flash.
+        // Before anything renders: every size token is read through these,
+        // so a scale or target floor applied after the first frame would
+        // flash.
         tokens::set_font_scale(font_scale);
+        tokens::set_large_targets(large_targets);
+        if let Some(reduced) = reduce_motion {
+            tokens::set_reduced_motion(reduced);
+        }
         let Place {
             explorer,
             properties,
@@ -380,6 +393,7 @@ impl Shell {
             ribbon_nav: roving::Roving::horizontal(),
             properties_nav: roving::Roving::vertical(),
             tab_order: roving::TabOrder::default(),
+            reduce_motion,
             scrub: None,
             tree_focus_handle,
             typeahead: tree_keys::Typeahead::default(),
@@ -412,10 +426,18 @@ impl Shell {
             ribbon_tab: ribbon::Tab::default(),
             document: Document::default(),
             open_menu: None,
-            properties_width: workspace::properties_width(),
-            explorer_width: workspace::explorer_width(),
-            output_height: workspace::OUTPUT_HEIGHT,
-            output_collapsed: false,
+            // A saved layout wins over the default; a zero means nothing
+            // was saved (see `Settings`).
+            properties_width: workspace::saved_or_default(
+                properties_width,
+                workspace::properties_width(),
+            ),
+            explorer_width: workspace::saved_or_default(
+                explorer_width,
+                workspace::explorer_width(),
+            ),
+            output_height: workspace::saved_or_default(output_height, workspace::OUTPUT_HEIGHT),
+            output_collapsed,
             drag: None,
             _subscriptions: [
                 tree_focused,
@@ -657,6 +679,43 @@ impl Shell {
         self.save_settings();
     }
 
+    /// Suppresses or restores motion, and remembers the choice.
+    ///
+    /// An explicit answer replaces the desktop's, which is the point: the
+    /// OS setting is a sensible default, not a verdict, and somebody who
+    /// wants this editor calm on a machine that animates everything else
+    /// needs somewhere to say so.
+    pub(crate) fn toggle_reduce_motion(&mut self, cx: &mut Context<Self>) {
+        let reduced = !tokens::reduced_motion();
+        self.reduce_motion = Some(reduced);
+        tokens::set_reduced_motion(reduced);
+        cx.set_reduce_motion(reduced);
+        self.save_settings();
+        cx.notify();
+    }
+
+    /// Raises every pointer target from WCAG 2.5.8's 24px floor to 2.5.5's
+    /// 44px one, or lowers it back.
+    pub(crate) fn toggle_large_targets(&mut self, cx: &mut Context<Self>) {
+        tokens::set_large_targets(!tokens::large_targets());
+        self.save_settings();
+        cx.notify();
+    }
+
+    /// Puts the docks back where they started.
+    ///
+    /// The companion every persisted layout needs: a dock dragged to a few
+    /// pixels wide is saved that way, and without this the only way back is
+    /// to find and delete the settings file.
+    pub(crate) fn reset_layout(&mut self, cx: &mut Context<Self>) {
+        self.properties_width = workspace::properties_width();
+        self.explorer_width = workspace::explorer_width();
+        self.output_height = workspace::OUTPUT_HEIGHT;
+        self.output_collapsed = false;
+        self.save_settings();
+        cx.notify();
+    }
+
     /// Applies a new UI scale and persists it.
     ///
     /// Every size token is read through `tokens::font_scale`, so this one
@@ -793,6 +852,12 @@ impl Shell {
             icon_pack: self.icon_pack,
             unfocused_fps: self.unfocused_fps,
             font_scale: tokens::font_scale(),
+            large_targets: tokens::large_targets(),
+            reduce_motion: self.reduce_motion,
+            properties_width: self.properties_width,
+            explorer_width: self.explorer_width,
+            output_height: self.output_height,
+            output_collapsed: self.output_collapsed,
         };
         let _ = settings.save();
 
