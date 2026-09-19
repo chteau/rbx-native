@@ -32,12 +32,6 @@ const GUIDE_OFFSET: f32 = 6.0;
 const CONNECTOR_WIDTH: f32 = 5.0;
 const CHEVRON_WIDTH: f32 = 12.0;
 const CLASS_ICON_SIZE: f32 = 12.0;
-/// The caption beside an `OptionalCFrame` row's present/absent checkbox.
-/// Real Studio has no equivalent control to copy a wording from — it never
-/// surfaces an optional `CFrame` at all — so this says plainly what the box
-/// means rather than borrowing a term from somewhere it isn't used.
-const HAS_VALUE_LABEL: &str = "Has value";
-
 /// Out of 255 — how strongly a tagged row's hover/selected background reads
 /// against the row behind it. Selected is the stronger of the two, matching
 /// the relationship the untagged selection has with its own hover step.
@@ -580,7 +574,12 @@ fn render_row_editor(
         // The checkbox is the only control an absent value has: there is
         // nothing to edit until it says there is a value. Present, it reads
         // as a clear, and the editor for the value itself sits under it.
-        RowEditor::Optional(present, inner) => {
+        //
+        // The caption travels with the value rather than being a constant
+        // here, because the two types shaped this way mean different things
+        // by the box — "Has value" for an `OptionalCFrame`, "Custom" for a
+        // `PhysicalProperties` (see `properties::EditKind::Optional`).
+        RowEditor::Optional(present, label, inner) => {
             let toggle = on_flag(0, present);
             v_flex()
                 .w_full()
@@ -599,7 +598,7 @@ fn render_row_editor(
                             div()
                                 .flex_none()
                                 .text_color(tokens::text_muted())
-                                .child(HAS_VALUE_LABEL),
+                                .child(label),
                         ),
                 )
                 .children(present.then(|| {

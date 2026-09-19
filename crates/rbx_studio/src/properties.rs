@@ -3,7 +3,9 @@
 
 use std::collections::BTreeMap;
 
-use rbx_dom::{Axes, CFrameData, Color3Data, Content, Faces, Font, Ref, Variant, WeakDom};
+use rbx_dom::{
+    Axes, CFrameData, Color3Data, Content, Faces, Font, PhysicalProperties, Ref, Variant, WeakDom,
+};
 use rbx_reflection::ReflectionDatabase;
 
 use crate::script_editor::source;
@@ -138,15 +140,20 @@ pub(crate) enum EditKind {
         labels: &'static [&'static str],
         values: Vec<bool>,
     },
-    /// A value that may simply not be there: a present/absent checkbox, and
-    /// the editor for the value itself below it once it is. `OptionalCFrame`
-    /// is the only `Variant` shaped this way.
+    /// A value that is only half there: a checkbox, and the editor for the
+    /// rest of it below once the box is ticked. Two `Variant`s are shaped
+    /// this way, for different reasons — an `OptionalCFrame` may genuinely
+    /// be absent, while a `PhysicalProperties` is always *something* but
+    /// only carries five numbers in its `Custom` form — which is why the
+    /// checkbox carries its own `label` rather than one fixed wording.
     ///
     /// `inner` is seeded even while `present` is false — the row does not
     /// draw it then, but that is what the value becomes the moment the
-    /// checkbox turns it on (see `edit::IDENTITY_CFRAME`).
+    /// checkbox turns it on (see `edit::IDENTITY_CFRAME` and
+    /// `edit::DEFAULT_PHYSICAL`).
     Optional {
         present: bool,
+        label: &'static str,
         inner: Box<EditKind>,
     },
 }
@@ -400,7 +407,19 @@ impl Properties {
                 "{{({}, {}), ({}, {})}}",
                 rect.min.x, rect.min.y, rect.max.x, rect.max.y
             ),
-            Variant::PhysicalProperties(physical) => format!("{physical:?}"),
+            // Spelled the way the editor's own fields read it back, not as
+            // Rust's derived `Debug`: `Custom { density: 0.7, .. }` is a
+            // struct dump, and this column is meant to agree with `rbxdump`.
+            Variant::PhysicalProperties(PhysicalProperties::Default) => "Default".to_owned(),
+            Variant::PhysicalProperties(PhysicalProperties::Custom {
+                density,
+                friction,
+                elasticity,
+                friction_weight,
+                elasticity_weight,
+            }) => format!(
+                "Custom({density}, {friction}, {elasticity}, {friction_weight}, {elasticity_weight})"
+            ),
             Variant::SharedString(id) => format!("SharedString({id})"),
             Variant::UDim(u) => format!("{{{}, {}}}", u.scale, u.offset),
             Variant::UDim2(u) => format!(
@@ -480,7 +499,21 @@ pub(crate) fn value_edit_kind(value: &Variant, text: String) -> EditKind {
         // one a value".
         Variant::OptionalCFrame(frame) => EditKind::Optional {
             present: frame.is_some(),
+            label: "Has value",
             inner: Box::new(groups(CFRAME, &text)),
+        },
+        // The same shape for a different reason. `PhysicalProperties` is
+        // never absent — a part always has physics — but its `Default` form
+        // carries no numbers at all: the engine derives them from the
+        // material. So the box does not say "has value", it says which of
+        // the enum's two forms this is, and the five fields appear only for
+        // the one that actually has five fields. That is also how Studio's
+        // own panel presents it, as a `CustomPhysicalProperties` boolean
+        // with the numbers underneath.
+        Variant::PhysicalProperties(physical) => EditKind::Optional {
+            present: matches!(physical, PhysicalProperties::Custom { .. }),
+            label: "Custom",
+            inner: Box::new(fields(PHYSICAL_PROPERTIES, &text)),
         },
         Variant::Ray { .. } => groups(RAY, &text),
         Variant::Faces(faces) => EditKind::Flags {
@@ -562,6 +595,16 @@ const RECT: &[Field] = &[
     decimal("Max Y"),
 ];
 const NUMBER_RANGE: &[Field] = &[decimal("Min"), decimal("Max")];
+/// The five numbers a `PhysicalProperties::Custom` carries, in the order
+/// Roblox's own `PhysicalProperties.new` takes them — so a reader comparing
+/// against the API, or against Studio's panel, finds them where they expect.
+const PHYSICAL_PROPERTIES: &[Field] = &[
+    decimal("Density"),
+    decimal("Friction"),
+    decimal("Elasticity"),
+    decimal("Friction Weight"),
+    decimal("Elasticity Weight"),
+];
 const FONT: &[Field] = &[text("Family"), text("Weight"), text("Style")];
 
 /// A `Faces`' six sides, in the order Roblox's own `Enum.NormalId` lists
