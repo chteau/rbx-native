@@ -154,6 +154,22 @@ impl Shell {
         };
         let handle = cx.entity();
 
+        // The field takes its place in the window's own Tab order
+        // (`shell::roving::TabOrder`) here, the same one-line fix
+        // `Shell::quality_control` gets and for the same reason: `InputState`
+        // is `Focusable`, and the handle it hands out is the one its own
+        // `.focus` already uses, so recording that handle *is* the fix —
+        // there is nothing to forward focus to once Tab lands on it.
+        //
+        // Registered while building the popover's body rather than once at
+        // startup, because the popover's body is the only place these fields
+        // exist on screen. A stop for a control that is not visible is worse
+        // than no stop at all, and the order is rebuilt every frame anyway
+        // (`TabOrder::restart`), so closing the popover takes them back out
+        // on its own.
+        self.tab_order
+            .register(&self.snap_fields.of(kind).read(cx).focus_handle(cx));
+
         v_flex()
             .w_full()
             .child(field_label(

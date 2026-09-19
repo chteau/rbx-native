@@ -96,9 +96,11 @@ impl Shell {
         // spelled out on the closure) to dodge clippy's `type_complexity`.
         let control = render_editor(
             tab_index,
+            &self.tab_order,
             widget,
             |_index, _checked| Box::new(|_, _, _| {}),
             on_scrub,
+            cx,
         );
         if let Some(message) = error {
             return v_flex_error(control, message);
