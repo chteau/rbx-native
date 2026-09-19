@@ -602,9 +602,10 @@ fn render_row_editor(
                         ),
                 )
                 .children(present.then(|| {
-                    // An optional's inner editor is a numeric one — the only
-                    // `Variant` shaped this way is `OptionalCFrame` — never a
-                    // flag set, so nothing below ever reaches `on_flag`.
+                    // An optional's inner editor is a numeric one — a
+                    // `CFrame`'s six fields or a `PhysicalProperties`'
+                    // five, the only two `Variant`s shaped this way — never
+                    // a flag set, so nothing below ever reaches `on_flag`.
                     render_row_editor(
                         tab_index,
                         stops,
