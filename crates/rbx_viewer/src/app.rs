@@ -4,9 +4,11 @@
 //! `--quality auto` is managed here too, from the frame times this loop measures
 //! (see [`quality`]).
 
+mod fps;
 mod input;
 mod pacing;
 mod quality;
+pub(crate) mod title;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -26,9 +28,11 @@ use crate::input::{CameraInput, Input};
 use crate::quality::{QualityLevel, QualityProfile};
 use crate::renderer::{Renderer, World};
 
+use fps::FrameRate;
 use input::{camera_key, wheel_notches};
 use pacing::SmoothedDt;
 use quality::Automatic;
+use title::title;
 
 const INITIAL_SIZE: (u32, u32) = (1280, 720);
 // How long a speed change stays in the title bar before it reverts to the file name.
@@ -70,6 +74,7 @@ pub(crate) fn open_window(
         controller,
         last_shown_speed: initial_speed,
         speed_title_until: None,
+        fps: FrameRate::new(now),
     };
     event_loop
         .run_app(&mut viewer)
@@ -103,6 +108,11 @@ struct Viewer<'a> {
     controller: Controller,
     last_shown_speed: f32,
     speed_title_until: Option<Instant>,
+    /// Per-second frame rate for the title bar. Runs whether the quality level
+    /// is pinned or `--quality auto`-managed — unlike `automatic`, which only
+    /// exists in the latter case — the same way `rbxstudio`'s corner label
+    /// shows its own reading regardless of quality mode.
+    fps: FrameRate,
 }
 
 /// GPU and window state once a window exists.
@@ -170,6 +180,8 @@ impl Viewer<'_> {
         let now = Instant::now();
         let dt = now.duration_since(self.last_frame);
         self.last_frame = now;
+        // Counts this same redraw, not a second measurement of it — see `fps`.
+        let fps_updated = self.fps.record(now);
         let elapsed = self.start.elapsed();
         // Raw `dt` is wall-clock noise around an actually-steady vsync cadence (see
         // `pacing`); motion integration gets the de-noised estimate instead, while the
@@ -184,7 +196,7 @@ impl Viewer<'_> {
         let from = self
             .controller
             .update(&mut self.input, motion_dt, elapsed, bounds, false);
-        let title_update = self.next_title(now);
+        let title_update = self.next_title(now, fps_updated);
         // The whole frame, presentation included: what the window actually
         // delivered, which is the only thing the manager can measure here.
         let level = self.automatic.as_mut().and_then(|auto| auto.record(dt));
@@ -210,22 +222,38 @@ impl Viewer<'_> {
         }
     }
 
-    /// Whether the title bar should change this frame: a fresh speed reading
-    /// shows it, and it reverts to the plain file name once its time is up.
-    fn next_title(&mut self, now: Instant) -> Option<String> {
+    /// Whether the title bar should change this frame.
+    ///
+    /// A fresh speed reading opens the window that shows it; a frame-rate
+    /// refresh (once a second, whether or not the speed is also showing) needs
+    /// a redraw too, since `title` composes both into the same line.
+    fn next_title(&mut self, now: Instant, fps_updated: bool) -> Option<String> {
         let speed = self.controller.speed();
+        let mut changed = fps_updated;
         if (speed - self.last_shown_speed).abs() > f32::EPSILON {
             self.last_shown_speed = speed;
             self.speed_title_until = Some(now + SPEED_TITLE_DURATION);
-            return Some(format!("{} — {} studs/s", self.title, speed.round() as i64));
+            changed = true;
         }
 
-        let until = self.speed_title_until?;
-        if now < until {
+        let showing_speed = match self.speed_title_until {
+            Some(until) if now < until => true,
+            Some(_) => {
+                self.speed_title_until = None;
+                changed = true;
+                false
+            }
+            None => false,
+        };
+
+        if !changed {
             return None;
         }
-        self.speed_title_until = None;
-        Some(self.title.to_string())
+        Some(title(
+            self.title,
+            self.fps.latest(),
+            showing_speed.then(|| speed.round() as i64),
+        ))
     }
 
     fn handle_key(&mut self, event_loop: &ActiveEventLoop, event: KeyEvent) {
@@ -345,7 +373,12 @@ impl ApplicationHandler for Viewer<'_> {
                 // that whole span reads as the first frame's `dt`, and `motion_dt`'s
                 // clamp (see `pacing`) then takes many real frames to decay back down,
                 // moving the camera far too fast if a key is already held at launch.
-                self.last_frame = Instant::now();
+                let now = Instant::now();
+                self.last_frame = now;
+                // Same reasoning for the title bar's frame rate: `fps` was created
+                // before this setup ran, and counting that span as part of its first
+                // one-second window would report a fraction of a frame per second.
+                self.fps = FrameRate::new(now);
             }
             Err(err) => {
                 self.error = Some(err);

@@ -262,6 +262,25 @@ impl Headless {
         self.offscreen.set_selection(selected);
     }
 
+    /// Whether scene geometry standing in front of the selection hides its
+    /// outline. `false` by default: the box is a control the user is acting
+    /// on rather than scenery, so it shows through whatever it is behind —
+    /// see `renderer::selection`. Same idle-skipping caveat as
+    /// [`Headless::set_selection`]: nothing moved, but the picture changed.
+    pub fn set_selection_occluded(&mut self, occluded: bool) {
+        if occluded == self.view.selection_occluded {
+            return;
+        }
+        self.view.set_selection_occluded(occluded);
+        self.offscreen.set_selection_occluded(occluded);
+    }
+
+    /// Whether [`Headless::set_selection_occluded`] last asked for an
+    /// occluded selection box.
+    pub fn selection_occluded(&self) -> bool {
+        self.view.selection_occluded
+    }
+
     /// Outlines whatever `BasePart` the cursor is over, distinctly from the
     /// selection outline above — Studio's "about to click" cue. `None` clears
     /// it. Unlike `set_selection`, the caller is expected to have already

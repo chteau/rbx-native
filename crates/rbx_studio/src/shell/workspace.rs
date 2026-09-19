@@ -282,6 +282,7 @@ impl Shell {
     fn viewport_overlay(&self, cx: &mut Context<Self>) -> AnyElement {
         let orthographic = self.orthographic();
         let axis_indicator = self.axis_indicator();
+        let selection_occluded = self.selection_occluded();
         let stats = self.stats_shown();
         let capped = self.unfocused_fps() == UnfocusedFps::Fps25;
 
@@ -300,6 +301,11 @@ impl Shell {
                 menu::item("Orientation Indicator")
                     .checked(axis_indicator)
                     .on_click(move |shell, cx| shell.set_axis_indicator(!axis_indicator, cx)),
+                menu::item("Hide Selection Box Behind Parts")
+                    .checked(selection_occluded)
+                    .on_click(move |shell, cx| {
+                        shell.set_selection_occluded(!selection_occluded, cx)
+                    }),
                 menu::item("Stats")
                     .checked(stats)
                     .on_click(move |shell, cx| shell.set_stats_shown(!stats, cx)),

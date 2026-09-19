@@ -155,7 +155,16 @@ impl Shell {
     /// menu click runs the exact same path the quick-insert keys do.
     pub(crate) fn insert_instance(&mut self, class: &str, cx: &mut Context<Self>) {
         let template = default_template(&self.database, class);
-        self.insert_instance_with_source(class, template, cx);
+        self.insert_instance_with_source(class, None, template, cx);
+    }
+
+    /// The ribbon Part menu's Block/Sphere/Cylinder items (see
+    /// `shell::ribbon::insert_tiles`): all three insert a bare `Part` and are
+    /// told apart only by `shape` (`Enum.PartType`) — Wedge/CornerWedge
+    /// disambiguate through their own class instead and go through
+    /// [`insert_instance`](Self::insert_instance) unchanged.
+    pub(crate) fn insert_part(&mut self, class: &str, shape: u32, cx: &mut Context<Self>) {
+        self.insert_instance_with_source(class, Some(shape), None, cx);
     }
 
     /// "Insert ModuleScript (Class)" (see `menu_bar`): the one script insert
@@ -164,18 +173,22 @@ impl Shell {
     /// `ROADMAP.md`'s "New-script templates" entry asks for alongside the
     /// plain-table default `ModuleScript` otherwise gets.
     pub(crate) fn insert_class_module(&mut self, cx: &mut Context<Self>) {
-        self.insert_instance_with_source("ModuleScript", Some(MODULE_CLASS_TEMPLATE), cx);
+        self.insert_instance_with_source("ModuleScript", None, Some(MODULE_CLASS_TEMPLATE), cx);
     }
 
-    /// Shared by [`insert_instance`](Self::insert_instance) and
-    /// [`insert_class_module`](Self::insert_class_module): inserts `class`
-    /// and, when `source` is `Some`, writes it to the new instance's
-    /// `Source` through `script_editor::source::write` — the same path a
-    /// script tab's own edits commit through, so undo, Ctrl+S and the
-    /// script editor need to know nothing about how the instance got here.
+    /// Shared by [`insert_instance`](Self::insert_instance),
+    /// [`insert_part`](Self::insert_part) and
+    /// [`insert_class_module`](Self::insert_class_module): inserts `class`,
+    /// applies `BasePart` defaults (writing `shape` too, for the classes that
+    /// actually declare it — see [`apply_part_defaults`]) and, when `source`
+    /// is `Some`, writes it to the new instance's `Source` through
+    /// `script_editor::source::write` — the same path a script tab's own
+    /// edits commit through, so undo, Ctrl+S and the script editor need to
+    /// know nothing about how the instance got here.
     fn insert_instance_with_source(
         &mut self,
         class: &str,
+        shape: Option<u32>,
         source: Option<&str>,
         cx: &mut Context<Self>,
     ) {
@@ -187,8 +200,8 @@ impl Shell {
         self.push_history();
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
         let reference = dom.new_instance(class, class, parent);
-        if class == "Part" {
-            apply_part_defaults(&mut dom, reference);
+        if let Some(part_shape) = part_defaults_shape(&self.database, class, shape) {
+            apply_part_defaults(&mut dom, reference, part_shape);
         }
         if let Some(text) = source {
             crate::script_editor::source::write(&mut dom, reference, text);
@@ -228,19 +241,45 @@ impl Shell {
     }
 }
 
+/// `Enum.PartType`, for the classes the Part insert menu can create through a
+/// bare `Part` — Wedge/CornerWedge disambiguate through their own class
+/// instead (see `rbx_viewer::scene::shape::resolve` and
+/// `Shell::insert_instance_with_source`).
+pub(super) const PART_TYPE_BALL: u32 = 0;
+pub(super) const PART_TYPE_BLOCK: u32 = 1;
+pub(super) const PART_TYPE_CYLINDER: u32 = 2;
+
+/// Whether `class` gets [`apply_part_defaults`] at all, and if so, what
+/// `shape` to pass it: `None` for anything that isn't a `BasePart` subclass;
+/// `Some(None)` for a `BasePart` subclass with no `Shape` property of its own
+/// (`WedgePart`, `CornerWedgePart`); `Some(Some(_))` for `Part` itself, using
+/// the caller's requested `shape` or [`PART_TYPE_BLOCK`] if it didn't ask for
+/// one.
+fn part_defaults_shape(
+    database: &ReflectionDatabase,
+    class: &str,
+    shape: Option<u32>,
+) -> Option<Option<u32>> {
+    database.is_subclass_of(class, "BasePart").then(|| {
+        database
+            .is_subclass_of(class, "Part")
+            .then(|| shape.unwrap_or(PART_TYPE_BLOCK))
+    })
+}
+
 /// Roblox's own defaults for `Instance.new("Part")`, duplicated from
 /// `rbx_lua::defaults::base_part_defaults` rather than reused: that table sits
 /// behind a `pub(crate)` `apply` function private to `rbx_lua`, and making a
 /// whole module public across crates for one small constant table is not
-/// worth it. Kept to just the shared `BasePart` geometry/appearance set plus
-/// `Part`'s own `shape`, since only `Part` is ever created through this
-/// quick-insert.
-fn apply_part_defaults(dom: &mut WeakDom, referent: Ref) {
+/// worth it. Applies to any `BasePart` subclass the insert menus create
+/// (`Part`, `WedgePart`, `CornerWedgePart`) — `shape` is written only when
+/// the caller passes one, since `WedgePart`/`CornerWedgePart` don't actually
+/// declare a `Shape` property in Roblox's own reflection data.
+fn apply_part_defaults(dom: &mut WeakDom, referent: Ref, shape: Option<u32>) {
     const IDENTITY_ROTATION: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
     const MATERIAL_PLASTIC: u32 = 256;
-    const PART_TYPE_BLOCK: u32 = 1;
 
-    let defaults: [(&str, Variant); 12] = [
+    let defaults: [(&str, Variant); 11] = [
         (
             "size",
             Variant::Vector3(Vector3Data {
@@ -276,10 +315,12 @@ fn apply_part_defaults(dom: &mut WeakDom, referent: Ref) {
         ("CastShadow", Variant::Bool(true)),
         ("Locked", Variant::Bool(false)),
         ("Massless", Variant::Bool(false)),
-        ("shape", Variant::Enum(PART_TYPE_BLOCK)),
     ];
     for (key, value) in defaults {
         let _ = dom.set_property(referent, key, value);
+    }
+    if let Some(shape) = shape {
+        let _ = dom.set_property(referent, "shape", Variant::Enum(shape));
     }
 }
 
@@ -365,7 +406,7 @@ mod tests {
     fn inserted_part_gets_studio_s_visible_defaults() {
         let mut dom = WeakDom::new();
         let part = dom.new_instance("Part", "Part", None);
-        apply_part_defaults(&mut dom, part);
+        apply_part_defaults(&mut dom, part, Some(PART_TYPE_BLOCK));
 
         let instance = dom.get(part).expect("just inserted");
         assert_eq!(
@@ -385,6 +426,85 @@ mod tests {
             instance.properties().get("CFrame"),
             Some(Variant::CFrame(_))
         ));
+    }
+
+    /// Mirrors what `Shell::insert_instance`/`insert_part` does for one Part
+    /// insert-menu item, without needing a real `Shell`/`Context` — the same
+    /// reason [`apply_part_defaults`]'s own tests above work on a bare
+    /// `WeakDom` instead.
+    fn insert_menu_item(class: &str, shape: Option<u32>) -> (WeakDom, Ref) {
+        let mut dom = WeakDom::new();
+        let reference = dom.new_instance(class, class, None);
+        if let Some(part_shape) = part_defaults_shape(&database(), class, shape) {
+            apply_part_defaults(&mut dom, reference, part_shape);
+        }
+        (dom, reference)
+    }
+
+    /// One test per `shell::ribbon::insert_tiles` Part-menu item. The bug
+    /// `ROADMAP.md` describes was invisible in the Explorer — every item
+    /// already showed the right class — and only showed once the viewport
+    /// resolved the wrong `ShapeKind`, so each of these checks both.
+    #[test]
+    fn block_menu_item_is_a_part_that_renders_as_a_box() {
+        let (dom, part) = insert_menu_item("Part", None);
+        assert_eq!(dom.get(part).expect("just inserted").class(), "Part");
+        assert_eq!(
+            rbx_viewer::resolved_shape_label(&dom, &database(), part),
+            Some("Box")
+        );
+    }
+
+    #[test]
+    fn sphere_menu_item_is_a_part_that_renders_as_a_ball() {
+        let (dom, part) = insert_menu_item("Part", Some(PART_TYPE_BALL));
+        assert_eq!(dom.get(part).expect("just inserted").class(), "Part");
+        assert_eq!(
+            rbx_viewer::resolved_shape_label(&dom, &database(), part),
+            Some("Ball")
+        );
+    }
+
+    #[test]
+    fn wedge_menu_item_is_a_wedge_part_with_studio_s_visible_defaults() {
+        let (dom, part) = insert_menu_item("WedgePart", None);
+        let instance = dom.get(part).expect("just inserted");
+        assert_eq!(instance.class(), "WedgePart");
+        assert_eq!(
+            instance.properties().get("Material"),
+            Some(&Variant::Enum(256)),
+            "Wedge/CornerWedge must get apply_part_defaults too, not just Part"
+        );
+        assert_eq!(
+            rbx_viewer::resolved_shape_label(&dom, &database(), part),
+            Some("Wedge")
+        );
+    }
+
+    #[test]
+    fn corner_wedge_menu_item_is_a_corner_wedge_part_with_studio_s_visible_defaults() {
+        let (dom, part) = insert_menu_item("CornerWedgePart", None);
+        let instance = dom.get(part).expect("just inserted");
+        assert_eq!(instance.class(), "CornerWedgePart");
+        assert_eq!(
+            instance.properties().get("Material"),
+            Some(&Variant::Enum(256)),
+            "Wedge/CornerWedge must get apply_part_defaults too, not just Part"
+        );
+        assert_eq!(
+            rbx_viewer::resolved_shape_label(&dom, &database(), part),
+            Some("CornerWedge")
+        );
+    }
+
+    #[test]
+    fn cylinder_menu_item_is_a_part_that_renders_as_a_cylinder() {
+        let (dom, part) = insert_menu_item("Part", Some(PART_TYPE_CYLINDER));
+        assert_eq!(dom.get(part).expect("just inserted").class(), "Part");
+        assert_eq!(
+            rbx_viewer::resolved_shape_label(&dom, &database(), part),
+            Some("CylinderX")
+        );
     }
 
     fn database() -> ReflectionDatabase {
@@ -443,7 +563,7 @@ mod tests {
     fn inserting_a_part_gets_no_source_property() {
         let mut dom = WeakDom::new();
         let part = dom.new_instance("Part", "Part", None);
-        apply_part_defaults(&mut dom, part);
+        apply_part_defaults(&mut dom, part, Some(PART_TYPE_BLOCK));
 
         assert_eq!(default_template(&database(), "Part"), None);
         assert_eq!(

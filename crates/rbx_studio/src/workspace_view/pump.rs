@@ -57,6 +57,9 @@ enum Command {
     Interval(Duration),
     Quality(QualityLevel),
     Orthographic(bool),
+    /// Whether a part in front of the selection hides its outline box — see
+    /// `Headless::set_selection_occluded`.
+    SelectionOccluded(bool),
     Selection(Vec<Selected>),
     /// The "about to click" cue — see `Headless::set_hover`. `None` clears
     /// it, the way an empty `Selection` clears the selection outline.
@@ -189,6 +192,12 @@ impl Pump {
     /// Swaps the main camera between perspective and orthographic projection.
     pub(super) fn orthographic(&self, orthographic: bool) {
         let _ = self.commands.send(Command::Orthographic(orthographic));
+    }
+
+    /// Switches whether the selection outline is depth-tested against the
+    /// scene or drawn through it.
+    pub(super) fn selection_occluded(&self, occluded: bool) {
+        let _ = self.commands.send(Command::SelectionOccluded(occluded));
     }
 
     /// Outlines what `selected` covers in the viewport.
@@ -569,6 +578,7 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::Interval(new) => *rendering.interval = new,
         Command::Quality(mode) => rendering.quality.set(mode, rendering.viewer),
         Command::Orthographic(orthographic) => rendering.viewer.set_orthographic(orthographic),
+        Command::SelectionOccluded(occluded) => rendering.viewer.set_selection_occluded(occluded),
         Command::Selection(selected) => rendering.viewer.set_selection(&selected),
         Command::Hover(selected) => rendering.viewer.set_hover(selected),
         Command::Gizmo(gizmo) => rendering.viewer.set_gizmo(gizmo),

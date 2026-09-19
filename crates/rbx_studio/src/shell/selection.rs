@@ -512,6 +512,44 @@ mod tests {
         part
     }
 
+    /// Alt-click's whole point is reaching *one* part inside a model, so the
+    /// aggregate box a plain click gets must not follow it there: what the
+    /// cycled-to part is outlined and gizmoed with is its own box alone, over
+    /// itself alone, even though the same click without `Alt` would have
+    /// picked the model spanning it and its siblings.
+    #[test]
+    fn alt_click_reaches_one_part_inside_a_model_rather_than_the_whole_thing() {
+        let mut dom = WeakDom::new();
+        let workspace = dom.new_instance("Workspace", "Workspace", None);
+        let model = dom.new_instance("Model", "House", Some(workspace));
+        let wall = placed_part(&mut dom, model, 0.0);
+        placed_part(&mut dom, model, 8.0);
+        let database = ReflectionDatabase::embedded();
+
+        let plain = from_click(&dom, &database, &[wall], None, false);
+        assert_eq!(plain, Some(model));
+        let (outline, targets) = shown(&dom, &database, &Vec::from_iter(plain));
+        assert_eq!(outline[0].parts().len(), 2, "the model carries both");
+
+        let cycled = from_click(&dom, &database, &[wall], plain, true);
+        assert_eq!(
+            cycled,
+            Some(wall),
+            "Alt steps to the raw part, not its model"
+        );
+
+        let (outline, targets_inside) = shown(&dom, &database, &Vec::from_iter(cycled));
+        assert_eq!(outline.len(), 1);
+        assert_eq!(outline[0].referent(), wall);
+        assert!(
+            outline[0].is_part(),
+            "its own oriented box, not an aggregate"
+        );
+        assert_eq!(outline[0].parts(), [wall]);
+        assert_eq!(targets_inside.iter().count(), 1);
+        assert_ne!(targets.iter().count(), targets_inside.iter().count());
+    }
+
     #[test]
     fn alt_click_with_one_thing_under_the_cursor_stays_on_it() {
         let (dom, loose, ..) = nested_place();

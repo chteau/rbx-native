@@ -327,3 +327,38 @@ fn a_model_that_gained_a_part_is_outlined_around_it_once_resent() {
     assert!((wide.x_axis.length() - 22.0).abs() < 1e-4, "{wide}");
     assert!((wide.w_axis.truncate().x - 10.0).abs() < 1e-4, "{wide}");
 }
+
+/// A `Model` inside a `Model` is not a second box: the outer one's aggregate
+/// spans every part at every depth, because `pick::parts_of` descends the
+/// whole subtree rather than stopping at the first container it meets. The
+/// nested model itself contributes nothing of its own — it is a `PVInstance`
+/// but not a `BasePart`, so it has no `Size` to union in, and its parts are
+/// already counted.
+#[test]
+fn a_model_nested_in_a_model_is_spanned_by_the_outer_ones_box() {
+    let mut dom = WeakDom::new();
+    let outer = dom.new_instance("Model", "House", None);
+    let near = dom.new_instance("Part", "Wall", Some(outer));
+    let inner = dom.new_instance("Model", "Door", Some(outer));
+    let deep = dom.new_instance("Part", "Handle", Some(inner));
+    let database = ReflectionDatabase::embedded();
+
+    let mut placements = HashMap::new();
+    placements.insert(near, cube(Vec3::new(-3.0, 0.0, 0.0)));
+    placements.insert(deep, cube(Vec3::new(9.0, 0.0, 0.0)));
+
+    let selected = Selected::read(&dom, &database, outer);
+    assert_eq!(selected.parts().len(), 2, "the buried part counts too");
+
+    // Two two-stud cubes at -3 and 9: one box spanning -4..10.
+    let model = outline::box_of(&placements, &selected).expect("both parts placed");
+    assert!((model.x_axis.length() - 14.0).abs() < 1e-4, "{model}");
+    assert!((model.w_axis.truncate() - Vec3::new(3.0, 0.0, 0.0)).length() < 1e-4);
+    assert_eq!(outline::box_edges(&placements, &[selected]).len(), 72);
+
+    // And selecting the nested model alone is its own, smaller box — the
+    // outer one's extent is never inherited downwards.
+    let inside = Selected::read(&dom, &database, inner);
+    let model = outline::box_of(&placements, &inside).expect("the buried part is placed");
+    assert!((model.x_axis.length() - 2.0).abs() < 1e-4, "{model}");
+}

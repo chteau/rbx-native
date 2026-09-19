@@ -21,6 +21,7 @@ use gpui_kit::component::{h_flex, v_flex, Icon};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
+use super::keys::{PART_TYPE_BALL, PART_TYPE_CYLINDER};
 use super::roving::Roving;
 
 use crate::tokens;
@@ -202,9 +203,11 @@ impl Shell {
         group
     }
 
-    /// §5.7 — the three insert menus. Every item routes through the same
-    /// `Shell::insert_instance` the Model menu already uses, so a ribbon
-    /// click and a menu-bar click are the same code path.
+    /// §5.7 — the three insert menus. Every item routes through
+    /// `Shell::insert_instance` (or, for the Part menu's Block/Sphere/
+    /// Cylinder, `Shell::insert_part` — see `insert_item`), the same paths
+    /// the Model menu already uses, so a ribbon click and a menu-bar click
+    /// are the same code path.
     fn insert_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let part = menu::dropdown(
             self,
@@ -217,11 +220,21 @@ impl Shell {
                 cx,
             )),
             vec![
-                insert_item("Block", IconName::Box, "Part"),
-                insert_item("Sphere", IconName::Circle, "Part"),
-                insert_item("Wedge", IconName::Triangle, "WedgePart"),
-                insert_item("Corner Wedge", IconName::TriangleRight, "CornerWedgePart"),
-                insert_item("Cylinder", IconName::Cylinder, "Part"),
+                insert_item("Block", IconName::Box, "Part", None),
+                insert_item("Sphere", IconName::Circle, "Part", Some(PART_TYPE_BALL)),
+                insert_item("Wedge", IconName::Triangle, "WedgePart", None),
+                insert_item(
+                    "Corner Wedge",
+                    IconName::TriangleRight,
+                    "CornerWedgePart",
+                    None,
+                ),
+                insert_item(
+                    "Cylinder",
+                    IconName::Cylinder,
+                    "Part",
+                    Some(PART_TYPE_CYLINDER),
+                ),
             ],
             cx,
         );
@@ -236,9 +249,9 @@ impl Shell {
                 cx,
             )),
             vec![
-                insert_item("Script", IconName::FileCode, "Script"),
-                insert_item("Local Script", IconName::FileCode, "LocalScript"),
-                insert_item("Module Script", IconName::Package, "ModuleScript"),
+                insert_item("Script", IconName::FileCode, "Script", None),
+                insert_item("Local Script", IconName::FileCode, "LocalScript", None),
+                insert_item("Module Script", IconName::Package, "ModuleScript", None),
             ],
             cx,
         );
@@ -265,13 +278,13 @@ impl Shell {
                 cx,
             )),
             vec![
-                insert_item("ScreenGui", IconName::AppWindow, "ScreenGui"),
-                insert_item("SurfaceGui", IconName::Frame, "SurfaceGui"),
+                insert_item("ScreenGui", IconName::AppWindow, "ScreenGui", None),
+                insert_item("SurfaceGui", IconName::Frame, "SurfaceGui", None),
                 // Roblox's own ad surface: it needs a Creator-Dashboard ad
                 // unit behind it to mean anything, which this editor has no
                 // way to provision.
                 menu::item("AdGui").icon(IconName::Megaphone).disabled(),
-                insert_item("BillboardGui", IconName::Presentation, "BillboardGui"),
+                insert_item("BillboardGui", IconName::Presentation, "BillboardGui", None),
             ],
             cx,
         )
@@ -310,8 +323,12 @@ impl Shell {
     }
 }
 
-/// Cut/Copy/Paste match `menu_bar`'s own disabled Edit-menu items exactly —
-/// same missing feature, same reason. Duplicate has no menu-bar twin yet.
+/// Copy/Paste/Duplicate are live in `menu_bar`'s Edit menu and on
+/// `Ctrl+C`/`V`/`D` (`shell::clipboard`); Cut stays a disabled placeholder
+/// there too. These ribbon tiles are left as visibly-disabled placeholders
+/// regardless — a live tile needs its own hover/active styling
+/// (`base_tile`'s `enabled` branch), which is ribbon-specific work this
+/// keyboard-and-menu-scoped change doesn't take on.
 fn clipboard() -> Vec<AnyElement> {
     vec![
         disabled_tile("ribbon-copy", IconName::Copy, "Copy").into_any_element(),
@@ -368,10 +385,25 @@ fn placeholders(page: &'static str, tiles: &[(IconName, &'static str)]) -> Vec<A
         .collect()
 }
 
-fn insert_item(label: &'static str, icon: IconName, class: &'static str) -> menu::Item {
+/// `shape` (`Enum.PartType`) is only ever `Some` for the Part menu's Sphere
+/// and Cylinder items — they're the only two of the five whose `class`
+/// (`Part`) doesn't already say which shape they are. Block shares that same
+/// class but needs no override: `Shell::insert_instance`'s own defaults
+/// already land on `Enum.PartType.Block`. Wedge/CornerWedge disambiguate
+/// through their own class instead and never carry a `Shape` property at
+/// all — see `rbx_viewer::scene::shape::resolve`.
+fn insert_item(
+    label: &'static str,
+    icon: IconName,
+    class: &'static str,
+    shape: Option<u32>,
+) -> menu::Item {
     menu::item(label)
         .icon(icon)
-        .on_click(move |shell, cx| shell.insert_instance(class, cx))
+        .on_click(move |shell, cx| match shape {
+            Some(shape) => shell.insert_part(class, shape, cx),
+            None => shell.insert_instance(class, cx),
+        })
 }
 
 fn tool_icon(tool: Tool) -> IconName {

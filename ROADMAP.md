@@ -255,6 +255,46 @@ Roblox's own engine.
   a claim that Studio itself has one. Click-to-snap-camera-to-a-face (real
   in those other tools) is deliberately not implemented — this is a static,
   informational indicator only.
+- [x] **An FPS/frame-time readout**, matching real Studio's own
+  performance-debugging surface rather than inventing a new one: Studio's
+  `Window > Performance > Stats` toggles a debug stats overlay, and
+  `Ctrl`+`F6` opens the MicroProfiler directly for a per-system frame-time
+  breakdown. `rbxstudio`'s viewport corner label gets a "Stats" toggle next
+  to the existing Orthographic one, in the Viewport panel's own overflow
+  menu (this editor has no `Window` menu yet) — switching it on adds the
+  render thread's last-measured fps and frame time to the label already
+  showing quality level and flight speed, reusing the same per-second
+  numbers `workspace_view::stats` already computed to drive automatic
+  quality scaling rather than a second timing mechanism. `rbxview`'s
+  standalone title bar carries the same fps/frame-time reading now too,
+  alongside the flight speed it already showed (it never displayed a
+  quality level of its own to begin with, pinned or automatic) — always on
+  rather than behind a toggle, since it is a separate binary with no menu
+  to put one in. A small `FrameRate` counts redraws over the same rolling
+  one-second window `rbxstudio`'s does, and the title is composed
+  (`app::title`, `app::fps` in `rbx_viewer`) with the identical fps/ms
+  formatting the corner label uses, once the first window closes.
+- [x] **A `Model`'s aggregate bounding box** — a plain click resolves to
+  the outermost enclosing `Model` (see Editor's Select bullet), which has
+  no `CFrame`/`Size` of its own, so it is outlined by one world-axis
+  -aligned box around every `BasePart` beneath it at any depth, nested
+  `Model`s included; a container with nothing drawable under it outlines
+  nothing, there being nothing to box. The Move gizmo stands at that box's
+  centre and carries every part inside it by the same offset, through the
+  same `transform::Targets` machinery multi-select already used, and
+  `Alt`/`⌥`-click still reaches one specific part inside the model and
+  gizmos it with its own oriented box. One derivation
+  (`rbx_viewer::gizmo::bounds_of`) feeds the outline, the gizmo's centre
+  and the Scale handles' box alike, and the Align tool's own **Selection
+  Bounds** agrees with it on the world axes. Known divergence, since the
+  docs are explicit: `Model:GetBoundingBox` orients Studio's box by the
+  model's pivot (the `PrimaryPart`'s, or the `WorldPivot`), which matches
+  world alignment only while that pivot is unrotated — pivots aren't
+  modelled here yet (see "What's planned" → Renderer's Pivot tools).
+  The box is drawn through whatever stands in front of it, as Studio's is;
+  the Viewport panel's overflow menu can ask for it to be depth-tested
+  against the scene instead (`Hide Selection Box Behind Parts`, off by
+  default and persisted the same way `Orthographic` is).
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: this project's own flat, from-scratch class icon kit
@@ -345,8 +385,7 @@ Roblox's own engine.
     a time, without ever needing to select the enclosing part or model
     first; whatever it lands on gets a gizmo exactly as any other
     selected `BasePart` does, since cycling deliberately never resolves up
-    to a `Model` the way a plain click does (see "Still open" below for
-    the one related case that doesn't yet have a gizmo of its own).
+    to a `Model` the way a plain click does.
     `Shift`/`Ctrl`/`Cmd`-click adds another top-level object to the
     selection instead of replacing it.
   - **Move** (`2`), **Scale** (`3`), **Rotate** (`4`) — colored axis
@@ -380,10 +419,9 @@ Roblox's own engine.
   - **Placement**: directly under the File/Edit/Model/View menu bar and
     above the viewport dock, matching the owner's reference screenshot.
   - **Still open**: the 5th "Transform" toolbar button visible in Studio's
-    current toolbar; and a plain click landing on a `Model` — unlike
-    cycling's raw parts, a `Model` has no `CFrame`/`Size` of its own for
-    the gizmo to read, so it draws neither an outline nor a gizmo today
-    (all under "What's planned" → Renderer).
+    current toolbar (under "What's planned" → Renderer). A plain click
+    landing on a `Model` now draws its aggregate box and gizmos the whole
+    thing — see Renderer's own bullet above.
 
 - [x] **Group/ungroup operations** — `Ctrl+G` (or Model ⟩ Group) wraps the
   current selection in one new `Model`, parented where the selection
@@ -457,6 +495,15 @@ Roblox's own engine.
   load-time prune keeps orphaned entries from accumulating forever, but
   does not carry the tag across the rename (see the `ponytail:` comment in
   `folder_colors.rs`).
+- [x] The ribbon's Part insert menu inserts the shape it names. Block,
+  Sphere and Cylinder all insert a `Part` and now write its `shape`
+  property (`Enum.PartType`) instead of leaving all three to resolve as
+  `ShapeKind::Box`; Wedge and Corner Wedge already passed their own
+  classes but now get the same size/colour/material defaults as any
+  other new part, since `insert_instance`'s defaults gate widened from
+  the literal class `"Part"` to any `BasePart` subclass. One test per
+  menu item asserts both the inserted instance's class and its resolved
+  `ShapeKind`.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -547,20 +594,6 @@ Roblox's own engine.
 - [ ] 📋 `Light.Shadows` for `PointLight` (needs 6-face shadow maps; done
   for `SpotLight`/`SurfaceLight`).
 - [ ] 📋 Neon/`ForceField` shimmer, `Glass` refraction — currently flat.
-- [x] 🚧 **An FPS/frame-time readout**, matching real Studio's own
-  performance-debugging surface rather than inventing a new one: Studio's
-  `Window > Performance > Stats` toggles a debug stats overlay, and
-  `Ctrl`+`F6` opens the MicroProfiler directly for a per-system frame-time
-  breakdown. `rbxstudio`'s viewport corner label gets a "Stats" toggle next
-  to the existing Orthographic one, in the Viewport panel's own overflow
-  menu (this editor has no `Window` menu yet) — switching it on adds the
-  render thread's last-measured fps and frame time to the label already
-  showing quality level and flight speed, reusing the same per-second
-  numbers `workspace_view::stats` already computed to drive automatic
-  quality scaling rather than a second timing mechanism. Still open:
-  `rbxview`'s standalone title bar shows quality level and flight speed the
-  same way and has no equivalent readout yet — a separate binary, out of
-  scope here.
 - [ ] 📋 **A 5th "Transform" toolbar button** appears in Studio's current
   toolbar (see the owner-provided screenshot) alongside the now-implemented
   Select/Move/Scale/Rotate (see "What's been implemented" → Editor), but
@@ -570,22 +603,6 @@ Roblox's own engine.
   docs alone. Needs confirming against a real Studio instance (the "Studio
   fallback" Vinegar/Wine workaround elsewhere in this roadmap is one way to
   do that) before implementing it, rather than guessing.
-- [ ] 📋 **A `Model`'s aggregate bounding box**, so a plain click that
-  resolves to one (see "What's been implemented" → Editor's Select
-  bullet) actually shows something instead of silently selecting an
-  instance with nothing to draw. Every part inside already carries its
-  own `CFrame`/`Size`; the box is the union of all of them, matching what
-  the Align tool's "Selection Bounds" mode below and real Studio's own
-  `PVInstance:GetPivot()`-adjacent bounding-box concept describe.
-  `renderer::selection`'s own doc comment already flags this ("a Model's
-  aggregate bounds are a TODO: nothing here derives one yet") — worth
-  wiring up rather than leaving as a silent no-op, and a natural fit for
-  the Move-only group-gizmo machinery `transform::Targets` already has
-  from multi-select (see "What's been implemented" → Editor), since
-  moving a `Model` is exactly "move every part inside it by the same
-  offset." `Alt`/`⌥`-click cycling remains the way to reach and gizmo one
-  specific part inside the model instead of the whole thing, exactly as
-  it does today.
 - [ ] 📋 **Gizmo papercuts and third-party-tool parity requests**, from
   real use of the Move/Scale/Rotate gizmos above. Checked against
   `Roblox/creator-docs` (`parts.md`'s Transform Parts section) and, where
@@ -717,10 +734,22 @@ Roblox's own engine.
     reveal it, or only highlights the top-level parent) — small, but
     real, user-facing toggles worth including alongside the rest of this
     item rather than hardcoding one behaviour.
-- [ ] 📋 Copy/paste/duplicate instances (`Ctrl+C`/`V`/`D`) — Insert/Delete
-  exist, these don't yet (the menu bar already has honest placeholders for
-  them); folds into the fuller Explorer editing item above rather than
-  being separate work.
+- [x] 🚧 **Copy/paste/duplicate instances** (`Ctrl+C`/`V`/`D`) — real now,
+  from the keyboard and the Edit menu's Copy/Paste/Duplicate items (Cut
+  stays a placeholder; it was never part of this bullet). Copy is a deep,
+  in-process clipboard, not the system one: descendants come along, a
+  `Ref`/`Content::Object` property pointing at something copied along with
+  it is remapped to point at the copy instead — `Class.Instance:Clone()`'s
+  own documented rule — and the copy is independent of the original. Paste
+  always lands in `Workspace`, matching creator-docs' `explorer.md`, never
+  wherever the selection is; Duplicate lands beside the original in its own
+  existing parent instead. A service can't be copied, pasted or duplicated,
+  the same refusal Group/Ungroup already enforce. One undo step per
+  operation. Still open, and left for the fuller Explorer editing item
+  above: `Ctrl+Shift+V` ("Paste Into" a chosen parent — a separate shortcut
+  real Studio also offers), the ribbon's own Copy/Paste/Duplicate tiles
+  (still disabled placeholders), and excluding a non-`Archivable`
+  descendant from the copy the way `Instance:Clone()` does.
 - [x] 🚧 Drag-and-drop reparenting in the Explorer tree. Dragging a row
   onto another reparents onto it, the way creator-docs describes
   ("simply drag and drop them onto the new parent") — with a ghost under
@@ -911,24 +940,6 @@ against `Roblox/creator-docs` rather than assumed:
   interactive use (a human editing live) hits the same thing; needs its
   own investigation of the render thread's state right after
   `Headless::reload`.
-- [ ] 📋 **The Part insert menu always inserts a block.** Every one of its
-  five items (Block, Sphere, Wedge, Corner Wedge, Cylinder) ends at
-  `Shell::insert_instance` with nothing but a class name
-  (`shell::ribbon::insert_item`), and three of them pass the same class:
-  Block, Sphere and Cylinder all insert a bare `Part` and never write its
-  `shape` property, so the renderer resolves all three to
-  `ShapeKind::Box` (`rbx_viewer::scene::shape::resolve`'s last branch —
-  no `shape` property means a plain box). Wedge and Corner Wedge do pass
-  their own classes, but `insert_instance` gates `apply_part_defaults` on
-  `class == "Part"`, so those two come in without the size, colour and
-  material a new part gets.
-  The fix is to carry a shape alongside the class through
-  `insert_instance` — `Enum.PartType` is Ball=0, Block=1, Cylinder=2 — and
-  to widen the defaults gate to any `BasePart` subclass rather than the
-  literal `"Part"`. One test per menu item, asserting the inserted
-  instance's class *and* resolved `ShapeKind`, since the current bug is
-  invisible in the Explorer and only shows in the viewport.
-
 - [ ] 📋 **Drag-to-rearrange docks.** The fixed shell that replaced the
   toolkit's `DockArea` cannot express it: a panel's position is the order of
   three `.child()` calls, not data, so there is nothing to change at
