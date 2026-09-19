@@ -622,6 +622,51 @@ fn cframe_edits_as_a_position_and_an_orientation() {
     assert_eq!(values, ["1", "2", "3", "0", "0", "0"]);
 }
 
+// An absent optional used to have no editor at all, which left the value
+// stuck: nothing in the panel could give it one.
+#[test]
+fn an_absent_optional_cframe_edits_as_an_unchecked_box_over_a_cframe() {
+    let Some(EditKind::Optional { present, inner }) =
+        edit_kind("WorldPivotData", Variant::OptionalCFrame(None))
+    else {
+        panic!("an OptionalCFrame should edit as a present/absent box");
+    };
+
+    assert!(!present, "an absent optional reads as unchecked");
+    // Seeded even while absent — this is the value the box turns on to.
+    assert_eq!(
+        *inner,
+        EditKind::Groups {
+            groups: CFRAME,
+            values: ["0", "0", "0", "0", "0", "0"].map(str::to_owned).to_vec(),
+        }
+    );
+}
+
+#[test]
+fn a_present_optional_cframe_keeps_the_cframe_editor_under_a_checked_box() {
+    let frame = CFrameData {
+        position: vector3(1.0, 2.0, 3.0),
+        rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+    };
+
+    let Some(EditKind::Optional { present, inner }) =
+        edit_kind("WorldPivotData", Variant::OptionalCFrame(Some(frame)))
+    else {
+        panic!("an OptionalCFrame should edit as a present/absent box");
+    };
+
+    assert!(present);
+    let EditKind::Groups { groups, values } = *inner else {
+        panic!("a present optional CFrame edits through the CFrame editor");
+    };
+    assert_eq!(
+        groups.iter().map(|group| group.caption).collect::<Vec<_>>(),
+        ["Position", "Orientation"]
+    );
+    assert_eq!(values, ["1", "2", "3", "0", "0", "0"]);
+}
+
 #[test]
 fn vector2_edits_as_two_labeled_fields() {
     assert_eq!(

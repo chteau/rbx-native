@@ -71,7 +71,7 @@ orientation.
 | ~~B2~~ | **`Ray`** | ✅ **done** — Origin and Direction, two captioned lines | |
 | ~~B3~~ | **`Faces`** | ✅ **done** — six named checkboxes | |
 | ~~B4~~ | **`Axes`** | ✅ **done** — three named checkboxes | |
-| B5 | **`OptionalCFrame`** | ⚠️ **half** — editable when present, using the `CFrame` editor. An *absent* one is still read-only: there is nowhere to say "give this a value" or "clear it" | a none/some toggle |
+| ~~B5~~ | **`OptionalCFrame`** | ✅ **done** — a present/absent checkbox above the `CFrame` editor, which draws only while there is a value | |
 | B6 | **`PhysicalProperties`** | `BasePart.CustomPhysicalProperties` | density / friction / elasticity / their weights as fields, plus the "use default" case. Currently rendered with Rust's `{:?}` |
 | B7 | **`NumberSequence`** | `ParticleEmitter.Size`, `.Transparency` | a keypoint list, or a small curve editor. The real work in this list |
 | B8 | **`ColorSequence`** | `ParticleEmitter.Color`, `UIGradient` | a gradient stop editor |

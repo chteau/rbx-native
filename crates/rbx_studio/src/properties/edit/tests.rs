@@ -57,10 +57,15 @@ fn scalar_and_composite_types_have_edit_text() {
 #[test]
 fn unsupported_types_have_no_edit_text() {
     assert_eq!(edit_text(&Variant::Ref(Ref::new(1))), None);
+}
+
+// The row's checkbox and its fields commit through the same textual path, so
+// each spelling has to land on the arm it means.
+#[test]
+fn an_absent_optional_cframe_seeds_from_the_origin() {
     assert_eq!(
         edit_text(&Variant::OptionalCFrame(None)),
-        None,
-        "an absent optional has no position to seed fields from"
+        Some("0, 0, 0, 0, 0, 0".to_owned())
     );
 }
 
@@ -738,3 +743,49 @@ fn vector3int16_rounds_and_clamps_instead_of_truncating() {
         "past the range it saturates rather than wrapping"
     );
 }
+
+#[test]
+fn unchecking_an_optional_cframe_clears_it() {
+    assert_eq!(
+        parse_as(
+            &Variant::OptionalCFrame(Some(cframe([1.0, 2.0, 3.0], IDENTITY_ROTATION))),
+            "false"
+        ),
+        Ok(Variant::OptionalCFrame(None))
+    );
+}
+
+#[test]
+fn checking_an_absent_optional_cframe_gives_it_the_origin() {
+    assert_eq!(
+        parse_as(&Variant::OptionalCFrame(None), "true"),
+        Ok(Variant::OptionalCFrame(Some(cframe(
+            [0.0, 0.0, 0.0],
+            IDENTITY_ROTATION
+        ))))
+    );
+}
+
+// Clearing and restoring in one session should not quietly move the value to
+// the origin — the checkbox only says whether there is one.
+#[test]
+fn checking_an_optional_cframe_that_still_holds_one_keeps_it() {
+    let frame = cframe([4.0, 5.0, 6.0], IDENTITY_ROTATION);
+    assert_eq!(
+        parse_as(&Variant::OptionalCFrame(Some(frame)), "true"),
+        Ok(Variant::OptionalCFrame(Some(frame)))
+    );
+}
+
+#[test]
+fn typing_into_an_absent_optional_cframe_gives_it_that_position() {
+    assert_eq!(
+        parse_as(&Variant::OptionalCFrame(None), "1, 2, 3"),
+        Ok(Variant::OptionalCFrame(Some(cframe(
+            [1.0, 2.0, 3.0],
+            IDENTITY_ROTATION
+        ))))
+    );
+}
+
+const IDENTITY_ROTATION: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];

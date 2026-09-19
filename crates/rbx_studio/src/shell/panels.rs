@@ -195,6 +195,10 @@ impl Shell {
                         // the current flags and which one moved.
                         let flags = match &widget {
                             super::edit::RowEditor::Flags(_, values) => values.clone(),
+                            // An optional's present/absent checkbox commits
+                            // through the same one-flag path, so the factory
+                            // below hands it `true`/`false` unchanged.
+                            super::edit::RowEditor::Optional(present, _) => vec![*present],
                             _ => Vec::new(),
                         };
                         let handle = cx.entity();
