@@ -1022,10 +1022,31 @@ against `Roblox/creator-docs` rather than assumed:
   `UniqueId`, `SecurityCapabilities` and `Unknown` stay read-only. They are
   identities and opaque payloads — editing them by hand corrupts a file
   rather than editing it.
-- [ ] 📋 Attributes editor (custom `Instance` attributes, distinct from
+- [x] 🚧 Attributes editor (custom `Instance` attributes, distinct from
   built-in properties) — a real, commonly-used modern Studio feature, not
-  currently scoped anywhere.
-- [ ] 📋 Tags editor (`CollectionService`) — same gap.
+  currently scoped anywhere. The Properties panel now has a dedicated
+  Attributes section (below the reflected categories, matching where real
+  Studio puts it): attributes are listed, added (name + a type picker),
+  renamed, removed, and their values edited through the exact same
+  per-type widgets an ordinary property of that type gets — a `Bool`
+  becomes the panel's checkbox, a `Vector3` becomes three number fields,
+  and so on — never a second set of editors. Name validation follows
+  `Instance:SetAttribute`'s documented rules (alphanumeric plus
+  `.`/`-`/`/`/`_`, ≤100 characters, no `RBX` prefix). What's still open:
+  `CFrame` is not offered as a creatable type (`rbx_dom::attributes` has no
+  verified wire format for it — guessing risks a blob Roblox's own client
+  can't read); `NumberSequence`/`ColorSequence` aren't creatable either,
+  matching this file's separate "eight `Variant` types" bullet's own
+  editors-are-their-own-PRs rule (an attribute already holding either
+  still renders, read-only); and the Properties panel's filter box does
+  not search attribute names.
+- [x] 🚧 Tags editor (`CollectionService`) — same gap. The same section
+  adds a Tags block: existing tags as removable chips, and an add-tag
+  field matching `CollectionService:AddTag`'s own semantics (adding an
+  already-applied tag is a no-op, not an error; an empty tag is refused,
+  since this crate's own `\0`-joined wire format can't tell an empty tag
+  apart from none at all). What's still open: same filter-box gap as the
+  Attributes section above.
 - [ ] 📋 **A dedicated UI-editing mode for `StarterGui`.** Today the
   viewport is always the 3D `Workspace` scene; editing a `ScreenGui`'s
   layout means selecting its descendants through the Explorer tree alone,

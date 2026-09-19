@@ -2,6 +2,19 @@
 
 ## 2026-09-19
 
+- **Attributes and Tags editor.** The Properties panel grows a section
+  below the reflected categories for custom `Instance` attributes and
+  `CollectionService` tags — neither had any editor before. Attributes
+  are listed, added (name plus a type picker), renamed, removed, and
+  their values edited through the exact same per-type widgets an ordinary
+  property gets, never a parallel set; tags are chips you add and remove,
+  matching `AddTag`'s own idempotent-add behaviour. Name validation
+  follows `Instance:SetAttribute`'s documented rules. `CFrame` is not
+  offered as a creatable attribute type (no verified wire format for it
+  in `rbx_dom::attributes`), and `NumberSequence`/`ColorSequence` aren't
+  either, matching this project's separate policy of giving each of those
+  eight `Variant` types its own PR. — @chteau
+
 - **A collapsed property category reads as a tile.** The category headers
   in the Properties panel carry their own fill now, one step above the
   dock and rounded like everything else that has a surface, and the gap
