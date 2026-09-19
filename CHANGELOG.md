@@ -2,30 +2,6 @@
 
 ## 2026-09-19
 
-- **The selection box can be hidden behind the parts in front of it.** A
-  selected object's outline has always been drawn with the depth test off,
-  so it shows through whatever stands between it and the camera — Studio's
-  own behaviour, and the reason a `Model` selected behind a wall is visible
-  at all. That stays the default; a new item in the Viewport panel's
-  overflow menu, next to Orthographic and Stats, asks for the other
-  behaviour instead, and the choice survives a relaunch. Two pipelines that
-  differ in one depth-compare, picked between at draw time, rather than one
-  rebuilt whenever the menu item is clicked — there is no device in hand at
-  that point. The choice rides in `rbx_viewer`'s `View` alongside the
-  projection mode and the selection itself, so a scene rebuild cannot
-  quietly drop it.
-  The `Model` aggregate bounding box this branch set out to add turned out
-  to already exist — it shipped with the Model/Folder/Tool outline work —
-  so what landed for it here is the coverage it was missing: a `Model`
-  nested inside a `Model` is one box and one drag over every part at every
-  depth, `Alt`-click still reaches a single part inside a model with its
-  own oriented box rather than the model's aggregate, and the Align tool's
-  **Selection Bounds** agrees with that box on the world axes. Three doc
-  comments left describing the older behaviour — one still calling a
-  `Model`'s aggregate bounds a TODO — now describe the code as it stands,
-  and the box records its one documented divergence from Studio, whose own
-  `Model:GetBoundingBox` orients the box by the model's pivot. — @chteau
-
 - **A collapsed property category reads as a tile.** The category headers
   in the Properties panel carry their own fill now, one step above the
   dock and rounded like everything else that has a surface, and the gap
@@ -204,6 +180,56 @@
   place of three hardcoded slots, and the architecture note is in
   `agents/dock-rearrangement.md` rather than a half-built version in the
   shell. — @chteau
+
+- **Fixed the Part insert menu always inserting a block.** Block, Sphere
+  and Cylinder all inserted a bare `Part` and never wrote its `shape`
+  property, so the renderer resolved all three to `ShapeKind::Box`; Wedge
+  and Corner Wedge passed their own classes but got none of a new part's
+  size, colour or material defaults, since those were gated on the
+  literal class `"Part"`. `shape` (`Enum.PartType`) now travels alongside
+  the class for the three that share it, and the defaults gate widened to
+  any `BasePart` subclass. One test per menu item asserts both the
+  inserted instance's class and its resolved `ShapeKind`. — @chteau
+- **`rbxview`'s title bar now shows fps/frame time**, alongside the flight
+  speed it already showed, closing the one leftover on the FPS/frame-time
+  readout item. Shares the same one-line format `rbxstudio`'s corner label
+  uses (`rbx_viewer::fps_readout`) rather than a second copy of it. —
+  @chteau
+- **Copy, Paste and Duplicate work now** (`Ctrl+C`/`V`/`D`, and the Edit
+  menu's items — Cut stays a placeholder). The clipboard is this window's
+  own, not the system one, and a copy is a genuine deep clone: descendants
+  come along, an internal reference is remapped to the copy exactly as
+  `Instance:Clone()` documents, and mutating the copy can't reach the
+  original. Paste always targets `Workspace`, matching creator-docs;
+  Duplicate stays in the original's own parent. Services refuse to be
+  copied, pasted or duplicated, the same way Group/Ungroup already refuse
+  them. A non-`Archivable` descendant (and its own subtree) is excluded
+  from what gets copied, and the copy is always `Archivable` regardless of
+  the original, matching `Instance.Archivable`'s own documented rule. —
+  @chteau
+- **The selection box can be hidden behind the parts in front of it.** A
+  selected object's outline has always been drawn with the depth test off,
+  so it shows through whatever stands between it and the camera — Studio's
+  own behaviour, and the reason a `Model` selected behind a wall is visible
+  at all. That stays the default; a new item in the Viewport panel's
+  overflow menu, next to Orthographic and Stats, asks for the other
+  behaviour instead, and the choice survives a relaunch. Two pipelines that
+  differ in one depth-compare, picked between at draw time, rather than one
+  rebuilt whenever the menu item is clicked — there is no device in hand at
+  that point. The choice rides in `rbx_viewer`'s `View` alongside the
+  projection mode and the selection itself, so a scene rebuild cannot
+  quietly drop it.
+  The `Model` aggregate bounding box this branch set out to add turned out
+  to already exist — it shipped with the Model/Folder/Tool outline work —
+  so what landed for it here is the coverage it was missing: a `Model`
+  nested inside a `Model` is one box and one drag over every part at every
+  depth, `Alt`-click still reaches a single part inside a model with its
+  own oriented box rather than the model's aggregate, and the Align tool's
+  **Selection Bounds** agrees with that box on the world axes. Three doc
+  comments left describing the older behaviour — one still calling a
+  `Model`'s aggregate bounds a TODO — now describe the code as it stands,
+  and the box records its one documented divergence from Studio, whose own
+  `Model:GetBoundingBox` orients the box by the model's pivot. — @chteau
 
 ## 2026-09-18
 

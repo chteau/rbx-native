@@ -10,17 +10,18 @@
 //! the same [`gpui::Action`] its keyboard shortcut resolves to, straight into
 //! `Shell`'s existing, already-tested handler — Save (`shell::save`),
 //! Undo/Redo (`shell::history`), Insert Part/Folder/Script/LocalScript/
-//! ModuleScript and Delete (`shell::keys`), Group/Ungroup (`shell::group`) —
-//! through one global `App::on_action` registration per action (see
-//! [`install_actions`]). A menu click never focuses anything first, so these
-//! are global rather than wired into the element tree: the same requirement
-//! `Shell::handle_shell_key` already has for Ctrl+S/Z/Y/G (a command must
-//! fire no matter what currently has focus).
+//! ModuleScript and Delete (`shell::keys`), Copy/Paste/Duplicate
+//! (`shell::clipboard`), Group/Ungroup (`shell::group`) — through one global
+//! `App::on_action` registration per action (see [`install_actions`]). A
+//! menu click never focuses anything first, so these are global rather than
+//! wired into the element tree: the same requirement `Shell::handle_shell_key`
+//! already has for Ctrl+S/Z/Y/G/C/V/D (a command must fire no matter what
+//! currently has focus).
 //!
 //! Everything this editor cannot do yet — New, Open…, Save As…, Publish to
-//! Roblox…, Cut/Copy/Paste, Insert Object… — stays a visibly disabled item
-//! rather than a click that silently does nothing while looking live. The one
-//! live View item is Style Editor: Roblox puts that panel under `Window` ⟩ UI
+//! Roblox…, Cut, Insert Object… — stays a visibly disabled item rather than
+//! a click that silently does nothing while looking live. The one live View
+//! item is Style Editor: Roblox puts that panel under `Window` ⟩ UI
 //! (`studio/ui-overview.md`), and this editor's menus are File/Edit/Model/View,
 //! so it goes under View.
 
@@ -44,6 +45,9 @@ actions!(
         MenuInsertModuleScript,
         MenuInsertModuleScriptClass,
         MenuDeleteInstance,
+        MenuCopyInstance,
+        MenuPasteInstance,
+        MenuDuplicateInstance,
         MenuGroup,
         MenuUngroup,
         MenuStyleEditor,
@@ -114,8 +118,9 @@ fn menus() -> Vec<OwnedMenu> {
                 MenuItem::action("Redo", MenuRedo),
                 MenuItem::separator(),
                 MenuItem::action("Cut", MenuPlaceholder).disabled(true),
-                MenuItem::action("Copy", MenuPlaceholder).disabled(true),
-                MenuItem::action("Paste", MenuPlaceholder).disabled(true),
+                MenuItem::action("Copy", MenuCopyInstance),
+                MenuItem::action("Paste", MenuPasteInstance),
+                MenuItem::action("Duplicate", MenuDuplicateInstance),
                 MenuItem::separator(),
                 MenuItem::action("Delete", MenuDeleteInstance),
             ])
@@ -238,6 +243,24 @@ fn install_actions(shell: Entity<Shell>, cx: &mut App) {
         let shell = shell.clone();
         move |_: &MenuDeleteInstance, cx| {
             shell.update(cx, |shell, cx| shell.delete_selected(cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
+        move |_: &MenuCopyInstance, cx| {
+            shell.update(cx, |shell, cx| shell.copy_selected(cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
+        move |_: &MenuPasteInstance, cx| {
+            shell.update(cx, |shell, cx| shell.paste_clipboard(cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
+        move |_: &MenuDuplicateInstance, cx| {
+            shell.update(cx, |shell, cx| shell.duplicate_selected(cx));
         }
     });
     cx.on_action({

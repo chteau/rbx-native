@@ -5,6 +5,7 @@
 
 mod align;
 mod chrome;
+mod clipboard;
 mod command;
 mod drag;
 mod edit;
@@ -154,6 +155,9 @@ pub(crate) struct Shell {
     edits: edit::Edits,
     /// Mirrors the tree's selected row (see [`Shell::sync_selection`]).
     selection: Selection,
+    /// This window's own copy/paste clipboard, replaced whole by every
+    /// `Ctrl+C` — see `shell::clipboard`.
+    clipboard: Vec<clipboard::Clipped>,
     /// The `BasePart` the cursor was last resolved to be over, if any — see
     /// `shell::drag::hover_in_viewport`. Kept here, alongside `selection`
     /// above, purely to dedupe: the viewport reports cursor motion on every
@@ -408,6 +412,7 @@ impl Shell {
             properties,
             edits: edit::Edits::default(),
             selection: Selection::new(selected),
+            clipboard: Vec::new(),
             hovered: Vec::new(),
             covered: HashSet::new(),
             scripts: ScriptEditor::default(),
