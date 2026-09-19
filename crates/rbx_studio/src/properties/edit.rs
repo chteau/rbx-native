@@ -82,7 +82,10 @@ pub(crate) fn edit_text(value: &Variant) -> Option<String> {
             u.x.scale, u.x.offset, u.y.scale, u.y.offset
         )),
         Variant::CFrame(frame) => Some(cframe_text(frame)),
-        Variant::OptionalCFrame(Some(frame)) => Some(cframe_text(frame)),
+        // An absent one seeds from [`IDENTITY_CFRAME`] rather than staying
+        // read-only: its fields are hidden until the row's present/absent
+        // checkbox turns the value on, and that is the value it turns on to.
+        Variant::OptionalCFrame(frame) => Some(cframe_text(&frame.unwrap_or(IDENTITY_CFRAME))),
         Variant::NumberRange(range) => Some(format!("{}, {}", range.min, range.max)),
         Variant::Rect(rect) => Some(format!(
             "{}, {}, {}, {}",
@@ -94,6 +97,37 @@ pub(crate) fn edit_text(value: &Variant) -> Option<String> {
 }
 
 mod orientation;
+
+/// What an absent `OptionalCFrame` becomes the moment its row says it has a
+/// value: there is no orientation to preserve, so it starts unrotated at the
+/// origin.
+const IDENTITY_CFRAME: CFrameData = CFrameData {
+    position: Vector3Data {
+        x: 0.,
+        y: 0.,
+        z: 0.,
+    },
+    rotation: [1., 0., 0., 0., 1., 0., 0., 0., 1.],
+};
+
+/// An `OptionalCFrame` row has two controls committing through this one
+/// textual path: a present/absent checkbox, which commits `true`/`false` (the
+/// same one-flag text `EditKind::Flags` produces), and the `CFrame` fields
+/// under it, which commit six numbers. Neither spelling can be mistaken for
+/// the other, so the text alone says which one moved.
+///
+/// Turning the checkbox on keeps whatever the value already held, so a
+/// clear-then-restore round-trips instead of silently resetting to the origin.
+fn parse_optional_cframe(current: &Option<CFrameData>, text: &str) -> Result<Variant, String> {
+    match text.trim() {
+        "false" => Ok(Variant::OptionalCFrame(None)),
+        "true" => Ok(Variant::OptionalCFrame(Some(
+            current.unwrap_or(IDENTITY_CFRAME),
+        ))),
+        _ => parse_cframe(&current.unwrap_or(IDENTITY_CFRAME), text)
+            .map(|frame| Variant::OptionalCFrame(Some(frame))),
+    }
+}
 
 /// Writes one row's edit into `dom`, taking the same latitude the Command Bar
 /// does: the caller owns handing `dom` in and back out around this call. On
@@ -238,19 +272,7 @@ pub(crate) fn parse(
         Variant::UDim(_) => parse_udim(text).map(Variant::UDim),
         Variant::UDim2(_) => parse_udim2(text).map(Variant::UDim2),
         Variant::CFrame(frame) => parse_cframe(frame, text).map(Variant::CFrame),
-        // An absent optional has no orientation to preserve, so it starts
-        // from an unrotated one rather than refusing the edit.
-        Variant::OptionalCFrame(frame) => {
-            let current = frame.unwrap_or(CFrameData {
-                position: Vector3Data {
-                    x: 0.,
-                    y: 0.,
-                    z: 0.,
-                },
-                rotation: [1., 0., 0., 0., 1., 0., 0., 0., 1.],
-            });
-            parse_cframe(&current, text).map(|frame| Variant::OptionalCFrame(Some(frame)))
-        }
+        Variant::OptionalCFrame(frame) => parse_optional_cframe(frame, text),
         Variant::NumberRange(_) => {
             let n = parse_numbers(text, 2)?;
             Ok(Variant::NumberRange(NumberRange {

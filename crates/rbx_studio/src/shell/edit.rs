@@ -54,6 +54,10 @@ pub(super) enum RowEditor {
     Flags(&'static [&'static str], Vec<bool>),
     Color(Entity<ColorPickerState>),
     Enum(Entity<SelectState<EnumOptions>>),
+    /// Whether the value is there, and the editor for it — drawn under the
+    /// present/absent checkbox only while it is. Built (and kept) either
+    /// way, so the flag flipping is all that changes.
+    Optional(bool, Box<RowEditor>),
 }
 
 impl RowEditor {
@@ -62,7 +66,27 @@ impl RowEditor {
     pub(super) fn field(&self, index: usize) -> Option<&Entity<InputState>> {
         match self {
             RowEditor::Fields(_, inputs) | RowEditor::Groups(_, inputs) => inputs.get(index),
+            RowEditor::Optional(_, inner) => inner.field(index),
             _ => None,
+        }
+    }
+
+    /// The text this editor's own `Input`s currently hold, joined the way
+    /// [`crate::properties::edit::parse`] reads them back. `None` for an
+    /// editor that commits from its own event instead (see
+    /// [`Shell::build_row_widget`]).
+    fn input_text(&self, cx: &App) -> Option<String> {
+        match self {
+            RowEditor::Text(input) => Some(input.read(cx).value().to_string()),
+            RowEditor::Fields(_, inputs) | RowEditor::Groups(_, inputs) => Some(
+                inputs
+                    .iter()
+                    .map(|input| input.read(cx).value().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            ),
+            RowEditor::Optional(_, inner) => inner.input_text(cx),
+            RowEditor::Color(_) | RowEditor::Enum(_) | RowEditor::Flags(..) => None,
         }
     }
 
@@ -76,7 +100,10 @@ impl RowEditor {
     pub(super) fn is_composite(&self) -> bool {
         matches!(
             self,
-            RowEditor::Fields(..) | RowEditor::Groups(..) | RowEditor::Flags(..)
+            RowEditor::Fields(..)
+                | RowEditor::Groups(..)
+                | RowEditor::Flags(..)
+                | RowEditor::Optional(..)
         )
     }
 }
@@ -125,6 +152,9 @@ fn resync_row_widget(widget: &RowEditor, kind: &EditKind, window: &mut Window, c
             for (input, seed) in inputs.iter().zip(values) {
                 resync_field(input, seed, window, cx);
             }
+        }
+        (RowEditor::Optional(_, inner), EditKind::Optional { inner: kind, .. }) => {
+            resync_row_widget(inner, kind, window, cx);
         }
         // `Color` and `Enum` rows have nothing outside their own widget that
         // writes to an already-selected instance repeatedly the way
@@ -227,6 +257,17 @@ impl Shell {
             EditKind::Flags { labels, values } => {
                 (RowEditor::Flags(labels, values.clone()), Vec::new())
             }
+            // The inner editor is built even while the value is absent: the
+            // checkbox turning it on commits, which drops this whole row
+            // editor (see `commit_row`) and rebuilds it against the value
+            // that write produced — so nothing here has to survive the flip.
+            EditKind::Optional { present, inner } => {
+                let (widget, subscriptions) = self.build_row_widget(name, inner, window, cx);
+                (
+                    RowEditor::Optional(*present, Box::new(widget)),
+                    subscriptions,
+                )
+            }
             EditKind::Color { r, g, b } => {
                 let value = rgb_to_hsla(*r, *g, *b);
                 let state = cx.new(|cx| ColorPickerState::new(window, cx).default_value(value));
@@ -289,17 +330,11 @@ impl Shell {
         let Some(edit) = self.edits.rows.get(name) else {
             return;
         };
-        let text = match &edit.widget {
-            RowEditor::Text(input) => input.read(cx).value().to_string(),
-            RowEditor::Fields(_, inputs) | RowEditor::Groups(_, inputs) => inputs
-                .iter()
-                .map(|input| input.read(cx).value().to_string())
-                .collect::<Vec<_>>()
-                .join(", "),
-            // Color and Enum commit straight from their own event instead
-            // (see `build_row_widget`); an `Input` subscription never fires
-            // for them.
-            RowEditor::Color(_) | RowEditor::Enum(_) | RowEditor::Flags(..) => return,
+        // Color, Enum and Flags commit straight from their own event or click
+        // instead (see `build_row_widget`); an `Input` subscription never
+        // fires for them, so they have no text to read here.
+        let Some(text) = edit.widget.input_text(cx) else {
+            return;
         };
         self.commit_row(name, &text, cx);
     }

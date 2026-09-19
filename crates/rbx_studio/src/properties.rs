@@ -138,6 +138,17 @@ pub(crate) enum EditKind {
         labels: &'static [&'static str],
         values: Vec<bool>,
     },
+    /// A value that may simply not be there: a present/absent checkbox, and
+    /// the editor for the value itself below it once it is. `OptionalCFrame`
+    /// is the only `Variant` shaped this way.
+    ///
+    /// `inner` is seeded even while `present` is false — the row does not
+    /// draw it then, but that is what the value becomes the moment the
+    /// checkbox turns it on (see `edit::IDENTITY_CFRAME`).
+    Optional {
+        present: bool,
+        inner: Box<EditKind>,
+    },
 }
 
 /// One line of the panel.
@@ -461,7 +472,16 @@ pub(crate) fn value_edit_kind(value: &Variant, text: String) -> EditKind {
         // Position and orientation, the way Roblox's own panel splits
         // them — a rotation matrix is not something anyone types. See
         // `edit::orientation` for the conversion and what it costs.
-        Variant::CFrame(_) | Variant::OptionalCFrame(Some(_)) => groups(CFRAME, &text),
+        Variant::CFrame(_) => groups(CFRAME, &text),
+        // The one type the DOM can hold that may be absent rather than
+        // wrong: a checkbox says whether there is a value, and the same
+        // `CFrame` editor edits it once there is. Without the checkbox an
+        // absent one was read-only, with nothing anywhere to say "give this
+        // one a value".
+        Variant::OptionalCFrame(frame) => EditKind::Optional {
+            present: frame.is_some(),
+            inner: Box::new(groups(CFRAME, &text)),
+        },
         Variant::Ray { .. } => groups(RAY, &text),
         Variant::Faces(faces) => EditKind::Flags {
             labels: FACES,

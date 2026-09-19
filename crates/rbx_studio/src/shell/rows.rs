@@ -31,6 +31,12 @@ const GUIDE_OFFSET: f32 = 6.0;
 const CONNECTOR_WIDTH: f32 = 5.0;
 const CHEVRON_WIDTH: f32 = 12.0;
 const CLASS_ICON_SIZE: f32 = 12.0;
+/// The caption beside an `OptionalCFrame` row's present/absent checkbox.
+/// Real Studio has no equivalent control to copy a wording from — it never
+/// surfaces an optional `CFrame` at all — so this says plainly what the box
+/// means rather than borrowing a term from somewhere it isn't used.
+const HAS_VALUE_LABEL: &str = "Has value";
+
 /// Out of 255 — how strongly a tagged row's hover/selected background reads
 /// against the row behind it. Selected is the stronger of the two, matching
 /// the relationship the untagged selection has with its own hover step.
@@ -486,6 +492,23 @@ pub(super) fn render_editor(
     on_flag: impl Fn(usize, bool) -> Box<dyn Fn(&ClickEvent, &mut Window, &mut App)> + 'static,
     on_scrub: OnScrub,
 ) -> AnyElement {
+    render_row_editor(tab_index, editor, &on_flag, on_scrub)
+}
+
+/// One flag's click handler, by its index and the value it currently shows.
+///
+/// A borrowed trait object rather than [`render_editor`]'s own generic: an
+/// `EditKind::Optional` draws the editor nested inside it, and a generic
+/// function that calls itself with a *different* closure type has no bottom
+/// to its monomorphization.
+type OnFlag<'a> = &'a dyn Fn(usize, bool) -> Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+
+fn render_row_editor(
+    tab_index: isize,
+    editor: RowEditor,
+    on_flag: OnFlag<'_>,
+    on_scrub: OnScrub,
+) -> AnyElement {
     match editor {
         RowEditor::Text(input) => field_box()
             .child(
@@ -540,6 +563,39 @@ pub(super) fn render_editor(
         }
         RowEditor::Fields(fields, inputs) => {
             number_fields(fields, &inputs, 0, tab_index, on_scrub).into_any_element()
+        }
+        // The checkbox is the only control an absent value has: there is
+        // nothing to edit until it says there is a value. Present, it reads
+        // as a clear, and the editor for the value itself sits under it.
+        RowEditor::Optional(present, inner) => {
+            let toggle = on_flag(0, present);
+            v_flex()
+                .w_full()
+                .gap(tokens::row_gap())
+                .child(
+                    h_flex()
+                        .flex_none()
+                        .items_center()
+                        .gap(tokens::label_gap())
+                        .child(checkbox(
+                            SharedString::from("optional-present"),
+                            present,
+                            toggle,
+                        ))
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_color(tokens::text_muted())
+                                .child(HAS_VALUE_LABEL),
+                        ),
+                )
+                .children(present.then(|| {
+                    // An optional's inner editor is a numeric one — the only
+                    // `Variant` shaped this way is `OptionalCFrame` — never a
+                    // flag set, so nothing below ever reaches `on_flag`.
+                    render_row_editor(tab_index, *inner, &|_, _| Box::new(|_, _, _| {}), on_scrub)
+                }))
+                .into_any_element()
         }
         // A bit set is a row of checkboxes, because that is what it is:
         // six independent yes/no answers, not one value with sixty-four
