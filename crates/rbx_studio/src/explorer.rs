@@ -281,6 +281,37 @@ pub(crate) fn item_ref(id: &SharedString) -> Option<Ref> {
     id.parse().ok().map(Ref::new)
 }
 
+/// The instance a scripted launch's `--select` target names: the one at that
+/// Explorer path when the path resolves, otherwise the first instance simply
+/// called that.
+///
+/// Trying the path first and falling back, rather than branching on whether
+/// `target` contains a `.`, is what keeps an instance whose own name has a dot
+/// in it (`Config.v2`) reachable — it fails as a path, then matches as a name.
+pub(crate) fn resolve(dom: &WeakDom, target: &str) -> Option<Ref> {
+    find_by_path(dom, target).or_else(|| find_by_name(dom, target))
+}
+
+/// The instance at `path`, each segment naming a child of the one before it
+/// and the first naming a root — the spelling [`crate::folder_colors::path_of`]
+/// produces (`Workspace.Nested.MyFolder`). `None` unless every segment
+/// matches: this is an exact lookup, not [`find_by_name`]'s search.
+fn find_by_path(dom: &WeakDom, path: &str) -> Option<Ref> {
+    let mut segments = path.split('.');
+    let mut current = child_named(dom, dom.root_refs(), segments.next()?)?;
+    for segment in segments {
+        current = child_named(dom, dom.get(current)?.children(), segment)?;
+    }
+    Some(current)
+}
+
+fn child_named(dom: &WeakDom, references: &[Ref], name: &str) -> Option<Ref> {
+    references
+        .iter()
+        .copied()
+        .find(|&reference| dom.get(reference).is_some_and(|child| child.name() == name))
+}
+
 /// The first instance called `name`, depth-first in file order. A debugging
 /// aid for scripted launches, not a search: names are not unique.
 pub(crate) fn find_by_name(dom: &WeakDom, name: &str) -> Option<Ref> {

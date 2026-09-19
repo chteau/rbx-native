@@ -51,6 +51,12 @@ impl CommandBar {
         self.feedback = feedback;
     }
 
+    /// The last run's outcome, for `--verbose`'s own report of what `--run`
+    /// came back with (see `cli`).
+    pub(crate) fn feedback(&self) -> &Feedback {
+        &self.feedback
+    }
+
     /// The bar as it sits at the bottom of the window: the last run's outcome
     /// above the input, full width.
     /// The bar as it sits at the bottom of the window. The design frame has
