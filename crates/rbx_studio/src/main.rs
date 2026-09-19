@@ -8,9 +8,10 @@
 //! are given. The rest stay variables: they are aids for scripted
 //! screenshots, not a surface worth committing to.
 //!
-//! `RBX_STUDIO_SELECT=<name>[,<name>...]` pre-selects the first instance of
-//! that name at startup, then adds each
-//! further comma-separated name to the selection exactly as a
+//! `RBX_STUDIO_SELECT=<target>[,<target>...]` pre-selects the first instance
+//! that target names — an Explorer path (`Workspace.Model.Part`) or a bare
+//! name, see `explorer::resolve` — at startup, then adds each
+//! further comma-separated target to the selection exactly as a
 //! `Shift`/`Ctrl`/`Cmd`-click would — a debugging aid for scripted
 //! screenshots of the Properties panel and the viewport's multi-selection
 //! outline/gizmo, since nothing else can click the tree or the viewport on
@@ -86,11 +87,10 @@ use save::Format;
 use settings::Settings;
 use shell::Shell;
 
-// `pub(crate)`: `shell` re-reads it — as the full comma list, not just the
-// one name resolved above — both up front and again after `RBX_STUDIO_RUN`,
-// to select whatever the script just created (see
-// `Shell::apply_debug_select`).
-pub(crate) const SELECT_VARIABLE: &str = "RBX_STUDIO_SELECT";
+/// The fallback for `--select`, resolved into [`Launch`] below and read
+/// nowhere else — `shell` takes the whole comma list from there rather than
+/// reaching back into the environment for it.
+const SELECT_VARIABLE: &str = "RBX_STUDIO_SELECT";
 
 const WINDOW_SIZE: (f32, f32) = (1600.0, 900.0);
 
