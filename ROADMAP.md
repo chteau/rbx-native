@@ -911,6 +911,60 @@ against `Roblox/creator-docs` rather than assumed:
   interactive use (a human editing live) hits the same thing; needs its
   own investigation of the render thread's state right after
   `Headless::reload`.
+- [ ] 📋 **Drag-to-rearrange docks.** The fixed shell that replaced the
+  toolkit's `DockArea` cannot express it: a panel's position is the order of
+  three `.child()` calls, not data, so there is nothing to change at
+  runtime. Re-adding it needs a layout tree (`Slot`/`Panel`) in place of
+  those three hardcoded slots — designed end to end, with sequencing and a
+  recommendation, in
+  [`agents/dock-rearrangement.md`](agents/dock-rearrangement.md).
+  Build the **non-drag** half first — "Move to Left/Right/Bottom", "Float",
+  on each dock's existing overflow menu — because that is the keyboard-
+  operable half and the reference guidance is explicit that drag-only
+  rearrangement is inaccessible. The drag is then a pure addition rather
+  than a rewrite; doing it first means building it against three hardcoded
+  slots and throwing it away.
+- [ ] 📋 **`Select`, `ColorPicker`, `NumberInput` and the menu bar are not
+  in the Tab order — a WCAG 2.1.1 (Keyboard, Level A) failure.** None of
+  those toolkit components exposes a way to set a tab index, so the editor's
+  own registry (`shell::roving::TabOrder`) cannot place them and they stay
+  mouse-only. In practice that means the graphics-quality dropdown, every
+  `Color3` property, the snap increments and every menu are unreachable
+  without a pointer.
+  This is a toolkit limitation rather than a design decision, and the fix is
+  known: wrap each in a focusable element of our own that forwards focus to
+  the widget on `focus_in`, exactly as the Explorer's tree door already does
+  (`shell::panels::instance_tree`). `SelectState` implements `Focusable` and
+  `InputState` has `focus`, so those two are straightforward; `ColorPicker`
+  and `AppMenuBar` need checking. The menu bar may instead want the usual
+  desktop answer — F10/Alt to enter it — which is a different job.
+  Listed as its own item because it is the most serious accessibility gap
+  left in the editor, and because shipping it open was a deliberate,
+  reviewed choice rather than an oversight (see `UX_GUIDELINES.md` §1's
+  conformance section and §11).
+- [ ] 📋 **The accessibility work the reference guidance calls Stage 2 and
+  Stage 3, minus what already shipped.** Stage 1 is met and asserted in
+  tests; these are the rest, each small enough to ride along with other
+  work rather than needing its own PR:
+  - **A separate editor/viewport font size**, independent of the UI scale —
+    VS Code's split between `window.zoomLevel` and `editor.fontSize`.
+    Nothing needs it yet; the moment the script editor grows, it will.
+  - **Named dock layouts.** Sizes persist and Reset Layout exists; saving
+    several under names (Blender's "workspaces") is the piece that does not.
+  - **A high-contrast theme** targeting 7:1 body / 4.5:1 large text
+    (WCAG 1.4.6). The palette is already a token module and the toolkit
+    theme already mirrors it, so this is a second `ThemeSet` rather than a
+    rework.
+  - **44×44 targets on primary and destructive controls by default** (2.5.5),
+    rather than only when Large Click Targets is on — Save, Delete, and
+    Play/Stop once they exist.
+  - **A command palette**, which the same guidance files under "recognition
+    rather than recall" alongside keyboard-driven panel management.
+  - **Keyboard focus shown separately from selection in the Explorer.** The
+    toolkit's `TreeState` tracks a single `selected_ix` and nothing else, so
+    the focused row and the selected rows cannot differ — which matters
+    because the Explorer multi-selects. Needs the toolkit's tree replaced or
+    extended.
 - [ ] 📋 **Property editors for the eight `Variant` types that still have
   none.** The Properties panel renders a value for every type the DOM can
   hold, but eight of them are read-only or edited through something that
@@ -1317,18 +1371,22 @@ against `Roblox/creator-docs` rather than assumed:
   never depends on colour alone. Contrast, target sizes and the toolkit
   theme mirror are all asserted in tests.
 
-  **Still open**: the dock's drag-to-rearrange and persisted layout went
-  away with the `DockArea` the fixed shell replaced, and re-adding it needs
-  a layout tree in place of three hardcoded slots — designed in
-  `agents/dock-rearrangement.md`, not built. `gpui` has no property
-  transitions and cannot transform a `Div`, so hover feedback is instant;
-  keyboard arrow-navigation inside the hand-built menus isn't wired, and
-  neither menu rows nor tree rows can take a focus ring (neither owns a
-  focus handle). The Explorer cannot show keyboard focus separately from
-  selection, because the toolkit's tree tracks only one index.
-  `UX_GUIDELINES.md` §11 lists every deviation from the frame with its
-  reason. This also still ships one built-in theme rather than the
-  user-installable theme packs the item above this one lists as open.
+  Dock sizes and the Output dock's collapsed state persist, with a Reset
+  Layout command beside them, and the View menu carries Reduce Motion (which
+  overrides the desktop preference read at startup) and Large Click Targets
+  (WCAG 2.5.5's 44px floor in place of 2.5.8's 24px).
+
+  **Still open**, each with its own bullet under "What's planned" → Editor:
+  the toolkit widgets that cannot join the Tab order (a Level A failure),
+  the remaining Stage 2/Stage 3 accessibility items, drag-to-rearrange
+  docks, and the eight property types without an editor. Beyond those,
+  `gpui` has no property transitions and cannot transform a `Div`, so hover
+  feedback is instant, and keyboard arrow-navigation inside the hand-built
+  menus isn't wired. `UX_GUIDELINES.md` §11 lists every deviation from the
+  frame with its reason, and §1 states where the editor stands against the
+  reference guidance's Stage 1/2/3 — failures included. This also still
+  ships one built-in theme rather than the user-installable theme packs the
+  item above this one lists as open.
 
 ### Play / Test workflow
 - [ ] 📋 The sandbox-place design (private per-developer place, injected
