@@ -914,7 +914,18 @@ impl Shell {
     /// the editor wears (`rows::field_box`) rather than in the toolkit's
     /// own chrome — it is a select like any other, and looked like a
     /// visitor from a different application floating over the viewport.
-    pub(super) fn quality_control(&self) -> impl IntoElement {
+    ///
+    /// Registered in the window's own Tab order (`shell::roving::TabOrder`)
+    /// with no wrapper and no forwarding subscription, unlike the Explorer's
+    /// tree door: `SelectState` already implements `Focusable` and its own
+    /// `focus_handle` is the real one `Select::focus` itself uses, so
+    /// recording that same handle is the whole fix — there is nothing to
+    /// forward focus *to* once Tab lands on it, because it is already
+    /// there. This was, until now, one of the WCAG 2.1.1 gaps the roadmap's
+    /// "most serious accessibility gap left" bullet names by name.
+    pub(super) fn quality_control(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        self.tab_order
+            .register(&self.quality.read(cx).focus_handle(cx));
         rows::select_box().w(quality_width()).child(
             Select::new(&self.quality)
                 .appearance(false)

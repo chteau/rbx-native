@@ -953,20 +953,32 @@ against `Roblox/creator-docs` rather than assumed:
   rearrangement is inaccessible. The drag is then a pure addition rather
   than a rewrite; doing it first means building it against three hardcoded
   slots and throwing it away.
-- [ ] 📋 **`Select`, `ColorPicker`, `NumberInput` and the menu bar are not
+- [ ] 🚧 **`Select`, `ColorPicker`, `NumberInput` and the menu bar are not
   in the Tab order — a WCAG 2.1.1 (Keyboard, Level A) failure.** None of
   those toolkit components exposes a way to set a tab index, so the editor's
   own registry (`shell::roving::TabOrder`) cannot place them and they stay
-  mouse-only. In practice that means the graphics-quality dropdown, every
-  `Color3` property, the snap increments and every menu are unreachable
-  without a pointer.
+  mouse-only. In practice that means every `Color3` property, the snap
+  increments and every menu are unreachable without a pointer.
   This is a toolkit limitation rather than a design decision, and the fix is
   known: wrap each in a focusable element of our own that forwards focus to
   the widget on `focus_in`, exactly as the Explorer's tree door already does
-  (`shell::panels::instance_tree`). `SelectState` implements `Focusable` and
-  `InputState` has `focus`, so those two are straightforward; `ColorPicker`
-  and `AppMenuBar` need checking. The menu bar may instead want the usual
-  desktop answer — F10/Alt to enter it — which is a different job.
+  (`shell::panels::instance_tree`). `ColorPicker` and `AppMenuBar` still
+  need checking. The menu bar may instead want the usual desktop answer —
+  F10/Alt to enter it — which is a different job.
+  **The graphics-quality dropdown is fixed**: `SelectState` already
+  implements `Focusable`, and its own `focus_handle` is the same one
+  `Select::focus` itself calls, so no wrapper or forwarding subscription was
+  needed there — `shell::Shell::quality_control` just records that handle
+  in `TabOrder` directly. `NumberInput` wraps an `InputState`, which has the
+  same shape (`Focusable`, and its own `.focus`), so the identical one-line
+  fix applies wherever a `NumberInput` is a single, stable, long-lived
+  widget rather than one rebuilt per property row per selection — the snap
+  increments (`shell::toolbar::snap`) are the only current `NumberInput`
+  use in the editor and are not yet done. Every `Select` used for an
+  ordinary, per-row property value (`Color3`, an enum) is a widget rebuilt
+  fresh per row per selection change, not a single long-lived one, so it
+  needs the handle registered at creation time rather than once at
+  startup — a different, larger piece of the same fix, also not yet done.
   Listed as its own item because it is the most serious accessibility gap
   left in the editor, and because shipping it open was a deliberate,
   reviewed choice rather than an oversight (see `UX_GUIDELINES.md` §1's
