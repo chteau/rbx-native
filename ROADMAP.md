@@ -309,6 +309,14 @@ Roblox's own engine.
   collapsible categories matching Roblox's own Properties panel, live —
   reflects DOM mutations from any source (script, undo/redo, the camera
   moving) without a manual refresh.
+- [x] A `Variant` that may simply be absent (`OptionalCFrame`, the DOM's
+  only such type — `Model.WorldPivotData`) edits through a present/absent
+  checkbox above the ordinary `CFrame` editor, which is drawn only while
+  there is a value to edit. Turning it off clears the value; turning it
+  back on restores whatever it held rather than resetting to the origin.
+  Not a Studio parity claim — real Studio never surfaces an optional
+  `CFrame` at all, so the checkbox's caption says plainly what it means
+  rather than borrowing a term from somewhere it isn't used.
 - [x] Properties panel hides properties Studio itself never shows:
   `rbx_reflection`'s `PropertyDescriptor` now carries the dump's
   per-property `Tags` and `Serialization` (`CanLoad`/`CanSave`), and the
@@ -1034,14 +1042,14 @@ against `Roblox/creator-docs` rather than assumed:
     the focused row and the selected rows cannot differ — which matters
     because the Explorer multi-selects. Needs the toolkit's tree replaced or
     extended.
-- [ ] 📋 **Property editors for the eight `Variant` types that still have
+- [ ] 📋 **Property editors for the seven `Variant` types that still have
   none.** The Properties panel renders a value for every type the DOM can
-  hold, but eight of them are read-only or edited through something that
+  hold, but seven of them are read-only or edited through something that
   misrepresents them. Inventory, rationale and rough sizing live in
   [`agents/property-editors.md`](agents/property-editors.md); the bullets
   below are what is left after the `CFrame`/`Ray`/`Vector3int16`/`Faces`/
-  `Axes`/`NumberRange`/`UDim` pass (see "What's been implemented" →
-  Editor).
+  `Axes`/`NumberRange`/`UDim` pass and the `OptionalCFrame` one (see
+  "What's been implemented" → Editor).
 
   Each is its own piece of work, so each gets its own PR:
   - **`BrickColor`** is edited as a raw palette index and displays as
@@ -1056,9 +1064,6 @@ against `Roblox/creator-docs` rather than assumed:
     numbers are a plain field row, but `Default` versus `Custom` is a
     design question first — how does someone go *back* to default once
     they have typed a density? — and worth answering before building.
-  - **`OptionalCFrame`** is editable when it has a value, using the
-    `CFrame` editor, and read-only when it does not: there is nowhere to
-    say "give this one a value" or "clear it". Needs a none/some control.
   - **`NumberSequence`** (`ParticleEmitter.Size`, `.Transparency`) needs a
     keypoint list or a small curve editor — the largest item here.
   - **`ColorSequence`** (`UIGradient`, particle colour) needs a gradient

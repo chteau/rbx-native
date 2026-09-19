@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-20
+
+- **An absent `OptionalCFrame` can be given a value, and a present one
+  cleared.** `Model.WorldPivotData` is the only property the DOM can hold
+  that is legitimately *nothing* rather than wrong, and the Properties
+  panel had no way to say so in either direction: absent, the row was
+  read-only text reading `none`; present, there was nowhere to clear it.
+  Both are one checkbox now, above the same `CFrame` editor the value
+  already used, which draws only while there is a value to edit. Clearing
+  and restoring keeps the frame rather than quietly moving it to the
+  origin — the box only says whether there is one. — @chteau
+
 ## 2026-09-19
 
 - **A collapsed property category reads as a tile.** The category headers
