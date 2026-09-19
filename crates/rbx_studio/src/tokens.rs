@@ -561,10 +561,18 @@ pub(crate) fn section_gap() -> Pixels {
     scaled(14.)
 }
 
-/// Between one category and the next — the largest gap in the panel, and
-/// deliberately so.
+/// Between one category's last row and the next category's header — the
+/// largest gap in the panel, and deliberately so.
 pub(crate) fn group_gap() -> Pixels {
     scaled(24.)
+}
+
+/// Between two category headers with nothing between them. A collapsed
+/// category is a tile, not a void: the header carries its own surface (see
+/// `shell::rows::section_header`), so the grouping is read off the fill
+/// and a full [`group_gap`] of dock between two bars just reads as a hole.
+pub(crate) fn header_gap() -> Pixels {
+    scaled(4.)
 }
 
 /// Inside a row, between a label and its own control. Shorter than

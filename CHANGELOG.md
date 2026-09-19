@@ -2,6 +2,15 @@
 
 ## 2026-09-19
 
+- **A collapsed property category reads as a tile.** The category headers
+  in the Properties panel carry their own fill now, one step above the
+  dock and rounded like everything else that has a surface, and the gap
+  between two of them shrank from the panel's largest to its smallest.
+  That is not a loosening of the proximity ladder: the ladder's big gap
+  now sits under a category's *last row*, where there is a group to close,
+  and a run of collapsed headers is spaced like the stack of tiles it
+  looks like. — @chteau
+
 - **Numeric property fields are draggable.** Pull a field's *label*
   sideways to scrub its value — the gesture Studio, Blender, Unity and
   Figma all bind the same way, and on the label rather than the field so a

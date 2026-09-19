@@ -440,6 +440,12 @@ pub(super) fn section_header(
         .gap(tokens::label_gap())
         .px(tokens::row_padding())
         .cursor_pointer()
+        // One step above the dock, and the only filled thing in the panel
+        // that is not an input: a category is a tile you click, so it looks
+        // like a surface rather than a line of text floating on the dock.
+        // Rounded because everything else that carries a fill here is.
+        .bg(tokens::chrome())
+        .rounded(tokens::RADIUS)
         .text_size(tokens::text_sm())
         .line_height(tokens::line_sm())
         .font_weight(tokens::WEIGHT_BOLD)

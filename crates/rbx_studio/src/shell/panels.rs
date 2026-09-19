@@ -271,13 +271,18 @@ impl Shell {
                     .child(
                         v_flex()
                             .w_full()
-                            // Gestalt proximity, as four ratios: the gap
-                            // between categories is the largest in the
+                            // Gestalt proximity, as a ratio: the gap after
+                            // a category's last row is the largest in the
                             // panel, then header-to-first-row, then
                             // row-to-row, then label-to-input. Flatten any
                             // one of them into its neighbour and the panel
                             // stops reading as groups at all.
-                            .gap(tokens::group_gap())
+                            //
+                            // The gap *here* is the small one, because two
+                            // collapsed headers are two tiles in a stack;
+                            // `group_gap` is spent below, on the open rows,
+                            // where there is actually a group to close.
+                            .gap(tokens::header_gap())
                             // Bottom only. A matching top pad stacked on
                             // the gap under the search field and left the
                             // first category floating a long way down the
@@ -311,6 +316,7 @@ impl Shell {
                                             v_flex()
                                                 .w_full()
                                                 .pt(tokens::section_gap())
+                                                .pb(tokens::group_gap())
                                                 .gap(tokens::row_gap())
                                                 .children(children),
                                         )

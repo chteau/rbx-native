@@ -140,7 +140,11 @@ and 16px in different places for different reasons, and rounding those to a
 base-4 ladder would be inventing a design the file doesn't have. Write the
 literal the frame measures. The Properties panel is the exception — its
 four gaps (`label_gap` < `row_gap` < `section_gap` < `group_gap`) are a
-*ratio*, not four independent numbers, and §6 explains why.
+*ratio*, not four independent numbers, and §6 explains why. `header_gap`
+sits outside that ladder on purpose: a collapsed category header carries
+its own fill, so consecutive headers are tiles in a stack and are spaced
+like tiles, not like groups — the grouping is read off the surface there,
+not off the void.
 
 **Every size is a function, not a constant**, and multiplies by
 `font_scale()`. Anything a pointer has to hit goes through `scaled_target`
