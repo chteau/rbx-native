@@ -619,6 +619,34 @@ fn build_part(
     ))
 }
 
+/// The debug label `build_part` (via `shape::resolve`) would give `referent`'s
+/// shape, read the same way the real render path does: off the instance's own
+/// `size` (`None` when it's missing, matching `build_part`). A narrow, `pub`
+/// bridge so `rbx_studio`'s Part-insert tests can assert against the exact
+/// render-time shape instead of duplicating the `Enum.PartType`/class mapping
+/// — `ShapeKind` itself stays crate-private, since its `Truss` variant carries
+/// `crate::shapes`-private fields.
+pub fn resolved_shape_label(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    referent: Ref,
+) -> Option<&'static str> {
+    let instance = dom.get(referent)?;
+    let Some(Variant::Vector3(size)) = instance.properties().get("size") else {
+        return None;
+    };
+    let size = Vec3::new(size.x, size.y, size.z);
+    Some(match shape::resolve(dom, database, instance, size).kind {
+        ShapeKind::Box => "Box",
+        ShapeKind::Ball => "Ball",
+        ShapeKind::CylinderX => "CylinderX",
+        ShapeKind::CylinderY => "CylinderY",
+        ShapeKind::Wedge => "Wedge",
+        ShapeKind::CornerWedge => "CornerWedge",
+        ShapeKind::Truss { .. } => "Truss",
+    })
+}
+
 /// The tail of [`build_part`] once placement and shape are known; also how a
 /// union's recovered leaf becomes a part, whose `cframe` is composed from its
 /// operation tree rather than read off any instance.
