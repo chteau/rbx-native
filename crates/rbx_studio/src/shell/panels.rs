@@ -221,6 +221,7 @@ impl Shell {
                             });
                         let control = render_editor(
                             tab_index,
+                            &self.tab_order,
                             widget,
                             move |index, checked| {
                                 let mut next = flags.clone();
@@ -240,6 +241,7 @@ impl Shell {
                                 })
                             },
                             on_scrub,
+                            cx,
                         );
                         property_row_control(row, control, composite, error.as_deref())
                             .into_any_element()
