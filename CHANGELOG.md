@@ -274,6 +274,26 @@
   rather than determining it a second time. Wedge/CornerWedge's own case
   is still open. — @chteau
 
+- **`rbxstudio` has a real command line.** Driving the editor from a script
+  or a CI job used to mean exporting `RBX_STUDIO_SELECT`/`RBX_STUDIO_RUN`
+  and hoping: variables no `--help` mentions, that a wrapper has to set on
+  a child process, and that say nothing back when a name in them matches
+  nothing. Those two capabilities are now arguments — `--select`, `--run` —
+  alongside `--verbose` and a `--help` that prints the lot.
+  Three things are genuinely new rather than renamed. `--select` takes an
+  Explorer path (`Workspace.Model.Part`) as well as a bare name, so a
+  scripted launch can name the part it means instead of the first one that
+  happens to share a name; the path is tried first and falls back to the
+  name search, which is what keeps an instance whose own name contains a
+  dot reachable. `--run` takes a `.luau` *file* rather than inline source,
+  read before the window and the GPU exist so a path typo is an exit code
+  instead of a line in the Output dock on the first frame. And a `--select`
+  target that matches nothing is now reported on stderr, verbose or not,
+  since a script driving the editor cannot see a silent no-op for itself.
+  Both variables keep working unchanged — they are still how the rest of
+  the screenshot aids are spelled — and a flag simply wins over its
+  variable when both are set. — @chteau
+
 ## 2026-09-18
 
 - **Rebuilt the editor's chrome against the project's own Figma design.**

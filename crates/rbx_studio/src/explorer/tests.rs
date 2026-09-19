@@ -314,3 +314,60 @@ fn find_by_name_walks_depth_first_in_file_order() {
     assert_eq!(find_by_name(&dom, "Part"), Some(inner));
     assert_eq!(find_by_name(&dom, "Nowhere"), None);
 }
+
+/// The tree `resolve` is exercised against below: two `Part`s called `Part`,
+/// one nested under a `Model` and one directly under `Workspace`, so a path
+/// and a name genuinely disagree about which one is meant.
+fn ambiguous_place() -> (WeakDom, Ref, Ref) {
+    let mut dom = WeakDom::new();
+    let workspace = insert(&mut dom, 1, "Workspace", "Workspace");
+    let model = insert(&mut dom, 2, "Model", "Model");
+    let inner = insert(&mut dom, 3, "Part", "Part");
+    let outer = insert(&mut dom, 4, "Part", "Part");
+    dom.set_parent(model, Some(workspace));
+    dom.set_parent(inner, Some(model));
+    dom.set_parent(outer, Some(workspace));
+    (dom, inner, outer)
+}
+
+#[test]
+fn a_path_picks_the_instance_a_bare_name_would_miss() {
+    let (dom, inner, outer) = ambiguous_place();
+
+    // The name search reaches the nested one first (see
+    // `find_by_name_walks_depth_first_in_file_order`), so the sibling under
+    // Workspace is only reachable by path.
+    assert_eq!(resolve(&dom, "Part"), Some(inner));
+    assert_eq!(resolve(&dom, "Workspace.Part"), Some(outer));
+    assert_eq!(resolve(&dom, "Workspace.Model.Part"), Some(inner));
+}
+
+#[test]
+fn a_path_matches_children_only_never_deeper_descendants() {
+    let (dom, _, _) = ambiguous_place();
+
+    // `Part` is a grandchild of Workspace through `Model`, not a child of it,
+    // so this path has no match at all — and no bare name to fall back to.
+    assert_eq!(resolve(&dom, "Workspace.Model.Model.Part"), None);
+    assert_eq!(resolve(&dom, "Model.Part"), None);
+}
+
+#[test]
+fn a_name_containing_a_dot_still_resolves_once_the_path_fails() {
+    let mut dom = WeakDom::new();
+    let workspace = insert(&mut dom, 1, "Workspace", "Workspace");
+    let dotted = insert(&mut dom, 2, "Folder", "Config.v2");
+    dom.set_parent(dotted, Some(workspace));
+
+    assert_eq!(resolve(&dom, "Config.v2"), Some(dotted));
+    assert_eq!(resolve(&dom, "Workspace.Config.v2"), None);
+}
+
+#[test]
+fn a_root_resolves_by_the_single_segment_that_names_it() {
+    let (dom, _, _) = ambiguous_place();
+
+    assert_eq!(resolve(&dom, "Workspace"), Some(Ref::new(1)));
+    assert_eq!(resolve(&dom, "Nowhere"), None);
+    assert_eq!(resolve(&dom, ""), None);
+}

@@ -54,7 +54,8 @@ use rbx_viewer::QualityLevel;
 
 use crate::align::Options as AlignOptions;
 use crate::class_icons::IconPack;
-use crate::command_bar::{self, CommandBar};
+use crate::cli::Launch;
+use crate::command_bar::CommandBar;
 use crate::explorer::Explorer;
 use crate::folder_colors::FolderColors;
 use crate::history::{History, DEFAULT_CAP};
@@ -246,6 +247,7 @@ impl Shell {
         title: impl Into<SharedString>,
         place: Place,
         settings: Settings,
+        launch: Launch,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -487,16 +489,22 @@ impl Shell {
         // `rbx_viewer::view::View`) instead of only proving it was set last.
         shell.apply_debug_tool(cx);
 
-        // `RBX_STUDIO_SELECT=<name>[,<name>...]`: `main::load` already
-        // resolved a single name into the initial `Place.selected` before
-        // the window opened (too early for a comma list — it looks up one
-        // literal name and finds nothing for a name containing a comma), so
-        // this is what actually applies a multi-instance selection — a
-        // debugging aid for a screenshot of the outline/gizmo over more than
-        // one part, since nothing else can send the viewport a
-        // `Shift`/`Ctrl`/`Cmd`-click on the editor's behalf.
-        if let Ok(spec) = std::env::var(crate::SELECT_VARIABLE) {
-            shell.apply_debug_select(&spec, cx);
+        // `--select` / `RBX_STUDIO_SELECT`: `main::load` already resolved a
+        // single target into the initial `Place.selected` before the window
+        // opened (too early for a comma list — it looks up one literal
+        // target and finds nothing for one containing a comma), so this is
+        // what actually applies a multi-instance selection — the only way to
+        // put the outline/gizmo over more than one part, since nothing else
+        // can send the viewport a `Shift`/`Ctrl`/`Cmd`-click on the editor's
+        // behalf.
+        //
+        // What it could not resolve is held rather than reported here: a
+        // target the `--run` block below is about to create is legitimately
+        // missing at this point, so only that block's own second attempt
+        // (or this one, when there is no script) says anything.
+        let mut unresolved = Vec::new();
+        if let Some(spec) = launch.select.as_deref() {
+            unresolved = shell.apply_debug_select(spec, &launch, cx);
         }
 
         // `RBX_STUDIO_ALIGN` (see `shell::align`): applied right after
@@ -516,17 +524,25 @@ impl Shell {
         // the selected part.
         shell.apply_debug_resize(cx);
 
-        // A debugging aid for a screenshot that proves the bar works without
-        // sending it synthetic input (see `AGENTS.md`'s safety rules): runs
-        // exactly the pipeline Enter would, once, before the first frame.
-        if let Ok(source) = std::env::var(command_bar::RUN_VARIABLE) {
-            shell.run_command(&source, cx);
+        // `--run` / `RBX_STUDIO_RUN`: runs exactly the pipeline Enter would,
+        // once, before the first frame — the way a scripted launch changes a
+        // place without synthetic input (see `AGENTS.md`'s safety rules).
+        if let Some(source) = launch.run.as_deref() {
+            shell.run_command(source, cx);
+            launch.say(format!("--run: {}", shell.command_bar.feedback().label()));
             // Re-applied: too early above to name anything the script just
             // created. Trying it again here is what lets a screenshot show
             // that without a click nothing else can send.
-            if let Ok(spec) = std::env::var(crate::SELECT_VARIABLE) {
-                shell.apply_debug_select(&spec, cx);
+            if let Some(spec) = launch.select.as_deref() {
+                unresolved = shell.apply_debug_select(spec, &launch, cx);
             }
+        }
+
+        // Always on stderr, verbose or not: a `--select` that quietly does
+        // nothing is exactly the failure a script driving this editor cannot
+        // see for itself.
+        for target in &unresolved {
+            eprintln!("rbxstudio: --select: no instance matches {target:?}");
         }
 
         // A debugging aid for the Properties panel itself, documented in

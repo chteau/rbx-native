@@ -2,10 +2,16 @@
 //! GPUI Kit window, next to the Explorer of the place, mutable through the
 //! Command Bar (see `command_bar`).
 //!
-//! One place per process: `rbxstudio [--quality <auto|1..21>]
-//! <file.rbxl|.rbxm|.rbxlx|.rbxmx>`. `RBX_STUDIO_SELECT=<name>[,<name>...]`
-//! pre-selects the first instance of that name at startup, then adds each
-//! further comma-separated name to the selection exactly as a
+//! One place per process; the command line it takes lives in [`cli`], and
+//! `--help` prints it. `--select` and `--run` are the supported spelling of
+//! the first two variables below — same behaviour, the flag winning when both
+//! are given. The rest stay variables: they are aids for scripted
+//! screenshots, not a surface worth committing to.
+//!
+//! `RBX_STUDIO_SELECT=<target>[,<target>...]` pre-selects the first instance
+//! that target names — an Explorer path (`Workspace.Model.Part`) or a bare
+//! name, see `explorer::resolve` — at startup, then adds each
+//! further comma-separated target to the selection exactly as a
 //! `Shift`/`Ctrl`/`Cmd`-click would — a debugging aid for scripted
 //! screenshots of the Properties panel and the viewport's multi-selection
 //! outline/gizmo, since nothing else can click the tree or the viewport on
@@ -41,6 +47,7 @@
 mod align;
 mod camera;
 mod class_icons;
+mod cli;
 mod command_bar;
 mod display;
 mod explorer;
@@ -68,10 +75,11 @@ use gpui_kit::component::{Root, Theme, ThemeMode, ThemeRegistry};
 use gpui_kit::*;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
-use rbx_viewer::{Headless, QualityLevel};
+use rbx_viewer::Headless;
 
 use camera::PlaceCamera;
 use class_icons::IconPack;
+use cli::Launch;
 use explorer::Explorer;
 use folder_colors::FolderColors;
 use properties::Properties;
@@ -79,13 +87,11 @@ use save::Format;
 use settings::Settings;
 use shell::Shell;
 
-// `pub(crate)`: `shell` re-reads it — as the full comma list, not just the
-// one name resolved above — both up front and again after `RBX_STUDIO_RUN`,
-// to select whatever the script just created (see
-// `Shell::apply_debug_select`).
-pub(crate) const SELECT_VARIABLE: &str = "RBX_STUDIO_SELECT";
+/// The fallback for `--select`, resolved into [`Launch`] below and read
+/// nowhere else — `shell` takes the whole comma list from there rather than
+/// reaching back into the environment for it.
+const SELECT_VARIABLE: &str = "RBX_STUDIO_SELECT";
 
-const USAGE: &str = "usage: rbxstudio [--quality <auto|1..21>] <file.rbxl|.rbxm|.rbxlx|.rbxmx>";
 const WINDOW_SIZE: (f32, f32) = (1600.0, 900.0);
 
 fn main() {
@@ -94,10 +100,20 @@ fn main() {
     // here since nothing on the command line can express it.
     let settings = Settings::load();
     let arguments: Vec<String> = std::env::args().skip(1).collect();
-    let Arguments { path, quality } = match parse(&arguments, settings.quality) {
-        Ok(parsed) => parsed,
+    let cli::Arguments {
+        path,
+        quality,
+        select,
+        run,
+        verbose,
+    } = match cli::parse(&arguments, settings.quality) {
+        Ok(cli::Parsed::Open(parsed)) => parsed,
+        Ok(cli::Parsed::Usage) => {
+            println!("{}", cli::USAGE);
+            return;
+        }
         Err(message) => {
-            eprintln!("{message}\n{USAGE}");
+            eprintln!("{message}\n{}", cli::USAGE);
             std::process::exit(2);
         }
     };
@@ -109,11 +125,24 @@ fn main() {
         ..settings
     };
 
+    // A flag wins over the variable it supersedes: a wrapper script that
+    // exports one and then passes the other meant the one it spelled out on
+    // the line. `--run`'s file is read here, before anything expensive, so a
+    // typo in its path is an exit code rather than a line in the Output dock
+    // on the first frame.
+    let launch = Launch {
+        select: select.or_else(|| std::env::var(SELECT_VARIABLE).ok()),
+        run: match run {
+            Some(script) => Some(read_script(&script)),
+            None => std::env::var(command_bar::RUN_VARIABLE).ok(),
+        },
+        verbose,
+    };
+
     // Parsing and the asset downloads both block; running them before the
     // window exists keeps the UI thread from ever stalling on the network.
     println!("loading {}…", path.display());
-    let select = std::env::var(SELECT_VARIABLE).ok();
-    let place = match load(&path, select.as_deref(), settings.icon_pack) {
+    let place = match load(&path, &launch, settings.icon_pack) {
         Ok(place) => place,
         Err(message) => {
             eprintln!("rbxstudio: {message}");
@@ -137,7 +166,7 @@ fn main() {
         cx.spawn(async move |cx| {
             let options = cx.update(|cx| window_options(&title, cx));
             cx.open_window(options, |window, cx| {
-                let shell = cx.new(|cx| Shell::new(title, place, settings, window, cx));
+                let shell = cx.new(|cx| Shell::new(title, place, settings, launch, window, cx));
                 cx.new(|cx| Root::new(shell, window, cx))
             })
             .expect("failed to open the main window");
@@ -152,7 +181,7 @@ fn main() {
 struct Place {
     explorer: Explorer,
     properties: Properties,
-    /// The instance `RBX_STUDIO_SELECT` named, when it exists in the file.
+    /// The instance `--select` named, when it exists in the file.
     selected: Option<Ref>,
     camera: Option<PlaceCamera>,
     viewer: Headless,
@@ -218,9 +247,18 @@ fn install_fonts(cx: &mut App) {
     }
 }
 
-fn load(path: &Path, select: Option<&str>, icon_pack: IconPack) -> Result<Place, String> {
+fn load(path: &Path, launch: &Launch, icon_pack: IconPack) -> Result<Place, String> {
     let bytes = std::fs::read(path).map_err(|err| format!("failed to read {path:?}: {err}"))?;
     let format = Format::sniff(&bytes);
+    launch.say(format!(
+        "read {} ({} bytes, {} place)",
+        path.display(),
+        bytes.len(),
+        match format {
+            Format::Binary => "binary",
+            Format::Xml => "XML",
+        }
+    ));
     let dom = rbx_viewer::read_place(path)?;
     let database = ReflectionDatabase::embedded();
 
@@ -231,7 +269,10 @@ fn load(path: &Path, select: Option<&str>, icon_pack: IconPack) -> Result<Place,
 
     Ok(Place {
         explorer: Explorer::from_dom(&dom, icon_pack, &folder_colors, path),
-        selected: select.and_then(|name| explorer::find_by_name(&dom, name)),
+        selected: launch
+            .select
+            .as_deref()
+            .and_then(|target| explorer::resolve(&dom, target)),
         camera: PlaceCamera::from_dom(&dom),
         viewer: Headless::load(path, true)?,
         properties: Properties::new(database.clone()),
@@ -263,42 +304,17 @@ fn window_options(title: &SharedString, cx: &App) -> WindowOptions {
     }
 }
 
-/// A parsed command line: the place to open, and the graphics quality to open it
-/// at.
-struct Arguments {
-    path: PathBuf,
-    quality: QualityLevel,
-}
-
-/// Reads the command line: one place file, and `--quality` spelled exactly as
-/// `rbxview` spells it (the same [`QualityLevel`] parser reads the value).
-///
-/// `default_quality` is what a bare invocation opens at when `--quality` is
-/// absent — the persisted [`Settings`], so the last pick from the dropdown
-/// survives a relaunch; an explicit flag still overrides it.
-fn parse(arguments: &[String], default_quality: QualityLevel) -> Result<Arguments, String> {
-    let mut path = None;
-    let mut quality = default_quality;
-
-    let mut arguments = arguments.iter();
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--quality" => {
-                let value = arguments
-                    .next()
-                    .ok_or_else(|| "--quality needs a level".to_string())?;
-                quality = value.parse()?;
-            }
-            flag if flag.starts_with('-') => return Err(format!("unknown option {flag}")),
-            file if path.is_none() => path = Some(PathBuf::from(file)),
-            _ => return Err("only one place file can be opened".to_string()),
+/// `--run`'s script, read before the window and the GPU exist so that a path
+/// typo stops the process outright instead of surfacing as an Output-dock
+/// error on the first frame.
+fn read_script(path: &Path) -> String {
+    match std::fs::read_to_string(path) {
+        Ok(source) => source,
+        Err(err) => {
+            eprintln!("rbxstudio: failed to read {}: {err}", path.display());
+            std::process::exit(1);
         }
     }
-
-    Ok(Arguments {
-        path: path.ok_or_else(|| "no place file given".to_string())?,
-        quality,
-    })
 }
 
 fn file_name(path: &Path) -> String {
@@ -310,10 +326,9 @@ fn file_name(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{file_name, parse};
+    use super::file_name;
     use gpui_kit::component::{ThemeMode, ThemeSet};
-    use rbx_viewer::QualityLevel;
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
 
     /// Guards `install_theme`'s `include_str!` + `.expect(...)`: a change to
     /// `assets/themes/dark-soft.json` that breaks its `ThemeSet` shape (a
@@ -330,78 +345,6 @@ mod tests {
             .find(|theme| theme.name == "rbx-native Dark")
             .expect("a theme named \"rbx-native Dark\"");
         assert_eq!(theme.mode, ThemeMode::Dark);
-    }
-
-    fn arguments(values: &[&str]) -> Vec<String> {
-        values.iter().map(|value| value.to_string()).collect()
-    }
-
-    fn parse_with_default(values: &[&str]) -> Result<super::Arguments, String> {
-        parse(&arguments(values), QualityLevel::Automatic)
-    }
-
-    #[test]
-    fn a_single_file_is_the_place_to_open() {
-        let parsed = parse_with_default(&["place.rbxl"]).expect("a path");
-        assert_eq!(parsed.path, PathBuf::from("place.rbxl"));
-    }
-
-    #[test]
-    fn no_argument_is_a_usage_error() {
-        assert!(parse_with_default(&[]).is_err());
-    }
-
-    #[test]
-    fn a_second_file_is_a_usage_error() {
-        assert!(parse_with_default(&["one.rbxl", "two.rbxl"]).is_err());
-    }
-
-    #[test]
-    fn flags_are_rejected_rather_than_opened_as_files() {
-        assert!(parse_with_default(&["--orbit"]).is_err());
-        assert!(parse_with_default(&["--size", "800x600"]).is_err());
-    }
-
-    // The editor has a frame clock, so unlike `rbxview` it manages the level
-    // itself unless told otherwise.
-    #[test]
-    fn the_quality_is_automatic_until_a_level_is_given() {
-        let parsed = parse_with_default(&["place.rbxl"]).expect("a path");
-        assert_eq!(parsed.quality, QualityLevel::Automatic);
-    }
-
-    // The persisted setting is what a bare invocation should reopen at, not
-    // always `Automatic`.
-    #[test]
-    fn a_missing_flag_falls_back_to_the_given_default_rather_than_always_automatic() {
-        let parsed = parse(&arguments(&["place.rbxl"]), QualityLevel::Level(12)).expect("a path");
-        assert_eq!(parsed.quality, QualityLevel::Level(12));
-    }
-
-    #[test]
-    fn an_explicit_flag_overrides_the_given_default() {
-        let parsed = parse(
-            &arguments(&["--quality", "Level03", "place.rbxl"]),
-            QualityLevel::Level(12),
-        )
-        .expect("a path");
-        assert_eq!(parsed.quality, QualityLevel::Level(3));
-    }
-
-    #[test]
-    fn a_quality_level_is_read_the_way_rbxview_reads_it() {
-        let quality = |values: &[&str]| parse_with_default(values).map(|parsed| parsed.quality);
-
-        assert_eq!(
-            quality(&["--quality", "Level07", "place.rbxl"]),
-            Ok(QualityLevel::Level(7))
-        );
-        assert_eq!(
-            quality(&["place.rbxl", "--quality", "auto"]),
-            Ok(QualityLevel::Automatic)
-        );
-        assert!(quality(&["--quality", "22", "place.rbxl"]).is_err());
-        assert!(quality(&["place.rbxl", "--quality"]).is_err());
     }
 
     #[test]

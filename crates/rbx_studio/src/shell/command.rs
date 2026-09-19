@@ -8,6 +8,7 @@ use std::rc::Rc;
 use gpui_kit::{Context, ScrollStrategy};
 use rbx_dom::{Change, Ref, WeakDom};
 
+use crate::cli::Launch;
 use crate::command_bar::{self, Feedback};
 use crate::explorer::{self, Explorer};
 use crate::transform::Targets;
@@ -15,42 +16,65 @@ use crate::transform::Targets;
 use super::Shell;
 
 impl Shell {
-    /// Selects `name`'s first match in the current DOM the way clicking its
-    /// row would, expanding whatever ancestors were collapsed — the only way
-    /// a screenshot can show an instance `RBX_STUDIO_RUN` just created, since
-    /// nothing else can click the tree on the editor's behalf.
-    pub(super) fn select_by_name(&mut self, name: &str, cx: &mut Context<Self>) {
-        let Some(reference) = explorer::find_by_name(&self.dom, name) else {
-            return;
+    /// Selects what `target` names in the current DOM (see
+    /// [`explorer::resolve`]) the way clicking its row would, expanding
+    /// whatever ancestors were collapsed — the only way a screenshot can show
+    /// an instance `--run` just created, since nothing else can click the
+    /// tree on the editor's behalf. `false` when nothing resolves.
+    fn select_target(&mut self, target: &str, cx: &mut Context<Self>) -> bool {
+        let Some(reference) = explorer::resolve(&self.dom, target) else {
+            return false;
         };
         self.select(reference, cx);
+        true
     }
 
-    /// Adds `name`'s first match to the selection exactly as a
+    /// Adds what `target` names to the selection exactly as a
     /// `Shift`/`Ctrl`/`Cmd`-click on it would (see [`Shell::extend_selection`]),
-    /// rather than replacing it the way [`Shell::select_by_name`] does. A
-    /// no-op if nothing resolves.
-    pub(super) fn extend_by_name(&mut self, name: &str, cx: &mut Context<Self>) {
-        let Some(reference) = explorer::find_by_name(&self.dom, name) else {
-            return;
+    /// rather than replacing it the way [`Shell::select_target`] does.
+    fn extend_target(&mut self, target: &str, cx: &mut Context<Self>) -> bool {
+        let Some(reference) = explorer::resolve(&self.dom, target) else {
+            return false;
         };
         self.extend_selection(reference, cx);
+        true
     }
 
-    /// `RBX_STUDIO_SELECT=<name>[,<name>...]`: selects the first name, then
-    /// adds each further one the way `Shift`/`Ctrl`/`Cmd`-click would —
-    /// documented on its call sites in `Shell::new`.
-    pub(super) fn apply_debug_select(&mut self, spec: &str, cx: &mut Context<Self>) {
-        let mut names = spec
+    /// `--select <target>[,<target>...]`: selects the first target, then adds
+    /// each further one the way `Shift`/`Ctrl`/`Cmd`-click would — documented
+    /// on its call sites in `Shell::new`.
+    ///
+    /// Returns the targets that matched nothing, rather than reporting them
+    /// here: whether an unmatched one is worth a word depends on which of
+    /// those call sites this was, which only they know.
+    pub(super) fn apply_debug_select(
+        &mut self,
+        spec: &str,
+        launch: &Launch,
+        cx: &mut Context<Self>,
+    ) -> Vec<String> {
+        let mut unresolved = Vec::new();
+        let mut targets = spec
             .split(',')
             .map(str::trim)
-            .filter(|name| !name.is_empty());
-        if let Some(first) = names.next() {
-            self.select_by_name(first, cx);
+            .filter(|target| !target.is_empty());
+        if let Some(first) = targets.next() {
+            if self.select_target(first, cx) {
+                launch.say(format!("--select: {first}"));
+            } else {
+                unresolved.push(first.to_owned());
+            }
         }
-        for name in names {
-            self.extend_by_name(name, cx);
+        // Every target after the first adds to whatever is selected by then,
+        // including when the first itself resolved to nothing.
+        for target in targets {
+            if self.extend_target(target, cx) {
+                launch.say(format!("--select: {target}"));
+            } else {
+                unresolved.push(target.to_owned());
+            }
         }
+        unresolved
     }
 
     /// Selects `reference` alone in the Explorer the way clicking its row
