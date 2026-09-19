@@ -2,6 +2,16 @@
 
 ## 2026-09-19
 
+- **`rbxview`'s title bar now shows fps and frame time**, closing the one
+  leftover on the FPS/frame-time readout item: `rbxstudio`'s viewport
+  corner label got its "Stats" toggle a while back, but the standalone
+  viewer's title bar had no equivalent. It reuses the same wall-clock `dt`
+  the redraw loop already measures for camera motion (a small `FrameRate`
+  just averages it over a rolling one-second window — no second timing
+  mechanism), and formats the reading exactly the way `rbxstudio`'s corner
+  label does. Always on rather than behind a toggle: `rbxview` has no menu
+  to put one in, and this is the least machinery that shows it. — @chteau
+
 - **A collapsed property category reads as a tile.** The category headers
   in the Properties panel carry their own fill now, one step above the
   dock and rounded like everything else that has a surface, and the gap
