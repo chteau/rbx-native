@@ -333,7 +333,7 @@ impl Shell {
             .rounded(tokens::RADIUS)
             .bg(tokens::chrome())
             .shadow(tokens::elevation())
-            .child(self.quality_control())
+            .child(self.quality_control(cx))
             .child(overflow)
             .into_any_element()
     }

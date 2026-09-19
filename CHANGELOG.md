@@ -244,6 +244,15 @@
   `NumberSequence`/`ColorSequence` aren't either, matching this project's
   separate policy of giving each of those eight `Variant` types its own
   PR. — @chteau
+- **The graphics-quality dropdown is reachable from the keyboard.** It was
+  one of the controls behind this project's most serious open
+  accessibility gap: `SelectState`'s own `focus_handle` — the exact one
+  `Select::focus` already uses — is now recorded directly in the window's
+  own Tab order (`shell::roving::TabOrder`), no wrapper element and no
+  forwarding subscription needed, since focus lands on the real thing
+  already. `Color3`/enum property rows, the snap increments, `ColorPicker`
+  and the menu bar remain mouse-only; each needs its own follow-up, laid
+  out in the roadmap bullet this partly closes. — @chteau
 
 ## 2026-09-18
 
