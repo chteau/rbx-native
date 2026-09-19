@@ -27,8 +27,10 @@ pub(super) fn status(
     let mut parts = vec![quality];
     if let Some(fps) = fps {
         // Frame time is exactly 1/fps over the same window `Stats` measured
-        // it in, not a separate approximation — see `stats::fps`.
-        parts.push(format!("{fps:.0} fps\u{b7}{:.1} ms", 1000.0 / fps));
+        // it in, not a separate approximation — see `stats::fps`. Formatted
+        // by `rbx_viewer::fps_readout`, which `rbxview`'s own title bar reads
+        // the same way.
+        parts.push(rbx_viewer::fps_readout(fps));
     }
     if let Some(speed) = speed {
         parts.push(format!("{} studs/s", speed.round() as i64));

@@ -15,5 +15,14 @@ run() {
 }
 run cargo fmt --all -- --check
 run cargo clippy --workspace --all-targets -- -D warnings
-run cargo test --workspace "$@" 2>&1 | tee /tmp/rbx-native-test.log | grep -aE '^(test result|running|error|warning: unused)' 
-echo "TOTAL PASSED: $(grep -aoE '^test result: ok\. [0-9]+ passed' /tmp/rbx-native-test.log | awk '{s+=$4} END {print s}')"
+
+# A fixed path here would race: two of this script running concurrently (one
+# per agent, on separate branches, is routine in this project — see
+# agents/AGENTS.md's "Orchestration and subagents") would each overwrite the
+# other's log between the `tee` and the final `grep`, corrupting the printed
+# total for whichever one loses the race. `mktemp` gives each invocation its
+# own file; `trap` cleans it up on any exit, not just the successful path.
+log="$(mktemp /tmp/rbx-native-test.XXXXXX.log)"
+trap 'rm -f "$log"' EXIT
+run cargo test --workspace "$@" 2>&1 | tee "$log" | grep -aE '^(test result|running|error|warning: unused)'
+echo "TOTAL PASSED: $(grep -aoE '^test result: ok\. [0-9]+ passed' "$log" | awk '{s+=$4} END {print s}')"

@@ -15,16 +15,25 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 cargo clippy --workspace --all-targets -- -D warnings
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-$logFile = Join-Path ([System.IO.Path]::GetTempPath()) "rbx-native-test.log"
-cargo test --workspace @args 2>&1 |
-    Tee-Object -FilePath $logFile |
-    Select-String -Pattern '^(test result|running|error|warning: unused)'
-$testExitCode = $LASTEXITCODE
+# A fixed path here would race: two of this script running concurrently (one
+# per agent, on separate branches, is routine in this project) would each
+# overwrite the other's log between Tee-Object and the final Select-String,
+# corrupting the printed total for whichever one loses the race. A per-process
+# name avoids that; the `finally` block cleans it up on any exit path.
+$logFile = Join-Path ([System.IO.Path]::GetTempPath()) "rbx-native-test.$PID.log"
+try {
+    cargo test --workspace @args 2>&1 |
+        Tee-Object -FilePath $logFile |
+        Select-String -Pattern '^(test result|running|error|warning: unused)'
+    $testExitCode = $LASTEXITCODE
 
-$total = 0
-Select-String -Path $logFile -Pattern '^test result: ok\. (\d+) passed' | ForEach-Object {
-    $total += [int]$_.Matches[0].Groups[1].Value
+    $total = 0
+    Select-String -Path $logFile -Pattern '^test result: ok\. (\d+) passed' | ForEach-Object {
+        $total += [int]$_.Matches[0].Groups[1].Value
+    }
+    Write-Output "TOTAL PASSED: $total"
+} finally {
+    Remove-Item -Path $logFile -ErrorAction SilentlyContinue
 }
-Write-Output "TOTAL PASSED: $total"
 
 if ($testExitCode -ne 0) { exit $testExitCode }

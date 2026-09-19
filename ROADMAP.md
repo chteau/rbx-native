@@ -255,6 +255,25 @@ Roblox's own engine.
   a claim that Studio itself has one. Click-to-snap-camera-to-a-face (real
   in those other tools) is deliberately not implemented — this is a static,
   informational indicator only.
+- [x] **An FPS/frame-time readout**, matching real Studio's own
+  performance-debugging surface rather than inventing a new one: Studio's
+  `Window > Performance > Stats` toggles a debug stats overlay, and
+  `Ctrl`+`F6` opens the MicroProfiler directly for a per-system frame-time
+  breakdown. `rbxstudio`'s viewport corner label gets a "Stats" toggle next
+  to the existing Orthographic one, in the Viewport panel's own overflow
+  menu (this editor has no `Window` menu yet) — switching it on adds the
+  render thread's last-measured fps and frame time to the label already
+  showing quality level and flight speed, reusing the same per-second
+  numbers `workspace_view::stats` already computed to drive automatic
+  quality scaling rather than a second timing mechanism. `rbxview`'s
+  standalone title bar carries the same fps/frame-time reading now too,
+  alongside the flight speed it already showed (it never displayed a
+  quality level of its own to begin with, pinned or automatic) — always on
+  rather than behind a toggle, since it is a separate binary with no menu
+  to put one in. A small `FrameRate` counts redraws over the same rolling
+  one-second window `rbxstudio`'s does, and the title is composed
+  (`app::title`, `app::fps` in `rbx_viewer`) with the identical fps/ms
+  formatting the corner label uses, once the first window closes.
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: this project's own flat, from-scratch class icon kit
@@ -556,20 +575,6 @@ Roblox's own engine.
 - [ ] 📋 `Light.Shadows` for `PointLight` (needs 6-face shadow maps; done
   for `SpotLight`/`SurfaceLight`).
 - [ ] 📋 Neon/`ForceField` shimmer, `Glass` refraction — currently flat.
-- [x] 🚧 **An FPS/frame-time readout**, matching real Studio's own
-  performance-debugging surface rather than inventing a new one: Studio's
-  `Window > Performance > Stats` toggles a debug stats overlay, and
-  `Ctrl`+`F6` opens the MicroProfiler directly for a per-system frame-time
-  breakdown. `rbxstudio`'s viewport corner label gets a "Stats" toggle next
-  to the existing Orthographic one, in the Viewport panel's own overflow
-  menu (this editor has no `Window` menu yet) — switching it on adds the
-  render thread's last-measured fps and frame time to the label already
-  showing quality level and flight speed, reusing the same per-second
-  numbers `workspace_view::stats` already computed to drive automatic
-  quality scaling rather than a second timing mechanism. Still open:
-  `rbxview`'s standalone title bar shows quality level and flight speed the
-  same way and has no equivalent readout yet — a separate binary, out of
-  scope here.
 - [ ] 📋 **A 5th "Transform" toolbar button** appears in Studio's current
   toolbar (see the owner-provided screenshot) alongside the now-implemented
   Select/Move/Scale/Rotate (see "What's been implemented" → Editor), but
