@@ -2,12 +2,15 @@
 //! publishes on `setup.rbxcdn.com` (the same CDN Vinegar/Sober pull from).
 //!
 //! Nothing is embedded in this crate: packages are fetched on demand, cached
-//! whole, then the one requested file is extracted from the cached zip.
+//! whole, then the one requested file is extracted from the cached zip. When
+//! the CDN cannot serve a file, a local Sober or Windows Roblox install is
+//! read as a last resort (see [`crate::sober`] and [`crate::local_install`]).
 
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 
 use crate::error::AssetError;
+use crate::local_install::LocalInstall;
 use crate::sober::Sober;
 
 const SETUP_CDN: &str = "https://setup.rbxcdn.com";
@@ -30,8 +33,11 @@ impl NativeContent {
     /// Fetches the single file at `path` (e.g. `"sky/sun.jpg"`) from whichever
     /// Studio content package contains it.
     pub(crate) fn fetch(&self, path: &str) -> Result<Vec<u8>, AssetError> {
-        self.fetch_from_cdn(path)
-            .or_else(|cdn_err| self.fetch_from_sober(path).ok_or(cdn_err))
+        self.fetch_from_cdn(path).or_else(|cdn_err| {
+            self.fetch_from_sober(path)
+                .or_else(|| fetch_from_local_install(path))
+                .ok_or(cdn_err)
+        })
     }
 
     fn fetch_from_cdn(&self, path: &str) -> Result<Vec<u8>, AssetError> {
@@ -86,6 +92,14 @@ impl NativeContent {
         write_atomic(&cache_path, &bytes)?;
         Ok(bytes)
     }
+}
+
+/// Best-effort extra fallback through a Roblox/Studio install on this machine
+/// (see [`LocalInstall`]), tried after the CDN and Sober have both failed. Not
+/// a method: it needs nothing from `NativeContent`, and there is no cache to
+/// fill since the file is already on disk.
+fn fetch_from_local_install(path: &str) -> Option<Vec<u8>> {
+    LocalInstall::new()?.read(path)
 }
 
 /// Maps a `rbxasset://` path's top-level directory to the Studio content
