@@ -119,12 +119,16 @@ impl Shell {
     /// a full dock panel — Align's controls are a handful of toggle buttons,
     /// the same shape `shell::toolbar`'s Move/Scale/Rotate strip already
     /// renders, not a dialog's worth of chrome.
-    pub(super) fn align_controls(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn align_popover(
+        &self,
+        trigger: super::chrome::Trigger,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + 'static {
         let handle = cx.entity();
         let options = self.align;
 
         Popover::new("align-popover")
-            .trigger(Button::new("align-trigger").label("Align").ghost().xsmall())
+            .trigger(trigger)
             .content(move |_, _, _| align_popover(handle.clone(), options))
     }
 }

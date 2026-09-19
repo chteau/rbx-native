@@ -57,22 +57,74 @@ fn scalar_and_composite_types_have_edit_text() {
 #[test]
 fn unsupported_types_have_no_edit_text() {
     assert_eq!(edit_text(&Variant::Ref(Ref::new(1))), None);
-    assert_eq!(edit_text(&Variant::Vector3int16 { x: 1, y: 2, z: 3 }), None);
-    assert_eq!(edit_text(&Variant::OptionalCFrame(None)), None);
+    assert_eq!(
+        edit_text(&Variant::OptionalCFrame(None)),
+        None,
+        "an absent optional has no position to seed fields from"
+    );
 }
 
-// A `CFrame`'s rotation has no accepted syntax, so only the position shows.
-#[test]
-fn cframe_edit_text_is_position_only() {
-    let frame = Variant::CFrame(CFrameData {
+fn cframe(position: [f32; 3], rotation: [f32; 9]) -> CFrameData {
+    CFrameData {
         position: Vector3Data {
-            x: 4.0,
-            y: 5.0,
-            z: 6.0,
+            x: position[0],
+            y: position[1],
+            z: position[2],
         },
-        rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
-    });
-    assert_eq!(edit_text(&frame), Some("4, 5, 6".to_owned()));
+        rotation,
+    }
+}
+
+const UNROTATED: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+
+// Six numbers: the position, then the orientation in degrees. The rotation
+// matrix is not a thing anyone types, so the panel never shows one.
+#[test]
+fn cframe_edit_text_is_a_position_and_three_angles() {
+    let frame = Variant::CFrame(cframe([4.0, 5.0, 6.0], UNROTATED));
+    assert_eq!(edit_text(&frame), Some("4, 5, 6, 0, 0, 0".to_owned()));
+}
+
+// The rule the whole `orientation` module exists for: the panel's fields
+// always submit all six numbers, so editing a position must not quietly
+// rewrite the rotation by round-tripping it through degrees.
+#[test]
+fn editing_only_the_position_leaves_the_rotation_matrix_untouched() {
+    // A rotation whose Euler round trip is *not* exact, so a needless
+    // conversion would be visible in the stored floats.
+    const R: f32 = std::f32::consts::FRAC_1_SQRT_2;
+    let rotation = [R, -0.5, 0.5, R, 0.5, -0.5, 0.0, R, R];
+    let current = Variant::CFrame(cframe([0.0, 0.0, 0.0], rotation));
+    let [x, y, z] = super::orientation::to_degrees(&rotation);
+
+    let moved = parse_as(&current, &format!("9, 8, 7, {x}, {y}, {z}")).expect("a valid CFrame");
+    let Variant::CFrame(moved) = moved else {
+        panic!("not a CFrame");
+    };
+
+    assert_eq!(moved.position.x, 9.0);
+    assert_eq!(
+        moved.rotation, rotation,
+        "the stored matrix must be byte-identical when only the position moved"
+    );
+}
+
+// …and the other half: touching an angle *does* rewrite it.
+#[test]
+fn editing_an_angle_rewrites_the_rotation() {
+    let current = Variant::CFrame(cframe([0.0, 0.0, 0.0], UNROTATED));
+
+    let turned = parse_as(&current, "0, 0, 0, 0, 90, 0").expect("a valid CFrame");
+    let Variant::CFrame(turned) = turned else {
+        panic!("not a CFrame");
+    };
+
+    assert_ne!(turned.rotation, UNROTATED);
+    let [x, y, z] = super::orientation::to_degrees(&turned.rotation);
+    assert!(
+        x.abs() < 1e-3 && (y - 90.0).abs() < 1e-3 && z.abs() < 1e-3,
+        "{x}, {y}, {z}"
+    );
 }
 
 // --- parse: one case per supported type ---------------------------------
@@ -604,4 +656,85 @@ fn committing_font_on_an_instance_without_a_font_face_writes_only_font() {
     let properties = dom.get(part_ref()).unwrap().properties().clone();
     assert_eq!(properties.get("Font"), Some(&Variant::Enum(4)));
     assert!(!properties.contains_key("FontFace"));
+}
+
+/// A bit set round-trips through its own labels' order, and a wrong count
+/// is refused rather than silently padded — a `Faces` short one flag would
+/// otherwise clear a side nobody touched.
+#[test]
+fn faces_and_axes_round_trip_as_named_flags() {
+    let faces = Variant::Faces(rbx_dom::Faces {
+        right: true,
+        top: false,
+        back: true,
+        left: false,
+        bottom: false,
+        front: true,
+    });
+    let text = edit_text(&faces).expect("faces are editable");
+    assert_eq!(text, "true, false, true, false, false, true");
+    assert_eq!(parse_as(&faces, &text), Ok(faces.clone()));
+
+    let axes = Variant::Axes(rbx_dom::Axes {
+        x: false,
+        y: true,
+        z: false,
+    });
+    let text = edit_text(&axes).expect("axes are editable");
+    assert_eq!(text, "false, true, false");
+    assert_eq!(parse_as(&axes, &text), Ok(axes.clone()));
+
+    assert!(
+        parse_as(&faces, "true, false").is_err(),
+        "a short flag list must be refused, not padded"
+    );
+}
+
+/// `Ray` and `Vector3int16` were read-only text until this pass; both are
+/// plain numeric shapes and now commit like any other.
+#[test]
+fn ray_and_vector3int16_round_trip() {
+    let ray = Variant::Ray {
+        origin: Vector3Data {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+        },
+        direction: Vector3Data {
+            x: 0.0,
+            y: -1.0,
+            z: 0.0,
+        },
+    };
+    let text = edit_text(&ray).expect("a ray is editable");
+    assert_eq!(text, "1, 2, 3, 0, -1, 0");
+    assert_eq!(parse_as(&ray, &text), Ok(ray.clone()));
+
+    let cell = Variant::Vector3int16 { x: 4, y: -5, z: 6 };
+    let text = edit_text(&cell).expect("a Vector3int16 is editable");
+    assert_eq!(text, "4, -5, 6");
+    assert_eq!(parse_as(&cell, &text), Ok(cell.clone()));
+}
+
+/// A drag hands these fields fractional values, and `Vector3int16` is 16
+/// bits wide — so the conversion has to round and clamp rather than cast.
+/// A raw `as i16` truncates toward zero and wraps silently past the range.
+#[test]
+fn vector3int16_rounds_and_clamps_instead_of_truncating() {
+    let current = Variant::Vector3int16 { x: 0, y: 0, z: 0 };
+
+    assert_eq!(
+        parse_as(&current, "3.7, -3.7, 0.5"),
+        Ok(Variant::Vector3int16 { x: 4, y: -4, z: 1 }),
+        "a fractional drag value rounds to the nearest cell"
+    );
+    assert_eq!(
+        parse_as(&current, "40000, -40000, 0"),
+        Ok(Variant::Vector3int16 {
+            x: i16::MAX,
+            y: i16::MIN,
+            z: 0,
+        }),
+        "past the range it saturates rather than wrapping"
+    );
 }

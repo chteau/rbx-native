@@ -25,10 +25,11 @@
 
 use std::time::SystemTime;
 
-use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::scroll::ScrollableElement as _;
-use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Icon, Selectable as _, Sizable};
+use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Icon, Sizable};
 use gpui_kit::*;
+
+use crate::tokens;
 
 use crate::command_bar::Feedback;
 
@@ -210,12 +211,14 @@ impl Shell {
     pub(super) fn output_controls(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let current = self.output_filter;
         h_flex()
-            .gap_1()
-            .px_1()
+            .items_center()
+            .gap(px(4.))
             .child(
                 div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
+                    .flex_none()
+                    .text_size(tokens::text_sm())
+                    .line_height(tokens::line_sm())
+                    .text_color(tokens::text_placeholder())
                     .child(format!("{} runs", self.output.len())),
             )
             .children(
@@ -225,21 +228,21 @@ impl Shell {
                     OutputFilter::Errors,
                 ]
                 .map(|level| {
-                    Button::new(("output-filter", level as usize))
-                        .label(level.label())
-                        .xsmall()
-                        .selected(current == level)
-                        .on_click(cx.listener(move |shell, _, _, cx| {
-                            shell.output_filter = level;
-                            cx.notify();
-                        }))
+                    super::chrome::button(
+                        ("output-filter", level as usize),
+                        level.label(),
+                        current == level,
+                    )
+                    .tab_index(self.tab_order.next())
+                    .on_click(cx.listener(move |shell, _, _, cx| {
+                        shell.output_filter = level;
+                        cx.notify();
+                    }))
                 }),
             )
             .child(
-                Button::new("output-clear")
-                    .label("Clear")
-                    .ghost()
-                    .xsmall()
+                super::chrome::button("output-clear", "Clear", false)
+                    .tab_index(self.tab_order.next())
                     .on_click(cx.listener(|shell, _, _, cx| {
                         shell.output.clear();
                         cx.notify();
@@ -247,8 +250,6 @@ impl Shell {
             )
     }
 
-    /// The Output panel's body: the filtered log, oldest first, each row
-    /// clickable to recall its source (see [`Shell::recall_command`]).
     pub(super) fn output_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let filter = self.output_filter;
         let show_timestamp = self.output_show_timestamps;
@@ -257,8 +258,9 @@ impl Shell {
         let list = if entries.is_empty() {
             v_flex().flex_1().p_2().child(
                 div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
+                    .text_size(tokens::text_sm())
+                    .line_height(tokens::line_sm())
+                    .text_color(tokens::text_placeholder())
                     .child(if self.output.is_empty() {
                         "Nothing run yet."
                     } else {

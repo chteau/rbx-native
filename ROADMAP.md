@@ -911,6 +911,117 @@ against `Roblox/creator-docs` rather than assumed:
   interactive use (a human editing live) hits the same thing; needs its
   own investigation of the render thread's state right after
   `Headless::reload`.
+- [ ] 📋 **The Part insert menu always inserts a block.** Every one of its
+  five items (Block, Sphere, Wedge, Corner Wedge, Cylinder) ends at
+  `Shell::insert_instance` with nothing but a class name
+  (`shell::ribbon::insert_item`), and three of them pass the same class:
+  Block, Sphere and Cylinder all insert a bare `Part` and never write its
+  `shape` property, so the renderer resolves all three to
+  `ShapeKind::Box` (`rbx_viewer::scene::shape::resolve`'s last branch —
+  no `shape` property means a plain box). Wedge and Corner Wedge do pass
+  their own classes, but `insert_instance` gates `apply_part_defaults` on
+  `class == "Part"`, so those two come in without the size, colour and
+  material a new part gets.
+  The fix is to carry a shape alongside the class through
+  `insert_instance` — `Enum.PartType` is Ball=0, Block=1, Cylinder=2 — and
+  to widen the defaults gate to any `BasePart` subclass rather than the
+  literal `"Part"`. One test per menu item, asserting the inserted
+  instance's class *and* resolved `ShapeKind`, since the current bug is
+  invisible in the Explorer and only shows in the viewport.
+
+- [ ] 📋 **Drag-to-rearrange docks.** The fixed shell that replaced the
+  toolkit's `DockArea` cannot express it: a panel's position is the order of
+  three `.child()` calls, not data, so there is nothing to change at
+  runtime. Re-adding it needs a layout tree (`Slot`/`Panel`) in place of
+  those three hardcoded slots — designed end to end, with sequencing and a
+  recommendation, in
+  [`agents/dock-rearrangement.md`](agents/dock-rearrangement.md).
+  Build the **non-drag** half first — "Move to Left/Right/Bottom", "Float",
+  on each dock's existing overflow menu — because that is the keyboard-
+  operable half and the reference guidance is explicit that drag-only
+  rearrangement is inaccessible. The drag is then a pure addition rather
+  than a rewrite; doing it first means building it against three hardcoded
+  slots and throwing it away.
+- [ ] 📋 **`Select`, `ColorPicker`, `NumberInput` and the menu bar are not
+  in the Tab order — a WCAG 2.1.1 (Keyboard, Level A) failure.** None of
+  those toolkit components exposes a way to set a tab index, so the editor's
+  own registry (`shell::roving::TabOrder`) cannot place them and they stay
+  mouse-only. In practice that means the graphics-quality dropdown, every
+  `Color3` property, the snap increments and every menu are unreachable
+  without a pointer.
+  This is a toolkit limitation rather than a design decision, and the fix is
+  known: wrap each in a focusable element of our own that forwards focus to
+  the widget on `focus_in`, exactly as the Explorer's tree door already does
+  (`shell::panels::instance_tree`). `SelectState` implements `Focusable` and
+  `InputState` has `focus`, so those two are straightforward; `ColorPicker`
+  and `AppMenuBar` need checking. The menu bar may instead want the usual
+  desktop answer — F10/Alt to enter it — which is a different job.
+  Listed as its own item because it is the most serious accessibility gap
+  left in the editor, and because shipping it open was a deliberate,
+  reviewed choice rather than an oversight (see `UX_GUIDELINES.md` §1's
+  conformance section and §11).
+- [ ] 📋 **The accessibility work the reference guidance calls Stage 2 and
+  Stage 3, minus what already shipped.** Stage 1 is met and asserted in
+  tests; these are the rest, each small enough to ride along with other
+  work rather than needing its own PR:
+  - **A separate editor/viewport font size**, independent of the UI scale —
+    VS Code's split between `window.zoomLevel` and `editor.fontSize`.
+    Nothing needs it yet; the moment the script editor grows, it will.
+  - **Named dock layouts.** Sizes persist and Reset Layout exists; saving
+    several under names (Blender's "workspaces") is the piece that does not.
+  - **A high-contrast theme** targeting 7:1 body / 4.5:1 large text
+    (WCAG 1.4.6). The palette is already a token module and the toolkit
+    theme already mirrors it, so this is a second `ThemeSet` rather than a
+    rework.
+  - **44×44 targets on primary and destructive controls by default** (2.5.5),
+    rather than only when Large Click Targets is on — Save, Delete, and
+    Play/Stop once they exist.
+  - **A command palette**, which the same guidance files under "recognition
+    rather than recall" alongside keyboard-driven panel management.
+  - **Keyboard focus shown separately from selection in the Explorer.** The
+    toolkit's `TreeState` tracks a single `selected_ix` and nothing else, so
+    the focused row and the selected rows cannot differ — which matters
+    because the Explorer multi-selects. Needs the toolkit's tree replaced or
+    extended.
+- [ ] 📋 **Property editors for the eight `Variant` types that still have
+  none.** The Properties panel renders a value for every type the DOM can
+  hold, but eight of them are read-only or edited through something that
+  misrepresents them. Inventory, rationale and rough sizing live in
+  [`agents/property-editors.md`](agents/property-editors.md); the bullets
+  below are what is left after the `CFrame`/`Ray`/`Vector3int16`/`Faces`/
+  `Axes`/`NumberRange`/`UDim` pass (see "What's been implemented" →
+  Editor).
+
+  Each is its own piece of work, so each gets its own PR:
+  - **`BrickColor`** is edited as a raw palette index and displays as
+    `BrickColor(194)`. A named swatch picker needs the ~64-entry palette
+    table bundled — an asset decision (where does the table come from,
+    under what licence) before it is a UI one.
+  - **`Font`** is three typed text fields. `FontWeight`'s nine members and
+    `FontStyle`'s two are closed sets and should be dropdowns; the family
+    list is the real work, and it lives in `rbx_viewer`'s font package
+    rather than in the editor.
+  - **`PhysicalProperties`** renders through Rust's `{:?}`. Its five
+    numbers are a plain field row, but `Default` versus `Custom` is a
+    design question first — how does someone go *back* to default once
+    they have typed a density? — and worth answering before building.
+  - **`OptionalCFrame`** is editable when it has a value, using the
+    `CFrame` editor, and read-only when it does not: there is nowhere to
+    say "give this one a value" or "clear it". Needs a none/some control.
+  - **`NumberSequence`** (`ParticleEmitter.Size`, `.Transparency`) needs a
+    keypoint list or a small curve editor — the largest item here.
+  - **`ColorSequence`** (`UIGradient`, particle colour) needs a gradient
+    stop editor.
+  - **`Ref`** (`ObjectValue.Value`, `Weld.Part0`) shows the target's name
+    and cannot be changed. Needs an instance picker — an Explorer target,
+    or a pick-in-viewport mode.
+  - **`Content`** (`Decal.Texture`, `MeshPart.MeshId`) needs an asset URI
+    field, and its `Content::Object` case is a `Ref` picker again.
+
+  **Deliberately excluded**, so nobody "fixes" them: `SharedString`,
+  `UniqueId`, `SecurityCapabilities` and `Unknown` stay read-only. They are
+  identities and opaque payloads — editing them by hand corrupts a file
+  rather than editing it.
 - [ ] 📋 Attributes editor (custom `Instance` attributes, distinct from
   built-in properties) — a real, commonly-used modern Studio feature, not
   currently scoped anywhere.
@@ -1199,7 +1310,7 @@ against `Roblox/creator-docs` rather than assumed:
     `rbx_assets::AssetCache` already owns) so people can publish and swap
     packs without forking the project — the actual goal behind spec'ing a
     from-scratch icon kit in the first place.
-- [ ] 📋 **Soften the editor's visual theme — calmer and lower-contrast,
+- [x] 🚧 **Soften the editor's visual theme — calmer and lower-contrast,
   closer to real Studio but gentler.** Today's panels are high-contrast
   flat blocks: near-pure black/white backgrounds, hard 1px borders, sharp
   rectangular corners, tight padding, saturated colour used everywhere
@@ -1233,6 +1344,67 @@ against `Roblox/creator-docs` rather than assumed:
     the theme format the item above calls for — plus a before/after
     screenshot of one representative panel (the Explorer, or a popup like
     Store/Upgrades) for review before it rolls out app-wide.
+
+  Shipped: a real design-token module
+  (`crates/rbx_studio/src/tokens.rs`) every piece of chrome reads from —
+  surfaces, state washes, borders, a seven-step text ramp, one radius, the
+  frame's measured dimensions and its type scale — with the palette also
+  expressed as a `ThemeSet`/`ThemeConfig` JSON
+  (`assets/themes/dark-soft.json`) so the toolkit's own widgets follow it
+  without a rebuild, and a test that fails the moment the two disagree.
+
+  The palette is not this bullet's original `#1a1a1a`-to-`#f0f0f0` ramp and
+  the layout is not the DevForum concept's: partway through, the project's
+  own Figma design landed (`RBX-NATIVE`, frame `RbxNative - Studio App`)
+  and the editor was rebuilt against **that** instead, measured rather than
+  interpreted. It is darker than this bullet asked for and answers the same
+  complaints: soft state washes instead of hard borders, a single 3px
+  radius, and exactly one saturated colour in the whole UI (the checkbox
+  blue, which focus and selection borrow and nothing else may).
+
+  The shell is now: a **title bar this editor draws itself** (client-side
+  window decorations — logo, centred title, minimize/maximize/close,
+  drag-to-move), the menu strip, **Row A** document tabs, **Row B** the
+  ribbon's seven category tabs, **Row C** the ribbon, **Row D** a
+  three-column workspace — Properties left, the open document over Output
+  in the middle, Explorer right — each dock a tab strip over an inset body.
+  Ribbon commands are 42px tiles and 78px stacks; the snap increments are a
+  live readout that opens its own editor. Chrome icons are Lucide, the set
+  the design is drawn with; the multi-colour `class_icons` kit stays where
+  identity matters, in the Explorer. Contrast is asserted rather than
+  eyeballed — every meaningful text token clears WCAG AA on every surface
+  it can land on, and the disabled step is asserted from both sides.
+
+  A second pass then grounded the whole thing in WCAG 2.1/2.2 and the
+  WAI-ARIA APG rather than in taste. The editor is keyboard-operable end to
+  end — Tab between regions, arrows within one, the full APG Tree View
+  contract in the Explorer, Escape out of any menu — and three genuine
+  keyboard traps were found and fixed by driving the window. Focus rings
+  appear for keyboard focus only and clear 3:1 on every surface; selection
+  and focus are no longer drawn the same way. There is a persisted UI scale
+  (Ctrl+= / Ctrl+− / Ctrl+0, 0.5x-2.0x) over every font *and* every box, so
+  text reaches 200% without losing layout. Controls are sized to the
+  `InputsStyle` frame and clear WCAG's 24x24 target floor — the checkbox was
+  10px. Each transform tool has its own pastel plus a border, so its state
+  never depends on colour alone. Contrast, target sizes and the toolkit
+  theme mirror are all asserted in tests.
+
+  Dock sizes and the Output dock's collapsed state persist, with a Reset
+  Layout command beside them, and the View menu carries Reduce Motion (which
+  overrides the desktop preference read at startup) and Large Click Targets
+  (WCAG 2.5.5's 44px floor in place of 2.5.8's 24px).
+
+  **Still open**, each with its own bullet under "What's planned" → Editor:
+  the toolkit widgets that cannot join the Tab order (a Level A failure),
+  the remaining Stage 2/Stage 3 accessibility items, drag-to-rearrange
+  docks, and the eight property types without an editor. Beyond those,
+  `gpui` has no property transitions and cannot transform a `Div`, so hover
+  feedback is instant, and keyboard arrow-navigation inside the hand-built
+  menus isn't wired. `UX_GUIDELINES.md` §11 lists every deviation from the
+  frame with its reason, and §1 states where the editor stands against the
+  reference guidance's Stage 1/2/3 — failures included. This also still
+  ships one built-in theme rather than the user-installable theme packs the
+  item above this one lists as open.
 
 ### Play / Test workflow
 - [ ] 📋 The sandbox-place design (private per-developer place, injected

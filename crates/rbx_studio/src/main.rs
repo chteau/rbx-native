@@ -52,17 +52,19 @@ mod pointer_lock;
 mod properties;
 mod render_image;
 mod save;
+mod scale;
 mod script_editor;
 mod settings;
 mod settle;
 mod shell;
 mod style_editor;
+mod tokens;
 mod transform;
 mod workspace_view;
 
 use std::path::{Path, PathBuf};
 
-use gpui_kit::component::{Root, Theme, ThemeMode};
+use gpui_kit::component::{Root, Theme, ThemeMode, ThemeRegistry};
 use gpui_kit::*;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
@@ -127,6 +129,9 @@ fn main() {
     let app = gpui_kit::application().with_assets(gpui_kit::assets::AllAssets);
     app.run(move |cx| {
         gpui_kit::init(cx);
+        install_theme(cx);
+        scale::install(cx);
+        shell::install_key_bindings(cx);
         Theme::change(ThemeMode::Dark, None, cx);
 
         cx.spawn(async move |cx| {
@@ -171,6 +176,48 @@ struct Place {
     folder_colors: FolderColors,
 }
 
+/// Swaps GPUI Kit's stock near-black dark theme for this editor's own
+/// lower-contrast palette (`assets/themes/dark-soft.json`), before
+/// [`Theme::change`] below activates it. The file follows GPUI Kit's own
+/// `ThemeSet`/`ThemeConfig` JSON format (any key this leaves unset falls
+/// back to the stock dark theme), so a future user-installable theme pack
+/// can drop a file in the same shape next to it without new plumbing here.
+fn install_theme(cx: &mut App) {
+    const THEME: &str = include_str!("../../../assets/themes/dark-soft.json");
+    ThemeRegistry::global_mut(cx)
+        .load_themes_from_str(THEME)
+        .expect("assets/themes/dark-soft.json is valid ThemeSet JSON");
+    if let Some(theme) = ThemeRegistry::global(cx)
+        .themes()
+        .get("rbx-native Dark")
+        .cloned()
+    {
+        Theme::global_mut(cx).dark_theme = theme;
+    }
+    install_fonts(cx);
+}
+
+/// Points the theme at the design system's own font stack, for whichever of
+/// its families this machine actually has.
+///
+/// The theme takes one family name, not a CSS-style stack with fallbacks,
+/// and a name that isn't installed is used as-is rather than falling
+/// through — so the fallback has to happen here, by asking the text system
+/// what exists before naming anything. A machine with neither family keeps
+/// the platform UI font, which is the right answer and not a failure.
+fn install_fonts(cx: &mut App) {
+    let installed = cx.text_system().all_font_names();
+    let has = |family: &str| installed.iter().any(|name| name == family);
+
+    let theme = Theme::global_mut(cx);
+    if has(tokens::FONT_FAMILY_UI) {
+        theme.font_family = tokens::FONT_FAMILY_UI.into();
+    }
+    if has(tokens::FONT_FAMILY_MONO) {
+        theme.mono_font_family = tokens::FONT_FAMILY_MONO.into();
+    }
+}
+
 fn load(path: &Path, select: Option<&str>, icon_pack: IconPack) -> Result<Place, String> {
     let bytes = std::fs::read(path).map_err(|err| format!("failed to read {path:?}: {err}"))?;
     let format = Format::sniff(&bytes);
@@ -201,10 +248,17 @@ fn window_options(title: &SharedString, cx: &App) -> WindowOptions {
 
     WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
+        // The editor draws its own title bar (see `shell::chrome::topbar`),
+        // so the window manager is asked not to. The title itself still
+        // goes through `TitlebarOptions`: that is what names the window in
+        // a taskbar, an alt-tab switcher and a screenshot tool, none of
+        // which can read the row this app paints for itself.
         titlebar: Some(TitlebarOptions {
             title: Some(title.clone()),
+            appears_transparent: true,
             ..Default::default()
         }),
+        window_decorations: Some(WindowDecorations::Client),
         ..Default::default()
     }
 }
@@ -257,8 +311,26 @@ fn file_name(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::{file_name, parse};
+    use gpui_kit::component::{ThemeMode, ThemeSet};
     use rbx_viewer::QualityLevel;
     use std::path::{Path, PathBuf};
+
+    /// Guards `install_theme`'s `include_str!` + `.expect(...)`: a change to
+    /// `assets/themes/dark-soft.json` that breaks its `ThemeSet` shape (a
+    /// typo in a key, invalid JSON) would otherwise only surface as a panic
+    /// the first time `rbxstudio` actually starts.
+    #[test]
+    fn the_bundled_theme_file_parses_as_a_dark_theme_named_for_this_project() {
+        const THEME: &str = include_str!("../../../assets/themes/dark-soft.json");
+        let theme_set: ThemeSet =
+            serde_json::from_str(THEME).expect("assets/themes/dark-soft.json is valid JSON");
+        let theme = theme_set
+            .themes
+            .iter()
+            .find(|theme| theme.name == "rbx-native Dark")
+            .expect("a theme named \"rbx-native Dark\"");
+        assert_eq!(theme.mode, ThemeMode::Dark);
+    }
 
     fn arguments(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| value.to_string()).collect()

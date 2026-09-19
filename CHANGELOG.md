@@ -1,7 +1,234 @@
 # Changelog
 
+## 2026-09-19
+
+- **A collapsed property category reads as a tile.** The category headers
+  in the Properties panel carry their own fill now, one step above the
+  dock and rounded like everything else that has a surface, and the gap
+  between two of them shrank from the panel's largest to its smallest.
+  That is not a loosening of the proximity ladder: the ladder's big gap
+  now sits under a category's *last row*, where there is a group to close,
+  and a run of collapsed headers is spaced like the stack of tiles it
+  looks like. — @chteau
+
+- **Numeric property fields are draggable.** Pull a field's *label*
+  sideways to scrub its value — the gesture Studio, Blender, Unity and
+  Figma all bind the same way, and on the label rather than the field so a
+  plain click still means "put the caret here and type". Shift coarsens by
+  ten, Alt refines by ten.
+  How far a pixel moves the value is a property of the **field**, not of the
+  row, which is the part worth knowing: a `UDim` is a decimal scale beside
+  an *integer* offset, so dragging the offset steps through whole units
+  while the scale moves in hundredths. Every composite type now carries a
+  per-field kind rather than just a label.
+  That audit found a real bug: `Vector3int16` was cast with `as i16`, which
+  truncates toward zero — so a dragged `3.7` would have landed on `3` — and
+  wraps silently outside the range, turning `40000` into `-25536`. It now
+  rounds and saturates, with a test for both.
+  The drag writes through the field's own input rather than straight to the
+  DOM, so it takes exactly the path typing does, including that rounding.
+  A `Font`'s family name is a field like any other to look at and cannot be
+  dragged at all.
+- **A `CFrame` is editable as a Position and an Orientation**, the way
+  Roblox's own panel splits it, instead of showing its position and hiding
+  its rotation matrix behind nothing at all. The matrix is converted to and
+  from three degrees in Roblox's `Y`-`X`-`Z` order.
+  The lossy direction needed a rule, because nine numbers do not fit in
+  three: the panel's fields always submit all six, so an edit compares the
+  angles against what the row was *showing* and leaves the stored matrix
+  **byte-identical** unless they actually changed. Without that, nudging a
+  part's X position would quietly rewrite its rotation through degrees and
+  back — a trip that at gimbal lock can land on a different orientation
+  entirely.
+  Six other types stopped being read-only text along the way: `Ray` and
+  `Vector3int16` as numeric fields, `Faces` and `Axes` as named checkboxes
+  (a bit set is six yes/no answers, not one value with sixty-four
+  spellings), `NumberRange` and `UDim` as labelled pairs instead of one
+  comma-separated string. A composite value now drops to its own line under
+  the property's name, because six numbers never fitted in a 140px column.
+  `agents/property-editors.md` lists the ten types still without an editor
+  and says why each was left.
+- **Darkened the palette and gave dropdowns a surface of their own.** Every
+  surface came down a step, and the whole ramp is now **neutral** grey
+  rather than the cool grey it started as: a blue cast on a tool whose
+  entire job is showing somebody else's colours puts a thumb on the scale
+  for every material and texture judged against it —
+  and a select now sits one level above the text fields around it, because
+  the two do different things and were previously told apart only by
+  noticing the chevron. The step between surfaces is asserted as a
+  *luminance difference* rather than a contrast ratio: this near black a
+  ratio is dominated by WCAG's own `+0.05` term and scores two surfaces 20
+  grey levels apart about the same as two 4 apart.
+  A select also sat 2.5-4.5px high in its field box, depending on its
+  padding — the toolkit top-aligns a select's row inside whatever height it
+  is given. Measured against a plain text field in the same panel and
+  compensated, so the two now differ by the same half pixel.
+- Property category headers are bold and the brightest step in the ramp, so
+  a heading no longer reads as one more property. Buttons are this project's
+  own now rather than the toolkit's: a filled surface and the one radius,
+  because an outlined pill beside a row of borderless filled fields looked
+  imported from somewhere else. The Command Bar sits on the docks' surface
+  instead of the window's black ground, which is what makes the field inside
+  it read as the same input every property row uses.
+- **Rebuilt the Tab order on this window's own registry, after GPUI's
+  turned out to be unusable here.** Two limitations, both found by driving
+  the real window rather than by reading the code: focus cannot escape a
+  group of stops that share a `tab_index`, and every toolkit control that
+  never asked for one sits at 0 — so focus that wandered into that bucket
+  stayed there, 49 presses in both directions. `tab_group` is no better: it
+  silently drops its children's stops entirely. And the obvious workaround —
+  call `focus_next` in a loop and check where it landed — cannot work
+  either, because GPUI defers a focus change to the end of the frame, so
+  the check reads the previous value every time.
+  Tab and Shift+Tab are now a key binding in this window's own context
+  (the toolkit binds them as an *action*, which resolves before any key
+  listener, so a capture-phase handler never saw them at all), and they walk
+  an ordered list this shell builds each render. The cycle is closed,
+  reversible and has no traps. The Explorer's tree finally has a keyboard
+  door: it had a complete, carefully-reasoned APG contract that no Tab press
+  could reach, and focusing it now also places the cursor on its first node.
+  The Properties panel became one stop with Up/Down inside it, instead of
+  the 32 presses it used to take to get from there back to the ribbon.
+- **Gave the editor some colour and made the docks visible.** Every dock had
+  been painted the frame's black on a black ground, so three docks and the
+  window behind them read as one undifferentiated field. There is now a
+  surface per layer — ground, dock, panel, button — each a measured step
+  above the one below, with a cool cast, and the step is asserted in tests.
+  The open document's tab gained an accent rule: the frame conveys "this one
+  is open" with a wash measuring 1.036:1, which is five grey levels out of
+  255 and invisible.
+- **Replaced the viewport's orientation indicator** with the design's own:
+  a translucent sphere with the three world axes' orbital rings passing
+  through it and a pale cube at the centre. Each ring is split at the
+  horizon and its far half dimmed, which is what makes it read as passing
+  *through* the sphere rather than lying on it. Still a flat projection, not
+  a 3D pass.
+- Checkboxes came down from the frame's 26px to 15 across two rounds of
+  review, while their *click target* stayed at 26 — WCAG 2.5.8 is explicit
+  that the icon may be smaller than the target. Property labels went back to
+  left-aligned; right alignment binds a label to its field more tightly but
+  leaves a ragged edge that makes a long list harder to scan. The command
+  bar, the viewport's quality dropdown and the Output buttons now use the
+  editor's own field and control sizes instead of the toolkit's steps. The
+  black slots between docks are gone, and so are the discs behind the
+  Explorer's chevrons.
+- **Fixed what the accessibility review found.** Composite property values
+  (a `CFrame`'s numbers) rendered as empty 16px cells and now wrap. A
+  read-only property's value was drawn at 1.7:1 and is now a readable step.
+  Target sizes are asserted at every UI scale rather than only at 1.0x,
+  where none of them could fail. The ribbon scrolls instead of losing
+  buttons at 2x, and a dock can no longer take more than 28% of the window.
+  The focus ring is inset on controls that sit flush against a container
+  edge, where an outset one was clipped to two sides of four — about half
+  the area WCAG 2.4.13 asks for. Double-clicking the title bar works from
+  the first try: the window move now starts on a drag, not on the first
+  press of the double click. — @chteau
+
+- **Made the editor keyboard-operable, and grounded the design in WCAG
+  2.1/2.2 rather than in taste.** Tab now moves between regions and arrows
+  move within one — the ribbon, each tab strip and the Explorer are one Tab
+  stop each, per WAI-ARIA's Toolbar, Tabs and Tree View patterns. The
+  Explorer implements the tree contract in full: Right expands then
+  descends, Left collapses then climbs to the parent, Home/End, type-ahead,
+  and no wrapping at the ends. Escape closes any open menu.
+  Three real keyboard traps were found by driving the window rather than
+  reading the code, and all three are fixed: Tab was swallowed by the
+  Command Bar's input, so focus could never leave it; Tab was swallowed
+  again by the title-bar buttons, because GPUI does not advance between two
+  stops sharing a `tab_index`; and a roving group's indices were silently
+  ignored, because `InteractiveElement::tab_index` does nothing once
+  `track_focus` is in play. Every tab stop now takes a unique index from one
+  counter, handed out in paint order.
+  Focus rings only appear for keyboard focus (GPUI's `focus_visible`), which
+  removes the hard blue rectangle a mouse click used to leave on every
+  button it touched, and they are now a 2px outset ring clearing 3:1 against
+  every surface — WCAG 2.4.13's measurable floor. Selected and focused are
+  no longer drawn the same way: selection is a wash, focus is an outline.
+- **Added a UI scale** (Ctrl+= / Ctrl+− / Ctrl+0, 0.5×–2.0×, persisted),
+  modelled on Blender's Resolution Scale: one multiplier over every font
+  size *and* the boxes they sit in, since text that grows while its row
+  doesn't is not a larger UI but a clipped one. This is how a native app
+  meets WCAG 1.4.4's 200% resize, and every size token is now a function
+  rather than a constant so nothing can escape it.
+  Body text went from the design frame's 9px to 14px. That is the one place
+  the frame is deliberately overruled — its hierarchy is kept, only the base
+  size moved.
+- **Sized the controls to the `InputsStyle` Figma frame**, which supersedes
+  guesswork: 31px fields, 3px radius, no border, 8px padding, and a 26px
+  checkbox. The checkbox was 10px, which is under a fifth of WCAG 2.5.8's
+  24×24 target area; panel icon buttons were 20px. Both now clear the floor,
+  and the floor is asserted in tests rather than eyeballed. The frame draws
+  an unticked checkbox with no border at all — 1.11:1 against a black dock —
+  so that one gets an outline this project chose.
+- **Gave each transform tool its own pastel** while it is the active one,
+  with a 1.5px border in the same colour so the state survives grayscale and
+  every kind of colour blindness (WCAG 1.4.1: colour is never the only cue).
+  Ribbon icons lift on hover, and the OS "reduce motion" preference is read
+  at startup and honoured — GPUI owns the flag but never learns the
+  platform's setting on its own.
+- **Loosened the Properties panel**, whose rows were touching. The four gaps
+  are now a ratio rather than four numbers — label-to-input < row-to-row <
+  header-to-first-row < between-categories — so the panel reads as groups
+  (Gestalt proximity) instead of one block. Labels are right-aligned, which
+  is the tightest label-to-field binding for a dense numeric inspector.
+- **Double-clicking the title bar maximizes or restores**, through the
+  platform's own call rather than by recomputing bounds. Both gestures hang
+  off the same press, which is the debounce: the second press of a double
+  click never starts a compositor window-move. Noted: that call toggles on
+  X11, Wayland and macOS but only maximizes on Windows.
+- Drag-to-rearrange docks is **not** implemented: it needs a layout tree in
+  place of three hardcoded slots, and the architecture note is in
+  `agents/dock-rearrangement.md` rather than a half-built version in the
+  shell. — @chteau
+
 ## 2026-09-18
 
+- **Rebuilt the editor's chrome against the project's own Figma design.**
+  Every surface, radius, dimension and type size in `tokens.rs` is now
+  measured off the `RbxNative - Studio App` frame rather than interpreted
+  from a reference screenshot: a near-black palette with soft white-alpha
+  state washes instead of borders, one 3px radius, and exactly one
+  saturated colour in the whole UI — the checkbox blue, which keyboard
+  focus and row selection borrow and nothing else may. The toolkit's theme
+  file mirrors that palette, and a test now fails the moment the two
+  disagree.
+  The editor draws its own title bar (client-side window decorations: logo,
+  centred title, minimize/maximize/close, drag-to-move and double-click to
+  maximize), over a 24px menu strip, fixed-width document tabs, seven
+  ribbon category pages, and a three-column workspace whose docks are a tab
+  strip over an inset body. Ribbon commands are 42px tiles and 78px stacks;
+  the snap increments became a live readout that opens its own editor,
+  since an increment is checked far more often than it is changed.
+  Chrome icons are Lucide — the set the design itself is drawn with, so
+  this project's hand-made outline kit went away; the multi-colour
+  class-icon kit stays in the Explorer, where the colour is the identity.
+  Contrast stays asserted rather than eyeballed: every meaningful text
+  token clears WCAG AA on every surface it can land on, and the disabled
+  step is asserted from both sides so it can't drift into invisibility.
+  The frame's 9px body text ships as drawn and is flagged in
+  `UX_GUIDELINES.md` §10 as the one open question rather than silently
+  corrected. — @chteau
+- **Rebuilt the editor's UI on a real design-token system.** Every colour,
+  radius, spacing step, elevation, easing curve and text style now comes
+  from one module (`tokens.rs`), with the palette mirrored into the
+  toolkit's own theme file so stock widgets follow it too. The discipline
+  (fixed radius scale, base-4 spacing, "shadow-as-border" layered
+  elevation) is borrowed from Vercel's Geist; the dark, rounder, softer
+  look deliberately isn't. Contrast is now a test rather than a judgement
+  call — primary text clears 11.5:1 on every surface, secondary 5.0:1, and
+  the accent-on-accent active-tab case 4.6:1.
+  The shell was rebuilt around it: document tabs directly under the menu
+  bar, the ribbon's category tabs under those, the ribbon under those, and
+  a three-column workspace (Properties, document over Output, Explorer)
+  with real resize handles, a collapsible Output dock, per-panel corner
+  radii and directional elevation. Explorer rows grew hierarchy guides.
+  Every piece of chrome is drawn from this project's own 24px outline icon
+  kit, which is what lets an icon tint itself per state; the multi-colour
+  class-icon kit stays in the Explorer, where the colour is the identity.
+  Replacing the toolkit's `DockArea` with that fixed shell is what made the
+  layout expressible — it also means panels can no longer be dragged to
+  rearrange, and the saved dock layout is gone; `UX_GUIDELINES.md` §10
+  records that along with every other deviation. — @chteau
 - **Throttle the viewport's render loop while the editor window is
   unfocused.** The render thread paced itself to the display's full refresh
   rate no matter whether anyone was looking, burning GPU/CPU (and battery,

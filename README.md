@@ -150,6 +150,8 @@ the real answer is simply: it doesn't belong here at all.
   direction. Only the maintainer edits this file.
 - [GUIDELINES.md](GUIDELINES.md) / [SPECS.md](SPECS.md) — the Rust style and
   architecture rules every change in this repo follows.
+- [UX_GUIDELINES.md](UX_GUIDELINES.md) — palette, contrast, spacing, radius
+  and dock-layout rules for anything touching `rbx_studio`'s look.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — how to propose a change.
 - [CHANGELOG.md](CHANGELOG.md) — a running log of what landed and why.
 - [BENCHMARKS.md](BENCHMARKS.md) — recorded load, reload and frame timings,

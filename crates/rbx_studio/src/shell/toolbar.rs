@@ -1,20 +1,23 @@
-//! The transform toolbar: the strip of tool buttons directly under the menu
-//! bar and above the dock, where Studio's own is (see `Render for Shell`).
+//! The transform tools, as the ribbon's Tools group draws them (§2):
+//! Select/Move/Scale/Rotate as tight 32x32 icon buttons, the local-axis
+//! toggle beside them, then the chevron that opens the snap increments and
+//! the Align popover.
 //!
-//! Select, Move, Scale and Rotate are all live.
-//!
-//! Studio's fifth **Transform** button is deliberately absent. `creator-docs`
-//! only uses "transform" as the umbrella name for Move+Scale+Rotate together
-//! and documents no distinct tool behind it, so there is nothing here to
-//! implement against yet.
+//! Studio's fifth **Transform** button is deliberately absent.
+//! `creator-docs` only uses "transform" as the umbrella name for
+//! Move+Scale+Rotate together and documents no distinct tool behind it, so
+//! there is nothing here to implement against yet.
 
-use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::{h_flex, ActiveTheme, Selectable as _, Sizable as _};
+use gpui_kit::assets::IconName;
+use gpui_kit::component::popover::Popover;
+use gpui_kit::component::{h_flex, v_flex, Icon};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
+use crate::tokens;
 use crate::transform::{Action, SnapKind, Tool};
 
+use super::ribbon;
 use super::Shell;
 
 pub(crate) mod snap;
@@ -46,6 +49,7 @@ impl Shell {
             }
         }
     }
+
     /// Applies a toolbar action, whether it came from a control here or from a
     /// shortcut typed over the 3D view.
     ///
@@ -77,55 +81,132 @@ impl Shell {
         }
     }
 
-    /// The strip itself.
-    pub(super) fn toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let active = self.transform.tool;
+    /// Studio shows an `L` beside the tools while local orientation is on.
+    /// This is that indicator and its toggle, as one more tile in the row.
+    pub(super) fn local_tile(&self, cx: &mut Context<Self>) -> impl IntoElement + 'static {
         let local = self.transform.local;
 
-        h_flex()
-            .w_full()
-            .h(px(32.))
-            .flex_none()
-            .items_center()
-            .gap_1()
-            .px_2()
-            .border_b_1()
-            .border_color(cx.theme().border)
-            .children(Tool::ALL.map(|tool| {
-                Button::new(("transform-tool", tool as usize))
-                    .label(format!("{} ({})", tool.label(), tool.shortcut()))
-                    .xsmall()
-                    .selected(active == tool)
-                    .on_click(cx.listener(move |shell, _, _, cx| {
-                        shell.transform_action(Action::Use(tool), cx);
-                    }))
-            }))
-            .child(
-                Button::new("transform-local")
-                    .label("L")
-                    .ghost()
-                    .xsmall()
-                    .selected(local)
-                    .on_click(cx.listener(|shell, _, _, cx| {
-                        shell.transform_action(Action::ToggleLocal, cx);
-                    })),
-            )
-            // Studio shows an `L` beside the tools while local orientation is
-            // on; the button above doubles as that indicator, and this spells
-            // out what it means rather than leaving a bare letter.
-            .when(local, |this| {
-                this.child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child("local"),
-                )
-            })
-            // Studio's own toolbar puts the snap increments in the same strip,
-            // to the right of the transform tools they apply to.
-            .child(div().w(px(1.)).h(px(18.)).bg(cx.theme().border).mx_2())
-            .child(self.snap_controls(cx))
-            .child(div().w(px(1.)).h(px(18.)).bg(cx.theme().border).mx_2())
-            .child(self.align_controls(cx))
+        ribbon::tile(
+            &self.ribbon_nav,
+            "tool-local",
+            IconName::Axis3d,
+            "Local",
+            cx,
+        )
+        .when(local, |this| ribbon::selected(this, tokens::tool_local()))
+        .tooltip(|window, cx| super::tooltip::text("Local orientation", window, cx))
+        .on_click(cx.listener(|shell, _, _, cx| {
+            shell.transform_action(Action::ToggleLocal, cx);
+        }))
     }
+
+    /// The snap increments, as the stack that sits beside the tools: each
+    /// row reads back what a drag will round to, and clicking either opens
+    /// the fields that set them.
+    ///
+    /// Read-out and control in one, which is the point — the increments are
+    /// checked far more often than they are changed, and a number you have
+    /// to open a popover to *see* is a number nobody trusts.
+    pub(super) fn snap_stack(&self, cx: &mut Context<Self>) -> impl IntoElement + 'static {
+        // Built inside the content closure, from this handle: the popover
+        // rebuilds its body every time it opens, and the fields have to be
+        // the live `InputState`s rather than a snapshot taken at render.
+        let handle = cx.entity();
+        let translate = self.transform.translate;
+        let rotate = self.transform.rotate;
+
+        Popover::new("snap-popover")
+            .appearance(false)
+            .trigger(super::chrome::Trigger::new(
+                self.ribbon_nav.claim(
+                    v_flex()
+                        .id("snap-stack")
+                        .flex_none()
+                        .w(tokens::stack_width())
+                        .h_full()
+                        .gap(px(4.))
+                        .cursor_pointer()
+                        .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::chrome())))
+                        .tooltip(|window, cx| super::tooltip::text("Snap increments", window, cx))
+                        .child(snap_readout(
+                            IconName::Magnet,
+                            format!("{} studs", translate.increment),
+                            translate.enabled,
+                        ))
+                        .child(snap_readout(
+                            IconName::RotateCw,
+                            format!("{}°", rotate.increment),
+                            rotate.enabled,
+                        )),
+                    cx,
+                ),
+            ))
+            .content(move |_, _, cx| handle.update(cx, |shell, cx| shell.snap_fields_popover(cx)))
+    }
+
+    /// Align keeps its own popover of toggles; its trigger is one more tile.
+    pub(super) fn align_control(&self, cx: &mut Context<Self>) -> impl IntoElement + 'static {
+        self.align_popover(
+            super::chrome::Trigger::new(
+                ribbon::tile(
+                    &self.ribbon_nav,
+                    "tool-align",
+                    IconName::AlignStartVertical,
+                    "Align",
+                    cx,
+                )
+                .tooltip(|window, cx| super::tooltip::text("Align selection", window, cx)),
+            )
+            .accent(tokens::tool_align()),
+            cx,
+        )
+    }
+}
+
+/// One row of the snap stack. A disabled increment is still *shown* — it is
+/// what snapping would round to the moment it is switched back on — but it
+/// reads as inactive rather than as the value in force.
+fn snap_readout(icon: IconName, value: String, enabled: bool) -> impl IntoElement {
+    h_flex()
+        .w_full()
+        .flex_1()
+        .items_center()
+        .gap(px(6.))
+        .px(px(7.))
+        .rounded(tokens::RADIUS)
+        .bg(tokens::tile())
+        .text_size(tokens::text_xs())
+        .line_height(tokens::line_xs())
+        .text_color(if enabled {
+            tokens::text_label()
+        } else {
+            tokens::text_disabled()
+        })
+        .child(Icon::new(icon).size(tokens::text_xs()))
+        .child(div().flex_1().truncate().child(SharedString::from(value)))
+}
+
+/// The snap popover's body: the two fields stacked, in a floating surface.
+pub(super) fn snap_container(fields: Vec<AnyElement>) -> AnyElement {
+    v_flex()
+        .w(px(180.))
+        .p(px(10.))
+        .gap(px(10.))
+        .bg(tokens::chrome())
+        .rounded(tokens::RADIUS)
+        .shadow(tokens::elevation())
+        .children(fields)
+        .into_any_element()
+}
+
+/// A field's own label row, above its input.
+pub(super) fn field_label(label: impl IntoElement) -> impl IntoElement {
+    h_flex()
+        .items_center()
+        .gap(px(4.))
+        .mb(px(4.))
+        .text_size(tokens::text_sm())
+        .line_height(tokens::line_sm())
+        .text_color(tokens::text_label())
+        .child(label)
 }

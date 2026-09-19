@@ -39,6 +39,8 @@ struct AxisFaces {
     /// `+Z`/Front, `-Z`/Back), not Roblox's own `CFrame.LookVector` (`-Z`).
     positive: &'static str,
     negative: &'static str,
+    /// The axis's own one-letter name, for the orbital indicator's labels.
+    name: &'static str,
     color: u32,
 }
 
@@ -49,6 +51,7 @@ const AXIS_FACES: [AxisFaces; 3] = [
         b: Vec3::Z,
         positive: "Right",
         negative: "Left",
+        name: "X",
         color: COLOR_X,
     },
     AxisFaces {
@@ -57,6 +60,7 @@ const AXIS_FACES: [AxisFaces; 3] = [
         b: Vec3::X,
         positive: "Top",
         negative: "Bottom",
+        name: "Y",
         color: COLOR_Y,
     },
     AxisFaces {
@@ -65,6 +69,7 @@ const AXIS_FACES: [AxisFaces; 3] = [
         b: Vec3::Y,
         positive: "Front",
         negative: "Back",
+        name: "Z",
         color: COLOR_Z,
     },
 ];
@@ -79,12 +84,11 @@ pub(super) struct Face {
     /// a unit-radius screen scale — the caller scales by the widget's
     /// actual on-screen radius. `x` is screen-right, `y` is screen-down
     /// (GPUI's own convention, not world space).
+    ///
+    /// A face's projected *centre* is simply the mean of these, since the
+    /// projection is linear; it used to be carried as its own field, and
+    /// is not any more because nothing needed it.
     pub(super) corners: [(f32, f32); 4],
-    /// The face's centre — exactly the mean of `corners`, since a linear
-    /// projection of a square's centre is the mean of its projected
-    /// corners; kept as its own field so a caller placing a label never has
-    /// to average `corners` itself.
-    pub(super) center: (f32, f32),
     /// How square-on this face is to the camera, from `0.0` (perfectly
     /// edge-on — see `visible_faces`'s doc on the degenerate case) to `1.0`
     /// (dead centre, filling the indicator). A face's own fill already reads
@@ -144,8 +148,90 @@ pub(super) fn visible_faces(pose: Pose) -> [Face; 3] {
                 project(normal - group.a + group.b),
             ],
             prominence: alignment.abs(),
-            center: project(normal),
         }
+    })
+}
+
+/// One world axis's orbital ring, split at the horizon into the half in
+/// front of the sphere's centre and the half behind it.
+///
+/// The split is the whole illusion: two arcs of the same colour, the far
+/// one dimmed, read as a circle passing *through* a sphere rather than as a
+/// flat ellipse drawn on top of one. Nothing here is a 3D render — it is
+/// the same orthographic projection the cube faces already use.
+///
+/// Each half is walked from the same start angle, so a ring that crosses
+/// the horizon twice yields its two runs in order; the caller strokes each
+/// as an open polyline, which is why neither is closed.
+#[derive(Debug, Clone)]
+pub(super) struct Ring {
+    pub(super) color: u32,
+    /// The arc on the camera's side of centre, in screen units.
+    pub(super) near: Vec<(f32, f32)>,
+    /// The arc behind it.
+    pub(super) far: Vec<(f32, f32)>,
+}
+
+/// Where one axis's name sits, and how much of it the camera can see.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct AxisLabel {
+    pub(super) text: &'static str,
+    pub(super) color: u32,
+    pub(super) at: (f32, f32),
+    /// `1.0` when the axis points straight at the camera, `0.0` when it
+    /// lies in the screen plane, and negative when it points away — a
+    /// caller fades the far ones rather than letting three labels pile up
+    /// in the middle.
+    pub(super) depth: f32,
+}
+
+/// How many segments each ring is drawn with. Enough that a 40px circle has
+/// no visible corners, few enough that three of them cost nothing.
+const RING_SEGMENTS: usize = 64;
+
+/// The three orbital rings at this pose — one per world axis, each the unit
+/// circle in the plane *perpendicular* to that axis, so the red ring is the
+/// one the X axis passes through.
+pub(super) fn axis_rings(pose: Pose) -> [Ring; 3] {
+    let (forward, right, up) = pose.basis();
+    let project = |world: Vec3| (world.dot(right), -world.dot(up));
+
+    AXIS_FACES.map(|group| {
+        let mut near = Vec::with_capacity(RING_SEGMENTS + 1);
+        let mut far = Vec::with_capacity(RING_SEGMENTS + 1);
+
+        for step in 0..=RING_SEGMENTS {
+            let angle = step as f32 / RING_SEGMENTS as f32 * std::f32::consts::TAU;
+            let world = group.a * angle.cos() + group.b * angle.sin();
+            let point = project(world);
+            // `forward` points away from the camera, so a *negative* dot is
+            // the half nearer the viewer.
+            if world.dot(forward) <= 0.0 {
+                near.push(point);
+            } else {
+                far.push(point);
+            }
+        }
+
+        Ring {
+            color: group.color,
+            near,
+            far,
+        }
+    })
+}
+
+/// The three axis names, placed where each axis's positive end meets the
+/// sphere.
+pub(super) fn axis_labels(pose: Pose) -> [AxisLabel; 3] {
+    let (forward, right, up) = pose.basis();
+    let project = |world: Vec3| (world.dot(right), -world.dot(up));
+
+    AXIS_FACES.map(|group| AxisLabel {
+        text: group.name,
+        color: group.color,
+        at: project(group.axis),
+        depth: -group.axis.dot(forward),
     })
 }
 
@@ -187,7 +273,7 @@ mod tests {
         let faces = visible_faces(pose(0.0, 0.0));
 
         let back = face(&faces, "Back");
-        assert_point(back.center, (0.0, 0.0));
+        assert_point(centre_of(back), (0.0, 0.0));
         assert!((back.prominence - 1.0).abs() < 1e-4, "{}", back.prominence);
         for corner in back.corners {
             assert!(
@@ -230,7 +316,7 @@ mod tests {
         let faces = visible_faces(pose(quarter_turn, 0.0));
 
         let left = face(&faces, "Left");
-        assert_point(left.center, (0.0, 0.0));
+        assert_point(centre_of(left), (0.0, 0.0));
         assert!((left.prominence - 1.0).abs() < 1e-4, "{}", left.prominence);
         for corner in left.corners {
             assert!(
@@ -240,16 +326,63 @@ mod tests {
         }
     }
 
+    /// A square's projected centre is the mean of its projected corners,
+    /// because the projection is linear — which is what lets the renderer
+    /// place anything relative to a face without carrying a separate point.
     #[test]
-    fn every_faces_centre_is_the_mean_of_its_own_corners() {
-        for face in visible_faces(pose(0.73, -0.31)) {
-            let sum = face
-                .corners
-                .iter()
-                .fold((0.0, 0.0), |acc, c| (acc.0 + c.0, acc.1 + c.1));
-            let mean = (sum.0 / 4.0, sum.1 / 4.0);
-            assert_point(mean, face.center);
+    fn a_faces_centre_is_the_mean_of_its_own_corners() {
+        for face in visible_faces(pose(0.0, 0.0)) {
+            let centre = centre_of(&face);
+            assert!(
+                centre.0.is_finite() && centre.1.is_finite(),
+                "{centre:?} is not a point"
+            );
         }
+        // Looking straight down -Z puts Back dead centre, and its four
+        // corners are symmetric about it.
+        let faces = visible_faces(pose(0.0, 0.0));
+        assert_point(centre_of(face(&faces, "Back")), (0.0, 0.0));
+    }
+
+    /// The three rings are one per axis colour, and each is split into the
+    /// half in front of the sphere and the half behind it.
+    #[test]
+    fn the_three_rings_are_one_per_axis_colour_and_split_at_the_horizon() {
+        let rings = axis_rings(pose(0.73, -0.31));
+
+        let mut colors: Vec<u32> = rings.iter().map(|ring| ring.color).collect();
+        colors.sort_unstable();
+        let mut expected = [COLOR_X, COLOR_Y, COLOR_Z];
+        expected.sort_unstable();
+        assert_eq!(colors, expected);
+
+        for ring in &rings {
+            assert_eq!(
+                ring.near.len() + ring.far.len(),
+                RING_SEGMENTS + 1,
+                "every sampled point belongs to exactly one half"
+            );
+            assert!(
+                !ring.near.is_empty(),
+                "a ring with no near half would read as painted behind the sphere entirely"
+            );
+        }
+    }
+
+    /// Each axis's name sits where that axis meets the sphere, and the one
+    /// pointing at the camera is the least foreshortened.
+    #[test]
+    fn an_axis_label_follows_its_own_axis() {
+        let labels = axis_labels(pose(0.0, 0.0));
+        let z = labels
+            .iter()
+            .find(|label| label.text == "Z")
+            .expect("a Z label");
+
+        // Looking down -Z, +Z points straight back at the camera: its label
+        // lands at the centre and is at full depth.
+        assert_point(z.at, (0.0, 0.0));
+        assert!((z.depth - 1.0).abs() < 1e-4, "{}", z.depth);
     }
 
     #[test]
@@ -263,5 +396,13 @@ mod tests {
         let mut expected = [COLOR_X, COLOR_Y, COLOR_Z];
         expected.sort_unstable();
         assert_eq!(colors, expected);
+    }
+
+    fn centre_of(face: &Face) -> (f32, f32) {
+        let sum = face
+            .corners
+            .iter()
+            .fold((0.0, 0.0), |acc, c| (acc.0 + c.0, acc.1 + c.1));
+        (sum.0 / 4.0, sum.1 / 4.0)
     }
 }

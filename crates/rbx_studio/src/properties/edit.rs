@@ -4,8 +4,8 @@
 //! lives on `Instance` itself rather than in its property map).
 
 use rbx_dom::{
-    CFrameData, Color3Data, NumberRange, Rect, Ref, UDim, UDim2, Variant, Vector2Data, Vector3Data,
-    WeakDom,
+    Axes, CFrameData, Color3Data, Faces, NumberRange, Rect, Ref, UDim, UDim2, Variant, Vector2Data,
+    Vector3Data, WeakDom,
 };
 use rbx_reflection::ReflectionDatabase;
 
@@ -53,6 +53,18 @@ pub(crate) fn edit_text(value: &Variant) -> Option<String> {
         Variant::String(text) => Some(text.clone()),
         Variant::Vector2(v) => Some(format!("{}, {}", v.x, v.y)),
         Variant::Vector3(v) => Some(format!("{}, {}, {}", v.x, v.y, v.z)),
+        Variant::Vector3int16 { x, y, z } => Some(format!("{x}, {y}, {z}")),
+        // Flags commit as their own booleans, in the fixed order
+        // `properties`' `FACES`/`AXES` name them.
+        Variant::Faces(f) => Some(format!(
+            "{}, {}, {}, {}, {}, {}",
+            f.right, f.top, f.back, f.left, f.bottom, f.front
+        )),
+        Variant::Axes(a) => Some(format!("{}, {}, {}", a.x, a.y, a.z)),
+        Variant::Ray { origin, direction } => Some(format!(
+            "{}, {}, {}, {}, {}, {}",
+            origin.x, origin.y, origin.z, direction.x, direction.y, direction.z
+        )),
         Variant::Color3(color) => Some(format!(
             "{}, {}, {}",
             channel(color.r),
@@ -69,10 +81,8 @@ pub(crate) fn edit_text(value: &Variant) -> Option<String> {
             "{}, {}, {}, {}",
             u.x.scale, u.x.offset, u.y.scale, u.y.offset
         )),
-        Variant::CFrame(frame) => Some(format!(
-            "{}, {}, {}",
-            frame.position.x, frame.position.y, frame.position.z
-        )),
+        Variant::CFrame(frame) => Some(cframe_text(frame)),
+        Variant::OptionalCFrame(Some(frame)) => Some(cframe_text(frame)),
         Variant::NumberRange(range) => Some(format!("{}, {}", range.min, range.max)),
         Variant::Rect(rect) => Some(format!(
             "{}, {}, {}, {}",
@@ -82,6 +92,8 @@ pub(crate) fn edit_text(value: &Variant) -> Option<String> {
         _ => None,
     }
 }
+
+mod orientation;
 
 /// Writes one row's edit into `dom`, taking the same latitude the Command Bar
 /// does: the caller owns handing `dom` in and back out around this call. On
@@ -164,6 +176,51 @@ pub(crate) fn parse(
             let n = parse_numbers(text, 2)?;
             Ok(Variant::Vector2(Vector2Data { x: n[0], y: n[1] }))
         }
+        Variant::Faces(_) => {
+            let f = parse_flags(text, 6)?;
+            Ok(Variant::Faces(Faces {
+                right: f[0],
+                top: f[1],
+                back: f[2],
+                left: f[3],
+                bottom: f[4],
+                front: f[5],
+            }))
+        }
+        Variant::Axes(_) => {
+            let a = parse_flags(text, 3)?;
+            Ok(Variant::Axes(Axes {
+                x: a[0],
+                y: a[1],
+                z: a[2],
+            }))
+        }
+        Variant::Vector3int16 { .. } => {
+            let n = parse_numbers(text, 3)?;
+            // Rounded and clamped, not `as i16`. A raw cast truncates
+            // toward zero (a dragged 3.7 lands on 3) and, outside i16's
+            // range, is a silent wrap — 40000 would become -25536.
+            Ok(Variant::Vector3int16 {
+                x: to_i16(n[0]),
+                y: to_i16(n[1]),
+                z: to_i16(n[2]),
+            })
+        }
+        Variant::Ray { .. } => {
+            let n = parse_numbers(text, 6)?;
+            Ok(Variant::Ray {
+                origin: Vector3Data {
+                    x: n[0],
+                    y: n[1],
+                    z: n[2],
+                },
+                direction: Vector3Data {
+                    x: n[3],
+                    y: n[4],
+                    z: n[5],
+                },
+            })
+        }
         Variant::Vector3(_) => {
             let n = parse_numbers(text, 3)?;
             Ok(Variant::Vector3(Vector3Data {
@@ -181,6 +238,19 @@ pub(crate) fn parse(
         Variant::UDim(_) => parse_udim(text).map(Variant::UDim),
         Variant::UDim2(_) => parse_udim2(text).map(Variant::UDim2),
         Variant::CFrame(frame) => parse_cframe(frame, text).map(Variant::CFrame),
+        // An absent optional has no orientation to preserve, so it starts
+        // from an unrotated one rather than refusing the edit.
+        Variant::OptionalCFrame(frame) => {
+            let current = frame.unwrap_or(CFrameData {
+                position: Vector3Data {
+                    x: 0.,
+                    y: 0.,
+                    z: 0.,
+                },
+                rotation: [1., 0., 0., 0., 1., 0., 0., 0., 1.],
+            });
+            parse_cframe(&current, text).map(|frame| Variant::OptionalCFrame(Some(frame)))
+        }
         Variant::NumberRange(_) => {
             let n = parse_numbers(text, 2)?;
             Ok(Variant::NumberRange(NumberRange {
@@ -242,9 +312,39 @@ fn parse_numbers(text: &str, count: usize) -> Result<Vec<f32>, String> {
 /// carried through from `current` untouched, so typing a position into the
 /// Properties panel never loses a part's facing and a viewport rotate never
 /// moves it.
+/// A `CFrame` as the panel shows it: three position numbers, then the three
+/// orientation angles in degrees (see [`orientation`]).
+fn cframe_text(frame: &CFrameData) -> String {
+    let [x, y, z] = orientation::to_degrees(&frame.rotation);
+    format!(
+        "{}, {}, {}, {}, {}, {}",
+        frame.position.x, frame.position.y, frame.position.z, x, y, z
+    )
+}
+
+/// Four shapes, by how many numbers were given: 3 is a position, 6 is a
+/// position plus orientation degrees (what the panel submits), 9 is a raw
+/// rotation matrix, 12 is a position plus a raw matrix.
+///
+/// The 6 case carries the rule this whole module exists for. The panel's
+/// fields always submit all six numbers, whichever one was typed in — so
+/// the angles are compared against what the row was *showing*, and the
+/// stored matrix is left **byte-identical** unless they actually changed.
+/// Without that, nudging a part's X position would quietly rewrite its
+/// rotation through degrees and back: a lossy trip (nine numbers do not fit
+/// in three) that at gimbal lock can land on a different orientation
+/// entirely.
 fn parse_cframe(current: &CFrameData, text: &str) -> Result<CFrameData, String> {
     let (position, rotation) = match count_numbers(text) {
         3 => (Some(parse_numbers(text, 3)?), None),
+        6 => {
+            let n = parse_numbers(text, 6)?;
+            let typed = [n[3], n[4], n[5]];
+            let rotation =
+                (!orientation::same_angles(typed, orientation::to_degrees(&current.rotation)))
+                    .then(|| orientation::from_degrees(typed).to_vec());
+            (Some(n[..3].to_vec()), rotation)
+        }
         9 => (None, Some(parse_numbers(text, 9)?)),
         _ => {
             let n = parse_numbers(text, 12)?;
@@ -260,6 +360,27 @@ fn parse_cframe(current: &CFrameData, text: &str) -> Result<CFrameData, String> 
         }),
         rotation: rotation.map_or(current.rotation, |n| std::array::from_fn(|term| n[term])),
     })
+}
+
+fn to_i16(value: f32) -> i16 {
+    value
+        .round()
+        .clamp(f32::from(i16::MIN), f32::from(i16::MAX)) as i16
+}
+
+/// `count` comma-separated booleans, in the order the flag labels name.
+fn parse_flags(text: &str, count: usize) -> Result<Vec<bool>, String> {
+    // Trimmed, because the text these parse is the same comma-joined form
+    // every other composite uses — with a space after each comma.
+    let flags: Result<Vec<bool>, String> = text
+        .split(',')
+        .map(|part| parse_bool(part.trim()))
+        .collect();
+    let flags = flags?;
+    if flags.len() != count {
+        return Err(format!("expected {count} flags, got {}", flags.len()));
+    }
+    Ok(flags)
 }
 
 /// How many comma-separated terms `text` holds, which is what picks between

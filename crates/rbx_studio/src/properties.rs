@@ -20,6 +20,72 @@ const MAX_STRING_LEN: usize = 64;
 /// category itself, so it can never collide with a real one.
 const UNCATEGORIZED: &str = "Other";
 
+/// What one field of a composite value holds.
+///
+/// Not decoration: it decides whether a field can be dragged and how far a
+/// drag moves it, and it is why `Vector3int16` can no longer be handed
+/// `3.7`. The DOM's own types are mixed even inside a single row — a `UDim`
+/// is an `f32` scale beside an `i32` offset — so this is per *field*, never
+/// per property.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FieldKind {
+    Decimal,
+    Integer,
+    /// Not a number at all — a `Font`'s family name. Typed, never dragged.
+    Text,
+}
+
+impl FieldKind {
+    /// How much one pixel of horizontal drag is worth.
+    ///
+    /// An integer moves a whole unit every few pixels rather than a
+    /// fraction every pixel: dragging a `Vector3int16` should step through
+    /// cells, not crawl. `None` is a field a drag must not touch.
+    pub(crate) fn step_per_pixel(self) -> Option<f32> {
+        match self {
+            FieldKind::Decimal => Some(0.05),
+            FieldKind::Integer => Some(1. / 6.),
+            FieldKind::Text => None,
+        }
+    }
+}
+
+/// One field of a composite value: what it is called and what it holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Field {
+    pub(crate) label: &'static str,
+    pub(crate) kind: FieldKind,
+}
+
+/// A decimal field, which is most of them.
+const fn decimal(label: &'static str) -> Field {
+    Field {
+        label,
+        kind: FieldKind::Decimal,
+    }
+}
+
+const fn integer(label: &'static str) -> Field {
+    Field {
+        label,
+        kind: FieldKind::Integer,
+    }
+}
+
+const fn text(label: &'static str) -> Field {
+    Field {
+        label,
+        kind: FieldKind::Text,
+    }
+}
+
+/// One captioned run of fields inside an [`EditKind::Groups`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FieldGroup {
+    pub(crate) caption: &'static str,
+    pub(crate) fields: &'static [Field],
+}
+
 /// Which widget a row's value should edit through, and the seed data that
 /// widget starts from. `None` on [`PropertyRow::edit`] keeps the row
 /// read-only, same as a `None` from `edit::edit_text` always has.
@@ -48,8 +114,28 @@ pub(crate) enum EditKind {
     /// A short row of numeric fields, one label per component: `edit_text`'s
     /// comma-joined text split back into `labels.len()` seed values.
     Fields {
-        labels: &'static [&'static str],
+        fields: &'static [Field],
         values: Vec<String>,
+    },
+    /// Several captioned groups of numeric fields, each on its own line —
+    /// a `CFrame`'s Position and Orientation, a `Ray`'s Origin and
+    /// Direction.
+    ///
+    /// The values are one flat list in group order, because the commit path
+    /// is a single comma-joined string either way; the groups only decide
+    /// how the row is *drawn*.
+    Groups {
+        groups: &'static [FieldGroup],
+        values: Vec<String>,
+    },
+    /// Independent named flags — a `Faces`' six sides, an `Axes`' three.
+    ///
+    /// A checkbox each, because that is what a bit set is: six yes/no
+    /// answers, not one value with sixty-four spellings. They used to
+    /// render as read-only text like `Faces[Top, Front]`.
+    Flags {
+        labels: &'static [&'static str],
+        values: Vec<bool>,
     },
 }
 
@@ -239,16 +325,41 @@ impl Properties {
                 b: *b,
             },
             Variant::Enum(raw) => self.enum_kind(class, name, *raw, text),
-            Variant::Vector2(_) => fields(&["X", "Y"], &text),
-            // `CFrame`'s edit text is position-only (see `edit::edit_text`),
-            // so it shares Vector3's 3-field shape.
-            Variant::Vector3(_) | Variant::CFrame(_) => fields(&["X", "Y", "Z"], &text),
-            Variant::UDim2(_) => fields(&["X Scale", "X Offset", "Y Scale", "Y Offset"], &text),
-            Variant::Rect(_) => fields(&["Min X", "Min Y", "Max X", "Max Y"], &text),
+            Variant::Vector2(_) => fields(VECTOR2, &text),
+            Variant::Vector3(_) => fields(VECTOR3, &text),
+            // Integer components, so a drag steps by whole cells and a
+            // typed `3.7` rounds rather than truncating toward zero.
+            Variant::Vector3int16 { .. } => fields(VECTOR3_INT, &text),
+            // A `UDim` is a float scale beside an *integer* offset — the
+            // clearest case for why a field's kind is not a property's.
+            Variant::UDim(_) => fields(UDIM, &text),
+            Variant::UDim2(_) => fields(UDIM2, &text),
+            Variant::Rect(_) => fields(RECT, &text),
+            Variant::NumberRange(_) => fields(NUMBER_RANGE, &text),
+            // Position and orientation, the way Roblox's own panel splits
+            // them — a rotation matrix is not something anyone types. See
+            // `edit::orientation` for the conversion and what it costs.
+            Variant::CFrame(_) | Variant::OptionalCFrame(Some(_)) => groups(CFRAME, &text),
+            Variant::Ray { .. } => groups(RAY, &text),
+            Variant::Faces(faces) => EditKind::Flags {
+                labels: FACES,
+                values: vec![
+                    faces.right,
+                    faces.top,
+                    faces.back,
+                    faces.left,
+                    faces.bottom,
+                    faces.front,
+                ],
+            },
+            Variant::Axes(axes) => EditKind::Flags {
+                labels: AXES,
+                values: vec![axes.x, axes.y, axes.z],
+            },
             // A family name, a `FontWeight` name and `Normal`/`Italic`, typed:
             // the fonts package that could list the families lives in the
             // viewer, and a weight's nine names are quicker typed than picked.
-            Variant::Font(_) => fields(&["Family", "Weight", "Style"], &text),
+            Variant::Font(_) => fields(FONT, &text),
             _ => EditKind::Text(text),
         })
     }
@@ -395,10 +506,69 @@ fn channel(value: f32) -> u8 {
 /// label — the two are built from the same match arms in
 /// `Properties::edit_kind`/`edit::edit_text`, so the split always has
 /// exactly `labels.len()` pieces.
-fn fields(labels: &'static [&'static str], text: &str) -> EditKind {
+const VECTOR2: &[Field] = &[decimal("X"), decimal("Y")];
+const VECTOR3: &[Field] = &[decimal("X"), decimal("Y"), decimal("Z")];
+const VECTOR3_INT: &[Field] = &[integer("X"), integer("Y"), integer("Z")];
+const UDIM: &[Field] = &[decimal("Scale"), integer("Offset")];
+const UDIM2: &[Field] = &[
+    decimal("X Scale"),
+    integer("X Offset"),
+    decimal("Y Scale"),
+    integer("Y Offset"),
+];
+const RECT: &[Field] = &[
+    decimal("Min X"),
+    decimal("Min Y"),
+    decimal("Max X"),
+    decimal("Max Y"),
+];
+const NUMBER_RANGE: &[Field] = &[decimal("Min"), decimal("Max")];
+const FONT: &[Field] = &[text("Family"), text("Weight"), text("Style")];
+
+/// A `Faces`' six sides, in the order Roblox's own `Enum.NormalId` lists
+/// them — so a reader comparing against Studio finds them where they expect.
+const FACES: &[&str] = &["Right", "Top", "Back", "Left", "Bottom", "Front"];
+const AXES: &[&str] = &["X", "Y", "Z"];
+
+/// A `CFrame`, as two captioned lines.
+const CFRAME: &[FieldGroup] = &[
+    FieldGroup {
+        caption: "Position",
+        fields: VECTOR3,
+    },
+    FieldGroup {
+        caption: "Orientation",
+        fields: VECTOR3,
+    },
+];
+
+const RAY: &[FieldGroup] = &[
+    FieldGroup {
+        caption: "Origin",
+        fields: VECTOR3,
+    },
+    FieldGroup {
+        caption: "Direction",
+        fields: VECTOR3,
+    },
+];
+
+/// [`fields`]'s captioned cousin: the same comma-joined text, split across
+/// however many fields the groups name between them.
+fn groups(groups: &'static [FieldGroup], text: &str) -> EditKind {
+    let values: Vec<String> = text.split(',').map(|part| part.trim().to_owned()).collect();
+    debug_assert_eq!(
+        values.len(),
+        groups.iter().map(|group| group.fields.len()).sum::<usize>(),
+        "{groups:?} vs {text:?}"
+    );
+    EditKind::Groups { groups, values }
+}
+
+fn fields(fields: &'static [Field], text: &str) -> EditKind {
     let values: Vec<String> = text.split(", ").map(str::to_owned).collect();
-    debug_assert_eq!(values.len(), labels.len(), "{labels:?} vs {text:?}");
-    EditKind::Fields { labels, values }
+    debug_assert_eq!(values.len(), fields.len(), "{fields:?} vs {text:?}");
+    EditKind::Fields { fields, values }
 }
 
 fn cframe(frame: &CFrameData) -> String {
