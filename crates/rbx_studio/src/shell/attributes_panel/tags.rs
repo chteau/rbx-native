@@ -17,17 +17,27 @@ use crate::tokens;
 use super::TAGS_CATEGORY;
 
 impl Shell {
+    /// Filtered by tag name through the same [`crate::properties::matches`]
+    /// the ordinary property rows and the Attributes section above use; the
+    /// "add tag" row is never filtered out, for the same reason
+    /// `attribute_section`'s "add attribute" row isn't.
     pub(super) fn tag_section(
         &mut self,
         reference: Ref,
+        filter: &str,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let open = !self.is_category_collapsed(TAGS_CATEGORY);
+        let filtering = !filter.trim().is_empty();
+        let open = filtering || !self.is_category_collapsed(TAGS_CATEGORY);
         let current = attrs::tags(&self.dom, reference);
         let error = self.attribute_edits.tag_error.clone();
 
-        let chips: Vec<AnyElement> = current.iter().map(|tag| self.tag_chip(tag, cx)).collect();
+        let chips: Vec<AnyElement> = current
+            .iter()
+            .filter(|tag| crate::properties::matches(tag, filter))
+            .map(|tag| self.tag_chip(tag, cx))
+            .collect();
 
         let handle = cx.entity();
         v_flex()
@@ -178,7 +188,14 @@ impl Shell {
         self.record_history_change(changes);
 
         match result {
-            Ok(()) => self.attribute_edits.tag_error = None,
+            Ok(()) => {
+                self.attribute_edits.tag_error = None;
+                // Same reasoning as `commit_add_attribute`'s identical line:
+                // dropping the entity makes the next render build a fresh,
+                // empty one rather than needing a `Window` to clear this one
+                // in place.
+                self.attribute_edits.new_tag = None;
+            }
             Err(message) => self.attribute_edits.tag_error = Some(message),
         }
         cx.notify();

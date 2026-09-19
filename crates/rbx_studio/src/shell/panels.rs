@@ -249,7 +249,7 @@ impl Shell {
         // Built before `self.properties_nav.finish()` so its own header and
         // buttons take the next indices in the same single Tab stop the rest
         // of the panel shares — see `shell::attributes_panel`.
-        let attributes_and_tags = self.attributes_and_tags(window, cx);
+        let attributes_and_tags = self.attributes_and_tags(&filter, window, cx);
         self.properties_nav.finish();
         let handle = cx.entity();
 

@@ -85,8 +85,11 @@ impl Shell {
     /// the exact same `is_category_collapsed`/`toggle_category` an ordinary
     /// property category uses (see `shell::edit`), just keyed by these two
     /// synthetic category names instead of one the reflection dump named.
+    /// `filter` is the same Properties panel filter box every ordinary
+    /// property row is already narrowed by (see `shell::panels::properties`).
     pub(super) fn attributes_and_tags(
         &mut self,
+        filter: &str,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -97,8 +100,8 @@ impl Shell {
         v_flex()
             .w_full()
             .gap(tokens::header_gap())
-            .child(self.attribute_section(reference, window, cx))
-            .child(self.tag_section(reference, window, cx))
+            .child(self.attribute_section(reference, filter, window, cx))
+            .child(self.tag_section(reference, filter, window, cx))
             .into_any_element()
     }
 }

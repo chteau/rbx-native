@@ -22,21 +22,26 @@ impl Shell {
     /// A row becomes whichever widget its `EditKind` calls for (see
     /// `shell::panels::properties`, which forces every section open so a
     /// filter match is never hidden behind a collapsed one — this section
-    /// does not participate in the filter, see `shell::attributes_panel`'s
-    /// module doc).
+    /// follows the same rule, filtering by attribute name through the same
+    /// [`crate::properties::matches`] the ordinary property rows use).
+    /// The "add attribute" row is never filtered out: it names nothing yet.
     pub(super) fn attribute_section(
         &mut self,
         reference: Ref,
+        filter: &str,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let open = !self.is_category_collapsed(ATTRIBUTES_CATEGORY);
+        let filtering = !filter.trim().is_empty();
+        let open = filtering || !self.is_category_collapsed(ATTRIBUTES_CATEGORY);
         let current = attrs::attributes(&self.dom, reference);
         let error = self.attribute_edits.attribute_error.clone();
 
         let mut rows = Vec::with_capacity(current.len());
         for (name, value) in &current {
-            rows.push(self.attribute_row(name, value, window, cx));
+            if crate::properties::matches(name, filter) {
+                rows.push(self.attribute_row(name, value, window, cx));
+            }
         }
         rows.push(self.add_attribute_row(reference, window, cx));
 
@@ -353,7 +358,18 @@ impl Shell {
         self.record_history_change(changes);
 
         match result {
-            Ok(()) => self.attribute_edits.attribute_error = None,
+            Ok(()) => {
+                self.attribute_edits.attribute_error = None;
+                // Dropped rather than cleared in place: the next render's
+                // `add_attribute_row` sees `None` and builds a fresh, empty
+                // pair exactly the way it already does the first time this
+                // row ever renders — no second code path, and no `Window`
+                // needed here to call `InputState::set_value` (this method
+                // only ever runs from a `PressEnter` subscription or a plain
+                // click handler, neither of which hands one over).
+                self.attribute_edits.new_name = None;
+                self.attribute_edits.new_type = None;
+            }
             Err(message) => self.attribute_edits.attribute_error = Some(message),
         }
         cx.notify();
