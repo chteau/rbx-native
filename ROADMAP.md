@@ -476,6 +476,15 @@ Roblox's own engine.
   load-time prune keeps orphaned entries from accumulating forever, but
   does not carry the tag across the rename (see the `ponytail:` comment in
   `folder_colors.rs`).
+- [x] The ribbon's Part insert menu inserts the shape it names. Block,
+  Sphere and Cylinder all insert a `Part` and now write its `shape`
+  property (`Enum.PartType`) instead of leaving all three to resolve as
+  `ShapeKind::Box`; Wedge and Corner Wedge already passed their own
+  classes but now get the same size/colour/material defaults as any
+  other new part, since `insert_instance`'s defaults gate widened from
+  the literal class `"Part"` to any `BasePart` subclass. One test per
+  menu item asserts both the inserted instance's class and its resolved
+  `ShapeKind`.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -916,24 +925,6 @@ against `Roblox/creator-docs` rather than assumed:
   interactive use (a human editing live) hits the same thing; needs its
   own investigation of the render thread's state right after
   `Headless::reload`.
-- [ ] 📋 **The Part insert menu always inserts a block.** Every one of its
-  five items (Block, Sphere, Wedge, Corner Wedge, Cylinder) ends at
-  `Shell::insert_instance` with nothing but a class name
-  (`shell::ribbon::insert_item`), and three of them pass the same class:
-  Block, Sphere and Cylinder all insert a bare `Part` and never write its
-  `shape` property, so the renderer resolves all three to
-  `ShapeKind::Box` (`rbx_viewer::scene::shape::resolve`'s last branch —
-  no `shape` property means a plain box). Wedge and Corner Wedge do pass
-  their own classes, but `insert_instance` gates `apply_part_defaults` on
-  `class == "Part"`, so those two come in without the size, colour and
-  material a new part gets.
-  The fix is to carry a shape alongside the class through
-  `insert_instance` — `Enum.PartType` is Ball=0, Block=1, Cylinder=2 — and
-  to widen the defaults gate to any `BasePart` subclass rather than the
-  literal `"Part"`. One test per menu item, asserting the inserted
-  instance's class *and* resolved `ShapeKind`, since the current bug is
-  invisible in the Explorer and only shows in the viewport.
-
 - [ ] 📋 **Drag-to-rearrange docks.** The fixed shell that replaced the
   toolkit's `DockArea` cannot express it: a panel's position is the order of
   three `.child()` calls, not data, so there is nothing to change at

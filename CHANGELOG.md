@@ -191,6 +191,16 @@
   `agents/dock-rearrangement.md` rather than a half-built version in the
   shell. — @chteau
 
+- **Fixed the Part insert menu always inserting a block.** Block, Sphere
+  and Cylinder all inserted a bare `Part` and never wrote its `shape`
+  property, so the renderer resolved all three to `ShapeKind::Box`; Wedge
+  and Corner Wedge passed their own classes but got none of a new part's
+  size, colour or material defaults, since those were gated on the
+  literal class `"Part"`. `shape` (`Enum.PartType`) now travels alongside
+  the class for the three that share it, and the defaults gate widened to
+  any `BasePart` subclass. One test per menu item asserts both the
+  inserted instance's class and its resolved `ShapeKind`. — @chteau
+
 ## 2026-09-18
 
 - **Rebuilt the editor's chrome against the project's own Figma design.**
