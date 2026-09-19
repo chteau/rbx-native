@@ -149,6 +149,17 @@ pub(super) fn models_of<'a>(
 /// bounding box and what the Move gizmo already stands in the middle of (see
 /// `gizmo::bounds_of`). Shared by the selection and hover outlines so both
 /// draw a model as one box rather than a mess of per-part ones.
+///
+/// Known divergence from real Studio, since the docs are explicit about it:
+/// `Model:GetBoundingBox` "matches the selection box rendered in Studio when
+/// the model is selected", and its orientation "matches the orientation of
+/// the Pivot — either the pivot of the `PrimaryPart` (if present) or the
+/// `WorldPivot` of the model". The default pivot has no rotation, so the two
+/// agree for every model that has neither; a model with a turned
+/// `PrimaryPart` gets a box turned with it in Studio and a world-aligned one
+/// here. Pivots are not modelled anywhere in this editor yet (see
+/// `ROADMAP.md`'s Pivot tools bullet), so the box is aligned to the world
+/// rather than to a pivot that does not exist to read.
 pub(super) fn box_of(placements: &HashMap<Ref, Placement>, entry: &Selected) -> Option<Mat4> {
     if entry.is_part() {
         return Some(placements.get(&entry.referent())?.model);
