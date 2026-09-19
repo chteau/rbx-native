@@ -67,6 +67,7 @@ impl Offscreen {
         };
         offscreen.set_orthographic(view.orthographic);
         offscreen.set_selection(&view.selected);
+        offscreen.set_selection_occluded(view.selection_occluded);
         offscreen.set_hover(view.hovered.clone());
         offscreen.set_gizmo(view.gizmo);
         Ok(offscreen)
@@ -81,6 +82,7 @@ impl Offscreen {
         self.renderer.rebuild(&self.device, &self.queue, world);
         self.set_orthographic(view.orthographic);
         self.set_selection(&view.selected);
+        self.set_selection_occluded(view.selection_occluded);
         self.set_gizmo(view.gizmo);
     }
 
@@ -104,6 +106,11 @@ impl Offscreen {
     /// buffer right away.
     pub(crate) fn set_selection(&mut self, selected: &[Selected]) {
         self.renderer.set_selection(&self.device, selected);
+    }
+
+    /// Whether geometry in front of the selection hides its outline.
+    pub(crate) fn set_selection_occluded(&mut self, occluded: bool) {
+        self.renderer.set_selection_occluded(occluded);
     }
 
     /// Replaces the hover outline box, rebuilding its tiny vertex buffer

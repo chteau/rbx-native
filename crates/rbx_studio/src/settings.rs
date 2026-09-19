@@ -1,8 +1,9 @@
 //! Persisted Studio preferences: the graphics quality dropdown, the
 //! Explorer's "show all services" checkbox, the Viewport's orthographic
-//! toggle, its orientation indicator toggle, and the Explorer's icon pack
-//! (dark/light), so a relaunch reopens where the user left off rather than
-//! always at the hardcoded defaults.
+//! toggle, its orientation indicator toggle, whether the selection box is
+//! occluded by geometry, and the Explorer's icon pack (dark/light), so a
+//! relaunch reopens where the user left off rather than always at the
+//! hardcoded defaults.
 //!
 //! Mirrors `rbx_assets::AssetCache`'s directory convention (`$XDG_CONFIG_HOME`,
 //! falling back to `~/.config` or, on Windows, `%APPDATA%`, all under an
@@ -28,6 +29,12 @@ pub(crate) struct Settings {
     /// as an always-there convention (the way Blender's own gizmo is), not
     /// an opt-in debug overlay.
     pub(crate) axis_indicator: bool,
+    /// Whether a part standing in front of the selection hides its outline
+    /// box. Defaults off, so the box draws through everything: that is what
+    /// Studio does, and what keeps a `Model` selected behind a wall visible
+    /// at all. Named for the behaviour being switched *on* rather than for
+    /// the default, so no call site has to read `!show_through`.
+    pub(crate) selection_occluded: bool,
     pub(crate) icon_pack: IconPack,
     /// The render loop's frame rate cap while the window is unfocused — see
     /// `pacing::FocusPacing`.
@@ -66,6 +73,7 @@ impl Default for Settings {
             show_all_services: false,
             orthographic: false,
             axis_indicator: true,
+            selection_occluded: false,
             icon_pack: IconPack::Dark,
             unfocused_fps: UnfocusedFps::DEFAULT,
             font_scale: 1.,
@@ -213,6 +221,10 @@ fn load_from(path: &Path) -> Settings {
         show_all_services,
         orthographic,
         axis_indicator,
+        selection_occluded: value
+            .get("selection_occluded")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
         icon_pack,
         unfocused_fps,
         font_scale,
@@ -248,6 +260,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "show_all_services": settings.show_all_services,
         "orthographic": settings.orthographic,
         "axis_indicator": settings.axis_indicator,
+        "selection_occluded": settings.selection_occluded,
         "icon_pack": format_icon_pack(settings.icon_pack),
         "unfocused_fps": settings.unfocused_fps.fps(),
         "font_scale": settings.font_scale,
@@ -376,6 +389,7 @@ mod tests {
             show_all_services: true,
             orthographic: true,
             axis_indicator: false,
+            selection_occluded: true,
             icon_pack: IconPack::Light,
             unfocused_fps: UnfocusedFps::Fps25,
             font_scale: 1.25,
@@ -396,6 +410,22 @@ mod tests {
         .unwrap();
 
         assert!(load_from(&path).axis_indicator);
+    }
+
+    /// The selection box shows through geometry unless someone has asked
+    /// otherwise, so a file written before the toggle existed — and one
+    /// written after it, with the toggle never touched — both read as off.
+    #[test]
+    fn a_settings_file_with_no_selection_occlusion_recorded_defaults_it_off() {
+        let path = temp_settings_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, br#"{"quality": "Automatic"}"#).unwrap();
+        assert!(!load_from(&path).selection_occluded);
+
+        // And an explicit `true` survives the round trip, or the preference
+        // would be unsettable rather than merely defaulted.
+        std::fs::write(&path, br#"{"selection_occluded": true}"#).unwrap();
+        assert!(load_from(&path).selection_occluded);
     }
 
     #[test]

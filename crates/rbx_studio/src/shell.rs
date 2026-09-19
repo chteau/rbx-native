@@ -106,6 +106,9 @@ pub(crate) struct Shell {
     /// Persisted the same way `orthographic` is, for the same reason: it's
     /// meant to be a durable preference, not a per-session debug switch.
     axis_indicator: bool,
+    /// Whether a part in front of the selection hides its outline box.
+    /// Persisted the same way `orthographic` is (see `settings`).
+    selection_occluded: bool,
     /// Which of the class icon kit's two variants the Explorer draws.
     /// Persisted (see `settings`); every write goes through
     /// [`Shell::save_settings`].
@@ -247,6 +250,7 @@ impl Shell {
             show_all_services,
             orthographic,
             axis_indicator,
+            selection_occluded,
             icon_pack,
             unfocused_fps,
             font_scale,
@@ -344,6 +348,7 @@ impl Shell {
                 quality,
                 orthographic,
                 axis_indicator,
+                selection_occluded,
                 unfocused_fps,
                 initial_outline,
                 window,
@@ -389,6 +394,7 @@ impl Shell {
             quality_choice: quality,
             orthographic,
             axis_indicator,
+            selection_occluded,
             icon_pack,
             stats_shown: false,
             unfocused_fps,
@@ -779,6 +785,28 @@ impl Shell {
         self.save_settings();
     }
 
+    /// Whether a part in front of the selection hides its outline box, for
+    /// the Viewport overflow menu item to render its checked state — see
+    /// `set_selection_occluded`.
+    pub(super) fn selection_occluded(&self) -> bool {
+        self.selection_occluded
+    }
+
+    /// Switches the selection outline between drawing through everything
+    /// (off, the default) and being depth-tested against the scene — see
+    /// `WorkspaceView::set_selection_occluded`.
+    fn set_selection_occluded(&mut self, occluded: bool, cx: &mut Context<Self>) {
+        if occluded == self.selection_occluded {
+            return;
+        }
+
+        self.selection_occluded = occluded;
+        self.viewport.update(cx, |viewport, cx| {
+            viewport.set_selection_occluded(occluded, cx)
+        });
+        self.save_settings();
+    }
+
     /// Which icon pack the Explorer draws, for the dock's Explorer menu item
     /// (see `shell::dock`) to render its checked state.
     pub(super) fn icon_pack(&self) -> IconPack {
@@ -854,6 +882,7 @@ impl Shell {
             show_all_services: self.show_all_services,
             orthographic: self.orthographic,
             axis_indicator: self.axis_indicator,
+            selection_occluded: self.selection_occluded,
             icon_pack: self.icon_pack,
             unfocused_fps: self.unfocused_fps,
             font_scale: tokens::font_scale(),

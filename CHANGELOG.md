@@ -2,16 +2,6 @@
 
 ## 2026-09-19
 
-- **`rbxview`'s title bar now shows fps and frame time**, closing the one
-  leftover on the FPS/frame-time readout item: `rbxstudio`'s viewport
-  corner label got its "Stats" toggle a while back, but the standalone
-  viewer's title bar had no equivalent. It reuses the same wall-clock `dt`
-  the redraw loop already measures for camera motion (a small `FrameRate`
-  just averages it over a rolling one-second window — no second timing
-  mechanism), and formats the reading exactly the way `rbxstudio`'s corner
-  label does. Always on rather than behind a toggle: `rbxview` has no menu
-  to put one in, and this is the least machinery that shows it. — @chteau
-
 - **A collapsed property category reads as a tile.** The category headers
   in the Properties panel carry their own fill now, one step above the
   dock and rounded like everything else that has a surface, and the gap
@@ -217,6 +207,29 @@
   from what gets copied, and the copy is always `Archivable` regardless of
   the original, matching `Instance.Archivable`'s own documented rule. —
   @chteau
+- **The selection box can be hidden behind the parts in front of it.** A
+  selected object's outline has always been drawn with the depth test off,
+  so it shows through whatever stands between it and the camera — Studio's
+  own behaviour, and the reason a `Model` selected behind a wall is visible
+  at all. That stays the default; a new item in the Viewport panel's
+  overflow menu, next to Orthographic and Stats, asks for the other
+  behaviour instead, and the choice survives a relaunch. Two pipelines that
+  differ in one depth-compare, picked between at draw time, rather than one
+  rebuilt whenever the menu item is clicked — there is no device in hand at
+  that point. The choice rides in `rbx_viewer`'s `View` alongside the
+  projection mode and the selection itself, so a scene rebuild cannot
+  quietly drop it.
+  The `Model` aggregate bounding box this branch set out to add turned out
+  to already exist — it shipped with the Model/Folder/Tool outline work —
+  so what landed for it here is the coverage it was missing: a `Model`
+  nested inside a `Model` is one box and one drag over every part at every
+  depth, `Alt`-click still reaches a single part inside a model with its
+  own oriented box rather than the model's aggregate, and the Align tool's
+  **Selection Bounds** agrees with that box on the world axes. Three doc
+  comments left describing the older behaviour — one still calling a
+  `Model`'s aggregate bounds a TODO — now describe the code as it stands,
+  and the box records its one documented divergence from Studio, whose own
+  `Model:GetBoundingBox` orients the box by the model's pivot. — @chteau
 
 ## 2026-09-18
 

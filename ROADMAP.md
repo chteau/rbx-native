@@ -274,6 +274,27 @@ Roblox's own engine.
   one-second window `rbxstudio`'s does, and the title is composed
   (`app::title`, `app::fps` in `rbx_viewer`) with the identical fps/ms
   formatting the corner label uses, once the first window closes.
+- [x] **A `Model`'s aggregate bounding box** — a plain click resolves to
+  the outermost enclosing `Model` (see Editor's Select bullet), which has
+  no `CFrame`/`Size` of its own, so it is outlined by one world-axis
+  -aligned box around every `BasePart` beneath it at any depth, nested
+  `Model`s included; a container with nothing drawable under it outlines
+  nothing, there being nothing to box. The Move gizmo stands at that box's
+  centre and carries every part inside it by the same offset, through the
+  same `transform::Targets` machinery multi-select already used, and
+  `Alt`/`⌥`-click still reaches one specific part inside the model and
+  gizmos it with its own oriented box. One derivation
+  (`rbx_viewer::gizmo::bounds_of`) feeds the outline, the gizmo's centre
+  and the Scale handles' box alike, and the Align tool's own **Selection
+  Bounds** agrees with it on the world axes. Known divergence, since the
+  docs are explicit: `Model:GetBoundingBox` orients Studio's box by the
+  model's pivot (the `PrimaryPart`'s, or the `WorldPivot`), which matches
+  world alignment only while that pivot is unrotated — pivots aren't
+  modelled here yet (see "What's planned" → Renderer's Pivot tools).
+  The box is drawn through whatever stands in front of it, as Studio's is;
+  the Viewport panel's overflow menu can ask for it to be depth-tested
+  against the scene instead (`Hide Selection Box Behind Parts`, off by
+  default and persisted the same way `Orthographic` is).
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: this project's own flat, from-scratch class icon kit
@@ -364,8 +385,7 @@ Roblox's own engine.
     a time, without ever needing to select the enclosing part or model
     first; whatever it lands on gets a gizmo exactly as any other
     selected `BasePart` does, since cycling deliberately never resolves up
-    to a `Model` the way a plain click does (see "Still open" below for
-    the one related case that doesn't yet have a gizmo of its own).
+    to a `Model` the way a plain click does.
     `Shift`/`Ctrl`/`Cmd`-click adds another top-level object to the
     selection instead of replacing it.
   - **Move** (`2`), **Scale** (`3`), **Rotate** (`4`) — colored axis
@@ -399,10 +419,9 @@ Roblox's own engine.
   - **Placement**: directly under the File/Edit/Model/View menu bar and
     above the viewport dock, matching the owner's reference screenshot.
   - **Still open**: the 5th "Transform" toolbar button visible in Studio's
-    current toolbar; and a plain click landing on a `Model` — unlike
-    cycling's raw parts, a `Model` has no `CFrame`/`Size` of its own for
-    the gizmo to read, so it draws neither an outline nor a gizmo today
-    (all under "What's planned" → Renderer).
+    current toolbar (under "What's planned" → Renderer). A plain click
+    landing on a `Model` now draws its aggregate box and gizmos the whole
+    thing — see Renderer's own bullet above.
 
 - [x] **Group/ungroup operations** — `Ctrl+G` (or Model ⟩ Group) wraps the
   current selection in one new `Model`, parented where the selection
@@ -584,22 +603,6 @@ Roblox's own engine.
   docs alone. Needs confirming against a real Studio instance (the "Studio
   fallback" Vinegar/Wine workaround elsewhere in this roadmap is one way to
   do that) before implementing it, rather than guessing.
-- [ ] 📋 **A `Model`'s aggregate bounding box**, so a plain click that
-  resolves to one (see "What's been implemented" → Editor's Select
-  bullet) actually shows something instead of silently selecting an
-  instance with nothing to draw. Every part inside already carries its
-  own `CFrame`/`Size`; the box is the union of all of them, matching what
-  the Align tool's "Selection Bounds" mode below and real Studio's own
-  `PVInstance:GetPivot()`-adjacent bounding-box concept describe.
-  `renderer::selection`'s own doc comment already flags this ("a Model's
-  aggregate bounds are a TODO: nothing here derives one yet") — worth
-  wiring up rather than leaving as a silent no-op, and a natural fit for
-  the Move-only group-gizmo machinery `transform::Targets` already has
-  from multi-select (see "What's been implemented" → Editor), since
-  moving a `Model` is exactly "move every part inside it by the same
-  offset." `Alt`/`⌥`-click cycling remains the way to reach and gizmo one
-  specific part inside the model instead of the whole thing, exactly as
-  it does today.
 - [ ] 📋 **Gizmo papercuts and third-party-tool parity requests**, from
   real use of the Move/Scale/Rotate gizmos above. Checked against
   `Roblox/creator-docs` (`parts.md`'s Transform Parts section) and, where

@@ -30,13 +30,18 @@ use super::pipeline::{self, Surface, Target};
 
 const SHADER: &str = include_str!("selection.wgsl");
 
-// Drawn with the depth test off (`compare: Always`): a selection box reads as
-// a control the user is acting on, not scenery, so it is never occluded by the
-// geometry it wraps — the whole box shows through, which is what Studio does
-// and what makes a part selected behind another object still visible. Drawn
-// last of the scene geometry (see `renderer::pass`), so drawing on top writes
-// no depth anything later reads except the draggers, which have no depth test
-// of their own either.
+// Drawn with the depth test off (`compare: Always`) by default: a selection
+// box reads as a control the user is acting on, not scenery, so it is never
+// occluded by the geometry it wraps — the whole box shows through, which is
+// what Studio does and what makes a part selected behind another object still
+// visible. Drawn last of the scene geometry (see `renderer::pass`), so drawing
+// on top writes no depth anything later reads except the draggers, which have
+// no depth test of their own either.
+//
+// [`Selection::set_occluded`] asks for the other behaviour: an ordinary depth
+// test, so a part standing in front of the box hides that much of it. Off by
+// default, because the box that shows through is the one Studio draws;
+// `rbxstudio` carries the choice as a persisted setting.
 
 /// Where the transform gizmo takes its frame of reference: the first part the
 /// selection covers that actually has a placement — a container's own first
@@ -138,7 +143,14 @@ impl Outline {
 /// renderer's own camera bind group, and the tiny vertex buffer rebuilt from
 /// [`Outline`] whenever that has something new to say.
 pub(super) struct Selection {
-    pipeline: wgpu::RenderPipeline,
+    /// The box drawn over everything, and the same box depth-tested against
+    /// the scene. Both built up front rather than one rebuilt whenever the
+    /// setting flips: they differ in a single depth-compare, and the flip
+    /// arrives as a menu click with no device in hand to build the other from.
+    on_top: wgpu::RenderPipeline,
+    occluded_by_scene: wgpu::RenderPipeline,
+    /// Whether geometry standing in front of the selection hides its box.
+    occluded: bool,
     outline: Outline,
     vertices: Option<wgpu::Buffer>,
     count: u32,
@@ -151,29 +163,35 @@ impl Selection {
         frame_layout: &wgpu::BindGroupLayout,
         placements: HashMap<Ref, Placement>,
     ) -> Self {
-        let pipeline = pipeline::surface(
-            device,
-            target,
-            &Surface {
-                cull: None,
-                // The selection box is never occluded — see this module's own
-                // note above on why the depth test is off.
-                compare: wgpu::CompareFunction::Always,
-                // Screen-space quads, two triangles an edge, not a `LineList`:
-                // the outline is expanded to a real pixel width in the vertex
-                // shader (see `selection.wgsl`).
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                ..Surface::new(
-                    "rbxview selection",
-                    SHADER,
-                    &[Some(frame_layout)],
-                    &[Some(Vertex::layout())],
-                )
-            },
-        );
+        let with_compare = |compare| {
+            pipeline::surface(
+                device,
+                target,
+                &Surface {
+                    cull: None,
+                    compare,
+                    // Screen-space quads, two triangles an edge, not a
+                    // `LineList`: the outline is expanded to a real pixel
+                    // width in the vertex shader (see `selection.wgsl`).
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    ..Surface::new(
+                        "rbxview selection",
+                        SHADER,
+                        &[Some(frame_layout)],
+                        &[Some(Vertex::layout())],
+                    )
+                },
+            )
+        };
 
         Selection {
-            pipeline,
+            on_top: with_compare(wgpu::CompareFunction::Always),
+            // Reversed-Z (see `camera::Camera::projection`) makes `Greater`
+            // the ordinary test; `GreaterEqual` takes the tie as well, so an
+            // edge drawn exactly on the surface of the part it wraps is not
+            // swallowed by it — the same compare `renderer::hover` picks.
+            occluded_by_scene: with_compare(wgpu::CompareFunction::GreaterEqual),
+            occluded: false,
             outline: Outline {
                 placements,
                 ..Outline::default()
@@ -208,6 +226,13 @@ impl Selection {
     /// from paying for N aggregate rebuilds inside a single step of it.
     pub(super) fn place(&mut self, referent: Ref, placement: Placement) {
         self.outline.place(referent, placement);
+    }
+
+    /// Whether geometry in front of the selection hides its box — see this
+    /// module's own note above. Nothing is re-uploaded and nothing is rebuilt:
+    /// only which of the two pipelines [`Selection::draw`] binds changes.
+    pub(super) fn set_occluded(&mut self, occluded: bool) {
+        self.occluded = occluded;
     }
 
     /// Uploads the outline again if anything has moved under it since the last
@@ -251,14 +276,6 @@ impl Selection {
         anchor_of(&self.outline.placements, &self.outline.selected)
     }
 
-    /// The centre of the world-axis-aligned box containing every part the
-    /// selection covers — where one gizmo for a whole selection belongs. For a
-    /// single part this is simply that part's own centre; for a `Model` it is
-    /// the middle of the very box [`box_of`] outlines it with.
-    ///
-    /// `rbxstudio` places the handles it hit-tests from the very same
-    /// `gizmo::centre_of` (see `transform::Targets::centre`), so what the user
-    /// can grab and what they can see cannot drift apart.
     /// The box the Scale handles stand on — see `gizmo::scale_box`.
     pub(super) fn scale_box(&self) -> Option<Mat4> {
         gizmo::scale_box(
@@ -269,6 +286,14 @@ impl Selection {
         )
     }
 
+    /// The centre of the world-axis-aligned box containing every part the
+    /// selection covers — where one gizmo for a whole selection belongs. For a
+    /// single part this is simply that part's own centre; for a `Model` it is
+    /// the middle of the very box `outline::box_of` outlines it with.
+    ///
+    /// `rbxstudio` places the handles it hit-tests from the very same
+    /// `gizmo::centre_of` (see `transform::Targets::centre`), so what the user
+    /// can grab and what they can see cannot drift apart.
     pub(super) fn centre(&self) -> Option<Vec3> {
         gizmo::centre_of(
             self.outline
@@ -285,7 +310,11 @@ impl Selection {
             return;
         };
 
-        pass.set_pipeline(&self.pipeline);
+        pass.set_pipeline(if self.occluded {
+            &self.occluded_by_scene
+        } else {
+            &self.on_top
+        });
         pass.set_bind_group(0, frame, &[]);
         pass.set_vertex_buffer(0, vertices.slice(..));
         pass.draw(0..self.count, 0..1);

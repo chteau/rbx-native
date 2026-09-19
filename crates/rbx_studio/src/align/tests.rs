@@ -277,3 +277,43 @@ fn every_toggled_axis_moves_independently_of_the_others() {
     // Collective bounds: x centre (0+10)/2 = 5, y centre (0+20)/2 = 10, z untouched.
     assert!((part_one - Vec3::new(5.0, 10.0, 0.0)).length() < 1e-5);
 }
+
+/// The Align toolbar's **Selection Bounds** and the box drawn around a
+/// selected `Model` have to be the same extent, or "align to the selection"
+/// would move things to somewhere other than the edge the user can see.
+///
+/// They are not one function: this module measures along an arbitrary
+/// direction, which `Space::Local` needs and `gizmo::bounds_of` cannot
+/// express, and it measures each entry separately rather than unioning the
+/// lot. On the world axes the two reduce to the same support function, which
+/// is what this pins down — including for a part turned off those axes,
+/// where a wrong reduction would show up first.
+#[test]
+fn selection_bounds_agree_with_the_box_drawn_around_the_selection() {
+    let entries = [
+        vec![part_at(
+            1,
+            Vec3::new(-4.0, 1.0, 0.0),
+            Vec3::new(2.0, 6.0, 2.0),
+        )],
+        vec![turned_part_at(
+            2,
+            Vec3::new(9.0, 0.0, 3.0),
+            Vec3::new(8.0, 2.0, 4.0),
+        )],
+    ];
+    let flat: Vec<&Target> = entries.iter().flatten().collect();
+    let (min, max) =
+        rbx_viewer::gizmo::bounds_of(flat.iter().map(|target| target.model)).expect("two parts");
+
+    for (axis, index) in [(Axis::X, 0), (Axis::Y, 1), (Axis::Z, 2)] {
+        let direction = axis.world_direction();
+        let along = |mode| bound_along(flat.iter().copied(), direction, mode).expect("two parts");
+        assert!((along(Mode::Min) - min[index]).abs() < 1e-5, "{axis:?} min");
+        assert!((along(Mode::Max) - max[index]).abs() < 1e-5, "{axis:?} max");
+        assert!(
+            (along(Mode::Center) - (min[index] + max[index]) * 0.5).abs() < 1e-5,
+            "{axis:?} centre"
+        );
+    }
+}

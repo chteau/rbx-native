@@ -540,6 +540,28 @@ fn dragging_a_model_moves_every_part_beneath_it_together() {
     }
 }
 
+/// A `Model` inside a `Model` is one drag, not two: the outer one covers
+/// every part at every depth, so moving it carries the buried ones by the
+/// same offset as the rest.
+#[test]
+fn dragging_a_model_carries_the_parts_of_a_model_nested_inside_it() {
+    let mut dom = WeakDom::new();
+    let outer = dom.new_instance("Model", "House", None);
+    unit_cube_at(&mut dom, Some(outer), 0.0);
+    let inner = dom.new_instance("Model", "Door", Some(outer));
+    let deep = unit_cube_at(&mut dom, Some(inner), 9.0);
+
+    let mut targets = Targets::read(&dom, &database(), &[outer]);
+    assert_eq!(targets.len(), 2, "the nested model's part is a target too");
+
+    let moves = targets.translate(Vec3::new(0.0, 5.0, 0.0));
+    let buried = moves
+        .iter()
+        .find(|&&(referent, _)| referent == deep)
+        .expect("the buried part moved");
+    assert!((buried.1 - Vec3::new(9.0, 5.0, 0.0)).length() < 1e-4);
+}
+
 /// Selecting a model *and* something inside it names the same part twice.
 /// Left in, a group drag would move it twice as far as the gizmo went.
 #[test]

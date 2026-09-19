@@ -352,6 +352,13 @@ impl Renderer {
         self.selection.set(device, selected);
     }
 
+    /// Whether scene geometry in front of the selection hides its outline —
+    /// see `renderer::selection`, which draws it through everything by
+    /// default.
+    pub(crate) fn set_selection_occluded(&mut self, occluded: bool) {
+        self.selection.set_occluded(occluded);
+    }
+
     /// Replaces the hover outline, rebuilding its tiny vertex buffer right
     /// away rather than waiting for the next `draw`. `None` clears it.
     pub(crate) fn set_hover(&mut self, device: &wgpu::Device, selected: Vec<Selected>) {
