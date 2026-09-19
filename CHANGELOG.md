@@ -181,6 +181,16 @@
   `agents/dock-rearrangement.md` rather than a half-built version in the
   shell. — @chteau
 
+- **Copy, Paste and Duplicate work now** (`Ctrl+C`/`V`/`D`, and the Edit
+  menu's items — Cut stays a placeholder). The clipboard is this window's
+  own, not the system one, and a copy is a genuine deep clone: descendants
+  come along, an internal reference is remapped to the copy exactly as
+  `Instance:Clone()` documents, and mutating the copy can't reach the
+  original. Paste always targets `Workspace`, matching creator-docs;
+  Duplicate stays in the original's own parent. Services refuse to be
+  copied, pasted or duplicated, the same way Group/Ungroup already refuse
+  them. — @chteau
+
 ## 2026-09-18
 
 - **Rebuilt the editor's chrome against the project's own Figma design.**
