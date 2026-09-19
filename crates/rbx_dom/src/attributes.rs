@@ -339,6 +339,16 @@ pub fn tags(value: Option<&Variant>) -> Vec<&str> {
     text.split('\0').filter(|tag| !tag.is_empty()).collect()
 }
 
+/// The `Tags` property text for `tags` — the exact inverse of [`tags`]: each
+/// name followed by its own NUL, the same shape a Studio-written file already
+/// round-trips through [`tags`] (see this module's tests). A tag holding a
+/// NUL byte itself would read back as two, so the caller is expected to have
+/// refused one before this is called — this function does not check, the
+/// same way [`encode`] does not validate an attribute name.
+pub fn encode_tags(tags: &[&str]) -> String {
+    tags.iter().map(|tag| format!("{tag}\0")).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -630,5 +640,18 @@ mod tests {
         assert_eq!(tags(Some(&value)), ["Container", "BlueOnHover"]);
         assert!(tags(Some(&Variant::String(String::new()))).is_empty());
         assert!(tags(None).is_empty());
+    }
+
+    #[test]
+    fn encode_tags_is_the_inverse_of_tags() {
+        assert_eq!(
+            encode_tags(&["Container", "BlueOnHover"]),
+            "Container\0BlueOnHover\0"
+        );
+        assert_eq!(
+            tags(Some(&Variant::String(encode_tags(&["Alone"])))),
+            ["Alone"]
+        );
+        assert_eq!(encode_tags(&[]), "");
     }
 }

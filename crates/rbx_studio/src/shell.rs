@@ -4,6 +4,7 @@
 //! dragged to another edge or stacked as tabs.
 
 mod align;
+mod attributes_panel;
 mod chrome;
 mod command;
 mod drag;
@@ -149,6 +150,9 @@ pub(crate) struct Shell {
     /// One open `Input` per Properties row currently being edited, keyed by
     /// property name; see `shell::edit`.
     edits: edit::Edits,
+    /// The Attributes/Tags section's own rename box and add-attribute/add-tag
+    /// fields; see `shell::attributes_panel`.
+    attribute_edits: attributes_panel::AttributeEdits,
     /// Mirrors the tree's selected row (see [`Shell::sync_selection`]).
     selection: Selection,
     /// The `BasePart` the cursor was last resolved to be over, if any — see
@@ -401,6 +405,7 @@ impl Shell {
             filter,
             properties,
             edits: edit::Edits::default(),
+            attribute_edits: attributes_panel::AttributeEdits::default(),
             selection: Selection::new(selected),
             hovered: Vec::new(),
             covered: HashSet::new(),
@@ -608,6 +613,7 @@ impl Shell {
     /// outline and draggers have to move to the new one.
     fn selection_changed(&mut self, cx: &mut Context<Self>) {
         self.edits.clear();
+        self.attribute_edits.clear();
         self.sync_viewport_selection(cx);
         // A click on the very part the cursor was already hovering would
         // otherwise leave its hover box drawn right under the new selection
