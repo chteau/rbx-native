@@ -4,8 +4,8 @@
 //! lives on `Instance` itself rather than in its property map).
 
 use rbx_dom::{
-    Axes, CFrameData, Color3Data, Faces, NumberRange, Rect, Ref, UDim, UDim2, Variant, Vector2Data,
-    Vector3Data, WeakDom,
+    Axes, CFrameData, Color3Data, Faces, NumberRange, PhysicalProperties, Rect, Ref, UDim, UDim2,
+    Variant, Vector2Data, Vector3Data, WeakDom,
 };
 use rbx_reflection::ReflectionDatabase;
 
@@ -92,7 +92,71 @@ pub(crate) fn edit_text(value: &Variant) -> Option<String> {
             rect.min.x, rect.min.y, rect.max.x, rect.max.y
         )),
         Variant::Font(font) => Some(font_text(font)),
+        // A `Default` seeds from [`DEFAULT_PHYSICAL`] for the same reason an
+        // absent `OptionalCFrame` seeds from the identity: the five fields
+        // are hidden until the row's Custom box turns them on, and that is
+        // what they turn on to.
+        Variant::PhysicalProperties(physical) => Some(physical_text(physical)),
         _ => None,
+    }
+}
+
+/// What a `PhysicalProperties::Default` becomes the moment the row's Custom
+/// box is ticked: Roblox's own defaults for `Plastic`, the material every
+/// newly inserted `Part` carries — density `0.7`, friction `0.3`, elasticity
+/// `0.5`, and both weights `1`. There is no better answer available here,
+/// because `Default` means "derive these from the material" and this
+/// function is not given the part.
+pub(crate) const DEFAULT_PHYSICAL: PhysicalProperties = PhysicalProperties::Custom {
+    density: 0.7,
+    friction: 0.3,
+    elasticity: 0.5,
+    friction_weight: 1.0,
+    elasticity_weight: 1.0,
+};
+
+/// The five numbers, comma-joined the way [`parse`] reads them back. A
+/// `Default` lends its fields from [`DEFAULT_PHYSICAL`] rather than showing
+/// blanks, so the editor under an unticked box is never empty.
+fn physical_text(physical: &PhysicalProperties) -> String {
+    let PhysicalProperties::Custom {
+        density,
+        friction,
+        elasticity,
+        friction_weight,
+        elasticity_weight,
+    } = custom_or_default(physical)
+    else {
+        unreachable!("custom_or_default never returns Default");
+    };
+    format!("{density}, {friction}, {elasticity}, {friction_weight}, {elasticity_weight}")
+}
+
+fn custom_or_default(physical: &PhysicalProperties) -> PhysicalProperties {
+    match physical {
+        PhysicalProperties::Default => DEFAULT_PHYSICAL,
+        custom => *custom,
+    }
+}
+
+/// The Custom box, then the five fields — the same two-shaped commit an
+/// `OptionalCFrame` row makes (see [`parse_optional_cframe`]). Unticking
+/// returns the value to `Default` rather than zeroing the numbers: the two
+/// are different physics, not the same physics written differently.
+fn parse_physical(current: &PhysicalProperties, text: &str) -> Result<Variant, String> {
+    match text.trim() {
+        "false" => Ok(Variant::PhysicalProperties(PhysicalProperties::Default)),
+        "true" => Ok(Variant::PhysicalProperties(custom_or_default(current))),
+        _ => {
+            let n = parse_numbers(text, 5)?;
+            Ok(Variant::PhysicalProperties(PhysicalProperties::Custom {
+                density: n[0],
+                friction: n[1],
+                elasticity: n[2],
+                friction_weight: n[3],
+                elasticity_weight: n[4],
+            }))
+        }
     }
 }
 
@@ -288,6 +352,7 @@ pub(crate) fn parse(
             }))
         }
         Variant::Font(_) => parse_font(text).map(Variant::Font),
+        Variant::PhysicalProperties(current) => parse_physical(current, text),
         other => Err(format!("{} is read-only", type_name(other))),
     }
 }
