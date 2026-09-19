@@ -535,6 +535,21 @@ Roblox's own engine.
   rendering/editor stack (`wgpu`, GPUI Kit) is cross-platform by
   construction. Never built on a real Windows machine yet — see
   [Platform: Windows](#platform-windows) below.
+- [x] Windows-native texture fallback — when `setup.rbxcdn.com` cannot
+  serve an `rbxasset://` file (offline, or absent from its packages),
+  `rbx_assets` reads it off a Roblox/Studio install on the same machine:
+  every `%LOCALAPPDATA%\Roblox\Versions\version-*` folder, newest first,
+  looking in `content\`, then `PlatformContent\pc\`, then
+  `PlatformContent\pc\textures\`. The last two are not optional: a real
+  install keeps the default skybox panels (`sky\sky512_*.tex`) only under
+  `PlatformContent\pc\textures\sky\` (checked against a real Studio
+  install), so `content\textures\` alone would still have left a place with
+  no `Sky` black when offline. The CDN stays the primary source; this is
+  tried after it and the Sober fallback have both failed, and never writes
+  to or installs anything. The path comes from a place file, so unlike the
+  zip-backed fallbacks it is refused outright when it contains `..`, `\`,
+  `:`, an empty or `.` segment, or a root or drive prefix, rather than
+  handed to the filesystem.
 
 ## What's planned
 
@@ -1631,11 +1646,6 @@ against `Roblox/creator-docs` rather than assumed:
 - [ ] 📋 Mouse capture in the free-flight camera — implemented for X11
   only today (`x11rb`/XFixes); needs a Win32 `ClipCursor`/`SetCursorPos`
   backend.
-- [ ] 📋 A Windows-native texture fallback path
-  (`%LOCALAPPDATA%\Roblox\Versions\<version>\content\textures\`, read
-  directly off a real local Roblox/Studio install) — the Linux equivalent
-  (an optional Sober Flatpak fallback) already exists and follows the same
-  rule: never the default source, `setup.rbxcdn.com` stays primary.
 - [ ] 📋 A first real build on Windows, and CI coverage for it — nothing
   here has ever been verified on the platform beyond code reading.
 
