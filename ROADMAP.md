@@ -731,10 +731,22 @@ Roblox's own engine.
     reveal it, or only highlights the top-level parent) — small, but
     real, user-facing toggles worth including alongside the rest of this
     item rather than hardcoding one behaviour.
-- [ ] 📋 Copy/paste/duplicate instances (`Ctrl+C`/`V`/`D`) — Insert/Delete
-  exist, these don't yet (the menu bar already has honest placeholders for
-  them); folds into the fuller Explorer editing item above rather than
-  being separate work.
+- [x] 🚧 **Copy/paste/duplicate instances** (`Ctrl+C`/`V`/`D`) — real now,
+  from the keyboard and the Edit menu's Copy/Paste/Duplicate items (Cut
+  stays a placeholder; it was never part of this bullet). Copy is a deep,
+  in-process clipboard, not the system one: descendants come along, a
+  `Ref`/`Content::Object` property pointing at something copied along with
+  it is remapped to point at the copy instead — `Class.Instance:Clone()`'s
+  own documented rule — and the copy is independent of the original. Paste
+  always lands in `Workspace`, matching creator-docs' `explorer.md`, never
+  wherever the selection is; Duplicate lands beside the original in its own
+  existing parent instead. A service can't be copied, pasted or duplicated,
+  the same refusal Group/Ungroup already enforce. One undo step per
+  operation. Still open, and left for the fuller Explorer editing item
+  above: `Ctrl+Shift+V` ("Paste Into" a chosen parent — a separate shortcut
+  real Studio also offers), the ribbon's own Copy/Paste/Duplicate tiles
+  (still disabled placeholders), and excluding a non-`Archivable`
+  descendant from the copy the way `Instance:Clone()` does.
 - [x] 🚧 Drag-and-drop reparenting in the Explorer tree. Dragging a row
   onto another reparents onto it, the way creator-docs describes
   ("simply drag and drop them onto the new parent") — with a ghost under

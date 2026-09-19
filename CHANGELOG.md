@@ -200,6 +200,23 @@
   the class for the three that share it, and the defaults gate widened to
   any `BasePart` subclass. One test per menu item asserts both the
   inserted instance's class and its resolved `ShapeKind`. — @chteau
+- **`rbxview`'s title bar now shows fps/frame time**, alongside the flight
+  speed it already showed, closing the one leftover on the FPS/frame-time
+  readout item. Shares the same one-line format `rbxstudio`'s corner label
+  uses (`rbx_viewer::fps_readout`) rather than a second copy of it. —
+  @chteau
+- **Copy, Paste and Duplicate work now** (`Ctrl+C`/`V`/`D`, and the Edit
+  menu's items — Cut stays a placeholder). The clipboard is this window's
+  own, not the system one, and a copy is a genuine deep clone: descendants
+  come along, an internal reference is remapped to the copy exactly as
+  `Instance:Clone()` documents, and mutating the copy can't reach the
+  original. Paste always targets `Workspace`, matching creator-docs;
+  Duplicate stays in the original's own parent. Services refuse to be
+  copied, pasted or duplicated, the same way Group/Ungroup already refuse
+  them. A non-`Archivable` descendant (and its own subtree) is excluded
+  from what gets copied, and the copy is always `Archivable` regardless of
+  the original, matching `Instance.Archivable`'s own documented rule. —
+  @chteau
 
 ## 2026-09-18
 
