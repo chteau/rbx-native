@@ -40,6 +40,10 @@ pub(crate) struct View {
     /// `None` whenever no transform tool is active, which is every `rbxview`
     /// frame: the standalone viewer edits nothing.
     pub(crate) gizmo: Option<Gizmo>,
+    /// Whether a part standing in front of the selection hides its outline.
+    /// `false` — the box shows through everything, which is what Studio
+    /// draws — unless the embedder asks otherwise; `rbxview` never does.
+    pub(crate) selection_occluded: bool,
 }
 
 impl View {
@@ -63,6 +67,10 @@ impl View {
     pub(crate) fn set_orthographic(&mut self, orthographic: bool) {
         self.orthographic = orthographic;
     }
+
+    pub(crate) fn set_selection_occluded(&mut self, occluded: bool) {
+        self.selection_occluded = occluded;
+    }
 }
 
 #[cfg(test)]
@@ -85,6 +93,23 @@ mod tests {
         assert!(view.hovered.is_empty());
         assert_eq!(view.gizmo, None);
         assert!(!view.orthographic);
+        assert!(
+            !view.selection_occluded,
+            "the selection box draws through geometry unless asked otherwise"
+        );
+    }
+
+    /// The occlusion choice lives in `View` rather than only in the renderer
+    /// for the reason this module exists: a reload rebuilds the renderer, and
+    /// a preference that only the renderer knew about would silently go back
+    /// to its default there with nothing on screen to explain it.
+    #[test]
+    fn the_selection_occlusion_choice_survives_in_the_view() {
+        let mut view = View::default();
+        view.set_selection_occluded(true);
+        assert!(view.selection_occluded);
+        view.set_selection_occluded(false);
+        assert!(!view.selection_occluded);
     }
 
     #[test]

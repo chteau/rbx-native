@@ -261,6 +261,10 @@ pub(crate) struct WorkspaceView {
     /// Whether the top-right orientation indicator draws at all — the
     /// Viewport panel's overflow menu again (see `Shell::set_axis_indicator`).
     axis_indicator: bool,
+    /// Whether a part in front of the selection hides its outline box — the
+    /// Viewport panel's overflow menu again (see
+    /// `Shell::set_selection_occluded`).
+    selection_occluded: bool,
     /// Whether the corner label shows `pump.stats()`'s frame rate — the
     /// Viewport panel overflow menu's Stats toggle, next to Orthographic
     /// (see `Shell::set_stats_shown`). Session-only: real Studio's own
@@ -321,6 +325,7 @@ impl WorkspaceView {
         quality: QualityLevel,
         orthographic: bool,
         axis_indicator: bool,
+        selection_occluded: bool,
         unfocused_fps: pacing::UnfocusedFps,
         selected: Vec<Selected>,
         window: &mut Window,
@@ -335,6 +340,10 @@ impl WorkspaceView {
         }
         viewer.set_selection(&selected);
         viewer.set_orthographic(orthographic);
+        // Applied here rather than after the view exists, so a saved
+        // preference is already in force on the first frame instead of
+        // flashing the default for one.
+        viewer.set_selection_occluded(selection_occluded);
 
         let full_interval = pacing::frame_interval(display::refresh_hz());
         let pacing = pacing::FocusPacing::new(unfocused_fps);
@@ -410,6 +419,7 @@ impl WorkspaceView {
             level: QualityLevel::MAX,
             orthographic,
             axis_indicator,
+            selection_occluded,
             stats_shown: false,
             transform: Transform::default(),
             targets: Targets::default(),
@@ -724,6 +734,20 @@ impl WorkspaceView {
 
         self.orthographic = orthographic;
         self.pump.orthographic(orthographic);
+        cx.notify();
+    }
+
+    /// Switches the selection outline between drawing through everything and
+    /// being depth-tested against the scene, the same way `set_orthographic`
+    /// above switches projection: the render thread owns the viewer, so the
+    /// switch happens there, between two frames.
+    pub(crate) fn set_selection_occluded(&mut self, occluded: bool, cx: &mut Context<Self>) {
+        if occluded == self.selection_occluded {
+            return;
+        }
+
+        self.selection_occluded = occluded;
+        self.pump.selection_occluded(occluded);
         cx.notify();
     }
 

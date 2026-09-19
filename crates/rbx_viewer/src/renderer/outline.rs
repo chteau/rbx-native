@@ -78,9 +78,6 @@ impl Vertex {
     }
 }
 
-/// The 12 edges (24 vertices) of one part's oriented bounding box: the unit
-/// cube's corners carried through its model matrix, which already scales them
-/// to the part's `Size`.
 /// The six vertices — two triangles — of one edge's screen-space quad, from
 /// endpoint `a` to endpoint `b`. Each carries its own end, the far end, and a
 /// side; `outline.wgsl` turns the pair into a ribbon of constant pixel width.
@@ -128,9 +125,6 @@ pub(super) fn edges(model: Mat4) -> [Vertex; 72] {
     vertices
 }
 
-/// Every named referent's edges, in order — a referent with no placement (not
-/// a `BasePart`) contributes nothing, whether it names a `Folder`, a service,
-/// or a `Model` with no aggregate box of its own yet.
 /// Every model matrix one selected/hovered instance covers, in the order
 /// `crate::pick::parts_of` resolved them — a part the scene never built (one
 /// outside `Workspace`) drops out here.
