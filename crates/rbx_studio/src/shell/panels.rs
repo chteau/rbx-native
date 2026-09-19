@@ -246,6 +246,10 @@ impl Shell {
             sections.push((category, children));
         }
 
+        // Built before `self.properties_nav.finish()` so its own header and
+        // buttons take the next indices in the same single Tab stop the rest
+        // of the panel shares — see `shell::attributes_panel`.
+        let attributes_and_tags = self.attributes_and_tags(&filter, window, cx);
         self.properties_nav.finish();
         let handle = cx.entity();
 
@@ -321,7 +325,12 @@ impl Shell {
                                                 .children(children),
                                         )
                                     })
-                            })),
+                            }))
+                            // Custom attributes and `CollectionService` tags,
+                            // after every reflected category — Roblox's own
+                            // Properties window puts both "at the bottom of
+                            // the window" too (see `shell::attributes_panel`).
+                            .child(attributes_and_tags),
                     )
                     .vertical_scrollbar(&self.properties_scroll),
             )

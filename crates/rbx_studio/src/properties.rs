@@ -8,6 +8,7 @@ use rbx_reflection::ReflectionDatabase;
 
 use crate::script_editor::source;
 
+pub(crate) mod attributes;
 pub(crate) mod edit;
 mod folder_row;
 
@@ -313,54 +314,12 @@ impl Properties {
         let text = edit::edit_text(value)?;
 
         Some(match value {
-            Variant::Bool(flag) => EditKind::Bool(*flag),
-            Variant::Color3(color) => EditKind::Color {
-                r: channel(color.r),
-                g: channel(color.g),
-                b: channel(color.b),
-            },
-            Variant::Color3uint8 { r, g, b } => EditKind::Color {
-                r: *r,
-                g: *g,
-                b: *b,
-            },
+            // The only arm that needs `self`: resolving an enum's member
+            // names is a reflection lookup, which `value_edit_kind` (shared
+            // with `attributes::edit_kind_for`, an attribute never being an
+            // `Enum` — see that module) has no database to make.
             Variant::Enum(raw) => self.enum_kind(class, name, *raw, text),
-            Variant::Vector2(_) => fields(VECTOR2, &text),
-            Variant::Vector3(_) => fields(VECTOR3, &text),
-            // Integer components, so a drag steps by whole cells and a
-            // typed `3.7` rounds rather than truncating toward zero.
-            Variant::Vector3int16 { .. } => fields(VECTOR3_INT, &text),
-            // A `UDim` is a float scale beside an *integer* offset — the
-            // clearest case for why a field's kind is not a property's.
-            Variant::UDim(_) => fields(UDIM, &text),
-            Variant::UDim2(_) => fields(UDIM2, &text),
-            Variant::Rect(_) => fields(RECT, &text),
-            Variant::NumberRange(_) => fields(NUMBER_RANGE, &text),
-            // Position and orientation, the way Roblox's own panel splits
-            // them — a rotation matrix is not something anyone types. See
-            // `edit::orientation` for the conversion and what it costs.
-            Variant::CFrame(_) | Variant::OptionalCFrame(Some(_)) => groups(CFRAME, &text),
-            Variant::Ray { .. } => groups(RAY, &text),
-            Variant::Faces(faces) => EditKind::Flags {
-                labels: FACES,
-                values: vec![
-                    faces.right,
-                    faces.top,
-                    faces.back,
-                    faces.left,
-                    faces.bottom,
-                    faces.front,
-                ],
-            },
-            Variant::Axes(axes) => EditKind::Flags {
-                labels: AXES,
-                values: vec![axes.x, axes.y, axes.z],
-            },
-            // A family name, a `FontWeight` name and `Normal`/`Italic`, typed:
-            // the fonts package that could list the families lives in the
-            // viewer, and a weight's nine names are quicker typed than picked.
-            Variant::Font(_) => fields(FONT, &text),
-            _ => EditKind::Text(text),
+            other => value_edit_kind(other, text),
         })
     }
 
@@ -464,6 +423,66 @@ impl Properties {
             Some(label) => format!("{raw} ({label})"),
             None => raw.to_string(),
         }
+    }
+}
+
+/// Which widget `value` (already turned into `text` by `edit::edit_text`)
+/// should edit through, for every type that needs no reflection lookup to
+/// decide — i.e. every type but `Enum`, whose member names live in the
+/// `ReflectionDatabase` `Properties::edit_kind` alone holds. Pulled out as a
+/// free function so `properties::attributes` can build the exact same
+/// `EditKind` for an attribute's value, which is never an `Enum` (not one of
+/// the types `Instance:SetAttribute` accepts — see that module), without a
+/// second copy of this match.
+pub(crate) fn value_edit_kind(value: &Variant, text: String) -> EditKind {
+    match value {
+        Variant::Bool(flag) => EditKind::Bool(*flag),
+        Variant::Color3(color) => EditKind::Color {
+            r: channel(color.r),
+            g: channel(color.g),
+            b: channel(color.b),
+        },
+        Variant::Color3uint8 { r, g, b } => EditKind::Color {
+            r: *r,
+            g: *g,
+            b: *b,
+        },
+        Variant::Vector2(_) => fields(VECTOR2, &text),
+        Variant::Vector3(_) => fields(VECTOR3, &text),
+        // Integer components, so a drag steps by whole cells and a
+        // typed `3.7` rounds rather than truncating toward zero.
+        Variant::Vector3int16 { .. } => fields(VECTOR3_INT, &text),
+        // A `UDim` is a float scale beside an *integer* offset — the
+        // clearest case for why a field's kind is not a property's.
+        Variant::UDim(_) => fields(UDIM, &text),
+        Variant::UDim2(_) => fields(UDIM2, &text),
+        Variant::Rect(_) => fields(RECT, &text),
+        Variant::NumberRange(_) => fields(NUMBER_RANGE, &text),
+        // Position and orientation, the way Roblox's own panel splits
+        // them — a rotation matrix is not something anyone types. See
+        // `edit::orientation` for the conversion and what it costs.
+        Variant::CFrame(_) | Variant::OptionalCFrame(Some(_)) => groups(CFRAME, &text),
+        Variant::Ray { .. } => groups(RAY, &text),
+        Variant::Faces(faces) => EditKind::Flags {
+            labels: FACES,
+            values: vec![
+                faces.right,
+                faces.top,
+                faces.back,
+                faces.left,
+                faces.bottom,
+                faces.front,
+            ],
+        },
+        Variant::Axes(axes) => EditKind::Flags {
+            labels: AXES,
+            values: vec![axes.x, axes.y, axes.z],
+        },
+        // A family name, a `FontWeight` name and `Normal`/`Italic`, typed:
+        // the fonts package that could list the families lives in the
+        // viewer, and a weight's nine names are quicker typed than picked.
+        Variant::Font(_) => fields(FONT, &text),
+        _ => EditKind::Text(text),
     }
 }
 

@@ -230,6 +230,20 @@
   `Model`'s aggregate bounds a TODO — now describe the code as it stands,
   and the box records its one documented divergence from Studio, whose own
   `Model:GetBoundingBox` orients the box by the model's pivot. — @chteau
+- **Attributes and Tags editor.** The Properties panel grows a section
+  below the reflected categories for custom `Instance` attributes and
+  `CollectionService` tags — neither had any editor before. Attributes
+  are listed, added (name plus a type picker), renamed, removed, and
+  their values edited through the exact same per-type widgets an ordinary
+  property gets, never a parallel set; tags are chips you add and remove,
+  matching `AddTag`'s own idempotent-add behaviour. Name validation
+  follows `Instance:SetAttribute`'s documented rules. Both sections search
+  through the panel's own filter box, the same way an ordinary property
+  row does. `CFrame` is not offered as a creatable attribute type (no
+  verified wire format for it in `rbx_dom::attributes`), and
+  `NumberSequence`/`ColorSequence` aren't either, matching this project's
+  separate policy of giving each of those eight `Variant` types its own
+  PR. — @chteau
 
 ## 2026-09-18
 

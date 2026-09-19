@@ -350,6 +350,28 @@ impl Shell {
             return result;
         }
 
+        // An attribute's value, not a real DOM property — see
+        // `properties::attributes::row_name`. Reuses this exact push-history/
+        // reflect/record sequence so it costs one undo step like any other
+        // edit, but the write itself goes through the attribute blob rather
+        // than `WeakDom::set_property` directly.
+        if let Some(attribute) = properties::attributes::attribute_of_row(name) {
+            self.push_history();
+            let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
+            let result = properties::attributes::set_attribute_value(
+                &mut dom,
+                &self.database,
+                reference,
+                attribute,
+                text,
+            );
+            self.dom = dom;
+            let changes = self.dom.take_changes();
+            self.reflect_changes(&changes, cx);
+            self.record_history_change(changes);
+            return result;
+        }
+
         // See `shell::history`: snapshotted before the write below.
         self.push_history();
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
