@@ -85,6 +85,21 @@
   (`..`, a drive letter, a backslash) or name a Windows device (`NUL`,
   `CON`) is refused rather than read. — @jleeclient
 
+- **`cargo clippy` is clean on Windows again.** Three pieces of X11-only
+  code in `rbx_studio` were being compiled on every target: the RandR
+  refresh-rate arithmetic and the check that decides whether the pointer
+  lock may talk to X, both used only by code that exists on Linux, and the
+  `u32::try_from` on an Xlib window id. The first two now carry the same
+  `target_os = "linux"` gate as their callers, tests included. The id is a
+  C `unsigned long`, so the conversion is a real range check where that is
+  64 bits and a same-type one clippy rejects where it is 32; it goes
+  through a helper generic over `TryInto<u32>` instead, which is one code
+  path on every target. Nothing changes on Linux. The Windows CI job runs
+  clippy now as well: the Linux run could not see any of this, because
+  what clippy reports here depends on the target, so a lint that only
+  fails on Windows had nothing to catch it until someone ran the gate by
+  hand there. — @jleeclient
+
 ## 2026-09-19
 
 - **A collapsed property category reads as a tile.** The category headers

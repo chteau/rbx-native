@@ -53,6 +53,7 @@ fn x11_refresh_hz() -> Option<f32> {
 ///
 /// Interlaced and double-scan modes are not corrected for; no desktop display
 /// reports one, and being wrong by a factor of two would only move the cap.
+#[cfg(target_os = "linux")]
 fn refresh_rate(dot_clock: u32, htotal: u16, vtotal: u16) -> Option<f32> {
     let pixels = u64::from(htotal) * u64::from(vtotal);
     if dot_clock == 0 || pixels == 0 {
@@ -62,7 +63,7 @@ fn refresh_rate(dot_clock: u32, htotal: u16, vtotal: u16) -> Option<f32> {
     Some(dot_clock as f32 / pixels as f32)
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::refresh_rate;
 

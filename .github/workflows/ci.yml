@@ -44,12 +44,22 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
 
       - uses: Swatinem/rust-cache@v2
 
-      # fmt/clippy are lint-only and OS-agnostic — the Linux job already
-      # covers them; this job exists to answer one question specifically:
-      # does the workspace actually build and pass its tests on Windows.
+      # rustfmt is OS-agnostic, so the Linux job's `cargo fmt --check` covers
+      # it. clippy is not: `dead_code` depends on which items a `cfg` leaves
+      # a caller for, and `useless_conversion` on type widths that differ by
+      # target (a C `unsigned long` is 32 bits here and 64 on Linux). Code
+      # behind a `target_os` gate can pass clippy on Linux and fail it here —
+      # rbx_studio's X11-only helpers did — so it runs on this target too.
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # The other question this job exists to answer: does the workspace
+      # actually build and pass its tests on Windows.
       - name: cargo build
         run: cargo build --workspace --all-targets
 
