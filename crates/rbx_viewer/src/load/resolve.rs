@@ -36,7 +36,7 @@ impl Loaded {
         warnings.extend(self.resolve_unions(resident));
         warnings.extend(self.resolve_materials(resident));
         warnings.extend(self.resolve_decor(resident));
-        self.resolve_effect_images(resident);
+        warnings.extend(self.resolve_effect_images(resident));
         self.resolve_fonts(resident);
         warnings
     }
@@ -129,12 +129,15 @@ impl Loaded {
     /// `Trail` and `ParticleEmitter` textures, and every `ImageLabel` in the
     /// place's GUIs.
     ///
-    /// Their warnings are deliberately dropped rather than surfaced: they were
-    /// never wired to the Output dock, and this is only moving where they are
-    /// fetched, not what is reported. What does change is that a pass now
-    /// reads an answer instead of resolving one itself — see `Answered`, whose
-    /// "no answer yet" is what keeps an emitter alive until its texture lands.
-    fn resolve_effect_images(&mut self, resident: &mut Resident) {
+    /// A pass here reads an answer instead of resolving one itself — see
+    /// `Answered`, whose "no answer yet" is what keeps an emitter alive until
+    /// its texture lands. That is also why the warnings have to be carried
+    /// back out from here: by the time a pass sees `Some(None)`, the failure
+    /// that produced it has been reduced to "no image", and the pass has
+    /// nothing left to report. A streaming loader reports these through
+    /// `Resident::poll` instead, so this return value is what a *blocking*
+    /// one (the CLI viewer, and every test) would otherwise lose.
+    fn resolve_effect_images(&mut self, resident: &mut Resident) -> Vec<String> {
         let mut references: Vec<AssetRef> = Vec::new();
         let mut push = |reference: &AssetRef| {
             if *reference != AssetRef::Empty && !references.contains(reference) {
@@ -156,11 +159,12 @@ impl Loaded {
 
         if references.is_empty() {
             self.images.clear();
-            return;
+            return Vec::new();
         }
         self.want(&references);
-        resident.images(&references);
+        let (_, warnings) = resident.images(&references);
         self.images = resident.answered(&references);
+        warnings
     }
 
     /// Asks for the fonts the GUI trees' text wants, in the two stages a

@@ -160,6 +160,30 @@ pub(crate) fn tags(dom: &WeakDom, reference: Ref) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// [`attributes`] narrowed to the names the Properties panel's filter box
+/// matches, through the very same [`crate::properties::matches`] every
+/// ordinary property row is narrowed by — the box searches one list, not two
+/// that can drift apart.
+pub(crate) fn attributes_matching(
+    dom: &WeakDom,
+    reference: Ref,
+    filter: &str,
+) -> BTreeMap<String, Variant> {
+    attributes(dom, reference)
+        .into_iter()
+        .filter(|(name, _)| crate::properties::matches(name, filter))
+        .collect()
+}
+
+/// [`tags`], narrowed the same way [`attributes_matching`] narrows
+/// attributes.
+pub(crate) fn tags_matching(dom: &WeakDom, reference: Ref, filter: &str) -> Vec<String> {
+    tags(dom, reference)
+        .into_iter()
+        .filter(|tag| crate::properties::matches(tag, filter))
+        .collect()
+}
+
 /// The `EditKind` an attribute's current value should edit through — the
 /// exact same mapping an ordinary property of that type gets (see
 /// `properties::value_edit_kind`), so the value routes through the

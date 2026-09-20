@@ -42,7 +42,6 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use gpui_kit::component::input::{InputEvent, InputState};
-use gpui_kit::component::menu::AppMenuBar;
 use gpui_kit::component::select::{SearchableVec, Select, SelectEvent, SelectState};
 use gpui_kit::component::tree::TreeState;
 use gpui_kit::component::{v_flex, IndexPath, Sizable};
@@ -59,6 +58,7 @@ use crate::command_bar::CommandBar;
 use crate::explorer::Explorer;
 use crate::folder_colors::FolderColors;
 use crate::history::{History, DEFAULT_CAP};
+use crate::menu_bar::MenuBar;
 use crate::pacing::UnfocusedFps;
 use crate::properties::Properties;
 use crate::save::Format;
@@ -86,9 +86,10 @@ type QualityOptions = SearchableVec<SharedString>;
 
 pub(crate) struct Shell {
     /// The top menu bar (File/Edit/Model/View); see `crate::menu_bar`. Kept
-    /// as a field only so `Render for Shell` has an entity to mount — the
-    /// menu's own state (which submenu is open) lives entirely inside it.
-    menu_bar: Entity<AppMenuBar>,
+    /// as a field so `Render for Shell` has an entity to mount, and so the
+    /// window-level F10/Alt handlers below have something to reach into —
+    /// which title is current and which menu is open lives entirely inside it.
+    menu_bar: Entity<MenuBar>,
     title: SharedString,
     viewport: Entity<WorkspaceView>,
     explorer: Rc<Explorer>,
@@ -580,6 +581,12 @@ impl Shell {
         // `StyleRule` they selected.
         shell.apply_debug_style_editor(cx);
 
+        // `RBX_STUDIO_MENU` (see `menu_bar::MenuBar::apply_debug_entry`):
+        // the only way to put the keyboard in the menu bar without a
+        // keystroke, and so the only way to screenshot it there.
+        let menu_bar = shell.menu_bar.clone();
+        menu_bar.update(cx, |bar, cx| bar.apply_debug_entry(window, cx));
+
         // `RBX_STUDIO_SAVE_AS` (see `shell::save`): applied last of all, so a
         // script can prove Ctrl+S round-trips whatever every block above just
         // mutated.
@@ -1026,6 +1033,22 @@ impl Render for Shell {
             }))
             .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
                 shell.handle_shell_key(&event.keystroke, window, cx);
+            }))
+            // A bare Alt tap is one of the two ways into the menu bar, so
+            // the window has to see Alt going down and coming back up. Both
+            // of the listeners below only exist to tell a tap apart from Alt
+            // being used as the live modifier it also is here — see
+            // `menu_bar::alt_tap`.
+            .on_modifiers_changed(cx.listener(
+                |shell, event: &ModifiersChangedEvent, window, cx| {
+                    let menu_bar = shell.menu_bar.clone();
+                    menu_bar.update(cx, |bar, cx| {
+                        bar.modifiers_changed(event.modifiers, window, cx)
+                    });
+                },
+            ))
+            .capture_any_mouse_down(cx.listener(|shell, _: &MouseDownEvent, _, cx| {
+                shell.menu_bar.update(cx, |bar, _| bar.interrupt_alt_tap());
             }))
             .on_mouse_move(cx.listener(|shell, event: &MouseMoveEvent, window, cx| {
                 shell.drag_resize(event.position, cx);

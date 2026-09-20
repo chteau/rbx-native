@@ -338,9 +338,53 @@ Roblox's own engine.
 - [x] Command Bar (Luau against the live DataModel) with an Output dock:
   run history, Clear, a success/error filter, click-to-recall a past
   command.
+- [x] App-level warnings reach the Output dock without a Play session ever
+  running: `OutputLog::push_warning`/`Feedback::Warning`, fed by every
+  asset fetch/decode failure a place's initial load or any reload produces
+  — both the plain fetch failure and the silent fall back to a default
+  texture — along `Headless::drain_warnings` → the render thread's
+  `Ready.warnings` → `WorkspaceView`'s `AssetWarnings` event → `Shell`.
+  They surface continuously rather than on a flush, so nothing is left
+  pending by the time a save happens. A warning is its own row kind
+  (orange, alert icon) and its own **Warnings** bucket beside All/Output/
+  Errors, which is what Studio's own window does — it "filters output by
+  type, such as **Error** or **Warning**" (`studio/output.md`) — and each
+  bucket holds exactly one kind, so a warning no longer doubles as
+  `Output`. That includes the `ParticleEmitter`/`Beam`/`Trail`/`ImageLabel`
+  textures the render passes only ever see an *answer* for: their failure
+  is reduced to "no image" before a pass sees it, so the warning is carried
+  out of `Loaded::resolve_effect_images` instead — the streaming loader
+  already reported them through `Resident::poll`; the blocking one (the CLI
+  viewer, and every test) was dropping them on the floor.
 - [x] Menu bar (File/Edit/Model/View) wired to real actions where one
   exists; everything else an honestly-disabled placeholder rather than a
   button that looks functional and isn't.
+- [x] The menu bar is reachable from the keyboard, which closes the last
+  WCAG 2.1.1 (Keyboard, Level A) gap in this editor. **F10**, or a bare
+  **Alt** tap, moves focus into it from wherever focus happens to be;
+  Left/Right walk the titles and wrap; Enter, Space or Down opens the
+  focused one; Escape closes an open menu, and Escape again leaves the bar
+  and puts focus back exactly where it came from. It is deliberately *not*
+  a Tab stop: Tab walks the editor's regions, and a fifth region everyone
+  has to pass through on the way to the ribbon is not what the desktop
+  convention asks for. An Alt *tap* is told apart from Alt-the-modifier —
+  which this editor uses live, for the Ball/Cylinder Scale lock and for
+  selection cycling — by a small state machine where anything at all
+  arriving while Alt is held cancels the tap (`menu_bar::alt_tap`).
+  This meant owning the bar rather than the toolkit's ready-made
+  `AppMenuBar`, whose current title is a private field with no way in from
+  outside; each dropdown is still the toolkit's own `PopupMenu`, keyboard
+  contract and all. Two conveniences beyond what this needed are not
+  there: access-key mnemonics (Alt+F for File), and Down preselecting the
+  first item of the menu it opens — `PopupMenu`'s selected index is
+  private, so Down opens the menu and a second Down steps into it.
+- [x] Tags editor (`CollectionService`), in the same Properties panel
+  section as the attributes above: existing tags as removable chips, and an
+  add-tag field matching `CollectionService:AddTag`'s own semantics (adding
+  an already-applied tag is a no-op, not an error; an empty tag is refused,
+  since this crate's `\0`-joined wire format cannot tell an empty tag apart
+  from none at all). The panel's filter box searches tag names alongside
+  the reflected property rows, through the same `properties::matches`.
 - [x] Undo/redo (`Ctrl+Z`/`Ctrl+Y`), bit-for-bit reversion verified.
 - [x] Save (`Ctrl+S`, writes back in the file's original format, atomic
   write).
@@ -1017,32 +1061,6 @@ against `Roblox/creator-docs` rather than assumed:
   rearrangement is inaccessible. The drag is then a pure addition rather
   than a rewrite; doing it first means building it against three hardcoded
   slots and throwing it away.
-- [ ] 🚧 **The menu bar is not keyboard-reachable — the last of the WCAG
-  2.1.1 (Keyboard, Level A) gap.** `Select`, `ColorPicker` and `NumberInput`
-  are done: every `Color3` swatch, every enum dropdown and both snap
-  increments are Tab stops now, so what is left of this item is
-  `AppMenuBar` alone.
-  None of the three needed the focusable wrapper this entry used to
-  describe. Each one's state entity — `SelectState`, `ColorPickerState`,
-  `InputState` — already implements `Focusable`, and the handle it hands out
-  is the same one the widget's own `.focus` uses, so recording that handle
-  in `shell::roving::TabOrder` *is* the fix: there is nothing to forward
-  focus to once Tab lands on it. The graphics-quality dropdown had already
-  proved the shape (`shell::Shell::quality_control`); this pass applied it
-  to the rest.
-  Two registration sites, because the widgets have two lifetimes. The snap
-  increments (`shell::toolbar::snap`) register while their popover's body is
-  built, so the stops appear and disappear with the popover rather than
-  standing for controls nobody can see. Every per-row `Select` and
-  `ColorPicker` (`shell::rows::render_editor`) registers per row per render,
-  since a property row's widget is rebuilt whenever the selection changes —
-  a longer thread than the one-off case, which is why `render_editor` now
-  takes the window's order and an `&mut App` alongside the `tab_index` it
-  already took.
-  The menu bar is a different job and deliberately not folded in: the
-  desktop answer is F10/Alt to enter it, not a Tab stop, and the entry stays
-  open until that exists (see `UX_GUIDELINES.md` §1's conformance section
-  and §11).
 - [ ] 📋 **The accessibility work the reference guidance calls Stage 2 and
   Stage 3, minus what already shipped.** Stage 1 is met and asserted in
   tests; these are the rest, each small enough to ride along with other
@@ -1118,15 +1136,7 @@ against `Roblox/creator-docs` rather than assumed:
   can't read); `NumberSequence`/`ColorSequence` aren't creatable either,
   matching this file's separate "eight `Variant` types" bullet's own
   editors-are-their-own-PRs rule (an attribute already holding either
-  still renders, read-only); and the Properties panel's filter box does
-  not search attribute names.
-- [x] 🚧 Tags editor (`CollectionService`) — same gap. The same section
-  adds a Tags block: existing tags as removable chips, and an add-tag
-  field matching `CollectionService:AddTag`'s own semantics (adding an
-  already-applied tag is a no-op, not an error; an empty tag is refused,
-  since this crate's own `\0`-joined wire format can't tell an empty tag
-  apart from none at all). What's still open: same filter-box gap as the
-  Attributes section above.
+  still renders, read-only).
 - [ ] 📋 **A dedicated UI-editing mode for `StarterGui`.** Today the
   viewport is always the 3D `Workspace` scene; editing a `ScreenGui`'s
   layout means selecting its descendants through the Explorer tree alone,
@@ -1500,24 +1510,6 @@ against `Roblox/creator-docs` rather than assumed:
 - [ ] 📋 Wiring the Output dock to real script `print`/`warn`/`error` and
   session events (join/leave messages and the like) once a sandbox session
   is running — depends on the sandbox above existing first.
-- [x] 🚧 **Routing app-level warnings into the Output dock, independent of
-  Play.** `OutputLog::push_warning`/`Feedback::Warning` exist now, and
-  asset-fetch/decode failures reach the Output dock from a place's initial
-  load and every reload — both the plain fetch-failure case and the
-  silent-fallback-to-default-texture case, since both already produced the
-  same warning string inside `crates/rbx_viewer/src/assets.rs`'s worker
-  pool. The path: `Headless::drain_warnings` → the render thread's
-  `Ready.warnings` → `WorkspaceView`'s `AssetWarnings` event → `Shell`.
-  Warnings surface continuously (every render-thread tick), which
-  supersedes the original ask for an explicit `Ctrl+S`-triggered flush —
-  nothing is ever left pending by the time a save happens. Still open: the
-  four live-render call sites (`renderer::particles`/`trail`/`beam`/
-  `gui::atlas`) still show nothing for a texture that will not resolve —
-  they no longer fetch one themselves (the loader does, once, and answers
-  them), so what is left is routing that single answer's warning to the
-  dock rather than dropping it; no dedicated
-  "Warnings" `OutputFilter` bucket; no distinct visual marker for a
-  warning row versus a successful Command Bar run.
 - [x] 🚧 **Output window: real Studio's filter/display feature set**,
   checked against `studio/output.md` rather than assumed. Only part of
   this depends on the sandbox above — the rest is buildable against what

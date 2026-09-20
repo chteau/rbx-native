@@ -30,14 +30,10 @@ impl Shell {
     ) -> impl IntoElement {
         let filtering = !filter.trim().is_empty();
         let open = filtering || !self.is_category_collapsed(TAGS_CATEGORY);
-        let current = attrs::tags(&self.dom, reference);
+        let current = attrs::tags_matching(&self.dom, reference, filter);
         let error = self.attribute_edits.tag_error.clone();
 
-        let chips: Vec<AnyElement> = current
-            .iter()
-            .filter(|tag| crate::properties::matches(tag, filter))
-            .map(|tag| self.tag_chip(tag, cx))
-            .collect();
+        let chips: Vec<AnyElement> = current.iter().map(|tag| self.tag_chip(tag, cx)).collect();
 
         let handle = cx.entity();
         v_flex()

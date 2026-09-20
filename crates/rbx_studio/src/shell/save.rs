@@ -19,9 +19,21 @@ impl Shell {
     pub(super) fn handle_shell_key(
         &mut self,
         keystroke: &Keystroke,
-        window: &Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // Every keystroke cancels a bare Alt tap, including this one: Alt+S
+        // must not leave a menu open behind it (see `menu_bar::alt_tap`).
+        let menu_bar = self.menu_bar.clone();
+        menu_bar.update(cx, |bar, cx| {
+            bar.interrupt_alt_tap();
+            // F10 is the other, explicit way in — and out again. Handled here
+            // rather than as a binding because the bar's own key context only
+            // covers the bar, and F10 has to work from wherever focus is.
+            if keystroke.key == "f10" && !keystroke.modifiers.modified() {
+                bar.toggle_entry(window, cx);
+            }
+        });
         if let Some(Action::Save) = save::action_for(&keystroke.key, keystroke.modifiers) {
             self.save(cx);
         }

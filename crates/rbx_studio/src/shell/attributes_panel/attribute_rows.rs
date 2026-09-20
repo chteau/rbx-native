@@ -34,14 +34,12 @@ impl Shell {
     ) -> impl IntoElement {
         let filtering = !filter.trim().is_empty();
         let open = filtering || !self.is_category_collapsed(ATTRIBUTES_CATEGORY);
-        let current = attrs::attributes(&self.dom, reference);
+        let current = attrs::attributes_matching(&self.dom, reference, filter);
         let error = self.attribute_edits.attribute_error.clone();
 
-        let mut rows = Vec::with_capacity(current.len());
+        let mut rows = Vec::with_capacity(current.len() + 1);
         for (name, value) in &current {
-            if crate::properties::matches(name, filter) {
-                rows.push(self.attribute_row(name, value, window, cx));
-            }
+            rows.push(self.attribute_row(name, value, window, cx));
         }
         rows.push(self.add_attribute_row(reference, window, cx));
 
