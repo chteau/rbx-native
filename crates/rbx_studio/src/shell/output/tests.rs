@@ -121,14 +121,41 @@ fn a_pushed_warning_is_not_treated_as_an_error() {
     assert!(!entry.is_error());
 }
 
+/// One row, one bucket: a warning is not a run's output and not an error,
+/// which is the whole point of giving it a bucket of its own.
 #[test]
-fn a_warning_shows_under_all_and_output_but_never_errors() {
+fn a_warning_shows_under_all_and_warnings_and_nowhere_else() {
     let mut log = OutputLog::default();
     log.push_warning("boom");
 
     assert_eq!(log.filtered(OutputFilter::All, "").count(), 1);
-    assert_eq!(log.filtered(OutputFilter::Output, "").count(), 1);
+    assert_eq!(log.filtered(OutputFilter::Warnings, "").count(), 1);
+    assert_eq!(log.filtered(OutputFilter::Output, "").count(), 0);
     assert_eq!(log.filtered(OutputFilter::Errors, "").count(), 0);
+}
+
+/// The other side of the same rule: the Warnings bucket holds *only*
+/// warnings, so a failed run does not leak into it on its way to Errors.
+#[test]
+fn a_run_never_shows_under_warnings() {
+    let mut log = OutputLog::default();
+    log.push("print(1)", Feedback::Output("1".into()));
+    log.push("boom()", Feedback::Error("boom".into()));
+
+    assert_eq!(log.filtered(OutputFilter::Warnings, "").count(), 0);
+    assert_eq!(log.filtered(OutputFilter::All, "").count(), 2);
+}
+
+/// The search box narrows *within* the level filter rather than replacing
+/// it — the same contract the Errors/Output buckets already have.
+#[test]
+fn the_search_box_narrows_inside_the_warnings_bucket() {
+    let mut log = OutputLog::default();
+    log.push_warning("asset 1: not found");
+    log.push_warning("asset 2: decode failed");
+
+    assert_eq!(log.filtered(OutputFilter::Warnings, "asset").count(), 2);
+    assert_eq!(log.filtered(OutputFilter::Warnings, "decode").count(), 1);
 }
 
 #[test]
