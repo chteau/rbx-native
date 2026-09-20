@@ -2,6 +2,22 @@
 
 ## 2026-09-21
 
+- **Numeric properties open like Studio's, and the panel has one left
+  edge.** A `Vector3`, a `UDim2`, a `CFrame` and every other multi-number
+  value used to take the row's whole width and lay its components out side
+  by side — three fields sharing a 150px column, each too narrow for a
+  digit, under a name on its own line. Each one is now an ordinary
+  name/value row showing the value whole (`0, 5, 0`, the spelling a script
+  would use, and still typeable as one), with an expander that drops its
+  components underneath: `X`/`Y`/`Z` for a `Vector3`, `Position` and
+  `Orientation` each over their own three for a `CFrame`. Collapsed is the
+  default, and a collapsed row does not build its component fields at all —
+  a `BasePart` selection is five such rows, so that is most of what the
+  panel used to lay out and paint every frame. Rows are separated by a
+  hairline instead of a gap, and property names, attribute names and tag
+  chips all start in the same column the expander chevrons leave for them.
+  — @chteau
+
 - **`NumberSequence` and `ColorSequence` have a real editor, and are
   creatable as attributes.** Both types used to render as read-only text,
   which is also why neither could be added as an attribute: the Attributes

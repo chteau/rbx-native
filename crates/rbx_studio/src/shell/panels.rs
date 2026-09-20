@@ -14,8 +14,8 @@ use crate::tokens;
 
 use super::reparent::{draggable_row, DraggedInstances};
 use super::rows::{
-    checkbox, guide_mask, property_row, property_row_control, render_editor, row, section_header,
-    OnOpen,
+    checkbox, expander, guide_mask, property_expandable, property_row, property_row_control,
+    render_editor, row, section_header, text_field, OnOpen,
 };
 use super::Shell;
 
@@ -190,20 +190,6 @@ impl Shell {
                     Some(kind) => {
                         let tab_index = self.tab_order.next();
                         let (widget, error) = self.edit_row(row, kind, window, cx);
-                        let composite = widget.is_composite();
-                        // A flag's click has to rewrite the *whole* set, so
-                        // the row hands the renderer a factory that knows
-                        // the current flags and which one moved.
-                        let flags = match &widget {
-                            super::edit::RowEditor::Flags(_, values) => values.clone(),
-                            // An optional's present/absent checkbox commits
-                            // through the same one-flag path, so the factory
-                            // below hands it `true`/`false` unchanged.
-                            super::edit::RowEditor::Optional(present, ..) => vec![*present],
-                            _ => Vec::new(),
-                        };
-                        let handle = cx.entity();
-                        let name = row.name.clone();
                         // Starting a scrub needs the property's name and
                         // which field moved; the value itself is read off
                         // the field at mouse-down (see `shell::scrub`).
@@ -220,6 +206,67 @@ impl Shell {
                                     });
                                 })
                             });
+
+                        // A numeric value keeps the ordinary name/value row
+                        // — the whole value in the field, the way it reads
+                        // in a script — and hangs its components off an
+                        // expander. Collapsed, those component rows are
+                        // never built: a `BasePart` alone carries five of
+                        // them, and their fields are the bulk of what this
+                        // panel lays out and paints every frame.
+                        if let Some(summary) = widget.summary().cloned() {
+                            let expanded = self.is_row_expanded(&row.name);
+                            let fields = expanded.then(|| {
+                                render_editor(
+                                    tab_index,
+                                    &self.tab_order,
+                                    widget,
+                                    // Neither shape under an expander is a
+                                    // flag set or a sequence, so neither
+                                    // handler is ever reached.
+                                    |_, _| Box::new(|_, _, _| {}),
+                                    on_scrub,
+                                    Box::new(|_, _, _| {}),
+                                    cx,
+                                )
+                            });
+                            let toggle = cx.entity();
+                            let toggle_name = row.name.clone();
+                            let expander = self.properties_nav.claim(
+                                expander(&row.name, expanded, move |_, _, cx| {
+                                    let name = toggle_name.clone();
+                                    toggle.update(cx, |shell, cx| {
+                                        shell.toggle_row_expanded(&name, cx)
+                                    });
+                                }),
+                                cx,
+                            );
+                            children.push(
+                                property_expandable(
+                                    expander,
+                                    text_field(&summary, tab_index),
+                                    fields,
+                                    error.as_deref(),
+                                )
+                                .into_any_element(),
+                            );
+                            continue;
+                        }
+
+                        let composite = widget.is_composite();
+                        // A flag's click has to rewrite the *whole* set, so
+                        // the row hands the renderer a factory that knows
+                        // the current flags and which one moved.
+                        let flags = match &widget {
+                            super::edit::RowEditor::Flags(_, values) => values.clone(),
+                            // An optional's present/absent checkbox commits
+                            // through the same one-flag path, so the factory
+                            // below hands it `true`/`false` unchanged.
+                            super::edit::RowEditor::Optional(present, ..) => vec![*present],
+                            _ => Vec::new(),
+                        };
+                        let handle = cx.entity();
+                        let name = row.name.clone();
                         // A sequence row's click opens the graph rather
                         // than committing anything; every other row shape
                         // never reaches this handler.
@@ -340,7 +387,6 @@ impl Shell {
                                                 .w_full()
                                                 .pt(tokens::section_gap())
                                                 .pb(tokens::group_gap())
-                                                .gap(tokens::row_gap())
                                                 .children(children),
                                         )
                                     })

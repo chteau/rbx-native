@@ -42,12 +42,22 @@ pub(super) enum RowEditor {
     Text(Entity<InputState>),
     /// One `Input` per label, in the same order as `EditKind::Fields`'
     /// `labels` — carried alongside so `shell::rows` can pair each field
-    /// with its caption without reaching back into `EditKind`.
-    Fields(&'static [Field], Vec<Entity<InputState>>),
+    /// with its caption without reaching back into `EditKind`, plus the
+    /// **summary** input that holds the same value whole (see
+    /// [`Self::summary`]).
+    Fields(
+        &'static [Field],
+        Entity<InputState>,
+        Vec<Entity<InputState>>,
+    ),
     /// The same inputs, but split into captioned lines — see
     /// `properties::FieldGroup`. One flat list, in group order, because the
     /// commit path joins them all into one string regardless.
-    Groups(&'static [FieldGroup], Vec<Entity<InputState>>),
+    Groups(
+        &'static [FieldGroup],
+        Entity<InputState>,
+        Vec<Entity<InputState>>,
+    ),
     /// A checkbox per named flag, and the flags as they currently stand.
     /// No entities: a checkbox has no editing state of its own, so the row
     /// commits straight from the click (see `shell::panels`).
@@ -72,8 +82,23 @@ impl RowEditor {
     /// one there.
     pub(super) fn field(&self, index: usize) -> Option<&Entity<InputState>> {
         match self {
-            RowEditor::Fields(_, inputs) | RowEditor::Groups(_, inputs) => inputs.get(index),
+            RowEditor::Fields(_, _, inputs) | RowEditor::Groups(_, _, inputs) => inputs.get(index),
             RowEditor::Optional(_, _, inner) => inner.field(index),
+            _ => None,
+        }
+    }
+
+    /// The one `Input` holding this value whole — `"0, 5, 0"` beside the
+    /// row's expander, the way Studio keeps a `Vector3`'s own field
+    /// editable while its components are showing.
+    ///
+    /// Deliberately **not** recursive into [`Self::Optional`]: an optional
+    /// draws its checkbox and its inner fields as one stacked block, so it
+    /// has no expander to put a summary beside, and the inner editor's own
+    /// summary is never rendered.
+    pub(super) fn summary(&self) -> Option<&Entity<InputState>> {
+        match self {
+            RowEditor::Fields(_, summary, _) | RowEditor::Groups(_, summary, _) => Some(summary),
             _ => None,
         }
     }
@@ -85,7 +110,7 @@ impl RowEditor {
     fn input_text(&self, cx: &App) -> Option<String> {
         match self {
             RowEditor::Text(input) => Some(input.read(cx).value().to_string()),
-            RowEditor::Fields(_, inputs) | RowEditor::Groups(_, inputs) => Some(
+            RowEditor::Fields(_, _, inputs) | RowEditor::Groups(_, _, inputs) => Some(
                 inputs
                     .iter()
                     .map(|input| input.read(cx).value().to_string())
@@ -101,20 +126,18 @@ impl RowEditor {
     }
 
     /// Whether this editor needs the row's **whole width** rather than its
-    /// value column.
+    /// value column: a `Faces`' six checkboxes, a `PhysicalProperties`'
+    /// checkbox-over-fields, a sequence's own strip. None of the three has
+    /// a single value to put on the row's own line, so the name goes above
+    /// them instead.
     ///
-    /// A `CFrame` is six numbers under two captions; a `Rect` is four. The
-    /// value column is 140px narrower than the dock, which is not enough
-    /// for any of them — so a composite value drops to its own line under
-    /// the property's name, the way Studio lays the same values out.
+    /// Numeric values are not in the list any more — they keep the ordinary
+    /// name/value row and hang their components off an expander (see
+    /// [`Self::summary`] and `shell::rows::property_expandable`).
     pub(super) fn is_composite(&self) -> bool {
         matches!(
             self,
-            RowEditor::Fields(..)
-                | RowEditor::Groups(..)
-                | RowEditor::Flags(..)
-                | RowEditor::Optional(..)
-                | RowEditor::Sequence { .. }
+            RowEditor::Flags(..) | RowEditor::Optional(..) | RowEditor::Sequence { .. }
         )
     }
 }
@@ -136,6 +159,11 @@ pub(super) struct RowEdit {
 pub(super) struct Edits {
     rows: HashMap<String, RowEdit>,
     collapsed: HashSet<String>,
+    /// Which numeric rows are showing their components. Collapsed is the
+    /// default — a `BasePart` has five of these, and thirty extra fields
+    /// laid out and painted every frame is thirty too many on the hardware
+    /// this editor is meant to stay usable on.
+    expanded: HashSet<String>,
 }
 
 impl Edits {
@@ -159,7 +187,9 @@ impl Edits {
 fn resync_row_widget(widget: &RowEditor, kind: &EditKind, window: &mut Window, cx: &mut App) {
     match (widget, kind) {
         (RowEditor::Text(input), EditKind::Text(seed)) => resync_field(input, seed, window, cx),
-        (RowEditor::Fields(_, inputs), EditKind::Fields { values, .. }) => {
+        (RowEditor::Fields(_, summary, inputs), EditKind::Fields { values, .. })
+        | (RowEditor::Groups(_, summary, inputs), EditKind::Groups { values, .. }) => {
+            resync_field(summary, &values.join(", "), window, cx);
             for (input, seed) in inputs.iter().zip(values) {
                 resync_field(input, seed, window, cx);
             }
@@ -247,26 +277,14 @@ impl Shell {
                 (RowEditor::Text(input), vec![subscription])
             }
             EditKind::Fields { fields, values } => {
-                let mut inputs = Vec::with_capacity(values.len());
-                let mut subscriptions = Vec::with_capacity(values.len());
-                for seed in values {
-                    let input =
-                        cx.new(|cx| InputState::new(window, cx).default_value(seed.clone()));
-                    subscriptions.push(self.commit_on_change(&input, name.clone(), cx));
-                    inputs.push(input);
-                }
-                (RowEditor::Fields(fields, inputs), subscriptions)
+                let (summary, inputs, subscriptions) =
+                    self.build_number_inputs(&name, values, window, cx);
+                (RowEditor::Fields(fields, summary, inputs), subscriptions)
             }
             EditKind::Groups { groups, values } => {
-                let mut inputs = Vec::with_capacity(values.len());
-                let mut subscriptions = Vec::with_capacity(values.len());
-                for seed in values {
-                    let input =
-                        cx.new(|cx| InputState::new(window, cx).default_value(seed.clone()));
-                    subscriptions.push(self.commit_on_change(&input, name.clone(), cx));
-                    inputs.push(input);
-                }
-                (RowEditor::Groups(groups, inputs), subscriptions)
+                let (summary, inputs, subscriptions) =
+                    self.build_number_inputs(&name, values, window, cx);
+                (RowEditor::Groups(groups, summary, inputs), subscriptions)
             }
             // Nothing to subscribe to: the strip is a button, and the panel
             // it opens commits through `commit_row` like any other widget.
@@ -334,6 +352,52 @@ impl Shell {
                 (RowEditor::Enum(state), vec![subscription])
             }
         }
+    }
+
+    /// The `Input`s behind one numeric value: the summary holding it whole,
+    /// then one per component.
+    ///
+    /// The components are built even while the row is collapsed and their
+    /// fields are not drawn. Seeding them costs a small entity each, once
+    /// per selection; skipping it would mean rebuilding the row's whole
+    /// widget on every expander click, which is the more expensive of the
+    /// two and the one that happens while someone is looking at it.
+    fn build_number_inputs(
+        &self,
+        name: &str,
+        values: &[String],
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> (
+        Entity<InputState>,
+        Vec<Entity<InputState>>,
+        Vec<Subscription>,
+    ) {
+        let mut subscriptions = Vec::with_capacity(values.len() + 1);
+
+        // The same comma-joined spelling `properties::edit::edit_text`
+        // produced and `parse` reads back, so what the summary shows is
+        // exactly what committing it writes.
+        let summary = cx.new(|cx| InputState::new(window, cx).default_value(values.join(", ")));
+        let whole = name.to_owned();
+        subscriptions.push(
+            cx.subscribe(&summary, move |shell, input, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::PressEnter { .. } | InputEvent::Blur) {
+                    // Its own text, not the components' — the two hold the
+                    // same value and only one of them is being typed into.
+                    let text = input.read(cx).value().to_string();
+                    shell.commit_row(&whole, &text, cx);
+                }
+            }),
+        );
+
+        let mut inputs = Vec::with_capacity(values.len());
+        for seed in values {
+            let input = cx.new(|cx| InputState::new(window, cx).default_value(seed.clone()));
+            subscriptions.push(self.commit_on_change(&input, name.to_owned(), cx));
+            inputs.push(input);
+        }
+        (summary, inputs, subscriptions)
     }
 
     /// Wires one `Input` (a lone `Text` field, or one of a `Fields` row) so
@@ -496,6 +560,22 @@ impl Shell {
     /// section open instead while a filter is active).
     pub(super) fn is_category_collapsed(&self, category: &str) -> bool {
         self.edits.collapsed.contains(category)
+    }
+
+    /// Whether one numeric row is showing its components.
+    pub(super) fn is_row_expanded(&self, name: &str) -> bool {
+        self.edits.expanded.contains(name)
+    }
+
+    /// Shows or hides one numeric row's components, from a click on its
+    /// expander. Survives a selection change the way a collapsed category
+    /// does: which values someone wants broken out is a preference about
+    /// the panel, not about the instance in it.
+    pub(super) fn toggle_row_expanded(&mut self, name: &str, cx: &mut Context<Self>) {
+        if !self.edits.expanded.remove(name) {
+            self.edits.expanded.insert(name.to_owned());
+        }
+        cx.notify();
     }
 
     /// Collapses or re-opens one section, from a click on its header.

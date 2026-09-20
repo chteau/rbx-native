@@ -124,6 +124,18 @@ pub(crate) fn divider() -> Rgba {
     rgb(0x3D3D3D)
 }
 
+/// The seam between two property rows. Fainter than [`divider`] on purpose:
+/// that one separates one region of chrome from the next, while this one
+/// runs under every row in a long list — at full strength it stops reading
+/// as a separator and starts reading as a grid drawn over the panel.
+///
+/// Decorative, so WCAG 1.4.11 does not apply: nothing about a row's meaning
+/// or state is carried by it, and the rows either side are already told
+/// apart by their own content.
+pub(crate) fn row_divider() -> Rgba {
+    rgba(0x3D3D3D80)
+}
+
 // ------------------------------------------------------------------- text
 
 /// The window title and the ribbon's category tabs — the only fully white
@@ -531,6 +543,14 @@ pub(crate) fn checkbox_size() -> Pixels {
 /// WCAG 2.5.8's floor, whatever the box inside it is doing.
 pub(crate) fn checkbox_target() -> Pixels {
     scaled_target(26.)
+}
+
+/// The column a property row's expander chevron sits in — and, because a
+/// child field's name lines up under its parent's rather than under the
+/// chevron, the step one level of nesting indents by. Wide enough for the
+/// [`text_xs`] icon with a hair of air after it.
+pub(crate) fn chevron_slot() -> Pixels {
+    scaled(14.)
 }
 
 /// The smallest square any icon-only button is allowed to be.
