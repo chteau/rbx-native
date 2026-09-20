@@ -56,8 +56,9 @@ expectations).
    `.github/PULL_REQUEST_TEMPLATE.md` for real: what changed and why, how
    it was verified, what's left undone, which roadmap item this addresses.
    Include the `ROADMAP.md` checkoff for that item in this same PR (move it
-   to "What's been implemented", or flip it to `[x] 🚧` in place if only
-   part of it shipped — see `agents/AGENTS.md`) so it's reviewed alongside
+   to "What's been implemented", or split it into an `[x]` bullet and a
+   `[ ] 📋` one if only part of it shipped — see `agents/AGENTS.md`) so
+   it's reviewed alongside
    the code rather than pushed on its own. Also add a `CHANGELOG.md` bullet
    under today's date heading, in the file's existing voice, ending it with
    `— @<GitHub username>` (`gh api user --jq .login`, not the local git

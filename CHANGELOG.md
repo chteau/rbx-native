@@ -166,6 +166,57 @@
   comments, which are harmless, and parse clean. Checked with PowerShell's
   own parser over all four rather than by eye. — @jleeclient
 
+- **The ribbon greys Copy, Paste and Duplicate when they would do nothing.**
+  All three were drawn live whatever the editor held, so with an empty
+  clipboard or an empty selection they hovered, took keyboard focus and
+  then returned straight out of their handler's own guard — a control that
+  looks clickable and silently isn't is worse than one that says why. Each
+  now greys with the reason on hover and drops out of the ribbon's arrow
+  order, the same treatment the not-implemented tiles already get. The test
+  is the interesting part: availability asks `clipboard::has_copyable`,
+  which *is* the guard `copy_selected` and `duplicate_selected` return on,
+  so the button and the command cannot drift — and a selection holding
+  nothing but services reads as empty, which a plain "is anything
+  selected?" would have got wrong. Group/Ungroup have the same flaw and a
+  same treatment: `group::has_groupable` is `common_parent` returning
+  `Some`, and `has_ungroupable` is "one `Model` with something in it among
+  the selection", which is exactly what `ungroup_selected` acts on and
+  ignores the rest of. — @chteau
+
+- **The Windows row in `README.md` was two claims out of date.** It said
+  the project "has never been built or run on a real Windows machine" long
+  after CI started running clippy, a build and the full test suite on
+  `windows-latest` for every change, and it pointed at a roadmap section
+  ("Compatibilité Windows native") that does not exist. It now separates
+  what CI covers — it compiles and the tests pass — from what nothing
+  covers: the editor has still never been *launched* there, because CI is
+  headless. `publish-screenshot.ps1`'s header claimed it was untested on
+  Windows after being run end to end on Windows 11; that line is what let
+  its parse bug sit, so it now says what was actually run. — @chteau
+
+- **The roadmap says Windows is built and tested, because it is.** "A
+  first real build on Windows, and CI coverage for it" had been sitting
+  unchecked since the `windows-latest` job landed, and the Tooling/CI
+  bullet still claimed Windows had no job at all. The first is checked off
+  and says what the job does and does not cover; the second is now about
+  macOS, which is the only platform the claim was still true of. Neither
+  is marked in-progress — a bullet that is half true is two bullets. —
+  @chteau
+
+- **No more in-progress bullets in the roadmap.** Nine were marked
+  `[x] 🚧` — each one both a claim that something shipped and a note that
+  it hadn't, so the planned list was never the whole of what was left and
+  every checked box had to be read to the end to learn which half it was.
+  Each is now two: an `[x]` for what actually landed and a `[ ] 📋` for
+  what is still open, named so it reads as a real item rather than a
+  footnote on a finished one. Nothing changed about what is done; the
+  shape of the claim did. `agents/AGENTS.md`, its workflow and the
+  `roadmap-task` skill all told agents to *create* that marker, so they
+  now describe the split instead — otherwise the next one would have put
+  it straight back. Along the way the Explorer-drag bullet stopped saying
+  Escape-to-cancel "has not been exercised in the running window", which
+  #68's own screenshots had already disproved. — @chteau
+
 ## 2026-09-19
 
 - **A collapsed property category reads as a tile.** The category headers

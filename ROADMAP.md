@@ -8,7 +8,7 @@ single source of truth for project direction; if something here looks stale,
 [CHANGELOG.md](CHANGELOG.md) has the day-by-day record of what actually
 landed and why.
 
-Feasibility legend: ✅ done · 🚧 in progress / partial · 📋 planned, not
+Feasibility legend: ✅ done · 📋 planned, not
 started · ⚠️ possible only via a workaround · ❌ not possible without
 Roblox's own engine.
 
@@ -641,7 +641,7 @@ Roblox's own engine.
   locally-hosted code-completion API instead — but that's a distinct,
   lower-priority idea worth its own decision on which backend (if any),
   not a default this project should ship opinionated about.
-- [x] 🚧 **New-script templates** — the Model menu now has real
+- [x] **New-script templates** — the Model menu now has real
   `Insert Script`/`Insert LocalScript`/`Insert ModuleScript`/
   `Insert ModuleScript (Class)` entries (there was previously no menu item
   or shortcut to insert a script at all), each seeding the new instance's
@@ -653,11 +653,12 @@ Roblox's own engine.
   per template under `Script/`, `LocalScript/` or `ModuleScript/`
   (`script_templates.rs`), each listed in the ribbon's Script menu by its
   file name, and a `Default.luau` in a class's folder replaces the built-in
-  starter every new script of that class gets. What's still open: authoring
-  and managing templates is done in a file manager, not an editing UI in
-  the editor, and the user's extras appear in the ribbon's Script menu but
-  not the menu bar's Model menu, whose items are fixed actions rather than
-  a list built at runtime.
+  starter every new script of that class gets.
+- [ ] 📋 **Managing script templates from inside the editor.** Authoring
+  one today means a file manager and a text editor; there is no UI for
+  adding, renaming or deleting a template. The user's extras also appear
+  in the ribbon's Script menu but not the menu bar's Model menu, whose
+  items are fixed actions rather than a list built at runtime.
 - [ ] 📋 **Optional, bundled `Fragment` UI framework.** [`Fragment`](https://github.com/chteau/Fragment)
   (MIT, single-file Luau `ModuleScript`, React-inspired: local/global
   state, contexts, reusable components over plain `GuiObject`s) offered as
@@ -764,19 +765,18 @@ Roblox's own engine.
     (F3X's own `C` rotate-tool binding is documented to conflict with
     Studio's native `C` = Toggle Comment Cursor) — worth checking against
     a real Studio instance before adopting either verbatim.
-  - [x] 🚧 **Selection outline shape and thickness**: the *thickness* half
-    has shipped — the outline (see `rbx_viewer::renderer::selection` and
+  - [x] **Selection outline thickness**: the outline (see `rbx_viewer::renderer::selection` and
     `renderer::outline`) is no longer a one-pixel `LineList` but a
     screen-space quad per edge, expanded in the vertex shader to a constant
     on-screen width (~3px selection blue, matching Studio's light-blue
-    selection box; the hover cue rides the same path in amber). What is
-    *still open* is shape-conformance: a `Ball`, `Cylinder`, wedge or mesh
-    still outlines as its oriented bounding box, not its own silhouette, and
-    Real Studio's own highlight is documented (`parts/models.md`) only as a
-    light-blue outline with no shape-conformance spec published — so matching
-    the true silhouette still needs checking against a real Studio instance
-    rather than guessing.
-- [x] 🚧 **Align tool**, matching Studio's real Model-tab tool (checked
+    selection box; the hover cue rides the same path in amber).
+  - [ ] 📋 **Selection outline shape conformance**: a `Ball`, `Cylinder`,
+    wedge or mesh still outlines as its oriented bounding box rather than
+    its own silhouette. Real Studio's highlight is documented
+    (`parts/models.md`) only as a light-blue outline with no
+    shape-conformance spec published, so matching the true silhouette
+    needs checking against a real Studio instance rather than guessing.
+- [x] **Align tool**, matching Studio's real Model-tab tool (checked
   against `studio/align-tool.md` rather than assumed, not the transform
   gizmos under "What's been implemented" → Editor). Aligns the selected
   objects' **Min**/**Center**/**Max** bounds
@@ -791,10 +791,11 @@ Roblox's own engine.
   no new dependency. Shipped: Min/Center/Max, X/Y/Z, World/Local, Selection
   Bounds/Active Object, a selected `Model` moving as one rigid body (the
   docs' "keeping the model intact"), and a compact popover on the
-  transform toolbar rather than a full dialog. **Still open**: the docs'
-  "dynamically previewing the point of alignment before confirming" — this
-  editor's Align commits immediately, with no live preview while the
-  toggles are being set.
+  transform toolbar rather than a full dialog.
+- [ ] 📋 **Align's live preview** — the docs' "dynamically previewing the
+  point of alignment before confirming". Align commits immediately today,
+  with nothing shown while the toggles are being set; drawing where the
+  parts *would* land needs a new renderer overlay pass.
 - [ ] 📋 **Pivot tools**, matching Studio's real Model-tab **Edit Pivot**/
   **Reset** tools (checked against `studio/pivot-tools.md`). Today's
   transform gizmos (see "What's been implemented" → Editor) move/rotate/
@@ -862,23 +863,23 @@ Roblox's own engine.
   always `Archivable`). Left for the fuller Explorer editing item above:
   the right-click **Paste Options** ⟩ **Paste Into At Original Location**
   the docs mention, and Cut.
-- [x] 🚧 Drag-and-drop reparenting in the Explorer tree. Dragging a row
+- [x] Drag-and-drop reparenting in the Explorer tree. Dragging a row
   onto another reparents onto it, the way creator-docs describes
   ("simply drag and drop them onto the new parent") — with a ghost under
   the cursor, the hovered row highlighted only while the drop is legal,
   the new parent expanded and revealed afterwards, and one undo step per
   drag. A drop is refused onto the dragged instance itself, into its own
-  subtree, onto the parent it already has, and for a service. Still open:
-  dragging a row *outside* the current selection collapses that selection
-  to the pressed row before the drag starts, so a multi-instance drag only
-  carries the whole selection when grabbed by its anchor row — the
-  Explorer tree tracks one selected row and already behaves this way for a
-  plain click, so fixing it properly belongs with the fuller Explorer
-  editing item above. Escape abandons a drag in flight
-  (`App::stop_active_drag`, from the window-level key handler), so nothing
-  drops and no undo step is pushed; it has not been exercised in the running
-  window. There is no drop *between* rows, which Studio does not offer
-  either.
+  subtree, onto the parent it already has, and for a service. Escape
+  abandons a drag in flight (`App::stop_active_drag`, from the
+  window-level key handler), so nothing drops and no undo step is pushed —
+  exercised in the running window, not just compiled. There is no drop
+  *between* rows, which Studio does not offer either.
+- [ ] 📋 **Multi-instance drag from a row outside the selection.** Pressing
+  such a row collapses the selection to it before the drag starts, so a
+  multi-instance drag only carries the whole selection when grabbed by its
+  anchor row. The Explorer tree tracks one selected row and already
+  behaves this way for a plain click, so this belongs with the fuller
+  Explorer editing item above rather than being patched at the drag.
 - [ ] 📋 **Save/Publish to Roblox from the editor UI.** The Open Cloud
   client side of this already exists and works —
   `rbx_cloud::Client::publish_place`
@@ -1017,8 +1018,10 @@ against `Roblox/creator-docs` rather than assumed:
   because they sound like the same feature.
 
 #### CSG
-- [x] 🚧 Legacy union/negate parts reconstruct the real constituent
-  geometry via a from-scratch CSG boolean.
+- [x] Legacy union/negate parts reconstruct the real constituent
+  geometry via a from-scratch CSG boolean. The one piece not covered is
+  `MeshData`/CSGMDL, which has its own bullet below and is deliberately
+  not attempted.
 - [x] **Give each of a failed-CSG union's recovered fallback pieces its
   own identity.** Every piece now carries a `scene::PartId` of its own —
   the union's referent plus its position in the operation tree's additive
@@ -1136,7 +1139,7 @@ against `Roblox/creator-docs` rather than assumed:
   `UniqueId`, `SecurityCapabilities` and `Unknown` stay read-only. They are
   identities and opaque payloads — editing them by hand corrupts a file
   rather than editing it.
-- [x] 🚧 Attributes editor (custom `Instance` attributes, distinct from
+- [x] Attributes editor (custom `Instance` attributes, distinct from
   built-in properties) — a real, commonly-used modern Studio feature, not
   currently scoped anywhere. The Properties panel now has a dedicated
   Attributes section (below the reflected categories, matching where real
@@ -1152,10 +1155,12 @@ against `Roblox/creator-docs` rather than assumed:
   floats), checked byte for byte against the two examples in `rojo-rbx/
   rbx-dom`'s attribute format documentation — and, since a blob is packed
   end to end, an instance whose attributes held a `CFrame` no longer loses
-  every attribute stored after it. What's still open:
-  `NumberSequence`/`ColorSequence` aren't creatable, matching this file's
-  separate "eight `Variant` types" bullet's own editors-are-their-own-PRs
-  rule (an attribute already holding either still renders, read-only).
+  every attribute stored after it.
+- [ ] 📋 **`NumberSequence`/`ColorSequence` attributes are not creatable.**
+  One already in a file renders, read-only; neither can be added or
+  edited, because neither has a property editor yet either — this follows
+  the "eight `Variant` types" bullet's own editors-are-their-own-PRs rule
+  rather than growing a second set of editors here.
 - [ ] 📋 **A dedicated UI-editing mode for `StarterGui`.** Today the
   viewport is always the 3D `Workspace` scene; editing a `ScreenGui`'s
   layout means selecting its descendants through the Explorer tree alone,
@@ -1403,7 +1408,7 @@ against `Roblox/creator-docs` rather than assumed:
   through the same real-property DOM mutation any other editor action
   does, not a shortcut that could write something a saved place file
   can't actually represent.
-- [x] 🚧 **Icon and theme packs — the editor's look stops being hardcoded.**
+- [x] **Icon and theme packs — the editor's look stops being hardcoded.**
   The Explorer's class icons are now this project's own icon kit rather than
   Roblox's downloaded sheet (see "What's been implemented" above). Both
   variants, `assets/icons/default/dark` and `.../light`, are now embedded
@@ -1426,13 +1431,15 @@ against `Roblox/creator-docs` rather than assumed:
     dark theme (under a name the registry does not already hold — it
     ignores a duplicate) replaces the built-in at startup. Names read from
     `appearance.json` are refused unless they are one plain path segment.
-  Still open: a theme reaches only the toolkit's own widgets — the chrome
-  this editor draws itself (`tokens.rs`, hundreds of call sites) still
-  reads compiled-in values, so palette, spacing and type scale are not yet
-  data; there is no in-editor theme chooser (edit `appearance.json`) and no
-  pack browser or installer, so a pack is copied in by hand; the icon pack
-  is chosen at runtime but a theme takes effect on the next launch.
-- [x] 🚧 **Soften the editor's visual theme — calmer and lower-contrast,
+- [ ] 📋 **A theme that reaches the whole editor, and a way to install
+  one.** A theme file replaces the toolkit widgets' colours only: the
+  chrome this editor draws itself (`tokens.rs`, hundreds of call sites)
+  still reads compiled-in values, so palette, spacing and type scale are
+  not data yet. There is also no in-editor theme chooser — `appearance.json`
+  is edited by hand — no pack browser or installer, so a pack is copied in
+  by hand, and while an icon pack is chosen at runtime a theme takes
+  effect only on the next launch.
+- [x] **Soften the editor's visual theme — calmer and lower-contrast,
   closer to real Studio but gentler.** Today's panels are high-contrast
   flat blocks: near-pure black/white backgrounds, hard 1px borders, sharp
   rectangular corners, tight padding, saturated colour used everywhere
@@ -1516,17 +1523,16 @@ against `Roblox/creator-docs` rather than assumed:
   overrides the desktop preference read at startup) and Large Click Targets
   (WCAG 2.5.5's 44px floor in place of 2.5.8's 24px).
 
-  **Still open**, each with its own bullet under "What's planned" → Editor:
-  the toolkit widgets that cannot join the Tab order (a Level A failure),
-  the remaining Stage 2/Stage 3 accessibility items, drag-to-rearrange
-  docks, and the eight property types without an editor. Beyond those,
-  `gpui` has no property transitions and cannot transform a `Div`, so hover
-  feedback is instant, and keyboard arrow-navigation inside the hand-built
-  menus isn't wired. `UX_GUIDELINES.md` §11 lists every deviation from the
-  frame with its reason, and §1 states where the editor stands against the
-  reference guidance's Stage 1/2/3 — failures included. Its palette is
-  still the one built-in; a user's own theme file now replaces the
-  toolkit's colours but not `tokens.rs`'s (see the item above this one).
+  `UX_GUIDELINES.md` §11 lists every deviation from the frame with its
+  reason, and §1 states where the editor stands against the reference
+  guidance's Stage 1/2/3 — failures included.
+- [ ] 📋 **What the visual pass left behind**, beyond the items that
+  already have their own bullets under "What's planned" → Editor (the
+  toolkit widgets that cannot join the Tab order — a Level A failure — the
+  remaining Stage 2/Stage 3 accessibility items, drag-to-rearrange docks,
+  and the eight property types without an editor): `gpui` has no property
+  transitions and cannot transform a `Div`, so hover feedback is instant,
+  and keyboard arrow-navigation inside the hand-built menus isn't wired.
 
 ### Play / Test workflow
 - [ ] 📋 The sandbox-place design (private per-developer place, injected
@@ -1536,38 +1542,37 @@ against `Roblox/creator-docs` rather than assumed:
 - [ ] 📋 Wiring the Output dock to real script `print`/`warn`/`error` and
   session events (join/leave messages and the like) once a sandbox session
   is running — depends on the sandbox above existing first.
-- [x] 🚧 **Output window: real Studio's filter/display feature set**,
-  checked against `studio/output.md` rather than assumed. Only part of
-  this depends on the sandbox above — the rest is buildable against what
-  the Command Bar and app warnings already put in the dock today:
-  - **Not sandbox-dependent, reported directly from real use**: shipped —
-    a **Show Timestamp** toggle, in the Output panel's own overflow menu
-    next to Explorer's and Viewport's toggles (`Shell::output_show_timestamps`,
-    `shell/dock.rs`), prints a per-row timestamp in `HH:MM:SS.SSS`; rows now
-    carry a per-kind color and icon in place of the old plain `✕`/`✓`
-    marker — `print`/a successful run in the default text color with a
-    check icon, `warn` in orange with an alert icon, `error` in red with an
-    X icon (`OutputEntry::kind`/`RowKind`, `shell/output.rs`). **Free-text
-    search over the log** is shipped too — a box in the Output tab's own
-    title bar, beside the level filter, matching case-insensitively against
-    both halves of what a row shows (the command and the result) and
-    narrowing *within* the level filter rather than replacing it
-    (`OutputLog::filtered`). The duplicate-display gap is closed: a Command
-    Bar run's outcome used to show twice, once in `command_bar::Feedback`'s
-    label and again as the Output dock's permanent row; the label now
-    appears only while the dock is collapsed
-    (`Feedback::shown_inline`), when it is the one place the result would
-    otherwise be lost — which is why a `Ctrl+S` save, which used to report
-    through the label alone, now logs a `Save` row too. Still open: `TestService.Message`'s blue/info kind,
-    which needs the sandbox before anything here can produce it.
-  - **Sandbox-dependent**: filtering by **context** (`Client`/`Server`/
-    `User Plugin`) only means something once the sandbox's client/server
-    split exists to produce it; **Show Context** and **Show Source**
-    (script name + line number) toggles are the same story, since neither
-    a Command Bar run nor an app warning carries a script/line origin
-    today. Whether logged tables show expanded by default applies to both
-    halves equally, and is the piece of this bullet that does not need the
-    sandbox first.
+- [x] **Output window: the half of real Studio's filter/display feature
+  set that does not need the sandbox**, checked against `studio/output.md`
+  rather than assumed and built against what the Command Bar and app
+  warnings already put in the dock today:
+  A **Show Timestamp** toggle, in the Output panel's own overflow menu
+  next to Explorer's and Viewport's toggles (`Shell::output_show_timestamps`,
+  `shell/dock.rs`), prints a per-row timestamp in `HH:MM:SS.SSS`; rows now
+  carry a per-kind color and icon in place of the old plain `✕`/`✓`
+  marker — `print`/a successful run in the default text color with a
+  check icon, `warn` in orange with an alert icon, `error` in red with an
+  X icon (`OutputEntry::kind`/`RowKind`, `shell/output.rs`). **Free-text
+  search over the log** is shipped too — a box in the Output tab's own
+  title bar, beside the level filter, matching case-insensitively against
+  both halves of what a row shows (the command and the result) and
+  narrowing *within* the level filter rather than replacing it
+  (`OutputLog::filtered`). The duplicate-display gap is closed: a Command
+  Bar run's outcome used to show twice, once in `command_bar::Feedback`'s
+  label and again as the Output dock's permanent row; the label now
+  appears only while the dock is collapsed
+  (`Feedback::shown_inline`), when it is the one place the result would
+  otherwise be lost — which is why a `Ctrl+S` save, which used to report
+  through the label alone, now logs a `Save` row too.
+- [ ] 📋 **Output window: the sandbox-dependent half.** Filtering by
+  **context** (`Client`/`Server`/`User Plugin`) only means something once
+  the sandbox's client/server split exists to produce it, and the **Show
+  Context** and **Show Source** (script name + line number) toggles are
+  the same story — neither a Command Bar run nor an app warning carries a
+  script/line origin today. `TestService.Message`'s blue/info kind needs
+  the sandbox before anything can produce it. Whether logged tables show
+  expanded by default is the one piece here that does not need the sandbox
+  first.
 - [ ] ⚠️ **Device Simulator equivalent** — real Studio's tool
   (`studio/device-simulator.md`, itself currently in beta on Roblox's
   side) previews an experience's UI at a chosen phone/desktop/console/
@@ -1681,16 +1686,23 @@ against `Roblox/creator-docs` rather than assumed:
 - [ ] 📋 Mouse capture in the free-flight camera — implemented for X11
   only today (`x11rb`/XFixes); needs a Win32 `ClipCursor`/`SetCursorPos`
   backend.
-- [ ] 📋 A first real build on Windows, and CI coverage for it — nothing
-  here has ever been verified on the platform beyond code reading.
+- [x] A first real build on Windows, and CI coverage for it — every
+  change now runs `cargo clippy -D warnings`, `cargo build` and
+  `cargo test --workspace` on `windows-latest`
+  (`.github/workflows/ci.yml`). The workspace compiles and its tests pass
+  there. What that job cannot answer is anything about the editor
+  *running*: it is headless, so no window, GPU surface or input path has
+  been exercised on Windows. Launching the editor there is still open, and
+  mouse capture (the bullet above) is the one gap already known about.
 
 ### Tooling / CI
 - [x] Daily API-Dump sync (`.github/workflows/sync-api-dump.yml`).
 - [ ] 📋 A job that rebuilds against the current Studio version and
   compares parsed output to reference dumps, to catch a format drift
   before a user does.
-- [ ] 📋 Cross-platform build CI (Linux is exercised constantly by
-  development itself; Windows and macOS have none).
+- [ ] 📋 macOS build CI. Linux is exercised constantly by development
+  itself and Windows has had a job since the one under "Platform:
+  Windows"; macOS has neither, and is not a target yet either.
 
 ## Explicitly impossible without Roblox's engine
 

@@ -80,7 +80,7 @@ impl Shell {
         self.ribbon_nav.begin(&self.tab_order, None, cx);
         let groups: Vec<Vec<AnyElement>> = match self.ribbon_tab {
             Tab::Home => vec![
-                clipboard(&self.ribbon_nav, cx),
+                self.clipboard_tiles(cx),
                 self.transform_tools(cx),
                 self.insert_tiles(cx),
             ],
@@ -296,51 +296,107 @@ impl Shell {
     /// reachable through the Properties panel today; a one-click ribbon
     /// version has to apply across a whole selection, which is real new
     /// plumbing rather than a second button on an existing path.
-    fn edit_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    /// Copy/Paste/Duplicate run the same `shell::clipboard` entry points as
+    /// `menu_bar`'s Edit menu and `Ctrl+C`/`V`/`D`; Cut stays a disabled
+    /// placeholder there too.
+    ///
+    /// Each is greyed exactly while its own handler would return early
+    /// without doing anything — `clipboard::has_copyable` is that handler's
+    /// own guard, so the button and the command cannot disagree about when
+    /// there is something to act on. A control that is greyed is also out
+    /// of the roving group (see `disabled_tile`), so arrowing along the
+    /// ribbon skips it rather than stopping on a dead end; the ribbon
+    /// already rebuilds that group every render, which is why its count is
+    /// allowed to change with the clipboard.
+    fn clipboard_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        const NOTHING_SELECTED: &str = "nothing is selected";
+        const CLIPBOARD_EMPTY: &str = "the clipboard is empty";
+
+        let nav = &self.ribbon_nav;
+        let copyable =
+            super::clipboard::has_copyable(&self.dom, &self.database, self.selected_all());
+
+        let copy = if copyable {
+            tile(nav, "ribbon-copy", IconName::Copy, "Copy", cx)
+                .on_click(cx.listener(|shell, _, _, cx| shell.copy_selected(cx)))
+        } else {
+            unavailable_tile("ribbon-copy", IconName::Copy, "Copy", NOTHING_SELECTED)
+        };
+        let paste = if self.clipboard.is_empty() {
+            unavailable_row(
+                "ribbon-paste",
+                IconName::ClipboardPaste,
+                "Paste",
+                CLIPBOARD_EMPTY,
+            )
+        } else {
+            live_stack_row(nav, "ribbon-paste", IconName::ClipboardPaste, "Paste", cx)
+                .on_click(cx.listener(|shell, _, _, cx| shell.paste_clipboard(cx)))
+        };
+        let duplicate = if copyable {
+            live_stack_row(nav, "ribbon-duplicate", IconName::CopyPlus, "Duplicate", cx)
+                .on_click(cx.listener(|shell, _, _, cx| shell.duplicate_selected(cx)))
+        } else {
+            unavailable_row(
+                "ribbon-duplicate",
+                IconName::CopyPlus,
+                "Duplicate",
+                NOTHING_SELECTED,
+            )
+        };
+
         vec![
-            tile(
-                &self.ribbon_nav,
+            copy.into_any_element(),
+            stack(vec![
+                paste,
+                stack_row("ribbon-cut", IconName::Scissors, "Cut"),
+                duplicate,
+            ])
+            .into_any_element(),
+        ]
+    }
+
+    /// Group and Ungroup grey on the same rule the clipboard tiles follow
+    /// (see [`Shell::clipboard_tiles`]): `group::has_groupable` and
+    /// `has_ungroupable` are the guards `group_selected` and
+    /// `ungroup_selected` return early on, so a live tile always has work to
+    /// do. Group needs one common, reparentable parent; Ungroup needs one
+    /// `Model` among the selection and ignores whatever else is there.
+    fn edit_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let nav = &self.ribbon_nav;
+        let selected = self.selected_all();
+        let group = if super::group::has_groupable(&self.dom, &self.database, selected) {
+            tile(nav, "ribbon-group", IconName::Group, "Group", cx)
+                .on_click(cx.listener(|shell, _, _, cx| shell.group_selected(cx)))
+        } else {
+            unavailable_tile(
                 "ribbon-group",
                 IconName::Group,
                 "Group",
-                cx,
+                "nothing groupable is selected",
             )
-            .on_click(cx.listener(|shell, _, _, cx| shell.group_selected(cx)))
-            .into_any_element(),
-            tile(
-                &self.ribbon_nav,
+        };
+        let ungroup = if super::group::has_ungroupable(&self.dom, &self.database, selected) {
+            tile(nav, "ribbon-ungroup", IconName::Ungroup, "Ungroup", cx)
+                .on_click(cx.listener(|shell, _, _, cx| shell.ungroup_selected(cx)))
+        } else {
+            unavailable_tile(
                 "ribbon-ungroup",
                 IconName::Ungroup,
                 "Ungroup",
-                cx,
+                "no Model is selected",
             )
-            .on_click(cx.listener(|shell, _, _, cx| shell.ungroup_selected(cx)))
-            .into_any_element(),
+        };
+
+        vec![
+            group.into_any_element(),
+            ungroup.into_any_element(),
             disabled_tile("ribbon-material", IconName::Layers, "Material").into_any_element(),
             disabled_tile("ribbon-color", IconName::Droplet, "Color").into_any_element(),
             disabled_tile("ribbon-lock", IconName::Lock, "Lock").into_any_element(),
             disabled_tile("ribbon-anchor", IconName::Anchor, "Anchor").into_any_element(),
         ]
     }
-}
-
-/// Copy/Paste/Duplicate run the same `shell::clipboard` entry points as
-/// `menu_bar`'s Edit menu and `Ctrl+C`/`V`/`D`; Cut stays a disabled
-/// placeholder there too.
-fn clipboard(nav: &Roving, cx: &mut Context<Shell>) -> Vec<AnyElement> {
-    vec![
-        tile(nav, "ribbon-copy", IconName::Copy, "Copy", cx)
-            .on_click(cx.listener(|shell, _, _, cx| shell.copy_selected(cx)))
-            .into_any_element(),
-        stack(vec![
-            live_stack_row(nav, "ribbon-paste", IconName::ClipboardPaste, "Paste", cx)
-                .on_click(cx.listener(|shell, _, _, cx| shell.paste_clipboard(cx))),
-            stack_row("ribbon-cut", IconName::Scissors, "Cut"),
-            live_stack_row(nav, "ribbon-duplicate", IconName::CopyPlus, "Duplicate", cx)
-                .on_click(cx.listener(|shell, _, _, cx| shell.duplicate_selected(cx))),
-        ])
-        .into_any_element(),
-    ]
 }
 
 /// Importing meshes and models off disk isn't implemented.
@@ -494,9 +550,25 @@ pub(super) fn disabled_tile(
     icon: IconName,
     label: &'static str,
 ) -> Stateful<Div> {
-    base_tile(id, icon, label, false).tooltip(move |window, cx| {
-        super::tooltip::text(format!("{label} — not implemented"), window, cx)
-    })
+    unavailable_tile(id, icon, label, "not implemented")
+}
+
+/// The same greyed, unclaimed tile for a command this editor *does* have
+/// that cannot act right now — nothing selected, an empty clipboard.
+///
+/// The reason replaces "not implemented" because the two are different
+/// answers: one is a gap in this editor, the other is something the person
+/// at the keyboard can fix in a second. Offering the click instead and
+/// doing nothing is the worst of the three, which is what this exists to
+/// stop.
+pub(super) fn unavailable_tile(
+    id: impl Into<ElementId>,
+    icon: IconName,
+    label: &'static str,
+    reason: &'static str,
+) -> Stateful<Div> {
+    base_tile(id, icon, label, false)
+        .tooltip(move |window, cx| super::tooltip::text(format!("{label} — {reason}"), window, cx))
 }
 
 fn base_tile(
@@ -577,12 +649,20 @@ pub(super) fn stack(rows: Vec<Stateful<Div>>) -> Div {
 /// One of its rows, for a command this editor doesn't have yet: greyed, not
 /// clickable and left out of the roving group, exactly as [`disabled_tile`].
 pub(super) fn stack_row(id: &'static str, icon: IconName, label: &'static str) -> Stateful<Div> {
+    unavailable_row(id, icon, label, "not implemented")
+}
+
+/// [`unavailable_tile`]'s stack row: the same reason, the same reasoning.
+fn unavailable_row(
+    id: &'static str,
+    icon: IconName,
+    label: &'static str,
+    reason: &'static str,
+) -> Stateful<Div> {
     base_row(id, icon, label)
         .cursor_not_allowed()
         .text_color(tokens::text_disabled())
-        .tooltip(move |window, cx| {
-            super::tooltip::text(format!("{label} — not implemented"), window, cx)
-        })
+        .tooltip(move |window, cx| super::tooltip::text(format!("{label} — {reason}"), window, cx))
 }
 
 /// A stack row that does something: the same geometry as [`stack_row`] with
