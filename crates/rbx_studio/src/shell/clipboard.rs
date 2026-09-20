@@ -57,14 +57,18 @@ pub(super) enum Action {
 /// Command Bar, an open script) keeps its own copy/paste and this handler
 /// never sees the keystroke.
 pub(super) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
-    if !modifiers.control {
+    // The whole modifier set decides, not just Ctrl plus whichever other key
+    // one arm happens to check: Ctrl+Alt+V (AltGr on some layouts) is no
+    // paste, and Ctrl+Shift+D is not a duplicate. Shift is the one modifier
+    // that means something, and only on V.
+    if !modifiers.control || modifiers.alt || modifiers.platform || modifiers.function {
         return None;
     }
-    match key {
-        "c" => Some(Action::Copy),
-        "v" if modifiers.shift => Some(Action::PasteInto),
-        "v" => Some(Action::Paste),
-        "d" => Some(Action::Duplicate),
+    match (key, modifiers.shift) {
+        ("c", false) => Some(Action::Copy),
+        ("v", false) => Some(Action::Paste),
+        ("v", true) => Some(Action::PasteInto),
+        ("d", false) => Some(Action::Duplicate),
         _ => None,
     }
 }
@@ -364,6 +368,29 @@ mod tests {
         };
         assert_eq!(action_for("v", shifted), Some(Action::PasteInto));
         assert_eq!(action_for("v", ctrl()), Some(Action::Paste));
+    }
+
+    #[test]
+    fn any_other_modifier_on_the_chord_is_not_a_clipboard_action() {
+        let with = |f: fn(&mut Modifiers)| {
+            let mut modifiers = ctrl();
+            f(&mut modifiers);
+            modifiers
+        };
+        let alt = with(|m| m.alt = true);
+        let platform = with(|m| m.platform = true);
+        let shift = with(|m| m.shift = true);
+        for key in ["c", "v", "d"] {
+            assert_eq!(action_for(key, alt), None, "Ctrl+Alt+{key}");
+            assert_eq!(action_for(key, platform), None, "Ctrl+Super+{key}");
+        }
+        assert_eq!(action_for("c", shift), None, "Ctrl+Shift+C");
+        assert_eq!(action_for("d", shift), None, "Ctrl+Shift+D");
+        let shift_alt = with(|m| {
+            m.shift = true;
+            m.alt = true;
+        });
+        assert_eq!(action_for("v", shift_alt), None, "Ctrl+Shift+Alt+V");
     }
 
     #[test]

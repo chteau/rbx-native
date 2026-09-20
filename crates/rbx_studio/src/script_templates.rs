@@ -99,10 +99,16 @@ impl ScriptTemplates {
             }
         }
         // Directory order is whatever the filesystem says; a menu that
-        // reshuffles between machines is not one anybody can learn.
-        templates
-            .extras
-            .sort_by_cached_key(|t| (t.class, t.name.to_lowercase(), t.name.clone()));
+        // reshuffles between machines is not one anybody can learn. Classes
+        // follow `CLASSES` — the order of the built-in rows these are listed
+        // after — rather than alphabetically.
+        templates.extras.sort_by_cached_key(|t| {
+            (
+                CLASSES.iter().position(|class| *class == t.class),
+                t.name.to_lowercase(),
+                t.name.clone(),
+            )
+        });
         templates
     }
 
@@ -186,22 +192,26 @@ mod tests {
     }
 
     #[test]
-    fn extras_are_grouped_by_class_and_sorted_by_name_ignoring_case() {
+    fn extras_follow_the_built_in_class_order_then_name_ignoring_case() {
         let dir = scratch();
         write(&dir, "ModuleScript/beta.luau", b"b");
         write(&dir, "Script/Zed.luau", b"z");
+        write(&dir, "LocalScript/Mid.luau", b"m");
         write(&dir, "ModuleScript/Alpha.luau", b"a");
         let listed: Vec<_> = ScriptTemplates::load_from(&dir)
             .extras()
             .iter()
             .map(|t| (t.class, t.name.clone()))
             .collect();
+        // Script, LocalScript, ModuleScript: the order of the three built-in
+        // rows these are listed after, not alphabetical by class.
         assert_eq!(
             listed,
             [
+                ("Script", "Zed".to_owned()),
+                ("LocalScript", "Mid".to_owned()),
                 ("ModuleScript", "Alpha".to_owned()),
                 ("ModuleScript", "beta".to_owned()),
-                ("Script", "Zed".to_owned()),
             ]
         );
     }

@@ -261,6 +261,7 @@ impl Shell {
         place: Place,
         settings: Settings,
         launch: Launch,
+        user: crate::packs::UserContent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -415,16 +416,8 @@ impl Shell {
             axis_indicator,
             selection_occluded,
             icon_pack,
-            appearance: {
-                let mut appearance = crate::packs::Appearance::load();
-                // `main` installed the pack before the place loaded; one that
-                // was named but would not load is not "chosen".
-                if !crate::class_icons::user_pack_installed() {
-                    appearance.icon_pack = None;
-                }
-                appearance
-            },
-            installed_icon_packs: crate::packs::installed_icon_packs(),
+            appearance: user.appearance,
+            installed_icon_packs: user.icon_packs,
             stats_shown: false,
             unfocused_fps,
             document_nav: roving::Roving::horizontal(),
@@ -443,7 +436,7 @@ impl Shell {
             attribute_edits: attributes_panel::AttributeEdits::default(),
             selection: Selection::new(selected),
             clipboard: Vec::new(),
-            script_templates: crate::script_templates::ScriptTemplates::load(),
+            script_templates: user.script_templates,
             hovered: Vec::new(),
             covered: HashSet::new(),
             scripts: ScriptEditor::default(),
@@ -911,7 +904,7 @@ impl Shell {
         };
         crate::class_icons::set_user_pack(overlay);
         self.appearance.icon_pack = name;
-        if let Err(err) = self.appearance.save() {
+        if let Err(err) = self.appearance.save_icon_pack() {
             self.output
                 .push_warning(&format!("could not remember the icon pack: {err}"));
         }

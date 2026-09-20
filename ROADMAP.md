@@ -1557,7 +1557,8 @@ against `Roblox/creator-docs` rather than assumed:
     label and again as the Output dock's permanent row; the label now
     appears only while the dock is collapsed
     (`Feedback::shown_inline`), when it is the one place the result would
-    otherwise be lost. Still open: `TestService.Message`'s blue/info kind,
+    otherwise be lost — which is why a `Ctrl+S` save, which used to report
+    through the label alone, now logs a `Save` row too. Still open: `TestService.Message`'s blue/info kind,
     which needs the sandbox before anything here can produce it.
   - **Sandbox-dependent**: filtering by **context** (`Client`/`Server`/
     `User Plugin`) only means something once the sandbox's client/server

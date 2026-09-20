@@ -55,7 +55,6 @@ pub(crate) enum IconPack {
 /// Every icon in the kit is authored on a 16x16 `viewBox` (see
 /// `assets/icons/README.md`'s "Canvas" section); rasterized at 2x for a
 /// sharp downscale to the Explorer's `CLASS_ICON_SIZE`.
-const ICON_VIEWBOX: f32 = 16.0;
 const RENDER_SIZE: u32 = 32;
 
 /// `ClassName -> icon slug`, extracted from the class icon kit's own spec
@@ -420,17 +419,13 @@ pub(crate) fn set_user_pack(pack: Option<IconOverlay>) {
     }
 }
 
-/// Whether a user pack is currently installed over the kit — what the
-/// Explorer menu checks so it never shows a pack as chosen that failed to load.
-pub(crate) fn user_pack_installed() -> bool {
-    USER_PACK.read().is_ok_and(|pack| pack.is_some())
-}
-
 /// Renders `svg` to a square RGBA tile.
 ///
-/// The kit is authored on a 16x16 canvas (`ICON_VIEWBOX`), but the scale is
-/// taken from the document's own size so a pack drawn on 24x24 or 32x32 fills
-/// the tile instead of being cropped to its top-left corner.
+/// The kit is authored on a 16x16 canvas, but the scale is taken from the
+/// document's own size so a pack drawn on 24x24 or 32x32 fills the tile
+/// instead of being cropped to its top-left corner, and a drawing that is not
+/// square is centred on the shorter axis rather than pinned to the top-left.
+/// (`usvg` refuses a document with no size, so the divisor is never zero.)
 ///
 /// `pub(crate)`: also `action_icons`'s own rasterizer, for the ribbon's
 /// action-icon kit (`assets/icons/actions`) — same 16x16 canvas, same
@@ -439,11 +434,15 @@ pub(crate) fn rasterize(svg: &[u8]) -> Option<Arc<RenderImage>> {
     let tree = Tree::from_data(svg, &Options::default()).ok()?;
     let mut pixmap = Pixmap::new(RENDER_SIZE, RENDER_SIZE)?;
     let size = tree.size();
-    let canvas = size.width().max(size.height());
-    let scale = RENDER_SIZE as f32 / if canvas > 0.0 { canvas } else { ICON_VIEWBOX };
+    let tile = RENDER_SIZE as f32;
+    let scale = tile / size.width().max(size.height());
+    let (x, y) = (
+        (tile - size.width() * scale) / 2.0,
+        (tile - size.height() * scale) / 2.0,
+    );
     resvg::render(
         &tree,
-        Transform::from_scale(scale, scale),
+        Transform::from_row(scale, 0.0, 0.0, scale, x, y),
         &mut pixmap.as_mut(),
     );
 
@@ -536,6 +535,31 @@ mod tests {
         let bytes = image.as_bytes(0).unwrap();
         let last_pixel = &bytes[bytes.len() - 4..];
         assert_eq!(last_pixel[3], 255, "bottom-right corner must be opaque");
+    }
+
+    /// A 32x16 drawing sits in the middle of the tile, not its top half: the
+    /// first row is empty and the middle one is not.
+    #[test]
+    fn a_drawing_that_is_not_square_is_centred() {
+        let wide = br##"<svg xmlns="http://www.w3.org/2000/svg" width="32" height="16">
+            <rect width="32" height="16" fill="#00ff00"/></svg>"##;
+        let overlay = IconOverlay::with("Part", wide);
+        let image = icon_tile_over("Part", IconPack::Dark, Some(&overlay)).unwrap();
+        let bytes = image.as_bytes(0).unwrap();
+        let alpha =
+            |row: usize, column: usize| bytes[(row * RENDER_SIZE as usize + column) * 4 + 3];
+
+        assert_eq!(alpha(0, 16), 0, "the top row is padding");
+        assert_eq!(alpha(31, 16), 0, "so is the bottom row");
+        assert_eq!(alpha(16, 16), 255, "the drawing is in the middle");
+    }
+
+    /// A document with no size cannot be scaled to anything; it is refused,
+    /// and so falls through to the kit, rather than dividing by zero.
+    #[test]
+    fn a_drawing_with_no_size_is_refused() {
+        let empty = br#"<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0"/>"#;
+        assert!(rasterize(empty).is_none());
     }
 
     /// A pack file that will not parse falls through to the kit rather than

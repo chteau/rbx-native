@@ -34,6 +34,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::script_templates::ScriptTemplates;
 use crate::settings::{default_config_dir, write_atomic};
 
 /// A single icon is a 16x16 drawing; 512 KiB is far past any real one and
@@ -95,20 +96,68 @@ impl Appearance {
         }
     }
 
-    pub(crate) fn save(&self) -> Result<(), String> {
+    /// Remembers the chosen icon pack, and nothing else.
+    pub(crate) fn save_icon_pack(&self) -> Result<(), String> {
         let Some(dir) = root() else {
             return Err("no config directory".to_owned());
         };
-        self.save_to(&dir.join("appearance.json"))
+        self.save_icon_pack_to(&dir.join("appearance.json"))
     }
 
-    pub(crate) fn save_to(&self, path: &Path) -> Result<(), String> {
-        let value = serde_json::json!({
-            "icon_pack": self.icon_pack,
-            "theme": self.theme,
-        });
+    /// Writes `icon_pack` into the file's own JSON rather than rebuilding the
+    /// file from what [`Appearance::load_from`] accepted: a `theme` it
+    /// refused (or a key from a newer version) belongs to whoever wrote it,
+    /// and a pack that was briefly unreadable at startup must not be
+    /// persisted away by an unrelated change. A file that is not a JSON
+    /// object has nothing worth keeping and is replaced.
+    pub(crate) fn save_icon_pack_to(&self, path: &Path) -> Result<(), String> {
+        let mut value = fs::read(path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .filter(serde_json::Value::is_object)
+            .unwrap_or_else(|| serde_json::json!({}));
+        if let Some(object) = value.as_object_mut() {
+            match &self.icon_pack {
+                Some(name) => object.insert("icon_pack".to_owned(), name.clone().into()),
+                None => object.remove("icon_pack"),
+            };
+        }
         let bytes = serde_json::to_vec_pretty(&value).map_err(|e| e.to_string())?;
         write_atomic(path, &bytes).map_err(|e| e.to_string())
+    }
+}
+
+/// Everything the editor reads from the config directory beyond
+/// `settings.json`, gathered in one pass at startup — before the window
+/// exists, where the file reads cannot stall the UI thread, and once, so
+/// `appearance.json` is not parsed by three different callers.
+pub(crate) struct UserContent {
+    pub(crate) appearance: Appearance,
+    /// The chosen pack's drawings, for `main` to install
+    /// (`class_icons::set_user_pack`) before the place loads and resolves its
+    /// first icons. `None` when no pack is chosen or the chosen one would not
+    /// load — in which case `appearance.icon_pack` has been cleared too, so
+    /// the Explorer's menu never shows a pack as chosen that is not drawn.
+    pub(crate) icon_overlay: Option<IconOverlay>,
+    /// Every installed pack's name, for the Explorer menu. Listed once: the
+    /// menu is rebuilt every frame.
+    pub(crate) icon_packs: Vec<String>,
+    pub(crate) script_templates: ScriptTemplates,
+}
+
+impl UserContent {
+    pub(crate) fn load() -> Self {
+        let mut appearance = Appearance::load();
+        let icon_overlay = appearance.icon_pack.as_deref().and_then(IconOverlay::load);
+        if icon_overlay.is_none() {
+            appearance.icon_pack = None;
+        }
+        UserContent {
+            appearance,
+            icon_overlay,
+            icon_packs: installed_icon_packs(),
+            script_templates: ScriptTemplates::load(),
+        }
     }
 }
 
@@ -263,14 +312,77 @@ mod tests {
     }
 
     #[test]
-    fn appearance_round_trips_through_disk() {
+    fn a_chosen_icon_pack_round_trips_through_disk() {
         let path = scratch().join("nested").join("appearance.json");
         let chosen = Appearance {
             icon_pack: Some("Mine".into()),
-            theme: Some("Dusk".into()),
+            theme: None,
         };
-        chosen.save_to(&path).expect("writes, creating the folder");
+        chosen
+            .save_icon_pack_to(&path)
+            .expect("writes, creating the folder");
         assert_eq!(Appearance::load_from(&path), chosen);
+    }
+
+    /// Changing the pack rewrites `icon_pack` and nothing else: a theme the
+    /// loader would refuse, and a key it has never heard of, are still there.
+    #[test]
+    fn saving_the_icon_pack_leaves_every_other_key_as_it_was() {
+        let dir = scratch();
+        write(
+            &dir,
+            "appearance.json",
+            br#"{"icon_pack":"Old","theme":"../escape","from_a_newer_version":[1,2]}"#,
+        );
+        let path = dir.join("appearance.json");
+
+        Appearance {
+            icon_pack: Some("New".into()),
+            theme: None,
+        }
+        .save_icon_pack_to(&path)
+        .unwrap();
+
+        let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(saved["icon_pack"], "New");
+        assert_eq!(saved["theme"], "../escape");
+        assert_eq!(saved["from_a_newer_version"], serde_json::json!([1, 2]));
+    }
+
+    #[test]
+    fn choosing_the_built_in_icons_removes_only_the_icon_pack_key() {
+        let dir = scratch();
+        write(
+            &dir,
+            "appearance.json",
+            br#"{"icon_pack":"Old","theme":"Dusk"}"#,
+        );
+        let path = dir.join("appearance.json");
+
+        Appearance::default().save_icon_pack_to(&path).unwrap();
+
+        let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert!(saved.get("icon_pack").is_none());
+        assert_eq!(saved["theme"], "Dusk");
+    }
+
+    #[test]
+    fn a_file_that_is_not_a_json_object_is_replaced_rather_than_failing() {
+        let dir = scratch();
+        write(&dir, "appearance.json", b"[1, 2, 3]");
+        let path = dir.join("appearance.json");
+
+        Appearance {
+            icon_pack: Some("Mine".into()),
+            theme: None,
+        }
+        .save_icon_pack_to(&path)
+        .unwrap();
+
+        assert_eq!(
+            Appearance::load_from(&path).icon_pack.as_deref(),
+            Some("Mine")
+        );
     }
 
     #[test]

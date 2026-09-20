@@ -20,7 +20,9 @@
   than `Workspace`, and into each selected instance when there are several —
   the docs' "convenient way to paste the same clipboard items into multiple
   parents" — one undo step for the lot. Plain `Ctrl+V` used to swallow the
-  shifted chord; it does not now. The ribbon's Copy, Paste and Duplicate
+  shifted chord; it does not now, and the whole modifier set is matched, so
+  `Ctrl+Alt+V` (AltGr on some layouts) is no paste and `Ctrl+Shift+D` is no
+  duplicate. The ribbon's Copy, Paste and Duplicate
   tiles were disabled placeholders; they run the same code the keys do. The
   roadmap listed skipping a non-`Archivable` descendant as still open, but
   that was already done and tested; only the bullet was stale. — @jleeclient
@@ -47,7 +49,10 @@
 - **A Command Bar result is not shown twice.** Every run put its outcome in
   the label above the input *and* as a permanent row in the Output dock. The
   label now shows only while the Output dock is collapsed, when it is the one
-  place the result would otherwise be lost. — @jleeclient
+  place the result would otherwise be lost. That rests on every outcome being
+  a row in the dock, which a save was not: `Ctrl+S` reported through the label
+  alone, so a failed save would have gone silent under default settings. A
+  save is logged as a `Save` row now, and a test pins it. — @jleeclient
 
 - **Escape abandons an Explorer drag.** Letting go after a mistaken pickup
   reparented whatever it was over; Escape stops the drag first, so nothing
