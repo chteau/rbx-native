@@ -27,10 +27,12 @@ authorized to:
 **You may edit `ROADMAP.md`, but only to check off the exact item your own
 merged PR addressed.** Once your PR is merged, update the file yourself:
 move the bullet from "What's planned" into "What's been implemented" if it
-shipped in full, or flip its marker to `[x] 🚧` in place (per the file's own
-"in progress / partial" legend) if it shipped only part of what the bullet
-described — say plainly, in the bullet itself, what landed versus what's
-still open. Prefer doing this as part of the same PR that implements the
+shipped in full. If it shipped only part of what the bullet described,
+**split it into two bullets**: an `[x]` one for what actually landed, and a
+`[ ] 📋` one for what is still open, named and scoped so it reads as a real
+item on its own. There is no in-progress marker — a bullet that is half
+true is two bullets, so that the planned list is the whole of what is left
+and nothing has to be read twice to find out which half is which. Prefer doing this as part of the same PR that implements the
 item (reviewed and merged together, so the roadmap update is never
 unreviewed) over a separate follow-up edit. Roadmap *direction* is still
 the maintainer's call only: never add, remove, reprioritize, or reword any

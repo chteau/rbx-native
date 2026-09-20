@@ -43,8 +43,8 @@ Don't edit `ROADMAP.md` yet to reflect this choice — wait until step 6,
 once your PR for it is actually merged, then check it off yourself (see
 `agents/AGENTS.md`'s "Picking up work from the roadmap" section for the
 exact shape: full item shipped → move it to "What's been implemented";
-only part of it shipped → flip it to `[x] 🚧` in place and say what's
-still open). Roadmap direction otherwise stays the maintainer's call —
+only part of it shipped → split it into an `[x]` bullet for what landed
+and a `[ ] 📋` bullet for what is still open). Roadmap direction otherwise stays the maintainer's call —
 don't touch any bullet but the one you shipped.
 
 ## 2. Check for an existing branch or PR before creating one
@@ -220,9 +220,9 @@ roadmap edit (below) against the bullet it's supposed to reflect.
 
 **Include the `ROADMAP.md` checkoff in this same PR**, not a separate
 follow-up: move the bullet to "What's been implemented" if it shipped in
-full, or flip it to `[x] 🚧` in place and say what's still open if only
-part of it did (see `agents/AGENTS.md`'s "Picking up work from the
-roadmap" section). Bundling it means the roadmap update gets reviewed
+full, or split it into an `[x]` bullet for what landed and a `[ ] 📋`
+bullet for what is still open if only part of it did (see
+`agents/AGENTS.md`'s "Picking up work from the roadmap" section). Bundling it means the roadmap update gets reviewed
 alongside the code, never pushed unreviewed on its own — don't push a
 `ROADMAP.md` edit directly to `dev` or `main` outside a PR unless the
 maintainer explicitly asks you to for a specific, already-merged item.

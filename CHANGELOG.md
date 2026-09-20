@@ -203,6 +203,20 @@
   is marked in-progress — a bullet that is half true is two bullets. —
   @chteau
 
+- **No more in-progress bullets in the roadmap.** Nine were marked
+  `[x] 🚧` — each one both a claim that something shipped and a note that
+  it hadn't, so the planned list was never the whole of what was left and
+  every checked box had to be read to the end to learn which half it was.
+  Each is now two: an `[x]` for what actually landed and a `[ ] 📋` for
+  what is still open, named so it reads as a real item rather than a
+  footnote on a finished one. Nothing changed about what is done; the
+  shape of the claim did. `agents/AGENTS.md`, its workflow and the
+  `roadmap-task` skill all told agents to *create* that marker, so they
+  now describe the split instead — otherwise the next one would have put
+  it straight back. Along the way the Explorer-drag bullet stopped saying
+  Escape-to-cancel "has not been exercised in the running window", which
+  #68's own screenshots had already disproved. — @chteau
+
 ## 2026-09-19
 
 - **A collapsed property category reads as a tile.** The category headers
