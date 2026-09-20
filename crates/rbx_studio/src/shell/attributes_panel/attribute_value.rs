@@ -9,7 +9,7 @@ use rbx_dom::Variant;
 
 use crate::properties::attributes as attrs;
 use crate::properties::{EditKind, PropertyRow};
-use crate::shell::rows::{checkbox, render_editor, OnScrub};
+use crate::shell::rows::{checkbox, render_editor, OnOpen, OnScrub};
 use crate::shell::Shell;
 use crate::tokens;
 
@@ -93,12 +93,23 @@ impl Shell {
         // reaches this factory — it exists only to satisfy `render_editor`'s
         // signature. Its return type is left to inference (rather than
         // spelled out on the closure) to dodge clippy's `type_complexity`.
+        // A sequence attribute's row opens the same graph an ordinary
+        // sequence property's does, through the same row name.
+        let open_handle = cx.entity();
+        let open_name = row_key.clone();
+        let on_open: OnOpen = Box::new(move |_, window, cx| {
+            let name = open_name.clone();
+            open_handle.update(cx, |shell, cx| {
+                shell.open_sequence_editor(&name, window, cx);
+            });
+        });
         let control = render_editor(
             tab_index,
             &self.tab_order,
             widget,
             |_index, _checked| Box::new(|_, _, _| {}),
             on_scrub,
+            on_open,
             cx,
         );
         if let Some(message) = error {

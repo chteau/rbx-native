@@ -32,6 +32,7 @@ mod scripts;
 mod scroll;
 mod scrub;
 mod selection;
+mod sequence_panel;
 mod style_panel;
 mod toolbar;
 mod tooltip;
@@ -153,6 +154,9 @@ pub(crate) struct Shell {
     reduce_motion: Option<bool>,
     /// A numeric field being dragged — see `shell::scrub`.
     scrub: Option<scrub::Scrub>,
+    /// The open `NumberSequence`/`ColorSequence` graph, if any — see
+    /// `shell::sequence_panel`, which owns everything about it.
+    sequence: Option<sequence_panel::Open>,
     /// The Explorer's type-ahead buffer — see `shell::tree_keys`.
     typeahead: tree_keys::Typeahead,
     search: Entity<InputState>,
@@ -427,6 +431,7 @@ impl Shell {
             tab_order: roving::TabOrder::default(),
             reduce_motion,
             scrub: None,
+            sequence: None,
             tree_focus_handle,
             typeahead: tree_keys::Typeahead::default(),
             search: cx.new(|cx| InputState::new(window, cx).placeholder("Search")),
@@ -1105,12 +1110,14 @@ impl Render for Shell {
             .on_mouse_move(cx.listener(|shell, event: &MouseMoveEvent, window, cx| {
                 shell.drag_resize(event.position, cx);
                 shell.drag_scrub(event.position.x, event.modifiers, window, cx);
+                shell.drag_sequence(event.position, cx);
             }))
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|shell, _: &MouseUpEvent, _, cx| {
                     shell.end_resize(cx);
                     shell.scrub = None;
+                    shell.end_sequence_drag();
                 }),
             )
             .on_mouse_up_out(
@@ -1118,6 +1125,7 @@ impl Render for Shell {
                 cx.listener(|shell, _: &MouseUpEvent, _, cx| {
                     shell.end_resize(cx);
                     shell.scrub = None;
+                    shell.end_sequence_drag();
                 }),
             )
             .child(self.topbar(cx))
@@ -1130,5 +1138,8 @@ impl Render for Shell {
                 self.command_bar
                     .render(self.tab_order.next(), self.output_collapsed, cx),
             )
+            // Last, so the graph lays over the docks rather than under
+            // them, and absent from the tree entirely while nothing is open.
+            .children(self.sequence_overlay(window, cx))
     }
 }

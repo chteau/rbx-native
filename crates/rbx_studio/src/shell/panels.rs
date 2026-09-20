@@ -15,6 +15,7 @@ use crate::tokens;
 use super::reparent::{draggable_row, DraggedInstances};
 use super::rows::{
     checkbox, guide_mask, property_row, property_row_control, render_editor, row, section_header,
+    OnOpen,
 };
 use super::Shell;
 
@@ -219,6 +220,17 @@ impl Shell {
                                     });
                                 })
                             });
+                        // A sequence row's click opens the graph rather
+                        // than committing anything; every other row shape
+                        // never reaches this handler.
+                        let open_handle = cx.entity();
+                        let open_name = row.name.clone();
+                        let on_open: OnOpen = Box::new(move |_, window, cx| {
+                            let name = open_name.clone();
+                            open_handle.update(cx, |shell, cx| {
+                                shell.open_sequence_editor(&name, window, cx);
+                            });
+                        });
                         let control = render_editor(
                             tab_index,
                             &self.tab_order,
@@ -241,6 +253,7 @@ impl Shell {
                                 })
                             },
                             on_scrub,
+                            on_open,
                             cx,
                         );
                         property_row_control(row, control, composite, error.as_deref())

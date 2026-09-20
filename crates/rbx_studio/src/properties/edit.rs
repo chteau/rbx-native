@@ -96,9 +96,9 @@ pub(crate) fn edit_text(value: &Variant) -> Option<String> {
             rect.min.x, rect.min.y, rect.max.x, rect.max.y
         )),
         Variant::Font(font) => Some(font_text(font)),
-        // Keypoints along a `;`, each one's numbers along a `,` — see
-        // `sequence`, which also carries why a one-line field rather than
-        // the curve/gradient widget these two eventually want.
+        // Keypoints along a `;`, each one's numbers along a `,`. Nobody
+        // types this — `shell::sequence_panel`'s graph is the editor; see
+        // `sequence` for why its commits still come through here.
         Variant::NumberSequence(sequence) => Some(number_sequence_text(sequence)),
         Variant::ColorSequence(sequence) => Some(color_sequence_text(sequence)),
         // A `Default` seeds from [`DEFAULT_PHYSICAL`] for the same reason an
@@ -367,6 +367,30 @@ pub(crate) fn parse(
         }
         Variant::PhysicalProperties(current) => parse_physical(current, text),
         other => Err(format!("{} is read-only", type_name(other))),
+    }
+}
+
+/// The sequence `text` spells, for a caller holding the text alone — the
+/// row's own preview and `shell::sequence_panel`, which both need the
+/// keypoints rather than a string. `color` picks which of the two shapes to
+/// read it as, the same way [`crate::properties::EditKind::Sequence`] carries
+/// it. Colour envelopes come back zeroed, since text never carries them (see
+/// [`sequence::parse_color_sequence`]) — a preview does not use them, and the
+/// panel reads the real ones off the value it opened on.
+pub(crate) fn sequence_value(color: bool, text: &str) -> Option<Variant> {
+    if color {
+        parse_color_sequence(
+            &rbx_dom::ColorSequence {
+                keypoints: Vec::new(),
+            },
+            text,
+        )
+        .map(Variant::ColorSequence)
+        .ok()
+    } else {
+        parse_number_sequence(text)
+            .map(Variant::NumberSequence)
+            .ok()
     }
 }
 

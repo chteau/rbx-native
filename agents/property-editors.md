@@ -3,7 +3,7 @@
 Every `Variant` the DOM can hold, what the Properties panel does with it,
 and what a purpose-built editor would be.
 
-**Status: A1, A4, A5, B1, B2, B3, B4 and half of B5 have shipped.** The rest
+**Status: A1, A4, A5, B1, B2, B3, B4, B5, B6, B7 and B8 have shipped.** The rest
 is still the triage list it started as.
 
 Two facts that shape the whole list:
@@ -72,9 +72,9 @@ orientation.
 | ~~B3~~ | **`Faces`** | ✅ **done** — six named checkboxes | |
 | ~~B4~~ | **`Axes`** | ✅ **done** — three named checkboxes | |
 | ~~B5~~ | **`OptionalCFrame`** | ✅ **done** — a present/absent checkbox above the `CFrame` editor, which draws only while there is a value | |
-| B6 | **`PhysicalProperties`** | `BasePart.CustomPhysicalProperties` | density / friction / elasticity / their weights as fields, plus the "use default" case. Currently rendered with Rust's `{:?}` |
-| B7 | **`NumberSequence`** | `ParticleEmitter.Size`, `.Transparency` | a keypoint list, or a small curve editor. The real work in this list |
-| B8 | **`ColorSequence`** | `ParticleEmitter.Color`, `UIGradient` | a gradient stop editor |
+| ~~B6~~ | **`PhysicalProperties`** | ✅ **done** — a Custom checkbox over the five numbers | |
+| ~~B7~~ | **`NumberSequence`** | ✅ **done** — a draggable curve with an envelope band, in a graph panel the row opens | |
+| ~~B8~~ | **`ColorSequence`** | ✅ **done** — a gradient ramp with draggable stops and a colour picker, in the same panel | |
 | B9 | **`Ref`** | `ObjectValue.Value`, `Weld.Part0` | an instance picker (Explorer target, or "pick in viewport"). Shows the target's name today |
 | B10 | **`Content`** | `Decal.Texture`, `MeshPart.MeshId` | an asset URI field; the `Content::Object` case is a `Ref` picker |
 
@@ -99,15 +99,11 @@ opaque payloads. Editing them by hand corrupts a file rather than editing it.
   that table comes from.
 - **A3 `Font`** — wants a family list, which lives in the viewer crate, not
   here. The weight and style halves are easy; the family is the whole job.
-- **B5's absent case** — a none/some toggle is a *new control*, not a
-  variation on an existing one.
-- **B6 `PhysicalProperties`** — `Default` versus `Custom` is a real design
-  question ("how does someone go back to default?") rather than a layout
-  one. Worth deciding before building.
-- **B7/B8 sequences, B9 `Ref`, B10 `Content`** — each is its own editor with
-  its own interaction model. None of them fits in a property row.
+- **B9 `Ref`, B10 `Content`** — each is its own editor with its own
+  interaction model. Neither fits in a property row. (B7/B8 were the same
+  case and got exactly that: a panel of their own, which the row opens.)
 
 ## Rough sizing for what remains
 
-- **Medium** (a new control, self-contained): A3's weight/style halves, B5, B6
-- **Large** (a new editor with its own interaction): A2, B7, B8, B9, B10
+- **Medium** (a new control, self-contained): A3's weight/style halves
+- **Large** (a new editor with its own interaction): A2, B9, B10

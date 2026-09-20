@@ -2,12 +2,13 @@
 //! `;`, the numbers inside one keypoint by `,` — the same comma-joined
 //! spelling every other composite value in this panel uses, one level deeper.
 //!
-//! A one-line field is not the curve/gradient widget these two eventually
-//! want, and it is not meant to be: what it buys is that both types edit
-//! through the panel's *existing* per-type path, which is also the only path
-//! an attribute's value is allowed to take (see
-//! `properties::attributes::edit_kind`) — so a sequence becomes creatable as
-//! an attribute without a second set of editors existing anywhere.
+//! Nobody types this: the graph in `shell::sequence_panel` is what edits a
+//! sequence, and a row draws one rather than showing a field. The text is
+//! how that graph *commits* — through the panel's existing per-type path,
+//! which is also the only path an attribute's value is allowed to take (see
+//! `properties::attributes::edit_kind`) — so the graph is a second input to
+//! one mutation path rather than a second mutation path, and a sequence
+//! becomes creatable as an attribute with no second editor anywhere.
 
 use rbx_dom::{
     Color3Data, ColorSequence, ColorSequenceKeypoint, NumberSequence, NumberSequenceKeypoint,

@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-09-21
+
+- **`NumberSequence` and `ColorSequence` have a real editor, and are
+  creatable as attributes.** Both types used to render as read-only text,
+  which is also why neither could be added as an attribute: the Attributes
+  section routes a value through the exact per-type widget an ordinary
+  property gets, so a type with no editor had no row anyone could change.
+  A sequence row now *draws* its value — a gradient ramp, or the curve —
+  and clicking it opens a graph panel over the docks wearing the window's
+  own title bar. Keypoints drag, a click on empty plot inserts one on the
+  curve it split, a `NumberSequence`'s envelope band has its own handle,
+  and a `ColorSequence`'s stops are markers under the ramp with the
+  panel's existing colour picker behind the swatch. Roblox's own
+  constructor rules are enforced (2–20 keypoints, non-descending time,
+  first at 0 and last at 1) because the renderer's `eval_number`/
+  `eval_color` walk the list assuming exactly that. The panel keeps no
+  copy of the value: it rebuilds from the DOM every frame and commits
+  through the same textual path a typed row takes, so the viewport
+  repaints on every drag step, an undo or a script shows up in the graph
+  immediately, and a whole drag is still one undo entry. — @chteau
+
 ## 2026-09-20
 
 - **A `CFrame` attribute no longer takes every attribute after it down with

@@ -58,6 +58,13 @@ pub(super) enum RowEditor {
     /// present/absent checkbox only while it is. Built (and kept) either
     /// way, so the flag flipping is all that changes.
     Optional(bool, &'static str, Box<RowEditor>),
+    /// A sequence's own drawing, which is also the button that opens
+    /// `shell::sequence_panel`. No entity: there is nothing to type into,
+    /// and the panel it opens owns whatever state an edit needs.
+    Sequence {
+        color: bool,
+        text: String,
+    },
 }
 
 impl RowEditor {
@@ -86,7 +93,10 @@ impl RowEditor {
                     .join(", "),
             ),
             RowEditor::Optional(_, _, inner) => inner.input_text(cx),
-            RowEditor::Color(_) | RowEditor::Enum(_) | RowEditor::Flags(..) => None,
+            RowEditor::Color(_)
+            | RowEditor::Enum(_)
+            | RowEditor::Flags(..)
+            | RowEditor::Sequence { .. } => None,
         }
     }
 
@@ -104,6 +114,7 @@ impl RowEditor {
                 | RowEditor::Groups(..)
                 | RowEditor::Flags(..)
                 | RowEditor::Optional(..)
+                | RowEditor::Sequence { .. }
         )
     }
 }
@@ -171,7 +182,12 @@ fn resync_row_widget(widget: &RowEditor, kind: &EditKind, window: &mut Window, c
 /// `seed` — `InputState::set_value` unconditionally resets the caret and
 /// scroll position, which would be visible jitter on every throttled sync if
 /// applied to a value that has not actually changed.
-fn resync_field(input: &Entity<InputState>, seed: &str, window: &mut Window, cx: &mut App) {
+pub(super) fn resync_field(
+    input: &Entity<InputState>,
+    seed: &str,
+    window: &mut Window,
+    cx: &mut App,
+) {
     if input.focus_handle(cx).is_focused(window) || input.read(cx).value().as_ref() == seed {
         return;
     }
@@ -252,6 +268,15 @@ impl Shell {
                 }
                 (RowEditor::Groups(groups, inputs), subscriptions)
             }
+            // Nothing to subscribe to: the strip is a button, and the panel
+            // it opens commits through `commit_row` like any other widget.
+            EditKind::Sequence { color, text } => (
+                RowEditor::Sequence {
+                    color: *color,
+                    text: text.clone(),
+                },
+                Vec::new(),
+            ),
             // Each flag commits the whole set, because the DOM's value is
             // one bit field — there is no "set only this side" write.
             EditKind::Flags { labels, values } => {
@@ -357,7 +382,20 @@ impl Shell {
     /// value — clamped colors, a resolved enum ordinal) or records the
     /// error for that row to show.
     pub(super) fn commit_row(&mut self, name: &str, text: &str, cx: &mut Context<Self>) {
-        match self.apply_edit(name, text, cx) {
+        self.commit_row_step(name, text, true, cx);
+    }
+
+    /// [`Self::commit_row`] for one step of a gesture: `push` is true only
+    /// on the step that starts it, so a whole drag lands as a single undo
+    /// entry the way a viewport drag already does (see `shell::drag`).
+    pub(super) fn commit_row_step(
+        &mut self,
+        name: &str,
+        text: &str,
+        push: bool,
+        cx: &mut Context<Self>,
+    ) {
+        match self.apply_edit(name, text, push, cx) {
             Ok(()) => {
                 self.edits.rows.remove(name);
             }
@@ -376,7 +414,13 @@ impl Shell {
     /// Explorer only when `Name` moved a row, and the viewport through the
     /// same `Change` log every other mutation hands it (see
     /// `Shell::reflect_changes`).
-    fn apply_edit(&mut self, name: &str, text: &str, cx: &mut Context<Self>) -> Result<(), String> {
+    fn apply_edit(
+        &mut self,
+        name: &str,
+        text: &str,
+        push: bool,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
         let reference = self
             .selected()
             .ok_or_else(|| "nothing is selected".to_string())?;
@@ -395,7 +439,9 @@ impl Shell {
         // edit, but the write itself goes through the attribute blob rather
         // than `WeakDom::set_property` directly.
         if let Some(attribute) = properties::attributes::attribute_of_row(name) {
-            self.push_history();
+            if push {
+                self.push_history();
+            }
             let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
             let result = properties::attributes::set_attribute_value(
                 &mut dom,
@@ -412,7 +458,9 @@ impl Shell {
         }
 
         // See `shell::history`: snapshotted before the write below.
-        self.push_history();
+        if push {
+            self.push_history();
+        }
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
         let result = properties::edit::commit(&mut dom, &self.database, reference, name, text);
         self.dom = dom;
@@ -472,7 +520,7 @@ impl Shell {
             return;
         };
         let name = name.trim().to_owned();
-        if self.apply_edit(&name, value.trim(), cx).is_ok() {
+        if self.apply_edit(&name, value.trim(), true, cx).is_ok() {
             // Narrows the panel to just this row, which a screenshot needs:
             // nothing can scroll the fixed-height list past however many
             // properties sort before it alphabetically (see `AGENTS.md`'s ban

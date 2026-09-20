@@ -481,6 +481,11 @@ pub(super) fn section_header(
 pub(super) type OnScrub =
     Rc<dyn Fn(usize, FieldKind) -> Box<dyn Fn(&MouseDownEvent, &mut Window, &mut App)>>;
 
+/// A sequence row's click: it opens `shell::sequence_panel` rather than
+/// committing anything, so it is a plain handler rather than one of
+/// [`OnScrub`]'s per-field factories.
+pub(super) type OnOpen = Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+
 ///
 /// `stops` is the window's own Tab order: the two editors that are whole
 /// widgets rather than toolkit elements — `Select` for an enum, `ColorPicker`
@@ -495,9 +500,10 @@ pub(super) fn render_editor(
     editor: RowEditor,
     on_flag: impl Fn(usize, bool) -> Box<dyn Fn(&ClickEvent, &mut Window, &mut App)> + 'static,
     on_scrub: OnScrub,
+    on_open: OnOpen,
     cx: &mut App,
 ) -> AnyElement {
-    render_row_editor(tab_index, stops, editor, &on_flag, on_scrub, cx)
+    render_row_editor(tab_index, stops, editor, &on_flag, on_scrub, on_open, cx)
 }
 
 /// One flag's click handler, by its index and the value it currently shows.
@@ -514,9 +520,44 @@ fn render_row_editor(
     editor: RowEditor,
     on_flag: OnFlag<'_>,
     on_scrub: OnScrub,
+    on_open: OnOpen,
     cx: &mut App,
 ) -> AnyElement {
     match editor {
+        // The row *is* the preview: a `ColorSequence`'s ramp or a
+        // `NumberSequence`'s curve, drawn at row height and clicked to open
+        // the graph that edits it (`shell::sequence_panel`). A sequence has
+        // more numbers than a row has width and they are the wrong numbers
+        // to type, so this replaces the field rather than sitting beside
+        // one. Unparseable text draws nothing rather than an empty box —
+        // the only way to reach that is a sequence some other tool wrote
+        // that Roblox's own constructors would reject too.
+        RowEditor::Sequence { color, text } => {
+            let stops = crate::properties::edit::sequence_value(color, &text)
+                .and_then(|value| crate::sequence_editor::Editor::open(&value))
+                .map(|editor| (editor.kind, editor.stops.clone(), editor.ceiling()));
+            div()
+                // Keyed by the row's own tab stop: a `UIGradient` shows two
+                // sequence rows at once, and two elements sharing an id are
+                // one element as far as click dispatch is concerned.
+                .id(("sequence-preview", tab_index as u64))
+                .w_full()
+                .h(tokens::input_height())
+                .rounded(px(4.))
+                .overflow_hidden()
+                .bg(tokens::black())
+                .cursor_pointer()
+                .tab_index(tab_index)
+                .hover(|this| this.border_color(tokens::check_on()))
+                .border_1()
+                .border_color(tokens::divider())
+                .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
+                .on_click(on_open)
+                .children(stops.map(|(kind, stops, ceiling)| {
+                    super::sequence_panel::preview(kind, stops, ceiling)
+                }))
+                .into_any_element()
+        }
         RowEditor::Text(input) => field_box()
             .child(
                 Input::new(&input)
@@ -612,6 +653,7 @@ fn render_row_editor(
                         *inner,
                         &|_, _| Box::new(|_, _, _| {}),
                         on_scrub,
+                        on_open,
                         cx,
                     )
                 }))

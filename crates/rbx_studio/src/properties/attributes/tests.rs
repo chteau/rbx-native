@@ -394,9 +394,10 @@ fn a_type_with_no_properties_panel_editor_falls_back_to_read_only() {
 }
 
 /// Both sequences used to be exactly that case. They are creatable types
-/// now, which means the panel has to hand their value an editor.
+/// now, which means the panel has to hand their value the same editor an
+/// ordinary sequence property gets — the graph, not a text field.
 #[test]
-fn a_sequence_attribute_edits_as_text() {
+fn a_sequence_attribute_edits_through_the_graph() {
     use rbx_dom::{NumberSequence, NumberSequenceKeypoint};
 
     let sequence = Variant::NumberSequence(NumberSequence {
@@ -416,7 +417,10 @@ fn a_sequence_attribute_edits_as_text() {
 
     assert_eq!(
         edit_kind(&sequence),
-        Some(EditKind::Text("0, 1, 0; 1, 0, 0".to_owned()))
+        Some(EditKind::Sequence {
+            color: false,
+            text: "0, 1, 0; 1, 0, 0".to_owned()
+        })
     );
 }
 

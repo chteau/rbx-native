@@ -379,6 +379,16 @@ fn window_button(
     label: &'static str,
     action: fn(&mut Window),
 ) -> impl IntoElement {
+    titlebar_button(focus, id, icon, label, move |_, window, _| action(window))
+}
+
+fn titlebar_button(
+    focus: &FocusHandle,
+    id: &'static str,
+    icon: IconName,
+    label: &'static str,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
     h_flex()
         .id(id)
         .flex_none()
@@ -393,8 +403,68 @@ fn window_button(
         .hover(|this| this.bg(tokens::hover()).text_color(tokens::text_full()))
         .active(|this| this.bg(tokens::ribbon_tab_active()))
         .tooltip(move |window, cx| super::tooltip::text(label, window, cx))
-        .on_click(move |_, window, _| action(window))
+        .on_click(on_click)
         .child(Icon::new(icon).size(tokens::text_md()))
+}
+
+/// The title bar a **floating panel** wears — today the sequence graph
+/// (`shell::sequence_panel`), which Roblox Studio puts in a second OS window
+/// and this editor lays over its own docks instead.
+///
+/// Built from the same pieces [`Shell::topbar`] is rather than a dialog
+/// header of its own: same height, same ground, the same logo block and the
+/// same button treatment, so a panel that behaves like a window reads as
+/// part of *this* window and not as something borrowed. The differences are
+/// what a panel actually has — one button, because a panel only closes, and
+/// no window-move drag, because there is no window under it to move.
+pub(super) fn panel_topbar(
+    title: SharedString,
+    focus: &FocusHandle,
+    on_close: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    h_flex()
+        .w_full()
+        .h(tokens::topbar_height())
+        .flex_none()
+        .items_center()
+        .bg(tokens::black())
+        .child(
+            h_flex()
+                .flex_none()
+                .w(WINDOW_ACTIONS_WIDTH / 3.)
+                .items_center()
+                .pl(px(12.))
+                .child(
+                    Icon::empty()
+                        .data(LOGO)
+                        .w(px(23.8))
+                        .h(px(17.))
+                        .text_color(tokens::text_full()),
+                ),
+        )
+        .child(
+            div()
+                .flex_1()
+                .overflow_hidden()
+                .text_size(tokens::text_md())
+                .line_height(tokens::line_md())
+                .text_color(tokens::text_full())
+                .child(div().truncate().child(title)),
+        )
+        .child(
+            h_flex()
+                .flex_none()
+                .w(WINDOW_ACTIONS_WIDTH / 3.)
+                .h_full()
+                .justify_end()
+                .child(titlebar_button(
+                    focus,
+                    "panel-close",
+                    IconName::X,
+                    "Close",
+                    on_close,
+                )),
+        )
 }
 
 /// A dock's tab strip: the panel it holds, then the button that owns the
