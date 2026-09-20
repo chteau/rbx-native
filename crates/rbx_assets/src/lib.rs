@@ -11,6 +11,7 @@ mod cache;
 mod dds;
 mod decode;
 mod error;
+mod local_install;
 mod native;
 mod resolver;
 mod sniff;
