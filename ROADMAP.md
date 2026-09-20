@@ -574,18 +574,20 @@ Roblox's own engine.
 - [x] `NumberSequence`/`ColorSequence` — a real curve/gradient editor
   widget (keypoints along a timeline, draggable), not just the read-only
   text these used to fall back to. The row itself draws the sequence — a
-  gradient ramp or the curve — and clicking it opens a graph panel laid
-  over the docks, wearing the window's own title bar
-  (`shell::chrome::panel_topbar`) rather than a dialog header of its own.
+  gradient ramp or the curve — and clicking it opens a graph in a second
+  window of the editor's own (`crate::sequence_window`): fixed-size,
+  floating above the main window, and wearing the editor's own title bar
+  (`shell::chrome::panel_topbar`) rather than the platform's.
   Keypoints drag in both axes, a click on empty plot inserts one on the
   curve it split, a `NumberSequence`'s envelope band has its own draggable
   handle, and a `ColorSequence`'s stops are markers under the ramp with the
   panel's existing colour picker behind the swatch. The value axis fits
-  itself rather than asking for Studio's "Max Size" number. Roblox's own
+  itself rather than asking for Studio's "Max Size" number, and dragging a
+  keypoint out through the top of the plot is what raises it. Roblox's own
   constructor rules are enforced (2–20 keypoints, non-descending time,
   first at 0 and last at 1), which matters because the renderer's
   `eval_number`/`eval_color` walk the list assuming exactly that.
-  **The panel keeps no copy of the value**: it rebuilds from the DOM every
+  **The window keeps no copy of the value**: it rebuilds from the DOM every
   frame and commits through the same textual path a typed row takes, so an
   undo, a Command Bar script or any other write shows up in the graph
   immediately, the viewport repaints on every drag step, and a whole drag

@@ -12,6 +12,9 @@
 //! keeps this project's own class icons, because there the icon *is* the
 //! class (see [`crate::class_icons`]).
 
+use std::cell::Cell;
+use std::rc::Rc;
+
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{h_flex, v_flex, Icon, Selectable};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -379,11 +382,13 @@ fn window_button(
     label: &'static str,
     action: fn(&mut Window),
 ) -> impl IntoElement {
-    titlebar_button(focus, id, icon, label, move |_, window, _| action(window))
+    titlebar_button(Some(focus), id, icon, label, move |_, window, _| {
+        action(window)
+    })
 }
 
 fn titlebar_button(
-    focus: &FocusHandle,
+    focus: Option<&FocusHandle>,
     id: &'static str,
     icon: IconName,
     label: &'static str,
@@ -397,7 +402,7 @@ fn titlebar_button(
         .items_center()
         .justify_center()
         .cursor_pointer()
-        .track_focus(focus)
+        .when_some(focus, |this, focus| this.track_focus(focus))
         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::black())))
         .text_color(tokens::text_label())
         .hover(|this| this.bg(tokens::hover()).text_color(tokens::text_full()))
@@ -407,19 +412,23 @@ fn titlebar_button(
         .child(Icon::new(icon).size(tokens::text_md()))
 }
 
-/// The title bar a **floating panel** wears — today the sequence graph
-/// (`shell::sequence_panel`), which Roblox Studio puts in a second OS window
-/// and this editor lays over its own docks instead.
+/// The title bar a **secondary window** wears — today the sequence graph
+/// (`crate::sequence_window`), which is its own fixed-size floating window
+/// rather than a dock.
 ///
 /// Built from the same pieces [`Shell::topbar`] is rather than a dialog
-/// header of its own: same height, same ground, the same logo block and the
-/// same button treatment, so a panel that behaves like a window reads as
-/// part of *this* window and not as something borrowed. The differences are
-/// what a panel actually has — one button, because a panel only closes, and
-/// no window-move drag, because there is no window under it to move.
-pub(super) fn panel_topbar(
+/// header of its own: same height, same ground, the same logo block, the
+/// same button treatment and the same drag-to-move stretch, so a second
+/// window of this application reads as one. The difference is what such a
+/// window actually has — one button, because it only closes, where the main
+/// window also minimizes and zooms.
+/// `grab` is how the bar tells a *move* it started from a press that
+/// started *here*. GPUI hands a mouse-move to whatever the pointer is over,
+/// not to whatever took the press, so without it a keypoint dragged up out
+/// of the plot crosses this bar and takes the window with it.
+pub(crate) fn panel_topbar(
     title: SharedString,
-    focus: &FocusHandle,
+    grab: Rc<Cell<bool>>,
     on_close: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
     h_flex()
@@ -443,12 +452,27 @@ pub(super) fn panel_topbar(
                 ),
         )
         .child(
-            div()
+            h_flex()
+                .id("panel-drag")
                 .flex_1()
+                .h_full()
+                .items_center()
                 .overflow_hidden()
                 .text_size(tokens::text_md())
                 .line_height(tokens::line_md())
                 .text_color(tokens::text_full())
+                .on_mouse_down(MouseButton::Left, {
+                    let grab = grab.clone();
+                    move |_, _, _| grab.set(true)
+                })
+                // Dragged, not pressed, for the reason `Shell::topbar`'s
+                // own stretch spells out: grabbing the pointer on mouse-down
+                // eats the second press of a double click.
+                .on_mouse_move(move |event: &MouseMoveEvent, window, _| {
+                    if grab.get() && event.pressed_button == Some(MouseButton::Left) {
+                        window.start_window_move();
+                    }
+                })
                 .child(div().truncate().child(title)),
         )
         .child(
@@ -458,7 +482,7 @@ pub(super) fn panel_topbar(
                 .h_full()
                 .justify_end()
                 .child(titlebar_button(
-                    focus,
+                    None,
                     "panel-close",
                     IconName::X,
                     "Close",

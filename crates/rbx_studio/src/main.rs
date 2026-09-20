@@ -64,6 +64,7 @@ mod scale;
 mod script_editor;
 mod script_templates;
 mod sequence_editor;
+mod sequence_window;
 mod settings;
 mod settle;
 mod shell;

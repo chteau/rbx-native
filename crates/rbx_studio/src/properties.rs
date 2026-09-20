@@ -158,7 +158,7 @@ pub(crate) enum EditKind {
     },
     /// A `NumberSequence`'s curve or a `ColorSequence`'s ramp: too many
     /// numbers for a row, and the wrong numbers to type. The row draws the
-    /// sequence itself and opens `shell::sequence_panel` — the graph where
+    /// sequence itself and opens `crate::sequence_window` — the graph where
     /// keypoints are dragged — which commits through this same `text`.
     Sequence {
         /// Which of the two, since the row draws a ramp for one and a curve

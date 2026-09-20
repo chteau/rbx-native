@@ -39,13 +39,13 @@ const ENVELOPE_HANDLE: f32 = 3.0;
 /// How the plot is dressed: a preview turns both off, the panel turns both
 /// on and names the stop under the cursor's attention.
 #[derive(Clone, Copy)]
-pub(super) struct Look {
-    pub(super) grid: bool,
-    pub(super) handles: Option<usize>,
+pub(crate) struct Look {
+    pub(crate) grid: bool,
+    pub(crate) handles: Option<usize>,
 }
 
 impl Look {
-    pub(super) fn preview() -> Self {
+    pub(crate) fn preview() -> Self {
         Look {
             grid: false,
             handles: None,
@@ -56,7 +56,7 @@ impl Look {
 /// The plot element. `report` — when the caller wants it — is handed the
 /// laid-out rectangle every frame, which is what turns a later pointer
 /// position into a `(time, value)` (see `sequence_editor::Rect`).
-pub(super) fn plot(
+pub(crate) fn plot(
     kind: Kind,
     stops: Vec<Stop>,
     ceiling: f32,

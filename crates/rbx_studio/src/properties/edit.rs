@@ -97,7 +97,7 @@ pub(crate) fn edit_text(value: &Variant) -> Option<String> {
         )),
         Variant::Font(font) => Some(font_text(font)),
         // Keypoints along a `;`, each one's numbers along a `,`. Nobody
-        // types this — `shell::sequence_panel`'s graph is the editor; see
+        // types this — `crate::sequence_window`'s graph is the editor; see
         // `sequence` for why its commits still come through here.
         Variant::NumberSequence(sequence) => Some(number_sequence_text(sequence)),
         Variant::ColorSequence(sequence) => Some(color_sequence_text(sequence)),
@@ -371,7 +371,7 @@ pub(crate) fn parse(
 }
 
 /// The sequence `text` spells, for a caller holding the text alone — the
-/// row's own preview and `shell::sequence_panel`, which both need the
+/// row's own preview and `crate::sequence_window`, which both need the
 /// keypoints rather than a string. `color` picks which of the two shapes to
 /// read it as, the same way [`crate::properties::EditKind::Sequence`] carries
 /// it. Colour envelopes come back zeroed, since text never carries them (see

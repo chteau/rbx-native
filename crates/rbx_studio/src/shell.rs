@@ -22,6 +22,7 @@ mod reparent;
 mod ribbon;
 mod roving;
 
+pub(crate) use chrome::panel_topbar;
 pub(crate) use roving::install as install_key_bindings;
 mod tree_keys;
 
@@ -32,7 +33,6 @@ mod scripts;
 mod scroll;
 mod scrub;
 mod selection;
-mod sequence_panel;
 mod style_panel;
 mod toolbar;
 mod tooltip;
@@ -61,7 +61,7 @@ use crate::folder_colors::FolderColors;
 use crate::history::{History, DEFAULT_CAP};
 use crate::menu_bar::MenuBar;
 use crate::pacing::UnfocusedFps;
-use crate::properties::Properties;
+use crate::properties::{self, Properties};
 use crate::save::Format;
 use crate::script_editor::ScriptEditor;
 use crate::settings::Settings;
@@ -154,9 +154,10 @@ pub(crate) struct Shell {
     reduce_motion: Option<bool>,
     /// A numeric field being dragged — see `shell::scrub`.
     scrub: Option<scrub::Scrub>,
-    /// The open `NumberSequence`/`ColorSequence` graph, if any — see
-    /// `shell::sequence_panel`, which owns everything about it.
-    sequence: Option<sequence_panel::Open>,
+    /// The open `NumberSequence`/`ColorSequence` graph, if any: a window of
+    /// its own (see `crate::sequence_window`, which owns everything about
+    /// it), kept only so opening a second one replaces the first.
+    sequence: Option<WindowHandle<gpui_kit::component::Root>>,
     /// The Explorer's type-ahead buffer — see `shell::tree_keys`.
     typeahead: tree_keys::Typeahead,
     search: Entity<InputState>,
@@ -1110,14 +1111,12 @@ impl Render for Shell {
             .on_mouse_move(cx.listener(|shell, event: &MouseMoveEvent, window, cx| {
                 shell.drag_resize(event.position, cx);
                 shell.drag_scrub(event.position.x, event.modifiers, window, cx);
-                shell.drag_sequence(event.position, cx);
             }))
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|shell, _: &MouseUpEvent, _, cx| {
                     shell.end_resize(cx);
                     shell.scrub = None;
-                    shell.end_sequence_drag();
                 }),
             )
             .on_mouse_up_out(
@@ -1125,7 +1124,6 @@ impl Render for Shell {
                 cx.listener(|shell, _: &MouseUpEvent, _, cx| {
                     shell.end_resize(cx);
                     shell.scrub = None;
-                    shell.end_sequence_drag();
                 }),
             )
             .child(self.topbar(cx))
@@ -1138,8 +1136,105 @@ impl Render for Shell {
                 self.command_bar
                     .render(self.tab_order.next(), self.output_collapsed, cx),
             )
-            // Last, so the graph lays over the docks rather than under
-            // them, and absent from the tree entirely while nothing is open.
-            .children(self.sequence_overlay(window, cx))
     }
+}
+
+// ---------------------------------------------------------- sequence graph
+
+impl Shell {
+    /// Opens the `NumberSequence`/`ColorSequence` graph for the row named
+    /// `row`, in a window of its own (`crate::sequence_window`). Whatever
+    /// graph was already open closes first: two windows editing the same
+    /// property would be two answers to the same question.
+    pub(super) fn open_sequence_editor(
+        &mut self,
+        row: &str,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((color, text)) = self.sequence_row(row) else {
+            return;
+        };
+        let Some(value) = properties::edit::sequence_value(color, &text) else {
+            return;
+        };
+        let Some(editor) = crate::sequence_editor::Editor::open(&value) else {
+            return;
+        };
+        let title = self.sequence_title(row);
+        let previous = self.sequence.take();
+        let shell = cx.entity();
+        let row = row.to_owned();
+
+        // Deferred, because this runs inside the click handler's own `Shell`
+        // update: opening a window renders it, and the first render reads
+        // the very entity that borrow is holding — which is a panic rather
+        // than something the compiler would have caught. `App::defer` puts
+        // both the close and the open after that update ends.
+        cx.defer(move |cx| {
+            if let Some(previous) = previous {
+                // An error here only means the window is already gone, which
+                // is exactly the state this is trying to reach.
+                let _ = previous.update(cx, |_, window, _| window.remove_window());
+            }
+            let opened = crate::sequence_window::SequenceWindow::open(
+                shell.clone(),
+                row,
+                title,
+                text,
+                editor,
+                cx,
+            );
+            shell.update(cx, |shell, _| shell.sequence = opened);
+        });
+    }
+
+    /// The row's `EditKind`, found the same way the Properties panel itself
+    /// finds a row rather than kept in a second place that could go stale.
+    /// `None` once the row is gone, which is how the graph window knows to
+    /// close itself.
+    pub(crate) fn sequence_row(&self, row: &str) -> Option<(bool, String)> {
+        let reference = self.selected()?;
+        let kind = if let Some(attribute) = properties::attributes::attribute_of_row(row) {
+            let value = properties::attributes::attributes(&self.dom, reference)
+                .get(attribute)?
+                .clone();
+            properties::attributes::edit_kind(&value)?
+        } else {
+            let folder_color = self.folder_color(reference);
+            self.properties
+                .rows(&self.dom, reference, folder_color)
+                .into_iter()
+                .find(|candidate| candidate.name == row)
+                .and_then(|candidate| candidate.edit)?
+        };
+        match kind {
+            properties::EditKind::Sequence { color, text } => Some((color, text)),
+            _ => None,
+        }
+    }
+
+    /// `ParticleEmitter.Size` — the instance's class and the property, the
+    /// way Studio titles the same window. An attribute row drops its
+    /// `Attribute:` prefix and reads as the attribute's name.
+    pub(crate) fn sequence_title(&self, row: &str) -> String {
+        let name = properties::attributes::attribute_of_row(row).unwrap_or(row);
+        let class = self
+            .selected()
+            .and_then(|reference| self.dom.get(reference))
+            .map(|instance| instance.class().to_owned());
+        match class {
+            Some(class) => format!("{class}.{name}"),
+            None => name.to_owned(),
+        }
+    }
+}
+
+/// One number as this editor's fields read it back: three decimals with
+/// trailing zeros trimmed, the same reading `shell::scrub` gives a dragged
+/// value, so a number that arrived by drag and one that was typed look
+/// alike. `pub(crate)` for `crate::sequence_window`, whose footer is a row
+/// of exactly those fields in a window of its own.
+pub(crate) fn format_scrubbed(value: f32) -> String {
+    scrub::format(value, crate::properties::FieldKind::Decimal)
 }

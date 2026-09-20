@@ -2,7 +2,7 @@
 //! row: what the keypoints are, what dragging one is allowed to do to them,
 //! and where they sit inside a plot rectangle.
 //!
-//! No rendering and no GPUI here — `shell::sequence_panel` draws this and
+//! No rendering and no GPUI here — `crate::sequence_window` draws this and
 //! feeds it pointer positions, and every edit leaves through [`Editor::text`]
 //! into the same textual commit path a typed row takes
 //! (`properties::edit::sequence`), so the graph is a second *input* to one
@@ -63,7 +63,7 @@ pub(crate) struct Drag {
 
 /// One sequence, laid out for editing.
 ///
-/// Deliberately **not** something the panel keeps: `shell::sequence_panel`
+/// Deliberately **not** something the window keeps: `crate::sequence_window`
 /// builds one from whatever the DOM holds at that instant, applies the edit,
 /// and commits the result as text. The DOM stays the single copy of the
 /// value, so an undo, a script, or a second panel writing the same property
@@ -118,10 +118,11 @@ impl Editor {
 
     /// The top of the value axis. Auto-fitted rather than typed into a "Max"
     /// box the way Studio's graph asks for one: every sequence this editor
-    /// opens already says how tall it is. A drag therefore cannot push a
-    /// value past the current ceiling — the **Value** field in the panel's
-    /// footer is the way up, and the axis refits around it on the next
-    /// frame.
+    /// opens already says how tall it is, and dragging a keypoint past the
+    /// top edge simply raises it — [`drag_to`](Self::drag_to) does not clamp
+    /// upward, and the axis refits the moment the drag ends. (The window
+    /// freezes this for the duration of a gesture; see
+    /// `sequence_window::SequenceWindow::drag_ceiling` for why it has to.)
     pub(crate) fn ceiling(&self) -> f32 {
         let reach = self
             .stops
@@ -165,11 +166,15 @@ impl Editor {
     /// keep their times entirely: Roblox's own constructors refuse a
     /// sequence that does not start at 0 and end at 1, so those two are not
     /// free to move even by a pixel.
+    ///
+    /// The value is only floored at zero, never capped: a `NumberSequence`
+    /// has no upper bound (`ParticleEmitter.Size` is studs), so dragging
+    /// past the top of the plot is how the axis grows — see
+    /// [`ceiling`](Self::ceiling).
     pub(crate) fn drag_to(&mut self, time: f32, value: f32) {
         let Some(Drag { index, handle }) = self.drag else {
             return;
         };
-        let ceiling = self.ceiling();
         let last = self.stops.len() - 1;
         let (low, high) = match index {
             0 => (0.0, 0.0),
@@ -183,13 +188,11 @@ impl Editor {
             // A colour stop only ever moves along the timeline; its `value`
             // is the unused half of [`Stop`] and must stay that way.
             Handle::Point if kind == Kind::Color => {}
-            Handle::Point => stop.value = value.clamp(0.0, ceiling),
+            Handle::Point => stop.value = value.max(0.0),
             // The band is symmetric, so either handle sets the same number
             // and a drag past the stop reads as the distance, not a
             // negative width.
-            Handle::Envelope => {
-                stop.envelope = (value - stop.value).abs().min(ceiling);
-            }
+            Handle::Envelope => stop.envelope = (value - stop.value).abs(),
         }
     }
 

@@ -8,18 +8,21 @@
   section routes a value through the exact per-type widget an ordinary
   property gets, so a type with no editor had no row anyone could change.
   A sequence row now *draws* its value — a gradient ramp, or the curve —
-  and clicking it opens a graph panel over the docks wearing the window's
-  own title bar. Keypoints drag, a click on empty plot inserts one on the
-  curve it split, a `NumberSequence`'s envelope band has its own handle,
-  and a `ColorSequence`'s stops are markers under the ramp with the
-  panel's existing colour picker behind the swatch. Roblox's own
-  constructor rules are enforced (2–20 keypoints, non-descending time,
-  first at 0 and last at 1) because the renderer's `eval_number`/
-  `eval_color` walk the list assuming exactly that. The panel keeps no
-  copy of the value: it rebuilds from the DOM every frame and commits
-  through the same textual path a typed row takes, so the viewport
-  repaints on every drag step, an undo or a script shows up in the graph
-  immediately, and a whole drag is still one undo entry. — @chteau
+  and clicking it opens a graph in a second window of the editor's own:
+  fixed-size, floating above the main window, moved by the editor's own
+  title bar rather than the platform's. Keypoints drag, a click on empty
+  plot inserts one on the curve it split, dragging one out through the top
+  raises the value axis (there is no "Max Size" box to fill in first), a
+  `NumberSequence`'s envelope band has its own handle, and a
+  `ColorSequence`'s stops are markers under the ramp with the panel's
+  existing colour picker behind the swatch. Roblox's own constructor rules
+  are enforced (2–20 keypoints, non-descending time, first at 0 and last
+  at 1) because the renderer's `eval_number`/`eval_color` walk the list
+  assuming exactly that. The window keeps no copy of the value: it
+  rebuilds from the DOM every frame and commits through the same textual
+  path a typed row takes, so the viewport repaints on every drag step, an
+  undo or a script shows up in the graph immediately, and a whole drag is
+  still one undo entry. — @chteau
 
 ## 2026-09-20
 

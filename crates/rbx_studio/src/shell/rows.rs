@@ -481,7 +481,7 @@ pub(super) fn section_header(
 pub(super) type OnScrub =
     Rc<dyn Fn(usize, FieldKind) -> Box<dyn Fn(&MouseDownEvent, &mut Window, &mut App)>>;
 
-/// A sequence row's click: it opens `shell::sequence_panel` rather than
+/// A sequence row's click: it opens `crate::sequence_window` rather than
 /// committing anything, so it is a plain handler rather than one of
 /// [`OnScrub`]'s per-field factories.
 pub(super) type OnOpen = Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
@@ -526,7 +526,7 @@ fn render_row_editor(
     match editor {
         // The row *is* the preview: a `ColorSequence`'s ramp or a
         // `NumberSequence`'s curve, drawn at row height and clicked to open
-        // the graph that edits it (`shell::sequence_panel`). A sequence has
+        // the graph that edits it (`crate::sequence_window`). A sequence has
         // more numbers than a row has width and they are the wrong numbers
         // to type, so this replaces the field rather than sitting beside
         // one. Unparseable text draws nothing rather than an empty box —
@@ -554,7 +554,7 @@ fn render_row_editor(
                 .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
                 .on_click(on_open)
                 .children(stops.map(|(kind, stops, ceiling)| {
-                    super::sequence_panel::preview(kind, stops, ceiling)
+                    crate::sequence_window::preview(kind, stops, ceiling)
                 }))
                 .into_any_element()
         }

@@ -59,7 +59,7 @@ pub(super) enum RowEditor {
     /// way, so the flag flipping is all that changes.
     Optional(bool, &'static str, Box<RowEditor>),
     /// A sequence's own drawing, which is also the button that opens
-    /// `shell::sequence_panel`. No entity: there is nothing to type into,
+    /// `crate::sequence_window`. No entity: there is nothing to type into,
     /// and the panel it opens owns whatever state an edit needs.
     Sequence {
         color: bool,
@@ -388,7 +388,7 @@ impl Shell {
     /// [`Self::commit_row`] for one step of a gesture: `push` is true only
     /// on the step that starts it, so a whole drag lands as a single undo
     /// entry the way a viewport drag already does (see `shell::drag`).
-    pub(super) fn commit_row_step(
+    pub(crate) fn commit_row_step(
         &mut self,
         name: &str,
         text: &str,

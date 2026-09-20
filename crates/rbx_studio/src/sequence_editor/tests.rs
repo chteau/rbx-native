@@ -197,6 +197,48 @@ fn the_value_axis_fits_the_stops_and_their_envelopes() {
     }
 }
 
+/// The axis is fitted, so there is no "Max" box to raise first: dragging a
+/// keypoint out through the top of the plot is how it goes up.
+#[test]
+fn dragging_past_the_top_raises_the_value_axis() {
+    let mut editor = editor(&number(&[
+        (0.0, 0.0, 0.0),
+        (0.5, 1.0, 0.0),
+        (1.0, 0.0, 0.0),
+    ]));
+    let before = editor.ceiling();
+
+    editor.drag = Some(Drag {
+        index: 1,
+        handle: Handle::Point,
+    });
+    // What the window hands in once the pointer is above the plot: the
+    // frozen axis scaled past its own top.
+    editor.drag_to(0.5, before * 1.4);
+
+    assert_eq!(editor.stops[1].value, before * 1.4);
+    assert!(editor.ceiling() > before);
+    assert!(editor.ceiling() > editor.stops[1].value);
+}
+
+/// …and never below zero, which is the one bound a value does have.
+#[test]
+fn a_dragged_value_floors_at_zero() {
+    let mut editor = editor(&number(&[
+        (0.0, 0.0, 0.0),
+        (0.5, 1.0, 0.0),
+        (1.0, 0.0, 0.0),
+    ]));
+
+    editor.drag = Some(Drag {
+        index: 1,
+        handle: Handle::Point,
+    });
+    editor.drag_to(0.5, -3.0);
+
+    assert_eq!(editor.stops[1].value, 0.0);
+}
+
 #[test]
 fn a_click_grabs_the_nearest_handle_and_empty_plot_grabs_nothing() {
     let editor = editor(&number(&[

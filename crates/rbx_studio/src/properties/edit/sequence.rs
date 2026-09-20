@@ -2,7 +2,7 @@
 //! `;`, the numbers inside one keypoint by `,` — the same comma-joined
 //! spelling every other composite value in this panel uses, one level deeper.
 //!
-//! Nobody types this: the graph in `shell::sequence_panel` is what edits a
+//! Nobody types this: the graph in `crate::sequence_window` is what edits a
 //! sequence, and a row draws one rather than showing a field. The text is
 //! how that graph *commits* — through the panel's existing per-type path,
 //! which is also the only path an attribute's value is allowed to take (see
