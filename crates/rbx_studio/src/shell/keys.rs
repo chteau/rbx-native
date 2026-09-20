@@ -8,7 +8,7 @@
 //! screenshot, since nothing else can send a keystroke to the Explorer on
 //! the editor's behalf (see `AGENTS.md`'s safety rules).
 
-use gpui_kit::{Context, Keystroke, Modifiers};
+use gpui_kit::{Context, Keystroke, Modifiers, Window};
 use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
@@ -73,6 +73,10 @@ pub(super) enum Action {
     Delete,
     InsertPart,
     InsertFolder,
+    /// The `+` picker, on the selected row — real Studio's own shortcut for
+    /// it (`studio/explorer.md`).
+    Insert,
+    Rename,
 }
 
 /// Maps one keystroke to an Explorer action. `delete` and `backspace` both
@@ -84,6 +88,10 @@ pub(super) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
         "delete" | "backspace" => Some(Action::Delete),
         "p" if modifiers.control && modifiers.shift => Some(Action::InsertPart),
         "f" if modifiers.control && modifiers.shift => Some(Action::InsertFolder),
+        // Ctrl alone, not Ctrl+Shift: the other two are this editor's own
+        // quick inserts, this one is the shortcut Studio documents.
+        "i" if modifiers.control && !modifiers.shift => Some(Action::Insert),
+        "f2" if !modifiers.modified() => Some(Action::Rename),
         _ => None,
     }
 }
@@ -99,11 +107,18 @@ impl Shell {
     /// only ever runs while some row in the tree holds focus, since that is
     /// the only place GPUI's dispatch path puts it — a filter box or the
     /// viewport keeps its own focus and never bubbles a key here.
-    pub(super) fn handle_explorer_key(&mut self, keystroke: &Keystroke, cx: &mut Context<Self>) {
+    pub(super) fn handle_explorer_key(
+        &mut self,
+        keystroke: &Keystroke,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         match action_for(&keystroke.key, keystroke.modifiers) {
             Some(Action::Delete) => self.delete_selected(cx),
             Some(Action::InsertPart) => self.insert_instance("Part", cx),
             Some(Action::InsertFolder) => self.insert_instance("Folder", cx),
+            Some(Action::Insert) => self.open_insert_picker_on_selection(window, cx),
+            Some(Action::Rename) => self.begin_rename_selection(window, cx),
             None => {}
         }
     }
@@ -117,23 +132,35 @@ impl Shell {
         let Some(reference) = self.selected() else {
             return;
         };
+        self.remove_instances(&[reference], cx);
+    }
 
-        // See `shell::history`: snapshotted before the removal below.
+    /// Removes each of `references` and its subtree as one undo step. Shared
+    /// with `shell::clipboard`'s Cut, which has a whole selection to take
+    /// out rather than the Delete key's single row.
+    pub(super) fn remove_instances(&mut self, references: &[Ref], cx: &mut Context<Self>) {
+        if references.is_empty() {
+            return;
+        }
+
+        // See `shell::history`: snapshotted before the removals below.
         self.push_history();
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
-        let removed = dom.remove(reference);
+        let removed: Vec<Ref> = references
+            .iter()
+            .flat_map(|&reference| dom.remove(reference))
+            .collect();
         self.dom = dom;
-        // One `Change::Removed` per instance in the subtree, each taken out
+        // One `Change::Removed` per instance in each subtree, each taken out
         // of the viewport in place — and put back the same way when this is
         // undone, since the log is reflected against whichever DOM stands.
         let changes = self.dom.take_changes();
 
         self.rebuild_explorer(cx);
-        // The Explorer holds one selection, always the deleted root itself,
-        // so this only ever resolves to `None` — going through the pure
-        // function anyway keeps the two "was it inside the subtree" checks
-        // (this one and its unit tests) reading the same rule.
-        match selection_after_removal(Some(reference), &removed) {
+        // Going through the pure function rather than assuming the selection
+        // died with the subtree keeps the two "was it inside" checks (this
+        // one and its unit tests) reading the same rule.
+        match selection_after_removal(self.selected(), &removed) {
             Some(kept) => self.select(kept, cx),
             None => self.deselect(cx),
         }
@@ -161,7 +188,23 @@ impl Shell {
             .default_for(class)
             .or_else(|| default_template(&self.database, class))
             .map(str::to_owned);
-        self.insert_instance_with_source(class, None, template.as_deref(), cx);
+        self.insert_instance_with_source(class, None, template.as_deref(), None, cx);
+    }
+
+    /// The `+` picker's entry point: the same insert, under the row whose
+    /// `+` was clicked rather than under the selection.
+    pub(super) fn insert_instance_under(
+        &mut self,
+        parent: Option<Ref>,
+        class: &str,
+        cx: &mut Context<Self>,
+    ) {
+        let template = self
+            .script_templates
+            .default_for(class)
+            .or_else(|| default_template(&self.database, class))
+            .map(str::to_owned);
+        self.insert_instance_with_source(class, None, template.as_deref(), parent, cx);
     }
 
     /// The ribbon Script menu's user-defined entries (see
@@ -173,7 +216,7 @@ impl Shell {
         let Some(template) = self.script_templates.extras().get(index).cloned() else {
             return;
         };
-        self.insert_instance_with_source(template.class, None, Some(&template.source), cx);
+        self.insert_instance_with_source(template.class, None, Some(&template.source), None, cx);
     }
 
     /// The ribbon Part menu's Block/Sphere/Cylinder items (see
@@ -182,7 +225,7 @@ impl Shell {
     /// disambiguate through their own class instead and go through
     /// [`insert_instance`](Self::insert_instance) unchanged.
     pub(crate) fn insert_part(&mut self, class: &str, shape: u32, cx: &mut Context<Self>) {
-        self.insert_instance_with_source(class, Some(shape), None, cx);
+        self.insert_instance_with_source(class, Some(shape), None, None, cx);
     }
 
     /// "Insert ModuleScript (Class)" (see `menu_bar`): the one script insert
@@ -191,7 +234,13 @@ impl Shell {
     /// `ROADMAP.md`'s "New-script templates" entry asks for alongside the
     /// plain-table default `ModuleScript` otherwise gets.
     pub(crate) fn insert_class_module(&mut self, cx: &mut Context<Self>) {
-        self.insert_instance_with_source("ModuleScript", None, Some(MODULE_CLASS_TEMPLATE), cx);
+        self.insert_instance_with_source(
+            "ModuleScript",
+            None,
+            Some(MODULE_CLASS_TEMPLATE),
+            None,
+            cx,
+        );
     }
 
     /// Shared by [`insert_instance`](Self::insert_instance),
@@ -208,16 +257,25 @@ impl Shell {
         class: &str,
         shape: Option<u32>,
         source: Option<&str>,
+        under: Option<Ref>,
         cx: &mut Context<Self>,
     ) {
-        let parent = self
-            .selected()
+        let parent = under
+            .or_else(|| self.selected())
             .or_else(|| explorer::find_by_name(&self.dom, "Workspace"));
+        // A new instance is named after its class; the increment preference
+        // is what turns a second `Part` into `Part1` (see
+        // `explorer::insert::incremented_name`).
+        let name = if self.increment_names() {
+            explorer::insert::incremented_name(&self.dom, parent, class)
+        } else {
+            class.to_owned()
+        };
 
         // See `shell::history`: snapshotted before the insert below.
         self.push_history();
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
-        let reference = dom.new_instance(class, class, parent);
+        let reference = dom.new_instance(class, &name, parent);
         if let Some(part_shape) = part_defaults_shape(&self.database, class, shape) {
             apply_part_defaults(&mut dom, reference, part_shape);
         }
@@ -370,6 +428,23 @@ mod tests {
     fn ctrl_shift_p_and_f_insert_part_and_folder() {
         assert_eq!(action_for("p", ctrl_shift()), Some(Action::InsertPart));
         assert_eq!(action_for("f", ctrl_shift()), Some(Action::InsertFolder));
+    }
+
+    #[test]
+    fn ctrl_i_opens_the_insert_picker_and_ctrl_shift_i_does_not() {
+        let ctrl = Modifiers {
+            control: true,
+            ..Modifiers::none()
+        };
+        assert_eq!(action_for("i", ctrl), Some(Action::Insert));
+        assert_eq!(action_for("i", ctrl_shift()), None);
+        assert_eq!(action_for("i", Modifiers::none()), None);
+    }
+
+    #[test]
+    fn f2_renames_only_unmodified() {
+        assert_eq!(action_for("f2", Modifiers::none()), Some(Action::Rename));
+        assert_eq!(action_for("f2", ctrl_shift()), None);
     }
 
     #[test]

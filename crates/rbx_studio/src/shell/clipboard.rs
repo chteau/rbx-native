@@ -31,7 +31,7 @@ use gpui_kit::{Context, Keystroke, Modifiers};
 use rbx_dom::{Content, Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
-use crate::explorer;
+use crate::explorer::{self, insert};
 
 use super::Shell;
 
@@ -42,6 +42,7 @@ const WORKSPACE_NAME: &str = "Workspace";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Action {
     Copy,
+    Cut,
     Paste,
     PasteInto,
     Duplicate,
@@ -66,6 +67,7 @@ pub(super) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
     }
     match (key, modifiers.shift) {
         ("c", false) => Some(Action::Copy),
+        ("x", false) => Some(Action::Cut),
         ("v", false) => Some(Action::Paste),
         ("v", true) => Some(Action::PasteInto),
         ("d", false) => Some(Action::Duplicate),
@@ -228,6 +230,7 @@ impl Shell {
     pub(super) fn handle_clipboard_key(&mut self, keystroke: &Keystroke, cx: &mut Context<Self>) {
         match action_for(&keystroke.key, keystroke.modifiers) {
             Some(Action::Copy) => self.copy_selected(cx),
+            Some(Action::Cut) => self.cut_selected(cx),
             Some(Action::Paste) => self.paste_clipboard(cx),
             Some(Action::PasteInto) => self.paste_into_selected(cx),
             Some(Action::Duplicate) => self.duplicate_selected(cx),
@@ -252,6 +255,32 @@ impl Shell {
             .filter_map(|reference| snapshot(&self.dom, reference))
             .collect();
         cx.notify();
+    }
+
+    /// Ctrl+X: Copy, then remove what was copied. Deliberately built out of
+    /// the two existing halves rather than as a third DOM path — a cut whose
+    /// clipboard and whose deletion could disagree about what
+    /// `Archivable`/service filtering left out is exactly the bug this
+    /// avoids: what lands on the clipboard is what leaves the tree.
+    ///
+    /// Two undo steps, not one: `copy_selected` pushes none at all, so the
+    /// removal below is the only thing `Ctrl+Z` has to take back, and taking
+    /// it back restores the instances *and* leaves them on the clipboard.
+    /// `pub(crate)`: also `menu_bar`'s and the ribbon's Cut entry point.
+    pub(crate) fn cut_selected(&mut self, cx: &mut Context<Self>) {
+        let cut = copyable(&self.dom, &self.database, self.selected_all());
+        if cut.is_empty() {
+            return;
+        }
+        self.copy_selected(cx);
+        self.remove_instances(&cut, cx);
+    }
+
+    /// Whether Paste/Paste Into would have anything to paste — the guard
+    /// their own handlers return early on, asked by the ribbon and the
+    /// Explorer's context menu so neither offers a row that does nothing.
+    pub(super) fn clipboard_is_empty(&self) -> bool {
+        self.clipboard.is_empty()
     }
 
     /// Ctrl+V: pastes every clipboard entry into `Workspace` — real
@@ -292,6 +321,7 @@ impl Shell {
     /// the single path Paste and Paste Into share, so neither can drift from
     /// the other in how it reaches the history or the viewport.
     fn paste_under(&mut self, parents: &[Option<Ref>], cx: &mut Context<Self>) {
+        let increment = self.increment_names();
         // See `shell::history`: snapshotted before the inserts below, so one
         // Paste is one undo step however many entries the clipboard holds.
         self.push_history();
@@ -299,7 +329,15 @@ impl Shell {
         let mut pasted: Vec<Ref> = Vec::new();
         for &parent in parents {
             for node in &self.clipboard {
-                pasted.push(materialize(&mut dom, node, parent));
+                // Resolved before the copy exists, so it cannot collide with
+                // itself; with the preference off the copy simply keeps the
+                // original's name, sibling or not.
+                let name = increment.then(|| insert::incremented_name(&dom, parent, &node.name));
+                let copy = materialize(&mut dom, node, parent);
+                if let Some(name) = name {
+                    let _ = dom.set_name(copy, &name);
+                }
+                pasted.push(copy);
             }
         }
         self.dom = dom;
@@ -324,6 +362,7 @@ impl Shell {
             return;
         }
 
+        let increment = self.increment_names();
         // See `shell::history`: snapshotted before the inserts below, so one
         // Duplicate is one undo step however many instances it duplicates.
         self.push_history();
@@ -332,7 +371,13 @@ impl Shell {
             .into_iter()
             .filter_map(|reference| {
                 let parent = dom.parent(reference);
-                snapshot(&dom, reference).map(|node| materialize(&mut dom, &node, parent))
+                let node = snapshot(&dom, reference)?;
+                let name = increment.then(|| insert::incremented_name(&dom, parent, &node.name));
+                let copy = materialize(&mut dom, &node, parent);
+                if let Some(name) = name {
+                    let _ = dom.set_name(copy, &name);
+                }
+                Some(copy)
             })
             .collect();
         self.dom = dom;
@@ -369,6 +414,17 @@ mod tests {
         assert_eq!(action_for("c", ctrl()), Some(Action::Copy));
         assert_eq!(action_for("v", ctrl()), Some(Action::Paste));
         assert_eq!(action_for("d", ctrl()), Some(Action::Duplicate));
+    }
+
+    #[test]
+    fn ctrl_x_is_cut() {
+        assert_eq!(action_for("x", ctrl()), Some(Action::Cut));
+        assert_eq!(action_for("x", Modifiers::none()), None);
+        let shifted = Modifiers {
+            shift: true,
+            ..ctrl()
+        };
+        assert_eq!(action_for("x", shifted), None);
     }
 
     #[test]

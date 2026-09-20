@@ -10,6 +10,7 @@ mod clipboard;
 mod command;
 mod drag;
 mod edit;
+mod explorer_edit;
 mod folder_color;
 mod group;
 mod history;
@@ -160,6 +161,16 @@ pub(crate) struct Shell {
     sequence: Option<WindowHandle<gpui_kit::component::Root>>,
     /// The Explorer's type-ahead buffer — see `shell::tree_keys`.
     typeahead: tree_keys::Typeahead,
+    /// The Explorer's own editing affordances — the `+` picker, the
+    /// right-click menu and the in-place name box. See
+    /// `shell::explorer_edit`.
+    explorer_edit: explorer_edit::ExplorerEdit,
+    /// Whether a new instance whose name a sibling already carries is
+    /// numbered, and whether inserting or selecting expands the tree to
+    /// reveal the instance. Real Studio's two insertion preferences, both
+    /// persisted — see `shell::explorer_edit::picker`.
+    increment_names: bool,
+    expand_on_select: bool,
     search: Entity<InputState>,
     filter: Entity<InputState>,
     properties: Properties,
@@ -285,6 +296,8 @@ impl Shell {
             explorer_width,
             output_height,
             output_collapsed,
+            increment_names,
+            expand_on_select,
         } = settings;
         // Before anything renders: every size token is read through these,
         // so a scale or target floor applied after the first frame would
@@ -435,6 +448,9 @@ impl Shell {
             sequence: None,
             tree_focus_handle,
             typeahead: tree_keys::Typeahead::default(),
+            explorer_edit: explorer_edit::ExplorerEdit::default(),
+            increment_names,
+            expand_on_select,
             search: cx.new(|cx| InputState::new(window, cx).placeholder("Search")),
             filter,
             properties,
@@ -984,6 +1000,8 @@ impl Shell {
             explorer_width: self.explorer_width,
             output_height: self.output_height,
             output_collapsed: self.output_collapsed,
+            increment_names: self.increment_names,
+            expand_on_select: self.expand_on_select,
         };
         let _ = settings.save();
 
@@ -1109,6 +1127,7 @@ impl Render for Shell {
                 shell.menu_bar.update(cx, |bar, _| bar.interrupt_alt_tap());
             }))
             .on_mouse_move(cx.listener(|shell, event: &MouseMoveEvent, window, cx| {
+                shell.note_pointer(event.position);
                 shell.drag_resize(event.position, cx);
                 shell.drag_scrub(event.position.x, event.modifiers, window, cx);
             }))
@@ -1136,6 +1155,10 @@ impl Render for Shell {
                 self.command_bar
                     .render(self.tab_order.next(), self.output_collapsed, cx),
             )
+            // Painted at the window's root rather than inside the Explorer:
+            // a popup nested in the tree's own scrolled, virtualised list
+            // is clipped by it.
+            .children(self.explorer_popups(cx))
     }
 }
 

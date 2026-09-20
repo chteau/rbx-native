@@ -14,6 +14,7 @@ use rbx_dom::{Ref, WeakDom};
 use crate::class_icons::{self, IconPack};
 use crate::folder_colors::{FolderColors, FOLDER_CLASS};
 
+pub(crate) mod insert;
 pub(crate) mod reparent;
 
 /// The order Studio lists services in — neither alphabetical nor the order the

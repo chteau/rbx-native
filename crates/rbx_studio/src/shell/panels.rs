@@ -12,6 +12,7 @@ use crate::explorer;
 use crate::properties::{group_by_category, EditKind};
 use crate::tokens;
 
+use super::explorer_edit::RowWidgets;
 use super::reparent::{draggable_row, DraggedInstances};
 use super::rows::{
     checkbox, guide_mask, property_row, property_row_control, render_editor, row, section_header,
@@ -53,6 +54,10 @@ impl Shell {
                 .collect()
         };
         let guides = guide_mask(&depths);
+        // Which row is hovered and which is being renamed: read once here,
+        // since the per-row closure below runs inside the tree's own layout
+        // pass and cannot borrow the shell back out of it.
+        let slots = self.row_slots();
 
         let tree_focus = self.tree_focus_handle.clone();
         self.tab_order.register(&tree_focus);
@@ -80,8 +85,8 @@ impl Shell {
                         cx.stop_propagation();
                     }
                 }))
-                .on_key_down(cx.listener(|shell, event: &KeyDownEvent, _, cx| {
-                    shell.handle_explorer_key(&event.keystroke, cx);
+                .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
+                    shell.handle_explorer_key(&event.keystroke, window, cx);
                 }))
                 .child(
                     base::Tree::new(&self.tree)
@@ -93,16 +98,25 @@ impl Shell {
                             // A row whose id does not read back as a referent has
                             // nothing to drag or drop onto; it still has to draw.
                             let Some(reference) = explorer::item_ref(&item.id) else {
-                                return row(index, entry, false, icon, tint, guide);
+                                return row(
+                                    index,
+                                    entry,
+                                    false,
+                                    icon,
+                                    tint,
+                                    guide,
+                                    RowWidgets::default(),
+                                );
                             };
                             let highlighted = selected.contains(&reference);
                             let dragged = DraggedInstances::new(&selected, reference, &item.label);
+                            let widgets = slots.of(&shell, reference);
                             draggable_row(
                                 &shell,
                                 index,
                                 reference,
                                 dragged,
-                                row(index, entry, highlighted, icon, tint, guide),
+                                row(index, entry, highlighted, icon, tint, guide, widgets),
                             )
                         })
                         .list_style(StyleRefinement::default().flex_grow_1().size_full())

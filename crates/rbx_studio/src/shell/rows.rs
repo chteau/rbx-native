@@ -22,6 +22,7 @@ use crate::properties::{Field, FieldKind, PropertyRow};
 use crate::tokens;
 
 use super::edit::RowEditor;
+use super::explorer_edit::RowWidgets;
 use super::roving::TabOrder;
 
 /// One indent step per depth level.
@@ -84,6 +85,10 @@ pub(super) fn guide_mask(depths: &[usize]) -> Vec<Guides> {
 ///
 /// `tint` is that same tag, reused for the row's hover and selected
 /// backgrounds so a tagged folder's subtree stays visually its own.
+///
+/// `widgets` carries the two things a row cannot build for itself — the
+/// name box while it is being renamed, the `+` while it is hovered — since
+/// only `shell::explorer_edit` knows which row is which.
 pub(super) fn row(
     index: usize,
     entry: &TreeEntry,
@@ -91,6 +96,7 @@ pub(super) fn row(
     icon: ClassIcon,
     tint: Option<(u8, u8, u8)>,
     guides: Guides,
+    widgets: RowWidgets,
 ) -> AnyElement {
     let item = entry.item();
     let depth = entry.depth();
@@ -131,6 +137,11 @@ pub(super) fn row(
         .children(guide_lines(depth, guides))
         .child(
             h_flex()
+                // Takes the row's spare width so the hovered row's `+` can
+                // sit at its right edge rather than immediately after a
+                // short name.
+                .flex_1()
+                .min_w(px(0.))
                 .items_center()
                 .gap_1p5()
                 .pl(px(depth as f32 * INDENT))
@@ -153,8 +164,13 @@ pub(super) fn row(
                         }),
                 )
                 .child(class_icon)
-                .child(item.label.clone()),
+                .child(
+                    widgets
+                        .name
+                        .unwrap_or_else(|| div().child(item.label.clone()).into_any_element()),
+                ),
         )
+        .children(widgets.trailing)
         .into_any_element()
 }
 
