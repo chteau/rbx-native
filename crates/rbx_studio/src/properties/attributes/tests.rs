@@ -218,6 +218,35 @@ fn set_attribute_value_round_trips_a_composite_type() {
 }
 
 #[test]
+fn a_cframe_attribute_is_created_edited_and_kept_beside_its_neighbours() {
+    let (mut dom, part) = instance();
+    add_attribute(&mut dom, part, "Before", Variant::Bool(true)).unwrap();
+    add_attribute(
+        &mut dom,
+        part,
+        "Spawn",
+        default_value("CFrame").expect("CFrame is creatable"),
+    )
+    .unwrap();
+    add_attribute(&mut dom, part, "After", Variant::Bool(false)).unwrap();
+
+    set_attribute_value(&mut dom, &database(), part, "Spawn", "1, 2, 3").expect("a position");
+
+    let stored = attributes(&dom, part);
+    let Some(Variant::CFrame(frame)) = stored.get("Spawn") else {
+        panic!("Spawn should still be a CFrame");
+    };
+    assert_eq!(
+        (frame.position.x, frame.position.y, frame.position.z),
+        (1., 2., 3.)
+    );
+    assert_eq!(frame.rotation, rbx_dom::rotation::IDENTITY);
+    // The old decoder dropped every attribute stored after a CFrame.
+    assert_eq!(stored.get("Before"), Some(&Variant::Bool(true)));
+    assert_eq!(stored.get("After"), Some(&Variant::Bool(false)));
+}
+
+#[test]
 fn set_attribute_value_on_a_missing_attribute_is_refused() {
     let (mut dom, part) = instance();
 
