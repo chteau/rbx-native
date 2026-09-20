@@ -63,7 +63,11 @@
   C `unsigned long`, so the conversion is a real range check where that is
   64 bits and a same-type one clippy rejects where it is 32; it goes
   through a helper generic over `TryInto<u32>` instead, which is one code
-  path on every target. Nothing changes on Linux. — @jleeclient
+  path on every target. Nothing changes on Linux. The Windows CI job runs
+  clippy now as well: the Linux run could not see any of this, because
+  what clippy reports here depends on the target, so a lint that only
+  fails on Windows had nothing to catch it until someone ran the gate by
+  hand there. — @jleeclient
 
 ## 2026-09-19
 
