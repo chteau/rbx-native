@@ -2,6 +2,26 @@
 
 ## 2026-09-20
 
+- **`PhysicalProperties` is editable.** A part's density, friction,
+  elasticity and the two weights were read-only text — the last of the three
+  types the roadmap listed that way. They edit as five labelled fields now,
+  under a **Custom** checkbox: unticked, the physics come from the material
+  the way `Default` means them to; ticked, the five numbers are yours. The
+  box switches between the enum's two forms rather than editing numbers, so
+  unticking hands the physics back to the material instead of zeroing them,
+  and the fields under an unticked box read Roblox's own `Plastic` defaults
+  so ticking never commits a row of zeroes. — @chteau
+
+- **Dropdowns, colour swatches and the snap increments can be reached with
+  Tab.** Every enum property, every `Color3` and both snap-increment fields
+  were mouse-only — a WCAG 2.1.1 (Keyboard, Level A) failure, and the one
+  the guidelines named as the most serious thing still open. They are Tab
+  stops now, in the same reading order as everything around them. The fix
+  turned out not to need the focusable wrapper it had been scoped as: each
+  widget's state already exposes the focus handle its own keyboard path
+  uses, so the window's Tab order just records it. The menu bar is still
+  out, and wants F10/Alt rather than a Tab stop. — @chteau
+
 - **The Output log is searchable.** A box in the Output tab's title bar,
   next to the level filter, hides every row that does not mention what you
   typed — matched against both the command and the result beside it, and

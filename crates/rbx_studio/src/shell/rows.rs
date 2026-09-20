@@ -22,6 +22,7 @@ use crate::properties::{Field, FieldKind, PropertyRow};
 use crate::tokens;
 
 use super::edit::RowEditor;
+use super::roving::TabOrder;
 
 /// One indent step per depth level.
 const INDENT: f32 = 12.0;
@@ -31,12 +32,6 @@ const GUIDE_OFFSET: f32 = 6.0;
 const CONNECTOR_WIDTH: f32 = 5.0;
 const CHEVRON_WIDTH: f32 = 12.0;
 const CLASS_ICON_SIZE: f32 = 12.0;
-/// The caption beside an `OptionalCFrame` row's present/absent checkbox.
-/// Real Studio has no equivalent control to copy a wording from — it never
-/// surfaces an optional `CFrame` at all — so this says plainly what the box
-/// means rather than borrowing a term from somewhere it isn't used.
-const HAS_VALUE_LABEL: &str = "Has value";
-
 /// Out of 255 — how strongly a tagged row's hover/selected background reads
 /// against the row behind it. Selected is the stronger of the two, matching
 /// the relationship the untagged selection has with its own hover step.
@@ -486,13 +481,23 @@ pub(super) fn section_header(
 pub(super) type OnScrub =
     Rc<dyn Fn(usize, FieldKind) -> Box<dyn Fn(&MouseDownEvent, &mut Window, &mut App)>>;
 
+///
+/// `stops` is the window's own Tab order: the two editors that are whole
+/// widgets rather than toolkit elements — `Select` for an enum, `ColorPicker`
+/// for a `Color3` — take no `tab_index`, so they can only be reached by
+/// recording their focus handle here, at the point in paint order the row is
+/// built. That has to happen per row per render, unlike the graphics-quality
+/// dropdown's one-off registration in `Shell::quality_control`, because a
+/// property row's widget is rebuilt whenever the selection changes.
 pub(super) fn render_editor(
     tab_index: isize,
+    stops: &TabOrder,
     editor: RowEditor,
     on_flag: impl Fn(usize, bool) -> Box<dyn Fn(&ClickEvent, &mut Window, &mut App)> + 'static,
     on_scrub: OnScrub,
+    cx: &mut App,
 ) -> AnyElement {
-    render_row_editor(tab_index, editor, &on_flag, on_scrub)
+    render_row_editor(tab_index, stops, editor, &on_flag, on_scrub, cx)
 }
 
 /// One flag's click handler, by its index and the value it currently shows.
@@ -505,9 +510,11 @@ type OnFlag<'a> = &'a dyn Fn(usize, bool) -> Box<dyn Fn(&ClickEvent, &mut Window
 
 fn render_row_editor(
     tab_index: isize,
+    stops: &TabOrder,
     editor: RowEditor,
     on_flag: OnFlag<'_>,
     on_scrub: OnScrub,
+    cx: &mut App,
 ) -> AnyElement {
     match editor {
         RowEditor::Text(input) => field_box()
@@ -567,7 +574,12 @@ fn render_row_editor(
         // The checkbox is the only control an absent value has: there is
         // nothing to edit until it says there is a value. Present, it reads
         // as a clear, and the editor for the value itself sits under it.
-        RowEditor::Optional(present, inner) => {
+        //
+        // The caption travels with the value rather than being a constant
+        // here, because the two types shaped this way mean different things
+        // by the box — "Has value" for an `OptionalCFrame`, "Custom" for a
+        // `PhysicalProperties` (see `properties::EditKind::Optional`).
+        RowEditor::Optional(present, label, inner) => {
             let toggle = on_flag(0, present);
             v_flex()
                 .w_full()
@@ -586,14 +598,22 @@ fn render_row_editor(
                             div()
                                 .flex_none()
                                 .text_color(tokens::text_muted())
-                                .child(HAS_VALUE_LABEL),
+                                .child(label),
                         ),
                 )
                 .children(present.then(|| {
-                    // An optional's inner editor is a numeric one — the only
-                    // `Variant` shaped this way is `OptionalCFrame` — never a
-                    // flag set, so nothing below ever reaches `on_flag`.
-                    render_row_editor(tab_index, *inner, &|_, _| Box::new(|_, _, _| {}), on_scrub)
+                    // An optional's inner editor is a numeric one — a
+                    // `CFrame`'s six fields or a `PhysicalProperties`'
+                    // five, the only two `Variant`s shaped this way — never
+                    // a flag set, so nothing below ever reaches `on_flag`.
+                    render_row_editor(
+                        tab_index,
+                        stops,
+                        *inner,
+                        &|_, _| Box::new(|_, _, _| {}),
+                        on_scrub,
+                        cx,
+                    )
                 }))
                 .into_any_element()
         }
@@ -630,9 +650,12 @@ fn render_row_editor(
                     }),
             )
             .into_any_element(),
-        RowEditor::Color(state) => ColorPicker::new(&state)
-            .with_size(tokens::field_size())
-            .into_any_element(),
+        RowEditor::Color(state) => {
+            stops.register(&state.read(cx).focus_handle(cx));
+            ColorPicker::new(&state)
+                .with_size(tokens::field_size())
+                .into_any_element()
+        }
         // `appearance(false)` drops the toolkit's own border and fill but
         // keeps its chevron, so this ends up as the frame's Select exactly:
         // one container, one 15px chevron.
@@ -640,16 +663,19 @@ fn render_row_editor(
         // it. Left to itself the toolkit renders a select at its own fixed
         // step height and aligns the text to the top of *that*, which reads
         // as the whole control sitting a few pixels high in its field.
-        RowEditor::Enum(state) => select_box()
-            .child(
-                Select::new(&state)
-                    .appearance(false)
-                    .with_size(tokens::field_size())
-                    .h_full()
-                    .py_0()
-                    .pt(tokens::select_inset()),
-            )
-            .into_any_element(),
+        RowEditor::Enum(state) => {
+            stops.register(&state.read(cx).focus_handle(cx));
+            select_box()
+                .child(
+                    Select::new(&state)
+                        .appearance(false)
+                        .with_size(tokens::field_size())
+                        .h_full()
+                        .py_0()
+                        .pt(tokens::select_inset()),
+                )
+                .into_any_element()
+        }
     }
 }
 

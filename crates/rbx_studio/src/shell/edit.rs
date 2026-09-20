@@ -57,7 +57,7 @@ pub(super) enum RowEditor {
     /// Whether the value is there, and the editor for it — drawn under the
     /// present/absent checkbox only while it is. Built (and kept) either
     /// way, so the flag flipping is all that changes.
-    Optional(bool, Box<RowEditor>),
+    Optional(bool, &'static str, Box<RowEditor>),
 }
 
 impl RowEditor {
@@ -66,7 +66,7 @@ impl RowEditor {
     pub(super) fn field(&self, index: usize) -> Option<&Entity<InputState>> {
         match self {
             RowEditor::Fields(_, inputs) | RowEditor::Groups(_, inputs) => inputs.get(index),
-            RowEditor::Optional(_, inner) => inner.field(index),
+            RowEditor::Optional(_, _, inner) => inner.field(index),
             _ => None,
         }
     }
@@ -85,7 +85,7 @@ impl RowEditor {
                     .collect::<Vec<_>>()
                     .join(", "),
             ),
-            RowEditor::Optional(_, inner) => inner.input_text(cx),
+            RowEditor::Optional(_, _, inner) => inner.input_text(cx),
             RowEditor::Color(_) | RowEditor::Enum(_) | RowEditor::Flags(..) => None,
         }
     }
@@ -153,7 +153,7 @@ fn resync_row_widget(widget: &RowEditor, kind: &EditKind, window: &mut Window, c
                 resync_field(input, seed, window, cx);
             }
         }
-        (RowEditor::Optional(_, inner), EditKind::Optional { inner: kind, .. }) => {
+        (RowEditor::Optional(_, _, inner), EditKind::Optional { inner: kind, .. }) => {
             resync_row_widget(inner, kind, window, cx);
         }
         // `Color` and `Enum` rows have nothing outside their own widget that
@@ -261,10 +261,14 @@ impl Shell {
             // checkbox turning it on commits, which drops this whole row
             // editor (see `commit_row`) and rebuilds it against the value
             // that write produced — so nothing here has to survive the flip.
-            EditKind::Optional { present, inner } => {
+            EditKind::Optional {
+                present,
+                label,
+                inner,
+            } => {
                 let (widget, subscriptions) = self.build_row_widget(name, inner, window, cx);
                 (
-                    RowEditor::Optional(*present, Box::new(widget)),
+                    RowEditor::Optional(*present, label, Box::new(widget)),
                     subscriptions,
                 )
             }

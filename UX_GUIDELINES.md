@@ -109,13 +109,16 @@ Layout command beside them (item 9) — named layouts do not exist.
 palette (item 12). Item 11's 44×44 is reachable through Large Click
 Targets but is not the default on primary controls.
 
-**The one Level A gap, stated plainly:** a handful of toolkit components —
-`Select`, `ColorPicker`, `NumberInput`, and the menu bar — expose no way to
-set a tab index, so they are not in the Tab order and are mouse-only. That
-is WCAG 2.1.1 Keyboard, Level A, and it is the most serious thing still
-open here. It is a toolkit limitation, not a design decision, and the fix is
-a focusable wrapper per widget that forwards focus the way the Explorer's
-tree door already does.
+**The one Level A gap, now down to the menu bar:** `Select`, `ColorPicker`
+and `NumberInput` are in the Tab order — every `Color3`, every enum and the
+snap increments included. None of them needed the focusable wrapper this
+section used to promise: each one's state entity (`SelectState`,
+`ColorPickerState`, `InputState`) already implements `Focusable` and hands
+out the same handle its own `.focus` uses, so the window's own order
+(`shell::roving::TabOrder`) records that handle directly. What is left is
+the menu bar, mouse-only and still WCAG 2.1.1 Keyboard, Level A. It wants
+the usual desktop answer — F10/Alt to enter it — rather than a Tab stop,
+which is why it is tracked as its own piece of work.
 
 ## 2. Tokens
 
@@ -492,7 +495,7 @@ to lie — not a shortcut:
 | An unsaved-document dot | not implemented | the editor has no dirty-state tracking to bind it to |
 | Hierarchy guides as one absolute overlay | drawn per row | the tree is virtualised; rows are the only thing that exists to hang a line on |
 | Keyboard focus visually distinct from selection in the Explorer | they are the same row | `TreeState` tracks one `selected_ix` and nothing else; splitting them means replacing the toolkit's tree |
-| Every control in the Tab order | `Select`, `ColorPicker`, `NumberInput` and the menu bar are mouse-only | **a Level A gap (2.1.1 Keyboard)**, not a trade-off: those toolkit components expose no way to set a tab index. The fix is a focusable wrapper per widget forwarding focus, as the Explorer's tree door already does |
+| Every control in the Tab order | the menu bar is mouse-only | **a Level A gap (2.1.1 Keyboard)**, not a trade-off. `Select`, `ColorPicker` and `NumberInput` are in the order now — their state entities are `Focusable`, so `shell::roving::TabOrder` records each handle directly, no wrapper needed. The menu bar wants F10/Alt instead, which is a different job |
 | A separate editor/viewport font size | one UI scale over everything | the reference notes VS Code splits them; nothing here needs a text size independent of its chrome yet |
 | Named dock layouts | one layout, plus Reset | sizes persist and can be restored; saving several under names is a feature, not a floor |
 

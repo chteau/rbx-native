@@ -626,7 +626,7 @@ fn cframe_edits_as_a_position_and_an_orientation() {
 // stuck: nothing in the panel could give it one.
 #[test]
 fn an_absent_optional_cframe_edits_as_an_unchecked_box_over_a_cframe() {
-    let Some(EditKind::Optional { present, inner }) =
+    let Some(EditKind::Optional { present, inner, .. }) =
         edit_kind("WorldPivotData", Variant::OptionalCFrame(None))
     else {
         panic!("an OptionalCFrame should edit as a present/absent box");
@@ -650,7 +650,7 @@ fn a_present_optional_cframe_keeps_the_cframe_editor_under_a_checked_box() {
         rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
     };
 
-    let Some(EditKind::Optional { present, inner }) =
+    let Some(EditKind::Optional { present, inner, .. }) =
         edit_kind("WorldPivotData", Variant::OptionalCFrame(Some(frame)))
     else {
         panic!("an OptionalCFrame should edit as a present/absent box");
@@ -665,6 +665,81 @@ fn a_present_optional_cframe_keeps_the_cframe_editor_under_a_checked_box() {
         ["Position", "Orientation"]
     );
     assert_eq!(values, ["1", "2", "3", "0", "0", "0"]);
+}
+
+/// `PhysicalProperties` was the last of the three types the roadmap listed
+/// as "still read-only text" — and the one that needed a shape, not just a
+/// field list, because it is an enum rather than a struct.
+#[test]
+fn default_physical_properties_edit_as_an_unticked_custom_box() {
+    let Some(EditKind::Optional {
+        present,
+        label,
+        inner,
+    }) = edit_kind(
+        "CustomPhysicalProperties",
+        Variant::PhysicalProperties(PhysicalProperties::Default),
+    )
+    else {
+        panic!("PhysicalProperties should edit as a Custom box over five fields");
+    };
+
+    assert!(!present, "a Default reads as unticked");
+    assert_eq!(label, "Custom");
+    // Seeded even while unticked — this is what the box turns on to.
+    assert_eq!(
+        *inner,
+        EditKind::Fields {
+            fields: PHYSICAL_PROPERTIES,
+            values: ["0.7", "0.3", "0.5", "1", "1"].map(str::to_owned).to_vec(),
+        }
+    );
+}
+
+#[test]
+fn custom_physical_properties_edit_as_five_fields_under_a_ticked_box() {
+    let Some(EditKind::Optional { present, inner, .. }) = edit_kind(
+        "CustomPhysicalProperties",
+        Variant::PhysicalProperties(PhysicalProperties::Custom {
+            density: 2.5,
+            friction: 0.4,
+            elasticity: 0.1,
+            friction_weight: 3.0,
+            elasticity_weight: 0.25,
+        }),
+    ) else {
+        panic!("PhysicalProperties should edit as a Custom box over five fields");
+    };
+
+    assert!(present);
+    assert_eq!(
+        *inner,
+        EditKind::Fields {
+            fields: PHYSICAL_PROPERTIES,
+            values: ["2.5", "0.4", "0.1", "3", "0.25"]
+                .map(str::to_owned)
+                .to_vec(),
+        }
+    );
+}
+
+/// The five captions are the panel's only clue to which number is which, and
+/// Roblox's own constructor order is the one a reader will be comparing to.
+#[test]
+fn the_physical_properties_fields_are_captioned_in_roblox_order() {
+    assert_eq!(
+        PHYSICAL_PROPERTIES
+            .iter()
+            .map(|field| field.label)
+            .collect::<Vec<_>>(),
+        [
+            "Density",
+            "Friction",
+            "Elasticity",
+            "Friction Weight",
+            "Elasticity Weight"
+        ]
+    );
 }
 
 #[test]

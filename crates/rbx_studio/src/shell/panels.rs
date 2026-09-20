@@ -198,7 +198,7 @@ impl Shell {
                             // An optional's present/absent checkbox commits
                             // through the same one-flag path, so the factory
                             // below hands it `true`/`false` unchanged.
-                            super::edit::RowEditor::Optional(present, _) => vec![*present],
+                            super::edit::RowEditor::Optional(present, ..) => vec![*present],
                             _ => Vec::new(),
                         };
                         let handle = cx.entity();
@@ -221,6 +221,7 @@ impl Shell {
                             });
                         let control = render_editor(
                             tab_index,
+                            &self.tab_order,
                             widget,
                             move |index, checked| {
                                 let mut next = flags.clone();
@@ -240,6 +241,7 @@ impl Shell {
                                 })
                             },
                             on_scrub,
+                            cx,
                         );
                         property_row_control(row, control, composite, error.as_deref())
                             .into_any_element()

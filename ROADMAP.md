@@ -836,13 +836,22 @@ Roblox's own engine.
   text these currently fall back to. The most valuable of the types
   explicitly left as text tonight, given how much of the GUI/particle work
   above depends on authoring these comfortably.
-- [x] 🚧 `Rect`, `PhysicalProperties`, `Font` — smaller, same "still
-  read-only text" status. `Rect` now edits as four labeled fields
-  (`crates/rbx_studio/src/properties/edit.rs`). `Font` turned out to
-  already be fully editable before this item was picked up (the roadmap
-  text describing it was stale). `PhysicalProperties` is still read-only —
-  it's a real enum (`Default`/`Custom` with five fields), bigger scope than
-  the other two, and remains open.
+- [x] `Rect`, `PhysicalProperties`, `Font` — all three edit now, where all
+  three used to be read-only text. `Rect` is four labeled fields; `Font`
+  turned out to already be editable before this item was picked up (the
+  roadmap text describing it was stale); `PhysicalProperties` was the one
+  that needed a shape rather than a field list, being a real enum rather
+  than a struct.
+  It reuses `EditKind::Optional` — the checkbox-over-an-editor shape
+  `OptionalCFrame` already had — because the two read the same way even
+  though they mean different things: a `Default` carries no numbers at all
+  (the engine derives them from the material), so the five fields appear
+  only under a ticked **Custom** box, which is also how Studio presents it.
+  That is why the checkbox now carries its own caption instead of the one
+  fixed "Has value" wording. Unticking returns the value to `Default`
+  rather than zeroing the numbers, and the fields under an unticked box are
+  seeded from Roblox's `Plastic` defaults (`0.7 / 0.3 / 0.5 / 1 / 1`) so
+  ticking it never commits a row of zeroes.
 - [ ] 📋 **Widgets that better match how Studio actually renders specific
   types**, rather than a generic fallback — verified against the real API
   dump and the current code, not assumed:
@@ -989,36 +998,32 @@ against `Roblox/creator-docs` rather than assumed:
   rearrangement is inaccessible. The drag is then a pure addition rather
   than a rewrite; doing it first means building it against three hardcoded
   slots and throwing it away.
-- [ ] 🚧 **`Select`, `ColorPicker`, `NumberInput` and the menu bar are not
-  in the Tab order — a WCAG 2.1.1 (Keyboard, Level A) failure.** None of
-  those toolkit components exposes a way to set a tab index, so the editor's
-  own registry (`shell::roving::TabOrder`) cannot place them and they stay
-  mouse-only. In practice that means every `Color3` property, the snap
-  increments and every menu are unreachable without a pointer.
-  This is a toolkit limitation rather than a design decision, and the fix is
-  known: wrap each in a focusable element of our own that forwards focus to
-  the widget on `focus_in`, exactly as the Explorer's tree door already does
-  (`shell::panels::instance_tree`). `ColorPicker` and `AppMenuBar` still
-  need checking. The menu bar may instead want the usual desktop answer —
-  F10/Alt to enter it — which is a different job.
-  **The graphics-quality dropdown is fixed**: `SelectState` already
-  implements `Focusable`, and its own `focus_handle` is the same one
-  `Select::focus` itself calls, so no wrapper or forwarding subscription was
-  needed there — `shell::Shell::quality_control` just records that handle
-  in `TabOrder` directly. `NumberInput` wraps an `InputState`, which has the
-  same shape (`Focusable`, and its own `.focus`), so the identical one-line
-  fix applies wherever a `NumberInput` is a single, stable, long-lived
-  widget rather than one rebuilt per property row per selection — the snap
-  increments (`shell::toolbar::snap`) are the only current `NumberInput`
-  use in the editor and are not yet done. Every `Select` used for an
-  ordinary, per-row property value (`Color3`, an enum) is a widget rebuilt
-  fresh per row per selection change, not a single long-lived one, so it
-  needs the handle registered at creation time rather than once at
-  startup — a different, larger piece of the same fix, also not yet done.
-  Listed as its own item because it is the most serious accessibility gap
-  left in the editor, and because shipping it open was a deliberate,
-  reviewed choice rather than an oversight (see `UX_GUIDELINES.md` §1's
-  conformance section and §11).
+- [ ] 🚧 **The menu bar is not keyboard-reachable — the last of the WCAG
+  2.1.1 (Keyboard, Level A) gap.** `Select`, `ColorPicker` and `NumberInput`
+  are done: every `Color3` swatch, every enum dropdown and both snap
+  increments are Tab stops now, so what is left of this item is
+  `AppMenuBar` alone.
+  None of the three needed the focusable wrapper this entry used to
+  describe. Each one's state entity — `SelectState`, `ColorPickerState`,
+  `InputState` — already implements `Focusable`, and the handle it hands out
+  is the same one the widget's own `.focus` uses, so recording that handle
+  in `shell::roving::TabOrder` *is* the fix: there is nothing to forward
+  focus to once Tab lands on it. The graphics-quality dropdown had already
+  proved the shape (`shell::Shell::quality_control`); this pass applied it
+  to the rest.
+  Two registration sites, because the widgets have two lifetimes. The snap
+  increments (`shell::toolbar::snap`) register while their popover's body is
+  built, so the stops appear and disappear with the popover rather than
+  standing for controls nobody can see. Every per-row `Select` and
+  `ColorPicker` (`shell::rows::render_editor`) registers per row per render,
+  since a property row's widget is rebuilt whenever the selection changes —
+  a longer thread than the one-off case, which is why `render_editor` now
+  takes the window's order and an `&mut App` alongside the `tab_index` it
+  already took.
+  The menu bar is a different job and deliberately not folded in: the
+  desktop answer is F10/Alt to enter it, not a Tab stop, and the entry stays
+  open until that exists (see `UX_GUIDELINES.md` §1's conformance section
+  and §11).
 - [ ] 📋 **The accessibility work the reference guidance calls Stage 2 and
   Stage 3, minus what already shipped.** Stage 1 is met and asserted in
   tests; these are the rest, each small enough to ride along with other
