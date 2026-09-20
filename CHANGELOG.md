@@ -100,6 +100,16 @@
   fails on Windows had nothing to catch it until someone ran the gate by
   hand there. — @jleeclient
 
+- **`publish-screenshot.ps1` parses on Windows PowerShell 5.1.** It had one
+  em dash in an executable string. 5.1 reads a script with no byte-order
+  mark as Windows-1252, where the last byte of that dash is a curly double
+  quote, so the string ended early and the parser reported four errors
+  instead of publishing anything — the script's own header called it
+  untested on Windows, and it was. It is ASCII there now, with a comment
+  saying why. The other three `.ps1` files have non-ASCII only in
+  comments, which are harmless, and parse clean. Checked with PowerShell's
+  own parser over all four rather than by eye. — @jleeclient
+
 ## 2026-09-19
 
 - **A collapsed property category reads as a tile.** The category headers
