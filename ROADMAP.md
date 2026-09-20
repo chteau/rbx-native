@@ -571,6 +571,32 @@ Roblox's own engine.
   real Studio's own CLI: `--placeId`/`--universeId`/`--task`, which are
   tied to Roblox's published-place identifiers rather than to a local
   file, per this bullet's own reasoning when it was planned.
+- [x] `NumberSequence`/`ColorSequence` — a real curve/gradient editor
+  widget (keypoints along a timeline, draggable), not just the read-only
+  text these used to fall back to. The row itself draws the sequence — a
+  gradient ramp or the curve — and clicking it opens a graph in a second
+  window of the editor's own (`crate::sequence_window`): fixed-size,
+  floating above the main window, and wearing the editor's own title bar
+  (`shell::chrome::panel_topbar`) rather than the platform's.
+  Keypoints drag in both axes, a click on empty plot inserts one on the
+  curve it split, a `NumberSequence`'s envelope band has its own draggable
+  handle, and a `ColorSequence`'s stops are markers under the ramp with the
+  panel's existing colour picker behind the swatch. The value axis fits
+  itself rather than asking for Studio's "Max Size" number, and dragging a
+  keypoint out through the top of the plot is what raises it. Roblox's own
+  constructor rules are enforced (2–20 keypoints, non-descending time,
+  first at 0 and last at 1), which matters because the renderer's
+  `eval_number`/`eval_color` walk the list assuming exactly that.
+  **The window keeps no copy of the value**: it rebuilds from the DOM every
+  frame and commits through the same textual path a typed row takes, so an
+  undo, a Command Bar script or any other write shows up in the graph
+  immediately, the viewport repaints on every drag step, and a whole drag
+  is still one undo entry.
+- [x] `NumberSequence`/`ColorSequence` attributes are creatable. Both are
+  in the Attributes section's type picker now, and their values edit
+  through the graph above — the same per-type widget an ordinary property
+  of that type gets, never a second set of editors. `rbx_dom::attributes`
+  already read and wrote both; the gap was entirely on the editor's side.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -911,11 +937,6 @@ Roblox's own engine.
   the same pass rather than filing separately: rows feel visually tight
   (more padding would help), and a numeric field's own value can get
   clipped by the input's own width instead of staying fully legible.
-- [ ] 📋 `NumberSequence`/`ColorSequence` — a real curve/gradient editor
-  widget (keypoints along a timeline, draggable), not just the read-only
-  text these currently fall back to. The most valuable of the types
-  explicitly left as text tonight, given how much of the GUI/particle work
-  above depends on authoring these comfortably.
 - [x] `Rect`, `PhysicalProperties`, `Font` — all three edit now, where all
   three used to be read-only text. `Rect` is four labeled fields; `Font`
   turned out to already be editable before this item was picked up (the
@@ -1103,9 +1124,9 @@ against `Roblox/creator-docs` rather than assumed:
     the focused row and the selected rows cannot differ — which matters
     because the Explorer multi-selects. Needs the toolkit's tree replaced or
     extended.
-- [ ] 📋 **Property editors for the seven `Variant` types that still have
+- [ ] 📋 **Property editors for the five `Variant` types that still have
   none.** The Properties panel renders a value for every type the DOM can
-  hold, but seven of them are read-only or edited through something that
+  hold, but five of them are read-only or edited through something that
   misrepresents them. Inventory, rationale and rough sizing live in
   [`agents/property-editors.md`](agents/property-editors.md); the bullets
   below are what is left after the `CFrame`/`Ray`/`Vector3int16`/`Faces`/
@@ -1125,10 +1146,6 @@ against `Roblox/creator-docs` rather than assumed:
     numbers are a plain field row, but `Default` versus `Custom` is a
     design question first — how does someone go *back* to default once
     they have typed a density? — and worth answering before building.
-  - **`NumberSequence`** (`ParticleEmitter.Size`, `.Transparency`) needs a
-    keypoint list or a small curve editor — the largest item here.
-  - **`ColorSequence`** (`UIGradient`, particle colour) needs a gradient
-    stop editor.
   - **`Ref`** (`ObjectValue.Value`, `Weld.Part0`) shows the target's name
     and cannot be changed. Needs an instance picker — an Explorer target,
     or a pick-in-viewport mode.
@@ -1156,11 +1173,6 @@ against `Roblox/creator-docs` rather than assumed:
   rbx-dom`'s attribute format documentation — and, since a blob is packed
   end to end, an instance whose attributes held a `CFrame` no longer loses
   every attribute stored after it.
-- [ ] 📋 **`NumberSequence`/`ColorSequence` attributes are not creatable.**
-  One already in a file renders, read-only; neither can be added or
-  edited, because neither has a property editor yet either — this follows
-  the "eight `Variant` types" bullet's own editors-are-their-own-PRs rule
-  rather than growing a second set of editors here.
 - [ ] 📋 **A dedicated UI-editing mode for `StarterGui`.** Today the
   viewport is always the 3D `Workspace` scene; editing a `ScreenGui`'s
   layout means selecting its descendants through the Explorer tree alone,

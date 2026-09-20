@@ -9,7 +9,7 @@ use rbx_dom::Variant;
 
 use crate::properties::attributes as attrs;
 use crate::properties::{EditKind, PropertyRow};
-use crate::shell::rows::{checkbox, render_editor, OnScrub};
+use crate::shell::rows::{checkbox, render_editor, OnOpen, OnScrub};
 use crate::shell::Shell;
 use crate::tokens;
 
@@ -22,10 +22,9 @@ impl Shell {
     /// `properties::value_edit_kind` `Properties::edit_kind` uses) — a
     /// `Bool` becomes the panel's own checkbox exactly as it does for a real
     /// property (see `shell::panels::properties`), because a checkbox needs
-    /// no persistent widget entity either way. A type with no editor here
-    /// (`NumberSequence`/`ColorSequence` — see
-    /// `properties::attributes::ATTRIBUTE_TYPES`) falls back to plain text,
-    /// same as the read-only column an unsupported property type gets.
+    /// no persistent widget entity either way. A type with no editor at all
+    /// falls back to plain text, same as the read-only column an unsupported
+    /// property type gets.
     pub(super) fn attribute_value_control(
         &mut self,
         name: &str,
@@ -35,11 +34,11 @@ impl Shell {
     ) -> AnyElement {
         let row_key = attrs::row_name(name);
         let Some(kind) = attrs::edit_kind(value) else {
-            // Only reachable for `NumberSequence`/`ColorSequence` in
-            // practice — every other legal attribute type has an editor
-            // (see `properties::attributes::ATTRIBUTE_TYPES`'s doc comment).
-            // `{value:?}` is the same last-resort rendering
-            // `Properties::format` gives `PhysicalProperties`.
+            // Every type `Instance:SetAttribute` accepts has an editor (see
+            // `properties::attributes::ATTRIBUTE_TYPES`), so this is only
+            // reachable for an attribute some other tool wrote in a type it
+            // does not. `{value:?}` is the same last-resort rendering
+            // `Properties::format` gives an unknown value.
             return div()
                 .flex_1()
                 .truncate()
@@ -94,12 +93,23 @@ impl Shell {
         // reaches this factory — it exists only to satisfy `render_editor`'s
         // signature. Its return type is left to inference (rather than
         // spelled out on the closure) to dodge clippy's `type_complexity`.
+        // A sequence attribute's row opens the same graph an ordinary
+        // sequence property's does, through the same row name.
+        let open_handle = cx.entity();
+        let open_name = row_key.clone();
+        let on_open: OnOpen = Box::new(move |_, window, cx| {
+            let name = open_name.clone();
+            open_handle.update(cx, |shell, cx| {
+                shell.open_sequence_editor(&name, window, cx);
+            });
+        });
         let control = render_editor(
             tab_index,
             &self.tab_order,
             widget,
             |_index, _checked| Box::new(|_, _, _| {}),
             on_scrub,
+            on_open,
             cx,
         );
         if let Some(message) = error {

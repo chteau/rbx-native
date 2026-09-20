@@ -44,6 +44,100 @@ fn add_attribute_round_trips_every_offered_type() {
     }
 }
 
+/// The whole point of the type list: a type this panel offers to create must
+/// also be one it can then *edit*, through the same widget an ordinary
+/// property of that type gets. A default value with no `edit_kind` would add
+/// a row nobody can change.
+#[test]
+fn every_offered_type_can_be_edited_after_it_is_created() {
+    for type_name in ATTRIBUTE_TYPES {
+        let (mut dom, part) = instance();
+        let value = default_value(type_name).expect("an offered type has a default");
+        add_attribute(&mut dom, part, "Thing", value.clone()).expect("a fresh attribute");
+
+        let text = super::super::edit::edit_text(&value)
+            .unwrap_or_else(|| panic!("{type_name} has no editable text"));
+        assert!(edit_kind(&value).is_some(), "{type_name}");
+
+        // Committing a row back unchanged is the weakest edit there is, and
+        // the one every widget makes on a focus loss — so it must not be the
+        // one that errors.
+        set_attribute_value(&mut dom, &database(), part, "Thing", &text)
+            .unwrap_or_else(|err| panic!("{type_name} refused its own text: {err}"));
+        assert_eq!(
+            attributes(&dom, part).get("Thing"),
+            Some(&value),
+            "{type_name}"
+        );
+    }
+}
+
+#[test]
+fn a_sequence_attribute_is_edited_through_its_keypoint_text() {
+    use rbx_dom::{Color3Data, ColorSequence, ColorSequenceKeypoint};
+
+    let (mut dom, part) = instance();
+    add_attribute(
+        &mut dom,
+        part,
+        "Ramp",
+        default_value("ColorSequence").expect("an offered type"),
+    )
+    .unwrap();
+
+    set_attribute_value(
+        &mut dom,
+        &database(),
+        part,
+        "Ramp",
+        "0, 255, 0, 0; 1, 0, 0, 255",
+    )
+    .expect("two keypoints");
+
+    assert_eq!(
+        attributes(&dom, part).get("Ramp"),
+        Some(&Variant::ColorSequence(ColorSequence {
+            keypoints: vec![
+                ColorSequenceKeypoint {
+                    time: 0.0,
+                    color: Color3Data {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0
+                    },
+                    envelope: 0.0,
+                },
+                ColorSequenceKeypoint {
+                    time: 1.0,
+                    color: Color3Data {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 1.0
+                    },
+                    envelope: 0.0,
+                },
+            ],
+        }))
+    );
+}
+
+/// Roblox's own constructors refuse these, so the panel refusing them is
+/// parity rather than an invention — and the value on the instance is left
+/// exactly as it was.
+#[test]
+fn an_illegal_sequence_is_refused_without_touching_the_stored_value() {
+    let (mut dom, part) = instance();
+    let original = default_value("NumberSequence").expect("an offered type");
+    add_attribute(&mut dom, part, "Curve", original.clone()).unwrap();
+
+    assert!(set_attribute_value(&mut dom, &database(), part, "Curve", "0, 1, 0").is_err());
+    assert!(
+        set_attribute_value(&mut dom, &database(), part, "Curve", "0, 0, 0; 0.5, 1, 0").is_err()
+    );
+
+    assert_eq!(attributes(&dom, part).get("Curve"), Some(&original));
+}
+
 #[test]
 fn every_attribute_type_has_a_default_and_nothing_else_does() {
     for type_name in ATTRIBUTE_TYPES {
@@ -289,19 +383,45 @@ fn edit_kind_routes_through_the_same_per_type_mapping_ordinary_properties_use() 
     ));
 }
 
+/// A `SharedString` is not a type `Instance:SetAttribute` accepts, so it can
+/// only reach an attribute row by having been written by something else —
+/// and it is one of the four this project keeps deliberately read-only
+/// forever (`ROADMAP.md`), so it will not quietly grow an editor and stop
+/// covering this path.
 #[test]
 fn a_type_with_no_properties_panel_editor_falls_back_to_read_only() {
+    assert_eq!(edit_kind(&Variant::SharedString(7)), None);
+}
+
+/// Both sequences used to be exactly that case. They are creatable types
+/// now, which means the panel has to hand their value the same editor an
+/// ordinary sequence property gets — the graph, not a text field.
+#[test]
+fn a_sequence_attribute_edits_through_the_graph() {
     use rbx_dom::{NumberSequence, NumberSequenceKeypoint};
 
     let sequence = Variant::NumberSequence(NumberSequence {
-        keypoints: vec![NumberSequenceKeypoint {
-            envelope: 0.0,
-            time: 0.0,
-            value: 1.0,
-        }],
+        keypoints: vec![
+            NumberSequenceKeypoint {
+                envelope: 0.0,
+                time: 0.0,
+                value: 1.0,
+            },
+            NumberSequenceKeypoint {
+                envelope: 0.0,
+                time: 1.0,
+                value: 0.0,
+            },
+        ],
     });
 
-    assert_eq!(edit_kind(&sequence), None);
+    assert_eq!(
+        edit_kind(&sequence),
+        Some(EditKind::Sequence {
+            color: false,
+            text: "0, 1, 0; 1, 0, 0".to_owned()
+        })
+    );
 }
 
 #[test]

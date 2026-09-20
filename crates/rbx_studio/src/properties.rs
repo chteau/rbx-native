@@ -156,6 +156,16 @@ pub(crate) enum EditKind {
         label: &'static str,
         inner: Box<EditKind>,
     },
+    /// A `NumberSequence`'s curve or a `ColorSequence`'s ramp: too many
+    /// numbers for a row, and the wrong numbers to type. The row draws the
+    /// sequence itself and opens `crate::sequence_window` — the graph where
+    /// keypoints are dragged — which commits through this same `text`.
+    Sequence {
+        /// Which of the two, since the row draws a ramp for one and a curve
+        /// for the other and the text alone cannot say.
+        color: bool,
+        text: String,
+    },
 }
 
 /// One line of the panel.
@@ -535,6 +545,8 @@ pub(crate) fn value_edit_kind(value: &Variant, text: String) -> EditKind {
         // the fonts package that could list the families lives in the
         // viewer, and a weight's nine names are quicker typed than picked.
         Variant::Font(_) => fields(FONT, &text),
+        Variant::NumberSequence(_) => EditKind::Sequence { color: false, text },
+        Variant::ColorSequence(_) => EditKind::Sequence { color: true, text },
         _ => EditKind::Text(text),
     }
 }

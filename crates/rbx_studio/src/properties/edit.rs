@@ -10,8 +10,12 @@ use rbx_dom::{
 use rbx_reflection::ReflectionDatabase;
 
 mod font;
+mod sequence;
 
 use font::{font_text, parse_font, synced};
+use sequence::{
+    color_sequence_text, number_sequence_text, parse_color_sequence, parse_number_sequence,
+};
 
 /// `Name` is not a key in `Instance::properties()` — the panel synthesizes a
 /// row for it and [`commit`] routes it to `WeakDom::set_name` instead of
@@ -92,6 +96,11 @@ pub(crate) fn edit_text(value: &Variant) -> Option<String> {
             rect.min.x, rect.min.y, rect.max.x, rect.max.y
         )),
         Variant::Font(font) => Some(font_text(font)),
+        // Keypoints along a `;`, each one's numbers along a `,`. Nobody
+        // types this — `crate::sequence_window`'s graph is the editor; see
+        // `sequence` for why its commits still come through here.
+        Variant::NumberSequence(sequence) => Some(number_sequence_text(sequence)),
+        Variant::ColorSequence(sequence) => Some(color_sequence_text(sequence)),
         // A `Default` seeds from [`DEFAULT_PHYSICAL`] for the same reason an
         // absent `OptionalCFrame` seeds from the identity: the five fields
         // are hidden until the row's Custom box turns them on, and that is
@@ -352,8 +361,36 @@ pub(crate) fn parse(
             }))
         }
         Variant::Font(_) => parse_font(text).map(Variant::Font),
+        Variant::NumberSequence(_) => parse_number_sequence(text).map(Variant::NumberSequence),
+        Variant::ColorSequence(current) => {
+            parse_color_sequence(current, text).map(Variant::ColorSequence)
+        }
         Variant::PhysicalProperties(current) => parse_physical(current, text),
         other => Err(format!("{} is read-only", type_name(other))),
+    }
+}
+
+/// The sequence `text` spells, for a caller holding the text alone — the
+/// row's own preview and `crate::sequence_window`, which both need the
+/// keypoints rather than a string. `color` picks which of the two shapes to
+/// read it as, the same way [`crate::properties::EditKind::Sequence`] carries
+/// it. Colour envelopes come back zeroed, since text never carries them (see
+/// [`sequence::parse_color_sequence`]) — a preview does not use them, and the
+/// panel reads the real ones off the value it opened on.
+pub(crate) fn sequence_value(color: bool, text: &str) -> Option<Variant> {
+    if color {
+        parse_color_sequence(
+            &rbx_dom::ColorSequence {
+                keypoints: Vec::new(),
+            },
+            text,
+        )
+        .map(Variant::ColorSequence)
+        .ok()
+    } else {
+        parse_number_sequence(text)
+            .map(Variant::NumberSequence)
+            .ok()
     }
 }
 
@@ -565,8 +602,6 @@ fn type_name(value: &Variant) -> &'static str {
         Variant::Axes(_) => "Axes",
         Variant::OptionalCFrame(_) => "OptionalCFrame",
         Variant::Ref(_) => "Ref",
-        Variant::NumberSequence(_) => "NumberSequence",
-        Variant::ColorSequence(_) => "ColorSequence",
         Variant::Rect(_) => "Rect",
         Variant::PhysicalProperties(_) => "PhysicalProperties",
         Variant::SharedString(_) => "SharedString",
