@@ -39,6 +39,21 @@
   and restoring keeps the frame rather than quietly moving it to the
   origin — the box only says whether there is one. — @chteau
 
+- **A Windows install of Roblox is now a texture fallback.** When
+  `setup.rbxcdn.com` can't serve an `rbxasset://` file — offline, or a file
+  its packages lack — the asset resolver reads it from the Roblox or Studio
+  install already on the machine, under
+  `%LOCALAPPDATA%\Roblox\Versions\`. The CDN is still asked first and
+  nothing is ever written to that folder. A real install keeps the default
+  skybox panels under `PlatformContent\pc\textures\` rather than `content\`,
+  so both are searched; without that, a place with no `Sky` rendered a
+  black background offline. What it reads is not kept in the asset cache,
+  so a stale copy from an older version folder can't become the permanent
+  answer once the CDN is back. The path in an `rbxasset://` reference comes
+  from a place file, so one that could step outside the install folder
+  (`..`, a drive letter, a backslash) or name a Windows device (`NUL`,
+  `CON`) is refused rather than read. — @jleeclient
+
 - **`cargo clippy` is clean on Windows again.** Three pieces of X11-only
   code in `rbx_studio` were being compiled on every target: the RandR
   refresh-rate arithmetic and the check that decides whether the pointer

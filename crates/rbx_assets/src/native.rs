@@ -2,12 +2,15 @@
 //! publishes on `setup.rbxcdn.com` (the same CDN Vinegar/Sober pull from).
 //!
 //! Nothing is embedded in this crate: packages are fetched on demand, cached
-//! whole, then the one requested file is extracted from the cached zip.
+//! whole, then the one requested file is extracted from the cached zip. When
+//! the CDN cannot serve a file, a local Sober or Windows Roblox install is
+//! read as a last resort (see [`crate::sober`] and [`crate::local_install`]).
 
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 
 use crate::error::AssetError;
+use crate::local_install::LocalInstall;
 use crate::sober::Sober;
 
 const SETUP_CDN: &str = "https://setup.rbxcdn.com";
@@ -16,22 +19,82 @@ const VERSION_ENDPOINT: &str = "https://setup.rbxcdn.com/versionQTStudio";
 /// almost certainly a manifest pointing at the wrong URL, not a real package.
 const MAX_PACKAGE_DOWNLOAD_BYTES: u64 = 200 * 1024 * 1024;
 
+/// Where a native file's bytes came from, which decides whether the caller
+/// may keep them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Source {
+    Cdn,
+    Sober,
+    LocalInstall,
+}
+
+impl Source {
+    /// Whether the bytes may go into the asset cache.
+    ///
+    /// That cache is keyed by the file's path alone, so whatever is stored
+    /// answers that path on every later run, CDN reachable or not. A local
+    /// install is searched newest version first but falls through to older
+    /// ones (see [`LocalInstall::read`]), so its copy can be years behind the
+    /// CDN's — fine as a stopgap for one offline session, wrong as the
+    /// permanent answer.
+    pub(crate) fn is_cacheable(self) -> bool {
+        self != Source::LocalInstall
+    }
+}
+
+/// A native file's bytes together with where they came from.
+pub(crate) struct Fetched {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) source: Source,
+}
+
 pub struct NativeContent {
     packages_dir: PathBuf,
+    /// Built once here rather than per lookup: offline, every asset in a
+    /// place misses the CDN and lands on it.
+    local_install: Option<LocalInstall>,
 }
 
 impl NativeContent {
     /// `packages_dir` is where downloaded package zips are cached
     /// (conventionally `<asset cache root>/native-packages/`).
     pub fn new(packages_dir: PathBuf) -> Self {
-        Self { packages_dir }
+        Self {
+            packages_dir,
+            local_install: LocalInstall::new(),
+        }
+    }
+
+    /// Stands `local_install` in for the machine's own, so a test never
+    /// depends on what is installed where it runs.
+    #[cfg(test)]
+    fn with_local_install(packages_dir: PathBuf, local_install: Option<LocalInstall>) -> Self {
+        Self {
+            packages_dir,
+            local_install,
+        }
     }
 
     /// Fetches the single file at `path` (e.g. `"sky/sun.jpg"`) from whichever
-    /// Studio content package contains it.
-    pub(crate) fn fetch(&self, path: &str) -> Result<Vec<u8>, AssetError> {
+    /// Studio content package contains it, or failing that from a local
+    /// install. The caller decides what to keep from [`Fetched::source`].
+    pub(crate) fn fetch(&self, path: &str) -> Result<Fetched, AssetError> {
         self.fetch_from_cdn(path)
-            .or_else(|cdn_err| self.fetch_from_sober(path).ok_or(cdn_err))
+            .map(|bytes| Fetched {
+                bytes,
+                source: Source::Cdn,
+            })
+            .or_else(|cdn_err| self.fetch_fallback(path).ok_or(cdn_err))
+    }
+
+    /// The sources tried once the CDN has failed, in order.
+    fn fetch_fallback(&self, path: &str) -> Option<Fetched> {
+        self.fetch_from_sober(path)
+            .map(|bytes| Fetched {
+                bytes,
+                source: Source::Sober,
+            })
+            .or_else(|| self.fetch_from_local_install(path))
     }
 
     fn fetch_from_cdn(&self, path: &str) -> Result<Vec<u8>, AssetError> {
@@ -85,6 +148,21 @@ impl NativeContent {
         let bytes = http_get_bytes(&url)?;
         write_atomic(&cache_path, &bytes)?;
         Ok(bytes)
+    }
+
+    /// Best-effort extra fallback through a Roblox/Studio install on this
+    /// machine (see [`LocalInstall`]), tried after the CDN and Sober have both
+    /// failed. `None` when there is no install or it lacks the file.
+    ///
+    /// The bytes are tagged [`Source::LocalInstall`] so the resolver does not
+    /// persist them: unlike the package zips above, which are cached by
+    /// Studio version, its native-file cache has no version in the key.
+    fn fetch_from_local_install(&self, path: &str) -> Option<Fetched> {
+        let bytes = self.local_install.as_ref()?.read(path)?;
+        Some(Fetched {
+            bytes,
+            source: Source::LocalInstall,
+        })
     }
 }
 
@@ -333,5 +411,45 @@ mod tests {
     fn missing_content_length_is_accepted() {
         let headers = ureq::http::HeaderMap::new();
         assert!(check_content_length("http://example.test/pkg.zip", &headers).is_ok());
+    }
+
+    fn install_with(file: &str, bytes: &[u8]) -> LocalInstall {
+        let versions = std::env::temp_dir().join(format!(
+            "rbx_assets_native_test_{}_{}",
+            std::process::id(),
+            file.replace('/', "_")
+        ));
+        let path = versions.join("version-aaaa").join("content").join(file);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, bytes).unwrap();
+        LocalInstall::with_versions_dir(versions)
+    }
+
+    // The asset cache is keyed by path alone and outlives the session, so a
+    // local copy — possibly from an old version — must not be kept in it.
+    #[test]
+    fn a_file_read_from_a_local_install_is_not_cacheable() {
+        let native = NativeContent::with_local_install(
+            std::env::temp_dir(),
+            Some(install_with("textures/x.png", b"local")),
+        );
+
+        let fetched = native.fetch_from_local_install("textures/x.png").unwrap();
+
+        assert_eq!(fetched.bytes, b"local");
+        assert_eq!(fetched.source, Source::LocalInstall);
+        assert!(!fetched.source.is_cacheable());
+    }
+
+    #[test]
+    fn cdn_and_sober_bytes_stay_cacheable() {
+        assert!(Source::Cdn.is_cacheable());
+        assert!(Source::Sober.is_cacheable());
+    }
+
+    #[test]
+    fn no_local_install_means_no_local_fallback() {
+        let native = NativeContent::with_local_install(std::env::temp_dir(), None);
+        assert!(native.fetch_from_local_install("textures/x.png").is_none());
     }
 }
