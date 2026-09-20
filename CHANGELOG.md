@@ -166,6 +166,31 @@
   comments, which are harmless, and parse clean. Checked with PowerShell's
   own parser over all four rather than by eye. — @jleeclient
 
+- **The ribbon greys Copy, Paste and Duplicate when they would do nothing.**
+  All three were drawn live whatever the editor held, so with an empty
+  clipboard or an empty selection they hovered, took keyboard focus and
+  then returned straight out of their handler's own guard — a control that
+  looks clickable and silently isn't is worse than one that says why. Each
+  now greys with the reason on hover and drops out of the ribbon's arrow
+  order, the same treatment the not-implemented tiles already get. The test
+  is the interesting part: availability asks `clipboard::has_copyable`,
+  which *is* the guard `copy_selected` and `duplicate_selected` return on,
+  so the button and the command cannot drift — and a selection holding
+  nothing but services reads as empty, which a plain "is anything
+  selected?" would have got wrong. Group/Ungroup have the same flaw and a
+  harder predicate (`common_parent`); they are untouched. — @chteau
+
+- **The Windows row in `README.md` was two claims out of date.** It said
+  the project "has never been built or run on a real Windows machine" long
+  after CI started running clippy, a build and the full test suite on
+  `windows-latest` for every change, and it pointed at a roadmap section
+  ("Compatibilité Windows native") that does not exist. It now separates
+  what CI covers — it compiles and the tests pass — from what nothing
+  covers: the editor has still never been *launched* there, because CI is
+  headless. `publish-screenshot.ps1`'s header claimed it was untested on
+  Windows after being run end to end on Windows 11; that line is what let
+  its parse bug sit, so it now says what was actually run. — @chteau
+
 ## 2026-09-19
 
 - **A collapsed property category reads as a tile.** The category headers

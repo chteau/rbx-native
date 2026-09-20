@@ -24,7 +24,7 @@ what's done, what's approximated, and what's out of scope on purpose).
 | Platform | State |
 |---|---|
 | Linux (X11) | Primary target. Actively developed and tested on it every day. |
-| Windows | The rendering/editor stack (`wgpu`, GPUI Kit) is cross-platform by design, and the asset cache/settings paths were made Windows-aware, but the project has never been built or run on a real Windows machine. Expect rough edges — see the "Compatibilité Windows native" section of [ROADMAP.md](ROADMAP.md) for the known gaps (mouse capture in the free-flight camera is the main one). **If you're on Windows, trying a build and reporting what breaks is one of the most valuable contributions you can make right now.** |
+| Windows | **Builds and passes its tests**, on every change: CI runs `cargo clippy -D warnings`, `cargo build` and `cargo test --workspace` on `windows-latest`. What that does *not* cover is the editor actually running — CI is headless, so no window, GPU surface or input path has ever been exercised on Windows, and `wgpu`/GPUI Kit being cross-platform by design is still the only reason to expect them to work. Known gaps are under [Platform: Windows](ROADMAP.md) in the roadmap; mouse capture in the free-flight camera is the main one (X11-only today). Of the PowerShell helpers in `scripts/`, only `publish-screenshot.ps1` has been run on a real Windows machine. **If you're on Windows, launching the editor and reporting what breaks is the most valuable contribution you can make right now — the compile is the part that's covered.** |
 | macOS | Not a target yet. Likely buildable given the dependencies, entirely unverified. |
 | Wayland | Falls back to an uncaptured cursor (no pointer lock) rather than failing outright. |
 
