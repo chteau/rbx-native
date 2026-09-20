@@ -55,12 +55,14 @@ mod folder_colors;
 mod history;
 mod menu_bar;
 mod pacing;
+mod packs;
 mod pointer_lock;
 mod properties;
 mod render_image;
 mod save;
 mod scale;
 mod script_editor;
+mod script_templates;
 mod settings;
 mod settle;
 mod shell;
@@ -139,6 +141,12 @@ fn main() {
         verbose,
     };
 
+    // Before `load`: the Explorer's rows resolve their icons while the place
+    // is built, so an installed pack has to be in place by then.
+    if let Some(pack) = packs::Appearance::load().icon_pack {
+        class_icons::set_user_pack(packs::IconOverlay::load(&pack));
+    }
+
     // Parsing and the asset downloads both block; running them before the
     // window exists keeps the UI thread from ever stalling on the network.
     println!("loading {}…", path.display());
@@ -210,8 +218,8 @@ struct Place {
 /// lower-contrast palette (`assets/themes/dark-soft.json`), before
 /// [`Theme::change`] below activates it. The file follows GPUI Kit's own
 /// `ThemeSet`/`ThemeConfig` JSON format (any key this leaves unset falls
-/// back to the stock dark theme), so a future user-installable theme pack
-/// can drop a file in the same shape next to it without new plumbing here.
+/// back to the stock dark theme). A user's own theme file in the same shape
+/// (see [`install_user_theme`]) replaces it afterwards.
 fn install_theme(cx: &mut App) {
     const THEME: &str = include_str!("../../../assets/themes/dark-soft.json");
     ThemeRegistry::global_mut(cx)
@@ -224,7 +232,45 @@ fn install_theme(cx: &mut App) {
     {
         Theme::global_mut(cx).dark_theme = theme;
     }
+    install_user_theme(cx);
     install_fonts(cx);
+}
+
+/// Applies the theme `appearance.json` names, from `<config>/themes/`: the
+/// first dark theme its `ThemeSet` file defines under a name the registry
+/// does not already hold — the registry ignores a duplicate name rather than
+/// replacing it, so a file that reuses a built-in's name would otherwise
+/// change nothing and say nothing. Anything wrong with the file is reported
+/// on stderr and leaves the built-in theme in place.
+///
+/// Only the toolkit's widgets follow it (see `packs`); the chrome this
+/// editor draws itself still reads `tokens`.
+fn install_user_theme(cx: &mut App) {
+    let Some(name) = packs::Appearance::load().theme else {
+        return;
+    };
+    let Some(json) = packs::theme_json(&name) else {
+        eprintln!("rbxstudio: theme {name:?} could not be read from the themes folder");
+        return;
+    };
+    let known: std::collections::HashSet<SharedString> =
+        ThemeRegistry::global(cx).themes().keys().cloned().collect();
+    if let Err(err) = ThemeRegistry::global_mut(cx).load_themes_from_str(&json) {
+        eprintln!("rbxstudio: theme {name:?} is not a valid theme file: {err}");
+        return;
+    }
+    let picked = ThemeRegistry::global(cx)
+        .sorted_themes()
+        .into_iter()
+        .find(|theme| !known.contains(&theme.name) && theme.mode == ThemeMode::Dark)
+        .cloned();
+    match picked {
+        Some(theme) => Theme::global_mut(cx).dark_theme = theme,
+        None => eprintln!(
+            "rbxstudio: theme {name:?} defines no dark theme with a name of its own; \
+             keeping the built-in"
+        ),
+    }
 }
 
 /// Points the theme at the design system's own font stack, for whichever of

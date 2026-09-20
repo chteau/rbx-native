@@ -37,6 +37,14 @@ impl Feedback {
         matches!(self, Feedback::Error(_))
     }
 
+    /// Whether the label above the input is worth painting. Every outcome is
+    /// also a permanent row in the Output dock, so with that dock open the
+    /// same text on screen twice is noise; with it collapsed the label is the
+    /// only place the result is visible, so it stays.
+    pub(crate) fn shown_inline(&self, output_collapsed: bool) -> bool {
+        output_collapsed && !matches!(self, Feedback::Idle)
+    }
+
     /// The text to paint: blank before the first run, `(no output)` for a
     /// silent success, otherwise the captured text truncated to one line.
     pub(crate) fn label(&self) -> SharedString {
@@ -63,6 +71,24 @@ fn truncate(text: &str) -> SharedString {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_label_shows_only_while_the_output_dock_is_collapsed() {
+        for feedback in [
+            Feedback::from_run(Ok(vec!["x".into()])),
+            Feedback::from_run(Err("boom".into())),
+            Feedback::Warning("w".into()),
+        ] {
+            assert!(feedback.shown_inline(true));
+            assert!(!feedback.shown_inline(false));
+        }
+    }
+
+    #[test]
+    fn nothing_to_say_is_never_shown() {
+        assert!(!Feedback::Idle.shown_inline(true));
+        assert!(!Feedback::Idle.shown_inline(false));
+    }
 
     #[test]
     fn idle_shows_nothing() {

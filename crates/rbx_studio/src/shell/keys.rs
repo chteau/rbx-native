@@ -154,8 +154,26 @@ impl Shell {
     /// Part/Folder/Script/LocalScript/ModuleScript items' entry point, so a
     /// menu click runs the exact same path the quick-insert keys do.
     pub(crate) fn insert_instance(&mut self, class: &str, cx: &mut Context<Self>) {
-        let template = default_template(&self.database, class);
-        self.insert_instance_with_source(class, None, template, cx);
+        // A user's `Default.luau` for the class wins over the built-in
+        // starter, so "every new Script looks like this" is one file.
+        let template = self
+            .script_templates
+            .default_for(class)
+            .or_else(|| default_template(&self.database, class))
+            .map(str::to_owned);
+        self.insert_instance_with_source(class, None, template.as_deref(), cx);
+    }
+
+    /// The ribbon Script menu's user-defined entries (see
+    /// `crate::script_templates`): inserts the `index`th extra template as
+    /// its own class with its own source. An index that no longer resolves
+    /// is a no-op rather than a panic — the menu is built from the same list
+    /// a frame earlier, but nothing ties the two lifetimes together.
+    pub(crate) fn insert_user_template(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(template) = self.script_templates.extras().get(index).cloned() else {
+            return;
+        };
+        self.insert_instance_with_source(template.class, None, Some(&template.source), cx);
     }
 
     /// The ribbon Part menu's Block/Sphere/Cylinder items (see

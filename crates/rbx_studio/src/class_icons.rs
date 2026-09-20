@@ -14,16 +14,17 @@
 //!
 //! Both variants are embedded at compile time; [`IconPack`] (an editor
 //! setting, see `settings::Settings::icon_pack`) only picks which one
-//! [`icon_tile`] reads from — no rebuild needed to switch. Swapping in a
-//! different icon pack entirely is still on `ROADMAP.md` under "Icon and
-//! theme packs" — not implemented yet.
+//! [`icon_tile`] reads from — no rebuild needed to switch. A user's own pack
+//! (`crate::packs`) is layered over either: [`set_user_pack`] installs it, and
+//! whatever it leaves out is still drawn from the built-in kit.
 
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use gpui_kit::RenderImage;
 use resvg::tiny_skia::{Pixmap, Transform};
 use resvg::usvg::{Options, Tree};
 
+use crate::packs::IconOverlay;
 use crate::render_image::to_render_image;
 
 mod tint;
@@ -372,7 +373,32 @@ const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
 /// invariant, not a runtime one: every file under both `assets/icons/default`
 /// variants is checked by this module's own tests).
 pub(crate) fn icon_tile(class: &str, pack: IconPack) -> Option<Arc<RenderImage>> {
-    let slug = CLASS_ICON_SLUGS.iter().find(|(name, _)| *name == class)?.1;
+    let installed = USER_PACK.read().ok().and_then(|pack| pack.clone());
+    icon_tile_over(class, pack, installed.as_deref())
+}
+
+/// [`icon_tile`] against an explicit overlay rather than the installed one, so
+/// the precedence can be tested without touching process-wide state.
+fn icon_tile_over(
+    class: &str,
+    pack: IconPack,
+    overlay: Option<&IconOverlay>,
+) -> Option<Arc<RenderImage>> {
+    let slug = CLASS_ICON_SLUGS
+        .iter()
+        .find(|(name, _)| *name == class)
+        .map(|(_, slug)| *slug);
+
+    // The installed pack goes first, and falls through on a drawing that will
+    // not parse rather than blanking the icon: it is somebody else's file.
+    if let Some(image) = overlay
+        .and_then(|overlay| overlay.svg(class, slug))
+        .and_then(|svg| rasterize(&svg))
+    {
+        return Some(image);
+    }
+
+    let slug = slug?;
     let file = match pack {
         IconPack::Dark => DefaultIcons::get(&format!("{slug}.svg")),
         IconPack::Light => LightIcons::get(&format!("{slug}.svg")),
@@ -380,7 +406,31 @@ pub(crate) fn icon_tile(class: &str, pack: IconPack) -> Option<Arc<RenderImage>>
     rasterize(&file.data)
 }
 
-/// Renders `svg` (a 16x16-`viewBox` document) to a square RGBA tile.
+/// The user's installed icon pack, drawn over the built-in kit — see
+/// `crate::packs`. Process-wide because the Explorer resolves icons deep
+/// inside row construction with no handle to the editor's state; set once at
+/// startup and again whenever the Explorer's menu picks another.
+static USER_PACK: RwLock<Option<Arc<IconOverlay>>> = RwLock::new(None);
+
+/// Installs `pack` as the overlay, or removes it with `None`. The caller
+/// rebuilds whatever already resolved an icon.
+pub(crate) fn set_user_pack(pack: Option<IconOverlay>) {
+    if let Ok(mut slot) = USER_PACK.write() {
+        *slot = pack.map(Arc::new);
+    }
+}
+
+/// Whether a user pack is currently installed over the kit — what the
+/// Explorer menu checks so it never shows a pack as chosen that failed to load.
+pub(crate) fn user_pack_installed() -> bool {
+    USER_PACK.read().is_ok_and(|pack| pack.is_some())
+}
+
+/// Renders `svg` to a square RGBA tile.
+///
+/// The kit is authored on a 16x16 canvas (`ICON_VIEWBOX`), but the scale is
+/// taken from the document's own size so a pack drawn on 24x24 or 32x32 fills
+/// the tile instead of being cropped to its top-left corner.
 ///
 /// `pub(crate)`: also `action_icons`'s own rasterizer, for the ribbon's
 /// action-icon kit (`assets/icons/actions`) — same 16x16 canvas, same
@@ -388,7 +438,9 @@ pub(crate) fn icon_tile(class: &str, pack: IconPack) -> Option<Arc<RenderImage>>
 pub(crate) fn rasterize(svg: &[u8]) -> Option<Arc<RenderImage>> {
     let tree = Tree::from_data(svg, &Options::default()).ok()?;
     let mut pixmap = Pixmap::new(RENDER_SIZE, RENDER_SIZE)?;
-    let scale = RENDER_SIZE as f32 / ICON_VIEWBOX;
+    let size = tree.size();
+    let canvas = size.width().max(size.height());
+    let scale = RENDER_SIZE as f32 / if canvas > 0.0 { canvas } else { ICON_VIEWBOX };
     resvg::render(
         &tree,
         Transform::from_scale(scale, scale),
@@ -445,5 +497,54 @@ mod tests {
         let dark = icon_tile("Part", IconPack::Dark).expect("Part is covered by the icon kit");
         let light = icon_tile("Part", IconPack::Light).expect("Part is covered by the icon kit");
         assert_ne!(dark.as_bytes(0), light.as_bytes(0));
+    }
+
+    const RED_SQUARE: &[u8] = br##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+        <rect width="24" height="24" fill="#ff0000"/></svg>"##;
+
+    /// The pack is an overlay over the kit: its drawing wins for a class it
+    /// names, and every other class is still the kit's.
+    #[test]
+    fn an_installed_pack_wins_for_the_classes_it_names_and_leaves_the_rest() {
+        let overlay = IconOverlay::with("Part", RED_SQUARE);
+
+        let mine = icon_tile_over("Part", IconPack::Dark, Some(&overlay)).unwrap();
+        let kit = icon_tile_over("Part", IconPack::Dark, None).unwrap();
+        assert_ne!(mine.as_bytes(0), kit.as_bytes(0));
+
+        let untouched = icon_tile_over("Folder", IconPack::Dark, Some(&overlay)).unwrap();
+        let folder = icon_tile_over("Folder", IconPack::Dark, None).unwrap();
+        assert_eq!(untouched.as_bytes(0), folder.as_bytes(0));
+    }
+
+    /// A pack can name a class the kit has no tile for at all, and its icon is
+    /// drawn where the kit alone would have fallen back to a glyph.
+    #[test]
+    fn a_pack_can_cover_a_class_the_kit_does_not() {
+        let overlay = IconOverlay::with("NotARealClass", RED_SQUARE);
+        assert!(icon_tile_over("NotARealClass", IconPack::Dark, None).is_none());
+        assert!(icon_tile_over("NotARealClass", IconPack::Dark, Some(&overlay)).is_some());
+    }
+
+    /// A drawing on a 24x24 canvas fills the tile the same way a 16x16 one
+    /// does, rather than being cropped to its top-left two thirds: the
+    /// far corner pixel of a full-bleed square is opaque either way.
+    #[test]
+    fn a_larger_canvas_is_scaled_to_fill_the_tile() {
+        let overlay = IconOverlay::with("Part", RED_SQUARE);
+        let image = icon_tile_over("Part", IconPack::Dark, Some(&overlay)).unwrap();
+        let bytes = image.as_bytes(0).unwrap();
+        let last_pixel = &bytes[bytes.len() - 4..];
+        assert_eq!(last_pixel[3], 255, "bottom-right corner must be opaque");
+    }
+
+    /// A pack file that will not parse falls through to the kit rather than
+    /// blanking the icon.
+    #[test]
+    fn a_broken_drawing_falls_back_to_the_kit() {
+        let overlay = IconOverlay::with("Part", b"this is not svg");
+        let shown = icon_tile_over("Part", IconPack::Dark, Some(&overlay)).unwrap();
+        let kit = icon_tile_over("Part", IconPack::Dark, None).unwrap();
+        assert_eq!(shown.as_bytes(0), kit.as_bytes(0));
     }
 }

@@ -1,0 +1,377 @@
+//! User-installable icon packs and themes: the two halves of the editor's
+//! look that used to be compiled in.
+//!
+//! Both live beside `settings.json`, under the config directory
+//! `settings::default_config_dir` owns, so a pack survives `rm -rf ~/.cache`
+//! the way a setting should and can be published, copied or deleted as
+//! ordinary files without forking the project:
+//!
+//! ```text
+//! <config>/icon_packs/<pack>/<Name>.svg     one folder per pack
+//! <config>/themes/<theme>.json              a GPUI Kit `ThemeSet`
+//! <config>/appearance.json                  {"icon_pack": "<pack>", "theme": "<theme>"}
+//! ```
+//!
+//! An icon pack is an *overlay*, not a replacement: whatever it leaves out is
+//! still drawn from the built-in kit, and whatever the kit does not cover is
+//! still a Lucide glyph (`explorer::resolve_icon`), so a pack of three icons
+//! is a valid pack. A file is named by the class it stands for
+//! (`Part.svg`) or by the kit's own tile slug (`humanoid-description.svg`),
+//! the latter reaching every class that shares a tile — see
+//! `class_icons::CLASS_ICON_SLUGS`.
+//!
+//! What a theme changes: the toolkit's own widgets — inputs, popovers,
+//! scrollbars, the focus ring — which read the registry's active theme. The
+//! editor's hand-built chrome reads `tokens`, whose values are still Rust
+//! constants; `ROADMAP.md` says so under "Icon and theme packs".
+//!
+//! Everything here reads files a stranger may have written, so it refuses what
+//! it cannot use — an over-large or non-SVG file, a path that is not a plain
+//! name — and never fails the editor starting.
+
+use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use crate::settings::{default_config_dir, write_atomic};
+
+/// A single icon is a 16x16 drawing; 512 KiB is far past any real one and
+/// keeps a stray or generated file from being read whole into memory.
+const MAX_SVG_BYTES: u64 = 512 * 1024;
+
+/// A theme file is a few kilobytes of colours; the same reasoning as
+/// [`MAX_SVG_BYTES`].
+const MAX_THEME_BYTES: u64 = 1024 * 1024;
+
+fn root() -> Option<PathBuf> {
+    default_config_dir()
+}
+
+/// Whether `name` is safe to join onto a directory: one plain segment, no
+/// separators, no `..`, no drive or device tricks. The name comes out of
+/// `appearance.json`, which is data, so it is never trusted to be one.
+fn is_plain_name(name: &str) -> bool {
+    !name.is_empty()
+        && name != "."
+        && name != ".."
+        && !name.contains(['/', '\\', ':', '\0'])
+        && !name.starts_with('.')
+}
+
+// ---------------------------------------------------------------- selection
+
+/// Which installed pack and theme are switched on. `None` is the built-in.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Appearance {
+    pub(crate) icon_pack: Option<String>,
+    pub(crate) theme: Option<String>,
+}
+
+impl Appearance {
+    pub(crate) fn load() -> Self {
+        root()
+            .map(|dir| Self::load_from(&dir.join("appearance.json")))
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn load_from(path: &Path) -> Self {
+        let Ok(bytes) = fs::read(path) else {
+            return Self::default();
+        };
+        let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+            return Self::default();
+        };
+        let name = |key: &str| {
+            value
+                .get(key)
+                .and_then(|v| v.as_str())
+                .filter(|name| is_plain_name(name))
+                .map(str::to_owned)
+        };
+        Appearance {
+            icon_pack: name("icon_pack"),
+            theme: name("theme"),
+        }
+    }
+
+    pub(crate) fn save(&self) -> Result<(), String> {
+        let Some(dir) = root() else {
+            return Err("no config directory".to_owned());
+        };
+        self.save_to(&dir.join("appearance.json"))
+    }
+
+    pub(crate) fn save_to(&self, path: &Path) -> Result<(), String> {
+        let value = serde_json::json!({
+            "icon_pack": self.icon_pack,
+            "theme": self.theme,
+        });
+        let bytes = serde_json::to_vec_pretty(&value).map_err(|e| e.to_string())?;
+        write_atomic(path, &bytes).map_err(|e| e.to_string())
+    }
+}
+
+// -------------------------------------------------------------- icon packs
+
+/// One installed pack's SVGs, keyed by lower-cased file stem, read whole at
+/// load so the Explorer never touches the disk while it draws.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct IconOverlay {
+    files: HashMap<String, Arc<[u8]>>,
+}
+
+impl IconOverlay {
+    /// An overlay holding one drawing, for tests elsewhere that need a pack
+    /// without a directory to read it from.
+    #[cfg(test)]
+    pub(crate) fn with(stem: &str, svg: &[u8]) -> Self {
+        IconOverlay {
+            files: HashMap::from([(stem.to_lowercase(), Arc::from(svg))]),
+        }
+    }
+
+    /// `<config>/icon_packs/<name>`, or `None` when the name is not a plain
+    /// one, there is no config directory, or the folder is missing.
+    pub(crate) fn load(name: &str) -> Option<Self> {
+        if !is_plain_name(name) {
+            return None;
+        }
+        Self::load_from(&root()?.join("icon_packs").join(name))
+    }
+
+    pub(crate) fn load_from(dir: &Path) -> Option<Self> {
+        let entries = fs::read_dir(dir).ok()?;
+        let mut files = HashMap::new();
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("svg") {
+                continue;
+            }
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let Ok(meta) = fs::metadata(&path) else {
+                continue;
+            };
+            if !meta.is_file() || meta.len() > MAX_SVG_BYTES {
+                continue;
+            }
+            if let Ok(bytes) = fs::read(&path) {
+                files.insert(stem.to_lowercase(), Arc::from(bytes));
+            }
+        }
+        Some(IconOverlay { files })
+    }
+
+    /// The pack's drawing for a class, by its own name first and then by the
+    /// kit tile it falls under — so `Part.svg` reaches exactly `Part`, and
+    /// `humanoid-description.svg` reaches every class sharing that tile.
+    pub(crate) fn svg(&self, class: &str, slug: Option<&str>) -> Option<Arc<[u8]>> {
+        self.files
+            .get(&class.to_lowercase())
+            .or_else(|| slug.and_then(|s| self.files.get(&s.to_lowercase())))
+            .cloned()
+    }
+}
+
+/// Every installed icon pack's name, alphabetical. A pack is a folder.
+pub(crate) fn installed_icon_packs() -> Vec<String> {
+    root()
+        .map(|dir| folder_names(&dir.join("icon_packs")))
+        .unwrap_or_default()
+}
+
+/// The plain-named sub-folders of `dir`.
+fn folder_names(dir: &Path) -> Vec<String> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = entries
+        .flatten()
+        .filter(|entry| entry.path().is_dir())
+        .filter_map(|entry| entry.file_name().to_str().map(str::to_owned))
+        .filter(|name| is_plain_name(name))
+        .collect();
+    names.sort_by_cached_key(|name| (name.to_lowercase(), name.clone()));
+    names
+}
+
+// ------------------------------------------------------------------ themes
+
+/// The text of `<config>/themes/<name>.json`, or `None` when the name is not
+/// a plain one, the file is missing, unreadable or over [`MAX_THEME_BYTES`].
+/// Parsing it as a `ThemeSet` is the caller's, since only the caller has the
+/// toolkit's registry to load it into.
+pub(crate) fn theme_json(name: &str) -> Option<String> {
+    if !is_plain_name(name) {
+        return None;
+    }
+    theme_json_from(&root()?.join("themes").join(format!("{name}.json")))
+}
+
+pub(crate) fn theme_json_from(path: &Path) -> Option<String> {
+    let meta = fs::metadata(path).ok()?;
+    if !meta.is_file() || meta.len() > MAX_THEME_BYTES {
+        return None;
+    }
+    fs::read_to_string(path).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    use super::*;
+
+    fn scratch() -> PathBuf {
+        static NEXT: AtomicU32 = AtomicU32::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "rbx-native-packs-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn write(dir: &Path, relative: &str, bytes: &[u8]) {
+        let path = dir.join(relative);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, bytes).unwrap();
+    }
+
+    #[test]
+    fn plain_names_are_one_segment_only() {
+        for good in ["Mine", "my pack", "pack-2", "v1.2"] {
+            assert!(is_plain_name(good), "{good}");
+        }
+        for bad in [
+            "", ".", "..", "../x", "a/b", "a\\b", "C:", "C:\\x", ".hidden", "a\0b",
+        ] {
+            assert!(!is_plain_name(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_missing_appearance_file_selects_the_built_ins() {
+        assert_eq!(
+            Appearance::load_from(&scratch().join("nope.json")),
+            Appearance::default()
+        );
+    }
+
+    #[test]
+    fn appearance_round_trips_through_disk() {
+        let path = scratch().join("nested").join("appearance.json");
+        let chosen = Appearance {
+            icon_pack: Some("Mine".into()),
+            theme: Some("Dusk".into()),
+        };
+        chosen.save_to(&path).expect("writes, creating the folder");
+        assert_eq!(Appearance::load_from(&path), chosen);
+    }
+
+    #[test]
+    fn appearance_refuses_a_name_that_is_a_path() {
+        let path = scratch().join("appearance.json");
+        fs::write(&path, br#"{"icon_pack":"../../etc","theme":"a/b"}"#).unwrap();
+        assert_eq!(Appearance::load_from(&path), Appearance::default());
+    }
+
+    #[test]
+    fn appearance_survives_malformed_json_and_wrong_types() {
+        let dir = scratch();
+        write(&dir, "a.json", b"{not json");
+        write(&dir, "b.json", br#"{"icon_pack": 7, "theme": ["x"]}"#);
+        assert_eq!(
+            Appearance::load_from(&dir.join("a.json")),
+            Appearance::default()
+        );
+        assert_eq!(
+            Appearance::load_from(&dir.join("b.json")),
+            Appearance::default()
+        );
+    }
+
+    #[test]
+    fn an_overlay_answers_by_class_name_then_by_tile_slug_ignoring_case() {
+        let dir = scratch();
+        write(&dir, "Part.svg", b"<svg/>");
+        write(&dir, "humanoid-description.svg", b"<svg id='h'/>");
+        let overlay = IconOverlay::load_from(&dir).unwrap();
+
+        assert!(overlay.svg("part", Some("part")).is_some());
+        assert!(overlay.svg("PART", None).is_some());
+        // No `AccessoryDescription.svg`, but the tile it shares is there.
+        assert_eq!(
+            overlay
+                .svg("AccessoryDescription", Some("humanoid-description"))
+                .as_deref(),
+            Some(&b"<svg id='h'/>"[..])
+        );
+        assert_eq!(overlay.svg("Model", Some("model")), None);
+    }
+
+    #[test]
+    fn a_class_name_file_beats_the_shared_tile_file() {
+        let dir = scratch();
+        write(&dir, "AccessoryDescription.svg", b"own");
+        write(&dir, "humanoid-description.svg", b"tile");
+        let overlay = IconOverlay::load_from(&dir).unwrap();
+        assert_eq!(
+            overlay
+                .svg("AccessoryDescription", Some("humanoid-description"))
+                .as_deref(),
+            Some(&b"own"[..])
+        );
+        // A class with no file of its own still reaches the shared tile.
+        assert_eq!(
+            overlay
+                .svg("HumanoidDescription", Some("humanoid-description"))
+                .as_deref(),
+            Some(&b"tile"[..])
+        );
+    }
+
+    #[test]
+    fn only_svg_files_within_the_size_limit_are_loaded() {
+        let dir = scratch();
+        write(&dir, "Part.svg", b"<svg/>");
+        write(&dir, "Model.png", b"png");
+        write(&dir, "Huge.svg", &vec![b' '; MAX_SVG_BYTES as usize + 1]);
+        let overlay = IconOverlay::load_from(&dir).unwrap();
+        assert_eq!(overlay.files.len(), 1);
+        assert!(overlay.svg("Part", None).is_some());
+    }
+
+    #[test]
+    fn a_pack_folder_that_does_not_exist_is_no_overlay() {
+        assert_eq!(IconOverlay::load_from(&scratch().join("gone")), None);
+    }
+
+    #[test]
+    fn packs_are_listed_alphabetically_ignoring_case_and_skip_files_and_hidden_folders() {
+        let dir = scratch();
+        write(&dir, "beta/x.svg", b"x");
+        write(&dir, "Alpha/x.svg", b"x");
+        write(&dir, ".hidden/x.svg", b"x");
+        write(&dir, "loose-file.txt", b"x");
+        assert_eq!(folder_names(&dir), ["Alpha", "beta"]);
+        assert!(folder_names(&dir.join("absent")).is_empty());
+    }
+
+    #[test]
+    fn theme_text_is_read_and_a_missing_or_oversized_file_is_not() {
+        let dir = scratch();
+        write(&dir, "Dusk.json", b"{\"themes\":[]}");
+        write(&dir, "Big.json", &vec![b' '; MAX_THEME_BYTES as usize + 1]);
+        assert_eq!(
+            theme_json_from(&dir.join("Dusk.json")).as_deref(),
+            Some("{\"themes\":[]}")
+        );
+        assert_eq!(theme_json_from(&dir.join("Big.json")), None);
+        assert_eq!(theme_json_from(&dir.join("Absent.json")), None);
+    }
+}

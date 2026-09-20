@@ -116,6 +116,11 @@ pub(crate) struct Shell {
     /// Persisted (see `settings`); every write goes through
     /// [`Shell::save_settings`].
     icon_pack: IconPack,
+    /// Which installed icon pack (see `crate::packs`) is drawn over the kit,
+    /// and every pack found at startup for the Explorer menu to list —
+    /// listed once because the menu is rebuilt every frame.
+    appearance: crate::packs::Appearance,
+    installed_icon_packs: Vec<String>,
     /// Whether the viewport's corner label shows its frame-rate readout —
     /// the Stats toggle, next to Orthographic in the same overflow menu (see
     /// `shell::dock`). Session-only, unlike the two settings above: real
@@ -164,6 +169,9 @@ pub(crate) struct Shell {
     /// This window's own copy/paste clipboard, replaced whole by every
     /// `Ctrl+C` — see `shell::clipboard`.
     clipboard: Vec<clipboard::Clipped>,
+    /// The user's starter scripts, read once at startup — see
+    /// `crate::script_templates`.
+    script_templates: crate::script_templates::ScriptTemplates,
     /// The `BasePart` the cursor was last resolved to be over, if any — see
     /// `shell::drag::hover_in_viewport`. Kept here, alongside `selection`
     /// above, purely to dedupe: the viewport reports cursor motion on every
@@ -407,6 +415,16 @@ impl Shell {
             axis_indicator,
             selection_occluded,
             icon_pack,
+            appearance: {
+                let mut appearance = crate::packs::Appearance::load();
+                // `main` installed the pack before the place loaded; one that
+                // was named but would not load is not "chosen".
+                if !crate::class_icons::user_pack_installed() {
+                    appearance.icon_pack = None;
+                }
+                appearance
+            },
+            installed_icon_packs: crate::packs::installed_icon_packs(),
             stats_shown: false,
             unfocused_fps,
             document_nav: roving::Roving::horizontal(),
@@ -425,6 +443,7 @@ impl Shell {
             attribute_edits: attributes_panel::AttributeEdits::default(),
             selection: Selection::new(selected),
             clipboard: Vec::new(),
+            script_templates: crate::script_templates::ScriptTemplates::load(),
             hovered: Vec::new(),
             covered: HashSet::new(),
             scripts: ScriptEditor::default(),
@@ -864,6 +883,46 @@ impl Shell {
         self.save_settings();
     }
 
+    /// The installed icon pack in use, if any, and every installed pack's
+    /// name — for the Explorer menu (see `shell::workspace`).
+    pub(super) fn installed_icon_packs(&self) -> (&[String], Option<&str>) {
+        (
+            &self.installed_icon_packs,
+            self.appearance.icon_pack.as_deref(),
+        )
+    }
+
+    /// Switches the user's icon pack over the kit (`None` for the kit alone)
+    /// and re-resolves every Explorer row's icon. A pack that no longer
+    /// loads — deleted since startup, say — is reported in the Output dock
+    /// and changes nothing, rather than silently reverting to the kit.
+    fn set_user_icon_pack(&mut self, name: Option<String>, cx: &mut Context<Self>) {
+        let overlay = match &name {
+            Some(name) => match crate::packs::IconOverlay::load(name) {
+                Some(overlay) => Some(overlay),
+                None => {
+                    self.output
+                        .push_warning(&format!("icon pack {name:?} could not be loaded"));
+                    cx.notify();
+                    return;
+                }
+            },
+            None => None,
+        };
+        crate::class_icons::set_user_pack(overlay);
+        self.appearance.icon_pack = name;
+        if let Err(err) = self.appearance.save() {
+            self.output
+                .push_warning(&format!("could not remember the icon pack: {err}"));
+        }
+        self.explorer = Rc::new(self.explorer.set_icon_pack(
+            self.icon_pack,
+            &self.folder_colors,
+            &self.path,
+        ));
+        cx.notify();
+    }
+
     /// Whether the viewport's corner label shows its frame-rate readout, for
     /// the dock's Viewport menu item (see `shell::dock`) to render its
     /// checked state.
@@ -1074,6 +1133,9 @@ impl Render for Shell {
             .child(self.ribbon_tabs(cx))
             .child(self.ribbon(cx))
             .child(self.workspace(window, cx))
-            .child(self.command_bar.render(self.tab_order.next(), cx))
+            .child(
+                self.command_bar
+                    .render(self.tab_order.next(), self.output_collapsed, cx),
+            )
     }
 }

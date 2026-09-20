@@ -105,6 +105,12 @@ pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
     });
     cx.on_action({
         let shell = shell.clone();
+        move |_: &MenuPasteIntoInstance, cx| {
+            shell.update(cx, |shell, cx| shell.paste_into_selected(cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
         move |_: &MenuDuplicateInstance, cx| {
             shell.update(cx, |shell, cx| shell.duplicate_selected(cx));
         }

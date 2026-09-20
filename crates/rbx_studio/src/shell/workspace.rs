@@ -150,6 +150,37 @@ impl Shell {
     fn explorer_dock(&self, cx: &mut Context<Self>) -> AnyElement {
         let show_all = self.show_all_services();
         let light_icons = self.icon_pack() == IconPack::Light;
+        let mut items = vec![
+            menu::item("Show all services")
+                .checked(show_all)
+                .on_click(move |shell, cx| shell.set_show_all_services(!show_all, cx)),
+            menu::item("Light Icons")
+                .checked(light_icons)
+                .on_click(move |shell, cx| {
+                    let next = if light_icons {
+                        IconPack::Dark
+                    } else {
+                        IconPack::Light
+                    };
+                    shell.set_icon_pack(next, cx);
+                }),
+        ];
+        // Only once somebody has installed a pack: a menu offering "Built-in
+        // icons" as the sole choice would be a checked row that does nothing.
+        let (packs, current) = self.installed_icon_packs();
+        if !packs.is_empty() {
+            items.push(
+                menu::item("Built-in icons")
+                    .checked(current.is_none())
+                    .on_click(|shell, cx| shell.set_user_icon_pack(None, cx)),
+            );
+            items.extend(packs.iter().map(|name| {
+                let chosen = name.clone();
+                menu::item(format!("Icon pack: {name}"))
+                    .checked(current == Some(name.as_str()))
+                    .on_click(move |shell, cx| shell.set_user_icon_pack(Some(chosen.clone()), cx))
+            }));
+        }
         let overflow = menu::dropdown(
             self,
             MenuId::ExplorerOverflow,
@@ -158,21 +189,7 @@ impl Shell {
                 IconName::Ellipsis,
                 "Explorer settings",
             )),
-            vec![
-                menu::item("Show all services")
-                    .checked(show_all)
-                    .on_click(move |shell, cx| shell.set_show_all_services(!show_all, cx)),
-                menu::item("Light Icons")
-                    .checked(light_icons)
-                    .on_click(move |shell, cx| {
-                        let next = if light_icons {
-                            IconPack::Dark
-                        } else {
-                            IconPack::Light
-                        };
-                        shell.set_icon_pack(next, cx);
-                    }),
-            ],
+            items,
             cx,
         );
 

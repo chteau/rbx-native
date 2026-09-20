@@ -46,6 +46,13 @@ impl Shell {
         if keystroke.key == "escape" && self.open_menu.take().is_some() {
             cx.notify();
         }
+        // The same key backs out of a drag in flight — an Explorer row being
+        // carried to a new parent — so a drag started by mistake is never
+        // committed by letting go of it. With no active drag there is nothing
+        // to stop, and a bare Escape does nothing here.
+        if keystroke.key == "escape" && cx.stop_active_drag(window) {
+            cx.notify();
+        }
         self.handle_history_key(keystroke, window, cx);
         self.handle_group_key(keystroke, cx);
         self.handle_clipboard_key(keystroke, cx);
