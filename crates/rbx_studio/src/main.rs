@@ -161,6 +161,7 @@ fn main() {
         install_theme(cx);
         scale::install(cx);
         shell::install_key_bindings(cx);
+        menu_bar::install_key_bindings(cx);
         Theme::change(ThemeMode::Dark, None, cx);
 
         cx.spawn(async move |cx| {

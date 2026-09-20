@@ -132,16 +132,23 @@ fn truncate(text: &str, max_len: usize) -> SharedString {
     }
 }
 
-/// Which entries [`OutputLog::filtered`] shows. Only two outcomes exist today
-/// — `rbx_lua::Runtime::run` returns `Result<Vec<String>, String>`, nothing
-/// else is distinguishable (see `command_bar::run`) — so this is an honest
-/// two-way filter plus "no filter", not a three-way one with a "warnings"
-/// bucket nothing would ever populate.
+/// Which entries [`OutputLog::filtered`] shows — Studio's own Output window
+/// "filters output by type, such as **Error** or **Warning**"
+/// (`studio/output.md`), and these are the three types this editor can
+/// actually produce: a `print`/successful run, an app-level warning
+/// ([`OutputLog::push_warning`]) and a failed run. `TestService.Message`'s
+/// blue/info kind has no producer here until a sandbox exists to run one in,
+/// so it gets no bucket either.
+///
+/// One bucket means exactly one kind, which is why a warning no longer shows
+/// under `Output`: a bucket that quietly held two kinds would make the
+/// warnings one unable to answer "what is *only* a warning".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum OutputFilter {
     #[default]
     All,
     Output,
+    Warnings,
     Errors,
 }
 
@@ -149,7 +156,8 @@ impl OutputFilter {
     fn matches(self, entry: &OutputEntry) -> bool {
         match self {
             OutputFilter::All => true,
-            OutputFilter::Output => !entry.is_error(),
+            OutputFilter::Output => entry.kind() == RowKind::Success,
+            OutputFilter::Warnings => entry.kind() == RowKind::Warning,
             OutputFilter::Errors => entry.is_error(),
         }
     }
@@ -158,6 +166,7 @@ impl OutputFilter {
         match self {
             OutputFilter::All => "All",
             OutputFilter::Output => "Output",
+            OutputFilter::Warnings => "Warnings",
             OutputFilter::Errors => "Errors",
         }
     }
@@ -183,9 +192,8 @@ impl OutputLog {
     /// Appends one warning from somewhere other than a Command Bar run (an
     /// asset-fetch/decode failure, a texture that fell back to a default) —
     /// same drop-oldest-at-[`CAP`] shape as [`OutputLog::push`], which this
-    /// is not: `OutputFilter::Errors` never catches it (see
-    /// `Feedback::Warning::is_error`), so it stays visible under "All" and
-    /// "Output" instead of quietly vanishing into a filtered view.
+    /// is not: it is neither a run's output nor an error, and
+    /// [`OutputFilter::Warnings`] is the bucket that owns it.
     pub(crate) fn push_warning(&mut self, message: &str) {
         self.push(WARNING_SOURCE, Feedback::Warning(message.to_string()));
     }
@@ -268,6 +276,7 @@ impl Shell {
                 [
                     OutputFilter::All,
                     OutputFilter::Output,
+                    OutputFilter::Warnings,
                     OutputFilter::Errors,
                 ]
                 .map(|level| {

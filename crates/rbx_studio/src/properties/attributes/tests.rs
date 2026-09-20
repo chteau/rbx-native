@@ -328,3 +328,53 @@ fn tags_survive_a_decode_after_several_add_and_remove_operations() {
 
     assert_eq!(tags(&dom, part), vec!["One".to_owned(), "Three".to_owned()]);
 }
+
+/// The Properties panel's filter box searches attribute names alongside the
+/// reflected properties, rather than leaving the Attributes section as the
+/// one part of the panel a search cannot reach.
+#[test]
+fn the_filter_box_narrows_attributes_by_name() {
+    let (mut dom, part) = instance();
+    add_attribute(&mut dom, part, "SpawnDelay", Variant::Float64(1.0)).expect("a fresh attribute");
+    add_attribute(&mut dom, part, "SpawnCount", Variant::Float64(2.0)).expect("a fresh attribute");
+    add_attribute(&mut dom, part, "Colour", Variant::Float64(3.0)).expect("a fresh attribute");
+
+    let names = |filter: &str| -> Vec<String> {
+        attributes_matching(&dom, part, filter)
+            .into_keys()
+            .collect()
+    };
+
+    assert_eq!(names("spawn"), ["SpawnCount", "SpawnDelay"]);
+    assert_eq!(names("COLOUR"), ["Colour"]);
+    assert!(names("nothing").is_empty());
+}
+
+/// An empty box is not a filter that matches nothing — it is no filter at
+/// all, which is what keeps the section visible until something is typed.
+#[test]
+fn an_empty_filter_keeps_every_attribute_and_tag() {
+    let (mut dom, part) = instance();
+    add_attribute(&mut dom, part, "Thing", Variant::Bool(true)).expect("a fresh attribute");
+    add_tag(&mut dom, part, "Enemy").expect("a fresh tag");
+
+    for filter in ["", "   "] {
+        assert_eq!(attributes_matching(&dom, part, filter).len(), 1);
+        assert_eq!(tags_matching(&dom, part, filter), ["Enemy"]);
+    }
+}
+
+#[test]
+fn the_filter_box_narrows_tags_by_name() {
+    let (mut dom, part) = instance();
+    add_tag(&mut dom, part, "Enemy").expect("a fresh tag");
+    add_tag(&mut dom, part, "EnemySpawner").expect("a fresh tag");
+    add_tag(&mut dom, part, "Door").expect("a fresh tag");
+
+    assert_eq!(
+        tags_matching(&dom, part, "enemy"),
+        ["Enemy", "EnemySpawner"]
+    );
+    assert_eq!(tags_matching(&dom, part, "door"), ["Door"]);
+    assert!(tags_matching(&dom, part, "nothing").is_empty());
+}

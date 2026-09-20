@@ -50,6 +50,27 @@ fn dom_with_unresolvable_decal() -> WeakDom {
     dom
 }
 
+/// The same place, with a `ParticleEmitter` in place of the `Decal`. An
+/// emitter's texture is fetched down a different branch of `Loaded::resolve`
+/// from every other image (`resolve_effect_images`), because the render pass
+/// reads a pre-computed answer rather than resolving one itself.
+fn dom_with_unresolvable_particle_emitter() -> WeakDom {
+    let mut dom = dom_with_unresolvable_decal();
+    let decal = Ref::new(9102);
+    dom.remove(decal);
+
+    let emitter_ref = Ref::new(9103);
+    let mut emitter = Instance::new(emitter_ref, "ParticleEmitter", "ParticleEmitter");
+    emitter.properties_mut().insert(
+        "Texture".to_string(),
+        Variant::String("rbxasset://unknown-native-package/none.png".to_string()),
+    );
+    dom.insert(emitter);
+    dom.set_parent(emitter_ref, Some(Ref::new(9101)));
+
+    dom
+}
+
 fn textures_only() -> Toggles {
     Toggles {
         textures: true,
@@ -77,6 +98,27 @@ fn from_dom_surfaces_a_warning_for_a_decal_that_cannot_resolve() {
     );
     // A second drain finds nothing: a `Loaded` yields its warnings once.
     assert!(loaded.take_warnings().is_empty());
+}
+
+/// An emitter's texture reaches the pass as `Some(None)` — "tried, and there
+/// is no image" — with the reason already thrown away, so if the warning is
+/// not carried out of `resolve_effect_images` it is lost for good and the
+/// dock shows nothing at all for a texture that will never resolve.
+#[test]
+fn from_dom_surfaces_a_warning_for_an_emitter_texture_that_cannot_resolve() {
+    let database = ReflectionDatabase::embedded();
+    let dom = dom_with_unresolvable_particle_emitter();
+
+    let mut loaded = Loaded::from_dom(&dom, &database, textures_only(), &mut Resident::default())
+        .expect("scene should still load");
+    let warnings = loaded.take_warnings();
+
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning.contains("unknown-native-package")),
+        "expected a warning naming the failed asset, got {warnings:?}"
+    );
 }
 
 // The failure that is nobody's in particular — no resolver could be built
