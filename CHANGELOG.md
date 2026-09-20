@@ -2,6 +2,37 @@
 
 ## 2026-09-20
 
+- **The menu bar answers F10, and a bare Alt tap.** It was the last thing
+  in the editor a keyboard could not reach at all — a WCAG 2.1.1 (Keyboard,
+  Level A) failure, and the one the previous pass named as still open.
+  Either key moves focus into it from wherever focus was; Left/Right walk
+  File/Edit/Model/View and wrap, Enter, Space or Down opens one, and Escape
+  closes the menu and then leaves the bar, putting focus back exactly where
+  it came from. It is not a Tab stop, on purpose: Tab walks the editor's
+  regions, and nobody wants a fifth one in the way of the ribbon. Telling
+  an Alt *tap* apart from Alt-the-modifier — which this editor uses live,
+  to lock a Ball's Scale handle round and to cycle the selection — is a
+  small state machine: anything at all arriving while Alt is held cancels
+  the tap. The toolkit's ready-made menu bar keeps its current title
+  private with no way in, so the bar itself is ours now; the dropdowns are
+  still the toolkit's, keyboard contract and all. — @chteau
+
+- **The Output dock has a Warnings filter.** An app-level warning — an
+  asset that will not resolve, a texture that fell back to a default — was
+  showing up under both *All* and *Output* and had no bucket of its own, so
+  there was no way to ask what was only a warning. There is one now, beside
+  All/Output/Errors, which is what Studio's own window does; each bucket
+  holds exactly one kind of row, so *Output* is a run's output again. The
+  emitter, beam, trail and `ImageLabel` textures were the one case that
+  could still fail silently: a render pass only ever sees "no image", never
+  why, and the blocking loader was dropping the reason instead of handing
+  it back. It hands it back now. — @chteau
+
+- **The Properties filter box searching attributes and tags is now
+  covered.** That gap was closed a day earlier without tests or a roadmap
+  line to show for it; both sections narrow through a helper of their own
+  now, with the cases that matter asserted. — @chteau
+
 - **`PhysicalProperties` is editable.** A part's density, friction,
   elasticity and the two weights were read-only text — the last of the three
   types the roadmap listed that way. They edit as five labelled fields now,
