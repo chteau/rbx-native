@@ -2,6 +2,62 @@
 
 ## 2026-09-20
 
+- **A `CFrame` attribute no longer takes every attribute after it down with
+  it.** The attribute blob's decoder gave up on type `0x14`, and because
+  entries are packed end to end one unknown id leaves no way to find the
+  next name, so a place with a `CFrame` attribute showed *none* of that
+  instance's attributes past it — and re-saved the blob unread. It is
+  decoded and encoded now, checked byte for byte against the two examples
+  `rojo-rbx/rbx-dom`'s attribute format prints, and `CFrame` is a type the
+  Attributes section can create and edit through the same twelve-number
+  field a property gets. The axis-aligned rotation table it needed already
+  existed twice in `rbx_binary`, once per direction with a comment saying
+  they had to agree; it lives once in `rbx_dom::rotation` now and both use
+  it. — @jleeclient
+
+- **Paste Into, and live Copy/Paste/Duplicate on the ribbon.** `Ctrl+Shift+V`
+  (and Edit ⟩ Paste Into) pastes the clipboard into the *selection* rather
+  than `Workspace`, and into each selected instance when there are several —
+  the docs' "convenient way to paste the same clipboard items into multiple
+  parents" — one undo step for the lot. Plain `Ctrl+V` used to swallow the
+  shifted chord; it does not now, and the whole modifier set is matched, so
+  `Ctrl+Alt+V` (AltGr on some layouts) is no paste and `Ctrl+Shift+D` is no
+  duplicate. The ribbon's Copy, Paste and Duplicate
+  tiles were disabled placeholders; they run the same code the keys do. The
+  roadmap listed skipping a non-`Archivable` descendant as still open, but
+  that was already done and tested; only the bullet was stale. — @jleeclient
+
+- **Starter scripts can be your own.** A `script_templates` folder in the
+  config directory (`Script/`, `LocalScript/`, `ModuleScript/`, one `.luau`
+  file per template) adds each file to the ribbon's Script menu under its
+  file name, and a `Default.luau` in a class's folder replaces the built-in
+  starter every new script of that class gets. Read once at startup; a file
+  that is unreadable, not UTF-8 or past 256 KiB is skipped rather than
+  stopping the editor. — @jleeclient
+
+- **Icon packs and themes can be installed.** An icon pack is a folder of
+  SVGs under `icon_packs/` in the config directory, named by class
+  (`Part.svg`) or by the kit's tile (`humanoid-description.svg`); it is
+  layered over the built-in kit, so a pack of three icons is a pack, and the
+  Explorer's overflow menu lists whatever is installed. A theme is a
+  toolkit `ThemeSet` JSON file under `themes/`, named in `appearance.json`.
+  Drawings are scaled from their own size rather than assumed 16x16, and one
+  that will not parse falls through to the kit. A theme reaches the
+  toolkit's widgets only: the chrome this editor draws itself still reads
+  compiled-in tokens. — @jleeclient
+
+- **A Command Bar result is not shown twice.** Every run put its outcome in
+  the label above the input *and* as a permanent row in the Output dock. The
+  label now shows only while the Output dock is collapsed, when it is the one
+  place the result would otherwise be lost. That rests on every outcome being
+  a row in the dock, which a save was not: `Ctrl+S` reported through the label
+  alone, so a failed save would have gone silent under default settings. A
+  save is logged as a `Save` row now, and a test pins it. — @jleeclient
+
+- **Escape abandons an Explorer drag.** Letting go after a mistaken pickup
+  reparented whatever it was over; Escape stops the drag first, so nothing
+  drops and no undo step is pushed. — @jleeclient
+
 - **The menu bar answers F10, and a bare Alt tap.** It was the last thing
   in the editor a keyboard could not reach at all — a WCAG 2.1.1 (Keyboard,
   Level A) failure, and the one the previous pass named as still open.

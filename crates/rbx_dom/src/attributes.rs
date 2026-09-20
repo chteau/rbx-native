@@ -14,9 +14,10 @@
 
 use std::collections::BTreeMap;
 
+use crate::rotation::{self, RAW_ROTATION_ID};
 use crate::variant::{
-    Color3Data, ColorSequence, ColorSequenceKeypoint, Font, FontStyle, NumberRange, NumberSequence,
-    NumberSequenceKeypoint, Rect, UDim, UDim2, Variant, Vector2Data, Vector3Data,
+    CFrameData, Color3Data, ColorSequence, ColorSequenceKeypoint, Font, FontStyle, NumberRange,
+    NumberSequence, NumberSequenceKeypoint, Rect, UDim, UDim2, Variant, Vector2Data, Vector3Data,
 };
 
 /// Every attribute in `value`, or an empty map where there are none.
@@ -107,11 +108,31 @@ impl Cursor<'_> {
         })
     }
 
+    /// A `CFrame`: a position, then one rotation-id byte that is either an
+    /// entry in [`rotation`]'s table of axis-aligned bases or `0`, meaning
+    /// nine raw floats (the row-major matrix `CFrameData` holds) follow.
+    fn cframe(&mut self) -> Option<CFrameData> {
+        let position = Vector3Data {
+            x: self.f32()?,
+            y: self.f32()?,
+            z: self.f32()?,
+        };
+        let rotation = match self.u8()? {
+            RAW_ROTATION_ID => {
+                let mut matrix = [0.0; 9];
+                for component in &mut matrix {
+                    *component = self.f32()?;
+                }
+                matrix
+            }
+            // An id outside the table leaves no way to know how many bytes
+            // belong to this value, so the blob is unreadable from here on.
+            id => rotation::basic_rotation(id)?,
+        };
+        Some(CFrameData { position, rotation })
+    }
+
     /// One value, its type read from the leading id byte.
-    ///
-    /// `CFrame` (`0x14`) is the one documented type left out: no GUI property
-    /// takes one, and its rotation is either nine floats or an id into a table
-    /// of axis-aligned bases, which is a table this crate has no other use for.
     fn value(&mut self) -> Option<Variant> {
         Some(match self.u8()? {
             0x02 => Variant::String(self.string()?),
@@ -132,6 +153,7 @@ impl Cursor<'_> {
                 y: self.f32()?,
                 z: self.f32()?,
             }),
+            0x14 => Variant::CFrame(self.cframe()?),
             // The enum's type name is written out beside the ordinal; only the
             // ordinal survives, which is all `Variant::Enum` holds anywhere
             // else in this crate.
@@ -284,6 +306,23 @@ fn write(out: &mut Vec<u8>, value: &Variant, enum_type: impl Fn() -> Option<Stri
             out.extend(value.y.to_le_bytes());
             out.extend(value.z.to_le_bytes());
         }
+        Variant::CFrame(frame) => {
+            out.push(0x14);
+            out.extend(frame.position.x.to_le_bytes());
+            out.extend(frame.position.y.to_le_bytes());
+            out.extend(frame.position.z.to_le_bytes());
+            // Studio writes the one-byte id whenever the rotation has one,
+            // so re-encoding a file it wrote reproduces its bytes.
+            match rotation::basic_rotation_id(&frame.rotation) {
+                Some(id) => out.push(id),
+                None => {
+                    out.push(RAW_ROTATION_ID);
+                    for component in frame.rotation {
+                        out.extend(component.to_le_bytes());
+                    }
+                }
+            }
+        }
         Variant::Enum(ordinal) => {
             out.push(0x15);
             string(out, &enum_type()?);
@@ -375,6 +414,81 @@ mod tests {
         bytes.extend(name.as_bytes());
         bytes.extend(value);
         bytes
+    }
+
+    /// The two `CFrame` examples `rojo-rbx/rbx-dom`'s attribute format
+    /// document prints byte for byte (`docs/attributes.md`): a bare
+    /// translation, which takes the one-byte id `02`, and a 45 degree turn
+    /// about Y, which takes the raw nine floats.
+    const SPEC_TRANSLATED: &[u8] = &[
+        0x14, 0x00, 0x00, 0x80, 0x3f, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x40, 0x40, 0x02,
+    ];
+    const SPEC_TURNED: &[u8] = &[
+        0x14, 0x00, 0x00, 0x80, 0x3f, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x40, 0x40, 0x00, 0xf3,
+        0x04, 0x35, 0x3f, 0x00, 0x00, 0x00, 0x00, 0xf3, 0x04, 0x35, 0x3f, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x80, 0x3f, 0x00, 0x00, 0x00, 0x00, 0xf3, 0x04, 0x35, 0xbf, 0x00, 0x00, 0x00,
+        0x00, 0xf3, 0x04, 0x35, 0x3f,
+    ];
+
+    fn frame_at_1_2_3(rotation: [f32; 9]) -> Variant {
+        Variant::CFrame(CFrameData {
+            position: Vector3Data {
+                x: 1.0,
+                y: 2.0,
+                z: 3.0,
+            },
+            rotation,
+        })
+    }
+
+    #[test]
+    fn a_cframe_with_an_axis_aligned_rotation_reads_from_its_one_byte_id() {
+        let decoded = decode(Some(&blob(&one("Pivot", SPEC_TRANSLATED))));
+        assert_eq!(decoded["Pivot"], frame_at_1_2_3(rotation::IDENTITY));
+    }
+
+    #[test]
+    fn a_cframe_with_a_free_rotation_reads_its_nine_floats() {
+        let decoded = decode(Some(&blob(&one("Pivot", SPEC_TURNED))));
+        let s = std::f32::consts::FRAC_1_SQRT_2;
+        assert_eq!(
+            decoded["Pivot"],
+            frame_at_1_2_3([s, 0.0, s, 0.0, 1.0, 0.0, -s, 0.0, s])
+        );
+    }
+
+    #[test]
+    fn a_cframe_re_encodes_to_the_bytes_the_spec_prints() {
+        for spec in [SPEC_TRANSLATED, SPEC_TURNED] {
+            let original = one("Pivot", spec);
+            let attributes = decode(Some(&blob(&original)));
+            let again = encode(&attributes, |_| None).expect("a CFrame attribute should encode");
+            assert_eq!(again, original);
+        }
+    }
+
+    #[test]
+    fn a_cframe_no_longer_takes_the_attributes_after_it_with_it() {
+        let mut bytes = vec![2, 0, 0, 0];
+        bytes.extend(1u32.to_le_bytes());
+        bytes.push(b'A');
+        bytes.extend(SPEC_TRANSLATED);
+        bytes.extend(1u32.to_le_bytes());
+        bytes.push(b'B');
+        bytes.extend([0x03, 0x01]);
+
+        let decoded = decode(Some(&blob(&bytes)));
+        assert_eq!(decoded.len(), 2);
+        assert_eq!(decoded["B"], Variant::Bool(true));
+    }
+
+    #[test]
+    fn a_cframe_with_a_rotation_id_outside_the_table_is_unreadable() {
+        // 0x01 and 0x04 are among the 12 collisions the table rejects; the
+        // reader cannot know the value's length, so it reads nothing.
+        let mut bad = SPEC_TRANSLATED.to_vec();
+        *bad.last_mut().unwrap() = 0x01;
+        assert!(decode(Some(&blob(&one("Pivot", &bad)))).is_empty());
     }
 
     #[test]
@@ -475,15 +589,15 @@ mod tests {
 
     #[test]
     fn a_type_this_cannot_read_takes_the_whole_blob_with_it() {
-        // 0x14 is `CFrame`, deliberately unimplemented: the entries that
-        // follow it can no longer be found.
+        // 0x7F is no type this format defines: the entries that follow it
+        // can no longer be found.
         let mut bytes = vec![2, 0, 0, 0];
         bytes.extend(4u32.to_le_bytes());
         bytes.extend(b"Here");
         bytes.extend([0x03, 0x01]);
         bytes.extend(4u32.to_le_bytes());
         bytes.extend(b"Gone");
-        bytes.push(0x14);
+        bytes.push(0x7F);
 
         assert!(decode(Some(&blob(&bytes))).is_empty());
     }

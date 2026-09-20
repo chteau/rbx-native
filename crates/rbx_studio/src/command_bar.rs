@@ -57,14 +57,23 @@ impl CommandBar {
         &self.feedback
     }
 
-    /// The bar as it sits at the bottom of the window: the last run's outcome
-    /// above the input, full width.
     /// The bar as it sits at the bottom of the window. The design frame has
     /// no command bar, so this borrows a dock's own furniture — the 5px
     /// inset and the `chrome` field — rather than inventing a third look
-    /// for the one row at the bottom of the window.
-    pub(crate) fn render(&self, tab_index: isize, _: &App) -> impl IntoElement {
-        let label = self.feedback.label();
+    /// for the one row at the bottom of the window. The last run's outcome
+    /// sits above the input only while `output_collapsed` — otherwise the
+    /// Output dock already shows it (see [`Feedback::shown_inline`]).
+    pub(crate) fn render(
+        &self,
+        tab_index: isize,
+        output_collapsed: bool,
+        _: &App,
+    ) -> impl IntoElement {
+        let label = if self.feedback.shown_inline(output_collapsed) {
+            self.feedback.label()
+        } else {
+            SharedString::default()
+        };
         let color = if self.feedback.is_error() {
             tokens::text_error()
         } else {

@@ -14,8 +14,8 @@
 use std::collections::BTreeMap;
 
 use rbx_dom::{
-    Color3Data, Font, FontStyle, NumberRange, Rect, Ref, UDim, UDim2, Variant, Vector2Data,
-    Vector3Data, WeakDom,
+    CFrameData, Color3Data, Font, FontStyle, NumberRange, Rect, Ref, UDim, UDim2, Variant,
+    Vector2Data, Vector3Data, WeakDom,
 };
 use rbx_reflection::ReflectionDatabase;
 
@@ -61,14 +61,8 @@ pub(crate) fn attribute_of_row(row: &str) -> Option<&str> {
 
 /// The Roblox attribute types this editor can create — every type
 /// `Instance:SetAttribute` accepts (`studio/properties.md#instance-attributes`)
-/// except three left out deliberately:
+/// except two left out deliberately:
 ///
-/// - `CFrame` has no verified wire format in `rbx_dom::attributes` — that
-///   module's own doc comment explains why it was never added (no *GUI*
-///   property needs one, which was true before this editor existed but
-///   leaves a real gap for a general instance attribute). Guessing the
-///   layout risks writing a blob Roblox's own client cannot read, which is
-///   exactly what this feature must not do.
 /// - `NumberSequence`/`ColorSequence` have no Properties-panel editor yet —
 ///   `ROADMAP.md`'s "eight `Variant` types" bullet is explicit that each is
 ///   its own PR, and this one is not it. An attribute already holding either
@@ -83,6 +77,7 @@ pub(crate) const ATTRIBUTE_TYPES: &[&str] = &[
     "UDim2",
     "Vector2",
     "Vector3",
+    "CFrame",
     "NumberRange",
     "Rect",
     "BrickColor",
@@ -123,6 +118,14 @@ pub(crate) fn default_value(type_name: &str) -> Option<Variant> {
             x: 0.0,
             y: 0.0,
             z: 0.0,
+        }),
+        "CFrame" => Variant::CFrame(CFrameData {
+            position: Vector3Data {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            rotation: rbx_dom::rotation::IDENTITY,
         }),
         "NumberRange" => Variant::NumberRange(NumberRange { min: 0.0, max: 0.0 }),
         "Rect" => Variant::Rect(Rect {
