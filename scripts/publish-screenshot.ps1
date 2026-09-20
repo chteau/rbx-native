@@ -34,7 +34,10 @@ New-Item -ItemType Directory -Path $workDir | Out-Null
 try {
     $stamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
     $placeholder = Join-Path $workDir "README.md"
-    "rbx-native PR screenshot(s), published $stamp — see the other file(s) in this gist." |
+    # ASCII on purpose: Windows PowerShell 5.1 reads a BOM-less script as
+    # Windows-1252, where the last byte of an em dash is a curly double quote
+    # that ends the string and breaks the parse of everything after it.
+    "rbx-native PR screenshot(s), published $stamp - see the other file(s) in this gist." |
         Out-File -FilePath $placeholder -Encoding utf8
 
     $gistUrl = gh gist create --desc "rbx-native PR screenshot(s) - $stamp" $placeholder
