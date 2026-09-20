@@ -9,6 +9,7 @@ mod dom;
 mod error;
 mod instance;
 mod reference;
+pub mod rotation;
 mod variant;
 
 pub use change::Change;

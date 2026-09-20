@@ -4,24 +4,12 @@
 //! compresses axis-aligned rotations to a single byte, storing only raw matrices
 //! when the rotation is not axis-aligned.
 
+use rbx_dom::rotation::{basic_rotation, IDENTITY, RAW_ROTATION_ID};
 use rbx_dom::{CFrameData, Variant, Vector3Data};
 
 use super::{vector, PropValues};
 use crate::codec::Reader;
 use crate::error::BinaryError;
-
-// Roblox's NormalId order: +X, +Y, +Z, -X, -Y, -Z.
-const AXES: [[f32; 3]; 6] = [
-    [1.0, 0.0, 0.0],
-    [0.0, 1.0, 0.0],
-    [0.0, 0.0, 1.0],
-    [-1.0, 0.0, 0.0],
-    [0.0, -1.0, 0.0],
-    [0.0, 0.0, -1.0],
-];
-
-const RAW_ROTATION_ID: u8 = 0;
-const IDENTITY: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
 
 // Type ids the OptionalCFrame payload repeats inline; see `optional_cframes`.
 const CFRAME_TYPE_ID: u8 = 0x10;
@@ -112,73 +100,9 @@ fn rotation(reader: &mut Reader<'_>) -> Result<[f32; 9], BinaryError> {
     }
     Ok(matrix)
 }
-
-/// Reconstructs an axis-aligned 3×3 rotation matrix from a compressed byte ID.
-///
-/// Axis-aligned rotations are compressed to a single byte: `id - 1` is split into
-/// the NormalId of the right vector (first column) and of the up vector (second column);
-/// the back vector is their cross product. Returns `None` if the two axes collide
-/// (which is invalid), since only 24 of the 36 possible combinations are valid.
-fn basic_rotation(id: u8) -> Option<[f32; 9]> {
-    let index = usize::from(id.checked_sub(1)?);
-    let (right_axis, up_axis) = (index / 6, index % 6);
-    if right_axis >= AXES.len() || up_axis >= AXES.len() || right_axis % 3 == up_axis % 3 {
-        return None;
-    }
-
-    let right = AXES[right_axis];
-    let up = AXES[up_axis];
-    let back = [
-        right[1] * up[2] - right[2] * up[1],
-        right[2] * up[0] - right[0] * up[2],
-        right[0] * up[1] - right[1] * up[0],
-    ];
-
-    // Stored row-major, with the three basis vectors as columns.
-    Some([
-        right[0], up[0], back[0], right[1], up[1], back[1], right[2], up[2], back[2],
-    ])
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn id_two_is_the_identity() {
-        assert_eq!(basic_rotation(2), Some(IDENTITY));
-    }
-
-    #[test]
-    fn id_three_is_a_quarter_turn_around_x() {
-        assert_eq!(
-            basic_rotation(3),
-            Some([1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0])
-        );
-    }
-
-    #[test]
-    fn colliding_axes_are_rejected() {
-        // id 1 -> right = +X, up = +X; id 4 -> right = +X, up = -X.
-        assert_eq!(basic_rotation(1), None);
-        assert_eq!(basic_rotation(4), None);
-        assert_eq!(basic_rotation(0x24), None);
-    }
-
-    #[test]
-    fn every_valid_id_is_orthonormal_and_right_handed() {
-        let valid = (1u8..=36).filter_map(basic_rotation).count();
-        assert_eq!(valid, 24);
-
-        for id in 1u8..=36 {
-            let Some(m) = basic_rotation(id) else {
-                continue;
-            };
-            let det = m[0] * (m[4] * m[8] - m[5] * m[7]) - m[1] * (m[3] * m[8] - m[5] * m[6])
-                + m[2] * (m[3] * m[7] - m[4] * m[6]);
-            assert!((det - 1.0).abs() < 1e-6, "id {id} has determinant {det}");
-        }
-    }
 
     #[test]
     fn raw_marker_reads_nine_untransformed_floats() {

@@ -55,12 +55,14 @@ mod folder_colors;
 mod history;
 mod menu_bar;
 mod pacing;
+mod packs;
 mod pointer_lock;
 mod properties;
 mod render_image;
 mod save;
 mod scale;
 mod script_editor;
+mod script_templates;
 mod settings;
 mod settle;
 mod shell;
@@ -71,7 +73,7 @@ mod workspace_view;
 
 use std::path::{Path, PathBuf};
 
-use gpui_kit::component::{Root, Theme, ThemeMode, ThemeRegistry};
+use gpui_kit::component::{Root, Theme, ThemeConfig, ThemeMode, ThemeRegistry, ThemeSet};
 use gpui_kit::*;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
@@ -139,6 +141,13 @@ fn main() {
         verbose,
     };
 
+    // Everything read from the config directory beyond `settings.json`, in one
+    // pass before the window exists. The icon pack goes in before `load`: the
+    // Explorer's rows resolve their icons while the place is built.
+    let mut user = packs::UserContent::load();
+    class_icons::set_user_pack(user.icon_overlay.take());
+    let theme = user.appearance.theme.clone();
+
     // Parsing and the asset downloads both block; running them before the
     // window exists keeps the UI thread from ever stalling on the network.
     println!("loading {}…", path.display());
@@ -158,7 +167,7 @@ fn main() {
     let app = gpui_kit::application().with_assets(gpui_kit::assets::AllAssets);
     app.run(move |cx| {
         gpui_kit::init(cx);
-        install_theme(cx);
+        install_theme(theme.as_deref(), cx);
         scale::install(cx);
         shell::install_key_bindings(cx);
         menu_bar::install_key_bindings(cx);
@@ -167,7 +176,8 @@ fn main() {
         cx.spawn(async move |cx| {
             let options = cx.update(|cx| window_options(&title, cx));
             cx.open_window(options, |window, cx| {
-                let shell = cx.new(|cx| Shell::new(title, place, settings, launch, window, cx));
+                let shell =
+                    cx.new(|cx| Shell::new(title, place, settings, launch, user, window, cx));
                 cx.new(|cx| Root::new(shell, window, cx))
             })
             .expect("failed to open the main window");
@@ -210,9 +220,9 @@ struct Place {
 /// lower-contrast palette (`assets/themes/dark-soft.json`), before
 /// [`Theme::change`] below activates it. The file follows GPUI Kit's own
 /// `ThemeSet`/`ThemeConfig` JSON format (any key this leaves unset falls
-/// back to the stock dark theme), so a future user-installable theme pack
-/// can drop a file in the same shape next to it without new plumbing here.
-fn install_theme(cx: &mut App) {
+/// back to the stock dark theme). A user's own theme file in the same shape
+/// (see [`install_user_theme`]) replaces it afterwards.
+fn install_theme(user_theme: Option<&str>, cx: &mut App) {
     const THEME: &str = include_str!("../../../assets/themes/dark-soft.json");
     ThemeRegistry::global_mut(cx)
         .load_themes_from_str(THEME)
@@ -224,7 +234,61 @@ fn install_theme(cx: &mut App) {
     {
         Theme::global_mut(cx).dark_theme = theme;
     }
+    install_user_theme(user_theme, cx);
     install_fonts(cx);
+}
+
+/// Applies the theme `appearance.json` names, from `<config>/themes/`: the
+/// first dark theme, in the file's own order, that its `ThemeSet` defines
+/// under a name the registry does not already hold — the registry ignores a
+/// duplicate name rather than replacing it, so a file that reused a
+/// built-in's name would otherwise change nothing and say nothing. Anything
+/// wrong with the file is reported on stderr and leaves the built-in theme in
+/// place, with nothing from the file registered.
+///
+/// Only the toolkit's widgets follow it (see `packs`); the chrome this
+/// editor draws itself still reads `tokens`.
+fn install_user_theme(name: Option<&str>, cx: &mut App) {
+    let Some(name) = name else {
+        return;
+    };
+    let Some(json) = packs::theme_json(name) else {
+        eprintln!("rbxstudio: theme {name:?} could not be read from the themes folder");
+        return;
+    };
+    let set = match serde_json::from_str::<ThemeSet>(&json) {
+        Ok(set) => set,
+        Err(err) => {
+            eprintln!("rbxstudio: theme {name:?} is not a valid theme file: {err}");
+            return;
+        }
+    };
+    let registry = ThemeRegistry::global(cx);
+    let Some(picked) = first_new_dark(&set, |theme| registry.themes().contains_key(theme)) else {
+        eprintln!(
+            "rbxstudio: theme {name:?} defines no dark theme with a name of its own; \
+             keeping the built-in"
+        );
+        return;
+    };
+    let picked = picked.name.clone();
+    if let Err(err) = ThemeRegistry::global_mut(cx).load_themes_from_str(&json) {
+        eprintln!("rbxstudio: theme {name:?} could not be loaded: {err}");
+        return;
+    }
+    if let Some(theme) = ThemeRegistry::global(cx).themes().get(&picked).cloned() {
+        Theme::global_mut(cx).dark_theme = theme;
+    }
+}
+
+/// The theme [`install_user_theme`] switches to: the first dark one in `set`,
+/// in the file's own order, that `known` does not already hold. Not the
+/// registry's `sorted_themes()`, which orders by name and would hand a file
+/// that lists `Zenith Dark` before `Aurora Dark` the wrong one.
+fn first_new_dark(set: &ThemeSet, known: impl Fn(&str) -> bool) -> Option<&ThemeConfig> {
+    set.themes
+        .iter()
+        .find(|theme| theme.mode == ThemeMode::Dark && !known(&theme.name))
 }
 
 /// Points the theme at the design system's own font stack, for whichever of
@@ -346,6 +410,47 @@ mod tests {
             .find(|theme| theme.name == "rbx-native Dark")
             .expect("a theme named \"rbx-native Dark\"");
         assert_eq!(theme.mode, ThemeMode::Dark);
+    }
+
+    fn set(themes: &[(&str, &str)]) -> ThemeSet {
+        let entries: Vec<String> = themes
+            .iter()
+            .map(|(name, mode)| format!(r#"{{"name":"{name}","mode":"{mode}"}}"#))
+            .collect();
+        let json = format!(
+            r#"{{"name":"pack","author":"me","themes":[{}]}}"#,
+            entries.join(",")
+        );
+        serde_json::from_str(&json).expect("a minimal theme set parses")
+    }
+
+    /// The registry sorts by name; the file's own order is what a theme
+    /// author wrote and what the doc comment promises.
+    #[test]
+    fn the_first_dark_theme_in_the_file_wins_not_the_alphabetically_first() {
+        let themes = set(&[("Zenith Dark", "dark"), ("Aurora Dark", "dark")]);
+        let picked = super::first_new_dark(&themes, |_| false).map(|t| t.name.to_string());
+        assert_eq!(picked.as_deref(), Some("Zenith Dark"));
+    }
+
+    #[test]
+    fn light_themes_and_names_the_registry_already_holds_are_skipped() {
+        let themes = set(&[
+            ("Dawn", "light"),
+            ("rbx-native Dark", "dark"),
+            ("Dusk", "dark"),
+        ]);
+        let picked = super::first_new_dark(&themes, |name| name == "rbx-native Dark")
+            .map(|t| t.name.to_string());
+        assert_eq!(picked.as_deref(), Some("Dusk"));
+    }
+
+    #[test]
+    fn a_file_with_nothing_to_offer_picks_nothing() {
+        let only_light = set(&[("Dawn", "light")]);
+        assert!(super::first_new_dark(&only_light, |_| false).is_none());
+        let only_known = set(&[("rbx-native Dark", "dark")]);
+        assert!(super::first_new_dark(&only_known, |_| true).is_none());
     }
 
     #[test]

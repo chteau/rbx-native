@@ -24,6 +24,7 @@ use gpui_kit::*;
 use super::keys::{PART_TYPE_BALL, PART_TYPE_CYLINDER};
 use super::roving::Roving;
 
+use crate::script_templates::ScriptTemplates;
 use crate::tokens;
 use crate::transform::Tool;
 
@@ -78,7 +79,11 @@ impl Shell {
         // has actually been built (see `shell::roving`).
         self.ribbon_nav.begin(&self.tab_order, None, cx);
         let groups: Vec<Vec<AnyElement>> = match self.ribbon_tab {
-            Tab::Home => vec![clipboard(), self.transform_tools(cx), self.insert_tiles(cx)],
+            Tab::Home => vec![
+                clipboard(&self.ribbon_nav, cx),
+                self.transform_tools(cx),
+                self.insert_tiles(cx),
+            ],
             Tab::Avatar => vec![placeholders(
                 "avatar",
                 &[
@@ -248,11 +253,7 @@ impl Shell {
                 "Script",
                 cx,
             )),
-            vec![
-                insert_item("Script", IconName::FileCode, "Script", None),
-                insert_item("Local Script", IconName::FileCode, "LocalScript", None),
-                insert_item("Module Script", IconName::Package, "ModuleScript", None),
-            ],
+            script_items(&self.script_templates),
             cx,
         );
 
@@ -323,19 +324,20 @@ impl Shell {
     }
 }
 
-/// Copy/Paste/Duplicate are live in `menu_bar`'s Edit menu and on
-/// `Ctrl+C`/`V`/`D` (`shell::clipboard`); Cut stays a disabled placeholder
-/// there too. These ribbon tiles are left as visibly-disabled placeholders
-/// regardless — a live tile needs its own hover/active styling
-/// (`base_tile`'s `enabled` branch), which is ribbon-specific work this
-/// keyboard-and-menu-scoped change doesn't take on.
-fn clipboard() -> Vec<AnyElement> {
+/// Copy/Paste/Duplicate run the same `shell::clipboard` entry points as
+/// `menu_bar`'s Edit menu and `Ctrl+C`/`V`/`D`; Cut stays a disabled
+/// placeholder there too.
+fn clipboard(nav: &Roving, cx: &mut Context<Shell>) -> Vec<AnyElement> {
     vec![
-        disabled_tile("ribbon-copy", IconName::Copy, "Copy").into_any_element(),
+        tile(nav, "ribbon-copy", IconName::Copy, "Copy", cx)
+            .on_click(cx.listener(|shell, _, _, cx| shell.copy_selected(cx)))
+            .into_any_element(),
         stack(vec![
-            stack_row("ribbon-paste", IconName::ClipboardPaste, "Paste"),
+            live_stack_row(nav, "ribbon-paste", IconName::ClipboardPaste, "Paste", cx)
+                .on_click(cx.listener(|shell, _, _, cx| shell.paste_clipboard(cx))),
             stack_row("ribbon-cut", IconName::Scissors, "Cut"),
-            stack_row("ribbon-duplicate", IconName::CopyPlus, "Duplicate"),
+            live_stack_row(nav, "ribbon-duplicate", IconName::CopyPlus, "Duplicate", cx)
+                .on_click(cx.listener(|shell, _, _, cx| shell.duplicate_selected(cx))),
         ])
         .into_any_element(),
     ]
@@ -404,6 +406,34 @@ fn insert_item(
             Some(shape) => shell.insert_part(class, shape, cx),
             None => shell.insert_instance(class, cx),
         })
+}
+
+/// The three built-in script classes, then whatever the user has put in
+/// their templates directory, labelled `"<name> (<class>)"` so two templates
+/// of different classes can share a name without being ambiguous.
+fn script_items(templates: &ScriptTemplates) -> Vec<menu::Item> {
+    let mut items = vec![
+        insert_item("Script", IconName::FileCode, "Script", None),
+        insert_item("Local Script", IconName::FileCode, "LocalScript", None),
+        insert_item("Module Script", IconName::Package, "ModuleScript", None),
+    ];
+    items.extend(
+        templates
+            .extras()
+            .iter()
+            .enumerate()
+            .map(|(index, template)| {
+                let icon = if template.class == "ModuleScript" {
+                    IconName::Package
+                } else {
+                    IconName::FileCode
+                };
+                menu::item(format!("{} ({})", template.name, template.class))
+                    .icon(icon)
+                    .on_click(move |shell, cx| shell.insert_user_template(index, cx))
+            }),
+    );
+    items
 }
 
 fn tool_icon(tool: Tool) -> IconName {
@@ -544,9 +574,37 @@ pub(super) fn stack(rows: Vec<Stateful<Div>>) -> Div {
         .children(rows)
 }
 
-/// One of its rows. Every one of these is a command this editor doesn't
-/// have yet; a live one would differ only in being clickable.
+/// One of its rows, for a command this editor doesn't have yet: greyed, not
+/// clickable and left out of the roving group, exactly as [`disabled_tile`].
 pub(super) fn stack_row(id: &'static str, icon: IconName, label: &'static str) -> Stateful<Div> {
+    base_row(id, icon, label)
+        .cursor_not_allowed()
+        .text_color(tokens::text_disabled())
+        .tooltip(move |window, cx| {
+            super::tooltip::text(format!("{label} — not implemented"), window, cx)
+        })
+}
+
+/// A stack row that does something: the same geometry as [`stack_row`] with
+/// [`base_tile`]'s enabled styling (hover wash, pressed wash, keyboard focus
+/// ring) and a place in the ribbon's roving group.
+fn live_stack_row(
+    nav: &Roving,
+    id: &'static str,
+    icon: IconName,
+    label: &'static str,
+    cx: &mut App,
+) -> Stateful<Div> {
+    let row = base_row(id, icon, label)
+        .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::chrome())))
+        .cursor_pointer()
+        .text_color(tokens::text_label())
+        .hover(|this| this.bg(tokens::hover()).text_color(tokens::text_full()))
+        .active(|this| this.bg(tokens::ribbon_tab_active()));
+    nav.claim(row, cx)
+}
+
+fn base_row(id: &'static str, icon: IconName, label: &'static str) -> Stateful<Div> {
     h_flex()
         .id(id)
         .w_full()
@@ -556,13 +614,8 @@ pub(super) fn stack_row(id: &'static str, icon: IconName, label: &'static str) -
         .px(px(7.))
         .rounded(tokens::RADIUS)
         .bg(tokens::tile())
-        .cursor_not_allowed()
         .text_size(tokens::text_xs())
         .line_height(tokens::line_xs())
-        .text_color(tokens::text_disabled())
-        .tooltip(move |window, cx| {
-            super::tooltip::text(format!("{label} — not implemented"), window, cx)
-        })
         .child(Icon::new(icon).size(tokens::text_xs()))
         .child(div().flex_1().truncate().child(label))
 }

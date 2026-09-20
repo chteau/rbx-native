@@ -17,11 +17,13 @@
 //! Real Studio's plain `Ctrl+V` always lands in `Workspace`, not wherever
 //! the selection happens to be (`studio/explorer.md`: "Pastes the clipboard
 //! contents into the top‑level Workspace branch"). `Ctrl+Shift+V`, "Paste
-//! Into" (pasting into the selection instead), is a separate shortcut real
-//! Studio also offers; it has no menu-bar placeholder here yet either, so
-//! it stays out of this module. `Ctrl+D` duplicates each selected instance
-//! into its own existing parent — "the same branch" real Studio duplicates
-//! into — rather than `Workspace`.
+//! Into", is the separate shortcut real Studio offers for pasting into the
+//! selection instead: "Using this action on multiple selected objects is a
+//! convenient way to paste the same clipboard items into multiple parents",
+//! so each selected instance receives its own independent copy of the
+//! whole clipboard. `Ctrl+D` duplicates each selected instance into its own
+//! existing parent — "the same branch" real Studio duplicates into — rather
+//! than `Workspace`.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -41,6 +43,7 @@ const WORKSPACE_NAME: &str = "Workspace";
 pub(super) enum Action {
     Copy,
     Paste,
+    PasteInto,
     Duplicate,
 }
 
@@ -54,13 +57,18 @@ pub(super) enum Action {
 /// Command Bar, an open script) keeps its own copy/paste and this handler
 /// never sees the keystroke.
 pub(super) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
-    if !modifiers.control {
+    // The whole modifier set decides, not just Ctrl plus whichever other key
+    // one arm happens to check: Ctrl+Alt+V (AltGr on some layouts) is no
+    // paste, and Ctrl+Shift+D is not a duplicate. Shift is the one modifier
+    // that means something, and only on V.
+    if !modifiers.control || modifiers.alt || modifiers.platform || modifiers.function {
         return None;
     }
-    match key {
-        "c" => Some(Action::Copy),
-        "v" => Some(Action::Paste),
-        "d" => Some(Action::Duplicate),
+    match (key, modifiers.shift) {
+        ("c", false) => Some(Action::Copy),
+        ("v", false) => Some(Action::Paste),
+        ("v", true) => Some(Action::PasteInto),
+        ("d", false) => Some(Action::Duplicate),
         _ => None,
     }
 }
@@ -210,6 +218,7 @@ impl Shell {
         match action_for(&keystroke.key, keystroke.modifiers) {
             Some(Action::Copy) => self.copy_selected(cx),
             Some(Action::Paste) => self.paste_clipboard(cx),
+            Some(Action::PasteInto) => self.paste_into_selected(cx),
             Some(Action::Duplicate) => self.duplicate_selected(cx),
             None => {}
         }
@@ -244,16 +253,44 @@ impl Shell {
             return;
         }
         let parent = explorer::find_by_name(&self.dom, WORKSPACE_NAME);
+        self.paste_under(&[parent], cx);
+    }
 
+    /// Ctrl+Shift+V: pastes the whole clipboard into *each* selected
+    /// instance — a service included, since `Workspace` and its siblings are
+    /// ordinary places to put a script or a folder — as an independent deep
+    /// copy per parent, then selects everything that was pasted. A no-op
+    /// with nothing on the clipboard or nothing selected. `pub(crate)`: also
+    /// `menu_bar`'s Paste Into item's entry point.
+    pub(crate) fn paste_into_selected(&mut self, cx: &mut Context<Self>) {
+        let parents: Vec<Option<Ref>> = self
+            .selected_all()
+            .iter()
+            .copied()
+            .filter(|&reference| self.dom.get(reference).is_some())
+            .map(Some)
+            .collect();
+        if self.clipboard.is_empty() || parents.is_empty() {
+            return;
+        }
+        self.paste_under(&parents, cx);
+    }
+
+    /// Materializes the clipboard once under every entry of `parents`,
+    /// selects the copies and records the whole batch as one undo step —
+    /// the single path Paste and Paste Into share, so neither can drift from
+    /// the other in how it reaches the history or the viewport.
+    fn paste_under(&mut self, parents: &[Option<Ref>], cx: &mut Context<Self>) {
         // See `shell::history`: snapshotted before the inserts below, so one
         // Paste is one undo step however many entries the clipboard holds.
         self.push_history();
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
-        let pasted: Vec<Ref> = self
-            .clipboard
-            .iter()
-            .map(|node| materialize(&mut dom, node, parent))
-            .collect();
+        let mut pasted: Vec<Ref> = Vec::new();
+        for &parent in parents {
+            for node in &self.clipboard {
+                pasted.push(materialize(&mut dom, node, parent));
+            }
+        }
         self.dom = dom;
         let changes = self.dom.take_changes();
 
@@ -321,6 +358,39 @@ mod tests {
         assert_eq!(action_for("c", ctrl()), Some(Action::Copy));
         assert_eq!(action_for("v", ctrl()), Some(Action::Paste));
         assert_eq!(action_for("d", ctrl()), Some(Action::Duplicate));
+    }
+
+    #[test]
+    fn ctrl_shift_v_is_paste_into_not_plain_paste() {
+        let shifted = Modifiers {
+            shift: true,
+            ..ctrl()
+        };
+        assert_eq!(action_for("v", shifted), Some(Action::PasteInto));
+        assert_eq!(action_for("v", ctrl()), Some(Action::Paste));
+    }
+
+    #[test]
+    fn any_other_modifier_on_the_chord_is_not_a_clipboard_action() {
+        let with = |f: fn(&mut Modifiers)| {
+            let mut modifiers = ctrl();
+            f(&mut modifiers);
+            modifiers
+        };
+        let alt = with(|m| m.alt = true);
+        let platform = with(|m| m.platform = true);
+        let shift = with(|m| m.shift = true);
+        for key in ["c", "v", "d"] {
+            assert_eq!(action_for(key, alt), None, "Ctrl+Alt+{key}");
+            assert_eq!(action_for(key, platform), None, "Ctrl+Super+{key}");
+        }
+        assert_eq!(action_for("c", shift), None, "Ctrl+Shift+C");
+        assert_eq!(action_for("d", shift), None, "Ctrl+Shift+D");
+        let shift_alt = with(|m| {
+            m.shift = true;
+            m.alt = true;
+        });
+        assert_eq!(action_for("v", shift_alt), None, "Ctrl+Shift+Alt+V");
     }
 
     #[test]

@@ -1,5 +1,6 @@
 //! CFrame and OptionalCFrame encoding, the encode counterpart of `chunks::prop::cframe`.
 
+use rbx_dom::rotation::{basic_rotation_id, IDENTITY, RAW_ROTATION_ID};
 use rbx_dom::{CFrameData, Variant, Vector3Data};
 
 use super::vector;
@@ -7,18 +8,6 @@ use crate::serialize::prop::map_dense;
 use crate::serialize::writer::Writer;
 use crate::serialize::SerializeError;
 
-// Roblox's NormalId order: +X, +Y, +Z, -X, -Y, -Z. Must match `chunks::prop::cframe::AXES`
-// exactly, since `basic_rotation_id` inverts the same table the reader's `basic_rotation` uses.
-const AXES: [[f32; 3]; 6] = [
-    [1.0, 0.0, 0.0],
-    [0.0, 1.0, 0.0],
-    [0.0, 0.0, 1.0],
-    [-1.0, 0.0, 0.0],
-    [0.0, -1.0, 0.0],
-    [0.0, 0.0, -1.0],
-];
-
-const RAW_ROTATION_ID: u8 = 0;
 const CFRAME_TYPE_ID: u8 = 0x10;
 const BOOL_TYPE_ID: u8 = 0x02;
 const ABSENT_CFRAME: CFrameData = CFrameData {
@@ -27,7 +16,7 @@ const ABSENT_CFRAME: CFrameData = CFrameData {
         y: 0.0,
         z: 0.0,
     },
-    rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+    rotation: IDENTITY,
 };
 
 pub(super) fn cframes(
@@ -88,39 +77,6 @@ fn encode_rotation(matrix: &[f32; 9]) -> Vec<u8> {
     writer.into_bytes()
 }
 
-// Inverse of `chunks::prop::cframe::basic_rotation`: only 24 of the 36 byte ids are
-// valid axis-aligned rotations, so a linear scan is simplest and never runs on a hot path.
-fn basic_rotation_id(matrix: &[f32; 9]) -> Option<u8> {
-    for id in 1u8..=36 {
-        if let Some(candidate) = basic_rotation(id) {
-            if candidate == *matrix {
-                return Some(id);
-            }
-        }
-    }
-    None
-}
-
-fn basic_rotation(id: u8) -> Option<[f32; 9]> {
-    let index = usize::from(id.checked_sub(1)?);
-    let (right_axis, up_axis) = (index / 6, index % 6);
-    if right_axis >= AXES.len() || up_axis >= AXES.len() || right_axis % 3 == up_axis % 3 {
-        return None;
-    }
-
-    let right = AXES[right_axis];
-    let up = AXES[up_axis];
-    let back = [
-        right[1] * up[2] - right[2] * up[1],
-        right[2] * up[0] - right[0] * up[2],
-        right[0] * up[1] - right[1] * up[0],
-    ];
-
-    Some([
-        right[0], up[0], back[0], right[1], up[1], back[1], right[2], up[2], back[2],
-    ])
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,17 +90,6 @@ mod tests {
             payload,
         };
         decode(&header, count, &[])
-    }
-
-    #[test]
-    fn identity_rotation_compresses_to_id_two() {
-        assert_eq!(basic_rotation_id(&ABSENT_CFRAME.rotation), Some(2));
-    }
-
-    #[test]
-    fn a_non_axis_aligned_matrix_has_no_compressed_id() {
-        let tilted = [0.9, 0.1, 0.0, -0.1, 0.9, 0.0, 0.0, 0.0, 1.0];
-        assert_eq!(basic_rotation_id(&tilted), None);
     }
 
     #[test]
