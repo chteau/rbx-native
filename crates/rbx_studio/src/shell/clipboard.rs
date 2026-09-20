@@ -143,6 +143,17 @@ fn copyable(dom: &WeakDom, database: &ReflectionDatabase, selected: &[Ref]) -> V
         .collect()
 }
 
+/// Whether Copy and Duplicate would do anything with the current selection.
+///
+/// The same question both handlers ask before returning early, asked once
+/// here so the ribbon can grey them instead of offering a click that no-ops.
+/// A selection of nothing but services is not "something selected" for this
+/// purpose — [`copyable`] drops them, so both handlers would return early
+/// on one.
+pub(super) fn has_copyable(dom: &WeakDom, database: &ReflectionDatabase, selected: &[Ref]) -> bool {
+    !copyable(dom, database, selected).is_empty()
+}
+
 /// Materializes one clipboard entry under `parent`: every instance in it,
 /// freshly created, with its own class, name and properties. Two passes —
 /// every instance is created first, then every property is written — so a
@@ -424,6 +435,28 @@ mod tests {
     fn nothing_selected_is_nothing_copyable() {
         let dom = WeakDom::new();
         assert_eq!(copyable(&dom, &database(), &[]), Vec::<Ref>::new());
+    }
+
+    /// What the ribbon greys Copy and Duplicate on: the same guard the two
+    /// handlers return early from, so a tile is never offered for a click
+    /// that would do nothing. A selection of services only is the case a
+    /// plain `selected.is_empty()` would get wrong.
+    #[test]
+    fn copy_and_duplicate_are_available_for_exactly_what_the_handlers_act_on() {
+        let mut dom = WeakDom::new();
+        let workspace = dom.new_instance("Workspace", "Workspace", None);
+        let part = dom.new_instance("Part", "Part", Some(workspace));
+
+        assert!(!has_copyable(&dom, &database(), &[]), "nothing selected");
+        assert!(
+            !has_copyable(&dom, &database(), &[workspace]),
+            "a service alone is not something to copy"
+        );
+        assert!(has_copyable(&dom, &database(), &[part]));
+        assert!(
+            has_copyable(&dom, &database(), &[workspace, part]),
+            "a mixed selection still has the part in it"
+        );
     }
 
     #[test]
