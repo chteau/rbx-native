@@ -61,3 +61,43 @@ fn a_horizontal_group_ignores_the_vertical_arrows() {
     assert_eq!(Move::of(&up, false), None);
     assert_eq!(Move::of(&up, true), Some(Move::Previous));
 }
+
+/// The ribbon's control count now changes with what the editor *holds*, not
+/// just with which page is open: a tile that greys because there is nothing
+/// to paste leaves the group (see `shell::ribbon`). A group that shrinks
+/// past its focused index has to pull that index back, or the next arrow
+/// key moves against a strip that no longer has the item it is standing on.
+#[test]
+fn a_group_that_shrinks_pulls_the_focused_index_back_into_range() {
+    let nav = Roving::horizontal();
+    nav.cursor.set(5);
+    nav.finish();
+    nav.current.set(4);
+
+    // The next render builds three: two controls greyed out between frames.
+    nav.cursor.set(3);
+    nav.finish();
+
+    assert_eq!(nav.len.get(), 3);
+    assert_eq!(nav.current.get(), 2, "the last item of the smaller group");
+    assert_eq!(
+        Move::Next.apply(nav.current.get(), nav.len.get()),
+        0,
+        "and an arrow from there still wraps inside the group"
+    );
+}
+
+/// The degenerate end of the same rule: a group with nothing left in it.
+#[test]
+fn a_group_that_empties_leaves_the_focused_index_at_zero() {
+    let nav = Roving::horizontal();
+    nav.cursor.set(2);
+    nav.finish();
+    nav.current.set(1);
+
+    nav.cursor.set(0);
+    nav.finish();
+
+    assert_eq!(nav.len.get(), 0);
+    assert_eq!(nav.current.get(), 0);
+}

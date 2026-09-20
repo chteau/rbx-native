@@ -356,26 +356,41 @@ impl Shell {
         ]
     }
 
+    /// Group and Ungroup grey on the same rule the clipboard tiles follow
+    /// (see [`Shell::clipboard_tiles`]): `group::has_groupable` and
+    /// `has_ungroupable` are the guards `group_selected` and
+    /// `ungroup_selected` return early on, so a live tile always has work to
+    /// do. Group needs one common, reparentable parent; Ungroup needs one
+    /// `Model` among the selection and ignores whatever else is there.
     fn edit_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        vec![
-            tile(
-                &self.ribbon_nav,
+        let nav = &self.ribbon_nav;
+        let selected = self.selected_all();
+        let group = if super::group::has_groupable(&self.dom, &self.database, selected) {
+            tile(nav, "ribbon-group", IconName::Group, "Group", cx)
+                .on_click(cx.listener(|shell, _, _, cx| shell.group_selected(cx)))
+        } else {
+            unavailable_tile(
                 "ribbon-group",
                 IconName::Group,
                 "Group",
-                cx,
+                "nothing groupable is selected",
             )
-            .on_click(cx.listener(|shell, _, _, cx| shell.group_selected(cx)))
-            .into_any_element(),
-            tile(
-                &self.ribbon_nav,
+        };
+        let ungroup = if super::group::has_ungroupable(&self.dom, &self.database, selected) {
+            tile(nav, "ribbon-ungroup", IconName::Ungroup, "Ungroup", cx)
+                .on_click(cx.listener(|shell, _, _, cx| shell.ungroup_selected(cx)))
+        } else {
+            unavailable_tile(
                 "ribbon-ungroup",
                 IconName::Ungroup,
                 "Ungroup",
-                cx,
+                "no Model is selected",
             )
-            .on_click(cx.listener(|shell, _, _, cx| shell.ungroup_selected(cx)))
-            .into_any_element(),
+        };
+
+        vec![
+            group.into_any_element(),
+            ungroup.into_any_element(),
             disabled_tile("ribbon-material", IconName::Layers, "Material").into_any_element(),
             disabled_tile("ribbon-color", IconName::Droplet, "Color").into_any_element(),
             disabled_tile("ribbon-lock", IconName::Lock, "Lock").into_any_element(),

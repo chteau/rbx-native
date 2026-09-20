@@ -83,6 +83,32 @@ fn ungroupable(
     (!children.is_empty()).then(|| (dom.parent(reference), children))
 }
 
+/// Whether Group would wrap anything: [`common_parent`]'s own answer, which
+/// is what `group_selected` returns early on. Asked by the ribbon so the
+/// tile is greyed exactly when the command would do nothing — the selection
+/// is empty, holds a service, or straddles two parents.
+pub(super) fn has_groupable(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    selected: &[Ref],
+) -> bool {
+    common_parent(dom, database, selected).is_some()
+}
+
+/// Whether Ungroup would unwrap anything. `ungroup_selected` unwraps every
+/// `Model` in the selection and ignores the rest, so *one* is enough — the
+/// same "skip what cannot follow along rather than refuse the whole call"
+/// rule the handler itself follows.
+pub(super) fn has_ungroupable(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    selected: &[Ref],
+) -> bool {
+    selected
+        .iter()
+        .any(|&reference| ungroupable(dom, database, reference).is_some())
+}
+
 /// The DOM half of a Group: creates the wrapping `Model` and moves every
 /// `selected` instance under it, returning the new `Model`'s referent. Split
 /// out from `Shell::group_selected` so it can be exercised without a live
@@ -199,192 +225,4 @@ impl Shell {
 }
 
 #[cfg(test)]
-mod tests {
-    use rbx_dom::Change;
-    use rbx_reflection::ReflectionDatabase;
-
-    use super::*;
-
-    fn database() -> ReflectionDatabase {
-        ReflectionDatabase::embedded()
-    }
-
-    #[test]
-    fn grouping_wraps_the_selection_under_one_new_model_and_nothing_else_moves() {
-        let mut dom = WeakDom::new();
-        let workspace = dom.new_instance("Workspace", "Workspace", None);
-        let a = dom.new_instance("Part", "A", Some(workspace));
-        let b = dom.new_instance("Part", "B", Some(workspace));
-        let untouched = dom.new_instance("Part", "Untouched", Some(workspace));
-
-        let parent = common_parent(&dom, &database(), &[a, b]).expect("shares one parent");
-        let model = apply_group(&mut dom, &[a, b], parent);
-
-        assert_eq!(dom.parent(a), Some(model));
-        assert_eq!(dom.parent(b), Some(model));
-        assert_eq!(dom.parent(model), Some(workspace));
-        assert_eq!(
-            dom.parent(untouched),
-            Some(workspace),
-            "an unselected sibling must not move"
-        );
-    }
-
-    #[test]
-    fn grouping_is_one_batch_of_changes_for_the_whole_selection() {
-        let mut dom = WeakDom::new();
-        let workspace = dom.new_instance("Workspace", "Workspace", None);
-        let a = dom.new_instance("Part", "A", Some(workspace));
-        let b = dom.new_instance("Part", "B", Some(workspace));
-        dom.take_changes(); // the three creates above, not what's under test
-
-        let model = apply_group(&mut dom, &[a, b], Some(workspace));
-        // One drain, mirroring `Shell::group_selected`'s single
-        // `push_history`/`take_changes` pair — this is what makes a Group
-        // one undo step rather than one per instance.
-        let changes = dom.take_changes();
-
-        assert_eq!(
-            changes,
-            vec![
-                Change::Added(model),
-                Change::Parent {
-                    referent: model,
-                    old: None,
-                    new: Some(workspace),
-                },
-                Change::Parent {
-                    referent: a,
-                    old: Some(workspace),
-                    new: Some(model),
-                },
-                Change::Parent {
-                    referent: b,
-                    old: Some(workspace),
-                    new: Some(model),
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn grouping_a_selection_spanning_multiple_parents_is_refused() {
-        let mut dom = WeakDom::new();
-        let a_parent = dom.new_instance("Model", "A", None);
-        let b_parent = dom.new_instance("Model", "B", None);
-        let a = dom.new_instance("Part", "PartA", Some(a_parent));
-        let b = dom.new_instance("Part", "PartB", Some(b_parent));
-
-        assert_eq!(common_parent(&dom, &database(), &[a, b]), None);
-    }
-
-    #[test]
-    fn grouping_a_service_is_refused() {
-        let mut dom = WeakDom::new();
-        let workspace = dom.new_instance("Workspace", "Workspace", None);
-        let part = dom.new_instance("Part", "Part", Some(workspace));
-
-        assert_eq!(common_parent(&dom, &database(), &[workspace, part]), None);
-    }
-
-    #[test]
-    fn grouping_nothing_selected_is_refused() {
-        let dom = WeakDom::new();
-        assert_eq!(common_parent(&dom, &database(), &[]), None);
-    }
-
-    #[test]
-    fn ungrouping_reparents_children_onto_the_model_s_old_parent_and_removes_it() {
-        let mut dom = WeakDom::new();
-        let workspace = dom.new_instance("Workspace", "Workspace", None);
-        let model = dom.new_instance("Model", "Model", Some(workspace));
-        let a = dom.new_instance("Part", "A", Some(model));
-        let b = dom.new_instance("Part", "B", Some(model));
-
-        let (parent, children) =
-            ungroupable(&dom, &database(), model).expect("a model with children ungroups");
-        assert_eq!(parent, Some(workspace));
-        assert_eq!(children, vec![a, b]);
-
-        let freed = apply_ungroup(&mut dom, &[(model, parent, children)]);
-
-        assert_eq!(freed, vec![a, b]);
-        assert_eq!(dom.parent(a), Some(workspace));
-        assert_eq!(dom.parent(b), Some(workspace));
-        assert!(dom.get(model).is_none(), "the emptied Model is removed");
-    }
-
-    #[test]
-    fn ungrouping_is_one_batch_of_changes() {
-        let mut dom = WeakDom::new();
-        let workspace = dom.new_instance("Workspace", "Workspace", None);
-        let model = dom.new_instance("Model", "Model", Some(workspace));
-        let a = dom.new_instance("Part", "A", Some(model));
-        let b = dom.new_instance("Part", "B", Some(model));
-        dom.take_changes(); // the four creates above, not what's under test
-
-        apply_ungroup(&mut dom, &[(model, Some(workspace), vec![a, b])]);
-        // One drain, mirroring `Shell::ungroup_selected`'s single
-        // `push_history`/`take_changes` pair.
-        let changes = dom.take_changes();
-
-        assert_eq!(
-            changes,
-            vec![
-                Change::Parent {
-                    referent: a,
-                    old: Some(model),
-                    new: Some(workspace),
-                },
-                Change::Parent {
-                    referent: b,
-                    old: Some(model),
-                    new: Some(workspace),
-                },
-                Change::Removed(model),
-            ]
-        );
-    }
-
-    #[test]
-    fn ungrouping_a_non_model_is_refused() {
-        let mut dom = WeakDom::new();
-        let part = dom.new_instance("Part", "Part", None);
-        assert_eq!(ungroupable(&dom, &database(), part), None);
-    }
-
-    #[test]
-    fn ungrouping_an_empty_model_is_refused() {
-        let mut dom = WeakDom::new();
-        let model = dom.new_instance("Model", "Empty", None);
-        assert_eq!(ungroupable(&dom, &database(), model), None);
-    }
-
-    #[test]
-    fn ungrouping_the_workspace_itself_is_refused() {
-        // `Workspace` is a `Model` subclass in Roblox's own class hierarchy
-        // (see `shell::selection`'s own note on the same fact); the service
-        // check in `ungroupable` is what stops this from being treated as
-        // an ordinary, ungroupable `Model`.
-        let mut dom = WeakDom::new();
-        let workspace = dom.new_instance("Workspace", "Workspace", None);
-        dom.new_instance("Part", "Part", Some(workspace));
-        assert_eq!(ungroupable(&dom, &database(), workspace), None);
-    }
-
-    #[test]
-    fn ctrl_g_groups_and_ctrl_shift_g_ungroups() {
-        let ctrl = Modifiers {
-            control: true,
-            ..Modifiers::none()
-        };
-        let ctrl_shift = Modifiers {
-            control: true,
-            shift: true,
-            ..Modifiers::none()
-        };
-        assert_eq!(action_for("g", ctrl), Some(Action::Group));
-        assert_eq!(action_for("g", ctrl_shift), Some(Action::Ungroup));
-        assert_eq!(action_for("g", Modifiers::none()), None);
-    }
-}
+mod tests;
