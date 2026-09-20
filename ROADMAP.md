@@ -648,10 +648,16 @@ Roblox's own engine.
   `Source` with a starter template instead of leaving it empty: a plain
   `print("Hello, world!")` for `Script`/`LocalScript`, a `ModuleScript`
   returning a table, and a `ModuleScript (Class)` with a `.new()`
-  constructor over a metatable. What's still open: the template set is
-  hardcoded (four `const` strings), not the user-extensible set this
-  bullet originally asked for — that's a materially bigger feature (storage
-  and an editing UI for user-defined templates) left for later.
+  constructor over a metatable. The set is user-extensible now: a
+  `script_templates` folder in the config directory holds one `.luau` file
+  per template under `Script/`, `LocalScript/` or `ModuleScript/`
+  (`script_templates.rs`), each listed in the ribbon's Script menu by its
+  file name, and a `Default.luau` in a class's folder replaces the built-in
+  starter every new script of that class gets. What's still open: authoring
+  and managing templates is done in a file manager, not an editing UI in
+  the editor, and the user's extras appear in the ribbon's Script menu but
+  not the menu bar's Model menu, whose items are fixed actions rather than
+  a list built at runtime.
 - [ ] 📋 **Optional, bundled `Fragment` UI framework.** [`Fragment`](https://github.com/chteau/Fragment)
   (MIT, single-file Luau `ModuleScript`, React-inspired: local/global
   state, contexts, reusable components over plain `GuiObject`s) offered as
@@ -695,7 +701,7 @@ Roblox's own engine.
   noted, **Building Tools by F3X** — a widely-used third-party Studio
   plugin, not native Studio — since some of what was asked for turns out
   to be F3X's own convention rather than something Studio itself does:
-  - [x] 🚧 **Scale handles that lock a Ball/Cylinder to a round
+  - [x] **Scale handles that lock a Ball/Cylinder to a round
     cross-section**: dragging any Scale handle on a Ball or Cylinder used to
     grow only the one axis grabbed, same as any other part, which turned a
     sphere oval or a cylinder's round end into an ellipse. Native Studio's
@@ -721,8 +727,11 @@ Roblox's own engine.
     because it is provably inert at the exact moment a Scale handle is
     grabbed (it only means "cycle selection" on a click that falls through
     to a *pick*, a branch a handle grab never reaches), not because it
-    matches F3X. **Still open**: Wedge/CornerWedge, which weren't confirmed
-    to have their own case in F3X's source at all. Plain `Part`s and
+    matches F3X. **Wedge/CornerWedge need nothing**: `Resize.lua` gates its
+    shape-specific branch on `Part:IsA 'Part'` and sends every other class —
+    `WedgePart`, `CornerWedgePart`, `MeshPart` — through the same plain
+    per-axis resize, so there is no case to model, and native Studio's docs
+    give Scale no shape-specific behavior either. Plain `Part`s and
     `MeshPart`s keep today's per-axis behavior regardless. — see
     `F3XTeam/RBX-Building-Tools`'s `Tools/Resize.lua`.
   - [x] **A live stud-count readout while a Move/Scale drag is in progress**
@@ -833,9 +842,10 @@ Roblox's own engine.
     reveal it, or only highlights the top-level parent) — small, but
     real, user-facing toggles worth including alongside the rest of this
     item rather than hardcoding one behaviour.
-- [x] 🚧 **Copy/paste/duplicate instances** (`Ctrl+C`/`V`/`D`) — real now,
-  from the keyboard and the Edit menu's Copy/Paste/Duplicate items (Cut
-  stays a placeholder; it was never part of this bullet). Copy is a deep,
+- [x] **Copy/paste/duplicate instances** (`Ctrl+C`/`V`/`D`) — real now,
+  from the keyboard, the Edit menu's Copy/Paste/Paste Into/Duplicate items
+  and the ribbon's Copy, Paste and Duplicate tiles (Cut stays a
+  placeholder; it was never part of this bullet). Copy is a deep,
   in-process clipboard, not the system one: descendants come along, a
   `Ref`/`Content::Object` property pointing at something copied along with
   it is remapped to point at the copy instead — `Class.Instance:Clone()`'s
@@ -844,11 +854,14 @@ Roblox's own engine.
   wherever the selection is; Duplicate lands beside the original in its own
   existing parent instead. A service can't be copied, pasted or duplicated,
   the same refusal Group/Ungroup already enforce. One undo step per
-  operation. Still open, and left for the fuller Explorer editing item
-  above: `Ctrl+Shift+V` ("Paste Into" a chosen parent — a separate shortcut
-  real Studio also offers), the ribbon's own Copy/Paste/Duplicate tiles
-  (still disabled placeholders), and excluding a non-`Archivable`
-  descendant from the copy the way `Instance:Clone()` does.
+  operation. `Ctrl+Shift+V` is "Paste Into": the clipboard goes into each
+  selected instance instead of `Workspace`, one copy per parent, as
+  creator-docs describes for pasting "into multiple parents". A
+  non-`Archivable` descendant is left out of the copy the way
+  `Instance:Clone()` does (the root itself is always copied, and the copy is
+  always `Archivable`). Left for the fuller Explorer editing item above:
+  the right-click **Paste Options** ⟩ **Paste Into At Original Location**
+  the docs mention, and Cut.
 - [x] 🚧 Drag-and-drop reparenting in the Explorer tree. Dragging a row
   onto another reparents onto it, the way creator-docs describes
   ("simply drag and drop them onto the new parent") — with a ghost under
@@ -861,8 +874,11 @@ Roblox's own engine.
   carries the whole selection when grabbed by its anchor row — the
   Explorer tree tracks one selected row and already behaves this way for a
   plain click, so fixing it properly belongs with the fuller Explorer
-  editing item above. No Escape-to-cancel (GPUI has no drag-cancel hook
-  wired), and no drop *between* rows, which Studio does not offer either.
+  editing item above. Escape abandons a drag in flight
+  (`App::stop_active_drag`, from the window-level key handler), so nothing
+  drops and no undo step is pushed; it has not been exercised in the running
+  window. There is no drop *between* rows, which Studio does not offer
+  either.
 - [ ] 📋 **Save/Publish to Roblox from the editor UI.** The Open Cloud
   client side of this already exists and works —
   `rbx_cloud::Client::publish_place`
@@ -1130,13 +1146,16 @@ against `Roblox/creator-docs` rather than assumed:
   becomes the panel's checkbox, a `Vector3` becomes three number fields,
   and so on — never a second set of editors. Name validation follows
   `Instance:SetAttribute`'s documented rules (alphanumeric plus
-  `.`/`-`/`/`/`_`, ≤100 characters, no `RBX` prefix). What's still open:
-  `CFrame` is not offered as a creatable type (`rbx_dom::attributes` has no
-  verified wire format for it — guessing risks a blob Roblox's own client
-  can't read); `NumberSequence`/`ColorSequence` aren't creatable either,
-  matching this file's separate "eight `Variant` types" bullet's own
-  editors-are-their-own-PRs rule (an attribute already holding either
-  still renders, read-only).
+  `.`/`-`/`/`/`_`, ≤100 characters, no `RBX` prefix). `CFrame` is a
+  creatable type now: `rbx_dom::attributes` reads and writes type `0x14` (a
+  position and either a one-byte axis-aligned rotation id or nine raw
+  floats), checked byte for byte against the two examples in `rojo-rbx/
+  rbx-dom`'s attribute format documentation — and, since a blob is packed
+  end to end, an instance whose attributes held a `CFrame` no longer loses
+  every attribute stored after it. What's still open:
+  `NumberSequence`/`ColorSequence` aren't creatable, matching this file's
+  separate "eight `Variant` types" bullet's own editors-are-their-own-PRs
+  rule (an attribute already holding either still renders, read-only).
 - [ ] 📋 **A dedicated UI-editing mode for `StarterGui`.** Today the
   viewport is always the 3D `Workspace` scene; editing a `ScreenGui`'s
   layout means selecting its descendants through the Explorer tree alone,
@@ -1392,20 +1411,27 @@ against `Roblox/creator-docs` rather than assumed:
   "Light Icons" checkbox in the Explorer panel's own overflow menu, next to
   "Show all services" — picks between them at runtime, dark by default,
   without a rebuild, persisted the same way `settings.rs`'s existing
-  quality/service-visibility settings are. Colours/spacing/fonts elsewhere
-  are still Rust constants throughout `rbx_studio`/`gpui_kit` — still open:
-  - Swapping in a **different icon pack** entirely: a directory (or bundle)
-    of SVGs named by `ClassName`/tile-role, loaded instead of the built-in
-    set at startup, with the existing Lucide fallback still covering
-    anything a pack leaves out.
-  - A **theme** format: the editor's palette (panel/accent/text colours,
-    maybe spacing) as data, not compiled-in constants, switchable without
-    a rebuild.
-  - Both icon packs and themes user-installable side-by-side (a
-    themes/icons directory under the same cache root
-    `rbx_assets::AssetCache` already owns) so people can publish and swap
-    packs without forking the project — the actual goal behind spec'ing a
-    from-scratch icon kit in the first place.
+  quality/service-visibility settings are.
+  - **Installable icon packs** (`packs.rs`, `class_icons.rs`): a folder of
+    SVGs under `icon_packs/<name>/` in the config directory, named by
+    `ClassName` (`Part.svg`) or by the kit's tile slug
+    (`humanoid-description.svg`, reaching every class that shares the
+    tile), layered *over* the built-in kit — a pack of three icons is a
+    pack, whatever it leaves out is still the kit's and then Lucide's. The
+    Explorer's overflow menu lists what is installed and the choice
+    persists in `appearance.json`. A drawing is scaled from its own size,
+    not assumed 16x16, and one that will not parse falls through to the kit.
+  - **Installable themes**: a toolkit `ThemeSet` JSON file under
+    `themes/<name>.json`, named by `appearance.json`'s `theme`; its first
+    dark theme (under a name the registry does not already hold — it
+    ignores a duplicate) replaces the built-in at startup. Names read from
+    `appearance.json` are refused unless they are one plain path segment.
+  Still open: a theme reaches only the toolkit's own widgets — the chrome
+  this editor draws itself (`tokens.rs`, hundreds of call sites) still
+  reads compiled-in values, so palette, spacing and type scale are not yet
+  data; there is no in-editor theme chooser (edit `appearance.json`) and no
+  pack browser or installer, so a pack is copied in by hand; the icon pack
+  is chosen at runtime but a theme takes effect on the next launch.
 - [x] 🚧 **Soften the editor's visual theme — calmer and lower-contrast,
   closer to real Studio but gentler.** Today's panels are high-contrast
   flat blocks: near-pure black/white backgrounds, hard 1px borders, sharp
@@ -1498,9 +1524,9 @@ against `Roblox/creator-docs` rather than assumed:
   feedback is instant, and keyboard arrow-navigation inside the hand-built
   menus isn't wired. `UX_GUIDELINES.md` §11 lists every deviation from the
   frame with its reason, and §1 states where the editor stands against the
-  reference guidance's Stage 1/2/3 — failures included. This also still
-  ships one built-in theme rather than the user-installable theme packs the
-  item above this one lists as open.
+  reference guidance's Stage 1/2/3 — failures included. Its palette is
+  still the one built-in; a user's own theme file now replaces the
+  toolkit's colours but not `tokens.rs`'s (see the item above this one).
 
 ### Play / Test workflow
 - [ ] 📋 The sandbox-place design (private per-developer place, injected
@@ -1526,12 +1552,13 @@ against `Roblox/creator-docs` rather than assumed:
     title bar, beside the level filter, matching case-insensitively against
     both halves of what a row shows (the command and the result) and
     narrowing *within* the level filter rather than replacing it
-    (`OutputLog::filtered`). Still open:
-    `TestService.Message`'s blue/info kind, which needs the sandbox before
-    anything here can produce it; and the duplicate-display gap itself —
-    every Command Bar run's own immediate feedback still shows twice, once
-    in `command_bar::Feedback`'s own label and again as the Output dock's
-    permanent row — left untouched.
+    (`OutputLog::filtered`). The duplicate-display gap is closed: a Command
+    Bar run's outcome used to show twice, once in `command_bar::Feedback`'s
+    label and again as the Output dock's permanent row; the label now
+    appears only while the dock is collapsed
+    (`Feedback::shown_inline`), when it is the one place the result would
+    otherwise be lost. Still open: `TestService.Message`'s blue/info kind,
+    which needs the sandbox before anything here can produce it.
   - **Sandbox-dependent**: filtering by **context** (`Client`/`Server`/
     `User Plugin`) only means something once the sandbox's client/server
     split exists to produce it; **Show Context** and **Show Source**
