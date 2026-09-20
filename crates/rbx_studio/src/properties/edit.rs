@@ -10,8 +10,12 @@ use rbx_dom::{
 use rbx_reflection::ReflectionDatabase;
 
 mod font;
+mod sequence;
 
 use font::{font_text, parse_font, synced};
+use sequence::{
+    color_sequence_text, number_sequence_text, parse_color_sequence, parse_number_sequence,
+};
 
 /// `Name` is not a key in `Instance::properties()` — the panel synthesizes a
 /// row for it and [`commit`] routes it to `WeakDom::set_name` instead of
@@ -92,6 +96,11 @@ pub(crate) fn edit_text(value: &Variant) -> Option<String> {
             rect.min.x, rect.min.y, rect.max.x, rect.max.y
         )),
         Variant::Font(font) => Some(font_text(font)),
+        // Keypoints along a `;`, each one's numbers along a `,` — see
+        // `sequence`, which also carries why a one-line field rather than
+        // the curve/gradient widget these two eventually want.
+        Variant::NumberSequence(sequence) => Some(number_sequence_text(sequence)),
+        Variant::ColorSequence(sequence) => Some(color_sequence_text(sequence)),
         // A `Default` seeds from [`DEFAULT_PHYSICAL`] for the same reason an
         // absent `OptionalCFrame` seeds from the identity: the five fields
         // are hidden until the row's Custom box turns them on, and that is
@@ -352,6 +361,10 @@ pub(crate) fn parse(
             }))
         }
         Variant::Font(_) => parse_font(text).map(Variant::Font),
+        Variant::NumberSequence(_) => parse_number_sequence(text).map(Variant::NumberSequence),
+        Variant::ColorSequence(current) => {
+            parse_color_sequence(current, text).map(Variant::ColorSequence)
+        }
         Variant::PhysicalProperties(current) => parse_physical(current, text),
         other => Err(format!("{} is read-only", type_name(other))),
     }
@@ -565,8 +578,6 @@ fn type_name(value: &Variant) -> &'static str {
         Variant::Axes(_) => "Axes",
         Variant::OptionalCFrame(_) => "OptionalCFrame",
         Variant::Ref(_) => "Ref",
-        Variant::NumberSequence(_) => "NumberSequence",
-        Variant::ColorSequence(_) => "ColorSequence",
         Variant::Rect(_) => "Rect",
         Variant::PhysicalProperties(_) => "PhysicalProperties",
         Variant::SharedString(_) => "SharedString",

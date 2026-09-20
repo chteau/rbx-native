@@ -14,8 +14,9 @@
 use std::collections::BTreeMap;
 
 use rbx_dom::{
-    CFrameData, Color3Data, Font, FontStyle, NumberRange, Rect, Ref, UDim, UDim2, Variant,
-    Vector2Data, Vector3Data, WeakDom,
+    CFrameData, Color3Data, ColorSequence, ColorSequenceKeypoint, Font, FontStyle, NumberRange,
+    NumberSequence, NumberSequenceKeypoint, Rect, Ref, UDim, UDim2, Variant, Vector2Data,
+    Vector3Data, WeakDom,
 };
 use rbx_reflection::ReflectionDatabase;
 
@@ -59,15 +60,11 @@ pub(crate) fn attribute_of_row(row: &str) -> Option<&str> {
     row.strip_prefix(ROW_PREFIX)
 }
 
-/// The Roblox attribute types this editor can create — every type
-/// `Instance:SetAttribute` accepts (`studio/properties.md#instance-attributes`)
-/// except two left out deliberately:
-///
-/// - `NumberSequence`/`ColorSequence` have no Properties-panel editor yet —
-///   `ROADMAP.md`'s "eight `Variant` types" bullet is explicit that each is
-///   its own PR, and this one is not it. An attribute already holding either
-///   (from a file authored elsewhere) still decodes and renders, read-only,
-///   through the ordinary fallback — it just cannot be *created* here.
+/// The Roblox attribute types this editor can create: every type
+/// `Instance:SetAttribute` accepts (`studio/properties.md#instance-attributes`),
+/// none left out. Each one's value then edits through the Properties panel's
+/// own widget for that type — see [`edit_kind`] — so this list can only ever
+/// grow as far as `properties::edit::edit_text` has an arm.
 pub(crate) const ATTRIBUTE_TYPES: &[&str] = &[
     "String",
     "Boolean",
@@ -78,11 +75,23 @@ pub(crate) const ATTRIBUTE_TYPES: &[&str] = &[
     "Vector2",
     "Vector3",
     "CFrame",
+    "NumberSequence",
+    "ColorSequence",
     "NumberRange",
     "Rect",
     "BrickColor",
     "Font",
 ];
+
+/// What every freshly created colour-shaped attribute starts at — a plain
+/// `Color3` and both ends of a `ColorSequence`. White rather than black so a
+/// new value is visible against this panel's own dark surface the moment it
+/// appears.
+const WHITE: Color3Data = Color3Data {
+    r: 1.0,
+    g: 1.0,
+    b: 1.0,
+};
 
 /// The value a freshly created attribute of `type_name` starts with —
 /// `type_name` must be one of [`ATTRIBUTE_TYPES`]'s own spellings.
@@ -94,11 +103,7 @@ pub(crate) fn default_value(type_name: &str) -> Option<Variant> {
         // way Lua itself doesn't; `Float64` is the widest of this crate's
         // three numeric variants, so it loses the least starting out.
         "Number" => Variant::Float64(0.0),
-        "Color3" => Variant::Color3(Color3Data {
-            r: 1.0,
-            g: 1.0,
-            b: 1.0,
-        }),
+        "Color3" => Variant::Color3(WHITE),
         "UDim" => Variant::UDim(UDim {
             scale: 0.0,
             offset: 0,
@@ -126,6 +131,40 @@ pub(crate) fn default_value(type_name: &str) -> Option<Variant> {
                 z: 0.0,
             },
             rotation: rbx_dom::rotation::IDENTITY,
+        }),
+        // Both start flat, with exactly the two keypoints Roblox's own
+        // `NumberSequence.new`/`ColorSequence.new` require as a minimum, at
+        // the times 0 and 1 they require at the ends — so the value a fresh
+        // attribute holds is one the editor itself would accept back (see
+        // `properties::edit::sequence`'s own bounds check). What Studio's
+        // "+" picks for these was not checked against a real client.
+        "NumberSequence" => Variant::NumberSequence(NumberSequence {
+            keypoints: vec![
+                NumberSequenceKeypoint {
+                    time: 0.0,
+                    value: 0.0,
+                    envelope: 0.0,
+                },
+                NumberSequenceKeypoint {
+                    time: 1.0,
+                    value: 0.0,
+                    envelope: 0.0,
+                },
+            ],
+        }),
+        "ColorSequence" => Variant::ColorSequence(ColorSequence {
+            keypoints: vec![
+                ColorSequenceKeypoint {
+                    time: 0.0,
+                    color: WHITE,
+                    envelope: 0.0,
+                },
+                ColorSequenceKeypoint {
+                    time: 1.0,
+                    color: WHITE,
+                    envelope: 0.0,
+                },
+            ],
         }),
         "NumberRange" => Variant::NumberRange(NumberRange { min: 0.0, max: 0.0 }),
         "Rect" => Variant::Rect(Rect {
@@ -191,10 +230,11 @@ pub(crate) fn tags_matching(dom: &WeakDom, reference: Ref, filter: &str) -> Vec<
 /// exact same mapping an ordinary property of that type gets (see
 /// `properties::value_edit_kind`), so the value routes through the
 /// Properties panel's existing per-type widgets rather than a parallel set.
-/// `None` for a type with no editor (an attribute this editor did not
-/// create — `NumberSequence`/`ColorSequence` — or one this crate cannot
-/// parse text back into at all), which keeps the row read-only exactly like
-/// `Properties::edit_kind` does for the same case.
+/// `None` for a type this crate cannot parse text back into at all, which
+/// keeps the row read-only exactly like `Properties::edit_kind` does for the
+/// same case. Every type in [`ATTRIBUTE_TYPES`] has one, so in practice that
+/// is only reachable for an attribute some other tool wrote in a type
+/// `Instance:SetAttribute` does not accept.
 pub(crate) fn edit_kind(value: &Variant) -> Option<EditKind> {
     let text = super::edit::edit_text(value)?;
     Some(value_edit_kind(value, text))
