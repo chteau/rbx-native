@@ -167,6 +167,31 @@ impl Loaded {
         warnings
     }
 
+    /// Asks for the images the freshly re-planned GUI trees name, and joins
+    /// whichever of them have already decoded — the GUI half of
+    /// [`Loaded::resolve_effect_images`], on its own because a patched edit
+    /// re-plans the GUI without touching the effect lists.
+    ///
+    /// Without this an `ImageLabel` pointed at an asset the place never
+    /// showed would draw the placeholder for the rest of the session: the
+    /// re-plan names the reference, but nothing asks for it, and a reference
+    /// nobody asked for never lands (see `Headless::take_landed_assets`).
+    /// Merged into `images` rather than replacing it, so the effect textures
+    /// resolved beside them are left alone.
+    ///
+    /// Warnings are dropped like [`Loaded::resolve_fonts`]'s are: a
+    /// streaming loader reports those through `Resident::poll`, and this
+    /// path only ever runs on one.
+    pub(crate) fn resolve_gui_images(&mut self, resident: &mut Resident) {
+        let references = self.scene.gui_assets();
+        if references.is_empty() {
+            return;
+        }
+        self.want(&references);
+        let (_, _warnings) = resident.images(&references);
+        self.images.extend(resident.answered(&references));
+    }
+
     /// Asks for the fonts the GUI trees' text wants, in the two stages a
     /// Roblox font takes: a family is a JSON file listing its faces, and only
     /// once that is in is it known which face file a weight and style come to

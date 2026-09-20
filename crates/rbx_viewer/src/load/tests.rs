@@ -427,3 +427,113 @@ fn a_streaming_load_lands_a_font_family_and_then_its_face() {
     assert_eq!(bytes.as_slice(), &[7, 0, 0]);
     assert_eq!(resident.in_flight(), 0, "the regular face was never wanted");
 }
+
+/// [`dom_with_unresolvable_decal`] plus a `ScreenGui` holding one
+/// `ImageLabel` that names no image of its own yet, and that label's
+/// referent.
+fn dom_with_an_image_label() -> (WeakDom, Ref) {
+    let mut dom = dom_with_unresolvable_decal();
+    let screen = Ref::new(9300);
+    dom.insert(Instance::new(screen, "ScreenGui", "ScreenGui"));
+    dom.set_parent(screen, None);
+    let label = Ref::new(9301);
+    dom.insert(Instance::new(label, "ImageLabel", "ImageLabel"));
+    dom.set_parent(label, Some(screen));
+    (dom, label)
+}
+
+// An `ImageLabel` pointed at an asset the place never showed: the re-plan
+// names the reference, and only this asks the loader for it. A reference
+// nobody asked for never lands (see `Headless::take_landed_assets`), so
+// without this the label draws the placeholder for the rest of the session.
+#[test]
+fn an_image_a_gui_edit_first_named_is_asked_for() {
+    let database = ReflectionDatabase::embedded();
+    let (mut dom, label) = dom_with_an_image_label();
+    let mut resident = Resident::fed_by(std::sync::Arc::new(FontShelf));
+    let mut loaded =
+        Loaded::from_dom(&dom, &database, textures_only(), &mut resident).expect("load");
+
+    let edited = AssetRef::parse("rbxassetid://424242").expect("a reference");
+    assert!(
+        !loaded.wants_any(std::slice::from_ref(&edited)),
+        "nothing in the place as loaded names it"
+    );
+
+    dom.set_property(
+        label,
+        "Image",
+        Variant::String("rbxassetid://424242".to_string()),
+    )
+    .unwrap();
+    loaded.scene_mut().replan_gui_screens(&dom, &database);
+    loaded.resolve_gui_images(&mut resident);
+
+    assert!(
+        loaded.wants_any(&[edited]),
+        "the re-planned image is what the loader is now waiting on"
+    );
+}
+
+// A `Decal`'s own properties edited: the renderer is patched with the face
+// straight away, but the decor plan is what every later asset landing
+// re-assembles the decals from — a plan still naming the image the file was
+// read with would undo the edit the moment anything lands, including the
+// image the edit itself just asked for.
+#[test]
+fn a_decals_own_edits_reach_the_decor_plan() {
+    let database = ReflectionDatabase::embedded();
+    let mut dom = dom_with_unresolvable_decal();
+    let part = Ref::new(9101);
+    let decal = Ref::new(9102);
+    let mut resident = Resident::fed_by(std::sync::Arc::new(FontShelf));
+    let mut loaded =
+        Loaded::from_dom(&dom, &database, textures_only(), &mut resident).expect("load");
+
+    // The plan carries the default `Sky`'s six panels alongside the faces,
+    // so each step asks after the decal's own image rather than the lot.
+    let opened =
+        AssetRef::parse("rbxasset://unknown-native-package/none.png").expect("a reference");
+    let edited = AssetRef::parse("rbxassetid://424242").expect("a reference");
+    assert!(loaded.decor_plan.references().contains(&opened));
+
+    dom.set_property(
+        decal,
+        "Texture",
+        Variant::String("rbxassetid://424242".to_string()),
+    )
+    .unwrap();
+    loaded.replan_faces(&dom, &database, part);
+    let planned = loaded.decor_plan.references();
+    assert!(planned.contains(&edited), "the typed image is planned");
+    assert!(!planned.contains(&opened), "and the one it replaced is not");
+    assert_eq!(
+        loaded.decor_plan,
+        rebuilt_plan(&dom, &database, &mut resident),
+        "the patched plan is the plan a reload would have built"
+    );
+
+    dom.remove(decal);
+    loaded.replan_faces(&dom, &database, part);
+    assert!(
+        !loaded.decor_plan.references().contains(&edited),
+        "a decal taken off its part leaves nothing planned for it"
+    );
+    assert_eq!(
+        loaded.decor_plan,
+        rebuilt_plan(&dom, &database, &mut resident)
+    );
+}
+
+/// The decor plan a fresh read of `dom` would build — the bar a patched one
+/// has to meet, since it is what every later asset landing re-assembles the
+/// decals from.
+fn rebuilt_plan(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    resident: &mut Resident,
+) -> textures::Plan {
+    Loaded::from_dom(dom, database, textures_only(), resident)
+        .expect("load")
+        .decor_plan
+}

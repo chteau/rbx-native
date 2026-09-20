@@ -2,6 +2,21 @@
 
 ## 2026-09-21
 
+- **An image a Properties edit first names now actually arrives.** Pointing
+  an `ImageLabel`/`ImageButton` at an asset the place had never shown
+  re-planned the GUI with the new reference but never asked the loader for
+  it, and a reference nobody asks for never lands — so the label drew the
+  placeholder until the next reload. A patched GUI now asks for its images
+  the way it already asks for its fonts. — @chteau
+- **A `Decal`/`Texture` edit is no longer quietly undone by the next asset
+  that lands.** Editing one of the faces themselves — a new `Texture`, a
+  different `Face` or tint, one added or deleted — patched the renderer but
+  left the *decor plan* as the file was read, and the plan is what every
+  later landing re-assembles the decals from. The very image the edit asked
+  for was enough to put the old one back. The plan is now re-read from the
+  DOM for the part a face edit touches, as it already was for a part that
+  moves. — @chteau
+
 - **`NumberSequence` and `ColorSequence` have a real editor, and are
   creatable as attributes.** Both types used to render as read-only text,
   which is also why neither could be added as an attribute: the Attributes
