@@ -178,7 +178,10 @@
   so the button and the command cannot drift — and a selection holding
   nothing but services reads as empty, which a plain "is anything
   selected?" would have got wrong. Group/Ungroup have the same flaw and a
-  harder predicate (`common_parent`); they are untouched. — @chteau
+  same treatment: `group::has_groupable` is `common_parent` returning
+  `Some`, and `has_ungroupable` is "one `Model` with something in it among
+  the selection", which is exactly what `ungroup_selected` acts on and
+  ignores the rest of. — @chteau
 
 - **The Windows row in `README.md` was two claims out of date.** It said
   the project "has never been built or run on a real Windows machine" long
@@ -190,6 +193,15 @@
   headless. `publish-screenshot.ps1`'s header claimed it was untested on
   Windows after being run end to end on Windows 11; that line is what let
   its parse bug sit, so it now says what was actually run. — @chteau
+
+- **The roadmap says Windows is built and tested, because it is.** "A
+  first real build on Windows, and CI coverage for it" had been sitting
+  unchecked since the `windows-latest` job landed, and the Tooling/CI
+  bullet still claimed Windows had no job at all. The first is checked off
+  and says what the job does and does not cover; the second is now about
+  macOS, which is the only platform the claim was still true of. Neither
+  is marked in-progress — a bullet that is half true is two bullets. —
+  @chteau
 
 ## 2026-09-19
 

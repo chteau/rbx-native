@@ -1681,16 +1681,23 @@ against `Roblox/creator-docs` rather than assumed:
 - [ ] 📋 Mouse capture in the free-flight camera — implemented for X11
   only today (`x11rb`/XFixes); needs a Win32 `ClipCursor`/`SetCursorPos`
   backend.
-- [ ] 📋 A first real build on Windows, and CI coverage for it — nothing
-  here has ever been verified on the platform beyond code reading.
+- [x] A first real build on Windows, and CI coverage for it — every
+  change now runs `cargo clippy -D warnings`, `cargo build` and
+  `cargo test --workspace` on `windows-latest`
+  (`.github/workflows/ci.yml`). The workspace compiles and its tests pass
+  there. What that job cannot answer is anything about the editor
+  *running*: it is headless, so no window, GPU surface or input path has
+  been exercised on Windows. Launching the editor there is still open, and
+  mouse capture (the bullet above) is the one gap already known about.
 
 ### Tooling / CI
 - [x] Daily API-Dump sync (`.github/workflows/sync-api-dump.yml`).
 - [ ] 📋 A job that rebuilds against the current Studio version and
   compares parsed output to reference dumps, to catch a format drift
   before a user does.
-- [ ] 📋 Cross-platform build CI (Linux is exercised constantly by
-  development itself; Windows and macOS have none).
+- [ ] 📋 macOS build CI. Linux is exercised constantly by development
+  itself and Windows has had a job since the one under "Platform:
+  Windows"; macOS has neither, and is not a target yet either.
 
 ## Explicitly impossible without Roblox's engine
 
