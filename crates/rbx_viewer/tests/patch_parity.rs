@@ -512,3 +512,67 @@ fn blank(pixels: &[u8]) -> bool {
     let first = chunks.next().unwrap_or(&[0; 4]);
     chunks.all(|pixel| pixel == first)
 }
+
+/// Selecting a part has to show in the frame: the cue is the silhouette of
+/// the geometry it covers (see `renderer::cue`), so a selected part draws
+/// differently from an unselected one — and goes back to the unselected
+/// picture when the selection is cleared.
+#[test]
+#[ignore = "needs a GPU"]
+fn a_selected_part_is_cued_in_the_frame() {
+    let path = fixture();
+    let dom = rbx_viewer::read_place(&path).expect("the fixture parses");
+    let mut headless = Headless::load(&path, true).expect("the fixture loads");
+    let bare = frame(&mut headless);
+
+    let part = *parts(&dom).first().expect("the fixture has a part");
+    headless.set_selection(&[rbx_viewer::pick::Selected::read(
+        &dom,
+        &rbx_reflection::ReflectionDatabase::embedded(),
+        part,
+    )]);
+    let cued = frame(&mut headless);
+    assert!(
+        differing(&bare, &cued) > 0,
+        "a selected part drew exactly the unselected frame: no cue at all"
+    );
+
+    headless.set_selection(&[]);
+    let cleared = frame(&mut headless);
+    assert_eq!(
+        differing(&bare, &cleared),
+        0,
+        "clearing the selection left the cue behind"
+    );
+}
+
+/// The same, at every graphics level — the cue's mask follows the scene
+/// pass's own sample count, and a multisampled one is a different texture
+/// type in the shader (see `renderer::highlight::pipelines`). A level that
+/// silently dropped the cue would leave the editor with nothing to show for
+/// a selection, which is exactly what its users would report as "the
+/// outline is gone".
+#[test]
+#[ignore = "needs a GPU"]
+fn a_selected_part_is_cued_at_every_graphics_level() {
+    let path = fixture();
+    let dom = rbx_viewer::read_place(&path).expect("the fixture parses");
+    let part = *parts(&dom).first().expect("the fixture has a part");
+    let selected = rbx_viewer::pick::Selected::read(
+        &dom,
+        &rbx_reflection::ReflectionDatabase::embedded(),
+        part,
+    );
+
+    for level in [1u8, 8, 14, 21] {
+        let mut headless = Headless::load(&path, true).expect("the fixture loads");
+        headless.set_quality(rbx_viewer::QualityLevel::Level(level));
+        let bare = frame(&mut headless);
+        headless.set_selection(std::slice::from_ref(&selected));
+        let cued = frame(&mut headless);
+        assert!(
+            differing(&bare, &cued) > 0,
+            "level {level}: a selected part drew exactly the unselected frame"
+        );
+    }
+}

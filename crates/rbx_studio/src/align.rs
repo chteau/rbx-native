@@ -300,11 +300,11 @@ pub(crate) fn preview(entries: &[Vec<Target>], active_index: usize, options: Opt
 /// The entries an alignment actually moves, with their index — everything
 /// selected except the active object, which the docs say "will not move
 /// during the operation".
-fn moving<'a>(
-    entries: &'a [Vec<Target>],
+fn moving(
+    entries: &[Vec<Target>],
     active_index: usize,
     options: Options,
-) -> impl Iterator<Item = (usize, &'a Vec<Target>)> {
+) -> impl Iterator<Item = (usize, &Vec<Target>)> {
     entries.iter().enumerate().filter(move |&(index, _)| {
         !(matches!(options.relative_to, RelativeTo::ActiveObject) && index == active_index)
     })

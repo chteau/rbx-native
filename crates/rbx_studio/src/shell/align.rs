@@ -22,6 +22,10 @@ use super::Shell;
 /// screenshot of parts actually lining up, since nothing else can click the
 /// popover's own buttons on the editor's behalf (see `AGENTS.md`'s safety
 /// rules).
+///
+/// A `preview` among those words shows the live preview instead of
+/// committing: what opening the popover with those toggles set would draw,
+/// for a screenshot of where an alignment *would* put things.
 pub(crate) const ALIGN_VARIABLE: &str = "RBX_STUDIO_ALIGN";
 
 impl Shell {
@@ -140,12 +144,18 @@ impl Shell {
                 "local" => self.align.space = Space::Local,
                 "bounds" => self.align.relative_to = RelativeTo::SelectionBounds,
                 "active" => self.align.relative_to = RelativeTo::ActiveObject,
-                "" => {}
+                // Handled after the loop: it picks what to do with the
+                // toggles rather than setting one of them.
+                "preview" | "" => {}
                 other => eprintln!("rbxstudio: {ALIGN_VARIABLE}: no option called {other:?}"),
             }
         }
         self.align.set_axes(axes);
-        self.align_selected(cx);
+        if spec.split(',').any(|word| word.trim() == "preview") {
+            self.align_opened(true, cx);
+        } else {
+            self.align_selected(cx);
+        }
     }
 
     /// The toolbar's own trigger: a compact popover (see this crate's

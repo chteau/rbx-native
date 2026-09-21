@@ -13,6 +13,13 @@
 //! the docs state is applied here as stated and marked as such; every other
 //! number is this renderer's own, picked to read as the effect at its
 //! documented ranges, and marked as that instead.
+//!
+//! `Explosion` is the fourth class of this family and is deliberately not
+//! among them: it is a one-shot that plays when it is parented into the
+//! world and destroys itself afterwards (its `BlastRadius` and
+//! `BlastPressure` are a physics impulse, not a standing effect), so an
+//! `Explosion` sitting in a place file has nothing to draw — the same
+//! reading this project already takes of `VideoFrame` playback.
 
 use glam::Vec3;
 use rbx_assets::AssetRef;
