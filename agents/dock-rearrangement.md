@@ -1,9 +1,20 @@
 # Dock rearrangement — architecture note
 
-**Status: not implemented.** UX Fixes v5 §5 asked for drag-to-rearrange
-docks, with the instruction to flag it first if it needs rework of the
-persistent-shell architecture. It does. This is that flag, and the design
-the rework would follow.
+**Status: shipped**, and not quite as designed below. Keep reading for the
+reasoning — it is still the argument for why source order had to become
+data — but the shape that landed is `shell::layout`'s, not this file's
+`Slot` tree.
+
+What changed and why: the recursive `Split { axis, fraction, before, after }`
+sketched here nests arbitrarily, and nothing in the gesture can *ask* for
+deeper nesting than "an edge holds a stack of docks, a dock holds tabs".
+A drop can name a strip or a half, and that is two levels. The extra
+generality would have been structure nobody could reach, so the shipped
+model is those two levels, plus a torn-out panel in a window of its own —
+which this file does not cover at all. The sequencing advice below was
+followed: the menu half was built first and is still there.
+
+The original flag follows.
 
 ## What exists today
 

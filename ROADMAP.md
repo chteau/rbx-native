@@ -391,6 +391,20 @@ Roblox's own engine.
 - [x] Dockable, rearrangeable panel layout (`gpui_component::dock`) with
   persistence — layout position/size/docking state saved across restarts,
   plus persisted settings (quality, service visibility).
+- [x] **Drag-to-rearrange docks** — real now, by the tab. A panel's home is
+  data (`shell::layout`) rather than the order of three `.child()` calls:
+  an edge holds a stack of docks, a dock holds tabs, and dragging a tab
+  offers both — land on a strip to join it, land on a dock's half to make
+  a new one beside it, at the size it will be. An edge holding nothing
+  grows a ghost dock while a drag is in flight, easing open and shut, so
+  an edge you emptied can be filled again. Drag a tab past the window and
+  it tears out into a window of its own; a dock can be closed from its tab
+  and reopened from the ribbon's Home tab or the View menu. The whole
+  arrangement persists. The non-drag half is there too and is not
+  decoration — "Move to Left/Right/Bottom", "Float" and "Close" on each
+  dock's own menu, going through the same one transform, because the
+  reference guidance treats drag-only rearrangement as a failure rather
+  than a gap.
 - [x] Live camera pose reflected into `Workspace.CurrentCamera.CFrame` as
   you fly, throttled and explicitly excluded from undo history.
 - [x] Fast-path scene updates: a `Lighting`/`Atmosphere`/post-effect edit or
@@ -1106,19 +1120,6 @@ against `Roblox/creator-docs` rather than assumed:
   interactive use (a human editing live) hits the same thing; needs its
   own investigation of the render thread's state right after
   `Headless::reload`.
-- [ ] 📋 **Drag-to-rearrange docks.** The fixed shell that replaced the
-  toolkit's `DockArea` cannot express it: a panel's position is the order of
-  three `.child()` calls, not data, so there is nothing to change at
-  runtime. Re-adding it needs a layout tree (`Slot`/`Panel`) in place of
-  those three hardcoded slots — designed end to end, with sequencing and a
-  recommendation, in
-  [`agents/dock-rearrangement.md`](agents/dock-rearrangement.md).
-  Build the **non-drag** half first — "Move to Left/Right/Bottom", "Float",
-  on each dock's existing overflow menu — because that is the keyboard-
-  operable half and the reference guidance is explicit that drag-only
-  rearrangement is inaccessible. The drag is then a pure addition rather
-  than a rewrite; doing it first means building it against three hardcoded
-  slots and throwing it away.
 - [ ] 📋 **The accessibility work the reference guidance calls Stage 2 and
   Stage 3, minus what already shipped.** Stage 1 is met and asserted in
   tests; these are the rest, each small enough to ride along with other

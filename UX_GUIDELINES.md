@@ -476,7 +476,9 @@ to lie — not a shortcut:
 | 36px inputs, 8px radius, 1px border (the v5 fallback spec) | 31px, 3px radius, no border | the `InputsStyle` frame gives real numbers, and §7.1 says the frame wins over the fallback |
 | Select chevron 12×12 at 12px inset | the toolkit's own, 15×15 at 8px | the frame's numbers, drawn by `Select` itself; `appearance(false)` removes its box but keeps its chevron |
 | 120ms 1.06× icon hover animation | instant size change | GPUI has no property transitions and cannot transform a `Div` |
-| Drag-to-rearrange docks | not implemented | needs a layout tree in place of three hardcoded slots — see [`agents/dock-rearrangement.md`](agents/dock-rearrangement.md) |
+| One dock per edge, fixed | an edge holds a stack of docks, each with tabs, all of it draggable by the tab | the frame draws one arrangement and says nothing about changing it, so §1's rule applies and this file decides. A drop offers both readings — a dock's strip joins it, a dock's half splits the edge — because a single whole-dock target cannot ask which one you meant |
+| No drop affordance at all | the target *is* the element that takes the drop, and an empty edge grows a ghost dock at the size the dock will be | a rectangle computed from pointer coordinates is a second piece of geometry that can disagree with where the panel actually lands. Making the highlight the landing site removes the disagreement rather than testing for it |
+| A torn-out panel | its own floating window, rendering the same `Shell` | the panel is not copied — see `shell::panel_window`. On X11 a window manager may ignore `WindowKind::Floating`, so the editor raises its own children on its rising edge |
 | Focus ring on menu rows and tree rows | not present | neither has a focus handle; the tree's belongs to the toolkit and is not exposed |
 | Menu bar: File · Edit · View · Plugins · Test · Window · Help | File · Edit · Model · View | the other three have no commands behind them; an empty menu is worse than an absent one, and the menu bar's own greyed items already carry "not yet" |
 | Close "×" on document and dock tabs | absent on both | a document here is a view of the one open place, not a file that closes independently, and a dock's panel can't close at all. A mark that does nothing is a control that lies |
@@ -487,7 +489,7 @@ to lie — not a shortcut:
 | Ribbon stack of three rows | two, where the design's third has no command behind it | a third empty row is decoration |
 | 0.5px `#2F2F2F` / `#353535` hairlines | same colours at 1px | as above |
 | `scale(0.98)` press feedback | pressed background | GPUI's style system has no transform |
-| Hover & colour transitions | instant state changes | no property transitions in GPUI |
+| Hover & colour transitions | instant state changes | GPUI has no CSS-style property transitions. `gpui_base::transition` can drive one value explicitly, which is what the ghost dock's ease uses (and it honours Reduce Motion); applying it to every hover state is a different, larger job |
 | `:focus-visible` (keyboard only) | focus ring on any focus | GPUI's focus doesn't distinguish input source |
 | Tooltip pointer and delay | toolkit tooltip | hover timing, flipping and layering are already solved there |
 | Letter-spacing | none | GPUI has no letter-spacing |
