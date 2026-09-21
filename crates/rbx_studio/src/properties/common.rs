@@ -22,12 +22,23 @@ impl Properties {
     /// for a lone selected `Folder` (see `shell::folder_color`), used only to
     /// seed its synthetic colour row — which a multi-selection never gets,
     /// since that store is written one folder at a time.
+    ///
+    /// A multi-selection's rows are kept until the selection changes or
+    /// [`Properties::dom_changed`] says the DOM did.
     pub(crate) fn rows(
         &self,
         dom: &WeakDom,
         selection: &[Ref],
         folder_color: Option<(u8, u8, u8)>,
     ) -> Vec<PropertyRow> {
+        let several = selection.len() > 1;
+        if several {
+            if let Some((cached, rows)) = &*self.common.borrow() {
+                if cached == selection {
+                    return rows.clone();
+                }
+            }
+        }
         let mut instances = selection
             .iter()
             .filter_map(|&reference| Some((reference, dom.get(reference)?)));
@@ -65,6 +76,9 @@ impl Properties {
             self.common(dom, class, &named, &others)
         };
         rows.sort_by(|left, right| left.name.cmp(&right.name));
+        if several {
+            *self.common.borrow_mut() = Some((selection.to_vec(), rows.clone()));
+        }
         rows
     }
 
@@ -78,9 +92,6 @@ impl Properties {
         anchor: &[Named],
         others: &[(Ref, &Instance, Rc<Sheet>)],
     ) -> Vec<PropertyRow> {
-        // ponytail: rebuilt every frame, O(selected × properties) — a few
-        // milliseconds for a thousand parts; memoise on the selection and a
-        // DOM change count if selections that size ever make the panel lag.
         anchor
             .iter()
             .filter_map(|named| {

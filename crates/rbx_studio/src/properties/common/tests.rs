@@ -195,6 +195,49 @@ fn the_title_names_the_nearest_shared_class_and_the_count() {
 }
 
 #[test]
+fn a_multi_selections_rows_are_kept_until_the_dom_changes() {
+    let (mut dom, properties, refs) = place(&[
+        ("Part", "A", vec![("Transparency", Variant::Float32(0.0))]),
+        ("Part", "B", vec![("Transparency", Variant::Float32(1.0))]),
+    ]);
+    let transparency = |dom: &WeakDom| {
+        let rows = properties.rows(dom, &refs, None);
+        let row = row(&rows, "Transparency");
+        (row.mixed, row.value.clone())
+    };
+    assert_eq!(transparency(&dom), (true, String::new()));
+
+    edit::commit_all(
+        &mut dom,
+        &ReflectionDatabase::embedded(),
+        &refs,
+        "Transparency",
+        "0.5",
+    )
+    .unwrap();
+    // Served from the cache: nothing has said the DOM changed yet.
+    assert_eq!(transparency(&dom), (true, String::new()));
+
+    properties.dom_changed();
+    assert_eq!(transparency(&dom), (false, "0.5".to_owned()));
+}
+
+#[test]
+fn another_selection_is_never_served_the_cached_rows() {
+    let (dom, properties, refs) = place(&[
+        ("Part", "A", vec![("Anchored", Variant::Bool(true))]),
+        ("Part", "B", vec![("Anchored", Variant::Bool(true))]),
+        ("Part", "C", vec![]),
+    ]);
+
+    let anchored =
+        |selection: &[Ref]| row(&properties.rows(&dom, selection, None), "Anchored").mixed;
+    assert!(!anchored(&refs[..2]));
+    assert!(anchored(&refs[1..]));
+    assert!(!anchored(&refs[..2]));
+}
+
+#[test]
 fn shared_parts_blank_only_what_differs() {
     let values = [
         &size(1.0, 2.0, 3.0),
