@@ -205,6 +205,33 @@ impl Shell {
             )
     }
 
+    /// Scrolls the dock just far enough to show the setting keyboard focus
+    /// has moved to. The list outgrows a short dock, and End or a wrapping
+    /// arrow would otherwise put focus on a row scrolled out of sight
+    /// (WCAG 2.4.11). Reads last frame's layout, which a focus move does
+    /// not change.
+    fn reveal_viewport_setting(&self) {
+        let Some(row) = self
+            .viewport_rows
+            .borrow()
+            .get(self.viewport_nav.current())
+            .copied()
+        else {
+            return;
+        };
+        let view = self.viewport_scroll.bounds();
+        let shift = if row.bottom() > view.bottom() {
+            row.bottom() - view.bottom()
+        } else if row.top() < view.top() {
+            row.top() - view.top()
+        } else {
+            return;
+        };
+        let offset = self.viewport_scroll.offset();
+        self.viewport_scroll
+            .set_offset(point(offset.x, offset.y - shift));
+    }
+
     /// The dock's trailing menu and its body: the quality and the live
     /// numbers as one column, the settings beside it — or under it, once
     /// the dock is too narrow for both.
@@ -297,6 +324,7 @@ impl Shell {
             .size_full()
             .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
                 if shell.viewport_nav.key(&event.keystroke, window, cx) {
+                    shell.reveal_viewport_setting();
                     cx.stop_propagation();
                     cx.notify();
                 }
@@ -314,14 +342,16 @@ impl Shell {
                     .text_size(tokens::text_md())
                     .line_height(tokens::line_md())
                     .child(numbers)
-                    .child(
+                    .child({
+                        let rows = self.viewport_rows.clone();
                         h_flex()
                             .flex_wrap()
                             .flex_grow_1()
                             .flex_basis(column)
                             .gap_x(tokens::group_gap())
-                            .children(settings),
-                    ),
+                            .on_children_prepainted(move |bounds, _, _| *rows.borrow_mut() = bounds)
+                            .children(settings)
+                    }),
             )
             .vertical_scrollbar(&self.viewport_scroll);
 

@@ -101,3 +101,26 @@ fn a_group_that_empties_leaves_the_focused_index_at_zero() {
     assert_eq!(nav.len.get(), 0);
     assert_eq!(nav.current.get(), 0);
 }
+
+/// The group's keys are its own only while one of its items holds focus.
+/// Its listener sits on a container that holds other controls too — the
+/// Viewport dock's quality select beside its settings — and a Home pressed
+/// in that open dropdown must stay there rather than jump into the list.
+#[gpui_kit::test]
+fn keys_pass_through_while_focus_is_outside_the_group(cx: &mut gpui_kit::TestAppContext) {
+    let cx = cx.add_empty_window();
+    cx.update(|window, cx| {
+        let nav = Roving::vertical();
+        nav.begin(&TabOrder::default(), Some(3), cx);
+        let home = Keystroke::parse("home").unwrap();
+
+        let outside = cx.focus_handle();
+        outside.focus(window, cx);
+        assert!(!nav.key(&home, window, cx), "took a key it does not own");
+        assert!(outside.is_focused(window));
+
+        nav.handle(2, cx).focus(window, cx);
+        assert!(nav.key(&home, window, cx));
+        assert!(nav.handle(0, cx).is_focused(window));
+    });
+}

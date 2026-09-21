@@ -236,6 +236,9 @@ pub(crate) struct Shell {
     /// The Viewport dock's own, for when it is docked somewhere too short
     /// for its settings — see `shell::viewport_dock`.
     viewport_scroll: ScrollHandle,
+    /// Where each of the dock's settings was laid out last frame, so a
+    /// keyboard move can scroll the one it lands on into view.
+    viewport_rows: Rc<std::cell::RefCell<Vec<Bounds<Pixels>>>>,
     /// The Output tab's free-text search box. Session-only and unpersisted,
     /// like `output_filter` beside it — a log you are still reading is not a
     /// setting.
@@ -502,6 +505,7 @@ impl Shell {
             output_show_timestamps: false,
             output_scroll: ScrollHandle::new(),
             viewport_scroll: ScrollHandle::new(),
+            viewport_rows: Rc::default(),
             output_search: cx.new(|cx| InputState::new(window, cx).placeholder("Search")),
             path,
             format,
