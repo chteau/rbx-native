@@ -127,6 +127,30 @@ fn a_missing_instance_has_no_rows() {
 }
 
 #[test]
+fn the_attribute_and_tag_blobs_never_get_an_ordinary_row() {
+    let rows = properties(&[
+        ("Anchored", Variant::Bool(true)),
+        ("Tags", Variant::String("Climbable".into())),
+        ("AttributesSerialize", Variant::String("blob".into())),
+    ])
+    .rows(part());
+
+    let names: Vec<&str> = rows.iter().map(|row| row.name.as_str()).collect();
+    assert_eq!(names, ["Anchored", "Name"]);
+}
+
+#[test]
+fn the_filter_never_turns_up_the_attribute_and_tag_blobs_either() {
+    let fixture = properties(&[
+        ("Tags", Variant::String("Climbable".into())),
+        ("AttributesSerialize", Variant::String("blob".into())),
+    ]);
+
+    assert!(fixture.rows_matching(part(), "tag").is_empty());
+    assert!(fixture.rows_matching(part(), "attributes").is_empty());
+}
+
+#[test]
 fn a_folder_gets_the_synthetic_explorer_colour_row() {
     let rows = instance_of("Folder", &[]).rows(part());
     let row = rows
@@ -446,8 +470,11 @@ fn identity_and_asset_values_keep_the_dump_spelling() {
         formatted("Capabilities", Variant::SecurityCapabilities(0x10)),
         "SecurityCapabilities(0x10)"
     );
+    // `MeshData` rather than `Tags`: both are stored as a shared blob, but
+    // the tag list has the Attributes/Tags section as its editor and so
+    // never gets a row of its own (see `attributes::is_backing_store`).
     assert_eq!(
-        formatted("Tags", Variant::SharedString(3)),
+        formatted("MeshData", Variant::SharedString(3)),
         "SharedString(3)"
     );
 }

@@ -38,6 +38,14 @@
   the shadow pass already instances. A place with no highlight in it compiles
   none of the six pipelines and allocates no mask. — @chteau
 
+- **Tags stopped showing up twice in Properties.** The panel listed every
+  property the instance carried and left out only the ones the reflection
+  dump tags `Hidden` — but `Tags` and `AttributesSerialize` are not in the
+  dump at all, so both got an ordinary row showing their packed bytes,
+  sitting a few rows above the Attributes/Tags section that is their real
+  editor. Two editors for one value, one of them useless. Neither gets a
+  row now, which is also what Studio does. — @chteau
+
 - **The insert picker's classes carry their own icons, and the kit grew
   five drawings to cover them.** A list of several hundred class names with
   nothing but text beside them is a list you read rather than scan, so each
