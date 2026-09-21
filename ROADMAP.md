@@ -838,20 +838,44 @@ Roblox's own engine.
   `BasePart.PivotOffset` exposed to the Command Bar and scripts generally
   (today's Luau DataModel has no pivot-specific API at all), not just the
   interactive tool, since real Studio exposes both.
-- [ ] 📋 **Full DOM editing from the Explorer**, beyond today's plain
+- [x] **DOM editing from the Explorer row** — beyond the old plain
   insert/delete:
-  - A `+` icon on each row to insert a child instance directly, without
-    going through a menu — greying out (not hiding) instance types that
-    can't legally be added to the hovered parent, so the constraint is
-    visible rather than silently enforced.
-  - Right-click context menu: **Cut**, **Copy**, **Duplicate**, **Rename**
-    (also bindable to `F2`), **Insert** (same picker as the new `+` icon),
-    **Group as model**.
-  - Export from the menu: services and the whole place to Roblox (Save/
-    Publish, see below), to a local file; individual instances to `.obj`
-    and `.gltf` — genuinely useful native additions since Studio itself
-    has no built-in mesh export, not something to frame as "matching
-    Studio" since it doesn't do this either.
+  - A `+` on the hovered row (`Ctrl+I` from the keyboard) opens a
+    searchable class list that inserts straight under that row, without
+    going through a menu. A class the parent cannot take is **greyed
+    rather than missing**, so the constraint is visible: the rule is
+    exactly the two refusals Roblox's own API dump states — `NotCreatable`
+    (`Instance.new` refuses the class outright) and `Service` (a singleton
+    the `DataModel` owns), since the dump carries no per-class table of
+    legal parents to build anything wider on.
+  - Right-click context menu on a row: **Cut**, **Copy**, **Duplicate**,
+    **Paste Into**, **Rename**, **Insert Object…** (the same picker the
+    `+` opens), **Group as Model**, **Ungroup**, **Delete**. Contextual
+    the way creator-docs describes, but *greyed* rather than absent — each
+    row is enabled by the same guard its own handler returns early on, so
+    a service's menu shows the same shape with most of it unavailable.
+  - **Rename** in the row itself, from the menu or `F2`, committing
+    through the same `WeakDom::set_name` the Properties panel's `Name`
+    field uses. A service is refused, the way it already is for a drag.
+  - **Cut** is real (`Ctrl+X`, the Edit menu, the ribbon tile), built out
+    of Copy and the removal path Delete already had. Deleting a *service*
+    is now refused everywhere, rather than letting one keystroke produce a
+    place file with no `Workspace`.
+  - **Two insertion preferences** real Studio exposes next to the `+`
+    icon's search field (`studio/explorer.md`), behind the same `⋯` and
+    persisted: **increment names for new instances** (numbered names for
+    same-type inserts/pastes/duplicates) and **expand hierarchy when
+    selecting** (whether inserting/pasting/viewport-selecting an instance
+    auto-expands the Explorer tree to reveal it, or only highlights the
+    top-level parent).
+- [ ] 📋 **Explorer export and searchable-tree browsing** — the two halves
+  of Explorer DOM editing that did not land with the row affordances
+  above:
+  - Export from the row's menu: services and the whole place to Roblox
+    (Save/Publish, see below), to a local file; individual instances to
+    `.obj` and `.gltf` — genuinely useful native additions since Studio
+    itself has no built-in mesh export, not something to frame as
+    "matching Studio" since it doesn't do this either.
   - **Keep search results browsable without clearing the search field** —
     a real devforum request
     ([`view-descendants-of-matching-instances-in-explorer-search`](https://devforum.roblox.com/t/view-descendants-of-matching-instances-in-explorer-search/4862003),
@@ -860,15 +884,9 @@ Roblox's own engine.
     result's children, so inspecting several matches in a row means
     search → select → clear → expand, repeated per result). Worth getting
     right from the start here rather than reproducing that friction: a
-    filtered Explorer tree should stay expandable in place.
-  - **Two insertion preferences** real Studio exposes next to the `+`
-    icon's search field (`studio/explorer.md`): **increment names for new
-    instances** (numbered names for same-type inserts/pastes/duplicates)
-    and **expand hierarchy when selecting** (whether inserting/pasting/
-    viewport-selecting an instance auto-expands the Explorer tree to
-    reveal it, or only highlights the top-level parent) — small, but
-    real, user-facing toggles worth including alongside the rest of this
-    item rather than hardcoding one behaviour.
+    filtered Explorer tree should stay expandable in place. The Explorer's
+    search box is still inert today, so this means building the filter as
+    well as keeping it browsable.
 - [x] **Copy/paste/duplicate instances** (`Ctrl+C`/`V`/`D`) — real now,
   from the keyboard, the Edit menu's Copy/Paste/Paste Into/Duplicate items
   and the ribbon's Copy, Paste and Duplicate tiles (Cut stays a

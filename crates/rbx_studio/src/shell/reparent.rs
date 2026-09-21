@@ -127,6 +127,26 @@ pub(super) fn draggable_row(
                 });
             }
         })
+        // The `+` draws on the hovered row alone, so the tree has to say
+        // which row that is. GPUI reports the leave as the row's own
+        // `false`, which is what `Shell::hover_row` is written around.
+        .on_hover({
+            let shell = shell.clone();
+            move |hovered: &bool, _, cx| {
+                let hovered = *hovered;
+                shell.update(cx, |shell, cx| shell.hover_row(target, hovered, cx));
+            }
+        })
+        // Right-click opens the row's own menu at the pointer. On mouse
+        // *down*, the way every desktop context menu opens — waiting for the
+        // release would leave the press with no feedback at all.
+        .on_mouse_down(MouseButton::Right, {
+            let shell = shell.clone();
+            move |event: &MouseDownEvent, _, cx| {
+                let position = event.position;
+                shell.update(cx, |shell, cx| shell.open_row_menu(target, position, cx));
+            }
+        })
         .on_drop({
             let shell = shell.clone();
             move |dragged: &DraggedInstances, _, cx| {

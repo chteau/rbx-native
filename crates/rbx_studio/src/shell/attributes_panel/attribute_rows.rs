@@ -12,7 +12,7 @@ use rbx_dom::{Ref, WeakDom};
 
 use crate::properties::attributes as attrs;
 use crate::shell::chrome;
-use crate::shell::rows::{field_box, section_header, select_box};
+use crate::shell::rows::{field_box, name_indent, row_frame, section_header, select_box};
 use crate::shell::Shell;
 use crate::tokens;
 
@@ -165,11 +165,13 @@ impl Shell {
 
         let control = self.attribute_value_control(name, value, window, cx);
 
-        v_flex()
-            .w_full()
+        row_frame()
             .gap(tokens::label_gap())
-            .px(tokens::row_padding())
-            .py(tokens::label_gap())
+            // The same name column every property row starts in, so the
+            // panel has one left edge from its first row to its last
+            // rather than one per section.
+            .pl(name_indent(0))
+            .pr(tokens::row_padding())
             .rounded(tokens::RADIUS)
             .hover(|this| this.bg(tokens::hover()))
             .child(header)
@@ -222,6 +224,8 @@ impl Shell {
             .w_full()
             .items_center()
             .gap(tokens::label_gap())
+            .pl(name_indent(0))
+            .pr(tokens::row_padding())
             .child(
                 field_box().flex_1().child(
                     Input::new(&name_input)

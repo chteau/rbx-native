@@ -34,6 +34,7 @@ pub(crate) enum MenuId {
     InsertPart,
     InsertScript,
     InsertGui,
+    InsertOptions,
 }
 
 impl MenuId {
@@ -45,6 +46,7 @@ impl MenuId {
             MenuId::InsertPart => "menu-insert-part",
             MenuId::InsertScript => "menu-insert-script",
             MenuId::InsertGui => "menu-insert-gui",
+            MenuId::InsertOptions => "menu-insert-options",
         }
     }
 }
@@ -143,6 +145,19 @@ fn container(shell: Entity<Shell>, items: &[Item]) -> impl IntoElement {
 }
 
 fn menu_surface(shell: Entity<Shell>, items: &[Item]) -> Div {
+    surface().children(
+        items
+            .iter()
+            .enumerate()
+            .map(|(index, item)| row(shell.clone(), index, item)),
+    )
+}
+
+/// §9's menu container, without its rows: `chrome`, the one radius, 4px of
+/// padding and the elevation its hairline carries. Shared with the
+/// Explorer's context menu, which builds its own rows because its actions
+/// need a `Window` the controlled dropdown's [`Action`] cannot carry.
+pub(super) fn surface() -> Div {
     v_flex()
         .min_w(px(180.))
         .p(px(4.))
@@ -150,12 +165,6 @@ fn menu_surface(shell: Entity<Shell>, items: &[Item]) -> Div {
         .bg(tokens::chrome())
         .rounded(tokens::RADIUS)
         .shadow(tokens::elevation())
-        .children(
-            items
-                .iter()
-                .enumerate()
-                .map(|(index, item)| row(shell.clone(), index, item)),
-        )
 }
 
 /// One menu row, in every state it has.
@@ -168,10 +177,39 @@ fn menu_surface(shell: Entity<Shell>, items: &[Item]) -> Div {
 fn row(shell: Entity<Shell>, index: usize, item: &Item) -> impl IntoElement {
     let enabled = item.enabled && item.action.is_some();
     let action = item.action.clone();
-    let label = item.label.clone();
 
+    row_chrome(
+        ("menu-item", index),
+        item.icon,
+        item.label.clone(),
+        enabled,
+        item.checked,
+    )
+    .when(enabled, |this| {
+        this.on_click(move |_, _, cx| {
+            let action = action.clone();
+            shell.update(cx, |shell, cx| {
+                shell.open_menu = None;
+                if let Some(action) = action {
+                    action(shell, cx);
+                }
+                cx.notify();
+            });
+        })
+    })
+}
+
+/// One menu row's chrome, without a handler on it. Shared with the
+/// Explorer's context menu (see [`surface`]).
+pub(super) fn row_chrome(
+    id: impl Into<ElementId>,
+    icon: Option<IconName>,
+    label: SharedString,
+    enabled: bool,
+    checked: bool,
+) -> Stateful<Div> {
     h_flex()
-        .id(("menu-item", index))
+        .id(id.into())
         .w_full()
         .h(px(24.))
         .flex_none()
@@ -196,23 +234,9 @@ fn row(shell: Entity<Shell>, index: usize, item: &Item) -> impl IntoElement {
                     .text_color(tokens::text_disabled())
             }
         })
-        .when_some(item.icon, |this, icon| {
-            this.child(Icon::new(icon).size(px(12.)))
-        })
+        .when_some(icon, |this, icon| this.child(Icon::new(icon).size(px(12.))))
         .child(div().flex_1().child(label))
-        .when(item.checked, |this| {
+        .when(checked, |this| {
             this.child(Icon::new(IconName::Check).size(px(10.)))
-        })
-        .when(enabled, |this| {
-            this.on_click(move |_, _, cx| {
-                let action = action.clone();
-                shell.update(cx, |shell, cx| {
-                    shell.open_menu = None;
-                    if let Some(action) = action {
-                        action(shell, cx);
-                    }
-                    cx.notify();
-                });
-            })
         })
 }

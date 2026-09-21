@@ -296,9 +296,8 @@ impl Shell {
     /// reachable through the Properties panel today; a one-click ribbon
     /// version has to apply across a whole selection, which is real new
     /// plumbing rather than a second button on an existing path.
-    /// Copy/Paste/Duplicate run the same `shell::clipboard` entry points as
-    /// `menu_bar`'s Edit menu and `Ctrl+C`/`V`/`D`; Cut stays a disabled
-    /// placeholder there too.
+    /// Cut/Copy/Paste/Duplicate run the same `shell::clipboard` entry points
+    /// as `menu_bar`'s Edit menu and `Ctrl+X`/`C`/`V`/`D`.
     ///
     /// Each is greyed exactly while its own handler would return early
     /// without doing anything — `clipboard::has_copyable` is that handler's
@@ -333,6 +332,12 @@ impl Shell {
             live_stack_row(nav, "ribbon-paste", IconName::ClipboardPaste, "Paste", cx)
                 .on_click(cx.listener(|shell, _, _, cx| shell.paste_clipboard(cx)))
         };
+        let cut = if copyable {
+            live_stack_row(nav, "ribbon-cut", IconName::Scissors, "Cut", cx)
+                .on_click(cx.listener(|shell, _, _, cx| shell.cut_selected(cx)))
+        } else {
+            unavailable_row("ribbon-cut", IconName::Scissors, "Cut", NOTHING_SELECTED)
+        };
         let duplicate = if copyable {
             live_stack_row(nav, "ribbon-duplicate", IconName::CopyPlus, "Duplicate", cx)
                 .on_click(cx.listener(|shell, _, _, cx| shell.duplicate_selected(cx)))
@@ -347,12 +352,7 @@ impl Shell {
 
         vec![
             copy.into_any_element(),
-            stack(vec![
-                paste,
-                stack_row("ribbon-cut", IconName::Scissors, "Cut"),
-                duplicate,
-            ])
-            .into_any_element(),
+            stack(vec![paste, cut, duplicate]).into_any_element(),
         ]
     }
 
