@@ -175,6 +175,15 @@ impl Highlights {
         self.shapes.remove(id);
     }
 
+    /// Uploads what [`Self::sync_part`] and [`Self::sync_mesh`] rewrote in
+    /// place — a moved part's record is only marked, like every other
+    /// pass's (see `slots::Slots::flush`), so a highlight or cue left
+    /// unflushed stays drawn where its part used to stand.
+    pub(super) fn flush(&mut self, queue: &wgpu::Queue) {
+        self.shapes.flush(queue);
+        self.meshes.flush(queue);
+    }
+
     /// [`Self::sync_part`] for a resolved file mesh. `false` when the mesh is
     /// one this renderer never downloaded, which is the caller's cue to fall
     /// back to a full reload — the same answer `casters::sync_mesh` gives.

@@ -158,6 +158,10 @@ impl Renderer {
         self.shadows.flush(queue);
         self.filemesh.flush(queue);
         self.textured.flush(queue);
+        // Every edit that moves a part — a drag, a typed `CFrame`, an undo —
+        // reaches the highlight and cue masks through `sync_part` too.
+        self.highlights.flush(queue);
+        self.cues.flush(queue);
     }
 
     /// Applies a `Lighting`/`Atmosphere`/`Clouds`/`PostEffect` edit. The
