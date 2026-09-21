@@ -21,10 +21,16 @@ pub(crate) struct DraggerSettings {
     /// free drag aligns with the face it lands on, a handle drag with the
     /// faces of the parts along its axis. `Shift` suspends it.
     pub(crate) snap_to_parts: bool,
+    /// Studio's Align Dragged Objects toggle
+    /// (`StudioService.AlignDraggedObjects`): a free drag turns the
+    /// selection to lie on the face it lands on. `Alt` suspends it.
+    pub(crate) align_dragged_objects: bool,
 }
 
 impl Default for DraggerSettings {
-    /// Studio ships with every one of these on.
+    /// Studio ships with every one of these on. Align Dragged Objects is
+    /// the one it hides: its default is read off Studio's own test fixture
+    /// and the Hold Orientation hint its drags always show.
     fn default() -> Self {
         DraggerSettings {
             show_hover_ruler: true,
@@ -32,26 +38,29 @@ impl Default for DraggerSettings {
             show_measurement: true,
             show_dragged_point: true,
             snap_to_parts: true,
+            align_dragged_objects: true,
         }
     }
 }
 
-const KEYS: [&str; 5] = [
+const KEYS: [&str; 6] = [
     "show_hover_ruler",
     "show_target_snap",
     "show_measurement",
     "show_dragged_point",
     "snap_to_parts",
+    "align_dragged_objects",
 ];
 
 impl DraggerSettings {
-    fn fields(&mut self) -> [&mut bool; 5] {
+    fn fields(&mut self) -> [&mut bool; 6] {
         [
             &mut self.show_hover_ruler,
             &mut self.show_target_snap,
             &mut self.show_measurement,
             &mut self.show_dragged_point,
             &mut self.snap_to_parts,
+            &mut self.align_dragged_objects,
         ]
     }
 

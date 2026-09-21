@@ -24,6 +24,13 @@ const MAX_TICKS: i32 = 48;
 /// The hover dot's radius, in handle scales.
 const DOT_RADIUS: f32 = 0.15;
 
+/// The hover ruler's opacity, depth-tested and over everything. Studio's
+/// `RulerView` asks for 0.4 and 0.85 transparency, which is 0.6 and 0.15,
+/// but a ruler lying on its face reads fainter on Studio's own screen: 0.57
+/// of a white pixel per pixel of line, sampled off its screenshot, where
+/// 0.6 over 0.15 draws 0.64 here and 0.5 the 0.57 it shows.
+const HOVER_OPACITY: (f32, f32) = (0.5, 0.15);
+
 /// The segments of a ruler whose corner is `origin`, measuring `size` along
 /// `x` and `z` (both pointing into the face) with ticks every `grid` studs.
 fn ruler(origin: Vec3, x: Vec3, z: Vec3, size: (f32, f32), grid: f32) -> Vec<[Vec3; 2]> {
@@ -92,7 +99,7 @@ pub(crate) fn hover(
     let snapped = Vec3::new(snap_to(local.x, grid), 0.0, snap_to(local.z, grid));
     let lines = ruler(frame.corner, x, z, (snapped.x.abs(), snapped.z.abs()), grid)
         .into_iter()
-        .map(|[from, to]| Line::hairline(from, to, PASSIVE, 0.6, 0.15))
+        .map(|[from, to]| Line::hairline(from, to, PASSIVE, HOVER_OPACITY.0, HOVER_OPACITY.1))
         .collect();
 
     let point = frame.world(snapped);
@@ -211,7 +218,7 @@ mod tests {
         assert!(guides
             .lines
             .iter()
-            .all(|line| line.color == PASSIVE && line.under == 0.6 && line.over == 0.15));
+            .all(|line| line.color == PASSIVE && (line.under, line.over) == HOVER_OPACITY));
     }
 
     #[test]

@@ -14,16 +14,18 @@
 //! button (see `WorkspaceView::begin_look`), so a left-button drag never
 //! competes with them.
 
+use std::time::Instant;
+
 use glam::{Mat3, Mat4, Vec2, Vec3};
 use gpui_kit::{Modifiers, Pixels, Point};
 use rbx_viewer::gizmo::{self, Faces, Handles};
 use rbx_viewer::pick::{self, Ray};
 use rbx_viewer::snap;
 
-use crate::dragger::free;
 use crate::dragger::sweep::{self, SoftSnap};
+use crate::dragger::{free, tilt};
 use crate::settle::{Settle, Settled};
-use crate::transform::{Target, Tool};
+use crate::transform::{Target, Targets, Tool};
 
 use super::{readout, ViewportAction, WorkspaceView};
 
@@ -33,12 +35,6 @@ use super::{readout, ViewportAction, WorkspaceView};
 /// past either end would write a value the engine rejects.
 const MIN_SIZE: f32 = 0.001;
 const MAX_SIZE: f32 = 2048.0;
-
-/// How near a part's surface the point a cursor drag holds has to be for `R`
-/// to turn about that surface's normal, as a fraction of a dragger arm — a
-/// screen-relative reach (see `gizmo::arm_length`), and this editor's own
-/// number: the docs name "the hovered surface" but no distance.
-const SOFT_SNAP_REACH: f32 = 0.35;
 
 /// Whether a click's modifiers mean "add to (or drop from) the selection"
 /// rather than "replace it" — `Shift`, `Ctrl`, or `Cmd` (`platform`), per
@@ -252,6 +248,8 @@ impl WorkspaceView {
     ) {
         self.drag = None;
         self.pending_grab = None;
+        // Any press in the view takes Studio's measurement box down.
+        self.close_measure();
         let Some(ray) = self.cursor_ray(position, scale) else {
             return;
         };
@@ -373,14 +371,21 @@ impl WorkspaceView {
             .iter()
             .filter_map(|target| Some((pick::ray_hits_box(ray, target.model)?, target)))
             .min_by(|(a, _), (b, _)| a.total_cmp(b))?;
-        // Studio snaps the point it holds on the clicked face's own grid
-        // whenever the toolbar's snapping is on — `Shift` or not.
+        // Studio snaps the point it holds on the grid of the frame the hover
+        // stood on whenever the toolbar's snapping is on — `Shift` or not —
+        // and holds the part by where the click met its real surface, which
+        // the hover has and the box does not.
         let snap = self.transform.translate;
+        let (point, hovered) = match self.hovered() {
+            Some((frame, hit)) => (hit, Some(frame)),
+            None => (ray.at(distance), None),
+        };
         let point = free::grab(
             clicked.model,
-            ray.at(distance),
+            point,
             if snap.enabled { snap.increment } else { 0.0 },
             clicked.sphere,
+            hovered,
         );
         Some(Drag::Plane {
             point,
@@ -420,15 +425,6 @@ impl WorkspaceView {
         }
     }
 
-    /// One dragger arm in studs, the screen-relative length everything the
-    /// gizmo measures in the world is scaled by.
-    fn arm(&self) -> f32 {
-        let (Some(anchor), Some(pose)) = (self.targets.anchor(), self.view) else {
-            return 0.0;
-        };
-        gizmo::arm_length(anchor.position(), pose, self.orthographic)
-    }
-
     /// The cursor moving with a drag held: works out what this step does to
     /// the gizmo's anchor, carries every other selected part by the same
     /// offset when it is a Move (see `transform::Targets::translate`), and
@@ -446,7 +442,8 @@ impl WorkspaceView {
         let Some(anchor) = self.targets.anchor() else {
             return;
         };
-        self.guides.dragged_at = Some(position);
+        self.guides.dragged_at = Some((position, modifiers));
+        let turning = self.turn_progress();
         // `position` is reused below as a match binding name for the part's
         // own new world-space placement (`Change::Position`), which shadows
         // this screen-space one for the length of that arm — kept under its
@@ -497,14 +494,20 @@ impl WorkspaceView {
                                 )
                             });
                         let (pose, grid) = (self.view, self.landing(modifiers.shift).grid);
-                        pose.map(|pose| Settle {
-                            cursor: ray,
-                            grabbed: -offset,
-                            grid,
-                            snap_to_parts: self.guides.settings.snap_to_parts && !modifiers.shift,
-                            pose,
-                            orthographic: self.orthographic,
-                            last: self.landed_on(),
+                        pose.map(|pose| {
+                            Box::new(Settle {
+                                cursor: ray,
+                                grabbed: -offset,
+                                grid,
+                                snap_to_parts: self.guides.settings.snap_to_parts
+                                    && !modifiers.shift,
+                                pose,
+                                orthographic: self.orthographic,
+                                last: self.landed_on(),
+                                align: self.aligns(modifiers.alt),
+                                tilt: self.guides.tilt,
+                                turning,
+                            })
                         })
                     }
                     _ => {
@@ -576,21 +579,21 @@ impl WorkspaceView {
         }
     }
 
-    /// The correction `Shell` made to the anchor's own move for this gesture,
-    /// when it rested the anchor on a surface the view itself cannot see —
-    /// the difference between where the anchor actually landed and the flat
-    /// guess `drag_to` already applied. Unlike [`WorkspaceView::set_targets`]
-    /// this is taken mid-gesture: it is the drag's own answer, finished with
-    /// the DOM, not a round trip that could land a frame late. Applied to
-    /// every selected part by the same offset, exactly as `drag_to`'s own
-    /// `Targets::translate` call is, so a settle never rearranges the group
-    /// relative to itself. `settled` is where it landed, for the guides; the
-    /// readout is measured again from where the anchor actually is now.
-    pub(crate) fn settle_at(&mut self, delta: Vec3, settled: Option<&Settled>) {
+    /// Where `Shell` rested the selection for this step, on a surface the
+    /// view itself cannot see: every part carried from where it stood at the
+    /// grab, in place of the flat guess `drag_to` already applied. Unlike
+    /// [`WorkspaceView::set_targets`] this is taken mid-gesture: it is the
+    /// drag's own answer, finished with the DOM, not a round trip that could
+    /// land a frame late. `None` over nothing: the guess stands. The guides
+    /// are drawn for where it landed, and the readout is measured again from
+    /// where the anchor actually is now.
+    pub(crate) fn settle_at(&mut self, settled: Option<&Settled>) {
         if self.drag.is_none() {
             return;
         }
-        self.targets.translate(delta);
+        if let Some(settled) = settled {
+            self.targets = self.held.carried(settled.carry);
+        }
         self.landed(settled);
         if let (Some((_, text)), Some(now), Some(start)) = (
             &mut self.drag_readout,
@@ -618,16 +621,29 @@ impl WorkspaceView {
             let scale = window.scale_factor();
             self.drag_to(position, modifiers, scale, cx);
         }
+        // A turn easing in moves the selection with the mouse still.
+        if self.guides.turning.is_some() {
+            self.drag_pending = self.guides.dragged_at;
+        }
     }
 
     /// The button coming up: the last cursor position the frame gate has
     /// not applied yet is applied first, so the part lands exactly where it
     /// was let go rather than a frame short of it.
-    pub(super) fn end_drag(&mut self, window: &gpui_kit::Window, cx: &mut gpui_kit::Context<Self>) {
+    pub(super) fn end_drag(
+        &mut self,
+        window: &mut gpui_kit::Window,
+        cx: &mut gpui_kit::Context<Self>,
+    ) {
         self.step_drag(window, cx);
-        if self.drag.take().is_some() {
+        if let Some(drag) = self.drag.take() {
+            let arrow = self.guides.arrow;
             self.clear_guides();
             self.rehover();
+            // A Move arrow's label stays behind, editable.
+            if let (Drag::Axis { axis, .. }, Some(arrow)) = (drag, arrow) {
+                self.open_measure(arrow, axis * arrow.1, window, cx);
+            }
         }
         self.drag_stepped_at = None;
         // A grab `Shell` has not answered yet is answered by the release:
@@ -636,87 +652,86 @@ impl WorkspaceView {
     }
 
     /// `t`/`r` typed with a part held by its body, reporting whether it was
-    /// one of the two and was actually carried out — the caller stops there
-    /// only then, so a `t` typed with nothing in hand stays an ordinary key.
+    /// one of the two — the caller stops there only then, so a `t` typed
+    /// with nothing in hand stays an ordinary key.
     pub(super) fn turn_key(
         &mut self,
         key: &str,
         modifiers: Modifiers,
         cx: &mut gpui_kit::Context<Self>,
     ) -> bool {
-        // Unmodified: Ctrl+T and Ctrl+R are creator-docs' *other* quarter
-        // turns, the ones that act on the selection with no drag at all, and
-        // neither belongs to this gesture.
-        if modifiers.control || modifiers.alt || modifiers.platform || modifiers.shift {
+        // Ctrl+T and Ctrl+R are creator-docs' *other* quarter turns, the
+        // ones that act on the selection with no drag at all. `Alt` is the
+        // drag's own Hold Orientation, which Studio turns under as well.
+        if modifiers.control || modifiers.platform || modifiers.shift {
             return false;
         }
         match key {
-            "t" => self.turn(true, cx),
-            "r" => self.turn(false, cx),
+            "t" => self.turn(true, modifiers, cx),
+            "r" => self.turn(false, modifiers, cx),
             _ => false,
         }
     }
 
-    /// `T` or `R` with a part held by its body: a quarter turn about the point
-    /// it was picked up by.
+    /// `T` or `R` with the selection held by its body (`FreeformDragger:
+    /// rotate`): a quarter turn added to the drag's tilt, and the drag
+    /// stepped again where the cursor stands — so it turns about the point
+    /// it is held by and comes to rest on the face again.
     ///
-    /// `creator-docs` (`parts/index.md#transform-parts`): "While cursor
-    /// dragging, `T` and `R` can be used to quickly rotate the part in 90°
-    /// increments around the point you picked it up by. `T` tilts the part 90°
-    /// towards the camera, while `R` rotates the part 90° around the normal of
-    /// the hovered surface."
-    ///
-    /// Only for a body drag: an axis dragger is a slide along one line, and
-    /// the docs give these two keys to cursor dragging alone. Turns the
-    /// gizmo's anchor alone rather than the whole group — the docs describe
-    /// this for one part being cursor-dragged, and a multi-part turn about a
-    /// point that is not every part's own centre has no agreed meaning yet.
-    pub(super) fn turn(&mut self, tilt: bool, cx: &mut gpui_kit::Context<Self>) -> bool {
-        let (Some(Drag::Plane { point, normal, .. }), Some(target)) =
-            (self.drag, self.targets.anchor())
+    /// `creator-docs` (`parts/index.md#transform-parts`): "`T` tilts the
+    /// part 90° towards the camera, while `R` rotates the part 90° around
+    /// the normal of the hovered surface." Studio turns about whichever of
+    /// the selection's own axes, as it lies on the face, points most nearly
+    /// along the face's normal (`R`) or the camera's right (`T`); over
+    /// nothing landed on yet there is no face to turn against, and the key
+    /// does nothing.
+    fn turn(&mut self, tip: bool, modifiers: Modifiers, cx: &mut gpui_kit::Context<Self>) -> bool {
+        let Some(Drag::Plane { .. }) = self.drag else {
+            return false;
+        };
+        let (Some(frame), Some(anchor), Some(pose)) =
+            (self.landed_on(), self.held.anchor(), self.view)
         else {
-            return false;
+            return true;
         };
-        let axis = if tilt {
-            // The plane's normal was fixed at the grab as `-ray.direction`, so
-            // the view direction is its opposite, and `forward × up` is the
-            // camera's right — the axis a tilt "towards the camera" turns
-            // about. A camera looking straight down has no such axis and the
-            // tilt has no meaning, so nothing happens.
-            (-normal).cross(Vec3::Y).try_normalize()
+        let axis = if tip {
+            let (_, right, _) = pose.basis();
+            right
         } else {
-            // "The hovered surface": the same nearby surface a free drag would
-            // soft-snap the grab point onto. With none in reach there is
-            // nothing being hovered, and the world's own up stands in for it.
-            Some(
-                snap::nearest_surface(point, &self.neighbours, self.arm() * SOFT_SNAP_REACH)
-                    .map_or(Vec3::Y, |surface| surface.normal),
-            )
+            frame.y
         };
-        let Some(axis) = axis else {
-            return false;
-        };
-
-        let turn = gizmo::quarter_turn(axis);
-        let (linear, position) = gizmo::turned(target.rotation(), target.position(), point, turn);
-        self.targets.set_anchor(target.turned_to(linear, position));
-        // The part turned about the grab point, so the cursor now holds it by
-        // a different part of itself; the offset has to turn with it or the
-        // next move would snap it back.
-        if let Some(Drag::Plane { offset, .. }) = &mut self.drag {
-            *offset = turn * *offset;
-        }
-
-        // A quarter turn always changes the part, so it can open the gesture
-        // the way a real drag step does.
-        let first = !std::mem::replace(&mut self.dragged, true);
-        cx.emit(ViewportAction::Turned {
-            referent: target.referent,
-            pivot: point,
-            axis,
-            first,
-        });
+        let align = self.aligns(modifiers.alt);
+        let from = self.guides.tilt;
+        self.guides.tilt = tilt::turned(&frame, anchor.orientation(), from, align, axis);
+        self.guides.turning = Some((from, Instant::now()));
+        self.modifiers_changed(modifiers);
+        cx.notify();
         true
+    }
+
+    /// The turn easing in (Studio tweens a quarter turn over
+    /// `Studio.DraggerTiltRotateDuration`): the tilt it turns from and how
+    /// far it has come, or `None` once it has finished.
+    fn turn_progress(&mut self) -> Option<(Mat3, f32)> {
+        let (from, started) = self.guides.turning?;
+        let progress = started.elapsed().as_secs_f32() / tilt::TURN_SECONDS;
+        if progress >= 1.0 {
+            self.guides.turning = None;
+            return None;
+        }
+        Some((from, tilt::eased(progress)))
+    }
+
+    /// Whether a free drag turns the selection onto the face it lands on:
+    /// Align Dragged Objects on, and `Alt` — Hold Orientation — up.
+    fn aligns(&self, alt: bool) -> bool {
+        self.guides.settings.align_dragged_objects && !alt
+    }
+
+    /// Where every part a drag carries stood at its grab, which a free drag
+    /// carries them from.
+    pub(crate) fn held(&self) -> &Targets {
+        &self.held
     }
 
     /// The boxes a free drag can soft-snap onto: every drawn part in the

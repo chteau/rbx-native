@@ -1,11 +1,22 @@
-use glam::Vec3;
+use glam::{Mat3, Mat4, Vec3};
 use rbx_dom::{CFrameData, Variant, Vector3Data, WeakDom};
 use rbx_viewer::pick::Meshes;
 
 use super::*;
 
 fn part(dom: &mut WeakDom, parent: Ref, name: &str, position: Vec3, size: Vec3) -> Ref {
-    let part = dom.new_instance("Part", name, Some(parent));
+    part_of(dom, parent, "Part", name, position, size)
+}
+
+fn part_of(
+    dom: &mut WeakDom,
+    parent: Ref,
+    class: &str,
+    name: &str,
+    position: Vec3,
+    size: Vec3,
+) -> Ref {
+    let part = dom.new_instance(class, name, Some(parent));
     let _ = dom.set_property(
         part,
         "CFrame",
@@ -94,6 +105,9 @@ fn step(cursor: Ray, grabbed: Vec3) -> Settle {
         pose: overhead(),
         orthographic: false,
         last: None,
+        align: true,
+        tilt: Mat3::IDENTITY,
+        turning: None,
     }
 }
 
@@ -106,9 +120,21 @@ fn close(a: Vec3, b: Vec3) -> bool {
     (a - b).length() < 1e-3
 }
 
-fn rest(dom: &WeakDom, dragged: Ref, settle: Settle) -> Option<Vec3> {
+/// `dragged` as it stands now, which is where a drag of it grabs it.
+fn held(dom: &WeakDom, dragged: Ref) -> Vec<(Ref, Mat4)> {
+    vec![(dragged, pick::model_of(dom, dragged).expect("a part"))]
+}
+
+fn land_on(dom: &WeakDom, dragged: Ref, settle: Settle) -> Option<(Settled, Mat4)> {
     let database = ReflectionDatabase::embedded();
-    settled(dom, &database, &Meshes::default(), &[dragged], settle).map(|landed| landed.centre)
+    let held = held(dom, dragged);
+    let landed = settled(dom, &database, &Meshes::default(), &held, settle)?;
+    let model = landed.carry * held[0].1;
+    Some((landed, model))
+}
+
+fn rest(dom: &WeakDom, dragged: Ref, settle: Settle) -> Option<Vec3> {
+    land_on(dom, dragged, settle).map(|(_, model)| model.w_axis.truncate())
 }
 
 #[test]
@@ -134,15 +160,8 @@ fn a_drag_over_open_space_has_no_surface_to_settle_on() {
 #[test]
 fn over_open_space_a_drag_keeps_to_the_plane_it_last_landed_in() {
     let (dom, dragged) = tabletop();
-    let database = ReflectionDatabase::embedded();
-    let landed = settled(
-        &dom,
-        &database,
-        &Meshes::default(),
-        &[dragged],
-        from_above(down_at(250.0, 0.0)),
-    )
-    .expect("over the ground");
+    let (landed, _) =
+        land_on(&dom, dragged, from_above(down_at(250.0, 0.0))).expect("over the ground");
     let mut settle = from_above(Ray::new(
         Vec3::new(300.0, 50.0, 0.0),
         Vec3::new(0.0, -1.0, 0.1),
@@ -164,8 +183,10 @@ fn the_dragged_part_is_never_the_surface_it_settles_on() {
     // *is* the crate. Settling onto it would stack the crate on its own top,
     // a stud higher on every mouse move.
     let cursor = down_at(0.0, 0.0);
-    let (_, hit) = target_under(&dom, &database, &Meshes::default(), cursor, &[dragged])
+    let ground = target_under(&dom, &database, &Meshes::default(), cursor, &[dragged])
         .expect("the ground is below");
+    let (distance, _) = ground.raycast(cursor).expect("the ray meets it");
+    let hit = cursor.at(distance);
     assert!(close(hit, Vec3::ZERO), "hit {hit}");
     let rested = rest(&dom, dragged, from_above(cursor)).expect("the ground is below");
     assert!(
@@ -252,13 +273,97 @@ fn snap_to_parts_pulls_the_crate_flush_with_the_edge_it_is_near() {
     // x = 18 edge and nothing else within reach (0.28 studs from 15 up).
     let mut settle = from_above(down_at(18.9, 0.5));
     settle.snap_to_parts = true;
-    let database = ReflectionDatabase::embedded();
-    let landed =
-        settled(&dom, &database, &Meshes::default(), &[dragged], settle).expect("over the block");
+    let (landed, model) = land_on(&dom, dragged, settle).expect("over the block");
+    let centre = model.w_axis.truncate();
     assert!(
-        close(landed.centre, Vec3::new(19.0, 5.0, 0.5)),
-        "rested at {}",
-        landed.centre
+        close(centre, Vec3::new(19.0, 5.0, 0.5)),
+        "rested at {centre}"
     );
     assert_eq!(landed.landing.aligned.len(), 1);
+}
+
+/// An 8-wide wedge 2 high and 4 deep at the origin, its slope rising 1 in 2
+/// towards +Z, and a 4 × 1 × 2 plank off to the side — `(dom, plank)`.
+fn ramp() -> (WeakDom, Ref) {
+    let mut dom = WeakDom::new();
+    let workspace = dom.new_instance("Workspace", "Workspace", None);
+    let wedge = Vec3::new(8.0, 2.0, 4.0);
+    part_of(&mut dom, workspace, "WedgePart", "Ramp", Vec3::Y, wedge);
+    let size = Vec3::new(4.0, 1.0, 2.0);
+    let plank = part(
+        &mut dom,
+        workspace,
+        "Plank",
+        Vec3::new(30.0, 0.5, 0.0),
+        size,
+    );
+    (dom, plank)
+}
+
+/// The ramp's slope, facing up and towards -Z.
+fn slope_normal() -> Vec3 {
+    Vec3::new(0.0, 2.0, -1.0).normalize()
+}
+
+#[test]
+fn a_part_dragged_onto_a_slope_lies_flat_on_it() {
+    let (dom, plank) = ramp();
+    // Onto the slope's middle line, held by the middle of its top.
+    let (_, model) = land_on(&dom, plank, from_above(down_at(1.0, 0.0))).expect("the ramp");
+    let up = model.y_axis.truncate().normalize();
+    assert!(close(up, slope_normal()), "up is {up}");
+    assert!(close(model.x_axis.truncate().normalize(), Vec3::X));
+    // Its underside on the slope: its centre half its height off it.
+    let centre = model.w_axis.truncate();
+    assert!(
+        close(centre, Vec3::new(1.0, 1.0, 0.0) + slope_normal() * 0.5),
+        "rested at {centre}"
+    );
+}
+
+#[test]
+fn holding_orientation_keeps_the_part_as_it_was_grabbed() {
+    let (dom, plank) = ramp();
+    let mut settle = from_above(down_at(1.0, 0.0));
+    settle.align = false;
+    let (_, model) = land_on(&dom, plank, settle).expect("the ramp");
+    assert!(close(model.y_axis.truncate(), Vec3::Y));
+    assert!(close(model.x_axis.truncate(), Vec3::X * 4.0));
+}
+
+#[test]
+fn r_spins_the_part_a_quarter_about_the_slopes_normal() {
+    let (dom, plank) = ramp();
+    let (landed, _) = land_on(&dom, plank, from_above(down_at(1.0, 0.0))).expect("the ramp");
+    let normal = landed.frame.y;
+    let mut settle = from_above(down_at(1.0, 0.0));
+    settle.tilt = tilt::turned(&landed.frame, Mat3::IDENTITY, Mat3::IDENTITY, true, normal);
+    let (_, model) = land_on(&dom, plank, settle).expect("the ramp");
+    let (along, up) = (
+        model.x_axis.truncate().normalize(),
+        model.y_axis.truncate().normalize(),
+    );
+    assert!(close(up, slope_normal()), "up is {up}");
+    // Its length now runs up the slope, not across it.
+    assert!(along.dot(Vec3::X).abs() < 1e-4, "along {along}");
+    assert!(close(along.cross(normal).cross(normal), -along));
+}
+
+#[test]
+fn a_turn_half_eased_in_stands_half_way_round() {
+    let (dom, plank) = ramp();
+    let mut settle = from_above(down_at(40.0, 40.0));
+    settle.last =
+        land_on(&dom, plank, from_above(down_at(1.0, 0.0))).map(|(landed, _)| landed.frame);
+    let quarter = Mat3::from_rotation_y(std::f32::consts::FRAC_PI_2);
+    settle.tilt = quarter;
+    settle.turning = Some((Mat3::IDENTITY, 0.5));
+    let (_, model) = land_on(&dom, plank, settle).expect("the slope's plane");
+    let along = model.x_axis.truncate().normalize();
+    // An eighth of a turn about the slope's normal from lying across it.
+    assert!(
+        (along.dot(Vec3::X) - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-4,
+        "{along}"
+    );
+    assert!(along.dot(slope_normal()).abs() < 1e-4);
 }

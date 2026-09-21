@@ -4,6 +4,8 @@
 
 use glam::{Vec2, Vec3};
 
+use super::Line;
+
 /// `conciseNumberFormat`, legacy: the fewest decimals that show `value` to
 /// within a thousandth — `"0"`, `"4"`, `"2.5"`, `"0.125"`.
 pub(crate) fn concise(value: f32) -> String {
@@ -22,6 +24,30 @@ pub(crate) fn concise(value: f32) -> String {
     } else {
         format!("{value:.3}")
     }
+}
+
+/// A distance typed into the measurement box, read the way Studio reads it
+/// (Luau's `tonumber`): surrounding spaces, a sign, decimals and exponents,
+/// and `0x` hexadecimal. `None` for anything else — `"4 studs"`, `"2+2"`,
+/// `"1,5"` — and for infinities and NaN, which `tonumber` would pass but no
+/// part can be moved by.
+pub(crate) fn typed(text: &str) -> Option<f32> {
+    let text = text.trim();
+    let (negative, unsigned) = match text.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, text.strip_prefix('+').unwrap_or(text)),
+    };
+    let magnitude = match unsigned
+        .strip_prefix("0x")
+        .or_else(|| unsigned.strip_prefix("0X"))
+    {
+        Some(hex) => u64::from_str_radix(hex, 16).ok()? as f64,
+        // A sign after the one already taken off is not a number.
+        None if unsigned.starts_with(['+', '-']) => return None,
+        None => unsigned.parse::<f64>().ok()?,
+    };
+    let value = if negative { -magnitude } else { magnitude } as f32;
+    value.is_finite().then_some(value)
 }
 
 /// A Move arrow as the label placement sees it: its direction and where it
@@ -97,9 +123,70 @@ pub(crate) fn move_label(
     base + direction * (start + share * length) + lagging * offset
 }
 
+/// The tail's width, in handle scales: Studio's radius is `0.1·0.65` of the
+/// smaller scale of its two ends.
+const TAIL_WIDTH: f32 = 2.0 * 0.1 * 0.65;
+
+/// The dragged Move arrow's tail (`MoveHandleView`'s `Tail`): a thin bar in
+/// the arrow's own `color`, half transparent over everything, from where the
+/// handles stand now (`origin`) back to where they stood at the press,
+/// `travelled` studs along `direction` ago. Studio marks the start with
+/// nothing else. `scale` is the handle scale at a point; `None` before the
+/// drag has gone anywhere, where the bar has no length.
+pub(crate) fn tail(
+    origin: Vec3,
+    direction: Vec3,
+    travelled: f32,
+    color: [f32; 3],
+    scale: impl Fn(Vec3) -> f32,
+) -> Option<Line> {
+    let start = origin - direction * travelled;
+    (travelled.abs() > 1e-4).then(|| Line {
+        from: origin,
+        to: start,
+        color,
+        under: 0.0,
+        over: 0.5,
+        width: TAIL_WIDTH * scale(origin).min(scale(start)),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_typed_distance_reads_as_luau_reads_it() {
+        assert_eq!(typed("5"), Some(5.0));
+        assert_eq!(typed(" -2.5 "), Some(-2.5));
+        assert_eq!(typed("1e2"), Some(100.0));
+        assert_eq!(typed("0x10"), Some(16.0));
+        assert_eq!(typed("-0x10"), Some(-16.0));
+        assert_eq!(typed(".5"), Some(0.5));
+        for bad in ["4 studs", "2+2", "1,5", "", "--1", "inf", "nan", "0xg"] {
+            assert_eq!(typed(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn the_tail_runs_back_to_the_start_half_seen_over_everything() {
+        let line = tail(
+            Vec3::new(5.0, 0.0, 0.0),
+            Vec3::X,
+            3.0,
+            [1.0, 0.0, 0.0],
+            |at| 1.0 + at.x,
+        )
+        .unwrap();
+        assert_eq!(
+            (line.from, line.to),
+            (Vec3::new(5.0, 0.0, 0.0), Vec3::new(2.0, 0.0, 0.0))
+        );
+        assert_eq!((line.under, line.over), (0.0, 0.5));
+        // 0.13 of the smaller end's scale, the start's here.
+        assert!((line.width - 0.13 * 3.0).abs() < 1e-6);
+        assert!(tail(Vec3::ZERO, Vec3::X, 0.0, [1.0; 3], |_| 1.0).is_none());
+    }
 
     #[test]
     fn whole_numbers_read_bare() {

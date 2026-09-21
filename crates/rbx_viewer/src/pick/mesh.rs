@@ -43,13 +43,19 @@ impl Meshes {
 /// "inside" answer of 0 as the solids have, since an arbitrary mesh need not
 /// even be closed.
 pub(super) fn hit(mesh: &Mesh, model: Mat4, ray: Ray) -> Option<f32> {
+    hit_with_normal(mesh, model, ray).map(|(distance, _)| distance)
+}
+
+/// [`hit`], and the normal of the triangle it met, in the mesh's own space
+/// and as its winding gives it.
+pub(super) fn hit_with_normal(mesh: &Mesh, model: Mat4, ray: Ray) -> Option<(f32, Vec3)> {
     let local = Local::of(model, ray)?;
     let vertex = |index: u32| {
         mesh.vertices
             .get(index as usize)
             .map(|vertex| Vec3::from(vertex.position))
     };
-    let nearest = mesh
+    let (nearest, normal) = mesh
         .lod0()
         .as_chunks::<3>()
         .0
@@ -60,12 +66,11 @@ pub(super) fn hit(mesh: &Mesh, model: Mat4, ray: Ray) -> Option<f32> {
                 vertex(triangle[1])?,
                 vertex(triangle[2])?,
             );
-            triangle_hit(local.origin, local.direction, a, b, c)
+            let distance = triangle_hit(local.origin, local.direction, a, b, c)?;
+            Some((distance, (b - a).cross(c - a)))
         })
-        .fold(None, |nearest: Option<f32>, distance| {
-            Some(nearest.map_or(distance, |nearest| nearest.min(distance)))
-        })?;
-    Some(nearest / local.per_stud)
+        .min_by(|(a, _), (b, _)| a.total_cmp(b))?;
+    Some((nearest / local.per_stud, normal))
 }
 
 /// Möller–Trumbore: where the ray crosses the plane of triangle `abc`,

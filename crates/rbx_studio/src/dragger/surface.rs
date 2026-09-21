@@ -3,11 +3,28 @@
 //!
 //! Its origin is the corner of the face under the cursor nearest the cursor,
 //! so a grid measured in it starts from that corner and runs along the face's
-//! own edges — not from the world origin, and not along world axes. Every part
-//! is taken as its box: Studio's own box, wedge and truss targets are, and
-//! the ball, cylinder and mesh variants it has are left out.
+//! own edges — not from the world origin, and not along world axes. This is
+//! the box's face; every other kind of part is `super::target`'s.
 
 use glam::{Mat4, Vec2, Vec3};
+use rbx_viewer::pick::Solid;
+
+/// What Studio's `TargetType` says a frame stands on, which decides how a
+/// drag snaps on it and what its guides draw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TargetKind {
+    /// A flat face measured from its corner: a box's, a wedge's, a
+    /// cylinder's cap, a mesh face, and the point at a ball's pole.
+    Polygon,
+    /// A ball away from its poles: the frame is already the snapped point.
+    Sphere,
+    /// A cylinder's side, measured along it from its nearer end.
+    Cylinder,
+    /// A surface with no edge to measure from, already snapped.
+    Round,
+    /// Empty space, in the plane of whatever the drag last landed on.
+    Nothing,
+}
 
 /// A face's nearest-corner frame: `y` is the face normal, `z` runs along the
 /// face edge nearest the cursor and `x` across it. `x` and `z` may point out of
@@ -21,6 +38,10 @@ pub(crate) struct SurfaceFrame {
     pub(crate) z: Vec3,
     /// The whole face's extent along `x` and along `z`.
     pub(crate) size: Vec2,
+    pub(crate) kind: TargetKind,
+    /// The ball or cylinder the frame stands on, whose major lines its guides
+    /// draw: the part's solid and its box.
+    pub(crate) part: Option<(Solid, Mat4)>,
 }
 
 impl SurfaceFrame {
@@ -95,6 +116,8 @@ pub(crate) fn surface_frame(model: Mat4, hit: Vec3) -> Option<SurfaceFrame> {
         y: normal,
         z,
         size: Vec2::new(half[across] * 2.0, half[along] * 2.0),
+        kind: TargetKind::Polygon,
+        part: None,
     })
 }
 

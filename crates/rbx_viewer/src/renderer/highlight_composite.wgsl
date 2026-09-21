@@ -71,17 +71,21 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let coord = vec2<i32>(input.clip_position.xy);
     let here = load_mask(coord);
 
-    // The boundary this pixel sits on, if any: the highest-numbered highlight
-    // among it and its neighbours, wherever the two disagree. Highest rather
-    // than nearest because two highlights meeting at a pixel is already a tie
-    // Roblox does not define an answer for, and a stable choice at least
-    // draws one unbroken line instead of a dotted argument between them.
+    // The boundary this pixel sits on, if any: the first-listed highlight
+    // among it and its neighbours, wherever the two disagree — the same one
+    // that wins a pixel both reach (see `renderer::highlight::draw_order`).
+    // Two highlights meeting at a pixel is a tie Roblox does not define an
+    // answer for; a stable choice at least draws one unbroken line instead
+    // of a dotted argument between them, and this one keeps the editor's
+    // selection cue in its own colour against a hovered part behind it.
     var edge: u32 = 0u;
     for (var dy = -RADIUS; dy <= RADIUS; dy++) {
         for (var dx = -RADIUS; dx <= RADIUS; dx++) {
             let there = sampled(coord + vec2<i32>(dx, dy), bounds);
             if (there != here) {
-                edge = max(edge, max(there, here));
+                // The lower of the two, unless that is "no highlight".
+                let low = select(min(there, here), max(there, here), min(there, here) == 0u);
+                edge = select(min(edge, low), low, edge == 0u);
             }
         }
     }

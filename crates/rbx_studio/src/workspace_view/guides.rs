@@ -10,7 +10,9 @@
 //! - A Move or Scale handle drag: the axis line, the soft-snap dots found at
 //!   the press, and the distance label (see [`handles`]).
 
-use glam::Vec3;
+use std::time::Instant;
+
+use glam::{Mat3, Vec3};
 use gpui_kit::*;
 use rbx_viewer::gizmo::Axis;
 use rbx_viewer::pick::Ray;
@@ -19,14 +21,14 @@ use rbx_viewer::Segment;
 use super::WorkspaceView;
 use crate::dragger::surface::SurfaceFrame;
 use crate::dragger::sweep::SoftSnap;
-use crate::dragger::{free, pixel_size, ruler, Guides};
+use crate::dragger::{free, pixel_size, round, ruler, Guides};
 use crate::settings::DraggerSettings;
 use crate::settle::Settled;
 use crate::transform::Tool;
 
 mod handles;
 
-pub(super) use handles::label_element;
+pub(super) use handles::{centred_on, label_element, label_text, measurement_box};
 
 /// The line layer the dragger guides are drawn on, apart from the light
 /// guides' so that a guide moving with the mouse never re-uploads them.
@@ -50,11 +52,16 @@ pub(super) struct State {
     /// The face a free drag last landed on. Over nothing, the drag keeps
     /// landing in that face's plane, on its grid.
     landed_on: Option<SurfaceFrame>,
+    /// The quarter turns `R` and `T` have added to the free drag under way.
+    pub(super) tilt: Mat3,
+    /// The last quarter turn while it eases in: the tilt it turns from, and
+    /// when it began.
+    pub(super) turning: Option<(Mat3, Instant)>,
     /// A handle drag's soft snaps, found once at the press.
     snaps: Vec<SoftSnap>,
     /// The Move arrow a handle drag holds: its axis, which end (`±1`) and
     /// how far out along it the press landed.
-    arrow: Option<(Axis, f32, f32)>,
+    pub(super) arrow: Option<(Axis, f32, f32)>,
     /// What is drawn now.
     drawn: Guides,
     /// Studio's distance label: where, in the panel's own logical pixels,
@@ -62,9 +69,10 @@ pub(super) struct State {
     pub(super) label: Option<(Point<Pixels>, SharedString)>,
     /// What the render thread was last sent.
     sent: Vec<Segment>,
-    /// Where the cursor last stepped the drag in progress: a modifier
-    /// pressed or released with the mouse still re-steps it from there.
-    pub(super) dragged_at: Option<Point<Pixels>>,
+    /// Where the cursor last stepped the drag in progress, and with what
+    /// held: a modifier pressed or released with the mouse still, or a turn
+    /// easing in, re-steps it from there.
+    pub(super) dragged_at: Option<(Point<Pixels>, Modifiers)>,
 }
 
 impl WorkspaceView {
@@ -117,7 +125,7 @@ impl WorkspaceView {
         let (Some((frame, hit)), Some(pose), true) = (state.hover, self.view, shows) else {
             return Guides::default();
         };
-        ruler::hover(
+        let mut guides = ruler::hover(
             &frame,
             hit,
             snap.increment,
@@ -125,7 +133,22 @@ impl WorkspaceView {
             pending,
             pose,
             self.orthographic,
-        )
+        );
+        guides.lines.extend(round::major_lines(&frame));
+        guides
+    }
+
+    /// The grid a hover's target frame is snapped in, which only a ball's
+    /// and a cylinder's side are: the grid in force at the last hover
+    /// (Studio's `shouldGridSnap`, off while `Shift` is held).
+    pub(crate) fn hover_grid(&self) -> f32 {
+        self.transform.translate.grid(self.guides.modifiers.shift)
+    }
+
+    /// The frame the hover under the cursor stands on, which a body grab
+    /// snaps the grabbed point in, and where the cursor meets it.
+    pub(super) fn hovered(&self) -> Option<(SurfaceFrame, Vec3)> {
+        self.guides.hover
     }
 
     /// Resolves the hover again where the cursor stands, next frame: after an
@@ -161,18 +184,22 @@ impl WorkspaceView {
         state.snaps.clear();
         state.arrow = None;
         state.landed_on = None;
+        state.tilt = Mat3::IDENTITY;
+        state.turning = None;
         state.dragged_at = None;
     }
 
-    /// `Shift` pressed or released mid-drag: Studio re-lands the drag on
-    /// the change — onto the grid or off it, onto the soft snaps or off them
-    /// — without waiting for the mouse, so the drag is stepped again where
-    /// the cursor stands (once per frame, like any step: see `step_drag`).
+    /// `Shift` or `Alt` pressed or released mid-drag, or a quarter turn:
+    /// Studio re-lands the drag on the change — onto the grid or off it,
+    /// onto the soft snaps or off them, turned onto the face or held as
+    /// grabbed — without waiting for the mouse, so the drag is stepped again
+    /// where the cursor stands (once per frame, like any step: see
+    /// `step_drag`).
     pub(super) fn modifiers_changed(&mut self, modifiers: Modifiers) {
         if let Some(position) = self
             .drag_pending
             .map(|(at, _)| at)
-            .or(self.guides.dragged_at)
+            .or(self.guides.dragged_at.map(|(at, _)| at))
         {
             self.drag_pending = Some((position, modifiers));
         }
