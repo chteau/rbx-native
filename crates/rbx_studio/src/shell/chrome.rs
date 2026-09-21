@@ -22,6 +22,7 @@ use gpui_kit::*;
 
 use crate::tokens;
 
+use super::layout::Edge;
 use super::Shell;
 
 /// The mark at the top-left, exported from the same Figma file as the rest
@@ -62,30 +63,17 @@ impl Document {
     }
 }
 
-/// Which edge is being dragged. One variant per resize handle in the shell;
-/// `Shell::drag` holds at most one at a time.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Handle {
-    /// Between the Properties column and the centre column.
-    Properties,
-    /// Between the centre column and the Explorer column.
-    Explorer,
-    /// Between the document and the Output dock beneath it.
-    Output,
-}
-
-impl Handle {
-    fn is_vertical_edge(self) -> bool {
-        !matches!(self, Handle::Output)
-    }
-}
-
-/// A drag in progress: where the pointer went down, and how big the panel
-/// was at that moment. Both are needed — tracking only the delta since the
-/// last move accumulates rounding drift over a long drag.
+/// A drag in progress: which edge, where the pointer went down, and how
+/// big that edge was at that moment. The last two are both needed —
+/// tracking only the delta since the previous move accumulates rounding
+/// drift over a long drag.
+///
+/// The edge is a `layout::Edge` rather than a variant per handle: a handle
+/// is now "the seam beside this edge", and which panel is behind it is a
+/// question for the layout.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Drag {
-    pub(crate) handle: Handle,
+    pub(crate) edge: Edge,
     pub(crate) origin: Pixels,
     pub(crate) size: Pixels,
 }
@@ -491,15 +479,49 @@ pub(crate) fn panel_topbar(
         )
 }
 
-/// A dock's tab strip: the panel it holds, then the button that owns the
-/// dock's own settings.
+/// One tab in a dock's strip: the frame's pill, dimmed when it is not the
+/// one showing.
 ///
-/// The frame puts a "+" in that second slot. This editor's docks hold one
-/// panel each and always will — Explorer is the Explorer — so the slot
-/// carries the panel's overflow menu instead: same cell, same divider, but
-/// a button with somewhere to go. For the same reason the tab has no close
-/// "×": the frame draws one, and here it would be a control that lies.
-pub(super) fn dock_tabs(title: SharedString, trailing: Option<AnyElement>) -> impl IntoElement {
+/// Unwired on purpose — the caller adds the id, the click that shows it and
+/// the drag that moves it (see `shell::workspace`), because a tab is the
+/// grab handle for its whole panel and only the caller knows which panel
+/// that is.
+pub(super) fn dock_tab(id: &'static str, title: SharedString, selected: bool) -> Stateful<Div> {
+    h_flex()
+        // Keyed by the panel rather than by its label: the Properties tab
+        // is named after the selected instance, and an element whose id
+        // changes on every selection is a new element every time.
+        .id(SharedString::from(format!("dock-tab-{id}")))
+        // Hugs its own title rather than filling the strip: the frame's
+        // tab is a pill on the dock's black ground, and a full-width bar
+        // would read as a header instead.
+        .flex_none()
+        .max_w(px(tokens::dock_width() - 60.))
+        .items_center()
+        .gap(px(7.))
+        .px(px(6.))
+        .rounded(tokens::RADIUS)
+        .text_size(tokens::text_sm())
+        .line_height(tokens::line_sm())
+        .cursor_pointer()
+        .map(|this| {
+            if selected {
+                this.bg(tokens::chrome()).text_color(tokens::text_strong())
+            } else {
+                // An unselected tab keeps the dock's own ground rather than
+                // a second fill: two pills side by side in different greys
+                // read as two docks, not as one dock's two tabs.
+                this.text_color(tokens::text_muted())
+                    .hover(|this| this.bg(tokens::hover()))
+            }
+        })
+        .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
+        .child(div().truncate().child(title))
+}
+
+/// The strip a dock's tabs sit in, with its own trailing cell for an
+/// overflow menu.
+pub(super) fn dock_strip(tabs: Vec<AnyElement>, trailing: Option<AnyElement>) -> impl IntoElement {
     h_flex()
         .w_full()
         .h(tokens::dock_tabs_height())
@@ -507,23 +529,7 @@ pub(super) fn dock_tabs(title: SharedString, trailing: Option<AnyElement>) -> im
         .items_stretch()
         .p(px(5.))
         .gap(px(4.))
-        .child(
-            h_flex()
-                // Hugs its own title rather than filling the strip: the
-                // frame's tab is a pill on the dock's black ground, and a
-                // full-width bar would read as a header instead.
-                .flex_none()
-                .max_w(px(tokens::dock_width() - 60.))
-                .items_center()
-                .gap(px(7.))
-                .px(px(6.))
-                .rounded(tokens::RADIUS)
-                .bg(tokens::chrome())
-                .text_size(tokens::text_sm())
-                .line_height(tokens::line_sm())
-                .text_color(tokens::text_strong())
-                .child(div().truncate().child(title)),
-        )
+        .children(tabs)
         .when_some(trailing, |this, trailing| {
             this.child(
                 h_flex()
@@ -623,16 +629,16 @@ pub(super) fn button(
 /// A resize handle. The frame has none — its docks are fixed at 228px — so
 /// this draws nothing until it is pointed at, and then only a hairline.
 pub(super) fn resize_handle(
-    handle: Handle,
+    edge: Edge,
     on_down: impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
-    let vertical_edge = handle.is_vertical_edge();
+    let vertical_edge = edge.is_vertical();
 
     div()
-        .id(match handle {
-            Handle::Properties => "handle-properties",
-            Handle::Explorer => "handle-explorer",
-            Handle::Output => "handle-output",
+        .id(match edge {
+            Edge::Left => "handle-left",
+            Edge::Right => "handle-right",
+            Edge::Bottom => "handle-bottom",
         })
         .flex_none()
         .map(|this| {

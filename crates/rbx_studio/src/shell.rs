@@ -8,6 +8,7 @@ mod attributes_panel;
 mod chrome;
 mod clipboard;
 mod command;
+mod dock_drag;
 mod drag;
 mod edit;
 mod explorer_edit;
@@ -18,6 +19,7 @@ mod keys;
 mod layout;
 mod menu;
 mod output;
+mod panel_window;
 mod panels;
 mod quality;
 mod reparent;
@@ -25,6 +27,7 @@ mod ribbon;
 mod roving;
 
 pub(crate) use chrome::panel_topbar;
+pub(crate) use layout::{edge_from_key, edge_key, Edge, SavedEdge, SavedLayout};
 pub(crate) use roving::install as install_key_bindings;
 mod tree_keys;
 
@@ -40,7 +43,7 @@ mod toolbar;
 mod tooltip;
 mod workspace;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -259,15 +262,20 @@ pub(crate) struct Shell {
     /// popover so that opening one closes the last, and so a menu item can
     /// close the menu it was clicked in (see `shell::menu`).
     open_menu: Option<MenuId>,
-    /// The three column/dock sizes the user can drag, and the drag in
-    /// progress if there is one. Session-only, like the rest of the
-    /// layout: the dock layout used to be persisted, and restoring a saved
-    /// one is a feature to redo deliberately rather than inherit.
-    properties_width: f32,
-    explorer_width: f32,
-    output_height: f32,
+    /// Which panel is on which edge and how big each edge is — the data
+    /// that used to be the order of three `.child()` calls (see
+    /// `shell::layout`). Persisted, along with the drag in progress if
+    /// there is one.
+    layout: layout::Layout,
     output_collapsed: bool,
     drag: Option<Drag>,
+    /// The dock currently being dragged by its tab, which is what puts the
+    /// drop strips on screen (see `shell::dock_drag`). `None` the rest of
+    /// the time, which is nearly always.
+    dragging_panel: Option<layout::Panel>,
+    /// One window per torn-out dock, kept in step with the layout by
+    /// `shell::panel_window`.
+    panel_windows: HashMap<layout::Panel, WindowHandle<gpui_kit::component::Root>>,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
     _subscriptions: [Subscription; 12],
 }
@@ -293,9 +301,7 @@ impl Shell {
             font_scale,
             large_targets,
             reduce_motion,
-            properties_width,
-            explorer_width,
-            output_height,
+            docks,
             output_collapsed,
             increment_names,
             expand_on_select,
@@ -485,17 +491,11 @@ impl Shell {
             ribbon_tab: ribbon::Tab::default(),
             document: Document::default(),
             open_menu: None,
-            // A saved layout wins over the default; a zero means nothing
-            // was saved (see `Settings`).
-            properties_width: workspace::saved_or_default(
-                properties_width,
-                workspace::properties_width(),
-            ),
-            explorer_width: workspace::saved_or_default(
-                explorer_width,
-                workspace::explorer_width(),
-            ),
-            output_height: workspace::saved_or_default(output_height, workspace::OUTPUT_HEIGHT),
+            // A saved layout wins over the default, and is total over
+            // whatever the file actually held (see `layout::Layout::restore`).
+            layout: layout::Layout::restore(&docks),
+            dragging_panel: None,
+            panel_windows: HashMap::new(),
             output_collapsed,
             drag: None,
             _subscriptions: [
@@ -788,10 +788,43 @@ impl Shell {
     /// pixels wide is saved that way, and without this the only way back is
     /// to find and delete the settings file.
     pub(crate) fn reset_layout(&mut self, cx: &mut Context<Self>) {
-        self.properties_width = workspace::properties_width();
-        self.explorer_width = workspace::explorer_width();
-        self.output_height = workspace::OUTPUT_HEIGHT;
+        self.layout = layout::Layout::default();
         self.output_collapsed = false;
+        self.save_settings();
+        cx.notify();
+    }
+
+    /// Docks one panel on one edge — from a drop, or from the dock menu's
+    /// "Move to" entry.
+    ///
+    /// Both go through here rather than each transforming the layout
+    /// themselves, so the two can never disagree about what a move means.
+    /// The menu is not decoration: the accessibility guidance this project
+    /// follows treats drag-only rearrangement as a failure, so the drag is
+    /// the fast path and the menu is the one that has to exist.
+    pub(super) fn dock_panel(
+        &mut self,
+        panel: layout::Panel,
+        to: layout::Edge,
+        before: Option<usize>,
+        cx: &mut Context<Self>,
+    ) {
+        self.layout.dock(panel, to, before);
+        self.save_settings();
+        cx.notify();
+    }
+
+    /// Shows one of a dock's tabs, from a click on it.
+    pub(super) fn activate_panel(&mut self, panel: layout::Panel, cx: &mut Context<Self>) {
+        self.layout.activate(panel);
+        self.save_settings();
+        cx.notify();
+    }
+
+    /// Tears one panel out into a window of its own — from a tab dragged
+    /// past the window's edge, or from the dock menu's "Float".
+    pub(super) fn float_panel(&mut self, panel: layout::Panel, cx: &mut Context<Self>) {
+        self.layout.float(panel);
         self.save_settings();
         cx.notify();
     }
@@ -808,8 +841,7 @@ impl Shell {
         }
         // The docks are sized in state, not in tokens, so they have to be
         // re-derived or a 2x scale leaves a 300px dock holding 600px rows.
-        self.properties_width = workspace::properties_width();
-        self.explorer_width = workspace::explorer_width();
+        self.layout.reset_sizes();
         self.save_settings();
         cx.notify();
     }
@@ -997,9 +1029,7 @@ impl Shell {
             font_scale: tokens::font_scale(),
             large_targets: tokens::large_targets(),
             reduce_motion: self.reduce_motion,
-            properties_width: self.properties_width,
-            explorer_width: self.explorer_width,
-            output_height: self.output_height,
+            docks: self.layout.saved(),
             output_collapsed: self.output_collapsed,
             increment_names: self.increment_names,
             expand_on_select: self.expand_on_select,
@@ -1137,16 +1167,22 @@ impl Render for Shell {
             }))
             .on_mouse_up(
                 MouseButton::Left,
-                cx.listener(|shell, _: &MouseUpEvent, _, cx| {
+                cx.listener(|shell, event: &MouseUpEvent, window, cx| {
                     shell.end_resize(cx);
                     shell.scrub = None;
+                    shell.end_panel_drag(event.position, window.viewport_size(), cx);
                 }),
             )
+            // The one that matters for tearing a dock out: a pointer
+            // released *outside* the window is by definition not over any
+            // element of ours, so no drop is ever reported for it and this
+            // is the only place the gesture can be finished.
             .on_mouse_up_out(
                 MouseButton::Left,
-                cx.listener(|shell, _: &MouseUpEvent, _, cx| {
+                cx.listener(|shell, event: &MouseUpEvent, window, cx| {
                     shell.end_resize(cx);
                     shell.scrub = None;
+                    shell.end_panel_drag(event.position, window.viewport_size(), cx);
                 }),
             )
             .child(self.topbar(cx))

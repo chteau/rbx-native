@@ -1,12 +1,16 @@
-//! **Row D** — the persistent three-column shell: Properties, the open
-//! document with Output docked beneath it, and Explorer.
+//! **Row D** — the document, and whichever panels are parked around it.
 //!
-//! The three panels are plain children of this row and are built once, in
-//! `Shell::new`. Nothing here is conditional on which document Row A has
-//! open or which page Row B has selected, which is what makes the
-//! independence rule hold by construction: switching either tab cannot
-//! unmount a panel, so a scroll position or a selection has nowhere to get
-//! lost (see `UX_GUIDELINES.md`).
+//! Which panel is on which edge is [`super::layout::Layout`]'s to say, not
+//! this module's: Row D used to be three hardcoded `.child()` calls, so
+//! "Properties is on the left" was source order and nothing could change
+//! it at runtime. This walks the layout instead. Everything else about the
+//! row is unchanged, including the panel bodies themselves.
+//!
+//! Every panel is still an unconditional child, which is what
+//! `UX_GUIDELINES.md` §3's independence rule asks: nothing here is
+//! conditional on which document Row A has open, and panels sharing an
+//! edge split it rather than becoming tabs, so none of them is ever left
+//! unrendered and a scroll position has nowhere to get lost.
 //!
 //! The frame fixes both side docks at 228px. They are draggable here
 //! anyway — a place file's instance names are not 228px wide just because
@@ -23,36 +27,11 @@ use crate::class_icons::IconPack;
 use crate::pacing::UnfocusedFps;
 use crate::tokens;
 
-use super::chrome::{self, Document, Drag, Handle};
+use super::chrome::{self, Document, Drag};
+use super::dock_drag::DraggedPanel;
+use super::layout::{Edge, Home, Panel};
 use super::menu::{self, MenuId};
 use super::Shell;
-
-/// What a dock starts at. The frame fixes both at 228px against a 9px
-/// label; this shell sets text at 14px, so the label column — and with it
-/// the dock — is wider (see `tokens::dock_width`).
-pub(super) fn explorer_width() -> f32 {
-    tokens::dock_width()
-}
-
-pub(super) fn properties_width() -> f32 {
-    tokens::dock_width()
-}
-
-pub(super) const OUTPUT_HEIGHT: f32 = 180.;
-/// A column may not be dragged outside this range; past either end the
-/// panel stops being usable rather than merely small.
-const COLUMN_RANGE: (f32, f32) = (200., 560.);
-const OUTPUT_RANGE: (f32, f32) = (80., 400.);
-/// A persisted dock size, or the default when nothing was saved. Zero is
-/// the "nothing was saved" marker (see `Settings`), which also rejects the
-/// NaN and negative values a hand-edited file could otherwise inject.
-pub(super) fn saved_or_default(saved: f32, default: f32) -> f32 {
-    if saved > 0. {
-        saved
-    } else {
-        default
-    }
-}
 
 /// The most of the window's width one side dock may occupy.
 const MAX_DOCK_SHARE: f32 = 0.28;
@@ -67,31 +46,35 @@ impl Shell {
         // leave a 1600px window ~350px of viewport. The scale is meant to
         // make the editor readable, not to squeeze out the thing being
         // edited, so a dock may never take more than this share of the
-        // window however big its own tokens have grown.
+        // window however big its own tokens have grown. A *display* cap:
+        // writing it back would mean a window narrowed once and widened
+        // again had lost the size the user picked.
         let limit = f32::from(window.viewport_size().width) * MAX_DOCK_SHARE;
-        self.properties_width = self.properties_width.min(limit);
-        self.explorer_width = self.explorer_width.min(limit);
 
-        let properties = self.properties_dock(window, cx);
+        // Built before the row is assembled, because each needs `&mut
+        // self` and the row below only moves finished elements around.
         let document = self.document_content(window, cx);
-        let output = self.output_dock(cx);
-        let explorer = self.explorer_dock(cx);
         let overlay = self.viewport_overlay(cx);
         let showing_viewport = self.document == Document::Viewport;
 
+        // Before the edges are built, so a panel torn out on the frame it
+        // was dropped does not also draw itself into a dock for one frame.
+        self.sync_panel_windows(cx);
+
+        let left = self.dock_edge(Edge::Left, limit, window, cx);
+        let right = self.dock_edge(Edge::Right, limit, window, cx);
+        let bottom = self.dock_edge(Edge::Bottom, limit, window, cx);
+        let zones = self.drop_zones(cx);
+
         h_flex()
+            // Positioned, so the drop strips can be laid over it — an edge
+            // holding nothing has no column of its own to aim at.
+            .relative()
             .w_full()
             .flex_1()
             .overflow_hidden()
             .bg(tokens::black())
-            .child(
-                dock_column()
-                    .w(px(self.properties_width))
-                    .border_r(px(1.))
-                    .border_color(tokens::divider())
-                    .child(properties),
-            )
-            .child(self.handle(Handle::Properties, cx))
+            .children(left)
             .child(
                 v_flex()
                     .flex_1()
@@ -111,30 +94,171 @@ impl Shell {
                             // indicator already owns the other one.
                             .when(showing_viewport, |this| this.child(overlay)),
                     )
-                    .when(!self.output_collapsed, |this| {
-                        this.child(self.handle(Handle::Output, cx))
-                    })
-                    .child(
-                        v_flex()
-                            .flex_none()
-                            .w_full()
-                            .bg(tokens::dock())
-                            .border_t(px(1.))
-                            .border_color(tokens::divider())
-                            .when(!self.output_collapsed, |this| {
-                                this.h(px(self.output_height))
-                            })
-                            .child(output),
-                    ),
+                    .children(bottom),
             )
-            .child(self.handle(Handle::Explorer, cx))
-            .child(
-                dock_column()
-                    .w(px(self.explorer_width))
-                    .border_l(px(1.))
-                    .border_color(tokens::divider())
-                    .child(explorer),
-            )
+            .children(right)
+            .children(zones)
+    }
+
+    /// One edge: its resize handle, its tab strip, and whichever tab is
+    /// showing.
+    ///
+    /// Returns nothing at all for an edge nobody put a panel on — no
+    /// column, no handle, no hairline — so emptying an edge gives the room
+    /// back to the document rather than leaving a seam where a dock was.
+    fn dock_edge(
+        &mut self,
+        edge: Edge,
+        limit: f32,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
+        let panels = self.layout.panels(edge).to_vec();
+        let Some(active) = self.layout.active(edge) else {
+            return Vec::new();
+        };
+
+        // Output is the one panel that collapses to its own tab strip.
+        let collapsed = self.output_collapsed && active == Panel::Output;
+        let size = self.layout.capped(edge, limit);
+
+        let tabs = panels
+            .iter()
+            .enumerate()
+            .map(|(index, panel)| {
+                let title = self.panel_title(*panel);
+                self.dock_tab(*panel, title, edge, index, *panel == active, cx)
+            })
+            .collect();
+        let (trailing, content) = self.panel_parts(active, collapsed, window, cx);
+        let strip = chrome::dock_strip(tabs, trailing).into_any_element();
+
+        let handle = cx.entity();
+        let column = if edge.is_vertical() {
+            dock_column().w(px(size))
+        } else {
+            v_flex()
+                .flex_none()
+                .w_full()
+                .bg(tokens::dock())
+                .when(!collapsed, |this| this.h(px(size)))
+        };
+        let column = match edge {
+            Edge::Left => column.border_r(px(1.)),
+            Edge::Right => column.border_l(px(1.)),
+            Edge::Bottom => column.border_t(px(1.)),
+        }
+        .border_color(tokens::divider())
+        .id(SharedString::from(format!("dock-{}", edge.label())))
+        // Dropping anywhere on a dock adds to its strip, so the tabs are
+        // a target rather than the only one — an inch of miss should not
+        // cost the gesture.
+        .on_drop(move |dragged: &DraggedPanel, _, cx| {
+            let panel = dragged.0;
+            handle.update(cx, |shell, cx| {
+                shell.dragging_panel = None;
+                shell.dock_panel(panel, edge, None, cx);
+            });
+        })
+        .child(strip)
+        .children(content)
+        .into_any_element();
+
+        // The handle sits between the edge and the document, so which side
+        // of the column it goes on is which edge this is. A collapsed
+        // Output has nothing to resize.
+        let resize = (!collapsed).then(|| self.handle(edge, cx));
+        match edge {
+            Edge::Left => [Some(column), resize].into_iter().flatten().collect(),
+            _ => [resize, Some(column)].into_iter().flatten().collect(),
+        }
+    }
+
+    /// One tab: shows its panel on a click, carries it on a drag, and
+    /// takes a drop to land beside itself.
+    ///
+    /// The tab is the grab handle for the whole dock, which is the gesture
+    /// every editor with movable panels uses — and the reason the panel's
+    /// own name had to become data (see `shell::layout`) rather than the
+    /// function that drew it.
+    fn panel_title(&self, panel: Panel) -> SharedString {
+        match panel {
+            // Named after the instance it is showing, which is what the
+            // dock's own title said before there were tabs.
+            Panel::Properties => self.properties_title(),
+            other => SharedString::from(other.key()),
+        }
+    }
+
+    fn dock_tab(
+        &self,
+        panel: Panel,
+        title: SharedString,
+        edge: Edge,
+        index: usize,
+        selected: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let show = cx.entity();
+        let start = cx.entity();
+        let drop = cx.entity();
+
+        chrome::dock_tab(panel.key(), title, selected)
+            // Mouse-*down*, not click: this element is also the drag
+            // handle, and a press that goes on to move is a drag whose
+            // click never arrives. Showing the tab on the press is what
+            // the Explorer's own rows do for the same reason, and it is
+            // the more responsive half of the bargain anyway.
+            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                show.update(cx, |shell, cx| shell.activate_panel(panel, cx));
+            })
+            .on_drag(DraggedPanel(panel), move |dragged, _, _, cx| {
+                start.update(cx, |shell, cx| shell.begin_panel_drag(dragged.0, cx));
+                cx.new(|_| dragged.clone())
+            })
+            .drag_over::<DraggedPanel>(|style, _, _, _| style.bg(tokens::check_on().opacity(0.35)))
+            // Landing *on* a tab inserts at its position, which is what
+            // makes a strip reorderable rather than append-only.
+            .on_drop(move |dragged: &DraggedPanel, _, cx| {
+                let carried = dragged.0;
+                drop.update(cx, |shell, cx| {
+                    shell.dragging_panel = None;
+                    shell.dock_panel(carried, edge, Some(index), cx);
+                });
+            })
+            .into_any_element()
+    }
+
+    /// The same parts a docked panel renders, for one that has been torn
+    /// out into a window of its own (see `shell::panel_window`).
+    ///
+    /// The torn-out window renders *through* this rather than holding a
+    /// copy of anything, which is what keeps a floating Explorer the
+    /// Explorer instead of a second one to keep in step.
+    pub(super) fn floating_parts(
+        &mut self,
+        panel: Panel,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> (Option<AnyElement>, Option<AnyElement>) {
+        self.panel_parts(panel, false, window, cx)
+    }
+
+    /// One panel's trailing controls and its content, with the tab strip
+    /// left to [`Self::dock_edge`] — the strip belongs to the *edge* now,
+    /// since several panels share one.
+    fn panel_parts(
+        &mut self,
+        panel: Panel,
+        collapsed: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> (Option<AnyElement>, Option<AnyElement>) {
+        match panel {
+            Panel::Properties => self.properties_dock(window, cx),
+            Panel::Explorer => self.explorer_dock(cx),
+            Panel::Output => self.output_dock(collapsed, cx),
+        }
     }
 
     /// Whichever editor Row A has open. This is the *only* thing Row A
@@ -147,10 +271,11 @@ impl Shell {
         }
     }
 
-    fn explorer_dock(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn explorer_dock(&self, cx: &mut Context<Self>) -> (Option<AnyElement>, Option<AnyElement>) {
         let show_all = self.show_all_services();
         let light_icons = self.icon_pack() == IconPack::Light;
-        let mut items = vec![
+        let mut items = self.move_items(Panel::Explorer);
+        items.extend([
             menu::item("Show all services")
                 .checked(show_all)
                 .on_click(move |shell, cx| shell.set_show_all_services(!show_all, cx)),
@@ -164,7 +289,7 @@ impl Shell {
                     };
                     shell.set_icon_pack(next, cx);
                 }),
-        ];
+        ]);
         // Only once somebody has installed a pack: a menu offering "Built-in
         // icons" as the sole choice would be a checked row that does nothing.
         let (packs, current) = self.installed_icon_packs();
@@ -193,46 +318,94 @@ impl Shell {
             cx,
         );
 
-        v_flex()
-            .size_full()
-            .overflow_hidden()
-            .child(chrome::dock_tabs(
-                "Explorer".into(),
-                Some(overflow.into_any_element()),
-            ))
-            .child(chrome::dock_content(
-                v_flex()
-                    .size_full()
-                    .gap(px(10.))
-                    .child(search_field(self.tab_order.next(), &self.search))
-                    .child(
-                        div()
-                            .flex_1()
-                            .overflow_hidden()
-                            .child(self.instance_tree(cx)),
-                    ),
-            ))
-            .into_any_element()
+        let content = chrome::dock_content(
+            v_flex()
+                .size_full()
+                .gap(px(10.))
+                .child(search_field(self.tab_order.next(), &self.search))
+                .child(
+                    div()
+                        .flex_1()
+                        .overflow_hidden()
+                        .child(self.instance_tree(cx)),
+                ),
+        );
+        (
+            Some(overflow.into_any_element()),
+            Some(content.into_any_element()),
+        )
     }
 
-    fn properties_dock(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let title = self.properties_title();
+    fn properties_dock(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> (Option<AnyElement>, Option<AnyElement>) {
+        let items = self.move_items(Panel::Properties);
         let rows = self.properties(window, cx);
+        // This dock had no overflow menu at all until it needed somewhere
+        // to put "Move to"; it still has nothing else in it.
+        let overflow = menu::dropdown(
+            self,
+            MenuId::PropertiesOverflow,
+            chrome::Trigger::new(chrome::icon_button(
+                "properties-overflow",
+                IconName::Ellipsis,
+                "Properties settings",
+            )),
+            items,
+            cx,
+        );
 
-        v_flex()
-            .size_full()
-            .overflow_hidden()
-            .child(chrome::dock_tabs(title, None))
-            .child(chrome::dock_content(rows))
-            .into_any_element()
+        (
+            Some(overflow.into_any_element()),
+            Some(chrome::dock_content(rows).into_any_element()),
+        )
+    }
+
+    /// The "Move to Left / Right / Bottom" run every dock's overflow menu
+    /// carries, with the edge it is already on ticked.
+    ///
+    /// This is the keyboard-operable way to rearrange, and the reason it is
+    /// built before the drag rather than after: the accessibility guidance
+    /// this project follows treats drag-only rearrangement as a failure,
+    /// not a gap. The drag calls the same `Shell::move_panel`, so there is
+    /// one transform rather than two that can disagree.
+    fn move_items(&self, panel: Panel) -> Vec<menu::Item> {
+        let here = self.layout.home_of(panel);
+        Edge::ALL
+            .into_iter()
+            .map(|edge| {
+                menu::item(format!("Move to {}", edge.label()))
+                    .checked(here == Home::Docked(edge))
+                    .on_click(move |shell, cx| shell.dock_panel(panel, edge, None, cx))
+            })
+            .chain(std::iter::once(
+                menu::item("Float")
+                    .checked(here == Home::Floating)
+                    .on_click(move |shell, cx| shell.float_panel(panel, cx)),
+            ))
+            .collect()
     }
 
     /// Output keeps its filter/Clear strip and its own settings menu, and
     /// collapses to exactly its own tab strip — enough to find and re-open,
     /// and nothing else.
-    fn output_dock(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn output_dock(
+        &self,
+        collapsed: bool,
+        cx: &mut Context<Self>,
+    ) -> (Option<AnyElement>, Option<AnyElement>) {
         let timestamps = self.output_show_timestamps;
-        let collapsed = self.output_collapsed;
+        let mut items = self.move_items(Panel::Output);
+        items.push(
+            menu::item("Show Timestamp")
+                .checked(timestamps)
+                .on_click(move |shell, cx| {
+                    shell.output_show_timestamps = !timestamps;
+                    cx.notify();
+                }),
+        );
         let overflow = menu::dropdown(
             self,
             MenuId::OutputOverflow,
@@ -241,12 +414,7 @@ impl Shell {
                 IconName::Ellipsis,
                 "Output settings",
             )),
-            vec![menu::item("Show Timestamp")
-                .checked(timestamps)
-                .on_click(move |shell, cx| {
-                    shell.output_show_timestamps = !timestamps;
-                    cx.notify();
-                })],
+            items,
             cx,
         );
 
@@ -277,22 +445,16 @@ impl Shell {
                 })),
             );
 
-        v_flex()
-            .size_full()
-            .overflow_hidden()
-            .child(chrome::dock_tabs(
-                "Output".into(),
-                Some(controls.into_any_element()),
-            ))
-            .when(!collapsed, |this| {
-                this.child(chrome::dock_content(
-                    div()
-                        .size_full()
-                        .overflow_hidden()
-                        .child(self.output_panel(cx)),
-                ))
-            })
+        let content = (!collapsed).then(|| {
+            chrome::dock_content(
+                div()
+                    .size_full()
+                    .overflow_hidden()
+                    .child(self.output_panel(cx)),
+            )
             .into_any_element()
+        });
+        (Some(controls.into_any_element()), content)
     }
 
     /// The viewport's own settings, floating in its top-right corner.
@@ -355,22 +517,19 @@ impl Shell {
             .into_any_element()
     }
 
-    fn handle(&self, handle: Handle, cx: &mut Context<Self>) -> AnyElement {
-        let size = match handle {
-            Handle::Properties => self.properties_width,
-            Handle::Explorer => self.explorer_width,
-            Handle::Output => self.output_height,
-        };
+    fn handle(&self, edge: Edge, cx: &mut Context<Self>) -> AnyElement {
+        let size = self.layout.size(edge);
 
         chrome::resize_handle(
-            handle,
+            edge,
             cx.listener(move |shell, event: &MouseDownEvent, _, cx| {
-                let origin = match handle {
-                    Handle::Output => event.position.y,
-                    _ => event.position.x,
+                let origin = if edge.is_vertical() {
+                    event.position.x
+                } else {
+                    event.position.y
                 };
                 shell.drag = Some(Drag {
-                    handle,
+                    edge,
                     origin,
                     size: px(size),
                 });
@@ -389,25 +548,15 @@ impl Shell {
             return;
         };
 
-        let clamp = |value: f32, (low, high): (f32, f32)| value.clamp(low, high);
         let size = f32::from(drag.size);
-        match drag.handle {
-            // Properties sits left of its handle, so rightward drag grows it.
-            Handle::Properties => {
-                self.properties_width =
-                    clamp(size + f32::from(position.x - drag.origin), COLUMN_RANGE);
-            }
-            // Explorer sits right of its handle: rightward drag shrinks it.
-            Handle::Explorer => {
-                self.explorer_width =
-                    clamp(size - f32::from(position.x - drag.origin), COLUMN_RANGE);
-            }
-            // Output sits below its handle: downward drag shrinks it.
-            Handle::Output => {
-                self.output_height =
-                    clamp(size - f32::from(position.y - drag.origin), OUTPUT_RANGE);
-            }
-        }
+        let moved = match drag.edge {
+            // The left edge is before its handle, so a rightward drag grows
+            // it; the other two sit after theirs and shrink.
+            Edge::Left => f32::from(position.x - drag.origin),
+            Edge::Right => -f32::from(position.x - drag.origin),
+            Edge::Bottom => -f32::from(position.y - drag.origin),
+        };
+        self.layout.resize(drag.edge, size + moved);
         cx.notify();
     }
 
