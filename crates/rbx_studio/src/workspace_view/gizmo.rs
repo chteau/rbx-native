@@ -446,6 +446,7 @@ impl WorkspaceView {
         let Some(anchor) = self.targets.anchor() else {
             return;
         };
+        self.guides.dragged_at = Some(position);
         // `position` is reused below as a match binding name for the part's
         // own new world-space placement (`Change::Position`), which shadows
         // this screen-space one for the length of that arm — kept under its
@@ -468,6 +469,7 @@ impl WorkspaceView {
         match change {
             Change::Position(position) => {
                 let Some((_, first)) = stepped(anchor, change, &mut self.dragged) else {
+                    self.step_guides(drag, ray, modifiers.shift, scale);
                     return;
                 };
                 // Applied to every selected part below, not just the anchor:
@@ -526,6 +528,7 @@ impl WorkspaceView {
             // what the box its handles stand on already promised.
             Change::Size { size, position } => {
                 let Some((moved, first)) = stepped(anchor, change, &mut self.dragged) else {
+                    self.step_guides(drag, ray, modifiers.shift, scale);
                     return;
                 };
                 self.targets.set_anchor(moved);
@@ -539,6 +542,7 @@ impl WorkspaceView {
                 let factor = self.held.factor_within(factor, MIN_SIZE, MAX_SIZE);
                 let change = Change::Scaled { pivot, factor };
                 let Some((_, first)) = stepped(anchor, change, &mut self.dragged) else {
+                    self.step_guides(drag, ray, modifiers.shift, scale);
                     return;
                 };
                 let held = self.held.clone();

@@ -946,7 +946,9 @@ impl Render for WorkspaceView {
                 // re-resolve the moment Alt is pressed or released, without
                 // waiting for the cursor to move. Re-queued at the last known
                 // position; suppressed mid-look exactly as an ordinary move is.
-                if !hover::suppressed(view.looking) {
+                if view.dragging() {
+                    view.modifiers_changed(event.modifiers);
+                } else if !hover::suppressed(view.looking) {
                     if let Some(position) = view.cursor {
                         view.hover_pending = Some((position, event.modifiers));
                     }

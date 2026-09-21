@@ -56,6 +56,9 @@ pub(super) struct State {
     light: Vec<Segment>,
     /// What the render thread was last sent, both kinds together.
     sent: Vec<Segment>,
+    /// Where the cursor last stepped the drag in progress: a modifier
+    /// pressed or released with the mouse still re-steps it from there.
+    pub(super) dragged_at: Option<Point<Pixels>>,
 }
 
 impl WorkspaceView {
@@ -133,6 +136,21 @@ impl WorkspaceView {
         state.snaps.clear();
         state.arrow = None;
         state.landed_on = None;
+        state.dragged_at = None;
+    }
+
+    /// `Shift` pressed or released mid-drag: Studio re-lands the drag on
+    /// the change — onto the grid or off it, onto the soft snaps or off them
+    /// — without waiting for the mouse, so the drag is stepped again where
+    /// the cursor stands (once per frame, like any step: see `step_drag`).
+    pub(super) fn modifiers_changed(&mut self, modifiers: Modifiers) {
+        if let Some(position) = self
+            .drag_pending
+            .map(|(at, _)| at)
+            .or(self.guides.dragged_at)
+        {
+            self.drag_pending = Some((position, modifiers));
+        }
     }
 
     /// Whether a drag snaps to parts this move: the setting on and `Shift` up

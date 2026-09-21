@@ -607,7 +607,9 @@ fn a_moved_selected_part_takes_its_cue_with_it() {
     let log = dom.take_changes();
 
     for (what, state) in [("forward", &dom), ("undo", &before)] {
-        let applied = patched.apply_changes(state, &log).expect("the edit applies");
+        let applied = patched
+            .apply_changes(state, &log)
+            .expect("the edit applies");
         assert_eq!(applied, Applied::Patched, "{what} must be patched");
         let ae = differing(&frame(&mut patched), &selected_frame(state));
         assert_eq!(ae, 0, "{what}: {ae} pixels differ from a rebuild");
