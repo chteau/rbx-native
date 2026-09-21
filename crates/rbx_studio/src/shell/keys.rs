@@ -12,6 +12,7 @@ use gpui_kit::{Context, Keystroke, Modifiers, Window};
 use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
+use crate::change_class;
 use crate::explorer;
 use crate::script_editor::source;
 
@@ -363,17 +364,30 @@ fn part_defaults_shape(
     })
 }
 
-/// Everything a new `class` instance starts with here, keyed the way the DOM
-/// stores it: [`part_defaults`] for a `BasePart`, with `Part`'s own block
-/// `shape`, and nothing for any other class — this editor knows no other
-/// class's defaults. Change Class reads it on both sides of a conversion.
+/// What Change Class gives an instance that had no value at all for these:
+/// [`part_defaults`]'s keys for a `BasePart`, with `Part`'s own block `shape`,
+/// each at `class`'s own default where the per-class table records one in the
+/// type the DOM stores it as — a `TrussPart` is 2 × 2 × 2, not a `Part`'s
+/// 4 × 1.2 × 2 — and nothing for any other class.
 pub(super) fn class_defaults(
     database: &ReflectionDatabase,
     class: &str,
 ) -> Vec<(&'static str, Variant)> {
+    let own = |key: &str, value: &Variant| {
+        let property = rbx_lua::reflected_property(database, class, key)?;
+        change_class::stock(database, class, &property.name)
+            .filter(|own| std::mem::discriminant(*own) == std::mem::discriminant(value))
+            .cloned()
+    };
     part_defaults_shape(database, class, None)
         .map(part_defaults)
         .unwrap_or_default()
+        .into_iter()
+        .map(|(key, value)| {
+            let value = own(key, &value).unwrap_or(value);
+            (key, value)
+        })
+        .collect()
 }
 
 /// Applies [`part_defaults`] to a freshly inserted instance.

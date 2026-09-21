@@ -236,6 +236,16 @@
   says so rather than writing a latitude past the pole. A line through the
   anchor toward the light — and in Shadow a marker where the shadow lands —
   is drawn through the same overlay the Align preview uses. — @chteau
+- **Change Class and the Sun tool read the real shapes and defaults.** A
+  value still at the old class's stock takes the new class's own stock,
+  read from each class's recorded defaults rather than one table shared by
+  every part: a stock `Part` becomes a 2 × 2 × 2 `TrussPart`, a stock
+  `PointLight` a `SpotLight` reaching 16 studs. A default recorded in
+  another type than the file keeps its key in is left alone rather than
+  written wrong. The Sun tool's Face and Glint aim off the surface a part is
+  drawn with — a wedge's slope, a ball's or a cylinder's curve, the triangle
+  of a downloaded mesh — rather than the box around it, through a
+  `pick::surface_hit` that resolves shapes the way a click does. — @chteau
 
 ## 2026-09-20
 

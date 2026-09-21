@@ -111,8 +111,8 @@ impl SunTool {
     /// The left button going down: a new gesture. Shadow takes its caster
     /// here — the one point the rest of the drag measures from.
     ///
-    /// `hit` is the scene under a ray, leaving out one part if asked (see
-    /// `settle::part_under`).
+    /// `hit` is the drawn surface under a ray, leaving out one part if asked
+    /// (see `shell::sun`, which answers it through `pick::surface_hit`).
     pub(crate) fn press(
         &mut self,
         ray: Ray,

@@ -161,6 +161,38 @@ fn distance_to(
         // which is exactly what the shape resolution below answers for it.
     }
 
+    let (kind, model) = solid_of(dom, database, referent)?;
+    shape::hit_key(kind, model, ray)
+}
+
+/// Where `ray` first meets the surface `referent` is drawn with, and that
+/// surface's outward unit normal there — the slope of a wedge, the curve of
+/// a ball or a cylinder, the triangle of a downloaded mesh — resolved
+/// through the same shapes [`parts_along`] tests. `None` when the ray misses,
+/// or starts inside a solid and so enters through no face.
+pub fn surface_hit(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    meshes: &Meshes,
+    referent: Ref,
+    ray: Ray,
+) -> Option<(Vec3, Vec3)> {
+    if let Some((asset, fit)) = file_mesh_fit(dom, database, referent) {
+        if let Some(mesh) = meshes.get(&asset) {
+            return mesh::surface(mesh, fit.transform(mesh), ray);
+        }
+    }
+    let (kind, model) = solid_of(dom, database, referent)?;
+    shape::surface(kind, model, ray)
+}
+
+/// The procedural solid `referent` is drawn as, and the matrix it is drawn
+/// through.
+fn solid_of(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    referent: Ref,
+) -> Option<(ShapeKind, Mat4)> {
     let instance = dom.get(referent)?;
     let properties = instance.properties();
     // Roblox's binary format spells `BasePart.Size` lowercase, which is the
@@ -171,7 +203,7 @@ fn distance_to(
         return None;
     };
     let geometry = resolve_shape(dom, database, instance, Vec3::new(size.x, size.y, size.z));
-    shape::hit_key(geometry.kind, geometry.model(cframe_matrix(cframe)), ray)
+    Some((geometry.kind, geometry.model(cframe_matrix(cframe))))
 }
 
 /// Everything in the scene a click or a drag can resolve against: `Workspace`'s

@@ -287,3 +287,30 @@ fn every_template_has_balanced_function_do_end_blocks() {
         );
     }
 }
+
+// What Change Class fills in comes from each class's own defaults where the
+// table has them in the DOM's type, and from the `Part` table otherwise.
+#[test]
+fn class_defaults_take_each_class_its_own_stock_values() {
+    let database = ReflectionDatabase::embedded();
+    let value = |class: &str, key: &str| {
+        class_defaults(&database, class)
+            .into_iter()
+            .find(|(name, _)| *name == key)
+            .map(|(_, value)| value)
+    };
+    let size = |x, y, z| Some(Variant::Vector3(Vector3Data { x, y, z }));
+    assert_eq!(value("TrussPart", "size"), size(2.0, 2.0, 2.0));
+    assert_eq!(value("CornerWedgePart", "size"), size(2.0, 2.0, 2.0));
+    assert_eq!(value("Part", "size"), size(4.0, 1.2, 2.0));
+    // Recorded as a `Color3`, stored as a `Color3uint8`: the table's own.
+    assert_eq!(
+        value("TrussPart", "Color3uint8"),
+        Some(Variant::Color3uint8 {
+            r: 163,
+            g: 162,
+            b: 165
+        })
+    );
+    assert!(class_defaults(&database, "Folder").is_empty());
+}

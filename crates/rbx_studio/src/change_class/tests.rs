@@ -40,7 +40,7 @@ fn place() -> (WeakDom, Ref, Ref) {
 }
 
 fn plan_for(dom: &WeakDom, part: Ref, target: &str) -> Plan {
-    plan(&database(), dom.get(part).unwrap(), target, &[], &[])
+    plan(&database(), dom.get(part).unwrap(), target, &[])
 }
 
 #[test]
@@ -87,39 +87,72 @@ fn a_property_of_the_same_name_but_another_type_is_dropped() {
     assert!(plan.kept.iter().any(|kept| kept == "Transparency"));
 }
 
+// Read from the per-class table (`ReflectionDatabase::default_value`): a
+// stock `Part` is 4 × 1.2 × 2, a stock `TrussPart` 2 × 2 × 2.
 #[test]
 fn a_value_at_the_old_default_gives_way_to_the_new_one() {
     let (mut dom, _, part) = place();
-    let stock = vector3(4.0, 1.2, 2.0);
-    dom.set_property(part, "size", stock.clone()).unwrap();
-    let truss = vector3(2.0, 10.0, 2.0);
+    dom.set_property(part, "size", vector3(4.0, 1.2, 2.0))
+        .unwrap();
 
-    let plan = plan(
-        &database(),
-        dom.get(part).unwrap(),
-        "TrussPart",
-        &stock_size(stock),
-        &stock_size(truss.clone()),
-    );
+    let plan = plan_for(&dom, part, "TrussPart");
     apply(&mut dom, part, "TrussPart", &plan);
 
     assert_eq!(plan.reset, vec!["size"]);
     assert_eq!(
         dom.get(part).unwrap().properties().get("size"),
-        Some(&truss)
+        Some(&vector3(2.0, 2.0, 2.0))
+    );
+}
+
+// Not only parts: a stock `PointLight` reaches 8 studs, a stock `SpotLight`
+// 16, and a light nobody tuned should light like the one it now is.
+#[test]
+fn a_light_at_its_stock_range_takes_the_new_class_range() {
+    let mut dom = WeakDom::new();
+    let light = dom.new_instance("PointLight", "Light", None);
+    dom.set_property(light, "Range", Variant::Float32(8.0))
+        .unwrap();
+    dom.set_property(light, "Brightness", Variant::Float32(1.0))
+        .unwrap();
+
+    let plan = plan_for(&dom, light, "SpotLight");
+    apply(&mut dom, light, "SpotLight", &plan);
+
+    let properties = dom.get(light).unwrap().properties();
+    assert_eq!(properties.get("Range"), Some(&Variant::Float32(16.0)));
+    // Stock on both, so there is nothing to reset.
+    assert_eq!(properties.get("Brightness"), Some(&Variant::Float32(1.0)));
+    assert_eq!(plan.reset, vec!["Range"]);
+}
+
+// The table records `BasePart.Color` as a `Color3`; a file keeps it as a
+// `Color3uint8`. Rewriting the key in the table's type would corrupt it.
+#[test]
+fn a_default_in_another_type_than_the_file_keeps_is_not_written() {
+    let (mut dom, _, part) = place();
+    let stock = Variant::Color3uint8 {
+        r: 163,
+        g: 162,
+        b: 165,
+    };
+    dom.set_property(part, "Color3uint8", stock.clone())
+        .unwrap();
+
+    let plan = plan_for(&dom, part, "TrussPart");
+    apply(&mut dom, part, "TrussPart", &plan);
+
+    assert!(plan.kept.iter().any(|kept| kept == "Color3uint8"));
+    assert_eq!(
+        dom.get(part).unwrap().properties().get("Color3uint8"),
+        Some(&stock)
     );
 }
 
 #[test]
 fn a_value_someone_chose_is_kept_over_the_new_default() {
     let (mut dom, _, part) = place();
-    let plan = plan(
-        &database(),
-        dom.get(part).unwrap(),
-        "TrussPart",
-        &stock_size(vector3(4.0, 1.2, 2.0)),
-        &stock_size(vector3(2.0, 10.0, 2.0)),
-    );
+    let plan = plan_for(&dom, part, "TrussPart");
     apply(&mut dom, part, "TrussPart", &plan);
     assert_eq!(
         dom.get(part).unwrap().properties().get("size"),
@@ -138,7 +171,6 @@ fn a_default_the_instance_never_had_is_filled_in() {
         &database(),
         dom.get(folder).unwrap(),
         "Part",
-        &[],
         &stock_size(stock.clone()),
     );
     apply(&mut dom, folder, "Part", &plan);

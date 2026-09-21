@@ -59,16 +59,17 @@ pub(crate) fn partition(
 pub(crate) struct Plan {
     /// DOM keys carried over as they are.
     pub(crate) kept: Vec<String>,
-    /// DOM keys holding the old class's default, taken off so the new
-    /// class's own default applies instead.
+    /// DOM keys still at the old class's default, rewritten to the new
+    /// class's own.
     pub(crate) reset: Vec<String>,
     /// Reflected names of what the new class cannot hold, which is what is
     /// actually lost and what the picker shows before anything happens.
     pub(crate) dropped: Vec<String>,
-    /// DOM keys taken off the instance: the `dropped` ones and the `reset`.
+    /// DOM keys taken off the instance: the `dropped` ones.
     removed: Vec<String>,
-    /// The new class's defaults for every key the instance is left without.
-    defaults: Vec<(&'static str, Variant)>,
+    /// What the `reset` keys become, and what a fresh instance of the new
+    /// class holds that this one never had.
+    defaults: Vec<(String, Variant)>,
 }
 
 /// Decides, for every property `instance` holds, whether it survives the
@@ -80,21 +81,21 @@ pub(crate) struct Plan {
 ///   attribute goes missing.
 /// - **Not on `target`**, or on it with another type (`BasePart.Size` is a
 ///   `Vector3`, `GuiObject.Size` a `UDim2`): dropped.
-/// - **At the old class's default**: reset, so a part at the stock `Part`
-///   size takes the new class's stock size rather than keeping one nobody
-///   chose.
+/// - **At the old class's default**: reset to the new class's, so a stock
+///   `Part`'s 4 × 1.2 × 2 becomes a stock `TrussPart`'s 2 × 2 × 2 and a
+///   stock `PointLight`'s range of 8 a `SpotLight`'s 16, rather than keeping
+///   a value nobody chose (see [`restock`]).
 /// - Anything else: kept.
 ///
 /// Keys are the file's own spelling (`size`, `Color3uint8`), so each is read
 /// through `rbx_lua::reflected_property` — the same mapping scripts use —
-/// before it is compared with the dump. `source_defaults`/`target_defaults`
-/// are the two classes' defaults in that same spelling.
+/// before it is compared with the dump. `fill` is what a fresh `target` is
+/// given where the instance has no value at all, in that same spelling.
 pub(crate) fn plan(
     database: &ReflectionDatabase,
     instance: &Instance,
     target: &str,
-    source_defaults: &[(&'static str, Variant)],
-    target_defaults: &[(&'static str, Variant)],
+    fill: &[(&'static str, Variant)],
 ) -> Plan {
     let mut plan = Plan::default();
     for (key, value) in instance.properties() {
@@ -108,19 +109,57 @@ pub(crate) fn plan(
         if !holds {
             plan.dropped.push(property.name.clone());
             plan.removed.push(key.clone());
-        } else if source_defaults.iter().any(|(k, v)| k == key && v == value) {
+        } else if let Some(fresh) =
+            restock(database, instance.class(), target, &property.name, value)
+        {
             plan.reset.push(key.clone());
-            plan.removed.push(key.clone());
+            plan.defaults.push((key.clone(), fresh.clone()));
         } else {
             plan.kept.push(key.clone());
         }
     }
-    plan.defaults = target_defaults
+    let held = |key: &str| plan.kept.iter().chain(&plan.reset).any(|held| held == key);
+    let filled: Vec<(String, Variant)> = fill
         .iter()
-        .filter(|(key, _)| !plan.kept.iter().any(|kept| kept == key))
-        .cloned()
+        .filter(|(key, _)| !held(key))
+        .map(|(key, value)| ((*key).to_owned(), value.clone()))
         .collect();
+    plan.defaults.extend(filled);
     plan
+}
+
+/// What a fresh `target` holds the property `name` at, when `value` is still
+/// what a fresh `source` holds it at. `None` where either class records no
+/// default, where the two agree, and where the new default is kept in
+/// another type than the file stores the value in (the table records
+/// `BasePart.Color` as a `Color3`, a file as a `Color3uint8`): the value is
+/// then kept rather than rewritten in a type its key does not hold.
+fn restock<'a>(
+    database: &'a ReflectionDatabase,
+    source: &str,
+    target: &str,
+    name: &'a str,
+    value: &Variant,
+) -> Option<&'a Variant> {
+    let fresh = stock(database, target, name)?;
+    (stock(database, source, name)? == value
+        && fresh != value
+        && std::mem::discriminant(fresh) == std::mem::discriminant(value))
+    .then_some(fresh)
+}
+
+/// What a freshly created `class` holds the property `name` at, as Studio
+/// reports it (`ReflectionDatabase::default_value`), under whichever of the
+/// property's spellings the table records it by.
+pub(crate) fn stock<'a>(
+    database: &'a ReflectionDatabase,
+    class: &str,
+    name: &'a str,
+) -> Option<&'a Variant> {
+    database
+        .stored_names(class, name)
+        .into_iter()
+        .find_map(|stored| database.default_value(class, stored))
 }
 
 /// Carries out `plan` on `referent`: the class first, then the properties.

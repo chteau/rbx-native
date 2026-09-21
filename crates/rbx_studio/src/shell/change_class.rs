@@ -28,7 +28,6 @@ impl Shell {
             &self.database,
             instance,
             class,
-            &class_defaults(&self.database, instance.class()),
             &class_defaults(&self.database, class),
         ))
     }

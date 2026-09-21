@@ -35,6 +35,22 @@ pub(super) fn hit(kind: ShapeKind, model: Mat4, ray: Ray) -> Option<f32> {
     Some(span.first_ahead()? / local.per_stud)
 }
 
+/// Where `ray` enters the unit solid of `kind` carried through `model`, and
+/// the outward unit normal of the face it enters through, both in world
+/// space. `None` when [`hit`] misses, and also for a ray starting inside,
+/// which enters through no face at all.
+pub(super) fn surface(kind: ShapeKind, model: Mat4, ray: Ray) -> Option<(Vec3, Vec3)> {
+    let local = Local::of(model, ray)?;
+    let span = span_of(kind, local.origin, local.direction)?;
+    if span.entry < 0.0 {
+        return None;
+    }
+    // A normal is a covector: a part stretched along one axis tilts its
+    // faces' normals the other way, so it goes through the inverse-transpose.
+    let normal = model.inverse().transpose().transform_vector3(span.normal);
+    Some((ray.at(span.entry / local.per_stud), normal.try_normalize()?))
+}
+
 /// The distance a click or hover orders this shape by, which is [`hit`]'s own
 /// answer except when the ray *starts inside* the shape: a part the camera
 /// sits inside is around the camera, not in front of it, so it is ordered by
@@ -118,21 +134,33 @@ impl Local {
 struct Span {
     entry: f32,
     exit: f32,
+    /// Outward normal of the surface `entry` crosses, in the solid's own
+    /// space and not necessarily unit length; zero where `entry` is infinite.
+    normal: Vec3,
 }
 
 impl Span {
     const EVERYWHERE: Span = Span {
         entry: f32::NEG_INFINITY,
         exit: f32::INFINITY,
+        normal: Vec3::ZERO,
     };
 
     /// The part of this span also inside `other`; `None` once nothing is left
     /// (or `other` never held the ray at all).
     fn clip(self, other: Option<Span>) -> Option<Span> {
         let other = other?;
+        // Whichever surface the ray crosses last on the way in is the one
+        // the intersection's own entry lies on.
+        let (entry, normal) = if other.entry > self.entry {
+            (other.entry, other.normal)
+        } else {
+            (self.entry, self.normal)
+        };
         let span = Span {
-            entry: self.entry.max(other.entry),
+            entry,
             exit: self.exit.min(other.exit),
+            normal,
         };
         (span.entry <= span.exit).then_some(span)
     }
@@ -155,9 +183,13 @@ fn slab(origin: Vec3, direction: Vec3, axis: usize) -> Option<Span> {
     }
     let first = (-HALF - origin) / direction;
     let second = (HALF - origin) / direction;
+    // A ray heading up the axis enters through the face at -0.5.
+    let mut normal = Vec3::ZERO;
+    normal[axis] = -direction.signum();
     Some(Span {
         entry: first.min(second),
         exit: first.max(second),
+        normal,
     })
 }
 
@@ -181,11 +213,13 @@ fn half_space(origin: Vec3, direction: Vec3, normal: Vec3) -> Option<Span> {
         Span {
             entry: f32::NEG_INFINITY,
             exit: crossing,
+            normal: Vec3::ZERO,
         }
     } else {
         Span {
             entry: crossing,
             exit: f32::INFINITY,
+            normal,
         }
     })
 }
@@ -209,9 +243,13 @@ fn quadratic(origin: Vec3, direction: Vec3) -> Option<Span> {
         return None;
     }
     let half_chord = (gap / along).sqrt();
+    let entry = middle - half_chord;
     Some(Span {
-        entry: middle - half_chord,
+        entry,
         exit: middle + half_chord,
+        // The point it enters at, seen from the centre (or, for a cylinder,
+        // from the axis, whose component the caller has already zeroed).
+        normal: origin + direction * entry,
     })
 }
 
@@ -227,3 +265,7 @@ fn cylinder(origin: Vec3, direction: Vec3, axis: usize) -> Option<Span> {
 #[cfg(test)]
 #[path = "shape/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "shape/surface_tests.rs"]
+mod surface_tests;
