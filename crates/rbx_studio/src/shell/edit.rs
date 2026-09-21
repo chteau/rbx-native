@@ -348,7 +348,7 @@ impl Shell {
 
                 // A rail only for a value that has one to run along, and
                 // only when the row is actually holding a number — the
-                // same `EditKind::Text` carries a `BrickColor`'s index and
+                // same `EditKind::Text` carries an attribute's `BrickColor` and
                 // every string in the dump.
                 let bounded = slider_range(&name)
                     .zip(seed.trim().parse::<f32>().ok())

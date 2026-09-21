@@ -106,8 +106,7 @@ pub(crate) struct FieldGroup {
 pub(crate) enum EditKind {
     /// A single free-text `Input`: scalars, strings, and any compound type
     /// not broken out into its own [`Self::Fields`] row (e.g. `NumberRange`,
-    /// `UDim`, and — since no palette table is bundled here (see
-    /// `edit::edit_text`'s `BrickColor` arm) — `BrickColor`'s raw index).
+    /// `UDim`, and an attribute's `BrickColor`, by number).
     Text(String),
     Bool(bool),
     /// 0-255 sRGB channels, matching how [`color3`] already displays a
@@ -176,9 +175,11 @@ pub(crate) enum EditKind {
         color: bool,
         text: String,
     },
-    /// A part's `BrickColor`, by number: picked from the palette Studio's
-    /// own picker shows, and written as the part's `Color` (see
-    /// `edit::commit_all`), since that is all Roblox saves.
+    /// Any `BrickColor`-typed property, by number — a part's `BrickColor`,
+    /// a `SpawnLocation`'s `TeamColor` — picked from the palette Studio's
+    /// own picker shows. A part's is written as its `Color` (see
+    /// `edit::commit_all`), since that is all Roblox saves; any other as
+    /// itself.
     BrickColor(u32),
 }
 
