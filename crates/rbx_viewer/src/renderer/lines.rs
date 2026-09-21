@@ -3,22 +3,36 @@
 //! the embedder works out where each one goes and hands the lot over, the
 //! way `renderer::preview` takes bare boxes.
 //!
-//! Drawn with the adornment pass's own line shader and pipelines (a
-//! `LineHandleAdornment` is the same thing: a world-space segment held at a
-//! constant width on screen), so the two cannot drift apart. A segment whose
-//! two ends coincide is a dot instead — Studio's `SphereHandleAdornment`
-//! markers, which its draggers size to stay constant on screen — drawn as a
-//! round disc that many pixels across by a shader of its own. Costs nothing
-//! until the first segment arrives — the pipelines are built then, not
-//! before — and draws nothing once the list is cleared again.
+//! Drawn onto the finished frame after the tone map, not into the HDR scene
+//! with the adornments: Studio's guides are single pixels of flat colour, and
+//! a line that thin drawn into the scene came out multisampled across two
+//! pixels, blended, bloomed and tone mapped into a grey smear. A segment
+//! whose two ends coincide is a dot instead — Studio's
+//! `SphereHandleAdornment` markers, which its draggers size to stay constant
+//! on screen. Costs nothing until the first segment arrives — the pipelines
+//! are built then, not before — and draws nothing once the list is cleared
+//! again.
 
 use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
 
-use super::adornment::{self, line, line_pipelines, Batch};
-use super::pipeline::{self, Target};
+use super::adornment::{line, Batch, LineVertex};
+use super::pipeline;
+use super::post::Targets;
 
-const DOT_SHADER: &str = include_str!("lines_dot.wgsl");
+const SHADER: &str = include_str!("lines.wgsl");
+/// What a multisampled scene depth buffer changes in [`SHADER`]: WGSL types
+/// it differently, and it has more than one depth per pixel to reach the
+/// farthest of — the substitution `renderer::post` makes for its resolve,
+/// plus the loop.
+const DEPTH_BINDING: &str = "var scene_depth: texture_depth_2d";
+const MULTISAMPLED_DEPTH_BINDING: &str = "var scene_depth: texture_depth_multisampled_2d";
+const DEPTH_READ: &str = "    return textureLoad(scene_depth, pixel, 0);";
+const MULTISAMPLED_DEPTH_READ: &str = "    var farthest = 1.0;
+    for (var sample = 0u; sample < textureNumSamples(scene_depth); sample++) {
+        farthest = min(farthest, textureLoad(scene_depth, pixel, i32(sample)));
+    }
+    return farthest;";
 
 /// One line an editor overlay draws.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -77,8 +91,7 @@ fn dot(centre: Vec3, width: f32, color: [f32; 4], out: &mut Vec<DotVertex>) {
 
 #[derive(Default)]
 pub(super) struct Lines {
-    pipelines: Option<[wgpu::RenderPipeline; 2]>,
-    dot_pipelines: Option<[wgpu::RenderPipeline; 2]>,
+    gpu: Option<Gpu>,
     /// Each layer's lines and dots, uploaded apart so that replacing one
     /// layer leaves the others' buffers alone.
     layers: Vec<Layer>,
@@ -90,15 +103,15 @@ struct Layer {
     dots: Batch,
 }
 
+impl Layer {
+    fn batches(&self) -> [&Batch; 2] {
+        [&self.lines, &self.dots]
+    }
+}
+
 impl Lines {
     /// Replaces one layer's segments. An empty list clears it.
-    pub(super) fn set(
-        &mut self,
-        device: &wgpu::Device,
-        target: Target,
-        layer: usize,
-        segments: &[Segment],
-    ) {
+    pub(super) fn set(&mut self, device: &wgpu::Device, layer: usize, segments: &[Segment]) {
         let mut sides = [Vec::new(), Vec::new()];
         let mut dots = [Vec::new(), Vec::new()];
         for segment in segments {
@@ -122,56 +135,176 @@ impl Lines {
         self.layers[layer].lines = Batch::build(device, "rbxview lines", &occluded, &on_top);
         let [occluded, on_top] = dots;
         self.layers[layer].dots = Batch::build(device, "rbxview dots", &occluded, &on_top);
-        if !segments.is_empty() && self.pipelines.is_none() {
-            self.build_pipelines(device, target);
-        }
     }
 
-    fn build_pipelines(&mut self, device: &wgpu::Device, target: Target) {
-        self.pipelines = Some(line_pipelines(device, target));
-        let frame = pipeline::frame_layout(device);
-        self.dot_pipelines = Some([false, true].map(|on_top| {
-            adornment::pipeline(
-                device,
-                target,
-                "rbxview dots",
-                DOT_SHADER,
-                DotVertex::layout(),
-                &[Some(&frame)],
-                on_top,
-            )
-        }));
-    }
-
-    /// Follows a new sample count — see
-    /// `renderer::switch::Renderer::rebuild_pipelines`.
-    pub(super) fn set_target(&mut self, device: &wgpu::Device, target: Target) {
-        if self.pipelines.is_some() {
-            self.build_pipelines(device, target);
-        }
-    }
-
-    /// The depth-tested segments first, then the ones drawn through; the
-    /// dots last, over the lines they mark — every layer's lines before any
+    /// Draws every layer onto `target`, the frame the resolve just finished:
+    /// the depth-tested lines first, then the ones drawn through, then the
+    /// dots over the lines they mark — every layer's lines before any
     /// layer's dots.
-    pub(super) fn draw<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, frame: &'a wgpu::BindGroup) {
-        let (Some(lines), Some(dots)) = (&self.pipelines, &self.dot_pipelines) else {
-            return;
-        };
-        let batches = self
+    pub(super) fn draw(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        target: &wgpu::Texture,
+        scene: &Targets,
+        frame: &wgpu::BindGroup,
+    ) {
+        let drawn = |batch: &Batch| batch.range(false).is_some() || batch.range(true).is_some();
+        if !self
             .layers
             .iter()
-            .map(|layer| (&layer.lines, lines))
-            .chain(self.layers.iter().map(|layer| (&layer.dots, dots)));
-        for (batch, pipelines) in batches {
-            for (on_top, pipeline) in [false, true].into_iter().zip(pipelines) {
-                if let Some((buffer, range)) = batch.range(on_top) {
-                    pass.set_pipeline(pipeline);
-                    pass.set_bind_group(0, frame, &[]);
-                    pass.set_vertex_buffer(0, buffer.slice(..));
-                    pass.draw(range, 0..1);
+            .any(|layer| layer.batches().into_iter().any(drawn))
+        {
+            return;
+        }
+        let format = target.format().remove_srgb_suffix();
+        let samples = scene.samples();
+        if self
+            .gpu
+            .as_ref()
+            .is_none_or(|gpu| (gpu.format, gpu.samples) != (format, samples))
+        {
+            self.gpu = Some(Gpu::new(device, format, samples));
+        }
+        let Some(gpu) = &self.gpu else {
+            return;
+        };
+
+        // Made per frame rather than kept: the depth buffer is replaced
+        // whenever the frame is resized or its sample count changes, and a
+        // bind group to the old one would draw against a stale depth.
+        let depth = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("rbxview lines depth"),
+            layout: &gpu.depth_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(scene.depth()),
+            }],
+        });
+        // The non-sRGB view, so the blend works on encoded values — see
+        // `lines.wgsl`'s `encoded`. The target was created with it among its
+        // view formats, the same view `renderer::gui` composites through.
+        let view = target.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(format),
+            ..Default::default()
+        });
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("rbxview lines"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_bind_group(0, frame, &[]);
+        pass.set_bind_group(1, &depth, &[]);
+        for kind in 0..2 {
+            for layer in &self.layers {
+                let batch = layer.batches()[kind];
+                for (on_top, pipeline) in [false, true].into_iter().zip(&gpu.pipelines[kind]) {
+                    if let Some((buffer, range)) = batch.range(on_top) {
+                        pass.set_pipeline(pipeline);
+                        pass.set_vertex_buffer(0, buffer.slice(..));
+                        pass.draw(range, 0..1);
+                    }
                 }
             }
+        }
+    }
+}
+
+/// The pipelines for one target format and one scene sample count — lines
+/// then dots, each depth-tested then drawn through — and the layout the
+/// scene's depth buffer is bound through.
+struct Gpu {
+    format: wgpu::TextureFormat,
+    samples: u32,
+    depth_layout: wgpu::BindGroupLayout,
+    pipelines: [[wgpu::RenderPipeline; 2]; 2],
+}
+
+impl Gpu {
+    fn new(device: &wgpu::Device, format: wgpu::TextureFormat, samples: u32) -> Self {
+        let multisampled = samples > 1;
+        let source = if multisampled {
+            SHADER
+                .replace(DEPTH_BINDING, MULTISAMPLED_DEPTH_BINDING)
+                .replace(DEPTH_READ, MULTISAMPLED_DEPTH_READ)
+        } else {
+            SHADER.to_owned()
+        };
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("rbxview lines"),
+            source: wgpu::ShaderSource::Wgsl(source.into()),
+        });
+        let depth_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("rbxview lines depth"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Depth,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled,
+                },
+                count: None,
+            }],
+        });
+        let frame = pipeline::frame_layout(device);
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("rbxview lines"),
+            bind_group_layouts: &[Some(&frame), Some(&depth_layout)],
+            immediate_size: 0,
+        });
+        let build = |vertex: &str, fragment: &str, buffer: wgpu::VertexBufferLayout<'_>| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(fragment),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some(vertex),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    buffers: &[Some(buffer)],
+                },
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some(fragment),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        Gpu {
+            format,
+            samples,
+            depth_layout,
+            pipelines: [
+                [
+                    build("vs_line", "fs_line", LineVertex::layout()),
+                    build("vs_line", "fs_line_on_top", LineVertex::layout()),
+                ],
+                [
+                    build("vs_dot", "fs_dot", DotVertex::layout()),
+                    build("vs_dot", "fs_dot_on_top", DotVertex::layout()),
+                ],
+            ],
         }
     }
 }

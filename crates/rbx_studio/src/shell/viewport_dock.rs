@@ -10,7 +10,9 @@
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::scroll::ScrollableElement as _;
-use gpui_kit::component::{h_flex, v_flex};
+use gpui_kit::component::select::Select;
+use gpui_kit::component::{h_flex, v_flex, Sizable as _};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::pacing::UnfocusedFps;
@@ -20,8 +22,14 @@ use crate::tokens;
 use super::chrome;
 use super::layout::Panel;
 use super::menu::{self, MenuId};
-use super::rows::checkbox;
+use super::rows::{self, checkbox};
 use super::Shell;
+
+/// The quality dropdown's width: its longest label ("Automatic") at the UI
+/// scale, and the chevron's own room, which does not scale.
+fn quality_width() -> Pixels {
+    tokens::scaled_width(101.) + tokens::select_chevron_room()
+}
 
 /// One view setting: what its row reads, whether it is on, and what sets it.
 type Toggle = (
@@ -152,11 +160,49 @@ impl Shell {
         self.viewport.read(cx).set_stats_sampling(wanted);
     }
 
+    /// The graphics-quality dropdown, in the same box every other field in
+    /// the editor wears (`rows::select_box`) rather than the toolkit's own.
+    ///
+    /// A Tab stop of its own: `SelectState` is `Focusable`, and its handle
+    /// is the one `Select` itself focuses, so recording that handle in the
+    /// window's order is all it takes. The toolkit draws no focus ring on a
+    /// select without its own chrome, so the box draws the editor's —
+    /// `focus_visible`'s rule by hand, since the handle is not this
+    /// element's: focused, and reached by keyboard. Inset, because the
+    /// field's column clips anything drawn outside it.
+    fn quality_control(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let handle = self.quality.read(cx).focus_handle(cx);
+        self.tab_order.register(&handle);
+        let ringed = handle.contains_focused(window, cx) && window.last_input_was_keyboard();
+        rows::select_box()
+            .w(quality_width())
+            // A side dock at a large UI scale can be narrower than that;
+            // the label truncates rather than the chevron being cut off.
+            .max_w_full()
+            .when(ringed, |this| this.shadow(tokens::focus_ring_inset()))
+            .child(
+                Select::new(&self.quality)
+                    .appearance(false)
+                    .with_size(tokens::field_size())
+                    .h_full()
+                    .py_0()
+                    .pt(tokens::select_inset())
+                    .menu_width(quality_width())
+                    .accessibility_label("Graphics quality"),
+            )
+    }
+
     /// The dock's trailing menu and its body: the quality and the live
     /// numbers as one column, the settings beside it — or under it, once
     /// the dock is too narrow for both.
+    ///
+    /// The quality select is one Tab stop and the settings are one more:
+    /// a roving group, the way the Properties panel's checkboxes are, so
+    /// arrows walk the list in reading order and Tab leaves it — not ten
+    /// stops to press through on the way to the next dock.
     pub(super) fn viewport_dock(
         &mut self,
+        window: &Window,
         cx: &mut Context<Self>,
     ) -> (Option<AnyElement>, Option<AnyElement>) {
         let overflow = menu::dropdown(
@@ -180,7 +226,7 @@ impl Shell {
             .flex_none()
             .w(column)
             .max_w_full()
-            .child(field("Graphics quality", self.quality_control(cx)))
+            .child(field("Graphics quality", self.quality_control(window, cx)))
             .children(readout.map(|(name, value)| {
                 field(
                     name,
@@ -192,36 +238,56 @@ impl Shell {
             }));
 
         let handle = cx.entity();
-        let settings = self.viewport_toggles().into_iter().map(|(label, on, set)| {
-            let handle = handle.clone();
-            // The whole row is the target, not only the box: the label
-            // is the obvious thing to click.
-            checkbox(
-                SharedString::from(format!("viewport-{label}")),
-                on,
-                move |_, _, cx| {
-                    handle.update(cx, |shell, cx| {
-                        set(shell, !on, cx);
-                        cx.notify();
-                    });
-                },
-            )
-            .w(column)
-            .max_w_full()
-            .gap(tokens::label_gap())
-            .tab_index(self.tab_order.next())
-            .child(
-                div()
-                    .flex_1()
-                    .truncate()
-                    .text_color(tokens::text_label())
-                    .child(label),
-            )
-        });
+        let toggles = self.viewport_toggles();
+        self.viewport_nav
+            .begin(&self.tab_order, Some(toggles.len()), cx);
+        let settings: Vec<_> = toggles
+            .into_iter()
+            .enumerate()
+            .map(|(index, (label, on, set))| {
+                let handle = handle.clone();
+                // The whole row is the target, not only the box: the label
+                // is the obvious thing to click. Space and Enter on the
+                // focused row arrive as this same click.
+                let row = checkbox(
+                    SharedString::from(format!("viewport-{label}")),
+                    on,
+                    move |_, _, cx| {
+                        handle.update(cx, |shell, cx| {
+                            set(shell, !on, cx);
+                            cx.notify();
+                        });
+                    },
+                )
+                .w(column)
+                .max_w_full()
+                .gap(tokens::label_gap())
+                // Inset rather than the checkbox's own outset ring: the
+                // rows sit flush, so the next one would paint over the
+                // bottom of it. The inset clears the box by this much.
+                .pl(tokens::label_gap())
+                .rounded(tokens::RADIUS)
+                .focus_visible(|this| this.shadow(tokens::focus_ring_inset()))
+                .child(
+                    div()
+                        .flex_1()
+                        .truncate()
+                        .text_color(tokens::text_label())
+                        .child(label),
+                );
+                self.viewport_nav.item(index, row, cx)
+            })
+            .collect();
 
         let body = div()
             .id("viewport-dock")
             .size_full()
+            .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
+                if shell.viewport_nav.key(&event.keystroke, window, cx) {
+                    cx.stop_propagation();
+                    cx.notify();
+                }
+            }))
             .overflow_y_scroll()
             .track_scroll(&self.viewport_scroll)
             .child(

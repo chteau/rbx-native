@@ -53,9 +53,9 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use gpui_kit::component::input::{InputEvent, InputState};
-use gpui_kit::component::select::{SearchableVec, Select, SelectEvent, SelectState};
+use gpui_kit::component::select::{SearchableVec, SelectEvent, SelectState};
 use gpui_kit::component::tree::TreeState;
-use gpui_kit::component::{v_flex, IndexPath, Sizable};
+use gpui_kit::component::{v_flex, IndexPath};
 use gpui_kit::*;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
@@ -84,12 +84,6 @@ use menu::MenuId;
 use quality::{quality_labels, quality_row};
 use selection::{outlined, Selection};
 use toolbar::snap::SnapFields;
-
-/// The quality dropdown's width. Scaled like every other size, or its
-/// longest label ("Automatic") is clipped the moment the UI scale grows.
-fn quality_width() -> Pixels {
-    tokens::scaled_width(132.)
-}
 
 /// The graphics quality dropdown's list: plain labels, since the mode a label
 /// stands for is read back out of the label itself.
@@ -155,6 +149,9 @@ pub(crate) struct Shell {
     /// get from the panel back to the ribbon, which defeats the entire
     /// point of Tab moving between regions.
     properties_nav: roving::Roving,
+    /// The Viewport dock's settings, one Tab stop for the lot — see
+    /// `shell::viewport_dock`.
+    viewport_nav: roving::Roving,
     /// The window's Tab order, handed out afresh every render — see
     /// `shell::roving::TabOrder`.
     tab_order: roving::TabOrder,
@@ -471,6 +468,7 @@ impl Shell {
             ribbon_tabs_nav: roving::Roving::horizontal(),
             ribbon_nav: roving::Roving::horizontal(),
             properties_nav: roving::Roving::vertical(),
+            viewport_nav: roving::Roving::vertical(),
             tab_order: roving::TabOrder::default(),
             reduce_motion,
             scrub: None,
@@ -1066,40 +1064,6 @@ impl Shell {
         let _ = settings.save();
 
         // Save the current dock layout state
-    }
-
-    /// The place file's name, shown as the dock's own Viewport tab title
-    /// (see `shell::dock`) now that the viewport no longer draws a fake one.
-    /// The graphics-quality dropdown, relocated from the viewport's old fake
-    /// tab bar into the dock's real Viewport title bar via `Panel::title_suffix`
-    /// (see `shell::dock`) — the natural surviving home for a per-view control
-    /// once that hand-rolled strip is gone.
-    /// The graphics-quality dropdown, in the same box every other field in
-    /// the editor wears (`rows::field_box`) rather than in the toolkit's
-    /// own chrome — it is a select like any other, and looked like a
-    /// visitor from a different application floating over the viewport.
-    ///
-    /// Registered in the window's own Tab order (`shell::roving::TabOrder`)
-    /// with no wrapper and no forwarding subscription, unlike the Explorer's
-    /// tree door: `SelectState` already implements `Focusable` and its own
-    /// `focus_handle` is the real one `Select::focus` itself uses, so
-    /// recording that same handle is the whole fix — there is nothing to
-    /// forward focus *to* once Tab lands on it, because it is already
-    /// there. This was, until now, one of the WCAG 2.1.1 gaps the roadmap's
-    /// "most serious accessibility gap left" bullet names by name.
-    pub(super) fn quality_control(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        self.tab_order
-            .register(&self.quality.read(cx).focus_handle(cx));
-        rows::select_box().w(quality_width()).child(
-            Select::new(&self.quality)
-                .appearance(false)
-                .with_size(tokens::field_size())
-                .h_full()
-                .py_0()
-                .pt(tokens::select_inset())
-                .menu_width(quality_width())
-                .accessibility_label("Graphics quality"),
-        )
     }
 
     /// The 3D view itself. No border: Row D's panels are told apart from it

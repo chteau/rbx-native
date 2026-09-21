@@ -120,7 +120,7 @@ impl Shell {
             Panel::Properties => self.properties_dock(window, cx),
             Panel::Explorer => self.explorer_dock(cx),
             Panel::Output => self.output_dock(collapsed, cx),
-            Panel::Viewport => self.viewport_dock(cx),
+            Panel::Viewport => self.viewport_dock(window, cx),
         }
     }
 

@@ -24,7 +24,6 @@ mod geometry;
 mod pipelines;
 
 pub(super) use geometry::line;
-pub(super) use pipelines::{build as pipeline, lines as line_pipelines};
 
 use std::collections::HashMap;
 use std::ops::Range;
