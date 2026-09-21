@@ -261,6 +261,16 @@
   centring in it, and Output's search and filters sit at the right end of
   its strip. — @chteau
 
+- **Fire, Smoke and freshly inserted lights draw what they should.** A
+  `Fire` or `Smoke` saves its `Size`, `Heat`, `Opacity` and `RiseVelocity`
+  as `size_xml`, `heat_xml` and so on, and the viewer only ever read the
+  plain names — so every real file's values, and every edit to them, were
+  ignored. It reads the saved names now. A light inserted from the Explorer
+  stores nothing, and a `SpotLight` or `SurfaceLight` without a `Face` was
+  simply skipped; every missing light property now falls back to the class
+  default Roblox itself uses, which also means an unstored `Shadows` is off,
+  as the Properties panel already said. — @chteau
+
 ## 2026-09-20
 
 - **A `CFrame` attribute no longer takes every attribute after it down with
