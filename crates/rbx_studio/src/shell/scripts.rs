@@ -243,7 +243,7 @@ impl Shell {
         self.push_history_snapshot(before);
         // Not reflected in the viewport, but a selected script's `Source`
         // row reads the DOM too.
-        self.properties.dom_changed();
+        self.properties.dom_changed(&[]);
         // A `Source` write is exactly one property write, so undoing it takes
         // the same fast in-place viewport patch every other single edit does
         // rather than a full reload — but only if the log that write produced

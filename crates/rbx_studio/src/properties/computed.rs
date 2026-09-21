@@ -31,7 +31,7 @@ use super::Properties;
 mod assembly;
 mod materials;
 
-pub(super) use assembly::Joints;
+pub(super) use assembly::{moves_joints, Assembly, Joints};
 
 /// What `Properties::computed` can answer for.
 pub(super) const COMPUTED: &[&str] = &[

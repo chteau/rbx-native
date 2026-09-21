@@ -15,4 +15,4 @@ pub use chunk::{read_chunks, Chunk, ChunkReader};
 pub use deserializer::{deserialize, deserialize_with_names};
 pub use error::BinaryError;
 pub use header::{parse_header, FileHeader};
-pub use serialize::{serialize, SerializeError};
+pub use serialize::{serialize, serialize_with_defaults, SerializeError};

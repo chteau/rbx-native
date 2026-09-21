@@ -80,12 +80,31 @@ impl SerializeError {
 /// might have been read from: referents are reused from the DOM's own `Ref` values,
 /// but class ids, chunk order and property order are assigned deterministically here.
 /// `deserialize(&serialize(&dom)?)` reconstructs an equivalent tree.
+///
+/// A property some instances of a class hold and others don't is written
+/// with a neutral value for the others — see [`serialize_with_defaults`],
+/// which a caller that knows each class's defaults should use instead.
 pub fn serialize(dom: &WeakDom) -> Result<Vec<u8>, SerializeError> {
+    serialize_with_defaults(dom, |_, _| None)
+}
+
+/// [`serialize`], with `default(class, property)` answering what an
+/// instance of `class` that holds no `property` has: the binary format
+/// stores one value per instance for every property any instance of the
+/// class holds, and whatever fills the gap is what Studio loads. The class
+/// default is the only honest fill — a zero turns a pasted part's
+/// `archivable` column into `false` for every other part, and Studio drops
+/// non-archivable instances from its next save. A property the lookup
+/// cannot answer for falls back to the neutral value.
+pub fn serialize_with_defaults(
+    dom: &WeakDom,
+    default: impl Fn(&str, &str) -> Option<Variant>,
+) -> Result<Vec<u8>, SerializeError> {
     let plan = plan::build(dom);
     // Built in a pass of its own, before any PROP chunk is written: the table is
     // deduplicated across the *whole file*, so every group's content must be seen
     // before the first index referencing it can be assigned.
-    let table = build_shared_string_table(dom, &plan);
+    let table = build_shared_string_table(dom, &plan, &default);
 
     let mut out = Vec::with_capacity(4096);
     out.extend_from_slice(&file_header(&plan));
@@ -96,7 +115,7 @@ pub fn serialize(dom: &WeakDom) -> Result<Vec<u8>, SerializeError> {
         out.extend(chunk::write_chunk(b"INST", &inst::write(class)));
 
         for name in property_names(dom, class) {
-            let values = collect_values(dom, class, &name);
+            let values = collect_values(dom, class, &name, &default);
             let (type_id, payload) = prop::encode(&class.class_name, &name, &values, &table)?;
             out.extend(chunk::write_chunk(
                 b"PROP",
@@ -111,11 +130,15 @@ pub fn serialize(dom: &WeakDom) -> Result<Vec<u8>, SerializeError> {
     Ok(out)
 }
 
-fn build_shared_string_table(dom: &WeakDom, plan: &Plan) -> SharedStringTable {
+fn build_shared_string_table(
+    dom: &WeakDom,
+    plan: &Plan,
+    default: &impl Fn(&str, &str) -> Option<Variant>,
+) -> SharedStringTable {
     let mut table = SharedStringTable::new();
     for class in &plan.classes {
         for name in property_names(dom, class) {
-            let values = collect_values(dom, class, &name);
+            let values = collect_values(dom, class, &name, default);
             sstr::collect_group(&mut table, &values);
         }
     }
@@ -162,7 +185,12 @@ fn property_names(dom: &WeakDom, class: &plan::ClassPlan) -> BTreeSet<String> {
     names
 }
 
-fn collect_values(dom: &WeakDom, class: &plan::ClassPlan, name: &str) -> Vec<Option<Variant>> {
+fn collect_values(
+    dom: &WeakDom,
+    class: &plan::ClassPlan,
+    name: &str,
+    default: &impl Fn(&str, &str) -> Option<Variant>,
+) -> Vec<Option<Variant>> {
     let mut values: Vec<Option<Variant>> = class
         .referents
         .iter()
@@ -175,27 +203,32 @@ fn collect_values(dom: &WeakDom, class: &plan::ClassPlan, name: &str) -> Vec<Opt
             }
         })
         .collect();
-    fill_missing_with_neutral(&mut values);
+    if values.iter().any(Option::is_none) {
+        fill_missing(&mut values, default(&class.class_name, name));
+    }
     values
 }
 
 // A script that sets only some properties on a freshly created instance (e.g.
 // `Instance.new("Part", workspace)`) leaves the rest absent, while a file-loaded
 // instance of the same class carries all of them; the binary format needs one
-// value per instance in a PROP chunk regardless. Filling the gap with the type's
-// neutral value lets such a mix serialize. Kinds with no obvious neutral value
-// (sequences, `Font`, `Unknown` blobs, and anything else not matched below) are
-// left as `None`, which `prop::encode`'s `map_dense` still rejects with
+// value per instance in a PROP chunk regardless. The gap is filled with
+// `default`, the class default, where it has the column's own type, and
+// otherwise with the type's neutral value. Kinds with neither (sequences,
+// `Font`, `Unknown` blobs, and anything else not matched below) are left as
+// `None`, which `prop::encode`'s `map_dense` still rejects with
 // `InconsistentProperty`.
 //
 // `Ref` is deliberately not filled here even though it has a "null" value: the
 // existing per-instance encoder already writes `None` as the null referent
 // (-1) without erroring, so there is nothing missing to fix for that kind.
-fn fill_missing_with_neutral(values: &mut [Option<Variant>]) {
+fn fill_missing(values: &mut [Option<Variant>], default: Option<Variant>) {
     let Some(sample) = values.iter().flatten().next() else {
         return;
     };
-    let Some(neutral) = neutral_for(sample) else {
+    let same_type =
+        |value: &Variant| std::mem::discriminant(value) == std::mem::discriminant(sample);
+    let Some(neutral) = default.filter(same_type).or_else(|| neutral_for(sample)) else {
         return;
     };
     for value in values.iter_mut() {
@@ -281,6 +314,30 @@ mod tests {
     use super::*;
     use crate::deserialize;
     use rbx_dom::Ref;
+
+    #[test]
+    fn a_value_one_instance_lacks_is_filled_with_the_given_default() {
+        let mut dom = WeakDom::new();
+        let stored = dom.new_instance("Part", "Stored", None);
+        let bare = dom.new_instance("Part", "Bare", None);
+        dom.set_property(stored, "CanCollide", Variant::Bool(false))
+            .unwrap();
+        // A default of the wrong type is no default at all.
+        dom.set_property(stored, "Transparency", Variant::Float32(0.5))
+            .unwrap();
+
+        let bytes = serialize_with_defaults(&dom, |class, property| match (class, property) {
+            ("Part", "CanCollide") => Some(Variant::Bool(true)),
+            ("Part", "Transparency") => Some(Variant::String("nope".into())),
+            _ => None,
+        })
+        .unwrap();
+        let reloaded = deserialize(&bytes).unwrap();
+
+        let bare = reloaded.get(bare).unwrap().properties();
+        assert_eq!(bare.get("CanCollide"), Some(&Variant::Bool(true)));
+        assert_eq!(bare.get("Transparency"), Some(&Variant::Float32(0.0)));
+    }
 
     #[test]
     fn header_round_trips_through_the_parser() {

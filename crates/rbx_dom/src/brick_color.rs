@@ -25,10 +25,6 @@ pub struct BrickColor {
 pub const DEFAULT_NUMBER: u32 = 194;
 
 impl BrickColor {
-    pub fn all() -> &'static [BrickColor] {
-        TABLE
-    }
-
     pub fn from_number(number: u32) -> Option<&'static BrickColor> {
         TABLE.iter().find(|color| color.number == number)
     }
@@ -40,11 +36,6 @@ impl BrickColor {
 
     pub fn from_palette(index: u8) -> Option<&'static BrickColor> {
         TABLE.iter().find(|color| color.palette == Some(index))
-    }
-
-    /// The palette, in palette order.
-    pub fn palette() -> impl Iterator<Item = &'static BrickColor> {
-        (0..128).filter_map(BrickColor::from_palette)
     }
 
     /// The closest colour to `rgb`, the way `BrickColor.new(Color3)` and a
@@ -73,8 +64,11 @@ mod tests {
 
     #[test]
     fn the_table_is_whole() {
-        assert_eq!(BrickColor::all().len(), 208);
-        let palette: Vec<u8> = BrickColor::palette().filter_map(|c| c.palette).collect();
+        assert_eq!(TABLE.len(), 208);
+        let palette: Vec<u8> = (0..128)
+            .filter_map(BrickColor::from_palette)
+            .filter_map(|c| c.palette)
+            .collect();
         assert_eq!(palette, (0..128).collect::<Vec<u8>>());
     }
 

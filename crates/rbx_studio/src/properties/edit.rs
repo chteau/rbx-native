@@ -48,10 +48,9 @@ pub(crate) const FOLDER_COLOR_PROPERTY: &str = "Explorer Colour";
 pub(crate) fn edit_text(value: &Variant) -> Option<String> {
     match value {
         Variant::Bool(flag) => Some(flag.to_string()),
-        // No BrickColor→RGB palette table is bundled here (Roblox's is ~140
-        // entries and not derivable from anything else already parsed), so
-        // the panel edits the raw palette index rather than a color swatch —
-        // see `properties::EditKind::Text`'s doc comment.
+        // By number: what the picker commits (see
+        // `properties::EditKind::BrickColor`) and an attribute's plain field
+        // holds.
         Variant::BrickColor(index) => Some(index.to_string()),
         Variant::Int32(number) => Some(number.to_string()),
         Variant::Int64(number) => Some(number.to_string()),

@@ -171,10 +171,9 @@ fn numbers_parse_and_reject_junk() {
     assert!(parse_as(&Variant::Float32(0.0), "").is_err());
 }
 
-// BrickColor has no bundled RGB palette (see `edit_text`'s doc comment), so
-// it edits as a plain palette-index number, the same shape as an Int32.
+// A BrickColor's text is its number, the same shape as an Int32.
 #[test]
-fn brick_color_edits_as_its_raw_palette_index() {
+fn brick_color_edits_as_its_number() {
     assert_eq!(edit_text(&Variant::BrickColor(194)), Some("194".to_owned()));
     assert_eq!(
         parse_as(&Variant::BrickColor(0), " 21 "),

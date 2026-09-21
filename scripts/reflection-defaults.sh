@@ -31,8 +31,14 @@ curl -fsSL "$URL" | jq -r --arg rev "$RBX_DOM_REV" '
     License: "MIT, Copyright (c) 2018-2025 The Rojo Developers",
     Version,
     Classes: (.Classes | map_values({
-      Aliases: (.Properties
-        | with_entries(select(.value.Kind.Alias))
+      # An alias is kept only when its canonical is itself saved, under its
+      # own name or another: loading renames an alias to what gets saved,
+      # and a canonical that only migrates (`PackageIdSerialize` to
+      # `PackageId`) or never serializes is a name Studio will not load.
+      Aliases: (.Properties as $properties | $properties
+        | with_entries(select(.value.Kind.Alias
+            and ($properties[.value.Kind.Alias.AliasFor].Kind.Canonical.Serialization
+              | . == "Serializes" or (type == "object" and has("SerializesAs")))))
         | map_values(.Kind.Alias.AliasFor)),
       SerializesAs: (.Properties
         | with_entries(select(.value.Kind.Canonical.Serialization | type == "object" and has("SerializesAs")))

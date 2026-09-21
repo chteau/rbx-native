@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use rbx_dom::{CFrameData, Vector3Data};
 use rbx_reflection::ReflectionDatabase;
 
@@ -289,4 +291,42 @@ fn a_weld_constraint_saved_in_an_unknown_state_leaves_the_assembly_unknown() {
     ]);
 
     assert_eq!(value(&rows(&dom, refs[0]), "AssemblyMass"), None);
+}
+
+#[test]
+fn a_move_keeps_the_joints_but_not_the_values_and_a_weld_edit_redoes_both() {
+    let (mut dom, refs) = place(&[
+        ("Part", vec![("CFrame", at(0.0))], WORKSPACE),
+        ("Part", vec![("CFrame", at(2.0))], WORKSPACE),
+        (
+            "WeldConstraint",
+            vec![
+                ("Part0Internal", Variant::Ref(Ref::new(10))),
+                ("Part1Internal", Variant::Ref(Ref::new(11))),
+            ],
+            WORKSPACE,
+        ),
+    ]);
+    dom.take_changes();
+    let properties = Properties::new(ReflectionDatabase::embedded());
+    let center = |dom: &WeakDom| {
+        value(
+            &properties.rows(dom, &[refs[0]], None),
+            "AssemblyCenterOfMass",
+        )
+    };
+    let joints = || properties.joints.borrow().clone().unwrap();
+    assert_eq!(center(&dom).as_deref(), Some("(1, 0, 0)"));
+    let before = joints();
+
+    dom.set_property(refs[1], "CFrame", at(4.0)).unwrap();
+    properties.dom_changed(&dom.take_changes());
+    assert_eq!(center(&dom).as_deref(), Some("(2, 0, 0)"));
+    assert!(Rc::ptr_eq(&before, &joints()));
+
+    dom.set_property(refs[2], "Enabled", Variant::Bool(false))
+        .unwrap();
+    properties.dom_changed(&dom.take_changes());
+    assert_eq!(center(&dom).as_deref(), Some("(0, 0, 0)"));
+    assert!(!Rc::ptr_eq(&before, &joints()));
 }

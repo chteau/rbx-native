@@ -310,7 +310,8 @@ pub(crate) fn brick_color(lua: &Lua) -> Result<Table> {
                     )))
                 }
                 other => Err(mlua::Error::runtime(format!(
-                    "BrickColor.new expected a number, a name, a Color3 or three numbers,                      got {} arguments",
+                    "BrickColor.new expected a number, a name, a Color3 or three numbers, \
+                     got {} arguments",
                     other.len()
                 ))),
             }

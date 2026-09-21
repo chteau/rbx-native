@@ -182,10 +182,10 @@ fn the_copy_is_always_archivable_even_if_the_original_was_not() {
     let clipped = snapshot(&dom, part).unwrap();
     let copy = materialize(&mut dom, &clipped, None);
 
-    assert_eq!(
-        dom.get(copy).unwrap().properties().get(ARCHIVABLE),
-        Some(&Variant::Bool(true))
-    );
+    // Archivable by holding no value: the default, which is `true`.
+    let copied = dom.get(copy).unwrap().properties();
+    assert_eq!(copied.get(ARCHIVABLE), None);
+    assert!(archivable(copied));
     // The original is untouched — only the copy was forced.
     assert_eq!(
         dom.get(part).unwrap().properties().get(ARCHIVABLE),
