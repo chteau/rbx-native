@@ -31,6 +31,12 @@ impl ReflectionDatabase {
             })
     }
 
+    /// The class default for a property under the name an instance stores
+    /// it as — `size` finds `Size`'s, `archivable` `Archivable`'s.
+    pub fn stored_default(&self, class: &str, key: &str) -> Option<&Variant> {
+        self.default_value(class, self.canonical_name(class, key))
+    }
+
     /// Renames every property `dom` holds under another spelling — `Color`,
     /// `Size`, a lowercase legacy name — to the one Roblox saves it under
     /// (`Color3uint8`, `size`), which is the one the renderer, the
