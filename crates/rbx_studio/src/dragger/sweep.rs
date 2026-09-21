@@ -35,7 +35,7 @@ const GLANCING: f32 = 0.3;
 /// Two contacts nearer than this along the axis are the same contact.
 const TIE: f32 = 1e-4;
 /// Studio's time budget for the whole search, `os.clock() - t > 0.01`.
-pub(crate) const BUDGET: Duration = Duration::from_millis(10);
+const BUDGET: Duration = Duration::from_millis(10);
 
 /// A handle drag's threshold without a grid, in handle scales at the snap.
 const REACH: f32 = 0.4;
