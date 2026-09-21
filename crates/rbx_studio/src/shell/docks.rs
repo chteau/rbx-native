@@ -334,6 +334,10 @@ fn edge_column(edge: Edge, size: f32, collapsed: bool) -> Div {
         h_flex()
             .flex_none()
             .w_full()
+            // Stretched, not `h_flex`'s centring: a dock shorter than the
+            // edge would float in the middle of it, with dead space between
+            // the document and its tab strip.
+            .items_stretch()
             .when(!collapsed, |this| this.h(px(size)))
     }
     .bg(tokens::dock());
