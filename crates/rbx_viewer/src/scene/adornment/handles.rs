@@ -26,7 +26,7 @@ const STYLE_MOVEMENT: u32 = 1;
 /// The size one handle is built from, as a fraction of the adornee's
 /// largest extent, kept inside a range so a 200-stud baseplate does not grow
 /// a 50-stud arrow and a half-stud part still gets a grabbable one.
-const HANDLE_UNIT: (f32, f32, f32) = (0.25, 0.5, 4.0);
+const HANDLE_UNIT: (f32, f32, f32) = (0.4, 1.0, 6.0);
 /// How far a handle's own base stands off the face it belongs to, in units.
 const GAP: f32 = 0.15;
 /// An arc's ring sits just outside the adornee, and its tube is a fraction
@@ -77,12 +77,7 @@ fn handles(context: &Context<'_>) -> Vec<Piece> {
             if movement {
                 arrow(context, frame, unit)
             } else {
-                vec![context.solid(
-                    Mesh::Sphere {
-                        radius: unit * 0.25,
-                    },
-                    frame,
-                )]
+                vec![context.solid(Mesh::Sphere { radius: unit * 0.3 }, frame)]
             }
         })
         .collect()
@@ -91,12 +86,12 @@ fn handles(context: &Context<'_>) -> Vec<Piece> {
 /// A movement handle: a shaft with a head on the end, both along the
 /// frame's own -Z.
 fn arrow(context: &Context<'_>, frame: Mat4, unit: f32) -> Vec<Piece> {
-    let shaft = unit * 0.6;
-    let head = unit * 0.4;
+    let shaft = unit * 0.7;
+    let head = unit * 0.5;
     vec![
         context.solid(
             Mesh::Cylinder {
-                radius: unit * 0.06,
+                radius: unit * 0.1,
                 inner: 0.0,
                 height: shaft,
                 sweep: 360.0,
@@ -105,7 +100,7 @@ fn arrow(context: &Context<'_>, frame: Mat4, unit: f32) -> Vec<Piece> {
         ),
         context.solid(
             Mesh::Cone {
-                radius: unit * 0.18,
+                radius: unit * 0.28,
                 height: head,
             },
             frame * Mat4::from_translation(Vec3::new(0.0, 0.0, -shaft)),

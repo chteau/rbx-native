@@ -243,6 +243,7 @@ mod tests {
             rotation_degrees: (0.0, 0.0),
             rot_speed_degrees: (0.0, 0.0),
             z_offset: 0.0,
+            gain: 1.0,
             time_scale: 1.0,
             cap: super::super::emitter::PER_EMITTER_CAP,
             seed: 1,

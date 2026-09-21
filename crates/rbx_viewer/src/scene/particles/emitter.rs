@@ -104,6 +104,17 @@ pub(crate) struct Emitter {
     pub(crate) rotation_degrees: (f32, f32),
     pub(crate) rot_speed_degrees: (f32, f32),
     pub(crate) z_offset: f32,
+    /// How much brighter than its own `Color` this effect draws, multiplied
+    /// into every particle's colour before the billboard samples its image.
+    ///
+    /// `1` for a `ParticleEmitter`, which has no such property and whose
+    /// `Texture` is whatever the place chose. A `Fire` needs more: Roblox's
+    /// own flame image (`textures/particles/fire_main.dds`) is a dark
+    /// detail map the engine multiplies by a colour ramp, and drawn through
+    /// this renderer's plain `image.rgb * colour` it would be a grey wisp
+    /// rather than a flame. The figure is this renderer's own — nothing
+    /// about the engine's own ramp is published.
+    pub(crate) gain: f32,
     /// `TimeScale`, clamped to the `[0, 1]` its docs give: the whole effect
     /// runs that much of normal speed, and `0` freezes it. Applied to the
     /// step the renderer advances the simulation by rather than to any one
@@ -233,6 +244,7 @@ fn build(
         rotation_degrees: number_range_or(properties, "Rotation", (0.0, 0.0)),
         rot_speed_degrees: number_range_or(properties, "RotSpeed", (0.0, 0.0)),
         z_offset: float_or(properties, "ZOffset", 0.0),
+        gain: 1.0,
         time_scale: time_scale(properties),
         cap: spend(rate, lifetime.1, budget),
         seed: seed_of(referent.value(), 0),

@@ -111,6 +111,8 @@ impl Renderer {
             shadow_sampler: self.shadows.sampler(),
             local_shadow_map: self.shadows.local_view(),
             light_shadows: &self.light_shadows_buffer,
+            point_shadow_map: self.shadows.point_view(),
+            point_faces: self.shadows.point_faces(),
         };
 
         self.frame.rebind(device, &self.frame_layout, shared);

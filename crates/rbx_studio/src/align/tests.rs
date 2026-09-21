@@ -364,7 +364,12 @@ fn the_preview_leaves_the_active_object_alone() {
     let boxes = preview(
         &entries,
         1,
-        options(Axis::X, Mode::Center, Space::World, RelativeTo::ActiveObject),
+        options(
+            Axis::X,
+            Mode::Center,
+            Space::World,
+            RelativeTo::ActiveObject,
+        ),
     );
     assert_eq!(boxes.len(), 1);
     // The one that moves is the first, landing on the second's centre.
@@ -386,7 +391,12 @@ fn a_multi_part_entry_previews_one_box_around_all_of_it() {
     let boxes = preview(
         &entries,
         1,
-        options(Axis::X, Mode::Center, Space::World, RelativeTo::ActiveObject),
+        options(
+            Axis::X,
+            Mode::Center,
+            Space::World,
+            RelativeTo::ActiveObject,
+        ),
     );
     assert_eq!(boxes.len(), 1, "only the model moves");
     // Two 2-stud parts 4 studs apart: 6 studs across, centred on the
@@ -403,7 +413,12 @@ fn one_object_previews_nothing_to_move() {
     let boxes = preview(
         &entries,
         0,
-        options(Axis::X, Mode::Min, Space::World, RelativeTo::SelectionBounds),
+        options(
+            Axis::X,
+            Mode::Min,
+            Space::World,
+            RelativeTo::SelectionBounds,
+        ),
     );
     assert!(boxes.is_empty());
 }

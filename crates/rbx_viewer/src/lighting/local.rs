@@ -78,11 +78,9 @@ pub(crate) struct LocalLight {
     pub(crate) direction: Vec3,
     pub(crate) cos_outer: f32,
     pub(crate) cos_inner: f32,
-    /// `Light.Shadows`. A `PointLight` never honours it — casting one needs six
-    /// faces, which this renderer does not build (see
-    /// `renderer::shadow::local`) — but it is read for every class alike, so a
-    /// part that later swaps a `PointLight` for a `SpotLight` needs no property
-    /// re-entered.
+    /// `Light.Shadows`. A cone light's map is one perspective
+    /// (`renderer::shadow::local`); a `PointLight`, which has no axis to
+    /// point one down, is six (`renderer::shadow::point`).
     pub(crate) shadows: bool,
 }
 

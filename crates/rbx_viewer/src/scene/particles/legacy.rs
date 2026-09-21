@@ -56,9 +56,15 @@ const FIRE_INNER_SCALE: f32 = 0.55;
 /// "more than twice as large" as the size in studs, and "at the largest size"
 /// — 100 — "smoke particles can render larger than 200 studs wide".
 const SMOKE_STUDS: f32 = 2.2;
+/// How much brighter than `Color` a flame draws — see [`Emitter::gain`],
+/// which explains why one is needed at all. Chosen so a default `Fire` over
+/// Roblox's own dark flame image reads as a flame; the inner one is brighter
+/// still, being the hotter of the two.
+const FIRE_GAIN: (f32, f32) = (5.0, 7.0);
+
 /// How wide a sparkle is drawn. Nothing in `Sparkles` sizes its particles at
 /// all, so this is a fixed figure of this renderer's own.
-const SPARKLE_STUDS: f32 = 0.8;
+const SPARKLE_STUDS: f32 = 1.5;
 
 /// Whether a class is one of the three this module reads. An exact match
 /// rather than a subclass test: all three are documented as `Instance`
@@ -116,10 +122,10 @@ fn fire(
     // Positive `Heat` is up, negative is down — documented — and how fast is
     // "the velocity at which particles are emit", with no studs-per-second
     // conversion published. This renderer reads it as a fraction of a stud
-    // per unit, so the default rises at a plausible flame speed rather than
-    // shooting off the part.
+    // per unit: enough that a default `Heat` lifts the flame clear of the
+    // part it is emitted from the centre of, without shooting off it.
     let rise = origin.up() * heat.signum();
-    let speed = heat.abs() * 0.15;
+    let speed = heat.abs() * 0.35;
 
     let inner = flame == Flame::Inner;
     let studs = size * FIRE_STUDS * if inner { FIRE_INNER_SCALE } else { 1.0 };
@@ -148,7 +154,7 @@ fn fire(
         drag: 0.0,
         // A flame narrows as it burns out.
         size: number_sequence(&[(0.0, studs * 0.55), (0.35, studs), (1.0, studs * 0.3)]),
-        transparency: number_sequence(&[(0.0, 0.35), (0.6, 0.5), (1.0, 1.0)]),
+        transparency: number_sequence(&[(0.0, 0.0), (0.6, 0.3), (1.0, 1.0)]),
         color: flat_color(color3_of_any(
             properties,
             &[if inner { "SecondaryColor" } else { "Color" }],
@@ -167,6 +173,7 @@ fn fire(
         rotation_degrees: (-180.0, 180.0),
         rot_speed_degrees: (-25.0, 25.0),
         z_offset: 0.0,
+        gain: if inner { FIRE_GAIN.1 } else { FIRE_GAIN.0 },
         time_scale: time_scale(properties),
         cap: spend(rate, lifetime.1, budget),
         seed: seed_of(referent.value(), inner as u8),
@@ -210,6 +217,9 @@ fn smoke(properties: &Properties, origin: Origin, referent: Ref, budget: &mut u3
         rotation_degrees: (-180.0, 180.0),
         rot_speed_degrees: (-12.0, 12.0),
         z_offset: 0.0,
+        // Roblox's own smoke image is already white, so its colour needs no
+        // help to come through.
+        gain: 1.0,
         time_scale: time_scale(properties),
         cap: spend(rate, lifetime.1, budget),
         seed: seed_of(referent.value(), 0),
@@ -223,13 +233,17 @@ fn sparkles(properties: &Properties, origin: Origin, referent: Ref, budget: &mut
     // `SparkleColor` is the live name; `Color` is its deprecated twin, which
     // the docs say "functions identically", and older files carry that one.
     let tint = color3_of_any(properties, &["SparkleColor", "Color"], [1.0, 1.0, 1.0]);
-    let rate = 22.0;
-    let lifetime = (0.7, 1.2);
+    let rate = 40.0;
+    // Long enough, and quick enough, to carry a sparkle clear of the part
+    // it spawns in the middle of — every one of these classes emits from
+    // the centre, so an effect that travels less than half a part never
+    // shows at all.
+    let lifetime = (1.0, 1.6);
 
     Emitter {
         rate,
         lifetime,
-        speed: (0.4, 1.2),
+        speed: (2.0, 4.0),
         // Sparkles surround the object rather than streaming off one face.
         spread_degrees: (180.0, 180.0),
         direction: origin.up(),
@@ -251,6 +265,7 @@ fn sparkles(properties: &Properties, origin: Origin, referent: Ref, budget: &mut
         rotation_degrees: (-180.0, 180.0),
         rot_speed_degrees: (-60.0, 60.0),
         z_offset: 0.0,
+        gain: 1.0,
         time_scale: time_scale(properties),
         cap: spend(rate, lifetime.1, budget),
         seed: seed_of(referent.value(), 0),

@@ -25,6 +25,11 @@ pub(super) struct StandIns {
     pub(super) env: EnvMap,
     pub(super) shadow: wgpu::Texture,
     pub(super) local_shadow: wgpu::Texture,
+    /// A `ViewportFrame`'s parts are drawn with no shadows at all, so this
+    /// is a single unread texel like `local_shadow` above — the frame bind
+    /// group still has to point somewhere.
+    pub(super) point_shadow: wgpu::Texture,
+    pub(super) point_faces: wgpu::Buffer,
     pub(super) shadow_sampler: wgpu::Sampler,
     pub(super) lights: wgpu::Buffer,
     pub(super) light_shadows: wgpu::Buffer,
@@ -58,6 +63,8 @@ impl StandIns {
             env: EnvMap::new(device, queue, None, quality),
             shadow: depth("rbxview viewport frame shadow stand-in", 1),
             local_shadow: depth("rbxview viewport frame local shadow stand-in", 1),
+            point_shadow: depth("rbxview viewport frame point shadow stand-in", 1),
+            point_faces: shadow::point::faces_stand_in(device),
             shadow_sampler: device.create_sampler(&wgpu::SamplerDescriptor {
                 label: Some("rbxview viewport frame shadow stand-in"),
                 compare: Some(wgpu::CompareFunction::LessEqual),

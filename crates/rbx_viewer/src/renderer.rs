@@ -257,6 +257,8 @@ impl Renderer {
             shadow_sampler: shadows.sampler(),
             local_shadow_map: shadows.local_view(),
             light_shadows: &light_shadows_buffer,
+            point_shadow_map: shadows.point_view(),
+            point_faces: shadows.point_faces(),
         };
         let frame = Frame::new(device, &layout, shared);
         let sky = decor.sky.as_ref().map(|panels| {
@@ -447,8 +449,13 @@ impl Renderer {
     ) {
         let parts = Cues::parts_of(&selected);
         self.hover.set(device, selected);
-        self.cues
-            .set_hover(device, queue, &self.frame_layout, parts, Self::cue_source(scene));
+        self.cues.set_hover(
+            device,
+            queue,
+            &self.frame_layout,
+            parts,
+            Self::cue_source(scene),
+        );
     }
 
     /// Replaces the ghost boxes a tool is previewing — see
@@ -588,10 +595,17 @@ impl Renderer {
             eye,
             self.shadows.local_cap(),
         );
+        // A `PointLight` has no axis to point one map down, so it takes six
+        // — see `renderer::shadow::point`.
+        let points = shadow::point::select(
+            &self.all_lights[..self.lights],
+            eye,
+            self.shadows.point_cap(),
+        );
         queue.write_buffer(
             &self.light_shadows_buffer,
             0,
-            bytemuck::cast_slice(&shadow::local::pack(self.lights, &selected)),
+            bytemuck::cast_slice(&shadow::local::pack(self.lights, &selected, &points)),
         );
 
         let rotation_only = self.camera.view_rotation_projection(from, aspect);
@@ -641,6 +655,11 @@ impl Renderer {
             self.shadows
                 .render_local(queue, &mut encoder, &self.meshes, &selected);
         }
+        // Redrawn only when the cubes would hold something different — six
+        // faces a light is the one shadow pass worth not repeating for a
+        // still camera over a still scene.
+        self.shadows
+            .render_points(queue, &mut encoder, &self.meshes, &points);
         self.scene_pass(&mut encoder, targets, &cull);
 
         // Before particles: sorting the two passes against each other is out
@@ -724,17 +743,17 @@ impl Renderer {
     }
 
     /// What the cue pass masks a silhouette out of: the same parts and
-/// resolved meshes the place's own highlights are drawn from, with no
-/// highlight of its own — `renderer::cue` supplies those.
-fn cue_source(scene: &Scene) -> highlight::Source<'_> {
-    highlight::Source {
-        highlights: &[],
-        parts: scene.parts(),
-        resolved: scene.resolved_file_meshes(),
+    /// resolved meshes the place's own highlights are drawn from, with no
+    /// highlight of its own — `renderer::cue` supplies those.
+    fn cue_source(scene: &Scene) -> highlight::Source<'_> {
+        highlight::Source {
+            highlights: &[],
+            parts: scene.parts(),
+            resolved: scene.resolved_file_meshes(),
+        }
     }
-}
 
-/// Which lamp casts this frame, and where its map looks.
+    /// Which lamp casts this frame, and where its map looks.
     ///
     /// Roblox keeps the sun's direction pointing at the sun all night long and
     /// puts the moon opposite it (see [`crate::lighting`]), so the lamp that is

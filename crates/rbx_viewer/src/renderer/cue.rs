@@ -58,10 +58,16 @@ impl Cues {
         scene: Source<'_>,
     ) -> Self {
         Cues {
-            pass: Highlights::new(device, queue, frame, target, Source {
-                highlights: &[],
-                ..scene
-            }),
+            pass: Highlights::new(
+                device,
+                queue,
+                frame,
+                target,
+                Source {
+                    highlights: &[],
+                    ..scene
+                },
+            ),
             selection: Vec::new(),
             hover: Vec::new(),
             occluded: false,
@@ -184,7 +190,8 @@ impl Cues {
         meshes: &Meshes,
         size: (u32, u32),
     ) {
-        self.pass.draw(device, encoder, targets, frame, meshes, size);
+        self.pass
+            .draw(device, encoder, targets, frame, meshes, size);
     }
 }
 

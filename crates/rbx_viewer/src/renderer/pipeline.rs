@@ -110,6 +110,10 @@ pub(super) struct Shared<'a> {
     /// see `renderer::shadow::local`. Sampled through `shadow_sampler` above.
     pub(super) local_shadow_map: &'a wgpu::TextureView,
     pub(super) light_shadows: &'a wgpu::Buffer,
+    /// The `PointLight` cubes and their per-face matrices — see
+    /// `renderer::shadow::point`. Sampled through `shadow_sampler` too.
+    pub(super) point_shadow_map: &'a wgpu::TextureView,
+    pub(super) point_faces: &'a wgpu::Buffer,
 }
 
 /// One pass's copy of bind group 0.
@@ -217,6 +221,30 @@ pub(super) fn frame_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
                 },
                 count: None,
             },
+            // The `PointLight` cubes and the six matrices each is read back
+            // through — see `renderer::shadow::point`. A second array
+            // rather than more layers of binding 7's: the faces are half
+            // the side, which is what keeps six of them affordable.
+            wgpu::BindGroupLayoutEntry {
+                binding: 9,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Depth,
+                    view_dimension: wgpu::TextureViewDimension::D2Array,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 10,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
         ],
     })
 }
@@ -315,6 +343,14 @@ fn bind(
             wgpu::BindGroupEntry {
                 binding: 8,
                 resource: shared.light_shadows.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 9,
+                resource: wgpu::BindingResource::TextureView(shared.point_shadow_map),
+            },
+            wgpu::BindGroupEntry {
+                binding: 10,
+                resource: shared.point_faces.as_entire_binding(),
             },
         ],
     })

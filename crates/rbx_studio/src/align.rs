@@ -285,11 +285,7 @@ pub(crate) fn plan(
 /// -aligned box around everything beneath it — the same two answers the
 /// selection outline already gives (`renderer::outline::box_of`), moved by
 /// the delta the alignment would apply.
-pub(crate) fn preview(
-    entries: &[Vec<Target>],
-    active_index: usize,
-    options: Options,
-) -> Vec<Mat4> {
+pub(crate) fn preview(entries: &[Vec<Target>], active_index: usize, options: Options) -> Vec<Mat4> {
     // Same no-op as `plan`: one object is already where it would be put,
     // so there is nothing to show it landing on.
     if entries.len() < 2 {
@@ -328,8 +324,7 @@ fn moved_box(entry: &[Target], delta: Vec3) -> Option<Mat4> {
     let (mut min, mut max) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
     for target in entry {
         let axes = target.rotation();
-        let half = 0.5
-            * (axes.x_axis.abs() + axes.y_axis.abs() + axes.z_axis.abs());
+        let half = 0.5 * (axes.x_axis.abs() + axes.y_axis.abs() + axes.z_axis.abs());
         let centre = target.position() + delta;
         min = min.min(centre - half);
         max = max.max(centre + half);

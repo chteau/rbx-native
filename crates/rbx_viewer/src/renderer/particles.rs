@@ -322,6 +322,7 @@ impl Particles {
             .flat_map(|live| {
                 let texture = live.texture;
                 let z_offset = live.emitter.z_offset;
+                let gain = live.emitter.gain;
                 live.simulation
                     .particles(&live.emitter)
                     .filter_map(move |particle| {
@@ -340,7 +341,10 @@ impl Particles {
                             raw: ParticleRaw {
                                 position: position.to_array(),
                                 size: particle.size,
-                                color: particle.color,
+                                // The emitter's own gain, which is 1 for
+                                // everything but a `Fire` — see
+                                // `Emitter::gain`.
+                                color: particle.color.map(|channel| channel * gain),
                                 alpha: particle.alpha,
                                 rotation: particle.rotation,
                                 light_emission: live.emitter.light_emission,

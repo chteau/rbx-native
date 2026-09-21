@@ -96,6 +96,8 @@ impl Renderer {
             shadow_sampler: self.shadows.sampler(),
             local_shadow_map: self.shadows.local_view(),
             light_shadows: &self.light_shadows_buffer,
+            point_shadow_map: self.shadows.point_view(),
+            point_faces: self.shadows.point_faces(),
         };
         self.sky = match (self.sky.take(), decor.sky.as_deref()) {
             (Some(sky), Some(panels)) if sky.holds(panels) => Some(sky),
