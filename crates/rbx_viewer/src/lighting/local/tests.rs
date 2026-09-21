@@ -108,7 +108,8 @@ fn a_point_light_defaults_to_studios_own_property_sheet() {
     assert_eq!(light.range, 8.0);
     assert!(close(light.color, Vec3::splat(RADIANCE_SCALE)));
     assert_eq!(light.position, Vec3::ZERO);
-    assert_eq!(light.near, 0.0);
+    assert_eq!(light.face_u, Vec3::ZERO);
+    assert_eq!(light.face_v, 0.0);
     // No cone at all: every direction has to come out fully lit.
     assert_eq!(light.direction, Vec3::ZERO);
     assert!(light.cos_outer < -1.0 && light.cos_outer < light.cos_inner);
@@ -232,7 +233,7 @@ fn a_spot_aims_along_its_face_rotated_by_the_parts_cframe() {
 }
 
 #[test]
-fn a_surface_light_sits_on_its_face_with_a_near_field_across_it() {
+fn a_surface_light_emits_from_its_whole_face() {
     let mut fixture = Fixture::new();
     // A ceiling panel: 6 by 8 studs across, 2 thick, emitting downward.
     let part = fixture.part(
@@ -251,29 +252,28 @@ fn a_surface_light_sits_on_its_face_with_a_near_field_across_it() {
 
     let light = fixture.lights()[0];
 
-    // On the bottom face, a stud below the part's centre, pointing down.
+    // Centred on the bottom face, a stud below the part's centre, pointing
+    // down, and as wide as that face: 6 along one axis, 8 along the other.
     assert!(close(light.position, Vec3::new(0.0, 19.0, 0.0)));
     assert!(close(light.direction, -Vec3::Y));
-    // Half the shorter side of the 6 by 8 face.
-    assert_eq!(light.near, 3.0);
+    assert!(close(light.face_u.abs(), Vec3::new(3.0, 0.0, 0.0)));
+    assert_eq!(light.face_v, 4.0);
 }
 
-// A face wider than its own reach would otherwise push the falloff past the
-// Range and leave a hard-edged sphere of light.
+// An attachment has no face: a `SurfaceLight` on one shines from its point.
 #[test]
-fn a_huge_face_keeps_its_falloff_inside_its_range() {
+fn a_surface_light_on_an_attachment_has_no_face() {
     let mut fixture = Fixture::new();
-    let part = fixture.part(Vec3::ZERO, Vec3::new(128.0, 1.0, 78.0), IDENTITY_ROTATION);
-    fixture.insert(
-        "SurfaceLight",
+    let part = fixture.part(Vec3::ZERO, Vec3::splat(4.0), IDENTITY_ROTATION);
+    let attachment = fixture.insert(
+        "Attachment",
         Some(part),
-        &[
-            ("Face", Variant::Enum(4)),
-            ("Range", Variant::Float32(18.0)),
-        ],
+        &[("CFrame", cframe(Vec3::ZERO, IDENTITY_ROTATION))],
     );
+    fixture.insert("SurfaceLight", Some(attachment), &[]);
 
-    assert_eq!(fixture.lights()[0].near, 9.0);
+    let light = fixture.lights()[0];
+    assert_eq!((light.face_u, light.face_v), (Vec3::ZERO, 0.0));
 }
 
 #[test]

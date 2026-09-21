@@ -12,12 +12,15 @@
 struct LocalLight {
     // xyz: position. w: Range, where the falloff reaches zero.
     position_range: vec4<f32>,
-    // rgb: radiance inside the near field. w: how far that field reaches.
-    color_near: vec4<f32>,
+    // rgb: radiance. w: half the emitting face along its second axis,
+    // cross(direction_cone.xyz, cone_face.yzw).
+    color_face: vec4<f32>,
     // xyz: cone axis. w: cosine of the cone's half-angle.
     direction_cone: vec4<f32>,
     // x: cosine of the inner half-angle, strictly above direction_cone.w.
-    cone_inner: vec4<f32>,
+    // yzw: half the emitting face along its first axis, as a vector. Zero,
+    // with color_face.w, for anything but a SurfaceLight on a part.
+    cone_face: vec4<f32>,
 }
 
 @group(0) @binding(6) var<storage, read> local_lights: array<LocalLight>;
@@ -158,8 +161,11 @@ struct LocalTerms {
 /// count is capped on the CPU (see `crate::lighting::local`).
 ///
 /// The falloff is linear to zero at `Range`, which is how Roblox's voxel grid
-/// reads from the outside; a `SurfaceLight` holds full brightness across its own
-/// face first, so a wide panel is not one hot spot in its middle.
+/// reads from the outside. A `SurfaceLight` "emits from the entire surface":
+/// every point of its face shines the cone, which comes to measuring the
+/// distance and the angle from the face's nearest point rather than from its
+/// centre — the frustum its guide draws. A point source has no face, so that
+/// nearest point is the light's own position and this is the plain cone.
 fn local_terms(receiver: Receiver, count: u32) -> LocalTerms {
     var terms: LocalTerms;
     terms.diffuse = vec3<f32>(0.0);
@@ -167,7 +173,14 @@ fn local_terms(receiver: Receiver, count: u32) -> LocalTerms {
 
     for (var index = 0u; index < count; index++) {
         let light = local_lights[index];
-        let offset = light.position_range.xyz - receiver.position;
+        let extent_u = length(light.cone_face.yzw);
+        let across_u = light.cone_face.yzw / max(extent_u, 1e-6);
+        let across_v = cross(light.direction_cone.xyz, across_u);
+        let from_centre = receiver.position - light.position_range.xyz;
+        let source = light.position_range.xyz
+            + across_u * clamp(dot(from_centre, across_u), -extent_u, extent_u)
+            + across_v * clamp(dot(from_centre, across_v), -light.color_face.w, light.color_face.w);
+        let offset = source - receiver.position;
         let distance = length(offset);
         let range = light.position_range.w;
         if distance >= range {
@@ -179,15 +192,14 @@ fn local_terms(receiver: Receiver, count: u32) -> LocalTerms {
             continue;
         }
 
-        let near = light.color_near.w;
-        let falloff = saturate((range - distance) / max(range - near, 1e-3));
+        let falloff = saturate((range - distance) / max(range, 1e-3));
         let cone = smoothstep(
             light.direction_cone.w,
-            light.cone_inner.x,
+            light.cone_face.x,
             dot(-to_light, light.direction_cone.xyz)
         );
         let shadow = local_light_visibility(receiver.position, facing, index);
-        let radiance = light.color_near.rgb * (falloff * cone * shadow);
+        let radiance = light.color_face.rgb * (falloff * cone * shadow);
 
         terms.diffuse += radiance * facing;
         let half_vector = normalize(to_light + receiver.to_eye);

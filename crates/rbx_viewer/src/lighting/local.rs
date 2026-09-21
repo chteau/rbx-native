@@ -69,9 +69,13 @@ pub(crate) struct LocalLight {
     pub(crate) color: Vec3,
     /// `Range`: where the falloff reaches zero.
     pub(crate) range: f32,
-    /// Studs of full brightness before the falloff starts. Only a
-    /// `SurfaceLight` has one, standing in for the extent of its face.
-    pub(crate) near: f32,
+    /// Half the emitting face along its first axis, as a vector across it,
+    /// and half of it along the second (`direction × face_u`). Only a
+    /// `SurfaceLight` on a part has one: "light emits from the entire
+    /// surface", so its reach is measured from the nearest point of the face
+    /// rather than from `position`, its centre. Zero for a point source.
+    pub(crate) face_u: Vec3,
+    pub(crate) face_v: f32,
     /// Unit cone axis, or [`Vec3::ZERO`] for a light that shines everywhere.
     pub(crate) direction: Vec3,
     pub(crate) cos_outer: f32,
@@ -174,7 +178,8 @@ fn read(
         position: frame.w_axis.truncate(),
         color,
         range,
-        near: 0.0,
+        face_u: Vec3::ZERO,
+        face_v: 0.0,
         direction: Vec3::ZERO,
         cos_outer: OMNI_COS_OUTER,
         cos_inner: OMNI_COS_INNER,
@@ -191,13 +196,14 @@ fn read(
     light.direction = frame.transform_vector3(axis).normalize_or(Vec3::Y);
     (light.cos_outer, light.cos_inner) = cone(value("Angle"));
     if surface {
-        // The whole face emits, not the part's centre: the light sits on the
-        // face and keeps full brightness across the face's own width, or the
-        // near half of its reach on a face wider than that. Without it a
-        // ceiling panel reads as one hot spot in the middle of itself.
-        let half_depth = 0.5 * size.dot(axis.abs());
-        light.position += light.direction * half_depth;
-        light.near = face_radius(size, axis).min(0.5 * range);
+        // The whole face emits, not the part's centre — the reach
+        // `SurfaceLight`'s guide draws: every point of the face shining the
+        // cone, out to `Range` (see `guides`).
+        let (normal, u, v) = face.axes();
+        let half = |axis: Vec3| 0.5 * size.dot(axis.abs());
+        light.position += light.direction * half(normal);
+        light.face_u = frame.transform_vector3(u).normalize_or_zero() * half(u);
+        light.face_v = half(v);
     }
     Some(light)
 }
@@ -244,22 +250,6 @@ fn cone(angle: Option<&Variant>) -> (f32, f32) {
     let half = half_angle(angle);
     let cos_inner = (half * (1.0 - CONE_SOFTNESS)).cos();
     (half.cos().min(cos_inner - MIN_CONE_GAP), cos_inner.min(1.0))
-}
-
-/// Half the shorter side of the face on `axis`, i.e. how far off a panel one has
-/// to stand before it starts looking like a point.
-fn face_radius(size: Vec3, axis: Vec3) -> f32 {
-    let on_face = size - size * axis.abs();
-    let sides = [on_face.x, on_face.y, on_face.z];
-    let shorter = sides
-        .into_iter()
-        .filter(|side| *side > 0.0)
-        .fold(f32::INFINITY, f32::min);
-    if shorter.is_finite() {
-        0.5 * shorter
-    } else {
-        0.0
-    }
 }
 
 fn frame_of(instance: &Instance) -> Option<Mat4> {
