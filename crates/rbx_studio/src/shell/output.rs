@@ -4,16 +4,11 @@
 //!
 //! `shell::command::run_command` appends one [`OutputEntry`] per run, success
 //! or failure, to the [`OutputLog`] `Shell` owns; this module renders that
-//! log as the Output panel's body plus its title-bar controls (filter, Clear)
-//! — see `shell::dock`'s `Section::Output` for how the panel itself is wired
-//! into the dock, including its "Show Timestamp" toggle
-//! (`Shell::output_show_timestamps`), which lives in that overflow menu
-//! alongside Explorer's and Viewport's own toggles rather than in this
-//! panel's own title-bar row. Each row's icon and color come from its
-//! `row_kind::RowKind` — a plain `✕`/`✓` marker used to be the only
-//! distinction between error and everything else; now `print`/success,
-//! `warn` and `error` each read distinctly, matching real Studio's Output
-//! window.
+//! log as the Output panel's body plus its strip controls (search, filter,
+//! Clear). `shell::workspace` wires the panel into its dock, overflow menu
+//! and "Show Timestamp" toggle included. Each row's icon and colour come from
+//! its `row_kind::RowKind`, so `print`/success, `warn` and `error` each read
+//! distinctly, as in Studio's own Output window.
 //!
 //! Clicking a logged entry recalls its source back into the Command Bar
 //! (see [`Shell::recall_command`]) instead of Studio's own Up/Down-through-history:
@@ -260,9 +255,8 @@ impl Shell {
                     .text_color(tokens::text_placeholder())
                     .child(format!("{} runs", self.output.len())),
             )
-            // The count reads as the tab's caption; the tools are the
-            // header's own, and sit at its far end the way a toolbar does,
-            // rather than trailing the caption wherever it happens to stop.
+            // The count is the tab's caption; the tools sit at the strip's
+            // far end, the way a toolbar's do.
             .child(div().flex_1())
             // No subscription behind it: the value is read straight off the
             // `InputState` at render, the same way the Properties panel's
