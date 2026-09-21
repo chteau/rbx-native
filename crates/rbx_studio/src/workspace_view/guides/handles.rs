@@ -138,6 +138,14 @@ impl WorkspaceView {
                     .map_or(0.0, |(now, then)| {
                         (now.position() - then.position()).dot(direction)
                     });
+                let orthographic = self.orthographic;
+                drawn.lines.extend(label::tail(
+                    handles.origin(),
+                    direction,
+                    travelled,
+                    held.color(),
+                    |at| handle_scale(at, pose, orthographic),
+                ));
                 measure
                     .then(|| self.move_label(&handles, held, sign, along, scale))
                     .flatten()
@@ -177,7 +185,7 @@ impl WorkspaceView {
 
     /// Where the Move label goes: beside the dragged arrow, leaning towards
     /// whichever other arrow looks most square to it on screen.
-    fn move_label(
+    pub(in crate::workspace_view) fn move_label(
         &self,
         handles: &gizmo::Handles,
         held: Axis,
@@ -282,16 +290,37 @@ fn span_along(direction: Vec3, models: &[Mat4]) -> (f32, f32) {
         })
 }
 
+/// The measurement text's size: Studio's `SourceSansBold` 24.
+pub(in crate::workspace_view) fn label_text() -> Pixels {
+    px(24.0 * crate::tokens::font_scale())
+}
+
 /// Studio's floating measurement box, legacy dark theme: a white bold number
-/// on RGB(37, 37, 37) with a black border and small rounded corners
-/// (`FloatingValueInput`), padded 4/4/2/4 and centred on its anchor.
-pub(in crate::workspace_view) fn label_element(
+/// on RGB(37, 37, 37) with a `border` and small rounded corners
+/// (`FloatingValueInput`), padded 4/4/2/4.
+pub(in crate::workspace_view) fn measurement_box(border: Rgba) -> Div {
+    div()
+        .pl(px(4.0))
+        .pr(px(4.0))
+        .pt(px(2.0))
+        .pb(px(4.0))
+        .bg(rgb(0x252525))
+        .border_1()
+        .border_color(border)
+        .rounded(px(3.0))
+        .text_color(rgb(0xffffff))
+        .text_size(label_text())
+        .line_height(label_text())
+        .font_weight(FontWeight::BOLD)
+}
+
+/// `element` centred on `at`: a slot wider and taller than any box, centred
+/// on the anchor, with the box centred inside it — GPUI places a child by
+/// its corner, not its middle.
+pub(in crate::workspace_view) fn centred_on(
     at: Point<Pixels>,
-    text: SharedString,
+    element: impl IntoElement,
 ) -> impl IntoElement {
-    // A box wider and taller than any label, centred on the anchor, with the
-    // label centred inside it: GPUI places a child by its corner, not its
-    // middle.
     const SLOT: f32 = 200.0;
     div()
         .absolute()
@@ -301,22 +330,15 @@ pub(in crate::workspace_view) fn label_element(
         .flex()
         .items_center()
         .justify_center()
-        .child(
-            div()
-                .pl(px(4.0))
-                .pr(px(4.0))
-                .pt(px(2.0))
-                .pb(px(4.0))
-                .bg(rgb(0x252525))
-                .border_1()
-                .border_color(rgb(0x000000))
-                .rounded(px(3.0))
-                .text_color(rgb(0xffffff))
-                .text_size(px(24.0 * crate::tokens::font_scale()))
-                .line_height(px(24.0 * crate::tokens::font_scale()))
-                .font_weight(FontWeight::BOLD)
-                .child(text),
-        )
+        .child(element)
+}
+
+/// The distance label a drag shows, read-only.
+pub(in crate::workspace_view) fn label_element(
+    at: Point<Pixels>,
+    text: SharedString,
+) -> impl IntoElement {
+    centred_on(at, measurement_box(rgb(0x000000)).child(text))
 }
 
 #[cfg(test)]

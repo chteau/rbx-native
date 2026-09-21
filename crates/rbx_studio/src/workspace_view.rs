@@ -16,6 +16,7 @@ mod guides;
 mod hover;
 mod input;
 mod label;
+mod measure;
 mod orientation;
 mod presence;
 mod pump;
@@ -284,6 +285,9 @@ pub(crate) struct WorkspaceView {
     /// `Shell` has resolved the same click against the real geometry (see
     /// `ViewportAction::Pick`'s `held`).
     pending_grab: Option<Drag>,
+    /// Studio's editable measurement box, up after a Move-arrow drag (see
+    /// `measure`).
+    measure: Option<measure::Measure>,
     /// The selection as it stood when the drag in progress grabbed it: what
     /// a group Scale or Rotate measures from, so a gesture is one absolute
     /// factor or turn rather than a running product (see
@@ -416,6 +420,7 @@ impl WorkspaceView {
             meshes: Meshes::default(),
             drag: None,
             pending_grab: None,
+            measure: None,
             held: Targets::default(),
             dragged: false,
             drag_readout: None,
@@ -651,15 +656,17 @@ impl WorkspaceView {
         // Only on the press: a tool switch is an edge, not a state the way the
         // camera's own movement keys are.
         if pressed {
+            // Only while a part is actually held by its body, and only then:
+            // with nothing in hand these are ordinary keys, and swallowing
+            // them would take `r` away from whatever binds it next. First,
+            // so that `Alt` — the drag's Hold Orientation — with `R` turns
+            // the part rather than jumping to the rotate increment field.
+            if self.turn_key(&keystroke.key, keystroke.modifiers, cx) {
+                return;
+            }
             let key = tool_key(&keystroke.key, layout);
             if let Some(action) = transform::action_for(key, keystroke.modifiers) {
                 cx.emit(ViewportAction::Tool(action));
-                return;
-            }
-            // Only while a part is actually held by its body, and only then:
-            // with nothing in hand these are ordinary keys, and swallowing
-            // them would take `r` away from whatever binds it next.
-            if self.turn_key(&keystroke.key, keystroke.modifiers, cx) {
                 return;
             }
         }
@@ -687,6 +694,7 @@ impl WorkspaceView {
 
         self.transform = transform;
         self.drag = None;
+        self.close_measure();
         self.pump.gizmo(transform.gizmo());
         self.refresh_guides();
         self.rehover();
@@ -924,12 +932,22 @@ impl Render for WorkspaceView {
                 let scale = window.scale_factor();
                 view.wheel(event.position, event.delta, event.modifiers.shift, scale);
             }))
-            .on_key_down(cx.listener(|view, event: &KeyDownEvent, _, cx| {
+            .on_key_down(cx.listener(|view, event: &KeyDownEvent, window, cx| {
                 view.note_input();
+                // Typed into the measurement box: its, not the view's —
+                // but `Escape` hands the keyboard back.
+                if view.typing(window, cx) {
+                    if event.keystroke.key == "escape" {
+                        window.focus(&view.focus, cx);
+                    }
+                    return;
+                }
                 view.key(&event.keystroke, true, cx);
             }))
-            .on_key_up(cx.listener(|view, event: &KeyUpEvent, _, cx| {
-                view.key(&event.keystroke, false, cx);
+            .on_key_up(cx.listener(|view, event: &KeyUpEvent, window, cx| {
+                if !view.typing(window, cx) {
+                    view.key(&event.keystroke, false, cx);
+                }
             }))
             // Shift alone never arrives as a keystroke: modifiers are reported
             // on their own, and Shift is Studio's precision modifier.
@@ -1026,6 +1044,9 @@ impl Render for WorkspaceView {
                 self.dragging().then(|| self.guides.label.clone()).flatten(),
                 |this, (at, text)| this.child(guides::label_element(at, text)),
             )
+            .when_some(self.measure_element(window, cx), |this, measure| {
+                this.child(measure)
+            })
             // No pose yet (the very first frame or two, before the render
             // thread's first `Ready` lands — see `self.view`'s own doc) draws
             // nothing rather than a widget with no orientation to show.

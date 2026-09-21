@@ -28,7 +28,7 @@ use crate::transform::Tool;
 
 mod handles;
 
-pub(super) use handles::label_element;
+pub(super) use handles::{centred_on, label_element, label_text, measurement_box};
 
 /// The line layer the dragger guides are drawn on, apart from the light
 /// guides' so that a guide moving with the mouse never re-uploads them.
@@ -61,7 +61,7 @@ pub(super) struct State {
     snaps: Vec<SoftSnap>,
     /// The Move arrow a handle drag holds: its axis, which end (`±1`) and
     /// how far out along it the press landed.
-    arrow: Option<(Axis, f32, f32)>,
+    pub(super) arrow: Option<(Axis, f32, f32)>,
     /// What is drawn now.
     drawn: Guides,
     /// Studio's distance label: where, in the panel's own logical pixels,

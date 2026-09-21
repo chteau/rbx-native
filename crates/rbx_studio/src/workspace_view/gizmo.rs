@@ -248,6 +248,8 @@ impl WorkspaceView {
     ) {
         self.drag = None;
         self.pending_grab = None;
+        // Any press in the view takes Studio's measurement box down.
+        self.close_measure();
         let Some(ray) = self.cursor_ray(position, scale) else {
             return;
         };
@@ -628,11 +630,20 @@ impl WorkspaceView {
     /// The button coming up: the last cursor position the frame gate has
     /// not applied yet is applied first, so the part lands exactly where it
     /// was let go rather than a frame short of it.
-    pub(super) fn end_drag(&mut self, window: &gpui_kit::Window, cx: &mut gpui_kit::Context<Self>) {
+    pub(super) fn end_drag(
+        &mut self,
+        window: &mut gpui_kit::Window,
+        cx: &mut gpui_kit::Context<Self>,
+    ) {
         self.step_drag(window, cx);
-        if self.drag.take().is_some() {
+        if let Some(drag) = self.drag.take() {
+            let arrow = self.guides.arrow;
             self.clear_guides();
             self.rehover();
+            // A Move arrow's label stays behind, editable.
+            if let (Drag::Axis { axis, .. }, Some(arrow)) = (drag, arrow) {
+                self.open_measure(arrow, axis * arrow.1, window, cx);
+            }
         }
         self.drag_stepped_at = None;
         // A grab `Shell` has not answered yet is answered by the release:

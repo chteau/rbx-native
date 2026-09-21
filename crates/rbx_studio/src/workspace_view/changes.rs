@@ -15,6 +15,8 @@ const LIGHT_GUIDES: usize = 0;
 impl WorkspaceView {
     /// Forwards the Explorer's selection, forcing one frame even at rest.
     pub(crate) fn set_selection(&mut self, selected: &[Selected]) {
+        // Studio's measurement box belongs to the selection it measured.
+        self.close_measure();
         self.pump.select(selected.to_vec());
     }
 
