@@ -43,14 +43,15 @@ use pipelines::{Composite, Mask, MaskInstance, Paint};
 /// filtered by "a highlight covers it" rather than by "it is drawn opaque":
 /// the same part lands at a different slot in each.
 ///
-/// The side data is the instance's depth mode, so one pass over a batch can
-/// pick out the run of instances the pipeline currently bound is for.
-type ShapeBatches = Keyed<ShapeKind, (), MaskInstance, DepthMode, PartId>;
+/// The side data is the instance's [`Claim`], so one pass over a batch can
+/// pick out the run of instances the pipeline currently bound is for, one
+/// highlight at a time.
+type ShapeBatches = Keyed<ShapeKind, (), MaskInstance, Claim, PartId>;
 
 /// The highlighted file meshes, one batch per mesh asset, against
 /// position-only geometry of their own — [`casters::MeshGeometry`], which the
 /// shadow pass builds from the same meshes for the same reason.
-type MeshBatches = Keyed<AssetRef, MeshGeometry, MaskInstance, DepthMode>;
+type MeshBatches = Keyed<AssetRef, MeshGeometry, MaskInstance, Claim>;
 
 /// What a part needs to know about the highlight covering it: which one, as
 /// the 1-based index the mask carries, and which side of the scene's depth it
@@ -77,9 +78,10 @@ pub(super) struct Highlights {
     /// The mask texture and the bind group reading it, reallocated whenever
     /// the frame changes size. `None` until the first frame draws one.
     target: Option<MaskTarget>,
-    /// Which depth modes are in play, so a scene using one never pays for a
-    /// second walk of the batches in the other.
-    modes: Vec<DepthMode>,
+    /// The claims in play, in the order the mask draws them (see
+    /// [`draw_order`]): each is one walk of the batches, so a scene pays for
+    /// the highlights it has and no more.
+    order: Vec<Claim>,
 }
 
 struct Gpu {
@@ -114,7 +116,7 @@ impl Highlights {
             gpu: None,
             format: target,
             target: None,
-            modes: Vec::new(),
+            order: Vec::new(),
         };
         pass.rebuild(device, queue, frame, scene);
         pass
@@ -161,11 +163,11 @@ impl Highlights {
             .claims
             .get(&part.referent())
             .filter(|_| part.is_drawn())
-            .map(|&(index, mode)| {
+            .map(|&claim| {
                 (
                     part.kind,
-                    MaskInstance::new(part.transform.to_cols_array_2d(), index),
-                    mode,
+                    MaskInstance::new(part.transform.to_cols_array_2d(), claim.0),
+                    claim,
                 )
             });
         self.shapes.sync(device, part.id, wanted, |_| Some(()));
@@ -193,11 +195,11 @@ impl Highlights {
         resolved: &Resolved,
         instance: &ResolvedInstance,
     ) -> bool {
-        let wanted = self.claims.get(&instance.referent).map(|&(index, mode)| {
+        let wanted = self.claims.get(&instance.referent).map(|&claim| {
             (
                 instance.mesh.clone(),
-                MaskInstance::new(instance.model.to_cols_array_2d(), index),
-                mode,
+                MaskInstance::new(instance.model.to_cols_array_2d(), claim.0),
+                claim,
             )
         });
         self.meshes.sync(device, instance.referent, wanted, |mesh| {
@@ -271,8 +273,8 @@ impl Highlights {
             });
 
             pass.set_bind_group(0, frame, &[]);
-            for mode in self.modes.clone() {
-                self.draw_mask(&mut pass, gpu, meshes, mode);
+            for claim in self.order.clone() {
+                self.draw_mask(&mut pass, gpu, meshes, claim);
             }
         }
 
@@ -307,14 +309,17 @@ impl Highlights {
         pass: &mut wgpu::RenderPass<'p>,
         gpu: &'p Gpu,
         meshes: &Meshes,
-        mode: DepthMode,
+        claim: Claim,
     ) {
+        let mode = claim.1;
         pass.set_pipeline(gpu.mask.shapes(mode));
         for batch in self.shapes.groups() {
             let Some(mesh) = meshes.get(batch.key) else {
                 continue;
             };
-            let runs = visible_runs(batch.slots.count(), |index| batch.slots.side(index) == mode);
+            let runs = visible_runs(batch.slots.count(), |index| {
+                batch.slots.side(index) == claim
+            });
             if runs.is_empty() {
                 continue;
             }
@@ -326,7 +331,9 @@ impl Highlights {
 
         pass.set_pipeline(gpu.mask.meshes(mode));
         for batch in self.meshes.groups() {
-            let runs = visible_runs(batch.slots.count(), |index| batch.slots.side(index) == mode);
+            let runs = visible_runs(batch.slots.count(), |index| {
+                batch.slots.side(index) == claim
+            });
             if runs.is_empty() {
                 continue;
             }
@@ -363,10 +370,7 @@ impl Highlights {
                     .map(move |&referent| (referent, claim))
             })
             .collect();
-        self.modes = [DepthMode::AlwaysOnTop, DepthMode::Occluded]
-            .into_iter()
-            .filter(|&mode| highlights.iter().any(|one| one.depth_mode == mode))
-            .collect();
+        self.order = draw_order(self.claims.values().copied());
 
         let paints: Vec<Paint> = highlights.iter().map(Paint::of).collect();
         if !paints.is_empty() {
@@ -450,11 +454,11 @@ fn shape_batches(
                 .iter()
                 .filter(|part| part.kind == kind && part.is_drawn())
                 .filter_map(|part| {
-                    let &(index, mode) = claims.get(&part.referent())?;
+                    let &claim = claims.get(&part.referent())?;
                     Some((
                         part.id,
-                        MaskInstance::new(part.transform.to_cols_array_2d(), index),
-                        mode,
+                        MaskInstance::new(part.transform.to_cols_array_2d(), claim.0),
+                        claim,
                     ))
                 }),
         );
@@ -487,15 +491,56 @@ fn mesh_batches(
                 .iter()
                 .filter(|instance| instance.mesh == reference)
                 .filter_map(|instance| {
-                    let &(index, mode) = claims.get(&instance.referent)?;
+                    let &claim = claims.get(&instance.referent)?;
                     Some((
                         instance.referent,
-                        MaskInstance::new(instance.model.to_cols_array_2d(), index),
-                        mode,
+                        MaskInstance::new(instance.model.to_cols_array_2d(), claim.0),
+                        claim,
                     ))
                 }),
         );
         batches.add_group(device, reference, geometry, roster);
     }
     batches
+}
+
+/// The order the mask draws the claims in: the depth modes as they always
+/// went, `AlwaysOnTop` first, and within each the highlights from the last to
+/// the first. A pixel two highlights both reach is the last one drawn's, so
+/// the first highlight listed wins it — which is what lets the editor's
+/// selection cue, listed before its hover cue, keep its outline in front of
+/// a hovered part behind it.
+fn draw_order(claims: impl Iterator<Item = Claim>) -> Vec<Claim> {
+    let mut order: Vec<Claim> = Vec::new();
+    for claim in claims {
+        if !order.contains(&claim) {
+            order.push(claim);
+        }
+    }
+    let rank = |mode: DepthMode| usize::from(mode == DepthMode::Occluded);
+    order.sort_by_key(|&(index, mode)| (rank(mode), std::cmp::Reverse(index)));
+    order
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_first_highlight_is_drawn_last_so_it_wins_a_shared_pixel() {
+        let claims = [
+            (1, DepthMode::AlwaysOnTop),
+            (2, DepthMode::AlwaysOnTop),
+            (1, DepthMode::AlwaysOnTop),
+            (3, DepthMode::Occluded),
+        ];
+        assert_eq!(
+            draw_order(claims.into_iter()),
+            vec![
+                (2, DepthMode::AlwaysOnTop),
+                (1, DepthMode::AlwaysOnTop),
+                (3, DepthMode::Occluded),
+            ]
+        );
+    }
 }
