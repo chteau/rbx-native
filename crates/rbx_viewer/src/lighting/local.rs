@@ -14,6 +14,10 @@ use super::{boolean, color, number};
 use crate::scene::{cframe_matrix, is_drawable, workspace_descendants};
 use crate::textures::NormalId;
 
+mod guides;
+
+pub use guides::light_guides;
+
 const LIGHT_CLASS: &str = "Light";
 const SPOT_CLASS: &str = "SpotLight";
 const SURFACE_CLASS: &str = "SurfaceLight";
@@ -168,14 +172,7 @@ fn read(
 
     let spot = database.is_subclass_of(class, SPOT_CLASS);
     let surface = database.is_subclass_of(class, SURFACE_CLASS);
-    let default_range = if spot {
-        DEFAULT_SPOT_RANGE
-    } else {
-        DEFAULT_RANGE
-    };
-    let range = number(properties.get("Range"))
-        .unwrap_or(default_range)
-        .clamp(0.0, MAX_RANGE);
+    let range = range(properties.get("Range"), spot);
     let brightness = number(properties.get("Brightness"))
         .unwrap_or(DEFAULT_BRIGHTNESS)
         .max(0.0);
@@ -197,10 +194,7 @@ fn read(
 
     // Both cone classes aim along a face of their part, so a missing or
     // unreadable `Face` leaves nothing sensible to point at.
-    let face = match properties.get("Face") {
-        Some(&Variant::Enum(raw)) => NormalId::from_ordinal(raw)?,
-        _ => return None,
-    };
+    let face = face(properties.get("Face"))?;
     let axis = face.axis();
     light.direction = frame.transform_vector3(axis).normalize_or(Vec3::Y);
     (light.cos_outer, light.cos_inner) = cone(number(properties.get("Angle")));
@@ -216,13 +210,36 @@ fn read(
     Some(light)
 }
 
-/// `(cos_outer, cos_inner)` of a cone of this full `Angle` in degrees.
-fn cone(angle: Option<f32>) -> (f32, f32) {
-    let half = angle
+fn face(value: Option<&Variant>) -> Option<NormalId> {
+    match value? {
+        &Variant::Enum(raw) => NormalId::from_ordinal(raw),
+        _ => None,
+    }
+}
+
+/// `Range`, defaulted and clamped the way Studio's property sheet has it.
+fn range(value: Option<&Variant>, spot: bool) -> f32 {
+    let default = if spot {
+        DEFAULT_SPOT_RANGE
+    } else {
+        DEFAULT_RANGE
+    };
+    number(value).unwrap_or(default).clamp(0.0, MAX_RANGE)
+}
+
+/// Half of a full `Angle` in degrees, in radians: the angle between a
+/// cone's axis and its edge.
+fn half_angle(angle: Option<f32>) -> f32 {
+    angle
         .unwrap_or(DEFAULT_ANGLE_DEGREES)
         .clamp(0.0, MAX_ANGLE_DEGREES)
         .to_radians()
-        * 0.5;
+        * 0.5
+}
+
+/// `(cos_outer, cos_inner)` of a cone of this full `Angle` in degrees.
+fn cone(angle: Option<f32>) -> (f32, f32) {
+    let half = half_angle(angle);
     let cos_inner = (half * (1.0 - CONE_SOFTNESS)).cos();
     (half.cos().min(cos_inner - MIN_CONE_GAP), cos_inner.min(1.0))
 }
