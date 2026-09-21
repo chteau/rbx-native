@@ -206,8 +206,9 @@ fn align(centre: f32, half: f32, inside: f32, size: f32) -> (f32, f32) {
 }
 
 /// What Studio draws for a free drag landing on `frame`'s face: the face
-/// alignments it snapped to, if any; otherwise, with the grid snapping, the
-/// ruler to the landing point and the dragged point's dot and bar down to it.
+/// alignments it snapped to, if any, or else the ruler to the landing point;
+/// and, with the grid snapping, the dragged point's dot and its bar down to
+/// the face.
 ///
 /// `target_snap` and `dragged_point` are the Show Target Snap and Show
 /// Dragged Point settings.
@@ -244,11 +245,13 @@ pub(crate) fn guides(
                 0.4,
             ));
         }
-        return guides;
-    }
-    if target_snap {
+    } else if target_snap {
         guides.lines = super::ruler::target(frame, hit, grid);
     }
+    // Drawn beside the alignment lines too. The decompiled `SnapConnection`
+    // reads as skipping it while anything is soft-snapped, but Studio's own
+    // screen shows the dot and its bar with the alignment lines, and the
+    // screen is what the draggers actually do.
     if dragged_point && grid > 0.0 {
         let point = landing.dragged(frame);
         let scale = scale(point);

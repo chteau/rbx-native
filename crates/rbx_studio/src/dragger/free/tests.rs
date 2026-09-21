@@ -188,7 +188,7 @@ fn the_centre_line_is_an_alignment_too() {
 }
 
 #[test]
-fn a_soft_snapped_drag_draws_only_its_alignment_lines() {
+fn a_soft_snapped_drag_draws_its_alignment_lines_and_the_dragged_point() {
     let frame = plate();
     let bounds = grabbed_by_top(&frame, Vec3::new(1.5, 1.0, 1.5));
     let hit = Vec3::new(9.2, 0.5, 4.3);
@@ -199,11 +199,15 @@ fn a_soft_snapped_drag_draws_only_its_alignment_lines() {
         "soft on one axis, the grid on the other"
     );
     let guides = guides(&frame, hit, &landing, 1.0, true, true, pose(), false);
-    assert!(
-        guides.dots.is_empty(),
-        "no dragged point while soft-snapped"
+    // The alignment line, then the dragged point's bar; no ruler.
+    assert_eq!(guides.lines.len(), landing.aligned.len() + 1);
+    assert_eq!(
+        guides.dots.len(),
+        1,
+        "the dragged point shows while soft-snapped"
     );
-    assert_eq!(guides.lines.len(), landing.aligned.len());
+    assert!(close(guides.dots[0].centre, landing.dragged(&frame)));
+    assert!(guides.lines[1].width > 0.0);
     let line = guides.lines[0];
     assert_eq!((line.color, line.under, line.over), (ACTIVE, 1.0, 0.4));
     // Overrun past both ends of the face by a screen-constant length.
