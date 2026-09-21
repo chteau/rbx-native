@@ -47,6 +47,12 @@ impl Shell {
         if keystroke.key == "escape" && self.open_menu.take().is_some() {
             cx.notify();
         }
+        // The Explorer's own popups are not dropdowns and are not on
+        // `open_menu`, so the same key has to reach them separately (see
+        // `shell::explorer_edit`).
+        if keystroke.key == "escape" && self.close_explorer_popups() {
+            cx.notify();
+        }
         // The same key backs out of a drag in flight — an Explorer row being
         // carried to a new parent — so a drag started by mistake is never
         // committed by letting go of it. With no active drag there is nothing

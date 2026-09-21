@@ -2,6 +2,43 @@
 
 ## 2026-09-21
 
+- **The insert picker's classes carry their own icons, and the kit grew
+  five drawings to cover them.** A list of several hundred class names with
+  nothing but text beside them is a list you read rather than scan, so each
+  row now draws the same identity icon the Explorer tree gives an instance
+  of that class — through the same `explorer::resolve_icon`, so the two can
+  never disagree. A row whose parent cannot take the class fades its icon
+  along with its label, since a kit tile carries its own colours and
+  greying the words alone left the row looking half-disabled. Rasterized
+  tiles are memoized now: the picker rebuilds its list on every keystroke,
+  and re-rendering an SVG per row per frame is not something that survives
+  contact with a real place. Five classes a creator reaches for had no tile
+  in Roblox's own metadata and so had no tile here — `StyleSheet`,
+  `StyleRule`, `StyleLink`/`StyleDerive`, `IntersectOperation` and
+  `BodyColors` — and now have one each, drawn to the kit's own spec in both
+  the dark and light variants; twenty-two more are pointed at the family
+  tile they belong to (a `FileMesh` is a mesh, a `KeyframeSequence` is an
+  animation). What still falls back to a Lucide glyph is the long tail:
+  `ReflectionMetadata*`, the `Studio*` plugin objects, the `DataStore*`
+  option bags and the debugger's own instances. — @chteau
+
+- **The Explorer edits the place from its own rows.** Inserting used to
+  mean two keyboard shortcuts or a trip to the ribbon, and renaming meant
+  finding the `Name` field in Properties. Hovering a row now reveals a `+`
+  (`Ctrl+I` from the keyboard) that opens a searchable list of every class
+  the API dump marks browsable, inserting straight under that row; a class
+  that parent cannot take is greyed rather than missing, so you learn the
+  constraint from the list instead of from its absence. Right-clicking a
+  row opens Cut, Copy, Duplicate, Paste Into, Rename, Insert Object…,
+  Group as Model, Ungroup and Delete, each greyed by exactly the guard its
+  own handler returns early on. `F2` renames in the row. Cut is real now
+  rather than a greyed placeholder, in the menu, the Edit menu, the ribbon
+  and `Ctrl+X` — and, in the same spirit, deleting a *service* is refused
+  everywhere instead of quietly producing a place with no `Workspace`.
+  Real Studio's two insertion preferences ride along behind the picker's
+  own `⋯`, persisted: numbered names for new instances, and whether
+  selecting expands the tree to reveal what was selected. — @chteau
+
 - **Bounded properties get a slider.** A `Transparency`, a `ClockTime`, a
   `GuiObject`'s `Rotation` — anything whose value has a real floor and
   ceiling — now shows a rail beside its number field, and the two edit the

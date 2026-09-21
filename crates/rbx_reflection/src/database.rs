@@ -48,6 +48,13 @@ impl ReflectionDatabase {
         self.classes.get(name)
     }
 
+    /// Every class the dump names, in no particular order — the backing map is
+    /// a `HashMap`, so a caller that shows these to a person has to sort them
+    /// itself rather than inherit an order that changes between runs.
+    pub fn class_names(&self) -> impl Iterator<Item = &str> {
+        self.classes.keys().map(String::as_str)
+    }
+
     /// Resolves a property descriptor by walking the superclass chain.
     ///
     /// Most properties (Name, Parent, etc.) are declared once on `Instance` and

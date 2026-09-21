@@ -8,7 +8,7 @@
 //! screenshot, since nothing else can send a keystroke to the Explorer on
 //! the editor's behalf (see `AGENTS.md`'s safety rules).
 
-use gpui_kit::{Context, Keystroke, Modifiers};
+use gpui_kit::{Context, Keystroke, Modifiers, Window};
 use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
@@ -73,6 +73,10 @@ pub(super) enum Action {
     Delete,
     InsertPart,
     InsertFolder,
+    /// The `+` picker, on the selected row — real Studio's own shortcut for
+    /// it (`studio/explorer.md`).
+    Insert,
+    Rename,
 }
 
 /// Maps one keystroke to an Explorer action. `delete` and `backspace` both
@@ -84,8 +88,22 @@ pub(super) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
         "delete" | "backspace" => Some(Action::Delete),
         "p" if modifiers.control && modifiers.shift => Some(Action::InsertPart),
         "f" if modifiers.control && modifiers.shift => Some(Action::InsertFolder),
+        // Ctrl alone, not Ctrl+Shift: the other two are this editor's own
+        // quick inserts, this one is the shortcut Studio documents.
+        "i" if modifiers.control && !modifiers.shift => Some(Action::Insert),
+        "f2" if !modifiers.modified() => Some(Action::Rename),
         _ => None,
     }
+}
+
+/// Whether an instance can be removed at all. A service cannot: Roblox
+/// creates exactly one of each, and a place whose `Workspace` has been
+/// deleted is not a place this editor — or Roblox — can open again. The same
+/// singleton rule `explorer::reparent` applies to dragging one somewhere
+/// else and `shell::clipboard` to copying one.
+pub(super) fn removable(dom: &WeakDom, database: &ReflectionDatabase, reference: Ref) -> bool {
+    dom.get(reference)
+        .is_some_and(|instance| !database.is_service(instance.class()))
 }
 
 /// Whichever selection survives a delete: cleared only if it sat inside the
@@ -99,11 +117,23 @@ impl Shell {
     /// only ever runs while some row in the tree holds focus, since that is
     /// the only place GPUI's dispatch path puts it — a filter box or the
     /// viewport keeps its own focus and never bubbles a key here.
-    pub(super) fn handle_explorer_key(&mut self, keystroke: &Keystroke, cx: &mut Context<Self>) {
+    pub(super) fn handle_explorer_key(
+        &mut self,
+        keystroke: &Keystroke,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // See `Shell::renaming_in_place`: Backspace in an open name box is a
+        // character, not the instance being renamed.
+        if self.renaming_in_place() {
+            return;
+        }
         match action_for(&keystroke.key, keystroke.modifiers) {
             Some(Action::Delete) => self.delete_selected(cx),
             Some(Action::InsertPart) => self.insert_instance("Part", cx),
             Some(Action::InsertFolder) => self.insert_instance("Folder", cx),
+            Some(Action::Insert) => self.open_insert_picker_on_selection(window, cx),
+            Some(Action::Rename) => self.begin_rename_selection(window, cx),
             None => {}
         }
     }
@@ -117,23 +147,40 @@ impl Shell {
         let Some(reference) = self.selected() else {
             return;
         };
+        self.remove_instances(&[reference], cx);
+    }
 
-        // See `shell::history`: snapshotted before the removal below.
+    /// Removes each of `references` and its subtree as one undo step. Shared
+    /// with `shell::clipboard`'s Cut, which has a whole selection to take
+    /// out rather than the Delete key's single row.
+    pub(super) fn remove_instances(&mut self, references: &[Ref], cx: &mut Context<Self>) {
+        let doomed: Vec<Ref> = references
+            .iter()
+            .copied()
+            .filter(|&reference| removable(&self.dom, &self.database, reference))
+            .collect();
+        if doomed.is_empty() {
+            return;
+        }
+
+        // See `shell::history`: snapshotted before the removals below.
         self.push_history();
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
-        let removed = dom.remove(reference);
+        let removed: Vec<Ref> = doomed
+            .iter()
+            .flat_map(|&reference| dom.remove(reference))
+            .collect();
         self.dom = dom;
-        // One `Change::Removed` per instance in the subtree, each taken out
+        // One `Change::Removed` per instance in each subtree, each taken out
         // of the viewport in place — and put back the same way when this is
         // undone, since the log is reflected against whichever DOM stands.
         let changes = self.dom.take_changes();
 
         self.rebuild_explorer(cx);
-        // The Explorer holds one selection, always the deleted root itself,
-        // so this only ever resolves to `None` — going through the pure
-        // function anyway keeps the two "was it inside the subtree" checks
-        // (this one and its unit tests) reading the same rule.
-        match selection_after_removal(Some(reference), &removed) {
+        // Going through the pure function rather than assuming the selection
+        // died with the subtree keeps the two "was it inside" checks (this
+        // one and its unit tests) reading the same rule.
+        match selection_after_removal(self.selected(), &removed) {
             Some(kept) => self.select(kept, cx),
             None => self.deselect(cx),
         }
@@ -161,7 +208,23 @@ impl Shell {
             .default_for(class)
             .or_else(|| default_template(&self.database, class))
             .map(str::to_owned);
-        self.insert_instance_with_source(class, None, template.as_deref(), cx);
+        self.insert_instance_with_source(class, None, template.as_deref(), None, cx);
+    }
+
+    /// The `+` picker's entry point: the same insert, under the row whose
+    /// `+` was clicked rather than under the selection.
+    pub(super) fn insert_instance_under(
+        &mut self,
+        parent: Option<Ref>,
+        class: &str,
+        cx: &mut Context<Self>,
+    ) {
+        let template = self
+            .script_templates
+            .default_for(class)
+            .or_else(|| default_template(&self.database, class))
+            .map(str::to_owned);
+        self.insert_instance_with_source(class, None, template.as_deref(), parent, cx);
     }
 
     /// The ribbon Script menu's user-defined entries (see
@@ -173,7 +236,7 @@ impl Shell {
         let Some(template) = self.script_templates.extras().get(index).cloned() else {
             return;
         };
-        self.insert_instance_with_source(template.class, None, Some(&template.source), cx);
+        self.insert_instance_with_source(template.class, None, Some(&template.source), None, cx);
     }
 
     /// The ribbon Part menu's Block/Sphere/Cylinder items (see
@@ -182,7 +245,7 @@ impl Shell {
     /// disambiguate through their own class instead and go through
     /// [`insert_instance`](Self::insert_instance) unchanged.
     pub(crate) fn insert_part(&mut self, class: &str, shape: u32, cx: &mut Context<Self>) {
-        self.insert_instance_with_source(class, Some(shape), None, cx);
+        self.insert_instance_with_source(class, Some(shape), None, None, cx);
     }
 
     /// "Insert ModuleScript (Class)" (see `menu_bar`): the one script insert
@@ -191,7 +254,13 @@ impl Shell {
     /// `ROADMAP.md`'s "New-script templates" entry asks for alongside the
     /// plain-table default `ModuleScript` otherwise gets.
     pub(crate) fn insert_class_module(&mut self, cx: &mut Context<Self>) {
-        self.insert_instance_with_source("ModuleScript", None, Some(MODULE_CLASS_TEMPLATE), cx);
+        self.insert_instance_with_source(
+            "ModuleScript",
+            None,
+            Some(MODULE_CLASS_TEMPLATE),
+            None,
+            cx,
+        );
     }
 
     /// Shared by [`insert_instance`](Self::insert_instance),
@@ -208,16 +277,25 @@ impl Shell {
         class: &str,
         shape: Option<u32>,
         source: Option<&str>,
+        under: Option<Ref>,
         cx: &mut Context<Self>,
     ) {
-        let parent = self
-            .selected()
+        let parent = under
+            .or_else(|| self.selected())
             .or_else(|| explorer::find_by_name(&self.dom, "Workspace"));
+        // A new instance is named after its class; the increment preference
+        // is what turns a second `Part` into `Part1` (see
+        // `explorer::insert::incremented_name`).
+        let name = if self.increment_names() {
+            explorer::insert::incremented_name(&self.dom, parent, class)
+        } else {
+            class.to_owned()
+        };
 
         // See `shell::history`: snapshotted before the insert below.
         self.push_history();
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
-        let reference = dom.new_instance(class, class, parent);
+        let reference = dom.new_instance(class, &name, parent);
         if let Some(part_shape) = part_defaults_shape(&self.database, class, shape) {
             apply_part_defaults(&mut dom, reference, part_shape);
         }
@@ -343,277 +421,5 @@ fn apply_part_defaults(dom: &mut WeakDom, referent: Ref, shape: Option<u32>) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn ctrl_shift() -> Modifiers {
-        Modifiers {
-            control: true,
-            shift: true,
-            ..Modifiers::none()
-        }
-    }
-
-    #[test]
-    fn delete_and_backspace_both_delete_with_no_modifiers_required() {
-        assert_eq!(
-            action_for("delete", Modifiers::none()),
-            Some(Action::Delete)
-        );
-        assert_eq!(
-            action_for("backspace", Modifiers::none()),
-            Some(Action::Delete)
-        );
-    }
-
-    #[test]
-    fn ctrl_shift_p_and_f_insert_part_and_folder() {
-        assert_eq!(action_for("p", ctrl_shift()), Some(Action::InsertPart));
-        assert_eq!(action_for("f", ctrl_shift()), Some(Action::InsertFolder));
-    }
-
-    #[test]
-    fn p_and_f_without_both_modifiers_do_nothing() {
-        assert_eq!(action_for("p", Modifiers::none()), None);
-        assert_eq!(action_for("f", Modifiers::none()), None);
-        let shift_only = Modifiers {
-            shift: true,
-            ..Modifiers::none()
-        };
-        assert_eq!(action_for("p", shift_only), None);
-    }
-
-    #[test]
-    fn any_other_key_does_nothing() {
-        assert_eq!(action_for("w", Modifiers::none()), None);
-        assert_eq!(action_for("enter", Modifiers::none()), None);
-    }
-
-    #[test]
-    fn deleting_the_selection_clears_it() {
-        let mut dom = WeakDom::new();
-        let part = dom.new_instance("Part", "Part", None);
-        let removed = dom.remove(part);
-        assert_eq!(selection_after_removal(Some(part), &removed), None);
-    }
-
-    #[test]
-    fn deleting_a_sibling_keeps_the_selection() {
-        let mut dom = WeakDom::new();
-        let kept = dom.new_instance("Part", "Kept", None);
-        let other = dom.new_instance("Part", "Other", None);
-        let removed = dom.remove(other);
-        assert_eq!(selection_after_removal(Some(kept), &removed), Some(kept));
-    }
-
-    #[test]
-    fn deleting_an_ancestor_clears_a_selection_inside_its_subtree() {
-        let mut dom = WeakDom::new();
-        let model = dom.new_instance("Model", "Model", None);
-        let child = dom.new_instance("Part", "Part", Some(model));
-        let removed = dom.remove(model);
-        assert_eq!(selection_after_removal(Some(child), &removed), None);
-    }
-
-    #[test]
-    fn no_selection_stays_none() {
-        assert_eq!(selection_after_removal(None, &[]), None);
-    }
-
-    #[test]
-    fn inserted_part_gets_studio_s_visible_defaults() {
-        let mut dom = WeakDom::new();
-        let part = dom.new_instance("Part", "Part", None);
-        apply_part_defaults(&mut dom, part, Some(PART_TYPE_BLOCK));
-
-        let instance = dom.get(part).expect("just inserted");
-        assert_eq!(
-            instance.properties().get("size"),
-            Some(&Variant::Vector3(Vector3Data {
-                x: 4.0,
-                y: 1.2,
-                z: 2.0
-            }))
-        );
-        assert_eq!(
-            instance.properties().get("Material"),
-            Some(&Variant::Enum(256))
-        );
-        assert_eq!(instance.properties().get("shape"), Some(&Variant::Enum(1)));
-        assert!(matches!(
-            instance.properties().get("CFrame"),
-            Some(Variant::CFrame(_))
-        ));
-    }
-
-    /// Mirrors what `Shell::insert_instance`/`insert_part` does for one Part
-    /// insert-menu item, without needing a real `Shell`/`Context` — the same
-    /// reason [`apply_part_defaults`]'s own tests above work on a bare
-    /// `WeakDom` instead.
-    fn insert_menu_item(class: &str, shape: Option<u32>) -> (WeakDom, Ref) {
-        let mut dom = WeakDom::new();
-        let reference = dom.new_instance(class, class, None);
-        if let Some(part_shape) = part_defaults_shape(&database(), class, shape) {
-            apply_part_defaults(&mut dom, reference, part_shape);
-        }
-        (dom, reference)
-    }
-
-    /// One test per `shell::ribbon::insert_tiles` Part-menu item. The bug
-    /// `ROADMAP.md` describes was invisible in the Explorer — every item
-    /// already showed the right class — and only showed once the viewport
-    /// resolved the wrong `ShapeKind`, so each of these checks both.
-    #[test]
-    fn block_menu_item_is_a_part_that_renders_as_a_box() {
-        let (dom, part) = insert_menu_item("Part", None);
-        assert_eq!(dom.get(part).expect("just inserted").class(), "Part");
-        assert_eq!(
-            rbx_viewer::resolved_shape_label(&dom, &database(), part),
-            Some("Box")
-        );
-    }
-
-    #[test]
-    fn sphere_menu_item_is_a_part_that_renders_as_a_ball() {
-        let (dom, part) = insert_menu_item("Part", Some(PART_TYPE_BALL));
-        assert_eq!(dom.get(part).expect("just inserted").class(), "Part");
-        assert_eq!(
-            rbx_viewer::resolved_shape_label(&dom, &database(), part),
-            Some("Ball")
-        );
-    }
-
-    #[test]
-    fn wedge_menu_item_is_a_wedge_part_with_studio_s_visible_defaults() {
-        let (dom, part) = insert_menu_item("WedgePart", None);
-        let instance = dom.get(part).expect("just inserted");
-        assert_eq!(instance.class(), "WedgePart");
-        assert_eq!(
-            instance.properties().get("Material"),
-            Some(&Variant::Enum(256)),
-            "Wedge/CornerWedge must get apply_part_defaults too, not just Part"
-        );
-        assert_eq!(
-            rbx_viewer::resolved_shape_label(&dom, &database(), part),
-            Some("Wedge")
-        );
-    }
-
-    #[test]
-    fn corner_wedge_menu_item_is_a_corner_wedge_part_with_studio_s_visible_defaults() {
-        let (dom, part) = insert_menu_item("CornerWedgePart", None);
-        let instance = dom.get(part).expect("just inserted");
-        assert_eq!(instance.class(), "CornerWedgePart");
-        assert_eq!(
-            instance.properties().get("Material"),
-            Some(&Variant::Enum(256)),
-            "Wedge/CornerWedge must get apply_part_defaults too, not just Part"
-        );
-        assert_eq!(
-            rbx_viewer::resolved_shape_label(&dom, &database(), part),
-            Some("CornerWedge")
-        );
-    }
-
-    #[test]
-    fn cylinder_menu_item_is_a_part_that_renders_as_a_cylinder() {
-        let (dom, part) = insert_menu_item("Part", Some(PART_TYPE_CYLINDER));
-        assert_eq!(dom.get(part).expect("just inserted").class(), "Part");
-        assert_eq!(
-            rbx_viewer::resolved_shape_label(&dom, &database(), part),
-            Some("CylinderX")
-        );
-    }
-
-    fn database() -> ReflectionDatabase {
-        ReflectionDatabase::embedded()
-    }
-
-    /// Counts unmatched `function`/`do` openers against `end` closers by
-    /// whitespace-splitting the template into tokens — no full Luau parser is
-    /// needed to catch a template with a stray or missing `end`.
-    fn opens_and_ends(template: &str) -> (usize, usize) {
-        let opens = template
-            .split_whitespace()
-            .filter(|token| *token == "function" || *token == "do")
-            .count();
-        let ends = template
-            .split_whitespace()
-            .filter(|token| *token == "end")
-            .count();
-        (opens, ends)
-    }
-
-    #[test]
-    fn a_non_script_class_gets_no_template() {
-        let db = database();
-        for class in ["Part", "Folder", "Model"] {
-            assert_eq!(default_template(&db, class), None);
-        }
-    }
-
-    #[test]
-    fn module_script_gets_the_table_template_others_get_the_plain_script_template() {
-        let db = database();
-        assert_eq!(default_template(&db, "ModuleScript"), Some(MODULE_TEMPLATE));
-        assert_eq!(default_template(&db, "Script"), Some(SCRIPT_TEMPLATE));
-        assert_eq!(default_template(&db, "LocalScript"), Some(SCRIPT_TEMPLATE));
-    }
-
-    #[test]
-    fn inserting_each_script_class_seeds_a_non_empty_starter_source() {
-        let db = database();
-        for class in ["Script", "LocalScript", "ModuleScript"] {
-            let mut dom = WeakDom::new();
-            let reference = dom.new_instance(class, class, None);
-            let template = default_template(&db, class).expect("a script class has a template");
-            assert!(source::write(&mut dom, reference, template));
-
-            let text = source::read(&dom, reference).expect("Source was just written");
-            assert!(
-                !text.trim().is_empty(),
-                "{class}'s starter text must not be empty"
-            );
-        }
-    }
-
-    #[test]
-    fn inserting_a_part_gets_no_source_property() {
-        let mut dom = WeakDom::new();
-        let part = dom.new_instance("Part", "Part", None);
-        apply_part_defaults(&mut dom, part, Some(PART_TYPE_BLOCK));
-
-        assert_eq!(default_template(&database(), "Part"), None);
-        assert_eq!(
-            dom.get(part)
-                .expect("just inserted")
-                .properties()
-                .get(source::SOURCE_PROPERTY),
-            None,
-            "a Part must never get a Source property"
-        );
-    }
-
-    #[test]
-    fn the_class_module_template_differs_from_the_plain_one() {
-        assert_ne!(MODULE_CLASS_TEMPLATE, MODULE_TEMPLATE);
-    }
-
-    #[test]
-    fn the_class_module_template_is_an_idiomatic_oop_stub() {
-        assert!(MODULE_CLASS_TEMPLATE.contains("setmetatable"));
-        assert!(MODULE_CLASS_TEMPLATE.contains("__index"));
-        assert!(MODULE_CLASS_TEMPLATE.contains(".new("));
-    }
-
-    #[test]
-    fn every_template_has_balanced_function_do_end_blocks() {
-        for template in [SCRIPT_TEMPLATE, MODULE_TEMPLATE, MODULE_CLASS_TEMPLATE] {
-            let (opens, ends) = opens_and_ends(template);
-            assert_eq!(
-                opens, ends,
-                "unbalanced function/do/end in template: {template:?}"
-            );
-        }
-    }
-}
+#[path = "keys/tests.rs"]
+mod tests;

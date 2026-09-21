@@ -18,6 +18,7 @@
 //! (`crate::packs`) is layered over either: [`set_user_pack`] installs it, and
 //! whatever it leaves out is still drawn from the built-in kit.
 
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use gpui_kit::RenderImage;
@@ -27,7 +28,10 @@ use resvg::usvg::{Options, Tree};
 use crate::packs::IconOverlay;
 use crate::render_image::to_render_image;
 
+mod slugs;
 mod tint;
+
+use slugs::CLASS_ICON_SLUGS;
 pub(crate) use tint::tint;
 
 /// Every SVG in `assets/icons/default/dark`, embedded at compile time.
@@ -45,7 +49,7 @@ struct LightIcons;
 /// Which of the kit's two equal-sized variants is currently drawn — a
 /// persisted editor setting (see `settings::Settings::icon_pack`), not a
 /// build-time choice.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub(crate) enum IconPack {
     #[default]
     Dark,
@@ -57,324 +61,46 @@ pub(crate) enum IconPack {
 /// sharp downscale to the Explorer's `CLASS_ICON_SIZE`.
 const RENDER_SIZE: u32 = 32;
 
-/// `ClassName -> icon slug`, extracted from the class icon kit's own spec
-/// (`assets/icons/README.md`'s "Tiles" section, which lists each SVG's
-/// filename against the classes it covers) — 300 classes onto 137 of the
-/// kit's 147 tiles; a class missing here falls back to a Lucide glyph
-/// (`explorer::icon`), same as a class undocumented in Roblox's own sheet
-/// used to.
-const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
-    ("Accessory", "accessory"),
-    ("AccessoryDescription", "humanoid-description"),
-    ("Accoutrement", "accessory"),
-    ("Actor", "actor"),
-    ("AdGui", "ad-gui"),
-    ("AdPortal", "ad-portal"),
-    ("AlignOrientation", "align-orientation"),
-    ("AlignPosition", "align-position"),
-    ("AngularVelocity", "angular-velocity"),
-    ("Animation", "animation"),
-    ("AnimationController", "animation"),
-    ("AnimationTrack", "animation"),
-    ("Animator", "animation"),
-    ("ArcHandles", "arc-handles"),
-    ("Atmosphere", "sky"),
-    ("Attachment", "attachment"),
-    ("AudioAnalyzer", "sound"),
-    ("AudioChannelMixer", "sound"),
-    ("AudioChannelSplitter", "sound"),
-    ("AudioChorus", "sound"),
-    ("AudioCompressor", "sound"),
-    ("AudioDeviceInput", "sound"),
-    ("AudioDeviceOutput", "sound"),
-    ("AudioDistortion", "sound"),
-    ("AudioEcho", "sound"),
-    ("AudioEmitter", "sound"),
-    ("AudioEqualizer", "sound"),
-    ("AudioFDNReverb", "sound"),
-    ("AudioFader", "sound"),
-    ("AudioFilter", "sound"),
-    ("AudioFlanger", "sound"),
-    ("AudioGate", "sound"),
-    ("AudioLimiter", "sound"),
-    ("AudioListener", "sound"),
-    ("AudioPitchShifter", "sound"),
-    ("AudioPlayer", "sound"),
-    ("AudioRecorder", "sound"),
-    ("AudioReverb", "sound"),
-    ("AudioSpeechToText", "sound"),
-    ("AudioStreamReader", "sound"),
-    ("AudioStreamWriter", "sound"),
-    ("AudioTextToSpeech", "sound"),
-    ("AudioTremolo", "sound"),
-    ("AudioWindSynthesizer", "sound"),
-    ("AuroraScript", "module-script"),
-    ("Backpack", "backpack"),
-    ("BallSocketConstraint", "ball-socket-constraint"),
-    ("Beam", "beam"),
-    ("BillboardGui", "surface-gui"),
-    ("BindableEvent", "bindable-event"),
-    ("BindableFunction", "bindable-function"),
-    ("BlockMesh", "mesh"),
-    ("BloomEffect", "post-effect"),
-    ("BlurEffect", "post-effect"),
-    ("BodyAngularVelocity", "body-mover"),
-    ("BodyForce", "body-mover"),
-    ("BodyGyro", "body-mover"),
-    ("BodyPartDescription", "humanoid-description"),
-    ("BodyPosition", "body-mover"),
-    ("BodyThrust", "body-mover"),
-    ("BodyVelocity", "body-mover"),
-    ("Bone", "bone"),
-    ("BoolValue", "value"),
-    ("BoxHandleAdornment", "box-handle-adornment"),
-    ("BrickColorValue", "value"),
-    ("CFrameValue", "value"),
-    ("Camera", "camera"),
-    ("CanvasGroup", "frame"),
-    ("ChannelTabsConfiguration", "chat-window-configuration"),
-    ("CharacterMesh", "animation"),
-    ("Chat", "message"),
-    ("ChatInputBarConfiguration", "chat-input-bar-configuration"),
-    ("ChatService", "message"),
-    ("ChatWindowConfiguration", "chat-window-configuration"),
-    ("ChorusSoundEffect", "sound-effect"),
-    ("ClickDetector", "click-detector"),
-    ("Clouds", "sky"),
-    ("Color3Value", "value"),
-    ("ColorCorrectionEffect", "post-effect"),
-    ("ColorGradingEffect", "post-effect"),
-    ("CompressorSoundEffect", "sound-effect"),
-    ("ConeHandleAdornment", "cone-handle-adornment"),
-    ("Configuration", "configuration"),
-    ("Constraint", "ball-socket-constraint"),
-    ("CoreGui", "gui-container"),
-    ("CorePackages", "backpack"),
-    ("CornerWedgePart", "part"),
-    ("CustomEvent", "value"),
-    ("CustomEventReceiver", "value"),
-    ("CylinderHandleAdornment", "cylinder-handle-adornment"),
-    ("CylinderMesh", "mesh"),
-    ("CylindricalConstraint", "cylindrical-constraint"),
-    ("Debris", "debris"),
-    ("Decal", "decal"),
-    ("DepthOfFieldEffect", "post-effect"),
-    ("Dialog", "dialog"),
-    ("DialogChoice", "dialog-choice"),
-    ("DistortionSoundEffect", "sound-effect"),
-    ("DoubleConstrainedValue", "value"),
-    ("DragDetector", "click-detector"),
-    ("EchoSoundEffect", "sound-effect"),
-    ("EqualizerSoundEffect", "sound-effect"),
-    ("Explosion", "explosion"),
-    ("FaceControls", "face-controls"),
-    ("Fire", "fire"),
-    ("Flag", "flag"),
-    ("FlagStand", "flag-stand"),
-    ("FlangeSoundEffect", "sound-effect"),
-    ("FloorWire", "value"),
-    ("Folder", "folder"),
-    ("ForceField", "force-field"),
-    ("Frame", "frame"),
-    ("GeneratedFolder", "folder"),
-    ("GuiButton", "image-button"),
-    ("GuiMain", "screen-gui"),
-    ("HandRigDescription", "handles"),
-    ("Handles", "handles"),
-    ("Hat", "hat"),
-    ("Highlight", "highlight"),
-    ("HingeConstraint", "hinge-constraint"),
-    ("Hint", "message"),
-    ("HopperBin", "hopper-bin"),
-    ("Humanoid", "humanoid"),
-    ("HumanoidDescription", "humanoid-description"),
-    ("HumanoidRigDescription", "handles"),
-    ("IKControl", "handles"),
-    ("ImageButton", "image-button"),
-    ("ImageHandleAdornment", "image-handle-adornment"),
-    ("ImageLabel", "image-label"),
-    ("IntConstrainedValue", "value"),
-    ("IntValue", "value"),
-    ("JointInstance", "weld"),
-    ("Keyframe", "animation"),
-    ("KeyframeMarker", "animation"),
-    ("Light", "light"),
-    ("Lighting", "light"),
-    ("LineForce", "line-force"),
-    ("LineHandleAdornment", "line-handle-adornment"),
-    ("LinearVelocity", "linear-velocity"),
-    ("LocalScript", "local-script"),
-    ("LocalizationService", "localization-service"),
-    ("LocalizationTable", "localization-table"),
-    ("MakeupDescription", "humanoid-description"),
-    ("MarketplaceService", "gui-container"),
-    ("MaterialService", "material-service"),
-    ("MaterialVariant", "material-variant"),
-    ("MeshPart", "union-operation"),
-    ("Message", "message"),
-    ("Model", "model"),
-    ("ModuleScript", "module-script"),
-    ("Motor6D", "motor6d"),
-    ("NegateOperation", "negate-operation"),
-    ("NetworkClient", "network-client"),
-    ("NetworkReplicator", "network-replicator"),
-    ("NetworkServer", "network-server"),
-    ("NoCollisionConstraint", "no-collision-constraint"),
-    ("NumberPose", "animation"),
-    ("NumberValue", "value"),
-    ("ObjectValue", "value"),
-    ("PackageLink", "package-link"),
-    ("Pants", "pants"),
-    ("ParallelRampPart", "part"),
-    ("Part", "part"),
-    ("PartPairLasso", "lasso"),
-    ("ParticleEmitter", "particle-emitter"),
-    ("PathfindingLink", "pathfinding-link"),
-    ("PathfindingModifier", "pathfinding-modifier"),
-    ("PitchShiftSoundEffect", "sound-effect"),
-    ("Plane", "plane-constraint"),
-    ("PlaneConstraint", "plane-constraint"),
-    ("Platform", "seat"),
-    ("PlatformLibraries", "gui-container"),
-    ("Player", "player"),
-    ("PlayerGui", "gui-container"),
-    ("PlayerScripts", "player-scripts"),
-    ("Players", "players"),
-    ("Plugin", "ball-socket-constraint"),
-    ("PluginDebugService", "gui-container"),
-    ("PluginGuiService", "gui-container"),
-    ("PointLight", "light"),
-    ("Pose", "animation"),
-    ("PoseBase", "animation"),
-    ("Preloaded", "replicated-storage"),
-    ("PrismPart", "part"),
-    ("PrismaticConstraint", "prismatic-constraint"),
-    ("ProximityPrompt", "proximity-prompt"),
-    ("PyramidHandleAdornment", "pyramid-handle-adornment"),
-    ("PyramidPart", "part"),
-    ("RayValue", "value"),
-    ("RemoteEvent", "remote-event"),
-    ("RemoteFunction", "remote-function"),
-    ("RenderingTest", "camera"),
-    ("ReplicatedFirst", "replicated-storage"),
-    ("ReplicatedStorage", "replicated-storage"),
-    ("ReverbSoundEffect", "sound-effect"),
-    ("RightAngleRampPart", "part"),
-    ("RigidConstraint", "rigid-constraint"),
-    ("RobloxPluginGuiService", "gui-container"),
-    ("RocketPropulsion", "body-mover"),
-    ("RodConstraint", "rod-constraint"),
-    ("RopeConstraint", "rope-constraint"),
-    ("ScreenGui", "screen-gui"),
-    ("Script", "script"),
-    ("ScrollingFrame", "frame"),
-    ("Seat", "seat"),
-    ("SelectionBox", "selection-box"),
-    ("SelectionPartLasso", "lasso"),
-    ("SelectionPointLasso", "lasso"),
-    ("SelectionSphere", "selection-box"),
-    ("ServerScriptService", "server-script-service"),
-    ("ServerStorage", "server-storage"),
-    ("Shirt", "shirt"),
-    ("ShirtGraphic", "shirt-graphic"),
-    ("SkateboardPlatform", "seat"),
-    ("Sky", "sky"),
-    ("SlidingBallConstraint", "prismatic-constraint"),
-    ("Smoke", "smoke"),
-    ("Snap", "weld"),
-    ("Sound", "sound"),
-    ("SoundGroup", "sound-group"),
-    ("SoundService", "sound-service"),
-    ("Sparkles", "sparkles"),
-    ("SpawnLocation", "spawn-location"),
-    ("SpecialMesh", "mesh"),
-    ("SphereHandleAdornment", "sphere-handle-adornment"),
-    ("SpotLight", "light"),
-    ("SpringConstraint", "spring-constraint"),
-    ("StandalonePluginScripts", "player-scripts"),
-    ("StarterCharacterScripts", "player-scripts"),
-    ("StarterGear", "backpack"),
-    ("StarterGui", "gui-container"),
-    ("StarterPack", "backpack"),
-    ("StarterPlayer", "starter-player"),
-    ("StarterPlayerScripts", "player-scripts"),
-    ("Status", "model"),
-    ("StringValue", "value"),
-    ("SunRaysEffect", "post-effect"),
-    ("SurfaceAppearance", "texture"),
-    ("SurfaceGui", "surface-gui"),
-    ("SurfaceGuiBase", "surface-gui"),
-    ("SurfaceLight", "light"),
-    ("SurfaceSelection", "surface-selection"),
-    ("Team", "team"),
-    ("Teams", "teams"),
-    ("Terrain", "terrain"),
-    ("TerrainDetail", "terrain-detail"),
-    ("TerrainRegion", "terrain"),
-    ("TestService", "test-service"),
-    ("TextBox", "text-button"),
-    ("TextButton", "text-button"),
-    ("TextChannel", "text-channel"),
-    ("TextChatCommand", "text-chat-command"),
-    ("TextChatService", "text-chat-service"),
-    ("TextLabel", "text-label"),
-    ("TextSource", "text-source"),
-    ("Texture", "texture"),
-    ("Tool", "tool"),
-    ("Torque", "angular-velocity"),
-    ("TorsionSpringConstraint", "torsion-spring-constraint"),
-    ("TouchTransmitter", "force-field"),
-    ("Trail", "trail"),
-    ("TremoloSoundEffect", "sound-effect"),
-    ("TrussPart", "part"),
-    ("UIAspectRatioConstraint", "ui-constraint"),
-    ("UICorner", "ui-constraint"),
-    ("UIDragDetector", "click-detector"),
-    ("UIFlexItem", "ui-constraint"),
-    ("UIGradient", "ui-constraint"),
-    ("UIGridLayout", "ui-constraint"),
-    ("UIListLayout", "ui-constraint"),
-    ("UIPadding", "ui-constraint"),
-    ("UIPageLayout", "ui-constraint"),
-    ("UIScale", "ui-constraint"),
-    ("UIShadow", "ui-constraint"),
-    ("UISizeConstraint", "ui-constraint"),
-    ("UIStroke", "ui-constraint"),
-    ("UITableLayout", "ui-constraint"),
-    ("UITextSizeConstraint", "ui-constraint"),
-    ("UnionOperation", "union-operation"),
-    ("UniversalConstraint", "universal-constraint"),
-    ("UnreliableRemoteEvent", "remote-event"),
-    ("ValueBase", "value"),
-    ("Vector3Value", "value"),
-    ("VectorForce", "vector-force"),
-    ("VehicleSeat", "seat"),
-    ("VideoDisplay", "sound"),
-    ("VideoFrame", "video-frame"),
-    ("VideoPlayer", "sound"),
-    ("ViewportFrame", "image-button"),
-    ("VoiceChatService", "voice-chat-service"),
-    ("WedgePart", "part"),
-    ("Weld", "weld"),
-    ("WeldConstraint", "weld-constraint"),
-    ("Wire", "sound"),
-    ("WireframeHandleAdornment", "actor"),
-    ("Workspace", "workspace"),
-    ("WorldModel", "workspace"),
-    ("WrapDeformer", "wrap-target"),
-    ("WrapLayer", "wrap-layer"),
-    ("WrapTarget", "wrap-target"),
-];
-
 /// The rasterized icon for `class` from the requested `pack`, or `None` for
 /// a class the icon kit doesn't cover (falls back to a Lucide glyph — see
 /// `explorer::resolve_icon`) or whose SVG failed to parse (a build-time
 /// invariant, not a runtime one: every file under both `assets/icons/default`
 /// variants is checked by this module's own tests).
 pub(crate) fn icon_tile(class: &str, pack: IconPack) -> Option<Arc<RenderImage>> {
+    if let Some(hit) = TILE_CACHE
+        .read()
+        .ok()
+        .and_then(|cache| cache.get(pack, class))
+    {
+        return hit;
+    }
     let installed = USER_PACK.read().ok().and_then(|pack| pack.clone());
-    icon_tile_over(class, pack, installed.as_deref())
+    let tile = icon_tile_over(class, pack, installed.as_deref());
+    if let Ok(mut cache) = TILE_CACHE.write() {
+        cache.insert(pack, class, tile.clone());
+    }
+    tile
 }
+
+/// Every tile resolved so far, keyed by the pack it was read from.
+///
+/// [`rasterize`] parses an SVG and renders a pixmap on every call, which is
+/// fine once per class per Explorer rebuild but not once per row per frame —
+/// the insert picker (see `shell::explorer_edit::picker`) lists hundreds of
+/// classes and rebuilds its list on every keystroke. The `None`s are cached
+/// too: a class the kit does not cover is the *common* case there, and
+/// re-deciding it would re-walk `CLASS_ICON_SLUGS` each time.
+///
+/// Keyed by *class* rather than by slug, which does mean two classes
+/// sharing a tile each rasterize it once: an installed pack is allowed to
+/// cover a class the kit does not (see [`IconOverlay::svg`]), so the class
+/// is the only key that stays correct once one is layered on.
+///
+/// Bounded by the table itself — at most one entry per mapped class per
+/// variant, a 32x32 RGBA tile each — so it needs no eviction.
+/// [`set_user_pack`] is the only thing that can invalidate it, and clears
+/// it.
+static TILE_CACHE: RwLock<TileCache> = RwLock::new(TileCache::new());
 
 /// [`icon_tile`] against an explicit overlay rather than the installed one, so
 /// the precedence can be tested without touching process-wide state.
@@ -416,6 +142,56 @@ static USER_PACK: RwLock<Option<Arc<IconOverlay>>> = RwLock::new(None);
 pub(crate) fn set_user_pack(pack: Option<IconOverlay>) {
     if let Ok(mut slot) = USER_PACK.write() {
         *slot = pack.map(Arc::new);
+    }
+    // Every cached tile was resolved against the overlay that just went
+    // away, including the misses — a pack that covers a class the kit does
+    // not would otherwise stay invisible until the next launch.
+    if let Ok(mut cache) = TILE_CACHE.write() {
+        cache.clear();
+    }
+}
+
+/// [`TILE_CACHE`]'s map: one class-keyed map per variant, rather than one
+/// map keyed by the pair, so a lookup borrows the class name instead of
+/// allocating a `String` to build a tuple key with.
+struct TileCache {
+    dark: Option<HashMap<String, Option<Arc<RenderImage>>>>,
+    light: Option<HashMap<String, Option<Arc<RenderImage>>>>,
+}
+
+impl TileCache {
+    const fn new() -> Self {
+        TileCache {
+            dark: None,
+            light: None,
+        }
+    }
+
+    fn of(&self, pack: IconPack) -> &Option<HashMap<String, Option<Arc<RenderImage>>>> {
+        match pack {
+            IconPack::Dark => &self.dark,
+            IconPack::Light => &self.light,
+        }
+    }
+
+    /// `Some(hit)` only when this class has been resolved before — the outer
+    /// `Option` is "have we looked", the inner one "does the kit cover it".
+    fn get(&self, pack: IconPack, class: &str) -> Option<Option<Arc<RenderImage>>> {
+        self.of(pack).as_ref()?.get(class).cloned()
+    }
+
+    fn insert(&mut self, pack: IconPack, class: &str, tile: Option<Arc<RenderImage>>) {
+        let slot = match pack {
+            IconPack::Dark => &mut self.dark,
+            IconPack::Light => &mut self.light,
+        };
+        slot.get_or_insert_with(HashMap::new)
+            .insert(class.to_owned(), tile);
+    }
+
+    fn clear(&mut self) {
+        self.dark = None;
+        self.light = None;
     }
 }
 
@@ -467,108 +243,5 @@ pub(crate) fn rasterize(svg: &[u8]) -> Option<Arc<RenderImage>> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Every slug this module names must actually be a file both
-    /// `DefaultIcons` and `LightIcons` embed, and every embedded file must
-    /// parse and rasterize — a build-time invariant on the (gitignored,
-    /// hand-authored) icon kit, checked here so a bad SVG fails `cargo test`
-    /// rather than silently blanking an icon.
-    #[test]
-    fn every_mapped_slug_rasterizes_in_both_packs() {
-        for (class, slug) in CLASS_ICON_SLUGS {
-            for pack in [IconPack::Dark, IconPack::Light] {
-                assert!(
-                    icon_tile(class, pack).is_some(),
-                    "{slug}.svg ({class}) failed to rasterize in {pack:?}"
-                );
-            }
-        }
-    }
-
-    /// The whole point of `IconPack`: the same class looks up a different
-    /// file, and thus different pixels, depending on which pack is asked
-    /// for — `part.svg` deliberately uses different fill colours between the
-    /// `dark` and `light` folders (see `assets/icons/default/*/part.svg`).
-    #[test]
-    fn icon_tile_reads_from_the_requested_pack() {
-        let dark = icon_tile("Part", IconPack::Dark).expect("Part is covered by the icon kit");
-        let light = icon_tile("Part", IconPack::Light).expect("Part is covered by the icon kit");
-        assert_ne!(dark.as_bytes(0), light.as_bytes(0));
-    }
-
-    const RED_SQUARE: &[u8] = br##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-        <rect width="24" height="24" fill="#ff0000"/></svg>"##;
-
-    /// The pack is an overlay over the kit: its drawing wins for a class it
-    /// names, and every other class is still the kit's.
-    #[test]
-    fn an_installed_pack_wins_for_the_classes_it_names_and_leaves_the_rest() {
-        let overlay = IconOverlay::with("Part", RED_SQUARE);
-
-        let mine = icon_tile_over("Part", IconPack::Dark, Some(&overlay)).unwrap();
-        let kit = icon_tile_over("Part", IconPack::Dark, None).unwrap();
-        assert_ne!(mine.as_bytes(0), kit.as_bytes(0));
-
-        let untouched = icon_tile_over("Folder", IconPack::Dark, Some(&overlay)).unwrap();
-        let folder = icon_tile_over("Folder", IconPack::Dark, None).unwrap();
-        assert_eq!(untouched.as_bytes(0), folder.as_bytes(0));
-    }
-
-    /// A pack can name a class the kit has no tile for at all, and its icon is
-    /// drawn where the kit alone would have fallen back to a glyph.
-    #[test]
-    fn a_pack_can_cover_a_class_the_kit_does_not() {
-        let overlay = IconOverlay::with("NotARealClass", RED_SQUARE);
-        assert!(icon_tile_over("NotARealClass", IconPack::Dark, None).is_none());
-        assert!(icon_tile_over("NotARealClass", IconPack::Dark, Some(&overlay)).is_some());
-    }
-
-    /// A drawing on a 24x24 canvas fills the tile the same way a 16x16 one
-    /// does, rather than being cropped to its top-left two thirds: the
-    /// far corner pixel of a full-bleed square is opaque either way.
-    #[test]
-    fn a_larger_canvas_is_scaled_to_fill_the_tile() {
-        let overlay = IconOverlay::with("Part", RED_SQUARE);
-        let image = icon_tile_over("Part", IconPack::Dark, Some(&overlay)).unwrap();
-        let bytes = image.as_bytes(0).unwrap();
-        let last_pixel = &bytes[bytes.len() - 4..];
-        assert_eq!(last_pixel[3], 255, "bottom-right corner must be opaque");
-    }
-
-    /// A 32x16 drawing sits in the middle of the tile, not its top half: the
-    /// first row is empty and the middle one is not.
-    #[test]
-    fn a_drawing_that_is_not_square_is_centred() {
-        let wide = br##"<svg xmlns="http://www.w3.org/2000/svg" width="32" height="16">
-            <rect width="32" height="16" fill="#00ff00"/></svg>"##;
-        let overlay = IconOverlay::with("Part", wide);
-        let image = icon_tile_over("Part", IconPack::Dark, Some(&overlay)).unwrap();
-        let bytes = image.as_bytes(0).unwrap();
-        let alpha =
-            |row: usize, column: usize| bytes[(row * RENDER_SIZE as usize + column) * 4 + 3];
-
-        assert_eq!(alpha(0, 16), 0, "the top row is padding");
-        assert_eq!(alpha(31, 16), 0, "so is the bottom row");
-        assert_eq!(alpha(16, 16), 255, "the drawing is in the middle");
-    }
-
-    /// A document with no size cannot be scaled to anything; it is refused,
-    /// and so falls through to the kit, rather than dividing by zero.
-    #[test]
-    fn a_drawing_with_no_size_is_refused() {
-        let empty = br#"<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0"/>"#;
-        assert!(rasterize(empty).is_none());
-    }
-
-    /// A pack file that will not parse falls through to the kit rather than
-    /// blanking the icon.
-    #[test]
-    fn a_broken_drawing_falls_back_to_the_kit() {
-        let overlay = IconOverlay::with("Part", b"this is not svg");
-        let shown = icon_tile_over("Part", IconPack::Dark, Some(&overlay)).unwrap();
-        let kit = icon_tile_over("Part", IconPack::Dark, None).unwrap();
-        assert_eq!(shown.as_bytes(0), kit.as_bytes(0));
-    }
-}
+#[path = "class_icons/tests.rs"]
+mod tests;
