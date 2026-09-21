@@ -176,7 +176,7 @@ impl Shell {
                     None => property_row(row).into_any_element(),
                     Some(EditKind::BrickColor(number)) => {
                         let current = (!row.mixed).then_some(*number);
-                        let control = self.brick_color_picker(&row.name, current, cx);
+                        let control = self.brick_color_picker(&row.name, current, window, cx);
                         property_row_control(row, control, false, None).into_any_element()
                     }
                     // No persistent entity: a checkbox commits straight
@@ -248,6 +248,7 @@ impl Shell {
                                     |_, _| Box::new(|_, _, _| {}),
                                     on_scrub,
                                     Box::new(|_, _, _| {}),
+                                    window,
                                     cx,
                                 )
                             });
@@ -322,6 +323,7 @@ impl Shell {
                             },
                             on_scrub,
                             on_open,
+                            window,
                             cx,
                         );
                         property_row_control(row, control, composite, error.as_deref())

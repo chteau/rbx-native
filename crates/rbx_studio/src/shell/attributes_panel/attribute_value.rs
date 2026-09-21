@@ -111,6 +111,7 @@ impl Shell {
             |_index, _checked| Box::new(|_, _, _| {}),
             on_scrub,
             on_open,
+            window,
             cx,
         );
         if let Some(message) = error {

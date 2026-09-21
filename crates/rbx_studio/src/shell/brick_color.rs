@@ -13,7 +13,7 @@ use gpui_kit::*;
 use rbx_dom::BrickColor;
 
 use super::chrome::Trigger;
-use super::rows::select_box;
+use super::rows::select_field;
 use super::Shell;
 use crate::tokens;
 
@@ -23,15 +23,22 @@ const COLUMNS: usize = 16;
 impl Shell {
     /// `current` is `None` for a multi-selection whose colours differ: the
     /// field shows no colour then, and a pick sets them all.
+    ///
+    /// A stop in the window's Tab order like any field, and ringed like
+    /// every other select (see `rows::select_field`); Enter opens it, the
+    /// way it opens any popover.
     pub(super) fn brick_color_picker(
         &self,
         row: &str,
         current: Option<u32>,
+        window: &Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + 'static {
         let shown = current.and_then(BrickColor::from_number);
-        let field = select_box()
+        let focus = self.tab_order.claim(cx);
+        let field = select_field(&focus, window, cx)
             .id(SharedString::from(format!("brick-color-{row}")))
+            .track_focus(&focus)
             .gap(tokens::label_gap())
             .cursor_pointer()
             .when_some(shown, |this, color| {

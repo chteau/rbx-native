@@ -12,7 +12,7 @@ use rbx_dom::{Ref, WeakDom};
 
 use crate::properties::attributes as attrs;
 use crate::shell::chrome;
-use crate::shell::rows::{field_box, name_indent, row_frame, section_header, select_box};
+use crate::shell::rows::{field_box, name_indent, row_frame, section_header, select_field};
 use crate::shell::Shell;
 use crate::tokens;
 
@@ -240,14 +240,16 @@ impl Shell {
                 // to set (see `UX_GUIDELINES.md` §1's Level A keyboard gap) —
                 // the same reason `shell::rows::render_editor`'s own
                 // `RowEditor::Enum` arm never sets one either.
-                select_box().w(px(120.)).child(
-                    Select::new(&type_select)
-                        .appearance(false)
-                        .with_size(tokens::field_size())
-                        .h_full()
-                        .py_0()
-                        .pt(tokens::select_inset()),
-                ),
+                select_field(&type_select.read(cx).focus_handle(cx), window, cx)
+                    .w(px(120.))
+                    .child(
+                        Select::new(&type_select)
+                            .appearance(false)
+                            .with_size(tokens::field_size())
+                            .h_full()
+                            .py_0()
+                            .pt(tokens::select_inset()),
+                    ),
             )
             .child(
                 self.properties_nav.claim(

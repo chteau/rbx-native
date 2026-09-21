@@ -655,6 +655,7 @@ pub(super) type OnOpen = Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 /// built. That has to happen per row per render, unlike the graphics-quality
 /// dropdown's one-off registration in `Shell::quality_control`, because a
 /// property row's widget is rebuilt whenever the selection changes.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn render_editor(
     tab_index: isize,
     stops: &TabOrder,
@@ -662,9 +663,12 @@ pub(super) fn render_editor(
     on_flag: impl Fn(usize, bool) -> Box<dyn Fn(&ClickEvent, &mut Window, &mut App)> + 'static,
     on_scrub: OnScrub,
     on_open: OnOpen,
+    window: &Window,
     cx: &mut App,
 ) -> AnyElement {
-    render_row_editor(tab_index, stops, editor, &on_flag, on_scrub, on_open, cx)
+    render_row_editor(
+        tab_index, stops, editor, &on_flag, on_scrub, on_open, window, cx,
+    )
 }
 
 /// One flag's click handler, by its index and the value it currently shows.
@@ -675,6 +679,7 @@ pub(super) fn render_editor(
 /// to its monomorphization.
 type OnFlag<'a> = &'a dyn Fn(usize, bool) -> Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
+#[allow(clippy::too_many_arguments)]
 fn render_row_editor(
     tab_index: isize,
     stops: &TabOrder,
@@ -682,6 +687,7 @@ fn render_row_editor(
     on_flag: OnFlag<'_>,
     on_scrub: OnScrub,
     on_open: OnOpen,
+    window: &Window,
     cx: &mut App,
 ) -> AnyElement {
     match editor {
@@ -832,6 +838,7 @@ fn render_row_editor(
                         &|_, _| Box::new(|_, _, _| {}),
                         on_scrub,
                         on_open,
+                        window,
                         cx,
                     )
                 }))
@@ -884,8 +891,9 @@ fn render_row_editor(
         // step height and aligns the text to the top of *that*, which reads
         // as the whole control sitting a few pixels high in its field.
         RowEditor::Enum(state) => {
-            stops.register(&state.read(cx).focus_handle(cx));
-            select_box()
+            let handle = state.read(cx).focus_handle(cx);
+            stops.register(&handle);
+            select_field(&handle, window, cx)
                 .child(
                     Select::new(&state)
                         .appearance(false)
@@ -1013,6 +1021,17 @@ pub(super) fn field_box() -> Div {
 /// [`tokens::field_select`]).
 pub(super) fn select_box() -> Div {
     field_surface(tokens::field_select())
+}
+
+/// A dropdown's box, ringed while keyboard focus is on `handle` — the
+/// toolkit `Select` inside it, or the box itself where the box is the
+/// control. The toolkit draws no ring once its own chrome is off, so
+/// without this a select took focus invisibly. Inset, like the Viewport
+/// dock's quality select: a property's value column clips anything drawn
+/// outside it, and a shadow moves nothing, so the column stays aligned.
+pub(super) fn select_field(handle: &FocusHandle, window: &Window, cx: &App) -> Div {
+    let ringed = handle.contains_focused(window, cx) && window.last_input_was_keyboard();
+    select_box().when(ringed, |this| this.shadow(tokens::focus_ring_inset()))
 }
 
 fn field_surface(surface: Rgba) -> Div {
