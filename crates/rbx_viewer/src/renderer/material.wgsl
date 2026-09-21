@@ -357,7 +357,11 @@ fn triplanar_weights(normal: vec3<f32>) -> vec3<f32> {
 /// surface's normal pushes the lookup aside.
 fn material_output(input: MaterialInput, alpha: f32, screen_uv: vec2<f32>) -> vec4<f32> {
     let shaded = material_shade_with_normal(input);
-    if input.kind != KIND_GLASS || alpha >= 1.0 {
+    // A pass with no copy behind it binds one unread texel (a
+    // `ViewportFrame`'s own, a place with no glass in it at all): there is
+    // nothing to bend, so the pane blends the ordinary way instead.
+    let source = vec2<i32>(textureDimensions(refraction_source));
+    if input.kind != KIND_GLASS || alpha >= 1.0 || source.x <= 1 {
         return vec4<f32>(shaded.color, alpha);
     }
 
@@ -368,7 +372,7 @@ fn material_output(input: MaterialInput, alpha: f32, screen_uv: vec2<f32>) -> ve
     let clip_normal = uniforms.view_projection * vec4<f32>(shaded.normal, 0.0);
     let offset = vec2<f32>(clip_normal.x, -clip_normal.y) * GLASS_REFRACTION;
     let uv = clamp(screen_uv + offset, vec2<f32>(0.0), vec2<f32>(1.0));
-    let texel = vec2<i32>(uv * uniforms.viewport.xy);
+    let texel = clamp(vec2<i32>(uv * vec2<f32>(source)), vec2<i32>(0), source - vec2<i32>(1));
     let behind = textureLoad(refraction_source, texel, 0).rgb;
 
     // Exactly the blend the pipeline would have done — `dst * (1 - alpha) +
