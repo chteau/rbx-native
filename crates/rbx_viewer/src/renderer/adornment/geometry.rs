@@ -75,7 +75,13 @@ pub(super) fn picture_quad(picture: &AdornPicture, alpha: f32, out: &mut Vec<Ima
 /// vertex shader — the same trick `renderer::outline` uses for the
 /// selection box, with the width and colour carried per vertex here because
 /// an adornment picks both.
-pub(super) fn line(from: Vec3, to: Vec3, pixels: f32, color: [f32; 4], out: &mut Vec<LineVertex>) {
+pub(in crate::renderer) fn line(
+    from: Vec3,
+    to: Vec3,
+    pixels: f32,
+    color: [f32; 4],
+    out: &mut Vec<LineVertex>,
+) {
     let half = (pixels * 0.5).max(0.5);
     let corner = |position: Vec3, other: Vec3, side: f32| LineVertex {
         position: position.to_array(),

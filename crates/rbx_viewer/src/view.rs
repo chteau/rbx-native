@@ -24,6 +24,7 @@ use glam::Mat4;
 
 use crate::gizmo::Gizmo;
 use crate::pick::Selected;
+use crate::renderer::Segment;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct View {
@@ -47,6 +48,10 @@ pub(crate) struct View {
     /// carried here for the same reason the selection is: a reload must
     /// not quietly drop it while the tool is still open.
     pub(crate) preview: Vec<Mat4>,
+    /// The editor's own line segments — Studio's light guides. Carried for
+    /// the preview's reason: a reload must not drop them while whatever
+    /// they are drawn for is still selected.
+    pub(crate) lines: Vec<Segment>,
     /// Whether a part standing in front of the selection hides its outline.
     /// `false` — the box shows through everything, which is what Studio
     /// draws — unless the embedder asks otherwise; `rbxview` never does.
@@ -70,6 +75,11 @@ impl View {
     /// Replaces the previewed boxes — empty to clear them.
     pub(crate) fn set_preview(&mut self, boxes: Vec<Mat4>) {
         self.preview = boxes;
+    }
+
+    /// Replaces the line segments — empty to clear them.
+    pub(crate) fn set_lines(&mut self, segments: Vec<Segment>) {
+        self.lines = segments;
     }
 
     pub(crate) fn set_gizmo(&mut self, gizmo: Option<Gizmo>) {

@@ -51,6 +51,7 @@ pub use headless::Headless;
 pub use input::{CameraInput, CameraKey};
 pub use load::read_place;
 pub use quality::{FrameRateManager, QualityLevel};
+pub use renderer::Segment;
 pub use scene::{resolved_shape_label, ScrollTarget};
 // `rbxview`'s own title bar and `rbxstudio`'s corner label read fps the same
 // way; shared here rather than each crate carrying its own copy of the format.

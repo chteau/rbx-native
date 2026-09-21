@@ -25,45 +25,12 @@ impl Gpu {
         image_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         let frame = pipeline::frame_layout(device);
-        let build = |label: &str,
-                     shader: &str,
-                     buffer: wgpu::VertexBufferLayout<'_>,
-                     layouts: &[Option<&wgpu::BindGroupLayout>],
-                     on_top: bool| {
-            pipeline::surface(
-                device,
-                target,
-                &Surface {
-                    // An adornment is a thin overlay a camera may well be
-                    // standing inside; culling would leave a hole where its
-                    // near face should be.
-                    cull: None,
-                    // Blended, and writing no depth: an adornment is drawn
-                    // over the scene, not part of it.
-                    translucent: true,
-                    // Reversed-Z, so `GreaterEqual` is the ordinary "in
-                    // front of, or exactly on, what is already there" test —
-                    // the tie matters for a `SurfaceSelection` slab, which
-                    // lies on the very surface it highlights. `Always` is
-                    // what `AlwaysOnTop` means.
-                    compare: if on_top {
-                        wgpu::CompareFunction::Always
-                    } else {
-                        wgpu::CompareFunction::GreaterEqual
-                    },
-                    ..Surface::new(label, shader, layouts, &[Some(buffer)])
-                },
-            )
-        };
-
         let both = |label: &str,
                     shader: &str,
                     buffer: fn() -> wgpu::VertexBufferLayout<'static>,
                     layouts: &[Option<&wgpu::BindGroupLayout>]| {
-            [
-                build(label, shader, buffer(), layouts, false),
-                build(label, shader, buffer(), layouts, true),
-            ]
+            [false, true]
+                .map(|on_top| build(device, target, label, shader, buffer(), layouts, on_top))
         };
 
         Gpu {
@@ -99,6 +66,62 @@ impl Gpu {
     pub(super) fn image(&self, on_top: bool) -> &wgpu::RenderPipeline {
         &self.image[usize::from(on_top)]
     }
+}
+
+/// The line pipelines alone, depth-tested then always-on-top: what
+/// `renderer::lines` draws an editor's own segments with, so the two kinds
+/// of line cannot drift apart in how wide or how depth-tested they read.
+pub(in crate::renderer) fn lines(
+    device: &wgpu::Device,
+    target: Target,
+) -> [wgpu::RenderPipeline; 2] {
+    let frame = pipeline::frame_layout(device);
+    [false, true].map(|on_top| {
+        build(
+            device,
+            target,
+            "rbxview lines",
+            LINE_SHADER,
+            LineVertex::layout(),
+            &[Some(&frame)],
+            on_top,
+        )
+    })
+}
+
+fn build(
+    device: &wgpu::Device,
+    target: Target,
+    label: &str,
+    shader: &str,
+    buffer: wgpu::VertexBufferLayout<'_>,
+    layouts: &[Option<&wgpu::BindGroupLayout>],
+    on_top: bool,
+) -> wgpu::RenderPipeline {
+    pipeline::surface(
+        device,
+        target,
+        &Surface {
+            // An adornment is a thin overlay a camera may well be
+            // standing inside; culling would leave a hole where its
+            // near face should be.
+            cull: None,
+            // Blended, and writing no depth: an adornment is drawn
+            // over the scene, not part of it.
+            translucent: true,
+            // Reversed-Z, so `GreaterEqual` is the ordinary "in
+            // front of, or exactly on, what is already there" test —
+            // the tie matters for a `SurfaceSelection` slab, which
+            // lies on the very surface it highlights. `Always` is
+            // what `AlwaysOnTop` means.
+            compare: if on_top {
+                wgpu::CompareFunction::Always
+            } else {
+                wgpu::CompareFunction::GreaterEqual
+            },
+            ..Surface::new(label, shader, layouts, &[Some(buffer)])
+        },
+    )
 }
 
 const SOLID_ATTRIBUTES: [wgpu::VertexAttribute; 2] =
