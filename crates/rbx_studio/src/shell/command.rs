@@ -13,6 +13,8 @@ use crate::command_bar::{self, Feedback};
 use crate::explorer::{self, Explorer};
 use crate::transform::Targets;
 
+use super::drag::{CFRAME_PROPERTY, SIZE_PROPERTY};
+
 use super::Shell;
 
 impl Shell {
@@ -293,8 +295,10 @@ pub(super) struct Refresh {
 /// have lost a part or gained one, and so may the neighbours. A property
 /// write invalidates only the side it landed on: the targets if it touched
 /// a part the selection *covers* (a typed coordinate, an undo of one), the
-/// neighbours if it touched anything else (a script moving parts the user
-/// has not selected). `covered` is every part the draggers carry — the
+/// neighbours if it moved or resized anything else (a script moving parts
+/// the user has not selected) — a neighbour is only a `CFrame` and a `size`,
+/// so any other write, `Lighting`'s under a Sun drag every frame, walks
+/// nothing. `covered` is every part the draggers carry — the
 /// selected parts themselves and every part beneath a selected `Model`
 /// (see `Shell::covered`) — not the selection's own referents: a drag of a
 /// Model writes its parts, never the Model, and judged against the Model's
@@ -307,8 +311,8 @@ pub(super) fn refresh_for(changes: &[Change], covered: &HashSet<Ref>) -> Refresh
         neighbours: false,
     };
     for change in changes {
-        let referent = match change {
-            Change::Property { referent, .. } => *referent,
+        let (referent, name) = match change {
+            Change::Property { referent, name } => (*referent, name.as_str()),
             Change::Parent { .. } | Change::Added(_) | Change::Removed(_) => {
                 return Refresh {
                     targets: true,
@@ -318,7 +322,7 @@ pub(super) fn refresh_for(changes: &[Change], covered: &HashSet<Ref>) -> Refresh
         };
         if covered.contains(&referent) {
             refresh.targets = true;
-        } else {
+        } else if [CFRAME_PROPERTY, SIZE_PROPERTY].contains(&name) {
             refresh.neighbours = true;
         }
     }
@@ -366,6 +370,22 @@ mod tests {
             Refresh {
                 targets: false,
                 neighbours: true,
+            }
+        );
+    }
+
+    // A write that moves nothing — the Sun tool's `Lighting`, every frame of
+    // its drag — leaves both mirrors alone.
+    #[test]
+    fn writes_that_move_no_part_refresh_nothing() {
+        assert_eq!(
+            refresh_for(
+                &[write(9, "TimeOfDay"), write(4, "Name")],
+                &HashSet::from([Ref::new(1)])
+            ),
+            Refresh {
+                targets: false,
+                neighbours: false,
             }
         );
     }

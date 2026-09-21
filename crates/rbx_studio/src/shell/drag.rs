@@ -30,7 +30,7 @@ mod debug;
 pub(super) const CFRAME_PROPERTY: &str = "CFrame";
 /// Roblox's binary format spells `BasePart.Size` lowercase, which is the name
 /// the DOM keeps — see `rbx_viewer::pick::model_of`, which reads the same pair.
-const SIZE_PROPERTY: &str = "size";
+pub(super) const SIZE_PROPERTY: &str = "size";
 
 impl Shell {
     pub(super) fn handle_viewport_action(
