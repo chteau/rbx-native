@@ -54,7 +54,8 @@ impl Shell {
                         .pt(tokens::section_gap())
                         .pb(tokens::group_gap())
                         .gap(tokens::row_gap())
-                        .px(tokens::row_padding())
+                        .pl(crate::shell::rows::name_indent(0))
+                        .pr(tokens::row_padding())
                         .child(
                             h_flex()
                                 .w_full()

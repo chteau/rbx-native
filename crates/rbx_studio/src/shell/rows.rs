@@ -15,6 +15,8 @@ use gpui_kit::component::{h_flex, v_flex, Icon, Sizable};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
+mod slider;
+
 use crate::explorer::ClassIcon;
 use std::rc::Rc;
 
@@ -307,12 +309,9 @@ fn property_stack(
     control: impl IntoElement,
     error: Option<&str>,
 ) -> impl IntoElement {
-    v_flex()
-        .w_full()
-        .flex_none()
+    row_frame()
         .gap(tokens::label_gap())
         .px(tokens::row_padding())
-        .py(tokens::label_gap())
         .rounded(tokens::RADIUS)
         .text_size(tokens::text_md())
         .line_height(tokens::line_md())
@@ -322,6 +321,9 @@ fn property_stack(
             div()
                 .w_full()
                 .truncate()
+                // Its own name column starts where every other row's does,
+                // even though this shape has nothing in it but the name.
+                .pl(tokens::chevron_slot() + tokens::label_gap())
                 .text_color(tokens::text_muted())
                 .child(SharedString::from(row.name.clone())),
         )
@@ -352,9 +354,7 @@ fn property_shell(
     value: impl IntoElement,
     error: Option<&str>,
 ) -> impl IntoElement {
-    v_flex()
-        .w_full()
-        .flex_none()
+    row_frame()
         .text_size(tokens::text_md())
         .line_height(tokens::line_md())
         .text_color(tokens::text_strong())
@@ -374,7 +374,7 @@ fn property_shell(
                         .flex_none()
                         .w(tokens::row_label_width())
                         .truncate()
-                        .pl(tokens::row_padding())
+                        .pl(name_indent(0))
                         .pr(tokens::label_gap())
                         .text_color(if read_only {
                             tokens::text_disabled()
@@ -385,6 +385,125 @@ fn property_shell(
                 )
                 .child(value),
         )
+        .when_some(error, |this, message| {
+            this.child(
+                div()
+                    .pl(tokens::row_label_width())
+                    .pr(tokens::row_padding())
+                    .pb(tokens::label_gap())
+                    .text_size(tokens::text_sm())
+                    .line_height(tokens::line_sm())
+                    .text_color(tokens::text_error())
+                    .child(SharedString::from(message.to_owned())),
+            )
+        })
+}
+
+/// Every property row's outer box, whatever shape it takes inside: full
+/// width, its own height, and a hairline under it.
+///
+/// The seam is what lets the rows sit flush against each other. A panel
+/// where a value is two lines tall next to one that is five needs a visible
+/// edge between them, and a gap large enough to do that job alone pushed a
+/// long category off the screen — a hairline costs nothing vertically and
+/// separates better than the space it replaced.
+///
+/// It still needs air either side of it. A line drawn hard against a 31px
+/// field box reads as the box's own border rather than as the boundary
+/// between two rows, so the content is inset by a [`tokens::label_gap`]
+/// top and bottom.
+pub(super) fn row_frame() -> Div {
+    v_flex()
+        .w_full()
+        .flex_none()
+        .py(tokens::label_gap())
+        .border_b_1()
+        .border_color(tokens::row_divider())
+}
+
+/// A numeric row's name column, which is also the control that shows and
+/// hides its components: the chevron, then the property's name.
+///
+/// The whole column is the target rather than the chevron alone — 14px of
+/// icon is well under WCAG 2.5.8's floor, and a name is the obvious thing
+/// to click to open what is under it.
+pub(super) fn expander(
+    name: &str,
+    expanded: bool,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> Stateful<Div> {
+    h_flex()
+        .id(SharedString::from(format!("expand-{name}")))
+        .flex_none()
+        .w(tokens::row_label_width())
+        .h_full()
+        .min_h(tokens::row_height())
+        .items_center()
+        .gap(tokens::label_gap())
+        .pl(tokens::row_padding())
+        .pr(tokens::label_gap())
+        .cursor_pointer()
+        .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
+        .on_click(on_click)
+        .child(
+            div()
+                .flex_none()
+                .w(tokens::chevron_slot())
+                .text_color(tokens::text_label())
+                .child(
+                    Icon::new(if expanded {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    })
+                    .size(tokens::text_xs()),
+                ),
+        )
+        .child(
+            div()
+                .flex_1()
+                .truncate()
+                .text_color(tokens::text_muted())
+                .child(SharedString::from(name.to_owned())),
+        )
+}
+
+/// A numeric row: the property's name and the whole value on one line, its
+/// components on their own lines underneath once the expander is open.
+///
+/// The summary stays editable while the components show, because it is the
+/// same value in a different spelling and typing `0, 5, 0` is faster than
+/// three fields — the two are kept in step by the commit itself, which
+/// rebuilds the row from what the DOM ended up with (see
+/// `shell::edit::Shell::commit_row`).
+pub(super) fn property_expandable(
+    expander: impl IntoElement,
+    summary: impl IntoElement,
+    fields: Option<AnyElement>,
+    error: Option<&str>,
+) -> impl IntoElement {
+    row_frame()
+        .text_size(tokens::text_md())
+        .line_height(tokens::line_md())
+        .text_color(tokens::text_strong())
+        .child(
+            h_flex()
+                .w_full()
+                .min_h(tokens::row_height())
+                .flex_none()
+                .items_center()
+                .rounded(tokens::RADIUS)
+                .hover(|this| this.bg(tokens::hover()))
+                .child(expander)
+                .child(
+                    div()
+                        .flex_1()
+                        .overflow_hidden()
+                        .pr(tokens::row_padding())
+                        .child(summary),
+                ),
+        )
+        .children(fields)
         .when_some(error, |this, message| {
             this.child(
                 div()
@@ -586,46 +705,62 @@ fn render_row_editor(
                 }))
                 .into_any_element()
         }
-        RowEditor::Text(input) => field_box()
+        RowEditor::Text(input) => text_field(&input, tab_index).into_any_element(),
+        // Rail first, number second: the drag is the reason the row looks
+        // like this, and the field is what it settles into. The field
+        // keeps a fixed width so the rails of a `Lighting` all end on the
+        // same edge however long the numbers beside them get.
+        RowEditor::Slider(input, rail) => h_flex()
+            .w_full()
+            .items_center()
+            .gap(tokens::label_gap())
+            .child(slider::slider(&rail, cx))
             .child(
-                Input::new(&input)
-                    .appearance(false)
-                    .with_size(tokens::field_size())
-                    .h_full()
-                    // Without an index a toolkit input keeps the default 0
-                    // and sorts ahead of every region in the window — a
-                    // property field reached before the menu bar.
-                    .tab_index(tab_index),
+                div()
+                    .flex_none()
+                    // Narrower than a labelled field (`field_min_width`):
+                    // there is no label in front of this one, and every
+                    // value a rail spans is a handful of digits.
+                    .w(tokens::scaled_width(52.))
+                    .child(text_field(&input, tab_index)),
             )
             .into_any_element(),
-        // A composite value — a CFrame's nine numbers, a Vector3's three —
-        // **wraps** rather than dividing the value column by however many
-        // fields there are. Three fields in a 150px column left each one
-        // 16px wide with 8px of padding on either side, i.e. no room for a
-        // digit: the cells rendered empty, and were also under WCAG 2.5.8's
-        // target floor on both size and spacing. A wrapped row is taller
-        // and readable, which is the right trade in an inspector.
         // Captioned lines — a `CFrame`'s Position over its Orientation.
-        // Each group is its own row of fields under its own small caption,
+        // Each group is its own run of field rows under its own caption,
         // which is what makes six numbers readable where one flat run of
         // six is a wall.
-        RowEditor::Groups(groups, inputs) => {
+        RowEditor::Groups(groups, _, inputs) => {
             let mut taken = 0;
             v_flex()
                 .w_full()
-                .gap(tokens::row_gap())
                 .children(groups.iter().map(|group| {
                     let mine = &inputs[taken..taken + group.fields.len()];
                     taken += group.fields.len();
                     v_flex()
                         .w_full()
-                        .gap(tokens::label_gap())
+                        // The caption is a row of its own rather than a
+                        // heading over a block: it sits in the same name
+                        // column its fields do, one level in, so a
+                        // `CFrame` reads as Position and Orientation each
+                        // owning the three lines under it.
                         .child(
-                            div()
-                                .text_size(tokens::text_sm())
-                                .line_height(tokens::line_sm())
-                                .text_color(tokens::text_label())
-                                .child(group.caption),
+                            h_flex()
+                                .w_full()
+                                .min_h(tokens::row_height())
+                                .items_center()
+                                .py(tokens::label_gap())
+                                .border_b_1()
+                                .border_color(tokens::row_divider())
+                                .child(
+                                    div()
+                                        .flex_none()
+                                        .w(tokens::row_label_width())
+                                        .truncate()
+                                        .pl(name_indent(1))
+                                        .pr(tokens::label_gap())
+                                        .text_color(tokens::text_label())
+                                        .child(group.caption),
+                                ),
                         )
                         .child(number_fields(
                             group.fields,
@@ -633,12 +768,13 @@ fn render_row_editor(
                             taken - group.fields.len(),
                             tab_index,
                             on_scrub.clone(),
+                            2,
                         ))
                 }))
                 .into_any_element()
         }
-        RowEditor::Fields(fields, inputs) => {
-            number_fields(fields, &inputs, 0, tab_index, on_scrub).into_any_element()
+        RowEditor::Fields(fields, _, inputs) => {
+            number_fields(fields, &inputs, 0, tab_index, on_scrub, 1).into_any_element()
         }
         // The checkbox is the only control an absent value has: there is
         // nothing to edit until it says there is a value. Present, it reads
@@ -749,24 +885,28 @@ fn render_row_editor(
     }
 }
 
-/// A wrapping run of labelled numeric fields.
+/// One labelled numeric field per line, each laid out as the property row
+/// above it is: the component's name in the same name column, its input in
+/// the same value column.
 ///
-/// A composite value — a `CFrame`'s numbers, a `Vector3`'s three — **wraps**
-/// rather than dividing the column by however many fields there are. Three
-/// fields in a 150px column left each one 16px wide with 8px of padding on
-/// either side, i.e. no room for a digit: the cells rendered empty, and were
-/// also under WCAG 2.5.8's target floor on both size and spacing.
+/// They used to share one wrapping line. Side by side, three fields in a
+/// 150px column left each one 16px wide with 8px of padding on either side
+/// — no room for a digit — and wrapping them fixed the width at the cost of
+/// a value column whose left edge moved from row to row. Stacking gets both:
+/// full-width fields, and one edge every input in the panel starts at.
+///
+/// `depth` is how far in the names sit — 1 under a property's own expander,
+/// 2 under a captioned group inside it.
 fn number_fields(
     fields: &'static [Field],
     inputs: &[Entity<InputState>],
     offset: usize,
     tab_index: isize,
     on_scrub: OnScrub,
+    depth: usize,
 ) -> Div {
-    h_flex()
+    v_flex()
         .w_full()
-        .flex_wrap()
-        .gap(tokens::label_gap())
         .children(
             fields
                 .iter()
@@ -775,18 +915,32 @@ fn number_fields(
                 .map(|(index, (field, input))| {
                     let draggable = field.kind.step_per_pixel().is_some();
                     h_flex()
-                        .flex_none()
-                        .min_w(tokens::field_min_width())
+                        .w_full()
+                        .min_h(tokens::row_height())
                         .items_center()
-                        .gap(tokens::label_gap())
+                        // Its own seam, for the same reason the rows above
+                        // it have one: a column of 31px field boxes with
+                        // nothing between them is one grey block, not a
+                        // list of values.
+                        .py(tokens::label_gap())
+                        .border_b_1()
+                        .border_color(tokens::row_divider())
+                        .rounded(tokens::RADIUS)
+                        .hover(|this| this.bg(tokens::hover()))
                         // The *label* is the drag handle, not the field: that is
                         // what leaves a plain click on the field meaning "put the
                         // caret here", and it is where every other tool with this
-                        // gesture puts it.
+                        // gesture puts it. It is the whole name column rather
+                        // than the word, which is what takes the handle over
+                        // WCAG 2.5.8's target floor.
                         .child(
                             div()
                                 .id(SharedString::from(format!("scrub-{}-{index}", field.label)))
                                 .flex_none()
+                                .w(tokens::row_label_width())
+                                .truncate()
+                                .pl(name_indent(depth))
+                                .pr(tokens::label_gap())
                                 .text_color(tokens::text_muted())
                                 .when(draggable, |this| {
                                     this.cursor_col_resize()
@@ -799,16 +953,38 @@ fn number_fields(
                                 .child(field.label),
                         )
                         .child(
-                            field_box().flex_1().child(
-                                Input::new(input)
-                                    .appearance(false)
-                                    .with_size(tokens::field_size())
-                                    .h_full()
-                                    .tab_index(tab_index),
-                            ),
+                            div()
+                                .flex_1()
+                                .overflow_hidden()
+                                .pr(tokens::row_padding())
+                                .child(text_field(input, tab_index)),
                         )
                 }),
         )
+}
+
+/// Where a name sits in the name column: past the row's own padding and the
+/// column an expander chevron occupies, then one more step per level of
+/// nesting. A row with no chevron still clears the slot, so every property
+/// name in the panel starts on the same edge whether or not it has
+/// components to open.
+pub(super) fn name_indent(depth: usize) -> Pixels {
+    tokens::row_padding() + (tokens::chevron_slot() + tokens::label_gap()) * (depth as f32 + 1.)
+}
+
+/// One `Input` in the panel's field box — the value column's whole content
+/// for a scalar row, a summary, or one component.
+pub(super) fn text_field(input: &Entity<InputState>, tab_index: isize) -> Div {
+    field_box().child(
+        Input::new(input)
+            .appearance(false)
+            .with_size(tokens::field_size())
+            .h_full()
+            // Without an index a toolkit input keeps the default 0 and
+            // sorts ahead of every region in the window — a property field
+            // reached before the menu bar.
+            .tab_index(tab_index),
+    )
 }
 
 /// The `InputsStyle` frame's field: [`tokens::chrome`], 3px radius, 8px of

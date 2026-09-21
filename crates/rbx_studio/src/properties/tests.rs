@@ -983,3 +983,58 @@ fn a_source_property_on_a_class_that_is_not_a_script_stays_editable() {
         Some(EditKind::Text("not code".to_owned()))
     );
 }
+
+/// The field beside a numeric row's expander shows the value **whole**, and
+/// what it shows has to be exactly what committing it writes: the panel
+/// splits one text into components and the summary rejoins them, so a
+/// spelling that survives the round trip is the only thing keeping the two
+/// halves of the row from disagreeing about the same value.
+#[test]
+fn a_numeric_rows_components_rejoin_into_the_text_they_were_split_from() {
+    let values = [
+        Variant::Vector2(Vector2Data { x: 1.0, y: -2.5 }),
+        Variant::Vector3(vector3(1.0, -2.5, 3.0)),
+        Variant::Vector3int16 { x: 1, y: -2, z: 3 },
+        Variant::UDim(UDim {
+            scale: 0.5,
+            offset: 12,
+        }),
+        Variant::UDim2(UDim2 {
+            x: UDim {
+                scale: 0.5,
+                offset: 12,
+            },
+            y: UDim {
+                scale: 0.0,
+                offset: -4,
+            },
+        }),
+        Variant::Rect(Rect {
+            min: Vector2Data { x: 0.0, y: 1.0 },
+            max: Vector2Data { x: 4.0, y: 2.0 },
+        }),
+        Variant::NumberRange(NumberRange { min: 1.0, max: 2.5 }),
+        Variant::Font(Font {
+            family: "rbxasset://fonts/families/Arial.json".into(),
+            weight: 400,
+            style: FontStyle::Normal,
+            cached_face_id: None,
+        }),
+        // The captioned shape, whose components are split across two groups
+        // and still rejoin into one line.
+        Variant::CFrame(CFrameData {
+            position: vector3(1.0, 2.0, 3.0),
+            rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        }),
+    ];
+
+    for value in values {
+        let whole = edit::edit_text(&value).expect("an editable value");
+        let components = match value_edit_kind(&value, whole.clone()) {
+            EditKind::Fields { values, .. } | EditKind::Groups { values, .. } => values,
+            other => panic!("{value:?} is not a numeric row: {other:?}"),
+        };
+
+        assert_eq!(components.join(", "), whole, "{value:?}");
+    }
+}

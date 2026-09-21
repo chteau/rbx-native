@@ -39,6 +39,36 @@
   own `⋯`, persisted: numbered names for new instances, and whether
   selecting expands the tree to reveal what was selected. — @chteau
 
+- **Bounded properties get a slider.** A `Transparency`, a `ClockTime`, a
+  `GuiObject`'s `Rotation` — anything whose value has a real floor and
+  ceiling — now shows a rail beside its number field, and the two edit the
+  same value: drag the rail or type the number. The reflection dump carries
+  no bounds, so which properties have one and how finely each steps is a
+  named table (`properties::ranges`), and a range there only decides how far
+  the rail reaches — the field still takes anything the parser does, so a
+  frame really can be rotated 400°. A drag commits every step, so the
+  viewport follows the rail rather than waiting for it to be let go, and the
+  whole gesture still undoes in one. This is the first slider in the editor;
+  it is built from `gpui_base`'s unstyled parts and skinned as a field box,
+  because the toolkit's finished one sizes itself in `rem` and would ignore
+  the UI scale. — @chteau
+
+- **Numeric properties open like Studio's, and the panel has one left
+  edge.** A `Vector3`, a `UDim2`, a `CFrame` and every other multi-number
+  value used to take the row's whole width and lay its components out side
+  by side — three fields sharing a 150px column, each too narrow for a
+  digit, under a name on its own line. Each one is now an ordinary
+  name/value row showing the value whole (`0, 5, 0`, the spelling a script
+  would use, and still typeable as one), with an expander that drops its
+  components underneath: `X`/`Y`/`Z` for a `Vector3`, `Position` and
+  `Orientation` each over their own three for a `CFrame`. Collapsed is the
+  default, and a collapsed row does not build its component fields at all —
+  a `BasePart` selection is five such rows, so that is most of what the
+  panel used to lay out and paint every frame. Rows are separated by a
+  hairline instead of a gap, and property names, attribute names and tag
+  chips all start in the same column the expander chevrons leave for them.
+  — @chteau
+
 - **`NumberSequence` and `ColorSequence` have a real editor, and are
   creatable as attributes.** Both types used to render as read-only text,
   which is also why neither could be added as an attribute: the Attributes
