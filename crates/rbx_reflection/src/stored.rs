@@ -263,6 +263,46 @@ mod tests {
     }
 
     #[test]
+    fn a_spelling_whose_property_only_migrates_is_left_alone() {
+        // `PackageId` is `CanLoad: false`: renaming the old saved name to it
+        // would lose the id on Studio's next load.
+        let mut dom = one(
+            "PackageLink",
+            &[(
+                "PackageIdSerialize",
+                Variant::String("rbxassetid://1".into()),
+            )],
+        );
+
+        database().normalize_names(&mut dom);
+
+        assert_eq!(keys(&dom), ["PackageIdSerialize"]);
+    }
+
+    #[test]
+    fn two_spellings_of_one_saved_name_keep_the_current_ones_value() {
+        // Both save as `xmlRead_MaxDistance_3`; `MaxDistance` is deprecated.
+        for _ in 0..4 {
+            let mut dom = one(
+                "Sound",
+                &[
+                    ("MaxDistance", Variant::Float32(1.0)),
+                    ("RollOffMaxDistance", Variant::Float32(2.0)),
+                ],
+            );
+            // A fresh database each time: the order came from its maps.
+            database().normalize_names(&mut dom);
+
+            let sound = dom.get(Ref::new(1)).unwrap();
+            assert_eq!(keys(&dom), ["xmlRead_MaxDistance_3"]);
+            assert_eq!(
+                sound.properties()["xmlRead_MaxDistance_3"],
+                Variant::Float32(2.0)
+            );
+        }
+    }
+
+    #[test]
     fn named_spellings_are_renamed_and_others_left_alone() {
         let mut dom = one("Part", &[("Size", size()), ("Shape", Variant::Enum(0))]);
 

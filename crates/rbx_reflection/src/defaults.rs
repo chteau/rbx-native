@@ -166,7 +166,7 @@ impl ReflectionDatabase {
             .lineage(class)
             .filter_map(|class| self.defaults.classes.get(class))
         {
-            let spellings = class_defaults
+            let mut spellings: Vec<(&str, &str)> = class_defaults
                 .serializes_as
                 .keys()
                 .map(|canonical| (canonical.as_str(), canonical.as_str()))
@@ -175,7 +175,18 @@ impl ReflectionDatabase {
                         .aliases
                         .iter()
                         .map(|(alias, canonical)| (alias.as_str(), canonical.as_str())),
-                );
+                )
+                .collect();
+            // The first rename to reach a saved name keeps its value, so the
+            // maps' random order would pick a different one per run where a
+            // file holds two spellings of one saved name (`MaxDistance` and
+            // `RollOffMaxDistance`): the current property first, then by name.
+            spellings.sort_unstable_by_key(|&(spelling, canonical)| {
+                let deprecated = self
+                    .resolve_property(class, canonical)
+                    .is_some_and(|property| property.is_deprecated());
+                (deprecated, spelling)
+            });
             for (spelling, canonical) in spellings {
                 let Some(&saved) = self.stored_names(class, canonical).first() else {
                     continue;
