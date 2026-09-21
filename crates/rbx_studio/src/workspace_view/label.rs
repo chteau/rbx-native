@@ -1,95 +1,79 @@
-//! The corner label: what the viewport is drawing at, how fast it is flying,
-//! and — while the Stats toggle is on (see `Shell::set_stats_shown`, the
-//! Viewport panel overflow menu item next to Orthographic) — how fast it is
-//! actually drawing. Real Studio's own equivalent is `Window > Performance >
-//! Stats`; this editor has no `Window` menu yet, so the toggle lives next to
-//! the other per-viewport debug affordance already there.
+//! What the view reads out about itself: the quality level and frame rate the
+//! Viewport dock lists (see `shell::viewport_dock`), and the flight speed the
+//! viewport shows for a moment after the wheel changes it.
+//!
+//! Nothing here stays on the 3D view. A persistent label in its corner was
+//! one more thing sat over the scene being edited, so the level and the rate
+//! live in a dock instead; only the speed, which is gone again in a second
+//! and is feedback on the gesture in progress, is still drawn over it.
 
 use gpui_kit::SharedString;
 use rbx_viewer::QualityLevel;
 
-/// The quality level, always; the frame rate while Stats is on; the flight
-/// speed while it is worth showing.
+/// The quality level the renderer is drawing at.
 ///
-/// `Automatic` says so rather than showing the bare level: a level that moves on
-/// its own is otherwise read as the renderer misbehaving.
-pub(super) fn status(
-    mode: QualityLevel,
-    level: u8,
-    fps: Option<f32>,
-    speed: Option<f32>,
-) -> SharedString {
-    let quality = match mode {
+/// `Automatic` says so rather than showing the bare level: a level that moves
+/// on its own is otherwise read as the renderer misbehaving.
+pub(super) fn quality(mode: QualityLevel, level: u8) -> SharedString {
+    match mode {
         QualityLevel::Automatic => format!("Auto\u{b7}Q{level}"),
         QualityLevel::Level(_) => format!("Q{level}"),
-    };
-
-    let mut parts = vec![quality];
-    if let Some(fps) = fps {
-        // Frame time is exactly 1/fps over the same window `Stats` measured
-        // it in, not a separate approximation — see `stats::fps`. Formatted
-        // by `rbx_viewer::fps_readout`, which `rbxview`'s own title bar reads
-        // the same way.
-        parts.push(rbx_viewer::fps_readout(fps));
     }
-    if let Some(speed) = speed {
-        parts.push(format!("{} studs/s", speed.round() as i64));
-    }
+    .into()
+}
 
-    SharedString::from(parts.join(" \u{b7} "))
+/// The last second's frame rate and its frame time, or a placeholder while
+/// the first second since sampling started is still being counted — `0.0` is
+/// "not measured yet", never a real rate.
+pub(super) fn frame_rate(fps: f32) -> SharedString {
+    if fps > 0.0 {
+        // Formatted by `rbx_viewer::fps_readout`, which `rbxview`'s own title
+        // bar reads the same way; the frame time is exactly 1/fps over the
+        // same window, not a separate approximation.
+        rbx_viewer::fps_readout(fps).into()
+    } else {
+        "Measuring\u{2026}".into()
+    }
+}
+
+/// The flight speed, while its moment on screen lasts.
+pub(super) fn speed(speed: f32) -> SharedString {
+    format!("{} studs/s", speed.round() as i64).into()
 }
 
 #[cfg(test)]
 mod tests {
     use rbx_viewer::QualityLevel;
 
-    use super::status;
+    use super::{frame_rate, quality, speed};
 
     #[test]
     fn a_pinned_level_is_the_level_alone() {
-        assert_eq!(status(QualityLevel::Level(7), 7, None, None), "Q7");
+        assert_eq!(quality(QualityLevel::Level(7), 7), "Q7");
     }
 
-    // The mode and the level are two different things, and the label says both:
-    // under Automatic the level shown is the one the frame rate allowed, which
-    // is exactly what a user reading the label wants to know.
+    // The mode and the level are two different things, and the readout says
+    // both: under Automatic the level shown is the one the frame rate
+    // allowed, which is exactly what someone reading it wants to know.
     #[test]
     fn automatic_is_named_next_to_the_level_it_settled_on() {
-        assert_eq!(
-            status(QualityLevel::Automatic, 14, None, None),
-            "Auto\u{b7}Q14"
-        );
+        assert_eq!(quality(QualityLevel::Automatic, 14), "Auto\u{b7}Q14");
     }
 
     #[test]
-    fn a_fresh_speed_reading_joins_the_level() {
-        assert_eq!(
-            status(QualityLevel::Automatic, 21, None, Some(49.6)),
-            "Auto\u{b7}Q21 \u{b7} 50 studs/s"
-        );
+    fn a_measured_rate_carries_its_frame_time() {
+        assert_eq!(frame_rate(60.0), "60 fps\u{b7}16.7 ms");
     }
 
-    // The Stats toggle: `None` (off) leaves the label exactly as it read
-    // before this readout existed; `Some` (on) inserts fps and its exact
-    // frame time (1000 / fps) between the quality and the speed.
+    // The first second after the dock opens has nothing to report yet, and a
+    // "0 fps" there would read as the viewport having frozen.
     #[test]
-    fn stats_off_reads_the_same_as_before_the_readout_existed() {
-        assert_eq!(status(QualityLevel::Level(7), 7, None, None), "Q7");
+    fn no_rate_yet_reads_as_measuring_not_as_zero() {
+        assert_eq!(frame_rate(0.0), "Measuring\u{2026}");
     }
 
     #[test]
-    fn stats_on_inserts_fps_and_frame_time_before_the_speed() {
-        assert_eq!(
-            status(QualityLevel::Level(7), 7, Some(60.0), Some(49.6)),
-            "Q7 \u{b7} 60 fps\u{b7}16.7 ms \u{b7} 50 studs/s"
-        );
-    }
-
-    #[test]
-    fn stats_on_with_no_speed_to_show_still_reads_cleanly() {
-        assert_eq!(
-            status(QualityLevel::Automatic, 14, Some(29.5), None),
-            "Auto\u{b7}Q14 \u{b7} 30 fps\u{b7}33.9 ms"
-        );
+    fn the_speed_is_whole_studs_per_second() {
+        assert_eq!(speed(49.6), "50 studs/s");
     }
 }

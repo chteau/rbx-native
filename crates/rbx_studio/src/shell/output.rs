@@ -243,13 +243,13 @@ impl Shell {
         window.focus(&handle, cx);
     }
 
-    /// The title-bar controls for the Output tab (see `shell::dock`'s
-    /// `title_suffix`): the search box, the level filter and the Clear
-    /// button, in the same spot the Viewport tab's graphics-quality dropdown
-    /// lives.
+    /// The Output dock's strip controls (see `shell::workspace`): the run
+    /// count, then — at the strip's far end — the search box, the level
+    /// filter and the Clear button.
     pub(super) fn output_controls(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let current = self.output_filter;
         h_flex()
+            .flex_1()
             .items_center()
             .gap(px(4.))
             .child(
@@ -260,6 +260,10 @@ impl Shell {
                     .text_color(tokens::text_placeholder())
                     .child(format!("{} runs", self.output.len())),
             )
+            // The count reads as the tab's caption; the tools are the
+            // header's own, and sit at its far end the way a toolbar does,
+            // rather than trailing the caption wherever it happens to stop.
+            .child(div().flex_1())
             // No subscription behind it: the value is read straight off the
             // `InputState` at render, the same way the Properties panel's
             // own filter box is (`shell::panels`).

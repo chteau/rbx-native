@@ -35,15 +35,133 @@ fn shape(layout: &Layout, edge: Edge) -> Vec<Vec<Panel>> {
 }
 
 /// The layout nobody has touched is the one the editor always had:
-/// Properties on the left, Explorer on the right, Output underneath.
+/// Properties on the left, Explorer on the right, Output underneath — with
+/// the Viewport dock a tab behind Output rather than a dock of its own.
 #[test]
 fn the_default_layout_is_the_shell_that_was_hardcoded() {
     let layout = Layout::default();
 
     assert_eq!(shape(&layout, Edge::Left), [[Panel::Properties]]);
     assert_eq!(shape(&layout, Edge::Right), [[Panel::Explorer]]);
-    assert_eq!(shape(&layout, Edge::Bottom), [[Panel::Output]]);
+    assert_eq!(
+        shape(&layout, Edge::Bottom),
+        [[Panel::Output, Panel::Viewport]]
+    );
     assert!(layout.floating().is_empty());
+}
+
+/// Behind Output, not in front of it: the Viewport dock samples the frame
+/// rate only while it is on screen, and a fresh editor should not.
+#[test]
+fn the_viewport_dock_starts_open_but_not_showing() {
+    let layout = Layout::default();
+
+    assert_ne!(layout.home_of(Panel::Viewport), Home::Closed);
+    assert!(!layout.is_showing(Panel::Viewport));
+    assert!(layout.is_showing(Panel::Output));
+}
+
+/// What is on screen is exactly the tabs being shown and the windows of
+/// their own — never a tab behind another, never a shut panel.
+#[test]
+fn showing_follows_the_tab_the_window_and_the_close() {
+    let mut layout = Layout::default();
+
+    layout.activate(Panel::Viewport);
+    assert!(layout.is_showing(Panel::Viewport));
+    assert!(!layout.is_showing(Panel::Output));
+
+    layout.float(Panel::Viewport);
+    assert!(layout.is_showing(Panel::Viewport));
+    assert!(layout.is_showing(Panel::Output));
+
+    layout.close(Panel::Viewport);
+    assert!(!layout.is_showing(Panel::Viewport));
+}
+
+/// Opening a panel that is already open but hidden behind another tab
+/// brings it forward rather than doing nothing — otherwise the View menu
+/// would have no way to show the Viewport dock in a fresh layout.
+#[test]
+fn opening_a_hidden_tab_brings_it_forward() {
+    let mut layout = Layout::default();
+    layout.open(Panel::Viewport);
+
+    assert!(layout.is_showing(Panel::Viewport));
+    assert_eq!(
+        shape(&layout, Edge::Bottom),
+        [[Panel::Output, Panel::Viewport]]
+    );
+}
+
+/// Closing a torn-out dock's window asks for it back, and it comes back
+/// docked where it started, showing — not left floating with no window.
+#[test]
+fn opening_a_floating_panel_docks_it_back_home() {
+    let mut layout = Layout::default();
+    layout.float(Panel::Explorer);
+    layout.open(Panel::Explorer);
+
+    assert_eq!(layout.floating(), []);
+    assert_eq!(shape(&layout, Edge::Right), [[Panel::Explorer]]);
+    assert!(layout.is_showing(Panel::Explorer));
+}
+
+/// Closed and reopened, it comes back where it started — a tab beside
+/// Output — and in front, since reopening is asking to see it.
+#[test]
+fn a_reopened_viewport_dock_is_a_showing_tab_beside_output() {
+    let mut layout = Layout::default();
+    layout.close(Panel::Viewport);
+    assert_eq!(shape(&layout, Edge::Bottom), [[Panel::Output]]);
+
+    layout.open(Panel::Viewport);
+
+    assert_eq!(
+        shape(&layout, Edge::Bottom),
+        [[Panel::Output, Panel::Viewport]]
+    );
+    assert!(layout.is_showing(Panel::Viewport));
+}
+
+/// A settings file from before the Viewport dock existed gets it as a
+/// hidden tab beside Output — the same place a fresh layout puts it —
+/// rather than a second dock halving Output's width.
+#[test]
+fn a_file_from_before_the_viewport_dock_seats_it_beside_output() {
+    let file = saved(vec![
+        edge(Edge::Left, &[&["Properties"]], 300.),
+        edge(Edge::Right, &[&["Explorer"]], 300.),
+        edge(Edge::Bottom, &[&["Output"]], 180.),
+    ]);
+
+    let layout = Layout::restore(&file);
+
+    assert_eq!(
+        shape(&layout, Edge::Bottom),
+        [[Panel::Output, Panel::Viewport]]
+    );
+    assert!(!layout.is_showing(Panel::Viewport));
+}
+
+/// Where the Viewport dock was, and whether it was shut, persist like any
+/// other dock's.
+#[test]
+fn the_viewport_dock_survives_a_round_trip_moved_or_closed() {
+    let mut layout = Layout::default();
+    layout.apply(
+        Panel::Viewport,
+        Landing::NewGroup {
+            edge: Edge::Right,
+            group: 1,
+        },
+    );
+    assert_eq!(Layout::restore(&layout.saved()), layout);
+
+    layout.close(Panel::Viewport);
+    let restored = Layout::restore(&layout.saved());
+    assert_eq!(restored.home_of(Panel::Viewport), Home::Closed);
+    assert_eq!(restored, layout);
 }
 
 /// The invariant every method here leans on: a panel is in exactly one
@@ -215,6 +333,7 @@ fn a_landing_below_the_dock_it_emptied_still_lands_right() {
 #[test]
 fn an_emptied_edge_holds_nothing() {
     let mut layout = Layout::default();
+    layout.close(Panel::Viewport);
     layout.apply(
         Panel::Output,
         Landing::NewGroup {
@@ -280,8 +399,7 @@ fn a_closed_panel_is_open_nowhere() {
     layout.close(Panel::Output);
 
     assert_eq!(layout.home_of(Panel::Output), Home::Closed);
-    assert!(!layout.is_open(Panel::Output));
-    assert!(layout.groups(Edge::Bottom).is_empty());
+    assert_eq!(shape(&layout, Edge::Bottom), [[Panel::Viewport]]);
 }
 
 /// Reopening puts it back on its own edge rather than nowhere in
@@ -292,8 +410,11 @@ fn reopening_a_panel_puts_it_on_its_own_edge() {
     layout.close(Panel::Output);
     layout.open(Panel::Output);
 
-    assert!(layout.is_open(Panel::Output));
-    assert_eq!(shape(&layout, Edge::Bottom), [[Panel::Output]]);
+    assert!(layout.is_showing(Panel::Output));
+    assert_eq!(
+        shape(&layout, Edge::Bottom),
+        [[Panel::Viewport, Panel::Output]]
+    );
 }
 
 /// Closing a tab must not take the dock's other tabs with it.
@@ -462,9 +583,11 @@ fn a_panel_named_twice_still_lands_in_one_place() {
         }
     );
     assert!(layout.floating().is_empty());
+    // Properties, which the file never placed, is seated as a tab of the
+    // dock already on its edge rather than splitting it.
     assert_eq!(
         shape(&layout, Edge::Left),
-        [vec![Panel::Explorer], vec![Panel::Properties]]
+        [[Panel::Explorer, Panel::Properties]]
     );
 }
 

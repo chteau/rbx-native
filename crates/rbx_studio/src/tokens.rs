@@ -478,8 +478,14 @@ pub(crate) fn row_height() -> Pixels {
     scaled_target(28.)
 }
 
+///
+/// Sized for the common `BasePart` names (`CollisionGroup`,
+/// `MaterialVariant`) at [`text_md`], not for the longest one: every pixel
+/// here comes out of the value column on every row, and a panel whose
+/// short names sit a long way from their values has to be dragged wider
+/// just to read them. The rare long name truncates.
 pub(crate) fn row_label_width() -> Pixels {
-    scaled(140.)
+    scaled(120.)
 }
 
 /// A property section's header.
@@ -545,12 +551,14 @@ pub(crate) fn checkbox_target() -> Pixels {
     scaled_target(26.)
 }
 
-/// The column a property row's expander chevron sits in — and, because a
-/// child field's name lines up under its parent's rather than under the
-/// chevron, the step one level of nesting indents by. Wide enough for the
-/// [`text_xs`] icon with a hair of air after it.
+/// The column a property row's expander chevron — and a section header's —
+/// sits in, and, because a child field's name lines up under its parent's
+/// rather than under the chevron, the step one level of nesting indents by.
+/// Exactly the [`text_xs`] icon's own box: the glyph already sits well
+/// inside that box, and [`label_gap`] is the air after it, so a wider slot
+/// only pushes every name in the panel further from the edge.
 pub(crate) fn chevron_slot() -> Pixels {
-    scaled(14.)
+    scaled(11.)
 }
 
 /// The rail a property slider runs its value along. Thick enough to carry
@@ -592,8 +600,11 @@ pub(crate) fn row_gap() -> Pixels {
     scaled(8.)
 }
 
+/// A property row's inset from the panel's edge, both sides. Small, because
+/// every name is indented past a chevron's slot on top of it (see
+/// `shell::rows::name_indent`) and the dock already has its own inset.
 pub(crate) fn row_padding() -> Pixels {
-    scaled(8.)
+    scaled(4.)
 }
 
 /// Between a category header and its first row.
