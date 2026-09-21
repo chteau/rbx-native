@@ -606,14 +606,20 @@ pub(super) fn section_header(
         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
         .on_click(on_click)
         .child(
-            div().flex_none().text_color(tokens::text_label()).child(
-                Icon::new(if open {
-                    IconName::ChevronDown
-                } else {
-                    IconName::ChevronRight
-                })
-                .size(tokens::text_xs()),
-            ),
+            div()
+                .flex_none()
+                // The same slot an expander's chevron sits in, so a
+                // category's name starts on the property names' own edge.
+                .w(tokens::chevron_slot())
+                .text_color(tokens::text_label())
+                .child(
+                    Icon::new(if open {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    })
+                    .size(tokens::text_xs()),
+                ),
         )
         .child(div().flex_1().truncate().child(label))
 }
