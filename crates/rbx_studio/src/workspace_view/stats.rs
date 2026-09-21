@@ -1,9 +1,9 @@
 //! Where a second's worth of frames spent their time.
 //!
-//! Sampled only while something is reading it — the Viewport dock, see
-//! [`Stats::set_sampling`] — and then also printed once a second on stderr in
-//! a debug build, and in a release one with `RBX_STUDIO_STATS=1` (which opens
-//! that dock at startup). Both threads write to it — the uploads are timed on
+//! Sampled only while something is reading it — the Viewport dock, or
+//! `RBX_STUDIO_STATS=1` (see [`Stats::set_sampling`] and
+//! `Shell::sync_stats`) — and then also printed once a second on stderr in a
+//! debug build, and in a release one with that variable set. Both threads write to it — the uploads are timed on
 //! the UI thread, the rest on the render thread — which is what the atomics
 //! are for.
 //!
@@ -191,8 +191,8 @@ pub(super) fn enabled() -> bool {
     cfg!(debug_assertions) || requested()
 }
 
-/// Whether `RBX_STUDIO_STATS=1` asked for the numbers — which also opens the
-/// Viewport dock at startup, since nothing is sampled while it is shut.
+/// Whether `RBX_STUDIO_STATS=1` asked for the numbers — which also keeps them
+/// sampled with the Viewport dock shut (see `Shell::sync_stats`).
 pub(crate) fn requested() -> bool {
     env::var(STATS_VARIABLE).is_ok_and(|value| value == "1")
 }

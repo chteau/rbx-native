@@ -578,15 +578,6 @@ impl Shell {
             unresolved = shell.apply_debug_select(spec, &launch, cx);
         }
 
-        // `RBX_STUDIO_STATS=1` asks for the frame-rate numbers, and nothing
-        // is sampled while the Viewport dock is off screen (see
-        // `shell::viewport_dock`), so it puts the dock on screen — without
-        // writing the settings file itself: the variable speaks for this
-        // run, not for the layout.
-        if crate::workspace_view::stats_requested() {
-            shell.layout.open(layout::Panel::Viewport);
-        }
-
         // `RBX_STUDIO_ALIGN` (see `shell::align`): applied right after
         // selection, so it aligns whatever the file itself or
         // `RBX_STUDIO_SELECT` just selected — a screenshot aid for the Align

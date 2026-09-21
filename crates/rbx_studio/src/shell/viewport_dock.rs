@@ -1,6 +1,6 @@
 //! The Viewport dock: the graphics quality, every view setting, and the live
-//! frame rate — what used to float in the 3D view's corner and sit in a label
-//! under it, moved off the scene being edited.
+//! frame rate — kept in a dock so that nothing persistent sits over the scene
+//! being edited.
 //!
 //! The settings are the shell's own state and apply whether or not this dock
 //! is open; the dock only shows them. The frame-rate sampling is the other
@@ -137,15 +137,19 @@ impl Shell {
         self.set_unfocused_fps(preset, cx);
     }
 
-    /// Samples the frame rate while this dock is on screen and not otherwise.
+    /// Samples the frame rate while this dock is on screen and not otherwise
+    /// — or throughout, when `RBX_STUDIO_STATS=1` asked for the numbers on
+    /// stderr. The variable never opens the dock: it speaks for one run, and
+    /// a layout it changed would be written back at the next settings save.
     ///
     /// Asked every render rather than at each place the layout changes — a
     /// drop, a tab click, a close, Reset Layout, a torn-out window shut — so
     /// that no way of moving a dock can forget to; when nothing changed it
     /// is one atomic swap.
     pub(super) fn sync_stats(&self, cx: &App) {
-        let showing = self.layout.is_showing(Panel::Viewport);
-        self.viewport.read(cx).set_stats_sampling(showing);
+        let wanted =
+            self.layout.is_showing(Panel::Viewport) || crate::workspace_view::stats_requested();
+        self.viewport.read(cx).set_stats_sampling(wanted);
     }
 
     /// The dock's trailing menu and its body: the quality and the live
@@ -191,8 +195,7 @@ impl Shell {
         let settings = self.viewport_toggles().into_iter().map(|(label, on, set)| {
             let handle = handle.clone();
             // The whole row is the target, not only the box: the label
-            // is the obvious thing to click, and it is what a menu item
-            // used to offer.
+            // is the obvious thing to click.
             checkbox(
                 SharedString::from(format!("viewport-{label}")),
                 on,

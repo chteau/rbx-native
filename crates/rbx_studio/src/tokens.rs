@@ -478,6 +478,7 @@ pub(crate) fn row_height() -> Pixels {
     scaled_target(28.)
 }
 
+/// A property row's name column.
 ///
 /// Sized for the common `BasePart` names (`CollisionGroup`,
 /// `MaterialVariant`) at [`text_md`], not for the longest one: every pixel

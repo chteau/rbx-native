@@ -2,10 +2,10 @@
 //! Viewport dock lists (see `shell::viewport_dock`), and the flight speed the
 //! viewport shows for a moment after the wheel changes it.
 //!
-//! Nothing here stays on the 3D view. A persistent label in its corner was
-//! one more thing sat over the scene being edited, so the level and the rate
-//! live in a dock instead; only the speed, which is gone again in a second
-//! and is feedback on the gesture in progress, is still drawn over it.
+//! Only the speed is drawn over the 3D view: it is gone again in a second and
+//! is feedback on the gesture in progress. The level and the rate stay on
+//! screen, and anything that stays belongs in a dock, not over the scene
+//! being edited.
 
 use gpui_kit::SharedString;
 use rbx_viewer::QualityLevel;

@@ -136,6 +136,12 @@ impl Panel {
         }
     }
 
+    /// Whether its strip controls are a toolbar that takes the rest of the
+    /// strip, rather than one overflow button beside the tabs.
+    pub(crate) fn has_toolbar(self) -> bool {
+        self == Panel::Output
+    }
+
     fn from_key(key: &str) -> Option<Panel> {
         Panel::ALL.into_iter().find(|panel| panel.key() == key)
     }
