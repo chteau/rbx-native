@@ -13,7 +13,7 @@ use crate::gizmo::Gizmo;
 use crate::gpu;
 use crate::pick::Selected;
 use crate::quality::QualityProfile;
-use crate::renderer::{Renderer, World};
+use crate::renderer::{Renderer, Segment, World};
 use crate::scene::Scene;
 use crate::view::View;
 use readback::{Pending, Target, FORMAT};
@@ -71,6 +71,7 @@ impl Offscreen {
         offscreen.set_selection_occluded(view.selection_occluded, world.scene);
         offscreen.set_hover(view.hovered.clone(), world.scene);
         offscreen.set_preview(&view.preview);
+        offscreen.set_lines(&view.lines);
         offscreen.set_gizmo(view.gizmo);
         Ok(offscreen)
     }
@@ -87,6 +88,7 @@ impl Offscreen {
         self.set_selection_occluded(view.selection_occluded, world.scene);
         self.set_hover(view.hovered.clone(), world.scene);
         self.set_preview(&view.preview);
+        self.set_lines(&view.lines);
         self.set_gizmo(view.gizmo);
     }
 
@@ -129,6 +131,11 @@ impl Offscreen {
     /// Replaces the ghost boxes a tool is previewing.
     pub(crate) fn set_preview(&mut self, boxes: &[glam::Mat4]) {
         self.renderer.set_preview(&self.device, boxes);
+    }
+
+    /// Replaces the editor's line segments.
+    pub(crate) fn set_lines(&mut self, segments: &[Segment]) {
+        self.renderer.set_lines(&self.device, segments);
     }
 
     /// Shows or hides the transform tool's draggers over the selection.

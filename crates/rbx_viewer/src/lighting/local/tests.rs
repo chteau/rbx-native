@@ -2,20 +2,20 @@ use rbx_dom::{CFrameData, Color3Data, Ref, Vector3Data};
 
 use super::*;
 
-const EPSILON: f32 = 1e-4;
-const IDENTITY_ROTATION: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+pub(super) const EPSILON: f32 = 1e-4;
+pub(super) const IDENTITY_ROTATION: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
 /// A quarter turn about +Y, which sends the part's local -Z (Front) to -X.
-const YAW_90_ROTATION: [f32; 9] = [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0];
+pub(super) const YAW_90_ROTATION: [f32; 9] = [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0];
 
-fn database() -> ReflectionDatabase {
+pub(super) fn database() -> ReflectionDatabase {
     ReflectionDatabase::embedded()
 }
 
-fn close(actual: Vec3, expected: Vec3) -> bool {
+pub(super) fn close(actual: Vec3, expected: Vec3) -> bool {
     (actual - expected).length() < EPSILON
 }
 
-fn cframe(position: Vec3, rotation: [f32; 9]) -> Variant {
+pub(super) fn cframe(position: Vec3, rotation: [f32; 9]) -> Variant {
     Variant::CFrame(CFrameData {
         position: Vector3Data {
             x: position.x,
@@ -37,14 +37,14 @@ fn vector3(size: Vec3) -> Variant {
 /// A DOM under construction: parts and the lights hanging off them, each with
 /// its own referent, all parented under a synthetic `Workspace` — `local_lights`
 /// only ever looks there now (see [`super::local_lights`]).
-struct Fixture {
-    dom: WeakDom,
+pub(super) struct Fixture {
+    pub(super) dom: WeakDom,
     next: u32,
-    workspace: Ref,
+    pub(super) workspace: Ref,
 }
 
 impl Fixture {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let mut dom = WeakDom::new();
         let workspace = Ref::new(1);
         dom.insert(Instance::new(workspace, "Workspace", "Workspace"));
@@ -56,7 +56,12 @@ impl Fixture {
         }
     }
 
-    fn insert(&mut self, class: &str, parent: Option<Ref>, properties: &[(&str, Variant)]) -> Ref {
+    pub(super) fn insert(
+        &mut self,
+        class: &str,
+        parent: Option<Ref>,
+        properties: &[(&str, Variant)],
+    ) -> Ref {
         let referent = Ref::new(self.next);
         self.next += 1;
         let mut instance = Instance::new(referent, class, class);
@@ -70,7 +75,7 @@ impl Fixture {
         referent
     }
 
-    fn part(&mut self, position: Vec3, size: Vec3, rotation: [f32; 9]) -> Ref {
+    pub(super) fn part(&mut self, position: Vec3, size: Vec3, rotation: [f32; 9]) -> Ref {
         self.insert(
             "Part",
             Some(self.workspace),

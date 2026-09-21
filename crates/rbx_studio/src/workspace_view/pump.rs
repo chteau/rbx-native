@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 
 use rbx_dom::{Change, Snapshot, WeakDom};
 use rbx_viewer::pick::{Meshes, Selected};
-use rbx_viewer::{Applied, CameraInput, Gizmo, Headless, Pose, QualityLevel};
+use rbx_viewer::{Applied, CameraInput, Gizmo, Headless, Pose, QualityLevel, Segment};
 
 use super::input::Wheel;
 use super::quality::Quality;
@@ -70,6 +70,9 @@ enum Command {
     /// Where a tool being configured would put the selection — the Align
     /// popover's live preview. An empty list clears it.
     Preview(Vec<glam::Mat4>),
+    /// World-space line segments over the scene — the light guides. An
+    /// empty list clears them.
+    Lines(Vec<Segment>),
     /// An edit to the DOM, as the `Change` log it produced, patched into the
     /// scene instance by instance — see `Headless::apply_changes`. What
     /// travels with the log is a snapshot of the instances it names (see
@@ -218,6 +221,11 @@ impl Pump {
     /// selection — see `Headless::set_preview`.
     pub(super) fn preview(&self, boxes: Vec<glam::Mat4>) {
         let _ = self.commands.send(Command::Preview(boxes));
+    }
+
+    /// Draws line segments over the scene — see `Headless::set_lines`.
+    pub(super) fn lines(&self, segments: Vec<Segment>) {
+        let _ = self.commands.send(Command::Lines(segments));
     }
 
     /// Shows or hides the transform tool's draggers over the selection.
@@ -591,6 +599,7 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::Selection(selected) => rendering.viewer.set_selection(&selected),
         Command::Hover(selected) => rendering.viewer.set_hover(selected),
         Command::Preview(boxes) => rendering.viewer.set_preview(boxes),
+        Command::Lines(segments) => rendering.viewer.set_lines(segments),
         Command::Gizmo(gizmo) => rendering.viewer.set_gizmo(gizmo),
         Command::Changes(snapshots, changes) => {
             rendering.mirror.mirror(snapshots);

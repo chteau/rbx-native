@@ -152,6 +152,7 @@ impl Renderer {
         // the top layer rather than being hidden under the selection box.
         self.selection.draw(&mut pass, &self.frame.bind_group);
         self.hover.draw(&mut pass, &self.frame.bind_group);
+        self.lines.draw(&mut pass, &self.frame.bind_group);
         // Over the outlines, under the draggers: a preview says where the
         // selection would land, so it belongs beside its outline rather
         // than over the handles being dragged.

@@ -223,7 +223,8 @@ impl Shell {
     /// selected part or the tree itself changed, and the boxes a free drag
     /// soft-snaps onto when anything *other* than the selection did — a drag
     /// moves nothing but the selection, and re-reading those per mouse move
-    /// would walk the whole workspace every frame.
+    /// would walk the whole workspace every frame. The selected lights'
+    /// guides are re-read every time: they cost only the selection.
     ///
     /// The one path every mutation takes — a Command Bar script, a
     /// Properties row, a viewport drag, the Explorer's insert, delete and
@@ -253,6 +254,7 @@ impl Shell {
         if refresh.neighbours {
             self.sync_snap_neighbours(cx);
         }
+        self.sync_light_guides(cx);
     }
 
     /// Rebuilds the Explorer's rows from the current `self.dom`, keeping the

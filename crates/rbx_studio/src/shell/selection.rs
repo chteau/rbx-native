@@ -83,6 +83,7 @@ impl Shell {
         // What the Align tool would do depends on what is selected, so an
         // open popover's preview follows the selection.
         self.refresh_align_preview(cx);
+        self.sync_light_guides(cx);
     }
 }
 

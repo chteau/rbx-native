@@ -23,6 +23,9 @@
 mod geometry;
 mod pipelines;
 
+pub(super) use geometry::line;
+pub(super) use pipelines::lines as line_pipelines;
+
 use std::collections::HashMap;
 use std::ops::Range;
 
@@ -70,14 +73,19 @@ pub(super) struct ImageVertex {
 
 /// A vertex buffer and where its depth-tested and always-on-top halves are.
 #[derive(Default)]
-struct Batch {
+pub(super) struct Batch {
     buffer: Option<wgpu::Buffer>,
     occluded: Range<u32>,
     on_top: Range<u32>,
 }
 
 impl Batch {
-    fn build<T: Pod>(device: &wgpu::Device, label: &str, occluded: &[T], on_top: &[T]) -> Self {
+    pub(super) fn build<T: Pod>(
+        device: &wgpu::Device,
+        label: &str,
+        occluded: &[T],
+        on_top: &[T],
+    ) -> Self {
         if occluded.is_empty() && on_top.is_empty() {
             return Batch::default();
         }
@@ -96,7 +104,7 @@ impl Batch {
         }
     }
 
-    fn range(&self, on_top: bool) -> Option<(&wgpu::Buffer, Range<u32>)> {
+    pub(super) fn range(&self, on_top: bool) -> Option<(&wgpu::Buffer, Range<u32>)> {
         let buffer = self.buffer.as_ref()?;
         let range = if on_top {
             self.on_top.clone()

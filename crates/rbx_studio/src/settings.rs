@@ -1,9 +1,9 @@
 //! Persisted Studio preferences: the graphics quality dropdown, the
 //! Explorer's "show all services" checkbox, the Viewport's orthographic
 //! toggle, its orientation indicator toggle, whether the selection box is
-//! occluded by geometry, and the Explorer's icon pack (dark/light), so a
-//! relaunch reopens where the user left off rather than always at the
-//! hardcoded defaults.
+//! occluded by geometry, whether light guides are shown, and the Explorer's
+//! icon pack (dark/light), so a relaunch reopens where the user left off
+//! rather than always at the hardcoded defaults.
 //!
 //! Mirrors `rbx_assets::AssetCache`'s directory convention (`$XDG_CONFIG_HOME`,
 //! falling back to `~/.config` or, on Windows, `%APPDATA%`, all under an
@@ -40,6 +40,10 @@ pub(crate) struct Settings {
     /// at all. Named for the behaviour being switched *on* rather than for
     /// the default, so no call site has to read `!show_through`.
     pub(crate) selection_occluded: bool,
+    /// Studio's `Show Light Guides`: the lines drawn around a selected
+    /// light. Defaults on — Roblox's announcement of the feature tells
+    /// anyone who finds them in the way to turn them off in settings.
+    pub(crate) light_guides: bool,
     pub(crate) icon_pack: IconPack,
     /// The render loop's frame rate cap while the window is unfocused — see
     /// `pacing::FocusPacing`.
@@ -90,6 +94,7 @@ impl Default for Settings {
             orthographic: false,
             axis_indicator: true,
             selection_occluded: false,
+            light_guides: true,
             icon_pack: IconPack::Dark,
             unfocused_fps: UnfocusedFps::DEFAULT,
             font_scale: 1.,
@@ -233,6 +238,10 @@ fn load_from(path: &Path) -> Settings {
             .get("selection_occluded")
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
+        light_guides: value
+            .get("light_guides")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true),
         icon_pack,
         unfocused_fps,
         font_scale,
@@ -353,6 +362,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "orthographic": settings.orthographic,
         "axis_indicator": settings.axis_indicator,
         "selection_occluded": settings.selection_occluded,
+        "light_guides": settings.light_guides,
         "icon_pack": format_icon_pack(settings.icon_pack),
         "unfocused_fps": settings.unfocused_fps.fps(),
         "font_scale": settings.font_scale,
@@ -505,6 +515,7 @@ mod tests {
             orthographic: true,
             axis_indicator: false,
             selection_occluded: true,
+            light_guides: false,
             icon_pack: IconPack::Light,
             unfocused_fps: UnfocusedFps::Fps25,
             font_scale: 1.25,
@@ -541,6 +552,17 @@ mod tests {
         // would be unsettable rather than merely defaulted.
         std::fs::write(&path, br#"{"selection_occluded": true}"#).unwrap();
         assert!(load_from(&path).selection_occluded);
+    }
+
+    #[test]
+    fn a_settings_file_with_no_light_guides_recorded_shows_them() {
+        let path = temp_settings_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, br#"{"quality": "Automatic"}"#).unwrap();
+        assert!(load_from(&path).light_guides);
+
+        std::fs::write(&path, br#"{"light_guides": false}"#).unwrap();
+        assert!(!load_from(&path).light_guides);
     }
 
     #[test]
