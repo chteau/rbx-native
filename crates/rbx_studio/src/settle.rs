@@ -71,10 +71,23 @@ pub(crate) fn surface_under(
     ray: Ray,
     exclude: Ref,
 ) -> Option<Surface> {
+    part_under(dom, database, meshes, ray, Some(exclude)).map(|(_, surface)| surface)
+}
+
+/// [`surface_under`], saying which part the face belongs to, and with the
+/// exclusion optional: the Sun tool aims at whatever is nearest, and leaves
+/// out only the part whose shadow it is placing.
+pub(crate) fn part_under(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    meshes: &Meshes,
+    ray: Ray,
+    exclude: Option<Ref>,
+) -> Option<(Ref, Surface)> {
     let nearest = pick::parts_along(dom, database, meshes, ray)
         .into_iter()
-        .find(|&referent| referent != exclude)?;
-    face_hit(ray, pick::model_of(dom, nearest)?)
+        .find(|&referent| Some(referent) != exclude)?;
+    Some((nearest, face_hit(ray, pick::model_of(dom, nearest)?)?))
 }
 
 /// The face of the box drawn with `model` that `ray` enters, or `None` when

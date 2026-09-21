@@ -69,6 +69,7 @@ mod settings;
 mod settle;
 mod shell;
 mod style_editor;
+mod sun;
 mod tokens;
 mod transform;
 mod workspace_view;

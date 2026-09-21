@@ -220,16 +220,31 @@ fn the_local_toggle_reaches_the_renderer_for_every_tool() {
 }
 
 #[test]
-fn every_tool_has_a_label_and_a_shortcut() {
-    for tool in Tool::ALL {
+fn every_transform_tool_has_a_label_and_a_shortcut() {
+    for tool in Tool::TRANSFORM {
         assert!(!tool.label().is_empty());
+        let key = tool.shortcut().expect("every transform tool has a key");
         assert_eq!(
-            action_for(tool.shortcut(), Modifiers::none()),
+            action_for(key, Modifiers::none()),
             Some(Action::Use(tool)),
             "{}'s own shortcut has to pick it",
             tool.label()
         );
     }
+}
+
+// The Sun tool aims at the scene rather than at the selection: no handles
+// for the renderer to draw, nothing for a drag to transform.
+#[test]
+fn the_sun_tool_has_no_handles_and_no_shortcut() {
+    let sun = Transform {
+        tool: Tool::Sun,
+        ..Transform::default()
+    };
+    assert_eq!(sun.gizmo(), None);
+    assert!(!sun.drags());
+    assert_eq!(Tool::Sun.shortcut(), None);
+    assert!(!Tool::TRANSFORM.contains(&Tool::Sun));
 }
 
 #[test]

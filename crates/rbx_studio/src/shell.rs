@@ -40,6 +40,7 @@ mod scroll;
 mod scrub;
 mod selection;
 mod style_panel;
+mod sun;
 mod toolbar;
 mod tooltip;
 mod workspace;
@@ -254,6 +255,9 @@ pub(crate) struct Shell {
     /// Whether the Align popover is open, and so whether its live preview
     /// is being drawn — see `shell::align::Shell::refresh_align_preview`.
     align_open: bool,
+    /// The Sun tool's body and gesture, and the drag under way — see
+    /// `crate::sun`. Whether the tool is active at all is `transform.tool`.
+    sun: crate::sun::SunTool,
     /// Which of the ribbon's own category tabs is showing — see
     /// `shell::ribbon`. Session-only: real Studio's own ribbon always opens
     /// back on Home too, and there's nothing here worth writing to
@@ -496,6 +500,7 @@ impl Shell {
             snap_fields,
             align: AlignOptions::default(),
             align_open: false,
+            sun: crate::sun::SunTool::default(),
             ribbon_tab: ribbon::Tab::default(),
             document: Document::default(),
             open_menu: None,

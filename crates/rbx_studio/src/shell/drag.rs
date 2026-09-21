@@ -61,6 +61,7 @@ impl Shell {
                 axis,
                 first,
             } => self.turn_part(*referent, *pivot, *axis, *first, cx),
+            ViewportAction::Sun { ray, first } => self.sun_step(*ray, *first, cx),
             // The one toolbar action that moves the caret instead of changing
             // state, which is why this path carries a `Window` at all.
             ViewportAction::Tool(transform::Action::FocusIncrement(kind)) => {

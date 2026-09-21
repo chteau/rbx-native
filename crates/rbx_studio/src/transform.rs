@@ -28,10 +28,15 @@ pub(crate) enum Tool {
     Move,
     Scale,
     Rotate,
+    /// Point at the scene to place the sun or the moon — see `crate::sun`.
+    /// Not a transform: it has no handles and never touches the selection.
+    Sun,
 }
 
 impl Tool {
-    pub(crate) const ALL: [Tool; 4] = [Tool::Select, Tool::Move, Tool::Scale, Tool::Rotate];
+    /// The four the ribbon's Tools group draws; [`Tool::Sun`] has a group
+    /// of its own.
+    pub(crate) const TRANSFORM: [Tool; 4] = [Tool::Select, Tool::Move, Tool::Scale, Tool::Rotate];
 
     pub(crate) fn label(self) -> &'static str {
         match self {
@@ -39,24 +44,30 @@ impl Tool {
             Tool::Move => "Move",
             Tool::Scale => "Scale",
             Tool::Rotate => "Rotate",
+            Tool::Sun => "Sun",
         }
     }
 
     /// The key that picks this tool, for the toolbar button's own label.
-    pub(crate) fn shortcut(self) -> &'static str {
+    ///
+    /// The Sun tool has none: the next digit is where Studio's own
+    /// Transform tool would go, and any other key over the 3D view is a
+    /// camera key or an arbitrary pick nobody would guess.
+    pub(crate) fn shortcut(self) -> Option<&'static str> {
         match self {
-            Tool::Select => "1",
-            Tool::Move => "2",
-            Tool::Scale => "3",
-            Tool::Rotate => "4",
+            Tool::Select => Some("1"),
+            Tool::Move => Some("2"),
+            Tool::Scale => Some("3"),
+            Tool::Rotate => Some("4"),
+            Tool::Sun => None,
         }
     }
 
-    /// Which handles this tool puts over the selection, or `None` for Select,
-    /// which has none of its own.
+    /// Which handles this tool puts over the selection, or `None` for Select
+    /// and Sun, which have none of their own.
     pub(crate) fn kind(self) -> Option<Kind> {
         match self {
-            Tool::Select => None,
+            Tool::Select | Tool::Sun => None,
             Tool::Move => Some(Kind::Move),
             Tool::Scale => Some(Kind::Scale),
             Tool::Rotate => Some(Kind::Rotate),
