@@ -8,6 +8,7 @@ use rbx_dom::Ref;
 use super::{highlight, lighting, shadow, Renderer, World};
 use crate::camera::Camera;
 use crate::lighting::{Lighting, LocalLight};
+use crate::load::Answered;
 use crate::scene::{Bounds, Drawn, EffectKind, Part, PartId, PartSync, Resolved, Scene};
 use crate::textures::FaceInstance;
 
@@ -200,6 +201,7 @@ impl Renderer {
         queue: &wgpu::Queue,
         kind: EffectKind,
         scene: &Scene,
+        images: &Answered,
     ) {
         match kind {
             EffectKind::Particles => self.particles.replace(scene.particle_emitters()),
@@ -208,6 +210,12 @@ impl Renderer {
             // The only one that needs the GPU: a highlight is drawn from the
             // geometry it covers, so a re-plan is new instance buffers rather
             // than a new list of definitions.
+            // Like a highlight, an adornment is geometry rather than a
+            // definition: a re-plan is a new vertex buffer.
+            EffectKind::Adornments => {
+                self.adornments
+                    .replace(device, queue, self.target, scene.adornments(), images)
+            }
             EffectKind::Highlights => self.highlights.replace(
                 device,
                 queue,

@@ -291,6 +291,12 @@ impl Patcher<'_> {
         if self.loaded.scene().adorns(referent) {
             self.pending.spaces = true;
         }
+        // A 3D adornment is placed against the part it adorns in the same
+        // way, and its geometry is worked out once at plan time rather than
+        // instanced per part — so a part that moves under one re-plans them.
+        if self.loaded.scene().adornments_cover(referent) {
+            self.pending.effect(crate::scene::EffectKind::Adornments);
+        }
         if with_children {
             self.sync_children(referent)?;
         }

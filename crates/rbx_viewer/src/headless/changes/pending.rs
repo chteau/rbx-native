@@ -20,7 +20,7 @@ pub(super) struct Pending {
     pub(super) lighting: bool,
     pub(super) lights: bool,
     /// By `EffectKind` — see [`Pending::effect`].
-    pub(super) effects: [bool; 4],
+    pub(super) effects: [bool; 5],
     /// The `ScreenGui` overlays, and the `BillboardGui`/`SurfaceGui`
     /// canvases placed in the scene — two lists, re-planned apart, since a
     /// part that moved can only have carried a canvas.
@@ -47,6 +47,7 @@ impl Pending {
             EffectKind::Beams => 1,
             EffectKind::Trails => 2,
             EffectKind::Highlights => 3,
+            EffectKind::Adornments => 4,
         }
     }
 
@@ -135,14 +136,16 @@ impl Patcher<'_> {
             EffectKind::Beams,
             EffectKind::Trails,
             EffectKind::Highlights,
+            EffectKind::Adornments,
         ] {
             let any_now = match kind {
                 EffectKind::Particles => false,
                 EffectKind::Beams => !self.loaded.scene().beams().is_empty(),
                 EffectKind::Trails => !self.loaded.scene().trails().is_empty(),
                 // A highlight names its target by referent, never through an
-                // `Attachment`, so a moved attachment owes it nothing.
-                EffectKind::Highlights => false,
+                // `Attachment`, so a moved attachment owes it nothing. An
+                // adornment names its adornee the same way.
+                EffectKind::Highlights | EffectKind::Adornments => false,
             };
             if !self
                 .pending
@@ -151,12 +154,13 @@ impl Patcher<'_> {
                 continue;
             }
             self.loaded.scene_mut().replan_effect(dom, database, kind);
-            let scene = self.loaded.scene();
+            let world = self.loaded.world();
+            let (scene, images) = (world.scene, world.images);
             // Always serves the edit now: a texture this renderer has no
             // upload for draws that effect's own fallback until it lands
             // (see `Renderer::patch_effect`) — never a rebuild.
             self.offscreen.with_renderer(|renderer, device, queue| {
-                renderer.patch_effect(device, queue, kind, scene)
+                renderer.patch_effect(device, queue, kind, scene, images)
             });
             self.request_effect_textures(kind);
         }
@@ -188,23 +192,31 @@ impl Patcher<'_> {
     fn request_effect_textures(&mut self, kind: EffectKind) {
         let images: Vec<AssetRef> = {
             let scene = self.loaded.scene();
-            let refs: Box<dyn Iterator<Item = &AssetRef>> = match kind {
-                EffectKind::Particles => Box::new(
-                    scene
-                        .particle_emitters()
-                        .iter()
-                        .map(|emitter| &emitter.texture),
-                ),
-                EffectKind::Beams => Box::new(scene.beams().iter().map(|beam| &beam.texture)),
-                EffectKind::Trails => Box::new(scene.trails().iter().map(|trail| &trail.texture)),
+            let refs: Vec<AssetRef> = match kind {
+                EffectKind::Particles => scene
+                    .particle_emitters()
+                    .iter()
+                    .map(|emitter| emitter.texture.clone())
+                    .collect(),
+                EffectKind::Beams => scene
+                    .beams()
+                    .iter()
+                    .map(|beam| beam.texture.clone())
+                    .collect(),
+                EffectKind::Trails => scene
+                    .trails()
+                    .iter()
+                    .map(|trail| trail.texture.clone())
+                    .collect(),
                 // A highlight is drawn from the geometry it covers and two
                 // flat colours; there is no image to fetch.
-                EffectKind::Highlights => Box::new(std::iter::empty()),
+                EffectKind::Highlights => Vec::new(),
+                EffectKind::Adornments => scene.adornment_images(),
             };
             let mut wanted = Vec::new();
             for reference in refs {
-                if *reference != AssetRef::Empty && !wanted.contains(reference) {
-                    wanted.push(reference.clone());
+                if reference != AssetRef::Empty && !wanted.contains(&reference) {
+                    wanted.push(reference);
                 }
             }
             wanted

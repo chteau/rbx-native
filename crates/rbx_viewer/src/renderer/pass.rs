@@ -94,6 +94,11 @@ impl Renderer {
             self.textured.draw_blended(&mut pass, &self.meshes);
         }
 
+        // Place content, so before the editor's own cues below: an
+        // adornment is something the file asks for, where a selection
+        // outline is something this editor draws about it.
+        self.adornments.draw(&mut pass, &self.frame.bind_group);
+
         // Last, so the outlines never get drawn over by geometry they should
         // sit on top of. Hover after selection: `Shell` never sends a hover
         // for an already-selected referent, so the two never contest the

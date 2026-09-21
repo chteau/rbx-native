@@ -233,7 +233,10 @@ impl Particles {
             .replace(now)
             .map_or(0.0, |previous| (now - previous).as_secs_f32().min(0.25));
         for live in &mut self.live {
-            live.simulation.step(&live.emitter, dt);
+            // `TimeScale` is documented as the speed of the whole effect, so
+            // it scales the step rather than any one property: 0 freezes it.
+            live.simulation
+                .step(&live.emitter, dt * live.emitter.time_scale);
         }
 
         let items = self.collect(eye);

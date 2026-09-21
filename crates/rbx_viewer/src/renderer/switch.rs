@@ -73,6 +73,7 @@ impl Renderer {
         }
         self.highlights
             .set_target(device, target, &self.frame_layout);
+        self.adornments.set_target(device, target);
         self.particles.set_target(device, target);
         self.beams.set_target(device, target);
         self.trails.set_target(device, target);

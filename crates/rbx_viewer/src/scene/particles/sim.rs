@@ -243,9 +243,11 @@ mod tests {
             rotation_degrees: (0.0, 0.0),
             rot_speed_degrees: (0.0, 0.0),
             z_offset: 0.0,
+            time_scale: 1.0,
             cap: super::super::emitter::PER_EMITTER_CAP,
             seed: 1,
             referent: rbx_dom::Ref::new(1),
+            slot: 0,
             volume: Mat4::IDENTITY,
         }
     }

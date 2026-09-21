@@ -1,6 +1,7 @@
 //! Draws a scene's parts, the decals projected onto them, its sky and its
 //! celestial bodies into any render target, window or texture alike.
 
+mod adornment;
 mod beam;
 mod cull;
 mod envmap;
@@ -45,6 +46,7 @@ use crate::pick::Selected;
 use crate::quality::QualityProfile;
 use crate::scene::{Bounds, Scene, ScrollTarget};
 use crate::textures::Decor;
+use adornment::Adornments;
 use beam::Beams;
 use cull::MainCull;
 use envmap::EnvMap;
@@ -142,6 +144,10 @@ pub(crate) struct Renderer {
     /// Billboarded `ParticleEmitter`s, drawn after everything above — see
     /// [`Renderer::draw`].
     particles: Particles,
+    /// The place's 3D adornments — `SelectionBox`, the handle shapes,
+    /// `Handles`/`ArcHandles` — drawn inside the scene pass over its
+    /// geometry. Costs nothing in a place with none.
+    adornments: Adornments,
     /// Every `Highlight` the place holds, drawn over the scene as a silhouette
     /// outline and an interior fill — see `renderer::highlight`. Costs nothing
     /// in a place with none.
@@ -311,6 +317,7 @@ impl Renderer {
                 images,
                 quality,
             ),
+            adornments: Adornments::new(device, queue, target, scene.adornments(), images, quality),
             highlights: highlight::Highlights::new(
                 device,
                 queue,
@@ -536,6 +543,10 @@ impl Renderer {
         // render pass that reads those buffers.
         self.translucent.prepare(queue, eye, &cull);
         self.filemesh.prepare(queue, eye);
+        // A `SelectionSphere`'s outline faces the eye, so its vertices are
+        // the camera's to decide — and a buffer written here cannot be
+        // written inside the pass that reads it.
+        self.adornments.prepare(device, eye);
 
         let orthographic = self.camera.orthographic_range(from);
         if self
