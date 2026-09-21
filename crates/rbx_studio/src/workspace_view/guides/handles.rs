@@ -36,12 +36,7 @@ impl WorkspaceView {
                 self.guides.arrow = Some((axis, if along < 0.0 { -1.0 } else { 1.0 }, along.abs()));
                 let basis = Axis::ALL.map(|axis| handles.direction(axis));
                 let models: Vec<Mat4> = self.targets.iter().map(|target| target.model).collect();
-                let slab = Slab::new(
-                    handles.origin(),
-                    basis,
-                    axis as usize,
-                    extent_in(basis, &models),
-                );
+                let slab = selection_slab(handles.origin(), basis, axis as usize, &models);
                 let offsets = sweep::offsets(&slab, &models);
                 (slab, offsets)
             }
@@ -255,22 +250,36 @@ impl WorkspaceView {
     }
 }
 
-/// The extent of the boxes `models` on each of `basis`'s three axes.
-fn extent_in(basis: [Vec3; 3], models: &[Mat4]) -> Vec3 {
-    Vec3::from(basis.map(|axis| {
-        let (low, high) =
-            models
-                .iter()
-                .fold((f32::INFINITY, f32::NEG_INFINITY), |(low, high), model| {
-                    let at = model.w_axis.truncate().dot(axis);
-                    let reach = 0.5
-                        * (0..3)
-                            .map(|column| model.col(column).truncate().dot(axis).abs())
-                            .sum::<f32>();
-                    (low.min(at - reach), high.max(at + reach))
-                });
-        (high - low).max(0.0)
-    }))
+/// The slab a Move drag of the boxes `models` along `basis[axis]` sweeps:
+/// their cross-section in `basis`, centred on it. Only the position along
+/// the axis is `origin`'s, where the drag is measured from; across it the
+/// slab sits where the boxes are, which is not `origin` when the handles
+/// stand at the middle of a world-aligned box and `basis` is turned.
+fn selection_slab(origin: Vec3, basis: [Vec3; 3], axis: usize, models: &[Mat4]) -> Slab {
+    let spans = basis.map(|direction| span_along(direction, models));
+    let mut centre = origin;
+    for (index, direction) in basis.into_iter().enumerate() {
+        if index != axis {
+            let (low, high) = spans[index];
+            centre += direction * ((low + high) * 0.5 - origin.dot(direction));
+        }
+    }
+    let size = Vec3::from(spans.map(|(low, high)| (high - low).max(0.0)));
+    Slab::new(centre, basis, axis, size)
+}
+
+/// Where the boxes `models` start and end along the unit `direction`.
+fn span_along(direction: Vec3, models: &[Mat4]) -> (f32, f32) {
+    models
+        .iter()
+        .fold((f32::INFINITY, f32::NEG_INFINITY), |(low, high), model| {
+            let at = model.w_axis.truncate().dot(direction);
+            let reach = 0.5
+                * (0..3)
+                    .map(|column| model.col(column).truncate().dot(direction).abs())
+                    .sum::<f32>();
+            (low.min(at - reach), high.max(at + reach))
+        })
 }
 
 /// Studio's floating measurement box, legacy dark theme: a white bold number
@@ -314,24 +323,67 @@ pub(in crate::workspace_view) fn label_element(
 mod tests {
     use glam::{Mat4, Vec3};
 
-    use super::extent_in;
+    use super::selection_slab;
+    use crate::dragger::sweep;
+
+    fn cube(at: Vec3) -> Mat4 {
+        Mat4::from_translation(at)
+    }
 
     #[test]
-    fn the_extent_is_measured_along_the_basis_given() {
+    fn the_slab_is_the_selections_cross_section_in_the_basis_given() {
         let a =
             Mat4::from_translation(Vec3::new(-2.0, 0.0, 0.0)) * Mat4::from_scale(Vec3::splat(2.0));
         let b = Mat4::from_translation(Vec3::new(3.0, 1.0, 0.0)) * Mat4::from_scale(Vec3::ONE);
-        let extent = extent_in([Vec3::X, Vec3::Y, Vec3::Z], &[a, b]);
-        assert!(
-            (extent - Vec3::new(6.5, 2.5, 2.0)).length() < 1e-5,
-            "{extent}"
+        let slab = selection_slab(
+            Vec3::new(0.25, 0.75, 0.0),
+            [Vec3::X, Vec3::Y, Vec3::Z],
+            0,
+            &[a, b],
         );
-        let turned = [
-            Vec3::new(1.0, 0.0, 1.0).normalize(),
-            Vec3::Y,
-            Vec3::new(-1.0, 0.0, 1.0).normalize(),
+        // Across X: Y spans -1…1.5 and Z -1…1, each widened by a tenth.
+        assert!((slab.half[0] - (1.25 + 0.1)).abs() < 1e-5 && (slab.half[1] - 1.1).abs() < 1e-5);
+        assert!(
+            (slab.origin - Vec3::new(0.25, 0.25, 0.0)).length() < 1e-5,
+            "{}",
+            slab.origin
+        );
+    }
+
+    // Three parts whose world box's middle is not their middle along a
+    // turned basis: the slab has to cover all three, not start past the
+    // first one.
+    #[test]
+    fn a_turned_basis_centres_the_slab_on_the_parts_not_the_world_box() {
+        let parts = [
+            cube(Vec3::ZERO),
+            cube(Vec3::new(10.0, 0.0, 0.0)),
+            cube(Vec3::new(0.0, 0.0, 10.0)),
         ];
-        let extent = extent_in(turned, &[Mat4::from_scale(Vec3::splat(2.0))]);
-        assert!((extent.x - 2.0 * std::f32::consts::SQRT_2).abs() < 1e-5);
+        let turn = glam::Mat3::from_rotation_y(std::f32::consts::FRAC_PI_4);
+        let basis = [turn.x_axis, turn.y_axis, turn.z_axis];
+        let world_middle = Vec3::new(5.0, 0.0, 5.0);
+        let slab = selection_slab(world_middle, basis, 0, &parts);
+
+        let root = std::f32::consts::FRAC_1_SQRT_2;
+        let along_z = slab.origin.dot(basis[2]);
+        assert!((along_z - (10.0 * root) * 0.5).abs() < 1e-4, "{along_z}");
+        // The first part is inside the slab, not beside it.
+        assert_eq!(sweep::offsets(&slab, &parts[..1]).len(), 3);
+        // Along X' the parts run from part 3's far side to part 2's.
+        let offsets = sweep::offsets(&slab, &parts);
+        let x = |at: Vec3| (at - slab.origin).dot(basis[0]);
+        let leading = x(Vec3::new(10.0, 0.0, 0.0)) + root;
+        let trailing = x(Vec3::new(0.0, 0.0, 10.0)) - root;
+        assert!(
+            offsets.iter().any(|offset| (offset + leading).abs() < 1e-4),
+            "{offsets:?}"
+        );
+        assert!(
+            offsets
+                .iter()
+                .any(|offset| (offset + trailing).abs() < 1e-4),
+            "{offsets:?}"
+        );
     }
 }
