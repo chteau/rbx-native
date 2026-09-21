@@ -1304,7 +1304,7 @@ impl Shell {
         } else {
             let folder_color = self.folder_color(reference);
             self.properties
-                .rows(&self.dom, reference, folder_color)
+                .rows(&self.dom, self.selected_all(), folder_color)
                 .into_iter()
                 .find(|candidate| candidate.name == row)
                 .and_then(|candidate| candidate.edit)?

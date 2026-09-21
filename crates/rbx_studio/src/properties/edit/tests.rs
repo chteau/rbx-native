@@ -489,18 +489,14 @@ fn committing_name_renames_the_instance_rather_than_setting_a_property() {
 }
 
 #[test]
-fn committing_a_property_the_instance_never_had_is_an_error() {
+fn committing_a_property_with_neither_a_value_nor_a_default_is_an_error() {
     let mut dom = dom_with(&[]);
 
-    let result = commit(&mut dom, &db(), part_ref(), "Transparency", "0.5");
+    // `Mass` is computed by a running engine: nothing to type-check against.
+    let result = commit(&mut dom, &db(), part_ref(), "Mass", "5");
 
     assert!(result.is_err());
-    assert!(dom
-        .get(part_ref())
-        .unwrap()
-        .properties()
-        .get("Transparency")
-        .is_none());
+    assert!(dom.get(part_ref()).unwrap().properties().is_empty());
 }
 
 #[test]

@@ -228,7 +228,7 @@ fn resync_row_widget(
         }
         (RowEditor::Fields(_, summary, inputs), EditKind::Fields { values, .. })
         | (RowEditor::Groups(_, summary, inputs), EditKind::Groups { values, .. }) => {
-            resync_field(summary, &values.join(", "), window, cx);
+            resync_field(summary, &summary_text(values), window, cx);
             for (input, seed) in inputs.iter().zip(values) {
                 resync_field(input, seed, window, cx);
             }
@@ -243,6 +243,17 @@ fn resync_row_widget(
         // defaults) always does so before that instance is selected, so
         // there is no stale cache for it to fight.
         _ => {}
+    }
+}
+
+/// The whole value, for the field beside a row's expander — empty when any
+/// part is: a multi-selection's parts that differ are left empty (see
+/// `properties::common`), and `4, , 2` is not a value anyone could type.
+fn summary_text(values: &[String]) -> String {
+    if values.iter().any(String::is_empty) {
+        String::new()
+    } else {
+        values.join(", ")
     }
 }
 
@@ -289,6 +300,10 @@ impl Shell {
         }
 
         let (widget, subscriptions) = self.build_row_widget(row.name.clone(), kind, window, cx);
+        // Selected instances of different colours: no one colour to show.
+        if let (true, RowEditor::Color(state)) = (row.mixed, &widget) {
+            state.update(cx, |state, cx| state.clear_value(window, cx));
+        }
         self.edits.rows.insert(
             row.name.clone(),
             RowEdit {
@@ -443,7 +458,7 @@ impl Shell {
         // The same comma-joined spelling `properties::edit::edit_text`
         // produced and `parse` reads back, so what the summary shows is
         // exactly what committing it writes.
-        let summary = cx.new(|cx| InputState::new(window, cx).default_value(values.join(", ")));
+        let summary = cx.new(|cx| InputState::new(window, cx).default_value(summary_text(values)));
         let whole = name.to_owned();
         subscriptions.push(
             cx.subscribe(&summary, move |shell, input, event: &InputEvent, cx| {
@@ -575,12 +590,14 @@ impl Shell {
         cx.notify();
     }
 
-    /// Writes one edit to the selected instance through the Command Bar's own
-    /// take/put-back path, then reflects it exactly as a script's mutation
-    /// would: the Properties panel always re-reads `self.dom` fresh, the
-    /// Explorer only when `Name` moved a row, and the viewport through the
-    /// same `Change` log every other mutation hands it (see
-    /// `Shell::reflect_changes`).
+    /// Writes one edit to every selected instance through the Command Bar's
+    /// own take/put-back path, as one undo step however many there are, then
+    /// reflects it exactly as a script's mutation would: the Properties panel
+    /// always re-reads `self.dom` fresh, the Explorer only when `Name` moved a
+    /// row, and the viewport through the same `Change` log every other
+    /// mutation hands it (see `Shell::reflect_changes`). A folder's colour
+    /// and an attribute are the anchor's alone: the panel offers neither for
+    /// a multi-selection.
     fn apply_edit(
         &mut self,
         name: &str,
@@ -628,8 +645,9 @@ impl Shell {
         if push {
             self.push_history();
         }
+        let selection = self.selected_all().to_vec();
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
-        let result = properties::edit::commit(&mut dom, &self.database, reference, name, text);
+        let result = properties::edit::commit_all(&mut dom, &self.database, &selection, name, text);
         self.dom = dom;
         // Reflected and recorded whether or not the commit below succeeded:
         // a rejected value never reaches `WeakDom::set_property`, so the log
@@ -652,7 +670,9 @@ impl Shell {
     /// `AGENTS.md`'s ban on synthetic input.
     fn scroll_to_row(&self, reference: rbx_dom::Ref, name: &str) {
         let folder_color = self.folder_color(reference);
-        let rows = self.properties.rows(&self.dom, reference, folder_color);
+        let rows = self
+            .properties
+            .rows(&self.dom, self.selected_all(), folder_color);
         if let Some(index) = rows.iter().position(|row| row.name == name) {
             self.properties_scroll.scroll_to_item(index);
         }

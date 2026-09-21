@@ -24,20 +24,20 @@ struct Fixture {
 
 impl Fixture {
     fn rows(&self, reference: Ref) -> Vec<PropertyRow> {
-        self.properties.rows(&self.dom, reference, None)
+        self.properties.rows(&self.dom, &[reference], None)
     }
 
     fn rows_with_folder_color(&self, reference: Ref, color: (u8, u8, u8)) -> Vec<PropertyRow> {
-        self.properties.rows(&self.dom, reference, Some(color))
+        self.properties.rows(&self.dom, &[reference], Some(color))
     }
 
     fn title(&self, reference: Ref) -> Option<String> {
-        self.properties.title(&self.dom, reference)
+        self.properties.title(&self.dom, &[reference])
     }
 
     fn rows_matching(&self, reference: Ref, filter: &str) -> Vec<PropertyRow> {
         self.properties
-            .rows_matching(&self.dom, reference, filter, None)
+            .rows_matching(&self.dom, &[reference], filter, None)
     }
 }
 
@@ -118,7 +118,10 @@ fn rows_come_sorted_by_name() {
     .rows(part());
 
     let names: Vec<&str> = rows.iter().map(|row| row.name.as_str()).collect();
-    assert_eq!(names, ["Anchored", "Name", "Transparency"]);
+    assert!(names.windows(2).all(|pair| pair[0] < pair[1]), "{names:?}");
+    for name in ["Anchored", "Name", "Transparency"] {
+        assert!(names.contains(&name), "{name} missing from {names:?}");
+    }
 }
 
 #[test]
@@ -136,7 +139,9 @@ fn the_attribute_and_tag_blobs_never_get_an_ordinary_row() {
     .rows(part());
 
     let names: Vec<&str> = rows.iter().map(|row| row.name.as_str()).collect();
-    assert_eq!(names, ["Anchored", "Name"]);
+    for blob in ["Tags", "AttributesSerialize", "Attributes"] {
+        assert!(!names.contains(&blob), "{blob} in {names:?}");
+    }
 }
 
 #[test]
@@ -286,17 +291,18 @@ fn colors_are_byte_triplets_whichever_way_they_were_stored() {
     };
 
     assert_eq!(formatted("Color", Variant::Color3(color)), "(0, 128, 255)");
-    assert_eq!(
-        formatted(
-            "Color3uint8",
-            Variant::Color3uint8 {
-                r: 91,
-                g: 91,
-                b: 91
-            }
-        ),
-        "(91, 91, 91)"
-    );
+    // Saved as `Color3uint8`, shown as the `Color` it is.
+    let rows = properties(&[(
+        "Color3uint8",
+        Variant::Color3uint8 {
+            r: 91,
+            g: 91,
+            b: 91,
+        },
+    )])
+    .rows(part());
+    let row = rows.iter().find(|row| row.name == "Color").unwrap();
+    assert_eq!(row.value, "(91, 91, 91)");
     assert_eq!(
         formatted("BrickColor", Variant::BrickColor(194)),
         "BrickColor(194)"
@@ -504,10 +510,9 @@ fn filtered_rows_keep_only_matching_names_in_order() {
             .map(|row| row.name)
             .collect()
     };
-    assert_eq!(names("can"), ["CanCollide", "CanTouch"]);
-    // `Name` is synthesized for every instance (see `Properties::rows`), not
-    // just the properties this fixture inserted.
-    assert_eq!(names(""), ["Anchored", "CanCollide", "CanTouch", "Name"]);
+    // `CanQuery` too: never stored here, it shows its class default.
+    assert_eq!(names("can"), ["CanCollide", "CanQuery", "CanTouch"]);
+    assert_eq!(names("").len(), properties.rows(part()).len());
     assert!(names("zzz").is_empty());
 }
 
@@ -871,8 +876,21 @@ fn rows_group_by_category_in_alphabetical_order_with_no_empty_groups() {
         .iter()
         .map(|(category, _)| category.as_str())
         .collect();
-    // `Data` comes from the synthesized `Name` row every instance carries.
-    assert_eq!(categories, ["Appearance", "Collision", "Data", "Part"]);
+    // Every category a Part's rows fall in, the ones its defaults fill in
+    // included.
+    assert_eq!(
+        categories,
+        [
+            "Appearance",
+            "Behavior",
+            "Collision",
+            "Data",
+            "Part",
+            "Pivot",
+            "Surface",
+            "Transform"
+        ]
+    );
     assert!(groups.iter().all(|(_, rows)| !rows.is_empty()));
 }
 
@@ -954,19 +972,35 @@ fn hidden_properties_never_appear_as_rows_at_all() {
 
 #[test]
 fn a_non_hidden_non_serializable_property_still_shows_but_has_no_edit_affordance() {
-    // BasePart.Size is not Hidden but Serialization.CanSave is false in the
-    // real dump (Studio derives it rather than storing it directly): the
-    // row must stay, just without an edit widget.
+    // BasePart.Rotation is not Hidden, but Studio never saves it under any
+    // name (it is a view of the CFrame): the row stays, just without an
+    // edit widget.
     let row = instance_of(
         "Part",
-        &[("Size", Variant::Vector3(vector3(4.0, 1.0, 2.0)))],
+        &[("Rotation", Variant::Vector3(vector3(0.0, 90.0, 0.0)))],
+    )
+    .rows(part())
+    .into_iter()
+    .find(|row| row.name == "Rotation")
+    .expect("the Rotation row");
+
+    assert_eq!(row.edit, None);
+}
+
+#[test]
+fn a_property_saved_under_another_name_is_still_editable() {
+    // The dump reports `BasePart.Size` as `CanSave: false` only because a
+    // file holds it as `size`.
+    let row = instance_of(
+        "Part",
+        &[("size", Variant::Vector3(vector3(4.0, 1.0, 2.0)))],
     )
     .rows(part())
     .into_iter()
     .find(|row| row.name == "Size")
     .expect("the Size row");
 
-    assert_eq!(row.edit, None);
+    assert!(matches!(row.edit, Some(EditKind::Fields { .. })));
 }
 
 #[test]
@@ -992,13 +1026,13 @@ fn cframe_stays_visible_and_editable_after_hidden_filtering() {
 
 #[test]
 fn an_ordinary_property_is_unaffected_by_hidden_or_read_only_filtering() {
-    let row = instance_of("Part", &[("Name", Variant::String("Baseplate".into()))])
+    let row = instance_of("Part", &[])
         .rows(part())
         .into_iter()
         .find(|row| row.name == "Name")
         .expect("the Name row");
 
-    assert_eq!(row.edit, Some(EditKind::Text("Baseplate".to_owned())));
+    assert_eq!(row.edit, Some(EditKind::Text("Greeter".to_owned())));
 }
 
 #[test]

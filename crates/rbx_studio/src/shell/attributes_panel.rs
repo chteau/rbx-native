@@ -93,7 +93,11 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let Some(reference) = self.selected() else {
+        // One instance only. Every mutation here writes the anchor alone,
+        // and Studio's own behaviour for several is not documented — so a
+        // multi-selection shows neither section rather than one instance's
+        // attributes under a header naming them all.
+        let [reference] = *self.selected_all() else {
             return div().into_any_element();
         };
 
