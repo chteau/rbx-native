@@ -18,7 +18,7 @@ pub(crate) use resident::{Answered, Resident};
 use crate::fonts::Library;
 use crate::lighting::{self, Lighting, LocalLight};
 use crate::renderer::World;
-use crate::scene::{Placement, Scene};
+use crate::scene::Scene;
 use crate::textures::{self, Decor};
 
 /// Reads `path` and parses it into a DOM tree, sniffing whether the bytes are
@@ -233,23 +233,30 @@ impl Loaded {
         &self.scene
     }
 
-    /// Re-projects one part's `Decal`/`Texture` faces after its placement
-    /// changed, keeping the decor plan in step with the scene the way
-    /// `Renderer::sync_part` keeps the GPU in step with it. Without this a
-    /// later asset landing would re-assemble the decals at the placement the
-    /// part had when the file was read.
-    pub(crate) fn replan_faces(
-        &mut self,
-        dom: &WeakDom,
-        database: &ReflectionDatabase,
-        referent: Ref,
-        placement: &Placement,
-    ) {
+    /// Re-reads every `Decal`/`Texture` hanging off `part` into the decor
+    /// plan, against the placement this scene now draws that part at —
+    /// keeping the plan in step the way `Renderer::sync_part` keeps the GPU
+    /// in step.
+    ///
+    /// Owed by both halves of an edit that reaches a face: the part moving
+    /// under it, and the face's own properties changing (a new image,
+    /// another `Face`, a different tint, one added or taken away). The
+    /// renderer is patched with the face there and then, but the *plan* is
+    /// what every later asset landing re-assembles the decals from, so a
+    /// plan left as the file was read would quietly undo the edit the moment
+    /// anything else lands — including the very image the edit just asked
+    /// for. A part this scene draws no box for has nothing to project onto
+    /// and keeps whatever the plan holds, exactly as `Decor::assemble`
+    /// already drops such a face.
+    pub(crate) fn replan_faces(&mut self, dom: &WeakDom, database: &ReflectionDatabase, part: Ref) {
         if !self.toggles.textures {
             return;
         }
-        let faces = textures::faces(dom, database, referent, placement);
-        self.decor_plan.replace_faces(referent, faces);
+        let Some(placement) = self.scene.placement_of(part) else {
+            return;
+        };
+        let faces = textures::faces(dom, database, part, &placement);
+        self.decor_plan.replace_faces(part, faces);
     }
 
     /// Replaces the constant lighting terms wholesale — what

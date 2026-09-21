@@ -137,6 +137,13 @@ impl Patcher<'_> {
             .map(|instance| Role::of(self.database, instance.class()));
         match role {
             Some(Role::MeshChild | Role::Appearance) => self.sync_parent_part(old_parent),
+            // The face itself is taken off the GPU by `present` below, which
+            // finds it under something that is not a part any more; the plan
+            // the old part left behind still names it.
+            Some(Role::Face) => {
+                self.loaded.replan_faces(dom, self.database, old_parent);
+                Ok(())
+            }
             Some(Role::Gui) => {
                 self.gui_changed(Some(old_parent));
                 Ok(())
@@ -218,6 +225,9 @@ impl Patcher<'_> {
             Role::Face => {
                 self.offscreen
                     .with_renderer(|renderer, _, _| renderer.remove_face(referent));
+                if let Some(parent) = known.parent {
+                    self.loaded.replan_faces(self.dom, self.database, parent);
+                }
                 Ok(())
             }
             Role::Light => {
@@ -274,10 +284,7 @@ impl Patcher<'_> {
         // `render_part` just kept the GPU in step — without it, a decal
         // image landing later would re-assemble at the placement this
         // part had when the file was read.
-        if let Some(placement) = self.loaded.scene().placement_of(referent) {
-            self.loaded
-                .replan_faces(self.dom, self.database, referent, &placement);
-        }
+        self.loaded.replan_faces(self.dom, self.database, referent);
         self.pending.parts = true;
         // A canvas adorned to this part hangs off it from anywhere in the
         // tree, so the children below are not the only thing that moved.
@@ -370,6 +377,13 @@ impl Patcher<'_> {
             .textures
             .then(|| dom.parent(referent))
             .flatten();
+        // Before the projection below and whatever it finds: the plan is
+        // what a later asset landing re-assembles every decal from, so it
+        // has to be re-read from the DOM even when this face itself ends up
+        // unpainted — see `Loaded::replan_faces`.
+        if let Some(parent) = painted {
+            self.loaded.replan_faces(dom, self.database, parent);
+        }
         let face = painted.and_then(|parent| {
             let placement = self.loaded.scene().placement_of(parent)?;
             textures::faces(dom, self.database, parent, &placement)

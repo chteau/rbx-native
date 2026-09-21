@@ -157,9 +157,11 @@ impl Patcher<'_> {
             self.loaded.scene_mut().replan_gui_spaces(dom, database);
         }
         if self.pending.screens || self.pending.spaces {
-            // A text object the edit gave a family this session has never
-            // seen draws in the fallback face until the family lands; asking
-            // now is what makes it land.
+            // An `ImageLabel` the edit pointed at an image this session has
+            // never seen, and a text object it gave a family this session has
+            // never seen, both draw their fallback until the asset lands;
+            // asking now is what makes it land.
+            self.loaded.resolve_gui_images(self.resident);
             self.loaded.resolve_fonts(self.resident);
             let world = self.loaded.world();
             self.offscreen.with_renderer(|renderer, device, queue| {
