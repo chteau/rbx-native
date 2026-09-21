@@ -20,14 +20,14 @@ use glam::Vec2;
 use crate::camera::DepthRange;
 use crate::lighting::Effects;
 use crate::quality::QualityProfile;
-use pipelines::{blur_layout, fullscreen, sample_layout};
+use pipelines::{attachment, blur_layout, fullscreen, sample_layout};
 use samples::supported;
 use targets::Sources;
 pub(super) use targets::Targets;
 
 /// Half floats, not 8-bit: the whole point of the offscreen target is the range
 /// above 1 the threshold compares against.
-pub(super) const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+pub(in crate::renderer) const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
 const SHADER: &str = include_str!("post.wgsl");
 
@@ -94,6 +94,10 @@ pub(super) struct Post {
     /// clamped to what the adapter will multisample and resolve.
     samples: u32,
     targets: Option<Targets>,
+    /// One texel, bound wherever a pass wants the refraction copy and the
+    /// frame has none — a bind group entry cannot be left empty, and most
+    /// places hold no glass to copy the scene for.
+    empty_refraction: wgpu::TextureView,
 }
 
 impl Post {
@@ -223,6 +227,13 @@ impl Post {
             color_correction: quality.color_correction,
             samples: supported(device, quality.msaa_samples),
             targets: None,
+            empty_refraction: attachment(
+                device,
+                "rbxview refraction (none)",
+                (1, 1),
+                HDR_FORMAT,
+                1,
+            ),
         }
     }
 
@@ -267,6 +278,24 @@ impl Post {
     /// depth-of-field distance reconstruction, since the two projections
     /// write depth by different formulas (see `camera.rs`'s
     /// `reversed_depth`/`orthographic_reversed_depth`).
+    /// What a refracting surface samples this frame: the copy taken after
+    /// the opaque pass, or the one unread texel above where there is none.
+    pub(super) fn refraction(&self) -> &wgpu::TextureView {
+        self.targets
+            .as_ref()
+            .and_then(Targets::refraction)
+            .unwrap_or(&self.empty_refraction)
+    }
+
+    /// Asks for (or gives up) the refraction copy, answering whether the view
+    /// behind [`Post::refraction`] changed — see
+    /// `Targets::want_refraction`.
+    pub(super) fn want_refraction(&mut self, device: &wgpu::Device, wanted: bool) -> bool {
+        self.targets
+            .as_mut()
+            .is_some_and(|targets| targets.want_refraction(device, wanted))
+    }
+
     pub(super) fn prepare(
         &mut self,
         device: &wgpu::Device,

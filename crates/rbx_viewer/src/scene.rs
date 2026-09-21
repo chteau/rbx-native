@@ -348,6 +348,19 @@ impl Scene {
         &self.highlights
     }
 
+    /// Whether anything here is drawn as `Glass` — the one material that
+    /// reads the scene behind itself, and so the one that makes a frame pay
+    /// for the copy it reads (see `renderer::post::Targets`).
+    pub(crate) fn has_glass(&self) -> bool {
+        let glass = |slot: &Slot| slot.kind == Kind::Glass;
+        self.parts.iter().any(|part| glass(&part.material))
+            || self
+                .resolved_file_meshes
+                .instances
+                .iter()
+                .any(|instance| glass(&instance.material))
+    }
+
     /// Every 3D adornment this scene draws — the `Handles`/`*Adornment`/
     /// `Selection*` family — already resolved to world-space primitives.
     /// The renderer turns those into triangles; a `Scene` has no GPU handle

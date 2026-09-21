@@ -193,6 +193,10 @@ pub(crate) struct Renderer {
     /// What every surface pipeline above was built for: the HDR format, and the
     /// profile's `msaa_samples` as far as the adapter allows (see `post`).
     target: Target,
+    /// Whether anything in the scene is `Glass`, and so whether the frame
+    /// pays for the copy a refracting surface reads — see
+    /// `post::Targets::capture_refraction`.
+    refracting: bool,
 }
 
 impl Renderer {
@@ -259,6 +263,9 @@ impl Renderer {
             light_shadows: &light_shadows_buffer,
             point_shadow_map: shadows.point_view(),
             point_faces: shadows.point_faces(),
+            // The frame has none yet: the first `draw` allocates one if the
+            // scene turns out to hold glass, and rebinds every group here.
+            refraction: post.refraction(),
         };
         let frame = Frame::new(device, &layout, shared);
         let sky = decor.sky.as_ref().map(|panels| {
@@ -380,6 +387,7 @@ impl Renderer {
             post,
             quality: *quality,
             target,
+            refracting: scene.has_glass(),
         }
     }
 
@@ -639,6 +647,12 @@ impl Renderer {
         {
             return;
         }
+        // After `prepare`, which is what allocates (or resizes) the targets
+        // the copy lives beside; a bind group holding the old view has to be
+        // rebuilt before anything samples it.
+        if self.post.want_refraction(device, self.refracting) {
+            self.rebind_frames(device);
+        }
         let Some(targets) = self.post.targets() else {
             return;
         };
@@ -661,6 +675,11 @@ impl Renderer {
         self.shadows
             .render_points(queue, &mut encoder, &self.meshes, &points);
         self.scene_pass(&mut encoder, targets, &cull);
+        // Between the two halves, never inside either: the copy's source is
+        // a colour attachment of both. A no-op in a place with no glass,
+        // which has no copy to take.
+        targets.capture_refraction(&mut encoder);
+        self.overlay_pass(&mut encoder, targets);
 
         // Before particles: sorting the two passes against each other is out
         // of scope for v1 (see `renderer::beam`'s docs), so beams simply go

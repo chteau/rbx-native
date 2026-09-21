@@ -91,5 +91,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     input.studs_per_tile = in.studs_per_tile;
     input.kind = in.material.y;
 
-    return vec4<f32>(material_shade(input), sample.a * in.color.a);
+    return material_output(
+        input,
+        sample.a * in.color.a,
+        in.clip_position.xy / uniforms.viewport.xy,
+    );
 }

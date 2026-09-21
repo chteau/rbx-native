@@ -8,6 +8,7 @@ use crate::quality::QualityProfile;
 use crate::renderer::envmap::{EnvMap, Probe};
 use crate::renderer::lighting::local_lights_buffer;
 use crate::renderer::pipeline::DEPTH_FORMAT;
+use crate::renderer::post::HDR_FORMAT;
 use crate::renderer::shadow;
 use crate::scene::GuiViewport;
 
@@ -30,6 +31,10 @@ pub(super) struct StandIns {
     /// group still has to point somewhere.
     pub(super) point_shadow: wgpu::Texture,
     pub(super) point_faces: wgpu::Buffer,
+    /// One colour texel where the scene pass would bind its refraction
+    /// copy: a `ViewportFrame` draws no glass through it, but the frame
+    /// group still needs a view of the right format.
+    pub(super) refraction: wgpu::Texture,
     pub(super) shadow_sampler: wgpu::Sampler,
     pub(super) lights: wgpu::Buffer,
     pub(super) light_shadows: wgpu::Buffer,
@@ -65,6 +70,20 @@ impl StandIns {
             local_shadow: depth("rbxview viewport frame local shadow stand-in", 1),
             point_shadow: depth("rbxview viewport frame point shadow stand-in", 1),
             point_faces: shadow::point::faces_stand_in(device),
+            refraction: device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("rbxview viewport frame refraction stand-in"),
+                size: wgpu::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: HDR_FORMAT,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            }),
             shadow_sampler: device.create_sampler(&wgpu::SamplerDescriptor {
                 label: Some("rbxview viewport frame shadow stand-in"),
                 compare: Some(wgpu::CompareFunction::LessEqual),

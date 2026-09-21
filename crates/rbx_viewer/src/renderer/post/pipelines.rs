@@ -116,7 +116,21 @@ pub(super) fn attachment(
     format: wgpu::TextureFormat,
     samples: u32,
 ) -> wgpu::TextureView {
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
+    attachment_texture(device, label, size, format, samples)
+        .create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+/// [`attachment`] where the caller needs the texture itself — one that is
+/// copied out of, rather than only drawn into and sampled (see
+/// `post::Targets`' refraction source).
+pub(super) fn attachment_texture(
+    device: &wgpu::Device,
+    label: &str,
+    size: (u32, u32),
+    format: wgpu::TextureFormat,
+    samples: u32,
+) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
         label: Some(label),
         size: wgpu::Extent3d {
             width: size.0,
@@ -127,11 +141,12 @@ pub(super) fn attachment(
         sample_count: samples,
         dimension: wgpu::TextureDimension::D2,
         format,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_SRC
+            | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
-    });
-
-    texture.create_view(&wgpu::TextureViewDescriptor::default())
+    })
 }
 
 pub(super) fn fullscreen(

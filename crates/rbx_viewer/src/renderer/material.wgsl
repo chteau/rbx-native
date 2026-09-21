@@ -13,6 +13,12 @@
 @group(1) @binding(3) var material_roughness: texture_2d_array<f32>;
 @group(1) @binding(4) var material_sampler: sampler;
 
+// The scene as it stood after the opaque pass — what a `Glass` surface bends
+// out of shape behind itself. One unread texel where the place holds no
+// glass at all (see `renderer::post::Post::refraction`), which is why
+// nothing but the glass branch ever samples it.
+@group(0) @binding(11) var refraction_source: texture_2d<f32>;
+
 // `scene::material::Kind`'s discriminants, which the instance buffer carries.
 const KIND_PLASTIC: u32 = 0u;
 const KIND_TEXTURED: u32 = 1u;
@@ -34,6 +40,34 @@ const FORCE_FIELD_REFLECTANCE: f32 = 0.2;
 // Glass is barely rougher than a mirror in Studio however its roughness map
 // reads, so it keeps a floor on the environment term.
 const GLASS_REFLECTANCE: f32 = 0.3;
+// How far a pane displaces what is behind it, as a fraction of the frame,
+// at a surface turned fully away from the eye. Roblox documents that glass
+// refracts ("refraction of light through this material is not supported on
+// mobile devices due to computational limitations") but publishes no index
+// of refraction or displacement, so the figure is this renderer's own:
+// enough to read as bent glass at arm's length, small enough that a pane
+// never drags in something from the far side of the frame.
+const GLASS_REFRACTION: f32 = 0.06;
+
+// A ForceField is a shell of energy rather than a surface, so it is drawn
+// as one: a lattice of cells, and a rim that brightens where the shell is
+// seen edge-on and the eye looks through more of it.
+//
+// Roblox's current `ForceField` material is documented as being driven by
+// the `Class.MeshPart.TextureID` of the mesh it is applied to ("that texture
+// image must have a wide value range since the material displays the range
+// from dark/black to light/white values"), which this renderer does not feed
+// into the material pass at all; nothing is published about the older,
+// texture-less look every ordinary `Part` still gets. The cell size, the
+// line width and both strengths below are therefore this renderer's own
+// rendition of an energy shell, not a reproduction of a published one — and
+// it does not shimmer: the pattern would have to move with a clock, and a
+// `--screenshot` that changed from run to run would be worse than a still
+// one (the same reason a `StyleRule` transition never applies here).
+const FORCE_FIELD_CELL_STUDS: f32 = 2.5;
+const FORCE_FIELD_LINE: f32 = 0.12;
+const FORCE_FIELD_LINE_GLOW: f32 = 1.6;
+const FORCE_FIELD_RIM_GLOW: f32 = 2.2;
 
 // Blinn-Phong from a roughness map: the exponent spans a very broad highlight
 // (2) to a tight one (2048), which is the useful range of
@@ -151,6 +185,11 @@ struct Mapped {
     metalness: f32,
     roughness: f32,
     kind: u32,
+    // Object space, in studs: what the `ForceField` lattice is laid out in,
+    // so its cells stay with the part rather than swimming as it moves.
+    object_studs: vec3<f32>,
+    // Towards the eye, for the rim the same shell brightens at.
+    to_eye: vec3<f32>,
 }
 
 /// Whether a material shades procedurally whatever maps it is handed: Neon is
@@ -182,6 +221,7 @@ fn mapped_shade(mapped: Mapped) -> vec3<f32> {
         );
         if mapped.kind == KIND_FORCE_FIELD {
             surface.reflectance = max(surface.reflectance, FORCE_FIELD_REFLECTANCE);
+            return shade(surface) + force_field_energy(mapped);
         }
         return shade(surface);
     }
@@ -206,6 +246,42 @@ fn mapped_shade(mapped: Mapped) -> vec3<f32> {
     }
 
     return shade(surface);
+}
+
+/// The shell's own light: a lattice of cells over the surface, and a rim
+/// that brightens where it is seen edge-on. Added to the shaded tint rather
+/// than replacing it, so a `ForceField` part keeps its own colour.
+fn force_field_energy(mapped: Mapped) -> vec3<f32> {
+    let facing = 1.0 - abs(dot(normalize(mapped.geometric_normal), mapped.to_eye));
+    let rim = facing * facing;
+    let lattice = force_field_lattice(mapped.object_studs, mapped.geometric_normal);
+    return mapped.base_albedo * (lattice * FORCE_FIELD_LINE_GLOW + rim * FORCE_FIELD_RIM_GLOW);
+}
+
+/// How close a point is to a cell edge, 1 on the line and 0 in the middle of
+/// a cell.
+///
+/// Three families of parallel lines 60 degrees apart, which is a honeycomb:
+/// cheaper than a hexagon distance field and, at the width a shell's lines
+/// are drawn at, the same picture.
+fn force_field_lattice(object_studs: vec3<f32>, normal: vec3<f32>) -> f32 {
+    // Laid out on the two object axes the surface faces least, so the cells
+    // sit *on* the surface rather than being projected through it.
+    let axis = dominant_axis(normal);
+    let frame = face_frame(axis);
+    let p = vec2<f32>(dot(object_studs, frame.u), dot(object_studs, frame.v))
+        / FORCE_FIELD_CELL_STUDS;
+
+    var closest = 1.0;
+    for (var i = 0; i < 3; i++) {
+        let angle = f32(i) * 1.0471976;
+        let direction = vec2<f32>(cos(angle), sin(angle));
+        let along = dot(p, direction);
+        // Distance to the nearest line of this family, in cell widths.
+        let distance = abs(fract(along) - 0.5);
+        closest = min(closest, distance);
+    }
+    return 1.0 - smoothstep(0.0, FORCE_FIELD_LINE, closest);
 }
 
 /// Projects the map pack along one world axis and samples it, before any
@@ -236,6 +312,8 @@ fn sample_axis(axis: vec3<f32>, input: MaterialInput) -> Mapped {
     mapped.metalness = metalness;
     mapped.roughness = roughness;
     mapped.kind = input.kind;
+    mapped.object_studs = input.object_studs;
+    mapped.to_eye = normalize(lighting.camera.xyz - input.world_position);
     return mapped;
 }
 
@@ -260,9 +338,54 @@ fn triplanar_weights(normal: vec3<f32>) -> vec3<f32> {
     return w / max(w.x + w.y + w.z, 0.0001);
 }
 
+/// What one surface fragment writes: its shaded colour and the alpha it
+/// blends with — except for `Glass`, which replaces the pixel outright with
+/// the scene behind it displaced, plus its own shading over the top.
+///
+/// Only the *opaque* scene is there to bend: the copy is taken when the
+/// opaque pass ends (see `post::Targets::capture_refraction`), so a
+/// translucent part standing behind a pane, or a second pane behind the
+/// first, is not in what the pane refracts. `screen_uv` is the fragment's
+/// own place in the frame, which is where that copy is read from before the
+/// surface's normal pushes the lookup aside.
+fn material_output(input: MaterialInput, alpha: f32, screen_uv: vec2<f32>) -> vec4<f32> {
+    let shaded = material_shade_with_normal(input);
+    if input.kind != KIND_GLASS || alpha >= 1.0 {
+        return vec4<f32>(shaded.color, alpha);
+    }
+
+    // The *mapped* normal, not the geometric one: a flat pane facing the eye
+    // bends nothing at all (light through it is not displaced), and what
+    // gives real glass its wobble is the surface itself — which for this
+    // material is its own normal map.
+    let clip_normal = uniforms.view_projection * vec4<f32>(shaded.normal, 0.0);
+    let offset = vec2<f32>(clip_normal.x, -clip_normal.y) * GLASS_REFRACTION;
+    let uv = clamp(screen_uv + offset, vec2<f32>(0.0), vec2<f32>(1.0));
+    let texel = vec2<i32>(uv * uniforms.viewport.xy);
+    let behind = textureLoad(refraction_source, texel, 0).rgb;
+
+    // Exactly the blend the pipeline would have done — `dst * (1 - alpha) +
+    // src * alpha` — with the bent copy standing in for `dst`, which is what
+    // makes this refraction rather than a second layer of haze.
+    return vec4<f32>(behind * (1.0 - alpha) + shaded.color * alpha, 1.0);
+}
+
+/// What a shaded fragment is, where the caller needs the surface as well as
+/// the colour: `Glass` bends the scene behind it along its own mapped
+/// normal.
+struct Shaded {
+    color: vec3<f32>,
+    normal: vec3<f32>,
+}
+
 /// The whole material model: project the pack onto the face (or, on a tilted
 /// facet, all three it straddles), sample it, shade.
 fn material_shade(input: MaterialInput) -> vec3<f32> {
+    return material_shade_with_normal(input).color;
+}
+
+/// [`material_shade`] keeping the surface normal it shaded with.
+fn material_shade_with_normal(input: MaterialInput) -> Shaded {
     let weights = triplanar_weights(input.object_normal);
     let max_weight = max(weights.x, max(weights.y, weights.z));
 
@@ -271,7 +394,8 @@ fn material_shade(input: MaterialInput) -> vec3<f32> {
     // triplanar blending existed.
     if max_weight >= TRIPLANAR_FAST_PATH {
         let axis = dominant_axis(input.object_normal);
-        return mapped_shade(sample_axis(axis, input));
+        let mapped = sample_axis(axis, input);
+        return Shaded(mapped_shade(mapped), mapped.normal);
     }
 
     // A facet tilted between axes (e.g. a CSG-carved rock): blend whichever of
@@ -290,6 +414,8 @@ fn material_shade(input: MaterialInput) -> vec3<f32> {
     mapped.metalness = 0.0;
     mapped.roughness = 0.0;
     mapped.kind = input.kind;
+    mapped.object_studs = input.object_studs;
+    mapped.to_eye = normalize(lighting.camera.xyz - input.world_position);
 
     if weights.x >= TRIPLANAR_WEIGHT_EPSILON {
         let leg = sample_axis(vec3<f32>(sign_of(n.x), 0.0, 0.0), input);
@@ -314,5 +440,5 @@ fn material_shade(input: MaterialInput) -> vec3<f32> {
     }
     mapped.normal = normalize(mapped.normal);
 
-    return mapped_shade(mapped);
+    return Shaded(mapped_shade(mapped), mapped.normal);
 }

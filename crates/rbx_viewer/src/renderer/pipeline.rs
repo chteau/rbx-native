@@ -114,6 +114,8 @@ pub(super) struct Shared<'a> {
     /// `renderer::shadow::point`. Sampled through `shadow_sampler` too.
     pub(super) point_shadow_map: &'a wgpu::TextureView,
     pub(super) point_faces: &'a wgpu::Buffer,
+    /// The opaque scene a refracting surface reads — see `renderer::post`.
+    pub(super) refraction: &'a wgpu::TextureView,
 }
 
 /// One pass's copy of bind group 0.
@@ -245,6 +247,21 @@ pub(super) fn frame_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
                 },
                 count: None,
             },
+            // The scene as it stood after the opaque pass, which a `Glass`
+            // surface bends what is behind it out of — see
+            // `post::Targets::capture_refraction`. Read through the
+            // environment probe's own filtering sampler at binding 3; one
+            // unread texel stands here in a place with no glass.
+            wgpu::BindGroupLayoutEntry {
+                binding: 11,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
         ],
     })
 }
@@ -351,6 +368,10 @@ fn bind(
             wgpu::BindGroupEntry {
                 binding: 10,
                 resource: shared.point_faces.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 11,
+                resource: wgpu::BindingResource::TextureView(shared.refraction),
             },
         ],
     })

@@ -1,8 +1,15 @@
-//! The one colour pass of a frame, and the order everything in it has to be
-//! drawn in.
+//! The two colour passes of a frame, and the order everything in them has to
+//! be drawn in.
 //!
-//! Split out of [`super::Renderer::draw`], which is left with what surrounds the
-//! pass: the per-frame uniforms, the shadow map and the resolve.
+//! Split out of [`super::Renderer::draw`], which is left with what surrounds
+//! them: the per-frame uniforms, the shadow map and the resolve.
+//!
+//! Two rather than one because a `Glass` surface reads the scene behind
+//! itself out of a copy (see `renderer::post::Targets::capture_refraction`),
+//! and a texture cannot be both a colour attachment and a bound resource in
+//! the same pass. The opaque half ends, the copy is taken, and everything
+//! that blends over it — the translucent geometry, the editor's own cues —
+//! goes in the second.
 
 use super::cull::MainCull;
 use super::pipeline;
@@ -10,6 +17,7 @@ use super::post::Targets;
 use super::{Renderer, CLEAR_COLOR};
 
 impl Renderer {
+    /// The opaque half: the sky and everything that writes depth.
     pub(super) fn scene_pass(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -81,7 +89,44 @@ impl Renderer {
             pass.set_bind_group(0, &self.frame.bind_group, &[]);
             self.textured.draw_opaque(&mut pass, &self.meshes);
         }
+    }
 
+    /// Everything that blends over the opaque half, in the same order it was
+    /// drawn in when the two were one pass: the translucent geometry, then
+    /// the adornments the place asks for, then the editor's own cues.
+    pub(super) fn overlay_pass(&self, encoder: &mut wgpu::CommandEncoder, targets: &Targets) {
+        let (view, resolve) = targets.color();
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("rbxview scene overlay"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                depth_slice: None,
+                resolve_target: resolve,
+                // Loaded, never cleared: the opaque pass just drew into this
+                // very attachment.
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: targets.depth(),
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+
+        let decals = self.quality.decals && !self.textured.is_empty();
+        let bindings = pipeline::Bindings {
+            frame: &self.frame.bind_group,
+            materials: &self.materials.bind_group,
+        };
         if !self.translucent.is_empty() {
             pass.set_pipeline(&self.blended);
             pass.set_bind_group(0, bindings.frame, &[]);

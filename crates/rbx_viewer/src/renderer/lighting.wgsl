@@ -5,6 +5,11 @@
 
 struct Uniforms {
     view_projection: mat4x4<f32>,
+    // xy: the frame's pixel size, which is what turns a fragment's own
+    // `@builtin(position)` into the screen UV a refracting surface samples
+    // the scene behind itself at (see `material.wgsl`). The outline passes
+    // declare the same pair under their own `Frame` struct.
+    viewport: vec4<f32>,
 }
 
 struct LightingUniform {
