@@ -58,7 +58,10 @@ impl Role {
         if is("BasePart") {
             return Role::Part;
         }
-        if is("Decal") {
+        // An `AdGui` alongside the `Decal` family: with no ad to serve, it
+        // is one image on one face and is drawn as exactly that (see
+        // `textures::part`), so an edit to one has to reach the same pass.
+        if is("Decal") || is("AdGui") {
             return Role::Face;
         }
         if is("Light") {
@@ -206,6 +209,7 @@ mod tests {
             ("TrussPart", Role::Part),
             ("Decal", Role::Face),
             ("Texture", Role::Face),
+            ("AdGui", Role::Face),
             ("PointLight", Role::Light),
             ("SpotLight", Role::Light),
             ("SurfaceLight", Role::Light),
@@ -215,8 +219,14 @@ mod tests {
             ("BloomEffect", Role::Lighting),
             ("Sky", Role::Sky),
             ("ParticleEmitter", Role::Effect(EffectKind::Particles)),
+            ("Fire", Role::Effect(EffectKind::Particles)),
+            ("Smoke", Role::Effect(EffectKind::Particles)),
+            ("Sparkles", Role::Effect(EffectKind::Particles)),
             ("Beam", Role::Effect(EffectKind::Beams)),
             ("Trail", Role::Effect(EffectKind::Trails)),
+            ("SelectionBox", Role::Effect(EffectKind::Adornments)),
+            ("Handles", Role::Effect(EffectKind::Adornments)),
+            ("BoxHandleAdornment", Role::Effect(EffectKind::Adornments)),
             ("Attachment", Role::Attachment),
             ("SpecialMesh", Role::MeshChild),
             ("BlockMesh", Role::MeshChild),
