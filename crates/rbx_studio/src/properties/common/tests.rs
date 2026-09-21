@@ -218,7 +218,7 @@ fn a_multi_selections_rows_are_kept_until_the_dom_changes() {
     // Served from the cache: nothing has said the DOM changed yet.
     assert_eq!(transparency(&dom), (true, String::new()));
 
-    properties.dom_changed();
+    properties.dom_changed(&dom.take_changes());
     assert_eq!(transparency(&dom), (false, "0.5".to_owned()));
 }
 

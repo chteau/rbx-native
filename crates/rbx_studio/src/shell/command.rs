@@ -234,7 +234,7 @@ impl Shell {
         if changes.is_empty() {
             return;
         }
-        self.properties.dom_changed();
+        self.properties.dom_changed(changes);
         let refresh = refresh_for(changes, &self.covered);
         // The instances the log names, not the tree: a drag reflects a
         // change every mouse move, and copying the whole place per move

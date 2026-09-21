@@ -7,7 +7,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
 use rbx_dom::{
-    Axes, CFrameData, Color3Data, Content, Faces, Font, PhysicalProperties, Ref, Variant, WeakDom,
+    Axes, CFrameData, Change, Color3Data, Content, Faces, Font, PhysicalProperties, Ref, Variant,
+    WeakDom,
 };
 use rbx_reflection::ReflectionDatabase;
 
@@ -228,9 +229,13 @@ pub(crate) struct Properties {
     /// by [`Self::dom_changed`].
     common: RefCell<Option<(Vec<Ref>, Vec<PropertyRow>)>>,
     /// Which parts are joined into assemblies, worked out the first time a
-    /// part's assembly is shown after the DOM last changed (see
-    /// `computed::assembly`).
+    /// part's assembly is shown after a joint last changed (see
+    /// `computed::assembly`): a walk of all of `Workspace`, too much to
+    /// repeat for every step of a drag.
     joints: RefCell<Option<Rc<computed::Joints>>>,
+    /// Each assembly's values, by every part in it, since the DOM last
+    /// changed.
+    assemblies: RefCell<HashMap<Ref, Rc<computed::Assembly>>>,
 }
 
 impl Properties {
@@ -240,16 +245,23 @@ impl Properties {
             sheets: RefCell::default(),
             common: RefCell::default(),
             joints: RefCell::default(),
+            assemblies: RefCell::default(),
         }
     }
 
-    /// Something in the DOM changed: a multi-selection's cached rows may no
-    /// longer be what its instances hold, nor the joints what joins parts.
-    /// A lone instance's rows are never cached — they cost a tenth of a
-    /// millisecond, and its folder colour lives outside the DOM.
-    pub(crate) fn dom_changed(&self) {
+    /// Something in the DOM changed, as `changes` logs it: a
+    /// multi-selection's cached rows and every assembly's values may no
+    /// longer be what the instances hold, and — only where an instance came,
+    /// went or moved, or a joint's own properties were written — nor the
+    /// joints what joins parts. A lone instance's rows are never cached:
+    /// they cost a tenth of a millisecond, and its folder colour lives
+    /// outside the DOM.
+    pub(crate) fn dom_changed(&self, changes: &[Change]) {
         self.common.take();
-        self.joints.take();
+        self.assemblies.take();
+        if changes.iter().any(computed::moves_joints) {
+            self.joints.take();
+        }
     }
 
     /// The panel's header: `Part "Baseplate"` for one instance; for several,

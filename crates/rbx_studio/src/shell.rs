@@ -698,7 +698,7 @@ impl Shell {
                 .is_some_and(|instance| instance.class() == "Camera")
         });
         if camera_shown {
-            self.properties.dom_changed();
+            self.properties.dom_changed(&[]);
         }
         cx.notify();
     }

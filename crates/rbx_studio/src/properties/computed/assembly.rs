@@ -24,13 +24,34 @@
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use rbx_dom::{Instance, Ref, Variant, Vector3Data, WeakDom};
+use rbx_dom::{Change, Instance, Ref, Variant, Vector3Data, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use super::super::Properties;
 
 /// The default `WeldConstraint.State`, rbx-dom's record of a new one.
 const DEFAULT_WELD_STATE: i32 = 3;
+
+/// Every property a joint's part in an assembly depends on, under each name
+/// the DOM may hold it as.
+const JOINT_PROPERTIES: &[&str] = &[
+    "Part0",
+    "Part1",
+    "Part0Internal",
+    "Part1Internal",
+    "Enabled",
+    "State",
+];
+
+/// Whether `change` can change which parts are joined: an instance added,
+/// removed or reparented (in or out of `Workspace`), or a joint's own
+/// property written. A part moving, the common case by far, cannot.
+pub(in crate::properties) fn moves_joints(change: &Change) -> bool {
+    match change {
+        Change::Property { name, .. } => JOINT_PROPERTIES.contains(&name.as_str()),
+        Change::Added(_) | Change::Removed(_) | Change::Parent { .. } => true,
+    }
+}
 
 /// Which parts are joined to which, for one state of the DOM.
 pub(in crate::properties) struct Joints {
@@ -144,6 +165,14 @@ fn subtree(dom: &WeakDom, root: Ref) -> HashSet<Ref> {
     found
 }
 
+/// One assembly's three values, worked out once for all of its parts.
+#[derive(Debug, Default)]
+pub(in crate::properties) struct Assembly {
+    mass: Option<f32>,
+    center: Option<Vector3Data>,
+    root: Option<Ref>,
+}
+
 impl Properties {
     fn joints(&self, dom: &WeakDom) -> Rc<Joints> {
         if let Some(joints) = &*self.joints.borrow() {
@@ -157,11 +186,38 @@ impl Properties {
     /// `AssemblyMass`, `AssemblyCenterOfMass` or `AssemblyRootPart` for
     /// `part` — see this module's doc for when each is left out.
     pub(super) fn assembly(&self, dom: &WeakDom, part: Ref, name: &str) -> Option<Variant> {
+        let assembly = self.assembly_of(dom, part)?;
+        match name {
+            "AssemblyMass" => assembly.mass.map(Variant::Float32),
+            "AssemblyRootPart" => assembly.root.map(Variant::Ref),
+            _ => assembly.center.map(Variant::Vector3),
+        }
+    }
+
+    /// `part`'s assembly, worked out on the first ask since the DOM last
+    /// changed and kept for every part in it: three rows each, for every
+    /// selected part, would otherwise walk the same assembly again each time.
+    fn assembly_of(&self, dom: &WeakDom, part: Ref) -> Option<Rc<Assembly>> {
+        if let Some(assembly) = self.assemblies.borrow().get(&part) {
+            return Some(Rc::clone(assembly));
+        }
         let members = self.joints(dom).assembly(part)?;
-        let parts: Vec<(Ref, &Instance)> = members
+        let assembly = Rc::new(self.work_out(dom, &members));
+        let mut memo = self.assemblies.borrow_mut();
+        for member in members {
+            memo.insert(member, Rc::clone(&assembly));
+        }
+        Some(assembly)
+    }
+
+    fn work_out(&self, dom: &WeakDom, members: &[Ref]) -> Assembly {
+        let Some(parts) = members
             .iter()
             .map(|&member| Some((member, dom.get(member)?)))
-            .collect::<Option<_>>()?;
+            .collect::<Option<Vec<(Ref, &Instance)>>>()
+        else {
+            return Assembly::default();
+        };
         let flag = |instance: &Instance, name| {
             matches!(self.read(instance, name), Some(Variant::Bool(true)))
         };
@@ -169,16 +225,18 @@ impl Properties {
             .iter()
             .filter(|(_, instance)| flag(instance, "Anchored"))
             .collect();
-
         if let [&(root, instance)] = anchored.as_slice() {
-            return match name {
-                "AssemblyMass" => Some(Variant::Float32(f32::INFINITY)),
-                "AssemblyRootPart" => Some(Variant::Ref(root)),
-                _ => self.world_center(instance).map(Variant::Vector3),
+            return Assembly {
+                mass: Some(f32::INFINITY),
+                center: self.world_center(instance),
+                root: Some(root),
             };
         }
         if !anchored.is_empty() {
-            return (name == "AssemblyMass").then_some(Variant::Float32(f32::INFINITY));
+            return Assembly {
+                mass: Some(f32::INFINITY),
+                ..Assembly::default()
+            };
         }
 
         let massive: Vec<&(Ref, &Instance)> = parts
@@ -194,46 +252,60 @@ impl Properties {
             Some(Variant::Int32(priority)) => priority,
             _ => 0,
         };
-        let highest = candidates.iter().map(|(_, i)| priority(i)).max()?;
-        let mut roots = candidates.iter().filter(|(_, i)| priority(i) == highest);
-        let root = match (roots.next(), roots.next()) {
-            (Some(root), None) => Some(**root),
-            _ => None,
-        };
+        let root = candidates
+            .iter()
+            .map(|(_, instance)| priority(instance))
+            .max()
+            .and_then(|highest| {
+                let mut roots = candidates
+                    .iter()
+                    .filter(|(_, instance)| priority(instance) == highest);
+                match (roots.next(), roots.next()) {
+                    (Some(root), None) => Some(**root),
+                    _ => None,
+                }
+            });
 
         // Whatever counts towards the assembly's mass: every part with mass,
         // or — when all of them are massless — the root alone.
         let counted: Vec<(Ref, &Instance)> = if massive.is_empty() {
-            vec![root?]
+            root.into_iter().collect()
         } else {
             massive.into_iter().copied().collect()
         };
-        match name {
-            "AssemblyRootPart" => root.map(|(root, _)| Variant::Ref(root)),
-            "AssemblyMass" => counted
-                .iter()
-                .map(|(_, instance)| self.mass(dom, instance))
-                .sum::<Option<f32>>()
-                .map(Variant::Float32),
-            _ => {
-                let mut total = 0.0;
+        let weighed: Option<Vec<(f32, &Instance)>> = counted
+            .iter()
+            .map(|(_, instance)| Some((self.mass(dom, instance)?, *instance)))
+            .collect();
+        let Some(weighed) = weighed.filter(|weighed| !weighed.is_empty()) else {
+            return Assembly {
+                root: root.map(|(root, _)| root),
+                ..Assembly::default()
+            };
+        };
+        let total: f32 = weighed.iter().map(|(mass, _)| mass).sum();
+        let center = weighed
+            .iter()
+            .map(|(mass, instance)| Some((*mass, self.world_center(instance)?)))
+            .collect::<Option<Vec<_>>>()
+            .filter(|_| total > 0.0)
+            .map(|centers| {
                 let mut weighted = [0.0f32; 3];
-                for (_, instance) in &counted {
-                    let mass = self.mass(dom, instance)?;
-                    let center = self.world_center(instance)?;
-                    total += mass;
+                for (mass, center) in centers {
                     for (sum, axis) in weighted.iter_mut().zip([center.x, center.y, center.z]) {
                         *sum += mass * axis;
                     }
                 }
-                (total > 0.0).then(|| {
-                    Variant::Vector3(Vector3Data {
-                        x: weighted[0] / total,
-                        y: weighted[1] / total,
-                        z: weighted[2] / total,
-                    })
-                })
-            }
+                Vector3Data {
+                    x: weighted[0] / total,
+                    y: weighted[1] / total,
+                    z: weighted[2] / total,
+                }
+            });
+        Assembly {
+            mass: Some(total),
+            center,
+            root: root.map(|(root, _)| root),
         }
     }
 
