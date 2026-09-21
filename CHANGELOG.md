@@ -209,6 +209,58 @@
   closes. The overlay takes plain world matrices and knows nothing about
   Align, so the next tool that needs one adds no pass. — @chteau
 
+- **Studio's light guides.** Select a `SpotLight`, `PointLight` or
+  `SurfaceLight` and the viewport draws how far it reaches, the way Studio's
+  "Show Light Guides" does: three great circles of `Range` around a point
+  light, a spot's cone out to its spherical cap with the axis line running
+  past the rim, and a surface light's frustum from its whole face. The lines
+  take the light's own `Color`, follow a Range/Angle/Face edit live without
+  a reload, and — as Studio's own announcement says — appear only for a
+  selected, enabled light, never for the part it hangs on. They go through
+  a new editor line pass that the dragger guides share, and the toggle lives
+  in the Viewport dock. — @chteau
+
+- **A dragged part lands where Studio lands it, and shows why.** A free
+  mouse drag now snaps to the Move increment the way Studio's draggers do —
+  along the face under the cursor, from that face's nearest corner, not from
+  the world origin — and Shift suspends the snap while it is held rather
+  than inverting it. The guides are read off Studio's own DraggerFramework:
+  a white ruler to the two nearest edges while hovering, a yellow one with
+  minor and major ticks while dragging, a yellow line across the face when
+  the part lines up with one of its edges or its centre, and, on a Move
+  handle, the axis line with a dot wherever the selection's leading face,
+  trailing face or pivot would meet a nearby part — which the drag takes
+  over the grid step when it is the nearer of the two. Each guide is a
+  Viewport-dock toggle named after the Studio setting it mirrors. The
+  selection outline also stops staying behind at a moved part's old
+  position: its mask was rewritten on every move and never uploaded.
+  — @chteau
+
+- **Properties lists what Studio lists, and a multi-selection shares it.**
+  The panel used to show only what the file happened to store, so a
+  hand-written Part had six rows. It now builds the class's whole sheet from
+  the reflection database, fills what the file left out from each class's
+  defaults (recorded beside the API dump from rbx-dom's MIT-licensed
+  database, since Roblox's own dump carries none for inherited properties),
+  and shows `Color`, `Size` and `Shape` rather than the `Color3uint8`,
+  `size` and `shape` a file saves — while an edit still lands under the name
+  the renderer and the writer read. Select several instances and it shows
+  what they share: a value they agree on reads normally, one they don't
+  reads blank (per component, for a vector) or as a dash on a checkbox, and
+  an edit applies to all of them as one undo step. — @chteau
+
+- **The viewport's settings got out of its way.** The quality dropdown, its
+  "…" menu and the quality label floated over the scene; they live in a
+  Viewport dock now, a tab beside Output by default, with the live frame
+  rate beside them — counted only while that dock is on screen, so closing
+  it costs nothing. A panel coming back to an edge joins the dock already
+  there as a tab instead of splitting it, and the View menu brings a hidden
+  tab forward rather than closing it. Properties and Output lost their dead
+  space: names share one left edge with their section headers, the name
+  column is 20px narrower, the bottom dock fills its edge instead of
+  centring in it, and Output's search and filters sit at the right end of
+  its strip. — @chteau
+
 ## 2026-09-20
 
 - **A `CFrame` attribute no longer takes every attribute after it down with
