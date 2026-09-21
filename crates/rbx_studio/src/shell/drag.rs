@@ -12,6 +12,7 @@ use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
 use rbx_viewer::gizmo;
 use rbx_viewer::pick::{self, Ray, Selected};
 
+use crate::dragger::surface::{surface_frame, SurfaceFrame};
 use crate::properties;
 use crate::settle::{self, Settle};
 use crate::transform;
@@ -90,6 +91,7 @@ impl Shell {
     fn hover_in_viewport(&mut self, ray: Option<Ray>, alt: bool, cx: &mut Context<Self>) {
         let meshes = self.viewport.read(cx).meshes().clone();
         let covered = self.covered.clone();
+        let mut target = None;
         let hovered: Vec<Selected> = ray
             .and_then(|ray| {
                 let hits = pick::parts_along(&self.dom, &self.database, &meshes, ray);
@@ -105,6 +107,10 @@ impl Shell {
                 // for the hover exactly as for the click.
                 let referent =
                     selection::from_click(&self.dom, &self.database, &hits, self.selected(), alt)?;
+                // Studio's hover ruler measures the face of whatever the
+                // cursor is over — selected or not — once there is something
+                // selectable there at all.
+                target = hover_target(&self.dom, ray, hits.first().copied());
                 selection::outlined(&self.dom, &self.database, &[referent])
                     .into_iter()
                     // A hover entirely inside the current selection adds only a
@@ -116,6 +122,8 @@ impl Shell {
             })
             .unwrap_or_default();
 
+        self.viewport
+            .update(cx, |viewport, _| viewport.set_hover_target(target));
         if hovered == self.hovered {
             return;
         }
@@ -200,15 +208,18 @@ impl Shell {
         settle: Option<Settle>,
         cx: &mut Context<Self>,
     ) {
-        let delta = settle.and_then(|settle| {
-            let &(anchor, fallback) = moves.first()?;
+        let settled = settle.and_then(|settle| {
             // Same render-thread mesh handle `pick_in_viewport` reads — a
             // settle's own surface search needs to agree with what a click
             // would have hit.
             let meshes = self.viewport.read(cx).meshes().clone();
-            let settled = settle::settled(&self.dom, &self.database, &meshes, anchor, settle)?;
-            Some(settled - fallback)
+            let dragged: Vec<Ref> = moves.iter().map(|&(referent, _)| referent).collect();
+            settle::settled(&self.dom, &self.database, &meshes, &dragged, settle)
         });
+        let delta = settled
+            .as_ref()
+            .zip(moves.first())
+            .map(|(settled, &(_, fallback))| settled.centre - fallback);
 
         if first {
             self.push_history();
@@ -240,9 +251,11 @@ impl Shell {
         self.reflect_changes(&changes, cx);
         self.record_history_change(changes);
 
-        if let Some(delta) = delta {
-            self.viewport
-                .update(cx, |viewport, _| viewport.settle_at(delta));
+        if settle.is_some() {
+            let delta = delta.unwrap_or(Vec3::ZERO);
+            self.viewport.update(cx, |viewport, _| {
+                viewport.settle_at(delta, settled.as_ref())
+            });
         }
         cx.notify();
     }
@@ -393,23 +406,34 @@ impl Shell {
         cx.notify();
     }
 
-    /// Hands the viewport the boxes a free drag can soft-snap onto: every
-    /// drawn part in the workspace except whichever are selected — a group
-    /// drag carries all of them together, so none should pull the others.
+    /// Hands the viewport the boxes a handle drag can soft-snap onto: every
+    /// drawn part in the workspace except whichever the selection carries — a
+    /// group drag carries all of them together, so none should pull the
+    /// others.
     ///
     /// Only on a selection change or after an edit moved something other
     /// than the selection (see `Shell::reflect_changes`), never per mouse
     /// move — this walks the whole workspace, and during a drag nothing but
     /// the dragged parts is moving anyway.
     pub(super) fn sync_snap_neighbours(&mut self, cx: &mut Context<Self>) {
-        let selected = self.selected_all();
+        // Everything the selection carries is left out — a selected
+        // `Model`'s own parts included, which `covered` holds and the
+        // selection itself does not.
         let neighbours: Vec<Mat4> = pick::drawable_parts(&self.dom, &self.database)
-            .filter(|referent| !selected.contains(referent))
+            .filter(|referent| !self.covered.contains(referent))
             .filter_map(|referent| pick::model_of(&self.dom, referent))
             .collect();
         self.viewport
             .update(cx, |viewport, _| viewport.set_neighbours(neighbours));
     }
+}
+
+/// The face of `part` under `ray`, framed on its corner nearest the cursor,
+/// and where the cursor meets it — what Studio's hover ruler measures.
+fn hover_target(dom: &WeakDom, ray: Ray, part: Option<Ref>) -> Option<(SurfaceFrame, Vec3)> {
+    let model = pick::model_of(dom, part?)?;
+    let hit = ray.at(pick::ray_hits_box(ray, model)?);
+    Some((surface_frame(model, hit)?, hit))
 }
 
 /// The three-number text `properties::edit::parse` reads a `Vector3` — or a

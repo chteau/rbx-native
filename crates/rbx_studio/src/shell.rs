@@ -15,6 +15,7 @@ mod edit;
 mod explorer_edit;
 mod folder_color;
 mod group;
+mod guides;
 mod history;
 mod keys;
 mod layout;
@@ -70,7 +71,7 @@ use crate::pacing::UnfocusedFps;
 use crate::properties::{self, Properties};
 use crate::save::Format;
 use crate::script_editor::ScriptEditor;
-use crate::settings::Settings;
+use crate::settings::{DraggerSettings, Settings};
 use crate::tokens;
 use crate::transform::{Targets, Transform};
 use crate::workspace_view::{AssetWarnings, Opened, PoseSynced, ViewportAction, WorkspaceView};
@@ -138,6 +139,8 @@ pub(crate) struct Shell {
     /// `pacing::FocusPacing`). Persisted (see `settings`); every write goes
     /// through [`Shell::save_settings`].
     unfocused_fps: UnfocusedFps,
+    /// The dragger guides' switches (see `shell::guides`). Persisted.
+    dragger: DraggerSettings,
     /// The three composite widgets that are one Tab stop each: the
     /// document tab strip, the ribbon's category tabs, and the ribbon's own
     /// controls. See `shell::roving`.
@@ -312,6 +315,7 @@ impl Shell {
             output_collapsed,
             increment_names,
             expand_on_select,
+            dragger,
         } = settings;
         // Before anything renders: every size token is read through these,
         // so a scale or target floor applied after the first frame would
@@ -394,7 +398,7 @@ impl Shell {
                 viewer,
                 dom: dom.clone(),
             };
-            WorkspaceView::new(
+            let mut view = WorkspaceView::new(
                 opened,
                 camera,
                 quality,
@@ -405,7 +409,9 @@ impl Shell {
                 initial_outline,
                 window,
                 cx,
-            )
+            );
+            view.set_dragger(dragger);
+            view
         });
         let camera_synced = cx.subscribe(&viewport, |shell, _, event: &PoseSynced, cx| {
             shell.sync_camera_pose(event.0, cx);
@@ -452,6 +458,7 @@ impl Shell {
             installed_icon_packs: user.icon_packs,
             stats_shown: false,
             unfocused_fps,
+            dragger,
             document_nav: roving::Roving::horizontal(),
             ribbon_tabs_nav: roving::Roving::horizontal(),
             ribbon_nav: roving::Roving::horizontal(),
@@ -527,6 +534,10 @@ impl Shell {
         // `sync_selection` only runs on a selection *change*, so without this
         // an instance selected before the first frame would be outlined and
         // gizmoed but not draggable until it was selected again.
+        shell.covered = initial_targets
+            .iter()
+            .map(|target| target.referent)
+            .collect();
         shell
             .viewport
             .update(cx, |viewport, _| viewport.set_targets(initial_targets));
@@ -1071,6 +1082,7 @@ impl Shell {
             output_collapsed: self.output_collapsed,
             increment_names: self.increment_names,
             expand_on_select: self.expand_on_select,
+            dragger: self.dragger,
         };
         let _ = settings.save();
 

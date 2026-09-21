@@ -12,6 +12,7 @@
 mod changes;
 mod frame;
 mod gizmo;
+mod guides;
 mod hover;
 mod input;
 mod label;
@@ -313,6 +314,9 @@ pub(crate) struct WorkspaceView {
     /// gesture; `render` only ever shows it while `dragging()` is true, so a
     /// value left over from the drag just released is simply never painted.
     drag_readout: Option<(Point<Pixels>, SharedString)>,
+    /// Studio's dragger guides: what they show now, and what they keep
+    /// between one event and the next (see [`guides`]).
+    guides: guides::State,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
     _subscriptions: [Subscription; 2],
 }
@@ -431,6 +435,7 @@ impl WorkspaceView {
             held: Targets::default(),
             dragged: false,
             drag_readout: None,
+            guides: guides::State::default(),
             _subscriptions: [blur, deactivated],
         }
     }
@@ -698,6 +703,7 @@ impl WorkspaceView {
         self.transform = transform;
         self.drag = None;
         self.pump.gizmo(transform.gizmo());
+        self.refresh_guides();
     }
 
     /// Where every selected part stands now: after a selection change, and
@@ -1020,6 +1026,10 @@ impl Render for WorkspaceView {
                             .child(text),
                     )
                 },
+            )
+            .when_some(
+                self.dragging().then(|| self.guides.label.clone()).flatten(),
+                |this, (at, text)| this.child(guides::label_element(at, text)),
             )
             // No pose yet (the very first frame or two, before the render
             // thread's first `Ready` lands — see `self.view`'s own doc) draws

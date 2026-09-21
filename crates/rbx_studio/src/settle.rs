@@ -1,12 +1,12 @@
-//! Resting a cursor-dragged part on whatever the cursor is over.
+//! Landing a cursor-dragged selection on whatever the cursor is over.
 //!
 //! Studio's cursor drag does not slide a part across a fixed plane: it lands
-//! the part on the surface under the cursor, so dragging across a scene
-//! carries it up onto a platform and back down again, the way an object dragged
-//! across a tabletop rides over whatever lies on it. creator-docs
-//! (`parts/index.md#transform-parts`) describes the rest of that gesture as
-//! soft-snapping "to surfaces and edges of nearby parts"; the surface half is
-//! what lives here, the edge half does not exist yet.
+//! the part on the face under the cursor, so dragging across a scene carries
+//! it up onto a platform and back down again, the way an object dragged
+//! across a tabletop rides over whatever lies on it. Where exactly it lands on
+//! that face — the grid measured from the face's nearest corner, and the
+//! face's own edges and centre lines it aligns with — is Studio's
+//! `DragHelper`, in `crate::dragger::free`.
 //!
 //! The split across the editor mirrors `workspace_view::gizmo`: the view
 //! knows the cursor and the grab but has no DOM, so it describes the gesture
@@ -23,106 +23,102 @@ use glam::{Mat4, Vec3};
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 use rbx_viewer::pick::{self, Meshes, Ray};
+use rbx_viewer::Pose;
+
+use crate::dragger::depth_scale;
+use crate::dragger::free::{self, Landing};
+use crate::dragger::surface::{surface_frame, SurfaceFrame};
 
 /// One step of a cursor drag, as the view describes it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Settle {
     /// The ray under the cursor now.
     pub(crate) cursor: Ray,
-    /// The ray the part was grabbed along, starting at the point on the part
-    /// it was grabbed by. Fixed for the whole gesture: it is what "the same
-    /// place relative to the cursor" is measured from.
-    pub(crate) grab: Ray,
-    /// Where the part's centre stood when it was grabbed.
+    /// Where the dragged point — the point the drag holds the selection by,
+    /// fixed at the press — stands relative to the anchor part's centre.
+    pub(crate) grabbed: Vec3,
+    /// The grid in force for this step (`0.0` for none: snapping off, or
+    /// `Shift` held).
+    pub(crate) grid: f32,
+    /// Snap to Parts on, and `Shift` up.
+    pub(crate) snap_to_parts: bool,
+    /// The camera the step was aimed with: a soft snap reaches a fixed
+    /// distance on screen, not in studs.
+    pub(crate) pose: Pose,
+    pub(crate) orthographic: bool,
+    /// The face the previous step landed on, which a cursor over nothing
+    /// keeps landing on, in its plane.
+    pub(crate) last: Option<SurfaceFrame>,
+}
+
+/// Where a drag step landed, and on what.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Settled {
+    /// The anchor part's new centre.
     pub(crate) centre: Vec3,
+    /// The face landed on, framed on its corner nearest the cursor.
+    pub(crate) frame: SurfaceFrame,
+    /// Where the cursor met it.
+    pub(crate) hit: Vec3,
+    pub(crate) landing: Landing,
+    /// The grid the step was snapped to, which its ruler is ticked in.
+    pub(crate) grid: f32,
 }
 
-/// A point on some part's face, and which way that face looks.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct Surface {
-    pub(crate) point: Vec3,
-    pub(crate) normal: Vec3,
-}
-
-/// Where the part `referent` comes to rest for this step, or `None` when the
-/// cursor is over nothing but sky — the caller keeps its own flat-plane answer
-/// for that.
+/// Where the parts `dragged` (the anchor first) come to rest for this step,
+/// or `None` when the cursor is over nothing and no step has landed yet —
+/// the caller keeps its own flat-plane answer for that.
 pub(crate) fn settled(
     dom: &WeakDom,
     database: &ReflectionDatabase,
     meshes: &Meshes,
-    referent: Ref,
+    dragged: &[Ref],
     settle: Settle,
-) -> Option<Vec3> {
-    let model = pick::model_of(dom, referent)?;
-    let surface = surface_under(dom, database, meshes, settle.cursor, referent)?;
-    Some(rest_on(settle, model, surface))
+) -> Option<Settled> {
+    let anchor = pick::model_of(dom, *dragged.first()?)?.w_axis.truncate();
+    let (frame, hit) = match target_under(dom, database, meshes, settle.cursor, dragged) {
+        Some((model, hit)) => (surface_frame(model, hit)?, hit),
+        None => {
+            let frame = settle.last?;
+            (
+                frame,
+                pick::ray_hits_plane(settle.cursor, frame.corner, frame.y)?,
+            )
+        }
+    };
+    let models = dragged.iter().filter_map(|&part| pick::model_of(dom, part));
+    let bounds = free::bounds(&frame, models, anchor + settle.grabbed);
+    let reach = settle
+        .snap_to_parts
+        .then(|| free::SOFT_SNAP_REACH * depth_scale(hit, settle.pose, settle.orthographic));
+    let landing = free::land(&frame, hit, bounds, settle.grid, reach);
+    Some(Settled {
+        centre: landing.dragged(&frame) - settle.grabbed,
+        frame,
+        hit,
+        landing,
+        grid: settle.grid,
+    })
 }
 
-/// The nearest drawn face along `ray`, leaving `exclude` out of the search.
+/// The nearest drawn part along `ray` that is not being dragged, as the box
+/// it is drawn in and where `ray` meets that box.
 ///
-/// The exclusion is the part being dragged: it is under the cursor by
-/// definition, so a search that could see it would find it first every time
-/// and rest the part on top of itself, one height higher per frame.
-pub(crate) fn surface_under(
+/// The dragged parts are left out: they are under the cursor by definition,
+/// so a search that could see them would find them first every time and rest
+/// the selection on top of itself, one height higher per frame.
+pub(crate) fn target_under(
     dom: &WeakDom,
     database: &ReflectionDatabase,
     meshes: &Meshes,
     ray: Ray,
-    exclude: Ref,
-) -> Option<Surface> {
+    dragged: &[Ref],
+) -> Option<(Mat4, Vec3)> {
     let nearest = pick::parts_along(dom, database, meshes, ray)
         .into_iter()
-        .find(|&referent| referent != exclude)?;
-    face_hit(ray, pick::model_of(dom, nearest)?)
-}
-
-/// The face of the box drawn with `model` that `ray` enters, or `None` when
-/// the ray misses it.
-pub(crate) fn face_hit(ray: Ray, model: Mat4) -> Option<Surface> {
-    let distance = pick::ray_hits_box(ray, model)?;
-    let point = ray.at(distance);
-
-    // On the unit cube's surface exactly one coordinate stands at ±0.5, so the
-    // face is whichever axis the hit sits furthest along. A ray starting
-    // inside the box hits at distance zero and lands on no face at all; the
-    // nearest one is as good an answer as any there.
-    let local = model.inverse().transform_point3(point);
-    let axis = (0..3).max_by(|&a, &b| local[a].abs().total_cmp(&local[b].abs()))?;
-    // Rotation and scale only, so a face normal is the box's own axis — the
-    // inverse-transpose a sheared matrix would need never comes up.
-    let normal = model.col(axis).truncate().normalize() * local[axis].signum();
-    Some(Surface { point, normal })
-}
-
-/// Where the centre of the part drawn with `model` stands once it rests on
-/// `surface`, keeping the grab where it was relative to the cursor.
-///
-/// The part's face that meets the surface is the one furthest back along the
-/// surface's normal; the grab ray is followed on to that face's plane and the
-/// point it meets there is what the cursor's hit point stands in for. That
-/// choice, rather than the grab point itself, is what keeps a part that
-/// already rests on a surface exactly still until the cursor actually moves:
-/// followed on past the part, the grab ray meets the surface at that very
-/// point.
-pub(crate) fn rest_on(settle: Settle, model: Mat4, surface: Surface) -> Vec3 {
-    let touching = settle.centre - surface.normal * reach(model, surface.normal);
-    // A grab ray running along the touching plane (a part grabbed from above
-    // and dragged onto a wall) meets it nowhere useful; the grab point dropped
-    // straight onto the plane is the answer with no direction to argue about.
-    let anchor = pick::ray_hits_plane(settle.grab, touching, surface.normal).unwrap_or_else(|| {
-        let grabbed = settle.grab.origin;
-        grabbed - surface.normal * (grabbed - touching).dot(surface.normal)
-    });
-    surface.point + (settle.centre - anchor)
-}
-
-/// How far the box drawn with `model` extends from its centre along the unit
-/// `direction`: half its size on each axis, each turned onto that direction.
-pub(crate) fn reach(model: Mat4, direction: Vec3) -> f32 {
-    0.5 * (0..3)
-        .map(|axis| model.col(axis).truncate().dot(direction).abs())
-        .sum::<f32>()
+        .find(|referent| !dragged.contains(referent))?;
+    let model = pick::model_of(dom, nearest)?;
+    Some((model, ray.at(pick::ray_hits_box(ray, model)?)))
 }
 
 #[cfg(test)]

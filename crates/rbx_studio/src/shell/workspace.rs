@@ -25,6 +25,7 @@ use gpui_kit::*;
 
 use crate::class_icons::IconPack;
 use crate::pacing::UnfocusedFps;
+use crate::settings::DraggerSettings;
 use crate::tokens;
 
 use super::chrome::{self, Document, Drag};
@@ -335,6 +336,7 @@ impl Shell {
         let selection_occluded = self.selection_occluded();
         let stats = self.stats_shown();
         let capped = self.unfocused_fps() == UnfocusedFps::Fps25;
+        let dragger = self.dragger();
 
         let overflow = menu::dropdown(
             self,
@@ -368,6 +370,66 @@ impl Shell {
                             UnfocusedFps::Fps25
                         };
                         shell.set_unfocused_fps(next, cx);
+                    }),
+                menu::item("Show Hover Ruler")
+                    .checked(dragger.show_hover_ruler)
+                    .on_click(move |shell, cx| {
+                        let show_hover_ruler = !dragger.show_hover_ruler;
+                        shell.set_dragger(
+                            DraggerSettings {
+                                show_hover_ruler,
+                                ..dragger
+                            },
+                            cx,
+                        )
+                    }),
+                menu::item("Show Target Snap")
+                    .checked(dragger.show_target_snap)
+                    .on_click(move |shell, cx| {
+                        let show_target_snap = !dragger.show_target_snap;
+                        shell.set_dragger(
+                            DraggerSettings {
+                                show_target_snap,
+                                ..dragger
+                            },
+                            cx,
+                        )
+                    }),
+                menu::item("Show Dragged Point")
+                    .checked(dragger.show_dragged_point)
+                    .on_click(move |shell, cx| {
+                        let show_dragged_point = !dragger.show_dragged_point;
+                        shell.set_dragger(
+                            DraggerSettings {
+                                show_dragged_point,
+                                ..dragger
+                            },
+                            cx,
+                        )
+                    }),
+                menu::item("Show Measurement")
+                    .checked(dragger.show_measurement)
+                    .on_click(move |shell, cx| {
+                        let show_measurement = !dragger.show_measurement;
+                        shell.set_dragger(
+                            DraggerSettings {
+                                show_measurement,
+                                ..dragger
+                            },
+                            cx,
+                        )
+                    }),
+                menu::item("Snap to Parts")
+                    .checked(dragger.snap_to_parts)
+                    .on_click(move |shell, cx| {
+                        let snap_to_parts = !dragger.snap_to_parts;
+                        shell.set_dragger(
+                            DraggerSettings {
+                                snap_to_parts,
+                                ..dragger
+                            },
+                            cx,
+                        )
                     }),
             ],
             cx,

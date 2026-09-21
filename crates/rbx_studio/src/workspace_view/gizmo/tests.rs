@@ -3,6 +3,7 @@ use rbx_dom::Ref;
 use rbx_viewer::Pose;
 
 use super::*;
+use crate::dragger::sweep::SoftSnap;
 
 /// Looking down -Z from ten studs out, at a point on the z=0 plane.
 fn looking_at(x: f32, y: f32) -> Ray {
@@ -15,8 +16,7 @@ fn free() -> Landing<'static> {
     Landing {
         grid: 0.0,
         angle: 0.0,
-        neighbours: &[],
-        reach: 0.0,
+        snaps: &[],
     }
 }
 
@@ -165,7 +165,10 @@ fn a_snapped_drag_rounds_the_travel_not_the_world_position() {
 }
 
 #[test]
-fn a_snapped_free_drag_rounds_every_axis_of_its_travel() {
+fn a_free_drag_leaves_its_snapping_to_the_face_it_lands_on() {
+    // The camera-facing plane is only the fallback over empty space; the
+    // grid a body drag snaps to is the face's under the cursor, which
+    // `Shell` lands it on (see `crate::settle`).
     let drag = Drag::Plane {
         point: Vec3::ZERO,
         normal: Vec3::Z,
@@ -173,111 +176,66 @@ fn a_snapped_free_drag_rounds_every_axis_of_its_travel() {
     };
     let moved = moved_to(drag, looking_at(3.4, 4.6), grid(1.0)).expect("the ray crosses");
     assert!(
-        (moved - Vec3::new(3.0, 5.0, 0.0)).length() < 1e-4,
+        (moved - Vec3::new(3.4, 4.6, 0.0)).length() < 1e-4,
         "{moved}"
     );
 }
 
-#[test]
-fn a_free_drag_soft_snaps_its_grab_point_onto_a_nearby_surface() {
-    // A part filling y ∈ [-1, 1]: the cursor puts the grab point at 1.2, just
-    // above its top face, and it settles onto it.
-    let neighbour =
-        Mat4::from_scale_rotation_translation(Vec3::splat(2.0), Quat::IDENTITY, Vec3::ZERO);
-    let drag = Drag::Plane {
-        point: Vec3::new(0.0, 5.0, 0.0),
-        normal: Vec3::Z,
-        offset: Vec3::ZERO,
-    };
-    let landing = Landing {
-        neighbours: &[neighbour],
-        reach: 0.5,
-        ..free()
-    };
-
-    let moved = moved_to(drag, looking_at(0.0, 1.2), landing).expect("the ray crosses");
-    assert!(
-        (moved - Vec3::new(0.0, 1.0, 0.0)).length() < 1e-4,
-        "{moved}"
-    );
+fn soft(distance: f32) -> SoftSnap {
+    SoftSnap {
+        point: Vec3::X * distance,
+        distance,
+        reach: 0.3,
+    }
 }
 
 #[test]
-fn a_free_drag_out_of_reach_of_everything_lands_where_the_cursor_is() {
-    let neighbour =
-        Mat4::from_scale_rotation_translation(Vec3::splat(2.0), Quat::IDENTITY, Vec3::ZERO);
-    let drag = Drag::Plane {
-        point: Vec3::new(0.0, 5.0, 0.0),
-        normal: Vec3::Z,
-        offset: Vec3::ZERO,
-    };
-    let landing = Landing {
-        neighbours: &[neighbour],
-        reach: 0.5,
-        ..free()
-    };
-
-    let moved = moved_to(drag, looking_at(0.0, 4.0), landing).expect("the ray crosses");
-    assert!(
-        (moved - Vec3::new(0.0, 4.0, 0.0)).length() < 1e-4,
-        "{moved}"
-    );
-}
-
-#[test]
-fn a_grid_in_force_takes_the_place_of_soft_snapping_rather_than_stacking_on_it() {
-    // creator-docs gives the two as alternatives — soft snapping is what a
-    // cursor drag does "if snapping is disabled" — so a surface well within
-    // reach must not pull a snapped drag off its increment.
-    let neighbour =
-        Mat4::from_scale_rotation_translation(Vec3::splat(2.0), Quat::IDENTITY, Vec3::ZERO);
-    let drag = Drag::Plane {
-        point: Vec3::ZERO,
-        normal: Vec3::Z,
-        offset: Vec3::ZERO,
-    };
-    let landing = Landing {
-        grid: 1.0,
-        neighbours: &[neighbour],
-        reach: 5.0,
-        ..free()
-    };
-
-    let moved = moved_to(drag, looking_at(0.0, 1.2), landing).expect("the ray crosses");
-    assert!(
-        (moved - Vec3::new(0.0, 1.0, 0.0)).length() < 1e-4,
-        "{moved}"
-    );
-}
-
-#[test]
-fn a_plane_drag_asks_to_settle_along_the_ray_that_grabbed_it() {
-    // Grabbed looking down -Z at a point on the part, with the centre a stud
-    // behind and above it.
-    let drag = Drag::Plane {
-        point: Vec3::new(2.0, 3.0, 4.0),
-        normal: Vec3::Z,
-        offset: Vec3::new(0.0, 1.0, -1.0),
-    };
-    let cursor = looking_at(5.0, 6.0);
-
-    let settle = drag.settle(cursor).expect("a cursor drag settles");
-    assert_eq!(settle.cursor, cursor);
-    // The grab ray starts where the grab landed and runs into the part, the
-    // way the click did — the reverse of the plane's normal.
-    assert_eq!(settle.grab.origin, Vec3::new(2.0, 3.0, 4.0));
-    assert!((settle.grab.direction - Vec3::NEG_Z).length() < 1e-6);
-    assert_eq!(settle.centre, Vec3::new(2.0, 4.0, 3.0));
-}
-
-#[test]
-fn an_axis_drag_never_settles() {
+fn an_axis_drag_takes_a_soft_snap_nearer_than_the_grid() {
     let drag = Drag::Axis {
         origin: Vec3::ZERO,
         axis: Vec3::X,
-        grabbed: 2.0,
+        grabbed: 0.0,
     };
-    assert_eq!(drag.settle(looking_at(6.5, 0.0)), None);
+    let snaps = [soft(4.75)];
+    // 4.6 of travel: the grid would take it to 5 (0.4 off), the face at 4.75
+    // is only 0.15 off.
+    let landing = Landing {
+        snaps: &snaps,
+        ..grid(1.0)
+    };
+    let moved = moved_to(drag, looking_at(4.6, 0.0), landing).expect("the axis is across");
+    assert!((moved.x - 4.75).abs() < 1e-4, "{moved}");
+    // 4.1: the grid's 0.1 beats the face's 0.65.
+    let moved = moved_to(drag, looking_at(4.1, 0.0), landing).expect("the axis is across");
+    assert!((moved.x - 4.0).abs() < 1e-4, "{moved}");
+}
+
+#[test]
+fn with_no_snaps_offered_the_grid_alone_decides() {
+    let drag = Drag::Axis {
+        origin: Vec3::ZERO,
+        axis: Vec3::X,
+        grabbed: 0.0,
+    };
+    let moved = moved_to(drag, looking_at(4.6, 0.0), grid(1.0)).expect("the axis is across");
+    assert!((moved.x - 5.0).abs() < 1e-4, "{moved}");
+}
+
+#[test]
+fn a_scale_drag_grows_onto_a_soft_snap() {
+    let snaps = [soft(1.8)];
+    let landing = Landing {
+        snaps: &snaps,
+        ..free()
+    };
+    let Some((_, Change::Size { size, .. })) =
+        advance(grabbed_x_face(), looking_at(2.9, 0.0), landing)
+    else {
+        unreachable!()
+    };
+    // Grabbed a stud out on the +X face: 1.9 of pull, 0.1 short of the face
+    // at 1.8 of growth — within reach, so it grows by exactly that.
+    assert!((size.x - (2.0 + 1.8)).abs() < 1e-4, "{size}");
 }
 
 /// Where one step of a drag puts the part's centre, for the gestures that only

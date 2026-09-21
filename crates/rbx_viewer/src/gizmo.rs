@@ -31,7 +31,7 @@ pub use faces::Faces;
 const SCREEN_FRACTION: f32 = 0.2;
 /// Where a dragger's shaft starts, in arm lengths. The gap around the origin
 /// is what leaves the part itself clickable for a free cursor drag.
-pub(crate) const SHAFT_START: f32 = 0.24;
+pub const SHAFT_START: f32 = 0.24;
 /// Where the shaft ends and the arrowhead begins, in arm lengths.
 pub(crate) const HEAD_START: f32 = 0.72;
 /// The shaft's and the arrowhead's radii, in arm lengths.

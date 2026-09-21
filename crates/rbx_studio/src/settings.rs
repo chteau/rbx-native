@@ -19,6 +19,10 @@ use crate::class_icons::IconPack;
 use crate::pacing::UnfocusedFps;
 use crate::shell::{Edge, SavedEdge, SavedGroup, SavedLayout};
 
+mod dragger;
+
+pub(crate) use dragger::DraggerSettings;
+
 /// What persists across a relaunch.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Settings {
@@ -72,6 +76,8 @@ pub(crate) struct Settings {
     /// reveal reads as an insert that did nothing.
     pub(crate) increment_names: bool,
     pub(crate) expand_on_select: bool,
+    /// The dragger guides' switches — see [`DraggerSettings`].
+    pub(crate) dragger: DraggerSettings,
 }
 
 impl Default for Settings {
@@ -96,6 +102,7 @@ impl Default for Settings {
             output_collapsed: false,
             increment_names: true,
             expand_on_select: true,
+            dragger: DraggerSettings::default(),
         }
     }
 }
@@ -247,6 +254,7 @@ fn load_from(path: &Path) -> Settings {
             .get("expand_on_select")
             .and_then(|v| v.as_bool())
             .unwrap_or(true),
+        dragger: DraggerSettings::read(&value),
     }
 }
 
@@ -376,6 +384,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "output_collapsed": settings.output_collapsed,
         "increment_names": settings.increment_names,
         "expand_on_select": settings.expand_on_select,
+        "dragger": settings.dragger.json(),
     });
     // A fixed-shape object always serializes; nothing here can fail.
     let bytes = serde_json::to_vec_pretty(&value).expect("settings JSON always serializes");
