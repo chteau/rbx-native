@@ -15,6 +15,7 @@ mod folder_color;
 mod group;
 mod history;
 mod keys;
+mod layout;
 mod menu;
 mod output;
 mod panels;
