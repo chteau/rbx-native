@@ -612,9 +612,7 @@ impl Shell {
         // Not a DOM write — see `shell::folder_color`; skips undo history
         // and `WeakDom::set_property` entirely.
         if name == properties::edit::FOLDER_COLOR_PROPERTY {
-            let result = self.commit_folder_color(reference, text, cx);
-            self.scroll_to_row(reference, name);
-            return result;
+            return self.commit_folder_color(reference, text, cx);
         }
 
         // An attribute's value, not a real DOM property — see
@@ -660,22 +658,13 @@ impl Shell {
         if name == NAME_PROPERTY {
             self.rebuild_explorer(cx);
         }
-        self.scroll_to_row(reference, name);
+        // Nothing scrolls the panel: it keeps its offset across the rebuild
+        // this edit causes, and no row above the edited one changes height
+        // (a row that grows, a ticked Custom box say, grows downwards), so
+        // the row stays exactly where it was clicked. The panel's scroll
+        // handle could not name a row anyway: its one child is the whole
+        // stack of category sections.
         Ok(())
-    }
-
-    /// Brings the row that was just written into view. A property far down
-    /// the alphabet starts scrolled out of the panel's fixed-height list, and
-    /// nothing can scroll it into frame for a screenshot afterwards — see
-    /// `AGENTS.md`'s ban on synthetic input.
-    fn scroll_to_row(&self, reference: rbx_dom::Ref, name: &str) {
-        let folder_color = self.folder_color(reference);
-        let rows = self
-            .properties
-            .rows(&self.dom, self.selected_all(), folder_color);
-        if let Some(index) = rows.iter().position(|row| row.name == name) {
-            self.properties_scroll.scroll_to_item(index);
-        }
     }
 
     /// Whether the properties panel's `category` section is manually
