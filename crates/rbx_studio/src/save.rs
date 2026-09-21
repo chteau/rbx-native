@@ -142,6 +142,42 @@ mod tests {
         std::fs::remove_file(&path).ok();
     }
 
+    /// A hand-written place may use a property's canonical name; the place
+    /// is read with the name Studio saves instead (see
+    /// `rbx_reflection::ReflectionDatabase::normalize_names`), and saved
+    /// back with it.
+    #[test]
+    fn a_canonical_name_in_a_file_is_saved_as_studio_saves_it() {
+        let original = temp_path("canonical.rbxlx");
+        std::fs::write(
+            &original,
+            r#"<roblox version="4"><Item class="Part" referent="RBX0"><Properties>
+            <string name="Name">Written</string>
+            <Vector3 name="Size"><X>5</X><Y>6</Y><Z>7</Z></Vector3>
+            <Color3 name="Color"><R>1</R><G>0</G><B>0</B></Color3>
+            </Properties></Item></roblox>"#,
+        )
+        .unwrap();
+
+        let dom = rbx_viewer::read_place(&original).unwrap();
+        let part = crate::explorer::find_by_name(&dom, "Written").unwrap();
+        let properties = dom.get(part).unwrap().properties();
+        assert!(properties.contains_key("size") && !properties.contains_key("Size"));
+        assert_eq!(
+            properties.get("Color3uint8"),
+            Some(&Variant::Color3uint8 { r: 255, g: 0, b: 0 })
+        );
+
+        let saved = temp_path("canonical_saved.rbxlx");
+        save(&dom, Format::Xml, &saved).unwrap();
+        let text = std::fs::read_to_string(&saved).unwrap();
+        assert!(text.contains(r#"name="size""#) && text.contains(r#"name="Color3uint8""#));
+        assert!(!text.contains(r#"name="Size""#) && !text.contains(r#"name="Color""#));
+
+        std::fs::remove_file(&original).ok();
+        std::fs::remove_file(&saved).ok();
+    }
+
     #[test]
     fn sniffing_a_binary_header_picks_binary() {
         let mut dom = WeakDom::new();

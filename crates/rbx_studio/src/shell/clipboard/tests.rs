@@ -148,7 +148,7 @@ fn a_non_archivable_descendant_and_its_own_subtree_are_excluded() {
     let model = dom.new_instance("Model", "Model", None);
     dom.new_instance("Part", "Kept", Some(model));
     let skipped = dom.new_instance("Part", "Skipped", Some(model));
-    dom.set_property(skipped, "Archivable", Variant::Bool(false))
+    dom.set_property(skipped, ARCHIVABLE, Variant::Bool(false))
         .unwrap();
     dom.new_instance("Part", "GrandchildOfSkipped", Some(skipped));
 
@@ -165,7 +165,7 @@ fn a_non_archivable_root_is_still_copied() {
     // actually selected and copied.
     let mut dom = WeakDom::new();
     let part = dom.new_instance("Part", "Part", None);
-    dom.set_property(part, "Archivable", Variant::Bool(false))
+    dom.set_property(part, ARCHIVABLE, Variant::Bool(false))
         .unwrap();
 
     let clipped = snapshot(&dom, part);
@@ -176,19 +176,19 @@ fn a_non_archivable_root_is_still_copied() {
 fn the_copy_is_always_archivable_even_if_the_original_was_not() {
     let mut dom = WeakDom::new();
     let part = dom.new_instance("Part", "Part", None);
-    dom.set_property(part, "Archivable", Variant::Bool(false))
+    dom.set_property(part, ARCHIVABLE, Variant::Bool(false))
         .unwrap();
 
     let clipped = snapshot(&dom, part).unwrap();
     let copy = materialize(&mut dom, &clipped, None);
 
     assert_eq!(
-        dom.get(copy).unwrap().properties().get("Archivable"),
+        dom.get(copy).unwrap().properties().get(ARCHIVABLE),
         Some(&Variant::Bool(true))
     );
     // The original is untouched — only the copy was forced.
     assert_eq!(
-        dom.get(part).unwrap().properties().get("Archivable"),
+        dom.get(part).unwrap().properties().get(ARCHIVABLE),
         Some(&Variant::Bool(false))
     );
 }

@@ -113,6 +113,38 @@ impl ReflectionDatabase {
         names.extend(aliases);
         names
     }
+
+    /// Every spelling a file may use for a property of `class` other than
+    /// the one Roblox saves: `(spelling, saved name, property)`, the nearest
+    /// class's first — `("Color", "Color3uint8", "Color")`,
+    /// `("size", "size_xml", "Size")` for a `Fire`.
+    pub(crate) fn renames(&self, class: &str) -> Vec<(&str, &str, &str)> {
+        let mut renames: Vec<(&str, &str, &str)> = Vec::new();
+        for class_defaults in self
+            .lineage(class)
+            .filter_map(|class| self.defaults.classes.get(class))
+        {
+            let spellings = class_defaults
+                .serializes_as
+                .keys()
+                .map(|canonical| (canonical.as_str(), canonical.as_str()))
+                .chain(
+                    class_defaults
+                        .aliases
+                        .iter()
+                        .map(|(alias, canonical)| (alias.as_str(), canonical.as_str())),
+                );
+            for (spelling, canonical) in spellings {
+                let Some(&saved) = self.stored_names(class, canonical).first() else {
+                    continue;
+                };
+                if spelling != saved && !renames.iter().any(|(from, ..)| *from == spelling) {
+                    renames.push((spelling, saved, canonical));
+                }
+            }
+        }
+        renames
+    }
 }
 
 #[derive(Deserialize)]

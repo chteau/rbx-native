@@ -42,6 +42,11 @@ pub fn read_place(path: &Path) -> Result<WeakDom, String> {
     // a whole place's worth of "new" instances would be an edit of the whole
     // place; it starts empty here instead.
     dom.take_changes();
+    // Both parsers keep a property under whatever name the file used, and a
+    // hand-written place may say `Color` or `Size` where Studio saves
+    // `Color3uint8` and `size`. Renamed once here, so nothing that reads the
+    // tree needs to know both.
+    ReflectionDatabase::shared().normalize_names(&mut dom);
     Ok(dom)
 }
 
