@@ -46,6 +46,7 @@
 
 mod align;
 mod camera;
+mod change_class;
 mod class_icons;
 mod cli;
 mod command_bar;

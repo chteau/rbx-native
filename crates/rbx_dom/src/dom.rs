@@ -97,6 +97,23 @@ impl WeakDom {
         Ok(old)
     }
 
+    /// Changes an instance's class in place, returning the class it had. The
+    /// referent stays, so everything that names the instance by it — a
+    /// `Weld.Part0`, a `Model.PrimaryPart`, a selection — still does; making a
+    /// new instance of the new class would leave each of those pointing at
+    /// nothing. Properties are left exactly as they were: which of them the new
+    /// class can still hold is a reflection question this crate cannot answer.
+    pub fn set_class(&mut self, referent: Ref, class: &str) -> Result<String, DomError> {
+        let instance = self
+            .instances
+            .get_mut(&referent)
+            .ok_or(DomError::UnknownInstance(referent))?;
+        let old = instance.class().to_string();
+        instance.set_class(class);
+        self.changes.push(Change::Class(referent));
+        Ok(old)
+    }
+
     /// Removes an instance and its whole subtree, detaching it from its parent (or
     /// from the root list) first. Returns every removed referent, root included; the
     /// order within that list is unspecified beyond that guarantee.

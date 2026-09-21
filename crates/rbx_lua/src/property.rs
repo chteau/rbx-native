@@ -7,6 +7,7 @@ mod to_lua;
 
 use mlua::{Lua, Result, Value};
 use rbx_dom::{Instance, Ref, Variant};
+use rbx_reflection::{PropertyDescriptor, ReflectionDatabase};
 
 use crate::ctx::Ctx;
 
@@ -95,6 +96,31 @@ fn storage_key(instance: &Instance, canonical: &str) -> String {
         .unwrap_or_else(|| canonical.to_string())
 }
 
+/// The reflected property that `key`, as a file stores it on an instance of
+/// `class`, stands for: `storage_key` read backwards, through the same rules
+/// and the same alias table, so `size` is `Part.Size` and `Color3uint8` is
+/// `BasePart.Color`. `None` for a key the dump has no property for at all —
+/// `Tags`, `AttributesSerialize` and the other serialized-only data.
+pub fn reflected_property<'a>(
+    database: &'a ReflectionDatabase,
+    class: &str,
+    key: &str,
+) -> Option<&'a PropertyDescriptor> {
+    let resolve = |name: &str| database.resolve_property(class, name);
+    let mut chars = key.chars();
+    let raised = chars
+        .next()
+        .map(|first| first.to_uppercase().collect::<String>() + chars.as_str());
+    resolve(key)
+        .or_else(|| raised.as_deref().and_then(resolve))
+        .or_else(|| {
+            ALIASES
+                .iter()
+                .find(|(_, alias)| *alias == key)
+                .and_then(|(name, _)| resolve(name))
+        })
+}
+
 /// Narrows a freshly built `Variant` to the representation the file already used
 /// for that property, so an edited place re-serializes byte-compatibly instead of
 /// switching a `Color3uint8` column to `Color3` or a float's width.
@@ -113,5 +139,26 @@ fn keep_representation(existing: Option<&Variant>, value: Variant) -> Variant {
         (Some(Variant::Int64(_)), Variant::Int32(v)) => Variant::Int64(i64::from(*v)),
         (Some(Variant::Int32(_)), Variant::Int64(v)) => Variant::Int32(*v as i32),
         _ => value,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_stored_key_reads_back_as_the_property_scripts_name() {
+        let database = ReflectionDatabase::embedded();
+        let name = |class: &str, key: &str| {
+            reflected_property(&database, class, key).map(|property| property.name.as_str())
+        };
+        assert_eq!(name("Part", "size"), Some("Size"));
+        assert_eq!(name("Part", "shape"), Some("Shape"));
+        assert_eq!(name("Part", "Color3uint8"), Some("Color"));
+        assert_eq!(name("Part", "CFrame"), Some("CFrame"));
+        // Declared on `Part`, so a `MeshPart` has no such property to map to.
+        assert_eq!(name("MeshPart", "shape"), None);
+        assert_eq!(name("Part", "Tags"), None);
+        assert_eq!(name("Part", "AttributesSerialize"), None);
     }
 }

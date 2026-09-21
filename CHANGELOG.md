@@ -208,6 +208,20 @@
   redrawn as the toggles and the selection change and cleared when it
   closes. The overlay takes plain world matrices and knows nothing about
   Align, so the next tool that needs one adds no pass. — @chteau
+- **Change Class.** Right-click an Explorer row and a `Part` can become a
+  `WedgePart`, a `Frame` a `TextButton`, a `Script` a `LocalScript` — the
+  whole selection at once, in one undo step. The instance changes class in
+  place rather than being rebuilt, so it keeps its referent, and everything
+  that pointed at it — a `Weld.Part0`, a `PrimaryPart`, the selection, an
+  open script tab — still does, which a plugin that destroys and recreates
+  the instance cannot offer. A property the new class has no room for is
+  dropped, one still at the old class's default takes the new class's own,
+  and tags, attributes and anything else the API dump does not describe
+  always survive; the picker says what a class would drop before you pick
+  it. It is the insert picker with another purpose: related classes and
+  this session's recent picks come first, and the search ranks a prefix
+  over word starts over scattered letters, so `tl` finds `TextLabel`. A
+  service's class stays put, and the Output panel says so. — @chteau
 - **The sun goes where you point.** A Sun tool on the Model page places the
   sun — or, from its Moon tile, the moon — by pointing at the scene instead
   of typing a time and a latitude. Four gestures: drag it across the Sky;

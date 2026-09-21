@@ -167,3 +167,39 @@ fn change_log_records_mutations_in_order_and_clears_on_take() {
     // Draining again returns nothing until something mutates the DOM again.
     assert_eq!(dom.take_changes(), Vec::new());
 }
+
+#[test]
+fn set_class_changes_the_class_in_place_and_logs_it() {
+    let (mut dom, folder, part) = dom_with_folder_and_part();
+    dom.set_property(part, "Transparency", Variant::Float32(0.5))
+        .unwrap();
+    dom.new_instance("Decal", "Decal", Some(part));
+    dom.take_changes();
+
+    let old = dom.set_class(part, "WedgePart").unwrap();
+
+    assert_eq!(old, "Part");
+    let instance = dom.get(part).unwrap();
+    assert_eq!(instance.class(), "WedgePart");
+    // Everything but the class is the instance it was: the same referent
+    // under the same parent, with its name, properties and children.
+    assert_eq!(instance.referent(), part);
+    assert_eq!(instance.name(), "Part");
+    assert_eq!(
+        instance.properties().get("Transparency"),
+        Some(&Variant::Float32(0.5))
+    );
+    assert_eq!(instance.children().len(), 1);
+    assert_eq!(dom.parent(part), Some(folder));
+    assert_eq!(dom.take_changes(), vec![Change::Class(part)]);
+}
+
+#[test]
+fn set_class_unknown_referent_errors_and_logs_nothing() {
+    let mut dom = WeakDom::new();
+    let bogus = Ref::new(999);
+
+    let err = dom.set_class(bogus, "Folder").unwrap_err();
+    assert_eq!(err, DomError::UnknownInstance(bogus));
+    assert!(dom.take_changes().is_empty());
+}

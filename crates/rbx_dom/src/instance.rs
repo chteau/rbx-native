@@ -44,6 +44,11 @@ impl Instance {
         &self.name
     }
 
+    // Untracked, like `set_name`; `WeakDom::set_class` is the tracked path.
+    pub(crate) fn set_class(&mut self, class: &str) {
+        self.class = class.to_string();
+    }
+
     // Bypasses WeakDom's change log by construction: this type has no reference back
     // to the DOM that owns it. Bulk construction (the binary deserializer) uses this
     // directly; a tracked rename on an instance already in a DOM should go through
