@@ -255,3 +255,20 @@ fn corrupted_bytes_never_panic() {
         }
     }
 }
+
+#[test]
+fn the_property_names_come_back_once_per_class() {
+    let (dom, names) = rbx_binary::deserialize_with_names(FPS).unwrap();
+
+    assert!(names.contains(&("Part".to_owned(), "size".to_owned())));
+    // One pair per property of a class, however many parts carry it.
+    let sizes = names
+        .iter()
+        .filter(|(class, property)| class == "Part" && property == "size")
+        .count();
+    assert_eq!(sizes, 1);
+    assert_eq!(
+        all_refs(&dom).len(),
+        all_refs(&deserialize(FPS).unwrap()).len()
+    );
+}

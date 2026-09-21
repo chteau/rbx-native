@@ -3,10 +3,12 @@
 
 use std::collections::HashMap;
 use std::mem::discriminant;
+use std::sync::Arc;
 
 use rbx_dom::{Instance, Variant, WeakDom};
 
 use crate::database::ReflectionDatabase;
+use crate::defaults::Rename;
 
 impl ReflectionDatabase {
     /// The value `name` holds on `instance` and the name it is stored under
@@ -41,28 +43,66 @@ impl ReflectionDatabase {
     /// conversion is a `Color3` becoming the `Color3uint8` a part's colour
     /// is saved as — and is otherwise left where it is.
     pub fn normalize_names(&self, dom: &mut WeakDom) {
-        let mut renames: HashMap<String, Vec<(&str, &str, &str)>> = HashMap::new();
+        self.rename_each(dom, |class| Some(self.renames(class)));
+    }
+
+    /// [`Self::normalize_names`] for a place whose property names are known
+    /// class by class — a binary one's, which stores each property once per
+    /// class. Only the spellings `names` holds are looked for, and only on
+    /// instances of the classes that hold them; for a place with none, the
+    /// cost is one check per name rather than a walk of every instance.
+    pub fn normalize_spellings<'a>(
+        &self,
+        dom: &mut WeakDom,
+        names: impl IntoIterator<Item = (&'a str, &'a str)>,
+    ) {
+        let mut wanted: HashMap<&str, Vec<Rename>> = HashMap::new();
+        for (class, property) in names {
+            for rename in self.renames(class).iter().filter(|r| r.from == property) {
+                wanted.entry(class).or_default().push(rename.clone());
+            }
+        }
+        if wanted.is_empty() {
+            return;
+        }
+        let wanted: HashMap<&str, Arc<[Rename]>> = wanted
+            .into_iter()
+            .map(|(class, renames)| (class, renames.into()))
+            .collect();
+        self.rename_each(dom, |class| wanted.get(class).cloned());
+    }
+
+    /// Applies `renames_of` each instance's class to that instance.
+    fn rename_each(&self, dom: &mut WeakDom, renames_of: impl Fn(&str) -> Option<Arc<[Rename]>>) {
         let mut stack = dom.root_refs().to_vec();
         while let Some(reference) = stack.pop() {
             let Some(instance) = dom.get_mut(reference) else {
                 continue;
             };
             stack.extend(instance.children().iter().copied());
-            let class = instance.class().to_owned();
-            let renames = renames
-                .entry(class.clone())
-                .or_insert_with(|| self.renames(&class));
-            let properties = instance.properties_mut();
-            for &(from, to, canonical) in renames.iter() {
-                let Some(value) = properties.remove(from) else {
+            let Some(renames) = renames_of(instance.class()) else {
+                continue;
+            };
+            // Nearly always none: a place saved by Studio holds only the saved
+            // spellings.
+            let found: Vec<&Rename> = renames
+                .iter()
+                .filter(|rename| instance.properties().contains_key(&rename.from))
+                .collect();
+            for rename in found {
+                let default = self
+                    .default_value(instance.class(), &rename.canonical)
+                    .cloned();
+                let properties = instance.properties_mut();
+                let Some(value) = properties.remove(&rename.from) else {
                     continue;
                 };
-                if properties.contains_key(to) {
+                if properties.contains_key(&rename.to) {
                     continue;
                 }
-                match conform(value, self.default_value(&class, canonical)) {
-                    Ok(value) => properties.insert(to.to_owned(), value),
-                    Err(value) => properties.insert(from.to_owned(), value),
+                match conform(value, default.as_ref()) {
+                    Ok(value) => properties.insert(rename.to.clone(), value),
+                    Err(value) => properties.insert(rename.from.clone(), value),
                 };
             }
         }
@@ -212,6 +252,25 @@ mod tests {
         let mut dom = one("Frame", &[("Size", Variant::Float32(1.0))]);
 
         database().normalize_names(&mut dom);
+
+        assert_eq!(keys(&dom), ["Size"]);
+    }
+
+    #[test]
+    fn named_spellings_are_renamed_and_others_left_alone() {
+        let mut dom = one("Part", &[("Size", size()), ("Shape", Variant::Enum(0))]);
+
+        // What a binary place's property chunks would list: only `Size`.
+        database().normalize_spellings(&mut dom, [("Part", "Size"), ("Part", "Anchored")]);
+
+        assert_eq!(keys(&dom), ["Shape", "size"]);
+    }
+
+    #[test]
+    fn nothing_named_to_rename_touches_nothing() {
+        let mut dom = one("Part", &[("Size", size())]);
+
+        database().normalize_spellings(&mut dom, [("Part", "size")]);
 
         assert_eq!(keys(&dom), ["Size"]);
     }
