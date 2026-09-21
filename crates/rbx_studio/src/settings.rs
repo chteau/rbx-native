@@ -17,9 +17,10 @@ use rbx_viewer::QualityLevel;
 
 use crate::class_icons::IconPack;
 use crate::pacing::UnfocusedFps;
+use crate::shell::{Edge, SavedEdge, SavedGroup, SavedLayout};
 
 /// What persists across a relaunch.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Settings {
     pub(crate) quality: QualityLevel,
     pub(crate) show_all_services: bool,
@@ -54,13 +55,15 @@ pub(crate) struct Settings {
     /// an accessibility preference that can only be set with an environment
     /// variable is not a setting anybody has.
     pub(crate) reduce_motion: Option<bool>,
-    /// The dock layout, so it survives a relaunch — the reference doc's
-    /// Stage 2 item 9. Not a separate file: a layout is a preference like
-    /// any other, and a second persistence path is a second thing to keep
-    /// in step.
-    pub(crate) properties_width: f32,
-    pub(crate) explorer_width: f32,
-    pub(crate) output_height: f32,
+    /// The dock layout — which panel is on which edge, and how big each
+    /// edge is — so it survives a relaunch, the reference doc's Stage 2
+    /// item 9. Not a separate file: a layout is a preference like any
+    /// other, and a second persistence path is a second thing to keep in
+    /// step.
+    ///
+    /// Read back through `shell::Layout::restore`, which is total over
+    /// whatever the file holds, so nothing here has to validate it.
+    pub(crate) docks: SavedLayout,
     pub(crate) output_collapsed: bool,
     /// Real Studio's two insertion preferences, off the `⋯` beside the
     /// Explorer's insert search field (`studio/explorer.md`). Both default
@@ -86,12 +89,10 @@ impl Default for Settings {
             font_scale: 1.,
             large_targets: false,
             reduce_motion: None,
-            // Zero means "whatever the shell's own default is" — the
-            // defaults live with the layout in `shell::workspace`, and
+            // Empty means "whatever the shell's own default is" — the
+            // defaults live with the layout in `shell::layout`, and
             // duplicating them here is how the two drift apart.
-            properties_width: 0.,
-            explorer_width: 0.,
-            output_height: 0.,
+            docks: SavedLayout::default(),
             output_collapsed: false,
             increment_names: true,
             expand_on_select: true,
@@ -216,15 +217,6 @@ fn load_from(path: &Path) -> Settings {
         })
         .unwrap_or(1.);
 
-    let number = |key: &str| {
-        value
-            .get(key)
-            .and_then(|v| v.as_f64())
-            .map(|n| n as f32)
-            .filter(|n| n.is_finite() && *n > 0.)
-            .unwrap_or(0.)
-    };
-
     Settings {
         quality,
         show_all_services,
@@ -242,9 +234,7 @@ fn load_from(path: &Path) -> Settings {
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
         reduce_motion: value.get("reduce_motion").and_then(|v| v.as_bool()),
-        properties_width: number("properties_width"),
-        explorer_width: number("explorer_width"),
-        output_height: number("output_height"),
+        docks: read_docks(&value),
         output_collapsed: value
             .get("output_collapsed")
             .and_then(|v| v.as_bool())
@@ -257,6 +247,83 @@ fn load_from(path: &Path) -> Settings {
             .get("expand_on_select")
             .and_then(|v| v.as_bool())
             .unwrap_or(true),
+    }
+}
+
+/// The saved dock layout, or nothing at all when the file predates it or
+/// has it in a shape this version cannot read.
+///
+/// Deliberately forgiving in one direction only: anything malformed is
+/// simply left out, and `shell::Layout::restore` puts the missing panels
+/// back on their own edges. That is the same contract every other field
+/// here has — a hand-edited or future-version settings file must not stop
+/// the editor from opening.
+fn read_docks(value: &serde_json::Value) -> SavedLayout {
+    let Some(docks) = value.get("docks") else {
+        return SavedLayout::default();
+    };
+
+    let names = |value: Option<&serde_json::Value>| -> Vec<String> {
+        value
+            .and_then(serde_json::Value::as_array)
+            .map(|names| {
+                names
+                    .iter()
+                    .filter_map(|name| name.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+
+    let edges = docks
+        .get("edges")
+        .and_then(serde_json::Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| {
+                    let edge: Edge = crate::shell::edge_from_key(entry.get("edge")?.as_str()?)?;
+                    let groups = entry
+                        .get("groups")
+                        .and_then(serde_json::Value::as_array)
+                        .map(|groups| {
+                            groups
+                                .iter()
+                                .map(|group| SavedGroup {
+                                    panels: names(group.get("panels")),
+                                    active: group
+                                        .get("active")
+                                        .and_then(serde_json::Value::as_u64)
+                                        .unwrap_or(0)
+                                        as usize,
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    Some(SavedEdge {
+                        edge,
+                        groups,
+                        // Zero is this file's "nothing was saved" marker,
+                        // which is also what a negative, infinite or NaN
+                        // size has to become: a hand-edited file must not
+                        // be able to collapse a dock to nothing or stretch
+                        // it past the window.
+                        size: entry
+                            .get("size")
+                            .and_then(serde_json::Value::as_f64)
+                            .map(|size| size as f32)
+                            .filter(|size| size.is_finite() && *size > 0.)
+                            .unwrap_or(0.),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    SavedLayout {
+        edges,
+        floating: names(docks.get("floating")),
+        closed: names(docks.get("closed")),
     }
 }
 
@@ -283,9 +350,29 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "font_scale": settings.font_scale,
         "large_targets": settings.large_targets,
         "reduce_motion": settings.reduce_motion,
-        "properties_width": settings.properties_width,
-        "explorer_width": settings.explorer_width,
-        "output_height": settings.output_height,
+        "docks": {
+            "edges": settings
+                .docks
+                .edges
+                .iter()
+                .map(|edge| {
+                    serde_json::json!({
+                        "edge": crate::shell::edge_key(edge.edge),
+                        "size": edge.size,
+                        "groups": edge
+                            .groups
+                            .iter()
+                            .map(|group| serde_json::json!({
+                                "panels": group.panels,
+                                "active": group.active,
+                            }))
+                            .collect::<Vec<_>>(),
+                    })
+                })
+                .collect::<Vec<_>>(),
+            "floating": settings.docks.floating,
+            "closed": settings.docks.closed,
+        },
         "output_collapsed": settings.output_collapsed,
         "increment_names": settings.increment_names,
         "expand_on_select": settings.expand_on_select,
@@ -600,9 +687,25 @@ mod tests {
     fn a_dock_layout_round_trips_and_a_missing_one_falls_back() {
         let path = temp_settings_path();
         let settings = Settings {
-            properties_width: 412.5,
-            explorer_width: 260.,
-            output_height: 95.,
+            docks: SavedLayout {
+                edges: vec![
+                    SavedEdge {
+                        edge: Edge::Left,
+                        groups: vec![SavedGroup {
+                            panels: vec!["Explorer".to_owned(), "Output".to_owned()],
+                            active: 1,
+                        }],
+                        size: 412.5,
+                    },
+                    SavedEdge {
+                        edge: Edge::Right,
+                        groups: Vec::new(),
+                        size: 260.,
+                    },
+                ],
+                floating: vec!["Properties".to_owned()],
+                closed: Vec::new(),
+            },
             output_collapsed: true,
             large_targets: true,
             reduce_motion: Some(true),
@@ -611,19 +714,18 @@ mod tests {
 
         save_to(&settings, &path).expect("save settings");
         let read = load_from(&path);
-        assert_eq!(read.properties_width, 412.5);
-        assert_eq!(read.output_height, 95.);
+        assert_eq!(read.docks, settings.docks, "which panel sits where");
         assert!(read.output_collapsed);
         assert!(read.large_targets);
         assert_eq!(read.reduce_motion, Some(true));
 
-        // Nothing saved reads as zero, which is the shell's cue to use its
-        // own defaults rather than collapsing every dock to nothing.
+        // Nothing saved reads as no edges at all, which is the shell's cue
+        // to use its own default layout rather than opening with no docks.
         let empty = temp_settings_path();
         std::fs::create_dir_all(empty.parent().expect("a parent")).expect("create dir");
         std::fs::write(&empty, b"{}").expect("write settings");
         let read = load_from(&empty);
-        assert_eq!(read.properties_width, 0.);
+        assert_eq!(read.docks, SavedLayout::default());
         assert_eq!(
             read.reduce_motion, None,
             "no recorded choice means follow the desktop, not 'off'"
@@ -637,13 +739,28 @@ mod tests {
         std::fs::create_dir_all(path.parent().expect("a parent")).expect("create dir");
         std::fs::write(
             &path,
-            br#"{"properties_width": -50, "explorer_width": 0, "output_height": 1e400}"#,
+            br#"{"docks": {"edges": [
+                {"edge": "left", "groups": [{"panels": ["Properties"]}], "size": -50},
+                {"edge": "right", "groups": [{"panels": ["Explorer"]}], "size": 1e39},
+                {"edge": "nowhere", "groups": [], "size": 300},
+                {"groups": [], "size": 300}
+            ]}}"#,
         )
         .expect("write settings");
 
         let read = load_from(&path);
-        assert_eq!(read.properties_width, 0., "a negative width is not a width");
-        assert_eq!(read.explorer_width, 0.);
-        assert_eq!(read.output_height, 0., "nor is an infinity");
+        assert_eq!(
+            read.docks.edges.len(),
+            2,
+            "an edge with no name is not an edge"
+        );
+        assert_eq!(
+            read.docks.edges[0].size, 0.,
+            "a negative width is not a width"
+        );
+        // 1e39 is a fine f64 and an infinite f32, which is the only way
+        // an overflow reaches this: a literal too big for f64 stops
+        // `serde_json` parsing the document at all.
+        assert_eq!(read.docks.edges[1].size, 0., "nor is an overflow");
     }
 }

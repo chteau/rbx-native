@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-09-22
+
+- **The docks move.** A panel's home used to be the order of three
+  `.child()` calls in the render code, so there was nothing a gesture could
+  change. It is data now, and the tab is the handle: drag a dock's tab to
+  another edge, onto another dock's strip to become a tab of it, or onto a
+  dock's half to split the edge and make a new dock there — the half that
+  lights up is the size the new dock will be, because it *is* that half. An
+  edge holding nothing grows a ghost dock while a drag is in flight, easing
+  open and shut, so an edge you emptied can be filled again. Drag a tab past
+  the window's own edge and the dock tears out into a window of its own,
+  rendering the same editor rather than a copy of it; close that window and
+  the panel goes back where it started. A dock closes from the × on its tab
+  and comes back from the ribbon's Home tab or the View menu, whose three
+  entries had been placeholders since the menu was written. Everything —
+  which panel is on which edge, in which dock, showing which tab, how big
+  each edge is, what is floating and what is shut — survives a restart.
+  "Move to Left/Right/Bottom", "Float" and "Close" are on every dock's own
+  menu too, and that is not decoration: the accessibility guidance this
+  project follows treats drag-only rearrangement as a failure rather than a
+  gap, so the drag is the fast path and the menu is the one that has to
+  exist. Both go through one transform, so they cannot disagree. — @chteau
+
 ## 2026-09-21
 
 - **The insert picker's classes carry their own icons, and the kit grew

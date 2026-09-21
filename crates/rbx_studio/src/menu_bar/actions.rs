@@ -8,7 +8,7 @@
 
 use gpui_kit::{App, Entity};
 
-use crate::shell::Shell;
+use crate::shell::{Panel, Shell};
 
 use super::*;
 
@@ -37,6 +37,16 @@ pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
             shell.update(cx, |shell, cx| shell.reset_layout(cx));
         }
     });
+    // A dock closed from its own tab has no tab left to reopen it with, so
+    // these are the way back — the same toggles the ribbon's Home tab
+    // carries, going through the same call.
+    for (panel, toggle) in [
+        (Panel::Explorer, &MenuToggleExplorer as &dyn PanelToggle),
+        (Panel::Properties, &MenuToggleProperties),
+        (Panel::Output, &MenuToggleOutput),
+    ] {
+        toggle.install(panel, shell.clone(), cx);
+    }
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuUndo, cx| {
@@ -150,3 +160,31 @@ pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
     });
     cx.on_action(move |_: &MenuPlaceholder, _cx| {});
 }
+
+/// One View-menu entry per dock, registered the same way every other
+/// action here is.
+///
+/// A trait only because `on_action` is generic over the action type and
+/// three near-identical blocks read worse than one.
+trait PanelToggle {
+    fn install(&self, panel: Panel, shell: Entity<Shell>, cx: &mut App);
+}
+
+macro_rules! panel_toggle {
+    ($action:ty) => {
+        impl PanelToggle for $action {
+            fn install(&self, panel: Panel, shell: Entity<Shell>, cx: &mut App) {
+                cx.on_action(move |_: &$action, cx| {
+                    shell.update(cx, |shell, cx| {
+                        let open = shell.is_panel_open(panel);
+                        shell.set_panel_open(panel, !open, cx);
+                    });
+                });
+            }
+        }
+    };
+}
+
+panel_toggle!(MenuToggleExplorer);
+panel_toggle!(MenuToggleProperties);
+panel_toggle!(MenuToggleOutput);

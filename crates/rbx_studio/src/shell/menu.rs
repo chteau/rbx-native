@@ -29,6 +29,7 @@ use super::Shell;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MenuId {
     ExplorerOverflow,
+    PropertiesOverflow,
     ViewportOverflow,
     OutputOverflow,
     InsertPart,
@@ -41,6 +42,7 @@ impl MenuId {
     fn id(self) -> &'static str {
         match self {
             MenuId::ExplorerOverflow => "menu-explorer",
+            MenuId::PropertiesOverflow => "menu-properties",
             MenuId::ViewportOverflow => "menu-viewport",
             MenuId::OutputOverflow => "menu-output",
             MenuId::InsertPart => "menu-insert-part",
