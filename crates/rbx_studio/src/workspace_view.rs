@@ -912,6 +912,11 @@ impl Render for WorkspaceView {
             // `on_mouse_move` to say so — bounds-scoped, like every handler
             // above — so a stale hover box would otherwise outlive it; `false`
             // is exactly that transition (see `Interactivity::on_hover`).
+            // Hit-tested whatever the last input was: GPUI's default reads a
+            // key press as the cursor leaving, and a key typed over the view
+            // (a camera key, a tool shortcut, Ctrl+Z) does not take the
+            // cursor anywhere.
+            .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
             .on_hover(cx.listener(|view, hovering: &bool, _, cx| {
                 if !hovering {
                     view.left_view();
