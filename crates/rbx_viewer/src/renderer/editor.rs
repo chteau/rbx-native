@@ -93,7 +93,7 @@ impl Renderer {
         layer: usize,
         segments: &[super::Segment],
     ) {
-        self.lines.set(device, self.target, layer, segments);
+        self.lines.set(device, layer, segments);
     }
 
     /// Shows or hides the transform tool's draggers over whatever is

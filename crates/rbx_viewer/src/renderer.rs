@@ -676,6 +676,16 @@ impl Renderer {
         // the tone map all live in the resolve.
         self.post
             .resolve(&mut encoder, &target.create_view(&Default::default()));
+        // Onto the finished frame, so a one-pixel guide keeps its colour
+        // (see `renderer::lines`), and under the `ScreenGui` like the rest
+        // of the 3D view.
+        self.lines.draw(
+            device,
+            &mut encoder,
+            target,
+            targets,
+            &self.frame.bind_group,
+        );
         // After the resolve, not before it: a `ScreenGui` is an overlay, so
         // bloom, depth of field and the tone map must leave it alone. It takes
         // the texture rather than a view because it composites through a

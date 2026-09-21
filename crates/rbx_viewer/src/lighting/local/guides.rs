@@ -44,13 +44,14 @@ use crate::textures::NormalId;
 /// this many sides.
 const CIRCLE_SEGMENTS: usize = 32;
 /// How a guide is shaded from its light's linear `Color`: Studio draws a
-/// white light's guide as a light grey (about 213 of 255) letting some 30%
-/// of the sky behind it through. Both matched by eye against Studio's own
-/// screenshots, through this renderer's blending and tone map.
-const SHADE: f32 = 0.75;
-const ALPHA: f32 = 0.5;
-/// A guide's width on screen: Studio's are two pixels across at 100% scale.
-const WIDTH: f32 = 2.0;
+/// white light's guide as the grey 213 of 255 (0.665 linear) at 0.71
+/// opacity, both solved from its own screenshots — the same line over three
+/// sky shades fits that one colour and opacity blended in encoded space,
+/// which is how `renderer::lines` blends.
+const SHADE: f32 = 0.665;
+const ALPHA: f32 = 0.71;
+/// A guide's width on screen: one pixel, like the dragger's own guides.
+const WIDTH: f32 = 1.0;
 /// A rim smaller than this is an `Angle` of 0: its slant lines would all lie
 /// on the axis line.
 const MIN_RIM: f32 = 1e-4;
