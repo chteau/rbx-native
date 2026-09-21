@@ -95,10 +95,16 @@ impl Shell {
         // viewport outline agree with the row immediately; by the time the
         // observer does eventually run, they already match, so it is a
         // deliberate no-op there.
+        // Real Studio's "expand hierarchy when selecting": with it off, a
+        // selection highlights without opening the branch it lives in (see
+        // `shell::explorer_edit::picker`).
+        let expand = self.expand_on_select();
         let tree = self.tree.clone();
         tree.update(cx, |tree, cx| {
             tree.set_selected_item(Some(&item), cx);
-            tree.reveal_item(&item.id, ScrollStrategy::Center, cx);
+            if expand {
+                tree.reveal_item(&item.id, ScrollStrategy::Center, cx);
+            }
         });
         if self.selection.set(Some(reference)) {
             self.selection_changed(cx);
@@ -131,10 +137,11 @@ impl Shell {
     /// it to its anchor the way [`Shell::select`] would.
     pub(super) fn reselect(&mut self, kept: Vec<Ref>, cx: &mut Context<Self>) {
         let anchor = kept.first().and_then(|&r| self.explorer.item(r));
+        let expand = self.expand_on_select();
         let tree = self.tree.clone();
         tree.update(cx, |tree, cx| {
             tree.set_selected_item(anchor.as_ref(), cx);
-            if let Some(anchor) = &anchor {
+            if let Some(anchor) = anchor.as_ref().filter(|_| expand) {
                 tree.reveal_item(&anchor.id, ScrollStrategy::Center, cx);
             }
         });

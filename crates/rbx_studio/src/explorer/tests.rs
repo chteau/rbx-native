@@ -114,12 +114,12 @@ fn instances_keep_their_children_in_file_order() {
 #[test]
 fn every_instance_gets_an_icon_by_its_referent() {
     let mut dom = WeakDom::new();
-    // Part: covered by the icon kit. BodyColors: a real class the kit doesn't
-    // claim a tile for, which is what this test is about (one icon per
-    // referent, covered or not).
+    // Part: covered by the icon kit. PluginAction: a real class the kit
+    // doesn't claim a tile for, which is what this test is about (one icon
+    // per referent, covered or not).
     let part = insert(&mut dom, 7, "Part", "Part");
-    let colors = insert(&mut dom, 8, "BodyColors", "BodyColors");
-    dom.set_parent(colors, Some(part));
+    let action = insert(&mut dom, 8, "PluginAction", "PluginAction");
+    dom.set_parent(action, Some(part));
 
     let explorer = from_dom(&dom);
 
@@ -152,7 +152,7 @@ fn resolve_icon_prefers_the_icon_kit_over_the_lucide_fallback() {
         resolve_icon("Script", IconPack::Dark),
         ClassIcon::Sprite(_)
     ));
-    assert!(is_lucide(&resolve_icon("BodyColors", IconPack::Dark)));
+    assert!(is_lucide(&resolve_icon("PluginAction", IconPack::Dark)));
 }
 
 #[test]
@@ -370,4 +370,48 @@ fn a_root_resolves_by_the_single_segment_that_names_it() {
     assert_eq!(resolve(&dom, "Workspace"), Some(Ref::new(1)));
     assert_eq!(resolve(&dom, "Nowhere"), None);
     assert_eq!(resolve(&dom, ""), None);
+}
+
+#[test]
+fn the_tiles_authored_beyond_roblox_own_sheet_resolve_to_sprites() {
+    // The five classes the insert picker's list is the reason for: real
+    // Studio's own metadata gives them no tile, so before the kit grew one
+    // each they listed with a bare Lucide glyph.
+    for class in [
+        "StyleSheet",
+        "StyleRule",
+        "StyleLink",
+        "IntersectOperation",
+        "BodyColors",
+    ] {
+        assert!(
+            matches!(resolve_icon(class, IconPack::Dark), ClassIcon::Sprite(_)),
+            "{class} should draw a kit tile"
+        );
+        assert!(
+            matches!(resolve_icon(class, IconPack::Light), ClassIcon::Sprite(_)),
+            "{class} should draw a kit tile in the light variant too"
+        );
+    }
+}
+
+#[test]
+fn the_picker_and_the_tree_resolve_one_class_to_one_tile() {
+    // `shell::explorer_edit::picker` lists classes and the tree lists
+    // instances, but both go through `resolve_icon` — so the same class has
+    // to come back as the very same rasterized tile, not a second copy of
+    // an equal one.
+    let mut dom = WeakDom::new();
+    insert(&mut dom, 11, "Part", "Part");
+    let explorer = from_dom(&dom);
+
+    match (
+        explorer.icon(&"11".into()),
+        resolve_icon("Part", IconPack::Dark),
+    ) {
+        (ClassIcon::Sprite(tree), ClassIcon::Sprite(picker)) => {
+            assert!(Arc::ptr_eq(&tree, &picker));
+        }
+        _ => panic!("Part is covered by the icon kit"),
+    }
 }

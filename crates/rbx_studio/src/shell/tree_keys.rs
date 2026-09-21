@@ -189,6 +189,10 @@ impl Shell {
     /// Returns whether this module answered it; `false` means the toolkit's
     /// handler should run (and expand or collapse the focused node).
     pub(super) fn handle_tree_arrow(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
+        // See `Shell::renaming_in_place`: the open name box owns the arrows.
+        if self.renaming_in_place() {
+            return false;
+        }
         let Some((len, focused, is_folder, expanded)) = self.tree_focus(cx) else {
             return false;
         };
@@ -251,6 +255,11 @@ impl Shell {
         keystroke: &Keystroke,
         cx: &mut Context<Self>,
     ) -> bool {
+        // See `Shell::renaming_in_place`: without this the type-ahead below
+        // swallows every letter typed into an open name box.
+        if self.renaming_in_place() {
+            return false;
+        }
         let Some((len, focused, is_folder, expanded)) = self.tree_focus(cx) else {
             return false;
         };

@@ -62,6 +62,13 @@ pub(crate) struct Settings {
     pub(crate) explorer_width: f32,
     pub(crate) output_height: f32,
     pub(crate) output_collapsed: bool,
+    /// Real Studio's two insertion preferences, off the `⋯` beside the
+    /// Explorer's insert search field (`studio/explorer.md`). Both default
+    /// on, as they do there: a second `Part` called `Part` is not something
+    /// anyone asks for, and an insert whose row the tree never expands to
+    /// reveal reads as an insert that did nothing.
+    pub(crate) increment_names: bool,
+    pub(crate) expand_on_select: bool,
 }
 
 impl Default for Settings {
@@ -86,6 +93,8 @@ impl Default for Settings {
             explorer_width: 0.,
             output_height: 0.,
             output_collapsed: false,
+            increment_names: true,
+            expand_on_select: true,
         }
     }
 }
@@ -240,6 +249,14 @@ fn load_from(path: &Path) -> Settings {
             .get("output_collapsed")
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
+        increment_names: value
+            .get("increment_names")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true),
+        expand_on_select: value
+            .get("expand_on_select")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true),
     }
 }
 
@@ -270,6 +287,8 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "explorer_width": settings.explorer_width,
         "output_height": settings.output_height,
         "output_collapsed": settings.output_collapsed,
+        "increment_names": settings.increment_names,
+        "expand_on_select": settings.expand_on_select,
     });
     // A fixed-shape object always serializes; nothing here can fail.
     let bytes = serde_json::to_vec_pretty(&value).expect("settings JSON always serializes");

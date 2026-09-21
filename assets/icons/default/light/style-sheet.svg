@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- style-sheet.svg - Class icon kit, light theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>style-sheet</title>
+  <path d="M4,2 L10.5,2 L13,4.5 L13,14 L4,14 Z" fill="#7743C4"/>
+  <path d="M10.5,2 L10.5,4.5 L13,4.5 Z" fill="#552F8E"/>
+  <rect x="5.5" y="7" width="2.6" height="2.6" rx="0.5" fill="#552F8E"/>
+  <g fill="none" stroke="#552F8E" stroke-width="1" stroke-linecap="round">
+    <line x1="9.2" y1="8.3" x2="11.2" y2="8.3"/>
+    <line x1="5.5" y1="11.6" x2="11.2" y2="11.6"/>
+  </g>
+</svg>

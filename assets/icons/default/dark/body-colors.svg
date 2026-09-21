@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- body-colors.svg - Class icon kit, dark theme -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>body-colors</title>
+  <circle cx="8" cy="4.6" r="2.6" fill="#A6B2C0"/>
+  <path d="M3.6,11.5 C3.6,7.2 12.4,7.2 12.4,11.5 Z" fill="#A6B2C0"/>
+  <rect x="2.2" y="12.4" width="3.4" height="2.4" rx="0.6" fill="#F58579"/>
+  <rect x="6.3" y="12.4" width="3.4" height="2.4" rx="0.6" fill="#4ACE6B"/>
+  <rect x="10.4" y="12.4" width="3.4" height="2.4" rx="0.6" fill="#63AEF5"/>
+</svg>
