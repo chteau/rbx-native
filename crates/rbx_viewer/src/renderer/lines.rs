@@ -79,13 +79,26 @@ fn dot(centre: Vec3, width: f32, color: [f32; 4], out: &mut Vec<DotVertex>) {
 pub(super) struct Lines {
     pipelines: Option<[wgpu::RenderPipeline; 2]>,
     dot_pipelines: Option<[wgpu::RenderPipeline; 2]>,
-    batch: Batch,
+    /// Each layer's lines and dots, uploaded apart so that replacing one
+    /// layer leaves the others' buffers alone.
+    layers: Vec<Layer>,
+}
+
+#[derive(Default)]
+struct Layer {
+    lines: Batch,
     dots: Batch,
 }
 
 impl Lines {
-    /// Replaces every segment. An empty list clears them.
-    pub(super) fn set(&mut self, device: &wgpu::Device, target: Target, segments: &[Segment]) {
+    /// Replaces one layer's segments. An empty list clears it.
+    pub(super) fn set(
+        &mut self,
+        device: &wgpu::Device,
+        target: Target,
+        layer: usize,
+        segments: &[Segment],
+    ) {
         let mut sides = [Vec::new(), Vec::new()];
         let mut dots = [Vec::new(), Vec::new()];
         for segment in segments {
@@ -102,10 +115,13 @@ impl Lines {
                 );
             }
         }
+        if self.layers.len() <= layer {
+            self.layers.resize_with(layer + 1, Layer::default);
+        }
         let [occluded, on_top] = sides;
-        self.batch = Batch::build(device, "rbxview lines", &occluded, &on_top);
+        self.layers[layer].lines = Batch::build(device, "rbxview lines", &occluded, &on_top);
         let [occluded, on_top] = dots;
-        self.dots = Batch::build(device, "rbxview dots", &occluded, &on_top);
+        self.layers[layer].dots = Batch::build(device, "rbxview dots", &occluded, &on_top);
         if !segments.is_empty() && self.pipelines.is_none() {
             self.build_pipelines(device, target);
         }
@@ -136,12 +152,18 @@ impl Lines {
     }
 
     /// The depth-tested segments first, then the ones drawn through; the
-    /// dots last, over the lines they mark.
+    /// dots last, over the lines they mark — every layer's lines before any
+    /// layer's dots.
     pub(super) fn draw<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, frame: &'a wgpu::BindGroup) {
         let (Some(lines), Some(dots)) = (&self.pipelines, &self.dot_pipelines) else {
             return;
         };
-        for (batch, pipelines) in [(&self.batch, lines), (&self.dots, dots)] {
+        let batches = self
+            .layers
+            .iter()
+            .map(|layer| (&layer.lines, lines))
+            .chain(self.layers.iter().map(|layer| (&layer.dots, dots)));
+        for (batch, pipelines) in batches {
             for (on_top, pipeline) in [false, true].into_iter().zip(pipelines) {
                 if let Some((buffer, range)) = batch.range(on_top) {
                     pass.set_pipeline(pipeline);

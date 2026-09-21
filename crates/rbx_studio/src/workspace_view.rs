@@ -473,6 +473,7 @@ impl WorkspaceView {
         if self.sized != size {
             self.sized = size;
             self.pump.resize(size);
+            self.send_lines();
         }
 
         // Everything waiting is drained, not just the first: an overtaken frame
@@ -698,6 +699,7 @@ impl WorkspaceView {
         self.drag = None;
         self.pump.gizmo(transform.gizmo());
         self.refresh_guides();
+        self.rehover();
     }
 
     /// Where every selected part stands now: after a selection change, and
@@ -912,6 +914,7 @@ impl Render for WorkspaceView {
             // is exactly that transition (see `Interactivity::on_hover`).
             .on_hover(cx.listener(|view, hovering: &bool, _, cx| {
                 if !hovering {
+                    view.left_view();
                     view.hover_pending = None;
                     cx.emit(ViewportAction::Hover {
                         ray: None,

@@ -8,6 +8,10 @@ use rbx_viewer::Segment;
 
 use super::WorkspaceView;
 
+/// The line layer the light guides are drawn on; the dragger guides have
+/// theirs (see `guides::DRAGGER_GUIDES`).
+const LIGHT_GUIDES: usize = 0;
+
 impl WorkspaceView {
     /// Forwards the Explorer's selection, forcing one frame even at rest.
     pub(crate) fn set_selection(&mut self, selected: &[Selected]) {
@@ -26,11 +30,10 @@ impl WorkspaceView {
         self.pump.preview(boxes);
     }
 
-    /// The light guides' segments. An empty list clears them. Sent along
-    /// with the dragger guides, which share the one list the render thread
-    /// takes (see `guides`).
+    /// The light guides' segments, on a line layer of their own apart from
+    /// the dragger guides' (see `guides`). An empty list clears them.
     pub(crate) fn set_lines(&mut self, segments: Vec<Segment>) {
-        self.show_light_guides(segments);
+        self.pump.lines(LIGHT_GUIDES, segments);
     }
 
     /// Reflects one edit's `Change` log in the render thread's scene, every
@@ -43,5 +46,6 @@ impl WorkspaceView {
     /// render thread's own copy of the DOM before the patch.
     pub(crate) fn apply_changes(&mut self, snapshots: Vec<Snapshot>, changes: Vec<Change>) {
         self.pump.apply_changes(snapshots, changes);
+        self.rehover();
     }
 }

@@ -71,7 +71,9 @@ impl Offscreen {
         offscreen.set_selection_occluded(view.selection_occluded, world.scene);
         offscreen.set_hover(view.hovered.clone(), world.scene);
         offscreen.set_preview(&view.preview);
-        offscreen.set_lines(&view.lines);
+        for (layer, segments) in view.lines.iter().enumerate() {
+            offscreen.set_lines(layer, segments);
+        }
         offscreen.set_gizmo(view.gizmo);
         Ok(offscreen)
     }
@@ -88,7 +90,9 @@ impl Offscreen {
         self.set_selection_occluded(view.selection_occluded, world.scene);
         self.set_hover(view.hovered.clone(), world.scene);
         self.set_preview(&view.preview);
-        self.set_lines(&view.lines);
+        for (layer, segments) in view.lines.iter().enumerate() {
+            self.set_lines(layer, segments);
+        }
         self.set_gizmo(view.gizmo);
     }
 
@@ -134,8 +138,8 @@ impl Offscreen {
     }
 
     /// Replaces the editor's line segments.
-    pub(crate) fn set_lines(&mut self, segments: &[Segment]) {
-        self.renderer.set_lines(&self.device, segments);
+    pub(crate) fn set_lines(&mut self, layer: usize, segments: &[Segment]) {
+        self.renderer.set_lines(&self.device, layer, segments);
     }
 
     /// Shows or hides the transform tool's draggers over the selection.

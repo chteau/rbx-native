@@ -28,6 +28,10 @@ mod handles;
 
 pub(super) use handles::label_element;
 
+/// The line layer the dragger guides are drawn on, apart from the light
+/// guides' so that a guide moving with the mouse never re-uploads them.
+const DRAGGER_GUIDES: usize = 1;
+
 /// Everything the guides keep between one event and the next.
 #[derive(Debug, Default)]
 pub(super) struct State {
@@ -35,10 +39,14 @@ pub(super) struct State {
     /// The face under the cursor and where the cursor meets it, as of the
     /// last hover `Shell` resolved.
     hover: Option<(SurfaceFrame, Vec3)>,
-    /// `Shift` at that hover, and whether a Move arrow was under the cursor —
-    /// Studio shows no hover ruler over a handle.
-    shift: bool,
+    /// The modifiers at that hover, and whether a Move arrow was under the
+    /// cursor — Studio shows no hover ruler over a handle.
+    modifiers: Modifiers,
     over_handle: bool,
+    /// Whether the cursor is over the view at all, so a hover asked for
+    /// again (see [`WorkspaceView::rehover`]) is never resolved at a cursor
+    /// that has left it.
+    inside: bool,
     /// The face a free drag last landed on. Over nothing, the drag keeps
     /// landing in that face's plane, on its grid.
     landed_on: Option<SurfaceFrame>,
@@ -52,9 +60,7 @@ pub(super) struct State {
     /// Studio's distance label: where, in the panel's own logical pixels,
     /// and what it reads.
     pub(super) label: Option<(Point<Pixels>, SharedString)>,
-    /// The light guides' segments, drawn alongside these.
-    light: Vec<Segment>,
-    /// What the render thread was last sent, both kinds together.
+    /// What the render thread was last sent.
     sent: Vec<Segment>,
     /// Where the cursor last stepped the drag in progress: a modifier
     /// pressed or released with the mouse still re-steps it from there.
@@ -86,10 +92,11 @@ impl WorkspaceView {
         self.show_guides(self.hover_guides(false));
     }
 
-    /// Notes what a hover ray is doing that `Shell` does not see: `Shift`,
-    /// and whether it points at one of the Move tool's arrows.
-    pub(super) fn note_hover(&mut self, ray: Option<Ray>, shift: bool) {
-        self.guides.shift = shift;
+    /// Notes what a hover ray is doing that `Shell` does not see: the
+    /// modifiers, and whether it points at one of the Move tool's arrows.
+    pub(super) fn note_hover(&mut self, ray: Option<Ray>, modifiers: Modifiers) {
+        self.guides.modifiers = modifiers;
+        self.guides.inside = true;
         self.guides.over_handle = self.transform.tool == Tool::Move
             && ray
                 .zip(self.handles())
@@ -114,11 +121,29 @@ impl WorkspaceView {
             &frame,
             hit,
             snap.increment,
-            snap.active(state.shift),
+            snap.active(state.modifiers.shift),
             pending,
             pose,
             self.orthographic,
         )
+    }
+
+    /// Resolves the hover again where the cursor stands, next frame: after an
+    /// edit, an undo or a delete moved or removed the face the ruler was
+    /// measuring, after a drag, and after a tool switch — none of which moves
+    /// the mouse, and a ruler left on a face that has gone is a lie.
+    pub(super) fn rehover(&mut self) {
+        if self.drag.is_some() || self.looking || !self.guides.inside {
+            return;
+        }
+        if let Some(at) = self.cursor {
+            self.hover_pending = Some((at, self.guides.modifiers));
+        }
+    }
+
+    /// The cursor left the view: nothing is hovered until it comes back.
+    pub(super) fn left_view(&mut self) {
+        self.guides.inside = false;
     }
 
     /// A body grab going ahead: the hover dot turns yellow until the first
@@ -203,30 +228,24 @@ impl WorkspaceView {
         self.send_lines();
     }
 
-    /// Replaces the light guides' segments (see `Shell::sync_light_guides`).
-    pub(super) fn show_light_guides(&mut self, segments: Vec<Segment>) {
-        self.guides.light = segments;
-        self.send_lines();
-    }
-
-    /// The render thread takes one list of segments for everything an editor
-    /// draws over the scene, so the light guides and the dragger guides go
-    /// together, from here alone — and only when they changed: a hover that
-    /// lands on the same grid point sends nothing.
-    fn send_lines(&mut self) {
-        let mut segments = self.guides.light.clone();
+    /// Sends the render thread the segments the guides draw now, on their
+    /// own line layer — only when they changed: a hover that lands on the
+    /// same grid point sends nothing. Also what follows a resized view, whose
+    /// screen-constant widths are pixels of the old height.
+    pub(super) fn send_lines(&mut self) {
         let height = self.viewport.get().size.1 as f32;
-        if let (Some(pose), true) = (self.view, height > 0.0) {
-            let orthographic = self.orthographic;
-            segments.extend(
+        let segments = match (self.view, height > 0.0) {
+            (Some(pose), true) => {
+                let orthographic = self.orthographic;
                 self.guides
                     .drawn
-                    .segments(|point| pixel_size(point, pose, orthographic, height)),
-            );
-        }
+                    .segments(|point| pixel_size(point, pose, orthographic, height))
+            }
+            _ => Vec::new(),
+        };
         if segments != self.guides.sent {
             self.guides.sent = segments.clone();
-            self.pump.lines(segments);
+            self.pump.lines(DRAGGER_GUIDES, segments);
         }
     }
 }

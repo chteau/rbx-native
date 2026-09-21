@@ -85,10 +85,15 @@ impl Renderer {
         self.preview.set(device, boxes);
     }
 
-    /// Replaces the editor's line segments — see `renderer::lines`. An empty
-    /// list clears them.
-    pub(crate) fn set_lines(&mut self, device: &wgpu::Device, segments: &[super::Segment]) {
-        self.lines.set(device, self.target, segments);
+    /// Replaces one layer of the editor's line segments — see
+    /// `renderer::lines`. An empty list clears it.
+    pub(crate) fn set_lines(
+        &mut self,
+        device: &wgpu::Device,
+        layer: usize,
+        segments: &[super::Segment],
+    ) {
+        self.lines.set(device, self.target, layer, segments);
     }
 
     /// Shows or hides the transform tool's draggers over whatever is
