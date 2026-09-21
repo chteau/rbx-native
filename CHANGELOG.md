@@ -16,7 +16,7 @@
   in Roblox's own metadata and so had no tile here — `StyleSheet`,
   `StyleRule`, `StyleLink`/`StyleDerive`, `IntersectOperation` and
   `BodyColors` — and now have one each, drawn to the kit's own spec in both
-  the dark and light variants; twenty-four more are pointed at the family
+  the dark and light variants; twenty-two more are pointed at the family
   tile they belong to (a `FileMesh` is a mesh, a `KeyframeSequence` is an
   animation). What still falls back to a Lucide glyph is the long tail:
   `ReflectionMetadata*`, the `Studio*` plugin objects, the `DataStore*`
