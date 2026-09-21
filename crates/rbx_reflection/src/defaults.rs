@@ -8,6 +8,7 @@
 //! API dump records only types.
 
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 use rbx_dom::{
     Axes, CFrameData, Color3Data, ColorSequence, ColorSequenceKeypoint, Content, Faces, Font,
@@ -22,6 +23,20 @@ use crate::database::ReflectionDatabase;
 #[derive(Debug, Default)]
 pub(crate) struct Defaults {
     classes: HashMap<String, ClassDefaults>,
+    /// Each class's [`Rename`]s, worked out the first time a class is asked
+    /// for: a place holds thousands of instances of a few dozen classes,
+    /// and reading one renames each of them.
+    renames: RwLock<HashMap<String, Arc<[Rename]>>>,
+}
+
+/// A spelling a file may use for a property, the name Roblox saves it
+/// under, and the property itself — `("Color", "Color3uint8", "Color")`,
+/// or `("size", "size_xml", "Size")` for a `Fire`.
+#[derive(Debug, Clone)]
+pub(crate) struct Rename {
+    pub(crate) from: String,
+    pub(crate) to: String,
+    pub(crate) canonical: String,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -61,7 +76,10 @@ impl Defaults {
                 .filter_map(|(name, value)| Some((name, variant(value, &weight)?)))
                 .collect();
         }
-        Ok(Defaults { classes })
+        Ok(Defaults {
+            classes,
+            renames: RwLock::default(),
+        })
     }
 }
 
@@ -115,10 +133,34 @@ impl ReflectionDatabase {
     }
 
     /// Every spelling a file may use for a property of `class` other than
-    /// the one Roblox saves: `(spelling, saved name, property)`, the nearest
-    /// class's first — `("Color", "Color3uint8", "Color")`,
-    /// `("size", "size_xml", "Size")` for a `Fire`.
-    pub(crate) fn renames(&self, class: &str) -> Vec<(&str, &str, &str)> {
+    /// the one Roblox saves, the nearest class's first where two name one
+    /// spelling.
+    pub(crate) fn renames(&self, class: &str) -> Arc<[Rename]> {
+        if let Some(renames) = self
+            .defaults
+            .renames
+            .read()
+            .ok()
+            .and_then(|renames| renames.get(class).cloned())
+        {
+            return renames;
+        }
+        let renames: Arc<[Rename]> = self
+            .build_renames(class)
+            .into_iter()
+            .map(|(from, to, canonical)| Rename {
+                from: from.to_owned(),
+                to: to.to_owned(),
+                canonical: canonical.to_owned(),
+            })
+            .collect();
+        if let Ok(mut memo) = self.defaults.renames.write() {
+            memo.insert(class.to_owned(), Arc::clone(&renames));
+        }
+        renames
+    }
+
+    fn build_renames(&self, class: &str) -> Vec<(&str, &str, &str)> {
         let mut renames: Vec<(&str, &str, &str)> = Vec::new();
         for class_defaults in self
             .lineage(class)

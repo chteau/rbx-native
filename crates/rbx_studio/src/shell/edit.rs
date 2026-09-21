@@ -184,6 +184,12 @@ pub(super) struct Edits {
     /// first of them, doubles as "is this the step that opens the undo
     /// entry" (see `Shell::slide_row`).
     sliding: Option<String>,
+    /// The open BrickColor picker's keyboard cursor, a cell of
+    /// `shell::brick_color`'s honeycomb, and the handle its palette takes
+    /// focus through — kept here because the popover's content is rebuilt
+    /// on every render.
+    pub(super) brick_cursor: usize,
+    pub(super) brick_focus: Option<FocusHandle>,
 }
 
 impl Edits {

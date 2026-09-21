@@ -27,19 +27,29 @@ type ClassReferents = HashMap<i32, Vec<Option<Ref>>>;
 /// nothing guarantees their order: PROP chunks may precede the SSTR table whose entries they index.
 /// Instances are created first, then properties applied, then parent-child relationships established.
 pub fn deserialize(bytes: &[u8]) -> Result<WeakDom, BinaryError> {
+    deserialize_with_names(bytes).map(|(dom, _)| dom)
+}
+
+/// [`deserialize`], and every `(class, property)` pair the file holds values
+/// for. The format stores a property once per class, not per instance, so
+/// this is how a caller that treats properties by name learns what the
+/// place holds without visiting every instance.
+pub fn deserialize_with_names(
+    bytes: &[u8],
+) -> Result<(WeakDom, Vec<(String, String)>), BinaryError> {
     let (_header, body) = parse_header(bytes)?;
     // Chunks are materialized up front because nothing guarantees their order:
     // a PROP chunk may precede the SSTR table whose entries it indexes.
     let chunks: Vec<Chunk> = read_chunks(body).collect::<Result<_, _>>()?;
 
     let mut dom = WeakDom::new();
-    let classes = insert_instances(&mut dom, &chunks)?;
+    let (classes, class_names) = insert_instances(&mut dom, &chunks)?;
     let shared = shared_strings(&chunks)?;
 
-    apply_properties(&mut dom, &chunks, &classes, &shared);
+    let names = apply_properties(&mut dom, &chunks, &classes, &class_names, &shared);
     apply_parents(&mut dom, &chunks)?;
 
-    Ok(dom)
+    Ok((dom, names))
 }
 
 fn chunks_named<'a>(chunks: &'a [Chunk], name: &str) -> impl Iterator<Item = &'a Chunk> + 'a {
@@ -47,8 +57,12 @@ fn chunks_named<'a>(chunks: &'a [Chunk], name: &str) -> impl Iterator<Item = &'a
     chunks.iter().filter(move |chunk| chunk.name_str() == name)
 }
 
-fn insert_instances(dom: &mut WeakDom, chunks: &[Chunk]) -> Result<ClassReferents, BinaryError> {
+fn insert_instances(
+    dom: &mut WeakDom,
+    chunks: &[Chunk],
+) -> Result<(ClassReferents, HashMap<i32, String>), BinaryError> {
     let mut classes = ClassReferents::new();
+    let mut names = HashMap::new();
 
     for chunk in chunks_named(chunks, "INST") {
         let parsed = inst::parse(&chunk.data)?;
@@ -69,9 +83,10 @@ fn insert_instances(dom: &mut WeakDom, chunks: &[Chunk]) -> Result<ClassReferent
         }
 
         classes.insert(parsed.class_id, referents);
+        names.insert(parsed.class_id, parsed.class_name);
     }
 
-    Ok(classes)
+    Ok((classes, names))
 }
 
 fn shared_strings(chunks: &[Chunk]) -> Result<Vec<Vec<u8>>, BinaryError> {
@@ -88,8 +103,10 @@ fn apply_properties(
     dom: &mut WeakDom,
     chunks: &[Chunk],
     classes: &ClassReferents,
+    class_names: &HashMap<i32, String>,
     shared: &[Vec<u8>],
-) {
+) -> Vec<(String, String)> {
+    let mut names = Vec::new();
     for chunk in chunks_named(chunks, "PROP") {
         let Ok(header) = prop::parse_header(&chunk.data) else {
             continue;
@@ -97,6 +114,9 @@ fn apply_properties(
         let Some(referents) = classes.get(&header.class_id) else {
             continue;
         };
+        if let Some(class) = class_names.get(&header.class_id) {
+            names.push((class.clone(), header.name.clone()));
+        }
 
         let values = prop::decode(&header, referents.len(), shared);
 
@@ -116,6 +136,7 @@ fn apply_properties(
             }
         }
     }
+    names
 }
 
 fn apply_parents(dom: &mut WeakDom, chunks: &[Chunk]) -> Result<(), BinaryError> {
