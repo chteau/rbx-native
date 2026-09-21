@@ -290,7 +290,7 @@ impl Shell {
         );
 
         let controls = h_flex()
-            .flex_none()
+            .flex_1()
             .items_center()
             .gap(px(4.))
             .child(self.output_controls(cx))
