@@ -105,10 +105,7 @@ pub(super) fn row(
     } else {
         IconName::ChevronRight
     };
-    let class_icon = match icon {
-        ClassIcon::Sprite(image) => img(image).size(px(CLASS_ICON_SIZE)).into_any_element(),
-        ClassIcon::Lucide(name) => Icon::new(name).small().into_any_element(),
-    };
+    let class_icon = class_icon(icon);
 
     let (hover_bg, selected_bg) = match tint {
         Some(color) => (
@@ -172,6 +169,21 @@ pub(super) fn row(
         )
         .children(widgets.trailing)
         .into_any_element()
+}
+
+/// A class's identity icon at the Explorer's own size: this project's
+/// rasterized kit tile, or the Lucide stand-in for a class the kit does not
+/// cover (see `explorer::resolve_icon`).
+///
+/// Shared with the insert picker, which lists classes rather than
+/// instances but has to draw them the same way — a `Part` in the tree and
+/// `Part` in the picker are the same thing, and two lookups would be two
+/// chances to disagree.
+pub(super) fn class_icon(icon: ClassIcon) -> AnyElement {
+    match icon {
+        ClassIcon::Sprite(image) => img(image).size(px(CLASS_ICON_SIZE)).into_any_element(),
+        ClassIcon::Lucide(name) => Icon::new(name).small().into_any_element(),
+    }
 }
 
 /// §3.2/§3.3 — the vertical guides this row passes through, plus the

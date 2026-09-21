@@ -466,7 +466,13 @@ fn tint_icon(icon: &ClassIcon, color: (u8, u8, u8)) -> ClassIcon {
 
 /// This project's own icon for `class` from `pack` (see `class_icons`) when
 /// the kit covers it, the Lucide stand-in otherwise.
-fn resolve_icon(class: &str, pack: IconPack) -> ClassIcon {
+///
+/// `pub(crate)`: also the insert picker's entry point
+/// (`shell::explorer_edit::picker`), so a class listed there and an instance
+/// of it in the tree cannot end up drawn from two different lookups.
+/// `class_icons::icon_tile` memoizes, so calling this per visible row per
+/// frame costs a hash lookup rather than a rasterization.
+pub(crate) fn resolve_icon(class: &str, pack: IconPack) -> ClassIcon {
     match class_icons::icon_tile(class, pack) {
         Some(image) => ClassIcon::Sprite(image),
         None => ClassIcon::Lucide(icon(class)),

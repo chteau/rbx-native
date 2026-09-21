@@ -18,6 +18,7 @@
 //! (`crate::packs`) is layered over either: [`set_user_pack`] installs it, and
 //! whatever it leaves out is still drawn from the built-in kit.
 
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use gpui_kit::RenderImage;
@@ -45,7 +46,7 @@ struct LightIcons;
 /// Which of the kit's two equal-sized variants is currently drawn — a
 /// persisted editor setting (see `settings::Settings::icon_pack`), not a
 /// build-time choice.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub(crate) enum IconPack {
     #[default]
     Dark,
@@ -59,10 +60,20 @@ const RENDER_SIZE: u32 = 32;
 
 /// `ClassName -> icon slug`, extracted from the class icon kit's own spec
 /// (`assets/icons/README.md`'s "Tiles" section, which lists each SVG's
-/// filename against the classes it covers) — 300 classes onto 137 of the
-/// kit's 147 tiles; a class missing here falls back to a Lucide glyph
+/// filename against the classes it covers) — 329 classes onto 142 of the
+/// kit's 152 tiles; a class missing here falls back to a Lucide glyph
 /// (`explorer::icon`), same as a class undocumented in Roblox's own sheet
 /// used to.
+///
+/// The spec covers what Roblox's own `ExplorerImageIndex` metadata covers,
+/// which is not everything a creator inserts — the insert picker (see
+/// `shell::explorer_edit::picker`) lists every browsable class, so classes
+/// the metadata skips show up there with nothing but a Lucide glyph. Those
+/// are mapped here too: to the nearest tile in the kit's own families where
+/// one fits (a `FileMesh` is a mesh, a `KeyframeSequence` is an animation),
+/// and to one of the five tiles authored beyond the sheet's 147 —
+/// `style-sheet`, `style-rule`, `style-link`, `intersect-operation`,
+/// `body-colors` — where none did.
 const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
     ("Accessory", "accessory"),
     ("AccessoryDescription", "humanoid-description"),
@@ -75,6 +86,7 @@ const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
     ("AngularVelocity", "angular-velocity"),
     ("Animation", "animation"),
     ("AnimationController", "animation"),
+    ("AnimationRigData", "animation"),
     ("AnimationTrack", "animation"),
     ("Animator", "animation"),
     ("ArcHandles", "arc-handles"),
@@ -102,6 +114,7 @@ const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
     ("AudioPlayer", "sound"),
     ("AudioRecorder", "sound"),
     ("AudioReverb", "sound"),
+    ("AudioSearchParams", "sound"),
     ("AudioSpeechToText", "sound"),
     ("AudioStreamReader", "sound"),
     ("AudioStreamWriter", "sound"),
@@ -113,12 +126,14 @@ const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
     ("BallSocketConstraint", "ball-socket-constraint"),
     ("Beam", "beam"),
     ("BillboardGui", "surface-gui"),
+    ("BinaryStringValue", "value"),
     ("BindableEvent", "bindable-event"),
     ("BindableFunction", "bindable-function"),
     ("BlockMesh", "mesh"),
     ("BloomEffect", "post-effect"),
     ("BlurEffect", "post-effect"),
     ("BodyAngularVelocity", "body-mover"),
+    ("BodyColors", "body-colors"),
     ("BodyForce", "body-mover"),
     ("BodyGyro", "body-mover"),
     ("BodyPartDescription", "humanoid-description"),
@@ -129,6 +144,7 @@ const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
     ("BoolValue", "value"),
     ("BoxHandleAdornment", "box-handle-adornment"),
     ("BrickColorValue", "value"),
+    ("BubbleChatMessageProperties", "chat-window-configuration"),
     ("CFrameValue", "value"),
     ("Camera", "camera"),
     ("CanvasGroup", "frame"),
@@ -151,6 +167,7 @@ const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
     ("CoreGui", "gui-container"),
     ("CorePackages", "backpack"),
     ("CornerWedgePart", "part"),
+    ("CurveAnimation", "animation"),
     ("CustomEvent", "value"),
     ("CustomEventReceiver", "value"),
     ("CylinderHandleAdornment", "cylinder-handle-adornment"),
@@ -164,14 +181,18 @@ const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
     ("DistortionSoundEffect", "sound-effect"),
     ("DoubleConstrainedValue", "value"),
     ("DragDetector", "click-detector"),
+    ("DynamicMesh", "mesh"),
     ("EchoSoundEffect", "sound-effect"),
     ("EqualizerSoundEffect", "sound-effect"),
+    ("EulerRotationCurve", "animation"),
     ("Explosion", "explosion"),
     ("FaceControls", "face-controls"),
+    ("FileMesh", "mesh"),
     ("Fire", "fire"),
     ("Flag", "flag"),
     ("FlagStand", "flag-stand"),
     ("FlangeSoundEffect", "sound-effect"),
+    ("FloatCurve", "animation"),
     ("FloorWire", "value"),
     ("Folder", "folder"),
     ("ForceField", "force-field"),
@@ -187,6 +208,7 @@ const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
     ("Hint", "message"),
     ("HopperBin", "hopper-bin"),
     ("Humanoid", "humanoid"),
+    ("HumanoidController", "humanoid"),
     ("HumanoidDescription", "humanoid-description"),
     ("HumanoidRigDescription", "handles"),
     ("IKControl", "handles"),
@@ -195,9 +217,11 @@ const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
     ("ImageLabel", "image-label"),
     ("IntConstrainedValue", "value"),
     ("IntValue", "value"),
+    ("IntersectOperation", "intersect-operation"),
     ("JointInstance", "weld"),
     ("Keyframe", "animation"),
     ("KeyframeMarker", "animation"),
+    ("KeyframeSequence", "animation"),
     ("Light", "light"),
     ("Lighting", "light"),
     ("LineForce", "line-force"),
@@ -207,6 +231,7 @@ const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
     ("LocalizationService", "localization-service"),
     ("LocalizationTable", "localization-table"),
     ("MakeupDescription", "humanoid-description"),
+    ("MarkerCurve", "animation"),
     ("MarketplaceService", "gui-container"),
     ("MaterialService", "material-service"),
     ("MaterialVariant", "material-variant"),
@@ -214,6 +239,7 @@ const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
     ("Message", "message"),
     ("Model", "model"),
     ("ModuleScript", "module-script"),
+    ("Motor", "motor6d"),
     ("Motor6D", "motor6d"),
     ("NegateOperation", "negate-operation"),
     ("NetworkClient", "network-client"),
@@ -225,8 +251,10 @@ const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
     ("ObjectValue", "value"),
     ("PackageLink", "package-link"),
     ("Pants", "pants"),
+    ("ParabolaAdornment", "line-handle-adornment"),
     ("ParallelRampPart", "part"),
     ("Part", "part"),
+    ("PartOperation", "union-operation"),
     ("PartPairLasso", "lasso"),
     ("ParticleEmitter", "particle-emitter"),
     ("PathfindingLink", "pathfinding-link"),
@@ -265,6 +293,7 @@ const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
     ("RocketPropulsion", "body-mover"),
     ("RodConstraint", "rod-constraint"),
     ("RopeConstraint", "rope-constraint"),
+    ("RotationCurve", "animation"),
     ("ScreenGui", "screen-gui"),
     ("Script", "script"),
     ("ScrollingFrame", "frame"),
@@ -277,6 +306,7 @@ const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
     ("ServerStorage", "server-storage"),
     ("Shirt", "shirt"),
     ("ShirtGraphic", "shirt-graphic"),
+    ("SkateboardController", "humanoid"),
     ("SkateboardPlatform", "seat"),
     ("Sky", "sky"),
     ("SlidingBallConstraint", "prismatic-constraint"),
@@ -300,6 +330,11 @@ const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
     ("StarterPlayerScripts", "player-scripts"),
     ("Status", "model"),
     ("StringValue", "value"),
+    ("StyleBase", "style-sheet"),
+    ("StyleDerive", "style-link"),
+    ("StyleLink", "style-link"),
+    ("StyleRule", "style-rule"),
+    ("StyleSheet", "style-sheet"),
     ("SunRaysEffect", "post-effect"),
     ("SurfaceAppearance", "texture"),
     ("SurfaceGui", "surface-gui"),
@@ -316,6 +351,7 @@ const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
     ("TextButton", "text-button"),
     ("TextChannel", "text-channel"),
     ("TextChatCommand", "text-chat-command"),
+    ("TextChatMessageProperties", "chat-window-configuration"),
     ("TextChatService", "text-chat-service"),
     ("TextLabel", "text-label"),
     ("TextSource", "text-source"),
@@ -324,6 +360,7 @@ const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
     ("Torque", "angular-velocity"),
     ("TorsionSpringConstraint", "torsion-spring-constraint"),
     ("TouchTransmitter", "force-field"),
+    ("TrackerStreamAnimation", "animation"),
     ("Trail", "trail"),
     ("TremoloSoundEffect", "sound-effect"),
     ("TrussPart", "part"),
@@ -346,9 +383,12 @@ const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
     ("UniversalConstraint", "universal-constraint"),
     ("UnreliableRemoteEvent", "remote-event"),
     ("ValueBase", "value"),
+    ("Vector3Curve", "animation"),
     ("Vector3Value", "value"),
     ("VectorForce", "vector-force"),
+    ("VehicleController", "humanoid"),
     ("VehicleSeat", "seat"),
+    ("VelocityMotor", "motor6d"),
     ("VideoDisplay", "sound"),
     ("VideoFrame", "video-frame"),
     ("VideoPlayer", "sound"),
@@ -372,9 +412,40 @@ const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
 /// invariant, not a runtime one: every file under both `assets/icons/default`
 /// variants is checked by this module's own tests).
 pub(crate) fn icon_tile(class: &str, pack: IconPack) -> Option<Arc<RenderImage>> {
+    if let Some(hit) = TILE_CACHE
+        .read()
+        .ok()
+        .and_then(|cache| cache.get(pack, class))
+    {
+        return hit;
+    }
     let installed = USER_PACK.read().ok().and_then(|pack| pack.clone());
-    icon_tile_over(class, pack, installed.as_deref())
+    let tile = icon_tile_over(class, pack, installed.as_deref());
+    if let Ok(mut cache) = TILE_CACHE.write() {
+        cache.insert(pack, class, tile.clone());
+    }
+    tile
 }
+
+/// Every tile resolved so far, keyed by the pack it was read from.
+///
+/// [`rasterize`] parses an SVG and renders a pixmap on every call, which is
+/// fine once per class per Explorer rebuild but not once per row per frame —
+/// the insert picker (see `shell::explorer_edit::picker`) lists hundreds of
+/// classes and rebuilds its list on every keystroke. The `None`s are cached
+/// too: a class the kit does not cover is the *common* case there, and
+/// re-deciding it would re-walk `CLASS_ICON_SLUGS` each time.
+///
+/// Keyed by *class* rather than by slug, which does mean two classes
+/// sharing a tile each rasterize it once: an installed pack is allowed to
+/// cover a class the kit does not (see [`IconOverlay::svg`]), so the class
+/// is the only key that stays correct once one is layered on.
+///
+/// Bounded by the table itself — at most one entry per mapped class per
+/// variant, a 32x32 RGBA tile each — so it needs no eviction.
+/// [`set_user_pack`] is the only thing that can invalidate it, and clears
+/// it.
+static TILE_CACHE: RwLock<TileCache> = RwLock::new(TileCache::new());
 
 /// [`icon_tile`] against an explicit overlay rather than the installed one, so
 /// the precedence can be tested without touching process-wide state.
@@ -416,6 +487,56 @@ static USER_PACK: RwLock<Option<Arc<IconOverlay>>> = RwLock::new(None);
 pub(crate) fn set_user_pack(pack: Option<IconOverlay>) {
     if let Ok(mut slot) = USER_PACK.write() {
         *slot = pack.map(Arc::new);
+    }
+    // Every cached tile was resolved against the overlay that just went
+    // away, including the misses — a pack that covers a class the kit does
+    // not would otherwise stay invisible until the next launch.
+    if let Ok(mut cache) = TILE_CACHE.write() {
+        cache.clear();
+    }
+}
+
+/// [`TILE_CACHE`]'s map: one class-keyed map per variant, rather than one
+/// map keyed by the pair, so a lookup borrows the class name instead of
+/// allocating a `String` to build a tuple key with.
+struct TileCache {
+    dark: Option<HashMap<String, Option<Arc<RenderImage>>>>,
+    light: Option<HashMap<String, Option<Arc<RenderImage>>>>,
+}
+
+impl TileCache {
+    const fn new() -> Self {
+        TileCache {
+            dark: None,
+            light: None,
+        }
+    }
+
+    fn of(&self, pack: IconPack) -> &Option<HashMap<String, Option<Arc<RenderImage>>>> {
+        match pack {
+            IconPack::Dark => &self.dark,
+            IconPack::Light => &self.light,
+        }
+    }
+
+    /// `Some(hit)` only when this class has been resolved before — the outer
+    /// `Option` is "have we looked", the inner one "does the kit cover it".
+    fn get(&self, pack: IconPack, class: &str) -> Option<Option<Arc<RenderImage>>> {
+        self.of(pack).as_ref()?.get(class).cloned()
+    }
+
+    fn insert(&mut self, pack: IconPack, class: &str, tile: Option<Arc<RenderImage>>) {
+        let slot = match pack {
+            IconPack::Dark => &mut self.dark,
+            IconPack::Light => &mut self.light,
+        };
+        slot.get_or_insert_with(HashMap::new)
+            .insert(class.to_owned(), tile);
+    }
+
+    fn clear(&mut self) {
+        self.dark = None;
+        self.light = None;
     }
 }
 
@@ -491,6 +612,98 @@ mod tests {
     /// file, and thus different pixels, depending on which pack is asked
     /// for — `part.svg` deliberately uses different fill colours between the
     /// `dark` and `light` folders (see `assets/icons/default/*/part.svg`).
+    /// The slug a class draws, or `None` when the kit does not cover it —
+    /// the table lookup on its own, without rasterizing anything.
+    fn slug_of(class: &str) -> Option<&'static str> {
+        CLASS_ICON_SLUGS
+            .iter()
+            .find(|(name, _)| *name == class)
+            .map(|(_, slug)| *slug)
+    }
+
+    #[test]
+    fn a_class_outside_roblox_metadata_reuses_its_family_tile() {
+        // Roblox's own `ExplorerImageIndex` covers none of the left-hand
+        // classes, which is why the insert picker used to list them with a
+        // bare glyph. Each is pointed at the tile its family already has
+        // rather than at a drawing of its own.
+        for (outsider, family) in [
+            ("FileMesh", "BlockMesh"),
+            ("DynamicMesh", "BlockMesh"),
+            ("KeyframeSequence", "Animation"),
+            ("Vector3Curve", "Animation"),
+            ("BinaryStringValue", "StringValue"),
+            ("Motor", "Motor6D"),
+            ("PartOperation", "UnionOperation"),
+            ("VehicleController", "Humanoid"),
+        ] {
+            let slug = slug_of(outsider).unwrap_or_else(|| panic!("{outsider} has no tile"));
+            assert_eq!(
+                Some(slug),
+                slug_of(family),
+                "{outsider} should share {family}'s tile"
+            );
+        }
+    }
+
+    #[test]
+    fn a_tile_authored_beyond_the_sheet_is_claimed_by_exactly_its_own_classes() {
+        // The five drawings added past Roblox's 147: each exists because no
+        // tile in the kit fitted, so each has to be claimed by something,
+        // and nothing else may quietly pick it up.
+        for (slug, classes) in [
+            ("style-sheet", &["StyleBase", "StyleSheet"][..]),
+            ("style-rule", &["StyleRule"][..]),
+            ("style-link", &["StyleDerive", "StyleLink"][..]),
+            ("intersect-operation", &["IntersectOperation"][..]),
+            ("body-colors", &["BodyColors"][..]),
+        ] {
+            let mut claimed: Vec<&str> = CLASS_ICON_SLUGS
+                .iter()
+                .filter(|(_, s)| *s == slug)
+                .map(|(class, _)| *class)
+                .collect();
+            claimed.sort_unstable();
+            assert_eq!(claimed, classes, "{slug}");
+        }
+    }
+
+    #[test]
+    fn a_resolved_tile_is_served_from_the_cache_next_time() {
+        // `rasterize` is far too expensive to run once per picker row per
+        // frame; the second lookup must hand back the very same image.
+        let first = icon_tile("Part", IconPack::Dark).expect("Part is covered by the icon kit");
+        let second = icon_tile("Part", IconPack::Dark).expect("Part is covered by the icon kit");
+        assert!(Arc::ptr_eq(&first, &second));
+    }
+
+    #[test]
+    fn clearing_the_cache_forgets_both_variants() {
+        let mut cache = TileCache::new();
+        cache.insert(IconPack::Dark, "Part", None);
+        cache.insert(IconPack::Light, "Part", None);
+        assert!(cache.get(IconPack::Dark, "Part").is_some());
+        assert!(cache.get(IconPack::Light, "Part").is_some());
+
+        cache.clear();
+        assert!(cache.get(IconPack::Dark, "Part").is_none());
+        assert!(cache.get(IconPack::Light, "Part").is_none());
+    }
+
+    #[test]
+    fn a_class_the_kit_does_not_cover_is_remembered_as_a_miss() {
+        // The misses are the common case in the picker — every row for a
+        // class outside the kit — so re-walking the table for each one is
+        // exactly what the cache is there to stop.
+        let mut cache = TileCache::new();
+        assert!(cache.get(IconPack::Dark, "NotARealClass").is_none());
+        cache.insert(IconPack::Dark, "NotARealClass", None);
+        assert!(matches!(
+            cache.get(IconPack::Dark, "NotARealClass"),
+            Some(None)
+        ));
+    }
+
     #[test]
     fn icon_tile_reads_from_the_requested_pack() {
         let dark = icon_tile("Part", IconPack::Dark).expect("Part is covered by the icon kit");

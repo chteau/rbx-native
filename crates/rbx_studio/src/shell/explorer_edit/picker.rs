@@ -18,10 +18,11 @@ use gpui_kit::*;
 use rbx_dom::Ref;
 
 use crate::explorer::insert::{self, Choice};
+use crate::explorer::{self as explorer_tree, ClassIcon};
 use crate::tokens;
 
 use super::super::menu::{self, MenuId};
-use super::super::{chrome, tooltip};
+use super::super::{chrome, rows, tooltip};
 use super::Shell;
 
 /// One open picker: which row's `+` opened it, and what has been typed.
@@ -98,10 +99,17 @@ impl Shell {
         let choices = insert::choices(&self.database, parent_class.as_deref(), &query);
         let hidden = choices.len().saturating_sub(MAX_ROWS);
 
+        // One lookup per painted row, not per class in the dump: the kit's
+        // rasterizer memoizes (see `class_icons::icon_tile`), so this is a
+        // hash lookup each, and the rows past `MAX_ROWS` cost nothing.
+        let pack = self.icon_pack();
         let rows: Vec<AnyElement> = choices
             .iter()
             .take(MAX_ROWS)
-            .map(|choice| class_row(choice, cx))
+            .map(|choice| {
+                let icon = explorer_tree::resolve_icon(&choice.class, pack);
+                class_row(choice, icon, cx)
+            })
             .collect();
 
         let surface = v_flex()
@@ -257,12 +265,22 @@ pub(super) fn insert_button(shell: &Entity<Shell>, reference: Ref) -> AnyElement
     .into_any_element()
 }
 
-/// One class in the list. A refused class is greyed and inert rather than
-/// missing, with the reason on hover — the point of the whole affordance
-/// (see this module's own comment).
-fn class_row(choice: &Choice, cx: &mut Context<Shell>) -> AnyElement {
+/// How far a refused row's icon is faded. A kit tile carries its own
+/// colours — the colour *is* the identity, so it is never re-tinted (see
+/// `UX_GUIDELINES.md` §5) — and a greyed label beside a full-strength icon
+/// reads as a half-disabled row. Fading is the one treatment that works on
+/// a multi-colour sprite and on a Lucide glyph alike, and this much still
+/// leaves the shape readable.
+const REFUSED_ICON_OPACITY: f32 = 0.4;
+
+/// One class in the list, with the same identity icon the Explorer draws
+/// for an instance of it. A refused class is greyed — label *and* icon —
+/// and inert rather than missing, with the reason on hover: the point of
+/// the whole affordance (see this module's own comment).
+fn class_row(choice: &Choice, icon: ClassIcon, cx: &mut Context<Shell>) -> AnyElement {
     let class = SharedString::from(choice.class.clone());
     let picked = choice.class.clone();
+    let legal = choice.legal;
 
     h_flex()
         .id(SharedString::from(format!("insert-{class}")))
@@ -270,10 +288,17 @@ fn class_row(choice: &Choice, cx: &mut Context<Shell>) -> AnyElement {
         .h(tokens::hit_target())
         .flex_none()
         .items_center()
+        .gap(px(6.))
         .px(px(8.))
         .rounded(tokens::RADIUS)
         .text_size(tokens::text_sm())
         .line_height(tokens::line_sm())
+        .child(
+            div()
+                .flex_none()
+                .when(!legal, |this| this.opacity(REFUSED_ICON_OPACITY))
+                .child(rows::class_icon(icon)),
+        )
         .child(class.clone())
         .map(|this| {
             if choice.legal {
