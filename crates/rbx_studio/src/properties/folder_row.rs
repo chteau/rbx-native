@@ -33,6 +33,7 @@ pub(super) fn row(
         value: format!("({r}, {g}, {b})"),
         category,
         edit: Some(EditKind::Color { r, g, b }),
+        mixed: false,
     })
 }
 

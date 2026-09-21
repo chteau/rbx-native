@@ -328,3 +328,27 @@ fn a_light_with_nowhere_to_shine_from_has_no_guide() {
 
     assert!(guides.is_empty());
 }
+
+/// A part staged outside `Workspace` is never drawn, so a guide for a light
+/// on it would float where nothing is — directly on it, or on its attachment.
+#[test]
+fn a_light_on_a_part_outside_the_workspace_has_no_guide() {
+    let mut fixture = Fixture::new();
+    let storage = fixture.insert("ReplicatedStorage", None, &[]);
+    let part = fixture.insert(
+        "Part",
+        Some(storage),
+        &[("CFrame", cframe(Vec3::ZERO, IDENTITY_ROTATION))],
+    );
+    let on_part = fixture.insert("PointLight", Some(part), &[]);
+    let attachment = fixture.insert(
+        "Attachment",
+        Some(part),
+        &[("CFrame", cframe(Vec3::ZERO, IDENTITY_ROTATION))],
+    );
+    let on_attachment = fixture.insert("PointLight", Some(attachment), &[]);
+
+    let guides = light_guides(&fixture.dom, &database(), &[on_part, on_attachment]);
+
+    assert!(guides.is_empty());
+}

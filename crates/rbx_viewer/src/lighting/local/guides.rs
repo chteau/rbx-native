@@ -37,7 +37,7 @@ use super::{
     LIGHT_CLASS, SPOT_CLASS, SURFACE_CLASS,
 };
 use crate::renderer::Segment;
-use crate::scene::is_drawable;
+use crate::scene::{is_drawable, WORKSPACE_CLASS};
 use crate::textures::NormalId;
 
 /// Straight pieces per guide circle — Studio's read as a polygon of about
@@ -125,27 +125,36 @@ fn guide(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> Option<
 
 /// Where a light on `parent` stands, and the extent of the part it lights
 /// from — `None` on an `Attachment`, which has none. The same two parents
-/// `super::local_lights` reads a light off.
+/// `super::local_lights` reads a light off, on the same condition: a
+/// drawable part under `Workspace`, so no guide floats where no part is
+/// drawn.
 fn placement(
     dom: &WeakDom,
     database: &ReflectionDatabase,
     parent: Ref,
 ) -> Option<(Mat4, Option<Vec3>)> {
     let instance = dom.get(parent)?;
-    if database.is_subclass_of(instance.class(), ATTACHMENT_CLASS) {
-        let part = dom.parent(parent)?;
-        if !is_drawable(dom, database, part) {
-            return None;
-        }
-        return Some((frame_of(dom.get(part)?)? * frame_of(instance)?, None));
-    }
-    if !is_drawable(dom, database, parent) {
+    let attached = database.is_subclass_of(instance.class(), ATTACHMENT_CLASS);
+    let part = if attached {
+        dom.parent(parent)?
+    } else {
+        parent
+    };
+    // Up the parent chain rather than down `Workspace`: this runs on every
+    // edit while a light is selected, and a chain costs its depth.
+    let root = std::iter::successors(Some(part), |&referent| dom.parent(referent)).last()?;
+    let in_workspace = dom
+        .get(root)
+        .is_some_and(|instance| database.is_subclass_of(instance.class(), WORKSPACE_CLASS));
+    if !in_workspace || !is_drawable(dom, database, part) {
         return None;
     }
-    Some((
-        frame_of(instance)?,
-        Some(size_of(instance).unwrap_or(Vec3::ZERO)),
-    ))
+    let frame = frame_of(dom.get(part)?)?;
+    Some(if attached {
+        (frame * frame_of(instance)?, None)
+    } else {
+        (frame, Some(size_of(instance).unwrap_or(Vec3::ZERO)))
+    })
 }
 
 /// A point and three unit axes in world space: the way a light shines, and

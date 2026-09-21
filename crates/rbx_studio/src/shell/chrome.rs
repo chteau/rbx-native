@@ -555,12 +555,14 @@ pub(super) fn dock_strip(tabs: Vec<AnyElement>, trailing: Option<AnyElement>) ->
                     // The frame's cell is a fixed 32px around one "+".
                     // Output's strip carries a filter row as well, so this
                     // is a floor rather than a width: the divider lands
-                    // where the design puts it, and a wider set of controls
-                    // grows away from it instead of being clipped by it.
-                    .flex_none()
+                    // where the design puts it, and the cell takes the rest
+                    // of the strip so a set of controls can push itself to
+                    // the far end of it (see `shell::workspace`'s Output).
+                    // Grows but never shrinks below what it holds.
+                    .flex_grow_1()
+                    .flex_shrink_0()
                     .min_w(tokens::dock_tab_add_width())
                     .items_center()
-                    .justify_center()
                     .gap(px(4.))
                     .pl(px(4.))
                     .border_l(px(1.))

@@ -46,6 +46,7 @@ use gizmo::Drag;
 use input::{camera_key, chorded, tool_key, Layout};
 use pump::Pump;
 pub(crate) use scroll::{scrolled, Scroll};
+pub(crate) use stats::requested as stats_requested;
 
 // How long a speed change stays on screen, matching the standalone viewer's
 // title bar.
@@ -266,12 +267,6 @@ pub(crate) struct WorkspaceView {
     /// Viewport panel's overflow menu again (see
     /// `Shell::set_selection_occluded`).
     selection_occluded: bool,
-    /// Whether the corner label shows `pump.stats()`'s frame rate — the
-    /// Viewport panel overflow menu's Stats toggle, next to Orthographic
-    /// (see `Shell::set_stats_shown`). Session-only: real Studio's own
-    /// `Window > Performance > Stats` doesn't persist across restarts
-    /// either.
-    stats_shown: bool,
     /// The transform toolbar's state, pushed down from `Shell` (see
     /// [`WorkspaceView::set_transform`]).
     transform: Transform,
@@ -424,7 +419,6 @@ impl WorkspaceView {
             orthographic,
             axis_indicator,
             selection_occluded,
-            stats_shown: false,
             transform: Transform::default(),
             targets: Targets::default(),
             neighbours: Vec::new(),
@@ -769,17 +763,23 @@ impl WorkspaceView {
         cx.notify();
     }
 
-    /// Turns the corner label's frame-rate readout on or off — see
-    /// `Shell::set_stats_shown`. Pure UI-thread state, unlike quality or
-    /// projection above: `pump.stats()` is already updated by the render
-    /// thread regardless, so nothing about what it draws needs to change.
-    pub(crate) fn set_stats_shown(&mut self, shown: bool, cx: &mut Context<Self>) {
-        if shown == self.stats_shown {
-            return;
-        }
+    /// Starts or stops the frame-rate sampling both threads do — on only
+    /// while the Viewport dock is on screen (see `Shell::sync_stats`). Takes
+    /// `&self`: the switch is an atomic the render thread reads per frame.
+    pub(crate) fn set_stats_sampling(&self, on: bool) {
+        self.pump.stats().set_sampling(on);
+    }
 
-        self.stats_shown = shown;
-        cx.notify();
+    /// What the Viewport dock lists about the view: the frame rate, then the
+    /// quality level — each as a name and a value.
+    pub(crate) fn readout(&self) -> [(&'static str, SharedString); 2] {
+        [
+            (
+                "Frame rate",
+                label::frame_rate(self.pump.stats().latest_fps()),
+            ),
+            ("Quality level", label::quality(self.quality, self.level)),
+        ]
     }
 
     /// Switches which unfocused preset `pacing` caps the render loop to —
@@ -812,18 +812,6 @@ impl WorkspaceView {
             self.interval = next;
             self.pump.set_interval(next);
         }
-    }
-
-    /// What the corner label reads: the speed is passed only while its moment
-    /// on screen lasts, the frame rate only while the Stats toggle is on —
-    /// and `0.0` (no full second counted yet) reads the same as off.
-    fn status_label(&self) -> SharedString {
-        let speed = self.speed_shown_until.map(|_| self.speed);
-        let fps = self
-            .stats_shown
-            .then(|| self.pump.stats().latest_fps())
-            .filter(|fps| *fps > 0.0);
-        label::status(self.quality, self.level, fps, speed)
     }
 }
 
@@ -995,17 +983,24 @@ impl Render for WorkspaceView {
                 .left_0()
                 .size_full(),
             )
-            .child(
-                div()
-                    .absolute()
-                    .bottom_2()
-                    .left_2()
-                    .px_2()
-                    .py_0p5()
-                    .bg(rgba(0x14151ae0))
-                    .text_xs()
-                    .text_color(rgb(0xe4e5e9))
-                    .child(self.status_label()),
+            // Only for the moment after the wheel changes the speed: anything
+            // that stays belongs in the Viewport dock, not over the scene.
+            .when_some(
+                self.speed_shown_until.map(|_| label::speed(self.speed)),
+                |this, speed| {
+                    this.child(
+                        div()
+                            .absolute()
+                            .bottom_2()
+                            .left_2()
+                            .px_2()
+                            .py_0p5()
+                            .bg(rgba(0x14151ae0))
+                            .text_xs()
+                            .text_color(rgb(0xe4e5e9))
+                            .child(speed),
+                    )
+                },
             )
             // Only while a drag is actually moving something — see
             // `drag_readout`'s own doc for why a stale value never leaks
@@ -1050,8 +1045,8 @@ impl Render for WorkspaceView {
 /// strength. That is what makes a ring read as passing *through* the
 /// sphere rather than lying on it.
 ///
-/// Placed opposite the quality/speed corner label (bottom-left) rather than
-/// colliding with it.
+/// Placed opposite the speed toast (bottom-left) rather than colliding with
+/// it.
 /// Half the indicator's own square, in px — where a face's unit-radius
 /// centre/corner offsets (see `orientation::Face`) land once scaled and
 /// re-centred inside the widget.

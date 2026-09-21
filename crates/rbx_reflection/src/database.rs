@@ -4,8 +4,10 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::class::{ClassDescriptor, PropertyDescriptor};
+use crate::defaults::Defaults;
 use crate::enums::EnumDescriptor;
 use crate::error::ReflectionError;
 use crate::parse::parse_dump;
@@ -17,6 +19,8 @@ use crate::parse::parse_dump;
 pub struct ReflectionDatabase {
     classes: HashMap<String, ClassDescriptor>,
     enums: HashMap<String, EnumDescriptor>,
+    /// Shared rather than copied: a database is cloned per Command Bar run.
+    pub(crate) defaults: Arc<Defaults>,
 }
 
 impl ReflectionDatabase {
@@ -27,7 +31,23 @@ impl ReflectionDatabase {
         Ok(ReflectionDatabase {
             classes: classes.into_iter().map(|c| (c.name.clone(), c)).collect(),
             enums: enums.into_iter().map(|e| (e.name.clone(), e)).collect(),
+            defaults: Arc::default(),
         })
+    }
+
+    /// Adds what the API dump leaves out — class defaults and the names
+    /// properties are saved under (see `defaults`) — from a
+    /// `reflection-defaults.json`. Without it a database still answers
+    /// everything else; those lookups just find nothing.
+    pub fn with_defaults(mut self, json: &str) -> Result<Self, ReflectionError> {
+        let weight = |name: &str| {
+            self.enum_items("FontWeight")?
+                .iter()
+                .find(|(item, _)| item == name)
+                .and_then(|(_, value)| u16::try_from(*value).ok())
+        };
+        self.defaults = Arc::new(Defaults::parse(json, weight)?);
+        Ok(self)
     }
 
     /// Reads a JSON API dump from any reader and builds a database.
@@ -78,6 +98,15 @@ impl ReflectionDatabase {
         }
 
         None
+    }
+
+    /// `class` and every superclass above it, nearest first; nothing for a
+    /// class the dump does not know.
+    pub(crate) fn lineage<'a>(&'a self, class: &str) -> impl Iterator<Item = &'a str> + 'a {
+        std::iter::successors(self.classes.get(class), |descriptor| {
+            self.classes.get(descriptor.superclass.as_deref()?)
+        })
+        .map(|descriptor| descriptor.name.as_str())
     }
 
     /// Tests whether a class is the ancestor class itself or inherits from it.

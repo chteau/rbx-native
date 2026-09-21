@@ -527,11 +527,16 @@ pub(super) fn property_expandable(
 /// a state. And it is **26px**, which is the frame's own number and, not by
 /// coincidence, over WCAG 2.5.8's 24x24 target floor; the 10px box this
 /// used to draw was less than a fifth of the required area.
+///
+/// `None` is the indeterminate state a multi-selection's disagreeing
+/// values show: filled like a ticked box, since it is not an empty one, and
+/// marked with a dash.
 pub(super) fn checkbox(
     id: impl Into<ElementId>,
-    checked: bool,
+    checked: impl Into<Option<bool>>,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> Stateful<Div> {
+    let checked = checked.into();
     div()
         .id(id.into())
         // The target, which never goes under 24px …
@@ -557,7 +562,7 @@ pub(super) fn checkbox(
                 .justify_center()
                 .rounded(tokens::RADIUS)
                 .map(|this| {
-                    if checked {
+                    if checked != Some(false) {
                         this.bg(tokens::check_on())
                     } else {
                         this.bg(tokens::check_off())
@@ -565,10 +570,13 @@ pub(super) fn checkbox(
                             .border_color(tokens::check_off_border())
                     }
                 })
-                .when(checked, |this| {
-                    this.text_color(tokens::black())
-                        .child(Icon::new(IconName::Check).size(tokens::text_xs()))
-                }),
+                .when_some(
+                    checked.map_or(Some(IconName::Minus), |on| on.then_some(IconName::Check)),
+                    |this, icon| {
+                        this.text_color(tokens::black())
+                            .child(Icon::new(icon).size(tokens::text_xs()))
+                    },
+                ),
         )
 }
 
@@ -606,14 +614,20 @@ pub(super) fn section_header(
         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
         .on_click(on_click)
         .child(
-            div().flex_none().text_color(tokens::text_label()).child(
-                Icon::new(if open {
-                    IconName::ChevronDown
-                } else {
-                    IconName::ChevronRight
-                })
-                .size(tokens::text_xs()),
-            ),
+            div()
+                .flex_none()
+                // The same slot an expander's chevron sits in, so a
+                // category's name starts on the property names' own edge.
+                .w(tokens::chevron_slot())
+                .text_color(tokens::text_label())
+                .child(
+                    Icon::new(if open {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    })
+                    .size(tokens::text_xs()),
+                ),
         )
         .child(div().flex_1().truncate().child(label))
 }

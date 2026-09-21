@@ -53,12 +53,13 @@ impl Shell {
             return self.ghost_dock(edge, window, cx);
         }
 
-        // Output collapses to its own strip, and only when it is the whole
-        // edge: one collapsed tab among others would still need its dock
-        // open for the others.
+        // Output collapses to its own strip, and only while it is the tab
+        // showing in the edge's only dock: a second dock beside it would
+        // still need the height, and showing another tab — the Viewport
+        // dock it shares a strip with by default — opens the edge again.
         let collapsed = self.output_collapsed
             && count == 1
-            && self.layout.groups(edge)[0].panels() == [Panel::Output];
+            && self.layout.groups(edge)[0].active() == Some(Panel::Output);
         let size = self.layout.capped(edge, limit);
 
         let docks: Vec<AnyElement> = (0..count)
@@ -334,6 +335,10 @@ fn edge_column(edge: Edge, size: f32, collapsed: bool) -> Div {
         h_flex()
             .flex_none()
             .w_full()
+            // Stretched, not `h_flex`'s centring: a dock shorter than the
+            // edge would float in the middle of it, with dead space between
+            // the document and its tab strip.
+            .items_stretch()
             .when(!collapsed, |this| this.h(px(size)))
     }
     .bg(tokens::dock());
