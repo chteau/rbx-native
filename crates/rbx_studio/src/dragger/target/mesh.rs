@@ -5,6 +5,11 @@
 //! finds the neighbouring face; the two faces' planes meet in the edge's
 //! line; walking along that line the same way finds where the edge ends.
 //! Every raycast is against the one part, as Studio's whitelist has it.
+//!
+//! ponytail: each probe walks every triangle of the mesh, and a target frame
+//! takes 25-100 of them — at most 0.95 ms per hover on the largest mesh of the
+//! fixture places (release, `target::cost`). A per-mesh BVH is the upgrade if
+//! a denser mesh pushes that past a frame's budget.
 
 use glam::Vec3;
 use rbx_viewer::pick::{PartSurface, Ray};

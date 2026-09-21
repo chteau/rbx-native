@@ -376,3 +376,7 @@ fn on_lattice(hit: Vec3, normal: Vec3, grid: f32, rotation: Mat3, origin: Vec3) 
 #[cfg(test)]
 #[path = "target/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "target/cost.rs"]
+mod cost;
