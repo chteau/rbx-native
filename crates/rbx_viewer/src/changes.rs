@@ -98,7 +98,12 @@ pub(crate) fn fold(changes: &[Change]) -> Vec<Touched> {
         let (referent, structural, old_parent) = match change {
             Change::Property { referent, .. } => (*referent, false, None),
             Change::Parent { referent, old, .. } => (*referent, true, *old),
-            Change::Added(referent) | Change::Removed(referent) => (*referent, true, None),
+            // A class change can move an instance to another pass
+            // altogether, and takes what hangs under it along: a part turned
+            // into a `Folder` stops being what its decals project onto.
+            Change::Added(referent) | Change::Removed(referent) | Change::Class(referent) => {
+                (*referent, true, None)
+            }
         };
         match slots.get(&referent) {
             Some(&slot) => {
@@ -191,6 +196,14 @@ mod tests {
             Some(Ref::new(2)),
             "two moves in one log leave the first origin as the one nothing now points at"
         );
+    }
+
+    #[test]
+    fn a_class_change_is_structural_even_beside_a_write() {
+        let touched = fold(&[write(3, "size"), Change::Class(Ref::new(3))]);
+
+        assert_eq!(touched.len(), 1);
+        assert!(touched[0].structural);
     }
 
     #[test]

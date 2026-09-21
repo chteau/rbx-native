@@ -1,4 +1,5 @@
-//! The `+` on an Explorer row, and the class list it opens.
+//! The `+` on an Explorer row, and the class list it opens — which is also
+//! the list the row menu's Change Class… opens.
 //!
 //! Real Studio's own shape, from `studio/explorer.md`: "you can select from
 //! a full array of objects by hovering over the intended parent and clicking
@@ -13,8 +14,18 @@
 //! same `explorer::resolve_icon` the tree's rows use: a class here and an
 //! instance of it there are the same thing, and two lookups would be two
 //! chances to disagree.
+//!
+//! What a picked class is *for* is the picker's [`Purpose`]; only the list
+//! and the commit differ between the two. Changing a class adds suggestions
+//! above the list and a footer saying what the highlighted class would cost
+//! (see `crate::change_class`).
+//!
+//! The caret stays in the search field. Up and Down move a highlight through
+//! the list, Enter commits it, Escape closes (`Shell::close_explorer_popups`).
+//! The arrows are caught at the action layer rather than as keystrokes, for
+//! the reason `shell::tree_keys` gives: the field binds them to its own caret.
 
-use gpui_kit::assets::IconName;
+use gpui_kit::base::input::{MoveDown, MoveUp};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{h_flex, v_flex, Sizable as _};
@@ -22,25 +33,46 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_dom::Ref;
 
-use crate::explorer::insert::{self, Choice};
-use crate::explorer::{resolve_icon, ClassIcon};
+use crate::change_class::{self, Choices};
+use crate::explorer::insert;
+use crate::explorer::resolve_icon;
 use crate::tokens;
 
-use super::super::menu::{self, MenuId};
-use super::super::{chrome, rows, tooltip};
 use super::Shell;
 
-/// One open picker: which row's `+` opened it, and what has been typed.
+mod options;
+mod row;
+
+pub(super) use row::insert_button;
+use row::{caption, class_row, note};
+
+/// One open picker: what it picks a class for, and what has been typed.
 pub(super) struct Picker {
-    parent: Ref,
+    purpose: Purpose,
     query: Entity<InputState>,
     scroll: ScrollHandle,
+    /// The row Enter commits, counted through the rows as listed. Back to
+    /// the top whenever the query changes, since the rows do.
+    highlight: usize,
+    /// The class under the pointer, which the footer describes in preference
+    /// to the highlight: it is the row being looked at.
+    hovered: Option<String>,
     /// Kept alive only to stay subscribed — the list has to repaint as the
-    /// query is typed.
+    /// query is typed, and Enter arrives as the field's own event.
     _subscription: Subscription,
 }
 
+/// What a picked class is for.
+pub(super) enum Purpose {
+    /// A new child of this instance.
+    Insert(Ref),
+    /// The new class of each of these.
+    ChangeClass(Vec<Ref>),
+}
+
 const WIDTH: f32 = 240.;
+/// Wider for Change Class, whose footer has property names to fit.
+const CHANGE_WIDTH: f32 = 300.;
 const LIST_HEIGHT: f32 = 260.;
 /// How many matches the list paints at once. Every class the dump names is
 /// a candidate, so an empty query matches several hundred; painting them all
@@ -58,28 +90,9 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // `window` is what `InputState::new` needs; the caret itself lands a
-        // frame later (see `Shell::focus_explorer_edit`).
-        if self.dom.get(parent).is_none() {
-            return;
+        if self.dom.get(parent).is_some() {
+            self.open_picker(Purpose::Insert(parent), window, cx);
         }
-        let query = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
-        let subscription = cx.subscribe(&query, |_, _, event: &InputEvent, cx| {
-            if matches!(event, InputEvent::Change) {
-                cx.notify();
-            }
-        });
-        self.explorer_edit.focus_next = Some(query.clone());
-
-        self.explorer_edit.menu = None;
-        self.explorer_edit.renaming = None;
-        self.explorer_edit.picker = Some(Picker {
-            parent,
-            query,
-            scroll: ScrollHandle::new(),
-            _subscription: subscription,
-        });
-        cx.notify();
     }
 
     /// Ctrl+I: the same picker, on the selected row — the keyboard half of
@@ -94,33 +107,120 @@ impl Shell {
         }
     }
 
-    pub(super) fn insert_picker_popup(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let picker = self.explorer_edit.picker.as_ref()?;
-        let parent_class = self
-            .dom
-            .get(picker.parent)
-            .map(|instance| instance.class().to_owned());
+    /// The same picker, to change the class of every one of `targets`.
+    pub(super) fn open_change_class_picker(
+        &mut self,
+        targets: Vec<Ref>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !targets.is_empty() {
+            self.open_picker(Purpose::ChangeClass(targets), window, cx);
+        }
+    }
+
+    fn open_picker(&mut self, purpose: Purpose, window: &mut Window, cx: &mut Context<Self>) {
+        // `window` is what `InputState::new` needs; the caret itself lands a
+        // frame later (see `Shell::focus_explorer_edit`).
+        let query = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
+        let subscription = cx.subscribe(&query, |shell, _, event: &InputEvent, cx| match event {
+            InputEvent::Change => {
+                if let Some(picker) = shell.explorer_edit.picker.as_mut() {
+                    picker.highlight = 0;
+                    picker.scroll.scroll_to_item(0);
+                }
+                cx.notify();
+            }
+            InputEvent::PressEnter { .. } => shell.commit_highlighted(cx),
+            _ => {}
+        });
+        self.explorer_edit.focus_next = Some(query.clone());
+
+        self.explorer_edit.menu = None;
+        self.explorer_edit.renaming = None;
+        self.explorer_edit.picker = Some(Picker {
+            purpose,
+            query,
+            scroll: ScrollHandle::new(),
+            highlight: 0,
+            hovered: None,
+            _subscription: subscription,
+        });
+        cx.notify();
+    }
+
+    /// What `picker` lists for what has been typed so far.
+    fn listed(&self, picker: &Picker, cx: &App) -> Choices {
         let query = picker.query.read(cx).value().to_string();
-        let choices = insert::choices(&self.database, parent_class.as_deref(), &query);
-        let hidden = choices.len().saturating_sub(MAX_ROWS);
+        match &picker.purpose {
+            Purpose::Insert(parent) => {
+                let parent_class = self.dom.get(*parent).map(|instance| instance.class());
+                Choices {
+                    suggested: Vec::new(),
+                    rest: insert::choices(&self.database, parent_class, &query),
+                }
+            }
+            Purpose::ChangeClass(targets) => {
+                // A service in the selection is refused whatever is picked,
+                // so it has no say in what is suggested either.
+                let sources: Vec<&str> = targets
+                    .iter()
+                    .filter(|&&target| change_class::changeable(&self.dom, &self.database, target))
+                    .filter_map(|&target| self.dom.get(target))
+                    .map(|instance| instance.class())
+                    .collect();
+                change_class::choices(
+                    &self.database,
+                    &sources,
+                    &self.explorer_edit.recent_classes,
+                    &query,
+                )
+            }
+        }
+    }
+
+    pub(super) fn picker_popup(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let picker = self.explorer_edit.picker.as_ref()?;
+        let listed = self.listed(picker, cx);
+        let total = listed.suggested.len() + listed.rest.len();
+        let hidden = total.saturating_sub(MAX_ROWS);
+        let highlight = picker.highlight.min(total.saturating_sub(1));
+        let changing = matches!(picker.purpose, Purpose::ChangeClass(_));
 
         // One lookup per painted row, not per class in the dump: the kit's
         // rasterizer memoizes (see `class_icons::icon_tile`), so this is a
         // hash lookup each, and the rows past `MAX_ROWS` cost nothing.
         let pack = self.icon_pack();
-        let rows: Vec<AnyElement> = choices
-            .iter()
-            .take(MAX_ROWS)
-            .map(|choice| {
-                let icon = resolve_icon(&choice.class, pack);
-                class_row(choice, icon, cx)
-            })
-            .collect();
+        let mut painted: Vec<AnyElement> = Vec::new();
+        for (index, choice) in listed.iter().take(MAX_ROWS).enumerate() {
+            if !listed.suggested.is_empty() && index == 0 {
+                painted.push(caption("Suggested"));
+            }
+            if !listed.suggested.is_empty() && index == listed.suggested.len() {
+                painted.push(caption("All classes"));
+            }
+            let icon = resolve_icon(&choice.class, pack);
+            let refusal = (!choice.legal).then(|| self.refusal(picker, &choice.class));
+            painted.push(class_row(choice, icon, index == highlight, refusal, cx));
+        }
+
+        // The pointer's row, else the highlighted one — whichever is being
+        // looked at is the one worth pricing.
+        let footer = match &picker.purpose {
+            Purpose::ChangeClass(targets) => picker
+                .hovered
+                .as_deref()
+                .and_then(|class| listed.iter().find(|choice| choice.class == class))
+                .or_else(|| listed.iter().nth(highlight))
+                .filter(|choice| choice.legal)
+                .map(|choice| self.change_class_summary(targets, &choice.class)),
+            Purpose::Insert(_) => None,
+        };
 
         let surface = v_flex()
             .id("insert-picker")
             .occlude()
-            .w(px(WIDTH))
+            .w(px(if changing { CHANGE_WIDTH } else { WIDTH }))
             .p(px(4.))
             .gap(px(4.))
             .bg(tokens::chrome())
@@ -129,6 +229,14 @@ impl Shell {
             .on_mouse_down_out(cx.listener(|shell, _: &MouseDownEvent, _, cx| {
                 shell.explorer_edit.picker = None;
                 cx.notify();
+            }))
+            .capture_action(cx.listener(|shell, _: &MoveUp, _, cx| {
+                shell.move_highlight(false, cx);
+                cx.stop_propagation();
+            }))
+            .capture_action(cx.listener(|shell, _: &MoveDown, _, cx| {
+                shell.move_highlight(true, cx);
+                cx.stop_propagation();
             }))
             .child(
                 h_flex()
@@ -150,7 +258,7 @@ impl Shell {
                                     .h_full(),
                             ),
                     )
-                    .child(self.insertion_options(cx)),
+                    .when(!changing, |this| this.child(self.insertion_options(cx))),
             )
             .child(
                 div()
@@ -158,18 +266,18 @@ impl Shell {
                     .max_h(px(LIST_HEIGHT))
                     .overflow_y_scroll()
                     .track_scroll(&picker.scroll)
-                    .child(v_flex().w_full().gap(px(1.)).children(rows))
+                    // The rows are the scroll container's own children, so
+                    // `ScrollHandle::scroll_to_item` can find the highlight.
+                    .flex()
+                    .flex_col()
+                    .gap(px(1.))
+                    .children(painted)
                     .vertical_scrollbar(&picker.scroll),
             )
             .when(hidden > 0, |this| {
-                this.child(
-                    div()
-                        .px(px(8.))
-                        .text_size(tokens::text_xs())
-                        .text_color(tokens::text_muted())
-                        .child(SharedString::from(format!("{hidden} more — keep typing"))),
-                )
-            });
+                this.child(note(format!("{hidden} more — keep typing")))
+            })
+            .when_some(footer, |this, footer| this.child(note(footer)));
 
         Some(
             deferred(
@@ -182,145 +290,86 @@ impl Shell {
         )
     }
 
-    /// The `⋯` beside the search field: real Studio's two insertion
-    /// preferences, in the place real Studio keeps them.
-    fn insertion_options(&self, cx: &mut Context<Self>) -> AnyElement {
-        let increment = self.increment_names();
-        let expand = self.expand_on_select();
-        menu::dropdown(
-            self,
-            MenuId::InsertOptions,
-            chrome::Trigger::new(chrome::icon_button(
-                "insert-options",
-                IconName::Ellipsis,
-                "Insertion options",
-            )),
-            vec![
-                menu::item("Increment names for new instances")
-                    .checked(increment)
-                    .on_click(move |shell, cx| shell.set_increment_names(!increment, cx)),
-                menu::item("Expand hierarchy when selecting")
-                    .checked(expand)
-                    .on_click(move |shell, cx| shell.set_expand_on_select(!expand, cx)),
-            ],
-            cx,
-        )
-        .into_any_element()
+    /// Why a refused row's `class` cannot be picked, for its tooltip.
+    fn refusal(&self, picker: &Picker, class: &str) -> String {
+        match &picker.purpose {
+            Purpose::Insert(_) => format!("{class} cannot be created here"),
+            Purpose::ChangeClass(_) if change_class::is_target(&self.database, class) => {
+                format!("Already a {class}")
+            }
+            Purpose::ChangeClass(_) => format!("{class} cannot be created"),
+        }
     }
 
-    /// Commits one row of the picker: closes it, then inserts through the
-    /// exact path the Insert menu and the quick-insert keys already use, so
-    /// a picked class costs one undo step and reaches the viewport the same
-    /// way every other insert does.
-    fn insert_picked(&mut self, class: String, cx: &mut Context<Self>) {
+    /// Up (`down == false`) or Down: one row, stopping at either end rather
+    /// than wrapping, the way the Explorer's own tree does.
+    fn move_highlight(&mut self, down: bool, cx: &mut Context<Self>) {
+        let Some(picker) = self.explorer_edit.picker.as_ref() else {
+            return;
+        };
+        let listed = self.listed(picker, cx);
+        let last = listed.iter().take(MAX_ROWS).count().saturating_sub(1);
+        let suggested = listed.suggested.len();
+        let Some(picker) = self.explorer_edit.picker.as_mut() else {
+            return;
+        };
+        let current = picker.highlight.min(last);
+        picker.highlight = if down {
+            (current + 1).min(last)
+        } else {
+            current.saturating_sub(1)
+        };
+        // Past the captions painted before it (see `picker_popup`).
+        let captions = match suggested {
+            0 => 0,
+            count if picker.highlight < count => 1,
+            _ => 2,
+        };
+        picker.scroll.scroll_to_item(picker.highlight + captions);
+        cx.notify();
+    }
+
+    /// Enter: commits the highlighted row, if it can be picked at all.
+    fn commit_highlighted(&mut self, cx: &mut Context<Self>) {
+        let Some(picker) = self.explorer_edit.picker.as_ref() else {
+            return;
+        };
+        let listed = self.listed(picker, cx);
+        let picked = listed
+            .iter()
+            .nth(picker.highlight)
+            .filter(|choice| choice.legal)
+            .map(|choice| choice.class.clone());
+        if let Some(class) = picked {
+            self.commit_picked(class, cx);
+        }
+    }
+
+    /// Commits one row of the picker: closes it, then runs the one path its
+    /// purpose already has — an insert goes exactly where the Insert menu
+    /// and the quick-insert keys go, so a picked class costs one undo step
+    /// and reaches the viewport the same way every other insert does.
+    fn commit_picked(&mut self, class: String, cx: &mut Context<Self>) {
         let Some(picker) = self.explorer_edit.picker.take() else {
             return;
         };
-        self.insert_instance_under(Some(picker.parent), &class, cx);
+        match picker.purpose {
+            Purpose::Insert(parent) => self.insert_instance_under(Some(parent), &class, cx),
+            Purpose::ChangeClass(targets) => self.change_class(&targets, &class, cx),
+        }
     }
 
-    /// Whether a new instance of a class a sibling already carries the name
-    /// of is numbered — see `explorer::insert::incremented_name`.
-    pub(in crate::shell) fn increment_names(&self) -> bool {
-        self.increment_names
-    }
-
-    fn set_increment_names(&mut self, increment: bool, cx: &mut Context<Self>) {
-        self.increment_names = increment;
-        self.save_settings();
+    fn hover_picked(&mut self, class: &str, hovered: bool, cx: &mut Context<Self>) {
+        let Some(picker) = self.explorer_edit.picker.as_mut() else {
+            return;
+        };
+        if hovered {
+            picker.hovered = Some(class.to_owned());
+        } else if picker.hovered.as_deref() == Some(class) {
+            picker.hovered = None;
+        } else {
+            return;
+        }
         cx.notify();
     }
-
-    /// Whether inserting, pasting or selecting expands the tree to reveal
-    /// the instance — see `Shell::select`.
-    pub(in crate::shell) fn expand_on_select(&self) -> bool {
-        self.expand_on_select
-    }
-
-    fn set_expand_on_select(&mut self, expand: bool, cx: &mut Context<Self>) {
-        self.expand_on_select = expand;
-        self.save_settings();
-        cx.notify();
-    }
-}
-
-/// The `+` the hovered row carries. Built from the shell's handle rather
-/// than through `cx.listener`, because it is assembled inside the tree's own
-/// per-row closure, which has an `App` and no `Context<Shell>` (see
-/// `ExplorerEdit::row_slots`).
-pub(super) fn insert_button(shell: &Entity<Shell>, reference: Ref) -> AnyElement {
-    let shell = shell.clone();
-    chrome::icon_button(
-        ("explorer-insert", reference.value() as usize),
-        IconName::Plus,
-        "Insert an object here (Ctrl+I)",
-    )
-    // The press must not reach the row underneath. Letting it through
-    // selects the row, and the toolkit scrolls a freshly selected row into
-    // view — which slides this button out from under the pointer between
-    // the press and the release, so the click never completes. The picker
-    // is told which row it is inserting under anyway, so there is nothing
-    // the selection is needed for here.
-    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-    .on_click(move |_, window, cx| {
-        shell.update(cx, |shell, cx| {
-            shell.open_insert_picker(reference, window, cx);
-        });
-    })
-    .into_any_element()
-}
-
-/// How far a refused row's icon is faded. A kit tile carries its own
-/// colours — the colour *is* the identity, so it is never re-tinted (see
-/// `UX_GUIDELINES.md` §5) — and a greyed label beside a full-strength icon
-/// reads as a half-disabled row. Fading is the one treatment that works on
-/// a multi-colour sprite and on a Lucide glyph alike, and this much still
-/// leaves the shape readable.
-const REFUSED_ICON_OPACITY: f32 = 0.4;
-
-/// One class in the list, with the same identity icon the Explorer draws
-/// for an instance of it. A refused class is greyed — label *and* icon —
-/// and inert rather than missing, with the reason on hover: the point of
-/// the whole affordance (see this module's own comment).
-fn class_row(choice: &Choice, icon: ClassIcon, cx: &mut Context<Shell>) -> AnyElement {
-    let class = SharedString::from(choice.class.clone());
-    let picked = choice.class.clone();
-    let legal = choice.legal;
-
-    h_flex()
-        .id(SharedString::from(format!("insert-{class}")))
-        .w_full()
-        .h(tokens::hit_target())
-        .flex_none()
-        .items_center()
-        .gap(px(6.))
-        .px(px(8.))
-        .rounded(tokens::RADIUS)
-        .text_size(tokens::text_sm())
-        .line_height(tokens::line_sm())
-        .child(
-            div()
-                .flex_none()
-                .when(!legal, |this| this.opacity(REFUSED_ICON_OPACITY))
-                .child(rows::class_icon(icon)),
-        )
-        .child(class.clone())
-        .map(|this| {
-            if choice.legal {
-                this.cursor_pointer()
-                    .text_color(tokens::text_strong())
-                    .hover(|this| this.bg(tokens::hover()))
-                    .active(|this| this.bg(tokens::selection()))
-                    .on_click(cx.listener(move |shell, _, _, cx| {
-                        shell.insert_picked(picked.clone(), cx);
-                    }))
-            } else {
-                this.cursor_not_allowed()
-                    .text_color(tokens::text_disabled())
-                    .tooltip(move |window, cx| {
-                        tooltip::text(format!("{class} cannot be created here"), window, cx)
-                    })
-            }
-        })
-        .into_any_element()
 }

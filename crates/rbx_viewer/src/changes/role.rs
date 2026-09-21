@@ -189,7 +189,6 @@ impl Roles {
         self.known.remove(&referent)
     }
 
-    #[cfg(test)]
     pub(crate) fn get(&self, referent: Ref) -> Option<Known> {
         self.known.get(&referent).copied()
     }

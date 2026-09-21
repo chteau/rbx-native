@@ -253,6 +253,17 @@ impl Shell {
         if refresh.neighbours {
             self.sync_snap_neighbours(cx);
         }
+        // A selected instance that changed class is, to everything built
+        // from the selection, another selection: its outline, its gizmo and
+        // its Properties rows are all read off its class. Checked here, so a
+        // change, its undo and its redo all come through it.
+        let selected = self.selected_all();
+        let class_changed = changes
+            .iter()
+            .any(|change| matches!(change, Change::Class(referent) if selected.contains(referent)));
+        if class_changed {
+            self.selection_changed(cx);
+        }
     }
 
     /// Rebuilds the Explorer's rows from the current `self.dom`, keeping the
@@ -289,8 +300,9 @@ pub(super) struct Refresh {
 }
 
 /// Which of the two mirrors a log invalidates. A structural change — an
-/// instance added, removed or moved — invalidates both: the selection may
-/// have lost a part or gained one, and so may the neighbours. A property
+/// instance added, removed, moved or given another class — invalidates
+/// both: the selection may have lost a part or gained one, and so may the
+/// neighbours. A property
 /// write invalidates only the side it landed on: the targets if it touched
 /// a part the selection *covers* (a typed coordinate, an undo of one), the
 /// neighbours if it touched anything else (a script moving parts the user
@@ -309,7 +321,7 @@ pub(super) fn refresh_for(changes: &[Change], covered: &HashSet<Ref>) -> Refresh
     for change in changes {
         let referent = match change {
             Change::Property { referent, .. } => *referent,
-            Change::Parent { .. } | Change::Added(_) | Change::Removed(_) => {
+            Change::Parent { .. } | Change::Added(_) | Change::Removed(_) | Change::Class(_) => {
                 return Refresh {
                     targets: true,
                     neighbours: true,
@@ -393,6 +405,11 @@ mod tests {
         let none = HashSet::new();
         assert_eq!(refresh_for(&[Change::Added(Ref::new(9))], &none), BOTH);
         assert_eq!(refresh_for(&[Change::Removed(Ref::new(9))], &none), BOTH);
+        // A selected part turned into a `Folder` is no longer something to drag.
+        assert_eq!(
+            refresh_for(&[Change::Class(Ref::new(1))], &HashSet::from([Ref::new(1)])),
+            BOTH
+        );
         assert_eq!(
             refresh_for(&[write(1, "Name"), reparent], &HashSet::from([Ref::new(1)])),
             BOTH

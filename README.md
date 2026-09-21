@@ -220,6 +220,13 @@ the autonomous-contribution workflow specifically.
 - **Evan Wallace** — [csg.js](https://github.com/evanw/csg.js) (MIT), whose
   BSP-tree boolean algorithm the legacy union/negate CSG resolver
   (`rbx_viewer::scene::union::csg`) is a dependency-free Rust port of.
+- **Elttob** (Studio Elttob,
+  [Roblox profile](https://www.roblox.com/users/1670764/profile)) — the free
+  Studio plugins *Reclass* and *Relight*, whose ideas (changing an
+  instance's class while keeping what it holds; placing the sun by pointing
+  at the scene) inspired this editor's Change Class and sun placement tools.
+  No code, assets or interface from either plugin is used: both were
+  reimplemented independently from how they behave.
 
 ## License
 
