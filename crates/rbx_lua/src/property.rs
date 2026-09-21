@@ -6,16 +6,9 @@ mod pseudo;
 mod to_lua;
 
 use mlua::{Lua, Result, Value};
-use rbx_dom::{Instance, Ref, Variant};
+use rbx_dom::{Ref, Variant};
 
 use crate::ctx::Ctx;
-
-/// Properties whose serialized name differs from the name scripts use.
-///
-/// The API dump carries no serialization info, so the file's spelling is resolved
-/// here. The generic rule below (lowercase first letter, as in `Size` -> `size`)
-/// covers most of them; this table holds what it cannot derive.
-const ALIASES: &[(&str, &str)] = &[("Color", "Color3uint8")];
 
 pub(crate) fn missing_instance() -> mlua::Error {
     mlua::Error::runtime("instance has been destroyed")
@@ -34,15 +27,17 @@ pub(crate) fn get(lua: &Lua, ctx: &Ctx, referent: Ref, name: &str) -> Result<Opt
         let Some(descriptor) = ctx.database().resolve_property(instance.class(), name) else {
             return Ok(None);
         };
-        let key = storage_key(instance, name);
-        (
-            descriptor.value_type.clone(),
-            instance.properties().get(&key).cloned(),
-        )
+        // Whichever name the file stored it under, or the class default:
+        // `part.Transparency` on a part a hand-written file left it off of
+        // reads `0`, as it would in Roblox.
+        let stored = ctx
+            .database()
+            .stored_or_default(instance, name)
+            .map(|(_, value)| value.clone());
+        (descriptor.value_type.clone(), stored)
     };
 
-    // A property the file never stored has no default here: the dump records types,
-    // not default values.
+    // Neither stored nor recorded: a value only a running engine computes.
     let Some(stored) = stored else {
         return Ok(Some(Value::Nil));
     };
@@ -61,8 +56,18 @@ pub(crate) fn set(ctx: &Ctx, referent: Ref, name: &str, value: &Value) -> Result
         let Some(descriptor) = ctx.database().resolve_property(instance.class(), name) else {
             return Ok(false);
         };
-        let key = storage_key(instance, name);
-        let existing = instance.properties().get(&key).cloned();
+        // Under the name the file stored it as, or else the one Roblox saves
+        // it under — `size`, `Color3uint8` — which is what the renderer and
+        // the save path read. The default, when there is one, says which
+        // representation that name holds.
+        let database = ctx.database();
+        let (key, existing) = match database.stored_or_default(instance, name) {
+            Some((key, value)) => (key.to_owned(), Some(value.clone())),
+            None => (
+                database.stored_names(instance.class(), name)[0].to_owned(),
+                None,
+            ),
+        };
         (descriptor.value_type.clone(), key, existing)
     };
 
@@ -72,27 +77,6 @@ pub(crate) fn set(ctx: &Ctx, referent: Ref, name: &str, value: &Value) -> Result
         .set_property(referent, &key, variant)
         .map_err(|error| mlua::Error::runtime(error.to_string()))?;
     Ok(true)
-}
-
-fn storage_key(instance: &Instance, canonical: &str) -> String {
-    if instance.properties().contains_key(canonical) {
-        return canonical.to_string();
-    }
-
-    let mut chars = canonical.chars();
-    let lowered = match chars.next() {
-        Some(first) => first.to_lowercase().collect::<String>() + chars.as_str(),
-        None => String::new(),
-    };
-    if instance.properties().contains_key(&lowered) {
-        return lowered;
-    }
-
-    ALIASES
-        .iter()
-        .find(|(name, alias)| *name == canonical && instance.properties().contains_key(*alias))
-        .map(|(_, alias)| alias.to_string())
-        .unwrap_or_else(|| canonical.to_string())
 }
 
 /// Narrows a freshly built `Variant` to the representation the file already used

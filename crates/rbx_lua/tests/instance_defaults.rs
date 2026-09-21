@@ -171,13 +171,24 @@ fn brick_color_new_accepts_a_known_name_or_a_number() {
 }
 
 #[test]
-fn brick_color_new_rejects_an_unknown_name() {
+fn brick_color_new_falls_back_to_medium_stone_grey() {
+    // What `BrickColor.new` documents for a name or number the table lacks.
     let mut runtime = runtime();
-    let error = runtime
-        .run(r#"BrickColor.new("Not A Real Color")"#)
-        .expect_err("unknown BrickColor names must be rejected");
+    let output = runtime
+        .run(r#"print(BrickColor.new("Not A Real Color").Name, BrickColor.new(9999).Number)"#)
+        .expect("script must run");
 
-    assert!(error.to_string().contains("is not one of the names"));
+    assert_eq!(output.lines(), ["Medium stone grey 194"]);
+}
+
+#[test]
+fn brick_color_new_finds_the_closest_colour_and_the_palette() {
+    let mut runtime = runtime();
+    let output = runtime
+        .run(r#"print(BrickColor.new(1, 0, 0).Name, BrickColor.palette(70).Name)"#)
+        .expect("script must run");
+
+    assert_eq!(output.lines(), ["Really red Gold"]);
 }
 
 #[test]

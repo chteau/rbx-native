@@ -104,7 +104,7 @@ pub(crate) fn lua_to_variant(
             datatype::<LuaNumberRange>(name, "NumberRange", value)?.0,
         )),
         "BrickColor" => Ok(Variant::BrickColor(
-            datatype::<LuaBrickColor>(name, "BrickColor", value)?.number,
+            datatype::<LuaBrickColor>(name, "BrickColor", value)?.number(),
         )),
         "NumberSequence" => Ok(Variant::NumberSequence(
             datatype_clone::<LuaNumberSequence>(name, "NumberSequence", value)?.0,
