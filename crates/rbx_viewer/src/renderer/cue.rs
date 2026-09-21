@@ -34,8 +34,9 @@ const SELECTION: [f32; 3] = [0.106, 0.462, 0.911];
 /// shader blends its own box with.
 const HOVER: [f32; 3] = [0.955, 0.380, 0.020];
 const HOVER_ALPHA: f32 = 0.55;
-/// A referent no DOM hands out: `rbx_binary`'s own null referent, which is
-/// what a `Ref` property with nothing on the other end reads as.
+/// What stands in `Highlight::referent` for a cue: no instance asked for
+/// one, and nothing reads the field back — it exists so a re-planned list
+/// can be matched to the DOM, which the editor's own cues never are.
 const NO_INSTANCE: Ref = Ref::new(0);
 
 /// The selection and hover silhouettes, as the one pass that draws both.
@@ -217,10 +218,6 @@ fn cue_highlights(selection: &[Ref], hover: &[Ref], occluded: bool) -> Vec<Highl
             outline: color,
             outline_alpha: alpha,
             depth_mode,
-            // No instance asked for these: they are the editor's own cues,
-            // not something the file holds. `Highlight::referent` is only
-            // read where a re-plan matches a list back to the DOM, which
-            // never happens for one of these.
             referent: NO_INSTANCE,
         })
         .collect()
