@@ -133,7 +133,7 @@ fn mixed(mut row: PropertyRow, values: &[&Variant]) -> PropertyRow {
             items,
         }),
         // Drawn from `row.mixed`: an indeterminate box, an empty swatch.
-        kind @ Some(EditKind::Bool(_) | EditKind::Color { .. }) => kind,
+        kind @ Some(EditKind::Bool(_) | EditKind::Color { .. } | EditKind::BrickColor(_)) => kind,
         Some(EditKind::Fields {
             fields,
             values: seeds,

@@ -174,6 +174,11 @@ impl Shell {
             for row in &category_rows {
                 let element = match &row.edit {
                     None => property_row(row).into_any_element(),
+                    Some(EditKind::BrickColor(number)) => {
+                        let current = (!row.mixed).then_some(*number);
+                        let control = self.brick_color_picker(&row.name, current, cx);
+                        property_row_control(row, control, false, None).into_any_element()
+                    }
                     // No persistent entity: a checkbox commits straight
                     // through the same textual path (`shell::Shell::commit_row`)
                     // every other widget uses, via `cx.entity()` since a

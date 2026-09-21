@@ -15,6 +15,7 @@ use crate::script_editor::source;
 
 pub(crate) mod attributes;
 mod common;
+mod computed;
 pub(crate) mod edit;
 mod folder_row;
 mod ranges;
@@ -174,6 +175,10 @@ pub(crate) enum EditKind {
         color: bool,
         text: String,
     },
+    /// A part's `BrickColor`, by number: picked from the palette Studio's
+    /// own picker shows, and written as the part's `Color` (see
+    /// `edit::commit_all`), since that is all Roblox saves.
+    BrickColor(u32),
 }
 
 /// One line of the panel.
@@ -222,6 +227,10 @@ pub(crate) struct Properties {
     /// selected, and the panel re-renders several times a second. Dropped
     /// by [`Self::dom_changed`].
     common: RefCell<Option<(Vec<Ref>, Vec<PropertyRow>)>>,
+    /// Which parts are joined into assemblies, worked out the first time a
+    /// part's assembly is shown after the DOM last changed (see
+    /// `computed::assembly`).
+    joints: RefCell<Option<Rc<computed::Joints>>>,
 }
 
 impl Properties {
@@ -230,15 +239,17 @@ impl Properties {
             db,
             sheets: RefCell::default(),
             common: RefCell::default(),
+            joints: RefCell::default(),
         }
     }
 
     /// Something in the DOM changed: a multi-selection's cached rows may no
-    /// longer be what its instances hold. A lone instance's rows are never
-    /// cached — they cost a tenth of a millisecond, and its folder colour
-    /// lives outside the DOM.
+    /// longer be what its instances hold, nor the joints what joins parts.
+    /// A lone instance's rows are never cached — they cost a tenth of a
+    /// millisecond, and its folder colour lives outside the DOM.
     pub(crate) fn dom_changed(&self) {
         self.common.take();
+        self.joints.take();
     }
 
     /// The panel's header: `Part "Baseplate"` for one instance; for several,
@@ -331,6 +342,9 @@ impl Properties {
             // with `attributes::edit_kind_for`, an attribute never being an
             // `Enum` — see that module) has no database to make.
             Variant::Enum(raw) => self.enum_kind(class, name, *raw, text),
+            // Here rather than in `value_edit_kind`: an attribute can hold a
+            // `BrickColor` too, and keeps its plain number field.
+            Variant::BrickColor(number) => EditKind::BrickColor(*number),
             other => value_edit_kind(other, text),
         })
     }
@@ -364,7 +378,10 @@ impl Properties {
             Variant::Int64(number) => number.to_string(),
             Variant::Float32(number) => number.to_string(),
             Variant::Float64(number) => number.to_string(),
-            Variant::BrickColor(number) => format!("BrickColor({number})"),
+            // By name, the way Studio shows it; a number the table lacks
+            // keeps the number.
+            Variant::BrickColor(number) => rbx_dom::BrickColor::from_number(*number)
+                .map_or_else(|| format!("BrickColor({number})"), |color| color.name.to_owned()),
             Variant::Color3(color) => color3(color),
             Variant::Color3uint8 { r, g, b } => format!("({r}, {g}, {b})"),
             Variant::Vector2(v) => format!("({}, {})", v.x, v.y),

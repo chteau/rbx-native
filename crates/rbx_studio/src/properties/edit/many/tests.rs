@@ -229,3 +229,28 @@ fn blanks_fill_part_by_part_only_for_a_value_made_of_parts() {
     assert_eq!(fill_blanks(&text, "x, "), "x, ");
     assert_eq!(fill_blanks(&text, ""), "a, b");
 }
+
+#[test]
+fn a_brick_color_edit_writes_the_parts_color() {
+    let mut dom = two_parts(&[], &[]);
+    let db = db();
+
+    commit_all(&mut dom, &db, &[LEFT, RIGHT], "BrickColor", "21").unwrap();
+    for part in [LEFT, RIGHT] {
+        assert_eq!(
+            stored(&dom, part, "Color3uint8"),
+            Some(&Variant::Color3uint8 {
+                r: 196,
+                g: 40,
+                b: 28
+            })
+        );
+    }
+    commit_all(&mut dom, &db, &[LEFT], "BrickColor", "Really red").unwrap();
+    assert_eq!(
+        stored(&dom, LEFT, "Color3uint8"),
+        Some(&Variant::Color3uint8 { r: 255, g: 0, b: 0 })
+    );
+    assert!(commit_all(&mut dom, &db, &[LEFT], "BrickColor", "Nonsense").is_err());
+    assert_eq!(stored(&dom, LEFT, "BrickColor"), None);
+}

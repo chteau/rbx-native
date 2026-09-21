@@ -157,7 +157,12 @@ fn security_and_not_scriptable_keep_nothing_out() {
 fn a_property_with_no_value_and_no_default_is_left_out() {
     let rows = rows("Part", &[]);
 
-    for computed in ["Mass", "AssemblyMass", "AssemblyLinearVelocity", "Rotation"] {
+    for computed in [
+        "AssemblyLinearVelocity",
+        "AssemblyAngularVelocity",
+        "ExtentsSize",
+        "Rotation",
+    ] {
         assert!(!names(&rows).contains(&computed), "{computed} listed");
     }
 }
@@ -204,4 +209,25 @@ fn each_class_is_worked_out_once() {
 
     assert!(Rc::ptr_eq(&first, &properties.sheet("Part")));
     assert_eq!(properties.sheets.borrow().len(), 1);
+}
+
+#[test]
+fn brick_color_is_the_closest_table_colour_to_the_parts_color() {
+    let fresh = rows("Part", &[]);
+    assert_eq!(row(&fresh, "BrickColor").value, "Medium stone grey");
+
+    let red = rows(
+        "Part",
+        &[(
+            "Color3uint8",
+            Variant::Color3uint8 {
+                r: 196,
+                g: 40,
+                b: 28,
+            },
+        )],
+    );
+    let brick = row(&red, "BrickColor");
+    assert_eq!(brick.value, "Bright red");
+    assert_eq!(brick.edit, Some(EditKind::BrickColor(21)));
 }

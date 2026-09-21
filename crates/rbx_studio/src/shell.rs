@@ -5,6 +5,7 @@
 
 mod align;
 mod attributes_panel;
+mod brick_color;
 mod chrome;
 mod clipboard;
 mod command;

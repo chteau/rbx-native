@@ -1,30 +1,48 @@
 //! Where an edit lands, and one edit made to every selected instance at
 //! once.
 
-use rbx_dom::{Instance, Ref, Variant, WeakDom};
+use rbx_dom::{BrickColor, Instance, Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use super::{commit, edit_text, parse, NAME_PROPERTY};
 use crate::properties::{value_edit_kind, EditKind};
 
+const BRICK_COLOR: &str = "BrickColor";
+const COLOR: &str = "Color";
+
 /// The name `name`'s value is stored under on `instance`, and that value —
 /// or, for a value the file never stored, the name Roblox saves it under and
-/// the class default. Either spelling of a property finds it: `Size` and
-/// `size` both land on the `size` the renderer and the save path read.
+/// the class default (see `ReflectionDatabase::stored_or_default`).
 pub(super) fn stored_or_default(
     db: &ReflectionDatabase,
     instance: &Instance,
     name: &str,
 ) -> Option<(String, Variant)> {
-    let class = instance.class();
-    let names = db.stored_names(class, name);
-    names
-        .iter()
-        .find_map(|key| Some((key.to_string(), instance.properties().get(*key)?.clone())))
-        .or_else(|| {
-            let default = db.default_value(class, db.canonical_name(class, name))?;
-            Some((names.first()?.to_string(), default.clone()))
-        })
+    db.stored_or_default(instance, name)
+        .map(|(key, value)| (key.to_owned(), value.clone()))
+}
+
+/// A part's `BrickColor` is its `Color` named by the closest table colour,
+/// and all Roblox saves is `Color`: an edit of the one, by number or name,
+/// is an edit of the other to that colour. Anything else passes through.
+fn through_color<'a>(
+    db: &ReflectionDatabase,
+    class: &str,
+    name: &'a str,
+    text: &str,
+) -> Result<(&'a str, String), String> {
+    if name != BRICK_COLOR || db.resolve_property(class, COLOR).is_none() {
+        return Ok((name, text.to_owned()));
+    }
+    let text = text.trim();
+    let color = text
+        .parse::<u32>()
+        .ok()
+        .and_then(BrickColor::from_number)
+        .or_else(|| BrickColor::from_name(text))
+        .ok_or_else(|| format!("{text:?} is not a BrickColor"))?;
+    let [r, g, b] = color.rgb;
+    Ok((COLOR, format!("{r}, {g}, {b}")))
 }
 
 /// [`commit`] for every instance in `selection`, as one edit: every value is
@@ -43,6 +61,13 @@ pub(crate) fn commit_all(
     name: &str,
     text: &str,
 ) -> Result<(), String> {
+    let class = selection
+        .first()
+        .and_then(|&reference| dom.get(reference))
+        .map(|instance| instance.class().to_owned())
+        .unwrap_or_default();
+    let (name, text) = through_color(db, &class, name, text)?;
+    let text = text.as_str();
     let currents: Vec<(String, Variant)> = selection
         .iter()
         .map(|&reference| current(dom, db, reference, name))

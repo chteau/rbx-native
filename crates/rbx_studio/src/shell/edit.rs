@@ -208,6 +208,7 @@ fn resync_row_widget(
     widget: &RowEditor,
     kind: &EditKind,
     sliding: bool,
+    mixed: bool,
     window: &mut Window,
     cx: &mut App,
 ) {
@@ -234,14 +235,23 @@ fn resync_row_widget(
             }
         }
         (RowEditor::Optional(_, _, inner), EditKind::Optional { inner: kind, .. }) => {
-            resync_row_widget(inner, kind, sliding, window, cx);
+            resync_row_widget(inner, kind, sliding, mixed, window, cx);
         }
-        // `Color` and `Enum` rows have nothing outside their own widget that
-        // writes to an already-selected instance repeatedly the way
-        // `Shell::sync_camera_pose` does — the one place that seeds a
-        // `Color3uint8`/`Enum` on insertion (`shell::keys`'s new-instance
-        // defaults) always does so before that instance is selected, so
-        // there is no stale cache for it to fight.
+        // A part's colour also moves when its `BrickColor` row picks one,
+        // or an undo or a script sets it. Not while the picker is open —
+        // what it shows then is the colour being chosen — nor for a
+        // multi-selection's differing colours, which show none.
+        (RowEditor::Color(state), EditKind::Color { r, g, b }) if !mixed => {
+            let picker = state.read(cx);
+            let stale = picker.value().map(hsla_to_rgb) != Some((*r, *g, *b));
+            if stale && !picker.is_open() {
+                let value = rgb_to_hsla(*r, *g, *b);
+                state.update(cx, |state, cx| state.set_value(value, window, cx));
+            }
+        }
+        // An `Enum` row has nothing outside its own widget that writes to an
+        // already-selected instance repeatedly the way
+        // `Shell::sync_camera_pose` does.
         _ => {}
     }
 }
@@ -295,7 +305,7 @@ impl Shell {
             let widget = existing.widget.clone();
             let error = existing.error.clone();
             let sliding = self.edits.sliding.as_deref() == Some(row.name.as_str());
-            resync_row_widget(&widget, kind, sliding, window, cx);
+            resync_row_widget(&widget, kind, sliding, row.mixed, window, cx);
             return (widget, error);
         }
 
@@ -323,8 +333,8 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> (RowEditor, Vec<Subscription>) {
         match kind {
-            EditKind::Bool(_) => unreachable!(
-                "EditKind::Bool never reaches here — see this method's caller in shell::panels"
+            EditKind::Bool(_) | EditKind::BrickColor(_) => unreachable!(
+                "a checkbox and a BrickColor picker are built where they render, in shell::panels"
             ),
             EditKind::Text(seed) => {
                 let input = cx.new(|cx| InputState::new(window, cx).default_value(seed.clone()));

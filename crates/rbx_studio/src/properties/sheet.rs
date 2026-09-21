@@ -32,12 +32,15 @@ use std::rc::Rc;
 use rbx_dom::{Instance, Ref, Variant, WeakDom};
 use rbx_reflection::{PropertyDescriptor, ReflectionDatabase};
 
+use super::computed::COMPUTED;
 use super::{attributes, edit::NAME_PROPERTY, Properties, UNCATEGORIZED};
 
 /// Two properties every instance has but no file stores, read off the
 /// instance itself the way `Name` is.
 const CLASS_NAME: &str = "ClassName";
 const PARENT: &str = "Parent";
+const BRICK_COLOR: &str = "BrickColor";
+const COLOR: &str = "Color";
 
 /// One listed property of a class.
 pub(super) struct Entry {
@@ -51,6 +54,19 @@ pub(super) struct Entry {
     keys: Vec<String>,
     default: Option<Variant>,
     read_only: bool,
+    source: Source,
+}
+
+/// Where an entry's value comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Source {
+    /// Stored under one of its keys, or else the class default.
+    Stored,
+    /// A part's `BrickColor`: the closest table colour to its `Color`, whose
+    /// keys and default the entry carries. Roblox saves only `Color`.
+    BrickColor,
+    /// Worked out from the part itself (see `computed`).
+    Computed,
 }
 
 /// Everything [`Properties::named`] needs about one class.
@@ -87,14 +103,29 @@ impl Sheet {
                 if !listed(property) || db.canonical_name(class, &property.name) != property.name {
                     continue;
                 }
+                let mut default = db.default_value(class, &property.name).cloned();
+                let mut keys = keys;
+                let mut source = Source::Stored;
+                if property.name == BRICK_COLOR && db.resolve_property(class, COLOR).is_some() {
+                    keys = db
+                        .stored_names(class, COLOR)
+                        .into_iter()
+                        .map(str::to_owned)
+                        .collect();
+                    default = db.default_value(class, COLOR).cloned();
+                    source = Source::BrickColor;
+                } else if default.is_none() && COMPUTED.contains(&property.name.as_str()) {
+                    source = Source::Computed;
+                }
                 index.insert(property.name.clone(), entries.len());
                 entries.push(Entry {
                     read_only: read_only(property, &keys),
-                    default: db.default_value(class, &property.name).cloned(),
+                    default,
                     owner: descriptor.name.clone(),
                     category: property.category.clone(),
                     name: property.name.clone(),
                     keys,
+                    source,
                 });
             }
             current = descriptor
@@ -162,7 +193,7 @@ impl Properties {
                     owner: &entry.owner,
                     category: &entry.category,
                     read_only: entry.read_only,
-                    value: value(entry, dom, reference, instance)?,
+                    value: self.value(entry, dom, reference, instance)?,
                 })
             })
             .collect();
@@ -228,31 +259,72 @@ impl Properties {
         if entry.owner != named.owner {
             return None;
         }
-        Some((value(entry, dom, reference, instance)?, entry.read_only))
+        Some((
+            self.value(entry, dom, reference, instance)?,
+            entry.read_only,
+        ))
+    }
+
+    /// What `name` holds on `instance`, stored or defaulted — through the
+    /// class's sheet, which already knows its names, rather than asking the
+    /// database to walk the class hierarchy for them again. `computed`
+    /// reads a dozen of these per part on every frame the panel draws.
+    pub(super) fn read(&self, instance: &Instance, name: &str) -> Option<Variant> {
+        let sheet = self.sheet(instance.class());
+        match sheet.index.get(name).map(|&index| &sheet.entries[index]) {
+            Some(entry) if entry.source == Source::Stored => stored(entry, instance).cloned(),
+            _ => self
+                .db
+                .stored_or_default(instance, name)
+                .map(|(_, value)| value.clone()),
+        }
+    }
+
+    /// What `entry` holds on `instance`.
+    fn value<'a>(
+        &self,
+        entry: &'a Entry,
+        dom: &WeakDom,
+        reference: Ref,
+        instance: &'a Instance,
+    ) -> Option<Cow<'a, Variant>> {
+        Some(match entry.name.as_str() {
+            NAME_PROPERTY => Cow::Owned(Variant::String(instance.name().to_owned())),
+            CLASS_NAME => Cow::Owned(Variant::String(instance.class().to_owned())),
+            // A service has no parent in the DOM; `nil` would be wrong, since
+            // Studio's is the place itself.
+            PARENT => Cow::Owned(Variant::Ref(dom.parent(reference)?)),
+            _ => match entry.source {
+                Source::Stored => Cow::Borrowed(stored(entry, instance)?),
+                Source::BrickColor => Cow::Owned(brick_color(stored(entry, instance)?)?),
+                Source::Computed => {
+                    Cow::Owned(self.computed(dom, reference, instance, &entry.name)?)
+                }
+            },
+        })
     }
 }
 
-/// What `entry` holds on `instance`: stored under any of its names, or else
-/// its class default.
-fn value<'a>(
-    entry: &'a Entry,
-    dom: &WeakDom,
-    reference: Ref,
-    instance: &'a Instance,
-) -> Option<Cow<'a, Variant>> {
-    Some(match entry.name.as_str() {
-        NAME_PROPERTY => Cow::Owned(Variant::String(instance.name().to_owned())),
-        CLASS_NAME => Cow::Owned(Variant::String(instance.class().to_owned())),
-        // A service has no parent in the DOM; `nil` would be wrong, since
-        // Studio's is the place itself.
-        PARENT => Cow::Owned(Variant::Ref(dom.parent(reference)?)),
-        _ => entry
-            .keys
-            .iter()
-            .find_map(|key| instance.properties().get(key))
-            .or(entry.default.as_ref())
-            .map(Cow::Borrowed)?,
-    })
+/// Stored under any of `entry`'s keys, or else its class default.
+fn stored<'a>(entry: &'a Entry, instance: &'a Instance) -> Option<&'a Variant> {
+    entry
+        .keys
+        .iter()
+        .find_map(|key| instance.properties().get(key))
+        .or(entry.default.as_ref())
+}
+
+/// The closest table colour to a part's `Color`.
+fn brick_color(color: &Variant) -> Option<Variant> {
+    let rgb = match color {
+        Variant::Color3uint8 { r, g, b } => [*r, *g, *b],
+        Variant::Color3(color) => [color.r, color.g, color.b]
+            .map(|channel| (channel.clamp(0.0, 1.0) * 255.0).round() as u8),
+        _ => return None,
+    };
+    Some(Variant::BrickColor(
+        rbx_dom::BrickColor::nearest(rgb).number,
+    ))
 }
 
 #[cfg(test)]

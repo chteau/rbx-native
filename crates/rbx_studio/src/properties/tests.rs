@@ -305,7 +305,7 @@ fn colors_are_byte_triplets_whichever_way_they_were_stored() {
     assert_eq!(row.value, "(91, 91, 91)");
     assert_eq!(
         formatted("BrickColor", Variant::BrickColor(194)),
-        "BrickColor(194)"
+        "Medium stone grey"
     );
 }
 
@@ -586,13 +586,13 @@ fn color3uint8_edits_its_stored_bytes_directly() {
 }
 
 #[test]
-fn brick_color_stays_a_text_field_with_no_bundled_palette() {
+fn any_brick_color_value_edits_through_the_palette_picker() {
+    // Not `BrickColor`, which a part derives from its `Color` (see
+    // `sheet`): any property holding one, a `SpawnLocation`'s `TeamColor`
+    // say, picks from the same palette.
     assert_eq!(
-        // Not `BrickColor`: that name is real on `BasePart` and, per the
-        // dump's Serialization, not saveable — read-only there now, which
-        // this assertion isn't testing.
         edit_kind("LegacyBrickColor", Variant::BrickColor(194)),
-        Some(EditKind::Text("194".to_owned()))
+        Some(EditKind::BrickColor(194))
     );
 }
 
@@ -882,6 +882,7 @@ fn rows_group_by_category_in_alphabetical_order_with_no_empty_groups() {
         categories,
         [
             "Appearance",
+            "Assembly",
             "Behavior",
             "Collision",
             "Data",
