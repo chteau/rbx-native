@@ -71,23 +71,31 @@ pub(crate) fn camera_key(key: &str, layout: Layout) -> Option<CameraKey> {
     }
 }
 
-/// The key a keystroke means to the transform toolbar, whose shortcuts are
-/// the digits `1`-`4` — on an AZERTY keyboard those sit on the *shifted*
-/// digit row, and the unshifted keys type `&`, `é`, `"` and `'` instead, which
-/// GPUI reports under their keysym names. Studio binds the physical key, so
-/// the unshifted row has to reach the same tools; `Shift`+`2` still types a
-/// plain `2` there, which is exactly the chord `transform::action_for` gives
-/// the increment field.
-pub(crate) fn tool_key(key: &str, layout: Layout) -> &str {
+/// The key and modifiers a keystroke means to the transform toolbar, whose
+/// shortcuts are the digits `1`-`4` and `Shift`+`2`. Studio binds the
+/// physical key, and on an AZERTY keyboard the digits sit on the *shifted*
+/// row: unshifted, the keys type `&`, `é`, `"` and `'`, which GPUI reports as
+/// those characters — `é`, having no ASCII form, under its keysym name. A
+/// digit, then, means `Shift` was down, though GPUI drops `Shift` from any
+/// key that has no case; it is put back, so `Shift`+`2` reaches the increment
+/// field as it does on QWERTY.
+pub(crate) fn tool_key(key: &str, modifiers: Modifiers, layout: Layout) -> (&str, Modifiers) {
     if layout != Layout::Azerty {
-        return key;
+        return (key, modifiers);
     }
     match key {
-        "ampersand" => "1",
-        "eacute" => "2",
-        "quotedbl" => "3",
-        "apostrophe" => "4",
-        _ => key,
+        "&" => ("1", modifiers),
+        "eacute" | "é" => ("2", modifiers),
+        "\"" => ("3", modifiers),
+        "'" => ("4", modifiers),
+        "1" | "2" | "3" | "4" => (
+            key,
+            Modifiers {
+                shift: true,
+                ..modifiers
+            },
+        ),
+        _ => (key, modifiers),
     }
 }
 
@@ -147,6 +155,7 @@ mod tests {
     use gpui_kit::{point, px};
 
     use super::*;
+    use crate::transform::{self, Action, SnapKind, Tool};
 
     // The bug this whole module exists for: the physical keys W/A/S/D must move
     // the camera the same way whatever letters the keyboard prints on them.
@@ -210,21 +219,36 @@ mod tests {
         assert_eq!(Layout::of("unknown"), Layout::Qwerty);
     }
 
-    #[test]
-    fn azerty_s_unshifted_digit_row_reaches_the_tool_shortcuts() {
-        assert_eq!(tool_key("ampersand", Layout::Azerty), "1");
-        assert_eq!(tool_key("eacute", Layout::Azerty), "2");
-        assert_eq!(tool_key("quotedbl", Layout::Azerty), "3");
-        assert_eq!(tool_key("apostrophe", Layout::Azerty), "4");
-        // Shifted, the same keys type the digits themselves.
-        assert_eq!(tool_key("2", Layout::Azerty), "2");
+    /// What each tool key does on each layout, from the key GPUI reports
+    /// (`keystroke_from_xkb`: a printable ASCII character as itself, `é` by
+    /// its keysym name) with `Shift` already dropped, as GPUI drops it.
+    fn tool(key: &str, layout: Layout) -> Option<transform::Action> {
+        let (key, modifiers) = tool_key(key, Modifiers::none(), layout);
+        transform::action_for(key, modifiers)
     }
 
     #[test]
-    fn qwerty_s_punctuation_is_not_a_tool_shortcut() {
-        assert_eq!(tool_key("eacute", Layout::Qwerty), "eacute");
-        assert_eq!(tool_key("apostrophe", Layout::Qwerty), "apostrophe");
-        assert_eq!(tool_key("2", Layout::Qwerty), "2");
+    fn azerty_s_unshifted_digit_row_reaches_the_tool_shortcuts() {
+        let tools = ["&", "eacute", "\"", "'"].map(|key| tool(key, Layout::Azerty));
+        assert_eq!(
+            tools,
+            [Tool::Select, Tool::Move, Tool::Scale, Tool::Rotate]
+                .map(|tool| Some(Action::Use(tool)))
+        );
+        // Shifted, the same keys type the digits: Shift+2 is the field.
+        assert_eq!(
+            tool("2", Layout::Azerty),
+            Some(Action::FocusIncrement(SnapKind::Translate))
+        );
+        assert_eq!(tool("3", Layout::Azerty), None);
+    }
+
+    #[test]
+    fn qwerty_s_digits_are_the_tools_and_its_punctuation_is_not() {
+        assert_eq!(tool("2", Layout::Qwerty), Some(Action::Use(Tool::Move)));
+        assert_eq!(tool("4", Layout::Qwerty), Some(Action::Use(Tool::Rotate)));
+        assert_eq!(tool("'", Layout::Qwerty), None);
+        assert_eq!(tool("&", Layout::Qwerty), None);
     }
 
     // The bug this exists for: Ctrl+Z with the viewport focused is an undo,
