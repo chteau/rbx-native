@@ -1,4 +1,6 @@
-//! Reading the `Decal` and `Texture` children of one BasePart.
+//! Reading the `Decal` and `Texture` children of one BasePart — and the
+//! `AdGui` children, which are the same thing in the only state this viewer
+//! can draw them in.
 
 use rbx_assets::AssetRef;
 use rbx_dom::{Ref, Variant, WeakDom};
@@ -9,6 +11,12 @@ use super::FaceInstance;
 use crate::scene::{self, Placement};
 
 const DECAL_ANCESTOR: &str = "Decal";
+/// The immersive-ad surface. Not a `SurfaceGui` (the two are siblings under
+/// `SurfaceGuiBase`) and not a GUI tree at all: what it shows is served at
+/// run time, and what it shows when nothing is served is one image on one
+/// face — which is a `Decal` in all but name, so it is read as one here
+/// rather than given a canvas of its own.
+const AD_GUI_CLASS: &str = "AdGui";
 
 /// Collects the face instances of one part, each projected onto the unit mesh
 /// `placement` describes.
@@ -29,8 +37,15 @@ pub(super) fn faces(
 
     part.children()
         .iter()
-        .filter(|&&child| is_face_instance(dom, database, child))
-        .filter_map(|&child| painted(dom, child, placement))
+        .filter_map(|&child| {
+            if is_face_instance(dom, database, child) {
+                painted(dom, child, placement)
+            } else if is_ad_gui(dom, database, child) {
+                advertised(dom, child, referent, placement)
+            } else {
+                None
+            }
+        })
         .collect()
 }
 
@@ -115,6 +130,63 @@ fn painted(
     ))
 }
 
+/// An `AdGui`'s own fallback image, laid on the face it adorns.
+///
+/// Roblox documents an ad surface as showing "the creator-supplied
+/// `FallbackImage`, or a default Roblox fallback image when that property is
+/// empty" whenever no ad is available — which, in a viewer that serves no
+/// ads, is always. The creator's image is drawn; Roblox's own default is not
+/// this project's to ship, so an `AdGui` with no `FallbackImage` draws
+/// nothing rather than a stand-in for someone else's artwork.
+///
+/// `Adornee` is honoured only where it names the part this is a child of:
+/// the decor plan is a walk of each part's own children (see [`faces`]), so
+/// an ad surface adorned to a part somewhere else in the tree is left
+/// undrawn rather than drawn on the wrong one.
+fn advertised(
+    dom: &WeakDom,
+    referent: Ref,
+    part: Ref,
+    placement: &Placement,
+) -> Option<(AssetRef, FaceInstance)> {
+    let properties = dom.get(referent)?.properties();
+    if !matches!(properties.get("Enabled"), None | Some(Variant::Bool(true))) {
+        return None;
+    }
+    if let Some(Variant::Ref(adornee)) = properties.get("Adornee") {
+        if *adornee != part {
+            return None;
+        }
+    }
+
+    let reference = AssetRef::parse(asset_uri(properties.get("FallbackImage")?)?).ok()?;
+    if reference == AssetRef::Empty {
+        return None;
+    }
+    let face = match properties.get("Face") {
+        Some(&Variant::Enum(raw)) => NormalId::from_ordinal(raw)?,
+        // `SurfaceGuiBase.Face`'s own default.
+        _ => NormalId::Front,
+    };
+
+    Some((
+        reference,
+        FaceInstance {
+            referent,
+            kind: placement.kind,
+            model: placement.model,
+            projection: face::projection(face, placement.kind, placement.size, Mapping::Stretched),
+            tint: [1.0; 3],
+            alpha: 1.0,
+        },
+    ))
+}
+
+fn is_ad_gui(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> bool {
+    dom.get(referent)
+        .is_some_and(|instance| database.is_subclass_of(instance.class(), AD_GUI_CLASS))
+}
+
 fn number(value: Option<&Variant>) -> Option<f32> {
     match value? {
         Variant::Float32(v) => Some(*v),
@@ -143,6 +215,71 @@ mod tests {
 
         assert_eq!(asset_uri(&Variant::Float32(1.0)), None);
         assert_eq!(asset_uri(&Variant::Content(rbx_dom::Content::None)), None);
+    }
+
+    /// A place with an ad surface on it draws the creator's own fallback
+    /// image on the face it adorns, since this viewer serves no ads — and
+    /// draws nothing at all where the creator supplied none.
+    #[test]
+    fn an_ad_surface_draws_its_fallback_image_on_its_own_face() {
+        let mut dom = WeakDom::new();
+        let workspace = dom.new_instance("Workspace", "Workspace", None);
+        let part = dom.new_instance("Part", "Billboard", Some(workspace));
+        let ad = dom.new_instance("AdGui", "AdGui", Some(part));
+        let database = ReflectionDatabase::embedded();
+        let placement = Placement {
+            kind: crate::scene::ShapeKind::Box,
+            model: glam::Mat4::from_scale(glam::Vec3::new(20.0, 10.0, 1.0)),
+            size: glam::Vec3::new(20.0, 10.0, 1.0),
+        };
+
+        assert!(
+            faces(&dom, &database, part, &placement).is_empty(),
+            "no fallback image, nothing to draw"
+        );
+
+        dom.set_property(
+            ad,
+            "FallbackImage",
+            Variant::Content(rbx_dom::Content::Uri("rbxassetid://12345".to_string())),
+        )
+        .unwrap();
+        // `NormalId.Right`, from the API dump.
+        dom.set_property(ad, "Face", Variant::Enum(0)).unwrap();
+
+        let drawn = faces(&dom, &database, part, &placement);
+        assert_eq!(drawn.len(), 1);
+        assert_eq!(drawn[0].0, AssetRef::Id(12345));
+        assert_eq!(drawn[0].1.referent, ad);
+        assert_eq!(drawn[0].1.alpha, 1.0);
+        // On the face it named, pointing out of the part's own +X.
+        assert!((drawn[0].1.projection.normal - glam::Vec3::X).length() < 1e-5);
+    }
+
+    /// An ad surface adorned to another part belongs to that part, not to
+    /// the one it happens to be parented under.
+    #[test]
+    fn an_ad_surface_adorned_elsewhere_is_not_drawn_here() {
+        let mut dom = WeakDom::new();
+        let workspace = dom.new_instance("Workspace", "Workspace", None);
+        let part = dom.new_instance("Part", "Holder", Some(workspace));
+        let other = dom.new_instance("Part", "Other", Some(workspace));
+        let ad = dom.new_instance("AdGui", "AdGui", Some(part));
+        dom.set_property(
+            ad,
+            "FallbackImage",
+            Variant::Content(rbx_dom::Content::Uri("rbxassetid://12345".to_string())),
+        )
+        .unwrap();
+        dom.set_property(ad, "Adornee", Variant::Ref(other))
+            .unwrap();
+
+        let placement = Placement {
+            kind: crate::scene::ShapeKind::Box,
+            model: glam::Mat4::IDENTITY,
+            size: glam::Vec3::ONE,
+        };
+        assert!(faces(&dom, &ReflectionDatabase::embedded(), part, &placement).is_empty());
     }
 
     #[test]

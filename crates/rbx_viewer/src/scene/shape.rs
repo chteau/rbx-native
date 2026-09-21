@@ -199,6 +199,12 @@ fn mesh_child(dom: &WeakDom, instance: &Instance, size: Vec3) -> Option<Geometry
             "SpecialMesh" => special_mesh(child, size * scale, offset),
             // A plain `FileMesh` child (no MeshType) has no procedural stand-in
             // yet — TODO: rbx_mesh will draw its actual geometry.
+            //
+            // A `DynamicMesh` child is the one other `DataModelMesh` a file
+            // can hold, and it is deliberately nothing here: the class
+            // carries no properties at all (the API dump lists none), its
+            // geometry arriving through the runtime editable-mesh API, so a
+            // place file's one has no shape to replace the part's with.
             _ => None,
         }
     })
