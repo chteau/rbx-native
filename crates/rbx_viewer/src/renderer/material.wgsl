@@ -185,9 +185,11 @@ struct Mapped {
     metalness: f32,
     roughness: f32,
     kind: u32,
-    // Object space, in studs: what the `ForceField` lattice is laid out in,
-    // so its cells stay with the part rather than swimming as it moves.
+    // Object space, in studs, and the object-space normal beside it: what
+    // the `ForceField` lattice is laid out in and against, so its cells
+    // stay with the part rather than swimming as it moves or turns.
     object_studs: vec3<f32>,
+    object_normal: vec3<f32>,
     // Towards the eye, for the rim the same shell brightens at.
     to_eye: vec3<f32>,
 }
@@ -254,7 +256,7 @@ fn mapped_shade(mapped: Mapped) -> vec3<f32> {
 fn force_field_energy(mapped: Mapped) -> vec3<f32> {
     let facing = 1.0 - abs(dot(normalize(mapped.geometric_normal), mapped.to_eye));
     let rim = facing * facing;
-    let lattice = force_field_lattice(mapped.object_studs, mapped.geometric_normal);
+    let lattice = force_field_lattice(mapped.object_studs, mapped.object_normal);
     return mapped.base_albedo * (lattice * FORCE_FIELD_LINE_GLOW + rim * FORCE_FIELD_RIM_GLOW);
 }
 
@@ -264,10 +266,11 @@ fn force_field_energy(mapped: Mapped) -> vec3<f32> {
 /// Three families of parallel lines 60 degrees apart, which is a honeycomb:
 /// cheaper than a hexagon distance field and, at the width a shell's lines
 /// are drawn at, the same picture.
-fn force_field_lattice(object_studs: vec3<f32>, normal: vec3<f32>) -> f32 {
+fn force_field_lattice(object_studs: vec3<f32>, object_normal: vec3<f32>) -> f32 {
     // Laid out on the two object axes the surface faces least, so the cells
-    // sit *on* the surface rather than being projected through it.
-    let axis = dominant_axis(normal);
+    // sit *on* the surface rather than being projected through it — the
+    // same face frame the map pack is sampled through.
+    let axis = dominant_axis(object_normal);
     let frame = face_frame(axis);
     let p = vec2<f32>(dot(object_studs, frame.u), dot(object_studs, frame.v))
         / FORCE_FIELD_CELL_STUDS;
@@ -277,7 +280,10 @@ fn force_field_lattice(object_studs: vec3<f32>, normal: vec3<f32>) -> f32 {
         let angle = f32(i) * 1.0471976;
         let direction = vec2<f32>(cos(angle), sin(angle));
         let along = dot(p, direction);
-        // Distance to the nearest line of this family, in cell widths.
+        // How far this point is from the nearest line of this family, in
+        // cell widths: the lines sit half a cell into each period, so the
+        // distance is zero exactly there and grows to half a cell between
+        // them.
         let distance = abs(fract(along) - 0.5);
         closest = min(closest, distance);
     }
@@ -313,6 +319,7 @@ fn sample_axis(axis: vec3<f32>, input: MaterialInput) -> Mapped {
     mapped.roughness = roughness;
     mapped.kind = input.kind;
     mapped.object_studs = input.object_studs;
+    mapped.object_normal = input.object_normal;
     mapped.to_eye = normalize(lighting.camera.xyz - input.world_position);
     return mapped;
 }
@@ -415,6 +422,7 @@ fn material_shade_with_normal(input: MaterialInput) -> Shaded {
     mapped.roughness = 0.0;
     mapped.kind = input.kind;
     mapped.object_studs = input.object_studs;
+    mapped.object_normal = input.object_normal;
     mapped.to_eye = normalize(lighting.camera.xyz - input.world_position);
 
     if weights.x >= TRIPLANAR_WEIGHT_EPSILON {
