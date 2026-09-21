@@ -1,33 +1,38 @@
 //! The Properties-panel fast path for the effects a [`Scene`] keeps beside its
-//! parts — `ParticleEmitter`s, `Beam`s and `Trail`s — which the renderer draws
-//! from static definitions rather than from the instance buffers
-//! `Scene::resync_part` writes into, so an edit to one is a re-plan of its
-//! list, not a rewrite of one GPU slot.
+//! parts — `ParticleEmitter`s, `Beam`s, `Trail`s and `Highlight`s — which the
+//! renderer draws from static definitions rather than from the instance
+//! buffers `Scene::resync_part` writes into, so an edit to one is a re-plan of
+//! its list, not a rewrite of one GPU slot.
 
 use rbx_dom::WeakDom;
 use rbx_reflection::ReflectionDatabase;
 
-use super::{beam, particles, trail, Scene};
+use super::{beam, highlight, particles, trail, Scene};
 
-/// Which of the three effect lists an edited instance's class lives in.
+/// Which of the four effect lists an edited instance's class lives in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EffectKind {
     Particles,
     Beams,
     Trails,
+    Highlights,
 }
 
 impl EffectKind {
-    /// `None` for anything that is not one of the three — the caller's cue
+    /// `None` for anything that is not one of the four — the caller's cue
     /// that this fast path does not apply. An `Attachment` is deliberately
     /// not here even though moving one moves a beam's or trail's endpoint:
     /// an attachment can be the endpoint of any number of effects of either
     /// kind at once, and a full reload is the only path that re-reads them all.
+    /// A `Highlight`'s *adornee* is the same case — editing the model a
+    /// highlight covers is a part edit, which `Scene::resync_part` handles,
+    /// not a re-plan of this list.
     pub(crate) fn of(database: &ReflectionDatabase, class: &str) -> Option<Self> {
         [
             ("ParticleEmitter", Self::Particles),
             ("Beam", Self::Beams),
             ("Trail", Self::Trails),
+            ("Highlight", Self::Highlights),
         ]
         .into_iter()
         .find(|(ancestor, _)| database.is_subclass_of(class, ancestor))
@@ -62,6 +67,7 @@ impl Scene {
             }
             EffectKind::Beams => self.beams = beam::plan(dom, database),
             EffectKind::Trails => self.trails = trail::plan(dom, database),
+            EffectKind::Highlights => self.highlights = highlight::plan(dom, database),
         }
     }
 }

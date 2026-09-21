@@ -8,6 +8,7 @@ mod filemesh;
 mod geometry;
 mod gizmo;
 mod gui;
+mod highlight;
 mod hover;
 mod instance;
 mod lighting;
@@ -141,6 +142,10 @@ pub(crate) struct Renderer {
     /// Billboarded `ParticleEmitter`s, drawn after everything above — see
     /// [`Renderer::draw`].
     particles: Particles,
+    /// Every `Highlight` the place holds, drawn over the scene as a silhouette
+    /// outline and an interior fill — see `renderer::highlight`. Costs nothing
+    /// in a place with none.
+    highlights: highlight::Highlights,
     /// The Explorer's selection outline. Reads `self.frame`'s bind group at
     /// draw time, so it needs no camera state of its own.
     selection: Selection,
@@ -305,6 +310,17 @@ impl Renderer {
                 scene.particle_emitters(),
                 images,
                 quality,
+            ),
+            highlights: highlight::Highlights::new(
+                device,
+                queue,
+                &layout,
+                target,
+                highlight::Source {
+                    highlights: scene.highlights(),
+                    parts: scene.parts(),
+                    resolved: scene.resolved_file_meshes(),
+                },
             ),
             selection,
             hover,
@@ -584,6 +600,18 @@ impl Renderer {
         // with the rest of it.
         self.gui
             .draw_space(device, queue, &mut encoder, targets, eye, view_projection);
+
+        // After every pass that draws scene content, so the silhouette is
+        // never cut into by a ribbon or a canvas drawn later, and before the
+        // resolve so it tone maps with the frame — see `renderer::highlight`.
+        self.highlights.draw(
+            device,
+            &mut encoder,
+            targets,
+            &self.frame.bind_group,
+            &self.meshes,
+            size,
+        );
 
         // The scene is HDR and unclamped until here: the bloom, the grade and
         // the tone map all live in the resolve.

@@ -5,7 +5,7 @@
 use rbx_assets::AssetRef;
 use rbx_dom::Ref;
 
-use super::{lighting, shadow, Renderer, World};
+use super::{highlight, lighting, shadow, Renderer, World};
 use crate::camera::Camera;
 use crate::lighting::{Lighting, LocalLight};
 use crate::scene::{Bounds, Drawn, EffectKind, Part, PartId, PartSync, Resolved, Scene};
@@ -49,6 +49,7 @@ impl Renderer {
                 self.hover.place(device, referent, part.placement());
                 self.filemesh.remove(referent);
                 self.shadows.remove_mesh_caster(referent);
+                self.highlights.remove_mesh(referent);
                 true
             }
             Drawn::Pieces { placement, pieces } => {
@@ -75,6 +76,7 @@ impl Renderer {
                 }
                 self.filemesh.remove(referent);
                 self.shadows.remove_mesh_caster(referent);
+                self.highlights.remove_mesh(referent);
                 true
             }
             Drawn::Mesh { index, placement } => {
@@ -89,6 +91,7 @@ impl Renderer {
                 self.hover.place(device, referent, *placement);
                 self.filemesh.sync(device, queue, resolved, instance)
                     && self.shadows.sync_mesh_caster(device, resolved, instance)
+                    && self.highlights.sync_mesh(device, resolved, instance)
             }
             Drawn::Gone => {
                 self.drop_box(whole);
@@ -96,6 +99,7 @@ impl Renderer {
                 self.hover.remove(device, referent);
                 self.filemesh.remove(referent);
                 self.shadows.remove_mesh_caster(referent);
+                self.highlights.remove_mesh(referent);
                 true
             }
         }
@@ -108,6 +112,7 @@ impl Renderer {
         self.shaped.sync(device, part);
         self.translucent.sync(device, part);
         self.shadows.sync_caster(device, part);
+        self.highlights.sync_part(device, part);
     }
 
     /// The same three passes told to forget one box.
@@ -115,6 +120,7 @@ impl Renderer {
         self.shaped.remove(id);
         self.translucent.remove(id);
         self.shadows.remove_caster(id);
+        self.highlights.remove_part(id);
     }
 
     /// Rewrites, moves or adds one `Decal`/`Texture`'s projection — see
@@ -188,11 +194,30 @@ impl Renderer {
     /// Always serves the edit: a definition naming a texture this renderer has
     /// no upload for draws that effect's own fallback until the loader lands
     /// one, which is what each `replace` documents.
-    pub(crate) fn patch_effect(&mut self, kind: EffectKind, scene: &Scene) {
+    pub(crate) fn patch_effect(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        kind: EffectKind,
+        scene: &Scene,
+    ) {
         match kind {
             EffectKind::Particles => self.particles.replace(scene.particle_emitters()),
             EffectKind::Beams => self.beams.replace(scene.beams()),
             EffectKind::Trails => self.trails.replace(scene.trails()),
+            // The only one that needs the GPU: a highlight is drawn from the
+            // geometry it covers, so a re-plan is new instance buffers rather
+            // than a new list of definitions.
+            EffectKind::Highlights => self.highlights.replace(
+                device,
+                queue,
+                &self.frame_layout,
+                highlight::Source {
+                    highlights: scene.highlights(),
+                    parts: scene.parts(),
+                    resolved: scene.resolved_file_meshes(),
+                },
+            ),
         }
     }
 

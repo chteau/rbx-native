@@ -15,7 +15,7 @@
 //! `lighting.wgsl` — which is what keeps the PCF kernel from shadowing the very
 //! surface it is filtering.
 
-mod casters;
+pub(in crate::renderer) mod casters;
 mod fit;
 pub(super) mod local;
 

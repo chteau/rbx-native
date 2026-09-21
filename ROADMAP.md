@@ -57,6 +57,26 @@ Roblox's own engine.
   constituent parts, not just a bounding-box fallback.
 - [x] Effects: `ParticleEmitter` (CPU simulation + billboards), `Beam`,
   `Trail`.
+- [x] **`Highlight`** — the real class (checked against
+  `reference/engine/classes/Highlight` rather than assumed), drawn the way
+  the docs describe it: a **silhouette** outline around the adornee and a
+  solid interior over it, each with its own `Color3` and transparency.
+  `Adornee` (falling back to the parent), `Enabled`, `FillColor`,
+  `FillTransparency`, `OutlineColor`, `OutlineTransparency` and both
+  `DepthMode`s — `AlwaysOnTop` shows through whatever stands in front,
+  `Occluded` stops where the nearest surface is not the adornee — plus
+  Roblox's own documented ceiling of 255 at once. Not the box outline the
+  Explorer's selection cue draws (`rbx_viewer::renderer::outline`): a
+  position-only mask pass re-draws the covered geometry — unit shapes and
+  downloaded `MeshPart`/`SpecialMesh` geometry alike, through the same
+  buffers `renderer::shadow` instances — and a composite pass reads the
+  silhouette back out of it, so a ball outlines as a circle and a mesh as
+  its own polygon. Two undocumented corners are named in the code rather
+  than guessed at: `LineThickness` is tagged `Hidden` in the API dump and
+  has no published behaviour, so the outline is a constant width chosen to
+  sit beside this renderer's existing cues; and where the scene is
+  multisampled the composite reads one sample, so the highlight's own edge
+  is aliased against the geometry it traces.
 - [x] GUI containers: `ScreenGui`/`Frame`/`ImageLabel`, `BillboardGui`,
   `SurfaceGui`.
 - [x] GUI — full `GuiObject` compatibility (every class below checked

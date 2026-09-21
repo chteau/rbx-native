@@ -20,7 +20,7 @@ pub(super) struct Pending {
     pub(super) lighting: bool,
     pub(super) lights: bool,
     /// By `EffectKind` — see [`Pending::effect`].
-    pub(super) effects: [bool; 3],
+    pub(super) effects: [bool; 4],
     /// The `ScreenGui` overlays, and the `BillboardGui`/`SurfaceGui`
     /// canvases placed in the scene — two lists, re-planned apart, since a
     /// part that moved can only have carried a canvas.
@@ -46,6 +46,7 @@ impl Pending {
             EffectKind::Particles => 0,
             EffectKind::Beams => 1,
             EffectKind::Trails => 2,
+            EffectKind::Highlights => 3,
         }
     }
 
@@ -129,11 +130,19 @@ impl Patcher<'_> {
                 self.loaded.set_lights(lights);
             }
         }
-        for kind in [EffectKind::Particles, EffectKind::Beams, EffectKind::Trails] {
+        for kind in [
+            EffectKind::Particles,
+            EffectKind::Beams,
+            EffectKind::Trails,
+            EffectKind::Highlights,
+        ] {
             let any_now = match kind {
                 EffectKind::Particles => false,
                 EffectKind::Beams => !self.loaded.scene().beams().is_empty(),
                 EffectKind::Trails => !self.loaded.scene().trails().is_empty(),
+                // A highlight names its target by referent, never through an
+                // `Attachment`, so a moved attachment owes it nothing.
+                EffectKind::Highlights => false,
             };
             if !self
                 .pending
@@ -146,8 +155,9 @@ impl Patcher<'_> {
             // Always serves the edit now: a texture this renderer has no
             // upload for draws that effect's own fallback until it lands
             // (see `Renderer::patch_effect`) — never a rebuild.
-            self.offscreen
-                .with_renderer(|renderer, _, _| renderer.patch_effect(kind, scene));
+            self.offscreen.with_renderer(|renderer, device, queue| {
+                renderer.patch_effect(device, queue, kind, scene)
+            });
             self.request_effect_textures(kind);
         }
         if self.pending.screens {
@@ -187,6 +197,9 @@ impl Patcher<'_> {
                 ),
                 EffectKind::Beams => Box::new(scene.beams().iter().map(|beam| &beam.texture)),
                 EffectKind::Trails => Box::new(scene.trails().iter().map(|trail| &trail.texture)),
+                // A highlight is drawn from the geometry it covers and two
+                // flat colours; there is no image to fetch.
+                EffectKind::Highlights => Box::new(std::iter::empty()),
             };
             let mut wanted = Vec::new();
             for reference in refs {

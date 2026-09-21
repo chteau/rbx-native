@@ -5,6 +5,7 @@ mod bounds;
 mod effects;
 mod filemesh;
 mod gui;
+mod highlight;
 mod identity;
 mod material;
 mod particles;
@@ -51,6 +52,7 @@ pub(crate) use gui::{
     ScrollWindow as GuiScrollWindow, SpaceGui, Text as GuiText, TextMeasure as GuiTextMeasure,
     Tile as GuiTile, Typeset as GuiTypeset, ViewCamera as GuiViewCamera, Viewport as GuiViewport,
 };
+pub(crate) use highlight::{DepthMode, Highlight, MAX_HIGHLIGHTS};
 pub(crate) use identity::PartId;
 pub(crate) use material::{Catalog, Kind, Maps, Slot};
 pub(crate) use particles::sequence::{eval_color, eval_number};
@@ -211,6 +213,9 @@ pub(crate) struct Scene {
     beams: Vec<Beam>,
     /// Every placeable `Trail`; see [`Scene::trails`].
     trails: Vec<Trail>,
+    /// Every enabled `Highlight` that covers something drawn; see
+    /// [`Scene::highlights`].
+    highlights: Vec<Highlight>,
     /// Every enabled `ScreenGui`; see [`Scene::gui_screens`].
     gui: Vec<GuiScreen>,
     /// Every placeable `BillboardGui`/`SurfaceGui`; see [`Scene::gui_spaces`].
@@ -264,6 +269,7 @@ impl Scene {
             emitters: Vec::new(),
             beams: Vec::new(),
             trails: Vec::new(),
+            highlights: Vec::new(),
             gui,
             gui_spaces: Vec::new(),
             union_plan,
@@ -282,6 +288,9 @@ impl Scene {
         // Same attachment-chain resolution as beams, and the same reason it
         // needs no placement either.
         scene.trails = trail::plan(dom, database);
+        // Resolves referents rather than geometry, so it needs no placement
+        // either — the renderer looks each part up for itself.
+        scene.highlights = highlight::plan(dom, database);
         Ok(scene)
     }
 
@@ -319,6 +328,13 @@ impl Scene {
     /// frame to record one itself.
     pub(crate) fn trails(&self) -> &[Trail] {
         &self.trails
+    }
+
+    /// Every enabled `Highlight` that covers at least one drawn part, each
+    /// already resolved to the referents it covers. The renderer turns those
+    /// into a silhouette; a `Scene` has no viewport to trace one against.
+    pub(crate) fn highlights(&self) -> &[Highlight] {
+        &self.highlights
     }
 
     /// Every enabled `ScreenGui` this scene found, as resolution-independent
