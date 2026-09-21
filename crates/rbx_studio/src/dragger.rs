@@ -22,7 +22,7 @@ use rbx_viewer::{Pose, Segment};
 
 /// `Studio.DraggerMajorGridIncrement`'s default: every fifth ruler tick,
 /// counted from the edge, is a long one.
-pub(crate) const MAJOR_GRID_INCREMENT: u32 = 5;
+const MAJOR_GRID_INCREMENT: u32 = 5;
 /// `Studio.DraggerMaxSoftSnaps`' default. Studio's own test fixture uses 100;
 /// what ships is 32.
 pub(crate) const MAX_SOFT_SNAPS: usize = 32;
@@ -38,9 +38,9 @@ const HAIRLINE: f32 = 2.0;
 
 /// `Studio.DraggerPassiveColor`: the hover ruler, a handle drag's axis line
 /// and its soft-snap dots.
-pub(crate) const PASSIVE: [f32; 3] = [1.0, 1.0, 1.0];
+const PASSIVE: [f32; 3] = [1.0, 1.0, 1.0];
 /// `Studio.DraggerActiveColor`: whatever a drag is actually snapped to.
-pub(crate) const ACTIVE: [f32; 3] = [1.0, 1.0, 0.0];
+const ACTIVE: [f32; 3] = [1.0, 1.0, 0.0];
 
 /// The camera term of Studio's `getHandleScale`: the point's depth along the
 /// view direction times the sine of the vertical field of view.

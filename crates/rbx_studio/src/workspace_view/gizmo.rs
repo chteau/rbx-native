@@ -197,7 +197,7 @@ impl WorkspaceView {
         cx: &mut gpui_kit::Context<Self>,
     ) {
         let ray = self.cursor_ray(position, scale);
-        self.note_hover(ray, modifiers.shift);
+        self.note_hover(ray, modifiers);
         cx.emit(ViewportAction::Hover {
             ray,
             alt: modifiers.alt,
@@ -627,6 +627,7 @@ impl WorkspaceView {
         self.step_drag(window, cx);
         if self.drag.take().is_some() {
             self.clear_guides();
+            self.rehover();
         }
         self.drag_stepped_at = None;
         // A grab `Shell` has not answered yet is answered by the release:

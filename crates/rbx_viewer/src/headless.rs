@@ -310,13 +310,14 @@ impl Headless {
     }
 
     /// Draws world-space line segments over the scene — Studio's light
-    /// guides (see [`crate::light_guides`]). Replaces every segment sent
-    /// before, so an embedder with more than one source of lines sends them
-    /// together; an empty list clears them. Kept across a reload like the
-    /// selection is.
-    pub fn set_lines(&mut self, segments: Vec<Segment>) {
-        self.offscreen.set_lines(&segments);
-        self.view.set_lines(segments);
+    /// guides (see [`crate::light_guides`]), an editor's dragger guides.
+    /// Replaces every segment sent before on `layer` alone: each source of
+    /// lines has a layer of its own, so one that changes every mouse move
+    /// never re-uploads another that has not. An empty list clears the
+    /// layer. Kept across a reload like the selection is.
+    pub fn set_lines(&mut self, layer: usize, segments: Vec<Segment>) {
+        self.offscreen.set_lines(layer, &segments);
+        self.view.set_lines(layer, segments);
     }
 
     /// Draws the transform tool's axis draggers over the selected part, or
