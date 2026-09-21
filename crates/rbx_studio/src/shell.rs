@@ -5,6 +5,7 @@
 
 mod align;
 mod attributes_panel;
+mod change_class;
 mod chrome;
 mod clipboard;
 mod command;

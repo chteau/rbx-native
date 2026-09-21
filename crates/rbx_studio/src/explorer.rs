@@ -386,6 +386,13 @@ fn rank(class: &str) -> Option<usize> {
     SERVICE_ORDER.iter().position(|service| *service == class)
 }
 
+/// Whether a root of this class is one of the services this Explorer knows,
+/// shown or not. Asked beside the dump's own `Service` tag because a few of
+/// them (`Packages`, `SerializationService`) are not in the dump at all.
+pub(crate) fn is_known_service(class: &str) -> bool {
+    rank(class).is_some() || KNOWN_SERVICES.contains(&class)
+}
+
 /// Whether Studio's default Explorer view shows a root of this class without
 /// the "show all services" toggle: its 14 fixed services, or anything that is
 /// not one of Roblox's own well-known service classes at all.

@@ -363,19 +363,39 @@ fn part_defaults_shape(
     })
 }
 
+/// Everything a new `class` instance starts with here, keyed the way the DOM
+/// stores it: [`part_defaults`] for a `BasePart`, with `Part`'s own block
+/// `shape`, and nothing for any other class — this editor knows no other
+/// class's defaults. Change Class reads it on both sides of a conversion.
+pub(super) fn class_defaults(
+    database: &ReflectionDatabase,
+    class: &str,
+) -> Vec<(&'static str, Variant)> {
+    part_defaults_shape(database, class, None)
+        .map(part_defaults)
+        .unwrap_or_default()
+}
+
+/// Applies [`part_defaults`] to a freshly inserted instance.
+fn apply_part_defaults(dom: &mut WeakDom, referent: Ref, shape: Option<u32>) {
+    for (key, value) in part_defaults(shape) {
+        let _ = dom.set_property(referent, key, value);
+    }
+}
+
 /// Roblox's own defaults for `Instance.new("Part")`, duplicated from
 /// `rbx_lua::defaults::base_part_defaults` rather than reused: that table sits
 /// behind a `pub(crate)` `apply` function private to `rbx_lua`, and making a
 /// whole module public across crates for one small constant table is not
 /// worth it. Applies to any `BasePart` subclass the insert menus create
-/// (`Part`, `WedgePart`, `CornerWedgePart`) — `shape` is written only when
+/// (`Part`, `WedgePart`, `CornerWedgePart`) — `shape` is listed only when
 /// the caller passes one, since `WedgePart`/`CornerWedgePart` don't actually
 /// declare a `Shape` property in Roblox's own reflection data.
-fn apply_part_defaults(dom: &mut WeakDom, referent: Ref, shape: Option<u32>) {
+fn part_defaults(shape: Option<u32>) -> Vec<(&'static str, Variant)> {
     const IDENTITY_ROTATION: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
     const MATERIAL_PLASTIC: u32 = 256;
 
-    let defaults: [(&str, Variant); 11] = [
+    let mut defaults = vec![
         (
             "size",
             Variant::Vector3(Vector3Data {
@@ -412,12 +432,10 @@ fn apply_part_defaults(dom: &mut WeakDom, referent: Ref, shape: Option<u32>) {
         ("Locked", Variant::Bool(false)),
         ("Massless", Variant::Bool(false)),
     ];
-    for (key, value) in defaults {
-        let _ = dom.set_property(referent, key, value);
-    }
     if let Some(shape) = shape {
-        let _ = dom.set_property(referent, "shape", Variant::Enum(shape));
+        defaults.push(("shape", Variant::Enum(shape)));
     }
+    defaults
 }
 
 #[cfg(test)]

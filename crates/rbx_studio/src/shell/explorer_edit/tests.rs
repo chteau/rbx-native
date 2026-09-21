@@ -36,6 +36,7 @@ fn an_ordinary_row_offers_every_clipboard_action() {
     // A lone part has a parent to be wrapped into, but is no `Model`.
     assert!(live.group);
     assert!(!live.ungroup);
+    assert!(live.change_class);
 }
 
 #[test]
@@ -50,6 +51,16 @@ fn a_service_row_greys_what_it_cannot_do() {
     // A place whose `Workspace` has been deleted is not a place anything
     // can open again, so Delete is refused for the same reason.
     assert!(!live.delete);
+    assert!(!live.change_class);
+}
+
+// One convertible instance is enough: the command converts it and says what
+// it left alone.
+#[test]
+fn a_mixed_selection_with_a_service_still_offers_change_class() {
+    let (dom, workspace, _, _, loose) = place();
+    let live = availability(&dom, &database(), &[workspace, loose], true, workspace);
+    assert!(live.change_class);
 }
 
 #[test]

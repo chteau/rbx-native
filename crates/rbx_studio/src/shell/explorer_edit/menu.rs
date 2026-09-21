@@ -13,8 +13,8 @@
 //! (`clipboard::has_copyable`, `group::has_groupable`/`has_ungroupable`), so
 //! a row can never be clickable and do nothing.
 //!
-//! Rows are built here rather than through [`menu::item`] because Rename and
-//! Insert need a `Window` the controlled dropdown's action type does not
+//! Rows are built here rather than through [`menu::item`] because Rename,
+//! Insert and Change Class need a `Window` the controlled dropdown's action type does not
 //! carry; they share [`menu::row_chrome`] so both menus stay one design.
 
 use gpui_kit::assets::IconName;
@@ -26,6 +26,7 @@ use rbx_reflection::ReflectionDatabase;
 use super::super::{clipboard, group, keys, menu};
 use super::rename::renameable;
 use super::Shell;
+use crate::change_class;
 
 /// Which of the menu's rows are live. Every field is the guard the row's own
 /// handler returns early on, so a row can never be clickable and do nothing
@@ -40,6 +41,9 @@ pub(super) struct Availability {
     pub(super) group: bool,
     pub(super) ungroup: bool,
     pub(super) delete: bool,
+    /// Live while any of the selection can change class; the command
+    /// converts those and names the rest (see `shell::change_class`).
+    pub(super) change_class: bool,
 }
 
 pub(super) fn availability(
@@ -56,6 +60,9 @@ pub(super) fn availability(
         group: group::has_groupable(dom, database, selected),
         ungroup: group::has_ungroupable(dom, database, selected),
         delete: keys::removable(dom, database, target),
+        change_class: selected
+            .iter()
+            .any(|&referent| change_class::changeable(dom, database, referent)),
     }
 }
 
@@ -138,6 +145,16 @@ impl Shell {
                 "Insert Object…",
                 true,
                 move |shell, window, cx| shell.open_insert_picker(target, window, cx),
+            ),
+            row(
+                "change-class",
+                IconName::Replace,
+                "Change Class…",
+                live.change_class,
+                |shell, window, cx| {
+                    let targets = shell.selected_all().to_vec();
+                    shell.open_change_class_picker(targets, window, cx);
+                },
             ),
             row(
                 "group",
