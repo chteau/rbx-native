@@ -30,9 +30,6 @@ pub(super) struct Measure {
     arrow: (Axis, f32, f32),
     /// The arrow's direction at the press, which a typed distance runs along.
     direction: Vec3,
-    /// How far the selection stands from where the drag started, along
-    /// `direction` (Studio's `_lastDelta`): what the box reads.
-    moved: f32,
     hovered: bool,
     _entered: Subscription,
 }
@@ -51,13 +48,7 @@ impl WorkspaceView {
         if !self.guides.settings.show_measurement {
             return;
         }
-        let moved = self
-            .targets
-            .anchor()
-            .zip(self.held.anchor())
-            .map_or(0.0, |(now, then)| {
-                (now.position() - then.position()).dot(direction)
-            });
+        let moved = self.travelled(direction);
         let input = cx.new(|cx| InputState::new(window, cx).default_value(label::concise(moved)));
         let entered = cx.subscribe_in(&input, window, |view, _, event: &InputEvent, window, cx| {
             match event {
@@ -71,10 +62,22 @@ impl WorkspaceView {
             input,
             arrow,
             direction,
-            moved,
             hovered: false,
             _entered: entered,
         });
+    }
+
+    /// How far the selection stands from where the drag started, along
+    /// `direction` (Studio's `_lastDelta`) — measured from where it stands
+    /// now, so an undo or an edit made anywhere else since is taken into
+    /// account, where Studio's own box keeps the number it last showed.
+    pub(super) fn travelled(&self, direction: Vec3) -> f32 {
+        self.targets
+            .anchor()
+            .zip(self.held.anchor())
+            .map_or(0.0, |(now, then)| {
+                travelled(now.position(), then.position(), direction)
+            })
     }
 
     /// Takes the box down.
@@ -87,26 +90,26 @@ impl WorkspaceView {
     /// anything else puts the box back to what it read. The keyboard goes
     /// back to the view either way.
     fn enter_measure(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(measure) = self.measure.as_mut() else {
+        let Some((input, direction)) = self
+            .measure
+            .as_ref()
+            .map(|measure| (measure.input.clone(), measure.direction))
+        else {
             return;
         };
-        let text = measure.input.read(cx).value();
-        if let Some((step, distance)) = entered(measure.moved, &text) {
-            measure.moved = distance;
-            let moves = self.targets.translate(measure.direction * step);
+        let text = input.read(cx).value();
+        let mut reads = self.travelled(direction);
+        if let Some((step, distance)) = entered(reads, &text) {
+            reads = distance;
+            let moves = self.targets.translate(direction * step);
             cx.emit(ViewportAction::Moved {
                 moves,
                 first: true,
                 settle: None,
             });
         }
-        let Some(measure) = self.measure.as_ref() else {
-            return;
-        };
-        let reads = label::concise(measure.moved);
-        measure
-            .input
-            .update(cx, |state, cx| state.set_value(reads, window, cx));
+        let reads = label::concise(reads);
+        input.update(cx, |state, cx| state.set_value(reads, window, cx));
         window.focus(&self.focus, cx);
     }
 
@@ -169,6 +172,11 @@ impl WorkspaceView {
     }
 }
 
+/// How far `now` stands from `start` along `direction`.
+fn travelled(now: Vec3, start: Vec3, direction: Vec3) -> f32 {
+    (now - start).dot(direction)
+}
+
 /// What Enter does with `text` in the box, the selection standing `moved`
 /// from where the drag started: how far to step along the arrow from where
 /// it stands now, and the distance the box then reads. `None` for text that
@@ -181,7 +189,9 @@ fn entered(moved: f32, text: &str) -> Option<(f32, f32)> {
 
 #[cfg(test)]
 mod tests {
-    use super::entered;
+    use glam::Vec3;
+
+    use super::{entered, travelled};
 
     #[test]
     fn a_typed_distance_is_measured_from_the_drags_start() {
@@ -189,6 +199,17 @@ mod tests {
         assert_eq!(entered(3.0, "5"), Some((2.0, 5.0)));
         assert_eq!(entered(3.0, " -1 "), Some((-4.0, -1.0)));
         assert_eq!(entered(3.0, "3"), Some((0.0, 3.0)));
+    }
+
+    #[test]
+    fn a_distance_typed_after_an_undo_is_measured_from_where_the_part_stands() {
+        let start = Vec3::new(2.0, 0.0, 0.0);
+        // Dragged 5 along X: typing 8 steps 3 more.
+        let dragged = travelled(start + Vec3::X * 5.0, start, Vec3::X);
+        assert_eq!(entered(dragged, "8"), Some((3.0, 8.0)));
+        // Undone, the part stands at the start again: 8 is all 8.
+        let undone = travelled(start, start, Vec3::X);
+        assert_eq!(entered(undone, "8"), Some((8.0, 8.0)));
     }
 
     #[test]

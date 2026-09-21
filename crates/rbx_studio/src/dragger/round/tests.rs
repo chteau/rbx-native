@@ -253,3 +253,56 @@ fn a_part_that_is_not_round_has_no_guides_of_its_own() {
     on.part = None;
     assert!(landed(&on, Vec3::ZERO, 1.0, false, |_| 1.0).is_none());
 }
+
+#[test]
+fn a_lattice_millions_of_steps_across_is_thinned_and_never_overflows() {
+    for steps in [5.0e4, 1.0e12] {
+        let lattice = Lattice {
+            at: Vec3::ZERO,
+            a: Vec3::X,
+            b: Vec3::Z,
+            min: Vec2::splat(-steps),
+            max: Vec2::splat(steps),
+            radius: Some(steps),
+            exclude: (0, 0),
+        };
+        let lines = lattice.lines();
+        assert!(
+            !lines.is_empty() && lines.len() <= 2 * 2049,
+            "{}",
+            lines.len()
+        );
+    }
+}
+
+#[test]
+fn a_ball_far_finer_than_its_grid_draws_a_bounded_guide() {
+    // A 20-stud ball on a 1e-7 grid: 1e8 latitudes a hemisphere, past where
+    // an f32 count stops counting.
+    let model = Mat4::from_scale(Vec3::splat(20.0));
+    let at = Vec3::new(0.0, 5.0, 75f32.sqrt());
+    let on = frame(
+        Solid::Ball,
+        model,
+        TargetKind::Sphere,
+        at,
+        at.normalize(),
+        Vec3::X,
+    );
+    let guides = landed(&on, at, 1e-7, false, |_| 1.0).unwrap();
+    assert!(guides.lines.len() < 10_000, "{}", guides.lines.len());
+    // And a 2048-stud ball's pole on a 0.02 grid: 90 000 steps across.
+    let model = Mat4::from_scale(Vec3::splat(2048.0));
+    let pole = Vec3::new(0.0, 1024.0, 0.0);
+    let on = frame(
+        Solid::Ball,
+        model,
+        TargetKind::Polygon,
+        pole,
+        Vec3::Y,
+        Vec3::X,
+    );
+    let hit = pole + Vec3::new(3.0, 0.0, 1.0);
+    let guides = landed(&on, hit, 0.02, false, |_| 1.0).unwrap();
+    assert!(guides.lines.len() < 10_000, "{}", guides.lines.len());
+}

@@ -22,6 +22,7 @@ use rbx_viewer::gizmo::{self, Faces, Handles};
 use rbx_viewer::pick::{self, Ray};
 use rbx_viewer::snap;
 
+use crate::dragger::surface::SurfaceFrame;
 use crate::dragger::sweep::{self, SoftSnap};
 use crate::dragger::{free, tilt};
 use crate::settle::{Settle, Settled};
@@ -274,7 +275,7 @@ impl WorkspaceView {
             // never with `Alt` or an extend modifier, which ask to change
             // the selection, not to move it.
             if !cycling && !extend {
-                self.pending_grab = self.grab_body(ray);
+                self.pending_grab = self.grab_body(ray, None).map(|_| ray);
             }
         }
 
@@ -314,8 +315,20 @@ impl WorkspaceView {
     /// as this gesture's drag. A no-op once the button is up again
     /// ([`WorkspaceView::end_drag`] clears the candidate), or when the press
     /// held nothing.
-    pub(crate) fn confirm_grab(&mut self, cx: &mut gpui_kit::Context<Self>) {
-        if let Some(drag) = self.pending_grab.take() {
+    ///
+    /// `surface` is the frame under the press and where the press met it,
+    /// resolved against the real geometry there and then — never an older
+    /// hover's, which a camera flown with the keys has left behind.
+    pub(crate) fn confirm_grab(
+        &mut self,
+        surface: Option<(SurfaceFrame, Vec3)>,
+        cx: &mut gpui_kit::Context<Self>,
+    ) {
+        if let Some(drag) = self
+            .pending_grab
+            .take()
+            .and_then(|ray| self.grab_body(ray, surface))
+        {
             self.begin(drag, cx);
         }
     }
@@ -361,7 +374,10 @@ impl WorkspaceView {
     /// holds: whether something *unselected* stands nearer along the ray is
     /// `Shell`'s call, made against the real geometry when the pick this
     /// accompanies is resolved (see `Shell::pick_in_viewport`).
-    fn grab_body(&self, ray: Ray) -> Option<Drag> {
+    ///
+    /// `surface` is the frame under the press and where the press met it,
+    /// once `Shell` has found it; before then the box's own face stands in.
+    fn grab_body(&self, ray: Ray, surface: Option<(SurfaceFrame, Vec3)>) -> Option<Drag> {
         if self.transform.tool != Tool::Move {
             return None;
         }
@@ -371,12 +387,11 @@ impl WorkspaceView {
             .iter()
             .filter_map(|target| Some((pick::ray_hits_box(ray, target.model)?, target)))
             .min_by(|(a, _), (b, _)| a.total_cmp(b))?;
-        // Studio snaps the point it holds on the grid of the frame the hover
-        // stood on whenever the toolbar's snapping is on — `Shift` or not —
-        // and holds the part by where the click met its real surface, which
-        // the hover has and the box does not.
+        // Studio snaps the point it holds on the grid of the frame under the
+        // click whenever the toolbar's snapping is on — `Shift` or not — and
+        // holds the part by where the click met its real surface.
         let snap = self.transform.translate;
-        let (point, hovered) = match self.hovered() {
+        let (point, hovered) = match surface {
             Some((frame, hit)) => (hit, Some(frame)),
             None => (ray.at(distance), None),
         };
@@ -635,6 +650,11 @@ impl WorkspaceView {
         window: &mut gpui_kit::Window,
         cx: &mut gpui_kit::Context<Self>,
     ) {
+        // A turn still easing in lands whole: the step that ends the drag is
+        // what is kept, and it must not be half a quarter turn.
+        if self.guides.turning.take().is_some() {
+            self.drag_pending = self.drag_pending.or(self.guides.dragged_at);
+        }
         self.step_drag(window, cx);
         if let Some(drag) = self.drag.take() {
             let arrow = self.guides.arrow;

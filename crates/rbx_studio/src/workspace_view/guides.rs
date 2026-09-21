@@ -26,9 +26,10 @@ use crate::settings::DraggerSettings;
 use crate::settle::Settled;
 use crate::transform::Tool;
 
+mod boxed;
 mod handles;
 
-pub(super) use handles::{centred_on, label_element, label_text, measurement_box};
+pub(super) use boxed::{centred_on, label_element, label_text, measurement_box};
 
 /// The line layer the dragger guides are drawn on, apart from the light
 /// guides' so that a guide moving with the mouse never re-uploads them.
@@ -143,12 +144,6 @@ impl WorkspaceView {
     /// (Studio's `shouldGridSnap`, off while `Shift` is held).
     pub(crate) fn hover_grid(&self) -> f32 {
         self.transform.translate.grid(self.guides.modifiers.shift)
-    }
-
-    /// The frame the hover under the cursor stands on, which a body grab
-    /// snaps the grabbed point in, and where the cursor meets it.
-    pub(super) fn hovered(&self) -> Option<(SurfaceFrame, Vec3)> {
-        self.guides.hover
     }
 
     /// Resolves the hover again where the cursor stands, next frame: after an

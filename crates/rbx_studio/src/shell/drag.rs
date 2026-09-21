@@ -160,8 +160,16 @@ impl Shell {
         if held {
             let outlined = selection::outlined(&self.dom, &self.database, self.selected_all());
             let covered = selection::covers(&outlined, hits.first().copied());
+            // The grab holds the part by the surface under this press, found
+            // here and now against the real geometry.
+            let grid = self.viewport.read(cx).hover_grid();
+            let surface = covered
+                .then(|| hits.first())
+                .flatten()
+                .and_then(|&part| PartSurface::read(&self.dom, &self.database, &meshes, part))
+                .and_then(|part| target::under(&part, ray, grid));
             self.viewport.update(cx, |viewport, cx| match covered {
-                true => viewport.confirm_grab(cx),
+                true => viewport.confirm_grab(surface, cx),
                 false => viewport.refuse_grab(),
             });
             if covered {
