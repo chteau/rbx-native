@@ -9,10 +9,12 @@ mod clouds;
 mod effects;
 mod local;
 mod sky;
+pub mod sun;
 
 pub(crate) use clouds::Clouds;
 pub(crate) use effects::{Effects, Tonemap};
 pub(crate) use local::{local_lights, LocalLight};
+use sun::sun_direction;
 
 use glam::Vec3;
 use rbx_dom::{Variant, WeakDom};
@@ -57,14 +59,6 @@ const MOON_TINT: Vec3 = Vec3::new(0.55, 0.68, 1.0);
 /// Half-width, in `sun_direction.y`, of the band the sun hands the fill lamp
 /// over to the moon across. Without it dawn and dusk would pop in one frame.
 const TWILIGHT_BAND: f32 = 0.1;
-
-// The community reproduction of `Lighting:GetSunDirection()` (no official
-// formula is published): Earth's axial tilt, the sky's 15 degrees an hour, and
-// the 6 a.m. origin that puts sunrise on +X.
-const AXIAL_TILT_DEGREES: f32 = 23.5;
-const DEGREES_PER_HOUR: f32 = 15.0;
-const SUNRISE_HOUR: f32 = 6.0;
-const HOURS_PER_DAY: f32 = 24.0;
 
 /// How the distance is faded out.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -273,25 +267,6 @@ impl Lighting {
             clouds,
         }
     }
-}
-
-/// Direction of the sun in Roblox's own axes, as the only known-good community
-/// reproduction of `Lighting:GetSunDirection()` computes it — Roblox publishes
-/// no formula, so this is reverse-engineered rather than authoritative.
-///
-/// Checks out at the three angles anyone can name from memory: noon at the
-/// tropic is straight up, 6:00 is on the horizon due +X, 18:00 due -X.
-fn sun_direction(clock: f32, latitude_degrees: f32) -> Vec3 {
-    let time = clock.rem_euclid(HOURS_PER_DAY);
-    let latitude = (latitude_degrees - AXIAL_TILT_DEGREES).to_radians();
-    let longitude = ((time - SUNRISE_HOUR) * DEGREES_PER_HOUR).to_radians();
-
-    Vec3::new(
-        latitude.cos() * longitude.cos(),
-        latitude.cos() * longitude.sin(),
-        latitude.sin(),
-    )
-    .normalize_or(Vec3::Y)
 }
 
 /// `ClockTime` when the file carries it, otherwise the `TimeOfDay` string

@@ -49,6 +49,9 @@ pub use gizmo::Gizmo;
 pub use gpu::describe_adapter;
 pub use headless::Headless;
 pub use input::{CameraInput, CameraKey};
+// An editor placing the sun by pointing at the scene needs the inverse of the
+// sun model the renderer lights with, and nothing else of `lighting`.
+pub use lighting::sun;
 pub use load::read_place;
 pub use quality::{FrameRateManager, QualityLevel};
 pub use scene::{resolved_shape_label, ScrollTarget};
