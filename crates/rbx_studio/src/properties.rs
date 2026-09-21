@@ -240,6 +240,10 @@ impl Properties {
             // e.g. `BasePart.Position`/`Orientation`, exposed only through
             // the dedicated Position/Orientation UI — not even read-only.
             .filter(|(name, _)| !self.is_hidden(class, name))
+            // The same rule, for the two the dump has no descriptor to tag
+            // with: the Attributes/Tags section at the bottom of the panel
+            // is their editor (see `attributes::is_backing_store`).
+            .filter(|(name, _)| !attributes::is_backing_store(name))
             .map(|(name, value)| PropertyRow {
                 name: name.clone(),
                 value: self.format(dom, class, name, value),
