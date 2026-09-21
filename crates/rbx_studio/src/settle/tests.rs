@@ -107,6 +107,7 @@ fn step(cursor: Ray, grabbed: Vec3) -> Settle {
         last: None,
         align: true,
         tilt: Mat3::IDENTITY,
+        turning: None,
     }
 }
 
@@ -346,4 +347,23 @@ fn r_spins_the_part_a_quarter_about_the_slopes_normal() {
     // Its length now runs up the slope, not across it.
     assert!(along.dot(Vec3::X).abs() < 1e-4, "along {along}");
     assert!(close(along.cross(normal).cross(normal), -along));
+}
+
+#[test]
+fn a_turn_half_eased_in_stands_half_way_round() {
+    let (dom, plank) = ramp();
+    let mut settle = from_above(down_at(40.0, 40.0));
+    settle.last =
+        land_on(&dom, plank, from_above(down_at(1.0, 0.0))).map(|(landed, _)| landed.frame);
+    let quarter = Mat3::from_rotation_y(std::f32::consts::FRAC_PI_2);
+    settle.tilt = quarter;
+    settle.turning = Some((Mat3::IDENTITY, 0.5));
+    let (_, model) = land_on(&dom, plank, settle).expect("the slope's plane");
+    let along = model.x_axis.truncate().normalize();
+    // An eighth of a turn about the slope's normal from lying across it.
+    assert!(
+        (along.dot(Vec3::X) - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-4,
+        "{along}"
+    );
+    assert!(along.dot(slope_normal()).abs() < 1e-4);
 }

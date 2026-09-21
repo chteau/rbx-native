@@ -10,6 +10,8 @@
 //! - A Move or Scale handle drag: the axis line, the soft-snap dots found at
 //!   the press, and the distance label (see [`handles`]).
 
+use std::time::Instant;
+
 use glam::{Mat3, Vec3};
 use gpui_kit::*;
 use rbx_viewer::gizmo::Axis;
@@ -52,6 +54,9 @@ pub(super) struct State {
     landed_on: Option<SurfaceFrame>,
     /// The quarter turns `R` and `T` have added to the free drag under way.
     pub(super) tilt: Mat3,
+    /// The last quarter turn while it eases in: the tilt it turns from, and
+    /// when it began.
+    pub(super) turning: Option<(Mat3, Instant)>,
     /// A handle drag's soft snaps, found once at the press.
     snaps: Vec<SoftSnap>,
     /// The Move arrow a handle drag holds: its axis, which end (`±1`) and
@@ -64,9 +69,10 @@ pub(super) struct State {
     pub(super) label: Option<(Point<Pixels>, SharedString)>,
     /// What the render thread was last sent.
     sent: Vec<Segment>,
-    /// Where the cursor last stepped the drag in progress: a modifier
-    /// pressed or released with the mouse still re-steps it from there.
-    pub(super) dragged_at: Option<Point<Pixels>>,
+    /// Where the cursor last stepped the drag in progress, and with what
+    /// held: a modifier pressed or released with the mouse still, or a turn
+    /// easing in, re-steps it from there.
+    pub(super) dragged_at: Option<(Point<Pixels>, Modifiers)>,
 }
 
 impl WorkspaceView {
@@ -179,6 +185,7 @@ impl WorkspaceView {
         state.arrow = None;
         state.landed_on = None;
         state.tilt = Mat3::IDENTITY;
+        state.turning = None;
         state.dragged_at = None;
     }
 
@@ -192,7 +199,7 @@ impl WorkspaceView {
         if let Some(position) = self
             .drag_pending
             .map(|(at, _)| at)
-            .or(self.guides.dragged_at)
+            .or(self.guides.dragged_at.map(|(at, _)| at))
         {
             self.drag_pending = Some((position, modifiers));
         }

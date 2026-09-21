@@ -19,7 +19,7 @@
 //! oscillating between two surfaces when the cursor holds still on the edge
 //! between them.
 
-use glam::{Mat3, Mat4, Vec2, Vec3};
+use glam::{Mat3, Mat4, Quat, Vec2, Vec3};
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 use rbx_viewer::pick::{self, Meshes, PartSurface, Ray};
@@ -55,6 +55,9 @@ pub(crate) struct Settle {
     pub(crate) align: bool,
     /// The quarter turns `R` and `T` have added this drag.
     pub(crate) tilt: Mat3,
+    /// The last of them while it eases in: the tilt it turns from, and how
+    /// far it has eased (see `crate::dragger::tilt::eased`).
+    pub(crate) turning: Option<(Mat3, f32)>,
 }
 
 /// Where a drag step landed, and on what.
@@ -115,16 +118,31 @@ pub(crate) fn settled(
     let origin = anchor.w_axis.truncate();
     let point = basis.transpose() * settle.grabbed;
     let selection = free::selection_box(basis, origin, held.iter().map(|&(_, model)| model));
-    let turn = tilt::in_frame(&frame, basis, settle.align) * settle.tilt;
-    let bounds = free::bounds(turn, selection, point);
+    let lying = tilt::in_frame(&frame, basis, settle.align);
     let reach = settle
         .snap_to_parts
         .then(|| free::SOFT_SNAP_REACH * depth_scale(hit, settle.pose, settle.orthographic));
-    let landing = free::land(&frame, hit, bounds, settle.grid, reach);
+    let land = |tilt: Mat3| {
+        let bounds = free::bounds(lying * tilt, selection, point);
+        free::land(&frame, hit, bounds, settle.grid, reach)
+    };
+    let landing = land(settle.tilt);
     // Turned as the box was, about the dragged point, which lands where the
-    // landing says.
+    // landing says — or, while a turn eases in, part way from where it
+    // stood before the turn, as Studio's tween lerps the two.
+    let (turn, dragged) = match settle.turning {
+        Some((from, eased)) => {
+            let before = land(from).dragged(&frame);
+            let between = Quat::from_mat3(&from).slerp(Quat::from_mat3(&settle.tilt), eased);
+            (
+                lying * Mat3::from_quat(between),
+                before.lerp(landing.dragged(&frame), eased),
+            )
+        }
+        None => (lying * settle.tilt, landing.dragged(&frame)),
+    };
     let rotation = tilt::frame_rotation(&frame) * turn * basis.transpose();
-    let translation = landing.dragged(&frame) - rotation * (origin + settle.grabbed);
+    let translation = dragged - rotation * (origin + settle.grabbed);
     Some(Settled {
         carry: Mat4::from_cols(
             rotation.x_axis.extend(0.0),

@@ -76,6 +76,20 @@ pub(crate) fn snap_to_primary(rotation: Mat3) -> Mat3 {
     Mat3::from_cols(r, u, r.cross(u))
 }
 
+/// `Studio.DraggerTiltRotateDuration`: how long a quarter turn takes to
+/// ease in, in seconds.
+pub(crate) const TURN_SECONDS: f32 = 0.13;
+
+/// How far a quarter turn has eased in `progress` of the way through its
+/// time: Studio's quartic ease in and out.
+pub(crate) fn eased(progress: f32) -> f32 {
+    if progress < 0.5 {
+        0.5 * (progress / 0.5).powi(4)
+    } else {
+        1.0 - 0.5 * ((1.0 - progress) / 0.5).powi(4)
+    }
+}
+
 /// A target frame's axes, as the rotation from its own space to the world's.
 pub(crate) fn frame_rotation(frame: &SurfaceFrame) -> Mat3 {
     Mat3::from_cols(frame.x, frame.y, frame.z)
@@ -132,6 +146,13 @@ mod tests {
             kind: TargetKind::Polygon,
             part: None,
         }
+    }
+
+    #[test]
+    fn a_turn_eases_in_and_out_over_its_time() {
+        assert_eq!((eased(0.0), eased(0.5), eased(1.0)), (0.0, 0.5, 1.0));
+        assert!((eased(0.25) - 0.03125).abs() < 1e-6);
+        assert!((eased(0.75) - 0.96875).abs() < 1e-6);
     }
 
     #[test]

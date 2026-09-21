@@ -14,6 +14,8 @@
 //! button (see `WorkspaceView::begin_look`), so a left-button drag never
 //! competes with them.
 
+use std::time::Instant;
+
 use glam::{Mat3, Mat4, Vec2, Vec3};
 use gpui_kit::{Modifiers, Pixels, Point};
 use rbx_viewer::gizmo::{self, Faces, Handles};
@@ -438,7 +440,8 @@ impl WorkspaceView {
         let Some(anchor) = self.targets.anchor() else {
             return;
         };
-        self.guides.dragged_at = Some(position);
+        self.guides.dragged_at = Some((position, modifiers));
+        let turning = self.turn_progress();
         // `position` is reused below as a match binding name for the part's
         // own new world-space placement (`Change::Position`), which shadows
         // this screen-space one for the length of that arm — kept under its
@@ -501,6 +504,7 @@ impl WorkspaceView {
                                 last: self.landed_on(),
                                 align: self.aligns(modifiers.alt),
                                 tilt: self.guides.tilt,
+                                turning,
                             })
                         })
                     }
@@ -615,6 +619,10 @@ impl WorkspaceView {
             let scale = window.scale_factor();
             self.drag_to(position, modifiers, scale, cx);
         }
+        // A turn easing in moves the selection with the mouse still.
+        if self.guides.turning.is_some() {
+            self.drag_pending = self.guides.dragged_at;
+        }
     }
 
     /// The button coming up: the last cursor position the frame gate has
@@ -682,11 +690,25 @@ impl WorkspaceView {
             frame.y
         };
         let align = self.aligns(modifiers.alt);
-        self.guides.tilt =
-            tilt::turned(&frame, anchor.orientation(), self.guides.tilt, align, axis);
+        let from = self.guides.tilt;
+        self.guides.tilt = tilt::turned(&frame, anchor.orientation(), from, align, axis);
+        self.guides.turning = Some((from, Instant::now()));
         self.modifiers_changed(modifiers);
         cx.notify();
         true
+    }
+
+    /// The turn easing in (Studio tweens a quarter turn over
+    /// `Studio.DraggerTiltRotateDuration`): the tilt it turns from and how
+    /// far it has come, or `None` once it has finished.
+    fn turn_progress(&mut self) -> Option<(Mat3, f32)> {
+        let (from, started) = self.guides.turning?;
+        let progress = started.elapsed().as_secs_f32() / tilt::TURN_SECONDS;
+        if progress >= 1.0 {
+            self.guides.turning = None;
+            return None;
+        }
+        Some((from, tilt::eased(progress)))
     }
 
     /// Whether a free drag turns the selection onto the face it lands on:
