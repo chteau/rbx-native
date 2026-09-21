@@ -180,15 +180,28 @@ pub(crate) fn plan(
     database: &ReflectionDatabase,
     placements: &HashMap<Ref, Placement>,
 ) -> Vec<Adornment> {
-    descendants(dom)
-        .filter(|&referent| {
-            dom.get(referent).is_some_and(|instance| {
-                database.is_subclass_of(instance.class(), BASE_CLASS)
-                    && rendered(dom, database, referent)
-            })
-        })
-        .filter_map(|referent| build(dom, database, placements, referent))
-        .collect()
+    // Memoised per class, not asked per instance: this walks every instance
+    // in the place, a superclass chain is several hash lookups deep, and a
+    // place of tens of thousands of instances holds a few dozen distinct
+    // classes — the same trick `scene::gui::space` already plays on the
+    // same walk.
+    let mut adornments: HashMap<String, bool> = HashMap::new();
+    let mut found = Vec::new();
+    for referent in descendants(dom) {
+        let Some(instance) = dom.get(referent) else {
+            continue;
+        };
+        let is_adornment = *adornments
+            .entry(instance.class().to_string())
+            .or_insert_with(|| database.is_subclass_of(instance.class(), BASE_CLASS));
+        if !is_adornment || !rendered(dom, database, referent) {
+            continue;
+        }
+        if let Some(adornment) = build(dom, database, placements, referent) {
+            found.push(adornment);
+        }
+    }
+    found
 }
 
 /// Whether an adornment parented here is drawn at all — see this module's

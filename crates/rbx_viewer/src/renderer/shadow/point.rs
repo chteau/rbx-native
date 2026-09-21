@@ -31,6 +31,12 @@ const FACE_FOV_DEGREES: f32 = 92.0;
 /// The direction each face looks along, and the up vector its view is built
 /// with. Only consistency matters, not any cube-map convention: the shader
 /// projects through the very matrix built here rather than sampling a cube.
+/// Side of one face. Half the cone lights' own map: a point light spends
+/// six of these where a cone light spends one, and halving the side is what
+/// keeps a cube at the same memory a single cone map costs plus half again,
+/// rather than at six times it.
+const SIDE: u32 = 512;
+
 const AXES: [(Vec3, Vec3); FACES] = [
     (Vec3::X, Vec3::Y),
     (Vec3::NEG_X, Vec3::Y),
@@ -91,6 +97,63 @@ fn faces_of(light: &LocalLight) -> [Mat4; FACES] {
     let fov = FACE_FOV_DEGREES.to_radians();
     AXES.map(|(direction, up)| {
         perspective(fov, 1.0, NEAR_STUDS, far) * look_to_mat4(light.position, direction, up)
+    })
+}
+
+/// The `PointLight` cube array: six layers per cube, each drawn into on its
+/// own and all sampled through one array view — see
+/// `renderer::shadow::point` for why this is an array of perspectives
+/// rather than a cube map.
+pub(in crate::renderer) fn map(
+    device: &wgpu::Device,
+    cubes: usize,
+) -> (wgpu::TextureView, Vec<wgpu::TextureView>) {
+    let layers = (cubes * FACES).max(1) as u32;
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("rbxview point shadow map"),
+        size: wgpu::Extent3d {
+            width: SIDE,
+            height: SIDE,
+            depth_or_array_layers: layers,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: super::FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+
+    let array_view = texture.create_view(&wgpu::TextureViewDescriptor {
+        label: Some("rbxview point shadow map (array)"),
+        dimension: Some(wgpu::TextureViewDimension::D2Array),
+        ..Default::default()
+    });
+    let layer_views = (0..layers)
+        .map(|layer| {
+            texture.create_view(&wgpu::TextureViewDescriptor {
+                label: Some("rbxview point shadow map (face)"),
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                base_array_layer: layer,
+                array_layer_count: Some(1),
+                ..Default::default()
+            })
+        })
+        .collect();
+
+    (array_view, layer_views)
+}
+
+/// The matrices `lights.wgsl` projects a fragment through, one per layer of
+/// [`map`]'s array. Never empty, for the same reason the light buffer
+/// itself never is: a storage binding has to point at something.
+pub(in crate::renderer) fn faces_buffer(device: &wgpu::Device, cubes: usize) -> wgpu::Buffer {
+    let layers = (cubes * FACES).max(FACES);
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("rbxview point shadow faces"),
+        size: super::MATRIX_SIZE * layers as wgpu::BufferAddress,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
     })
 }
 

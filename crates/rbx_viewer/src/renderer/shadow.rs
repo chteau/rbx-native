@@ -38,12 +38,6 @@ const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 /// is a small enough thing on screen that one map size covers every level.
 const LOCAL_SIZE: u32 = 1024;
 
-/// Side of one face of a `PointLight`'s cube. Half the cone lights' own map:
-/// a point light spends six of these where a cone light spends one, and
-/// halving the side is what keeps a cube at the same memory a single cone
-/// map costs plus half again, rather than at six times it.
-const POINT_SIZE: u32 = 512;
-
 /// How many `PointLight`s may cast at once, from the same level knob the
 /// cone lights' cap comes from. A quarter of it, rounded down: six faces
 /// each, and a level that allows no cone shadows at all allows no point
@@ -148,7 +142,7 @@ impl Shadows {
             mapped_at_creation: false,
         });
         let cubes = point_cap(quality);
-        let (point_view, point_layers) = point_map(device, cubes);
+        let (point_view, point_layers) = point::map(device, cubes);
         let point_buffers = local_buffers(device, cubes * point::FACES);
         let point_bind_groups = local_bind_groups(device, &layout, &point_buffers);
         let (local_view, local_layers) = local_map(device, quality.local_shadow_lights_max);
@@ -191,7 +185,7 @@ impl Shadows {
             local_bind_groups,
             point_view,
             point_layers,
-            point_faces: point_faces_buffer(device, cubes),
+            point_faces: point::faces_buffer(device, cubes),
             point_buffers,
             point_bind_groups,
             point_state: None,
@@ -215,12 +209,12 @@ impl Shadows {
         self.local_bind_groups = local_bind_groups(device, &self.light_layout, &self.local_buffers);
 
         let cubes = point_cap(quality);
-        let (point_view, point_layers) = point_map(device, cubes);
+        let (point_view, point_layers) = point::map(device, cubes);
         self.point_view = point_view;
         self.point_layers = point_layers;
         self.point_buffers = local_buffers(device, cubes * point::FACES);
         self.point_bind_groups = local_bind_groups(device, &self.light_layout, &self.point_buffers);
-        self.point_faces = point_faces_buffer(device, cubes);
+        self.point_faces = point::faces_buffer(device, cubes);
         self.point_state = None;
     }
 
@@ -560,60 +554,6 @@ fn local_map(device: &wgpu::Device, cap: usize) -> (wgpu::TextureView, Vec<wgpu:
         .collect();
 
     (array_view, layer_views)
-}
-
-/// The `PointLight` cube array: six layers per cube, each drawn into on its
-/// own and all sampled through one array view — see
-/// `renderer::shadow::point` for why this is an array of perspectives
-/// rather than a cube map.
-fn point_map(device: &wgpu::Device, cubes: usize) -> (wgpu::TextureView, Vec<wgpu::TextureView>) {
-    let layers = (cubes * point::FACES).max(1) as u32;
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("rbxview point shadow map"),
-        size: wgpu::Extent3d {
-            width: POINT_SIZE,
-            height: POINT_SIZE,
-            depth_or_array_layers: layers,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: FORMAT,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-        view_formats: &[],
-    });
-
-    let array_view = texture.create_view(&wgpu::TextureViewDescriptor {
-        label: Some("rbxview point shadow map (array)"),
-        dimension: Some(wgpu::TextureViewDimension::D2Array),
-        ..Default::default()
-    });
-    let layer_views = (0..layers)
-        .map(|layer| {
-            texture.create_view(&wgpu::TextureViewDescriptor {
-                label: Some("rbxview point shadow map (face)"),
-                dimension: Some(wgpu::TextureViewDimension::D2),
-                base_array_layer: layer,
-                array_layer_count: Some(1),
-                ..Default::default()
-            })
-        })
-        .collect();
-
-    (array_view, layer_views)
-}
-
-/// The matrices `lights.wgsl` projects a fragment through, one per layer of
-/// [`point_map`]'s array. Never empty, for the same reason the light buffer
-/// itself never is: a storage binding has to point at something.
-fn point_faces_buffer(device: &wgpu::Device, cubes: usize) -> wgpu::Buffer {
-    let layers = (cubes * point::FACES).max(point::FACES);
-    device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("rbxview point shadow faces"),
-        size: MATRIX_SIZE * layers as wgpu::BufferAddress,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    })
 }
 
 /// One small view-projection uniform per array slot: every slot is written and
