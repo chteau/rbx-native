@@ -15,6 +15,10 @@ use super::surface::{SurfaceFrame, TargetKind};
 use super::target::placement;
 use super::{snap_to, Dot, Guides, Line, ACTIVE, PASSIVE};
 
+mod lattice;
+
+use lattice::{thinned, Lattice};
+
 /// The centre point's radius, in handle scales.
 const CENTRE_RADIUS: f32 = 0.15;
 
@@ -161,73 +165,6 @@ fn corner_vectors(frame: &SurfaceFrame, hit: Vec3) -> (Vec3, Vec3, f32, f32) {
     (x, z, relative.dot(x).max(0.0), relative.dot(z).max(0.0))
 }
 
-/// Studio's `Grid3D`: the lattice lines `at + a·i + b·j` for whole `i` and
-/// `j` in the ranges given, leaving out `exclude`; with `radius`, each line
-/// clipped to the disc of that radius round `at` (all in lattice steps).
-struct Lattice {
-    at: Vec3,
-    a: Vec3,
-    b: Vec3,
-    min: Vec2,
-    max: Vec2,
-    radius: Option<f32>,
-    exclude: (i32, i32),
-}
-
-impl Lattice {
-    /// Its lines, each drawn at 0.4 transparency depth-tested and 0.85 over
-    /// everything.
-    fn lines(&self) -> Vec<Line> {
-        let mut pairs = Vec::new();
-        let (a, b) = (self.a, self.b);
-        let mut run =
-            |min: f32, max: f32, other: (f32, f32), skip: i32, across: Vec3, along: Vec3| {
-                let (first, last) = ((min - 0.001).ceil() as i32, (max + 0.001).floor() as i32);
-                // Studio thins a lattice more than 1024 lines across.
-                let range = (last - first).max(0) as f32;
-                let step = if range > 1024.0 {
-                    2f32.powf((range / 1024.0).log2().floor()) as i32
-                } else {
-                    1
-                };
-                for i in (first..=last).step_by(step.max(1) as usize) {
-                    if i == skip {
-                        continue;
-                    }
-                    let (mut low, mut high) = other;
-                    if let Some(radius) = self.radius {
-                        let half = (radius * radius - (i * i) as f32).sqrt();
-                        if half.is_nan() {
-                            continue;
-                        }
-                        (low, high) = (low.max(-half), high.min(half));
-                    }
-                    if low < high {
-                        let base = self.at + across * i as f32;
-                        pairs.push([base + along * low, base + along * high]);
-                    }
-                }
-            };
-        run(
-            self.min.x,
-            self.max.x,
-            (self.min.y, self.max.y),
-            self.exclude.0,
-            a,
-            b,
-        );
-        run(
-            self.min.y,
-            self.max.y,
-            (self.min.x, self.max.x),
-            self.exclude.1,
-            b,
-            a,
-        );
-        styled(pairs, PASSIVE, 0.6, 0.15)
-    }
-}
-
 /// What a free drag landing on a ball or a cylinder draws in place of the
 /// ruler (`TargetGridView`), with `hit` where the cursor meets the target
 /// and `grid` the grid in force; `None` for any other part. `scale` is the
@@ -314,7 +251,7 @@ pub(crate) fn landed(
                         min: Vec2::new(-1.0, 0.0),
                         max: Vec2::new(1.0, half / grid),
                         radius: None,
-                        exclude: (0, step as i32),
+                        exclude: (0, step as i64),
                     }
                     .lines(),
                 );
@@ -378,10 +315,11 @@ fn lat_lon(part: &Part, at: Vec3, grid: Option<f32>) -> Vec<Line> {
     let turn = Mat3::from_rotation_y(longitude);
     let side = if y >= 0.0 { 1.0 } else { -1.0 };
     let mut ticks = Vec::new();
-    let mut step = 1.0;
-    while step * grid <= r + 1e-4 {
-        let height = side * step * grid;
-        step += 1.0;
+    // Studio draws every one; one past 1024 of them is thinned as its
+    // `Grid3D` thins a lattice [inferred: a guard Studio's own loop lacks].
+    let count = ((r + 1e-4) / grid).floor() as i64;
+    for step in thinned(1, count) {
+        let height = side * step as f32 * grid;
         if (height - y).abs() < 0.01 {
             continue;
         }

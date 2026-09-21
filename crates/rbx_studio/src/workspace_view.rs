@@ -284,7 +284,7 @@ pub(crate) struct WorkspaceView {
     /// A body grab the last press found on the selection, held back until
     /// `Shell` has resolved the same click against the real geometry (see
     /// `ViewportAction::Pick`'s `held`).
-    pending_grab: Option<Drag>,
+    pending_grab: Option<Ray>,
     /// Studio's editable measurement box, up after a Move-arrow drag (see
     /// `measure`).
     measure: Option<measure::Measure>,
@@ -944,10 +944,12 @@ impl Render for WorkspaceView {
                 }
                 view.key(&event.keystroke, true, cx);
             }))
-            .on_key_up(cx.listener(|view, event: &KeyUpEvent, window, cx| {
-                if !view.typing(window, cx) {
-                    view.key(&event.keystroke, false, cx);
-                }
+            // Always, the measurement box's focus or not: a camera key held
+            // as the box took the keyboard is still released here, or the
+            // camera would keep flying. Releasing one never pressed does
+            // nothing.
+            .on_key_up(cx.listener(|view, event: &KeyUpEvent, _, cx| {
+                view.key(&event.keystroke, false, cx);
             }))
             // Shift alone never arrives as a keystroke: modifiers are reported
             // on their own, and Shift is Studio's precision modifier.

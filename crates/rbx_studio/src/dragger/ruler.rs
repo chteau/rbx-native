@@ -44,18 +44,19 @@ fn ruler(origin: Vec3, x: Vec3, z: Vec3, size: (f32, f32), grid: f32) -> Vec<[Ve
     };
     // Ticks along the line z = sz, counted from the x = 0 edge: the first is
     // the long cap on the edge itself, the last falls on P.
-    let count = (sx / grid + 0.001).floor() as i32 + 1;
-    if count < MAX_TICKS {
-        for i in 0..count {
+    // Counted in floats: a count past `i32` is still just "too many".
+    let count = (sx / grid + 0.001).floor() + 1.0;
+    if count < MAX_TICKS as f32 {
+        for i in 0..count as i32 {
             let (along, half) = (i as f32 * grid, tick(i));
             lines.push([at(along, sz - half), at(along, sz + half)]);
         }
     } else {
         lines.push([at(0.0, 0.0), at(sx, 0.0)]);
     }
-    let count = (sz / grid + 0.001).floor() as i32 + 1;
-    if count < MAX_TICKS {
-        for i in 0..count {
+    let count = (sz / grid + 0.001).floor() + 1.0;
+    if count < MAX_TICKS as f32 {
+        for i in 0..count as i32 {
             let (along, half) = (i as f32 * grid, tick(i));
             lines.push([at(sx - half, along), at(sx + half, along)]);
         }
@@ -197,6 +198,9 @@ mod tests {
         assert_eq!(lines.len(), 2 + 1 + 2);
         let lines = ruler(Vec3::ZERO, Vec3::X, Vec3::Z, (46.0, 1.0), 1.0);
         assert_eq!(lines.len(), 2 + 47 + 2);
+        // Billions of steps, past what an `i32` counts: still just the edges.
+        let lines = ruler(Vec3::ZERO, Vec3::X, Vec3::Z, (2048.0, 2048.0), 1e-7);
+        assert_eq!(lines.len(), 2 + 1 + 1);
     }
 
     #[test]
