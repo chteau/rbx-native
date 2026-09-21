@@ -2,6 +2,20 @@
 
 ## 2026-09-21
 
+- **Bounded properties get a slider.** A `Transparency`, a `ClockTime`, a
+  `GuiObject`'s `Rotation` — anything whose value has a real floor and
+  ceiling — now shows a rail beside its number field, and the two edit the
+  same value: drag the rail or type the number. The reflection dump carries
+  no bounds, so which properties have one and how finely each steps is a
+  named table (`properties::ranges`), and a range there only decides how far
+  the rail reaches — the field still takes anything the parser does, so a
+  frame really can be rotated 400°. A drag commits every step, so the
+  viewport follows the rail rather than waiting for it to be let go, and the
+  whole gesture still undoes in one. This is the first slider in the editor;
+  it is built from `gpui_base`'s unstyled parts and skinned as a field box,
+  because the toolkit's finished one sizes itself in `rem` and would ignore
+  the UI scale. — @chteau
+
 - **Numeric properties open like Studio's, and the panel has one left
   edge.** A `Vector3`, a `UDim2`, a `CFrame` and every other multi-number
   value used to take the row's whole width and lay its components out side

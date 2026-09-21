@@ -553,6 +553,26 @@ pub(crate) fn chevron_slot() -> Pixels {
     scaled(14.)
 }
 
+/// The rail a property slider runs its value along. Thick enough to carry
+/// the outline an empty one needs (see `shell::rows::slider`), thin enough
+/// that the grip still reads as the control.
+pub(crate) fn slider_rail() -> Pixels {
+    scaled(6.)
+}
+
+/// The grip on that rail. Smaller than the strip a click has to land in,
+/// the same way [`checkbox_size`] is smaller than [`checkbox_target`].
+pub(crate) fn slider_thumb() -> Pixels {
+    scaled(13.)
+}
+
+/// Below this a rail has fewer pixels than the value has steps, and
+/// dragging it stops meaning anything. The row lets it push the panel
+/// sideways rather than shrink past it.
+pub(crate) fn slider_min_width() -> Pixels {
+    scaled(60.)
+}
+
 /// The smallest square any icon-only button is allowed to be.
 pub(crate) fn hit_target() -> Pixels {
     scaled_target(target_floor())

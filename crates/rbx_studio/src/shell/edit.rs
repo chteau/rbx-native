@@ -19,11 +19,14 @@ use std::collections::{HashMap, HashSet};
 use gpui_kit::component::color_picker::{ColorPickerEvent, ColorPickerState};
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::select::{SearchableVec, SelectEvent, SelectState};
+use gpui_kit::component::slider::{SliderEvent, SliderState, SliderValue};
 use gpui_kit::component::IndexPath;
 use gpui_kit::*;
 use rbx_dom::WeakDom;
 
-use crate::properties::{self, edit::NAME_PROPERTY, EditKind, Field, FieldGroup, PropertyRow};
+use crate::properties::{
+    self, edit::NAME_PROPERTY, slider_range, EditKind, Field, FieldGroup, FieldKind, PropertyRow,
+};
 
 use super::Shell;
 
@@ -40,6 +43,11 @@ pub(super) type EnumOptions = SearchableVec<SharedString>;
 #[derive(Clone)]
 pub(super) enum RowEditor {
     Text(Entity<InputState>),
+    /// The same field, plus a rail for the values that have somewhere to
+    /// run between (see `properties::ranges`). The field stays the one
+    /// that commits — the rail only writes into it — so a value outside
+    /// the rail's reach is still typeable.
+    Slider(Entity<InputState>, Entity<SliderState>),
     /// One `Input` per label, in the same order as `EditKind::Fields`'
     /// `labels` — carried alongside so `shell::rows` can pair each field
     /// with its caption without reaching back into `EditKind`, plus the
@@ -109,7 +117,9 @@ impl RowEditor {
     /// [`Shell::build_row_widget`]).
     fn input_text(&self, cx: &App) -> Option<String> {
         match self {
-            RowEditor::Text(input) => Some(input.read(cx).value().to_string()),
+            RowEditor::Text(input) | RowEditor::Slider(input, _) => {
+                Some(input.read(cx).value().to_string())
+            }
             RowEditor::Fields(_, _, inputs) | RowEditor::Groups(_, _, inputs) => Some(
                 inputs
                     .iter()
@@ -164,6 +174,16 @@ pub(super) struct Edits {
     /// laid out and painted every frame is thirty too many on the hardware
     /// this editor is meant to stay usable on.
     expanded: HashSet<String>,
+    /// The row whose slider is being dragged, while it is.
+    ///
+    /// A commit normally drops the row's widget so the next render rebuilds
+    /// it from what the DOM made of the value. That is exactly wrong here:
+    /// the widget being dropped is the one holding the gesture, and the
+    /// drag would end on its own first frame. So this names the row that
+    /// has to survive its own commits — and, since it is set before the
+    /// first of them, doubles as "is this the step that opens the undo
+    /// entry" (see `Shell::slide_row`).
+    sliding: Option<String>,
 }
 
 impl Edits {
@@ -184,9 +204,28 @@ impl Edits {
 /// whatever it was first seeded with forever, not "whatever the field
 /// currently editing it left behind" (which is the only case actually worth
 /// protecting — see `resync_field`).
-fn resync_row_widget(widget: &RowEditor, kind: &EditKind, window: &mut Window, cx: &mut App) {
+fn resync_row_widget(
+    widget: &RowEditor,
+    kind: &EditKind,
+    sliding: bool,
+    window: &mut Window,
+    cx: &mut App,
+) {
     match (widget, kind) {
         (RowEditor::Text(input), EditKind::Text(seed)) => resync_field(input, seed, window, cx),
+        (RowEditor::Slider(input, rail), EditKind::Text(seed)) => {
+            resync_field(input, seed, window, cx);
+            // Not while the rail is the thing being dragged: it is already
+            // showing where the pointer is, and the value coming back is
+            // its own, rounded to what the field prints — writing it back
+            // would drag the grip a fraction of a step backwards under the
+            // pointer on every frame of the gesture.
+            if !sliding {
+                if let Ok(value) = seed.trim().parse::<f32>() {
+                    rail.update(cx, |state, cx| state.set_value(value, window, cx));
+                }
+            }
+        }
         (RowEditor::Fields(_, summary, inputs), EditKind::Fields { values, .. })
         | (RowEditor::Groups(_, summary, inputs), EditKind::Groups { values, .. }) => {
             resync_field(summary, &values.join(", "), window, cx);
@@ -195,7 +234,7 @@ fn resync_row_widget(widget: &RowEditor, kind: &EditKind, window: &mut Window, c
             }
         }
         (RowEditor::Optional(_, _, inner), EditKind::Optional { inner: kind, .. }) => {
-            resync_row_widget(inner, kind, window, cx);
+            resync_row_widget(inner, kind, sliding, window, cx);
         }
         // `Color` and `Enum` rows have nothing outside their own widget that
         // writes to an already-selected instance repeatedly the way
@@ -244,7 +283,8 @@ impl Shell {
         if let Some(existing) = self.edits.rows.get(&row.name) {
             let widget = existing.widget.clone();
             let error = existing.error.clone();
-            resync_row_widget(&widget, kind, window, cx);
+            let sliding = self.edits.sliding.as_deref() == Some(row.name.as_str());
+            resync_row_widget(&widget, kind, sliding, window, cx);
             return (widget, error);
         }
 
@@ -273,8 +313,33 @@ impl Shell {
             ),
             EditKind::Text(seed) => {
                 let input = cx.new(|cx| InputState::new(window, cx).default_value(seed.clone()));
-                let subscription = self.commit_on_change(&input, name, cx);
-                (RowEditor::Text(input), vec![subscription])
+                let mut subscriptions = vec![self.commit_on_change(&input, name.clone(), cx)];
+
+                // A rail only for a value that has one to run along, and
+                // only when the row is actually holding a number — the
+                // same `EditKind::Text` carries a `BrickColor`'s index and
+                // every string in the dump.
+                let bounded = slider_range(&name)
+                    .zip(seed.trim().parse::<f32>().ok())
+                    .map(|(span, value)| {
+                        let rail = cx.new(|_| {
+                            SliderState::new()
+                                .min(span.min)
+                                .max(span.max)
+                                // Never left to the toolkit's own default
+                                // of 1, which would make every 0-1 value on
+                                // the panel a two-position switch.
+                                .step(span.step)
+                                .default_value(value.clamp(span.min, span.max))
+                        });
+                        subscriptions.push(self.slide_on_change(&rail, name, cx));
+                        rail
+                    });
+
+                match bounded {
+                    Some(rail) => (RowEditor::Slider(input, rail), subscriptions),
+                    None => (RowEditor::Text(input), subscriptions),
+                }
             }
             EditKind::Fields { fields, values } => {
                 let (summary, inputs, subscriptions) =
@@ -416,6 +481,40 @@ impl Shell {
         })
     }
 
+    /// Wires one rail so a drag writes through this row the way typing
+    /// does, and lands as a single undo entry however many frames it took.
+    fn slide_on_change(
+        &self,
+        rail: &Entity<SliderState>,
+        name: String,
+        cx: &mut Context<Self>,
+    ) -> Subscription {
+        cx.subscribe(rail, move |shell, _, event: &SliderEvent, cx| match event {
+            SliderEvent::Change(SliderValue::Single(value)) => shell.slide_row(&name, *value, cx),
+            // The gesture is over: let the row rebuild from whatever the
+            // DOM made of the last value, and let the next drag open its
+            // own undo entry.
+            SliderEvent::Release(_) => {
+                shell.edits.sliding = None;
+                shell.edits.rows.remove(&name);
+                cx.notify();
+            }
+            // A range slider's two-value form, which no property row builds.
+            SliderEvent::Change(SliderValue::Range(..)) => {}
+        })
+    }
+
+    /// One frame of a slider drag: the same textual commit a typed value
+    /// takes, spelled the way the field beside the rail prints it.
+    fn slide_row(&mut self, name: &str, value: f32, cx: &mut Context<Self>) {
+        let text = super::scrub::format(value, FieldKind::Decimal);
+        let opening = self.edits.sliding.is_none();
+        if opening {
+            self.edits.sliding = Some(name.to_owned());
+        }
+        self.commit_row_step(name, &text, opening, cx);
+    }
+
     /// Reads every `Input` making up row `name` (one for `Text`, several for
     /// `Fields`) and commits their values joined the same way
     /// `edit::edit_text` already joins a compound value's numbers.
@@ -461,7 +560,11 @@ impl Shell {
     ) {
         match self.apply_edit(name, text, push, cx) {
             Ok(()) => {
-                self.edits.rows.remove(name);
+                // Except the row whose own slider is mid-drag: dropping its
+                // widget drops the gesture with it (see `Edits::sliding`).
+                if self.edits.sliding.as_deref() != Some(name) {
+                    self.edits.rows.remove(name);
+                }
             }
             Err(message) => {
                 if let Some(edit) = self.edits.rows.get_mut(name) {

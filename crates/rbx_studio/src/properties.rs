@@ -13,6 +13,9 @@ use crate::script_editor::source;
 pub(crate) mod attributes;
 pub(crate) mod edit;
 mod folder_row;
+mod ranges;
+
+pub(crate) use ranges::slider_range;
 
 /// Above this, a string no longer reads on a one-line row and only its size is
 /// worth showing.

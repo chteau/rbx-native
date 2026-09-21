@@ -15,6 +15,8 @@ use gpui_kit::component::{h_flex, v_flex, Icon, Sizable};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
+mod slider;
+
 use crate::explorer::ClassIcon;
 use std::rc::Rc;
 
@@ -676,6 +678,25 @@ fn render_row_editor(
                 .into_any_element()
         }
         RowEditor::Text(input) => text_field(&input, tab_index).into_any_element(),
+        // Rail first, number second: the drag is the reason the row looks
+        // like this, and the field is what it settles into. The field
+        // keeps a fixed width so the rails of a `Lighting` all end on the
+        // same edge however long the numbers beside them get.
+        RowEditor::Slider(input, rail) => h_flex()
+            .w_full()
+            .items_center()
+            .gap(tokens::label_gap())
+            .child(slider::slider(&rail, cx))
+            .child(
+                div()
+                    .flex_none()
+                    // Narrower than a labelled field (`field_min_width`):
+                    // there is no label in front of this one, and every
+                    // value a rail spans is a handful of digits.
+                    .w(tokens::scaled_width(52.))
+                    .child(text_field(&input, tab_index)),
+            )
+            .into_any_element(),
         // Captioned lines — a `CFrame`'s Position over its Orientation.
         // Each group is its own run of field rows under its own caption,
         // which is what makes six numbers readable where one flat run of
