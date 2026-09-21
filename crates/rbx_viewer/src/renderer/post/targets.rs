@@ -118,6 +118,12 @@ impl Targets {
         }
     }
 
+    /// What every attachment here was allocated at, which is what any pass
+    /// joining this one's depth buffer has to match.
+    pub(in crate::renderer) fn samples(&self) -> u32 {
+        self.samples
+    }
+
     pub(in crate::renderer) fn depth(&self) -> &wgpu::TextureView {
         &self.depth
     }

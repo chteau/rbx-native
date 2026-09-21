@@ -71,6 +71,8 @@ impl Renderer {
         if let Some(bodies) = &mut self.bodies {
             bodies.set_target(device, target, &self.frame_layout);
         }
+        self.highlights
+            .set_target(device, target, &self.frame_layout);
         self.particles.set_target(device, target);
         self.beams.set_target(device, target);
         self.trails.set_target(device, target);

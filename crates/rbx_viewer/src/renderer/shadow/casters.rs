@@ -44,10 +44,10 @@ pub(super) type ShapeBatches = Keyed<ShapeKind, (), CasterRaw, Sphere, PartId>;
 /// A file mesh's positions and indices, the payload of one [`MeshBatches`]
 /// group. A mesh's skin is irrelevant to a depth pass, so the (mesh, skin)
 /// split the colour pass batches by collapses back to one batch per mesh.
-pub(super) struct MeshGeometry {
-    pub(super) vertices: wgpu::Buffer,
-    pub(super) indices: wgpu::Buffer,
-    pub(super) index_count: u32,
+pub(in crate::renderer) struct MeshGeometry {
+    pub(in crate::renderer) vertices: wgpu::Buffer,
+    pub(in crate::renderer) indices: wgpu::Buffer,
+    pub(in crate::renderer) index_count: u32,
 }
 
 pub(super) type MeshBatches = Keyed<AssetRef, MeshGeometry, CasterRaw, ()>;
@@ -135,7 +135,15 @@ pub(super) fn sync_mesh(
     })
 }
 
-fn geometry(device: &wgpu::Device, resolved: &Resolved, mesh: &AssetRef) -> Option<MeshGeometry> {
+/// A mesh asset's positions and indices, uploaded on their own: the only
+/// thing a pass that draws silhouettes rather than surfaces needs of it.
+/// Shared with `renderer::highlight`, which re-draws geometry into a mask for
+/// the same reason this one re-draws it into a depth map.
+pub(in crate::renderer) fn geometry(
+    device: &wgpu::Device,
+    resolved: &Resolved,
+    mesh: &AssetRef,
+) -> Option<MeshGeometry> {
     let mesh = resolved.meshes.get(mesh)?;
     let positions: Vec<[f32; 3]> = mesh.vertices.iter().map(|vertex| vertex.position).collect();
     let indices = mesh.lod0();

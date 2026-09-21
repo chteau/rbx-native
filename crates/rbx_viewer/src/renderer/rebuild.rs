@@ -29,7 +29,7 @@ use super::skybox::Skybox;
 use super::stars::Stars;
 use super::sun::Bodies;
 use super::translucent::Translucent;
-use super::{lighting, shadow, Renderer, World};
+use super::{highlight, lighting, shadow, Renderer, World};
 use crate::camera::Camera;
 
 impl Renderer {
@@ -158,6 +158,18 @@ impl Renderer {
             .rebuild(device, queue, scene.trails(), images, &quality);
         self.particles
             .rebuild(device, queue, scene.particle_emitters(), images, &quality);
+        // After `shaped`/`filemesh` above only for readability — the mask's
+        // own batches are built from the scene, not from theirs.
+        self.highlights.replace(
+            device,
+            queue,
+            &self.frame_layout,
+            highlight::Source {
+                highlights: scene.highlights(),
+                parts: scene.parts(),
+                resolved: scene.resolved_file_meshes(),
+            },
+        );
         self.gui.rebuild(
             device,
             queue,

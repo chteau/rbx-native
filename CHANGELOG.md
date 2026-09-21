@@ -25,6 +25,19 @@
 
 ## 2026-09-21
 
+- **`Highlight` draws.** The class a script reaches for to call attention to
+  something had nothing behind it here at all — parenting one to a model did
+  nothing. It now draws what Roblox documents: a silhouette outline around
+  the adornee and a solid interior over it, each with its own colour and
+  transparency, and both `DepthMode`s, so a highlight either shows through
+  whatever stands in front of it or stops where the object stops being the
+  nearest surface. The silhouette is the object's own, not the box around
+  it — a ball outlines as a circle, a wedge as a triangle, a downloaded mesh
+  as its own polygon — because the covered geometry is re-drawn, position
+  only, into a mask the frame is then painted from, through the same buffers
+  the shadow pass already instances. A place with no highlight in it compiles
+  none of the six pipelines and allocates no mask. — @chteau
+
 - **The insert picker's classes carry their own icons, and the kit grew
   five drawings to cover them.** A list of several hundred class names with
   nothing but text beside them is a list you read rather than scan, so each
