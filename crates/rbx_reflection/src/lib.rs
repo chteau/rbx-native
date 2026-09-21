@@ -5,6 +5,7 @@
 
 mod class;
 mod database;
+mod defaults;
 #[cfg(feature = "embedded-dump")]
 mod embedded;
 mod enums;

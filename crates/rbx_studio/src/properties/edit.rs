@@ -10,9 +10,12 @@ use rbx_dom::{
 use rbx_reflection::ReflectionDatabase;
 
 mod font;
+mod many;
 mod sequence;
 
 use font::{font_text, parse_font, synced};
+pub(crate) use many::commit_all;
+use many::stored_or_default;
 use sequence::{
     color_sequence_text, number_sequence_text, parse_color_sequence, parse_number_sequence,
 };
@@ -225,19 +228,17 @@ pub(crate) fn commit(
         .get(reference)
         .ok_or_else(|| "the instance no longer exists".to_string())?;
     let class = instance.class().to_owned();
-    let current = instance
-        .properties()
-        .get(prop_name)
-        .ok_or_else(|| format!("{prop_name} has no current value to type-check against"))?
-        .clone();
+    let (key, current) = stored_or_default(db, instance, prop_name)
+        .ok_or_else(|| format!("{prop_name} has no current value to type-check against"))?;
+    let canonical = db.canonical_name(&class, prop_name);
 
-    let value = parse(&current, db, &class, prop_name, text)?;
+    let value = parse(&current, db, &class, canonical, text)?;
     // A saved place carries both `Font` and `FontFace`, and the viewer draws
     // the face; the enum edit would otherwise change nothing on screen.
     let partner =
-        synced(prop_name, &value).filter(|(name, _)| instance.properties().contains_key(*name));
+        synced(canonical, &value).filter(|(name, _)| instance.properties().contains_key(*name));
     let previous = dom
-        .set_property(reference, prop_name, value)
+        .set_property(reference, &key, value)
         .map_err(|err| err.to_string())?;
     if let Some((name, value)) = partner {
         dom.set_property(reference, name, value)

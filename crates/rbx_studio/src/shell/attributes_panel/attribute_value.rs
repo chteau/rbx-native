@@ -72,6 +72,7 @@ impl Shell {
             value: String::new(),
             category: ATTRIBUTES_CATEGORY.to_owned(),
             edit: Some(kind.clone()),
+            mixed: false,
         };
         let tab_index = self.tab_order.next();
         let (widget, error) = self.edit_row(&row, &kind, window, cx);

@@ -27,6 +27,13 @@ impl PropertyDescriptor {
         self.tags.iter().any(|tag| tag == "Hidden")
     }
 
+    /// Whether the dump tags the property `Deprecated`: an old spelling of
+    /// a property kept under a newer name (`className`, `Fire.size`), or one
+    /// superseded or inert (`Sound.Pitch`, `FormFactorPart.FormFactor`).
+    pub fn is_deprecated(&self) -> bool {
+        self.tags.iter().any(|tag| tag == "Deprecated")
+    }
+
     /// Whether the property should render with no edit affordance. The dump
     /// sets `ReadOnly` and `Serialization.CanSave: false` independently —
     /// many `ReadOnly` properties still report `CanSave: true` — so both
