@@ -2,6 +2,23 @@
 
 ## 2026-09-21
 
+- **The Explorer edits the place from its own rows.** Inserting used to
+  mean two keyboard shortcuts or a trip to the ribbon, and renaming meant
+  finding the `Name` field in Properties. Hovering a row now reveals a `+`
+  (`Ctrl+I` from the keyboard) that opens a searchable list of every class
+  the API dump marks browsable, inserting straight under that row; a class
+  that parent cannot take is greyed rather than missing, so you learn the
+  constraint from the list instead of from its absence. Right-clicking a
+  row opens Cut, Copy, Duplicate, Paste Into, Rename, Insert Object…,
+  Group as Model, Ungroup and Delete, each greyed by exactly the guard its
+  own handler returns early on. `F2` renames in the row. Cut is real now
+  rather than a greyed placeholder, in the menu, the Edit menu, the ribbon
+  and `Ctrl+X` — and, in the same spirit, deleting a *service* is refused
+  everywhere instead of quietly producing a place with no `Workspace`.
+  Real Studio's two insertion preferences ride along behind the picker's
+  own `⋯`, persisted: numbered names for new instances, and whether
+  selecting expands the tree to reveal what was selected. — @chteau
+
 - **`NumberSequence` and `ColorSequence` have a real editor, and are
   creatable as attributes.** Both types used to render as read-only text,
   which is also why neither could be added as an attribute: the Attributes
