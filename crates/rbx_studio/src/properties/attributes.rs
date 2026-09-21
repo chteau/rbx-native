@@ -60,6 +60,19 @@ pub(crate) fn attribute_of_row(row: &str) -> Option<&str> {
     row.strip_prefix(ROW_PREFIX)
 }
 
+/// Whether `name` is one of the two raw properties this section is the
+/// editor for: the packed attribute blob and the packed tag list.
+///
+/// Neither is in the reflection dump (`rbx_reflection`'s own tests assert
+/// `Tags` resolves to nothing), so `properties::Catalog::is_hidden` cannot
+/// tag them `Hidden` the way the dump does for `BasePart.Position` — without
+/// this they list as ordinary rows showing the encoded bytes, a second and
+/// far worse editor for the data the Attributes/Tags section below already
+/// edits properly. Real Studio lists neither.
+pub(crate) fn is_backing_store(name: &str) -> bool {
+    name == ATTRIBUTES_PROPERTY || name == TAGS_PROPERTY
+}
+
 /// The Roblox attribute types this editor can create: every type
 /// `Instance:SetAttribute` accepts (`studio/properties.md#instance-attributes`),
 /// none left out. Each one's value then edits through the Properties panel's
