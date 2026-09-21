@@ -9,7 +9,8 @@
 use gpui_kit::assets::IconName;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
-use rbx_viewer::pick::Ray;
+use rbx_dom::Ref;
+use rbx_viewer::pick::{self, Ray};
 use rbx_viewer::sun::{place, Body};
 
 use crate::settle;
@@ -30,12 +31,18 @@ impl Shell {
             return;
         };
         let meshes = self.viewport.read(cx).meshes().clone();
-        // ponytail: a face's normal is its part's box face (`settle::face_hit`),
-        // so a ball, a cylinder, a wedge's slope or a mesh aims as the box
-        // around it. Per-shape normals out of `rbx_viewer::pick` when Face or
-        // Glint on curved parts needs them.
-        let hit =
-            |ray, exclude| settle::part_under(&self.dom, &self.database, &meshes, ray, exclude);
+        // The nearest part's drawn surface, not the box around it: Face and
+        // Glint aim off a wedge's slope or a ball's curve as it looks.
+        let hit = |ray: Ray, exclude: Option<Ref>| {
+            pick::parts_along(&self.dom, &self.database, &meshes, ray)
+                .into_iter()
+                .filter(|&part| Some(part) != exclude)
+                .find_map(|part| {
+                    let (point, normal) =
+                        pick::surface_hit(&self.dom, &self.database, &meshes, part, ray)?;
+                    Some((part, settle::Surface { point, normal }))
+                })
+        };
         if first {
             self.sun.press(ray, hit);
         }

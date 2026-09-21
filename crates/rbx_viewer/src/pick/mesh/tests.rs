@@ -101,3 +101,12 @@ fn meshes_are_empty_by_default_and_shared_once_built() {
         &mesh
     ));
 }
+
+#[test]
+fn a_surface_hit_on_the_slanted_face_faces_back_up_the_ray() {
+    // The face x + y + z = -0.5, whatever way its triangle happens to wind.
+    let ray = toward_neg_z(-0.4, -0.4);
+    let (point, normal) = surface(&corner_tetrahedron(), Mat4::IDENTITY, ray).unwrap();
+    assert!((point - Vec3::new(-0.4, -0.4, 0.3)).length() < 1e-4);
+    assert!((normal - Vec3::ONE.normalize()).length() < 1e-4, "{normal}");
+}
