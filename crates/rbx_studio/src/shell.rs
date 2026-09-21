@@ -690,6 +690,17 @@ impl Shell {
     /// by a pose update landing mid-edit.
     fn sync_camera_pose(&mut self, pose: rbx_viewer::Pose, cx: &mut Context<Self>) {
         crate::camera::write_pose(&mut self.dom, pose);
+        // Not a `reflect_changes`, so the Properties cache is told here —
+        // only when a camera is among the selection, or a flight would
+        // rebuild a large selection's rows five times a second for nothing.
+        let camera_shown = self.selected_all().iter().any(|&reference| {
+            self.dom
+                .get(reference)
+                .is_some_and(|instance| instance.class() == "Camera")
+        });
+        if camera_shown {
+            self.properties.dom_changed();
+        }
         cx.notify();
     }
 

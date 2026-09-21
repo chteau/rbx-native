@@ -217,6 +217,11 @@ pub(crate) struct Properties {
     /// shown (see `sheet`). A `RefCell` because the panel only ever reads
     /// through `&self`, on the one UI thread.
     sheets: RefCell<HashMap<String, Rc<sheet::Sheet>>>,
+    /// The last multi-selection's rows, and that selection: comparing
+    /// every instance's every value costs milliseconds per thousand
+    /// selected, and the panel re-renders several times a second. Dropped
+    /// by [`Self::dom_changed`].
+    common: RefCell<Option<(Vec<Ref>, Vec<PropertyRow>)>>,
 }
 
 impl Properties {
@@ -224,7 +229,16 @@ impl Properties {
         Properties {
             db,
             sheets: RefCell::default(),
+            common: RefCell::default(),
         }
+    }
+
+    /// Something in the DOM changed: a multi-selection's cached rows may no
+    /// longer be what its instances hold. A lone instance's rows are never
+    /// cached — they cost a tenth of a millisecond, and its folder colour
+    /// lives outside the DOM.
+    pub(crate) fn dom_changed(&self) {
+        self.common.take();
     }
 
     /// The panel's header: `Part "Baseplate"` for one instance; for several,
