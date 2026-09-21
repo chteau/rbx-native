@@ -222,6 +222,20 @@
   this session's recent picks come first, and the search ranks a prefix
   over word starts over scattered letters, so `tl` finds `TextLabel`. A
   service's class stays put, and the Output panel says so. — @chteau
+- **The sun goes where you point.** A Sun tool on the Model page places the
+  sun — or, from its Moon tile, the moon — by pointing at the scene instead
+  of typing a time and a latitude. Four gestures: drag it across the Sky;
+  press a surface and it shines straight onto that Face; press an object
+  and drag to where its Shadow should fall; or press a surface and it moves
+  to where its Glint reaches the camera. Every step writes `TimeOfDay` and
+  `GeographicLatitude` and is patched rather than rebuilt, so the sky and
+  the shadows follow the cursor, the Properties panel follows too, and the
+  whole drag is one undo. The inverse of the sun model lives beside the
+  formula the renderer lights with, so the two cannot drift; a cone of the
+  sky no latitude inside ±90° reaches is held at its rim, and the readout
+  says so rather than writing a latitude past the pole. A line through the
+  anchor toward the light — and in Shadow a marker where the shadow lands —
+  is drawn through the same overlay the Align preview uses. — @chteau
 
 ## 2026-09-20
 

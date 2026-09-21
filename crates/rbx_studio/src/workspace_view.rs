@@ -22,6 +22,7 @@ mod quality;
 mod readout;
 mod scroll;
 mod stats;
+mod sun;
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -143,6 +144,12 @@ pub(crate) enum ViewportAction {
         axis: Vec3,
         first: bool,
     },
+    /// The Sun tool's gesture: the ray under the cursor at the press
+    /// (`first`) and at every drag step after it. `Shell` works out what it
+    /// points at and writes `Lighting` (see `shell::sun`), and answers with
+    /// [`WorkspaceView::show_sun`]. `first` is what starts a new gesture,
+    /// so a release needs no message of its own.
+    Sun { ray: Ray, first: bool },
     /// A transform-toolbar shortcut typed over the view.
     Tool(transform::Action),
     /// Cursor motion with nothing held: `Shell` resolves what is under the
@@ -696,7 +703,7 @@ impl WorkspaceView {
         }
 
         self.transform = transform;
-        self.drag = None;
+        self.drop_drag();
         self.pump.gizmo(transform.gizmo());
     }
 
@@ -1003,9 +1010,13 @@ impl Render for WorkspaceView {
             )
             // Only while a drag is actually moving something — see
             // `drag_readout`'s own doc for why a stale value never leaks
-            // into a gesture that hasn't stepped yet.
+            // into a gesture that hasn't stepped yet. Empty is a Sun step
+            // `Shell` has not answered yet.
             .when_some(
-                self.dragging().then(|| self.drag_readout.clone()).flatten(),
+                self.dragging()
+                    .then(|| self.drag_readout.clone())
+                    .flatten()
+                    .filter(|(_, text)| !text.is_empty()),
                 |this, (position, text)| {
                     this.child(
                         div()

@@ -235,6 +235,12 @@ pub(crate) fn tool_local() -> Rgba {
     rgb(0x8FE0D8)
 }
 
+/// The Sun tool's own, on whichever of its Sun and Moon tiles is active.
+/// Yellower than Rotate's orange, so the two never read as one tool.
+pub(crate) fn tool_sun() -> Rgba {
+    rgb(0xFFE88F)
+}
+
 /// The same pastel as the fill behind an active tool's icon: the frame's
 /// own wash weight, low enough that the icon stays the brightest thing in
 /// the button.
@@ -248,13 +254,14 @@ pub(crate) type Named = (&'static str, fn() -> Rgba);
 
 /// Every pastel, for the test that checks them all against [`tile`].
 #[cfg(test)]
-pub(crate) const TOOL_ACCENTS: [Named; 6] = [
+pub(crate) const TOOL_ACCENTS: [Named; 7] = [
     ("select", tool_select),
     ("move", tool_move),
     ("scale", tool_scale),
     ("rotate", tool_rotate),
     ("align", tool_align),
     ("local", tool_local),
+    ("sun", tool_sun),
 ];
 
 // ----------------------------------------------------------------- shapes
