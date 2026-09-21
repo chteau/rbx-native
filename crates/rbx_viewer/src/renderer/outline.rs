@@ -170,14 +170,20 @@ pub(super) fn box_of(placements: &HashMap<Ref, Placement>, entry: &Selected) -> 
     Some(Mat4::from_translation((min + max) * 0.5) * Mat4::from_scale(max - min))
 }
 
-/// Every instance's edges, in order — one box each, and nothing at all for a
-/// container with no drawable geometry under it.
+/// Every *container's* edges, in order — one box each, and nothing at all
+/// for one with no drawable geometry under it.
+///
+/// A part is left out: it has a shape of its own, and both cues trace that
+/// silhouette instead of boxing it (see `renderer::cue`). A container has
+/// no orientation or shape to trace, so the box around everything beneath
+/// it — what Studio calls a model's bounding box — is still the answer.
 pub(super) fn box_edges(
     placements: &HashMap<Ref, Placement>,
     selected: &[Selected],
 ) -> Vec<Vertex> {
     selected
         .iter()
+        .filter(|entry| !entry.is_part())
         .filter_map(|entry| box_of(placements, entry))
         .flat_map(edges)
         .collect()
@@ -230,12 +236,16 @@ mod tests {
     }
 
     #[test]
-    fn a_part_referent_draws_its_box() {
+    /// A part has a shape of its own, so it is cued by the silhouette
+    /// `renderer::cue` traces rather than by a box here. `box_of` still
+    /// answers with its box, which the gizmo and the scale handles read.
+    fn a_part_referent_is_left_to_its_own_silhouette() {
         let mut placements = HashMap::new();
         placements.insert(Ref::new(1), placement(Mat4::IDENTITY));
 
-        let vertices = box_edges(&placements, &[Selected::part(Ref::new(1))]);
-        assert_eq!(vertices.len(), 72);
+        let selected = [Selected::part(Ref::new(1))];
+        assert!(box_edges(&placements, &selected).is_empty());
+        assert_eq!(box_of(&placements, &selected[0]), Some(Mat4::IDENTITY));
     }
 
     #[test]

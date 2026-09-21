@@ -43,9 +43,12 @@ pub(super) fn emitter(texture: rbx_assets::AssetRef) -> Emitter {
         rotation_degrees: (0.0, 0.0),
         rot_speed_degrees: (0.0, 0.0),
         z_offset: 0.0,
+        gain: 1.0,
+        time_scale: 1.0,
         cap: 0,
         seed: 1,
         referent: Ref::new(1),
+        slot: 0,
         volume: Mat4::IDENTITY,
     }
 }

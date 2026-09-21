@@ -321,3 +321,104 @@ fn selection_bounds_agree_with_the_box_drawn_around_the_selection() {
         );
     }
 }
+
+/// The live preview stands where the alignment would put each object, and
+/// nowhere else: one box per object that moves, at the placement `plan`
+/// would write.
+#[test]
+fn the_preview_stands_where_the_plan_would_put_each_object() {
+    let entries = vec![
+        vec![part_at(1, Vec3::new(-6.0, 0.0, 0.0), Vec3::splat(2.0))],
+        vec![part_at(2, Vec3::new(6.0, 0.0, 0.0), Vec3::splat(2.0))],
+    ];
+    let options = options(
+        Axis::X,
+        Mode::Center,
+        Space::World,
+        RelativeTo::SelectionBounds,
+    );
+
+    let moves = plan(&entries, 1, options);
+    let boxes = preview(&entries, 1, options);
+    assert_eq!(boxes.len(), entries.len());
+    for (index, ghost) in boxes.iter().enumerate() {
+        let referent = entries[index][0].referent;
+        let (_, position) = moves
+            .iter()
+            .find(|(moved, _)| *moved == referent)
+            .expect("every previewed object is one the plan moves");
+        assert!((ghost.w_axis.truncate() - *position).length() < 1e-5);
+        // The part's own box, not a unit one: its size rides along.
+        assert!((ghost.x_axis.length() - 2.0).abs() < 1e-5);
+    }
+}
+
+/// The active object "will not move during the operation", so nothing is
+/// previewed for it either.
+#[test]
+fn the_preview_leaves_the_active_object_alone() {
+    let entries = vec![
+        vec![part_at(1, Vec3::new(-6.0, 0.0, 0.0), Vec3::splat(2.0))],
+        vec![part_at(2, Vec3::new(6.0, 0.0, 0.0), Vec3::splat(2.0))],
+    ];
+    let boxes = preview(
+        &entries,
+        1,
+        options(
+            Axis::X,
+            Mode::Center,
+            Space::World,
+            RelativeTo::ActiveObject,
+        ),
+    );
+    assert_eq!(boxes.len(), 1);
+    // The one that moves is the first, landing on the second's centre.
+    assert!((boxes[0].w_axis.x - 6.0).abs() < 1e-5);
+}
+
+/// A `Model` has no orientation of its own, so its ghost is the box around
+/// every part beneath it — moved as one, which is what "keeps the model
+/// intact" means.
+#[test]
+fn a_multi_part_entry_previews_one_box_around_all_of_it() {
+    let entries = vec![
+        vec![
+            part_at(1, Vec3::new(-8.0, 0.0, 0.0), Vec3::splat(2.0)),
+            part_at(2, Vec3::new(-4.0, 0.0, 0.0), Vec3::splat(2.0)),
+        ],
+        vec![part_at(3, Vec3::new(10.0, 0.0, 0.0), Vec3::splat(2.0))],
+    ];
+    let boxes = preview(
+        &entries,
+        1,
+        options(
+            Axis::X,
+            Mode::Center,
+            Space::World,
+            RelativeTo::ActiveObject,
+        ),
+    );
+    assert_eq!(boxes.len(), 1, "only the model moves");
+    // Two 2-stud parts 4 studs apart: 6 studs across, centred on the
+    // active object.
+    assert!((boxes[0].x_axis.length() - 6.0).abs() < 1e-4);
+    assert!((boxes[0].w_axis.x - 10.0).abs() < 1e-4);
+}
+
+/// Fewer than two objects is a no-op alignment, so there is nothing to
+/// preview either.
+#[test]
+fn one_object_previews_nothing_to_move() {
+    let entries = vec![vec![part_at(1, Vec3::ZERO, Vec3::splat(2.0))]];
+    let boxes = preview(
+        &entries,
+        0,
+        options(
+            Axis::X,
+            Mode::Min,
+            Space::World,
+            RelativeTo::SelectionBounds,
+        ),
+    );
+    assert!(boxes.is_empty());
+}

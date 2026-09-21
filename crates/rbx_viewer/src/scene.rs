@@ -1,5 +1,6 @@
 //! Turns a parsed DOM into the shaped instances the renderer draws.
 
+mod adornment;
 mod beam;
 mod bounds;
 mod effects;
@@ -10,6 +11,7 @@ mod identity;
 mod material;
 mod particles;
 mod patch;
+mod props;
 mod resync;
 mod shape;
 mod trail;
@@ -25,6 +27,9 @@ use rbx_reflection::ReflectionDatabase;
 
 use crate::fonts::Face;
 
+pub(crate) use adornment::{
+    Adornment, Mesh as AdornMesh, Picture as AdornPicture, Piece as AdornPiece,
+};
 pub(crate) use beam::{Beam, TextureMode};
 #[cfg(test)]
 pub(crate) use bounds::tests_support;
@@ -216,6 +221,8 @@ pub(crate) struct Scene {
     /// Every enabled `Highlight` that covers something drawn; see
     /// [`Scene::highlights`].
     highlights: Vec<Highlight>,
+    /// Every 3D adornment this scene draws; see [`Scene::adornments`].
+    adornments: Vec<Adornment>,
     /// Every enabled `ScreenGui`; see [`Scene::gui_screens`].
     gui: Vec<GuiScreen>,
     /// Every placeable `BillboardGui`/`SurfaceGui`; see [`Scene::gui_spaces`].
@@ -270,6 +277,7 @@ impl Scene {
             beams: Vec::new(),
             trails: Vec::new(),
             highlights: Vec::new(),
+            adornments: Vec::new(),
             gui,
             gui_spaces: Vec::new(),
             union_plan,
@@ -291,6 +299,9 @@ impl Scene {
         // Resolves referents rather than geometry, so it needs no placement
         // either — the renderer looks each part up for itself.
         scene.highlights = highlight::plan(dom, database);
+        // Placed against whatever their adornee is drawn as, so this needs
+        // the same placements the emitters did.
+        scene.adornments = adornment::plan(dom, database, &placements);
         Ok(scene)
     }
 
@@ -335,6 +346,57 @@ impl Scene {
     /// into a silhouette; a `Scene` has no viewport to trace one against.
     pub(crate) fn highlights(&self) -> &[Highlight] {
         &self.highlights
+    }
+
+    /// Whether anything here is drawn as `Glass` — the one material that
+    /// reads the scene behind itself, and so the one that makes a frame pay
+    /// for the copy it reads (see `renderer::post::Targets`).
+    pub(crate) fn has_glass(&self) -> bool {
+        let glass = |slot: &Slot| slot.kind == Kind::Glass;
+        self.parts.iter().any(|part| glass(&part.material))
+            || self
+                .resolved_file_meshes
+                .instances
+                .iter()
+                .any(|instance| glass(&instance.material))
+    }
+
+    /// Every 3D adornment this scene draws — the `Handles`/`*Adornment`/
+    /// `Selection*` family — already resolved to world-space primitives.
+    /// The renderer turns those into triangles; a `Scene` has no GPU handle
+    /// and, for the one camera-facing piece among them, no eye either.
+    pub(crate) fn adornments(&self) -> &[Adornment] {
+        &self.adornments
+    }
+
+    /// Every image the adornments sample — an `ImageHandleAdornment`'s own
+    /// — without repeats, for the loader to fetch alongside the other
+    /// effect textures.
+    pub(crate) fn adornment_images(&self) -> Vec<AssetRef> {
+        let mut references = Vec::new();
+        for adornment in &self.adornments {
+            for piece in &adornment.pieces {
+                if let AdornPiece::Picture(picture) = piece {
+                    if picture.texture != AssetRef::Empty && !references.contains(&picture.texture)
+                    {
+                        references.push(picture.texture.clone());
+                    }
+                }
+            }
+        }
+        references
+    }
+
+    /// Whether any 3D adornment was placed against the part at `referent`,
+    /// so an edit that moves it has to re-plan them. False in a place with
+    /// no adornments at all, which is what keeps a drag there free.
+    ///
+    /// Distinct from [`Scene::adorns`], which answers the same question for
+    /// the `SurfaceGui`/`BillboardGui` canvases.
+    pub(crate) fn adornments_cover(&self, referent: Ref) -> bool {
+        self.adornments
+            .iter()
+            .any(|adornment| adornment.covers.contains(&referent))
     }
 
     /// Every enabled `ScreenGui` this scene found, as resolution-independent

@@ -7,20 +7,26 @@
 use rbx_dom::WeakDom;
 use rbx_reflection::ReflectionDatabase;
 
-use super::{beam, highlight, particles, trail, Scene};
+use super::{adornment, beam, highlight, particles, trail, Scene};
 
-/// Which of the four effect lists an edited instance's class lives in.
+/// Which of the effect lists an edited instance's class lives in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EffectKind {
     Particles,
     Beams,
     Trails,
     Highlights,
+    /// The `Handles`/`*Adornment`/`Selection*` family — see
+    /// `scene::adornment`.
+    Adornments,
 }
 
 impl EffectKind {
     /// `None` for anything that is not one of the four — the caller's cue
-    /// that this fast path does not apply. An `Attachment` is deliberately
+    /// that this fast path does not apply. The preconfigured `Fire`,
+    /// `Smoke` and `Sparkles` classes are emitters like any other here: they
+    /// are planned into the very same list (see `scene::particles::legacy`),
+    /// so an edit to one re-plans it the same way. An `Attachment` is deliberately
     /// not here even though moving one moves a beam's or trail's endpoint:
     /// an attachment can be the endpoint of any number of effects of either
     /// kind at once, and a full reload is the only path that re-reads them all.
@@ -30,6 +36,10 @@ impl EffectKind {
     pub(crate) fn of(database: &ReflectionDatabase, class: &str) -> Option<Self> {
         [
             ("ParticleEmitter", Self::Particles),
+            ("Fire", Self::Particles),
+            ("Smoke", Self::Particles),
+            ("Sparkles", Self::Particles),
+            ("GuiBase3d", Self::Adornments),
             ("Beam", Self::Beams),
             ("Trail", Self::Trails),
             ("Highlight", Self::Highlights),
@@ -68,6 +78,10 @@ impl Scene {
             EffectKind::Beams => self.beams = beam::plan(dom, database),
             EffectKind::Trails => self.trails = trail::plan(dom, database),
             EffectKind::Highlights => self.highlights = highlight::plan(dom, database),
+            EffectKind::Adornments => {
+                let placements = self.placements();
+                self.adornments = adornment::plan(dom, database, &placements);
+            }
         }
     }
 }
@@ -177,7 +191,7 @@ mod tests {
     }
 
     #[test]
-    fn effect_kind_covers_exactly_the_three_effect_classes() {
+    fn effect_kind_covers_exactly_the_effect_classes() {
         let database = ReflectionDatabase::embedded();
         assert_eq!(
             EffectKind::of(&database, "ParticleEmitter"),
@@ -185,7 +199,38 @@ mod tests {
         );
         assert_eq!(EffectKind::of(&database, "Beam"), Some(EffectKind::Beams));
         assert_eq!(EffectKind::of(&database, "Trail"), Some(EffectKind::Trails));
-        for other in ["Part", "Attachment", "Fire", "Folder"] {
+        // The preconfigured emitters re-plan as particles, since that is the
+        // list they are planned into.
+        for preconfigured in ["Fire", "Smoke", "Sparkles"] {
+            assert_eq!(
+                EffectKind::of(&database, preconfigured),
+                Some(EffectKind::Particles),
+                "{preconfigured}"
+            );
+        }
+        // Every adornment descends from `GuiBase3d`, and an edit to one
+        // re-plans that list rather than the GUI trees it would otherwise
+        // be taken for.
+        for adornment in [
+            "SelectionBox",
+            "BoxHandleAdornment",
+            "Handles",
+            "ArcHandles",
+        ] {
+            assert_eq!(
+                EffectKind::of(&database, adornment),
+                Some(EffectKind::Adornments),
+                "{adornment}"
+            );
+        }
+        for other in [
+            "Part",
+            "Attachment",
+            "Explosion",
+            "Folder",
+            "ScreenGui",
+            "Frame",
+        ] {
             assert_eq!(EffectKind::of(&database, other), None, "{other}");
         }
     }

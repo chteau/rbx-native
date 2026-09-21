@@ -343,3 +343,32 @@ fn absorbing_the_same_union_twice_merges_it_once() {
     assert_eq!(union_referents(&scene), vec![a]);
     assert_eq!(scene.parts().len(), parts_before);
 }
+
+/// Only a place that actually holds glass pays for the copy a refracting
+/// surface reads (see `renderer::post::Targets::want_refraction`), so the
+/// question has to be answered from the scene rather than assumed.
+#[test]
+fn a_place_knows_whether_anything_in_it_is_glass() {
+    let database = ReflectionDatabase::embedded();
+    assert!(!Scene::from_dom(&test_place(), &database)
+        .unwrap()
+        .has_glass());
+
+    let mut dom = test_place();
+    let part = dom
+        .root_refs()
+        .iter()
+        .flat_map(|&root| descendants_of(&dom, root))
+        .find(|&referent| {
+            dom.get(referent)
+                .is_some_and(|instance| instance.class() == "Part")
+        })
+        .expect("the fixture has a part");
+    // `Enum.Material.Glass`, from the API dump.
+    dom.get_mut(part)
+        .unwrap()
+        .properties_mut()
+        .insert("Material".to_string(), Variant::Enum(1568));
+
+    assert!(Scene::from_dom(&dom, &database).unwrap().has_glass());
+}

@@ -96,6 +96,9 @@ impl Renderer {
             shadow_sampler: self.shadows.sampler(),
             local_shadow_map: self.shadows.local_view(),
             light_shadows: &self.light_shadows_buffer,
+            point_shadow_map: self.shadows.point_view(),
+            point_faces: self.shadows.point_faces(),
+            refraction: self.post.refraction(),
         };
         self.sky = match (self.sky.take(), decor.sky.as_deref()) {
             (Some(sky), Some(panels)) if sky.holds(panels) => Some(sky),
@@ -145,7 +148,20 @@ impl Renderer {
         // filtered `placements` drops — the same map `Renderer::new` seeds it
         // with. Without this a full rebuild (an asset streaming in, a beam or
         // particle resolving) stripped every mesh part's outline and gizmo.
+        self.refracting = scene.has_glass();
         self.selection.rebuild(device, scene.all_placements());
+        // The same instances, but new `Part` records and new mesh uploads,
+        // so the cue masks are rebuilt around them rather than kept.
+        self.cues.rebuild(
+            device,
+            queue,
+            &self.frame_layout,
+            highlight::Source {
+                highlights: &[],
+                parts: scene.parts(),
+                resolved: scene.resolved_file_meshes(),
+            },
+        );
         self.shaped = Shaped::new(device, scene.parts());
         self.translucent = Translucent::new(device, scene.parts());
         self.filemesh
@@ -158,6 +174,8 @@ impl Renderer {
             .rebuild(device, queue, scene.trails(), images, &quality);
         self.particles
             .rebuild(device, queue, scene.particle_emitters(), images, &quality);
+        self.adornments
+            .replace(device, queue, self.target, scene.adornments(), images);
         // After `shaped`/`filemesh` above only for readability — the mask's
         // own batches are built from the scene, not from theirs.
         self.highlights.replace(

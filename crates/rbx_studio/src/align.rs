@@ -28,7 +28,7 @@
 //! the only reading that makes "Local" comparable across objects that don't
 //! share an orientation at all.
 
-use glam::{Mat3, Vec3};
+use glam::{Mat3, Mat4, Vec3};
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 use rbx_viewer::pick;
@@ -259,6 +259,85 @@ pub(crate) fn plan(
     if entries.len() < 2 {
         return Vec::new();
     }
+    let deltas = deltas(entries, active_index, options);
+
+    // The active object itself is left out of the result entirely, not just
+    // given a zero delta: `studio/align-tool.md` — "it will not move during
+    // the operation" — and a caller writing every returned position back to
+    // the DOM should not have to filter out a no-op write to something that
+    // was never meant to move at all.
+    moving(entries, active_index, options)
+        .flat_map(|(index, entry)| {
+            let delta = deltas[index];
+            entry
+                .iter()
+                .map(move |target| (target.referent, target.position() + delta))
+        })
+        .collect()
+}
+
+/// Where each moving object's own box would land — one per entry the
+/// alignment moves, for the live preview `studio/align-tool.md` describes
+/// as "dynamically previewing the point of alignment before confirming".
+///
+/// One box per top-level object, not per part: an entry with a single part
+/// keeps that part's own oriented box, and a `Model` gets the world-axis
+/// -aligned box around everything beneath it — the same two answers the
+/// selection outline already gives (`renderer::outline::box_of`), moved by
+/// the delta the alignment would apply.
+pub(crate) fn preview(entries: &[Vec<Target>], active_index: usize, options: Options) -> Vec<Mat4> {
+    // Same no-op as `plan`: one object is already where it would be put,
+    // so there is nothing to show it landing on.
+    if entries.len() < 2 {
+        return Vec::new();
+    }
+    let deltas = deltas(entries, active_index, options);
+    moving(entries, active_index, options)
+        .filter_map(|(index, entry)| moved_box(entry, deltas[index]))
+        .collect()
+}
+
+/// The entries an alignment actually moves, with their index — everything
+/// selected except the active object, which the docs say "will not move
+/// during the operation".
+fn moving(
+    entries: &[Vec<Target>],
+    active_index: usize,
+    options: Options,
+) -> impl Iterator<Item = (usize, &Vec<Target>)> {
+    entries.iter().enumerate().filter(move |&(index, _)| {
+        !(matches!(options.relative_to, RelativeTo::ActiveObject) && index == active_index)
+    })
+}
+
+/// One entry's box after `delta`, or `None` for an entry with nothing
+/// drawable under it.
+fn moved_box(entry: &[Target], delta: Vec3) -> Option<Mat4> {
+    let (first, rest) = entry.split_first()?;
+    if rest.is_empty() {
+        let mut model = first.model;
+        model.w_axis = (first.position() + delta).extend(1.0);
+        return Some(model);
+    }
+    // Several parts: the box round all of them, square to the world, which
+    // has no single orientation of its own to keep.
+    let (mut min, mut max) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
+    for target in entry {
+        let axes = target.rotation();
+        let half = 0.5 * (axes.x_axis.abs() + axes.y_axis.abs() + axes.z_axis.abs());
+        let centre = target.position() + delta;
+        min = min.min(centre - half);
+        max = max.max(centre + half);
+    }
+    Some(Mat4::from_translation((min + max) * 0.5) * Mat4::from_scale(max - min))
+}
+
+/// How far each entry moves. Index-for-index with `entries`; the active
+/// object's own is always zero.
+fn deltas(entries: &[Vec<Target>], active_index: usize, options: Options) -> Vec<Vec3> {
+    if entries.len() < 2 {
+        return vec![Vec3::ZERO; entries.len()];
+    }
 
     let frame = local_frame(entries, active_index, options.relative_to);
     let mut deltas = vec![Vec3::ZERO; entries.len()];
@@ -301,25 +380,7 @@ pub(crate) fn plan(
             deltas[index] += direction * (reference - value);
         }
     }
-
-    // The active object itself is left out of the result entirely, not just
-    // given a zero delta: `studio/align-tool.md` — "it will not move during
-    // the operation" — and a caller writing every returned position back to
-    // the DOM should not have to filter out a no-op write to something that
-    // was never meant to move at all.
-    entries
-        .iter()
-        .enumerate()
-        .filter(|&(index, _)| {
-            !(matches!(options.relative_to, RelativeTo::ActiveObject) && index == active_index)
-        })
-        .flat_map(|(index, entry)| {
-            let delta = deltas[index];
-            entry
-                .iter()
-                .map(move |target| (target.referent, target.position() + delta))
-        })
-        .collect()
+    deltas
 }
 
 #[cfg(test)]

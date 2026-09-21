@@ -73,6 +73,9 @@ impl Renderer {
         }
         self.highlights
             .set_target(device, target, &self.frame_layout);
+        self.cues.set_target(device, target, &self.frame_layout);
+        self.adornments.set_target(device, target);
+        self.preview = super::preview::Preview::new(device, target, &self.frame_layout);
         self.particles.set_target(device, target);
         self.beams.set_target(device, target);
         self.trails.set_target(device, target);
@@ -108,6 +111,9 @@ impl Renderer {
             shadow_sampler: self.shadows.sampler(),
             local_shadow_map: self.shadows.local_view(),
             light_shadows: &self.light_shadows_buffer,
+            point_shadow_map: self.shadows.point_view(),
+            point_faces: self.shadows.point_faces(),
+            refraction: self.post.refraction(),
         };
 
         self.frame.rebind(device, &self.frame_layout, shared);

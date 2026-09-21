@@ -83,6 +83,15 @@ impl Viewports {
                 dimension: Some(wgpu::TextureViewDimension::D2Array),
                 ..Default::default()
             });
+        let refraction_view = stand_ins
+            .refraction
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let point_shadow_view = stand_ins
+            .point_shadow
+            .create_view(&wgpu::TextureViewDescriptor {
+                dimension: Some(wgpu::TextureViewDimension::D2Array),
+                ..Default::default()
+            });
         let frame = Frame::new(
             device,
             &layout,
@@ -94,6 +103,11 @@ impl Viewports {
                 shadow_sampler: &stand_ins.shadow_sampler,
                 local_shadow_map: &local_shadow_view,
                 light_shadows: &stand_ins.light_shadows,
+                point_shadow_map: &point_shadow_view,
+                point_faces: &stand_ins.point_faces,
+                // A `ViewportFrame`'s parts are drawn with no refraction
+                // either: the same single unread texel stands in.
+                refraction: &refraction_view,
             },
         );
         let (opaque, blended) = pipeline::shape_pipelines(device, TARGET, &layout, material_layout);

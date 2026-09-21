@@ -111,7 +111,7 @@ fn packing_fills_only_the_selected_indices_with_their_own_layer() {
     let selected = select(&lights, Vec3::ZERO, 8);
     assert_eq!(selected.len(), 2);
 
-    let packed = pack(lights.len(), &selected);
+    let packed = pack(lights.len(), &selected, &[]);
 
     assert_eq!(packed.len(), 3);
     // Nearest first: index 1 (distance 1) is layer 0, index 0 is layer 1.
@@ -124,10 +124,27 @@ fn packing_fills_only_the_selected_indices_with_their_own_layer() {
     );
 }
 
+/// A point light takes a cube of the other array, and says so in the second
+/// slot rather than the first — the two kinds never share a record.
+#[test]
+fn packing_gives_a_point_light_a_cube_and_no_layer() {
+    let lights = [spot(Vec3::new(5.0, 0.0, 0.0), true), point(Vec3::ZERO)];
+    let cones = select(&lights, Vec3::ZERO, 8);
+    let cubes = super::super::point::select(&lights, Vec3::ZERO, 8);
+    assert_eq!(cubes.len(), 1);
+
+    let packed = pack(lights.len(), &cones, &cubes);
+    assert_eq!(packed[0].layer[0], 0.0, "the cone keeps its own layer");
+    assert_eq!(packed[0].layer[1], -1.0, "and no cube");
+    assert_eq!(packed[1].layer[0], -1.0, "the point light has no layer");
+    assert_eq!(packed[1].layer[1], 0.0, "and the first cube");
+}
+
 #[test]
 fn packing_never_produces_an_empty_buffer() {
-    assert_eq!(pack(0, &[]).len(), 1);
-    assert_eq!(pack(0, &[])[0].layer[0], -1.0);
+    assert_eq!(pack(0, &[], &[]).len(), 1);
+    assert_eq!(pack(0, &[], &[])[0].layer[0], -1.0);
+    assert_eq!(pack(0, &[], &[])[0].layer[1], -1.0);
 }
 
 // What `LightShadow` in lights.wgsl declares: a `mat4x4` and one `vec4` behind

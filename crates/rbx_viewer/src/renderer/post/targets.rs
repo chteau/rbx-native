@@ -4,7 +4,7 @@
 //! the result.
 
 use super::super::pipeline::DEPTH_FORMAT;
-use super::pipelines::attachment;
+use super::pipelines::{attachment, attachment_texture};
 use super::{FIRST_LEVEL_DIVISOR, HDR_FORMAT};
 
 /// What every bind group in here is built from; all three live on [`super::Post`]
@@ -37,6 +37,15 @@ pub(in crate::renderer) struct Targets {
     /// Single-sampled, and the only colour target the post chain ever samples: it
     /// is either what the scene pass draws into or what it resolves into.
     scene: wgpu::TextureView,
+    /// The texture [`Targets::scene`] views, kept so the frame can be copied
+    /// out of it — see [`Targets::capture_refraction`].
+    scene_texture: wgpu::Texture,
+    /// A copy of the frame as it stood after the opaque pass, which a
+    /// refracting surface reads the scene behind itself out of. Allocated
+    /// only once a place actually holds one (see
+    /// [`Targets::want_refraction`]) — it is another full-size HDR target,
+    /// and most places have no glass in them at all.
+    refraction: Option<(wgpu::Texture, wgpu::TextureView)>,
     /// Present only above one sample: the target the scene pass actually draws
     /// into, resolved into `scene` by the pass's own resolve attachment rather
     /// than by a pass of ours.
@@ -68,7 +77,8 @@ impl Targets {
         blur_levels: u32,
         samples: u32,
     ) -> Self {
-        let scene = attachment(device, "rbxview scene", size, HDR_FORMAT, 1);
+        let scene_texture = attachment_texture(device, "rbxview scene", size, HDR_FORMAT, 1);
+        let scene = scene_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let depth = attachment(device, "rbxview depth", size, DEPTH_FORMAT, samples);
         let blur_chain = build_chain(device, sources, size, blur_levels, "rbxview blur");
 
@@ -92,7 +102,53 @@ impl Targets {
             chain: build_chain(device, sources, size, levels, "rbxview bloom"),
             blur_chain,
             scene,
+            scene_texture,
+            refraction: None,
         }
+    }
+
+    /// Allocates (or drops) the refraction copy, answering whether that
+    /// changed anything — the caller's cue to rebind every group holding the
+    /// old view (see `renderer::switch::Renderer::rebind_frames`).
+    pub(in crate::renderer) fn want_refraction(
+        &mut self,
+        device: &wgpu::Device,
+        wanted: bool,
+    ) -> bool {
+        if wanted == self.refraction.is_some() {
+            return false;
+        }
+        self.refraction = wanted.then(|| {
+            let texture =
+                attachment_texture(device, "rbxview refraction", self.size, HDR_FORMAT, 1);
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            (texture, view)
+        });
+        true
+    }
+
+    /// What a refracting surface samples, or `None` where this frame has no
+    /// copy to read.
+    pub(in crate::renderer) fn refraction(&self) -> Option<&wgpu::TextureView> {
+        self.refraction.as_ref().map(|(_, view)| view)
+    }
+
+    /// Copies the frame as it stands into that source. Between passes, never
+    /// inside one: the scene texture is a colour attachment of the pass on
+    /// either side of this.
+    pub(in crate::renderer) fn capture_refraction(&self, encoder: &mut wgpu::CommandEncoder) {
+        let Some((texture, _)) = &self.refraction else {
+            return;
+        };
+        encoder.copy_texture_to_texture(
+            self.scene_texture.as_image_copy(),
+            texture.as_image_copy(),
+            wgpu::Extent3d {
+                width: self.size.0,
+                height: self.size.1,
+                depth_or_array_layers: 1,
+            },
+        );
     }
 
     /// Whether these targets are still the ones the frame wants.

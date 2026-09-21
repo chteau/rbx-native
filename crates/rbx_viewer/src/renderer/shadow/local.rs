@@ -5,8 +5,8 @@
 //! cap (see `crate::quality::QualityProfile::local_shadow_lights_max`) far more
 //! often than not; [`select`] is what picks which ones get one. A `PointLight`
 //! reads as a cone with no axis at all (see `crate::lighting::local`), which is
-//! the tell this filters on — casting one needs six faces, a TODO this module
-//! does not pick up.
+//! the tell this filters on: it takes six faces rather than one, and
+//! `shadow::point` is what casts it.
 
 use bytemuck::{Pod, Zeroable};
 use glam::camera::rh::proj::directx::perspective;
@@ -19,7 +19,10 @@ use crate::lighting::LocalLight;
 /// Roblox has no near plane of its own for a light; this is close enough that
 /// nothing plausible sits inside it, and it costs the depth range almost
 /// nothing next to a `Range` of several studs or more.
-const NEAR_STUDS: f32 = 0.1;
+///
+/// Shared with `shadow::point`, so a cone light's map and a point light's
+/// six faces are read back through one comparison sampler and one bias.
+pub(super) const NEAR_STUDS: f32 = 0.1;
 
 /// Below this the cone axis is vertical and `Vec3::Y` stops being a usable up
 /// vector for the light's own view — the same threshold `shadow::fit` uses.
@@ -101,28 +104,46 @@ fn view_projection(light: &LocalLight) -> Mat4 {
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub(in crate::renderer) struct LightShadowRaw {
     view_projection: [[f32; 4]; 4],
-    /// x: the array layer this light's map lives in. Negative for every light
-    /// [`select`] did not choose, which `local_light_visibility` reads as "not
-    /// shadowed" without touching the texture array at all.
+    /// x: the array layer this cone light's map lives in. y: the cube of the
+    /// point-light array this light's six faces live in (see
+    /// `renderer::shadow::point`). Each is negative for a light that has
+    /// none — not selected, `Shadows = false`, or simply the other kind —
+    /// which `local_light_visibility` reads as "not shadowed" without
+    /// touching either texture array at all.
     layer: [f32; 4],
 }
 
 const UNSHADOWED: LightShadowRaw = LightShadowRaw {
     view_projection: [[0.0; 4]; 4],
-    layer: [-1.0, 0.0, 0.0, 0.0],
+    layer: [-1.0, -1.0, 0.0, 0.0],
 };
 
 /// One record per local light the place has uploaded (`lights.len()`, which the
 /// shader's `local_lights` and `light_shadows` arrays must always agree on),
-/// filled in at `selected`'s own index for the ones that got a layer, and
+/// filled in at each selected light's own index — a cone light with the layer
+/// and matrix it drew into, a point light with the cube it holds — and
 /// [`UNSHADOWED`] everywhere else.
-pub(in crate::renderer) fn pack(lights: usize, selected: &[Selected]) -> Vec<LightShadowRaw> {
+pub(in crate::renderer) fn pack(
+    lights: usize,
+    selected: &[Selected],
+    points: &[super::point::Selected],
+) -> Vec<LightShadowRaw> {
     let mut packed = vec![UNSHADOWED; lights.max(1)];
     for (layer, light) in selected.iter().enumerate() {
         if let Some(entry) = packed.get_mut(light.index) {
             *entry = LightShadowRaw {
                 view_projection: light.view_projection.to_cols_array_2d(),
-                layer: [layer as f32, 0.0, 0.0, 0.0],
+                layer: [layer as f32, -1.0, 0.0, 0.0],
+            };
+        }
+    }
+    for (cube, light) in points.iter().enumerate() {
+        if let Some(entry) = packed.get_mut(light.index) {
+            // No matrix of its own: the face the fragment lands on decides
+            // which of the six the shader projects through.
+            *entry = LightShadowRaw {
+                view_projection: [[0.0; 4]; 4],
+                layer: [-1.0, cube as f32, 0.0, 0.0],
             };
         }
     }

@@ -18,6 +18,7 @@
 pub(in crate::renderer) mod casters;
 mod fit;
 pub(super) mod local;
+pub(super) mod point;
 
 use super::cull;
 use super::geometry::Meshes;
@@ -36,6 +37,14 @@ const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 /// cost (see `QualityProfile::local_shadow_lights_max`), and a lantern close up
 /// is a small enough thing on screen that one map size covers every level.
 const LOCAL_SIZE: u32 = 1024;
+
+/// How many `PointLight`s may cast at once, from the same level knob the
+/// cone lights' cap comes from. A quarter of it, rounded down: six faces
+/// each, and a level that allows no cone shadows at all allows no point
+/// ones either.
+fn point_cap(quality: &QualityProfile) -> usize {
+    quality.local_shadow_lights_max / 4
+}
 
 /// Exactly one texel's worth of slope, which is how much depth a caster tilted
 /// away from the lamp can gain across the texel it is quantized into; the
@@ -92,6 +101,23 @@ pub(super) struct Shadows {
     /// written a second time and still have both passes see their own value.
     local_buffers: Vec<wgpu::Buffer>,
     local_bind_groups: Vec<wgpu::BindGroup>,
+    /// The `PointLight` cubes: the same three arrays as the cone lights
+    /// above, six layers to a light — see `renderer::shadow::point`.
+    point_view: wgpu::TextureView,
+    point_layers: Vec<wgpu::TextureView>,
+    point_buffers: Vec<wgpu::Buffer>,
+    point_bind_groups: Vec<wgpu::BindGroup>,
+    /// Every selected cube's six matrices, as the shader reads them back —
+    /// one entry per layer of [`Shadows::point_view`], rewritten whenever
+    /// the selection changes.
+    point_faces: wgpu::Buffer,
+    /// Which lights the cubes currently hold, so a frame that would redraw
+    /// the very same six faces from the very same place does not.
+    ///
+    /// The cone maps redraw every frame because one pass is cheap; six per
+    /// light is not, and nothing in this viewer moves a light or a caster
+    /// without saying so — a caster edit sets this back to `None`.
+    point_state: Option<Vec<usize>>,
 }
 
 impl Shadows {
@@ -115,6 +141,10 @@ impl Shadows {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let cubes = point_cap(quality);
+        let (point_view, point_layers) = point::map(device, cubes);
+        let point_buffers = local_buffers(device, cubes * point::FACES);
+        let point_bind_groups = local_bind_groups(device, &layout, &point_buffers);
         let (local_view, local_layers) = local_map(device, quality.local_shadow_lights_max);
         let local_buffers = local_buffers(device, quality.local_shadow_lights_max);
         let local_bind_groups = local_bind_groups(device, &layout, &local_buffers);
@@ -153,6 +183,12 @@ impl Shadows {
             local_layers,
             local_buffers,
             local_bind_groups,
+            point_view,
+            point_layers,
+            point_faces: point::faces_buffer(device, cubes),
+            point_buffers,
+            point_bind_groups,
+            point_state: None,
             light_layout: layout,
         }
     }
@@ -171,6 +207,15 @@ impl Shadows {
         self.local_layers = layers;
         self.local_buffers = local_buffers(device, quality.local_shadow_lights_max);
         self.local_bind_groups = local_bind_groups(device, &self.light_layout, &self.local_buffers);
+
+        let cubes = point_cap(quality);
+        let (point_view, point_layers) = point::map(device, cubes);
+        self.point_view = point_view;
+        self.point_layers = point_layers;
+        self.point_buffers = local_buffers(device, cubes * point::FACES);
+        self.point_bind_groups = local_bind_groups(device, &self.light_layout, &self.point_buffers);
+        self.point_faces = point::faces_buffer(device, cubes);
+        self.point_state = None;
     }
 
     /// Replaces every caster with `scene`'s, keeping the maps, the pipelines
@@ -178,6 +223,7 @@ impl Shadows {
     /// position-only copy of every file mesh the new scene still casts with
     /// (see [`casters::mesh_batches`]).
     pub(super) fn rebuild(&mut self, device: &wgpu::Device, scene: &Scene) {
+        self.point_state = None;
         self.shape_batches = casters::shape_batches(device, scene);
         let mut spare: Vec<(rbx_assets::AssetRef, casters::MeshGeometry)> =
             std::mem::replace(&mut self.mesh_batches, Keyed::new("rbxview shadow casters"))
@@ -193,6 +239,7 @@ impl Shadows {
     /// it to its new shape's batch, drops it if it stopped casting, or adds
     /// it if it just started.
     pub(super) fn sync_caster(&mut self, device: &wgpu::Device, part: &crate::scene::Part) {
+        self.point_state = None;
         casters::sync_shape(device, &mut self.shape_batches, part);
     }
 
@@ -205,18 +252,21 @@ impl Shadows {
         resolved: &crate::scene::Resolved,
         instance: &crate::scene::ResolvedInstance,
     ) -> bool {
+        self.point_state = None;
         casters::sync_mesh(device, &mut self.mesh_batches, resolved, instance)
     }
 
     /// Drops a file-mesh caster whose instance the scene no longer draws at
     /// all (see `Renderer::sync_part`); a no-op if it never cast.
     pub(super) fn remove_mesh_caster(&mut self, referent: rbx_dom::Ref) {
+        self.point_state = None;
         self.mesh_batches.remove(referent);
     }
 
     /// Drops a box caster whose box no longer draws; a no-op if it never
     /// cast.
     pub(super) fn remove_caster(&mut self, id: crate::scene::PartId) {
+        self.point_state = None;
         self.shape_batches.remove(id);
     }
 
@@ -245,6 +295,62 @@ impl Shadows {
     /// array's own layer count, and so the cap `local::select` must be given.
     pub(super) fn local_cap(&self) -> usize {
         self.local_layers.len()
+    }
+
+    /// The whole `PointLight` cube array, for `lights.wgsl` to sample —
+    /// through the same comparison sampler everything else here is.
+    pub(super) fn point_view(&self) -> &wgpu::TextureView {
+        &self.point_view
+    }
+
+    /// The six matrices per cube the shader projects through, one entry per
+    /// layer of [`Shadows::point_view`].
+    pub(super) fn point_faces(&self) -> &wgpu::Buffer {
+        &self.point_faces
+    }
+
+    /// How many `PointLight`s can cast at once — the cap
+    /// `renderer::shadow::point::select` must be given.
+    pub(super) fn point_cap(&self) -> usize {
+        self.point_layers.len() / point::FACES
+    }
+
+    /// Redraws every selected `PointLight`'s six faces, and uploads the
+    /// matrices the shader reads them back with.
+    ///
+    /// Skipped entirely when the same lights already hold the same cubes
+    /// and nothing they could cast has changed: six passes a frame per
+    /// light is the one place in this file where redrawing regardless
+    /// would show up in a frame time.
+    pub(super) fn render_points(
+        &mut self,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        meshes: &Meshes,
+        selected: &[point::Selected],
+    ) {
+        debug_assert!(selected.len() <= self.point_cap());
+        let wanted: Vec<usize> = selected.iter().map(|light| light.index).collect();
+        if self.point_state.as_ref() == Some(&wanted) {
+            return;
+        }
+
+        let mut matrices = vec![[[0.0f32; 4]; 4]; self.point_layers.len().max(point::FACES)];
+        for (cube, light) in selected.iter().enumerate() {
+            for (face, matrix) in light.faces.iter().enumerate() {
+                let layer = cube * point::FACES + face;
+                matrices[layer] = matrix.to_cols_array_2d();
+                queue.write_buffer(
+                    &self.point_buffers[layer],
+                    0,
+                    bytemuck::cast_slice(&matrix.to_cols_array()),
+                );
+                let mut pass = self.begin(encoder, &self.point_layers[layer]);
+                self.draw_casters(&mut pass, meshes, &self.point_bind_groups[layer], None);
+            }
+        }
+        queue.write_buffer(&self.point_faces, 0, bytemuck::cast_slice(&matrices));
+        self.point_state = Some(wanted);
     }
 
     /// Redraws the whole map for this frame's fit. Cheap enough to do every

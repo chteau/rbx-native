@@ -431,3 +431,148 @@ fn a_frame_moved_from_a_screen_gui_to_a_billboard_gui_draws_as_a_rebuild_draws_i
         },
     );
 }
+
+/// The edits that cannot be patched take the whole scene through
+/// `Headless::reload` instead, and the render thread has to come out of that
+/// still drawing: a viewport that goes black (or stops handing frames back)
+/// after a scripted edit is the failure this guards, and it is one no
+/// parity check above would catch — a rebuild compared against a rebuild
+/// agrees with itself perfectly while both draw nothing.
+#[test]
+#[ignore = "needs a GPU"]
+fn a_rebuild_leaves_the_renderer_drawing() {
+    let path = fixture();
+    let mut dom = rbx_viewer::read_place(&path).expect("the fixture parses");
+    let mut headless = Headless::load(&path, true).expect("the fixture loads");
+    assert!(
+        !blank(&frame(&mut headless)),
+        "the fixture draws something to begin with"
+    );
+
+    // A `Sky` is the cheapest edit `apply_changes` refuses to patch.
+    // Removing the place's own is the one whose effect is unmistakable:
+    // the frame falls back to this renderer's procedural sky. A place with
+    // no `Sky` at all gets one instead, which rebuilds just the same but
+    // may legitimately draw the same pixels (an empty `Sky` is the default
+    // sky), so the picture is only compared in the first case.
+    let existing = sky(&dom);
+    match existing {
+        Some(referent) => {
+            dom.remove(referent);
+        }
+        None => {
+            let lighting = named(&dom, "Lighting");
+            dom.new_instance("Sky", "Sky", Some(lighting));
+        }
+    }
+    let log = dom.take_changes();
+    assert_eq!(
+        headless
+            .apply_changes(&dom, &log)
+            .expect("the edit applies"),
+        Applied::Rebuilt(rbx_viewer::Rebuild::Sky),
+    );
+
+    let after = frame(&mut headless);
+    assert!(!blank(&after), "the frame after a rebuild is blank");
+    // And it is the picture a scene rebuilt from the same DOM draws — the
+    // same bar every patched edit above is held to, applied to the path
+    // that gives up on patching.
+    let reference = rebuilt(&dom);
+    let ae = differing(&after, &reference);
+    assert_eq!(
+        ae, 0,
+        "a rebuild in place: {ae} pixels differ from a reload"
+    );
+
+    // Still drawing several frames later, which is where a renderer left
+    // holding a stale target would show it.
+    for _ in 0..3 {
+        assert!(!blank(&frame(&mut headless)), "a later frame is blank");
+    }
+}
+
+/// The place's own `Sky`, if it has one.
+fn sky(dom: &WeakDom) -> Option<Ref> {
+    let mut pending: Vec<Ref> = dom.root_refs().to_vec();
+    while let Some(referent) = pending.pop() {
+        let instance = dom.get(referent)?;
+        if instance.class() == "Sky" {
+            return Some(referent);
+        }
+        pending.extend(instance.children());
+    }
+    None
+}
+
+/// Whether every pixel is the same colour — a frame with nothing drawn in
+/// it, whatever that colour turned out to be.
+fn blank(pixels: &[u8]) -> bool {
+    let mut chunks = pixels.chunks(4);
+    let first = chunks.next().unwrap_or(&[0; 4]);
+    chunks.all(|pixel| pixel == first)
+}
+
+/// Selecting a part has to show in the frame: the cue is the silhouette of
+/// the geometry it covers (see `renderer::cue`), so a selected part draws
+/// differently from an unselected one — and goes back to the unselected
+/// picture when the selection is cleared.
+#[test]
+#[ignore = "needs a GPU"]
+fn a_selected_part_is_cued_in_the_frame() {
+    let path = fixture();
+    let dom = rbx_viewer::read_place(&path).expect("the fixture parses");
+    let mut headless = Headless::load(&path, true).expect("the fixture loads");
+    let bare = frame(&mut headless);
+
+    let part = *parts(&dom).first().expect("the fixture has a part");
+    headless.set_selection(&[rbx_viewer::pick::Selected::read(
+        &dom,
+        &rbx_reflection::ReflectionDatabase::embedded(),
+        part,
+    )]);
+    let cued = frame(&mut headless);
+    assert!(
+        differing(&bare, &cued) > 0,
+        "a selected part drew exactly the unselected frame: no cue at all"
+    );
+
+    headless.set_selection(&[]);
+    let cleared = frame(&mut headless);
+    assert_eq!(
+        differing(&bare, &cleared),
+        0,
+        "clearing the selection left the cue behind"
+    );
+}
+
+/// The same, at every graphics level — the cue's mask follows the scene
+/// pass's own sample count, and a multisampled one is a different texture
+/// type in the shader (see `renderer::highlight::pipelines`). A level that
+/// silently dropped the cue would leave the editor with nothing to show for
+/// a selection, which is exactly what its users would report as "the
+/// outline is gone".
+#[test]
+#[ignore = "needs a GPU"]
+fn a_selected_part_is_cued_at_every_graphics_level() {
+    let path = fixture();
+    let dom = rbx_viewer::read_place(&path).expect("the fixture parses");
+    let part = *parts(&dom).first().expect("the fixture has a part");
+    let selected = rbx_viewer::pick::Selected::read(
+        &dom,
+        &rbx_reflection::ReflectionDatabase::embedded(),
+        part,
+    );
+
+    for level in [1u8, 8, 14, 21] {
+        let mut headless = Headless::load(&path, true).expect("the fixture loads");
+        headless.set_quality(rbx_viewer::QualityLevel::Level(level));
+        let bare = frame(&mut headless);
+        headless.set_selection(std::slice::from_ref(&selected));
+        let cued = frame(&mut headless);
+        assert!(
+            differing(&bare, &cued) > 0,
+            "level {level}: a selected part drew exactly the unselected frame"
+        );
+    }
+}

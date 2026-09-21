@@ -126,8 +126,8 @@ impl Loaded {
     }
 
     /// Asks for the images the renderer's own passes sample — `Beam`,
-    /// `Trail` and `ParticleEmitter` textures, and every `ImageLabel` in the
-    /// place's GUIs.
+    /// `Trail` and `ParticleEmitter` textures, an `ImageHandleAdornment`'s
+    /// own, and every `ImageLabel` in the place's GUIs.
     ///
     /// A pass here reads an answer instead of resolving one itself — see
     /// `Answered`, whose "no answer yet" is what keeps an emitter alive until
@@ -152,6 +152,9 @@ impl Loaded {
         }
         for trail in self.scene.trails() {
             push(&trail.texture);
+        }
+        for reference in &self.scene.adornment_images() {
+            push(reference);
         }
         for reference in &self.scene.gui_assets() {
             push(reference);

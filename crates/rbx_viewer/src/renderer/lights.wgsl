@@ -26,11 +26,15 @@ struct LocalLight {
 // it this frame — a `LocalLight` and its `LightShadow` share an index, the way
 // `local_lights` and `light_shadows` share a length.
 struct LightShadow {
-    // World space to this light's own clip space.
+    // World space to this light's own clip space. A `PointLight` has six of
+    // these instead, in `point_faces` — this one is then unused.
     view_projection: mat4x4<f32>,
-    // x: which layer of `local_shadow_map` holds the map, negative when this
-    // light casts none this frame — not selected, `Shadows = false`, or a
-    // `PointLight`, which never is (see `renderer::shadow::local::select`).
+    // x: which layer of `local_shadow_map` holds this cone light's map,
+    // negative when it casts none this frame (not selected, or
+    // `Shadows = false`).
+    // y: which cube of `point_shadow_map` holds this point light's six
+    // faces, negative the same way. At most one of the two is ever set: a
+    // light is one kind or the other.
     layer: vec4<f32>,
 }
 
@@ -40,6 +44,16 @@ struct LightShadow {
 // sun's own comparison sampler serves this array too.
 @group(0) @binding(7) var local_shadow_map: texture_depth_2d_array;
 @group(0) @binding(8) var<storage, read> light_shadows: array<LightShadow>;
+
+// The `PointLight` cubes: six layers per cube, and the matrix each layer was
+// drawn with — see `renderer::shadow::point`, which explains why these are
+// six perspectives rather than a cube map.
+@group(0) @binding(9) var point_shadow_map: texture_depth_2d_array;
+@group(0) @binding(10) var<storage, read> point_faces: array<mat4x4<f32>>;
+
+const POINT_FACES: i32 = 6;
+// Reciprocal of `renderer::shadow::POINT_SIZE`.
+const POINT_SHADOW_TEXEL: f32 = 1.0 / 512.0;
 
 // 3x3, one texel step each way: enough to soften a nearby lantern's edge
 // without the sun map's wider (and costlier) kernel, which a light this close
@@ -53,18 +67,46 @@ const LOCAL_SHADOW_TEXEL: f32 = 1.0 / 1024.0;
 // `lamp_visibility`'s own bias uses.
 const LOCAL_DEPTH_BIAS: f32 = 0.0015;
 
+/// Which of a cube's six faces a direction out of the light belongs to: the
+/// major axis, negative side second — the order `renderer::shadow::point`'s
+/// own `AXES` builds the matrices in.
+fn point_shadow_face(direction: vec3<f32>) -> i32 {
+    let absolute = abs(direction);
+    if absolute.x >= absolute.y && absolute.x >= absolute.z {
+        return select(0, 1, direction.x < 0.0);
+    }
+    if absolute.y >= absolute.z {
+        return select(2, 3, direction.y < 0.0);
+    }
+    return select(4, 5, direction.z < 0.0);
+}
+
 /// How much of one local light reaches `world_position`, 0 (fully shadowed) to
 /// 1. `facing` is `dot(normal, to_light)`, which the caller already has and
 /// which the slope-scaled bias needs; every unselected light returns 1 before
 /// touching the texture array at all.
 fn local_light_visibility(world_position: vec3<f32>, facing: f32, index: u32) -> f32 {
     let record = light_shadows[index];
-    let layer = record.layer.x;
-    if layer < 0.0 {
+    var layer = record.layer.x;
+    var view_projection = record.view_projection;
+    var texel = LOCAL_SHADOW_TEXEL;
+    var cube = false;
+
+    if record.layer.y >= 0.0 {
+        // A point light: the face the fragment sits on decides both the
+        // layer and the matrix, and every face is the same size.
+        let direction = world_position - local_lights[index].position_range.xyz;
+        let face = point_shadow_face(direction);
+        let slot = i32(record.layer.y) * POINT_FACES + face;
+        layer = f32(slot);
+        view_projection = point_faces[slot];
+        texel = POINT_SHADOW_TEXEL;
+        cube = true;
+    } else if layer < 0.0 {
         return 1.0;
     }
 
-    let clip = record.view_projection * vec4<f32>(world_position, 1.0);
+    let clip = view_projection * vec4<f32>(world_position, 1.0);
     if clip.w <= 0.0 {
         return 1.0;
     }
@@ -78,10 +120,16 @@ fn local_light_visibility(world_position: vec3<f32>, facing: f32, index: u32) ->
     var lit = 0.0;
     for (var y = -LOCAL_PCF_HALF; y <= LOCAL_PCF_HALF; y++) {
         for (var x = -LOCAL_PCF_HALF; x <= LOCAL_PCF_HALF; x++) {
-            let tap = uv + vec2<f32>(f32(x), f32(y)) * LOCAL_SHADOW_TEXEL;
-            lit += textureSampleCompareLevel(
-                local_shadow_map, shadow_sampler, tap, i32(layer), depth
-            );
+            let tap = uv + vec2<f32>(f32(x), f32(y)) * texel;
+            if cube {
+                lit += textureSampleCompareLevel(
+                    point_shadow_map, shadow_sampler, tap, i32(layer), depth
+                );
+            } else {
+                lit += textureSampleCompareLevel(
+                    local_shadow_map, shadow_sampler, tap, i32(layer), depth
+                );
+            }
         }
     }
     let taps = f32(2 * LOCAL_PCF_HALF + 1);

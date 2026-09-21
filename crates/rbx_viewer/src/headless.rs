@@ -259,7 +259,7 @@ impl Headless {
     /// picture has.
     pub fn set_selection(&mut self, selected: &[Selected]) {
         self.view.select(selected);
-        self.offscreen.set_selection(selected);
+        self.offscreen.set_selection(selected, self.loaded.scene());
     }
 
     /// Whether scene geometry standing in front of the selection hides its
@@ -272,7 +272,8 @@ impl Headless {
             return;
         }
         self.view.set_selection_occluded(occluded);
-        self.offscreen.set_selection_occluded(occluded);
+        self.offscreen
+            .set_selection_occluded(occluded, self.loaded.scene());
     }
 
     /// Whether [`Headless::set_selection_occluded`] last asked for an
@@ -292,7 +293,19 @@ impl Headless {
     /// if the host's render loop only draws on camera movement.
     pub fn set_hover(&mut self, selected: Vec<Selected>) {
         self.view.set_hover(selected.clone());
-        self.offscreen.set_hover(selected);
+        self.offscreen.set_hover(selected, self.loaded.scene());
+    }
+
+    /// Draws ghost boxes where a tool being configured would put things —
+    /// the Align tool's live preview (`studio/align-tool.md`: "dynamically
+    /// previewing the point of alignment before confirming"). An empty
+    /// list clears them, which is what closing the tool sends.
+    ///
+    /// Plain world matrices rather than anything read out of the DOM: the
+    /// whole point is a placement no instance has yet.
+    pub fn set_preview(&mut self, boxes: Vec<glam::Mat4>) {
+        self.offscreen.set_preview(&boxes);
+        self.view.set_preview(boxes);
     }
 
     /// Draws the transform tool's axis draggers over the selected part, or

@@ -7,7 +7,7 @@
 pub struct Ref(u32);
 
 impl Ref {
-    pub fn new(id: u32) -> Self {
+    pub const fn new(id: u32) -> Self {
         Ref(id)
     }
 

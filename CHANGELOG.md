@@ -150,6 +150,65 @@
   undo or a script shows up in the graph immediately, and a whole drag is
   still one undo entry. — @chteau
 
+- **The rest of the renderer's API-dump gaps.** A sweep of
+  `assets/API-Dump.json`'s renderer-relevant classes against what
+  `rbx_viewer` actually draws turned up four that drew nothing at all, and
+  they draw now. `Fire`, `Smoke` and `Sparkles` — documented as
+  preconfigured particle emitters — are read into the same emitter
+  definition a `ParticleEmitter` produces, a `Fire` as the two emitters its
+  docs describe; every emitter also reads `TimeScale` now and can hang off
+  an `Attachment` rather than only a `BasePart`. `AdGui` shows its own
+  `FallbackImage` on the face it adorns, which is what Roblox documents an
+  ad surface as showing when no ad is available. An `Explosion` and a
+  `DynamicMesh` are recognized as having nothing a place file can draw —
+  one is a one-shot that plays when it is parented, the other carries no
+  properties at all — rather than left unaccounted for. — @chteau
+- **The `Handles`/`*HandleAdornment`/`Selection*` family draws.**
+  `SelectionBox`, `SelectionSphere`, `SurfaceSelection`, `Handles`,
+  `ArcHandles` and the six handle shapes are resolved into world-space
+  primitives on the CPU (`scene::adornment`) and drawn as unlit geometry
+  inside the scene pass (`renderer::adornment`) — depth-tested by default,
+  over everything while `AlwaysOnTop`, with `ZIndex` ordering those among
+  themselves. What the docs leave unpublished (a handle's proportions, the
+  axis a cone points down) is marked in the code as this renderer's own
+  choice rather than presented as parity. Input is not part of this: the
+  docs are explicit that a handle listens only under a `PlayerGui` or the
+  `CoreGui`, which is the plugin API's business. — @chteau
+- **A selected part is outlined by its own shape.** The Explorer's
+  selection and the hover cue traced the oriented bounding box of whatever
+  they covered, which is the wrong shape for a `Ball`, a wedge or a
+  `MeshPart`. A part now draws through the same mask-and-composite pass a
+  `Highlight` does, so it outlines as its own silhouette; a container has
+  no shape of its own to trace and keeps the box around everything beneath
+  it. — @chteau
+- **`PointLight` casts a shadow.** It was the one local light that never
+  did: a point light has no axis to point a single shadow map down. It
+  takes six 90-degree faces into a depth array of its own now, and the
+  shader picks the face a fragment belongs to from the major axis of the
+  light-to-fragment direction — the same projection-and-compare the cone
+  lights already use, rather than a second set of cube-map conventions to
+  get wrong. Sized so it pays its way: the faces are half a cone light's
+  map across, a quality level allows a quarter as many point lights as
+  cone ones, and the six passes are redrawn only when the cubes would hold
+  something different rather than every frame. — @chteau
+- **`Glass` refracts, and a `ForceField` is a shell rather than a tint.**
+  The scene pass ends when the opaque half is done and everything that
+  blends over it goes in a second pass, which is what lets a pane read the
+  frame behind itself and displace it along its own mapped normal. The
+  copy that makes it possible is only allocated, and only taken, in a
+  place that actually holds glass. A `ForceField` part keeps its tinted
+  shell and gains a lattice of cells and a rim that brightens edge-on;
+  Roblox publishes no pattern for the texture-less look, so the code says
+  plainly that the rendition is this renderer's own — and that it does not
+  animate, because a shimmer with a clock in it would make every
+  `--screenshot` differ from the last. — @chteau
+- **The Align tool previews where things will land.** Opening its popover
+  now draws a ghost box at each object's aligned placement — the docs'
+  "dynamically previewing the point of alignment before confirming" —
+  redrawn as the toggles and the selection change and cleared when it
+  closes. The overlay takes plain world matrices and knows nothing about
+  Align, so the next tool that needs one adds no pass. — @chteau
+
 ## 2026-09-20
 
 - **A `CFrame` attribute no longer takes every attribute after it down with

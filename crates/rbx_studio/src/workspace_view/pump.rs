@@ -67,6 +67,9 @@ enum Command {
     /// Which transform tool's draggers to draw over the selection, if any —
     /// see `Headless::set_gizmo`.
     Gizmo(Option<Gizmo>),
+    /// Where a tool being configured would put the selection — the Align
+    /// popover's live preview. An empty list clears it.
+    Preview(Vec<glam::Mat4>),
     /// An edit to the DOM, as the `Change` log it produced, patched into the
     /// scene instance by instance — see `Headless::apply_changes`. What
     /// travels with the log is a snapshot of the instances it names (see
@@ -209,6 +212,12 @@ impl Pump {
     /// selection — `None` clears it.
     pub(super) fn hover(&self, selected: Vec<Selected>) {
         let _ = self.commands.send(Command::Hover(selected));
+    }
+
+    /// Draws ghost boxes where the tool being configured would put the
+    /// selection — see `Headless::set_preview`.
+    pub(super) fn preview(&self, boxes: Vec<glam::Mat4>) {
+        let _ = self.commands.send(Command::Preview(boxes));
     }
 
     /// Shows or hides the transform tool's draggers over the selection.
@@ -581,6 +590,7 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::SelectionOccluded(occluded) => rendering.viewer.set_selection_occluded(occluded),
         Command::Selection(selected) => rendering.viewer.set_selection(&selected),
         Command::Hover(selected) => rendering.viewer.set_hover(selected),
+        Command::Preview(boxes) => rendering.viewer.set_preview(boxes),
         Command::Gizmo(gizmo) => rendering.viewer.set_gizmo(gizmo),
         Command::Changes(snapshots, changes) => {
             rendering.mirror.mirror(snapshots);

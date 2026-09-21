@@ -157,25 +157,24 @@ mod tests {
 
     /// The rest of the geometry (how a box's edges follow its model matrix,
     /// how a referent with no placement draws nothing) is already covered by
-    /// `renderer::outline`'s own tests — this only checks that a hover of one
-    /// part draws its box and a hover of two draws both.
+    /// `renderer::outline`'s own tests — this only checks which side of the
+    /// split a hover lands on: a part is cued by its own silhouette (see
+    /// `renderer::cue`) and draws no box, a container still draws one.
     #[test]
-    fn a_hovered_part_draws_its_box_and_a_model_draws_all_of_them() {
+    fn a_hovered_part_is_left_to_its_silhouette_and_a_model_still_boxes() {
+        let mut dom = rbx_dom::WeakDom::new();
+        let model = dom.new_instance("Model", "Model", None);
+        let inside = dom.new_instance("Part", "Part", Some(model));
+        let database = rbx_reflection::ReflectionDatabase::embedded();
+
         let mut placements = HashMap::new();
         placements.insert(Ref::new(1), placement(Mat4::IDENTITY));
-        placements.insert(Ref::new(2), placement(Mat4::IDENTITY));
+        placements.insert(inside, placement(Mat4::IDENTITY));
 
+        assert!(box_edges(&placements, &[Selected::part(Ref::new(1))]).is_empty());
         assert_eq!(
-            box_edges(&placements, &[Selected::part(Ref::new(1))]).len(),
+            box_edges(&placements, &[Selected::read(&dom, &database, model)]).len(),
             72
-        );
-        assert_eq!(
-            box_edges(
-                &placements,
-                &[Selected::part(Ref::new(1)), Selected::part(Ref::new(2))]
-            )
-            .len(),
-            144
         );
         assert!(box_edges(&placements, &[]).is_empty());
     }

@@ -40,11 +40,24 @@ Roblox's own engine.
 - [x] Lighting model reverse-engineered from Roblox's own decompiled
   shaders and calibrated pixel-by-pixel against real Studio captures: two
   lamps + sky ambient, Blinn-Phong specular, sky cubemap reflection,
-  fog/`Atmosphere`, sun/moon, shadow maps for `SpotLight`/`SurfaceLight`,
-  local point lights, bloom/stars/`ColorCorrectionEffect`/
-  `ColorGradingEffect`/`BlurEffect`/`SunRaysEffect`/`DepthOfFieldEffect`.
+  fog/`Atmosphere`, sun/moon, shadow maps for every local light —
+  `SpotLight`/`SurfaceLight` from one perspective down their own cone, a
+  `PointLight` from six faces into a depth array of its own
+  (`renderer::shadow::point`), the shader picking the face from the major
+  axis of the light-to-fragment direction — bloom/stars/
+  `ColorCorrectionEffect`/`ColorGradingEffect`/`BlurEffect`/
+  `SunRaysEffect`/`DepthOfFieldEffect`.
 - [x] 43 official Roblox materials (`rbx_materials`) with real texture
-  packs, `MaterialVariant`, `SurfaceAppearance`.
+  packs, `MaterialVariant`, `SurfaceAppearance`. `Glass` refracts what is
+  behind it — the scene is copied when the opaque pass ends and a pane
+  reads it back displaced along its own mapped normal, which is the
+  surface detail that gives real glass its wobble (Roblox documents the
+  refraction itself, and that it is dropped on mobile "due to
+  computational limitations", but publishes no index or displacement, so
+  the figure is this renderer's). A `ForceField` is drawn as an energy
+  shell: a lattice of cells and a rim that brightens where it is seen
+  edge-on, both this renderer's own rendition — see "What's planned" →
+  Renderer for what of that material is still open.
 - [x] Decals/textures projected on real geometry (not just boxes), and
   patched in place — not just redrawn on a full reload — when the
   `CFrame`, size or shape of the part they're pinned to is edited live.
@@ -56,7 +69,34 @@ Roblox's own engine.
   boolean (BSP tree, dependency-free) over the operation's original
   constituent parts, not just a bounding-box fallback.
 - [x] Effects: `ParticleEmitter` (CPU simulation + billboards), `Beam`,
-  `Trail`.
+  `Trail`, and the three preconfigured particle classes — `Fire`
+  (the two emitters its docs describe, the inner one longer-lived,
+  faster-rising and at `LightEmission` 1), `Smoke` and `Sparkles` — each
+  read into the same emitter definition a `ParticleEmitter` produces, so
+  the budget, the simulation and a Properties-panel edit all treat them
+  identically. Every emitter reads `TimeScale`, and can hang off an
+  `Attachment` as well as a `BasePart`; each effect draws through
+  Roblox's own image for it out of the Studio content package. What the
+  docs state is followed as stated, and every figure they do not publish
+  is marked in the code as this renderer's own. An `Explosion` is not
+  among them: it is a one-shot that plays when it is parented into the
+  world, so one sitting in a place file has nothing to draw.
+- [x] The 3D adornment family, from a place file: `SelectionBox` (its
+  bars and, where it is not transparent, its surfaces), `SelectionSphere`
+  (the documented "ring/outline in addition to a surface", the ring being
+  the sphere's own silhouette faced at the camera), `SurfaceSelection`,
+  `Handles` (arrows or spheres, per face) and `ArcHandles` (a ring per
+  axis), and the `*HandleAdornment` shapes — box, sphere, cylinder
+  (`InnerRadius` and `Angle` included), cone, line (its `Thickness` in
+  pixels, as documented, where `SelectionBox.LineThickness` is in studs)
+  and image. Depth-tested by default and over everything while
+  `AlwaysOnTop`, with `ZIndex` ordering those among themselves, exactly as
+  the docs describe. `WireframeHandleAdornment`, `ParabolaAdornment` and
+  `SelectionLasso` serialize no geometry to draw from and are recognized
+  as drawing nothing rather than guessed at.
+- [x] `AdGui`: the ad surfaces a place holds show their own
+  `FallbackImage` on the face they adorn, which is what Roblox documents
+  one as showing whenever no ad is available — and no ad ever is here.
 - [x] **`Highlight`** — the real class (checked against
   `reference/engine/classes/Highlight` rather than assumed), drawn the way
   the docs describe it: a **silhouette** outline around the adornee and a
@@ -744,9 +784,17 @@ Roblox's own engine.
   above existing first regardless of which direction it takes.
 
 ### Renderer
-- [ ] 📋 `Light.Shadows` for `PointLight` (needs 6-face shadow maps; done
-  for `SpotLight`/`SurfaceLight`).
-- [ ] 📋 Neon/`ForceField` shimmer, `Glass` refraction — currently flat.
+- [ ] 📋 **An animated `ForceField` shimmer**, and the modern material's
+  own `MeshPart.TextureID` source. The shell itself is drawn now (see
+  "What's been implemented" → Renderer), but it does not move: a pattern
+  that animates needs a clock in the material pass, and a `--screenshot`
+  that differed from run to run would be worse than a still one — the same
+  reason a `StyleRule` transition never applies here. Roblox's current
+  `ForceField` material is documented as displaying the dark-to-light range
+  of the `Class.MeshPart.TextureID` of the mesh it is applied to, which
+  this renderer does not feed into the material pass at all; that is the
+  other half, and it needs the mesh's own texture on the material path
+  rather than a second guess at the texture-less look.
 - [ ] 📋 **A 5th "Transform" toolbar button** appears in Studio's current
   toolbar (see the owner-provided screenshot) alongside the now-implemented
   Select/Move/Scale/Rotate (see "What's been implemented" → Editor), but
@@ -830,12 +878,18 @@ Roblox's own engine.
     screen-space quad per edge, expanded in the vertex shader to a constant
     on-screen width (~3px selection blue, matching Studio's light-blue
     selection box; the hover cue rides the same path in amber).
-  - [ ] 📋 **Selection outline shape conformance**: a `Ball`, `Cylinder`,
-    wedge or mesh still outlines as its oriented bounding box rather than
-    its own silhouette. Real Studio's highlight is documented
+  - [x] **Selection outline shape conformance**: a `Ball`, `Cylinder`,
+    wedge or mesh outlined as its oriented bounding box rather than as its
+    own silhouette. A part now draws through the very mask-and-composite
+    pass `Highlight` does (`renderer::cue`), so it outlines as its own
+    shape — a ball as a circle, a `MeshPart` as its own polygon — while a
+    container, which has no shape of its own to trace, keeps the box
+    around everything beneath it. The hover cue rides the same path in its
+    own amber. Real Studio's own highlight is documented
     (`parts/models.md`) only as a light-blue outline with no
-    shape-conformance spec published, so matching the true silhouette
-    needs checking against a real Studio instance rather than guessing.
+    shape-conformance spec published: this is not a claim of parity with
+    it, and the code says so — it is the same answer this renderer already
+    gives for the one outline effect that *is* specified as a silhouette.
 - [x] **Align tool**, matching Studio's real Model-tab tool (checked
   against `studio/align-tool.md` rather than assumed, not the transform
   gizmos under "What's been implemented" → Editor). Aligns the selected
@@ -852,10 +906,16 @@ Roblox's own engine.
   Bounds/Active Object, a selected `Model` moving as one rigid body (the
   docs' "keeping the model intact"), and a compact popover on the
   transform toolbar rather than a full dialog.
-- [ ] 📋 **Align's live preview** — the docs' "dynamically previewing the
-  point of alignment before confirming". Align commits immediately today,
-  with nothing shown while the toggles are being set; drawing where the
-  parts *would* land needs a new renderer overlay pass.
+- [x] **Align's live preview** — the docs' "dynamically previewing the
+  point of alignment before confirming". Opening the popover draws a ghost
+  box where each object would land, redrawn as the toggles and the
+  selection change and cleared when it closes; one box per top-level
+  object, a part keeping its own oriented box and a `Model` taking the box
+  around everything beneath it (the same two answers the selection outline
+  gives). The overlay itself (`renderer::preview`) takes plain world
+  matrices and knows nothing about Align, so the next tool that wants one
+  adds no pass. `RBX_STUDIO_ALIGN=...,preview` shows it without a click,
+  the way that variable already stands in for the popover's own buttons.
 - [ ] 📋 **Pivot tools**, matching Studio's real Model-tab **Edit Pivot**/
   **Reset** tools (checked against `studio/pivot-tools.md`). Today's
   transform gizmos (see "What's been implemented" → Editor) move/rotate/
@@ -1132,14 +1192,25 @@ against `Roblox/creator-docs` rather than assumed:
     specifically, not just available for `BasePart.Material`.
 
 ### Editor
-- [ ] 📋 **The viewport goes black, and the render thread's stats stop
+- [ ] ⚠️ **The viewport goes black, and the render thread's stats stop
   updating, after a full scene reload triggered by a non-interactive,
   scripted run** (`RBX_STUDIO_RUN`/`RBX_STUDIO_EDIT`-driven screenshot
-  automation) — reproduced on a plain, unmodified build too, so no
-  particular fast-path change caused it. Not yet confirmed whether real
-  interactive use (a human editing live) hits the same thing; needs its
-  own investigation of the render thread's state right after
-  `Headless::reload`.
+  automation) — reproduced on a plain, unmodified build when this was
+  written, so no particular fast-path change caused it.
+  **Not reproducible as of 2026-09-21**: four scripted runs that each take
+  the reload path — a `Sky` inserted from the Command Bar, a `Material`
+  edit on `TestPlace.rbxl`, the same edit across every part of
+  `marked.rbxl` (16 742 instances), and a `MeshPart` created with a
+  `MeshId` this session had never fetched — all came back drawing, with
+  the stats line still ticking, on a screenshot of the real window each
+  time. Left open rather than closed: not reproducing is not the same as
+  fixed, and nothing here explains what was seen. What did land is a guard
+  against the symptom — `patch_parity`'s
+  `a_rebuild_leaves_the_renderer_drawing` asserts that an edit the patcher
+  refuses leaves the renderer drawing the very frame a reload of the same
+  DOM draws, which no parity check there would otherwise catch (a rebuild
+  compared against a rebuild agrees with itself perfectly while both draw
+  nothing).
 - [ ] 📋 **The accessibility work the reference guidance calls Stage 2 and
   Stage 3, minus what already shipped.** Stage 1 is met and asserted in
   tests; these are the rest, each small enough to ride along with other
@@ -1675,25 +1746,28 @@ against `Roblox/creator-docs` rather than assumed:
   `HttpService:RequestAsync`) for plugins that don't need Roblox's own UI
   system — see [Explicitly impossible](#explicitly-impossible-without-robloxs-engine)
   for what a plugin fundamentally can't do here.
-- [ ] 📋 **The `Handles`/`*HandleAdornment`/`Selection*` Instance family**
+- [x] **The `Handles`/`*HandleAdornment`/`Selection*` Instance family**
   (`Handles`, `ArcHandles`, `BoxHandleAdornment`, `SphereHandleAdornment`
   and siblings, `SelectionBox`, `SelectionSphere`) — real, current,
-  documented classes a script or plugin instantiates to draw interactive
-  3D handles and outlines directly in the viewport, independent of this
-  project's own Move/Scale/Rotate gizmo. Worth building since it's a
-  real, general plugin capability (checked directly against
+  documented classes a script or plugin instantiates to draw 3D handles
+  and outlines directly in the viewport, independent of this project's own
+  Move/Scale/Rotate gizmo. **Drawn**, from a place file: see "What's been
+  implemented" → Renderer. Checked directly against
   `reference/engine/classes/Handles`/`BoxHandleAdornment`/
-  `SphereHandleAdornment`/`SelectionBox` rather than assumed), **not**
-  because it's how **Building Tools by F3X** draws its own tools — it
+  `SphereHandleAdornment`/`SelectionBox` rather than assumed, and **not**
+  modelled on how **Building Tools by F3X** draws its own tools — it
   isn't: F3X's actual source
   (`F3XTeam/RBX-Building-Tools`, `Libraries/Handles.lua`) renders plain 2D
   `ImageButton`s inside a `ScreenGui`, hand-projected from 3D to screen
   space, the same ordinary GUI machinery this project already renders
   (see "What's been implemented" → Renderer's GUI containers) — worth not
   conflating the two mechanisms just because both are called "handles."
-  `SelectionBox` in particular carries its own `LineThickness` property,
-  directly relevant to the selection-outline thickness question raised
-  under "What's planned" → Renderer's gizmo papercuts item.
+- [ ] 📋 **Making those handles interactive.** The docs are explicit that
+  a `Handles`/`ArcHandles`/`*HandleAdornment` listens for input only under
+  a player's `PlayerGui` or the `CoreGui`, and firing `MouseButton1Down`/
+  `MouseDrag`/`MouseButton1Up` at a script is the plugin API's business
+  (the item above this one), not the renderer's — so what a place file
+  holds is drawn, and nothing is draggable yet.
 - [ ] 📋 **A floating, non-dockable plugin widget surface.** A real,
   well-read devforum request
   ([`allow-floating-non-resizeable-widgets`](https://devforum.roblox.com/t/allow-floating-non-resizeable-widgets/4193893),

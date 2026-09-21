@@ -1,8 +1,11 @@
 //! Draws a scene's parts, the decals projected onto them, its sky and its
 //! celestial bodies into any render target, window or texture alike.
 
+mod adornment;
 mod beam;
+mod cue;
 mod cull;
+mod editor;
 mod envmap;
 mod filemesh;
 mod geometry;
@@ -20,6 +23,7 @@ mod pass;
 mod patch;
 mod pipeline;
 mod post;
+mod preview;
 mod rebuild;
 mod selection;
 mod shadow;
@@ -45,7 +49,9 @@ use crate::pick::Selected;
 use crate::quality::QualityProfile;
 use crate::scene::{Bounds, Scene, ScrollTarget};
 use crate::textures::Decor;
+use adornment::Adornments;
 use beam::Beams;
+use cue::Cues;
 use cull::MainCull;
 use envmap::EnvMap;
 use geometry::Meshes;
@@ -57,6 +63,7 @@ use material::Materials;
 use particles::Particles;
 use pipeline::{Frame, Shared, Target};
 use post::Post;
+use preview::Preview;
 use selection::Selection;
 use shadow::{Fit, Lamp, Shadows};
 use shaped::Shaped;
@@ -142,17 +149,28 @@ pub(crate) struct Renderer {
     /// Billboarded `ParticleEmitter`s, drawn after everything above — see
     /// [`Renderer::draw`].
     particles: Particles,
+    /// The place's 3D adornments — `SelectionBox`, the handle shapes,
+    /// `Handles`/`ArcHandles` — drawn inside the scene pass over its
+    /// geometry. Costs nothing in a place with none.
+    adornments: Adornments,
     /// Every `Highlight` the place holds, drawn over the scene as a silhouette
     /// outline and an interior fill — see `renderer::highlight`. Costs nothing
     /// in a place with none.
     highlights: highlight::Highlights,
-    /// The Explorer's selection outline. Reads `self.frame`'s bind group at
-    /// draw time, so it needs no camera state of its own.
+    /// The Explorer's selection outline — the box a container gets. A part
+    /// keeps its own silhouette instead; that is `cues` below.
     selection: Selection,
+    /// The selection and hover cues of whatever has a shape of its own,
+    /// drawn as silhouettes through the same pass a `Highlight` uses — see
+    /// `renderer::cue`.
+    cues: Cues,
     /// The "about to click" cue drawn around whatever `BasePart` the cursor is
     /// over, distinctly from `selection` above — see `renderer::hover`. Reads
     /// the same shared bind group, for the same reason.
     hover: Hover,
+    /// Where the tool being configured would put things — the Align
+    /// tool's live preview. Empty unless an editor asks for one.
+    preview: Preview,
     /// The transform tool's axis draggers, drawn over the selection outline.
     draggers: Draggers,
     /// Which transform tool the editor has active, if any — `None` while the
@@ -176,6 +194,10 @@ pub(crate) struct Renderer {
     /// What every surface pipeline above was built for: the HDR format, and the
     /// profile's `msaa_samples` as far as the adapter allows (see `post`).
     target: Target,
+    /// Whether anything in the scene is `Glass`, and so whether the frame
+    /// pays for the copy a refracting surface reads — see
+    /// `post::Targets::capture_refraction`.
+    refracting: bool,
 }
 
 impl Renderer {
@@ -240,6 +262,11 @@ impl Renderer {
             shadow_sampler: shadows.sampler(),
             local_shadow_map: shadows.local_view(),
             light_shadows: &light_shadows_buffer,
+            point_shadow_map: shadows.point_view(),
+            point_faces: shadows.point_faces(),
+            // The frame has none yet: the first `draw` allocates one if the
+            // scene turns out to hold glass, and rebinds every group here.
+            refraction: post.refraction(),
         };
         let frame = Frame::new(device, &layout, shared);
         let sky = decor.sky.as_ref().map(|panels| {
@@ -311,6 +338,7 @@ impl Renderer {
                 images,
                 quality,
             ),
+            adornments: Adornments::new(device, queue, target, scene.adornments(), images, quality),
             highlights: highlight::Highlights::new(
                 device,
                 queue,
@@ -323,7 +351,19 @@ impl Renderer {
                 },
             ),
             selection,
+            cues: Cues::new(
+                device,
+                queue,
+                &layout,
+                target,
+                highlight::Source {
+                    highlights: &[],
+                    parts: scene.parts(),
+                    resolved: scene.resolved_file_meshes(),
+                },
+            ),
             hover,
+            preview: Preview::new(device, target, &layout),
             draggers,
             gizmo: None,
             gui: Gui::new(
@@ -348,6 +388,7 @@ impl Renderer {
             post,
             quality: *quality,
             target,
+            refracting: scene.has_glass(),
         }
     }
 
@@ -360,33 +401,6 @@ impl Renderer {
     /// see `Camera::with_orthographic`.
     pub(crate) fn set_orthographic(&mut self, orthographic: bool) {
         self.camera = self.camera.with_orthographic(orthographic);
-    }
-
-    /// Replaces the outlined selection, rebuilding its tiny vertex buffer right
-    /// away rather than waiting for the next `draw`.
-    pub(crate) fn set_selection(&mut self, device: &wgpu::Device, selected: &[Selected]) {
-        self.selection.set(device, selected);
-    }
-
-    /// Whether scene geometry in front of the selection hides its outline —
-    /// see `renderer::selection`, which draws it through everything by
-    /// default.
-    pub(crate) fn set_selection_occluded(&mut self, occluded: bool) {
-        self.selection.set_occluded(occluded);
-    }
-
-    /// Replaces the hover outline, rebuilding its tiny vertex buffer right
-    /// away rather than waiting for the next `draw`. `None` clears it.
-    pub(crate) fn set_hover(&mut self, device: &wgpu::Device, selected: Vec<Selected>) {
-        self.hover.set(device, selected);
-    }
-
-    /// Shows or hides the transform tool's draggers over whatever is
-    /// selected. Their geometry is rebuilt inside [`Renderer::draw`] rather
-    /// than here: the arms are scaled to hold a constant size on screen, so
-    /// they change with every camera move, not only when the tool does.
-    pub(crate) fn set_gizmo(&mut self, gizmo: Option<Gizmo>) {
-        self.gizmo = gizmo;
     }
 
     /// The `ScrollingFrame` of the screen overlay the wheel over `point` (in
@@ -512,10 +526,17 @@ impl Renderer {
             eye,
             self.shadows.local_cap(),
         );
+        // A `PointLight` has no axis to point one map down, so it takes six
+        // — see `renderer::shadow::point`.
+        let points = shadow::point::select(
+            &self.all_lights[..self.lights],
+            eye,
+            self.shadows.point_cap(),
+        );
         queue.write_buffer(
             &self.light_shadows_buffer,
             0,
-            bytemuck::cast_slice(&shadow::local::pack(self.lights, &selected)),
+            bytemuck::cast_slice(&shadow::local::pack(self.lights, &selected, &points)),
         );
 
         let rotation_only = self.camera.view_rotation_projection(from, aspect);
@@ -536,6 +557,10 @@ impl Renderer {
         // render pass that reads those buffers.
         self.translucent.prepare(queue, eye, &cull);
         self.filemesh.prepare(queue, eye);
+        // A `SelectionSphere`'s outline faces the eye, so its vertices are
+        // the camera's to decide — and a buffer written here cannot be
+        // written inside the pass that reads it.
+        self.adornments.prepare(device, eye);
 
         let orthographic = self.camera.orthographic_range(from);
         if self
@@ -544,6 +569,12 @@ impl Renderer {
             .is_none()
         {
             return;
+        }
+        // After `prepare`, which is what allocates (or resizes) the targets
+        // the copy lives beside; a bind group holding the old view has to be
+        // rebuilt before anything samples it.
+        if self.post.want_refraction(device, self.refracting) {
+            self.rebind_frames(device);
         }
         let Some(targets) = self.post.targets() else {
             return;
@@ -561,7 +592,17 @@ impl Renderer {
             self.shadows
                 .render_local(queue, &mut encoder, &self.meshes, &selected);
         }
+        // Redrawn only when the cubes would hold something different — six
+        // faces a light is the one shadow pass worth not repeating for a
+        // still camera over a still scene.
+        self.shadows
+            .render_points(queue, &mut encoder, &self.meshes, &points);
         self.scene_pass(&mut encoder, targets, &cull);
+        // Between the two halves, never inside either: the copy's source is
+        // a colour attachment of both. A no-op in a place with no glass,
+        // which has no copy to take.
+        targets.capture_refraction(&mut encoder);
+        self.overlay_pass(&mut encoder, targets);
 
         // Before particles: sorting the two passes against each other is out
         // of scope for v1 (see `renderer::beam`'s docs), so beams simply go
@@ -605,6 +646,16 @@ impl Renderer {
         // never cut into by a ribbon or a canvas drawn later, and before the
         // resolve so it tone maps with the frame — see `renderer::highlight`.
         self.highlights.draw(
+            device,
+            &mut encoder,
+            targets,
+            &self.frame.bind_group,
+            &self.meshes,
+            size,
+        );
+        // After the place's own highlights: the editor's cue for what is
+        // selected has to read on top of whatever the file asks for.
+        self.cues.draw(
             device,
             &mut encoder,
             targets,

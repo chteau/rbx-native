@@ -45,15 +45,15 @@ fn carry_over(
     emitters: &[Emitter],
     slot: impl Fn(&AssetRef) -> Option<usize>,
 ) -> Vec<Live> {
-    let mut simulations: HashMap<Ref, Simulation> = previous
+    let mut simulations: HashMap<(Ref, u8), Simulation> = previous
         .into_iter()
-        .map(|live| (live.emitter.referent, live.simulation))
+        .map(|live| (live.emitter.id(), live.simulation))
         .collect();
     emitters
         .iter()
         .filter_map(|emitter| {
             let texture = slot(&emitter.texture)?;
-            let simulation = simulations.remove(&emitter.referent).unwrap_or_else(|| {
+            let simulation = simulations.remove(&emitter.id()).unwrap_or_else(|| {
                 let mut simulation = Simulation::new(emitter.seed);
                 simulation.prewarm(emitter);
                 simulation

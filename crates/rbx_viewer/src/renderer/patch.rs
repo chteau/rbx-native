@@ -8,6 +8,7 @@ use rbx_dom::Ref;
 use super::{highlight, lighting, shadow, Renderer, World};
 use crate::camera::Camera;
 use crate::lighting::{Lighting, LocalLight};
+use crate::load::Answered;
 use crate::scene::{Bounds, Drawn, EffectKind, Part, PartId, PartSync, Resolved, Scene};
 use crate::textures::FaceInstance;
 
@@ -50,6 +51,7 @@ impl Renderer {
                 self.filemesh.remove(referent);
                 self.shadows.remove_mesh_caster(referent);
                 self.highlights.remove_mesh(referent);
+                self.cues.remove_mesh(referent);
                 true
             }
             Drawn::Pieces { placement, pieces } => {
@@ -77,6 +79,7 @@ impl Renderer {
                 self.filemesh.remove(referent);
                 self.shadows.remove_mesh_caster(referent);
                 self.highlights.remove_mesh(referent);
+                self.cues.remove_mesh(referent);
                 true
             }
             Drawn::Mesh { index, placement } => {
@@ -92,6 +95,7 @@ impl Renderer {
                 self.filemesh.sync(device, queue, resolved, instance)
                     && self.shadows.sync_mesh_caster(device, resolved, instance)
                     && self.highlights.sync_mesh(device, resolved, instance)
+                    && self.cues.sync_mesh(device, resolved, instance)
             }
             Drawn::Gone => {
                 self.drop_box(whole);
@@ -100,6 +104,7 @@ impl Renderer {
                 self.filemesh.remove(referent);
                 self.shadows.remove_mesh_caster(referent);
                 self.highlights.remove_mesh(referent);
+                self.cues.remove_mesh(referent);
                 true
             }
         }
@@ -113,6 +118,7 @@ impl Renderer {
         self.translucent.sync(device, part);
         self.shadows.sync_caster(device, part);
         self.highlights.sync_part(device, part);
+        self.cues.sync_part(device, part);
     }
 
     /// The same three passes told to forget one box.
@@ -121,6 +127,7 @@ impl Renderer {
         self.translucent.remove(id);
         self.shadows.remove_caster(id);
         self.highlights.remove_part(id);
+        self.cues.remove_part(id);
     }
 
     /// Rewrites, moves or adds one `Decal`/`Texture`'s projection — see
@@ -200,6 +207,7 @@ impl Renderer {
         queue: &wgpu::Queue,
         kind: EffectKind,
         scene: &Scene,
+        images: &Answered,
     ) {
         match kind {
             EffectKind::Particles => self.particles.replace(scene.particle_emitters()),
@@ -208,6 +216,12 @@ impl Renderer {
             // The only one that needs the GPU: a highlight is drawn from the
             // geometry it covers, so a re-plan is new instance buffers rather
             // than a new list of definitions.
+            // Like a highlight, an adornment is geometry rather than a
+            // definition: a re-plan is a new vertex buffer.
+            EffectKind::Adornments => {
+                self.adornments
+                    .replace(device, queue, self.target, scene.adornments(), images)
+            }
             EffectKind::Highlights => self.highlights.replace(
                 device,
                 queue,
