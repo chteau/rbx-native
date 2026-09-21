@@ -9,6 +9,7 @@ mod chrome;
 mod clipboard;
 mod command;
 mod dock_drag;
+mod docks;
 mod drag;
 mod edit;
 mod explorer_edit;
@@ -27,7 +28,7 @@ mod ribbon;
 mod roving;
 
 pub(crate) use chrome::panel_topbar;
-pub(crate) use layout::{edge_from_key, edge_key, Edge, SavedEdge, SavedLayout};
+pub(crate) use layout::{edge_from_key, edge_key, Edge, Panel, SavedEdge, SavedGroup, SavedLayout};
 pub(crate) use roving::install as install_key_bindings;
 mod tree_keys;
 
@@ -276,6 +277,9 @@ pub(crate) struct Shell {
     /// One window per torn-out dock, kept in step with the layout by
     /// `shell::panel_window`.
     panel_windows: HashMap<layout::Panel, WindowHandle<gpui_kit::component::Root>>,
+    /// Whether the main window held focus last frame, so a torn-out dock
+    /// is raised with it once rather than fought over every frame.
+    window_was_active: bool,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
     _subscriptions: [Subscription; 12],
 }
@@ -496,6 +500,7 @@ impl Shell {
             layout: layout::Layout::restore(&docks),
             dragging_panel: None,
             panel_windows: HashMap::new(),
+            window_was_active: true,
             output_collapsed,
             drag: None,
             _subscriptions: [
@@ -802,16 +807,45 @@ impl Shell {
     /// The menu is not decoration: the accessibility guidance this project
     /// follows treats drag-only rearrangement as a failure, so the drag is
     /// the fast path and the menu is the one that has to exist.
-    pub(super) fn dock_panel(
+    pub(super) fn land_panel(
         &mut self,
         panel: layout::Panel,
-        to: layout::Edge,
-        before: Option<usize>,
+        landing: layout::Landing,
         cx: &mut Context<Self>,
     ) {
-        self.layout.dock(panel, to, before);
+        self.dragging_panel = None;
+        self.layout.apply(panel, landing);
         self.save_settings();
         cx.notify();
+    }
+
+    /// Shuts one panel, from its tab's own cross or its dock menu.
+    pub(super) fn close_panel(&mut self, panel: layout::Panel, cx: &mut Context<Self>) {
+        self.layout.close(panel);
+        self.save_settings();
+        cx.notify();
+    }
+
+    /// Reopens one, from the View menu or the ribbon's Home tab — the only
+    /// two ways back, which is why both exist.
+    pub(crate) fn set_panel_open(
+        &mut self,
+        panel: layout::Panel,
+        open: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if open {
+            self.layout.open(panel);
+        } else {
+            self.layout.close(panel);
+        }
+        self.save_settings();
+        cx.notify();
+    }
+
+    /// Whether a panel is showing anywhere — what a View tick reads.
+    pub(crate) fn is_panel_open(&self, panel: layout::Panel) -> bool {
+        self.layout.is_open(panel)
     }
 
     /// Shows one of a dock's tabs, from a click on it.

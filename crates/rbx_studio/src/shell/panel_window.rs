@@ -100,7 +100,7 @@ impl Render for PanelWindow {
                 self.grab.clone(),
                 move |_, _, cx| {
                     closing.update(cx, |shell, cx| {
-                        shell.dock_panel(panel, panel.home(), None, cx);
+                        shell.set_panel_open(panel, true, cx);
                     });
                 },
             ))
@@ -129,6 +129,43 @@ impl Shell {
     /// and GPUI panics with "cannot update while it is already being
     /// updated". Running it after the frame costs nothing and is the whole
     /// fix.
+    /// Brings every torn-out dock up with the window it belongs to.
+    ///
+    /// `WindowKind::Floating` asks the platform to keep these above the
+    /// editor, and on X11 a window manager is free to ignore it — which
+    /// leaves a dock you tore out sitting behind the window you tore it
+    /// out of. Raising them on the main window's own rising edge is the
+    /// part this app can do for itself. Only on the *edge*: raising them
+    /// every frame would fight the compositor, and re-activating the main
+    /// window afterwards is what keeps the keyboard where the click put
+    /// it.
+    pub(super) fn raise_panel_windows(&mut self, window: &Window, cx: &mut Context<Self>) {
+        let active = window.is_window_active();
+        if active == self.window_was_active {
+            return;
+        }
+        self.window_was_active = active;
+        if !active || self.panel_windows.is_empty() {
+            return;
+        }
+
+        let children: Vec<_> = self.panel_windows.values().cloned().collect();
+        let handle = cx.entity();
+        cx.defer(move |cx| {
+            for child in children {
+                let _ = child.update(cx, |_, window, _| window.activate_window());
+            }
+            // Last, so the window the user actually clicked keeps focus.
+            handle.update(cx, |_, cx| {
+                cx.defer(|cx| {
+                    if let Some(main) = cx.windows().first() {
+                        let _ = main.update(cx, |_, window, _| window.activate_window());
+                    }
+                });
+            });
+        });
+    }
+
     pub(super) fn sync_panel_windows(&mut self, cx: &mut Context<Self>) {
         let wanted: Vec<Panel> = self.layout.floating().to_vec();
         let open: Vec<Panel> = self.panel_windows.keys().copied().collect();

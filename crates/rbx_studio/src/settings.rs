@@ -17,7 +17,7 @@ use rbx_viewer::QualityLevel;
 
 use crate::class_icons::IconPack;
 use crate::pacing::UnfocusedFps;
-use crate::shell::{Edge, SavedEdge, SavedLayout};
+use crate::shell::{Edge, SavedEdge, SavedGroup, SavedLayout};
 
 /// What persists across a relaunch.
 #[derive(Debug, Clone, PartialEq)]
@@ -283,9 +283,26 @@ fn read_docks(value: &serde_json::Value) -> SavedLayout {
                 .iter()
                 .filter_map(|entry| {
                     let edge: Edge = crate::shell::edge_from_key(entry.get("edge")?.as_str()?)?;
+                    let groups = entry
+                        .get("groups")
+                        .and_then(serde_json::Value::as_array)
+                        .map(|groups| {
+                            groups
+                                .iter()
+                                .map(|group| SavedGroup {
+                                    panels: names(group.get("panels")),
+                                    active: group
+                                        .get("active")
+                                        .and_then(serde_json::Value::as_u64)
+                                        .unwrap_or(0)
+                                        as usize,
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
                     Some(SavedEdge {
                         edge,
-                        panels: names(entry.get("panels")),
+                        groups,
                         // Zero is this file's "nothing was saved" marker,
                         // which is also what a negative, infinite or NaN
                         // size has to become: a hand-edited file must not
@@ -297,10 +314,6 @@ fn read_docks(value: &serde_json::Value) -> SavedLayout {
                             .map(|size| size as f32)
                             .filter(|size| size.is_finite() && *size > 0.)
                             .unwrap_or(0.),
-                        active: entry
-                            .get("active")
-                            .and_then(serde_json::Value::as_u64)
-                            .unwrap_or(0) as usize,
                     })
                 })
                 .collect()
@@ -310,6 +323,7 @@ fn read_docks(value: &serde_json::Value) -> SavedLayout {
     SavedLayout {
         edges,
         floating: names(docks.get("floating")),
+        closed: names(docks.get("closed")),
     }
 }
 
@@ -344,13 +358,20 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
                 .map(|edge| {
                     serde_json::json!({
                         "edge": crate::shell::edge_key(edge.edge),
-                        "panels": edge.panels,
                         "size": edge.size,
-                        "active": edge.active,
+                        "groups": edge
+                            .groups
+                            .iter()
+                            .map(|group| serde_json::json!({
+                                "panels": group.panels,
+                                "active": group.active,
+                            }))
+                            .collect::<Vec<_>>(),
                     })
                 })
                 .collect::<Vec<_>>(),
             "floating": settings.docks.floating,
+            "closed": settings.docks.closed,
         },
         "output_collapsed": settings.output_collapsed,
         "increment_names": settings.increment_names,
@@ -670,18 +691,20 @@ mod tests {
                 edges: vec![
                     SavedEdge {
                         edge: Edge::Left,
-                        panels: vec!["Explorer".to_owned(), "Output".to_owned()],
+                        groups: vec![SavedGroup {
+                            panels: vec!["Explorer".to_owned(), "Output".to_owned()],
+                            active: 1,
+                        }],
                         size: 412.5,
-                        active: 1,
                     },
                     SavedEdge {
                         edge: Edge::Right,
-                        panels: Vec::new(),
+                        groups: Vec::new(),
                         size: 260.,
-                        active: 0,
                     },
                 ],
                 floating: vec!["Properties".to_owned()],
+                closed: Vec::new(),
             },
             output_collapsed: true,
             large_targets: true,
@@ -717,10 +740,10 @@ mod tests {
         std::fs::write(
             &path,
             br#"{"docks": {"edges": [
-                {"edge": "left", "panels": ["Properties"], "size": -50},
-                {"edge": "right", "panels": ["Explorer"], "size": 1e39},
-                {"edge": "nowhere", "panels": ["Output"], "size": 300},
-                {"panels": ["Output"], "size": 300}
+                {"edge": "left", "groups": [{"panels": ["Properties"]}], "size": -50},
+                {"edge": "right", "groups": [{"panels": ["Explorer"]}], "size": 1e39},
+                {"edge": "nowhere", "groups": [], "size": 300},
+                {"groups": [], "size": 300}
             ]}}"#,
         )
         .expect("write settings");

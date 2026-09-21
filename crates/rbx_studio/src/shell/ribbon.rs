@@ -22,6 +22,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::keys::{PART_TYPE_BALL, PART_TYPE_CYLINDER};
+use super::layout::Panel;
 use super::roving::Roving;
 
 use crate::script_templates::ScriptTemplates;
@@ -83,6 +84,7 @@ impl Shell {
                 self.clipboard_tiles(cx),
                 self.transform_tools(cx),
                 self.insert_tiles(cx),
+                self.panel_tiles(cx),
             ],
             Tab::Avatar => vec![placeholders(
                 "avatar",
@@ -265,6 +267,29 @@ impl Shell {
             // own engine (see `ROADMAP.md`).
             disabled_tile("ribbon-toolbox", IconName::Package, "Toolbox").into_any_element(),
         ]
+    }
+
+    /// One toggle per dock, and the reason they exist: a dock closed from
+    /// its own tab has no tab left to bring it back with. The View menu
+    /// carries the same three, through the same call — a window you can
+    /// shut and not reopen is a window you have lost.
+    fn panel_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        [
+            (Panel::Explorer, IconName::ListTree, "Explorer"),
+            (Panel::Properties, IconName::SlidersHorizontal, "Properties"),
+            (Panel::Output, IconName::Terminal, "Output"),
+        ]
+        .into_iter()
+        .map(|(panel, icon, label)| {
+            let open = self.is_panel_open(panel);
+            tile(&self.ribbon_nav, label, icon, label, cx)
+                .when(open, |this| this.bg(tokens::ribbon_tab_active()))
+                .on_click(cx.listener(move |shell, _, _, cx| {
+                    shell.set_panel_open(panel, !open, cx);
+                }))
+                .into_any_element()
+        })
+        .collect()
     }
 
     fn insert_gui(&self, cx: &mut Context<Self>) -> impl IntoElement + 'static {

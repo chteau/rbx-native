@@ -486,7 +486,12 @@ pub(crate) fn panel_topbar(
 /// the drag that moves it (see `shell::workspace`), because a tab is the
 /// grab handle for its whole panel and only the caller knows which panel
 /// that is.
-pub(super) fn dock_tab(id: &'static str, title: SharedString, selected: bool) -> Stateful<Div> {
+pub(super) fn dock_tab(
+    id: &'static str,
+    title: SharedString,
+    selected: bool,
+    on_close: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> Stateful<Div> {
     h_flex()
         // Keyed by the panel rather than by its label: the Properties tab
         // is named after the selected instance, and an element whose id
@@ -517,6 +522,20 @@ pub(super) fn dock_tab(id: &'static str, title: SharedString, selected: bool) ->
         })
         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
         .child(div().truncate().child(title))
+        .child(
+            // Only on the tab that is showing: a strip of two tabs with a
+            // cross on each reads as two buttons rather than as one dock,
+            // and the tab you are looking at is the one you would close.
+            div()
+                .id(SharedString::from(format!("dock-close-{id}")))
+                .flex_none()
+                .when(!selected, |this| this.invisible())
+                .cursor_pointer()
+                .text_color(tokens::text_label())
+                .hover(|this| this.text_color(tokens::text_full()))
+                .on_click(on_close)
+                .child(Icon::new(IconName::X).size(tokens::text_xs())),
+        )
 }
 
 /// The strip a dock's tabs sit in, with its own trailing cell for an

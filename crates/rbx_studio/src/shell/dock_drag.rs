@@ -1,25 +1,20 @@
-//! Dragging a dock by its tab: what travels, where it may land, and the
-//! overlay that says so.
+//! Dragging a dock by its tab: what travels, and what ends the gesture.
 //!
-//! GPUI performs the gesture, the same way `shell::reparent` already has
-//! the Explorer do it: `on_drag` on the tab a drag starts from, `on_drop`
-//! on whatever is under the cursor, `drag_over` for the tint in between.
-//! Nothing here tracks pointer positions itself.
+//! GPUI performs the drag itself, the same way `shell::reparent` already
+//! has the Explorer do it: `on_drag` on the tab a drag starts from,
+//! `on_drop` on whatever is under the cursor, `drag_over` for the tint in
+//! between. Where a drop may *land* is `shell::docks`' business — every
+//! target there is a real element sitting where the panel would go — so
+//! nothing here computes a rectangle or tracks a pointer.
 //!
-//! Two things this has that a row-onto-row drag does not. A dock can be
-//! dropped on an edge that currently holds **nothing**, so there is no
-//! element there to drop on — hence the [`Shell::drop_zones`] overlay,
-//! three strips that exist only while a drag is in flight. And a dock can
-//! be dropped **outside the window entirely**, which is a tear-out; that
-//! one is decided on mouse-up (see `Shell::end_panel_drag`), because a
-//! drop that lands on nothing is exactly what GPUI does not report.
+//! What is left for this module is the one case GPUI cannot report: a
+//! pointer released **outside the window** is over nothing of ours, so no
+//! drop ever arrives for it. That is a tear-out, and it is decided on
+//! mouse-up in [`Shell::end_panel_drag`].
 
-use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use crate::tokens;
-
-use super::layout::{Edge, Panel};
+use super::layout::Panel;
 use super::Shell;
 
 /// The panel a drag is carrying.
@@ -33,74 +28,26 @@ impl Render for DraggedPanel {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         // The tab itself, travelling: a ghost that looked like anything
         // else would leave you guessing what you had picked up.
-        super::chrome::dock_tab("dragged", SharedString::from(self.0.key()), true)
-            .opacity(0.8)
-            .into_any_element()
+        super::chrome::dock_tab(
+            "dragged",
+            SharedString::from(self.0.key()),
+            true,
+            |_, _, _| {},
+        )
+        .opacity(0.8)
+        .into_any_element()
     }
 }
 
-/// How far into the window an edge's drop strip reaches. Wide enough to
-/// hit without aiming, narrow enough that the document keeps a middle that
-/// means "not here".
-const ZONE: f32 = 72.;
-
 impl Shell {
-    /// The three strips a dragged dock can be dropped on, drawn over the
-    /// row only while a drag is actually in flight.
-    ///
-    /// They have to exist separately from the dock columns because an edge
-    /// holding nothing has no column to aim at — and an edge you can empty
-    /// but never refill is a trap. Drawn *over* the docks rather than
-    /// beside them for the same reason: the left strip has to accept a
-    /// drop even when a dock already covers that part of the window.
-    pub(super) fn drop_zones(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        if self.dragging_panel.is_none() {
-            return Vec::new();
-        }
-
-        Edge::ALL
-            .into_iter()
-            .map(|edge| {
-                let handle = cx.entity();
-                div()
-                    .id(SharedString::from(format!("drop-{}", edge.label())))
-                    .absolute()
-                    .map(|this| match edge {
-                        Edge::Left => this.left_0().top_0().bottom_0().w(px(ZONE)),
-                        Edge::Right => this.right_0().top_0().bottom_0().w(px(ZONE)),
-                        Edge::Bottom => this.left_0().right_0().bottom_0().h(px(ZONE)),
-                    })
-                    // Visible before it is hovered, not only during: a drop
-                    // target nobody can see until they have already aimed
-                    // at it is one they never find.
-                    .bg(tokens::check_on().opacity(0.12))
-                    .border_2()
-                    .border_color(tokens::check_on().opacity(0.35))
-                    .drag_over::<DraggedPanel>(|style, _, _, _| {
-                        style
-                            .bg(tokens::check_on().opacity(0.28))
-                            .border_color(tokens::check_on())
-                    })
-                    .on_drop(move |dragged: &DraggedPanel, _, cx| {
-                        let panel = dragged.0;
-                        handle.update(cx, |shell, cx| {
-                            shell.dragging_panel = None;
-                            shell.dock_panel(panel, edge, None, cx);
-                        });
-                    })
-                    .into_any_element()
-            })
-            .collect()
-    }
-
-    /// Records that a tab has been picked up, so [`Self::drop_zones`] has
-    /// something to draw.
+    /// Records that a tab has been picked up, which is what puts the ghost
+    /// docks and the split halves on screen (see `shell::docks`).
     pub(super) fn begin_panel_drag(&mut self, panel: Panel, cx: &mut Context<Self>) {
         self.dragging_panel = Some(panel);
         cx.notify();
     }
 
-    /// Ends a drag that no drop zone claimed.
+    /// Ends a drag that no target claimed.
     ///
     /// Let go over the document and the dock stays where it was — the
     /// middle of the window means "not a drop". Let go **outside the

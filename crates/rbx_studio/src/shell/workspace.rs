@@ -28,8 +28,7 @@ use crate::pacing::UnfocusedFps;
 use crate::tokens;
 
 use super::chrome::{self, Document, Drag};
-use super::dock_drag::DraggedPanel;
-use super::layout::{Edge, Home, Panel};
+use super::layout::{Edge, Home, Landing, Panel};
 use super::menu::{self, MenuId};
 use super::Shell;
 
@@ -60,11 +59,11 @@ impl Shell {
         // Before the edges are built, so a panel torn out on the frame it
         // was dropped does not also draw itself into a dock for one frame.
         self.sync_panel_windows(cx);
+        self.raise_panel_windows(window, cx);
 
         let left = self.dock_edge(Edge::Left, limit, window, cx);
         let right = self.dock_edge(Edge::Right, limit, window, cx);
         let bottom = self.dock_edge(Edge::Bottom, limit, window, cx);
-        let zones = self.drop_zones(cx);
 
         h_flex()
             // Positioned, so the drop strips can be laid over it — an edge
@@ -97,136 +96,6 @@ impl Shell {
                     .children(bottom),
             )
             .children(right)
-            .children(zones)
-    }
-
-    /// One edge: its resize handle, its tab strip, and whichever tab is
-    /// showing.
-    ///
-    /// Returns nothing at all for an edge nobody put a panel on — no
-    /// column, no handle, no hairline — so emptying an edge gives the room
-    /// back to the document rather than leaving a seam where a dock was.
-    fn dock_edge(
-        &mut self,
-        edge: Edge,
-        limit: f32,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Vec<AnyElement> {
-        let panels = self.layout.panels(edge).to_vec();
-        let Some(active) = self.layout.active(edge) else {
-            return Vec::new();
-        };
-
-        // Output is the one panel that collapses to its own tab strip.
-        let collapsed = self.output_collapsed && active == Panel::Output;
-        let size = self.layout.capped(edge, limit);
-
-        let tabs = panels
-            .iter()
-            .enumerate()
-            .map(|(index, panel)| {
-                let title = self.panel_title(*panel);
-                self.dock_tab(*panel, title, edge, index, *panel == active, cx)
-            })
-            .collect();
-        let (trailing, content) = self.panel_parts(active, collapsed, window, cx);
-        let strip = chrome::dock_strip(tabs, trailing).into_any_element();
-
-        let handle = cx.entity();
-        let column = if edge.is_vertical() {
-            dock_column().w(px(size))
-        } else {
-            v_flex()
-                .flex_none()
-                .w_full()
-                .bg(tokens::dock())
-                .when(!collapsed, |this| this.h(px(size)))
-        };
-        let column = match edge {
-            Edge::Left => column.border_r(px(1.)),
-            Edge::Right => column.border_l(px(1.)),
-            Edge::Bottom => column.border_t(px(1.)),
-        }
-        .border_color(tokens::divider())
-        .id(SharedString::from(format!("dock-{}", edge.label())))
-        // Dropping anywhere on a dock adds to its strip, so the tabs are
-        // a target rather than the only one — an inch of miss should not
-        // cost the gesture.
-        .on_drop(move |dragged: &DraggedPanel, _, cx| {
-            let panel = dragged.0;
-            handle.update(cx, |shell, cx| {
-                shell.dragging_panel = None;
-                shell.dock_panel(panel, edge, None, cx);
-            });
-        })
-        .child(strip)
-        .children(content)
-        .into_any_element();
-
-        // The handle sits between the edge and the document, so which side
-        // of the column it goes on is which edge this is. A collapsed
-        // Output has nothing to resize.
-        let resize = (!collapsed).then(|| self.handle(edge, cx));
-        match edge {
-            Edge::Left => [Some(column), resize].into_iter().flatten().collect(),
-            _ => [resize, Some(column)].into_iter().flatten().collect(),
-        }
-    }
-
-    /// One tab: shows its panel on a click, carries it on a drag, and
-    /// takes a drop to land beside itself.
-    ///
-    /// The tab is the grab handle for the whole dock, which is the gesture
-    /// every editor with movable panels uses — and the reason the panel's
-    /// own name had to become data (see `shell::layout`) rather than the
-    /// function that drew it.
-    fn panel_title(&self, panel: Panel) -> SharedString {
-        match panel {
-            // Named after the instance it is showing, which is what the
-            // dock's own title said before there were tabs.
-            Panel::Properties => self.properties_title(),
-            other => SharedString::from(other.key()),
-        }
-    }
-
-    fn dock_tab(
-        &self,
-        panel: Panel,
-        title: SharedString,
-        edge: Edge,
-        index: usize,
-        selected: bool,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let show = cx.entity();
-        let start = cx.entity();
-        let drop = cx.entity();
-
-        chrome::dock_tab(panel.key(), title, selected)
-            // Mouse-*down*, not click: this element is also the drag
-            // handle, and a press that goes on to move is a drag whose
-            // click never arrives. Showing the tab on the press is what
-            // the Explorer's own rows do for the same reason, and it is
-            // the more responsive half of the bargain anyway.
-            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                show.update(cx, |shell, cx| shell.activate_panel(panel, cx));
-            })
-            .on_drag(DraggedPanel(panel), move |dragged, _, _, cx| {
-                start.update(cx, |shell, cx| shell.begin_panel_drag(dragged.0, cx));
-                cx.new(|_| dragged.clone())
-            })
-            .drag_over::<DraggedPanel>(|style, _, _, _| style.bg(tokens::check_on().opacity(0.35)))
-            // Landing *on* a tab inserts at its position, which is what
-            // makes a strip reorderable rather than append-only.
-            .on_drop(move |dragged: &DraggedPanel, _, cx| {
-                let carried = dragged.0;
-                drop.update(cx, |shell, cx| {
-                    shell.dragging_panel = None;
-                    shell.dock_panel(carried, edge, Some(index), cx);
-                });
-            })
-            .into_any_element()
     }
 
     /// The same parts a docked panel renders, for one that has been torn
@@ -245,9 +114,9 @@ impl Shell {
     }
 
     /// One panel's trailing controls and its content, with the tab strip
-    /// left to [`Self::dock_edge`] — the strip belongs to the *edge* now,
-    /// since several panels share one.
-    fn panel_parts(
+    /// left to `shell::docks` — the strip belongs to the *dock* now, since
+    /// several panels share one.
+    pub(super) fn panel_parts(
         &mut self,
         panel: Panel,
         collapsed: bool,
@@ -376,15 +245,17 @@ impl Shell {
         Edge::ALL
             .into_iter()
             .map(|edge| {
+                let landing = Landing::NewGroup { edge, group: 0 };
                 menu::item(format!("Move to {}", edge.label()))
-                    .checked(here == Home::Docked(edge))
-                    .on_click(move |shell, cx| shell.dock_panel(panel, edge, None, cx))
+                    .checked(matches!(here, Home::Docked { edge: at, .. } if at == edge))
+                    .on_click(move |shell, cx| shell.land_panel(panel, landing, cx))
             })
-            .chain(std::iter::once(
+            .chain([
                 menu::item("Float")
                     .checked(here == Home::Floating)
                     .on_click(move |shell, cx| shell.float_panel(panel, cx)),
-            ))
+                menu::item("Close").on_click(move |shell, cx| shell.close_panel(panel, cx)),
+            ])
             .collect()
     }
 
@@ -517,7 +388,7 @@ impl Shell {
             .into_any_element()
     }
 
-    fn handle(&self, edge: Edge, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn handle(&self, edge: Edge, cx: &mut Context<Self>) -> AnyElement {
         let size = self.layout.size(edge);
 
         chrome::resize_handle(
@@ -569,17 +440,6 @@ impl Shell {
             cx.notify();
         }
     }
-}
-
-/// One side dock's column: its own surface, a step off the window's black
-/// ground, plus the hairline that says where it ends.
-///
-/// The frame paints docks the same black as everything behind them, which
-/// makes three docks and the window one undifferentiated field — you cannot
-/// see where the Explorer stops and the viewport starts. This is the
-/// deliberate departure from it.
-fn dock_column() -> Div {
-    v_flex().flex_none().h_full().bg(tokens::dock())
 }
 
 /// A dock's search field: the frame's own, which is a field with a centred
