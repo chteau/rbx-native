@@ -105,7 +105,7 @@ fn a_point_light_defaults_to_studios_own_property_sheet() {
 
     assert_eq!(lights.len(), 1);
     let light = lights[0];
-    assert_eq!(light.range, DEFAULT_RANGE);
+    assert_eq!(light.range, 8.0);
     assert!(close(light.color, Vec3::splat(RADIANCE_SCALE)));
     assert_eq!(light.position, Vec3::ZERO);
     assert_eq!(light.near, 0.0);
@@ -114,13 +114,20 @@ fn a_point_light_defaults_to_studios_own_property_sheet() {
     assert!(light.cos_outer < -1.0 && light.cos_outer < light.cos_inner);
 }
 
+/// What a light inserted from the Explorer holds: nothing stored at all, so
+/// every value is its class default — the ones the Properties sheet shows.
 #[test]
-fn a_spot_light_defaults_to_the_wider_range_and_a_right_angle_cone() {
-    let lights = one("SpotLight", &[("Face", Variant::Enum(1))]);
+fn a_cone_light_with_nothing_stored_shines_from_its_front_with_studios_defaults() {
+    for class in ["SpotLight", "SurfaceLight"] {
+        let lights = one(class, &[]);
 
-    assert_eq!(lights[0].range, DEFAULT_SPOT_RANGE);
-    // A 90 degree cone reaches 45 degrees off its axis.
-    assert!((lights[0].cos_outer - 45f32.to_radians().cos()).abs() < EPSILON);
+        assert_eq!(lights.len(), 1, "{class}");
+        assert_eq!(lights[0].range, 16.0, "{class}");
+        assert!(close(lights[0].direction, -Vec3::Z), "{class} faces Front");
+        // A 90 degree cone reaches 45 degrees off its axis.
+        assert!((lights[0].cos_outer - 45f32.to_radians().cos()).abs() < EPSILON);
+        assert!(close(lights[0].color, Vec3::splat(RADIANCE_SCALE)));
+    }
 }
 
 #[test]
@@ -194,26 +201,16 @@ fn a_light_whose_parent_is_not_drawable_is_skipped() {
     assert!(fixture.lights().is_empty());
 }
 
-// Studio's own default: an omitted `Shadows` still casts, just like an
-// omitted `Enabled` still lights (see `a_disabled_light_never_reaches_the_gpu`).
+// The class default: a fresh light casts no shadow until asked to.
 #[test]
-fn shadows_default_to_on_and_read_back_when_turned_off() {
-    assert!(one("SpotLight", &[("Face", Variant::Enum(1))])[0].shadows);
-    assert!(
-        !one(
-            "SpotLight",
-            &[
-                ("Face", Variant::Enum(1)),
-                ("Shadows", Variant::Bool(false))
-            ]
-        )[0]
-        .shadows
-    );
+fn shadows_default_to_off_and_read_back_when_turned_on() {
+    assert!(!one("SpotLight", &[])[0].shadows);
+    assert!(!one("PointLight", &[])[0].shadows);
+    assert!(one("SpotLight", &[("Shadows", Variant::Bool(true))])[0].shadows);
 }
 
 #[test]
-fn a_cone_light_without_a_face_is_skipped() {
-    assert!(one("SpotLight", &[]).is_empty());
+fn a_cone_light_with_an_unreadable_face_is_skipped() {
     assert!(one("SurfaceLight", &[("Face", Variant::Enum(9))]).is_empty());
 }
 
@@ -304,7 +301,7 @@ fn a_light_on_an_attachment_is_placed_in_the_parts_own_frame() {
 #[test]
 fn the_cone_edges_never_coincide() {
     for angle in [0.0, 1.0, 90.0, 179.0, 180.0, 400.0] {
-        let (outer, inner) = cone(Some(angle));
+        let (outer, inner) = cone(Some(&Variant::Float32(angle)));
         // `- EPSILON`: an Angle of 0 lands the gap on MIN_CONE_GAP itself, and
         // the subtraction that produced it rounds a hair below.
         assert!(
@@ -313,7 +310,6 @@ fn the_cone_edges_never_coincide() {
         );
         assert!(inner <= 1.0, "angle {angle}");
     }
-    assert_eq!(cone(None), cone(Some(DEFAULT_ANGLE_DEGREES)));
 }
 
 #[test]

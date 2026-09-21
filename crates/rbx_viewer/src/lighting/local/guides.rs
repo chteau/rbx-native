@@ -33,7 +33,7 @@ use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use super::{
-    boolean, color, face, frame_of, half_angle, number, range, size_of, ATTACHMENT_CLASS,
+    boolean, color, face, frame_of, half_angle, property, range, size_of, ATTACHMENT_CLASS,
     LIGHT_CLASS, SPOT_CLASS, SURFACE_CLASS,
 };
 use crate::renderer::Segment;
@@ -72,23 +72,21 @@ pub fn light_guides(
 fn guide(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> Option<Vec<Segment>> {
     let light = dom.get(referent)?;
     let class = light.class();
-    let properties = light.properties();
-    if !database.is_subclass_of(class, LIGHT_CLASS)
-        || !boolean(properties.get("Enabled")).unwrap_or(true)
-    {
+    let value = |name: &str| property(database, light, name);
+    if !database.is_subclass_of(class, LIGHT_CLASS) || !boolean(value("Enabled")).unwrap_or(true) {
         return None;
     }
     let spot = database.is_subclass_of(class, SPOT_CLASS);
     let surface = database.is_subclass_of(class, SURFACE_CLASS);
-    let range = range(properties.get("Range"), spot);
+    let range = range(value("Range"));
     if range <= 0.0 {
         return None;
     }
     let (frame, size) = placement(dom, database, dom.parent(referent)?)?;
 
     let lines = if spot || surface {
-        let face = face(properties.get("Face"))?;
-        let half = half_angle(number(properties.get("Angle")));
+        let face = face(value("Face"))?;
+        let half = half_angle(value("Angle"));
         let basis = Basis::of(frame, face);
         match size {
             Some(size) if surface => {
@@ -106,7 +104,7 @@ fn guide(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> Option<
         sphere(frame, range)
     };
 
-    let color = (color(properties.get("Color")).unwrap_or(Vec3::ONE) * SHADE)
+    let color = (color(value("Color")).unwrap_or(Vec3::ONE) * SHADE)
         .extend(ALPHA)
         .to_array();
     Some(

@@ -3,7 +3,7 @@ use rbx_dom::{Color3Data, Variant};
 use super::super::tests::{
     cframe, close, database, Fixture, EPSILON, IDENTITY_ROTATION, YAW_90_ROTATION,
 };
-use super::super::{DEFAULT_RANGE, DEFAULT_SPOT_RANGE, MAX_RANGE};
+use super::super::MAX_RANGE;
 use super::*;
 
 const RIGHT: u32 = 0;
@@ -97,11 +97,11 @@ fn a_guide_takes_the_lights_colour_at_a_fixed_opacity() {
 fn range_is_defaulted_and_clamped_like_the_light_itself() {
     let radius = |segments: &[Segment]| segments[0].from.length();
     let point = guide_of("PointLight", Vec3::ZERO, Vec3::ONE, &[]);
-    assert!(near(radius(&point), DEFAULT_RANGE));
+    assert!(near(radius(&point), 8.0));
 
     // A spot's axis line is exactly its range long.
     let spot = guide_of("SpotLight", Vec3::ZERO, Vec3::ONE, &[face(TOP)]);
-    assert!(close(spot[0].to, Vec3::Y * DEFAULT_SPOT_RANGE));
+    assert!(close(spot[0].to, Vec3::Y * 16.0));
 
     let huge = guide_of("PointLight", Vec3::ZERO, Vec3::ONE, &[range(1000.0)]);
     assert!(near(radius(&huge), MAX_RANGE));
@@ -322,11 +322,29 @@ fn a_light_with_nowhere_to_shine_from_has_no_guide() {
     let folder = fixture.insert("Folder", Some(fixture.workspace), &[]);
     let loose = fixture.insert("PointLight", Some(folder), &[]);
     let part = fixture.part(Vec3::ZERO, Vec3::ONE, IDENTITY_ROTATION);
-    let faceless = fixture.insert("SpotLight", Some(part), &[]);
+    let faceless = fixture.insert("SpotLight", Some(part), &[face(9)]);
 
     let guides = light_guides(&fixture.dom, &database(), &[loose, faceless]);
 
     assert!(guides.is_empty());
+}
+
+/// A light inserted from the Explorer stores nothing: its guide is its class
+/// defaults', the ones the Properties sheet shows.
+#[test]
+fn a_cone_light_with_nothing_stored_draws_its_class_defaults() {
+    let spot = guide_of("SpotLight", Vec3::ZERO, Vec3::ONE, &[]);
+    // Front, 16 studs, a right-angle cone.
+    assert!(close(spot[0].to, -Vec3::Z * 16.0));
+    assert_eq!(spot.len(), 1 + 4 + CIRCLE_SEGMENTS);
+    assert!(near(
+        spot[1].to.normalize().dot(-Vec3::Z),
+        45f32.to_radians().cos()
+    ));
+
+    let surface = guide_of("SurfaceLight", Vec3::ZERO, Vec3::new(2.0, 4.0, 6.0), &[]);
+    assert!(close(surface[0].from, -Vec3::Z * 3.0));
+    assert!(close(surface[0].to, -Vec3::Z * (3.0 + 16.0)));
 }
 
 /// A part staged outside `Workspace` is never drawn, so a guide for a light
