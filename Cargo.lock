@@ -5999,6 +5999,7 @@ dependencies = [
 name = "rbx_reflection"
 version = "0.1.0"
 dependencies = [
+ "rbx_dom",
  "serde",
  "serde_json",
  "thiserror 2.0.20",

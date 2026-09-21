@@ -214,7 +214,10 @@ the autonomous-contribution workflow specifically.
   [Roblox-Materials](https://github.com/MaximumADHD/Roblox-Materials) (the
   material texture pack layout) and the Roblox FileMesh format specification.
 - **rojo-rbx** — [rbx-dom](https://github.com/rojo-rbx/rbx-dom) documentation
-  of the binary format.
+  of the binary format, and its reflection database (MIT), from which
+  `scripts/reflection-defaults.sh` extracts each class's default property
+  values and the names properties are saved under
+  (`assets/reflection-defaults.json`).
 - **Roblox** — [creator-docs](https://github.com/Roblox/creator-docs), the
   public API dump and the material texture asset ids it publishes.
 - **Evan Wallace** — [csg.js](https://github.com/evanw/csg.js) (MIT), whose
