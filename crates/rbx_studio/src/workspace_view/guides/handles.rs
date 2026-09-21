@@ -176,7 +176,7 @@ impl WorkspaceView {
                 })
             }
         };
-        self.guides.drawn = drawn;
+        self.show_guides(drawn);
         self.guides.label = label.map(|(at, text)| (at, SharedString::from(text)));
     }
 

@@ -18,7 +18,7 @@ pub(crate) mod surface;
 pub(crate) mod sweep;
 
 use glam::Vec3;
-use rbx_viewer::Pose;
+use rbx_viewer::{Pose, Segment};
 
 /// `Studio.DraggerMajorGridIncrement`'s default: every fifth ruler tick,
 /// counted from the edge, is a long one.
@@ -29,6 +29,12 @@ pub(crate) const MAX_SOFT_SNAPS: usize = 32;
 /// `Studio.DraggerSoftSnapMarginFactor`'s default, the multiplier on every
 /// soft-snap reach.
 const SOFT_SNAP_MARGIN: f32 = 1.0;
+
+/// A guide line's width on screen, in pixels. Studio draws its guides with
+/// the engine's default thickness, which measures off its own screenshots
+/// as one fully coloured pixel with a partly covered one either side: what
+/// this renderer draws for a two-pixel line.
+const HAIRLINE: f32 = 2.0;
 
 /// `Studio.DraggerPassiveColor`: the hover ruler, a handle drag's axis line
 /// and its soft-snap dots.
@@ -75,9 +81,9 @@ pub(crate) struct Line {
     pub(crate) under: f32,
     /// Opacity of the copy drawn over everything.
     pub(crate) over: f32,
-    /// World-space thickness, or `0.0` for the engine's one-pixel line
-    /// (Studio never sets `Thickness` on a guide). Only the dragged point's
-    /// bar, which Studio draws as a thin box, has one.
+    /// World-space thickness, or `0.0` for the engine's own line width
+    /// (Studio never sets `Thickness` on a guide; see [`HAIRLINE`]). Only the
+    /// dragged point's bar, which Studio draws as a thin box, has one.
     pub(crate) width: f32,
 }
 
@@ -94,15 +100,13 @@ impl Line {
     }
 }
 
-/// A marker Studio draws with a handle adornment, always over everything.
+/// A marker Studio draws with a `SphereHandleAdornment`, always over
+/// everything.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Dot {
     pub(crate) centre: Vec3,
-    /// The sphere's radius, or half the cube's side.
     pub(crate) radius: f32,
     pub(crate) color: [f32; 3],
-    /// A cube (`BoxHandleAdornment`) rather than a sphere.
-    pub(crate) cube: bool,
 }
 
 /// Everything one frame's guides draw.
@@ -110,6 +114,58 @@ pub(crate) struct Dot {
 pub(crate) struct Guides {
     pub(crate) lines: Vec<Line>,
     pub(crate) dots: Vec<Dot>,
+}
+
+impl Guides {
+    /// The segments the renderer draws these as, `pixel` being how long one
+    /// pixel is at a point: each line once depth-tested and once over
+    /// everything (skipping a copy with nothing to show), then each dot.
+    ///
+    /// Every screen-constant size Studio gives a guide is a multiple of
+    /// [`handle_scale`], which is itself a fixed share of the view's height,
+    /// so it goes over as the pixels it covers now and stays that size
+    /// however the camera moves.
+    pub(crate) fn segments(&self, pixel: impl Fn(Vec3) -> f32) -> Vec<Segment> {
+        let mut segments = Vec::new();
+        for line in &self.lines {
+            let width = if line.width > 0.0 {
+                line.width / pixel((line.from + line.to) * 0.5)
+            } else {
+                HAIRLINE
+            };
+            for (alpha, on_top) in [(line.under, false), (line.over, true)] {
+                if alpha > 0.0 {
+                    segments.push(Segment {
+                        from: line.from,
+                        to: line.to,
+                        color: Vec3::from(line.color).extend(alpha).to_array(),
+                        on_top,
+                        width,
+                    });
+                }
+            }
+        }
+        segments.extend(self.dots.iter().map(|dot| Segment {
+            from: dot.centre,
+            to: dot.centre,
+            color: Vec3::from(dot.color).extend(1.0).to_array(),
+            on_top: true,
+            width: 2.0 * dot.radius / pixel(dot.centre),
+        }));
+        segments
+    }
+}
+
+/// How long one pixel is at `point`, on a view `height` pixels tall.
+pub(crate) fn pixel_size(point: Vec3, pose: Pose, orthographic: bool, height: f32) -> f32 {
+    let half = (pose.fov_degrees * 0.5).to_radians();
+    let visible = if orthographic {
+        2.0 * pose.ortho_scale
+    } else {
+        let (forward, ..) = pose.basis();
+        2.0 * (point - pose.position).dot(forward).max(1e-3) * half.tan()
+    };
+    visible / height
 }
 
 /// Luau's `math.sign`, which answers 0 for 0 where `f32::signum` answers 1:
@@ -176,6 +232,48 @@ mod tests {
         let scale = handle_scale(Vec3::ZERO, pose, true);
         let share = scale / (2.0 * pose.ortho_scale);
         assert!((share - 0.05 * 35f32.to_radians().cos().powi(2)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_dot_covers_the_same_pixels_at_any_depth() {
+        let pose = looking_down_z();
+        let (forward, ..) = pose.basis();
+        let pixels = |depth: f32| {
+            let centre = forward * depth;
+            let guides = Guides {
+                lines: Vec::new(),
+                dots: vec![Dot {
+                    centre,
+                    radius: 0.15 * handle_scale(centre, pose, false),
+                    color: ACTIVE,
+                }],
+            };
+            guides.segments(|point| pixel_size(point, pose, false, 1080.0))[0].width
+        };
+        assert!((pixels(10.0) - pixels(55.0)).abs() < 1e-3);
+        // Studio's 0.15-scale dot: about 5.4 pixels in radius at 1080p.
+        assert!(
+            (pixels(10.0) - 2.0 * 5.435).abs() < 0.02,
+            "{}",
+            pixels(10.0)
+        );
+    }
+
+    #[test]
+    fn each_line_goes_over_once_per_copy_it_shows() {
+        let guides = Guides {
+            lines: vec![
+                Line::hairline(Vec3::ZERO, Vec3::X, PASSIVE, 0.6, 0.15),
+                Line::hairline(Vec3::ZERO, Vec3::Y, PASSIVE, 1.0, 0.0),
+            ],
+            dots: Vec::new(),
+        };
+        let segments = guides.segments(|_| 0.01);
+        assert_eq!(segments.len(), 3);
+        assert_eq!((segments[0].on_top, segments[0].color[3]), (false, 0.6));
+        assert_eq!((segments[1].on_top, segments[1].color[3]), (true, 0.15));
+        assert!(!segments[2].on_top);
+        assert!(segments.iter().all(|segment| segment.width == HAIRLINE));
     }
 
     #[test]

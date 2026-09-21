@@ -263,7 +263,10 @@ impl WorkspaceView {
             // one needs no second opinion.
             if let Some(drag) = self.grab_handle(ray, modifiers.alt) {
                 self.begin(drag, cx);
+                // Studio's handle drag shows its guides from the press on —
+                // the label reading 0 — not from the first step that moves.
                 self.grab_guides(drag, ray);
+                self.step_guides(drag, ray, modifiers.shift, scale);
                 return;
             }
             // A selected part's body is only a *candidate*: the view knows

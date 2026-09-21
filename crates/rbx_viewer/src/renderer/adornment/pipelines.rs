@@ -89,7 +89,10 @@ pub(in crate::renderer) fn lines(
     })
 }
 
-fn build(
+/// One adornment pipeline: blended, unculled, depth-tested or — `on_top` —
+/// drawn over everything. Shared with `renderer::lines`' dots, which are
+/// adornments in all but name.
+pub(in crate::renderer) fn build(
     device: &wgpu::Device,
     target: Target,
     label: &str,

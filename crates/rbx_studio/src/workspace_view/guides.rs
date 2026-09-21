@@ -14,11 +14,12 @@ use glam::Vec3;
 use gpui_kit::*;
 use rbx_viewer::gizmo::Axis;
 use rbx_viewer::pick::Ray;
+use rbx_viewer::Segment;
 
 use super::WorkspaceView;
 use crate::dragger::surface::SurfaceFrame;
 use crate::dragger::sweep::SoftSnap;
-use crate::dragger::{free, ruler, Guides};
+use crate::dragger::{free, pixel_size, ruler, Guides};
 use crate::settings::DraggerSettings;
 use crate::settle::Settled;
 use crate::transform::Tool;
@@ -47,10 +48,14 @@ pub(super) struct State {
     /// how far out along it the press landed.
     arrow: Option<(Axis, f32, f32)>,
     /// What is drawn now.
-    pub(super) drawn: Guides,
+    drawn: Guides,
     /// Studio's distance label: where, in the panel's own logical pixels,
     /// and what it reads.
     pub(super) label: Option<(Point<Pixels>, SharedString)>,
+    /// The light guides' segments, drawn alongside these.
+    light: Vec<Segment>,
+    /// What the render thread was last sent, both kinds together.
+    sent: Vec<Segment>,
 }
 
 impl WorkspaceView {
@@ -63,7 +68,7 @@ impl WorkspaceView {
     /// nothing held: the tool, or a setting.
     pub(super) fn refresh_guides(&mut self) {
         if self.drag.is_none() {
-            self.guides.drawn = self.hover_guides(false);
+            self.show_guides(self.hover_guides(false));
         }
     }
 
@@ -75,7 +80,7 @@ impl WorkspaceView {
             return;
         }
         self.guides.hover = target;
-        self.guides.drawn = self.hover_guides(false);
+        self.show_guides(self.hover_guides(false));
     }
 
     /// Notes what a hover ray is doing that `Shell` does not see: `Shift`,
@@ -116,14 +121,14 @@ impl WorkspaceView {
     /// A body grab going ahead: the hover dot turns yellow until the first
     /// step lands the drag.
     pub(super) fn pend_guides(&mut self) {
-        self.guides.drawn = self.hover_guides(true);
+        self.show_guides(self.hover_guides(true));
         self.guides.label = None;
     }
 
     /// Everything a gesture drew goes when it ends.
     pub(super) fn clear_guides(&mut self) {
+        self.show_guides(Guides::default());
         let state = &mut self.guides;
-        state.drawn = Guides::default();
         state.label = None;
         state.snaps.clear();
         state.arrow = None;
@@ -155,7 +160,7 @@ impl WorkspaceView {
     /// way Studio draws it, or nothing over empty space.
     pub(super) fn landed(&mut self, settled: Option<&Settled>) {
         let settings = self.guides.settings;
-        self.guides.drawn = match (settled, self.view) {
+        let drawn = match (settled, self.view) {
             (Some(settled), Some(pose)) => {
                 self.guides.landed_on = Some(settled.frame);
                 free::guides(
@@ -171,5 +176,39 @@ impl WorkspaceView {
             }
             _ => Guides::default(),
         };
+        self.show_guides(drawn);
+    }
+
+    /// Replaces what the dragger guides draw.
+    fn show_guides(&mut self, guides: Guides) {
+        self.guides.drawn = guides;
+        self.send_lines();
+    }
+
+    /// Replaces the light guides' segments (see `Shell::sync_light_guides`).
+    pub(super) fn show_light_guides(&mut self, segments: Vec<Segment>) {
+        self.guides.light = segments;
+        self.send_lines();
+    }
+
+    /// The render thread takes one list of segments for everything an editor
+    /// draws over the scene, so the light guides and the dragger guides go
+    /// together, from here alone — and only when they changed: a hover that
+    /// lands on the same grid point sends nothing.
+    fn send_lines(&mut self) {
+        let mut segments = self.guides.light.clone();
+        let height = self.viewport.get().size.1 as f32;
+        if let (Some(pose), true) = (self.view, height > 0.0) {
+            let orthographic = self.orthographic;
+            segments.extend(
+                self.guides
+                    .drawn
+                    .segments(|point| pixel_size(point, pose, orthographic, height)),
+            );
+        }
+        if segments != self.guides.sent {
+            self.guides.sent = segments.clone();
+            self.pump.lines(segments);
+        }
     }
 }

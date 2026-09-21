@@ -101,7 +101,6 @@ pub(crate) fn hover(
             centre: point,
             radius: DOT_RADIUS * handle_scale(point, pose, orthographic),
             color: if pending { ACTIVE } else { PASSIVE },
-            cube: false,
         })
         .into_iter()
         .collect();

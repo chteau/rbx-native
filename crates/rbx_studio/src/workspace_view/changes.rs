@@ -26,10 +26,11 @@ impl WorkspaceView {
         self.pump.preview(boxes);
     }
 
-    /// Forwards the line segments drawn over the scene — the light guides.
-    /// An empty list clears them.
+    /// The light guides' segments. An empty list clears them. Sent along
+    /// with the dragger guides, which share the one list the render thread
+    /// takes (see `guides`).
     pub(crate) fn set_lines(&mut self, segments: Vec<Segment>) {
-        self.pump.lines(segments);
+        self.show_light_guides(segments);
     }
 
     /// Reflects one edit's `Change` log in the render thread's scene, every

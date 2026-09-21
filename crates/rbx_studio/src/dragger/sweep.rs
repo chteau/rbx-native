@@ -338,7 +338,6 @@ pub(crate) fn dots(
             centre: snap.point,
             radius: DOT_RADIUS * handle_scale(snap.point, pose, orthographic),
             color: PASSIVE,
-            cube: false,
         })
         .collect();
     dots.dedup_by(|a, b| a.centre == b.centre);
@@ -346,7 +345,6 @@ pub(crate) fn dots(
         centre: point,
         radius: CURRENT_RADIUS * handle_scale(point, pose, orthographic),
         color: ACTIVE,
-        cube: false,
     }));
     dots
 }

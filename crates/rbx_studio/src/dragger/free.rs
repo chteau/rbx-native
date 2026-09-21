@@ -25,7 +25,10 @@ const DOT_RADIUS: f32 = 0.15;
 const BAR_WIDTH: f32 = 0.05;
 /// How far an alignment line runs on past each end, in handle scales.
 const LINE_OVERRUN: f32 = 1.5;
-/// An alignment line with no length is drawn as a cube this wide instead.
+/// An alignment line with no length is a mark this wide instead. Studio
+/// draws a cube (`BoxHandleAdornment`) there; this draws the same-sized dot
+/// every other mark is, for a case that needs the cursor exactly on a face's
+/// edge line.
 const POINT_SIZE: f32 = 0.3;
 
 /// The grab at a press, snapped the way Studio snaps it
@@ -229,7 +232,6 @@ pub(crate) fn guides(
                     centre: from,
                     radius: 0.5 * POINT_SIZE * scale,
                     color: ACTIVE,
-                    cube: true,
                 });
                 continue;
             };
@@ -254,7 +256,6 @@ pub(crate) fn guides(
             centre: point,
             radius: DOT_RADIUS * scale,
             color: ACTIVE,
-            cube: false,
         });
         guides.lines.push(Line {
             from: point,

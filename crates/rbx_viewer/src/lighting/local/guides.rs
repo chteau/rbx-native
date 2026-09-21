@@ -49,6 +49,8 @@ const CIRCLE_SEGMENTS: usize = 32;
 /// screenshots, through this renderer's blending and tone map.
 const SHADE: f32 = 0.75;
 const ALPHA: f32 = 0.5;
+/// A guide's width on screen: Studio's are two pixels across at 100% scale.
+const WIDTH: f32 = 2.0;
 /// A rim smaller than this is an `Angle` of 0: its slant lines would all lie
 /// on the axis line.
 const MIN_RIM: f32 = 1e-4;
@@ -115,6 +117,7 @@ fn guide(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> Option<
                 to,
                 color,
                 on_top: false,
+                width: WIDTH,
             })
             .collect(),
     )
