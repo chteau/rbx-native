@@ -169,6 +169,17 @@ impl Patcher<'_> {
             return Ok(());
         };
         let role = Role::of(self.database, instance.class());
+        // Only a class change moves a live instance between passes, and the
+        // pass it leaves still draws it until told otherwise: a part turned
+        // into a `Folder` would stay on screen, a light turned into a value
+        // object would keep lighting.
+        if self
+            .roles
+            .get(referent)
+            .is_some_and(|known| known.role != role)
+        {
+            self.forget(referent)?;
+        }
         self.roles.insert(
             referent,
             Known {

@@ -432,6 +432,85 @@ fn a_frame_moved_from_a_screen_gui_to_a_billboard_gui_draws_as_a_rebuild_draws_i
     );
 }
 
+// A class change re-derives the instance whole — a wedge is not a block —
+// and is the one edit that can move a live instance out of the pass that
+// draws it: a part turned into a `Folder` has to stop being drawn.
+#[test]
+#[ignore = "needs a GPU"]
+fn a_part_given_another_class_draws_as_a_rebuild_draws_it() {
+    for class in ["WedgePart", "CornerWedgePart", "MeshPart", "Folder"] {
+        parity(&format!("Part to {class}"), |dom| {
+            let part = parts(dom)[0];
+            dom.set_class(part, class).unwrap();
+        });
+    }
+}
+
+#[test]
+#[ignore = "needs a GPU"]
+fn a_light_given_another_class_draws_as_a_rebuild_draws_it() {
+    for class in ["SpotLight", "SurfaceLight", "StringValue"] {
+        staged(
+            &format!("PointLight to {class}"),
+            |dom| {
+                let part = parts(dom)[0];
+                let light = dom.new_instance("PointLight", "Lamp", Some(part));
+                for (name, value) in [
+                    ("Brightness", Variant::Float32(8.0)),
+                    ("Range", Variant::Float32(40.0)),
+                    (
+                        "Color",
+                        Variant::Color3(Color3Data {
+                            r: 1.0,
+                            g: 0.2,
+                            b: 0.2,
+                        }),
+                    ),
+                ] {
+                    dom.set_property(light, name, value).unwrap();
+                }
+            },
+            |dom| {
+                let light = named(dom, "Lamp");
+                dom.set_class(light, class).unwrap();
+            },
+        );
+    }
+}
+
+#[test]
+#[ignore = "needs a GPU"]
+fn a_frame_given_another_class_draws_as_a_rebuild_draws_it() {
+    for class in ["TextLabel", "ImageLabel", "Folder"] {
+        staged(
+            &format!("Frame to {class}"),
+            |dom| {
+                let starter = named(dom, "StarterGui");
+                let screen = dom.new_instance("ScreenGui", "Screen", Some(starter));
+                let frame = dom.new_instance("Frame", "Panel", Some(screen));
+                for (name, value) in [
+                    ("Size", udim2(0.4)),
+                    ("Position", udim2(0.1)),
+                    (
+                        "BackgroundColor3",
+                        Variant::Color3(Color3Data {
+                            r: 0.1,
+                            g: 0.3,
+                            b: 1.0,
+                        }),
+                    ),
+                ] {
+                    dom.set_property(frame, name, value).unwrap();
+                }
+            },
+            |dom| {
+                let frame = named(dom, "Panel");
+                dom.set_class(frame, class).unwrap();
+            },
+        );
+    }
+}
+
 /// The edits that cannot be patched take the whole scene through
 /// `Headless::reload` instead, and the render thread has to come out of that
 /// still drawing: a viewport that goes black (or stops handing frames back)

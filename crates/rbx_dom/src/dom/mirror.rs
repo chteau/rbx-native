@@ -51,7 +51,11 @@ impl WeakDom {
         };
         for change in changes {
             match change {
-                Change::Property { referent, .. } => want(*referent, &mut wanted),
+                // A class change reorders no child list, so, like a write,
+                // it costs the one instance — which carries its new class.
+                Change::Property { referent, .. } | Change::Class(referent) => {
+                    want(*referent, &mut wanted)
+                }
                 Change::Parent { referent, old, new } => {
                     want(*referent, &mut wanted);
                     for parent in [old, new].into_iter().flatten() {
@@ -226,6 +230,15 @@ mod tests {
             dom.set_property(a, "Transparency", Variant::Float32(0.5))
                 .unwrap();
             dom.set_name(a, "Renamed").unwrap();
+        });
+    }
+
+    #[test]
+    fn a_class_change_follows_and_undoes() {
+        round_trip(|dom, fixture| {
+            let [a, ..] = fixture.children;
+            dom.set_class(a, "WedgePart").unwrap();
+            dom.set_class(fixture.model, "Folder").unwrap();
         });
     }
 
