@@ -68,31 +68,9 @@ impl Gpu {
     }
 }
 
-/// The line pipelines alone, depth-tested then always-on-top: what
-/// `renderer::lines` draws an editor's own segments with, so the two kinds
-/// of line cannot drift apart in how wide or how depth-tested they read.
-pub(in crate::renderer) fn lines(
-    device: &wgpu::Device,
-    target: Target,
-) -> [wgpu::RenderPipeline; 2] {
-    let frame = pipeline::frame_layout(device);
-    [false, true].map(|on_top| {
-        build(
-            device,
-            target,
-            "rbxview lines",
-            LINE_SHADER,
-            LineVertex::layout(),
-            &[Some(&frame)],
-            on_top,
-        )
-    })
-}
-
 /// One adornment pipeline: blended, unculled, depth-tested or — `on_top` —
-/// drawn over everything. Shared with `renderer::lines`' dots, which are
-/// adornments in all but name.
-pub(in crate::renderer) fn build(
+/// drawn over everything.
+fn build(
     device: &wgpu::Device,
     target: Target,
     label: &str,
@@ -144,7 +122,9 @@ impl Vertex {
 }
 
 impl LineVertex {
-    pub(super) const fn layout() -> wgpu::VertexBufferLayout<'static> {
+    /// Shared with `renderer::lines`, whose lines are built by the same
+    /// `geometry::line`.
+    pub(in crate::renderer) const fn layout() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<LineVertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
