@@ -1078,6 +1078,9 @@ impl Render for Shell {
         // is already predictable on its own — which is all the APG's
         // entry-point rule actually asks for.
         self.tab_order.restart();
+        // Before the tree is built, so the box this focuses is in the very
+        // frame that hands it the caret — see `Shell::focus_explorer_edit`.
+        self.focus_explorer_edit(window, cx);
         v_flex()
             .size_full()
             .bg(tokens::black())

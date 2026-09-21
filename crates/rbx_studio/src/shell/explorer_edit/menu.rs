@@ -23,7 +23,7 @@ use gpui_kit::*;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
-use super::super::{clipboard, group, menu};
+use super::super::{clipboard, group, keys, menu};
 use super::rename::renameable;
 use super::Shell;
 
@@ -55,7 +55,7 @@ pub(super) fn availability(
         rename: renameable(dom, database, target),
         group: group::has_groupable(dom, database, selected),
         ungroup: group::has_ungroupable(dom, database, selected),
-        delete: dom.get(target).is_some(),
+        delete: keys::removable(dom, database, target),
     }
 }
 

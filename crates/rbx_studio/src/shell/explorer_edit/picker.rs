@@ -52,6 +52,8 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // `window` is what `InputState::new` needs; the caret itself lands a
+        // frame later (see `Shell::focus_explorer_edit`).
         if self.dom.get(parent).is_none() {
             return;
         }
@@ -61,7 +63,7 @@ impl Shell {
                 cx.notify();
             }
         });
-        query.update(cx, |state, cx| state.focus(window, cx));
+        self.explorer_edit.focus_next = Some(query.clone());
 
         self.explorer_edit.menu = None;
         self.explorer_edit.renaming = None;
@@ -240,6 +242,13 @@ pub(super) fn insert_button(shell: &Entity<Shell>, reference: Ref) -> AnyElement
         IconName::Plus,
         "Insert an object here (Ctrl+I)",
     )
+    // The press must not reach the row underneath. Letting it through
+    // selects the row, and the toolkit scrolls a freshly selected row into
+    // view — which slides this button out from under the pointer between
+    // the press and the release, so the click never completes. The picker
+    // is told which row it is inserting under anyway, so there is nothing
+    // the selection is needed for here.
+    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
     .on_click(move |_, window, cx| {
         shell.update(cx, |shell, cx| {
             shell.open_insert_picker(reference, window, cx);

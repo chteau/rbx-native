@@ -96,6 +96,16 @@ pub(super) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
     }
 }
 
+/// Whether an instance can be removed at all. A service cannot: Roblox
+/// creates exactly one of each, and a place whose `Workspace` has been
+/// deleted is not a place this editor — or Roblox — can open again. The same
+/// singleton rule `explorer::reparent` applies to dragging one somewhere
+/// else and `shell::clipboard` to copying one.
+pub(super) fn removable(dom: &WeakDom, database: &ReflectionDatabase, reference: Ref) -> bool {
+    dom.get(reference)
+        .is_some_and(|instance| !database.is_service(instance.class()))
+}
+
 /// Whichever selection survives a delete: cleared only if it sat inside the
 /// just-removed subtree (`removed` is `WeakDom::remove`'s own return value).
 pub(super) fn selection_after_removal(selected: Option<Ref>, removed: &[Ref]) -> Option<Ref> {
@@ -113,6 +123,11 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // See `Shell::renaming_in_place`: Backspace in an open name box is a
+        // character, not the instance being renamed.
+        if self.renaming_in_place() {
+            return;
+        }
         match action_for(&keystroke.key, keystroke.modifiers) {
             Some(Action::Delete) => self.delete_selected(cx),
             Some(Action::InsertPart) => self.insert_instance("Part", cx),
@@ -139,14 +154,19 @@ impl Shell {
     /// with `shell::clipboard`'s Cut, which has a whole selection to take
     /// out rather than the Delete key's single row.
     pub(super) fn remove_instances(&mut self, references: &[Ref], cx: &mut Context<Self>) {
-        if references.is_empty() {
+        let doomed: Vec<Ref> = references
+            .iter()
+            .copied()
+            .filter(|&reference| removable(&self.dom, &self.database, reference))
+            .collect();
+        if doomed.is_empty() {
             return;
         }
 
         // See `shell::history`: snapshotted before the removals below.
         self.push_history();
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
-        let removed: Vec<Ref> = references
+        let removed: Vec<Ref> = doomed
             .iter()
             .flat_map(|&reference| dom.remove(reference))
             .collect();

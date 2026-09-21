@@ -44,6 +44,9 @@ pub(super) struct ExplorerEdit {
     /// which is the whole reason this is tracked rather than read off the
     /// event that opened it.
     pointer: Point<Pixels>,
+    /// A box to put the caret in on the next frame — see
+    /// [`Shell::focus_explorer_edit`].
+    focus_next: Option<Entity<InputState>>,
 }
 
 impl Shell {
@@ -53,6 +56,34 @@ impl Shell {
     /// from would cost a frame each time.
     pub(super) fn note_pointer(&mut self, position: Point<Pixels>) {
         self.explorer_edit.pointer = position;
+    }
+
+    /// Puts the caret in the picker's search box or the name box that was
+    /// just opened. Deferred to the frame that draws it, rather than done
+    /// when it was created: GPUI blurs a focus handle whose element is not
+    /// in the rendered tree, so focusing a box that does not exist yet is
+    /// undone before the caret ever appears — and the blur that undoes it
+    /// would take the rename with it.
+    pub(super) fn focus_explorer_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(input) = self.explorer_edit.focus_next.take() else {
+            return;
+        };
+        input.update(cx, |state, cx| {
+            state.focus(window, cx);
+            // A rename is almost always a new name rather than an edit to
+            // the old one, so the first keystroke should replace it. The
+            // picker's own box is empty, where this does nothing.
+            state.select_all(window, cx);
+        });
+    }
+
+    /// Whether a name box is open in the tree. While it is, the Explorer's
+    /// own keyboard contract has to stand aside: its type-ahead would eat
+    /// every letter typed into the box, its arrows would move the selection
+    /// instead of the caret, and Delete would remove the instance being
+    /// renamed rather than a character.
+    pub(in crate::shell) fn renaming_in_place(&self) -> bool {
+        self.explorer_edit.renaming.is_some()
     }
 
     /// What the Explorer's per-row closure needs from this state, read once

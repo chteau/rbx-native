@@ -49,12 +49,16 @@ impl Renaming {
 /// for the reason `picker::insert_button` is (see `ExplorerEdit::row_slots`).
 pub(super) fn name_box(input: &Entity<InputState>) -> AnyElement {
     div()
+        .id("explorer-rename")
         .flex_1()
         .min_w(px(40.))
         .h(tokens::tree_row_height())
-        // The tree's own row press selects; a click aimed at the caret must
-        // not travel on to it and re-seat the selection mid-rename.
+        // The tree's own row press selects, and the Explorer's wrapper hands
+        // focus back to the tree on any click inside it — which would blur
+        // this box and commit the half-typed name. A click aimed at the
+        // caret has to stop here.
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .on_click(|_, _, cx| cx.stop_propagation())
         .child(
             Input::new(input)
                 .appearance(false)
@@ -91,10 +95,7 @@ impl Shell {
                 shell.commit_rename(cx);
             }
         });
-        input.update(cx, |state, cx| {
-            state.focus(window, cx);
-            state.select_all(window, cx);
-        });
+        self.explorer_edit.focus_next = Some(input.clone());
 
         self.explorer_edit.picker = None;
         self.explorer_edit.menu = None;

@@ -47,6 +47,9 @@ fn a_service_row_greys_what_it_cannot_do() {
     assert!(!live.clipboard);
     assert!(!live.group);
     assert!(!live.rename);
+    // A place whose `Workspace` has been deleted is not a place anything
+    // can open again, so Delete is refused for the same reason.
+    assert!(!live.delete);
 }
 
 #[test]
