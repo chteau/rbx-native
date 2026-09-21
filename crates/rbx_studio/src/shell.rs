@@ -18,6 +18,7 @@ mod group;
 mod history;
 mod keys;
 mod layout;
+mod light_guides;
 mod menu;
 mod output;
 mod panel_window;
@@ -119,6 +120,12 @@ pub(crate) struct Shell {
     /// Whether a part in front of the selection hides its outline box.
     /// Persisted the same way `orthographic` is (see `settings`).
     selection_occluded: bool,
+    /// Whether a selected light draws its guide — Studio's `Show Light
+    /// Guides`. Persisted the same way `orthographic` is (see `settings`).
+    light_guides: bool,
+    /// The guide segments last sent to the viewport, so an edit that leaves
+    /// them as they were sends nothing — see `shell::light_guides`.
+    light_guides_sent: Vec<rbx_viewer::Segment>,
     /// Which of the class icon kit's two variants the Explorer draws.
     /// Persisted (see `settings`); every write goes through
     /// [`Shell::save_settings`].
@@ -303,6 +310,7 @@ impl Shell {
             orthographic,
             axis_indicator,
             selection_occluded,
+            light_guides,
             icon_pack,
             unfocused_fps,
             font_scale,
@@ -447,6 +455,8 @@ impl Shell {
             orthographic,
             axis_indicator,
             selection_occluded,
+            light_guides,
+            light_guides_sent: Vec::new(),
             icon_pack,
             appearance: user.appearance,
             installed_icon_packs: user.icon_packs,
@@ -531,6 +541,8 @@ impl Shell {
             .viewport
             .update(cx, |viewport, _| viewport.set_targets(initial_targets));
         shell.sync_snap_neighbours(cx);
+        // Its light guides, for the same reason.
+        shell.sync_light_guides(cx);
 
         // `RBX_STUDIO_TOOL` (see `shell::toolbar`). Before the Command Bar
         // block below rather than after it: a script's reload rebuilds the
@@ -1062,6 +1074,7 @@ impl Shell {
             orthographic: self.orthographic,
             axis_indicator: self.axis_indicator,
             selection_occluded: self.selection_occluded,
+            light_guides: self.light_guides,
             icon_pack: self.icon_pack,
             unfocused_fps: self.unfocused_fps,
             font_scale: tokens::font_scale(),

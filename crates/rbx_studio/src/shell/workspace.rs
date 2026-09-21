@@ -356,6 +356,9 @@ impl Shell {
                     .on_click(move |shell, cx| {
                         shell.set_selection_occluded(!selection_occluded, cx)
                     }),
+                menu::item("Show Light Guides")
+                    .checked(self.light_guides_shown())
+                    .on_click(|shell, cx| shell.toggle_light_guides(cx)),
                 menu::item("Stats")
                     .checked(stats)
                     .on_click(move |shell, cx| shell.set_stats_shown(!stats, cx)),
