@@ -178,8 +178,8 @@ Shell (v_flex)
 ├─ ROW D  Workspace flex-1  black
 │   ├─ Properties   w 300 (persisted)  DockTabs + p5 content, on `dock`
 │   ├─ ⇔ handle     4px hit on the dock's own surface — no black slot
-│   ├─ Centre       flex-1: document (+ its floating controls) over Output
-│   │   └─ Output   h 160 (80–400), or its 33px tab strip alone when collapsed
+│   ├─ Centre       flex-1: document, nothing floating over it, over the bottom dock
+│   │   └─ Output │ Viewport   tabs; h 180 (80–400), or Output's strip alone when collapsed
 │   ├─ ⇔ handle
 │   └─ Explorer     w 300 (persisted)  DockTabs + p5 content, on `dock`
 └─ CommandBar      auto    black      a dock's own 5px inset and chrome field
@@ -341,9 +341,13 @@ before changing a button. In short:
   than they are changed, and a number you have to open a popover to see is a
   number nobody trusts.
 - **This project's own additions don't go in the ribbon.** The graphics
-  quality dropdown and the viewport's settings float in the viewport's
-  top-left corner, because they belong to the open document rather than
-  under a Studio-named group.
+  quality dropdown, the viewport's settings and its live frame rate live in
+  the **Viewport dock** — a tab beside Output by default — rather than under
+  a Studio-named group. They used to float over the viewport's corner, and
+  nothing persistent sits over the scene being edited any more: only the
+  transient readouts a gesture produces (the flight speed, a drag's studs).
+  The ribbon's Home tab carries the dock's open/close tile like every other
+  dock's, and the dock samples the frame rate only while it is on screen.
 
 ## 8. Keyboard
 

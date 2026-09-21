@@ -99,10 +99,20 @@ pub(crate) enum Panel {
     Explorer,
     Properties,
     Output,
+    /// The viewport's own settings and live stats — the quality level, the
+    /// view toggles, the frame rate — kept off the 3D view itself.
+    Viewport,
 }
 
 impl Panel {
-    pub(crate) const ALL: [Panel; 3] = [Panel::Explorer, Panel::Properties, Panel::Output];
+    /// In the order a fresh layout seats them, which is what makes the
+    /// Viewport dock a tab beside Output rather than a dock of its own.
+    pub(crate) const ALL: [Panel; 4] = [
+        Panel::Explorer,
+        Panel::Properties,
+        Panel::Output,
+        Panel::Viewport,
+    ];
 
     /// Where this panel lives in a layout nobody has rearranged — also
     /// where it goes when a saved layout has lost track of it, and where
@@ -111,7 +121,7 @@ impl Panel {
         match self {
             Panel::Explorer => Edge::Right,
             Panel::Properties => Edge::Left,
-            Panel::Output => Edge::Bottom,
+            Panel::Output | Panel::Viewport => Edge::Bottom,
         }
     }
 
@@ -122,6 +132,7 @@ impl Panel {
             Panel::Explorer => "Explorer",
             Panel::Properties => "Properties",
             Panel::Output => "Output",
+            Panel::Viewport => "Viewport",
         }
     }
 
@@ -171,8 +182,9 @@ pub(crate) enum Home {
     Floating,
     /// Shut, and reachable only from the View menu or the ribbon's Home
     /// tab. A closed panel keeps nothing — reopening puts it back on its
-    /// own default edge, because a layout that remembered where a panel
-    /// was before it was closed would have to keep a slot open for it.
+    /// own default edge (see [`Layout::seat`]), because a layout that
+    /// remembered where a panel was before it was closed would have to keep
+    /// a slot open for it.
     Closed,
 }
 
@@ -216,16 +228,16 @@ pub(crate) struct Layout {
 
 impl Default for Layout {
     fn default() -> Self {
-        let mut edges: [Vec<Group>; 3] = Default::default();
-        for panel in Panel::ALL {
-            edges[panel.home().index()].push(Group::new(panel));
-        }
-        Self {
-            edges,
+        let mut layout = Self {
+            edges: Default::default(),
             floating: Vec::new(),
             closed: Vec::new(),
             size: Edge::ALL.map(Edge::default_size),
+        };
+        for panel in Panel::ALL {
+            layout.seat(panel);
         }
+        layout
     }
 }
 
@@ -241,10 +253,19 @@ impl Layout {
         &self.floating
     }
 
-    /// Whether a panel is showing anywhere at all — what a View menu or a
-    /// ribbon button ticks.
-    pub(crate) fn is_open(&self, panel: Panel) -> bool {
-        self.home_of(panel) != Home::Closed
+    /// Whether a panel is actually on screen: in a window of its own, or
+    /// the tab its dock is showing. What a View menu or a ribbon button
+    /// ticks — a tab hidden behind another reads as off, so the button
+    /// that would otherwise close it brings it forward instead.
+    pub(crate) fn is_showing(&self, panel: Panel) -> bool {
+        match self.home_of(panel) {
+            Home::Floating => true,
+            Home::Docked { edge, group } => self
+                .groups(edge)
+                .get(group)
+                .is_some_and(|group| group.active() == Some(panel)),
+            Home::Closed => false,
+        }
     }
 
     /// Where a panel is. Every panel is always exactly one of these.
@@ -383,13 +404,31 @@ impl Layout {
         self.closed.push(panel);
     }
 
-    /// Reopens a shut panel on its own default edge.
+    /// Puts a panel on screen in a dock. A shut one goes back to its own
+    /// default edge, and so does one in a window of its own — this is what
+    /// closing that window asks for (see `shell::panel_window`); one hidden
+    /// behind another tab is brought forward.
     pub(crate) fn open(&mut self, panel: Panel) {
-        if self.is_open(panel) {
-            return;
+        if !matches!(self.home_of(panel), Home::Docked { .. }) {
+            self.detach(panel);
+            self.seat(panel);
         }
-        self.detach(panel);
-        self.edges[panel.home().index()].push(Group::new(panel));
+        self.activate(panel);
+    }
+
+    /// Where a panel goes when nothing says otherwise: a tab of the first
+    /// dock on its own edge, or a new dock there if the edge is empty.
+    ///
+    /// A tab rather than a dock of its own because the bottom edge stacks
+    /// its docks *across*: a panel that split it would halve Output's width
+    /// for something that is looked at far less often. Seated behind the
+    /// tab already showing — [`Self::open`] is what brings it forward.
+    fn seat(&mut self, panel: Panel) {
+        let groups = &mut self.edges[panel.home().index()];
+        match groups.first_mut() {
+            Some(group) => group.panels.push(panel),
+            None => groups.push(Group::new(panel)),
+        }
     }
 
     /// Shows one of a dock's tabs. Ignores a panel that is not docked,
@@ -463,7 +502,7 @@ impl Layout {
 
         for panel in Panel::ALL {
             if layout.unclaimed(panel.key()).is_some() {
-                layout.edges[panel.home().index()].push(Group::new(panel));
+                layout.seat(panel);
             }
         }
 

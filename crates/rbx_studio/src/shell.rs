@@ -42,6 +42,7 @@ mod selection;
 mod style_panel;
 mod toolbar;
 mod tooltip;
+mod viewport_dock;
 mod workspace;
 
 use std::collections::{HashMap, HashSet};
@@ -128,12 +129,6 @@ pub(crate) struct Shell {
     /// listed once because the menu is rebuilt every frame.
     appearance: crate::packs::Appearance,
     installed_icon_packs: Vec<String>,
-    /// Whether the viewport's corner label shows its frame-rate readout —
-    /// the Stats toggle, next to Orthographic in the same overflow menu (see
-    /// `shell::dock`). Session-only, unlike the two settings above: real
-    /// Studio's own `Window > Performance > Stats` doesn't persist across
-    /// restarts either, so this one lazily doesn't bother with `settings`.
-    stats_shown: bool,
     /// The render loop's frame rate cap while the window is unfocused (see
     /// `pacing::FocusPacing`). Persisted (see `settings`); every write goes
     /// through [`Shell::save_settings`].
@@ -230,6 +225,9 @@ pub(crate) struct Shell {
     /// persisted — resets to off each launch, same as `output_filter` above.
     output_show_timestamps: bool,
     output_scroll: ScrollHandle,
+    /// The Viewport dock's own, for when it is docked somewhere too short
+    /// for its settings — see `shell::viewport_dock`.
+    viewport_scroll: ScrollHandle,
     /// The Output tab's free-text search box. Session-only and unpersisted,
     /// like `output_filter` beside it — a log you are still reading is not a
     /// setting.
@@ -450,7 +448,6 @@ impl Shell {
             icon_pack,
             appearance: user.appearance,
             installed_icon_packs: user.icon_packs,
-            stats_shown: false,
             unfocused_fps,
             document_nav: roving::Roving::horizontal(),
             ribbon_tabs_nav: roving::Roving::horizontal(),
@@ -488,6 +485,7 @@ impl Shell {
             output_filter: output::OutputFilter::default(),
             output_show_timestamps: false,
             output_scroll: ScrollHandle::new(),
+            viewport_scroll: ScrollHandle::new(),
             output_search: cx.new(|cx| InputState::new(window, cx).placeholder("Search")),
             path,
             format,
@@ -555,6 +553,15 @@ impl Shell {
         let mut unresolved = Vec::new();
         if let Some(spec) = launch.select.as_deref() {
             unresolved = shell.apply_debug_select(spec, &launch, cx);
+        }
+
+        // `RBX_STUDIO_STATS=1` asks for the frame-rate numbers, and nothing
+        // is sampled while the Viewport dock is off screen (see
+        // `shell::viewport_dock`), so it puts the dock on screen — without
+        // writing the settings file itself: the variable speaks for this
+        // run, not for the layout.
+        if crate::workspace_view::stats_requested() {
+            shell.layout.open(layout::Panel::Viewport);
         }
 
         // `RBX_STUDIO_ALIGN` (see `shell::align`): applied right after
@@ -830,8 +837,8 @@ impl Shell {
         cx.notify();
     }
 
-    /// Reopens one, from the View menu or the ribbon's Home tab — the only
-    /// two ways back, which is why both exist.
+    /// Opens (or brings forward) or shuts one, from the View menu or the
+    /// ribbon's Home tab — the only two ways back, which is why both exist.
     pub(crate) fn set_panel_open(
         &mut self,
         panel: layout::Panel,
@@ -847,9 +854,11 @@ impl Shell {
         cx.notify();
     }
 
-    /// Whether a panel is showing anywhere — what a View tick reads.
-    pub(crate) fn is_panel_open(&self, panel: layout::Panel) -> bool {
-        self.layout.is_open(panel)
+    /// Whether a panel is on screen — what a View menu toggle and a ribbon
+    /// tile read, so one hidden behind another tab is brought forward by
+    /// them rather than shut.
+    pub(crate) fn is_panel_showing(&self, panel: layout::Panel) -> bool {
+        self.layout.is_showing(panel)
     }
 
     /// Shows one of a dock's tabs, from a click on it.
@@ -884,12 +893,6 @@ impl Shell {
         cx.notify();
     }
 
-    /// Whether the viewport's main camera is orthographic, for the dock's
-    /// Viewport menu item (see `shell::dock`) to render its checked state.
-    pub(super) fn orthographic(&self) -> bool {
-        self.orthographic
-    }
-
     /// Flips the viewport's main camera between perspective and orthographic
     /// projection — see `WorkspaceView::set_orthographic`.
     fn set_orthographic(&mut self, orthographic: bool, cx: &mut Context<Self>) {
@@ -904,13 +907,6 @@ impl Shell {
         self.save_settings();
     }
 
-    /// Whether the viewport's orientation indicator draws, for the dock's
-    /// Viewport menu item to render its checked state — see
-    /// `set_axis_indicator`.
-    pub(super) fn axis_indicator(&self) -> bool {
-        self.axis_indicator
-    }
-
     /// Shows or hides the top-right orientation indicator — see
     /// `WorkspaceView::set_axis_indicator`.
     fn set_axis_indicator(&mut self, shown: bool, cx: &mut Context<Self>) {
@@ -922,13 +918,6 @@ impl Shell {
         self.viewport
             .update(cx, |viewport, cx| viewport.set_axis_indicator(shown, cx));
         self.save_settings();
-    }
-
-    /// Whether a part in front of the selection hides its outline box, for
-    /// the Viewport overflow menu item to render its checked state — see
-    /// `set_selection_occluded`.
-    pub(super) fn selection_occluded(&self) -> bool {
-        self.selection_occluded
     }
 
     /// Switches the selection outline between drawing through everything
@@ -1007,32 +996,6 @@ impl Shell {
             &self.path,
         ));
         cx.notify();
-    }
-
-    /// Whether the viewport's corner label shows its frame-rate readout, for
-    /// the dock's Viewport menu item (see `shell::dock`) to render its
-    /// checked state.
-    pub(super) fn stats_shown(&self) -> bool {
-        self.stats_shown
-    }
-
-    /// Flips the viewport corner label's Stats readout on or off — see
-    /// `WorkspaceView::set_stats_shown`.
-    fn set_stats_shown(&mut self, shown: bool, cx: &mut Context<Self>) {
-        if shown == self.stats_shown {
-            return;
-        }
-
-        self.stats_shown = shown;
-        self.viewport
-            .update(cx, |viewport, cx| viewport.set_stats_shown(shown, cx));
-    }
-
-    /// The frame rate preset the render loop caps itself to while the window
-    /// is unfocused, for the dock's Viewport menu item (see `shell::dock`)
-    /// to render its checked state.
-    pub(super) fn unfocused_fps(&self) -> UnfocusedFps {
-        self.unfocused_fps
     }
 
     /// Switches the unfocused frame rate preset — see

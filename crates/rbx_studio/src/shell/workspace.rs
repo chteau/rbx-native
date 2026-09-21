@@ -20,11 +20,9 @@
 use gpui_kit::assets::IconName;
 use gpui_kit::component::input::Input;
 use gpui_kit::component::{h_flex, v_flex, Sizable as _};
-use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::class_icons::IconPack;
-use crate::pacing::UnfocusedFps;
 use crate::tokens;
 
 use super::chrome::{self, Document, Drag};
@@ -50,16 +48,15 @@ impl Shell {
         // again had lost the size the user picked.
         let limit = f32::from(window.viewport_size().width) * MAX_DOCK_SHARE;
 
-        // Built before the row is assembled, because each needs `&mut
-        // self` and the row below only moves finished elements around.
+        // Built before the row is assembled, because it needs `&mut self`
+        // and the row below only moves finished elements around.
         let document = self.document_content(window, cx);
-        let overlay = self.viewport_overlay(cx);
-        let showing_viewport = self.document == Document::Viewport;
 
         // Before the edges are built, so a panel torn out on the frame it
         // was dropped does not also draw itself into a dock for one frame.
         self.sync_panel_windows(cx);
         self.raise_panel_windows(window, cx);
+        self.sync_stats(cx);
 
         let left = self.dock_edge(Edge::Left, limit, window, cx);
         let right = self.dock_edge(Edge::Right, limit, window, cx);
@@ -79,19 +76,15 @@ impl Shell {
                     .flex_1()
                     .h_full()
                     .overflow_hidden()
+                    // Nothing floats over the document: the view's own
+                    // settings and numbers are the Viewport dock's (see
+                    // `shell::viewport_dock`).
                     .child(
                         v_flex()
                             .relative()
                             .flex_1()
                             .overflow_hidden()
-                            .child(document)
-                            // The viewport's own settings have no home in
-                            // the frame's chrome — they belong to the open
-                            // document, not to a dock — so they float in its
-                            // corner, the way every 3D editor's view
-                            // controls do. Top *left*: the orientation
-                            // indicator already owns the other one.
-                            .when(showing_viewport, |this| this.child(overlay)),
+                            .child(document),
                     )
                     .children(bottom),
             )
@@ -127,6 +120,7 @@ impl Shell {
             Panel::Properties => self.properties_dock(window, cx),
             Panel::Explorer => self.explorer_dock(cx),
             Panel::Output => self.output_dock(collapsed, cx),
+            Panel::Viewport => self.viewport_dock(cx),
         }
     }
 
@@ -240,7 +234,7 @@ impl Shell {
     /// this project follows treats drag-only rearrangement as a failure,
     /// not a gap. The drag calls the same `Shell::move_panel`, so there is
     /// one transform rather than two that can disagree.
-    fn move_items(&self, panel: Panel) -> Vec<menu::Item> {
+    pub(super) fn move_items(&self, panel: Panel) -> Vec<menu::Item> {
         let here = self.layout.home_of(panel);
         Edge::ALL
             .into_iter()
@@ -326,66 +320,6 @@ impl Shell {
             .into_any_element()
         });
         (Some(controls.into_any_element()), content)
-    }
-
-    /// The viewport's own settings, floating in its top-right corner.
-    fn viewport_overlay(&self, cx: &mut Context<Self>) -> AnyElement {
-        let orthographic = self.orthographic();
-        let axis_indicator = self.axis_indicator();
-        let selection_occluded = self.selection_occluded();
-        let stats = self.stats_shown();
-        let capped = self.unfocused_fps() == UnfocusedFps::Fps25;
-
-        let overflow = menu::dropdown(
-            self,
-            MenuId::ViewportOverflow,
-            chrome::Trigger::new(chrome::icon_button(
-                "viewport-overflow",
-                IconName::Ellipsis,
-                "Viewport settings",
-            )),
-            vec![
-                menu::item("Orthographic")
-                    .checked(orthographic)
-                    .on_click(move |shell, cx| shell.set_orthographic(!orthographic, cx)),
-                menu::item("Orientation Indicator")
-                    .checked(axis_indicator)
-                    .on_click(move |shell, cx| shell.set_axis_indicator(!axis_indicator, cx)),
-                menu::item("Hide Selection Box Behind Parts")
-                    .checked(selection_occluded)
-                    .on_click(move |shell, cx| {
-                        shell.set_selection_occluded(!selection_occluded, cx)
-                    }),
-                menu::item("Stats")
-                    .checked(stats)
-                    .on_click(move |shell, cx| shell.set_stats_shown(!stats, cx)),
-                menu::item("Cap frame rate at 25 fps when unfocused")
-                    .checked(capped)
-                    .on_click(move |shell, cx| {
-                        let next = if capped {
-                            UnfocusedFps::Fps30
-                        } else {
-                            UnfocusedFps::Fps25
-                        };
-                        shell.set_unfocused_fps(next, cx);
-                    }),
-            ],
-            cx,
-        );
-
-        h_flex()
-            .absolute()
-            .top(px(8.))
-            .left(px(8.))
-            .items_center()
-            .gap(px(4.))
-            .p(px(4.))
-            .rounded(tokens::RADIUS)
-            .bg(tokens::chrome())
-            .shadow(tokens::elevation())
-            .child(self.quality_control(cx))
-            .child(overflow)
-            .into_any_element()
     }
 
     pub(super) fn handle(&self, edge: Edge, cx: &mut Context<Self>) -> AnyElement {

@@ -271,21 +271,22 @@ impl Shell {
 
     /// One toggle per dock, and the reason they exist: a dock closed from
     /// its own tab has no tab left to bring it back with. The View menu
-    /// carries the same three, through the same call — a window you can
+    /// carries the same toggles, through the same call — a window you can
     /// shut and not reopen is a window you have lost.
     fn panel_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         [
             (Panel::Explorer, IconName::ListTree, "Explorer"),
             (Panel::Properties, IconName::SlidersHorizontal, "Properties"),
             (Panel::Output, IconName::Terminal, "Output"),
+            (Panel::Viewport, IconName::MonitorCog, "Viewport"),
         ]
         .into_iter()
         .map(|(panel, icon, label)| {
-            let open = self.is_panel_open(panel);
+            let showing = self.is_panel_showing(panel);
             tile(&self.ribbon_nav, label, icon, label, cx)
-                .when(open, |this| this.bg(tokens::ribbon_tab_active()))
+                .when(showing, |this| this.bg(tokens::ribbon_tab_active()))
                 .on_click(cx.listener(move |shell, _, _, cx| {
-                    shell.set_panel_open(panel, !open, cx);
+                    shell.set_panel_open(panel, !showing, cx);
                 }))
                 .into_any_element()
         })

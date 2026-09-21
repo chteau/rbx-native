@@ -73,6 +73,7 @@ actions!(
         MenuToggleExplorer,
         MenuToggleProperties,
         MenuToggleOutput,
+        MenuToggleViewport,
         /// Shared by every item below that has no real handler yet; always
         /// paired with `.disabled(true)` (see `menus`), so `PopupMenu` never
         /// lets a click reach it — `actions::install` still gives it a no-op
@@ -147,6 +148,7 @@ fn menus() -> Vec<OwnedMenu> {
                 MenuItem::action("Explorer", MenuToggleExplorer),
                 MenuItem::action("Properties", MenuToggleProperties),
                 MenuItem::action("Output", MenuToggleOutput),
+                MenuItem::action("Viewport", MenuToggleViewport),
                 MenuItem::action("Command Bar", MenuPlaceholder).disabled(true),
                 MenuItem::separator(),
                 MenuItem::action("Style Editor", MenuStyleEditor),

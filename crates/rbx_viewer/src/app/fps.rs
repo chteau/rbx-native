@@ -4,7 +4,7 @@
 //! frame for `dt` — not a second stopwatch: this just counts how many of
 //! those already-happening redraws land inside a rolling one-second window,
 //! the same technique `rbxstudio`'s own `workspace_view::stats` uses to drive
-//! its viewport corner label, minus the render/readback/upload split that has
+//! its Viewport dock's readout, minus the render/readback/upload split that has
 //! no equivalent in a single windowed loop with no render thread of its own.
 
 use std::time::{Duration, Instant};

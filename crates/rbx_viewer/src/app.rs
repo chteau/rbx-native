@@ -110,7 +110,7 @@ struct Viewer<'a> {
     speed_title_until: Option<Instant>,
     /// Per-second frame rate for the title bar. Runs whether the quality level
     /// is pinned or `--quality auto`-managed — unlike `automatic`, which only
-    /// exists in the latter case — the same way `rbxstudio`'s corner label
+    /// exists in the latter case — the same way `rbxstudio`'s Viewport dock
     /// shows its own reading regardless of quality mode.
     fps: FrameRate,
 }
