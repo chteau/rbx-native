@@ -15,6 +15,7 @@ mod highlight;
 mod hover;
 mod instance;
 mod lighting;
+mod lines;
 mod material;
 mod mesh;
 mod outline;
@@ -59,6 +60,7 @@ use gizmo::Draggers;
 use gui::Gui;
 use hover::Hover;
 use lighting::LightingRaw;
+use lines::Lines;
 use material::Materials;
 use particles::Particles;
 use pipeline::{Frame, Shared, Target};
@@ -71,6 +73,8 @@ use stars::Stars;
 use texture::PER_FRAME;
 use trail::Trails;
 use translucent::Translucent;
+
+pub use lines::Segment;
 
 /// Only ever seen where a scene has no `Sky`, or where one of its six panels
 /// would not resolve.
@@ -171,6 +175,9 @@ pub(crate) struct Renderer {
     /// Where the tool being configured would put things — the Align
     /// tool's live preview. Empty unless an editor asks for one.
     preview: Preview,
+    /// The editor's own world-space line segments — Studio's light guides.
+    /// Empty unless an editor asks for some.
+    lines: Lines,
     /// The transform tool's axis draggers, drawn over the selection outline.
     draggers: Draggers,
     /// Which transform tool the editor has active, if any — `None` while the
@@ -364,6 +371,7 @@ impl Renderer {
             ),
             hover,
             preview: Preview::new(device, target, &layout),
+            lines: Lines::default(),
             draggers,
             gizmo: None,
             gui: Gui::new(

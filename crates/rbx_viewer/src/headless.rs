@@ -19,6 +19,7 @@ use crate::input::{CameraInput, Input};
 use crate::load::{Loaded, Resident, Toggles};
 use crate::pick::Selected;
 use crate::quality::QualityLevel;
+use crate::renderer::Segment;
 use crate::scene::{Bounds, ScrollTarget};
 use crate::view::View;
 
@@ -306,6 +307,16 @@ impl Headless {
     pub fn set_preview(&mut self, boxes: Vec<glam::Mat4>) {
         self.offscreen.set_preview(&boxes);
         self.view.set_preview(boxes);
+    }
+
+    /// Draws world-space line segments over the scene — Studio's light
+    /// guides (see [`crate::light_guides`]). Replaces every segment sent
+    /// before, so an embedder with more than one source of lines sends them
+    /// together; an empty list clears them. Kept across a reload like the
+    /// selection is.
+    pub fn set_lines(&mut self, segments: Vec<Segment>) {
+        self.offscreen.set_lines(&segments);
+        self.view.set_lines(segments);
     }
 
     /// Draws the transform tool's axis draggers over the selected part, or

@@ -1,9 +1,10 @@
 //! Two ways the rest of the shell reaches into the 3D view from outside its
-//! own render loop: passing on a selection or a hover, and reflecting an edit
-//! to the DOM.
+//! own render loop: passing on a selection, a hover or the lines drawn over
+//! the scene, and reflecting an edit to the DOM.
 
 use rbx_dom::{Change, Snapshot};
 use rbx_viewer::pick::Selected;
+use rbx_viewer::Segment;
 
 use super::WorkspaceView;
 
@@ -23,6 +24,12 @@ impl WorkspaceView {
     /// the Align popover's live preview. An empty list clears it.
     pub(crate) fn set_preview(&mut self, boxes: Vec<glam::Mat4>) {
         self.pump.preview(boxes);
+    }
+
+    /// Forwards the line segments drawn over the scene — the light guides.
+    /// An empty list clears them.
+    pub(crate) fn set_lines(&mut self, segments: Vec<Segment>) {
+        self.pump.lines(segments);
     }
 
     /// Reflects one edit's `Change` log in the render thread's scene, every

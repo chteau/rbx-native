@@ -46,6 +46,13 @@ impl Shell {
                 Shell::set_selection_occluded,
             ),
             (
+                "Show Light Guides",
+                self.light_guides_shown(),
+                // A flip, and the row only ever asks for the opposite of
+                // what it shows, so the value it passes is already implied.
+                |shell, _, cx| shell.toggle_light_guides(cx),
+            ),
+            (
                 "Cap frame rate at 25 fps when unfocused",
                 self.unfocused_fps == UnfocusedFps::Fps25,
                 Shell::set_unfocused_cap,
