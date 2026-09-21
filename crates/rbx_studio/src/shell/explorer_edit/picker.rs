@@ -8,6 +8,11 @@
 //! What this adds over Studio is that a class the hovered parent cannot take
 //! is **greyed rather than missing** — see `explorer::insert` for the two
 //! refusals that rule is built from, and why it is only those two.
+//!
+//! Every row carries the class's own identity icon, resolved through the
+//! same `explorer::resolve_icon` the tree's rows use: a class here and an
+//! instance of it there are the same thing, and two lookups would be two
+//! chances to disagree.
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
@@ -18,7 +23,7 @@ use gpui_kit::*;
 use rbx_dom::Ref;
 
 use crate::explorer::insert::{self, Choice};
-use crate::explorer::{self as explorer_tree, ClassIcon};
+use crate::explorer::{resolve_icon, ClassIcon};
 use crate::tokens;
 
 use super::super::menu::{self, MenuId};
@@ -107,7 +112,7 @@ impl Shell {
             .iter()
             .take(MAX_ROWS)
             .map(|choice| {
-                let icon = explorer_tree::resolve_icon(&choice.class, pack);
+                let icon = resolve_icon(&choice.class, pack);
                 class_row(choice, icon, cx)
             })
             .collect();
