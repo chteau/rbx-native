@@ -109,12 +109,13 @@ pub(crate) struct Snap {
 impl Snap {
     /// Whether this drag actually snaps, given whether `Shift` is held.
     ///
-    /// `Shift` *inverts* rather than enables: "While transforming, you can
-    /// temporarily **toggle** snapping by holding the `Shift` key"
-    /// (`parts/index.md#transform-parts`) — so it snaps a free drag and frees
-    /// a snapped one, and either way only for as long as it is held.
+    /// The docs say `Shift` temporarily "**toggle**[s] snapping"
+    /// (`parts/index.md#transform-parts`) without saying which way. Studio's
+    /// own draggers only ever suspend it: `DraggerFramework`'s
+    /// `shouldGridSnap` is `LinearSnapEnabled and not Shift`, so `Shift`
+    /// frees a snapped drag and does nothing to a free one.
     pub(crate) fn active(self, shift: bool) -> bool {
-        self.enabled != shift
+        self.enabled && !shift
     }
 
     /// The increment this drag should round to, or `0.0` for no grid at all —

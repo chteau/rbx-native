@@ -93,9 +93,7 @@ fn alt_r_jumps_to_the_rotate_increment_field() {
 }
 
 #[test]
-fn shift_inverts_the_snap_state_rather_than_forcing_it_on() {
-    // "While transforming, you can temporarily toggle snapping by holding the
-    // Shift key" — both directions.
+fn shift_suspends_snapping_and_never_turns_it_on() {
     let on = Snap {
         enabled: true,
         increment: 2.0,
@@ -108,7 +106,7 @@ fn shift_inverts_the_snap_state_rather_than_forcing_it_on() {
         increment: 2.0,
     };
     assert!(!off.active(false));
-    assert!(off.active(true));
+    assert!(!off.active(true));
 }
 
 #[test]
@@ -126,7 +124,7 @@ fn the_grid_is_the_increment_only_while_snapping_is_in_force() {
         increment: 2.0,
     };
     assert_eq!(off.grid(false), 0.0);
-    assert_eq!(off.grid(true), 2.0);
+    assert_eq!(off.grid(true), 0.0);
 }
 
 #[test]
