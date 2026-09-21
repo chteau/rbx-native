@@ -356,20 +356,6 @@ impl Target {
             ..self
         }
     }
-
-    /// The same part turned and standing somewhere else — what a `T`/`R`
-    /// quarter turn shows while `Shell` is still writing the new `CFrame`.
-    pub(crate) fn turned_to(self, rotation: glam::Mat3, position: glam::Vec3) -> Self {
-        Target {
-            model: Mat4::from_cols(
-                rotation.x_axis.extend(0.0),
-                rotation.y_axis.extend(0.0),
-                rotation.z_axis.extend(0.0),
-                position.extend(1.0),
-            ),
-            ..self
-        }
-    }
 }
 
 /// Where every selected part stands, in selection order.
@@ -542,6 +528,20 @@ impl Targets {
             *target = target.moved_to(target.position() + delta);
         }
         moves
+    }
+
+    /// Every target carried rigidly by `carry` (turned and moved as one)
+    /// from where it stands here.
+    pub(crate) fn carried(&self, carry: Mat4) -> Targets {
+        Targets(
+            self.0
+                .iter()
+                .map(|target| Target {
+                    model: carry * target.model,
+                    ..*target
+                })
+                .collect(),
+        )
     }
 
     /// Replaces the anchor's own placement — what a Scale or Rotate drag

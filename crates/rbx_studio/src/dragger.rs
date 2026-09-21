@@ -13,9 +13,12 @@
 
 pub(crate) mod free;
 pub(crate) mod label;
+pub(crate) mod round;
 pub(crate) mod ruler;
 pub(crate) mod surface;
 pub(crate) mod sweep;
+pub(crate) mod target;
+pub(crate) mod tilt;
 
 use glam::Vec3;
 use rbx_viewer::{Pose, Segment};
@@ -30,11 +33,10 @@ pub(crate) const MAX_SOFT_SNAPS: usize = 32;
 /// soft-snap reach.
 const SOFT_SNAP_MARGIN: f32 = 1.0;
 
-/// A guide line's width on screen, in pixels. Studio draws its guides with
-/// the engine's default thickness, which measures off its own screenshots
-/// as one fully coloured pixel with a partly covered one either side: what
-/// this renderer draws for a two-pixel line.
-const HAIRLINE: f32 = 2.0;
+/// A guide line's width on screen, in pixels. Studio never sets a guide's
+/// `Thickness`, and the engine's default measures off its screenshots as one
+/// pixel: a line's coverage across it sums to about one whole pixel.
+const HAIRLINE: f32 = 1.0;
 
 /// `Studio.DraggerPassiveColor`: the hover ruler, a handle drag's axis line
 /// and its soft-snap dots.

@@ -1,4 +1,5 @@
-use glam::{Mat4, Vec3};
+use glam::{Mat3, Mat4, Vec2, Vec3};
+use rbx_viewer::pick::Solid;
 
 use super::*;
 use crate::dragger::PASSIVE;
@@ -27,11 +28,12 @@ fn plate() -> SurfaceFrame {
     .unwrap()
 }
 
-/// A box `size` big, grabbed by the middle of its top face: its bounds
-/// measured from that point in `frame`.
+/// A box `size` big standing square to the world, grabbed by the middle of
+/// its top face: its bounds measured from that point in `frame`, as it is
+/// held (not turned onto the face).
 fn grabbed_by_top(frame: &SurfaceFrame, size: Vec3) -> (Vec3, Vec3) {
-    let model = Mat4::from_scale(size);
-    bounds(frame, [model], Vec3::new(0.0, size.y * 0.5, 0.0))
+    let turn = crate::dragger::tilt::frame_rotation(frame).transpose();
+    bounds(turn, (Vec3::ZERO, size), Vec3::new(0.0, size.y * 0.5, 0.0))
 }
 
 #[test]
@@ -40,10 +42,10 @@ fn a_press_snaps_the_grab_onto_the_clicked_faces_own_grid() {
     // (2, 0.5, 1), so the whole-stud points of that face are x ∈ {-2…2},
     // z ∈ {-1, 0, 1}.
     let block = Mat4::from_scale(Vec3::new(4.0, 1.0, 2.0));
-    let grabbed = grab(block, Vec3::new(0.3, 0.5, 0.4), 1.0, false);
+    let grabbed = grab(block, Vec3::new(0.3, 0.5, 0.4), 1.0, false, None);
     assert!(close(grabbed, Vec3::new(0.0, 0.5, 0.0)), "{grabbed}");
     // Off, it is left alone.
-    let free = grab(block, Vec3::new(0.3, 0.5, 0.4), 0.0, false);
+    let free = grab(block, Vec3::new(0.3, 0.5, 0.4), 0.0, false, None);
     assert!(close(free, Vec3::new(0.3, 0.5, 0.4)));
 }
 
@@ -52,7 +54,7 @@ fn a_press_on_an_odd_sized_face_snaps_from_its_corner_not_the_world_origin() {
     // 3 studs across X: its corners stand at ±1.5, so the half studs are the
     // grid points along it.
     let block = Mat4::from_scale(Vec3::new(3.0, 1.0, 2.0));
-    let grabbed = grab(block, Vec3::new(0.9, 0.5, 0.9), 1.0, false);
+    let grabbed = grab(block, Vec3::new(0.9, 0.5, 0.9), 1.0, false, None);
     assert!(close(grabbed, Vec3::new(0.5, 0.5, 1.0)), "{grabbed}");
 }
 
@@ -60,19 +62,40 @@ fn a_press_on_an_odd_sized_face_snaps_from_its_corner_not_the_world_origin() {
 fn a_press_on_a_ball_snaps_on_every_axis_of_its_own_frame() {
     let ball =
         Mat4::from_translation(Vec3::new(0.25, 0.0, 0.0)) * Mat4::from_scale(Vec3::splat(4.0));
-    let grabbed = grab(ball, Vec3::new(1.9, 1.1, -0.2), 1.0, true);
+    let grabbed = grab(ball, Vec3::new(1.9, 1.1, -0.2), 1.0, true, None);
     assert!(close(grabbed, Vec3::new(2.25, 1.0, 0.0)), "{grabbed}");
 }
 
 #[test]
-fn the_bounds_of_a_turned_box_reach_its_corners() {
-    let frame = plate();
-    let turned =
-        Mat4::from_rotation_y(std::f32::consts::FRAC_PI_4) * Mat4::from_scale(Vec3::splat(2.0));
-    let (low, high) = bounds(&frame, [turned], Vec3::ZERO);
+fn the_selection_box_of_a_turned_part_reaches_its_corners() {
+    let turned = Mat4::from_translation(Vec3::new(1.0, 0.0, 0.0))
+        * Mat4::from_rotation_y(std::f32::consts::FRAC_PI_4)
+        * Mat4::from_scale(Vec3::splat(2.0));
+    let (centre, size) = selection_box(Mat3::IDENTITY, Vec3::ZERO, [turned]);
     let root2 = std::f32::consts::SQRT_2;
-    assert!(close(low, Vec3::new(-root2, -1.0, -root2)), "{low}");
-    assert!(close(high, Vec3::new(root2, 1.0, root2)), "{high}");
+    assert!(close(centre, Vec3::X), "{centre}");
+    assert!(
+        close(size, Vec3::new(2.0 * root2, 2.0, 2.0 * root2)),
+        "{size}"
+    );
+    // In the part's own frame, it is the part.
+    let own = Mat3::from_rotation_y(std::f32::consts::FRAC_PI_4);
+    let (centre, size) = selection_box(own, Vec3::X, [turned]);
+    assert!(
+        close(centre, Vec3::ZERO) && close(size, Vec3::splat(2.0)),
+        "{size}"
+    );
+}
+
+#[test]
+fn the_box_turned_onto_a_face_is_measured_from_the_dragged_point() {
+    // A 4 x 2 x 2 box grabbed at the end of its top, turned a quarter about
+    // Y: along the frame's X it now spans only 2, its end at the point.
+    let turn = Mat3::from_rotation_y(std::f32::consts::FRAC_PI_2);
+    let size = Vec3::new(4.0, 2.0, 2.0);
+    let (low, high) = bounds(turn, (Vec3::ZERO, size), Vec3::new(2.0, 1.0, 0.0));
+    assert!(close(low, Vec3::new(-1.0, -2.0, 0.0)), "{low}");
+    assert!(close(high, Vec3::new(1.0, 0.0, 4.0)), "{high}");
 }
 
 #[test]
@@ -251,4 +274,77 @@ fn each_setting_hides_its_own_part() {
         Guides::default()
     );
     assert_ne!(ACTIVE, PASSIVE);
+}
+
+/// A 4-stud ball at the origin, framed at the snapped point `at` on it the
+/// way `target::ball` frames it.
+fn on_ball(at: Vec3) -> SurfaceFrame {
+    let normal = at.normalize();
+    let z = normal.cross(Vec3::Y).normalize();
+    SurfaceFrame {
+        corner: at,
+        x: normal.cross(z),
+        y: normal,
+        z,
+        size: Vec2::ZERO,
+        kind: TargetKind::Sphere,
+        part: Some((Solid::Ball, Mat4::from_scale(Vec3::splat(4.0)))),
+    }
+}
+
+#[test]
+fn a_drag_onto_a_ball_lands_on_its_snapped_point_and_aligns_with_nothing() {
+    let frame = on_ball(Vec3::new(2.0f32.sqrt(), 1.0, 1.0).normalize() * 2.0);
+    let bounds = grabbed_by_top(&frame, Vec3::splat(1.0));
+    let hit = frame.corner + frame.x * 0.3 + frame.z * 0.2;
+    let landing = land(&frame, hit, bounds, 1.0, Some(5.0));
+    assert!(close(landing.foot, frame.corner), "{}", landing.foot);
+    assert!(landing.aligned.is_empty());
+    let drawn = guides(&frame, hit, &landing, 1.0, true, true, pose(), false);
+    // The ball's own guides, its great circles among them, and no ruler.
+    assert!(drawn
+        .lines
+        .iter()
+        .any(|line| line.color == PASSIVE && line.under == 1.0 && line.over == 0.0));
+    assert!(drawn
+        .lines
+        .iter()
+        .all(|line| !(line.color == ACTIVE && line.over == 0.5)));
+}
+
+/// An 8-stud cylinder along X, radius 1, its side framed on `corner` at the
+/// +X end facing `y`, with `x` round it.
+fn cylinder_side(corner: Vec3, x: Vec3, y: Vec3) -> SurfaceFrame {
+    SurfaceFrame {
+        corner,
+        x,
+        y,
+        z: Vec3::NEG_X,
+        size: Vec2::new(0.0, 8.0),
+        kind: TargetKind::Cylinder,
+        part: Some((Solid::Cylinder, Mat4::from_scale(Vec3::new(8.0, 2.0, 2.0)))),
+    }
+}
+
+#[test]
+fn a_cylinders_side_takes_the_grid_along_it_but_no_alignment() {
+    let frame = cylinder_side(Vec3::new(4.0, 1.0, 0.0), Vec3::Z, Vec3::Y);
+    let bounds = grabbed_by_top(&frame, Vec3::splat(1.0));
+    let landing = land(&frame, Vec3::new(1.3, 1.0, 0.1), bounds, 1.0, Some(5.0));
+    assert!(landing.aligned.is_empty());
+    assert!(
+        close(landing.foot, Vec3::new(1.0, 1.0, 0.0)),
+        "{}",
+        landing.foot
+    );
+}
+
+#[test]
+fn a_press_snaps_in_the_frame_the_hover_stood_on() {
+    // The cylinder's +Z side, hovered: the grab rounds the distance from
+    // its end, not from the box face's corner.
+    let side = cylinder_side(Vec3::new(4.0, 0.0, 1.0), Vec3::NEG_Y, Vec3::Z);
+    let model = Mat4::from_scale(Vec3::new(8.0, 2.0, 2.0));
+    let grabbed = grab(model, Vec3::new(2.4, 0.3, 1.0), 1.0, false, Some(side));
+    assert!(close(grabbed, Vec3::new(2.0, 0.0, 1.0)), "{grabbed}");
 }

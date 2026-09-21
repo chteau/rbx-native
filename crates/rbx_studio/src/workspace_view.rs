@@ -113,7 +113,7 @@ pub(crate) enum ViewportAction {
     Moved {
         moves: Vec<(Ref, Vec3)>,
         first: bool,
-        settle: Option<Settle>,
+        settle: Option<Box<Settle>>,
     },
     /// A Scale drag resized the part. The centre travels with it: the face
     /// opposite the grabbed one holds still, so growing the part by a stud
@@ -133,16 +133,6 @@ pub(crate) enum ViewportAction {
         /// centre for every part of a group (see
         /// `transform::Targets::rotate_about`).
         parts: Vec<(Ref, Mat3, Vec3)>,
-        first: bool,
-    },
-    /// `T` or `R` during a cursor drag: a quarter turn about `pivot`, the
-    /// point the part is being held by. `first` marks the gesture's undo step,
-    /// exactly as `Moved` does — a drag that turns the part and then moves it
-    /// is still one drag.
-    Turned {
-        referent: Ref,
-        pivot: Vec3,
-        axis: Vec3,
         first: bool,
     },
     /// A transform-toolbar shortcut typed over the view.

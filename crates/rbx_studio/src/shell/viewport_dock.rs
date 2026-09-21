@@ -121,6 +121,19 @@ impl Shell {
                 },
             ),
             (
+                "Align Dragged Objects",
+                self.dragger().align_dragged_objects,
+                |shell, align_dragged_objects, cx| {
+                    shell.set_dragger(
+                        DraggerSettings {
+                            align_dragged_objects,
+                            ..shell.dragger()
+                        },
+                        cx,
+                    )
+                },
+            ),
+            (
                 "Cap frame rate at 25 fps when unfocused",
                 self.unfocused_fps == UnfocusedFps::Fps25,
                 Shell::set_unfocused_cap,

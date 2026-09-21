@@ -8,11 +8,11 @@
 
 use glam::{Mat3, Mat4, Vec3};
 use gpui_kit::*;
-use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
+use rbx_dom::{Ref, WeakDom};
 use rbx_viewer::gizmo;
-use rbx_viewer::pick::{self, Ray, Selected};
+use rbx_viewer::pick::{self, PartSurface, Ray, Selected};
 
-use crate::dragger::surface::{surface_frame, SurfaceFrame};
+use crate::dragger::target;
 use crate::properties;
 use crate::settle::{self, Settle};
 use crate::transform;
@@ -53,15 +53,9 @@ impl Shell {
                 moves,
                 first,
                 settle,
-            } => self.move_parts(moves, *first, *settle, cx),
+            } => self.move_parts(moves, *first, settle.as_deref().copied(), cx),
             ViewportAction::Resized { parts, first } => self.resize_parts(parts, *first, cx),
             ViewportAction::Rotated { parts, first } => self.rotate_parts(parts, *first, cx),
-            ViewportAction::Turned {
-                referent,
-                pivot,
-                axis,
-                first,
-            } => self.turn_part(*referent, *pivot, *axis, *first, cx),
             // The one toolbar action that moves the caret instead of changing
             // state, which is why this path carries a `Window` at all.
             ViewportAction::Tool(transform::Action::FocusIncrement(kind)) => {
@@ -90,6 +84,7 @@ impl Shell {
     /// changing out from under a still-hovered part).
     fn hover_in_viewport(&mut self, ray: Option<Ray>, alt: bool, cx: &mut Context<Self>) {
         let meshes = self.viewport.read(cx).meshes().clone();
+        let grid = self.viewport.read(cx).hover_grid();
         let covered = self.covered.clone();
         let mut target = None;
         let hovered: Vec<Selected> = ray
@@ -110,7 +105,10 @@ impl Shell {
                 // Studio's hover ruler measures the face of whatever the
                 // cursor is over — selected or not — once there is something
                 // selectable there at all.
-                target = hover_target(&self.dom, ray, hits.first().copied());
+                target = hits.first().and_then(|&part| {
+                    let surface = PartSurface::read(&self.dom, &self.database, &meshes, part)?;
+                    target::under(&surface, ray, grid)
+                });
                 selection::outlined(&self.dom, &self.database, &[referent])
                     .into_iter()
                     // A hover entirely inside the current selection adds only a
@@ -184,23 +182,17 @@ impl Shell {
     /// One step of a drag, whether it carries one selected part or a whole
     /// group of them.
     ///
-    /// A cursor drag asks, through `settle`, to rest the anchor on whatever
-    /// the cursor is over. Only the DOM can answer that, so it is answered
-    /// here: `delta` corrects the anchor's own move from the view's flat
-    /// guess to where it actually landed, and is applied to every part in
-    /// `moves` before any of them are written, so the group's relative
-    /// layout survives the settle intact. The answer is handed back to the
-    /// view too (`WorkspaceView::settle_at`): its draggers are following
-    /// their own flat-plane guess until told otherwise.
+    /// A cursor drag asks, through `settle`, to rest the selection on
+    /// whatever the cursor is over. Only the DOM can answer that, so it is
+    /// answered here: the answer carries every part from where it stood at
+    /// the grab, turned and moved as one, and each part's whole `CFrame` is
+    /// written. The answer is handed back to the view too
+    /// (`WorkspaceView::settle_at`): its draggers are following their own
+    /// flat-plane guess until told otherwise. With nothing to rest on, the
+    /// guess is what is written: `moves`, positions alone.
     ///
     /// History is pushed once, on `first`, for every part the drag carries
-    /// together: a snapshot is a whole `WeakDom` clone (see
-    /// `crate::history`), so one per mouse move — let alone one per part per
-    /// mouse move — would both cost a copy of the place per frame and flush
-    /// every earlier undo step out of a fifty-deep stack in under a second.
-    /// Each write goes through the same `properties::edit::commit` the
-    /// Properties panel uses, so a drag and a typed coordinate cannot
-    /// disagree about what moving a part means.
+    /// together (see `write_drag`).
     fn move_parts(
         &mut self,
         moves: &[(Ref, Vec3)],
@@ -212,52 +204,37 @@ impl Shell {
             // Same render-thread mesh handle `pick_in_viewport` reads — a
             // settle's own surface search needs to agree with what a click
             // would have hit.
-            let meshes = self.viewport.read(cx).meshes().clone();
-            let dragged: Vec<Ref> = moves.iter().map(|&(referent, _)| referent).collect();
-            settle::settled(&self.dom, &self.database, &meshes, &dragged, settle)
+            let viewport = self.viewport.read(cx);
+            let meshes = viewport.meshes().clone();
+            let held: Vec<(Ref, Mat4)> = viewport
+                .held()
+                .iter()
+                .map(|target| (target.referent, target.model))
+                .collect();
+            let settled = settle::settled(&self.dom, &self.database, &meshes, &held, settle)?;
+            Some((settled, held))
         });
-        let delta = settled
-            .as_ref()
-            .zip(moves.first())
-            .map(|(settled, &(_, fallback))| settled.centre - fallback);
-
-        if first {
-            self.push_history();
-        }
-
-        let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
-        for &(referent, position) in moves {
-            let position = position + delta.unwrap_or(Vec3::ZERO);
-            let text = vector(position);
-            let written = properties::edit::commit(
-                &mut dom,
-                &self.database,
-                referent,
-                CFRAME_PROPERTY,
-                &text,
-            );
-            if let Err(err) = written {
-                self.output.push_warning(&format!("viewport drag: {err}"));
-            }
-        }
-        self.dom = dom;
-        // Overwrites, not appends: this step's log alone — one `CFrame`
-        // write per part carried, however many mouse-move frames it took to
-        // get there — is what a later undo of the whole gesture reflects
-        // (see this method's doc comment for why history is pushed once, on
-        // `first`, not per frame). Reflected as one batch, one DOM clone,
-        // whatever the group's size.
-        let changes = self.dom.take_changes();
-        self.reflect_changes(&changes, cx);
-        self.record_history_change(changes);
-
+        let writes: Vec<(Ref, &str, String)> = match &settled {
+            Some((settled, held)) => held
+                .iter()
+                .map(|&(referent, model)| {
+                    let carried = settled.carry * model;
+                    let [x, y, z] = gizmo::basis(Some(Mat3::from_mat4(carried)));
+                    let placement = cframe(Mat3::from_cols(x, y, z), carried.w_axis.truncate());
+                    (referent, CFRAME_PROPERTY, placement)
+                })
+                .collect(),
+            None => moves
+                .iter()
+                .map(|&(referent, position)| (referent, CFRAME_PROPERTY, vector(position)))
+                .collect(),
+        };
+        self.write_drag(first, &writes, cx);
         if settle.is_some() {
-            let delta = delta.unwrap_or(Vec3::ZERO);
-            self.viewport.update(cx, |viewport, _| {
-                viewport.settle_at(delta, settled.as_ref())
-            });
+            let settled = settled.map(|(settled, _)| settled);
+            self.viewport
+                .update(cx, |viewport, _| viewport.settle_at(settled.as_ref()));
         }
-        cx.notify();
     }
 
     /// One step of a Scale drag, for every part it carries. Two properties
@@ -289,15 +266,7 @@ impl Shell {
         let writes: Vec<(Ref, &str, String)> = parts
             .iter()
             .map(|&(referent, orientation, position)| {
-                let rows =
-                    (0..3).flat_map(|row| (0..3).map(move |column| orientation.col(column)[row]));
-                let text = [position.x, position.y, position.z]
-                    .into_iter()
-                    .chain(rows)
-                    .map(|term| term.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                (referent, CFRAME_PROPERTY, text)
+                (referent, CFRAME_PROPERTY, cframe(orientation, position))
             })
             .collect();
         self.write_drag(first, &writes, cx);
@@ -337,75 +306,6 @@ impl Shell {
         cx.notify();
     }
 
-    /// A `T`/`R` quarter turn mid-drag.
-    ///
-    /// Unlike a move, this cannot go through `properties::edit::commit`: a
-    /// `CFrame`'s rotation has no text syntax that path accepts (see
-    /// `properties::edit::parse`, which deliberately keeps the existing
-    /// rotation and reads only a position), so the new frame is written
-    /// straight onto the instance instead. It shares the drag's one undo step,
-    /// opening it if the turn is the first thing the gesture did.
-    fn turn_part(
-        &mut self,
-        referent: Ref,
-        pivot: Vec3,
-        axis: Vec3,
-        first: bool,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(Variant::CFrame(frame)) = self
-            .dom
-            .get(referent)
-            .and_then(|instance| instance.properties().get(CFRAME_PROPERTY))
-        else {
-            return;
-        };
-
-        let r = frame.rotation;
-        // `CFrameData::rotation` is row-major; `Mat3::from_cols_array` is not.
-        let rotation = glam::Mat3::from_cols(
-            Vec3::new(r[0], r[3], r[6]),
-            Vec3::new(r[1], r[4], r[7]),
-            Vec3::new(r[2], r[5], r[8]),
-        );
-        let position = Vec3::new(frame.position.x, frame.position.y, frame.position.z);
-        let (rotation, position) =
-            gizmo::turned(rotation, position, pivot, gizmo::quarter_turn(axis));
-
-        let turned = Variant::CFrame(CFrameData {
-            position: Vector3Data {
-                x: position.x,
-                y: position.y,
-                z: position.z,
-            },
-            rotation: [
-                rotation.x_axis.x,
-                rotation.y_axis.x,
-                rotation.z_axis.x,
-                rotation.x_axis.y,
-                rotation.y_axis.y,
-                rotation.z_axis.y,
-                rotation.x_axis.z,
-                rotation.y_axis.z,
-                rotation.z_axis.z,
-            ],
-        });
-
-        if first {
-            self.push_history();
-        }
-        if let Err(err) = self.dom.set_property(referent, CFRAME_PROPERTY, turned) {
-            self.output.push_warning(&format!("viewport turn: {err}"));
-            return;
-        }
-        // Same reasoning as `move_parts`: this turn writes exactly the one
-        // `CFrame` change, however many `T`/`R` presses the gesture took.
-        let changes = self.dom.take_changes();
-        self.reflect_changes(&changes, cx);
-        self.record_history_change(changes);
-        cx.notify();
-    }
-
     /// Hands the viewport the boxes a handle drag can soft-snap onto: every
     /// drawn part in the workspace except whichever the selection carries — a
     /// group drag carries all of them together, so none should pull the
@@ -428,12 +328,18 @@ impl Shell {
     }
 }
 
-/// The face of `part` under `ray`, framed on its corner nearest the cursor,
-/// and where the cursor meets it — what Studio's hover ruler measures.
-fn hover_target(dom: &WeakDom, ray: Ray, part: Option<Ref>) -> Option<(SurfaceFrame, Vec3)> {
-    let model = pick::model_of(dom, part?)?;
-    let hit = ray.at(pick::ray_hits_box(ray, model)?);
-    Some((surface_frame(model, hit)?, hit))
+/// A whole `CFrame` as the twelve numbers Roblox's own `CFrame.new(x, y, z,
+/// R00 … R22)` takes, the rotation row by row (`creator-docs`,
+/// `reference/engine/datatypes/CFrame.yaml`), which `properties::edit::parse`
+/// reads back.
+fn cframe(orientation: Mat3, position: Vec3) -> String {
+    let rows = (0..3).flat_map(|row| (0..3).map(move |column| orientation.col(column)[row]));
+    [position.x, position.y, position.z]
+        .into_iter()
+        .chain(rows)
+        .map(|term| term.to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// The three-number text `properties::edit::parse` reads a `Vector3` — or a

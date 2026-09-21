@@ -19,15 +19,16 @@
 //! oscillating between two surfaces when the cursor holds still on the edge
 //! between them.
 
-use glam::{Mat4, Vec3};
+use glam::{Mat3, Mat4, Vec2, Vec3};
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
-use rbx_viewer::pick::{self, Meshes, Ray};
-use rbx_viewer::Pose;
+use rbx_viewer::pick::{self, Meshes, PartSurface, Ray};
+use rbx_viewer::{gizmo, Pose};
 
 use crate::dragger::depth_scale;
 use crate::dragger::free::{self, Landing};
-use crate::dragger::surface::{surface_frame, SurfaceFrame};
+use crate::dragger::surface::{SurfaceFrame, TargetKind};
+use crate::dragger::{target, tilt};
 
 /// One step of a cursor drag, as the view describes it.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -35,7 +36,7 @@ pub(crate) struct Settle {
     /// The ray under the cursor now.
     pub(crate) cursor: Ray,
     /// Where the dragged point — the point the drag holds the selection by,
-    /// fixed at the press — stands relative to the anchor part's centre.
+    /// fixed at the press — stood relative to the anchor part's centre then.
     pub(crate) grabbed: Vec3,
     /// The grid in force for this step (`0.0` for none: snapping off, or
     /// `Shift` held).
@@ -49,13 +50,19 @@ pub(crate) struct Settle {
     /// The face the previous step landed on, which a cursor over nothing
     /// keeps landing on, in its plane.
     pub(crate) last: Option<SurfaceFrame>,
+    /// Align Dragged Objects on and `Alt` up: the selection turns to lie on
+    /// the face it lands on (see `crate::dragger::tilt`).
+    pub(crate) align: bool,
+    /// The quarter turns `R` and `T` have added this drag.
+    pub(crate) tilt: Mat3,
 }
 
 /// Where a drag step landed, and on what.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Settled {
-    /// The anchor part's new centre.
-    pub(crate) centre: Vec3,
+    /// The rigid move from where the parts stood at the grab to where this
+    /// step rests them: every part's grab-time placement carried by it.
+    pub(crate) carry: Mat4,
     /// The face landed on, framed on its corner nearest the cursor.
     pub(crate) frame: SurfaceFrame,
     /// Where the cursor met it.
@@ -65,35 +72,66 @@ pub(crate) struct Settled {
     pub(crate) grid: f32,
 }
 
-/// Where the parts `dragged` (the anchor first) come to rest for this step,
-/// or `None` when the cursor is over nothing and no step has landed yet —
-/// the caller keeps its own flat-plane answer for that.
+/// Where the parts `held` — each where it stood at the grab, the anchor
+/// first — come to rest for this step, or `None` when the cursor is over
+/// nothing and no step has landed yet: the caller keeps its own flat-plane
+/// answer for that.
+///
+/// Studio's `getDragTargetNew`: the selection's box, in the anchor's own
+/// frame at the grab, is turned onto the target's frame, lifted until its
+/// underside rests on the face, and hung from the dragged point's landing.
 pub(crate) fn settled(
     dom: &WeakDom,
     database: &ReflectionDatabase,
     meshes: &Meshes,
-    dragged: &[Ref],
+    held: &[(Ref, Mat4)],
     settle: Settle,
 ) -> Option<Settled> {
-    let anchor = pick::model_of(dom, *dragged.first()?)?.w_axis.truncate();
-    let (frame, hit) = match target_under(dom, database, meshes, settle.cursor, dragged) {
-        Some((model, hit)) => (surface_frame(model, hit)?, hit),
+    let &(_, anchor) = held.first()?;
+    let dragged: Vec<Ref> = held.iter().map(|&(referent, _)| referent).collect();
+    let found = target_under(dom, database, meshes, settle.cursor, &dragged)
+        .and_then(|part| target::under(&part, settle.cursor, settle.grid));
+    let (frame, hit) = match found {
+        Some(found) => found,
         None => {
-            let frame = settle.last?;
+            // Studio's `Nothing`: the last frame as it stood, measured on
+            // its grid but aligned with nothing.
+            let frame = SurfaceFrame {
+                kind: TargetKind::Nothing,
+                size: Vec2::ZERO,
+                part: None,
+                ..settle.last?
+            };
             (
                 frame,
                 pick::ray_hits_plane(settle.cursor, frame.corner, frame.y)?,
             )
         }
     };
-    let models = dragged.iter().filter_map(|&part| pick::model_of(dom, part));
-    let bounds = free::bounds(&frame, models, anchor + settle.grabbed);
+    // The anchor's placement at the grab is the selection's basis, and the
+    // dragged point and the selection's box are measured in its frame.
+    let [x, y, z] = gizmo::basis(Some(Mat3::from_mat4(anchor)));
+    let basis = Mat3::from_cols(x, y, z);
+    let origin = anchor.w_axis.truncate();
+    let point = basis.transpose() * settle.grabbed;
+    let selection = free::selection_box(basis, origin, held.iter().map(|&(_, model)| model));
+    let turn = tilt::in_frame(&frame, basis, settle.align) * settle.tilt;
+    let bounds = free::bounds(turn, selection, point);
     let reach = settle
         .snap_to_parts
         .then(|| free::SOFT_SNAP_REACH * depth_scale(hit, settle.pose, settle.orthographic));
     let landing = free::land(&frame, hit, bounds, settle.grid, reach);
+    // Turned as the box was, about the dragged point, which lands where the
+    // landing says.
+    let rotation = tilt::frame_rotation(&frame) * turn * basis.transpose();
+    let translation = landing.dragged(&frame) - rotation * (origin + settle.grabbed);
     Some(Settled {
-        centre: landing.dragged(&frame) - settle.grabbed,
+        carry: Mat4::from_cols(
+            rotation.x_axis.extend(0.0),
+            rotation.y_axis.extend(0.0),
+            rotation.z_axis.extend(0.0),
+            translation.extend(1.0),
+        ),
         frame,
         hit,
         landing,
@@ -101,8 +139,8 @@ pub(crate) fn settled(
     })
 }
 
-/// The nearest drawn part along `ray` that is not being dragged, as the box
-/// it is drawn in and where `ray` meets that box.
+/// The surface of the nearest drawn part along `ray` that is not being
+/// dragged.
 ///
 /// The dragged parts are left out: they are under the cursor by definition,
 /// so a search that could see them would find them first every time and rest
@@ -113,12 +151,11 @@ pub(crate) fn target_under(
     meshes: &Meshes,
     ray: Ray,
     dragged: &[Ref],
-) -> Option<(Mat4, Vec3)> {
+) -> Option<PartSurface> {
     let nearest = pick::parts_along(dom, database, meshes, ray)
         .into_iter()
         .find(|referent| !dragged.contains(referent))?;
-    let model = pick::model_of(dom, nearest)?;
-    Some((model, ray.at(pick::ray_hits_box(ray, model)?)))
+    PartSurface::read(dom, database, meshes, nearest)
 }
 
 #[cfg(test)]

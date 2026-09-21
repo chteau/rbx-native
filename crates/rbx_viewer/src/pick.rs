@@ -16,6 +16,7 @@
 
 mod mesh;
 mod shape;
+mod surface;
 
 use glam::{Mat4, Vec2, Vec3};
 use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
@@ -27,6 +28,7 @@ use crate::scene::{
 };
 
 pub use mesh::Meshes;
+pub use surface::{PartSurface, Solid};
 
 // Reversed-Z (see `camera::Camera::projection`) puts the near plane at depth 1
 // and the far end at 0, in both the perspective and the orthographic
