@@ -319,13 +319,12 @@ Roblox's own engine.
   performance-debugging surface rather than inventing a new one: Studio's
   `Window > Performance > Stats` toggles a debug stats overlay, and
   `Ctrl`+`F6` opens the MicroProfiler directly for a per-system frame-time
-  breakdown. `rbxstudio`'s viewport corner label gets a "Stats" toggle next
-  to the existing Orthographic one, in the Viewport panel's own overflow
-  menu (this editor has no `Window` menu yet) — switching it on adds the
-  render thread's last-measured fps and frame time to the label already
-  showing quality level and flight speed, reusing the same per-second
-  numbers `workspace_view::stats` already computed to drive automatic
-  quality scaling rather than a second timing mechanism. `rbxview`'s
+  breakdown. `rbxstudio`'s Viewport dock (a tab beside Output by default,
+  so nothing is drawn over the scene) shows the render thread's
+  last-measured fps and frame time beside the quality level, counted only
+  while the dock is on screen, and reusing the same per-second numbers
+  `workspace_view::stats` already computed to drive automatic quality
+  scaling rather than a second timing mechanism. `rbxview`'s
   standalone title bar carries the same fps/frame-time reading now too,
   alongside the flight speed it already showed (it never displayed a
   quality level of its own to begin with, pinned or automatic) — always on
@@ -523,10 +522,14 @@ Roblox's own engine.
     the cursor is over nothing.
   - **Snapping**: move/scale snap in studs, rotate snap in degrees, each
     with its own toolbar increment field and enable/disable checkbox;
-    holding `Shift` mid-drag inverts the current snap state for that one
-    drag. A free Move drag soft-snaps its grab point onto nearby
-    surfaces/edges when snapping is off. While cursor-dragging a part,
-    `T`/`R` tilt/rotate it 90° around the grab point.
+    holding `Shift` suspends snapping for as long as it is held, the way
+    Studio's draggers read it. A free drag lands the grabbed point on the
+    face under the cursor, rounded onto that face's grid from its nearest
+    corner and — with Snap to Parts — onto its edges and centre lines,
+    squaring the selection onto an angled face (`Alt` keeps its
+    orientation); a Move/Scale handle drag soft-snaps to nearby parts'
+    faces along its axis. While cursor-dragging a part, `T`/`R` tilt/rotate
+    it 90°.
   - **Multi-select**: `Shift`/`Ctrl`/`Cmd`-click adds/removes a top-level
     object; the Explorer, viewport outline and Properties panel all follow
     the whole set. One Move gizmo appears, centred on the selection's
@@ -592,7 +595,7 @@ Roblox's own engine.
   focus (`gpui`'s window activation) caps the viewport's render thread —
   not just the UI thread's own poll rate — to a user-chosen preset, 25 or
   30 fps (`pacing::UnfocusedFps`, next to the quality dropdown in the
-  Viewport panel's overflow menu); the first focus or input event
+  Viewport dock); the first focus or input event
   (`pacing::FocusPacing::mark_input`) restores the full display rate
   immediately, ahead of whatever window-activation event may still be in
   flight, so nothing feels sluggish coming back. Persisted the same way

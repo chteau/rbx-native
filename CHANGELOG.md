@@ -23,6 +23,41 @@
   gap, so the drag is the fast path and the menu is the one that has to
   exist. Both go through one transform, so they cannot disagree. — @chteau
 
+- **A dragged part squares itself onto what it lands on.** Dropping onto a
+  wedge's slope, a ball or a cylinder's side turns the selection onto that
+  face the way Studio's `snapRotationToPrimaryDirection` does, keeping the
+  grab-time orientation otherwise (`Alt` holds it as is), and every one of
+  those surfaces now gets its own frame for the grid snap and guides — a
+  ball's latitude and longitude, a cylinder's cap and side, a mesh's face
+  from the triangles under the cursor. After a handle drag the distance
+  label turns into Studio's measurement box: type a length and the
+  selection moves by exactly that, as one undo step. The handle trails a
+  line back to where the drag began, every guide is Studio's one pixel
+  wide — the line pass now draws after the tone map, so a hairline keeps
+  its colour — and a key press over the viewport no longer wipes the hover
+  ruler and cue until the mouse moves. — @chteau
+
+- **A `SurfaceLight` lights its whole face.** It shone as a cone from the
+  face's centre, so its patch was half the width of the frustum its own
+  guide draws; the shader now measures from the nearest point on the face,
+  and the lit area is the guide's. — @chteau
+
+- **`BrickColor`, and the numbers Studio computes, in Properties.** The
+  full 208-colour table from Roblox's docs backs a `BrickColor` row that
+  reads the nearest palette colour off `Color` and writes a pick back to
+  it, and `rbx_lua`'s `BrickColor` uses the same table now, so the two
+  cannot disagree. `Mass`, `CenterOfMass`, `CurrentPhysicalProperties` and
+  the assembly's mass and centre show read-only, computed only where
+  Roblox documents exactly how. A file that stores `Color` or `Size` under
+  its canonical name renders them — names are normalised once, at load —
+  and a script reading a property the file never stored gets Roblox's
+  default instead of nothing. — @chteau
+
+- **The Viewport dock works from the keyboard and at any UI scale.** Its
+  settings are one Tab stop walked with the arrow keys, the way Properties
+  is, every select shows a focus ring, and the dock keeps its proportions
+  at 0.5× and 2×. — @chteau
+
 ## 2026-09-21
 
 - **`Highlight` draws.** The class a script reaches for to call attention to
