@@ -459,6 +459,16 @@ pub(crate) fn dock_width() -> f32 {
     300. * font_scale()
 }
 
+/// The bottom dock: its tab strip and five rows under it — Output's log, or
+/// the Viewport dock's settings.
+///
+/// Counted in rows rather than scaled from one number, because a row has
+/// WCAG's 24px floor under it: at 0.5x the rows barely shrink, and a dock
+/// that halved would clip them.
+pub(crate) fn dock_height() -> f32 {
+    f32::from(dock_tabs_height() + row_height() * 5.)
+}
+
 /// A ribbon button, and the stacked-row column beside it.
 pub(crate) fn tile_width() -> Pixels {
     scaled(56.)
@@ -528,6 +538,15 @@ pub(crate) fn field_min_width() -> Pixels {
 /// and will need re-measuring against a plain text field in the same panel.
 pub(crate) fn select_inset() -> Pixels {
     scaled(4.5)
+}
+
+/// The room a toolkit `Select` keeps for its chevron, which it draws at a
+/// fixed 15px at an 8px inset (`UX_GUIDELINES.md` §11) whatever the UI
+/// scale. **Not** scaled, deliberately: a select sized as one scaled width
+/// gives its label less and less room as the scale drops, until at 0.5x
+/// "Automatic" no longer fits.
+pub(crate) fn select_chevron_room() -> Pixels {
+    px(31.)
 }
 
 /// `InputsStyle` again: the frame's inputs are padded 8px horizontally.

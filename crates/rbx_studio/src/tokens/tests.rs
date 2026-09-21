@@ -354,6 +354,7 @@ fn every_scaled_size_actually_follows_the_scale() {
             f32::from(tab_width()),
             f32::from(tool_border()),
             dock_width(),
+            dock_height(),
         ]
     };
 

@@ -65,10 +65,11 @@ impl Edge {
     /// Read through `tokens` rather than held as a constant: the frame
     /// fixes a dock at 228px against a 9px label, this shell sets text at
     /// 14px, and at 2x the UI scale a dock that stayed 300px would hold
-    /// 600px rows.
+    /// 600px rows — or a bottom dock that stayed 180px would be half its
+    /// own tab strip.
     pub(crate) fn default_size(self) -> f32 {
         match self {
-            Edge::Bottom => 180.,
+            Edge::Bottom => tokens::dock_height(),
             _ => tokens::dock_width(),
         }
     }
