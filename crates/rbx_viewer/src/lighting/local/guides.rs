@@ -37,7 +37,7 @@ use super::{
     LIGHT_CLASS, SPOT_CLASS, SURFACE_CLASS,
 };
 use crate::renderer::Segment;
-use crate::scene::{is_drawable, workspace_descendants};
+use crate::scene::{is_drawable, WORKSPACE_CLASS};
 use crate::textures::NormalId;
 
 /// Straight pieces per guide circle — Studio's read as a polygon of about
@@ -137,12 +137,13 @@ fn placement(
     } else {
         parent
     };
-    // ponytail: walks `Workspace` until it meets the part, once per selected
-    // light per edit; a parent lookup up to the service if a place with a
-    // huge `Workspace` makes dragging a selected light's part lag.
-    if !is_drawable(dom, database, part)
-        || !workspace_descendants(dom, database).any(|referent| referent == part)
-    {
+    // Up the parent chain rather than down `Workspace`: this runs on every
+    // edit while a light is selected, and a chain costs its depth.
+    let root = std::iter::successors(Some(part), |&referent| dom.parent(referent)).last()?;
+    let in_workspace = dom
+        .get(root)
+        .is_some_and(|instance| database.is_subclass_of(instance.class(), WORKSPACE_CLASS));
+    if !in_workspace || !is_drawable(dom, database, part) {
         return None;
     }
     let frame = frame_of(dom.get(part)?)?;
