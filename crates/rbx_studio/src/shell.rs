@@ -251,6 +251,9 @@ pub(crate) struct Shell {
     /// The Align tool's current toggles (axes, Min/Center/Max, World/Local,
     /// Selection Bounds/Active Object) — see `crate::align`/`shell::align`.
     align: AlignOptions,
+    /// Whether the Align popover is open, and so whether its live preview
+    /// is being drawn — see `shell::align::Shell::refresh_align_preview`.
+    align_open: bool,
     /// Which of the ribbon's own category tabs is showing — see
     /// `shell::ribbon`. Session-only: real Studio's own ribbon always opens
     /// back on Home too, and there's nothing here worth writing to
@@ -492,6 +495,7 @@ impl Shell {
             transform,
             snap_fields,
             align: AlignOptions::default(),
+            align_open: false,
             ribbon_tab: ribbon::Tab::default(),
             document: Document::default(),
             open_menu: None,

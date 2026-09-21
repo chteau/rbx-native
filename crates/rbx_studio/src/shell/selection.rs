@@ -80,6 +80,9 @@ impl Shell {
             viewport.set_selection(&outline);
             viewport.set_targets(targets);
         });
+        // What the Align tool would do depends on what is selected, so an
+        // open popover's preview follows the selection.
+        self.refresh_align_preview(cx);
     }
 }
 

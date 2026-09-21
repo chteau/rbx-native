@@ -19,6 +19,12 @@ impl WorkspaceView {
         self.pump.hover(selected);
     }
 
+    /// Forwards where a tool being configured would put the selection —
+    /// the Align popover's live preview. An empty list clears it.
+    pub(crate) fn set_preview(&mut self, boxes: Vec<glam::Mat4>) {
+        self.pump.preview(boxes);
+    }
+
     /// Reflects one edit's `Change` log in the render thread's scene, every
     /// instance it names patched in place there, between two frames (see
     /// `rbx_viewer::Headless::apply_changes`) — the render thread owns the

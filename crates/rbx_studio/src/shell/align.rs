@@ -27,16 +27,19 @@ pub(crate) const ALIGN_VARIABLE: &str = "RBX_STUDIO_ALIGN";
 impl Shell {
     pub(super) fn align_toggle_axis(&mut self, axis: Axis, cx: &mut Context<Self>) {
         self.align.toggle_axis(axis);
+        self.refresh_align_preview(cx);
         cx.notify();
     }
 
     pub(super) fn align_set_mode(&mut self, mode: Mode, cx: &mut Context<Self>) {
         self.align.mode = mode;
+        self.refresh_align_preview(cx);
         cx.notify();
     }
 
     pub(super) fn align_set_space(&mut self, space: Space, cx: &mut Context<Self>) {
         self.align.space = space;
+        self.refresh_align_preview(cx);
         cx.notify();
     }
 
@@ -46,7 +49,36 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         self.align.relative_to = relative_to;
+        self.refresh_align_preview(cx);
         cx.notify();
+    }
+
+    /// Whether the popover is open, which is the whole of when the preview
+    /// is drawn: ghost boxes standing around the selection with no tool
+    /// open to explain them would be noise.
+    pub(super) fn align_opened(&mut self, open: bool, cx: &mut Context<Self>) {
+        self.align_open = open;
+        self.refresh_align_preview(cx);
+    }
+
+    /// Sends the viewport the boxes the current toggles would move the
+    /// selection into — `studio/align-tool.md`'s "dynamically previewing
+    /// the point of alignment before confirming" — or clears them when the
+    /// popover is closed.
+    ///
+    /// Called from every toggle, from opening and closing the popover, and
+    /// from a selection change, since all four change where the alignment
+    /// would put things.
+    pub(crate) fn refresh_align_preview(&mut self, cx: &mut Context<Self>) {
+        let boxes = if self.align_open {
+            let entries = align::read_entries(&self.dom, &self.database, self.selected_all());
+            let active_index = entries.len().saturating_sub(1);
+            align::preview(&entries, active_index, self.align)
+        } else {
+            Vec::new()
+        };
+        self.viewport
+            .update(cx, |viewport, _| viewport.set_preview(boxes));
     }
 
     /// Runs the current toolbar toggles against the current selection and
@@ -82,6 +114,8 @@ impl Shell {
         let changes = self.dom.take_changes();
         self.reflect_changes(&changes, cx);
         self.record_history_change(changes);
+        // Everything just moved, so where it *would* move has too.
+        self.refresh_align_preview(cx);
         cx.notify();
     }
 
@@ -129,6 +163,13 @@ impl Shell {
 
         Popover::new("align-popover")
             .trigger(trigger)
+            .on_open_change({
+                let handle = handle.clone();
+                move |open, _, cx| {
+                    let open = *open;
+                    handle.update(cx, |shell, cx| shell.align_opened(open, cx));
+                }
+            })
             .content(move |_, _, _| align_popover(handle.clone(), options))
     }
 }

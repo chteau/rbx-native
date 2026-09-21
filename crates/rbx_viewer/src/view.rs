@@ -20,6 +20,8 @@
 //! cannot quietly drop one of these — whatever it does or does not happen to
 //! keep of the renderer's own copy.
 
+use glam::Mat4;
+
 use crate::gizmo::Gizmo;
 use crate::pick::Selected;
 
@@ -40,6 +42,11 @@ pub(crate) struct View {
     /// `None` whenever no transform tool is active, which is every `rbxview`
     /// frame: the standalone viewer edits nothing.
     pub(crate) gizmo: Option<Gizmo>,
+    /// The ghost boxes a tool is previewing — where the Align tool would
+    /// put the selection, say. Empty unless an editor asked for one, and
+    /// carried here for the same reason the selection is: a reload must
+    /// not quietly drop it while the tool is still open.
+    pub(crate) preview: Vec<Mat4>,
     /// Whether a part standing in front of the selection hides its outline.
     /// `false` — the box shows through everything, which is what Studio
     /// draws — unless the embedder asks otherwise; `rbxview` never does.
@@ -58,6 +65,11 @@ impl View {
     /// clear it.
     pub(crate) fn set_hover(&mut self, selected: Vec<Selected>) {
         self.hovered = selected;
+    }
+
+    /// Replaces the previewed boxes — empty to clear them.
+    pub(crate) fn set_preview(&mut self, boxes: Vec<Mat4>) {
+        self.preview = boxes;
     }
 
     pub(crate) fn set_gizmo(&mut self, gizmo: Option<Gizmo>) {

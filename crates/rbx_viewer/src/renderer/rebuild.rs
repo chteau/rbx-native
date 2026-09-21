@@ -146,6 +146,18 @@ impl Renderer {
         // with. Without this a full rebuild (an asset streaming in, a beam or
         // particle resolving) stripped every mesh part's outline and gizmo.
         self.selection.rebuild(device, scene.all_placements());
+        // The same instances, but new `Part` records and new mesh uploads,
+        // so the cue masks are rebuilt around them rather than kept.
+        self.cues.rebuild(
+            device,
+            queue,
+            &self.frame_layout,
+            highlight::Source {
+                highlights: &[],
+                parts: scene.parts(),
+                resolved: scene.resolved_file_meshes(),
+            },
+        );
         self.shaped = Shaped::new(device, scene.parts());
         self.translucent = Translucent::new(device, scene.parts());
         self.filemesh

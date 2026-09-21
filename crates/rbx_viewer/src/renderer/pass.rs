@@ -107,6 +107,10 @@ impl Renderer {
         // the top layer rather than being hidden under the selection box.
         self.selection.draw(&mut pass, &self.frame.bind_group);
         self.hover.draw(&mut pass, &self.frame.bind_group);
+        // Over the outlines, under the draggers: a preview says where the
+        // selection would land, so it belongs beside its outline rather
+        // than over the handles being dragged.
+        self.preview.draw(&mut pass, &self.frame.bind_group);
         // After both outlines, and with no depth test of its own: a dragger
         // is a control rather than scenery, and one buried inside the part it
         // moves would be impossible to grab.

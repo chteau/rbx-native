@@ -14,6 +14,7 @@ use crate::gpu;
 use crate::pick::Selected;
 use crate::quality::QualityProfile;
 use crate::renderer::{Renderer, World};
+use crate::scene::Scene;
 use crate::view::View;
 use readback::{Pending, Target, FORMAT};
 
@@ -66,9 +67,10 @@ impl Offscreen {
             pending: None,
         };
         offscreen.set_orthographic(view.orthographic);
-        offscreen.set_selection(&view.selected);
-        offscreen.set_selection_occluded(view.selection_occluded);
-        offscreen.set_hover(view.hovered.clone());
+        offscreen.set_selection(&view.selected, world.scene);
+        offscreen.set_selection_occluded(view.selection_occluded, world.scene);
+        offscreen.set_hover(view.hovered.clone(), world.scene);
+        offscreen.set_preview(&view.preview);
         offscreen.set_gizmo(view.gizmo);
         Ok(offscreen)
     }
@@ -81,8 +83,10 @@ impl Offscreen {
     pub(crate) fn reload(&mut self, world: World<'_>, view: &View) {
         self.renderer.rebuild(&self.device, &self.queue, world);
         self.set_orthographic(view.orthographic);
-        self.set_selection(&view.selected);
-        self.set_selection_occluded(view.selection_occluded);
+        self.set_selection(&view.selected, world.scene);
+        self.set_selection_occluded(view.selection_occluded, world.scene);
+        self.set_hover(view.hovered.clone(), world.scene);
+        self.set_preview(&view.preview);
         self.set_gizmo(view.gizmo);
     }
 
@@ -104,19 +108,27 @@ impl Offscreen {
 
     /// Replaces the outlined selection box(es), rebuilding their tiny vertex
     /// buffer right away.
-    pub(crate) fn set_selection(&mut self, selected: &[Selected]) {
-        self.renderer.set_selection(&self.device, selected);
+    pub(crate) fn set_selection(&mut self, selected: &[Selected], scene: &Scene) {
+        self.renderer
+            .set_selection(&self.device, &self.queue, selected, scene);
     }
 
     /// Whether geometry in front of the selection hides its outline.
-    pub(crate) fn set_selection_occluded(&mut self, occluded: bool) {
-        self.renderer.set_selection_occluded(occluded);
+    pub(crate) fn set_selection_occluded(&mut self, occluded: bool, scene: &Scene) {
+        self.renderer
+            .set_selection_occluded(&self.device, &self.queue, occluded, scene);
     }
 
     /// Replaces the hover outline box, rebuilding its tiny vertex buffer
     /// right away.
-    pub(crate) fn set_hover(&mut self, selected: Vec<Selected>) {
-        self.renderer.set_hover(&self.device, selected);
+    pub(crate) fn set_hover(&mut self, selected: Vec<Selected>, scene: &Scene) {
+        self.renderer
+            .set_hover(&self.device, &self.queue, selected, scene);
+    }
+
+    /// Replaces the ghost boxes a tool is previewing.
+    pub(crate) fn set_preview(&mut self, boxes: &[glam::Mat4]) {
+        self.renderer.set_preview(&self.device, boxes);
     }
 
     /// Shows or hides the transform tool's draggers over the selection.

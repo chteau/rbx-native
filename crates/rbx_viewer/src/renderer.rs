@@ -3,6 +3,7 @@
 
 mod adornment;
 mod beam;
+mod cue;
 mod cull;
 mod envmap;
 mod filemesh;
@@ -21,6 +22,7 @@ mod pass;
 mod patch;
 mod pipeline;
 mod post;
+mod preview;
 mod rebuild;
 mod selection;
 mod shadow;
@@ -48,6 +50,7 @@ use crate::scene::{Bounds, Scene, ScrollTarget};
 use crate::textures::Decor;
 use adornment::Adornments;
 use beam::Beams;
+use cue::Cues;
 use cull::MainCull;
 use envmap::EnvMap;
 use geometry::Meshes;
@@ -59,6 +62,7 @@ use material::Materials;
 use particles::Particles;
 use pipeline::{Frame, Shared, Target};
 use post::Post;
+use preview::Preview;
 use selection::Selection;
 use shadow::{Fit, Lamp, Shadows};
 use shaped::Shaped;
@@ -152,13 +156,20 @@ pub(crate) struct Renderer {
     /// outline and an interior fill — see `renderer::highlight`. Costs nothing
     /// in a place with none.
     highlights: highlight::Highlights,
-    /// The Explorer's selection outline. Reads `self.frame`'s bind group at
-    /// draw time, so it needs no camera state of its own.
+    /// The Explorer's selection outline — the box a container gets. A part
+    /// keeps its own silhouette instead; that is `cues` below.
     selection: Selection,
+    /// The selection and hover cues of whatever has a shape of its own,
+    /// drawn as silhouettes through the same pass a `Highlight` uses — see
+    /// `renderer::cue`.
+    cues: Cues,
     /// The "about to click" cue drawn around whatever `BasePart` the cursor is
     /// over, distinctly from `selection` above — see `renderer::hover`. Reads
     /// the same shared bind group, for the same reason.
     hover: Hover,
+    /// Where the tool being configured would put things — the Align
+    /// tool's live preview. Empty unless an editor asks for one.
+    preview: Preview,
     /// The transform tool's axis draggers, drawn over the selection outline.
     draggers: Draggers,
     /// Which transform tool the editor has active, if any — `None` while the
@@ -330,7 +341,19 @@ impl Renderer {
                 },
             ),
             selection,
+            cues: Cues::new(
+                device,
+                queue,
+                &layout,
+                target,
+                highlight::Source {
+                    highlights: &[],
+                    parts: scene.parts(),
+                    resolved: scene.resolved_file_meshes(),
+                },
+            ),
             hover,
+            preview: Preview::new(device, target, &layout),
             draggers,
             gizmo: None,
             gui: Gui::new(
@@ -371,21 +394,67 @@ impl Renderer {
 
     /// Replaces the outlined selection, rebuilding its tiny vertex buffer right
     /// away rather than waiting for the next `draw`.
-    pub(crate) fn set_selection(&mut self, device: &wgpu::Device, selected: &[Selected]) {
+    ///
+    /// Two cues, not one: a container gets the box `renderer::selection`
+    /// draws, and anything with a shape of its own gets the silhouette
+    /// `renderer::cue` traces — which is why this needs the scene the
+    /// silhouette is masked from.
+    pub(crate) fn set_selection(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        selected: &[Selected],
+        scene: &Scene,
+    ) {
         self.selection.set(device, selected);
+        self.cues.set_selection(
+            device,
+            queue,
+            &self.frame_layout,
+            Cues::parts_of(selected),
+            Self::cue_source(scene),
+        );
     }
 
     /// Whether scene geometry in front of the selection hides its outline —
     /// see `renderer::selection`, which draws it through everything by
     /// default.
-    pub(crate) fn set_selection_occluded(&mut self, occluded: bool) {
+    pub(crate) fn set_selection_occluded(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        occluded: bool,
+        scene: &Scene,
+    ) {
         self.selection.set_occluded(occluded);
+        self.cues.set_occluded(
+            device,
+            queue,
+            &self.frame_layout,
+            occluded,
+            Self::cue_source(scene),
+        );
     }
 
     /// Replaces the hover outline, rebuilding its tiny vertex buffer right
-    /// away rather than waiting for the next `draw`. `None` clears it.
-    pub(crate) fn set_hover(&mut self, device: &wgpu::Device, selected: Vec<Selected>) {
+    /// away rather than waiting for the next `draw`. An empty list clears it.
+    pub(crate) fn set_hover(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        selected: Vec<Selected>,
+        scene: &Scene,
+    ) {
+        let parts = Cues::parts_of(&selected);
         self.hover.set(device, selected);
+        self.cues
+            .set_hover(device, queue, &self.frame_layout, parts, Self::cue_source(scene));
+    }
+
+    /// Replaces the ghost boxes a tool is previewing — see
+    /// `renderer::preview`. An empty list clears them.
+    pub(crate) fn set_preview(&mut self, device: &wgpu::Device, boxes: &[glam::Mat4]) {
+        self.preview.set(device, boxes);
     }
 
     /// Shows or hides the transform tool's draggers over whatever is
@@ -623,6 +692,16 @@ impl Renderer {
             &self.meshes,
             size,
         );
+        // After the place's own highlights: the editor's cue for what is
+        // selected has to read on top of whatever the file asks for.
+        self.cues.draw(
+            device,
+            &mut encoder,
+            targets,
+            &self.frame.bind_group,
+            &self.meshes,
+            size,
+        );
 
         // The scene is HDR and unclamped until here: the bloom, the grade and
         // the tone map all live in the resolve.
@@ -644,7 +723,18 @@ impl Renderer {
         queue.submit(std::iter::once(encoder.finish()));
     }
 
-    /// Which lamp casts this frame, and where its map looks.
+    /// What the cue pass masks a silhouette out of: the same parts and
+/// resolved meshes the place's own highlights are drawn from, with no
+/// highlight of its own — `renderer::cue` supplies those.
+fn cue_source(scene: &Scene) -> highlight::Source<'_> {
+    highlight::Source {
+        highlights: &[],
+        parts: scene.parts(),
+        resolved: scene.resolved_file_meshes(),
+    }
+}
+
+/// Which lamp casts this frame, and where its map looks.
     ///
     /// Roblox keeps the sun's direction pointing at the sun all night long and
     /// puts the moon opposite it (see [`crate::lighting`]), so the lamp that is

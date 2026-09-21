@@ -52,12 +52,13 @@ fn a_referent_with_no_placement_draws_nothing() {
 }
 
 #[test]
-fn a_part_referent_draws_its_box() {
+/// A part is cued by its own silhouette (see `renderer::cue`), so the box
+/// pass draws nothing for one.
+fn a_part_referent_is_left_to_its_own_silhouette() {
     let mut placements = HashMap::new();
     placements.insert(Ref::new(1), placement(Mat4::IDENTITY));
 
-    let vertices = outline::box_edges(&placements, &[part(1)]);
-    assert_eq!(vertices.len(), 72);
+    assert!(outline::box_edges(&placements, &[part(1)]).is_empty());
 }
 
 #[test]
@@ -215,8 +216,11 @@ fn a_part_with_parts_under_it_keeps_its_own_oriented_box() {
     placements.insert(handle, placement(turned));
     placements.insert(sight, cube(Vec3::new(9.0, 0.0, 0.0)));
 
+    // Still the part's own oriented box — which is what the gizmo takes
+    // its frame from — even though the cue drawn around it is the
+    // silhouette rather than this box.
     assert_eq!(outline::box_of(&placements, &selected), Some(turned));
-    assert_eq!(outline::box_edges(&placements, &[selected]).len(), 72);
+    assert!(outline::box_edges(&placements, &[selected]).is_empty());
 }
 
 /// A model selected together with one of its own parts is one box, not two
