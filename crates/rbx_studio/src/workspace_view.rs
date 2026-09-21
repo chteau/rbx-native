@@ -664,8 +664,8 @@ impl WorkspaceView {
             if self.turn_key(&keystroke.key, keystroke.modifiers, cx) {
                 return;
             }
-            let key = tool_key(&keystroke.key, layout);
-            if let Some(action) = transform::action_for(key, keystroke.modifiers) {
+            let (key, modifiers) = tool_key(&keystroke.key, keystroke.modifiers, layout);
+            if let Some(action) = transform::action_for(key, modifiers) {
                 cx.emit(ViewportAction::Tool(action));
                 return;
             }
