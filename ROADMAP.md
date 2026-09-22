@@ -369,9 +369,9 @@ Roblox's own engine.
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: this project's own flat, from-scratch class icon kit
-  (`assets/icons/default/dark`, 152 tiles — Roblox's 147-tile layout plus
-  five of its own — spec'd in `assets/icons/README.md`) rasterized and
-  painted per row
+  (`assets/icons/default/dark`, 329 classes onto 142 of its 152 tiles —
+  Roblox's 147-tile layout plus five of its own — spec'd in
+  `assets/icons/README.md`) rasterized and painted per row
   (`class_icons.rs`), with Lucide glyphs as the fallback for anything the
   kit doesn't cover — Roblox's own sprite sheet is no longer downloaded or
   drawn anywhere in the editor. Default service filter with a "show all"

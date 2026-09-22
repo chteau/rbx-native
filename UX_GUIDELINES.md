@@ -102,23 +102,25 @@ those tokens can fail.
 reference's separate editor/viewport font size is not, and is not missed
 yet. Large Click Targets and a Reduce Motion toggle (item 8) live in the
 View menu, the latter overriding a desktop preference read at startup.
-Dock sizes and the Output dock's collapsed state persist, with a Reset
-Layout command beside them (item 9) — named layouts do not exist.
+The whole dock arrangement persists — which edge, dock and tab each panel
+sits in, every size, what is floating and what is closed — with a Reset
+Layout command beside it (item 9); named layouts do not exist.
 
 **Stage 3 — not started.** No high-contrast theme (item 10), no command
 palette (item 12). Item 11's 44×44 is reachable through Large Click
 Targets but is not the default on primary controls.
 
-**The one Level A gap, now down to the menu bar:** `Select`, `ColorPicker`
-and `NumberInput` are in the Tab order — every `Color3`, every enum and the
-snap increments included. None of them needed the focusable wrapper this
-section used to promise: each one's state entity (`SelectState`,
-`ColorPickerState`, `InputState`) already implements `Focusable` and hands
-out the same handle its own `.focus` uses, so the window's own order
-(`shell::roving::TabOrder`) records that handle directly. What is left is
-the menu bar, mouse-only and still WCAG 2.1.1 Keyboard, Level A. It wants
-the usual desktop answer — F10/Alt to enter it — rather than a Tab stop,
-which is why it is tracked as its own piece of work.
+**No Level A gap left.** `Select`, `ColorPicker` and `NumberInput` are in
+the Tab order — every `Color3`, every enum and the snap increments
+included. None of them needed the focusable wrapper this section used to
+promise: each one's state entity (`SelectState`, `ColorPickerState`,
+`InputState`) already implements `Focusable` and hands out the same handle
+its own `.focus` uses, so the window's own order (`shell::roving::TabOrder`)
+records that handle directly. The menu bar, which was the last
+mouse-only control, takes the usual desktop answer rather than a Tab stop:
+**F10** or a bare **Alt** tap enters it, Left/Right walk the titles,
+Enter/Space/Down open one, and Escape backs out to wherever focus came from
+(`menu_bar`). That closes WCAG 2.1.1 Keyboard, Level A.
 
 ## 2. Tokens
 
@@ -501,11 +503,11 @@ to lie — not a shortcut:
 | An unsaved-document dot | not implemented | the editor has no dirty-state tracking to bind it to |
 | Hierarchy guides as one absolute overlay | drawn per row | the tree is virtualised; rows are the only thing that exists to hang a line on |
 | Keyboard focus visually distinct from selection in the Explorer | they are the same row | `TreeState` tracks one `selected_ix` and nothing else; splitting them means replacing the toolkit's tree |
-| Every control in the Tab order | the menu bar is mouse-only | **a Level A gap (2.1.1 Keyboard)**, not a trade-off. `Select`, `ColorPicker` and `NumberInput` are in the order now — their state entities are `Focusable`, so `shell::roving::TabOrder` records each handle directly, no wrapper needed. The menu bar wants F10/Alt instead, which is a different job |
+| Every control in the Tab order | every control but the menu bar, which F10 or a bare Alt tap reaches instead | the desktop convention: a region everyone has to Tab through on the way to the ribbon is not what it asks for. `Select`, `ColorPicker` and `NumberInput` are in the order — their state entities are `Focusable`, so `shell::roving::TabOrder` records each handle directly, no wrapper needed. No Level A gap remains (2.1.1 Keyboard) |
 | No slider anywhere in the frame | a rail beside the number field, on the bounded properties only | the frame is silent, so §1's rule applies and this file decides. Built from `gpui_base`'s unstyled slider parts rather than the toolkit's finished `Slider`, whose rail, thumb and target are all sized in `rem` and would ignore the UI scale. Skinned as a field box: `chrome` fill, no border, `check_on` for what is set |
 | A slider in the Tab order | mouse and assistive-technology only | `SliderState` is not `Focusable`, so `shell::roving::TabOrder` has no handle to record. Not a Level A gap: the rail is a decoration on a row whose number field *is* a Tab stop and takes the same value typed, and `gpui_base` gives the rail `Role::Slider` with working increment/decrement actions |
 | A separate editor/viewport font size | one UI scale over everything | the reference notes VS Code splits them; nothing here needs a text size independent of its chrome yet |
-| Named dock layouts | one layout, plus Reset | sizes persist and can be restored; saving several under names is a feature, not a floor |
+| Named dock layouts | one layout, plus Reset | the arrangement persists and can be reset; saving several under names is a feature, not a floor |
 
 ## 12. Verifying a visual change
 
