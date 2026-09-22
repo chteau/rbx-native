@@ -21,9 +21,7 @@ var scene_depth: texture_depth_2d;
 
 // The farthest the scene reaches anywhere in this pixel: every sample of it
 // once the frame is multisampled, since none of them sits at the pixel's
-// centre, where this pass's own depth is. A guide lying on the very surface
-// it marks then compares against a depth at or behind its own, rather than
-// flickering against one a fraction of a pixel away up a slope.
+// centre, where this pass's own depth is.
 fn scene_farthest(pixel: vec2<i32>) -> f32 {
     return textureLoad(scene_depth, pixel, 0);
 }
@@ -36,9 +34,38 @@ const DEPTH_SLACK: f32 = 1e-5;
 // across: one pixel, the width of the filter below.
 const FRINGE: f32 = 1.0;
 
-fn behind_scene(position: vec4<f32>) -> bool {
-    let scene = scene_farthest(vec2<i32>(position.xy));
-    return position.z < scene * (1.0 - DEPTH_SLACK);
+// How much the scene's depth changes from one pixel to the next here: the
+// gentler of the two steps each way along each axis, so a silhouette on one
+// side of the pixel does not count as a slope.
+fn scene_slope(pixel: vec2<i32>, here: f32) -> f32 {
+    let x = min(
+        abs(scene_beside(pixel, vec2<i32>(1, 0)) - here),
+        abs(here - scene_beside(pixel, vec2<i32>(-1, 0)))
+    );
+    let y = min(
+        abs(scene_beside(pixel, vec2<i32>(0, 1)) - here),
+        abs(here - scene_beside(pixel, vec2<i32>(0, -1)))
+    );
+    return max(x, y);
+}
+
+// `scene_farthest` one pixel over, held inside the frame.
+fn scene_beside(pixel: vec2<i32>, offset: vec2<i32>) -> f32 {
+    let last = vec2<i32>(textureDimensions(scene_depth)) - vec2<i32>(1);
+    return scene_farthest(clamp(pixel + offset, vec2<i32>(0), last));
+}
+
+// Whether the scene stands in front of this fragment. A line or a dot has one
+// depth all the way across it — its centre's — while the surface it lies on
+// keeps sloping away under it; so the further a fragment is from that centre
+// (`off_centre`, in pixels), the more of the surface's own slope it is
+// allowed, plus half a pixel for where in the pixel the samples sit. Without
+// it a guide drawn on a sloped face loses the pixel on its nearer side.
+fn behind_scene(position: vec4<f32>, off_centre: f32) -> bool {
+    let pixel = vec2<i32>(position.xy);
+    let scene = scene_farthest(pixel);
+    let slack = scene * DEPTH_SLACK + scene_slope(pixel, scene) * (off_centre + 0.5);
+    return position.z < scene - slack;
 }
 
 // The target is attached through its non-sRGB view, so blending happens on
@@ -121,7 +148,7 @@ fn line_coverage(input: LineOutput) -> f32 {
 @fragment
 fn fs_line(input: LineOutput) -> @location(0) vec4<f32> {
     let coverage = line_coverage(input);
-    if coverage <= 0.0 || behind_scene(input.clip_position) {
+    if coverage <= 0.0 || behind_scene(input.clip_position, abs(input.across)) {
         discard;
     }
     return encoded(input.color, coverage);
@@ -177,7 +204,7 @@ fn dot_coverage(input: DotOutput) -> f32 {
 @fragment
 fn fs_dot(input: DotOutput) -> @location(0) vec4<f32> {
     let coverage = dot_coverage(input);
-    if coverage <= 0.0 || behind_scene(input.clip_position) {
+    if coverage <= 0.0 || behind_scene(input.clip_position, length(input.offset)) {
         discard;
     }
     return encoded(input.color, coverage);
