@@ -18,24 +18,25 @@
 //! Which parts each highlight covers is resolved off the DOM in
 //! `scene::highlight`; nothing here reads an `Adornee`.
 
+mod batches;
 mod pipelines;
 
 use std::collections::HashMap;
+use std::ops::Range;
 
 use rbx_assets::AssetRef;
 use rbx_dom::Ref;
 
-use super::cull::visible_runs;
 use super::geometry::Meshes;
 use super::pipeline::Target;
 use super::post::Targets;
 use super::shadow::casters::{self, MeshGeometry};
 use super::slots::keyed::Keyed;
-use super::slots::Roster;
 use crate::scene::{
     DepthMode, Highlight, Part, PartId, Resolved, ResolvedInstance, ShapeKind, MAX_HIGHLIGHTS,
 };
 
+use batches::{claim_runs, draw_order, mesh_batches, shape_batches};
 use pipelines::{Composite, Mask, MaskInstance, Paint};
 
 /// The highlighted unit shapes, drawn against [`Meshes`]' shared buffers.
@@ -79,9 +80,21 @@ pub(super) struct Highlights {
     /// the frame changes size. `None` until the first frame draws one.
     target: Option<MaskTarget>,
     /// The claims in play, in the order the mask draws them (see
-    /// [`draw_order`]): each is one walk of the batches, so a scene pays for
-    /// the highlights it has and no more.
+    /// [`draw_order`]).
     order: Vec<Claim>,
+    /// Which runs of which batch each claim in `order` draws — a walk of
+    /// every batch per claim, so it is kept until a batch changes rather
+    /// than walked again every frame. `None` when it is owed.
+    runs: Option<Vec<ClaimRuns>>,
+}
+
+/// One claim's share of the batches: for each batch it has instances in,
+/// the batch's position in [`Keyed::groups`] (stable, see `slots::keyed`)
+/// and the runs of its instances.
+struct ClaimRuns {
+    claim: Claim,
+    shapes: Vec<(usize, Vec<Range<u32>>)>,
+    meshes: Vec<(usize, Vec<Range<u32>>)>,
 }
 
 struct Gpu {
@@ -117,6 +130,7 @@ impl Highlights {
             format: target,
             target: None,
             order: Vec::new(),
+            runs: None,
         };
         pass.rebuild(device, queue, frame, scene);
         pass
@@ -159,6 +173,10 @@ impl Highlights {
     /// is never in these batches to begin with, so this is a no-op for all
     /// but a handful of the edits a drag reports.
     pub(super) fn sync_part(&mut self, device: &wgpu::Device, part: &Part) {
+        // A part no highlight claims is in no batch, now or after.
+        if self.claims.contains_key(&part.referent()) {
+            self.runs = None;
+        }
         let wanted = self
             .claims
             .get(&part.referent())
@@ -175,6 +193,7 @@ impl Highlights {
 
     pub(super) fn remove_part(&mut self, id: PartId) {
         self.shapes.remove(id);
+        self.runs = None;
     }
 
     /// Uploads what [`Self::sync_part`] and [`Self::sync_mesh`] rewrote in
@@ -195,6 +214,9 @@ impl Highlights {
         resolved: &Resolved,
         instance: &ResolvedInstance,
     ) -> bool {
+        if self.claims.contains_key(&instance.referent) {
+            self.runs = None;
+        }
         let wanted = self.claims.get(&instance.referent).map(|&claim| {
             (
                 instance.mesh.clone(),
@@ -209,6 +231,7 @@ impl Highlights {
 
     pub(super) fn remove_mesh(&mut self, referent: Ref) {
         self.meshes.remove(referent);
+        self.runs = None;
     }
 
     /// Whether this frame has anything to draw at all. A place with no
@@ -238,7 +261,10 @@ impl Highlights {
             return;
         }
         self.fit(device, size, targets.samples());
-        let (Some(gpu), Some(target)) = (&self.gpu, &self.target) else {
+        if self.runs.is_none() {
+            self.runs = Some(self.plan_runs());
+        }
+        let (Some(gpu), Some(target), Some(runs)) = (&self.gpu, &self.target, &self.runs) else {
             return;
         };
 
@@ -273,7 +299,7 @@ impl Highlights {
             });
 
             pass.set_bind_group(0, frame, &[]);
-            for claim in self.order.clone() {
+            for claim in runs {
                 self.draw_mask(&mut pass, gpu, meshes, claim);
             }
         }
@@ -300,49 +326,51 @@ impl Highlights {
         pass.draw(0..3, 0..1);
     }
 
-    /// One depth mode's worth of mask draws: every batch, but only the runs
-    /// of instances that mode's pipeline is for — the same
-    /// [`visible_runs`] split the main and shadow passes already cull with,
-    /// asked a different question.
+    /// Every claim's runs, in draw order: each batch split into the runs of
+    /// instances one claim's pipeline is for — the same [`visible_runs`]
+    /// split the main and shadow passes already cull with, asked a
+    /// different question.
+    fn plan_runs(&self) -> Vec<ClaimRuns> {
+        self.order
+            .iter()
+            .map(|&claim| ClaimRuns {
+                claim,
+                shapes: claim_runs(self.shapes.groups(), claim),
+                meshes: claim_runs(self.meshes.groups(), claim),
+            })
+            .collect()
+    }
+
+    /// One claim's mask draws, from its runs as [`Self::plan_runs`] found them.
     fn draw_mask<'p>(
         &'p self,
         pass: &mut wgpu::RenderPass<'p>,
         gpu: &'p Gpu,
         meshes: &Meshes,
-        claim: Claim,
+        runs: &ClaimRuns,
     ) {
-        let mode = claim.1;
+        let mode = runs.claim.1;
         pass.set_pipeline(gpu.mask.shapes(mode));
-        for batch in self.shapes.groups() {
+        for (position, ranges) in &runs.shapes {
+            let batch = &self.shapes.groups()[*position];
             let Some(mesh) = meshes.get(batch.key) else {
                 continue;
             };
-            let runs = visible_runs(batch.slots.count(), |index| {
-                batch.slots.side(index) == claim
-            });
-            if runs.is_empty() {
-                continue;
-            }
             pass.set_vertex_buffer(1, batch.slots.buffer().slice(..));
-            for run in runs {
-                mesh.draw_range(pass, run);
+            for run in ranges {
+                mesh.draw_range(pass, run.clone());
             }
         }
 
         pass.set_pipeline(gpu.mask.meshes(mode));
-        for batch in self.meshes.groups() {
-            let runs = visible_runs(batch.slots.count(), |index| {
-                batch.slots.side(index) == claim
-            });
-            if runs.is_empty() {
-                continue;
-            }
+        for (position, ranges) in &runs.meshes {
+            let batch = &self.meshes.groups()[*position];
             let geometry = &batch.extra;
             pass.set_vertex_buffer(0, geometry.vertices.slice(..));
             pass.set_vertex_buffer(1, batch.slots.buffer().slice(..));
             pass.set_index_buffer(geometry.indices.slice(..), wgpu::IndexFormat::Uint32);
-            for run in runs {
-                pass.draw_indexed(0..geometry.index_count, 0, run);
+            for run in ranges {
+                pass.draw_indexed(0..geometry.index_count, 0, run.clone());
             }
         }
     }
@@ -379,6 +407,7 @@ impl Highlights {
 
         self.shapes = shape_batches(device, &self.claims, scene.parts);
         self.meshes = mesh_batches(device, &self.claims, scene.resolved);
+        self.runs = None;
     }
 
     /// The mask target, allocated at `size` and kept until the frame changes
@@ -439,108 +468,6 @@ pub(super) struct Source<'a> {
     pub(super) resolved: &'a Resolved,
 }
 
-fn shape_batches(
-    device: &wgpu::Device,
-    claims: &HashMap<Ref, Claim>,
-    parts: &[Part],
-) -> ShapeBatches {
-    let mut batches = Keyed::new("rbxview highlight shapes");
-    if claims.is_empty() {
-        return batches;
-    }
-    for kind in super::shaped::kinds(parts) {
-        let roster = Roster::from_iter(
-            parts
-                .iter()
-                .filter(|part| part.kind == kind && part.is_drawn())
-                .filter_map(|part| {
-                    let &claim = claims.get(&part.referent())?;
-                    Some((
-                        part.id,
-                        MaskInstance::new(part.transform.to_cols_array_2d(), claim.0),
-                        claim,
-                    ))
-                }),
-        );
-        if roster.len() > 0 {
-            batches.add_group(device, kind, (), roster);
-        }
-    }
-    batches
-}
-
-fn mesh_batches(
-    device: &wgpu::Device,
-    claims: &HashMap<Ref, Claim>,
-    resolved: &Resolved,
-) -> MeshBatches {
-    let mut batches = Keyed::new("rbxview highlight meshes");
-    let mut order: Vec<AssetRef> = Vec::new();
-    for instance in &resolved.instances {
-        if claims.contains_key(&instance.referent) && !order.contains(&instance.mesh) {
-            order.push(instance.mesh.clone());
-        }
-    }
-    for reference in order {
-        let Some(geometry) = casters::geometry(device, resolved, &reference) else {
-            continue;
-        };
-        let roster = Roster::from_iter(
-            resolved
-                .instances
-                .iter()
-                .filter(|instance| instance.mesh == reference)
-                .filter_map(|instance| {
-                    let &claim = claims.get(&instance.referent)?;
-                    Some((
-                        instance.referent,
-                        MaskInstance::new(instance.model.to_cols_array_2d(), claim.0),
-                        claim,
-                    ))
-                }),
-        );
-        batches.add_group(device, reference, geometry, roster);
-    }
-    batches
-}
-
-/// The order the mask draws the claims in: the depth modes as they always
-/// went, `AlwaysOnTop` first, and within each the highlights from the last to
-/// the first. A pixel two highlights both reach is the last one drawn's, so
-/// the first highlight listed wins it — which is what lets the editor's
-/// selection cue, listed before its hover cue, keep its outline in front of
-/// a hovered part behind it.
-fn draw_order(claims: impl Iterator<Item = Claim>) -> Vec<Claim> {
-    let mut order: Vec<Claim> = Vec::new();
-    for claim in claims {
-        if !order.contains(&claim) {
-            order.push(claim);
-        }
-    }
-    let rank = |mode: DepthMode| usize::from(mode == DepthMode::Occluded);
-    order.sort_by_key(|&(index, mode)| (rank(mode), std::cmp::Reverse(index)));
-    order
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_first_highlight_is_drawn_last_so_it_wins_a_shared_pixel() {
-        let claims = [
-            (1, DepthMode::AlwaysOnTop),
-            (2, DepthMode::AlwaysOnTop),
-            (1, DepthMode::AlwaysOnTop),
-            (3, DepthMode::Occluded),
-        ];
-        assert_eq!(
-            draw_order(claims.into_iter()),
-            vec![
-                (2, DepthMode::AlwaysOnTop),
-                (1, DepthMode::AlwaysOnTop),
-                (3, DepthMode::Occluded),
-            ]
-        );
-    }
-}
+#[path = "highlight/tests.rs"]
+mod tests;
