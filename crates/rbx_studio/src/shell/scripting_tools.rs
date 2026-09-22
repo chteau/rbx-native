@@ -21,15 +21,17 @@ use std::time::Instant;
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::InputState;
-use gpui_kit::component::{h_flex, v_flex, Disableable as _, Icon, Sizable as _};
+use gpui_kit::component::{h_flex, v_flex, Icon, Sizable as _};
 use gpui_kit::*;
 
 use crate::tokens;
+use crate::wally_client;
 
 use super::argon_sync::{SyncDirection, SyncState};
 use super::chrome;
 use super::layout::Panel;
 use super::menu::{self, MenuId};
+use super::wally_sync;
 use super::workspace::search_field;
 use super::Shell;
 
@@ -122,14 +124,43 @@ impl Shell {
             self.move_items(Panel::Wally),
             cx,
         );
-        let body = tool_dock(
-            IconName::Package,
-            "No packages installed",
-            "Resolves a wally.toml manifest and writes the packages it \
-             names straight into this place's Packages folder.",
-            "wally-add",
-            "Add package",
-        );
+
+        let tab_index = self.tab_order.next();
+        // Capped rather than scrolled — a dock this short has no real room
+        // for a long list anyway, and a search narrows results faster than
+        // scrolling would.
+        let rows: Vec<AnyElement> = self
+            .wally_results()
+            .iter()
+            .take(10)
+            .enumerate()
+            .map(|(index, result)| {
+                let picked = result.clone();
+                wally_result_row(
+                    ("wally-result", index),
+                    result,
+                    cx.listener(move |shell, _, _, cx| {
+                        shell.wally_install(picked.clone(), cx);
+                    }),
+                )
+                .into_any_element()
+            })
+            .collect();
+
+        let body = v_flex()
+            .size_full()
+            .gap(tokens::group_gap())
+            .text_size(tokens::text_sm())
+            .line_height(tokens::line_sm())
+            .child(
+                div()
+                    .w_full()
+                    .max_w(px(260.))
+                    .child(search_field(tab_index, &self.wally_query)),
+            )
+            .children(wally_status(self.wally_install_state()))
+            .child(v_flex().gap(px(2.)).children(rows));
+
         (
             Some(overflow.into_any_element()),
             Some(chrome::dock_content(body).into_any_element()),
@@ -137,32 +168,59 @@ impl Shell {
     }
 }
 
-/// The still-a-placeholder shape Wally's dock uses: a status line, what the
-/// tool will do once it's wired to the real thing, and the one action it's
-/// built around — inert and tooltipped with why, not hidden, so the dock
-/// reads as "not yet" rather than "never".
-fn tool_dock(
-    icon: IconName,
-    status: &'static str,
-    blurb: &'static str,
-    action_id: &'static str,
-    action_label: &'static str,
+/// One search result: `scope/name`, its description if it has one, a
+/// click target for the whole row.
+fn wally_result_row(
+    id: impl Into<ElementId>,
+    result: &wally_client::SearchResult,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
     v_flex()
-        .size_full()
-        .gap(tokens::group_gap())
-        .text_size(tokens::text_sm())
-        .line_height(tokens::line_sm())
-        .child(status_row(icon, status))
-        .child(div().text_color(tokens::text_muted()).child(blurb))
+        .id(id.into())
+        .w_full()
+        .rounded(tokens::RADIUS)
+        .px(tokens::label_gap())
+        .py(px(4.))
+        .cursor_pointer()
+        .hover(|this| this.bg(tokens::hover()))
+        .on_click(on_click)
         .child(
-            field_button(Button::new(action_id).label(action_label).outline())
-                .self_start()
-                .disabled(true)
-                .tooltip(format!(
-                    "{action_label} — not implemented yet, see ROADMAP.md"
-                )),
+            div()
+                .text_color(tokens::text_label())
+                .child(format!("{}/{}", result.scope, result.name)),
         )
+        .children(result.description.clone().map(|description| {
+            div()
+                .text_size(tokens::text_xs())
+                .line_height(tokens::line_xs())
+                .text_color(tokens::text_muted())
+                .child(description)
+        }))
+}
+
+fn wally_status(state: &wally_sync::InstallState) -> Option<AnyElement> {
+    Some(match state {
+        wally_sync::InstallState::Idle => return None,
+        wally_sync::InstallState::Installing { name } => {
+            status_row(IconName::LoaderCircle, format!("Installing {name}…")).into_any_element()
+        }
+        wally_sync::InstallState::Installed { name, count } => {
+            let text = match count {
+                1 => format!("Installed {name}"),
+                n => format!("Installed {name} and {} more", n - 1),
+            };
+            status_row(IconName::CircleCheck, text).into_any_element()
+        }
+        wally_sync::InstallState::Error(message) => v_flex()
+            .gap(tokens::label_gap())
+            .child(status_row(IconName::CircleAlert, "Couldn't install"))
+            .child(
+                div()
+                    .text_color(tokens::text_error())
+                    .child(message.clone()),
+            )
+            .into_any_element(),
+    })
 }
 
 /// A button the same height and horizontal padding as `workspace::

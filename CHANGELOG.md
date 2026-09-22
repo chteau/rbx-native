@@ -19,6 +19,23 @@
   for it), and an update's omitted properties are left alone rather than
   reset to their class default. — @chteau
 
+- **The Wally dock searches and installs for real.** Typing in the dock's
+  search field now hits the real `api.wally.run` registry (debounced) and
+  lists results; picking one resolves its whole dependency graph — a BFS
+  matching Wally's own resolver (`crate::wally_client::resolve`), erroring
+  cleanly on an unsatisfiable requirement rather than installing the wrong
+  version — and installs every resolved package into the DOM as one undo
+  step, in Wally's own real on-disk shape: each package's content under
+  `Packages/_Index/<scope>_<name>@<version>/<name>`, a sibling alias
+  `ModuleScript` per dependency edge, and a top-level alias only for the
+  package actually picked. No separate "install via Argon" path exists —
+  the same DOM insertion reaches a connected Argon session automatically
+  through the write-back sync above, and is native when one isn't
+  connected. Two known gaps: no `wally.lock` (two installs can pick
+  different compatible versions of a shared dependency), and version
+  discovery is search-based, so a non-default registry isn't supported.
+  — @chteau
+
 - **The Script Editor has its own docks: Argon and Wally.** Two new bottom
   docks, tabbed beside Output, show up only while the Script Editor is the
   open document — and the Viewport dock steps aside while they're there,

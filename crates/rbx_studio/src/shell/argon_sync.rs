@@ -467,7 +467,7 @@ impl Shell {
             return;
         }
         let removals = std::mem::take(&mut self.argon.removed);
-        let dirty: Vec<Ref> = self.argon.dirty.drain().collect();
+        let dirty = ordered_parent_first(&self.dom, std::mem::take(&mut self.argon.dirty));
         let Some(client) = &self.argon.client else {
             return;
         };
@@ -521,6 +521,47 @@ impl Shell {
             self.touch_last_sync(SyncDirection::Up, cx);
         }
     }
+}
+
+/// Orders a dirty set so a referent is only emitted once its parent is
+/// either already known outside this batch, or already placed earlier in
+/// the same batch — a package install (or any multi-instance edit) dirties
+/// a parent `Folder`/`ModuleScript` alongside its own children in one go,
+/// and `flush_argon_write` needs the parent's `ArgonRef` to exist before it
+/// can name it as a child's parent. Draining the `HashSet` directly (as
+/// this used to) processes referents in arbitrary hash order, so a child
+/// could be visited before its own not-yet-assigned parent and silently
+/// fall back to [`ArgonRef::ROOT`] — the wrong place on the Argon side.
+///
+/// Bounded by the batch's own depth (a handful of iterations for anything
+/// this editor would realistically dirty in one edit); a `retain` pass
+/// that places nothing at all — which a real tree can't produce, since a
+/// root-level referent is always immediately ready — is treated as a
+/// malformed edge case rather than looped on forever, and whatever's left
+/// is appended in whatever order it was in.
+fn ordered_parent_first(dom: &WeakDom, dirty: HashSet<Ref>) -> Vec<Ref> {
+    let mut remaining: Vec<Ref> = dirty.iter().copied().collect();
+    let mut placed: HashSet<Ref> = HashSet::new();
+    let mut ordered = Vec::with_capacity(remaining.len());
+    while !remaining.is_empty() {
+        let before = ordered.len();
+        remaining.retain(|&referent| {
+            let ready = match dom.parent(referent) {
+                Some(parent) => !dirty.contains(&parent) || placed.contains(&parent),
+                None => true,
+            };
+            if ready {
+                ordered.push(referent);
+                placed.insert(referent);
+            }
+            !ready
+        });
+        if ordered.len() == before {
+            ordered.append(&mut remaining);
+            break;
+        }
+    }
+    ordered
 }
 
 /// `"host:port"` (Argon's own default `localhost:8000`) → its two halves,

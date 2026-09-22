@@ -55,12 +55,27 @@ x11rb = { version = "0.13", features = ["randr", "xfixes"] }
 serde = { version = "1", features = ["derive"] }
 # The Argon dock's HTTP client (`shell::argon_sync`/`argon_client`): blocking
 # by design, already the tree's one HTTP crate via `rbx_cloud`/`rbx_assets`,
-# so this adds no new dependency version to the tree.
-ureq = "3"
+# so this adds no new dependency version to the tree. `json` (for the Wally
+# dock's plain-JSON search calls) is the same feature `rbx_cloud` already
+# turns on for its own `ureq`.
+ureq = { version = "3", features = ["json"] }
 # Argon's wire protocol is MsgPack, tagged dynamically (`{TypeName: payload}`)
 # rather than shaped for a fixed struct — `rmpv`'s `Value` tree is decoded by
 # tag the same way `rbx_xml::value` dispatches by tag name, not through serde.
 rmpv = "1"
+# The Wally dock's package fetch (`shell::wally_sync`/`wally_client`): a
+# package's content download is a zip of its raw source tree. Same version
+# `rbx_assets` already pins for its own archive reading, so this adds no new
+# dependency version to the tree.
+zip = { version = "8", default-features = false, features = ["deflate"] }
+# Wally's own dependency requirements are ordinary Cargo-style semver
+# (`^0.3`, `>=1.0`, ...) — already in the tree transitively, so this adds no
+# new dependency version either; used the same way Wally's own resolver
+# uses it, `VersionReq::matches` against each candidate `Version`.
+semver = "1"
+# The one new dependency this feature needs: a fetched package's `wally.toml`
+# is plain TOML, and nothing in this workspace parses that format yet.
+toml = "0.9"
 
 [dev-dependencies]
 # GPUI's headless test window/entity harness (`#[gpui_kit::test]`,

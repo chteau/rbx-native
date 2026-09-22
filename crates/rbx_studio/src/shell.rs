@@ -52,6 +52,7 @@ mod toolbar;
 mod tooltip;
 mod ui_editor;
 mod viewport_dock;
+mod wally_sync;
 mod workspace;
 
 use std::collections::{HashMap, HashSet};
@@ -265,6 +266,13 @@ pub(crate) struct Shell {
     /// The live connection to an `argon serve` instance, if any — see
     /// `shell::argon_sync`.
     argon: argon_sync::Sync,
+    /// The search field on the Wally dock (`shell::scripting_tools`) —
+    /// real, editable, local to this window; read by
+    /// `Shell::wally_query_changed`.
+    wally_query: Entity<InputState>,
+    /// The Wally dock's search results and install state — see
+    /// `shell::wally_sync`.
+    wally: wally_sync::Search,
     /// The file `self.dom` was opened from and its on-disk format; see
     /// `shell::save`. Ctrl+S always writes back here, in this format,
     /// regardless of what the tree currently looks like.
@@ -318,7 +326,7 @@ pub(crate) struct Shell {
     /// is raised with it once rather than fought over every frame.
     window_was_active: bool,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
-    _subscriptions: [Subscription; 13],
+    _subscriptions: [Subscription; 14],
 }
 
 impl Shell {
@@ -414,6 +422,14 @@ impl Shell {
         let filtered = cx.subscribe(&filter, |_, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
                 cx.notify();
+            }
+        });
+
+        let wally_query =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Search Wally packages"));
+        let wally_query_changed = cx.subscribe(&wally_query, |shell, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                shell.wally_query_changed(cx);
             }
         });
 
@@ -540,6 +556,8 @@ impl Shell {
             argon_address: cx.new(|cx| InputState::new(window, cx).default_value("localhost:8000")),
             argon_version: scripting_tools::detect_argon_version(),
             argon: argon_sync::Sync::default(),
+            wally_query,
+            wally: wally_sync::Search::default(),
             path,
             format,
             folder_colors,
@@ -573,6 +591,7 @@ impl Shell {
                 translate_stepped,
                 rotate_stepped,
                 canvas_drawn,
+                wally_query_changed,
             ],
         };
 
@@ -696,6 +715,11 @@ impl Shell {
         // editor's behalf — the same reason every other debug var here
         // exists.
         shell.apply_debug_argon_connect(window, cx);
+
+        // `RBX_STUDIO_WALLY_INSTALL` (see `shell::wally_sync`): a result
+        // row is a dynamically-populated click target, the same reason
+        // `RBX_STUDIO_ARGON_CONNECT` above exists.
+        shell.apply_debug_wally_install(cx);
 
         // `RBX_STUDIO_MENU` (see `menu_bar::MenuBar::apply_debug_entry`):
         // the only way to put the keyboard in the menu bar without a

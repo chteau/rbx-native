@@ -50,6 +50,9 @@
 //! Editor's Argon dock at startup — the same aid, for a real connection to
 //! a running `argon serve` (see `shell::argon_sync`); the address form
 //! overrides the dock's own address field first.
+//! `RBX_STUDIO_WALLY_INSTALL=<scope>/<name>` resolves and installs that
+//! Wally package at startup exactly as clicking its search result row
+//! would — the same aid, for the Wally dock (see `shell::wally_sync`).
 
 mod align;
 mod argon_client;
@@ -83,6 +86,7 @@ mod sun;
 mod tokens;
 mod transform;
 mod ui_canvas;
+mod wally_client;
 mod workspace_view;
 
 use std::path::{Path, PathBuf};

@@ -1528,19 +1528,27 @@ against `Roblox/creator-docs` rather than assumed:
   `*.project.json`/`default.project.json` tree directly (for `luau-lsp`,
   and for opening an Argon project without a running server) is unrelated
   work against the same file-format Rojo also uses, not yet started.
-- [ ] 📋 **Wally package manager, built in.** Wally (`UpliftGames/wally`,
-  MPL-2.0) is the de facto Luau/Roblox package manager — a `wally.toml`
-  manifest, a registry index git repo, packages installed as
-  `ModuleScript`s under a `Packages`/`DevPackages` folder that
-  `rbx_binary`/`rbx_xml` already read and write like any other instance
-  tree. Native support means: an `Install`/`Add package` action in
-  `rbxstudio` that shells out to (or reimplements) Wally's resolver and
-  writes the resulting `Packages` tree straight into the open place's DOM,
-  instead of requiring a separate CLI step and a project re-sync. Natural
-  pairing with the Argon/Rojo file-tree work above, since Wally-managed
-  packages live in the same kind of synced folder structure. Its dock
-  exists now (`shell::scripting_tools`, Script Editor tab only) — an Add
-  package action with nothing behind it yet, waiting on the resolver.
+- [x] 📋 **Wally package manager, built in.** Wally (`UpliftGames/wally`,
+  MPL-2.0) is the de facto Luau/Roblox package manager. The Wally dock
+  (`shell::scripting_tools`, Script Editor tab only) now searches the real
+  `api.wally.run` registry as you type, and installing a result resolves
+  its *whole* dependency graph — a BFS matching Wally's own resolver shape
+  (`crate::wally_client::resolve`), reusing an already-activated version
+  when one satisfies a new requirement, erroring cleanly on an
+  unsatisfiable one (a real stale dependency, `sleitnick/knit`'s
+  `sleitnick/comm@^0.3`, is this codebase's own test fixture for that
+  path) — then installs every resolved package into the DOM in the same
+  on-disk shape real `wally install` produces: each package's content
+  under `Packages/_Index/<scope>_<name>@<version>/<name>`, one alias
+  `ModuleScript` per dependency edge beside it, and a top-level
+  `Packages/<name>` alias for the package actually picked (`crate::
+  shell::wally_sync`). One `WeakDom` insertion path serves both roles Wally
+  itself splits: with a connected Argon session it reaches disk for free
+  through the write-back sync above; without one, it's native. Two known
+  gaps: version discovery is `package-search` filtered client-side, not a
+  cloned registry index, so a non-default registry isn't supported; and
+  there's no `wally.lock`, so two separate installs can pick different
+  compatible versions of a shared dependency.
 - [ ] 📋 **Native Git integration** — a real panel in `rbxstudio` (diff view,
   stage/commit, branch switch), not relying on the user's own external git
   client. Not scoped in any detail yet.

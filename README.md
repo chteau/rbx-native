@@ -238,7 +238,13 @@ the autonomous-contribution workflow specifically.
   no code from either was copied, but that source is what the client's
   message and property encoding are read from.
 - **UpliftGames** — [Wally](https://wally.run/) (MPL-2.0), the Luau package
-  manager the Script Editor's Wally dock is built around.
+  manager the Script Editor's Wally dock is built around, and the
+  [`wally` source](https://github.com/UpliftGames/wally) (also MPL-2.0),
+  which is how this editor's own client (`crate::wally_client`) confirmed
+  the registry API's actual response shapes and the real on-disk install
+  layout (`_Index` slots, sibling alias files) that
+  `shell::wally_sync` reproduces — no code was copied, but that source is
+  what the install layout is read from.
 
 ## License
 
