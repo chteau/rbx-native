@@ -53,6 +53,14 @@ x11rb = { version = "0.13", features = ["randr", "xfixes"] }
 
 # Dock layout state serialization — uses same version serde_json brings in.
 serde = { version = "1", features = ["derive"] }
+# The Argon dock's HTTP client (`shell::argon_sync`/`argon_client`): blocking
+# by design, already the tree's one HTTP crate via `rbx_cloud`/`rbx_assets`,
+# so this adds no new dependency version to the tree.
+ureq = "3"
+# Argon's wire protocol is MsgPack, tagged dynamically (`{TypeName: payload}`)
+# rather than shaped for a fixed struct — `rmpv`'s `Value` tree is decoded by
+# tag the same way `rbx_xml::value` dispatches by tag name, not through serde.
+rmpv = "1"
 
 [dev-dependencies]
 # GPUI's headless test window/entity harness (`#[gpui_kit::test]`,

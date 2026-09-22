@@ -4,6 +4,7 @@
 //! dragged to another edge or stacked as tabs.
 
 mod align;
+mod argon_sync;
 mod attributes_panel;
 mod brick_color;
 mod change_class;
@@ -40,6 +41,7 @@ mod tree_keys;
 mod rows;
 mod save;
 mod script_panel;
+mod scripting_tools;
 mod scripts;
 mod scroll;
 mod scrub;
@@ -253,6 +255,16 @@ pub(crate) struct Shell {
     /// like `output_filter` beside it — a log you are still reading is not a
     /// setting.
     output_search: Entity<InputState>,
+    /// The address field on the Argon dock (`shell::scripting_tools`) —
+    /// real, editable, local to this window; read by `Shell::argon_connect`.
+    argon_address: Entity<InputState>,
+    /// The `argon` CLI's version, if it's on PATH — probed once at startup
+    /// (see `scripting_tools::detect_argon_version`) and cached here rather
+    /// than re-run every frame the dock is open.
+    argon_version: Option<SharedString>,
+    /// The live connection to an `argon serve` instance, if any — see
+    /// `shell::argon_sync`.
+    argon: argon_sync::Sync,
     /// The file `self.dom` was opened from and its on-disk format; see
     /// `shell::save`. Ctrl+S always writes back here, in this format,
     /// regardless of what the tree currently looks like.
@@ -525,6 +537,9 @@ impl Shell {
             viewport_scroll: ScrollHandle::new(),
             viewport_rows: Rc::default(),
             output_search: cx.new(|cx| InputState::new(window, cx).placeholder("Search")),
+            argon_address: cx.new(|cx| InputState::new(window, cx).default_value("localhost:8000")),
+            argon_version: scripting_tools::detect_argon_version(),
+            argon: argon_sync::Sync::default(),
             path,
             format,
             folder_colors,

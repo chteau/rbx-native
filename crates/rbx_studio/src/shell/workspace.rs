@@ -121,6 +121,8 @@ impl Shell {
             Panel::Explorer => self.explorer_dock(cx),
             Panel::Output => self.output_dock(collapsed, cx),
             Panel::Viewport => self.viewport_dock(window, cx),
+            Panel::Argon => self.argon_dock(cx),
+            Panel::Wally => self.wally_dock(cx),
         }
     }
 

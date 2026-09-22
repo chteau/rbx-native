@@ -21,6 +21,7 @@ use gpui_kit::component::{h_flex, v_flex, Icon};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
+use super::chrome::Document;
 use super::keys::{PART_TYPE_BALL, PART_TYPE_CYLINDER};
 use super::layout::Panel;
 use super::roving::Roving;
@@ -274,23 +275,31 @@ impl Shell {
     /// carries the same toggles, through the same call — a window you can
     /// shut and not reopen is a window you have lost.
     fn panel_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        [
+        let mut tiles = vec![
             (Panel::Explorer, IconName::ListTree, "Explorer"),
             (Panel::Properties, IconName::SlidersHorizontal, "Properties"),
             (Panel::Output, IconName::Terminal, "Output"),
             (Panel::Viewport, IconName::MonitorCog, "Viewport"),
-        ]
-        .into_iter()
-        .map(|(panel, icon, label)| {
-            let showing = self.is_panel_showing(panel);
-            tile(&self.ribbon_nav, label, icon, label, cx)
-                .when(showing, |this| this.bg(tokens::ribbon_tab_active()))
-                .on_click(cx.listener(move |shell, _, _, cx| {
-                    shell.set_panel_open(panel, !showing, cx);
-                }))
-                .into_any_element()
-        })
-        .collect()
+        ];
+        // Argon and Wally have no tab of their own to reopen from outside
+        // the Script Editor, because they're nowhere to be seen outside it
+        // either — see `Shell::hidden_panels`.
+        if self.document == Document::Scripts {
+            tiles.push((Panel::Argon, IconName::RefreshCw, "Argon"));
+            tiles.push((Panel::Wally, IconName::Package, "Wally"));
+        }
+        tiles
+            .into_iter()
+            .map(|(panel, icon, label)| {
+                let showing = self.is_panel_showing(panel);
+                tile(&self.ribbon_nav, label, icon, label, cx)
+                    .when(showing, |this| this.bg(tokens::ribbon_tab_active()))
+                    .on_click(cx.listener(move |shell, _, _, cx| {
+                        shell.set_panel_open(panel, !showing, cx);
+                    }))
+                    .into_any_element()
+            })
+            .collect()
     }
 
     fn insert_gui(&self, cx: &mut Context<Self>) -> impl IntoElement + 'static {

@@ -48,6 +48,7 @@
 //! save to a scratch path instead (see `save`).
 
 mod align;
+mod argon_client;
 mod camera;
 mod change_class;
 mod class_icons;

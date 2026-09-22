@@ -270,6 +270,7 @@ impl Shell {
         if class_changed {
             self.selection_changed(cx);
         }
+        self.forward_to_argon(changes, cx);
     }
 
     /// Rebuilds the Explorer's rows from the current `self.dom`, keeping the
