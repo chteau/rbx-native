@@ -20,6 +20,8 @@ use rbx_dom::{Change, Snapshot, WeakDom};
 use rbx_viewer::pick::{Meshes, Selected};
 use rbx_viewer::{Applied, CameraInput, Gizmo, Headless, Pose, QualityLevel, Segment};
 
+pub(crate) mod canvas;
+
 use super::input::Wheel;
 use super::quality::Quality;
 use super::scroll::Scroll;
@@ -83,6 +85,9 @@ enum Command {
     /// thread, and are reported on stderr so the reason is on record.
     Changes(Vec<Snapshot>, Vec<Change>),
     Visible(bool),
+    /// The UI editor's canvas to draw, or `None` once it is off screen —
+    /// see [`canvas`].
+    Canvas(Option<canvas::Request>),
     Stop,
 }
 
@@ -118,6 +123,8 @@ pub(super) struct Ready {
     /// frame (see [`Command::Wheel`]), oldest first. Never throttled, like
     /// `warnings`: the UI thread owns the DOM the scroll is written to.
     pub(super) scrolls: Vec<Scroll>,
+    /// The UI editor's canvas, on the tick it was redrawn — see [`canvas`].
+    pub(super) canvas: Option<canvas::Drawn>,
 }
 
 pub(super) struct Pump {
@@ -250,6 +257,12 @@ impl Pump {
         let _ = self.commands.send(Command::Visible(visible));
     }
 
+    /// Asks for the UI editor's canvas, or stops drawing it — see
+    /// [`canvas`]. Sending the same request again costs nothing.
+    pub(super) fn canvas(&self, request: Option<canvas::Request>) {
+        let _ = self.commands.send(Command::Canvas(request));
+    }
+
     /// The next message waiting, without ever blocking the UI thread.
     pub(super) fn poll(&self) -> Option<Ready> {
         self.ready.try_recv().ok()
@@ -312,6 +325,7 @@ fn run(
     // UI thread as any rebuilt one.
     let mut rebuilt = true;
     let mut scrolls = Vec::new();
+    let mut canvas = canvas::Canvas::default();
 
     loop {
         if !drain(
@@ -325,6 +339,7 @@ fn run(
                 rebuilt: &mut rebuilt,
                 scrolls: &mut scrolls,
                 interval: &mut interval,
+                canvas: &mut canvas,
             },
             idle,
         ) {
@@ -361,6 +376,11 @@ fn run(
         // and was swapped into it — both mean new geometry to pick against.
         let meshes = (std::mem::take(&mut rebuilt) | viewer.pick_meshes_changed())
             .then(|| viewer.pick_meshes());
+        // A swap-in is news to the canvas as much as to the scene.
+        if meshes.is_some() {
+            canvas.touch();
+        }
+        let drawn = canvas.draw(&mut viewer);
         let scrolled = std::mem::take(&mut scrolls);
 
         if (frame.is_some()
@@ -368,7 +388,8 @@ fn run(
             || pose.is_some()
             || !warnings.is_empty()
             || meshes.is_some()
-            || !scrolled.is_empty())
+            || !scrolled.is_empty()
+            || drawn.is_some())
             && frames
                 .send(Ready {
                     pixels: frame.map(|frame| frame.pixels),
@@ -380,6 +401,7 @@ fn run(
                     meshes,
                     warnings,
                     scrolls: scrolled,
+                    canvas: drawn,
                 })
                 .is_err()
         {
@@ -520,6 +542,7 @@ struct Rendering<'a> {
     /// `quality`'s automatic-level target stays fixed to the rate `Quality::new`
     /// opened with, not to this — see this module's `run` for why that's fine.
     interval: &'a mut Duration,
+    canvas: &'a mut canvas::Canvas,
 }
 
 /// Applies everything the UI thread has asked for, blocking for the first order
@@ -622,6 +645,7 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::Lines(layer, segments) => rendering.viewer.set_lines(layer, segments),
         Command::Gizmo(gizmo) => rendering.viewer.set_gizmo(gizmo),
         Command::Changes(snapshots, changes) => {
+            rendering.canvas.touch();
             rendering.mirror.mirror(snapshots);
             match rendering.viewer.apply_changes(rendering.mirror, &changes) {
                 Ok(Applied::Patched) => {}
@@ -633,6 +657,7 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
             }
         }
         Command::Visible(new) => *rendering.visible = new,
+        Command::Canvas(request) => rendering.canvas.set(request),
         Command::Stop => return false,
     }
 

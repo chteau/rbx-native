@@ -74,6 +74,7 @@ mod style_editor;
 mod sun;
 mod tokens;
 mod transform;
+mod ui_canvas;
 mod workspace_view;
 
 use std::path::{Path, PathBuf};

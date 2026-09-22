@@ -9,6 +9,7 @@
 //! of that but the upload happens on a thread of its own (see [`pump`]); this
 //! module is the UI half — events in, finished frames out.
 
+mod canvas;
 mod changes;
 mod frame;
 mod gizmo;
@@ -43,9 +44,11 @@ use crate::pointer_lock::{self, PointerLock};
 use crate::settle::Settle;
 use crate::transform::{self, Targets, Transform};
 use crate::{display, pacing};
+pub(crate) use canvas::{Canvas, CanvasUpdated};
 use frame::{device_pixels, render_image, Viewport};
 use gizmo::Drag;
 use input::{camera_key, chorded, tool_key, Layout};
+pub(crate) use pump::canvas::Request as CanvasRequest;
 use pump::Pump;
 pub(crate) use scroll::{scrolled, Scroll};
 pub(crate) use stats::requested as stats_requested;
@@ -313,6 +316,10 @@ pub(crate) struct WorkspaceView {
     /// Studio's dragger guides: what they show now, and what they keep
     /// between one event and the next (see [`guides`]).
     guides: guides::State,
+    /// The UI editor's canvas: the request last forwarded, and the last
+    /// frame drawn for it — see [`canvas`].
+    canvas_request: Option<CanvasRequest>,
+    canvas: Option<Canvas>,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
     _subscriptions: [Subscription; 2],
 }
@@ -432,6 +439,8 @@ impl WorkspaceView {
             dragged: false,
             drag_readout: None,
             guides: guides::State::default(),
+            canvas_request: None,
+            canvas: None,
             _subscriptions: [blur, deactivated],
         }
     }
@@ -487,6 +496,7 @@ impl WorkspaceView {
         let mut pose = None;
         let mut warnings = Vec::new();
         let mut scrolls = Vec::new();
+        let mut drawn = None;
         while let Some(ready) = self.pump.poll() {
             speed = Some(ready.speed);
             level = Some(ready.level);
@@ -510,6 +520,12 @@ impl WorkspaceView {
             }
             warnings.extend(ready.warnings);
             scrolls.extend(ready.scrolls);
+            if ready.canvas.is_some() {
+                drawn = ready.canvas;
+            }
+        }
+        if let Some(drawn) = drawn {
+            self.show_canvas(drawn, window, cx);
         }
 
         self.show_speed(speed, now, cx);
