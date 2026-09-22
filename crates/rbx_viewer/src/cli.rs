@@ -19,6 +19,7 @@ type Position = (f32, f32, f32);
 pub struct Options {
     path: PathBuf,
     screenshot: Option<PathBuf>,
+    batch: Option<PathBuf>,
     size: (u32, u32),
     yaw: Option<i32>,
     pitch: Option<i32>,
@@ -44,6 +45,7 @@ impl Options {
     pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Self, String> {
         let mut path = None;
         let mut screenshot = None;
+        let mut batch = None;
         let mut size = DEFAULT_SIZE;
         let mut yaw = None;
         let mut pitch = None;
@@ -68,6 +70,7 @@ impl Options {
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "--screenshot" => screenshot = Some(PathBuf::from(value(&mut args, &arg)?)),
+                "--batch" => batch = Some(PathBuf::from(value(&mut args, &arg)?)),
                 "--size" => size = parse_size(&value(&mut args, &arg)?)?,
                 "--yaw" => yaw = Some(parse_angle(&value(&mut args, &arg)?)?),
                 "--pitch" => pitch = Some(parse_angle(&value(&mut args, &arg)?)?),
@@ -96,10 +99,14 @@ impl Options {
         if eye.is_some() != look_at.is_some() {
             return Err("'--eye' and '--look-at' must be given together".to_string());
         }
+        if screenshot.is_some() && batch.is_some() {
+            return Err("'--screenshot' and '--batch' cannot be combined".to_string());
+        }
 
         Ok(Options {
             path: path.ok_or_else(|| "missing input file".to_string())?,
             screenshot,
+            batch,
             size,
             yaw,
             pitch,
@@ -132,7 +139,14 @@ impl Options {
              \x20              [--orbit] [--speed <studs/s>] [--sensitivity <deg/px>]\n\
              \x20              [--clock-time <hours>] [--quality <auto|1..21>]\n\
              \x20              [--orthographic]\n\
+             \x20       {program} <dir> --batch <out-dir> [same framing/quality flags]\n\
              \x20 --screenshot  render a single frame offscreen to a PNG and exit\n\
+             \x20 --batch       render every .rbxl/.rbxm/.rbxlx/.rbxmx file under the input\n\
+             \x20               directory (or just the input file) to <out-dir>, mirroring\n\
+             \x20               its subdirectories, and exit; one GPU device and asset cache\n\
+             \x20               are shared across the whole run instead of one per file, and\n\
+             \x20               the same --yaw/--pitch/--eye/--look-at frames every file.\n\
+             \x20               Cannot be combined with --screenshot\n\
              \x20 --size        pixel size of that frame (default {}x{})\n\
              \x20 --yaw         angle to look from, in degrees (screenshots only)\n\
              \x20 --pitch       height to look from, in degrees above the scene;\n\
@@ -186,6 +200,12 @@ impl Options {
 
     pub(crate) fn screenshot(&self) -> Option<&Path> {
         self.screenshot.as_deref()
+    }
+
+    /// The output directory for `--batch`, which turns `path()` from a single
+    /// input file into the root `--batch` walks for place files instead.
+    pub(crate) fn batch(&self) -> Option<&Path> {
+        self.batch.as_deref()
     }
 
     pub(crate) fn size(&self) -> (u32, u32) {

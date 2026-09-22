@@ -6046,6 +6046,7 @@ dependencies = [
  "rbx_xml",
  "serde_json",
  "swash",
+ "tempfile",
  "wgpu 30.0.1",
  "winit",
 ]

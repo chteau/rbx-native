@@ -192,3 +192,18 @@ fn malformed_positions_are_rejected() {
     assert!(parse(&["a.rbxl", "--eye", "x,y,z", "--look-at", "0,0,0"]).is_err());
     assert!(parse(&["a.rbxl", "--eye", "1,2,3,4", "--look-at", "0,0,0"]).is_err());
 }
+
+#[test]
+fn batch_is_picked_up_with_its_output_directory() {
+    let options = parse(&["places/", "--batch", "out/"]).unwrap();
+
+    assert_eq!(options.path(), Path::new("places/"));
+    assert_eq!(options.batch(), Some(Path::new("out/")));
+    assert_eq!(options.screenshot(), None);
+}
+
+#[test]
+fn batch_and_screenshot_cannot_be_combined() {
+    assert!(parse(&["a.rbxl", "--batch", "out/", "--screenshot", "a.png"]).is_err());
+    assert!(parse(&["a.rbxl", "--screenshot", "a.png", "--batch", "out/"]).is_err());
+}

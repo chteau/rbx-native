@@ -46,3 +46,8 @@ swash = { version = "0.2", features = ["render"] }
 # Roblox describes a font family as a small JSON file (`fonts/families/*.json`,
 # see `fonts::Family`); already in `Cargo.lock` through `rbx_cloud`.
 serde_json = "1"
+
+[dev-dependencies]
+# `batch`'s own tests write throwaway place files to disk; already resolved in
+# the lockfile via `rbx_parser_cli`'s dev-dependency of the same name.
+tempfile = "3"

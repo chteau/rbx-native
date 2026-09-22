@@ -18,6 +18,7 @@
 
 mod app;
 mod assets;
+mod batch;
 mod camera;
 mod capture;
 mod changes;
@@ -65,6 +66,10 @@ use glam::Vec3;
 use load::{Loaded, Toggles};
 
 pub fn run(options: &Options) -> Result<(), String> {
+    if let Some(out_dir) = options.batch() {
+        return batch::run(options, out_dir);
+    }
+
     let loaded = Loaded::read(options.path(), toggles(options))?;
 
     let eye_look_at = options
@@ -105,7 +110,7 @@ pub fn run(options: &Options) -> Result<(), String> {
     }
 }
 
-fn toggles(options: &Options) -> Toggles {
+pub(crate) fn toggles(options: &Options) -> Toggles {
     Toggles {
         textures: options.textures(),
         materials: options.materials(),
