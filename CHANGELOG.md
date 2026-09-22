@@ -9,12 +9,16 @@
   (its Stylesheet sub-tab): select a `ScreenGui` or anything in it and that
   screen alone is drawn — by the viewport's own GUI renderer, with no scene
   behind it — at a device preset, a typed size or turned on its side. Click
-  or marquee to select, drag, resize, rotate, nudge with the arrows, snap to
-  siblings and the parent along smart guides, hold Alt for distances, align,
-  distribute, group into a fitted `Frame`, insert elements from a floating
-  bar, and make a screen responsive in one click (offsets folded into scale,
-  fixed shapes kept by aspect ratio) — every edit one Ctrl+Z, written the
-  way a typed Properties value is. While it is up the Explorer lists only
+  or marquee to select, drag, resize and rotate one element or the whole
+  selection at once, nudge with the arrows, snap to siblings and the parent
+  along smart guides, hold Alt for distances, align, distribute, group into
+  a fitted `Frame`, insert elements from a floating bar, and make a screen
+  responsive in one click (offsets folded into scale, fixed shapes kept by
+  aspect ratio) — every edit one Ctrl+Z, written the way a typed Properties
+  value is, and measured the way the renderer lays it out: inside the
+  parent's `UIPadding`, through `UIScale`, aspect and size constraints. A
+  part's `SurfaceGui` or a `BillboardGui` goes on the canvas too, at its
+  own canvas size. While it is up the Explorer lists only
   the UI, and the Properties, Output and Viewport docks step aside for a
   property sidebar built from the same rows; leaving it puts them back as
   they were. A new `GuiObject` inserted anywhere is now a visible box rather

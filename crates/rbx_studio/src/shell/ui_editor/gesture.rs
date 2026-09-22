@@ -8,10 +8,12 @@
 //! Every step writes through `Shell::write_drag` — one undo entry per
 //! gesture, the Properties panel's own commit.
 
+mod frame;
 mod held;
 mod input;
 mod step;
 
+pub(super) use frame::{frame, frame_of, preview};
 pub(super) use held::Held;
 
 use gpui_kit::*;
@@ -19,7 +21,6 @@ use rbx_dom::Ref;
 use rbx_viewer::GuiBox;
 
 use super::super::Shell;
-use crate::ui_canvas::carry;
 use crate::ui_canvas::{self, angle_of, box_of, rotate, Handle, Rect};
 
 /// How far the pointer travels, in panel pixels, before a press is a drag.
@@ -339,67 +340,12 @@ fn roomy(rect: &Rect, zoom: f32) -> bool {
     rect.w.min(rect.h) * zoom > HANDLE_REACH * 4.0
 }
 
-/// The frame a selection's handles stand on: one element's own box, turned
-/// as it is; several elements' boxes, bounded square to the screen, the way
-/// a Figma selection box is.
-pub(super) fn frame_of(boxes: impl IntoIterator<Item = (Rect, f32)>) -> Option<(Rect, f32)> {
-    let mut boxes = boxes.into_iter();
-    let first = boxes.next()?;
-    let Some(second) = boxes.next() else {
-        return Some(first);
-    };
-    let bounds = [second]
-        .into_iter()
-        .chain(boxes)
-        .fold(first.0.turned_bounds(first.1), |bounds, (rect, turn)| {
-            bounds.union(&rect.turned_bounds(turn))
-        });
-    Some((bounds, 0.0))
-}
-
-/// Where a gesture in flight has the selection's frame, ahead of the
-/// canvas catching up: `None` for one that does not move the frame itself.
-pub(super) fn frame(gesture: &Gesture) -> Option<(Rect, f32)> {
-    match gesture {
-        Gesture::Resize { shown, .. } => Some(*shown),
-        Gesture::Rotate {
-            frame: (rect, turn),
-            delta,
-            ..
-        } => Some((*rect, turn + delta)),
-        _ => None,
-    }
-}
-
 /// Where the rotation knob stands: above the middle of the top edge, as
 /// far out as `KNOB_OFFSET` panel pixels, turned with the box.
 pub(super) fn knob(rect: &Rect, degrees: f32, zoom: f32) -> [f32; 2] {
     let c = rect.centre();
     let [x, y] = rotate([0.0, -(rect.h * 0.5 + KNOB_OFFSET / zoom)], degrees);
     [c[0] + x, c[1] + y]
-}
-
-/// What a gesture in flight shows for what it carries, ahead of the canvas
-/// catching up with the writes: each element's box and turn.
-pub(super) fn preview(gesture: &Gesture) -> Vec<(Ref, Rect, f32)> {
-    match gesture {
-        Gesture::Move { held, shift, .. } => held
-            .iter()
-            .map(|h| (h.referent, h.rect.shifted(*shift), h.rotation))
-            .collect(),
-        Gesture::Resize { preview, .. } => preview.clone(),
-        Gesture::Rotate {
-            held, frame, delta, ..
-        } => {
-            let carried: Vec<_> = held.iter().map(Held::carried).collect();
-            let moved = carry::turn(frame.0.centre(), *delta, &carried);
-            held.iter()
-                .zip(moved)
-                .map(|(h, shift)| (h.referent, h.rect.shifted(shift), h.rotation + delta))
-                .collect()
-        }
-        _ => Vec::new(),
-    }
 }
 
 /// The drag threshold, for the canvas to tell whether a gesture has begun.

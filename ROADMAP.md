@@ -776,13 +776,16 @@ Roblox's own engine.
   dock-tab pill: the new canvas (the default) and the style-sheet editor
   as it was (**Stylesheet**; View ⟩ Style Editor still lands there). The
   3D viewport never edits a GUI and is off screen while the canvas is up.
-  - **The canvas draws one `ScreenGui` alone** — whichever the selection
-    is in, enabled or not — through the viewport's own GUI layout and
-    painter on the same render thread, over a flat backdrop with no scene
-    pass, at a simulated resolution: six device presets (desktop, laptop,
+  - **The canvas draws one GUI alone** — the `ScreenGui`, `BillboardGui`
+    or `SurfaceGui` the selection is in, enabled or not, on a part or not —
+    through the viewport's own GUI layout and painter on the same render
+    thread, over a flat backdrop with no scene pass. A `ScreenGui` is laid
+    out at a simulated resolution: six device presets (desktop, laptop,
     tablet, phone landscape/portrait, small phone), a typed width×height,
-    and a portrait ⇄ landscape turn. Pan with the wheel or the middle
-    button, zoom with Ctrl+wheel or the toolbar, fit on demand.
+    and a portrait ⇄ landscape turn; a `BillboardGui`/`SurfaceGui` at its
+    own canvas size, the one its part gives it in the world. Pan with the
+    wheel or the middle button, zoom with Ctrl+wheel or the toolbar, fit
+    on demand.
   - **The Explorer lists only the UI** while the canvas is up — every
     `ScreenGui`/`BillboardGui`/`SurfaceGui` as a root with its subtree —
     and the Properties, Output and Viewport docks are left out of the
@@ -794,20 +797,27 @@ Roblox's own engine.
   - **Figma-like editing**, all through the shared selection and the one
     undo history (each gesture one entry, written through the Properties
     panel's own commit): click and marquee select, drag to move, eight
-    handles to resize (Shift keeps the aspect), a knob to rotate (Shift
-    snaps to 15°), smart alignment guides against siblings and the parent
-    (Ctrl lets go of them), Alt for the distances to what the pointer is
-    over, arrow nudging (Shift for 10 px), Delete, align left/centre/right/
-    top/middle/bottom through the Align tool's own geometry, distribute
-    evenly, and Ctrl+G into a `Frame` fitted round the selection.
+    handles to resize and a knob to rotate — one element or the whole
+    selection, carried as one by a frame round it (Shift keeps the aspect,
+    and snaps a turn to 15°) — smart alignment guides against siblings, the
+    parent and its padded box (Ctrl lets go of them), Alt for the distances
+    to what the pointer is over, arrow nudging (Shift for 10 px), Delete,
+    align left/centre/right/top/middle/bottom through the Align tool's own
+    geometry, distribute evenly, and Ctrl+G into a `Frame` fitted round the
+    selection that keeps each value's scale or offset. Every write honours
+    the layout the renderer reports rather than a bare parent: the
+    parent's `UIPadding`, the element's `UIScale`, an aspect constraint
+    (kept through a resize), `SizeConstraint`, and a turned parent.
   - **A floating insert bar** puts a `Frame`, text, image or scrolling
     frame — or a `ScreenGui`, layout or modifier from its `+` — under the
     selection or the screen, through the Explorer's own insert, which now
     seeds a new `GuiObject` as a visible box rather than 0×0.
   - **Make responsive** folds every `Position`/`Size` offset of the
     selection (or the whole screen) into its scale at the current
-    resolution, and gives each pixel-sized box a `UIAspectRatioConstraint`
-    at its shape, as one undo step.
+    resolution — against the parent's padded box, a `Size` along the axes
+    its `SizeConstraint` names — and gives each pixel-sized box that no
+    aspect constraint already shapes a `UIAspectRatioConstraint` at its
+    shape, as one undo step.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
