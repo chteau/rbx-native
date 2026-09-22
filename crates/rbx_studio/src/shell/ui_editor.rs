@@ -231,6 +231,11 @@ impl Shell {
     pub(super) fn set_document(&mut self, document: Document, cx: &mut Context<Self>) {
         if document == Document::UiEditor && self.document != Document::UiEditor {
             self.ui.tab = Tab::Canvas;
+            // Only from here, not from startup regardless of which document
+            // opens: the 3D view emulating a phone's screen is right while
+            // someone is actually laying out a GUI against it, not as the
+            // ordinary Viewport's default look.
+            self.follow_ui_screen(cx);
         }
         self.document = document;
         self.sync_explorer_filter(cx);
@@ -396,10 +401,15 @@ impl Shell {
         (self.ui.width.clone(), self.ui.height.clone())
     }
 
-    /// Puts the canvas's screen on the 3D view at startup: the viewport
-    /// follows the resolution a GUI is designed at from the first frame,
-    /// not only once one is picked. The Viewport dock's "Viewport size"
-    /// still lets it go.
+    /// Puts the canvas's screen on the 3D view: the viewport follows the
+    /// resolution a GUI is designed at as soon as the UI Editor opens, not
+    /// only once a size is actually picked in it. The Viewport dock's
+    /// "Viewport size" still lets it go.
+    ///
+    /// Called from `set_document` rather than once at startup — the
+    /// ordinary Viewport document has no GUI open to match, and emulating a
+    /// phone's screen there by default was exactly the "gap" a real 3D
+    /// scene has no reason to have.
     pub(super) fn follow_ui_screen(&mut self, cx: &mut Context<Self>) {
         let screen = self.ui.resolution;
         self.viewport

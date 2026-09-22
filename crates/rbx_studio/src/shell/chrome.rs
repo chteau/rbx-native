@@ -205,6 +205,8 @@ impl Shell {
             .h(tokens::tabs_height())
             .flex_none()
             .items_stretch()
+            .gap(px(8.))
+            .px(px(8.))
             .bg(tokens::chrome())
             .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
                 if shell.document_nav.key(&event.keystroke, window, cx) {
@@ -323,10 +325,10 @@ fn document_tab(
         .w(tokens::tab_width())
         .h_full()
         .items_center()
+        .justify_center()
         .gap(px(10.))
         .px(px(16.))
-        .border_r(px(1.))
-        .border_color(tokens::tab_border())
+        .rounded(tokens::RADIUS)
         .relative()
         .cursor_pointer()
         .focus_visible(|this| this.shadow(tokens::focus_ring_inset()))
@@ -337,13 +339,8 @@ fn document_tab(
         } else {
             tokens::text_label()
         })
-        .map(|this| {
-            if active {
-                this.bg(tokens::tab_active())
-            } else {
-                this.hover(|this| this.bg(tokens::hover()))
-            }
-        })
+        .when(active, |this| this.font_weight(tokens::WEIGHT_BOLD))
+        .when(!active, |this| this.hover(|this| this.bg(tokens::hover())))
         .on_click(on_click)
         .when(active, |this| {
             this.child(

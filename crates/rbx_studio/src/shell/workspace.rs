@@ -62,33 +62,46 @@ impl Shell {
         let right = self.dock_edge(Edge::Right, limit, window, cx);
         let bottom = self.dock_edge(Edge::Bottom, limit, window, cx);
 
-        h_flex()
-            // Positioned, so the drop strips can be laid over it — an edge
-            // holding nothing has no column of its own to aim at.
+        // Bottom is a sibling of the left/document/right row, not a child of
+        // its document column: Output reads as the floor the whole
+        // workspace stands on, not a third thing squeezed between two
+        // docks. Left and right still run the window's full height, above
+        // it.
+        v_flex()
             .relative()
             .w_full()
             .flex_1()
             .overflow_hidden()
             .bg(tokens::black())
-            .children(left)
             .child(
-                v_flex()
+                h_flex()
+                    // Positioned, so the drop strips can be laid over it —
+                    // an edge holding nothing has no column of its own to
+                    // aim at.
+                    .relative()
+                    .w_full()
                     .flex_1()
-                    .h_full()
                     .overflow_hidden()
-                    // Nothing floats over the document: the view's own
-                    // settings and numbers are the Viewport dock's (see
-                    // `shell::viewport_dock`).
+                    .children(left)
                     .child(
                         v_flex()
-                            .relative()
                             .flex_1()
+                            .h_full()
                             .overflow_hidden()
-                            .child(document),
+                            // Nothing floats over the document: the view's
+                            // own settings and numbers are the Viewport
+                            // dock's (see `shell::viewport_dock`).
+                            .child(
+                                v_flex()
+                                    .relative()
+                                    .flex_1()
+                                    .overflow_hidden()
+                                    .child(document),
+                            ),
                     )
-                    .children(bottom),
+                    .children(right),
             )
-            .children(right)
+            .children(bottom)
     }
 
     /// The same parts a docked panel renders, for one that has been torn

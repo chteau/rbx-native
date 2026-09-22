@@ -727,9 +727,11 @@ impl Shell {
         // `StyleRule` they selected.
         shell.apply_debug_style_editor(cx);
 
-        shell.follow_ui_screen(cx);
         // `RBX_STUDIO_UI_EDITOR` (see `shell::ui_editor`): after the selection
         // blocks, so the screen they selected into is the one on the canvas.
+        // `set_document` inside it is what starts the 3D view following the
+        // canvas's screen — see its own doc comment for why that no longer
+        // happens unconditionally at startup.
         shell.apply_debug_ui_editor(cx);
 
         // `RBX_STUDIO_ARGON_CONNECT` (see `shell::argon_sync`): Connect is a

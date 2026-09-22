@@ -178,9 +178,16 @@ impl Shell {
 
     /// The four transform tools, the local-axis toggle, Align, and the snap
     /// increments they all obey.
+    ///
+    /// The tools, Local and Align sit inside one bordered cluster with a
+    /// caption naming them underneath, rather than as separate tiles each
+    /// carrying its own label — six copies of the same six words is the
+    /// kind of repetition a dense toolbar can't afford, and one legend read
+    /// once a session is worth more than one under every icon. The snap
+    /// readouts stay their own thing beside it: they are values, not tools.
     fn transform_tools(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let active = self.transform.tool;
-        let mut group: Vec<AnyElement> = Tool::TRANSFORM
+        let cluster: Vec<AnyElement> = Tool::TRANSFORM
             .map(|tool| {
                 tile(
                     &self.ribbon_nav,
@@ -203,12 +210,45 @@ impl Shell {
                 .into_any_element()
             })
             .into_iter()
+            .chain([
+                self.local_tile(cx).into_any_element(),
+                self.align_control(cx).into_any_element(),
+            ])
             .collect();
 
-        group.push(self.local_tile(cx).into_any_element());
-        group.push(self.align_control(cx).into_any_element());
-        group.push(self.snap_stack(cx).into_any_element());
-        group
+        let caption = Tool::TRANSFORM
+            .into_iter()
+            .map(Tool::label)
+            .chain(["Local", "Align"])
+            .collect::<Vec<_>>()
+            .join(" · ");
+
+        vec![
+            v_flex()
+                .flex_none()
+                .h_full()
+                .justify_center()
+                .gap(px(4.))
+                .child(
+                    h_flex()
+                        .flex_none()
+                        .items_stretch()
+                        .rounded(tokens::RADIUS)
+                        .border_1()
+                        .border_color(tokens::divider())
+                        .overflow_hidden()
+                        .children(cluster),
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .text_size(tokens::text_xs())
+                        .text_color(tokens::text_muted())
+                        .child(caption),
+                )
+                .into_any_element(),
+            self.snap_stack(cx).into_any_element(),
+        ]
     }
 
     /// §5.7 — the three insert menus. Every item routes through

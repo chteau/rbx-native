@@ -74,17 +74,6 @@ pub(crate) fn menu_bar() -> Rgba {
     rgb(0x1D1D1D)
 }
 
-/// The active document tab — a 30% black wash over [`chrome`], so the open
-/// document reads as recessed rather than highlighted.
-///
-/// On its own this wash is 1.12:1 against the strip, which is *five grey
-/// levels*: the frame conveys "this document is open" with a difference
-/// nobody can see. So it never travels alone — [`tab_active_bar`] is the
-/// part that actually carries the state.
-pub(crate) fn tab_active() -> Rgba {
-    rgba(0x0000004D)
-}
-
 /// The accent rule along the top of the open document's tab. This is the
 /// cue WCAG 1.4.11 asks for and the wash above cannot give: 5.8:1 against
 /// the strip, and a *shape* rather than a tint, so it survives being
@@ -120,13 +109,9 @@ pub(crate) fn selection() -> Rgba {
 
 // ---------------------------------------------------------------- borders
 
-/// Between document tabs. Half a pixel in the frame; GPUI draws whole
-/// pixels, so this one line is heavier than the design.
-pub(crate) fn tab_border() -> Rgba {
-    rgba(0xFFFFFF1C)
-}
-
-/// Before a dock's trailing cell, and between ribbon groups.
+/// Before a dock's trailing cell, and between ribbon groups. Document tabs
+/// no longer draw one between themselves — a floating label with an accent
+/// underline needs no divider to tell it from its neighbour.
 pub(crate) fn divider() -> Rgba {
     rgba(0xFFFFFF1C)
 }

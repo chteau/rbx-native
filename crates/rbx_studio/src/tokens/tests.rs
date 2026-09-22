@@ -155,19 +155,6 @@ fn a_checkbox_reads_differently_ticked_and_unticked() {
     );
 }
 
-/// The active document tab is a *darker* wash, not a lighter one — the open
-/// document is recessed into the strip. If this ever inverts, the whole tab
-/// strip starts reading upside down.
-#[test]
-fn the_active_document_tab_is_darker_than_the_strip() {
-    let active = luminance(composite(tab_active(), chrome()));
-    let strip = luminance(chrome());
-    assert!(
-        active < strip,
-        "the active tab ({active:.4}) is no darker than the tab strip ({strip:.4})"
-    );
-}
-
 /// The toolkit's own components — the menu bar, the inputs, the buttons in
 /// the Output strip — are painted from `assets/themes/dark-soft.json`, not
 /// from this module. That is two copies of one palette, which is exactly
@@ -186,7 +173,7 @@ fn the_toolkit_theme_paints_the_same_palette_this_module_does() {
     let mirrored: [Named; 14] = [
         ("background", black),
         ("popover.background", chrome),
-        ("border", tab_border),
+        ("border", divider),
         ("input.border", divider),
         ("muted.background", chrome),
         ("sidebar.background", dock),
