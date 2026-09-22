@@ -27,12 +27,23 @@ Roblox's own engine.
   `take_changes`) — what live editing is built on.
 - [x] `rbxdump --roundtrip` — a continuous-verification tool that found and
   got two real serialization bugs fixed.
+- [x] Per-class property defaults (`assets/reflection-defaults.json`, taken
+  from rbx-dom's MIT-licensed database, since Roblox's own dump carries
+  none for inherited properties). A binary save fills a property one
+  instance of a class stored and another left unset with that class's
+  default — infinite ones included — rather than the type's zero, which
+  used to save an Explorer-inserted `Part` with `CanCollide` off and no
+  size. A load normalises the several names a property can be saved
+  under to one, never to a spelling Studio cannot read back (a package
+  link keeps `PackageIdSerialize`).
 
 ### Scripting (`rbx_lua`)
 - [x] Sandboxed Luau VM (`mlua`) with a from-scratch DataModel
   (`Instance`/`game`/`workspace`, `Vector3`/`CFrame`/`Color3`/`UDim2`/
   `NumberSequence`/`ColorSequence`/`Rect`/`PhysicalProperties`/`Font`/
-  `Content`, defaults for a fresh `Part`).
+  `Content`). A property the file never stored reads as Roblox's own
+  default for that class rather than `nil`, and `BrickColor` carries the
+  full 208-colour table the Properties panel uses.
 - [x] CLI runner (`rbxlua place.rbxl script.luau [--out] [--print-changes]`)
   and an in-editor Command Bar.
 
@@ -229,8 +240,8 @@ Roblox's own engine.
     Several `UIStroke`s on one object draw in `ZIndex` order.
 - [x] Free-flight camera (WASD + mouse look + wheel), exponentially-eased
   movement (mouse look itself stays unfiltered).
-- [x] Orthographic camera mode — toggled from the Viewport panel's overflow
-  menu (`rbxstudio`) or `rbxview --orthographic`. Flies with the same
+- [x] Orthographic camera mode — toggled from the Viewport dock
+  (`rbxstudio`) or `rbxview --orthographic`. Flies with the same
   WASD/mouse-look controller; the mouse wheel without the look button held
   zooms the view volume directly (`Pose::ortho_scale`) instead of dollying
   the eye, since dollying does nothing visible under a parallel projection
@@ -308,7 +319,7 @@ Roblox's own engine.
   Move/Rotate/Scale gizmo already uses), positioned by projecting the free
   camera's current basis (`rbx_viewer::Pose::basis`) rather than a literal
   3D cube mesh — the same flat 2D approach Blender's own gizmo actually
-  draws with. Toggleable off from the Viewport panel's overflow menu
+  draws with. Toggleable off from the Viewport dock
   (`Orientation Indicator`, next to `Orthographic`), on by default and
   persisted the same way. As flagged when this was picked up: a genuine
   rbx-native addition inspired by Blender/SketchUp/3ds Max conventions, not
@@ -348,26 +359,62 @@ Roblox's own engine.
   Bounds** agrees with it on the world axes. Known divergence, since the
   docs are explicit: `Model:GetBoundingBox` orients Studio's box by the
   model's pivot (the `PrimaryPart`'s, or the `WorldPivot`), which matches
-  world alignment only while that pivot is unrotated — pivots aren't
-  modelled here yet (see "What's planned" → Renderer's Pivot tools).
+  world alignment only while that pivot is unrotated. The pivot itself is
+  read now (the Properties panel's `Origin` row), but this box does not
+  turn with it yet (see "What's planned" → Renderer's Pivot tools).
   The box is drawn through whatever stands in front of it, as Studio's is;
-  the Viewport panel's overflow menu can ask for it to be depth-tested
+  the Viewport dock can ask for it to be depth-tested
   against the scene instead (`Hide Selection Box Behind Parts`, off by
   default and persisted the same way `Orthographic` is).
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: this project's own flat, from-scratch class icon kit
-  (`assets/icons/default/dark`, 300 classes onto 137 tiles, spec'd in
-  `assets/icons/README.md`) rasterized and painted per row
+  (`assets/icons/default/dark`, 152 tiles — Roblox's 147-tile layout plus
+  five of its own — spec'd in `assets/icons/README.md`) rasterized and
+  painted per row
   (`class_icons.rs`), with Lucide glyphs as the fallback for anything the
   kit doesn't cover — Roblox's own sprite sheet is no longer downloaded or
   drawn anywhere in the editor. Default service filter with a "show all"
   toggle, selection with a viewport highlight, instance insert/delete.
 - [x] Properties panel: real per-type widgets (checkbox, colour picker,
-  enum dropdown, numeric fields for vectors/CFrame position), grouped into
-  collapsible categories matching Roblox's own Properties panel, live —
+  enum dropdown, `BrickColor` palette, numeric fields), grouped into
+  collapsible categories named as Roblox's own Properties panel names
+  them, live —
   reflects DOM mutations from any source (script, undo/redo, the camera
   moving) without a manual refresh.
+  - **The class's whole sheet**, built from the reflection database rather
+    than from what the file happened to store, with anything the file left
+    out filled from the class's defaults (see Format & parsing). Rows go by
+    Studio's names (`Color`, `Size`, `Shape`) while an edit still lands
+    under the name the renderer and the writer read (`Color3uint8`, `size`,
+    `shape`).
+  - **A multi-selection shows what it shares**: a value every instance
+    agrees on reads normally, one they don't reads blank (per component,
+    for a vector) or as a dash on a checkbox, and an edit applies to all of
+    them as one undo step.
+  - **Numeric values open like Studio's**: a `Vector3`, a `UDim2`, a
+    `CFrame` is one name/value row showing the whole value (`0, 5, 0`,
+    still typeable as one) with an expander that drops its components
+    underneath — `Position` and `Orientation` each over their own three for
+    a `CFrame`. A collapsed row builds no component fields at all. A
+    bounded property (`Transparency`, `ClockTime`, a `GuiObject`'s
+    `Rotation`) also gets a slider beside its field; the dump carries no
+    bounds, so they are a named table (`properties::ranges`) that only
+    decides how far the rail reaches.
+  - **`BrickColor`**: the full 208-colour table from Roblox's docs, laid out
+    as Studio's honeycomb picker and workable by keyboard. A part's
+    `BrickColor` row reads the nearest palette colour off `Color` and writes
+    a pick back to it, since `Color` is all Roblox saves.
+  - **`Origin`**, which Studio lists under Transform: where a part's or
+    model's pivot stands in the world, read as `GetPivot` reads it, and
+    moved as `PivotTo` moves it when one is typed — a model's parts and its
+    pivot together, as one undo step.
+  - **Computed, read-only**: `Mass`, `CenterOfMass`,
+    `CurrentPhysicalProperties` and the assembly's mass and centre, shown
+    only where Roblox documents exactly how they are computed.
+  - Rows are separated by hairlines, and property names, attribute names
+    and tag chips share one left edge. The filter finds a `CFrame` row by
+    its Position and Orientation fields as well as its name.
 - [x] A `Variant` that may simply be absent (`OptionalCFrame`, the DOM's
   only such type — `Model.WorldPivotData`) edits through a present/absent
   checkbox above the ordinary `CFrame` editor, which is drawn only while
@@ -377,23 +424,19 @@ Roblox's own engine.
   `CFrame` at all, so the checkbox's caption says plainly what it means
   rather than borrowing a term from somewhere it isn't used.
 - [x] Properties panel hides properties Studio itself never shows:
-  `rbx_reflection`'s `PropertyDescriptor` now carries the dump's
-  per-property `Tags` and `Serialization` (`CanLoad`/`CanSave`), and the
-  panel filters out anything tagged `Hidden` entirely — e.g.
-  `BasePart.Position`/`Orientation`, which Studio only exposes through a
-  dedicated Position/Orientation UI this project hasn't built yet, so
-  `CFrame`'s own row stays the stand-in and stays fully editable. A
-  non-`Hidden` property the dump says Studio can't save back
-  (`CanSave: false`) or tags `ReadOnly` — e.g. `BasePart.Size` — still shows,
-  just with no edit widget (the same "no edit affordance" treatment this
-  panel already used for a type it doesn't understand). `Deprecated` is now
-  captured in `tags` too but deliberately left unacted on: `Roblox/
-  creator-docs` documents individually-deprecated properties (e.g.
-  `BodyForce.force`) as real, still-readable API surface rather than
-  something Studio's own panel hides outright, and there's no confirmed
-  signal that a merely-`Deprecated`, non-`Hidden` property disappears from
-  real Studio's panel — left for a follow-up once that's actually verified
-  rather than guessed.
+  `rbx_reflection`'s `PropertyDescriptor` carries the dump's per-property
+  `Tags` and `Serialization` (`CanLoad`/`CanSave`), and the panel leaves
+  out anything tagged `Hidden` or `Deprecated` — a deprecated property is
+  an old spelling kept under a newer name (`className`, `Fire.size`) or
+  one superseded or inert (`Sound.Pitch`, `FormFactorPart.FormFactor`),
+  so its row would either duplicate the live one or do nothing. A part's
+  position and rotation edit through its `CFrame` row's Position and
+  Orientation fields and its `Origin` row. A property tagged `ReadOnly`,
+  or one Studio never saves, shows with no edit widget — unless it is
+  saved under another name: the dump reports `BasePart.Size` as
+  `CanSave: false` only because a file holds it as `size`, so `Size`
+  edits. `Tags` and `AttributesSerialize`, which the dump does not list at
+  all, get no row either; the Attributes/Tags section is their editor.
 - [x] Command Bar (Luau against the live DataModel) with an Output dock:
   run history, Clear, a success/error filter, click-to-recall a past
   command.
@@ -447,9 +490,10 @@ Roblox's own engine.
 - [x] Undo/redo (`Ctrl+Z`/`Ctrl+Y`), bit-for-bit reversion verified.
 - [x] Save (`Ctrl+S`, writes back in the file's original format, atomic
   write).
-- [x] Dockable, rearrangeable panel layout (`gpui_component::dock`) with
-  persistence — layout position/size/docking state saved across restarts,
-  plus persisted settings (quality, service visibility).
+- [x] Dockable, rearrangeable panel layout (`shell::layout`, drawn by
+  `shell::docks`) with persistence — layout position/size/docking state
+  saved across restarts, plus persisted settings (quality, service
+  visibility).
 - [x] **Drag-to-rearrange docks** — real now, by the tab. A panel's home is
   data (`shell::layout`) rather than the order of three `.child()` calls:
   an edge holds a stack of docks, a dock holds tabs, and dragging a tab
@@ -463,7 +507,9 @@ Roblox's own engine.
   decoration — "Move to Left/Right/Bottom", "Float" and "Close" on each
   dock's own menu, going through the same one transform, because the
   reference guidance treats drag-only rearrangement as a failure rather
-  than a gap.
+  than a gap. Still open: a torn-out panel cannot be dragged back into the
+  main window — GPUI's drag-and-drop is per-window — so it goes back by
+  closing its window, which returns it to where it started.
 - [x] Live camera pose reflected into `Workspace.CurrentCamera.CFrame` as
   you fly, throttled and explicitly excluded from undo history.
 - [x] Fast-path scene updates: a `Lighting`/`Atmosphere`/post-effect edit or
@@ -515,7 +561,9 @@ Roblox's own engine.
     selection instead of replacing it.
   - **Move** (`2`), **Scale** (`3`), **Rotate** (`4`) — colored axis
     draggers/handles/rings per axis; `Ctrl`/`Cmd`+`L` toggles world/local
-    orientation, with an `L` indicator when local is active. Move is also
+    orientation, with an `L` indicator when local is active. While a Move
+    or Scale handle is held only that handle is drawn, as in Studio, over
+    the guides rather than under them. Move is also
     draggable by the part's own body ("cursor dragging"), which rests the
     part on whatever the cursor passes over — real geometry, not a
     bounding box — falling back to sliding flat across the view only when
@@ -529,7 +577,18 @@ Roblox's own engine.
     squaring the selection onto an angled face (`Alt` keeps its
     orientation); a Move/Scale handle drag soft-snaps to nearby parts'
     faces along its axis. While cursor-dragging a part, `T`/`R` tilt/rotate
-    it 90°.
+    it 90°, eased over Studio's 0.13 seconds.
+  - **Dragger guides**, read off Studio's own DraggerFramework: a white
+    ruler to the two nearest edges while hovering, a yellow one with minor
+    and major ticks while dragging, a yellow line across the face when the
+    part lines up with one of its edges or its centre, and, on a Move
+    handle, the axis line with a dot wherever the selection's leading face,
+    trailing face or pivot would meet a nearby part — which the drag takes
+    over the grid step when it is the nearer. The handle trails a line back
+    to where the drag began. Each guide and dragger setting is a Viewport
+    dock toggle named after the Studio setting it mirrors (Show Hover
+    Ruler, Show Target Snap, Show Dragged Point, Show Measurement, Snap to
+    Parts, Align Dragged Objects).
   - **Multi-select**: `Shift`/`Ctrl`/`Cmd`-click adds/removes a top-level
     object; the Explorer, viewport outline and Properties panel all follow
     the whole set. One Move gizmo appears, centred on the selection's
@@ -545,8 +604,9 @@ Roblox's own engine.
   - Clicking (and dragging) resolves against the shape actually drawn —
     sphere, capped cylinder, wedge slope, a downloaded mesh's own
     triangles — not the part's bounding box.
-  - **Placement**: directly under the File/Edit/Model/View menu bar and
-    above the viewport dock, matching the owner's reference screenshot.
+  - **Placement**: the ribbon's Tools group — Select/Move/Scale/Rotate,
+    the local-axis toggle, then the chevron that opens the snap increments
+    and the Align popover.
   - **Still open**: the 5th "Transform" toolbar button visible in Studio's
     current toolbar (under "What's planned" → Renderer). A plain click
     landing on a `Model` now draws its aggregate box and gizmos the whole
@@ -562,6 +622,42 @@ Roblox's own engine.
   it moves. Out of scope, matching real Studio's own separate Pivot tools
   (see "What's planned" → Renderer): the new `Model` gets no computed
   `PrimaryPart` or pivot, just Roblox's own empty-pivot default.
+
+- [x] **Light guides** — select a `SpotLight`, `PointLight` or
+  `SurfaceLight` and the viewport draws how far it reaches, as Studio's
+  "Show Light Guides" does: three great circles of `Range` around a point
+  light, a spot's cone out to its spherical cap with the axis line running
+  past the rim, and a surface light's frustum from its whole face. Drawn
+  in the light's own `Color`, following a Range/Angle/Face edit live, and
+  only for a selected, enabled light — never for the part it hangs on.
+  Toggled from the Viewport dock. A `SurfaceLight` also lights exactly that
+  frustum now, measured from the nearest point on its face rather than as
+  a cone from the face's centre.
+
+- [x] **Change Class** — from an Explorer row's context menu, the whole
+  selection changes class in place (a `Part` into a `WedgePart`, a `Frame`
+  into a `TextButton`, a `Script` into a `LocalScript`) as one undo step.
+  The instance keeps its referent, so everything that pointed at it — a
+  `Weld.Part0`, a `PrimaryPart`, the selection, an open script tab — still
+  does, which a plugin that destroys and recreates the instance cannot
+  offer. A property the new class has no room for is dropped (the picker
+  says which before you pick), one still at the old class's default takes
+  the new class's own (a stock `Part` becomes a 2 × 2 × 2 `TrussPart`),
+  and tags, attributes and anything the API dump does not describe always
+  survive. Related classes and this session's recent picks list first; a
+  service keeps its class.
+
+- [x] **Sun tool** (Model page) — places the sun, or from its Moon tile the
+  moon, by pointing at the scene instead of typing a time and a latitude:
+  drag it across the **Sky**; press a surface and it shines straight onto
+  that **Face**; press an object and drag to where its **Shadow** should
+  fall; or press a surface and it moves to where its **Glint** reaches the
+  camera. Every step writes `TimeOfDay` and `GeographicLatitude` as a
+  patch rather than a rebuild, and the whole drag is one undo. Face and
+  Glint aim off the surface a part is drawn with — a wedge's slope, a
+  ball's curve, a mesh's triangle — not its box. A stretch of sky no
+  latitude inside ±90° reaches is held at its rim, and the readout says
+  so. Not a Studio built-in: an rbx-native addition.
 
 - [x] **A real script editor** — double-clicking a `Script`, `LocalScript`
   or `ModuleScript` in the Explorer opens it in the Script Editor dock
@@ -855,8 +951,10 @@ Roblox's own engine.
     decimal places, matching Studio's own numeric-field precision. Reads
     the same delta `gizmo.rs`'s own drag math already computes for the
     part itself (see `workspace_view::readout`), so there is nothing new
-    to keep in sync. A Rotate-angle readout was a natural follow-on but is
-    out of this bullet's own scope and hasn't been added.
+    to keep in sync. After a handle drag the label turns into Studio's
+    measurement box: type a length and the selection moves by exactly
+    that, as one undo step. A Rotate-angle readout was a natural follow-on
+    but is out of this bullet's own scope and hasn't been added.
   - **`Tab` to "summon" the gizmo's handles to the cursor** — this one
     *is* real, current native Studio behavior (2021 "Pivot Points" beta
     update): holding `Tab` moves the active tool's handles to the cursor's
@@ -934,7 +1032,10 @@ Roblox's own engine.
   deleted. Also needs `PVInstance:GetPivot()`/`PVInstance:PivotTo()`/
   `BasePart.PivotOffset` exposed to the Command Bar and scripts generally
   (today's Luau DataModel has no pivot-specific API at all), not just the
-  interactive tool, since real Studio exposes both.
+  interactive tool, since real Studio exposes both. Landed so far: the
+  Properties panel's `Origin` row reads a part's or model's pivot the way
+  `GetPivot` does and moves the instance the way `PivotTo` does (see
+  "What's been implemented" → Editor).
 - [x] **DOM editing from the Explorer row** — beyond the old plain
   insert/delete:
   - A `+` on the hovered row (`Ctrl+I` from the keyboard) opens a
@@ -986,8 +1087,8 @@ Roblox's own engine.
     well as keeping it browsable.
 - [x] **Copy/paste/duplicate instances** (`Ctrl+C`/`V`/`D`) — real now,
   from the keyboard, the Edit menu's Copy/Paste/Paste Into/Duplicate items
-  and the ribbon's Copy, Paste and Duplicate tiles (Cut stays a
-  placeholder; it was never part of this bullet). Copy is a deep,
+  and the ribbon's Copy, Paste and Duplicate tiles (Cut, never part of
+  this bullet, landed with the Explorer row editing above). Copy is a deep,
   in-process clipboard, not the system one: descendants come along, a
   `Ref`/`Content::Object` property pointing at something copied along with
   it is remapped to point at the copy instead — `Class.Instance:Clone()`'s
@@ -1001,9 +1102,8 @@ Roblox's own engine.
   creator-docs describes for pasting "into multiple parents". A
   non-`Archivable` descendant is left out of the copy the way
   `Instance:Clone()` does (the root itself is always copied, and the copy is
-  always `Archivable`). Left for the fuller Explorer editing item above:
-  the right-click **Paste Options** ⟩ **Paste Into At Original Location**
-  the docs mention, and Cut.
+  always `Archivable`). Still open: the right-click **Paste Options** ⟩
+  **Paste Into At Original Location** the docs mention.
 - [x] Drag-and-drop reparenting in the Explorer tree. Dragging a row
   onto another reparents onto it, the way creator-docs describes
   ("simply drag and drop them onto the new parent") — with a ghost under
@@ -1041,17 +1141,16 @@ Roblox's own engine.
   yet wired into `rbx_cloud` at all; worth treating as its own follow-up
   rather than assuming the existing client already covers it.
 #### Properties panel — remaining type editors
-- [ ] 📋 **Layout/UX pass on the panel itself**, separate from the
-  per-type editor work below. Reported directly from real use, not yet
-  checked against creator-docs or a real Studio instance the way this
-  roadmap's other Studio-parity claims are (worth doing before assuming
-  what "logical" ordering actually means there — the "Studio fallback"
-  Vinegar/Wine workaround elsewhere in this document is one way to check):
-  category ordering doesn't read as sensibly grouped as real Studio's own
-  panel does. A few smaller, self-contained papercuts worth folding into
-  the same pass rather than filing separately: rows feel visually tight
-  (more padding would help), and a numeric field's own value can get
-  clipped by the input's own width instead of staying fully legible.
+- [ ] 📋 **Category order in the panel.** Categories are sorted
+  alphabetically (`properties::group_by_category`), which doesn't read as
+  sensibly grouped as real Studio's own panel does. Reported from real use
+  and not yet checked against creator-docs or a real Studio instance
+  (worth doing before assuming what "logical" ordering actually means
+  there — the "Studio fallback" Vinegar/Wine workaround elsewhere in this
+  document is one way to check). The two papercuts first filed with it —
+  tight rows, and a numeric value clipped by a narrow field — went with
+  the panel's rework: hairline seams between rows, and a numeric value
+  shown whole on its own row with its components behind an expander.
 - [x] `Rect`, `PhysicalProperties`, `Font` — all three edit now, where all
   three used to be read-only text. `Rect` is four labeled fields; `Font`
   turned out to already be editable before this item was picked up (the
@@ -1068,27 +1167,14 @@ Roblox's own engine.
   rather than zeroing the numbers, and the fields under an unticked box are
   seeded from Roblox's `Plastic` defaults (`0.7 / 0.3 / 0.5 / 1 / 1`) so
   ticking it never commits a row of zeroes.
-- [ ] 📋 **Widgets that better match how Studio actually renders specific
-  types**, rather than a generic fallback — verified against the real API
-  dump and the current code, not assumed:
-  - `CFrame` — today's editor is position-only
-    (`crates/rbx_studio/src/properties.rs`'s `Variant::CFrame` arm reuses
-    the plain `X`/`Y`/`Z` vector fields; there is no way to edit rotation
-    at all). Studio splits
-    a part's placement into a `Position` row and a separate `Orientation`
-    row (`X`/`Y`/`Z` in degrees, Euler XYZ) instead of exposing the raw
-    matrix — worth matching that split for both `BasePart` (whose
-    `Position`/`Orientation` are already ordinary properties) and any
-    other class with a genuine `CFrame`-typed property (`Attachment`,
-    `Motor6D.C0`/`C1`, `Camera.CFrame`, …), which today only get the same
-    position-only treatment.
-  - `BrickColor` — rendered as literal text today
-    (`format!("BrickColor({number})")`); Studio shows a colour swatch plus
-    a picker of Roblox's named brick colours, not a raw palette index.
-  - General pass: go through the API dump's actual type/category coverage
-    (`assets/API-Dump.json`, kept current by the daily sync) rather than
-    relying on memory for how each Roblox type is conventionally shown, the
-    same discipline `AGENTS.md` asks for lighting/material claims.
+- [ ] 📋 **A general pass on how Studio renders each type**, rather than
+  a generic fallback: go through the API dump's actual type/category
+  coverage (`assets/API-Dump.json`, kept current by the daily sync) rather
+  than relying on memory for how each Roblox type is conventionally shown,
+  the same discipline `AGENTS.md` asks for lighting/material claims. The
+  two types this item first named are done — every `CFrame` row expands
+  into `Position` and `Orientation`, and `BrickColor` has Studio's palette
+  picker (see "What's been implemented" → Editor).
 - [ ] 📋 **"Freeze"/"Apply" a `MeshPart`'s rotation** — zero out
   `Orientation` while leaving the object's *visual* placement unchanged,
   the Blender "Apply Transform" equivalent. A real, well-read devforum
@@ -1237,33 +1323,27 @@ against `Roblox/creator-docs` rather than assumed:
     the focused row and the selected rows cannot differ — which matters
     because the Explorer multi-selects. Needs the toolkit's tree replaced or
     extended.
-- [ ] 📋 **Property editors for the five `Variant` types that still have
+- [ ] 📋 **Property editors for the two `Variant` types that still have
   none.** The Properties panel renders a value for every type the DOM can
-  hold, but five of them are read-only or edited through something that
-  misrepresents them. Inventory, rationale and rough sizing live in
+  hold, but two of them are still read-only. Inventory, rationale and
+  rough sizing live in
   [`agents/property-editors.md`](agents/property-editors.md); the bullets
   below are what is left after the `CFrame`/`Ray`/`Vector3int16`/`Faces`/
-  `Axes`/`NumberRange`/`UDim` pass and the `OptionalCFrame` one (see
-  "What's been implemented" → Editor).
+  `Axes`/`NumberRange`/`UDim` pass, the `OptionalCFrame` one, and
+  `PhysicalProperties`, `Font` and `BrickColor` (see "What's been
+  implemented" → Editor).
 
   Each is its own piece of work, so each gets its own PR:
-  - **`BrickColor`** is edited as a raw palette index and displays as
-    `BrickColor(194)`. A named swatch picker needs the ~64-entry palette
-    table bundled — an asset decision (where does the table come from,
-    under what licence) before it is a UI one.
-  - **`Font`** is three typed text fields. `FontWeight`'s nine members and
-    `FontStyle`'s two are closed sets and should be dropdowns; the family
-    list is the real work, and it lives in `rbx_viewer`'s font package
-    rather than in the editor.
-  - **`PhysicalProperties`** renders through Rust's `{:?}`. Its five
-    numbers are a plain field row, but `Default` versus `Custom` is a
-    design question first — how does someone go *back* to default once
-    they have typed a density? — and worth answering before building.
   - **`Ref`** (`ObjectValue.Value`, `Weld.Part0`) shows the target's name
     and cannot be changed. Needs an instance picker — an Explorer target,
     or a pick-in-viewport mode.
   - **`Content`** (`Decal.Texture`, `MeshPart.MeshId`) needs an asset URI
     field, and its `Content::Object` case is a `Ref` picker again.
+
+  Smaller, and not a missing editor: `Font` edits as three typed fields
+  (family, weight, style) by choice — a weight's nine names are quicker
+  typed than picked — so a family list is what would make it a picker,
+  and that lives in `rbx_viewer`'s font package rather than the editor.
 
   **Deliberately excluded**, so nobody "fixes" them: `SharedString`,
   `UniqueId`, `SecurityCapabilities` and `Unknown` stay read-only. They are
@@ -1653,11 +1733,13 @@ against `Roblox/creator-docs` rather than assumed:
   guidance's Stage 1/2/3 — failures included.
 - [ ] 📋 **What the visual pass left behind**, beyond the items that
   already have their own bullets under "What's planned" → Editor (the
-  toolkit widgets that cannot join the Tab order — a Level A failure — the
-  remaining Stage 2/Stage 3 accessibility items, drag-to-rearrange docks,
-  and the eight property types without an editor): `gpui` has no property
-  transitions and cannot transform a `Div`, so hover feedback is instant,
-  and keyboard arrow-navigation inside the hand-built menus isn't wired.
+  remaining Stage 2/Stage 3 accessibility items and the property types
+  still without an editor): hover feedback is instant — `gpui` has no
+  CSS-style property transitions and cannot transform a `Div`;
+  `gpui_base::transition` animates one value explicitly (the ghost dock's
+  ease uses it), but putting it behind every hover state is a larger job —
+  and keyboard arrow-navigation inside the hand-built menus
+  (`shell::menu`) isn't wired.
 
 ### Play / Test workflow
 - [ ] 📋 The sandbox-place design (private per-developer place, injected
