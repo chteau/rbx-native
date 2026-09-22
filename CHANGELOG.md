@@ -2,6 +2,16 @@
 
 ## 2026-09-22
 
+- **The 3D view shows a GUI at the screen it was built for.** A `ScreenGui`
+  laid out on a 1920×1080 canvas used to be laid out again at whatever size
+  the viewport panel was, so it never looked the way it was built. The
+  Viewport dock has a Screen setting now, the same one as the UI Editor's
+  resolution: pick a device, type a size or turn it, and the scene is
+  letterboxed to that screen's shape with the GUI laid out at its size, as
+  Studio's device emulator shows it. Choosing a resolution on the canvas
+  applies it to the viewport as well; "Viewport size" goes back to the
+  panel's own. — @chteau
+
 - **The UI Editor's canvas works like Figma now, and keeps up with a drag.**
   Its sidebar leads with a design panel — position with align-to-parent and
   an anchor grid, W/H with an aspect lock, auto layout, opacity, corner
