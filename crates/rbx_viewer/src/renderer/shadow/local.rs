@@ -33,6 +33,12 @@ const VERTICAL_LIGHT: f32 = 0.999;
 /// `Angle` slider goes without being a `PointLight`.
 const MAX_FOV_RADIANS: f32 = 170.0 / 180.0 * std::f32::consts::PI;
 
+/// The narrowest a face light's map is made, so an `Angle` of 0 — a prism
+/// straight out of the face, which no perspective reaches — still gets an eye
+/// a finite distance behind it. A spot's own cone never gets this narrow:
+/// `crate::lighting::local::cone` keeps its outer edge a little open.
+const MIN_HALF_FOV_RADIANS: f32 = 0.25 / 180.0 * std::f32::consts::PI;
+
 /// One light selected to cast a shadow this frame.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(in crate::renderer) struct Selected {
@@ -75,8 +81,15 @@ pub(in crate::renderer) fn select(
         .collect()
 }
 
-/// The light's own perspective: eye at its position, looking down its cone
-/// axis, FOV wide enough to cover the cone the shader tests fragments against.
+/// The light's own perspective, looking down its cone axis with the cone's
+/// own angle.
+///
+/// A spot's eye is its position. A `SurfaceLight` on a part shines that cone
+/// from every point of its face (see `lights.wgsl`'s `local_terms`), so its
+/// eye backs off behind the face until the cone from there takes in the
+/// whole face — and so, widening at the same angle, the whole frustum the
+/// face lights — with the near plane on the face itself, which keeps the
+/// light's own part out of its map.
 ///
 /// Standard (not reversed) depth, matching `Shadows::render`'s own convention —
 /// see that module's doc comment for why the sun map is not reversed either.
@@ -86,17 +99,26 @@ fn view_projection(light: &LocalLight) -> Mat4 {
     } else {
         Vec3::Y
     };
-    let view = look_to_mat4(light.position, light.direction, up);
 
-    // `cos_outer` already IS the cosine `local_light_visibility` in lights.wgsl
-    // tests fragments against (see `crate::lighting::local::cone`), so
-    // recovering the FOV from it keeps the map exactly as wide as the light
-    // actually reaches, with no second copy of `Angle` to carry all the way
-    // from the DOM to here and risk drifting from the one the shader uses.
-    let fov = (2.0 * light.cos_outer.clamp(-1.0, 1.0).acos()).min(MAX_FOV_RADIANS);
-    let far = light.range.max(NEAR_STUDS + 0.01);
+    // `cos_outer` already IS the cosine `local_terms` in lights.wgsl tests
+    // fragments against (see `crate::lighting::local::cone`), so recovering
+    // the angle from it keeps the map as wide as the light actually reaches,
+    // with no second copy of `Angle` to carry from the DOM to here.
+    let half = light
+        .cos_outer
+        .clamp(-1.0, 1.0)
+        .acos()
+        .clamp(MIN_HALF_FOV_RADIANS, 0.5 * MAX_FOV_RADIANS);
+    let extent = light.face_u.length().max(light.face_v);
+    let behind = extent / half.tan();
+    let view = look_to_mat4(
+        light.position - light.direction * behind,
+        light.direction,
+        up,
+    );
+    let far = behind + light.range.max(NEAR_STUDS + 0.01);
 
-    perspective(fov, 1.0, NEAR_STUDS, far) * view
+    perspective(2.0 * half, 1.0, behind + NEAR_STUDS, far) * view
 }
 
 /// One [`Selected`] light, as `lights.wgsl`'s `LightShadow` reads it.
