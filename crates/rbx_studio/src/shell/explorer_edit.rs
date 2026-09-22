@@ -47,6 +47,10 @@ pub(super) struct ExplorerEdit {
     /// A box to put the caret in on the next frame — see
     /// [`Shell::focus_explorer_edit`].
     focus_next: Option<Entity<InputState>>,
+    /// What Change Class last turned something into, most recent first —
+    /// suggested again next time. This session's only: a class picked in
+    /// one place says little about the next.
+    pub(super) recent_classes: Vec<String>,
 }
 
 impl Shell {
@@ -122,7 +126,7 @@ impl Shell {
     /// The picker and the context menu, painted over the whole window from
     /// `Render for Shell`.
     pub(super) fn explorer_popups(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        [self.insert_picker_popup(cx), self.row_menu_popup(cx)]
+        [self.picker_popup(cx), self.row_menu_popup(cx)]
             .into_iter()
             .flatten()
             .collect()

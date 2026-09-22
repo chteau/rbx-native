@@ -43,20 +43,36 @@ impl Meshes {
 /// "inside" answer of 0 as the solids have, since an arbitrary mesh need not
 /// even be closed.
 pub(super) fn hit(mesh: &Mesh, model: Mat4, ray: Ray) -> Option<f32> {
-    hit_with_normal(mesh, model, ray).map(|(distance, _)| distance)
+    let local = Local::of(model, ray)?;
+    let (distance, _) = nearest(mesh, &local)?;
+    Some(distance / local.per_stud)
 }
 
-/// [`hit`], and the normal of the triangle it met, in the mesh's own space
-/// and as its winding gives it.
-pub(super) fn hit_with_normal(mesh: &Mesh, model: Mat4, ray: Ray) -> Option<(f32, Vec3)> {
+/// Where `ray` first meets `mesh` carried through `model`, and that
+/// triangle's unit normal turned to face the ray, both in world space. Facing
+/// the ray rather than trusting the winding, because a downloaded mesh's
+/// winding is whatever its author exported.
+pub(super) fn surface(mesh: &Mesh, model: Mat4, ray: Ray) -> Option<(Vec3, Vec3)> {
     let local = Local::of(model, ray)?;
+    let (distance, normal) = nearest(mesh, &local)?;
+    let normal = model.inverse().transpose().transform_vector3(normal);
+    let normal = if normal.dot(ray.direction) > 0.0 {
+        -normal
+    } else {
+        normal
+    };
+    Some((ray.at(distance / local.per_stud), normal.try_normalize()?))
+}
+
+/// The nearest triangle `local` crosses: how far along it, in the mesh's own
+/// units, and the triangle's (unnormalized) plane normal.
+fn nearest(mesh: &Mesh, local: &Local) -> Option<(f32, Vec3)> {
     let vertex = |index: u32| {
         mesh.vertices
             .get(index as usize)
             .map(|vertex| Vec3::from(vertex.position))
     };
-    let (nearest, normal) = mesh
-        .lod0()
+    mesh.lod0()
         .as_chunks::<3>()
         .0
         .iter()
@@ -69,8 +85,7 @@ pub(super) fn hit_with_normal(mesh: &Mesh, model: Mat4, ray: Ray) -> Option<(f32
             let distance = triangle_hit(local.origin, local.direction, a, b, c)?;
             Some((distance, (b - a).cross(c - a)))
         })
-        .min_by(|(a, _), (b, _)| a.total_cmp(b))?;
-    Some((nearest / local.per_stud, normal))
+        .min_by(|(a, _), (b, _)| a.total_cmp(b))
 }
 
 /// Möller–Trumbore: where the ray crosses the plane of triangle `abc`,

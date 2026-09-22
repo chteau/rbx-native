@@ -57,7 +57,7 @@ impl WorkspaceView {
                     vec![0.0],
                 )
             }
-            Drag::Plane { .. } | Drag::Ring { .. } => return,
+            Drag::Plane { .. } | Drag::Ring { .. } | Drag::Sun => return,
         };
         self.guides.snaps = sweep::soft_snaps(
             &slab,
@@ -108,7 +108,7 @@ impl WorkspaceView {
                 grabbed,
                 ..
             } => (origin, axis, grabbed),
-            Drag::Plane { .. } | Drag::Ring { .. } => return,
+            Drag::Plane { .. } | Drag::Ring { .. } | Drag::Sun => return,
         };
         let grid = self.transform.translate.grid(shift);
         let snaps = self.soft_snaps(shift);

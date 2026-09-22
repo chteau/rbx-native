@@ -49,7 +49,9 @@ const JOINT_PROPERTIES: &[&str] = &[
 pub(in crate::properties) fn moves_joints(change: &Change) -> bool {
     match change {
         Change::Property { name, .. } => JOINT_PROPERTIES.contains(&name.as_str()),
-        Change::Added(_) | Change::Removed(_) | Change::Parent { .. } => true,
+        // A class change can turn a joint into something else, or a part
+        // into something no joint holds.
+        Change::Added(_) | Change::Removed(_) | Change::Parent { .. } | Change::Class(_) => true,
     }
 }
 

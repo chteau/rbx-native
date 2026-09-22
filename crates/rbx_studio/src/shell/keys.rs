@@ -12,6 +12,7 @@ use gpui_kit::{Context, Keystroke, Modifiers, Window};
 use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
+use crate::change_class;
 use crate::explorer;
 use crate::script_editor::source;
 
@@ -363,19 +364,52 @@ fn part_defaults_shape(
     })
 }
 
+/// What Change Class gives an instance that had no value at all for these:
+/// [`part_defaults`]'s keys for a `BasePart`, with `Part`'s own block `shape`,
+/// each at `class`'s own default where the per-class table records one in the
+/// type the DOM stores it as — a `TrussPart` is 2 × 2 × 2, not a `Part`'s
+/// 4 × 1.2 × 2 — and nothing for any other class.
+pub(super) fn class_defaults(
+    database: &ReflectionDatabase,
+    class: &str,
+) -> Vec<(&'static str, Variant)> {
+    let own = |key: &str, value: &Variant| {
+        let property = database.resolve_property(class, database.canonical_name(class, key))?;
+        change_class::stock(database, class, &property.name)
+            .filter(|own| std::mem::discriminant(*own) == std::mem::discriminant(value))
+            .cloned()
+    };
+    part_defaults_shape(database, class, None)
+        .map(part_defaults)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(key, value)| {
+            let value = own(key, &value).unwrap_or(value);
+            (key, value)
+        })
+        .collect()
+}
+
+/// Applies [`part_defaults`] to a freshly inserted instance.
+fn apply_part_defaults(dom: &mut WeakDom, referent: Ref, shape: Option<u32>) {
+    for (key, value) in part_defaults(shape) {
+        let _ = dom.set_property(referent, key, value);
+    }
+}
+
 /// Roblox's own defaults for `Instance.new("Part")`, duplicated from
 /// `rbx_lua::defaults::base_part_defaults` rather than reused: that table sits
 /// behind a `pub(crate)` `apply` function private to `rbx_lua`, and making a
 /// whole module public across crates for one small constant table is not
 /// worth it. Applies to any `BasePart` subclass the insert menus create
-/// (`Part`, `WedgePart`, `CornerWedgePart`) — `shape` is written only when
+/// (`Part`, `WedgePart`, `CornerWedgePart`) — `shape` is listed only when
 /// the caller passes one, since `WedgePart`/`CornerWedgePart` don't actually
 /// declare a `Shape` property in Roblox's own reflection data.
-fn apply_part_defaults(dom: &mut WeakDom, referent: Ref, shape: Option<u32>) {
+fn part_defaults(shape: Option<u32>) -> Vec<(&'static str, Variant)> {
     const IDENTITY_ROTATION: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
     const MATERIAL_PLASTIC: u32 = 256;
 
-    let defaults: [(&str, Variant); 11] = [
+    let mut defaults = vec![
         (
             "size",
             Variant::Vector3(Vector3Data {
@@ -412,12 +446,10 @@ fn apply_part_defaults(dom: &mut WeakDom, referent: Ref, shape: Option<u32>) {
         ("Locked", Variant::Bool(false)),
         ("Massless", Variant::Bool(false)),
     ];
-    for (key, value) in defaults {
-        let _ = dom.set_property(referent, key, value);
-    }
     if let Some(shape) = shape {
-        let _ = dom.set_property(referent, "shape", Variant::Enum(shape));
+        defaults.push(("shape", Variant::Enum(shape)));
     }
+    defaults
 }
 
 #[cfg(test)]

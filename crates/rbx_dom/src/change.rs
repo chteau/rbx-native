@@ -28,4 +28,9 @@ pub enum Change {
     /// An instance was deleted. `WeakDom::remove` emits one of these per removed
     /// instance, including every descendant in the removed subtree.
     Removed(Ref),
+    /// `referent`'s class changed in place (see `WeakDom::set_class`). Structural
+    /// to every consumer: what an instance is decides which pass draws it, which
+    /// icon it carries and which properties it lists, so it is re-read whole
+    /// rather than patched one value at a time.
+    Class(Ref),
 }

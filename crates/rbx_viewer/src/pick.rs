@@ -163,6 +163,17 @@ fn distance_to(
         // which is exactly what the shape resolution below answers for it.
     }
 
+    let (kind, model) = solid_of(dom, database, referent)?;
+    shape::hit_key(kind, model, ray)
+}
+
+/// The procedural solid `referent` is drawn as, and the matrix it is drawn
+/// through.
+fn solid_of(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    referent: Ref,
+) -> Option<(ShapeKind, Mat4)> {
     let instance = dom.get(referent)?;
     let properties = instance.properties();
     // Roblox's binary format spells `BasePart.Size` lowercase, which is the
@@ -173,7 +184,7 @@ fn distance_to(
         return None;
     };
     let geometry = resolve_shape(dom, database, instance, Vec3::new(size.x, size.y, size.z));
-    shape::hit_key(geometry.kind, geometry.model(cframe_matrix(cframe)), ray)
+    Some((geometry.kind, geometry.model(cframe_matrix(cframe))))
 }
 
 /// Everything in the scene a click or a drag can resolve against: `Workspace`'s

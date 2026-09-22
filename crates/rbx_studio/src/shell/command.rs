@@ -13,6 +13,8 @@ use crate::command_bar::{self, Feedback};
 use crate::explorer::{self, Explorer};
 use crate::transform::Targets;
 
+use super::drag::{CFRAME_PROPERTY, SIZE_PROPERTY};
+
 use super::Shell;
 
 impl Shell {
@@ -256,6 +258,17 @@ impl Shell {
             self.sync_snap_neighbours(cx);
         }
         self.sync_light_guides(cx);
+        // A selected instance that changed class is, to everything built
+        // from the selection, another selection: its outline, its gizmo and
+        // its Properties rows are all read off its class. Checked here, so a
+        // change, its undo and its redo all come through it.
+        let selected = self.selected_all();
+        let class_changed = changes
+            .iter()
+            .any(|change| matches!(change, Change::Class(referent) if selected.contains(referent)));
+        if class_changed {
+            self.selection_changed(cx);
+        }
     }
 
     /// Rebuilds the Explorer's rows from the current `self.dom`, keeping the
@@ -292,12 +305,15 @@ pub(super) struct Refresh {
 }
 
 /// Which of the two mirrors a log invalidates. A structural change — an
-/// instance added, removed or moved — invalidates both: the selection may
-/// have lost a part or gained one, and so may the neighbours. A property
+/// instance added, removed, moved or given another class — invalidates
+/// both: the selection may have lost a part or gained one, and so may the
+/// neighbours. A property
 /// write invalidates only the side it landed on: the targets if it touched
 /// a part the selection *covers* (a typed coordinate, an undo of one), the
-/// neighbours if it touched anything else (a script moving parts the user
-/// has not selected). `covered` is every part the draggers carry — the
+/// neighbours if it moved or resized anything else (a script moving parts
+/// the user has not selected) — a neighbour is only a `CFrame` and a `size`,
+/// so any other write, `Lighting`'s under a Sun drag every frame, walks
+/// nothing. `covered` is every part the draggers carry — the
 /// selected parts themselves and every part beneath a selected `Model`
 /// (see `Shell::covered`) — not the selection's own referents: a drag of a
 /// Model writes its parts, never the Model, and judged against the Model's
@@ -310,9 +326,9 @@ pub(super) fn refresh_for(changes: &[Change], covered: &HashSet<Ref>) -> Refresh
         neighbours: false,
     };
     for change in changes {
-        let referent = match change {
-            Change::Property { referent, .. } => *referent,
-            Change::Parent { .. } | Change::Added(_) | Change::Removed(_) => {
+        let (referent, name) = match change {
+            Change::Property { referent, name } => (*referent, name.as_str()),
+            Change::Parent { .. } | Change::Added(_) | Change::Removed(_) | Change::Class(_) => {
                 return Refresh {
                     targets: true,
                     neighbours: true,
@@ -321,7 +337,7 @@ pub(super) fn refresh_for(changes: &[Change], covered: &HashSet<Ref>) -> Refresh
         };
         if covered.contains(&referent) {
             refresh.targets = true;
-        } else {
+        } else if [CFRAME_PROPERTY, SIZE_PROPERTY].contains(&name) {
             refresh.neighbours = true;
         }
     }
@@ -373,6 +389,22 @@ mod tests {
         );
     }
 
+    // A write that moves nothing — the Sun tool's `Lighting`, every frame of
+    // its drag — leaves both mirrors alone.
+    #[test]
+    fn writes_that_move_no_part_refresh_nothing() {
+        assert_eq!(
+            refresh_for(
+                &[write(9, "TimeOfDay"), write(4, "Name")],
+                &HashSet::from([Ref::new(1)])
+            ),
+            Refresh {
+                targets: false,
+                neighbours: false,
+            }
+        );
+    }
+
     #[test]
     fn writes_on_both_sides_refresh_both() {
         assert_eq!(
@@ -396,6 +428,11 @@ mod tests {
         let none = HashSet::new();
         assert_eq!(refresh_for(&[Change::Added(Ref::new(9))], &none), BOTH);
         assert_eq!(refresh_for(&[Change::Removed(Ref::new(9))], &none), BOTH);
+        // A selected part turned into a `Folder` is no longer something to drag.
+        assert_eq!(
+            refresh_for(&[Change::Class(Ref::new(1))], &HashSet::from([Ref::new(1)])),
+            BOTH
+        );
         assert_eq!(
             refresh_for(&[write(1, "Name"), reparent], &HashSet::from([Ref::new(1)])),
             BOTH

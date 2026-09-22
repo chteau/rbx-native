@@ -46,6 +46,7 @@
 
 mod align;
 mod camera;
+mod change_class;
 mod class_icons;
 mod cli;
 mod command_bar;
@@ -70,6 +71,7 @@ mod settings;
 mod settle;
 mod shell;
 mod style_editor;
+mod sun;
 mod tokens;
 mod transform;
 mod workspace_view;

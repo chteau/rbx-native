@@ -31,7 +31,7 @@ mod debug;
 pub(super) const CFRAME_PROPERTY: &str = "CFrame";
 /// Roblox's binary format spells `BasePart.Size` lowercase, which is the name
 /// the DOM keeps — see `rbx_viewer::pick::model_of`, which reads the same pair.
-const SIZE_PROPERTY: &str = "size";
+pub(super) const SIZE_PROPERTY: &str = "size";
 
 impl Shell {
     pub(super) fn handle_viewport_action(
@@ -56,6 +56,7 @@ impl Shell {
             } => self.move_parts(moves, *first, settle.as_deref().copied(), cx),
             ViewportAction::Resized { parts, first } => self.resize_parts(parts, *first, cx),
             ViewportAction::Rotated { parts, first } => self.rotate_parts(parts, *first, cx),
+            ViewportAction::Sun { ray, first } => self.sun_step(*ray, *first, cx),
             // The one toolbar action that moves the caret instead of changing
             // state, which is why this path carries a `Window` at all.
             ViewportAction::Tool(transform::Action::FocusIncrement(kind)) => {

@@ -254,6 +254,44 @@
   redrawn as the toggles and the selection change and cleared when it
   closes. The overlay takes plain world matrices and knows nothing about
   Align, so the next tool that needs one adds no pass. — @chteau
+- **Change Class.** Right-click an Explorer row and a `Part` can become a
+  `WedgePart`, a `Frame` a `TextButton`, a `Script` a `LocalScript` — the
+  whole selection at once, in one undo step. The instance changes class in
+  place rather than being rebuilt, so it keeps its referent, and everything
+  that pointed at it — a `Weld.Part0`, a `PrimaryPart`, the selection, an
+  open script tab — still does, which a plugin that destroys and recreates
+  the instance cannot offer. A property the new class has no room for is
+  dropped, one still at the old class's default takes the new class's own,
+  and tags, attributes and anything else the API dump does not describe
+  always survive; the picker says what a class would drop before you pick
+  it. It is the insert picker with another purpose: related classes and
+  this session's recent picks come first, and the search ranks a prefix
+  over word starts over scattered letters, so `tl` finds `TextLabel`. A
+  service's class stays put, and the Output panel says so. — @chteau
+- **The sun goes where you point.** A Sun tool on the Model page places the
+  sun — or, from its Moon tile, the moon — by pointing at the scene instead
+  of typing a time and a latitude. Four gestures: drag it across the Sky;
+  press a surface and it shines straight onto that Face; press an object
+  and drag to where its Shadow should fall; or press a surface and it moves
+  to where its Glint reaches the camera. Every step writes `TimeOfDay` and
+  `GeographicLatitude` and is patched rather than rebuilt, so the sky and
+  the shadows follow the cursor, the Properties panel follows too, and the
+  whole drag is one undo. The inverse of the sun model lives beside the
+  formula the renderer lights with, so the two cannot drift; a cone of the
+  sky no latitude inside ±90° reaches is held at its rim, and the readout
+  says so rather than writing a latitude past the pole. A line through the
+  anchor toward the light — and in Shadow a marker where the shadow lands —
+  is drawn through the same overlay the Align preview uses. — @chteau
+- **Change Class and the Sun tool read the real shapes and defaults.** A
+  value still at the old class's stock takes the new class's own stock,
+  read from each class's recorded defaults rather than one table shared by
+  every part: a stock `Part` becomes a 2 × 2 × 2 `TrussPart`, a stock
+  `PointLight` a `SpotLight` reaching 16 studs. A default recorded in
+  another type than the file keeps its key in is left alone rather than
+  written wrong. The Sun tool's Face and Glint aim off the surface a part is
+  drawn with — a wedge's slope, a ball's or a cylinder's curve, the triangle
+  of a downloaded mesh — rather than the box around it, through a
+  `pick::surface_hit` that resolves shapes the way a click does. — @chteau
 
 - **Studio's light guides.** Select a `SpotLight`, `PointLight` or
   `SurfaceLight` and the viewport draws how far it reaches, the way Studio's

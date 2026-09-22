@@ -115,7 +115,7 @@ impl Shell {
                     (IconName::Bug, "Analysis"),
                 ],
             )],
-            Tab::Model => vec![self.edit_tiles(cx), file_tiles()],
+            Tab::Model => vec![self.edit_tiles(cx), self.sun_tiles(cx), file_tiles()],
             Tab::Test => vec![test_tiles(), viewport_tiles()],
             Tab::Plugins => vec![placeholders(
                 "plugins",
@@ -179,7 +179,7 @@ impl Shell {
     /// increments they all obey.
     fn transform_tools(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let active = self.transform.tool;
-        let mut group: Vec<AnyElement> = Tool::ALL
+        let mut group: Vec<AnyElement> = Tool::TRANSFORM
             .map(|tool| {
                 tile(
                     &self.ribbon_nav,
@@ -190,11 +190,11 @@ impl Shell {
                 )
                 .when(active == tool, |this| selected(this, tool_accent(tool)))
                 .tooltip(move |window, cx| {
-                    super::tooltip::text(
-                        format!("{} ({})", tool.label(), tool.shortcut()),
-                        window,
-                        cx,
-                    )
+                    let text = match tool.shortcut() {
+                        Some(key) => format!("{} ({key})", tool.label()),
+                        None => tool.label().to_owned(),
+                    };
+                    super::tooltip::text(text, window, cx)
                 })
                 .on_click(cx.listener(move |shell, _, _, cx| {
                     shell.transform_action(crate::transform::Action::Use(tool), cx);
@@ -524,6 +524,7 @@ fn tool_icon(tool: Tool) -> IconName {
         Tool::Move => IconName::Move3d,
         Tool::Scale => IconName::Scale3d,
         Tool::Rotate => IconName::Rotate3d,
+        Tool::Sun => IconName::Sun,
     }
 }
 
@@ -535,6 +536,7 @@ pub(super) fn tool_accent(tool: Tool) -> Rgba {
         Tool::Move => tokens::tool_move(),
         Tool::Scale => tokens::tool_scale(),
         Tool::Rotate => tokens::tool_rotate(),
+        Tool::Sun => tokens::tool_sun(),
     }
 }
 
@@ -679,7 +681,7 @@ pub(super) fn stack_row(id: &'static str, icon: IconName, label: &'static str) -
 }
 
 /// [`unavailable_tile`]'s stack row: the same reason, the same reasoning.
-fn unavailable_row(
+pub(super) fn unavailable_row(
     id: &'static str,
     icon: IconName,
     label: &'static str,
@@ -694,7 +696,7 @@ fn unavailable_row(
 /// A stack row that does something: the same geometry as [`stack_row`] with
 /// [`base_tile`]'s enabled styling (hover wash, pressed wash, keyboard focus
 /// ring) and a place in the ribbon's roving group.
-fn live_stack_row(
+pub(super) fn live_stack_row(
     nav: &Roving,
     id: &'static str,
     icon: IconName,

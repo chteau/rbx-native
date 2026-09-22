@@ -125,6 +125,10 @@ pub(super) enum Drag {
         last: f32,
         turned: f32,
     },
+    /// The Sun tool is aiming the sun or the moon. Nothing of the gizmo's is
+    /// held: each step goes to `Shell` as the cursor's ray (see
+    /// `super::sun`), and the selection is never touched.
+    Sun,
 }
 
 /// What one step of a drag does to the part.
@@ -254,6 +258,12 @@ impl WorkspaceView {
         let Some(ray) = self.cursor_ray(position, scale) else {
             return;
         };
+        // The Sun tool aims at the scene rather than selecting out of it.
+        if self.transform.tool == Tool::Sun {
+            self.begin(Drag::Sun, cx);
+            self.sun_step(position, scale, true, cx);
+            return;
+        }
 
         let cycling = modifiers.alt;
         let extend = extends_selection(modifiers);
@@ -348,7 +358,7 @@ impl WorkspaceView {
         let end = match self.transform.tool {
             Tool::Move => self.handles().and_then(|handles| handles.grab_arm(ray)),
             Tool::Scale => self.faces().and_then(|faces| faces.grab(ray)),
-            Tool::Select | Tool::Rotate => None,
+            Tool::Select | Tool::Rotate | Tool::Sun => None,
         };
         if let Some(end) = end {
             let held = self.transform.gizmo().map(|gizmo| Gizmo {
@@ -366,7 +376,7 @@ impl WorkspaceView {
         let handles = self.handles()?;
         let anchor = self.targets.anchor()?;
         match self.transform.tool {
-            Tool::Select => None,
+            Tool::Select | Tool::Sun => None,
             Tool::Move => self.grab_axis(&handles, ray),
             Tool::Scale if self.targets.len() > 1 => grab_box(&self.faces()?, ray),
             Tool::Scale => grab_face(&self.faces()?, anchor, ray, lock_shape),
@@ -471,6 +481,11 @@ impl WorkspaceView {
         scale: f32,
         cx: &mut gpui_kit::Context<Self>,
     ) {
+        // Aims at the scene, not at the selection there may not even be.
+        if self.drag == Some(Drag::Sun) {
+            self.sun_step(position, scale, false, cx);
+            return;
+        }
         let (Some(drag), Some(ray)) = (self.drag, self.cursor_ray(position, scale)) else {
             return;
         };
@@ -676,7 +691,7 @@ impl WorkspaceView {
             self.drag_pending = self.drag_pending.or(self.guides.dragged_at);
         }
         self.step_drag(window, cx);
-        if let Some(drag) = self.drag.take() {
+        if let Some(drag) = self.drop_drag() {
             if matches!(
                 drag,
                 Drag::Axis { .. } | Drag::Size { .. } | Drag::Box { .. }
@@ -978,6 +993,8 @@ pub(super) fn advance(drag: Drag, ray: Ray, landing: Landing) -> Option<(Drag, C
                 Change::Orientation(Mat3::from_axis_angle(turn, applied) * orientation),
             ))
         }
+        // Moves no part: `Shell` answers each of its steps instead.
+        Drag::Sun => None,
     }
 }
 
