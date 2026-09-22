@@ -51,17 +51,17 @@ impl View {
         }
     }
 
-    pub(crate) fn to_view(&self, p: [f32; 2]) -> [f32; 2] {
+    pub(crate) fn to_view(self, p: [f32; 2]) -> [f32; 2] {
         [0, 1].map(|axis| self.pan[axis] + p[axis] * self.zoom)
     }
 
-    pub(crate) fn to_canvas(&self, p: [f32; 2]) -> [f32; 2] {
+    pub(crate) fn to_canvas(self, p: [f32; 2]) -> [f32; 2] {
         [0, 1].map(|axis| (p[axis] - self.pan[axis]) / self.zoom)
     }
 
     /// Zoomed by `factor` about `at` (panel pixels), which stays put under
     /// the pointer the way every canvas editor zooms.
-    pub(crate) fn zoomed(&self, factor: f32, at: [f32; 2]) -> View {
+    pub(crate) fn zoomed(self, factor: f32, at: [f32; 2]) -> View {
         let zoom = (self.zoom * factor).clamp(ZOOM_RANGE.0, ZOOM_RANGE.1);
         let kept = zoom / self.zoom;
         View {

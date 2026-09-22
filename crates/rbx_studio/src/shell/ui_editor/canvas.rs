@@ -91,6 +91,13 @@ impl Shell {
                 MouseButton::Middle,
                 cx.listener(|shell, _: &MouseUpEvent, _, cx| shell.canvas_release(cx)),
             )
+            // Leaving the canvas fires no move to say so: the hover outline
+            // would otherwise stay on whatever the pointer last crossed.
+            .on_hover(cx.listener(|shell, hovering: &bool, _, cx| {
+                if !hovering && shell.ui.hovered.take().is_some() {
+                    cx.notify();
+                }
+            }))
             .on_scroll_wheel(cx.listener(|shell, event: &ScrollWheelEvent, _, cx| {
                 shell.canvas_wheel(event, cx);
             }))

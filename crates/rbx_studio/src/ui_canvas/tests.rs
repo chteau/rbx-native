@@ -232,7 +232,7 @@ fn a_scaled_member_still_finds_the_parents_origin() {
 #[test]
 fn a_fit_centres_the_screen_and_never_blows_it_up() {
     let big = View::fit([1000.0, 600.0], [1920.0, 1080.0], 20.0);
-    assert!((big.zoom - 560.0 / 1080.0).abs() < 1e-6, "height-bound");
+    assert_eq!(big.zoom, 0.5, "width-bound: 960 of room for 1920");
     assert!(close(big.to_view([960.0, 540.0]), [500.0, 300.0]));
 
     let small = View::fit([1000.0, 900.0], [390.0, 844.0], 20.0);

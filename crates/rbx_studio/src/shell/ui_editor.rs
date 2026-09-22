@@ -306,3 +306,39 @@ impl Shell {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use rbx_dom::WeakDom;
+    use rbx_reflection::ReflectionDatabase;
+
+    use super::{is_gui_object, screen_of};
+
+    // What decides which screen is on the canvas: the one the selection is
+    // in, found from any depth, and none for a canvas the world draws.
+    #[test]
+    fn the_canvas_screen_is_the_screen_gui_the_selection_sits_in() {
+        let database = ReflectionDatabase::embedded();
+        let mut dom = WeakDom::new();
+        let starter = dom.new_instance("StarterGui", "StarterGui", None);
+        let hud = dom.new_instance("ScreenGui", "Hud", Some(starter));
+        let folder = dom.new_instance("Folder", "Bits", Some(hud));
+        let label = dom.new_instance("TextLabel", "Title", Some(folder));
+        let workspace = dom.new_instance("Workspace", "Workspace", None);
+        let sign = dom.new_instance("Part", "Sign", Some(workspace));
+        let surface = dom.new_instance("SurfaceGui", "Face", Some(sign));
+        let text = dom.new_instance("TextLabel", "Text", Some(surface));
+
+        assert_eq!(screen_of(&dom, &database, hud), Some(hud));
+        assert_eq!(screen_of(&dom, &database, label), Some(hud));
+        assert_eq!(screen_of(&dom, &database, text), None);
+        assert_eq!(screen_of(&dom, &database, sign), None);
+
+        assert!(is_gui_object(&dom, &database, label));
+        assert!(!is_gui_object(&dom, &database, folder));
+        assert!(
+            !is_gui_object(&dom, &database, hud),
+            "a screen has no Position"
+        );
+    }
+}
