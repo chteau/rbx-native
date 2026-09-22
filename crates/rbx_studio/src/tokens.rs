@@ -34,7 +34,7 @@ use gpui_kit::{px, rgb, rgba, BoxShadow, FontWeight, Pixels, Rgba};
 /// cast on a tool whose entire job is showing somebody else's colours puts
 /// a thumb on the scale for every material and texture judged against it.
 pub(crate) fn black() -> Rgba {
-    rgb(0x000000)
+    rgb(0x0A0A0B)
 }
 
 /// A dock's body, and the ribbon's category strip. The frame paints both
@@ -43,13 +43,13 @@ pub(crate) fn black() -> Rgba {
 /// the ribbon's tabs read as a gap rather than as a strip. This is the
 /// first step off the ground, and the seam that makes a dock a dock.
 pub(crate) fn dock() -> Rgba {
-    rgb(0x0D0D0D)
+    rgb(0x151515)
 }
 
 /// Document tabs, the ribbon body, a dock's active tab, and every input —
 /// the raised-panel tone.
 pub(crate) fn chrome() -> Rgba {
-    rgb(0x171717)
+    rgb(0x1D1D1D)
 }
 
 /// A **dropdown**, and only a dropdown: one step above the plain value
@@ -66,12 +66,12 @@ pub(crate) fn field_select() -> Rgba {
 /// A ribbon button: above [`field_select`], the way a key sits above its
 /// keyboard.
 pub(crate) fn tile() -> Rgba {
-    rgb(0x2F2F2F)
+    rgb(0x282828)
 }
 
 /// The File/Edit/View menu strip, between the title bar and the tabs.
 pub(crate) fn menu_bar() -> Rgba {
-    rgb(0x1B1B1B)
+    rgb(0x1D1D1D)
 }
 
 /// The active document tab — a 30% black wash over [`chrome`], so the open
@@ -101,14 +101,21 @@ pub(crate) fn ribbon_tab_active() -> Rgba {
 /// Hover on anything not already lit. Deliberately slight: this UI is dark
 /// enough that a strong hover reads as a selection instead.
 pub(crate) fn hover() -> Rgba {
-    rgba(0xFFFFFF14)
+    rgba(0xFFFFFF0D)
 }
 
-/// A selected Explorer row. Weighted to clear 3:1 against the dock it sits
-/// on — a selection is a state, and WCAG 1.4.11 does not exempt it — while
-/// still leaving its own label at 5.8:1 on top.
+/// A selected Explorer row: the accent, weighted to clear 3:1 against the
+/// dock it sits on — a selection is a state, and WCAG 1.4.11 does not
+/// exempt it — while still leaving its own label at 4.5:1 on top.
+///
+/// The brief that asked for this palette wants a much softer (~12%) wash
+/// for "active/selected" — see [`accent_soft`] — but at 12% an accent this
+/// dark barely lifts off a surface this dark: it fails the 3:1 floor a
+/// state indicator has to clear on its own, no separate border to help it.
+/// So the Explorer's selection keeps the stronger wash the old palette
+/// used, just re-hued.
 pub(crate) fn selection() -> Rgba {
-    rgba(0x3AA0FF99)
+    rgba(0x6C7FDBB8)
 }
 
 // ---------------------------------------------------------------- borders
@@ -116,12 +123,12 @@ pub(crate) fn selection() -> Rgba {
 /// Between document tabs. Half a pixel in the frame; GPUI draws whole
 /// pixels, so this one line is heavier than the design.
 pub(crate) fn tab_border() -> Rgba {
-    rgb(0x333333)
+    rgba(0xFFFFFF1C)
 }
 
 /// Before a dock's trailing cell, and between ribbon groups.
 pub(crate) fn divider() -> Rgba {
-    rgb(0x3D3D3D)
+    rgba(0xFFFFFF1C)
 }
 
 /// The seam between two property rows. Fainter than [`divider`] on purpose:
@@ -133,13 +140,15 @@ pub(crate) fn divider() -> Rgba {
 /// or state is carried by it, and the rows either side are already told
 /// apart by their own content.
 pub(crate) fn row_divider() -> Rgba {
-    rgba(0x3D3D3D80)
+    rgba(0xFFFFFF0F)
 }
 
 // ------------------------------------------------------------------- text
 
-/// The window title and the ribbon's category tabs — the only fully white
-/// text in the design.
+/// The window title, and a ribbon category tab while it isn't the active
+/// one — the active tab's own label switches to [`check_on`] instead, the
+/// one place text itself carries the accent. The only fully white text in
+/// the design otherwise.
 pub(crate) fn text_full() -> Rgba {
     rgba(0xFFFFFFFF)
 }
@@ -180,7 +189,35 @@ pub(crate) fn text_error() -> Rgba {
 /// [`focus_ring`] and [`selection`], the only saturated colour in the whole
 /// UI that isn't a transform tool's own.
 pub(crate) fn check_on() -> Rgba {
-    rgb(0x3AA0FF)
+    rgb(0x6C7FDB)
+}
+
+/// The accent as a wash: an "active" or "selected" surface that *isn't*
+/// carrying the state on its own (a ribbon category tab, an armed tool
+/// button, a panel toggle) — paired with [`accent_line`] or a stronger cue
+/// elsewhere on the same control, never alone on something WCAG 1.4.11
+/// would call a state indicator in its own right (see [`selection`]).
+pub(crate) fn accent_soft() -> Rgba {
+    Rgba {
+        a: 0.12,
+        ..check_on()
+    }
+}
+
+/// The accent as a 1px line — the border half of an active/selected
+/// control, next to [`accent_soft`]'s fill.
+///
+/// The brief this ramp comes from calls for the accent at 55% here, same as
+/// its `--accent-line` token. That reads fine on the light chrome it was
+/// drawn against; against this app's near-black surfaces a 55% line falls
+/// short of the 3:1 a state's own outline has to clear (WCAG 1.4.11), so
+/// this sits higher — still visibly a tint rather than the solid accent,
+/// but one that survives the surfaces it's actually drawn on.
+pub(crate) fn accent_line() -> Rgba {
+    Rgba {
+        a: 0.8,
+        ..check_on()
+    }
 }
 
 /// An unticked one. The frame gives it [`chrome`] and no border at all,
@@ -279,7 +316,7 @@ pub(crate) fn tool_border() -> Pixels {
 
 /// Everything rounded in this design is rounded by exactly this much:
 /// ribbon buttons, dock tabs, inputs, checkboxes, value fields.
-pub(crate) const RADIUS: Pixels = px(3.);
+pub(crate) const RADIUS: Pixels = px(5.);
 /// Except a colour swatch, which is barely rounded at all.
 pub(crate) const RADIUS_TINY: Pixels = px(1.);
 
@@ -400,10 +437,10 @@ pub(crate) fn line_xs() -> Pixels {
 /// A property category's header, and nothing else.
 pub(crate) const WEIGHT_BOLD: FontWeight = FontWeight::BOLD;
 
-/// The design is set in Inter. `main::install_fonts` only names it when the
-/// machine actually has it, so one without falls back to the platform UI
-/// font rather than to nothing.
-pub(crate) const FONT_FAMILY_UI: &str = "Inter";
+/// The design is set in Manrope. `main::install_fonts` only names it when
+/// the machine actually has it, so one without falls back to the platform
+/// UI font rather than to nothing.
+pub(crate) const FONT_FAMILY_UI: &str = "Manrope";
 pub(crate) const FONT_FAMILY_MONO: &str = "JetBrains Mono";
 
 /// The size to hand a toolkit widget — an `Input`, a `Select`, a

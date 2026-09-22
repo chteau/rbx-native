@@ -293,7 +293,10 @@ impl Shell {
             .map(|(panel, icon, label)| {
                 let showing = self.is_panel_showing(panel);
                 tile(&self.ribbon_nav, label, icon, label, cx)
-                    .when(showing, |this| this.bg(tokens::ribbon_tab_active()))
+                    .when(showing, |this| {
+                        this.bg(tokens::accent_soft())
+                            .text_color(tokens::check_on())
+                    })
                     .on_click(cx.listener(move |shell, _, _, cx| {
                         shell.set_panel_open(panel, !showing, cx);
                     }))

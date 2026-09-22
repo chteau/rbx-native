@@ -36,7 +36,7 @@ select, stepper and checkbox gets its height, padding, radius and fill.
 
 The frame is deliberately incomplete in places — it names six ribbon
 categories and fills one, and its right dock is empty. Filling those gaps
-means extending the frame's own vocabulary (its surfaces, its 3px radius),
+means extending the frame's own vocabulary (its surfaces, its 5px radius),
 never inventing a second one.
 
 **Accessibility floors come from WCAG 2.1/2.2 and the WAI-ARIA APG**, via
@@ -127,12 +127,12 @@ Enter/Space/Down open one, and Escape backs out to wherever focus came from
 | Group | Tokens | Notes |
 |---|---|---|
 | Surfaces | `black` `#000000` · `dock` `#0D0D0D` · `chrome` `#171717` · `field_select` `#232323` · `tile` `#2F2F2F` · `menu_bar` `#1B1B1B` | ground → a dock's body → raised panel and every text field → a **dropdown** → a ribbon button. **Neutral** grey, deliberately: a cool cast on a tool whose job is showing somebody else's colours biases every material judged against it. Each step is **asserted** as a luminance delta, not a contrast ratio: this near black, a ratio is dominated by WCAG's `+0.05` term and scores two surfaces 20 levels apart about the same as two 4 apart |
-| States | `tab_active` (black 30%) · `ribbon_tab_active` (white 10%) · `hover` (white 8%) · `selection` (blue 35%) | the open document is *recessed*; everything else lights up |
-| Borders | `tab_border` `#333333` · `divider` `#3D3D3D` | between document tabs; between ribbon groups, along a dock's edge, and before its trailing cell |
+| States | `tab_active` (black 30%) · `ribbon_tab_active` (white 10%) · `hover` (white 5%) · `selection` (accent 68%) | the open document is *recessed*; everything else lights up |
+| Borders | `tab_border` / `divider` — white 11% (`#FFFFFF1C`) | between document tabs; between ribbon groups, along a dock's edge, and before its trailing cell |
 | Text | `text_full` → `text_disabled`, six steps of white alpha, plus `text_error` | alphas, not greys: changing a surface re-tints every label on it. There is no step below `text_disabled` — the one there used to be rendered read-only *values* at 1.7:1 |
-| Colour | `check_on` `#4A90D9` + `check_on_border`, `check_off` `#222222` + `check_off_border` | the **only** saturated hue in the design. It is the checkbox. Focus and selection borrow it; nothing else may |
-| Radius | `RADIUS` 3 · `RADIUS_TINY` 1 | that is the whole scale. A third radius is a bug |
-| Controls | `check_on` `#3AA0FF` · `check_off` + `check_off_border` · `tab_active_bar` · `select_inset` | the accent, the outline the frame's borderless checkbox needed, and the one compensation this file admits to (see §11) |
+| Colour | `check_on` `#6C7FDB` (the accent) + `check_off` + `check_off_border`, plus `accent_soft`/`accent_line` washes for active/selected chrome | the **only** saturated hue in the design. It is the checkbox and the accent. Focus and selection borrow it; nothing else may |
+| Radius | `RADIUS` 5 · `RADIUS_TINY` 1 | that is the whole scale. A third radius is a bug |
+| Controls | `check_on` `#6C7FDB` · `check_off` + `check_off_border` · `tab_active_bar` · `select_inset` | the accent, the outline the frame's borderless checkbox needed, and the one compensation this file admits to (see §11) |
 | Dimensions | `topbar_height()` 34 · `menu_bar_height()` 30 · `tabs_height()` 42 · `ribbon_tabs_height()` 28 · `ribbon_height()` 80 · `dock_tabs_height()` 38 · `dock_width()` 300 · `dock_height()` 178 (the strip and five rows) · `row_height()` 28 · `row_label_width()` 120 · `input_height()` 31 · `checkbox_size()` 15 in a `checkbox_target()` of 26 · … | **functions**, all scaled. Larger than the frame's own numbers because the type is (see below) |
 | Type | `text_md()` 14 · `text_sm()` 13 · `text_xs()` 11, with `line_md()`/`line_sm()`/`line_xs()` | 14 is the default; 13 is section headers and tooltips; 11 is a ribbon tile's label. The frame's own 9/8 is overruled — see §11 |
 | Toolkit | `FIELD_SIZE` | hand this to any `Input`/`Select`/`ColorPicker` so its text comes out at `TEXT_SM` — the toolkit's own smallest step is 12px |
@@ -301,7 +301,7 @@ than writing a sixth variant.
 | State | Treatment |
 |---|---|
 | Default | transparent bg, `text_label` (or `text_strong` where the frame is brighter) |
-| Hover | `hover` (white 8%), `text_full` |
+| Hover | `hover` (white 5%), `text_full` |
 | Pressed | `ribbon_tab_active` (white 10%) |
 | Active/committed | `ribbon_tab_active` for a ribbon tab or tool; `tab_active` for the open document; `selection` for a selected row |
 | Disabled | `text_disabled`, `cursor_not_allowed`, no hover/press, not clickable, tooltip saying why |
@@ -490,7 +490,7 @@ to lie — not a shortcut:
 | A select sitting level in its field box | `select_inset`, a measured 4.5px top pad | the toolkit's select trigger top-aligns its row inside whatever height it is given, and its text sits ~1.5px above that row's own centre. Measured against a plain text field in the same panel; re-measure if the toolkit is upgraded |
 | A borderless unticked checkbox | outlined at `check_off_border` | **overruled.** `#111` on a black dock is 1.11:1 — a WCAG 1.4.11 failure for a control whose only job is to show a state |
 | 10px checkbox, 20px icon buttons | 26px and 24px | WCAG 2.5.8's 24×24 target floor. 26 is the `InputsStyle` frame's own number |
-| 36px inputs, 8px radius, 1px border (the v5 fallback spec) | 31px, 3px radius, no border | the `InputsStyle` frame gives real numbers, and §7.1 says the frame wins over the fallback |
+| 36px inputs, 8px radius, 1px border (the v5 fallback spec) | 31px, 5px radius, no border | the `InputsStyle` frame gives real numbers, and §7.1 says the frame wins over the fallback |
 | Select chevron 12×12 at 12px inset | the toolkit's own, 15×15 at 8px | the frame's numbers, drawn by `Select` itself; `appearance(false)` removes its box but keeps its chevron |
 | 120ms 1.06× icon hover animation | instant size change | GPUI has no property transitions and cannot transform a `Div` |
 | One dock per edge, fixed | an edge holds a stack of docks, each with tabs, all of it draggable by the tab | the frame draws one arrangement and says nothing about changing it, so §1's rule applies and this file decides. A drop offers both readings — a dock's strip joins it, a dock's half splits the edge — because a single whole-dock target cannot ask which one you meant |

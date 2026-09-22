@@ -288,7 +288,10 @@ impl Shell {
                             .text_color(tokens::text_full())
                             .map(|this| {
                                 if ribbon_tab == active {
-                                    this.bg(tokens::ribbon_tab_active())
+                                    this.bg(tokens::accent_soft())
+                                        .text_color(tokens::check_on())
+                                        .border_b(px(2.))
+                                        .border_color(tokens::accent_line())
                                 } else {
                                     this.hover(|this| this.bg(tokens::hover()))
                                 }
@@ -649,8 +652,8 @@ pub(super) fn button(
         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
         .map(|this| {
             if selected {
-                this.bg(tokens::ribbon_tab_active())
-                    .text_color(tokens::text_full())
+                this.bg(tokens::accent_soft())
+                    .text_color(tokens::check_on())
             } else {
                 this.bg(tokens::field_select())
                     .text_color(tokens::text_label())
@@ -754,7 +757,9 @@ impl RenderOnce for Trigger {
         let accent = self.accent;
         self.element.when(self.open, |this| match accent {
             Some(accent) => super::ribbon::selected(this, accent),
-            None => this.bg(tokens::ribbon_tab_active()),
+            None => this
+                .bg(tokens::accent_soft())
+                .text_color(tokens::check_on()),
         })
     }
 }

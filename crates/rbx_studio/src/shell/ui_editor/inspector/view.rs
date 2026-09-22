@@ -68,8 +68,8 @@ pub(super) fn toggle(
     on: bool,
 ) -> Stateful<Div> {
     chrome::icon_button(id, icon, label).when(on, |this| {
-        this.bg(tokens::ribbon_tab_active())
-            .text_color(tokens::text_full())
+        this.bg(tokens::accent_soft())
+            .text_color(tokens::check_on())
     })
 }
 
