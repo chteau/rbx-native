@@ -22,6 +22,8 @@ impl gpui_kit::EventEmitter<CanvasUpdated> for WorkspaceView {}
 /// element as laid out, in paint order.
 pub(crate) struct Canvas {
     pub(crate) request: Request,
+    /// The size drawn — see `pump::canvas::Drawn::size`.
+    pub(crate) size: (u32, u32),
     pub(crate) image: Arc<RenderImage>,
     pub(crate) boxes: Vec<GuiBox>,
 }
@@ -47,7 +49,7 @@ impl WorkspaceView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let (width, height) = drawn.request.size;
+        let (width, height) = drawn.size;
         let Some(image) = frame::render_image(drawn.pixels, width, height) else {
             return;
         };
@@ -58,6 +60,7 @@ impl WorkspaceView {
         }
         self.canvas = Some(Canvas {
             request: drawn.request,
+            size: drawn.size,
             image,
             boxes: drawn.boxes,
         });

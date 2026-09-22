@@ -18,10 +18,10 @@ use crate::ui_canvas::{box_of, position_shift, shifted, udim2_text, Rect};
 impl Shell {
     /// Lines the selected elements' `mode` sides up on `axis`.
     pub(super) fn align_gui(&mut self, axis: usize, mode: Mode, cx: &mut Context<Self>) {
-        let Some((_, boxes)) = self.canvas_boxes(cx) else {
+        let Some((root, boxes)) = self.canvas_boxes(cx) else {
             return;
         };
-        let held = self.held_selection(&boxes);
+        let held = self.held_selection(&root, &boxes);
         let rects: Vec<(Ref, Rect)> = held
             .iter()
             .map(|h| (h.referent, h.rect.turned_bounds(h.rotation)))
@@ -41,10 +41,10 @@ impl Shell {
 
     /// Spaces the selected elements evenly along `axis`.
     pub(super) fn distribute_gui(&mut self, axis: usize, cx: &mut Context<Self>) {
-        let Some((_, boxes)) = self.canvas_boxes(cx) else {
+        let Some((root, boxes)) = self.canvas_boxes(cx) else {
             return;
         };
-        let held = self.held_selection(&boxes);
+        let held = self.held_selection(&root, &boxes);
         let rects: Vec<Rect> = held
             .iter()
             .map(|h| h.rect.turned_bounds(h.rotation))
@@ -105,22 +105,28 @@ impl Shell {
         {
             return false;
         }
-        let Some((screen, boxes)) = self.canvas_boxes(cx) else {
+        let Some((root, boxes)) = self.canvas_boxes(cx) else {
             return false;
         };
-        let parent_box = match parent == screen.referent {
-            true => Some(screen),
-            false => box_of(&boxes, parent).copied(),
-        };
-        let members: Option<Vec<Member>> = selected
+        let held: Option<Vec<Held>> = selected
             .iter()
-            .map(|&r| box_of(&boxes, r).and_then(|placed| Held::read_member(&self.dom, placed)))
+            .map(|&r| {
+                let placed = box_of(&boxes, r)?;
+                Held::read(&self.dom, &self.database, placed, &root, &boxes)
+            })
             .collect();
-        let (Some(parent_box), Some(members)) = (parent_box, members) else {
+        let Some(held) = held else {
             return false;
         };
-        let Some(grouping) = arrange::group(&members, [parent_box.rect[2], parent_box.rect[3]])
-        else {
+        // Every member resolves in the same box — they share a parent — and
+        // `None` there means a `ScrollingFrame`'s canvas, which the group
+        // then measures from its first member (see `arrange::group`).
+        let content = held
+            .first()
+            .and_then(|first| first.parent)
+            .map(|parent| parent.content);
+        let members: Vec<Member> = held.iter().map(Held::member).collect();
+        let Some(grouping) = arrange::group(&members, content) else {
             return false;
         };
 

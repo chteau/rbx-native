@@ -9,6 +9,7 @@ use rbx_viewer::GuiBox;
 use super::super::super::Shell;
 use super::super::is_gui_object;
 use super::{Gesture, Held, ROTATE_STEP, SNAP_REACH};
+use crate::ui_canvas::carry::{self, Carried};
 use crate::ui_canvas::guides;
 use crate::ui_canvas::{
     angle_of, box_of, position_shift, resize, rotate, shifted, udim2_text, Rect,
@@ -18,7 +19,11 @@ impl Shell {
     /// Every selected element a move carries: the laid-out `GuiObject`s,
     /// less any whose ancestor is carried too — moving the parent already
     /// moves it.
-    pub(in crate::shell::ui_editor) fn held_selection(&self, boxes: &[GuiBox]) -> Vec<Held> {
+    pub(in crate::shell::ui_editor) fn held_selection(
+        &self,
+        root: &GuiBox,
+        boxes: &[GuiBox],
+    ) -> Vec<Held> {
         let selected = self.selected_all();
         selected
             .iter()
@@ -34,14 +39,15 @@ impl Shell {
                 true
             })
             .filter_map(|&referent| box_of(boxes, referent))
-            .filter_map(|placed| Held::read(&self.dom, placed))
+            .filter_map(|placed| Held::read(&self.dom, &self.database, placed, root, boxes))
             .collect()
     }
 
-    /// The boxes a drag of `held` snaps onto: its siblings and its parent —
-    /// the screen's frame when the parent is the screen.
+    /// The boxes a drag of `held` snaps onto: its siblings, and its
+    /// parent's box and the padded box inside it — the screen's frame when
+    /// the parent is the screen.
     fn snap_targets(&self, held: &[Held], cx: &App) -> Vec<Rect> {
-        let Some((screen, boxes)) = self.canvas_boxes(cx) else {
+        let Some((_, boxes)) = self.canvas_boxes(cx) else {
             return Vec::new();
         };
         let Some(parent) = held
@@ -61,11 +67,12 @@ impl Shell {
             .filter_map(|child| box_of(&boxes, child))
             .map(|placed| Rect::of(placed).turned_bounds(placed.rotation))
             .collect();
-        let parent_box = match parent == screen.referent {
-            true => Some(screen),
-            false => box_of(&boxes, parent).copied(),
-        };
-        targets.extend(parent_box.map(|placed| Rect::of(&placed)));
+        if let Some(frame) = held.first().and_then(|first| first.parent) {
+            targets.push(frame.rect);
+            if frame.content != frame.rect {
+                targets.push(frame.content);
+            }
+        }
         targets
     }
 
@@ -123,17 +130,18 @@ impl Shell {
                 at: start,
                 held,
                 handle,
+                frame: (grab, turn),
                 first,
                 ..
             } => {
                 let travel = [0, 1].map(|axis| (at[axis] - start[axis]) / view.zoom);
-                let size = [held.rect.w, held.rect.h];
-                let mut local = rotate(travel, -held.rotation);
+                let size = [grab.w, grab.h];
+                let mut local = rotate(travel, -turn);
                 self.ui.guides.clear();
-                // Snapping an edge is only meaningful while the box is
+                // Snapping an edge is only meaningful while the frame is
                 // square to the screen; a turned one has no edge on a line.
-                let targets = match snapping && held.rotation == 0.0 {
-                    true => self.snap_targets(std::slice::from_ref(&held), cx),
+                let targets = match snapping && turn == 0.0 {
+                    true => self.snap_targets(&held, cx),
                     false => Vec::new(),
                 };
                 let sides = [handle.0, handle.1];
@@ -142,7 +150,7 @@ impl Shell {
                         continue;
                     }
                     let step = resize(handle, size, local, false);
-                    let (start_edge, length) = held.rect.along(axis);
+                    let (start_edge, length) = grab.along(axis);
                     let centre = start_edge + length * 0.5 + step.centre[axis];
                     let half = (length + step.grow[axis]) * 0.5;
                     let edge = centre + f32::from(sides[axis]) * half;
@@ -152,53 +160,93 @@ impl Shell {
                         local[axis] += snap;
                     }
                 }
-                let step = resize(handle, size, local, modifiers.shift);
-                let centre = rotate(step.centre, held.rotation);
-                let rect = Rect {
-                    x: held.rect.x + centre[0] - step.grow[0] * 0.5,
-                    y: held.rect.y + centre[1] - step.grow[1] * 0.5,
-                    w: held.rect.w + step.grow[0],
-                    h: held.rect.h + step.grow[1],
+                // One element whose shape an aspect constraint decides keeps
+                // its shape: a free stretch would only snap back once drawn.
+                let keep = modifiers.shift || matches!(held.as_slice(), [one] if one.aspect);
+                let step = resize(handle, size, local, keep);
+                let centre = rotate(step.centre, turn);
+                let shown = Rect {
+                    x: grab.x + centre[0] - step.grow[0] * 0.5,
+                    y: grab.y + centre[1] - step.grow[1] * 0.5,
+                    w: grab.w + step.grow[0],
+                    h: grab.h + step.grow[1],
                 };
                 if !targets.is_empty() {
-                    self.ui.guides = guides::guides(&rect, &targets);
+                    self.ui.guides = guides::guides(&shown, &targets);
                 }
-                let moved = position_shift(centre, held.parent_rotation(), held.anchor, step.grow);
-                let writes = [
-                    (
-                        held.referent,
-                        "Size",
-                        udim2_text(shifted(held.size, step.grow)),
-                    ),
-                    (
-                        held.referent,
+                let carried: Vec<Carried> = held.iter().map(Held::carried).collect();
+                let moved = carry::scale(&grab, turn, &step, &carried);
+                let mut writes: Vec<(Ref, &str, String)> = Vec::with_capacity(held.len() * 2);
+                let mut preview = Vec::with_capacity(held.len());
+                for (h, m) in held.iter().zip(&moved) {
+                    // `UIScale` multiplies the whole resolved `Size`, so a
+                    // pixel on screen is less than a pixel of offset.
+                    let offsets = m.grow.map(|grow| grow / h.size_scale);
+                    let position = position_shift(m.centre, h.parent_rotation(), h.anchor, m.grow);
+                    writes.push((h.referent, "Size", udim2_text(shifted(h.size, offsets))));
+                    writes.push((
+                        h.referent,
                         "Position",
-                        udim2_text(shifted(held.position, moved)),
-                    ),
-                ];
+                        udim2_text(shifted(h.position, position)),
+                    ));
+                    let rect = Rect {
+                        x: h.rect.x + m.centre[0] - m.grow[0] * 0.5,
+                        y: h.rect.y + m.centre[1] - m.grow[1] * 0.5,
+                        w: h.rect.w + m.grow[0],
+                        h: h.rect.h + m.grow[1],
+                    };
+                    preview.push((h.referent, rect, h.rotation));
+                }
                 self.write_drag(first, &writes, cx);
                 Gesture::Resize {
                     at: start,
                     held,
                     handle,
-                    rect,
+                    frame: (grab, turn),
+                    shown: (shown, turn),
+                    preview,
                     first: false,
                 }
             }
             Gesture::Rotate {
-                held, from, first, ..
+                held,
+                frame,
+                from,
+                first,
+                ..
             } => {
-                let now = angle_of(held.rect.centre(), view.to_canvas(at));
-                let mut rotation = held.own_rotation + (now - from);
+                let pivot = frame.0.centre();
+                let mut delta = angle_of(pivot, view.to_canvas(at)) - from;
                 if modifiers.shift {
-                    rotation = round_to(rotation, ROTATE_STEP);
+                    // One element lands on a round angle; a selection turns
+                    // by one, since its members need not share an angle.
+                    delta = match held.as_slice() {
+                        [one] => round_to(one.own_rotation + delta, ROTATE_STEP) - one.own_rotation,
+                        _ => round_to(delta, ROTATE_STEP),
+                    };
                 }
-                let text = format!("{}", (rotation * 100.0).round() / 100.0);
-                self.write_drag(first, &[(held.referent, "Rotation", text)], cx);
+                let carried: Vec<Carried> = held.iter().map(Held::carried).collect();
+                let moved = carry::turn(pivot, delta, &carried);
+                let mut writes: Vec<(Ref, &str, String)> = Vec::with_capacity(held.len() * 2);
+                for (h, shift) in held.iter().zip(moved) {
+                    let rotation = ((h.own_rotation + delta) * 100.0).round() / 100.0;
+                    writes.push((h.referent, "Rotation", format!("{rotation}")));
+                    if shift != [0.0, 0.0] {
+                        let position =
+                            position_shift(shift, h.parent_rotation(), h.anchor, [0.0; 2]);
+                        writes.push((
+                            h.referent,
+                            "Position",
+                            udim2_text(shifted(h.position, position)),
+                        ));
+                    }
+                }
+                self.write_drag(first, &writes, cx);
                 Gesture::Rotate {
                     held,
+                    frame,
                     from,
-                    rotation,
+                    delta,
                     first: false,
                 }
             }

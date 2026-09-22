@@ -375,14 +375,7 @@ impl Headless {
         (width, height): (u32, u32),
         backdrop: [f32; 3],
     ) -> Result<GuiCanvas, String> {
-        let (pixels, boxes, size) = self
-            .offscreen
-            .gui_canvas((width, height), screen, backdrop)?;
-        Ok(GuiCanvas {
-            pixels,
-            size,
-            boxes,
-        })
+        self.offscreen.gui_canvas((width, height), screen, backdrop)
     }
 
     /// Advances the camera by `dt` and reports whether the next frame would

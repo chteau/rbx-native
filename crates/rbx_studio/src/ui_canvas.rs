@@ -10,6 +10,7 @@
 //! distribute and group geometry.
 
 pub(crate) mod arrange;
+pub(crate) mod carry;
 pub(crate) mod guides;
 
 use rbx_dom::Ref;
@@ -82,7 +83,11 @@ pub(crate) struct Rect {
 
 impl Rect {
     pub(crate) fn of(placed: &GuiBox) -> Rect {
-        let [x, y, w, h] = placed.rect;
+        Rect::from_array(placed.rect)
+    }
+
+    /// `x, y, width, height`, the way `rbx_viewer::GuiBox` spells a box.
+    pub(crate) fn from_array([x, y, w, h]: [f32; 4]) -> Rect {
         Rect { x, y, w, h }
     }
 
@@ -172,9 +177,13 @@ pub(crate) fn rotate([x, y]: [f32; 2], degrees: f32) -> [f32; 2] {
 
 /// Whether `point` falls inside `placed` as drawn, rotation included.
 pub(crate) fn covers(placed: &GuiBox, point: [f32; 2]) -> bool {
-    let rect = Rect::of(placed);
+    covers_turned(&Rect::of(placed), placed.rotation, point)
+}
+
+/// Whether `point` falls inside `rect` turned `degrees` about its centre.
+pub(crate) fn covers_turned(rect: &Rect, degrees: f32, point: [f32; 2]) -> bool {
     let c = rect.centre();
-    let [x, y] = rotate([point[0] - c[0], point[1] - c[1]], -placed.rotation);
+    let [x, y] = rotate([point[0] - c[0], point[1] - c[1]], -degrees);
     x.abs() <= rect.w * 0.5 && y.abs() <= rect.h * 0.5
 }
 

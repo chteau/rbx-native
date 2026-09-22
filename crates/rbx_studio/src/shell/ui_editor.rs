@@ -54,6 +54,8 @@ pub(crate) const UI_EDITOR_VARIABLE: &str = "RBX_STUDIO_UI_EDITOR";
 const CANVAS_HIDES: [Panel; 3] = [Panel::Properties, Panel::Output, Panel::Viewport];
 
 const SCREEN_CLASS: &str = "ScreenGui";
+/// What a canvas can put up: every `LayerCollector` a place holds.
+const ROOT_CLASSES: [&str; 3] = [SCREEN_CLASS, "BillboardGui", "SurfaceGui"];
 const GUI_OBJECT_CLASS: &str = "GuiObject";
 
 /// The document's two sub-tabs.
@@ -160,23 +162,30 @@ impl UiEditor {
     }
 }
 
-/// The `ScreenGui` `referent` is, or sits in — `None` outside every one,
-/// which includes a `BillboardGui`/`SurfaceGui`: those are drawn in the
-/// world, at a canvas size the part they sit on decides.
-pub(super) fn screen_of(
-    dom: &WeakDom,
-    database: &ReflectionDatabase,
-    referent: Ref,
-) -> Option<Ref> {
+/// The `ScreenGui`, `BillboardGui` or `SurfaceGui` `referent` is, or sits
+/// in — the nearest, since that is the one that draws it — or `None`
+/// outside every one.
+pub(super) fn root_of(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> Option<Ref> {
     let mut current = Some(referent);
     while let Some(reference) = current {
         let instance = dom.get(reference)?;
-        if database.is_subclass_of(instance.class(), SCREEN_CLASS) {
+        if ROOT_CLASSES
+            .iter()
+            .any(|class| database.is_subclass_of(instance.class(), class))
+        {
             return Some(reference);
         }
         current = dom.parent(reference);
     }
     None
+}
+
+/// Whether the canvas's root takes the resolution the toolbar picks: a
+/// `ScreenGui` is a device's screen, where a `BillboardGui`/`SurfaceGui`'s
+/// canvas size is its own (see `rbx_viewer::GuiCanvas::size`).
+pub(super) fn takes_resolution(dom: &WeakDom, database: &ReflectionDatabase, root: Ref) -> bool {
+    dom.get(root)
+        .is_none_or(|instance| database.is_subclass_of(instance.class(), SCREEN_CLASS))
 }
 
 /// Whether `referent` is a `GuiObject` — something with a `Position` and a
@@ -264,12 +273,13 @@ impl Shell {
         });
     }
 
-    /// Puts the screen the selection is in on the canvas — called on every
-    /// selection change, from wherever it came.
+    /// Puts the screen the selection is in on the canvas — a
+    /// `BillboardGui`/`SurfaceGui` as much as a `ScreenGui` — called on
+    /// every selection change, from wherever it came.
     pub(super) fn ui_follow_selection(&mut self) {
         let screen = self
             .selected()
-            .and_then(|reference| screen_of(&self.dom, &self.database, reference));
+            .and_then(|reference| root_of(&self.dom, &self.database, reference));
         if screen.is_some() && screen != self.ui.screen {
             self.ui.screen = screen;
             self.ui.fitted = true;
@@ -288,6 +298,18 @@ impl Shell {
             screen,
             size: self.ui.resolution,
         })
+    }
+
+    /// The size the canvas's root is laid out at: the frame on hand when it
+    /// is the one asked for — the only word on a `BillboardGui`/
+    /// `SurfaceGui`'s own size — or the resolution picked.
+    pub(super) fn canvas_size(&self, cx: &App) -> (u32, u32) {
+        let request = self.canvas_request();
+        self.viewport
+            .read(cx)
+            .canvas()
+            .filter(|canvas| Some(canvas.request) == request)
+            .map_or(self.ui.resolution, |canvas| canvas.size)
     }
 
     /// The document itself: the sub-tab strip over whichever sub-tab is up.
@@ -357,10 +379,11 @@ mod tests {
     use rbx_dom::WeakDom;
     use rbx_reflection::ReflectionDatabase;
 
-    use super::{is_gui_object, screen_of};
+    use super::{is_gui_object, root_of, takes_resolution};
 
-    // What decides which screen is on the canvas: the one the selection is
-    // in, found from any depth, and none for a canvas the world draws.
+    // What decides which root is on the canvas: the nearest the selection
+    // is in, found from any depth — a part's `SurfaceGui` as much as a
+    // `ScreenGui` — and whether the toolbar's resolution applies to it.
     #[test]
     fn the_canvas_screen_is_the_screen_gui_the_selection_sits_in() {
         let database = ReflectionDatabase::embedded();
@@ -374,10 +397,12 @@ mod tests {
         let surface = dom.new_instance("SurfaceGui", "Face", Some(sign));
         let text = dom.new_instance("TextLabel", "Text", Some(surface));
 
-        assert_eq!(screen_of(&dom, &database, hud), Some(hud));
-        assert_eq!(screen_of(&dom, &database, label), Some(hud));
-        assert_eq!(screen_of(&dom, &database, text), None);
-        assert_eq!(screen_of(&dom, &database, sign), None);
+        assert_eq!(root_of(&dom, &database, hud), Some(hud));
+        assert_eq!(root_of(&dom, &database, label), Some(hud));
+        assert_eq!(root_of(&dom, &database, text), Some(surface));
+        assert_eq!(root_of(&dom, &database, sign), None);
+        assert!(takes_resolution(&dom, &database, hud));
+        assert!(!takes_resolution(&dom, &database, surface), "its own size");
 
         assert!(is_gui_object(&dom, &database, label));
         assert!(!is_gui_object(&dom, &database, folder));

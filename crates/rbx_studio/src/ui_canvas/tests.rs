@@ -2,6 +2,7 @@ use rbx_dom::Ref;
 use rbx_viewer::GuiBox;
 
 use super::arrange::{self, Grouping, Member};
+use super::carry::{self, Carried};
 use super::guides::{self, Guide};
 use super::*;
 use crate::align::Mode;
@@ -15,6 +16,9 @@ fn placed(id: u32, r: Rect, rotation: f32) -> GuiBox {
         referent: Ref::new(id),
         rect: [r.x, r.y, r.w, r.h],
         rotation,
+        content: Some([r.x, r.y, r.w, r.h]),
+        size_scale: 1.0,
+        aspect: false,
     }
 }
 
@@ -188,24 +192,38 @@ fn distributing_evens_out_the_gaps_between_the_ends() {
     assert_eq!(arrange::distribute(&boxes[..2], 0), [0.0, 0.0]);
 }
 
-// Two offset-placed members of a parent at (100, 100), one anchored at its
-// centre: the frame fits round both and each keeps its place on screen.
+fn member(r: Rect, anchor: [f32; 2], position: Udim2, size: Udim2) -> Member {
+    Member {
+        rect: r,
+        anchor,
+        position,
+        size,
+        size_scale: 1.0,
+        size_axes: [0, 1],
+    }
+}
+
+// Two offset-placed members of a parent whose content box starts at
+// (100, 100), one anchored at its centre: the frame fits round both and each
+// keeps its place on screen.
 #[test]
 fn a_group_frame_fits_its_members_without_moving_them() {
     let members = [
-        Member {
-            rect: rect(110.0, 120.0, 20.0, 20.0),
-            anchor: [0.0, 0.0],
-            position: [(0.0, 10), (0.0, 20)],
-        },
-        Member {
-            rect: rect(150.0, 110.0, 10.0, 40.0),
-            anchor: [0.5, 0.5],
-            position: [(0.0, 55), (0.0, 30)],
-        },
+        member(
+            rect(110.0, 120.0, 20.0, 20.0),
+            [0.0, 0.0],
+            [(0.0, 10), (0.0, 20)],
+            [(0.0, 20), (0.0, 20)],
+        ),
+        member(
+            rect(150.0, 110.0, 10.0, 40.0),
+            [0.5, 0.5],
+            [(0.0, 55), (0.0, 30)],
+            [(0.0, 10), (0.0, 40)],
+        ),
     ];
     assert_eq!(
-        arrange::group(&members, [400.0, 300.0]),
+        arrange::group(&members, Some(rect(100.0, 100.0, 400.0, 300.0))),
         Some(Grouping {
             frame: ([(0.0, 10), (0.0, 10)], [(0.0, 50), (0.0, 40)]),
             members: vec![
@@ -214,6 +232,124 @@ fn a_group_frame_fits_its_members_without_moving_them() {
             ],
         })
     );
+}
+
+// Scale stays scale — of the new frame for a member, of the parent for the
+// frame — and pixels stay pixels; `UIScale` comes back out of a size, and a
+// `RelativeXX` height is taken against the frame's width.
+#[test]
+fn a_group_keeps_each_value_in_the_mode_it_was_written_in() {
+    let mut scaled = member(
+        rect(250.0, 50.0, 50.0, 100.0),
+        [0.0, 0.0],
+        [(0.0, 250), (0.0, 50)],
+        [(0.0, 25), (0.0, 50)],
+    );
+    scaled.size_scale = 2.0;
+    let mut wide = member(
+        rect(100.0, 150.0, 50.0, 50.0),
+        [0.0, 0.0],
+        [(0.0, 100), (0.0, 150)],
+        [(0.0, 50), (0.25, 0)],
+    );
+    wide.size_axes = [0, 0];
+    let members = [
+        member(
+            rect(100.0, 50.0, 100.0, 50.0),
+            [0.0, 0.0],
+            [(0.25, 0), (0.25, 0)],
+            [(0.25, 0), (0.25, 0)],
+        ),
+        scaled,
+        wide,
+    ];
+    let grouping = arrange::group(&members, Some(rect(0.0, 0.0, 400.0, 200.0))).unwrap();
+    assert_eq!(
+        grouping.frame,
+        ([(0.25, 0), (0.25, 0)], [(0.5, 0), (0.75, 0)]),
+        "a member used scale, so the frame does too"
+    );
+    assert_eq!(
+        grouping.members,
+        [
+            ([(0.0, 0), (0.0, 0)], [(0.5, 0), (50.0 / 150.0, 0)]),
+            ([(0.0, 150), (0.0, 0)], [(0.0, 25), (0.0, 50)]),
+            ([(0.0, 0), (0.0, 100)], [(0.0, 50), (0.25, 0)]),
+        ]
+    );
+}
+
+// Inside a `ScrollingFrame` there is no content box to measure against: the
+// origin comes back from the first member's pixels, and pixels go out.
+#[test]
+fn a_group_in_a_scrolled_canvas_is_written_in_pixels() {
+    let members = [member(
+        rect(130.0, 40.0, 10.0, 10.0),
+        [0.0, 0.0],
+        [(0.0, 30), (0.0, 40)],
+        [(0.0, 10), (0.0, 10)],
+    )];
+    let grouping = arrange::group(&members, None).unwrap();
+    assert_eq!(
+        grouping.frame,
+        ([(0.0, 30), (0.0, 40)], [(0.0, 10), (0.0, 10)])
+    );
+}
+
+// One element carried by a frame that is its own box is exactly a plain
+// resize of it: the same growth, the centre moved the same way.
+#[test]
+fn one_element_carried_is_its_own_resize() {
+    let frame = rect(0.0, 0.0, 100.0, 50.0);
+    let step = resize(Handle(1, 0), [100.0, 50.0], [10.0, 0.0], false);
+    let moved = carry::scale(
+        &frame,
+        30.0,
+        &step,
+        &[Carried {
+            centre: frame.centre(),
+            size: [100.0, 50.0],
+            rotation: 30.0,
+        }],
+    );
+    assert!(close(moved[0].centre, rotate(step.centre, 30.0)));
+    assert!(close(moved[0].grow, step.grow));
+}
+
+// A selection stretched half again across: each element's place scales from
+// the fixed edge, and a quarter-turned one grows along its own height.
+#[test]
+fn a_selection_stretches_as_one() {
+    let frame = rect(0.0, 0.0, 200.0, 100.0);
+    let step = resize(Handle(1, 0), [200.0, 100.0], [100.0, 0.0], false);
+    let carried = [
+        Carried {
+            centre: [50.0, 50.0],
+            size: [100.0, 100.0],
+            rotation: 0.0,
+        },
+        Carried {
+            centre: [150.0, 50.0],
+            size: [100.0, 100.0],
+            rotation: 90.0,
+        },
+    ];
+    let moved = carry::scale(&frame, 0.0, &step, &carried);
+    assert!(close(moved[0].centre, [25.0, 0.0]));
+    assert!(close(moved[0].grow, [50.0, 0.0]));
+    assert!(close(moved[1].centre, [75.0, 0.0]));
+    assert!(close(moved[1].grow, [0.0, 50.0]));
+}
+
+#[test]
+fn a_selection_turns_about_one_pivot() {
+    let carried = [Carried {
+        centre: [150.0, 50.0],
+        size: [10.0, 10.0],
+        rotation: 0.0,
+    }];
+    let moved = carry::turn([100.0, 50.0], 90.0, &carried);
+    assert!(close(moved[0], [-50.0, 50.0]));
 }
 
 // Half of a 400-wide parent is 200 pixels however it is spelt: offset in,
@@ -231,19 +367,6 @@ fn an_offset_folds_into_the_scale_it_stands_for() {
     );
     assert!(arrange::is_fixed([(0.0, 50), (0.0, 10)]));
     assert!(!arrange::is_fixed([(1.0, 0), (0.0, 10)]));
-}
-
-// A member placed by scale still gives the parent's origin back: half of a
-// 400-wide parent is 200.
-#[test]
-fn a_scaled_member_still_finds_the_parents_origin() {
-    let members = [Member {
-        rect: rect(300.0, 0.0, 10.0, 10.0),
-        anchor: [0.0, 0.0],
-        position: [(0.5, 0), (0.0, 0)],
-    }];
-    let grouping = arrange::group(&members, [400.0, 300.0]).unwrap();
-    assert_eq!(grouping.frame.0, [(0.0, 200), (0.0, 0)]);
 }
 
 #[test]

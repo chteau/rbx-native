@@ -134,6 +134,51 @@ impl Shell {
             cx,
         );
 
+        // A `BillboardGui`/`SurfaceGui` is the size its own properties and
+        // its part make it: nothing a device preset could change, so the
+        // strip says what that size is instead of offering one.
+        let own_size = self
+            .ui
+            .screen
+            .is_some_and(|root| !super::takes_resolution(&self.dom, &self.database, root));
+        let screen: Vec<AnyElement> = match own_size {
+            true => {
+                let (w, h) = self.canvas_size(cx);
+                vec![div()
+                    .id("ui-own-size")
+                    .px(px(8.))
+                    .text_size(tokens::text_sm())
+                    .text_color(tokens::text_label())
+                    .tooltip(|window, cx| {
+                        super::super::tooltip::text(
+                            "A BillboardGui or SurfaceGui is drawn at its own canvas size",
+                            window,
+                            cx,
+                        )
+                    })
+                    .child(format!("{w}×{h} canvas"))
+                    .into_any_element()]
+            }
+            false => vec![
+                resolution.into_any_element(),
+                size_field(self.tab_order.next(), &self.ui.width).into_any_element(),
+                div()
+                    .text_color(tokens::text_muted())
+                    .child("×")
+                    .into_any_element(),
+                size_field(self.tab_order.next(), &self.ui.height).into_any_element(),
+                chrome::icon_button(
+                    "ui-orientation",
+                    IconName::RotateCw,
+                    "Turn the screen: portrait ⇄ landscape",
+                )
+                .on_click(cx.listener(move |shell, _, _, cx| {
+                    shell.set_resolution((height, width), cx);
+                }))
+                .into_any_element(),
+            ],
+        };
+
         let zoom = format!("{:.0}%", self.ui.view.zoom * 100.0);
         h_flex()
             .flex_1()
@@ -146,20 +191,7 @@ impl Shell {
             .child(group)
             .child(responsive)
             .child(div().flex_1())
-            .child(resolution)
-            .child(size_field(self.tab_order.next(), &self.ui.width))
-            .child(div().text_color(tokens::text_muted()).child("×"))
-            .child(size_field(self.tab_order.next(), &self.ui.height))
-            .child(
-                chrome::icon_button(
-                    "ui-orientation",
-                    IconName::RotateCw,
-                    "Turn the screen: portrait ⇄ landscape",
-                )
-                .on_click(cx.listener(move |shell, _, _, cx| {
-                    shell.set_resolution((height, width), cx);
-                })),
-            )
+            .children(screen)
             .child(separator())
             .child(
                 chrome::icon_button("ui-zoom-out", IconName::ZoomOut, "Zoom out").on_click(

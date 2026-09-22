@@ -3,24 +3,24 @@
 //! staying the same number of pixels on every device.
 //!
 //! Every `Position` and `Size` offset is folded into its scale against the
-//! parent's content as laid out right now (`ui_canvas::arrange::to_scale`),
-//! so nothing moves at the resolution on the canvas; and every element that
-//! was pixels alone on both axes gets a `UIAspectRatioConstraint` at the
-//! shape it has, so a square button stays a square on a phone. One undo
+//! parent's content box as laid out right now — `UIPadding` taken off, a
+//! `Size` measured along the axes its `SizeConstraint` names; `UIScale`
+//! multiplies both halves alike and so cancels — using
+//! `ui_canvas::arrange::to_scale`, so nothing moves at the resolution on the
+//! canvas; and every element that was pixels alone on both axes, and is not
+//! already shaped by one, gets a `UIAspectRatioConstraint` at the shape it
+//! has, so a square button stays a square on a phone. One undo
 //! step for the lot, like any other edit.
 
 use gpui_kit::*;
 use rbx_dom::{Ref, WeakDom};
-use rbx_viewer::GuiBox;
 
 use super::super::Shell;
 use super::gesture::Held;
-use super::is_gui_object;
 use crate::properties;
 use crate::ui_canvas::arrange::{is_fixed, to_scale};
-use crate::ui_canvas::{box_of, udim2_text};
+use crate::ui_canvas::{box_of, udim2_text, Rect};
 
-const SCROLLING_CLASS: &str = "ScrollingFrame";
 const ASPECT_CLASS: &str = "UIAspectRatioConstraint";
 
 impl Shell {
@@ -38,9 +38,10 @@ impl Shell {
             roots.push(screen.referent);
         }
 
-        // Every laid-out `GuiObject` at or under the roots, each with the
-        // extent its parent lays it out in.
-        let mut targets: Vec<(Held, [f32; 2])> = Vec::new();
+        // Every laid-out `GuiObject` at or under the roots whose parent's
+        // box is known — not one inside a `ScrollingFrame`, which resolves
+        // against a canvas the editor is not shown.
+        let mut targets: Vec<(Held, Rect)> = Vec::new();
         let mut pending = roots;
         while let Some(referent) = pending.pop() {
             if let Some(instance) = self.dom.get(referent) {
@@ -49,10 +50,10 @@ impl Shell {
             if targets.iter().any(|(held, _)| held.referent == referent) {
                 continue;
             }
-            let held = box_of(&boxes, referent).and_then(|placed| Held::read(&self.dom, placed));
-            let extent = self.content_extent(referent, &screen, &boxes);
-            if let (Some(held), Some(extent)) = (held, extent) {
-                targets.push((held, extent));
+            let held = box_of(&boxes, referent)
+                .and_then(|placed| Held::read(&self.dom, &self.database, placed, &screen, &boxes));
+            if let Some((held, parent)) = held.and_then(|held| Some((held, held.parent?))) {
+                targets.push((held, parent.content));
             }
         }
         if targets.is_empty() {
@@ -62,26 +63,24 @@ impl Shell {
         self.push_history();
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
         let mut written = Ok(());
-        for (held, extent) in &targets {
+        for (held, content) in &targets {
+            // Against the parent's padded box: a `Position` along both of
+            // its axes, a `Size` along whichever `SizeConstraint` names.
+            let extent = [content.w, content.h];
+            let size_extent = held.size_axes.map(|axis| extent[axis]);
             let mut writes = vec![
                 (
                     held.referent,
                     "Position",
-                    udim2_text(to_scale(held.position, *extent)),
+                    udim2_text(to_scale(held.position, extent)),
                 ),
                 (
                     held.referent,
                     "Size",
-                    udim2_text(to_scale(held.size, *extent)),
+                    udim2_text(to_scale(held.size, size_extent)),
                 ),
             ];
-            let shaped = dom.get(held.referent).is_some_and(|instance| {
-                instance.children().iter().any(|&child| {
-                    dom.get(child)
-                        .is_some_and(|c| self.database.is_subclass_of(c.class(), ASPECT_CLASS))
-                })
-            });
-            if is_fixed(held.size) && !shaped && held.rect.h > 0.0 {
+            if is_fixed(held.size) && !held.aspect && held.rect.h > 0.0 {
                 let constraint = dom.new_instance(ASPECT_CLASS, ASPECT_CLASS, Some(held.referent));
                 writes.push((
                     constraint,
@@ -109,29 +108,5 @@ impl Shell {
             self.output.push_warning(&format!("make responsive: {err}"));
         }
         cx.notify();
-    }
-
-    /// The pixels `referent`'s `UDim2`s resolve against: its nearest
-    /// `GuiObject` ancestor's box, or the screen's own frame — `None` inside
-    /// a `ScrollingFrame`, whose children resolve against its canvas rather
-    /// than the window the box is. A `UIPadding` on the parent is not taken
-    /// off; the canvas lays out boxes, not the content inside them.
-    fn content_extent(&self, referent: Ref, screen: &GuiBox, boxes: &[GuiBox]) -> Option<[f32; 2]> {
-        let mut up = self.dom.parent(referent);
-        while let Some(parent) = up {
-            if parent == screen.referent {
-                return Some([screen.rect[2], screen.rect[3]]);
-            }
-            if is_gui_object(&self.dom, &self.database, parent) {
-                let class = self.dom.get(parent)?.class();
-                if self.database.is_subclass_of(class, SCROLLING_CLASS) {
-                    return None;
-                }
-                let placed = box_of(boxes, parent)?;
-                return Some([placed.rect[2], placed.rect[3]]);
-            }
-            up = self.dom.parent(parent);
-        }
-        None
     }
 }

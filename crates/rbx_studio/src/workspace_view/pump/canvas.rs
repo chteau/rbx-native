@@ -25,6 +25,9 @@ pub(crate) struct Request {
 /// A drawn canvas, as the UI thread receives it.
 pub(crate) struct Drawn {
     pub(crate) request: Request,
+    /// What was drawn: `request.size`, or a `BillboardGui`/`SurfaceGui`'s
+    /// own canvas size.
+    pub(crate) size: (u32, u32),
     pub(crate) pixels: Vec<u8>,
     pub(crate) boxes: Vec<GuiBox>,
 }
@@ -59,6 +62,7 @@ impl Canvas {
         match viewer.render_gui(request.screen, request.size, BACKDROP) {
             Ok(canvas) => Some(Drawn {
                 request,
+                size: canvas.size,
                 pixels: canvas.pixels,
                 boxes: canvas.boxes,
             }),

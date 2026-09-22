@@ -19,6 +19,7 @@ use rbx_dom::Ref;
 use rbx_viewer::GuiBox;
 
 use super::super::Shell;
+use crate::ui_canvas::carry;
 use crate::ui_canvas::{self, angle_of, box_of, rotate, Handle, Rect};
 
 /// How far the pointer travels, in panel pixels, before a press is a drag.
@@ -63,17 +64,24 @@ pub(super) enum Gesture {
         shift: [f32; 2],
         first: bool,
     },
+    /// The selection's frame — its one element's own box, or the box
+    /// round several — dragged by a handle: `frame` as grabbed, `shown` as
+    /// it stands now, and each element's box as it stands now.
     Resize {
         at: [f32; 2],
-        held: Held,
+        held: Vec<Held>,
         handle: Handle,
-        rect: Rect,
+        frame: (Rect, f32),
+        shown: (Rect, f32),
+        preview: Vec<(Ref, Rect, f32)>,
         first: bool,
     },
+    /// The selection turned about its frame's centre by `delta` degrees.
     Rotate {
-        held: Held,
+        held: Vec<Held>,
+        frame: (Rect, f32),
         from: f32,
-        rotation: f32,
+        delta: f32,
         first: bool,
     },
     Marquee {
@@ -109,13 +117,15 @@ impl Shell {
         ]
     }
 
-    /// The one selected element the handles are drawn on: exactly one
-    /// `GuiObject` selected, and laid out.
-    pub(super) fn handled(&self, boxes: &[GuiBox]) -> Option<GuiBox> {
-        match self.selected_all() {
-            [only] => box_of(boxes, *only).copied(),
-            _ => None,
-        }
+    /// The frame the handles are drawn on: the one selected element's own
+    /// box, turned as it is, or the box round several — see [`frame_of`].
+    pub(super) fn selection_frame(&self, boxes: &[GuiBox]) -> Option<(Rect, f32)> {
+        frame_of(
+            self.selected_all()
+                .iter()
+                .filter_map(|&referent| box_of(boxes, referent))
+                .map(|placed| (Rect::of(placed), placed.rotation)),
+        )
     }
 
     pub(super) fn canvas_press(
@@ -131,6 +141,7 @@ impl Shell {
         };
         let view = self.ui.view;
         let point = view.to_canvas(at);
+        let frame = self.selection_frame(&boxes);
         let extend = event.modifiers.shift || event.modifiers.control || event.modifiers.platform;
         let near = |p: [f32; 2]| {
             let q = view.to_view(p);
@@ -140,17 +151,15 @@ impl Shell {
         // A handle wins over the body it sits on, except inside an element
         // too small on screen to tell the two apart: there the body wins,
         // and the handles are reached from just outside it.
-        let press = if let Some(placed) = self
-            .handled(&boxes)
-            .filter(|placed| !ui_canvas::covers(placed, point) || roomy(placed, view.zoom))
-        {
-            let rect = Rect::of(&placed);
+        let press = if let Some((rect, turn)) = frame.filter(|(rect, turn)| {
+            !ui_canvas::covers_turned(rect, *turn, point) || roomy(rect, view.zoom)
+        }) {
             let grabbed = Handle::ALL
                 .into_iter()
-                .find(|handle| near(handle.at(&rect, placed.rotation)));
+                .find(|handle| near(handle.at(&rect, turn)));
             match grabbed {
                 Some(handle) => Some(Press::Handle(handle)),
-                None => near(knob(&rect, placed.rotation, view.zoom)).then_some(Press::Knob),
+                None => near(knob(&rect, turn, view.zoom)).then_some(Press::Knob),
             }
         } else {
             None
@@ -230,34 +239,35 @@ impl Shell {
         press: Press,
         cx: &mut Context<Self>,
     ) -> Option<Gesture> {
-        let (_, boxes) = self.canvas_boxes(cx)?;
-        let held_one = || {
-            self.handled(&boxes)
-                .and_then(|placed| Held::read(&self.dom, &placed))
-        };
+        let (root, boxes) = self.canvas_boxes(cx)?;
+        let held = self.held_selection(&root, &boxes);
+        let frame = self.selection_frame(&boxes);
         Some(match press {
             Press::Element { .. } => Gesture::Move {
                 at,
-                held: self.held_selection(&boxes),
+                held,
                 shift: [0.0, 0.0],
                 first: true,
             },
             Press::Handle(handle) => {
-                let held = held_one()?;
+                let frame = frame.filter(|_| !held.is_empty())?;
                 Gesture::Resize {
                     at,
                     held,
                     handle,
-                    rect: held.rect,
+                    frame,
+                    shown: frame,
+                    preview: Vec::new(),
                     first: true,
                 }
             }
             Press::Knob => {
-                let held = held_one()?;
+                let frame = frame.filter(|_| !held.is_empty())?;
                 Gesture::Rotate {
                     held,
-                    from: angle_of(held.rect.centre(), self.ui.view.to_canvas(at)),
-                    rotation: held.own_rotation,
+                    frame,
+                    from: angle_of(frame.0.centre(), self.ui.view.to_canvas(at)),
+                    delta: 0.0,
                     first: true,
                 }
             }
@@ -323,11 +333,42 @@ impl Shell {
     }
 }
 
-/// Whether an element is big enough on screen for its handles to be told
-/// apart from its body.
-fn roomy(placed: &GuiBox, zoom: f32) -> bool {
-    let [_, _, w, h] = placed.rect;
-    w.min(h) * zoom > HANDLE_REACH * 4.0
+/// Whether a frame is big enough on screen for its handles to be told apart
+/// from its body.
+fn roomy(rect: &Rect, zoom: f32) -> bool {
+    rect.w.min(rect.h) * zoom > HANDLE_REACH * 4.0
+}
+
+/// The frame a selection's handles stand on: one element's own box, turned
+/// as it is; several elements' boxes, bounded square to the screen, the way
+/// a Figma selection box is.
+pub(super) fn frame_of(boxes: impl IntoIterator<Item = (Rect, f32)>) -> Option<(Rect, f32)> {
+    let mut boxes = boxes.into_iter();
+    let first = boxes.next()?;
+    let Some(second) = boxes.next() else {
+        return Some(first);
+    };
+    let bounds = [second]
+        .into_iter()
+        .chain(boxes)
+        .fold(first.0.turned_bounds(first.1), |bounds, (rect, turn)| {
+            bounds.union(&rect.turned_bounds(turn))
+        });
+    Some((bounds, 0.0))
+}
+
+/// Where a gesture in flight has the selection's frame, ahead of the
+/// canvas catching up: `None` for one that does not move the frame itself.
+pub(super) fn frame(gesture: &Gesture) -> Option<(Rect, f32)> {
+    match gesture {
+        Gesture::Resize { shown, .. } => Some(*shown),
+        Gesture::Rotate {
+            frame: (rect, turn),
+            delta,
+            ..
+        } => Some((*rect, turn + delta)),
+        _ => None,
+    }
 }
 
 /// Where the rotation knob stands: above the middle of the top edge, as
@@ -346,9 +387,16 @@ pub(super) fn preview(gesture: &Gesture) -> Vec<(Ref, Rect, f32)> {
             .iter()
             .map(|h| (h.referent, h.rect.shifted(*shift), h.rotation))
             .collect(),
-        Gesture::Resize { held, rect, .. } => vec![(held.referent, *rect, held.rotation)],
-        Gesture::Rotate { held, rotation, .. } => {
-            vec![(held.referent, held.rect, held.parent_rotation() + rotation)]
+        Gesture::Resize { preview, .. } => preview.clone(),
+        Gesture::Rotate {
+            held, frame, delta, ..
+        } => {
+            let carried: Vec<_> = held.iter().map(Held::carried).collect();
+            let moved = carry::turn(frame.0.centre(), *delta, &carried);
+            held.iter()
+                .zip(moved)
+                .map(|(h, shift)| (h.referent, h.rect.shifted(shift), h.rotation + delta))
+                .collect()
         }
         _ => Vec::new(),
     }

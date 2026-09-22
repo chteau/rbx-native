@@ -98,12 +98,20 @@ pub(crate) fn is_fixed(size: Udim2) -> bool {
 }
 
 /// One element a group takes in: where it came out, its `AnchorPoint`, and
-/// the `Position` it came out there from.
+/// the `Position`/`Size` it came out there from.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Member {
+    /// Its box in its parent's own frame — turned back by the parent's
+    /// rotation, where the parent's content box is square to the axes.
     pub(crate) rect: Rect,
     pub(crate) anchor: [f32; 2],
     pub(crate) position: Udim2,
+    pub(crate) size: Udim2,
+    /// `UIScale`: its resolved `Size` times this is the box drawn.
+    pub(crate) size_scale: f32,
+    /// Which of the parent's axes each `Size` scale is taken against —
+    /// `SizeConstraint`, `[0, 1]` unless it says otherwise.
+    pub(crate) size_axes: [usize; 2],
 }
 
 /// What wrapping members in a new frame writes: the frame's own `Position`
@@ -116,43 +124,80 @@ pub(crate) struct Grouping {
 }
 
 /// A frame fitted exactly round `members`, which all share one parent whose
-/// content area is `parent_size` pixels, with each member moved inside it
-/// so that nothing on screen moves.
+/// children resolve against `parent` (its content box: less `UIPadding`),
+/// with each member moved inside it so that nothing on screen moves.
 ///
-/// Everything comes out in offsets — the frame's box and each member's
-/// place in it are measured in pixels at the resolution on the canvas, and
-/// a scale would stretch a member against a frame it was never sized for.
-/// The parent's origin is recovered from the first member: its box is where
-/// its `Position` put its `AnchorPoint`.
-pub(crate) fn group(members: &[Member], parent_size: [f32; 2]) -> Option<Grouping> {
+/// Each value keeps the mode it had: a member placed or sized by scale on
+/// an axis is written as a scale of the new frame there, one in pixels as
+/// pixels, and the frame itself scales with its parent on any axis a member
+/// did — so a responsive layout stays responsive once grouped. `UIScale` is
+/// divided back out of a member's size, and `SizeConstraint` decides which
+/// of the frame's axes a size scale is taken against.
+///
+/// `parent` is `None` inside a `ScrollingFrame`, whose scrolled canvas the
+/// editor is not shown: the origin is then recovered from the first member
+/// as though its `Position` were pixels alone, and the frame is written in
+/// pixels.
+pub(crate) fn group(members: &[Member], parent: Option<Rect>) -> Option<Grouping> {
     let first = members.first()?;
-    let origin = [0, 1].map(|axis| {
-        let (start, length) = first.rect.along(axis);
-        let (scale, offset) = first.position[axis];
-        start + first.anchor[axis] * length - scale * parent_size[axis] - offset as f32
-    });
+    let (origin, extent) = match parent {
+        Some(content) => ([content.x, content.y], Some([content.w, content.h])),
+        None => (
+            [0, 1].map(|axis| {
+                let (start, length) = first.rect.along(axis);
+                start + first.anchor[axis] * length - first.position[axis].1 as f32
+            }),
+            None,
+        ),
+    };
     let bounds = members
         .iter()
         .skip(1)
         .fold(first.rect, |bounds, member| bounds.union(&member.rect));
-    let offsets = |values: [f32; 2]| values.map(|value| (0.0, value.round() as i32));
+    let size = [bounds.w, bounds.h];
+    let scaled = [0, 1].map(|axis| {
+        members
+            .iter()
+            .any(|member| member.position[axis].0 != 0.0 || member.size[axis].0 != 0.0)
+    });
+    let corner = [bounds.x, bounds.y];
     Some(Grouping {
         frame: (
-            offsets([bounds.x - origin[0], bounds.y - origin[1]]),
-            offsets([bounds.w, bounds.h]),
+            [0, 1].map(|axis| {
+                let against = extent.map(|extent| extent[axis]);
+                udim(corner[axis] - origin[axis], scaled[axis], against)
+            }),
+            [0, 1].map(|axis| udim(size[axis], scaled[axis], extent.map(|extent| extent[axis]))),
         ),
         members: members
             .iter()
             .map(|member| {
                 let rect = member.rect;
+                let placed = [
+                    rect.x + member.anchor[0] * rect.w,
+                    rect.y + member.anchor[1] * rect.h,
+                ];
+                let drawn = [rect.w, rect.h].map(|length| length / member.size_scale);
                 (
-                    offsets([
-                        rect.x + member.anchor[0] * rect.w - bounds.x,
-                        rect.y + member.anchor[1] * rect.h - bounds.y,
-                    ]),
-                    offsets([rect.w, rect.h]),
+                    [0, 1].map(|axis| {
+                        let scaled = member.position[axis].0 != 0.0;
+                        udim(placed[axis] - corner[axis], scaled, Some(size[axis]))
+                    }),
+                    [0, 1].map(|axis| {
+                        let scaled = member.size[axis].0 != 0.0;
+                        udim(drawn[axis], scaled, Some(size[member.size_axes[axis]]))
+                    }),
                 )
             })
             .collect(),
     })
+}
+
+/// `pixels` as a `UDim`: a scale of `against` when `scaled` and there is an
+/// extent to divide by, whole pixels otherwise.
+fn udim(pixels: f32, scaled: bool, against: Option<f32>) -> (f32, i32) {
+    match (scaled, against) {
+        (true, Some(extent)) if extent > 0.0 => (pixels / extent, 0),
+        _ => (0.0, pixels.round() as i32),
+    }
 }

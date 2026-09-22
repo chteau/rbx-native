@@ -54,7 +54,7 @@ impl Shell {
         let screen = self.canvas_request()?.screen;
         let inside = self
             .selected()
-            .filter(|&r| super::screen_of(&self.dom, &self.database, r) == Some(screen))
+            .filter(|&r| super::root_of(&self.dom, &self.database, r) == Some(screen))
             .filter(|&r| r == screen || is_gui_object(&self.dom, &self.database, r));
         Some(inside.unwrap_or(screen))
     }

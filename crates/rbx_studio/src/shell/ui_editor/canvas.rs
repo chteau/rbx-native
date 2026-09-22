@@ -31,7 +31,7 @@ impl Shell {
         self.sync_size_fields(window, cx);
         let panel = self.ui.bounds.get().size;
         let panel = [f32::from(panel.width), f32::from(panel.height)];
-        let (width, height) = self.ui.resolution;
+        let (width, height) = self.canvas_size(cx);
         let screen_size = [width as f32, height as f32];
         if self.ui.fitted && panel[0] > 0.0 && panel[1] > 0.0 {
             self.ui.view = View::fit(panel, screen_size, FIT_MARGIN);
@@ -195,28 +195,29 @@ impl Shell {
         for (rect, degrees) in &outlined {
             shapes.push(Shape::Outline(corners(rect, *degrees), accent, 1.0));
         }
-        match outlined.as_slice() {
-            [(rect, degrees)] if selected.len() == 1 => {
-                let top = view.to_view(Handle(0, -1).at(rect, *degrees));
-                let knob = view.to_view(gesture::knob(rect, *degrees, view.zoom));
-                shapes.push(Shape::Line(top, knob, accent));
-                shapes.push(Shape::Handle(knob, true));
-                for handle in Handle::ALL {
-                    shapes.push(Shape::Handle(
-                        view.to_view(handle.at(rect, *degrees)),
-                        false,
-                    ));
-                }
+        // The frame the handles stand on: where a resize or a turn has it,
+        // or round the selection as it stands — one element's own box, the
+        // box round several (see `gesture::frame_of`).
+        let frame = self
+            .ui
+            .gesture
+            .as_ref()
+            .and_then(gesture::frame)
+            .or_else(|| gesture::frame_of(outlined.iter().copied()));
+        if let Some((rect, degrees)) = frame {
+            if outlined.len() > 1 {
+                shapes.push(Shape::Outline(corners(&rect, degrees), accent, 1.0));
             }
-            [first, rest @ ..] if !rest.is_empty() => {
-                let union = rest
-                    .iter()
-                    .fold(first.0.turned_bounds(first.1), |u, (r, d)| {
-                        u.union(&r.turned_bounds(*d))
-                    });
-                shapes.push(Shape::Outline(corners(&union, 0.0), accent, 1.0));
+            let top = view.to_view(Handle(0, -1).at(&rect, degrees));
+            let knob = view.to_view(gesture::knob(&rect, degrees, view.zoom));
+            shapes.push(Shape::Line(top, knob, accent));
+            shapes.push(Shape::Handle(knob, true));
+            for handle in Handle::ALL {
+                shapes.push(Shape::Handle(
+                    view.to_view(handle.at(&rect, degrees)),
+                    false,
+                ));
             }
-            _ => {}
         }
 
         for g in &self.ui.guides {
@@ -281,11 +282,10 @@ impl Shell {
     fn canvas_hint(&self, drawing: bool) -> Option<AnyElement> {
         let text = match (drawing, self.ui.screen.is_some()) {
             (true, _) => return None,
-            (false, true) => "The ScreenGui on the canvas is gone.",
+            (false, true) => "The GUI on the canvas is gone.",
             (false, false) => {
-                "Select a ScreenGui, or anything inside one, to put it on the canvas — \
-                 or start one from the + below. BillboardGui and SurfaceGui are drawn \
-                 in the 3D view."
+                "Select a ScreenGui, BillboardGui or SurfaceGui, or anything inside one, \
+                 to put it on the canvas — or start a ScreenGui from the + below."
             }
         };
         Some(

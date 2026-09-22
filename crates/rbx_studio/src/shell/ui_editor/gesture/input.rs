@@ -52,11 +52,11 @@ impl Shell {
             }
             _ => return false,
         };
-        let Some((_, boxes)) = self.canvas_boxes(cx) else {
+        let Some((root, boxes)) = self.canvas_boxes(cx) else {
             return false;
         };
         let writes: Vec<(Ref, &str, String)> = self
-            .held_selection(&boxes)
+            .held_selection(&root, &boxes)
             .iter()
             .map(|h| {
                 let moved = position_shift(nudge, h.parent_rotation(), h.anchor, [0.0; 2]);
