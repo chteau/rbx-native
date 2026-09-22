@@ -297,7 +297,13 @@ impl Properties {
         folder_color: Option<(u8, u8, u8)>,
     ) -> Vec<PropertyRow> {
         let mut rows = self.rows(dom, selection, folder_color);
-        rows.retain(|row| matches(&row.name, filter));
+        // A `CFrame` row opens into Position and Orientation, which Studio's
+        // filter finds by those names as well as the row's own.
+        rows.retain(|row| {
+            matches(&row.name, filter)
+                || matches!(&row.edit, Some(EditKind::Groups { groups, .. })
+                    if groups.iter().any(|group| matches(group.caption, filter)))
+        });
         rows
     }
 

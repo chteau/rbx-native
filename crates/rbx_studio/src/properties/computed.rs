@@ -16,6 +16,8 @@
 //! - `ResizeIncrement` and `ResizeableFaces` for the classes their docs
 //!   name: 1 and every face for a `Part`, every face for a `WedgePart`.
 //! - The assembly's mass, centre and root: see `assembly`.
+//! - `Origin`, the instance's pivot (`edit::pivot`) — the one of these a
+//!   user can type into, which moves the instance.
 //!
 //! Left out, for want of anything true to show: the assembly's velocities
 //! (a simulation's state), `ExtentsSize`/`ExtentsCFrame` (the physics
@@ -26,6 +28,7 @@ use std::f64::consts::PI;
 
 use rbx_dom::{Faces, Instance, PhysicalProperties, Ref, Variant, Vector3Data, WeakDom};
 
+use super::edit::pivot::{pivot, ORIGIN};
 use super::Properties;
 
 mod assembly;
@@ -43,6 +46,7 @@ pub(super) const COMPUTED: &[&str] = &[
     "AssemblyMass",
     "AssemblyCenterOfMass",
     "AssemblyRootPart",
+    ORIGIN,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,6 +97,7 @@ impl Properties {
                     right: true,
                 }))
             }
+            ORIGIN => pivot(dom, &self.db, reference).map(Variant::CFrame),
             "AssemblyMass" | "AssemblyCenterOfMass" | "AssemblyRootPart" => {
                 self.assembly(dom, reference, name)
             }

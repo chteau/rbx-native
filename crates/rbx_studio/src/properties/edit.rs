@@ -11,6 +11,7 @@ use rbx_reflection::ReflectionDatabase;
 
 mod font;
 mod many;
+pub(super) mod pivot;
 mod sequence;
 
 use font::{font_text, parse_font, synced};

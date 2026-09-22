@@ -78,23 +78,25 @@ pub(crate) fn camera_key(key: &str, layout: Layout) -> Option<CameraKey> {
 /// those characters — `é`, having no ASCII form, under its keysym name. A
 /// digit, then, means `Shift` was down, though GPUI drops `Shift` from any
 /// key that has no case; it is put back, so `Shift`+`2` reaches the increment
-/// field as it does on QWERTY.
+/// field. On QWERTY the same drop turns `Shift`+`2` into the bare `@` it
+/// types, which is read back the same way.
 pub(crate) fn tool_key(key: &str, modifiers: Modifiers, layout: Layout) -> (&str, Modifiers) {
+    let shifted = Modifiers {
+        shift: true,
+        ..modifiers
+    };
     if layout != Layout::Azerty {
-        return (key, modifiers);
+        return match key {
+            "@" => ("2", shifted),
+            _ => (key, modifiers),
+        };
     }
     match key {
         "&" => ("1", modifiers),
         "eacute" | "é" => ("2", modifiers),
         "\"" => ("3", modifiers),
         "'" => ("4", modifiers),
-        "1" | "2" | "3" | "4" => (
-            key,
-            Modifiers {
-                shift: true,
-                ..modifiers
-            },
-        ),
+        "1" | "2" | "3" | "4" => (key, shifted),
         _ => (key, modifiers),
     }
 }
@@ -248,6 +250,11 @@ mod tests {
         assert_eq!(tool("2", Layout::Qwerty), Some(Action::Use(Tool::Move)));
         assert_eq!(tool("4", Layout::Qwerty), Some(Action::Use(Tool::Rotate)));
         assert_eq!(tool("'", Layout::Qwerty), None);
+        // Shift+2 arrives as the `@` it types, Shift dropped.
+        assert_eq!(
+            tool("@", Layout::Qwerty),
+            Some(Action::FocusIncrement(SnapKind::Translate))
+        );
         assert_eq!(tool("&", Layout::Qwerty), None);
     }
 
