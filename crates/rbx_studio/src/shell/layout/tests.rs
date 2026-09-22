@@ -36,7 +36,8 @@ fn shape(layout: &Layout, edge: Edge) -> Vec<Vec<Panel>> {
 
 /// The layout nobody has touched is the one the editor always had:
 /// Properties on the left, Explorer on the right, Output underneath — with
-/// the Viewport dock a tab behind Output rather than a dock of its own.
+/// the Viewport dock, and the Script Editor's own Argon and Wally docks,
+/// tabs behind Output rather than docks of their own.
 #[test]
 fn the_default_layout_is_the_shell_that_was_hardcoded() {
     let layout = Layout::default();
@@ -45,7 +46,7 @@ fn the_default_layout_is_the_shell_that_was_hardcoded() {
     assert_eq!(shape(&layout, Edge::Right), [[Panel::Explorer]]);
     assert_eq!(
         shape(&layout, Edge::Bottom),
-        [[Panel::Output, Panel::Viewport]]
+        [[Panel::Output, Panel::Viewport, Panel::Argon, Panel::Wally]]
     );
     assert!(layout.floating().is_empty());
 }
@@ -73,6 +74,8 @@ fn showing_follows_the_tab_the_window_and_the_close() {
 
     layout.float(Panel::Viewport);
     assert!(layout.is_showing(Panel::Viewport));
+    // Output is the dock's first tab, so it's what takes over — not
+    // whichever tab happened to land in the slot Viewport left behind.
     assert!(layout.is_showing(Panel::Output));
 
     layout.close(Panel::Viewport);
@@ -90,7 +93,7 @@ fn opening_a_hidden_tab_brings_it_forward() {
     assert!(layout.is_showing(Panel::Viewport));
     assert_eq!(
         shape(&layout, Edge::Bottom),
-        [[Panel::Output, Panel::Viewport]]
+        [[Panel::Output, Panel::Viewport, Panel::Argon, Panel::Wally]]
     );
 }
 
@@ -113,13 +116,16 @@ fn opening_a_floating_panel_docks_it_back_home() {
 fn a_reopened_viewport_dock_is_a_showing_tab_beside_output() {
     let mut layout = Layout::default();
     layout.close(Panel::Viewport);
-    assert_eq!(shape(&layout, Edge::Bottom), [[Panel::Output]]);
+    assert_eq!(
+        shape(&layout, Edge::Bottom),
+        [[Panel::Output, Panel::Argon, Panel::Wally]]
+    );
 
     layout.open(Panel::Viewport);
 
     assert_eq!(
         shape(&layout, Edge::Bottom),
-        [[Panel::Output, Panel::Viewport]]
+        [[Panel::Output, Panel::Argon, Panel::Wally, Panel::Viewport]]
     );
     assert!(layout.is_showing(Panel::Viewport));
 }
@@ -139,7 +145,7 @@ fn a_file_from_before_the_viewport_dock_seats_it_beside_output() {
 
     assert_eq!(
         shape(&layout, Edge::Bottom),
-        [[Panel::Output, Panel::Viewport]]
+        [[Panel::Output, Panel::Viewport, Panel::Argon, Panel::Wally]]
     );
     assert!(!layout.is_showing(Panel::Viewport));
 }
@@ -334,6 +340,8 @@ fn a_landing_below_the_dock_it_emptied_still_lands_right() {
 fn an_emptied_edge_holds_nothing() {
     let mut layout = Layout::default();
     layout.close(Panel::Viewport);
+    layout.close(Panel::Argon);
+    layout.close(Panel::Wally);
     layout.apply(
         Panel::Output,
         Landing::NewGroup {
@@ -399,7 +407,10 @@ fn a_closed_panel_is_open_nowhere() {
     layout.close(Panel::Output);
 
     assert_eq!(layout.home_of(Panel::Output), Home::Closed);
-    assert_eq!(shape(&layout, Edge::Bottom), [[Panel::Viewport]]);
+    assert_eq!(
+        shape(&layout, Edge::Bottom),
+        [[Panel::Viewport, Panel::Argon, Panel::Wally]]
+    );
 }
 
 /// Reopening puts it back on its own edge rather than nowhere in
@@ -413,7 +424,7 @@ fn reopening_a_panel_puts_it_on_its_own_edge() {
     assert!(layout.is_showing(Panel::Output));
     assert_eq!(
         shape(&layout, Edge::Bottom),
-        [[Panel::Viewport, Panel::Output]]
+        [[Panel::Viewport, Panel::Argon, Panel::Wally, Panel::Output]]
     );
 }
 

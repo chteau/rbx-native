@@ -46,8 +46,20 @@
 //! Ctrl+S writes the place back to the file it was opened from, in the
 //! format it was opened in; `RBX_STUDIO_SAVE_AS=<path>` redirects one such
 //! save to a scratch path instead (see `save`).
+//! `RBX_STUDIO_ARGON_CONNECT=1|<host>:<port>` clicks Connect on the Script
+//! Editor's Argon dock at startup — the same aid, for a real connection to
+//! a running `argon serve` (see `shell::argon_sync`); the address form
+//! overrides the dock's own address field first.
+//! `RBX_STUDIO_WALLY_INSTALL=<scope>/<name>` resolves and installs that
+//! Wally package at startup exactly as clicking its search result row
+//! would — the same aid, for the Wally dock (see `shell::wally_sync`).
+//! `RBX_STUDIO_ARGON_DIFF=1` opens the Argon review prompt's Diff window on
+//! a small synthetic batch at startup — the same aid, for a window that
+//! otherwise only opens once a live `argon serve` session pushes five or
+//! more real changes at once (see `shell::argon_sync`).
 
 mod align;
+mod argon_client;
 mod camera;
 mod change_class;
 mod class_icons;
@@ -78,6 +90,7 @@ mod sun;
 mod tokens;
 mod transform;
 mod ui_canvas;
+mod wally_client;
 mod workspace_view;
 
 use std::path::{Path, PathBuf};

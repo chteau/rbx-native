@@ -4,6 +4,8 @@
 //! dragged to another edge or stacked as tabs.
 
 mod align;
+mod argon_diff_window;
+mod argon_sync;
 mod attributes_panel;
 mod brick_color;
 mod change_class;
@@ -40,6 +42,7 @@ mod tree_keys;
 mod rows;
 mod save;
 mod script_panel;
+mod scripting_tools;
 mod scripts;
 mod scroll;
 mod scrub;
@@ -50,6 +53,7 @@ mod toolbar;
 mod tooltip;
 mod ui_editor;
 mod viewport_dock;
+mod wally_sync;
 mod workspace;
 
 use std::collections::{HashMap, HashSet};
@@ -173,6 +177,10 @@ pub(crate) struct Shell {
     /// its own (see `crate::sequence_window`, which owns everything about
     /// it), kept only so opening a second one replaces the first.
     sequence: Option<WindowHandle<gpui_kit::component::Root>>,
+    /// The open Argon review Diff window, if any — see
+    /// `shell::argon_diff_window`, the same one-window-of-its-own shape as
+    /// [`Self::sequence`] above.
+    argon_diff: Option<WindowHandle<gpui_kit::component::Root>>,
     /// The Explorer's type-ahead buffer — see `shell::tree_keys`.
     typeahead: tree_keys::Typeahead,
     /// The Explorer's own editing affordances — the `+` picker, the
@@ -253,6 +261,30 @@ pub(crate) struct Shell {
     /// like `output_filter` beside it — a log you are still reading is not a
     /// setting.
     output_search: Entity<InputState>,
+    /// The address field on the Argon dock (`shell::scripting_tools`) —
+    /// real, editable, local to this window; read by `Shell::argon_connect`.
+    argon_address: Entity<InputState>,
+    /// The address `Settings::argon_address` should hold — a plain `String`
+    /// rather than reading `argon_address` above back out, because
+    /// `Shell::save_settings` takes no `cx` and an `Entity<InputState>`
+    /// can't be read without one. Updated only on a successful connect
+    /// (see `Shell::drain_argon_events`), not on every keystroke of a
+    /// draft still being typed.
+    argon_saved_address: String,
+    /// The `argon` CLI's version, if it's on PATH — probed once at startup
+    /// (see `scripting_tools::detect_argon_version`) and cached here rather
+    /// than re-run every frame the dock is open.
+    argon_version: Option<SharedString>,
+    /// The live connection to an `argon serve` instance, if any — see
+    /// `shell::argon_sync`.
+    argon: argon_sync::Sync,
+    /// The search field on the Wally dock (`shell::scripting_tools`) —
+    /// real, editable, local to this window; read by
+    /// `Shell::wally_query_changed`.
+    wally_query: Entity<InputState>,
+    /// The Wally dock's search results and install state — see
+    /// `shell::wally_sync`.
+    wally: wally_sync::Search,
     /// The file `self.dom` was opened from and its on-disk format; see
     /// `shell::save`. Ctrl+S always writes back here, in this format,
     /// regardless of what the tree currently looks like.
@@ -306,7 +338,7 @@ pub(crate) struct Shell {
     /// is raised with it once rather than fought over every frame.
     window_was_active: bool,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
-    _subscriptions: [Subscription; 13],
+    _subscriptions: [Subscription; 14],
 }
 
 impl Shell {
@@ -336,6 +368,7 @@ impl Shell {
             increment_names,
             expand_on_select,
             dragger,
+            argon_address: argon_address_setting,
         } = settings;
         // Before anything renders: every size token is read through these,
         // so a scale or target floor applied after the first frame would
@@ -402,6 +435,14 @@ impl Shell {
         let filtered = cx.subscribe(&filter, |_, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
                 cx.notify();
+            }
+        });
+
+        let wally_query =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Search Wally packages"));
+        let wally_query_changed = cx.subscribe(&wally_query, |shell, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                shell.wally_query_changed(cx);
             }
         });
 
@@ -493,6 +534,7 @@ impl Shell {
             reduce_motion,
             scrub: None,
             sequence: None,
+            argon_diff: None,
             tree_focus_handle,
             typeahead: tree_keys::Typeahead::default(),
             explorer_edit: explorer_edit::ExplorerEdit::default(),
@@ -525,6 +567,19 @@ impl Shell {
             viewport_scroll: ScrollHandle::new(),
             viewport_rows: Rc::default(),
             output_search: cx.new(|cx| InputState::new(window, cx).placeholder("Search")),
+            argon_address: cx.new(|cx| {
+                let seed = if argon_address_setting.is_empty() {
+                    "localhost:8000".to_owned()
+                } else {
+                    argon_address_setting.clone()
+                };
+                InputState::new(window, cx).default_value(seed)
+            }),
+            argon_saved_address: argon_address_setting,
+            argon_version: scripting_tools::detect_argon_version(),
+            argon: argon_sync::Sync::default(),
+            wally_query,
+            wally: wally_sync::Search::default(),
             path,
             format,
             folder_colors,
@@ -558,6 +613,7 @@ impl Shell {
                 translate_stepped,
                 rotate_stepped,
                 canvas_drawn,
+                wally_query_changed,
             ],
         };
 
@@ -675,6 +731,23 @@ impl Shell {
         // `RBX_STUDIO_UI_EDITOR` (see `shell::ui_editor`): after the selection
         // blocks, so the screen they selected into is the one on the canvas.
         shell.apply_debug_ui_editor(cx);
+
+        // `RBX_STUDIO_ARGON_CONNECT` (see `shell::argon_sync`): Connect is a
+        // click, and nothing else can send one to the window on the
+        // editor's behalf — the same reason every other debug var here
+        // exists.
+        shell.apply_debug_argon_connect(window, cx);
+
+        // `RBX_STUDIO_ARGON_DIFF` (see `shell::argon_sync`): after Connect
+        // above, so a real connection can still send a genuine batch — but
+        // this seeds its own synthetic one either way, the only
+        // deterministic way to screenshot the Diff window.
+        shell.apply_debug_argon_diff(cx);
+
+        // `RBX_STUDIO_WALLY_INSTALL` (see `shell::wally_sync`): a result
+        // row is a dynamically-populated click target, the same reason
+        // `RBX_STUDIO_ARGON_CONNECT` above exists.
+        shell.apply_debug_wally_install(cx);
 
         // `RBX_STUDIO_MENU` (see `menu_bar::MenuBar::apply_debug_entry`):
         // the only way to put the keyboard in the menu bar without a
@@ -1096,6 +1169,7 @@ impl Shell {
             increment_names: self.increment_names,
             expand_on_select: self.expand_on_select,
             dragger: self.dragger,
+            argon_address: self.argon_saved_address.clone(),
         };
         let _ = settings.save();
 

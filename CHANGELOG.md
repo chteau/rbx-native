@@ -2,6 +2,65 @@
 
 ## 2026-09-22
 
+- **The Argon review prompt has a real Diff window, and the connection
+  address is remembered.** A "Diff" button on the batch review prompt opens
+  a second window (`shell::argon_diff_window`, the same fixed-size floating
+  shape as the `ColorSequence`/`NumberSequence` graph, own title bar and
+  all) listing every addition, update and removal in the pending batch —
+  an addition's own name/class and nested-descendant count, an update's
+  changed properties as "before → after", a removal's name/class. It holds
+  no copy of the batch: every frame it re-reads whatever review is
+  currently pending, so it closes itself the moment Accept or Cancel (still
+  the dock's own buttons) resolves it. Also: the address Connect last
+  actually succeeded with is now saved to `Settings` and reused on the next
+  launch, instead of always starting back at `localhost:8000`. — @chteau
+
+- **The Argon dock talks to the real thing.** Connect now opens an actual
+  HTTP+MsgPack connection to a locally-running `argon serve`
+  (`crate::argon_client`, the same protocol `argon-rbx/argon`'s own Studio
+  plugin speaks), long-polling for changes in the background and applying
+  them to the DOM as one undo step — additions, property/name/class
+  updates and removals, with a review prompt ("N additions, N updates, N
+  removals") before a large batch lands, the same threshold Argon's own
+  plugin uses. Local edits sync back out too: an instance added, changed or
+  removed in `rbxstudio` while connected is pushed to the server on a short
+  debounce. Verified end to end against a real `argon serve` session.
+  `ExecuteCode` messages (server-sent Luau) are decoded and always
+  discarded — running code a network message asked for is a boundary this
+  client doesn't cross, unlike the reference plugin. Two known gaps: a
+  reparent doesn't sync back out (Argon's own wire protocol has no field
+  for it), and an update's omitted properties are left alone rather than
+  reset to their class default. — @chteau
+
+- **The Wally dock searches and installs for real.** Typing in the dock's
+  search field now hits the real `api.wally.run` registry (debounced) and
+  lists results; picking one resolves its whole dependency graph — a BFS
+  matching Wally's own resolver (`crate::wally_client::resolve`), erroring
+  cleanly on an unsatisfiable requirement rather than installing the wrong
+  version — and installs every resolved package into the DOM as one undo
+  step, in Wally's own real on-disk shape: each package's content under
+  `Packages/_Index/<scope>_<name>@<version>/<name>`, a sibling alias
+  `ModuleScript` per dependency edge, and a top-level alias only for the
+  package actually picked. No separate "install via Argon" path exists —
+  the same DOM insertion reaches a connected Argon session automatically
+  through the write-back sync above, and is native when one isn't
+  connected. Two known gaps: no `wally.lock` (two installs can pick
+  different compatible versions of a shared dependency), and version
+  discovery is search-based, so a non-default registry isn't supported.
+  — @chteau
+
+- **The Script Editor has its own docks: Argon and Wally.** Two new bottom
+  docks, tabbed beside Output, show up only while the Script Editor is the
+  open document — and the Viewport dock steps aside while they're there,
+  since the 3D view isn't on screen either way. The Argon dock is shaped
+  after Argon's own Studio plugin: it actually checks whether the `argon`
+  CLI is on PATH and shows the real version if so, and its address field is
+  a real, editable one — but Connect stays inert, the same way an unbuilt
+  ribbon command stays visible and greyed rather than disappearing, since
+  Argon's live sync protocol isn't public yet (see ROADMAP.md). Wally's
+  dock is the same shape (an Add Package action, inert for the same reason
+  — its resolver is its own effort). — @chteau
+
 - **The 3D view shows a GUI at the screen it was built for.** A `ScreenGui`
   laid out on a 1920×1080 canvas used to be laid out again at whatever size
   the viewport panel was, so it never looked the way it was built. The
