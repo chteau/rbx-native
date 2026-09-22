@@ -1528,6 +1528,12 @@ against `Roblox/creator-docs` rather than assumed:
   `*.project.json`/`default.project.json` tree directly (for `luau-lsp`,
   and for opening an Argon project without a running server) is unrelated
   work against the same file-format Rojo also uses, not yet started.
+- [ ] 📋 **Improve Argon's Diff window to look like GitHub's.** The review
+  prompt's Diff window (`shell::argon_diff_window`, PR #85) currently
+  lists additions/updates/removals as plain rows — GitHub's own diff view
+  (unified/split hunks, red/green line backgrounds, +/- gutter markers) is
+  the more legible bar to clear, especially once an update's property
+  values get long. Not scoped in any detail yet.
 - [x] 📋 **Wally package manager, built in.** Wally (`UpliftGames/wally`,
   MPL-2.0) is the de facto Luau/Roblox package manager. The Wally dock
   (`shell::scripting_tools`, Script Editor tab only) now searches the real
