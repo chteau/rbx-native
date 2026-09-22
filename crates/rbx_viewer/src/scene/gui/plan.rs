@@ -69,7 +69,9 @@ const GROUP_CLASS: &str = "CanvasGroup";
 /// ever seen on a tree built in code: a place file serializes the property.
 const DEFAULT_BORDER: [f32; 3] = [27.0 / 255.0, 42.0 / 255.0, 53.0 / 255.0];
 
-/// Every enabled `ScreenGui` in the DOM, in the order the tree holds them.
+/// Every `ScreenGui` in the DOM, in the order the tree holds them — disabled
+/// ones too, flagged, so an editor can still lay one out on its own (see
+/// `Screen::enabled`); the overlay itself draws only the enabled.
 ///
 /// The walk is its own recursion rather than [`crate::scene::descendants`]:
 /// that iterator pops off a stack and so visits children backwards, while a
@@ -108,18 +110,18 @@ fn gather(
     }
     if database.is_subclass_of(instance.class(), SCREEN_CLASS) {
         let properties = styles.properties_of(instance);
-        if flag(properties, "Enabled", true) {
-            let (roots, groups) = elements(dom, database, styles, materials, instance.children());
-            into.push(Screen {
-                display_order: integer(properties, "DisplayOrder", 0),
-                top_inset: constraints::top_bar_inset(properties),
-                global_z_index: constraints::global_z_index(properties),
-                clip_to_safe_area: constraints::clip_to_safe_area(properties),
-                list: layout_of(dom, database, styles, instance.children()),
-                roots,
-                groups,
-            });
-        }
+        let (roots, groups) = elements(dom, database, styles, materials, instance.children());
+        into.push(Screen {
+            referent,
+            enabled: flag(properties, "Enabled", true),
+            display_order: integer(properties, "DisplayOrder", 0),
+            top_inset: constraints::top_bar_inset(properties),
+            global_z_index: constraints::global_z_index(properties),
+            clip_to_safe_area: constraints::clip_to_safe_area(properties),
+            list: layout_of(dom, database, styles, instance.children()),
+            roots,
+            groups,
+        });
         // A `ScreenGui` never nests inside another, and its own children are
         // already read above.
         return;

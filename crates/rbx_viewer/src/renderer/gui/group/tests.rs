@@ -12,6 +12,7 @@ use crate::scene::{GuiGroup, GuiGroupTint};
 
 fn boxed(x: f32, y: f32, width: f32, height: f32, alpha: f32) -> GuiElement {
     GuiElement {
+        referent: rbx_dom::Ref::new(0),
         rect: GuiRect {
             x,
             y,

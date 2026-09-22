@@ -21,6 +21,7 @@ fn a_rounded_stroked_shaded_element_draws_through_the_pipeline() {
     let mut painter = Painter::new(&device, &queue, format, &viewport_layout, &image_layout);
 
     let element = GuiElement {
+        referent: rbx_dom::Ref::new(0),
         rect: GuiRect {
             x: 8.0,
             y: 8.0,
@@ -137,6 +138,7 @@ fn a_half_transparent_black_quad_halves_the_encoded_pixel_under_it() {
     let mut painter = Painter::new(&device, &queue, format, &viewport_layout, &image_layout);
 
     let element = GuiElement {
+        referent: rbx_dom::Ref::new(0),
         rect: GuiRect {
             x: 0.0,
             y: 0.0,

@@ -116,6 +116,7 @@ pub(super) fn scroll(
                 },
             };
             into.push(Element {
+                referent: node.referent,
                 viewport: None,
                 rect: context.carried(rect),
                 clip: context.clip,

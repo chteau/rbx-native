@@ -74,6 +74,7 @@ use texture::PER_FRAME;
 use trail::Trails;
 use translucent::Translucent;
 
+pub use gui::GuiBox;
 pub use lines::Segment;
 
 /// Only ever seen where a scene has no `Sky`, or where one of its six panels
@@ -416,6 +417,36 @@ impl Renderer {
     /// `scene::gui::scroll_target`.
     pub(crate) fn gui_scroll_target(&self, point: [f32; 2], axis: usize) -> Option<ScrollTarget> {
         self.gui.scroll_target(point, axis)
+    }
+
+    /// Draws one `ScreenGui` alone over `backdrop` into `target`, with no
+    /// scene pass at all — an editor's 2D canvas (see `Gui::draw_canvas`).
+    pub(crate) fn draw_gui_canvas(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        target: &wgpu::Texture,
+        canvas: ((u32, u32), rbx_dom::Ref),
+        backdrop: wgpu::Color,
+    ) {
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("rbxview gui canvas"),
+        });
+        self.gui.draw_canvas(
+            device,
+            queue,
+            &mut encoder,
+            target,
+            canvas,
+            backdrop,
+            &self.materials.bind_group,
+        );
+        queue.submit(std::iter::once(encoder.finish()));
+    }
+
+    /// Every element the GUI was last laid out with, in paint order.
+    pub(crate) fn gui_boxes(&self) -> &[GuiBox] {
+        self.gui.boxes()
     }
 
     /// Where this frame's draggers sit, or `None` when no transform tool is

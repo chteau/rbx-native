@@ -7,6 +7,8 @@
 
 mod text;
 
+use rbx_dom::Ref;
+
 use super::plan::{Align, GroupTint, Node, Screen, Span, Viewport};
 use super::space::SpaceGui;
 use super::wheel::ScrollWindow;
@@ -39,6 +41,9 @@ pub(in crate::scene::gui) use walk::{children, Context, Scope};
 /// One `GuiObject` at its final pixel position, ready to be drawn on its own.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Element {
+    /// The `GuiObject` this was laid out for — a `ScrollingFrame`'s bar
+    /// segments carry the frame's own. What an editor hit-tests against.
+    pub(crate) referent: Ref,
     pub(crate) rect: Rect,
     /// The scissor rect inherited from the nearest `ClipsDescendants`
     /// ancestor, if any. Already intersected down the whole chain.
@@ -106,12 +111,12 @@ pub(crate) fn resolve(screens: &[Screen], viewport: [f32; 2]) -> Vec<Element> {
 /// [`resolve`] with the text measured by `measure` — what the renderer calls,
 /// so `TextScaled` and an `AutomaticSize` text box come out at the size the
 /// glyphs will actually take.
-pub(crate) fn resolve_with(
-    screens: &[Screen],
+pub(crate) fn resolve_with<'a>(
+    screens: impl IntoIterator<Item = &'a Screen>,
     viewport: [f32; 2],
     measure: &mut dyn TextMeasure,
 ) -> Vec<Element> {
-    let mut order: Vec<&Screen> = screens.iter().collect();
+    let mut order: Vec<&Screen> = screens.into_iter().collect();
     // Stable, so two screens sharing a `DisplayOrder` keep the order the DOM
     // holds them in rather than an arbitrary one.
     order.sort_by_key(|screen| screen.display_order);
@@ -218,6 +223,7 @@ pub(in crate::scene::gui) fn emit(
     let rounded = corner_radii.iter().any(|&radius| radius > 0.0);
     let start = into.len();
     into.push(Element {
+        referent: node.referent,
         rect,
         clip: context.clip,
         rotation: context.angle + node.rotation,

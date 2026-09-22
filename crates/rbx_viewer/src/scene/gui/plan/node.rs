@@ -161,6 +161,10 @@ impl Group {
 /// against the viewport itself.
 #[derive(Clone)]
 pub(crate) struct Screen {
+    pub(crate) referent: Ref,
+    /// `Enabled`. A disabled screen is still planned — an editor laying one
+    /// out on its own needs it — but the overlay leaves it out.
+    pub(crate) enabled: bool,
     pub(in crate::scene::gui) display_order: i32,
     /// `ScreenInsets`: pixels of the viewport's top edge the canvas gives up
     /// to Roblox's top bar.

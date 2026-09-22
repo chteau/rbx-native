@@ -47,7 +47,7 @@ pub use gizmo::Gizmo;
 // Only so a report (`examples/bench`) can label its numbers with the GPU that
 // produced them; nothing in the render path itself asks for this.
 pub use gpu::describe_adapter;
-pub use headless::Headless;
+pub use headless::{GuiCanvas, Headless};
 pub use input::{CameraInput, CameraKey};
 pub use lighting::light_guides;
 // An editor placing the sun by pointing at the scene needs the inverse of the
@@ -55,7 +55,7 @@ pub use lighting::light_guides;
 pub use lighting::sun;
 pub use load::read_place;
 pub use quality::{FrameRateManager, QualityLevel};
-pub use renderer::Segment;
+pub use renderer::{GuiBox, Segment};
 pub use scene::{resolved_shape_label, ScrollTarget};
 // `rbxview`'s own title bar and `rbxstudio`'s Viewport dock read fps the same
 // way; shared here rather than each crate carrying its own copy of the format.

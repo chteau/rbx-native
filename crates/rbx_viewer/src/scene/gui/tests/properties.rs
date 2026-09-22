@@ -5,8 +5,11 @@ use rbx_assets::AssetRef;
 
 use super::*;
 
+// Planned and flagged rather than dropped: the overlay leaves a disabled
+// screen out (see `renderer::gui`'s own test), but an editor still lays one
+// out on its own canvas.
 #[test]
-fn a_disabled_screen_gui_contributes_nothing() {
+fn a_disabled_screen_gui_is_planned_but_flagged() {
     let (mut dom, gui) = screen_gui();
     dom.set_property(gui, "Enabled", Variant::Bool(false))
         .unwrap();
@@ -17,7 +20,9 @@ fn a_disabled_screen_gui_contributes_nothing() {
         udim2(0.0, 10, 0.0, 10),
     );
 
-    assert!(resolve(&screens(&dom), VIEWPORT).is_empty());
+    let screens = screens(&dom);
+    assert!(!screens[0].enabled);
+    assert_eq!(resolve(&screens, VIEWPORT).len(), 1);
 }
 
 #[test]
