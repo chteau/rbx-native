@@ -65,7 +65,7 @@ pub(super) fn emit(
         true => EllipsizeHeightLimit::Height(rect.height),
         false => EllipsizeHeightLimit::Lines(1),
     }));
-    let buffer = fonts.shape(text, typeset.size, width, ellipsize);
+    let buffer = fonts.shape_cached(text, typeset.size, width, ellipsize);
     let lines: Vec<LayoutRun> = buffer.layout_runs().collect();
     if lines.is_empty() {
         return;

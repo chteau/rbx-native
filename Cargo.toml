@@ -23,3 +23,14 @@ rbx_studio = { opt-level = 3 }
 rbx_viewer = { opt-level = 3 }
 taffy = { opt-level = 3 }
 ttf-parser = { opt-level = 3 }
+# The GUI's own text stack, for the same reason again: the UI editor's canvas
+# shapes every label it lays out, and lays out after every step of a drag.
+cosmic-text = { opt-level = 3 }
+harfrust = { opt-level = 3 }
+swash = { opt-level = 3 }
+skrifa = { opt-level = 3 }
+read-fonts = { opt-level = 3 }
+font-types = { opt-level = 3 }
+fontdb = { opt-level = 3 }
+zeno = { opt-level = 3 }
+unicode-linebreak = { opt-level = 3 }
