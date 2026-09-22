@@ -33,6 +33,7 @@ use rbx_dom::{Instance, Ref, Variant, WeakDom};
 use rbx_reflection::{PropertyDescriptor, ReflectionDatabase};
 
 use super::computed::COMPUTED;
+use super::edit::pivot::ORIGIN;
 use super::{attributes, edit::NAME_PROPERTY, Properties, UNCATEGORIZED};
 
 /// Two properties every instance has but no file stores, read off the
@@ -119,7 +120,8 @@ impl Sheet {
                 }
                 index.insert(property.name.clone(), entries.len());
                 entries.push(Entry {
-                    read_only: read_only(property, &keys),
+                    // Never saved, but typing one moves the instance there.
+                    read_only: property.name != ORIGIN && read_only(property, &keys),
                     default,
                     owner: descriptor.name.clone(),
                     category: property.category.clone(),

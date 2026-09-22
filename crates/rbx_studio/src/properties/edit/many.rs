@@ -4,7 +4,7 @@
 use rbx_dom::{BrickColor, Instance, Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
-use super::{commit, edit_text, parse, NAME_PROPERTY};
+use super::{commit, edit_text, parse, pivot, NAME_PROPERTY};
 use crate::properties::{value_edit_kind, EditKind};
 
 const BRICK_COLOR: &str = "BrickColor";
@@ -66,6 +66,9 @@ pub(crate) fn commit_all(
         .and_then(|&reference| dom.get(reference))
         .map(|instance| instance.class().to_owned())
         .unwrap_or_default();
+    if name == pivot::ORIGIN {
+        return pivot::pivot_all(dom, db, selection, text);
+    }
     let (name, text) = through_color(db, &class, name, text)?;
     let text = text.as_str();
     let currents: Vec<(String, Variant)> = selection
@@ -113,7 +116,7 @@ fn current(
 
 /// `typed` with whatever was left empty taken from `current` instead: all
 /// of it for a blank field, one part at a time for a value made of parts.
-fn fill_blanks(current: &Variant, typed: &str) -> String {
+pub(super) fn fill_blanks(current: &Variant, typed: &str) -> String {
     let Some(own) = edit_text(current) else {
         return typed.to_owned();
     };

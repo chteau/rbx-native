@@ -2,6 +2,17 @@
 
 ## 2026-09-22
 
+- **Properties shows a part's `Origin`, and typing one moves it there.**
+  Studio lists where a part or model's pivot stands in the world under
+  Transform; it was missing here, so filtering for "origin" or "position"
+  found nothing. The row reads `GetPivot` — a part's `CFrame` times its
+  `PivotOffset`, a model's primary part or `WorldPivot` — and an edit moves
+  the instance the way `PivotTo` does, carrying a model's parts and its
+  pivot together as one undo step, with a rotation left untouched kept
+  byte-for-byte. The filter now also finds a `CFrame` row by its Position
+  and Orientation fields. On a US keyboard, `Shift`+`2` reaches the move
+  increment field again: GPUI reports it as the `@` it types. — @chteau
+
 - **The docks move.** A panel's home used to be the order of three
   `.child()` calls in the render code, so there was nothing a gesture could
   change. It is data now, and the tab is the handle: drag a dock's tab to

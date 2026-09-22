@@ -517,6 +517,26 @@ fn filtered_rows_keep_only_matching_names_in_order() {
 }
 
 #[test]
+fn a_part_lists_its_origin_and_a_filter_finds_cframe_fields_by_caption() {
+    let properties = properties(&[]);
+
+    let origin = properties
+        .rows_matching(part(), "origin")
+        .into_iter()
+        .find(|row| row.name == "Origin")
+        .expect("a part shows its pivot as Origin");
+    assert!(origin.edit.is_some(), "typing an Origin moves the part");
+
+    let names: Vec<String> = properties
+        .rows_matching(part(), "position")
+        .into_iter()
+        .map(|row| row.name)
+        .collect();
+    assert!(names.contains(&"Origin".to_owned()), "{names:?}");
+    assert!(names.contains(&"CFrame".to_owned()), "{names:?}");
+}
+
+#[test]
 fn category_comes_from_the_reflection_dump() {
     assert_eq!(category("Anchored", Variant::Bool(true)), "Part");
     assert_eq!(category("CanCollide", Variant::Bool(true)), "Collision");
