@@ -18,7 +18,7 @@ use std::time::Instant;
 
 use glam::{Mat3, Mat4, Vec2, Vec3};
 use gpui_kit::{Modifiers, Pixels, Point};
-use rbx_viewer::gizmo::{self, Faces, Handles};
+use rbx_viewer::gizmo::{self, End, Faces, Gizmo, Handles};
 use rbx_viewer::pick::{self, Ray};
 use rbx_viewer::snap;
 
@@ -261,6 +261,7 @@ impl WorkspaceView {
             // one needs no second opinion.
             if let Some(drag) = self.grab_handle(ray, modifiers.alt) {
                 self.begin(drag, cx);
+                self.hold_handle(ray);
                 // Studio's handle drag shows its guides from the press on —
                 // the label reading 0 — not from the first step that moves.
                 self.grab_guides(drag, ray);
@@ -324,6 +325,25 @@ impl WorkspaceView {
     /// the cursor and took the click as a pick instead, so nothing is held.
     pub(crate) fn refuse_grab(&mut self) {
         self.pending_grab = None;
+    }
+
+    /// Draws only the Move arrow or Scale ball `ray` grabbed, for as long as
+    /// the drag holds it: Studio hides the other five mid-drag (see
+    /// `rbx_viewer::gizmo::Gizmo::held`), and [`WorkspaceView::end_drag`]
+    /// brings them back.
+    fn hold_handle(&mut self, ray: Ray) {
+        let end = match self.transform.tool {
+            Tool::Move => self.handles().and_then(|handles| handles.grab_arm(ray)),
+            Tool::Scale => self.faces().and_then(|faces| faces.grab(ray)),
+            Tool::Select | Tool::Rotate => None,
+        };
+        if let Some(end) = end {
+            let held = self.transform.gizmo().map(|gizmo| Gizmo {
+                held: Some(End::of(end)),
+                ..gizmo
+            });
+            self.pump.gizmo(held);
+        }
     }
 
     /// What this ray grabs on the gizmo itself, if anything: a Move arrow, a
@@ -637,6 +657,12 @@ impl WorkspaceView {
     ) {
         self.step_drag(window, cx);
         if let Some(drag) = self.drag.take() {
+            if matches!(
+                drag,
+                Drag::Axis { .. } | Drag::Size { .. } | Drag::Box { .. }
+            ) {
+                self.pump.gizmo(self.transform.gizmo());
+            }
             let arrow = self.guides.arrow;
             self.clear_guides();
             self.rehover();

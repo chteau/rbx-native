@@ -17,7 +17,7 @@ use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
 
 use crate::gizmo::{
-    Axis, Faces, Handles, Shape, HEAD_RADIUS, HEAD_START, RING_RADIUS, RING_THICKNESS,
+    Axis, End, Faces, Handles, Shape, HEAD_RADIUS, HEAD_START, RING_RADIUS, RING_THICKNESS,
     SHAFT_RADIUS, SHAFT_START,
 };
 
@@ -90,11 +90,13 @@ impl Vertex {
     }
 }
 
-/// This tool's handles as one triangle list, painted back to front.
-pub(super) fn mesh(shape: &Shape, eye: Vec3) -> Vec<Vertex> {
+/// This tool's handles as one triangle list, painted back to front — only
+/// the `held` one, while a drag holds a Move arrow or a Scale ball.
+pub(super) fn mesh(shape: &Shape, held: Option<End>, eye: Vec3) -> Vec<Vertex> {
+    let shown = |axis: Axis, sign: f32| held.is_none_or(|end| end.is(axis, sign));
     match shape {
-        Shape::Move(handles) => arms(handles, eye, arrow),
-        Shape::Scale(faces) => balls(faces, eye),
+        Shape::Move(handles) => arms(handles, eye, arrow, shown),
+        Shape::Scale(faces) => balls(faces, eye, shown),
         Shape::Rotate(handles) => rings(handles, eye),
     }
 }
@@ -107,10 +109,16 @@ type Build = fn(&mut Vec<Vertex>, Vec3, Vec3, f32, [f32; 3]);
 ///
 /// Sorting by arm is enough here: the arms never intersect each other, so a
 /// painter's order over six convex pieces is exact rather than approximate.
-fn arms(handles: &Handles, eye: Vec3, build: Build) -> Vec<Vertex> {
+fn arms(
+    handles: &Handles,
+    eye: Vec3,
+    build: Build,
+    shown: impl Fn(Axis, f32) -> bool,
+) -> Vec<Vertex> {
     let mut arms: Vec<(f32, Axis, f32)> = Axis::ALL
         .into_iter()
         .flat_map(|axis| [(axis, 1.0f32), (axis, -1.0f32)])
+        .filter(|&(axis, sign)| shown(axis, sign))
         .map(|(axis, sign)| {
             let tip = handles.origin() + handles.direction(axis) * handles.arm() * sign;
             ((tip - eye).length(), axis, sign)
@@ -167,9 +175,10 @@ fn arrow(vertices: &mut Vec<Vertex>, origin: Vec3, direction: Vec3, arm: f32, co
 /// Sorted by ball for the same reason [`arms`] sorts by arm: six convex pieces
 /// that only meet when a part is small enough for opposite faces to touch, so
 /// a painter's order over them is exact wherever it matters.
-fn balls(faces: &Faces, eye: Vec3) -> Vec<Vertex> {
+fn balls(faces: &Faces, eye: Vec3, shown: impl Fn(Axis, f32) -> bool) -> Vec<Vertex> {
     let mut order: Vec<(f32, Axis, f32)> = faces
         .all()
+        .filter(|&(axis, sign)| shown(axis, sign))
         .map(|(axis, sign)| ((faces.handle(axis, sign) - eye).length(), axis, sign))
         .collect();
     order.sort_by(|(a, ..), (b, ..)| b.total_cmp(a));

@@ -29,6 +29,11 @@ fn faces() -> Faces {
     Faces::new(model, pose(Vec3::splat(40.0)), false)
 }
 
+/// No handle held: every one drawn.
+fn every(_: Axis, _: f32) -> bool {
+    true
+}
+
 /// Every tool's geometry, for the checks that have to hold for all three.
 fn shapes() -> [Shape; 3] {
     [
@@ -57,7 +62,7 @@ fn signed_volume(vertices: &[Vertex]) -> f32 {
 #[test]
 fn a_gizmo_fits_the_buffer_it_reserved() {
     for shape in shapes() {
-        let vertices = mesh(&shape, Vec3::splat(40.0));
+        let vertices = mesh(&shape, None, Vec3::splat(40.0));
         assert!(
             vertices.len() <= CAPACITY,
             "{shape:?} overruns the buffer at {} vertices",
@@ -70,7 +75,7 @@ fn a_gizmo_fits_the_buffer_it_reserved() {
 
 #[test]
 fn the_move_arms_fill_exactly_what_they_reserve() {
-    let vertices = arms(&handles(), Vec3::splat(40.0), arrow);
+    let vertices = arms(&handles(), Vec3::splat(40.0), arrow, every);
     assert_eq!(vertices.len(), ARROW_VERTICES);
 }
 
@@ -78,7 +83,7 @@ fn the_move_arms_fill_exactly_what_they_reserve() {
 fn no_move_arrow_is_drawn_further_out_than_an_arm() {
     let handles = handles();
     let arm = handles.arm();
-    let furthest = mesh(&Shape::Move(handles), Vec3::splat(40.0))
+    let furthest = mesh(&Shape::Move(handles), None, Vec3::splat(40.0))
         .iter()
         .map(|vertex| (Vec3::from(vertex.position) - handles.origin()).length())
         .fold(0.0f32, f32::max);
@@ -94,7 +99,7 @@ fn no_move_arrow_is_drawn_further_out_than_an_arm() {
 #[test]
 fn every_scale_ball_is_drawn_on_the_face_it_resizes() {
     let faces = faces();
-    let vertices = mesh(&Shape::Scale(faces), Vec3::splat(40.0));
+    let vertices = mesh(&Shape::Scale(faces), None, Vec3::splat(40.0));
 
     for vertex in vertices {
         let point = Vec3::from(vertex.position);
@@ -136,7 +141,7 @@ fn every_arrow_is_wound_outwards() {
 
 #[test]
 fn a_whole_gizmo_is_wound_outwards() {
-    assert!(signed_volume(&arms(&handles(), Vec3::splat(40.0), arrow)) > 0.0);
+    assert!(signed_volume(&arms(&handles(), Vec3::splat(40.0), arrow, every)) > 0.0);
 }
 
 /// A torus is a closed surface, so the same divergence-theorem check that
@@ -194,7 +199,7 @@ fn a_scale_ball_is_round() {
 fn the_scale_balls_are_painted_back_to_front() {
     let faces = faces();
     let eye = Vec3::new(4.0, 1.0, 40.0);
-    let vertices = balls(&faces, eye);
+    let vertices = balls(&faces, eye, every);
 
     let mut previous = f32::INFINITY;
     for chunk in vertices.as_chunks::<VERTICES_PER_BALL>().0 {
@@ -223,7 +228,7 @@ fn the_arms_are_painted_back_to_front() {
     // painted first and the one reaching towards it last, so that with the
     // depth test off the near arm still ends up on top.
     let handles = Handles::new(Vec3::ZERO, basis(None), 1.0);
-    let vertices = arms(&handles, Vec3::new(100.0, 0.0, 0.0), arrow);
+    let vertices = arms(&handles, Vec3::new(100.0, 0.0, 0.0), arrow, every);
 
     let (chunks, _) = vertices.as_chunks::<VERTICES_PER_ARM>();
     let first = chunks.first().expect("six arms");
@@ -296,7 +301,7 @@ fn each_ring_lies_in_the_plane_of_its_own_axis() {
 #[test]
 fn each_arm_carries_its_axis_colour() {
     for shape in shapes() {
-        let vertices = mesh(&shape, Vec3::splat(40.0));
+        let vertices = mesh(&shape, None, Vec3::splat(40.0));
         let colors: std::collections::HashSet<[u32; 3]> = vertices
             .iter()
             .map(|vertex| vertex.color.map(f32::to_bits))
@@ -313,7 +318,7 @@ fn each_arm_carries_its_axis_colour() {
 fn a_local_gizmo_points_along_the_parts_own_axes() {
     let rotation = glam::Mat3::from_rotation_y(std::f32::consts::FRAC_PI_2);
     let handles = Handles::new(Vec3::ZERO, basis(Some(rotation)), 1.0);
-    let vertices = arms(&handles, Vec3::splat(40.0), arrow);
+    let vertices = arms(&handles, Vec3::splat(40.0), arrow, every);
 
     // The red (X) arrow's tip now stands on world -Z, not world +X.
     let red = Axis::X.color().map(f32::to_bits);
@@ -348,4 +353,21 @@ fn a_local_rotation_ring_stands_in_the_parts_own_plane() {
         let point = Vec3::from(vertex.position);
         assert!(point.z.abs() <= tube + 1e-4, "the red ring left world Z");
     }
+}
+
+/// A drag draws the one handle it holds: Studio builds just the dragged
+/// Move arrow or Scale ball while it is held, and every handle again after.
+#[test]
+fn a_held_handle_is_drawn_alone() {
+    let eye = Vec3::splat(40.0);
+    for shape in [Shape::Move(handles()), Shape::Scale(faces())] {
+        let all = mesh(&shape, None, eye).len();
+        let held = End::of((Axis::X, -1.0));
+        let one = mesh(&shape, Some(held), eye);
+        assert_eq!(one.len() * 6, all, "{shape:?}");
+    }
+    // Rotate has no ends to hold; its rings are untouched.
+    let rings = mesh(&Shape::Rotate(handles()), None, eye).len();
+    let held = Some(End::of((Axis::Y, 1.0)));
+    assert_eq!(mesh(&Shape::Rotate(handles()), held, eye).len(), rings);
 }

@@ -6,7 +6,7 @@
 
 use glam::Vec3;
 
-use crate::gizmo::Shape;
+use crate::gizmo::{End, Shape};
 
 use super::pipeline::{self, Surface, Target};
 use mesh::{Vertex, CAPACITY};
@@ -14,6 +14,11 @@ use mesh::{Vertex, CAPACITY};
 mod mesh;
 
 const SHADER: &str = include_str!("gizmo.wgsl");
+
+/// The layout [`Draggers::triangles`] is laid out in.
+pub(super) fn vertex_layout() -> wgpu::VertexBufferLayout<'static> {
+    Vertex::layout()
+}
 
 /// The gizmo's GPU state.
 pub(super) struct Draggers {
@@ -63,15 +68,27 @@ impl Draggers {
 
     /// Rebuilds this frame's handles, or draws none at all when nothing is
     /// selected or no transform tool is active.
-    pub(super) fn update(&mut self, queue: &wgpu::Queue, shape: Option<Shape>, eye: Vec3) {
+    pub(super) fn update(
+        &mut self,
+        queue: &wgpu::Queue,
+        shape: Option<Shape>,
+        held: Option<End>,
+        eye: Vec3,
+    ) {
         let Some(shape) = shape else {
             self.count = 0;
             return;
         };
 
-        let vertices = mesh::mesh(&shape, eye);
+        let vertices = mesh::mesh(&shape, held, eye);
         self.count = vertices.len() as u32;
         queue.write_buffer(&self.vertices, 0, bytemuck::cast_slice(&vertices));
+    }
+
+    /// This frame's handle triangles, `None` with none drawn — what the
+    /// line pass keeps its guides off (see `renderer::lines`).
+    pub(super) fn triangles(&self) -> Option<(&wgpu::Buffer, u32)> {
+        (self.count > 0).then_some((&self.vertices, self.count))
     }
 
     pub(super) fn draw<'a>(&'a self, pass: &mut wgpu::RenderPass<'a>, frame: &'a wgpu::BindGroup) {
