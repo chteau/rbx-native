@@ -97,6 +97,29 @@ pub(crate) fn plan(
     screens
 }
 
+/// The one tree `root` — a `ScreenGui`, `BillboardGui` or `SurfaceGui` —
+/// planned exactly as [`plan`] plans it, without walking the rest of the
+/// DOM: `None` once it is not a tree [`plan`] would list at all (gone, no
+/// such root, or under a `StarterGui` hiding its contents).
+pub(crate) fn plan_root(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    materials: &mut Catalog,
+    root: Ref,
+) -> Option<Screen> {
+    let mut up = dom.parent(root);
+    while let Some(ancestor) = up {
+        if hides_contents(database, dom.get(ancestor)?) {
+            return None;
+        }
+        up = dom.parent(ancestor);
+    }
+    let styles = Styled::for_tree(dom, root);
+    let mut found = Vec::new();
+    gather(dom, database, &styles, materials, root, &mut found);
+    found.into_iter().find(|screen| screen.referent == root)
+}
+
 fn gather(
     dom: &WeakDom,
     database: &ReflectionDatabase,

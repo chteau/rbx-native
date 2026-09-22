@@ -21,10 +21,11 @@ pub(super) struct Pending {
     pub(super) lights: bool,
     /// By `EffectKind` — see [`Pending::effect`].
     pub(super) effects: [bool; 5],
-    /// The `ScreenGui` overlays, and the `BillboardGui`/`SurfaceGui`
-    /// canvases placed in the scene — two lists, re-planned apart, since a
-    /// part that moved can only have carried a canvas.
-    pub(super) screens: bool,
+    /// The GUI trees (every `ScreenGui`, and every `BillboardGui`/
+    /// `SurfaceGui` as an editor's canvas), and the canvases placed in the
+    /// scene — two lists, re-planned apart, since a part that moved can
+    /// only have carried a canvas.
+    pub(super) screens: Screens,
     pub(super) spaces: bool,
     /// An `Attachment` moved, came or went. What hangs off one — a `Beam`
     /// or `Trail` end, a `Light` — is re-planned only if the scene has any
@@ -34,6 +35,35 @@ pub(super) struct Pending {
     /// after is what made dragging any model cost a full-place walk per
     /// mouse move.
     pub(super) attachments: bool,
+}
+
+/// Which GUI trees a batch re-plans.
+///
+/// A property written inside one tree — every step of an editor's drag —
+/// re-plans that tree alone: the whole list costs a walk of the entire DOM
+/// (twice: once for style links, once for roots) and a plan of every tree
+/// in the place, which is what made a drag cost the place rather than the
+/// edit.
+#[derive(Default)]
+pub(super) enum Screens {
+    #[default]
+    None,
+    Roots(Vec<Ref>),
+    All,
+}
+
+impl Screens {
+    fn root(&mut self, root: Ref) {
+        match self {
+            Screens::None => *self = Screens::Roots(vec![root]),
+            Screens::Roots(roots) if !roots.contains(&root) => roots.push(root),
+            Screens::Roots(_) | Screens::All => {}
+        }
+    }
+
+    fn owed(&self) -> bool {
+        !matches!(self, Screens::None)
+    }
 }
 
 impl Pending {
@@ -71,31 +101,42 @@ impl Patcher<'_> {
     /// once it is gone. A `ScreenGui` is an overlay, a `BillboardGui`/
     /// `SurfaceGui` a canvas, and a `Frame` whichever holds it; with no
     /// container to be found (the parent went too), both lists are owed.
-    pub(super) fn gui_changed(&mut self, start: Option<Ref>) {
+    ///
+    /// `written` is a property write on a live instance, which re-plans only
+    /// the tree it sits in (see [`Screens`]). Anything structural re-plans
+    /// every tree, and so does a write to the styling family: a sheet can
+    /// sit in one tree and style another through a `StyleLink` anywhere.
+    pub(super) fn gui_changed(&mut self, start: Option<Ref>, written: bool) {
         let dom = self.dom;
+        let styling = start
+            .and_then(|start| dom.get(start))
+            .is_some_and(|instance| {
+                ["StyleBase", "StyleDerive", "StyleLink"]
+                    .iter()
+                    .any(|class| self.database.is_subclass_of(instance.class(), class))
+            });
         let mut current = start;
         while let Some(referent) = current {
             let Some(instance) = dom.get(referent) else {
                 break;
             };
-            if self.database.is_subclass_of(instance.class(), "ScreenGui") {
-                self.pending.screens = true;
-                return;
-            }
-            if self
-                .database
-                .is_subclass_of(instance.class(), "BillboardGui")
-                || self.database.is_subclass_of(instance.class(), "SurfaceGui")
-            {
-                // Both: the canvas an editor lays one of these out on is
-                // planned with the screens (see `scene::gui::plan`).
-                self.pending.spaces = true;
-                self.pending.screens = true;
+            let class = instance.class();
+            let screen = self.database.is_subclass_of(class, "ScreenGui");
+            // Both lists for these: the canvas an editor lays one out on is
+            // planned with the screens (see `scene::gui::plan`).
+            let space = self.database.is_subclass_of(class, "BillboardGui")
+                || self.database.is_subclass_of(class, "SurfaceGui");
+            if screen || space {
+                self.pending.spaces |= space;
+                match written && !styling {
+                    true => self.pending.screens.root(referent),
+                    false => self.pending.screens = Screens::All,
+                }
                 return;
             }
             current = dom.parent(referent);
         }
-        self.pending.screens = true;
+        self.pending.screens = Screens::All;
         self.pending.spaces = true;
     }
 
@@ -167,13 +208,27 @@ impl Patcher<'_> {
             });
             self.request_effect_textures(kind);
         }
-        if self.pending.screens {
-            self.loaded.scene_mut().replan_gui_screens(dom, database);
+        let screens = std::mem::take(&mut self.pending.screens);
+        match &screens {
+            Screens::None => {}
+            Screens::All => self.loaded.scene_mut().replan_gui_screens(dom, database),
+            Screens::Roots(roots) => {
+                // A root the list does not hold yet — one this batch made —
+                // has no place in it to go to but the one a whole re-plan
+                // finds for it.
+                if !self
+                    .loaded
+                    .scene_mut()
+                    .replan_gui_roots(dom, database, roots)
+                {
+                    self.loaded.scene_mut().replan_gui_screens(dom, database);
+                }
+            }
         }
         if self.pending.spaces {
             self.loaded.scene_mut().replan_gui_spaces(dom, database);
         }
-        if self.pending.screens || self.pending.spaces {
+        if screens.owed() || self.pending.spaces {
             // An `ImageLabel` the edit pointed at an image this session has
             // never seen, and a text object it gave a family this session has
             // never seen, both draw their fallback until the asset lands;

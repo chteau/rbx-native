@@ -14,7 +14,7 @@
 //! would reveal it survive into a place file, so here a matching rule always
 //! wins over the instance's stored value.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use rbx_dom::{Ref, Variant, WeakDom};
 
@@ -39,6 +39,51 @@ impl Styled {
             styled.gather(dom, root);
         }
         styled
+    }
+
+    /// [`Styled::new`] for one tree alone: the instances under `root`
+    /// (itself included) come out exactly as the whole-DOM pass would leave
+    /// them, and nothing else is walked but the path down to `root` — a
+    /// link applies to its parent's tree, so only one on `root`'s path or
+    /// inside it can reach it. The walk keeps the whole pass's order, which
+    /// is what decides which of two colliding links wins.
+    pub(super) fn for_tree(dom: &WeakDom, root: Ref) -> Self {
+        let mut path = HashSet::new();
+        let mut up = dom.parent(root);
+        while let Some(ancestor) = up {
+            path.insert(ancestor);
+            up = dom.parent(ancestor);
+        }
+        let mut styled = Styled::default();
+        for &top in dom.root_refs() {
+            styled.gather_toward(dom, top, root, &path);
+        }
+        styled
+    }
+
+    fn gather_toward(&mut self, dom: &WeakDom, referent: Ref, root: Ref, path: &HashSet<Ref>) {
+        let Some(instance) = dom.get(referent) else {
+            return;
+        };
+        if referent == root {
+            self.gather(dom, referent);
+            return;
+        }
+        if instance.class() == LINK_CLASS {
+            if let (Some(sheet), Some(scope)) = (cascade::reference(instance), dom.parent(referent))
+            {
+                if path.contains(&scope) {
+                    self.apply_from(dom, scope, root, &cascade::flatten(dom, sheet));
+                }
+            }
+            return;
+        }
+        if !path.contains(&referent) {
+            return;
+        }
+        for &child in instance.children() {
+            self.gather_toward(dom, child, root, path);
+        }
     }
 
     /// `instance`'s properties with every rule that matched it applied.
@@ -77,7 +122,13 @@ impl Styled {
     /// rules, and the alternative is indexing them by class/tag/name, which
     /// only pays once a sheet runs to hundreds.
     fn apply(&mut self, dom: &WeakDom, root: Ref, rules: &[cascade::Rule]) {
-        let mut stack = vec![root];
+        self.apply_from(dom, root, root, rules);
+    }
+
+    /// [`Styled::apply`] over `start`'s tree alone, inside a link scoped to
+    /// `root` — the selectors still read their ancestry from `root`.
+    fn apply_from(&mut self, dom: &WeakDom, root: Ref, start: Ref, rules: &[cascade::Rule]) {
+        let mut stack = vec![start];
         while let Some(referent) = stack.pop() {
             let Some(instance) = dom.get(referent) else {
                 continue;

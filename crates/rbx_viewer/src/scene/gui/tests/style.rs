@@ -397,3 +397,77 @@ fn a_place_with_no_style_link_is_untouched() {
         [1.0, 1.0, 1.0]
     );
 }
+
+// One tree planned on its own — what an editor's drag re-plans every step —
+// has to come out exactly as the whole place's plan has it, links above it
+// and inside it applied in the same order: here `StarterGui`'s own link,
+// listed after the screen, overrides the screen's.
+#[test]
+fn one_tree_planned_alone_matches_the_whole_places_plan() {
+    let mut dom = WeakDom::new();
+    let starter = dom.new_instance("StarterGui", "StarterGui", None);
+    let target = dom.new_instance("ScreenGui", "Target", Some(starter));
+    dom.set_property(target, "ScreenInsets", Variant::Enum(0))
+        .unwrap();
+    let card = frame(
+        &mut dom,
+        target,
+        udim2(0.0, 10, 0.0, 10),
+        udim2(0.0, 50, 0.0, 50),
+    );
+    dom.set_name(card, "Card").unwrap();
+    frame(
+        &mut dom,
+        target,
+        udim2(0.0, 80, 0.0, 10),
+        udim2(0.0, 50, 0.0, 50),
+    );
+    let inner = sheet(&mut dom);
+    rule(
+        &mut dom,
+        inner,
+        "#Card",
+        &[("BackgroundColor3", colour(BLUE))],
+    );
+    link(&mut dom, target, inner);
+    let other = dom.new_instance("ScreenGui", "Other", Some(starter));
+    frame(
+        &mut dom,
+        other,
+        udim2(0.0, 0, 0.0, 0),
+        udim2(0.0, 20, 0.0, 20),
+    );
+    let outer = sheet(&mut dom);
+    rule(
+        &mut dom,
+        outer,
+        "Frame",
+        &[("BackgroundColor3", colour(RED))],
+    );
+    link(&mut dom, starter, outer);
+
+    let database = ReflectionDatabase::embedded();
+    let alone =
+        crate::scene::gui::plan_root(&dom, &database, &mut Catalog::new(&dom, &database), target)
+            .expect("a ScreenGui is a tree");
+    let whole = screens(&dom);
+    let listed = whole
+        .iter()
+        .find(|screen| screen.referent == target)
+        .unwrap();
+
+    let alone = resolve(std::slice::from_ref(&alone), VIEWPORT);
+    assert_eq!(alone, resolve(std::slice::from_ref(listed), VIEWPORT));
+    assert_eq!(alone[0].background, RED, "the later link wins");
+
+    // A `StarterGui` hiding its contents lists no tree at all.
+    dom.set_property(starter, "ShowDevelopmentGui", Variant::Bool(false))
+        .unwrap();
+    assert!(crate::scene::gui::plan_root(
+        &dom,
+        &database,
+        &mut Catalog::new(&dom, &database),
+        target
+    )
+    .is_none());
+}

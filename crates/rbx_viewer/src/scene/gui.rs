@@ -45,7 +45,7 @@ pub(crate) use plan::GroupTint;
 #[cfg(test)]
 pub(crate) use plan::TextSpan;
 pub(crate) use plan::{
-    plan, span_face, Align, GradientKind, Join, Screen, Text, Tile, ViewCamera, Viewport,
+    plan, plan_root, span_face, Align, GradientKind, Join, Screen, Text, Tile, ViewCamera, Viewport,
 };
 pub(crate) use space::{plan as plan_space, Anchor, SpaceGui};
 pub use wheel::ScrollTarget;
