@@ -1560,6 +1560,19 @@ against `Roblox/creator-docs` rather than assumed:
   neighbourhood, but its own screen in real Studio rather than a tab of
   Studio Settings, worth keeping distinct here too rather than merging
   the two into one dialog Studio itself doesn't have.
+- [ ] 📋 **Discord Rich Presence, switched on from Studio Settings** —
+  an rbx-native addition, not Studio parity: real Studio has no built-in
+  Discord presence, only third-party plugins and companion apps. A
+  checkbox in the Studio Settings screen above (off by default) that
+  shows the open place, what's being edited (a script's name, or the
+  viewport) and elapsed time on the user's Discord profile, with a
+  second toggle to hide place and script names for anyone working on
+  something unannounced. Discord's local IPC is all it needs — the
+  `discord-ipc-0` socket under `$XDG_RUNTIME_DIR` on Linux (Flatpak and
+  Snap builds of Discord put it somewhere else, worth probing rather
+  than assuming one path) and the `\\.\pipe\discord-ipc-0` named pipe on
+  Windows — plus this project's own Discord application id. No Discord
+  running should mean silently nothing, never an error.
 - [ ] 📋 **A "Beta Features" toggle**, matching real Studio's own
   `File > Beta Features` (experimental features switched on individually,
   applied after a restart). Directly useful for a fast-moving project like
