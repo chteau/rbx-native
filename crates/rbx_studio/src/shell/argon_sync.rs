@@ -46,6 +46,12 @@ const POLL_INTERVAL: Duration = Duration::from_millis(500);
 /// already uses.
 const WRITE_DEBOUNCE: Duration = Duration::from_millis(300);
 
+/// `RBX_STUDIO_ARGON_CONNECT=1` (or `=<host>:<port>` to override the dock's
+/// own address field first) clicks Connect on the editor's behalf, the same
+/// screenshot-aid reason every other `RBX_STUDIO_*` var in `shell.rs`
+/// exists — see `main`'s module doc comment.
+pub(crate) const CONNECT_VARIABLE: &str = "RBX_STUDIO_ARGON_CONNECT";
+
 /// What the Argon dock shows — `argon-roblox`'s own plugin state machine
 /// (`NotConnected`/`Connecting`/`Connected`/`Error`), minus its `Unavailable`
 /// page (this editor has no play-test mode to be unavailable during).
@@ -123,6 +129,23 @@ impl Shell {
 
     pub(super) fn argon_pending(&self) -> Option<&PendingReview> {
         self.argon.pending.as_ref()
+    }
+
+    /// `RBX_STUDIO_ARGON_CONNECT`: documented at [`CONNECT_VARIABLE`].
+    pub(super) fn apply_debug_argon_connect(
+        &mut self,
+        window: &mut gpui_kit::Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Ok(value) = std::env::var(CONNECT_VARIABLE) else {
+            return;
+        };
+        if value != "1" {
+            self.argon_address.update(cx, |state, cx| {
+                state.set_value(value, window, cx);
+            });
+        }
+        self.argon_connect(cx);
     }
 
     /// The dock's Connect button: reads the address field, opens the

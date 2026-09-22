@@ -46,6 +46,10 @@
 //! Ctrl+S writes the place back to the file it was opened from, in the
 //! format it was opened in; `RBX_STUDIO_SAVE_AS=<path>` redirects one such
 //! save to a scratch path instead (see `save`).
+//! `RBX_STUDIO_ARGON_CONNECT=1|<host>:<port>` clicks Connect on the Script
+//! Editor's Argon dock at startup — the same aid, for a real connection to
+//! a running `argon serve` (see `shell::argon_sync`); the address form
+//! overrides the dock's own address field first.
 
 mod align;
 mod argon_client;

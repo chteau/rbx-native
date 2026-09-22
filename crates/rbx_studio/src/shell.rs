@@ -691,6 +691,12 @@ impl Shell {
         // blocks, so the screen they selected into is the one on the canvas.
         shell.apply_debug_ui_editor(cx);
 
+        // `RBX_STUDIO_ARGON_CONNECT` (see `shell::argon_sync`): Connect is a
+        // click, and nothing else can send one to the window on the
+        // editor's behalf — the same reason every other debug var here
+        // exists.
+        shell.apply_debug_argon_connect(window, cx);
+
         // `RBX_STUDIO_MENU` (see `menu_bar::MenuBar::apply_debug_entry`):
         // the only way to put the keyboard in the menu bar without a
         // keystroke, and so the only way to screenshot it there.
