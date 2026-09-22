@@ -2,6 +2,24 @@
 
 ## 2026-09-22
 
+- **The Style Editor is the UI Editor, with a canvas.** Editing a
+  `ScreenGui` meant picking its descendants out of the Explorer and typing
+  `UDim2`s into Properties, with the 3D view the only picture. The document
+  now opens on a Figma-style canvas beside the unchanged style sheets
+  (its Stylesheet sub-tab): select a `ScreenGui` or anything in it and that
+  screen alone is drawn — by the viewport's own GUI renderer, with no scene
+  behind it — at a device preset, a typed size or turned on its side. Click
+  or marquee to select, drag, resize, rotate, nudge with the arrows, snap to
+  siblings and the parent along smart guides, hold Alt for distances, align,
+  distribute, group into a fitted `Frame`, insert elements from a floating
+  bar, and make a screen responsive in one click (offsets folded into scale,
+  fixed shapes kept by aspect ratio) — every edit one Ctrl+Z, written the
+  way a typed Properties value is. While it is up the Explorer lists only
+  the UI, and the Properties, Output and Viewport docks step aside for a
+  property sidebar built from the same rows; leaving it puts them back as
+  they were. A new `GuiObject` inserted anywhere is now a visible box rather
+  than a 0×0 one. — @chteau
+
 - **Properties shows a part's `Origin`, and typing one moves it there.**
   Studio lists where a part or model's pivot stands in the world under
   Transform; it was missing here, so filtering for "origin" or "position"

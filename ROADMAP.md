@@ -771,6 +771,44 @@ Roblox's own engine.
   of that type gets, never a second set of editors. `rbx_dom::attributes`
   already read and wrote both; the gap was entirely on the editor's side.
 
+- [x] **UI Editor — a dedicated UI-editing mode for `StarterGui`.** The
+  Style Editor document is the **UI Editor** now, with two sub-tabs on the
+  dock-tab pill: the new canvas (the default) and the style-sheet editor
+  as it was (**Stylesheet**; View ⟩ Style Editor still lands there). The
+  3D viewport never edits a GUI and is off screen while the canvas is up.
+  - **The canvas draws one `ScreenGui` alone** — whichever the selection
+    is in, enabled or not — through the viewport's own GUI layout and
+    painter on the same render thread, over a flat backdrop with no scene
+    pass, at a simulated resolution: six device presets (desktop, laptop,
+    tablet, phone landscape/portrait, small phone), a typed width×height,
+    and a portrait ⇄ landscape turn. Pan with the wheel or the middle
+    button, zoom with Ctrl+wheel or the toolbar, fit on demand.
+  - **The Explorer lists only the UI** while the canvas is up — every
+    `ScreenGui`/`BillboardGui`/`SurfaceGui` as a root with its subtree —
+    and the Properties, Output and Viewport docks are left out of the
+    layout for the room, at render time only: leaving the canvas shows
+    exactly what was there. A Figma-style **property sidebar** stands in
+    for Properties, built from the same rows through the Properties
+    panel's own row builder, sorted into Layout/Fill/Stroke/Text/Image/
+    Behavior with the rest under "More properties".
+  - **Figma-like editing**, all through the shared selection and the one
+    undo history (each gesture one entry, written through the Properties
+    panel's own commit): click and marquee select, drag to move, eight
+    handles to resize (Shift keeps the aspect), a knob to rotate (Shift
+    snaps to 15°), smart alignment guides against siblings and the parent
+    (Ctrl lets go of them), Alt for the distances to what the pointer is
+    over, arrow nudging (Shift for 10 px), Delete, align left/centre/right/
+    top/middle/bottom through the Align tool's own geometry, distribute
+    evenly, and Ctrl+G into a `Frame` fitted round the selection.
+  - **A floating insert bar** puts a `Frame`, text, image or scrolling
+    frame — or a `ScreenGui`, layout or modifier from its `+` — under the
+    selection or the screen, through the Explorer's own insert, which now
+    seeds a new `GuiObject` as a visible box rather than 0×0.
+  - **Make responsive** folds every `Position`/`Size` offset of the
+    selection (or the whole screen) into its scale at the current
+    resolution, and gives each pixel-sized box a `UIAspectRatioConstraint`
+    at its shape, as one undo step.
+
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
 - [x] Windows — asset cache and settings now fall back to
@@ -1366,55 +1404,23 @@ against `Roblox/creator-docs` rather than assumed:
   rbx-dom`'s attribute format documentation — and, since a blob is packed
   end to end, an instance whose attributes held a `CFrame` no longer loses
   every attribute stored after it.
-- [ ] 📋 **A dedicated UI-editing mode for `StarterGui`.** Today the
-  viewport is always the 3D `Workspace` scene; editing a `ScreenGui`'s
-  layout means selecting its descendants through the Explorer tree alone,
-  with no direct on-screen manipulation and a real risk of misclicking
-  into a `Workspace` part instead of the UI element you meant to touch.
-  GUI rendering is now reasonably complete (see "What's been implemented"
-  → Renderer → GUI), so there is something to edit interactively.
-  Direction decided, in this shape:
-  - **Never in the 3D viewport.** The main viewport keeps *showing* every
-    enabled `ScreenGui` over the scene, as it does today, but never edits
-    one; a click there stays a 3D click.
-  - **The Style Editor panel grows a second tab, "Design"**, beside the
-    existing style-sheet tab. Opening it swaps the whole dock layout for
-    a UI-editing layout (the Explorer, Properties, Output and Script
-    Editor docks hide; the 3D viewport hides), and closing it restores
-    the previous layout.
-  - That layout is three docks, Figma-style. **Left**: the `StarterGui`
-    tree, with a picker for *which* `ScreenGui` is being edited — one at
-    a time, rather than every enabled screen drawn over one another the
-    way the runtime overlay must. **Middle**: a 2D canvas that renders
-    only the chosen `ScreenGui` (no 3D scene behind it, a neutral
-    backdrop), at a *chosen resolution* — a list of device/window presets
-    plus a free width×height — so a layout's responsiveness can be checked
-    by switching resolutions without leaving the tab. **Right**: the
-    Properties panel for the selected `GuiObject`, following the canvas
-    selection like the Explorer's does today.
-  - Then the basic Figma-like editing on that canvas: click to select
-    (respecting `ZIndex` and hierarchy), drag to move, handles to resize,
-    snapping/alignment guides against siblings and the parent, keyboard
-    nudging, multi-select — each writing `Position`/`Size`/`AnchorPoint`
-    through the same undo history every other edit uses, so the main
-    viewport's overlay follows live. Real Studio's own "UI Editor" mode
-    is the reference point for what the handles do.
-  - **`ViewportFrame` authoring, in the same Design tab.** Setting one up
-    in real Studio is notoriously painful: the `Camera` has to be created
-    and parented by hand, its `CFrame` typed in or scripted, the model
-    cloned under the frame, and every adjustment means re-running that
-    dance with no live preview. Here a `ViewportFrame` selected on the
-    canvas gets its own editing surface — its own window, or a large
-    pop-out from the Design tab, since it needs room a dock does not have —
-    that renders the frame's contents exactly as the viewer's
-    `ViewportFrame` support draws them, with a free-flight camera whose
-    pose is written straight to the frame's `CurrentCamera` (created on
-    the spot if the frame has none), an "insert from Workspace" action
-    that clones a selected `Model`/`BasePart` under the frame, framing
-    ("fit the model") buttons, and the frame's `Ambient`/`LightColor`/
-    `LightDirection`/`ImageColor3`/`ImageTransparency` beside it with the
-    result updating live. Every write goes through the undo history like
-    the rest of the tab.
+- [ ] 📋 **`ViewportFrame` authoring in the UI Editor.** The rest of the
+  dedicated UI-editing mode for `StarterGui` has shipped (see "What's been
+  implemented" → Editor → UI Editor); this is what is left of it.
+  Setting one up in real Studio is notoriously painful: the `Camera` has to
+  be created and parented by hand, its `CFrame` typed in or scripted, the
+  model cloned under the frame, and every adjustment means re-running that
+  dance with no live preview. Here a `ViewportFrame` selected on the canvas
+  gets its own editing surface — its own window, or a large pop-out from the
+  UI Editor, since it needs room a dock does not have — that renders the
+  frame's contents exactly as the viewer's `ViewportFrame` support draws
+  them, with a free-flight camera whose pose is written straight to the
+  frame's `CurrentCamera` (created on the spot if the frame has none), an
+  "insert from Workspace" action that clones a selected `Model`/`BasePart`
+  under the frame, framing ("fit the model") buttons, and the frame's
+  `Ambient`/`LightColor`/`LightDirection`/`ImageColor3`/`ImageTransparency`
+  beside it with the result updating live. Every write goes through the undo
+  history like the rest of the tab.
 - [ ] 📋 **3D asset import and round-trip through Roblox**, i.e. import a
   local `.fbx`/`.obj`/`.gltf` (drag-and-drop or
   `Insert > Model/Mesh/Image`), upload it to Roblox as a real asset via
