@@ -2,6 +2,24 @@
 
 ## 2026-09-22
 
+- **The UI Editor's canvas works like Figma now, and keeps up with a drag.**
+  Its sidebar leads with a design panel — position with align-to-parent and
+  an anchor grid, W/H with an aspect lock, auto layout, opacity, corner
+  radius (per corner too), fill with hex and a gradient, stroke, and
+  constraints — where every number's label scrubs and a value Roblox keeps
+  on a modifier makes the `UICorner`, `UIStroke`, `UIPadding` or layout it
+  needs as you edit it. The insert bar draws: pick a tool (or press F, T,
+  B, X, L, G) and drag the element out where it goes; a switch beside it
+  picks whether the canvas writes Offset or Scale. The canvas shows the
+  selection's size, rounds corners from handles, shows an auto layout's
+  gaps and padding as bands you drag and reorders a list by dragging a
+  child, edits text in place on a double-click, and takes Sketch's keys —
+  paint order, fit and zoom to selection, Space to pan, Shift and Alt on
+  every drag. A drag step on a text-heavy screen went from 27 ms to 4 ms:
+  laying the screen out again after each edit no longer re-shapes every
+  label (see BENCHMARKS.md). Open Explorer rows now stay open across an
+  edit. — @chteau
+
 - **The Style Editor is the UI Editor, with a canvas.** Editing a
   `ScreenGui` meant picking its descendants out of the Explorer and typing
   `UDim2`s into Properties, with the 3D view the only picture. The document

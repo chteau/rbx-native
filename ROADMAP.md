@@ -790,10 +790,18 @@ Roblox's own engine.
     `ScreenGui`/`BillboardGui`/`SurfaceGui` as a root with its subtree —
     and the Properties, Output and Viewport docks are left out of the
     layout for the room, at render time only: leaving the canvas shows
-    exactly what was there. A Figma-style **property sidebar** stands in
-    for Properties, built from the same rows through the Properties
-    panel's own row builder, sorted into Layout/Fill/Stroke/Text/Image/
-    Behavior with the rest under "More properties".
+    exactly what was there. A Figma-style **design panel** stands in for
+    Properties: Position (align to the parent, X/Y, an anchor grid that
+    keeps the element where it is, rotation and a quarter turn), Layout
+    (W/H with an aspect lock, auto layout flow — none, column, row, grid —
+    with gap, padding and alignment, clip content), Appearance (show/hide,
+    opacity, corner radius, all corners or each one), Fill (swatch, hex,
+    opacity, a gradient), Stroke and Constraints (aspect, size and text
+    size limits, scale). Every number's label scrubs, each edit is one
+    undo step, and a value that lives on a modifier makes the `UICorner`,
+    `UIStroke`, `UIPadding` or layout it needs on its first edit. Text,
+    image, input, scrolling and the rest keep the Properties panel's own
+    rows beneath.
   - **Figma-like editing**, all through the shared selection and the one
     undo history (each gesture one entry, written through the Properties
     panel's own commit): click and marquee select, drag to move, eight
@@ -808,10 +816,22 @@ Roblox's own engine.
     the layout the renderer reports rather than a bare parent: the
     parent's `UIPadding`, the element's `UIScale`, an aspect constraint
     (kept through a resize), `SizeConstraint`, and a turned parent.
-  - **A floating insert bar** puts a `Frame`, text, image or scrolling
-    frame — or a `ScreenGui`, layout or modifier from its `+` — under the
-    selection or the screen, through the Explorer's own insert, which now
-    seeds a new `GuiObject` as a visible box rather than 0×0.
+  - **A floating insert bar** arms a drawing tool (F frame, T text, B
+    button, X text box, L image, G image button; V or Escape to put it
+    down): drag the element out where it goes, or click for its own size,
+    and it lands in the container under the pointer. Its `+` inserts a
+    `ScreenGui`, layout or modifier through the Explorer's own insert, and
+    an **Offset/Scale switch** picks which half of every `UDim` the canvas
+    writes — moves, resizes, nudges, aligns, anchors and new elements alike.
+  - **On the canvas, as in Sketch:** a W × H pill under the selection;
+    corner radius handles (Alt for one corner); an auto layout's container,
+    numbered children and gap and padding bands, each dragged to resize;
+    a list or grid child dragged to a new place in it; double-click to
+    type into a text element; the Explorer's menu on right-click (Group in
+    a Frame, and Ungroup, which lets a `Frame` go where its children
+    stand); Ctrl+[ / ] for paint order (Shift for all the way); Ctrl+0 to
+    fit and Ctrl+1 to zoom to the selection; Space to pan; Shift to hold a
+    move to one axis, draw a square; Alt to resize about the centre.
   - **Make responsive** folds every `Position`/`Size` offset of the
     selection (or the whole screen) into its scale at the current
     resolution — against the parent's padded box, a `Size` along the axes
@@ -1414,6 +1434,11 @@ against `Roblox/creator-docs` rather than assumed:
   rbx-dom`'s attribute format documentation — and, since a blob is packed
   end to end, an instance whose attributes held a `CFrame` no longer loses
   every attribute stored after it.
+- [ ] 📋 **Effects (drop shadows) in the UI Editor's design panel.** Figma's
+  Effects section, and Sketch's, is a drop shadow per element, which Roblox
+  now does with `UIShadow`. The embedded API dump predates the class and the
+  GUI renderer draws none, so both come first; the panel's `+` then makes one
+  the way Stroke makes a `UIStroke`.
 - [ ] 📋 **`ViewportFrame` authoring in the UI Editor.** The rest of the
   dedicated UI-editing mode for `StarterGui` has shipped (see "What's been
   implemented" → Editor → UI Editor); this is what is left of it.
