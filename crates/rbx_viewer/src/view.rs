@@ -24,6 +24,7 @@ use glam::Mat4;
 
 use crate::gizmo::Gizmo;
 use crate::pick::Selected;
+use crate::renderer::Segment;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct View {
@@ -47,6 +48,11 @@ pub(crate) struct View {
     /// carried here for the same reason the selection is: a reload must
     /// not quietly drop it while the tool is still open.
     pub(crate) preview: Vec<Mat4>,
+    /// The editor's own line segments, layer by layer (see
+    /// `Headless::set_lines`). Carried for the preview's reason: a reload
+    /// must not drop them while whatever they are drawn for is still
+    /// selected.
+    pub(crate) lines: Vec<Vec<Segment>>,
     /// Whether a part standing in front of the selection hides its outline.
     /// `false` — the box shows through everything, which is what Studio
     /// draws — unless the embedder asks otherwise; `rbxview` never does.
@@ -70,6 +76,14 @@ impl View {
     /// Replaces the previewed boxes — empty to clear them.
     pub(crate) fn set_preview(&mut self, boxes: Vec<Mat4>) {
         self.preview = boxes;
+    }
+
+    /// Replaces one layer's line segments — empty to clear it.
+    pub(crate) fn set_lines(&mut self, layer: usize, segments: Vec<Segment>) {
+        if self.lines.len() <= layer {
+            self.lines.resize(layer + 1, Vec::new());
+        }
+        self.lines[layer] = segments;
     }
 
     pub(crate) fn set_gizmo(&mut self, gizmo: Option<Gizmo>) {
@@ -175,6 +189,7 @@ mod tests {
         view.set_gizmo(Some(Gizmo {
             kind: Kind::Rotate,
             local: true,
+            held: None,
         }));
 
         // A tool switched away and back, and the local toggle flipped: what a
@@ -183,6 +198,7 @@ mod tests {
         view.set_gizmo(Some(Gizmo {
             kind: Kind::Move,
             local: false,
+            held: None,
         }));
 
         assert!(view.orthographic);
@@ -193,6 +209,7 @@ mod tests {
             Some(Gizmo {
                 kind: Kind::Move,
                 local: false,
+                held: None,
             })
         );
     }

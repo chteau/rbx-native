@@ -2,20 +2,20 @@ use rbx_dom::{CFrameData, Color3Data, Ref, Vector3Data};
 
 use super::*;
 
-const EPSILON: f32 = 1e-4;
-const IDENTITY_ROTATION: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+pub(super) const EPSILON: f32 = 1e-4;
+pub(super) const IDENTITY_ROTATION: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
 /// A quarter turn about +Y, which sends the part's local -Z (Front) to -X.
-const YAW_90_ROTATION: [f32; 9] = [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0];
+pub(super) const YAW_90_ROTATION: [f32; 9] = [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0];
 
-fn database() -> ReflectionDatabase {
+pub(super) fn database() -> ReflectionDatabase {
     ReflectionDatabase::embedded()
 }
 
-fn close(actual: Vec3, expected: Vec3) -> bool {
+pub(super) fn close(actual: Vec3, expected: Vec3) -> bool {
     (actual - expected).length() < EPSILON
 }
 
-fn cframe(position: Vec3, rotation: [f32; 9]) -> Variant {
+pub(super) fn cframe(position: Vec3, rotation: [f32; 9]) -> Variant {
     Variant::CFrame(CFrameData {
         position: Vector3Data {
             x: position.x,
@@ -37,14 +37,14 @@ fn vector3(size: Vec3) -> Variant {
 /// A DOM under construction: parts and the lights hanging off them, each with
 /// its own referent, all parented under a synthetic `Workspace` — `local_lights`
 /// only ever looks there now (see [`super::local_lights`]).
-struct Fixture {
-    dom: WeakDom,
+pub(super) struct Fixture {
+    pub(super) dom: WeakDom,
     next: u32,
-    workspace: Ref,
+    pub(super) workspace: Ref,
 }
 
 impl Fixture {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let mut dom = WeakDom::new();
         let workspace = Ref::new(1);
         dom.insert(Instance::new(workspace, "Workspace", "Workspace"));
@@ -56,7 +56,12 @@ impl Fixture {
         }
     }
 
-    fn insert(&mut self, class: &str, parent: Option<Ref>, properties: &[(&str, Variant)]) -> Ref {
+    pub(super) fn insert(
+        &mut self,
+        class: &str,
+        parent: Option<Ref>,
+        properties: &[(&str, Variant)],
+    ) -> Ref {
         let referent = Ref::new(self.next);
         self.next += 1;
         let mut instance = Instance::new(referent, class, class);
@@ -70,7 +75,7 @@ impl Fixture {
         referent
     }
 
-    fn part(&mut self, position: Vec3, size: Vec3, rotation: [f32; 9]) -> Ref {
+    pub(super) fn part(&mut self, position: Vec3, size: Vec3, rotation: [f32; 9]) -> Ref {
         self.insert(
             "Part",
             Some(self.workspace),
@@ -100,22 +105,30 @@ fn a_point_light_defaults_to_studios_own_property_sheet() {
 
     assert_eq!(lights.len(), 1);
     let light = lights[0];
-    assert_eq!(light.range, DEFAULT_RANGE);
+    assert_eq!(light.range, 8.0);
     assert!(close(light.color, Vec3::splat(RADIANCE_SCALE)));
     assert_eq!(light.position, Vec3::ZERO);
-    assert_eq!(light.near, 0.0);
+    assert_eq!(light.face_u, Vec3::ZERO);
+    assert_eq!(light.face_v, 0.0);
     // No cone at all: every direction has to come out fully lit.
     assert_eq!(light.direction, Vec3::ZERO);
     assert!(light.cos_outer < -1.0 && light.cos_outer < light.cos_inner);
 }
 
+/// What a light inserted from the Explorer holds: nothing stored at all, so
+/// every value is its class default — the ones the Properties sheet shows.
 #[test]
-fn a_spot_light_defaults_to_the_wider_range_and_a_right_angle_cone() {
-    let lights = one("SpotLight", &[("Face", Variant::Enum(1))]);
+fn a_cone_light_with_nothing_stored_shines_from_its_front_with_studios_defaults() {
+    for class in ["SpotLight", "SurfaceLight"] {
+        let lights = one(class, &[]);
 
-    assert_eq!(lights[0].range, DEFAULT_SPOT_RANGE);
-    // A 90 degree cone reaches 45 degrees off its axis.
-    assert!((lights[0].cos_outer - 45f32.to_radians().cos()).abs() < EPSILON);
+        assert_eq!(lights.len(), 1, "{class}");
+        assert_eq!(lights[0].range, 16.0, "{class}");
+        assert!(close(lights[0].direction, -Vec3::Z), "{class} faces Front");
+        // A 90 degree cone reaches 45 degrees off its axis.
+        assert!((lights[0].cos_outer - 45f32.to_radians().cos()).abs() < EPSILON);
+        assert!(close(lights[0].color, Vec3::splat(RADIANCE_SCALE)));
+    }
 }
 
 #[test]
@@ -189,26 +202,16 @@ fn a_light_whose_parent_is_not_drawable_is_skipped() {
     assert!(fixture.lights().is_empty());
 }
 
-// Studio's own default: an omitted `Shadows` still casts, just like an
-// omitted `Enabled` still lights (see `a_disabled_light_never_reaches_the_gpu`).
+// The class default: a fresh light casts no shadow until asked to.
 #[test]
-fn shadows_default_to_on_and_read_back_when_turned_off() {
-    assert!(one("SpotLight", &[("Face", Variant::Enum(1))])[0].shadows);
-    assert!(
-        !one(
-            "SpotLight",
-            &[
-                ("Face", Variant::Enum(1)),
-                ("Shadows", Variant::Bool(false))
-            ]
-        )[0]
-        .shadows
-    );
+fn shadows_default_to_off_and_read_back_when_turned_on() {
+    assert!(!one("SpotLight", &[])[0].shadows);
+    assert!(!one("PointLight", &[])[0].shadows);
+    assert!(one("SpotLight", &[("Shadows", Variant::Bool(true))])[0].shadows);
 }
 
 #[test]
-fn a_cone_light_without_a_face_is_skipped() {
-    assert!(one("SpotLight", &[]).is_empty());
+fn a_cone_light_with_an_unreadable_face_is_skipped() {
     assert!(one("SurfaceLight", &[("Face", Variant::Enum(9))]).is_empty());
 }
 
@@ -230,7 +233,7 @@ fn a_spot_aims_along_its_face_rotated_by_the_parts_cframe() {
 }
 
 #[test]
-fn a_surface_light_sits_on_its_face_with_a_near_field_across_it() {
+fn a_surface_light_emits_from_its_whole_face() {
     let mut fixture = Fixture::new();
     // A ceiling panel: 6 by 8 studs across, 2 thick, emitting downward.
     let part = fixture.part(
@@ -249,29 +252,28 @@ fn a_surface_light_sits_on_its_face_with_a_near_field_across_it() {
 
     let light = fixture.lights()[0];
 
-    // On the bottom face, a stud below the part's centre, pointing down.
+    // Centred on the bottom face, a stud below the part's centre, pointing
+    // down, and as wide as that face: 6 along one axis, 8 along the other.
     assert!(close(light.position, Vec3::new(0.0, 19.0, 0.0)));
     assert!(close(light.direction, -Vec3::Y));
-    // Half the shorter side of the 6 by 8 face.
-    assert_eq!(light.near, 3.0);
+    assert!(close(light.face_u.abs(), Vec3::new(3.0, 0.0, 0.0)));
+    assert_eq!(light.face_v, 4.0);
 }
 
-// A face wider than its own reach would otherwise push the falloff past the
-// Range and leave a hard-edged sphere of light.
+// An attachment has no face: a `SurfaceLight` on one shines from its point.
 #[test]
-fn a_huge_face_keeps_its_falloff_inside_its_range() {
+fn a_surface_light_on_an_attachment_has_no_face() {
     let mut fixture = Fixture::new();
-    let part = fixture.part(Vec3::ZERO, Vec3::new(128.0, 1.0, 78.0), IDENTITY_ROTATION);
-    fixture.insert(
-        "SurfaceLight",
+    let part = fixture.part(Vec3::ZERO, Vec3::splat(4.0), IDENTITY_ROTATION);
+    let attachment = fixture.insert(
+        "Attachment",
         Some(part),
-        &[
-            ("Face", Variant::Enum(4)),
-            ("Range", Variant::Float32(18.0)),
-        ],
+        &[("CFrame", cframe(Vec3::ZERO, IDENTITY_ROTATION))],
     );
+    fixture.insert("SurfaceLight", Some(attachment), &[]);
 
-    assert_eq!(fixture.lights()[0].near, 9.0);
+    let light = fixture.lights()[0];
+    assert_eq!((light.face_u, light.face_v), (Vec3::ZERO, 0.0));
 }
 
 #[test]
@@ -299,7 +301,7 @@ fn a_light_on_an_attachment_is_placed_in_the_parts_own_frame() {
 #[test]
 fn the_cone_edges_never_coincide() {
     for angle in [0.0, 1.0, 90.0, 179.0, 180.0, 400.0] {
-        let (outer, inner) = cone(Some(angle));
+        let (outer, inner) = cone(Some(&Variant::Float32(angle)));
         // `- EPSILON`: an Angle of 0 lands the gap on MIN_CONE_GAP itself, and
         // the subtraction that produced it rounds a hair below.
         assert!(
@@ -308,7 +310,6 @@ fn the_cone_edges_never_coincide() {
         );
         assert!(inner <= 1.0, "angle {angle}");
     }
-    assert_eq!(cone(None), cone(Some(DEFAULT_ANGLE_DEGREES)));
 }
 
 #[test]

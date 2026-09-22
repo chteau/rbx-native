@@ -28,12 +28,30 @@ use crate::textures::{self, Decor};
 /// so `rbxview`, `rbxstudio` and their embedders never re-implement the sniff.
 pub fn read_place(path: &Path) -> Result<WeakDom, String> {
     let bytes = std::fs::read(path).map_err(|err| format!("failed to read {path:?}: {err}"))?;
+    let database = ReflectionDatabase::shared();
+    // Both parsers keep a property under whatever name the file used, and a
+    // hand-written place may say `Color` or `Size` where Studio saves
+    // `Color3uint8` and `size`. Renamed once here, so nothing that reads the
+    // tree needs to know both — for a binary place by the names its
+    // per-class property chunks carry, rather than by visiting every
+    // instance.
     let mut dom = if rbx_xml::is_xml(&bytes) {
         let text = std::str::from_utf8(&bytes)
             .map_err(|err| format!("{path:?} is not valid UTF-8 XML: {err}"))?;
-        rbx_xml::deserialize(text).map_err(|err| format!("failed to parse {path:?}: {err}"))?
+        let mut dom =
+            rbx_xml::deserialize(text).map_err(|err| format!("failed to parse {path:?}: {err}"))?;
+        database.normalize_names(&mut dom);
+        dom
     } else {
-        rbx_binary::deserialize(&bytes).map_err(|err| format!("failed to parse {path:?}: {err}"))?
+        let (mut dom, names) = rbx_binary::deserialize_with_names(&bytes)
+            .map_err(|err| format!("failed to parse {path:?}: {err}"))?;
+        database.normalize_spellings(
+            &mut dom,
+            names
+                .iter()
+                .map(|(class, property)| (class.as_str(), property.as_str())),
+        );
+        dom
     };
     // A parser builds the tree through the same `insert`/`set_parent` an edit
     // uses, so the DOM comes back with a change log of its own construction

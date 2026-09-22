@@ -44,6 +44,7 @@ pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
         (Panel::Explorer, &MenuToggleExplorer as &dyn PanelToggle),
         (Panel::Properties, &MenuToggleProperties),
         (Panel::Output, &MenuToggleOutput),
+        (Panel::Viewport, &MenuToggleViewport),
     ] {
         toggle.install(panel, shell.clone(), cx);
     }
@@ -176,8 +177,8 @@ macro_rules! panel_toggle {
             fn install(&self, panel: Panel, shell: Entity<Shell>, cx: &mut App) {
                 cx.on_action(move |_: &$action, cx| {
                     shell.update(cx, |shell, cx| {
-                        let open = shell.is_panel_open(panel);
-                        shell.set_panel_open(panel, !open, cx);
+                        let showing = shell.is_panel_showing(panel);
+                        shell.set_panel_open(panel, !showing, cx);
                     });
                 });
             }
@@ -188,3 +189,4 @@ macro_rules! panel_toggle {
 panel_toggle!(MenuToggleExplorer);
 panel_toggle!(MenuToggleProperties);
 panel_toggle!(MenuToggleOutput);
+panel_toggle!(MenuToggleViewport);

@@ -160,6 +160,10 @@ impl Cues {
         self.pass.remove_part(id);
     }
 
+    pub(super) fn flush(&mut self, queue: &wgpu::Queue) {
+        self.pass.flush(queue);
+    }
+
     pub(super) fn sync_mesh(
         &mut self,
         device: &wgpu::Device,

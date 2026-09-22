@@ -129,12 +129,12 @@ impl Shell {
     }
 
     /// The dock's displayed title for the Properties panel (see
-    /// `shell::dock`): the selected instance's class and name, or the plain
-    /// section name when nothing is selected — the inner header this used to
-    /// feed is gone, the dock's own title bar shows it instead.
+    /// `shell::dock`): what is selected (see `properties::Properties::title`),
+    /// or the plain section name when nothing is — the inner header this used
+    /// to feed is gone, the dock's own title bar shows it instead.
     pub(super) fn properties_title(&self) -> SharedString {
-        self.selected()
-            .and_then(|reference| self.properties.title(&self.dom, reference))
+        self.properties
+            .title(&self.dom, self.selected_all())
             .map_or_else(|| SharedString::from("Properties"), SharedString::from)
     }
 
@@ -157,14 +157,12 @@ impl Shell {
         // closed after, since how many controls there are depends on what
         // is selected.
         self.properties_nav.begin(&self.tab_order, None, cx);
-        let rows = self
+        let folder_color = self
             .selected()
-            .map(|reference| {
-                let folder_color = self.folder_color(reference);
-                self.properties
-                    .rows_matching(&self.dom, reference, &filter, folder_color)
-            })
-            .unwrap_or_default();
+            .and_then(|reference| self.folder_color(reference));
+        let rows =
+            self.properties
+                .rows_matching(&self.dom, self.selected_all(), &filter, folder_color);
 
         // Built up front — needs `&mut self` to create or reuse each row's
         // widget entity (see `shell::edit::edit_row`) — so the `Accordion`
@@ -176,6 +174,11 @@ impl Shell {
             for row in &category_rows {
                 let element = match &row.edit {
                     None => property_row(row).into_any_element(),
+                    Some(EditKind::BrickColor(number)) => {
+                        let current = (!row.mixed).then_some(*number);
+                        let control = self.brick_color_picker(&row.name, current, window, cx);
+                        property_row_control(row, control, false, None).into_any_element()
+                    }
                     // No persistent entity: a checkbox commits straight
                     // through the same textual path (`shell::Shell::commit_row`)
                     // every other widget uses, via `cx.entity()` since a
@@ -185,13 +188,17 @@ impl Shell {
                     Some(EditKind::Bool(flag)) => {
                         let handle = cx.entity();
                         let name = row.name.clone();
-                        let flag = *flag;
+                        // Mixed shows neither state, and a click turns every
+                        // one of them on: one value for all of them, which
+                        // is what an edit to a multi-selection means.
+                        // Studio's own choice here is not documented.
+                        let flag = (!row.mixed).then_some(*flag);
                         let control = self.properties_nav.claim(
                             checkbox(
                                 SharedString::from(format!("prop-bool-{}", row.name)),
                                 flag,
                                 move |_, _, cx| {
-                                    let text = if flag { "false" } else { "true" };
+                                    let text = if flag == Some(true) { "false" } else { "true" };
                                     let name = name.clone();
                                     handle
                                         .update(cx, |shell, cx| shell.commit_row(&name, text, cx));
@@ -241,6 +248,7 @@ impl Shell {
                                     |_, _| Box::new(|_, _, _| {}),
                                     on_scrub,
                                     Box::new(|_, _, _| {}),
+                                    window,
                                     cx,
                                 )
                             });
@@ -315,6 +323,7 @@ impl Shell {
                             },
                             on_scrub,
                             on_open,
+                            window,
                             cx,
                         );
                         property_row_control(row, control, composite, error.as_deref())

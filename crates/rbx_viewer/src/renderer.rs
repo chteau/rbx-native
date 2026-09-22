@@ -15,6 +15,7 @@ mod highlight;
 mod hover;
 mod instance;
 mod lighting;
+mod lines;
 mod material;
 mod mesh;
 mod outline;
@@ -59,6 +60,7 @@ use gizmo::Draggers;
 use gui::Gui;
 use hover::Hover;
 use lighting::LightingRaw;
+use lines::Lines;
 use material::Materials;
 use particles::Particles;
 use pipeline::{Frame, Shared, Target};
@@ -71,6 +73,8 @@ use stars::Stars;
 use texture::PER_FRAME;
 use trail::Trails;
 use translucent::Translucent;
+
+pub use lines::Segment;
 
 /// Only ever seen where a scene has no `Sky`, or where one of its six panels
 /// would not resolve.
@@ -171,6 +175,9 @@ pub(crate) struct Renderer {
     /// Where the tool being configured would put things — the Align
     /// tool's live preview. Empty unless an editor asks for one.
     preview: Preview,
+    /// The editor's own world-space line segments — Studio's light guides.
+    /// Empty unless an editor asks for some.
+    lines: Lines,
     /// The transform tool's axis draggers, drawn over the selection outline.
     draggers: Draggers,
     /// Which transform tool the editor has active, if any — `None` while the
@@ -364,6 +371,7 @@ impl Renderer {
             ),
             hover,
             preview: Preview::new(device, target, &layout),
+            lines: Lines::default(),
             draggers,
             gizmo: None,
             gui: Gui::new(
@@ -498,7 +506,8 @@ impl Renderer {
         // and this level's render distance. The shadow pass below never uses
         // this — see `Fit::visible` — so a caster it culls can still land a
         // shadow inside the frame.
-        self.draggers.update(queue, self.handles(from), eye);
+        let held = self.gizmo.and_then(|gizmo| gizmo.held);
+        self.draggers.update(queue, self.handles(from), held, eye);
         let frustum = Frustum::new(&self.camera, from, aspect);
         let cull = MainCull::new(&frustum, eye, self.quality.render_distance);
         let (lamp, fit) = self.sun_shadow(from, aspect);
@@ -668,6 +677,17 @@ impl Renderer {
         // the tone map all live in the resolve.
         self.post
             .resolve(&mut encoder, &target.create_view(&Default::default()));
+        // Onto the finished frame, so a one-pixel guide keeps its colour
+        // (see `renderer::lines`), and under the `ScreenGui` like the rest
+        // of the 3D view.
+        self.lines.draw(
+            device,
+            &mut encoder,
+            target,
+            targets,
+            &self.frame.bind_group,
+            self.draggers.triangles(),
+        );
         // After the resolve, not before it: a `ScreenGui` is an overlay, so
         // bloom, depth of field and the tone map must leave it alone. It takes
         // the texture rather than a view because it composites through a

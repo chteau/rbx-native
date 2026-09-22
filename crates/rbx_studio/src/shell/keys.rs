@@ -374,7 +374,7 @@ pub(super) fn class_defaults(
     class: &str,
 ) -> Vec<(&'static str, Variant)> {
     let own = |key: &str, value: &Variant| {
-        let property = rbx_lua::reflected_property(database, class, key)?;
+        let property = database.resolve_property(class, database.canonical_name(class, key))?;
         change_class::stock(database, class, &property.name)
             .filter(|own| std::mem::discriminant(*own) == std::mem::discriminant(value))
             .cloned()

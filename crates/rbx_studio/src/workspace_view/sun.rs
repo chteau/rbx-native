@@ -63,11 +63,14 @@ impl WorkspaceView {
         cx.notify();
     }
 
-    /// Lets go of whatever drag is held, taking the Sun tool's guide off
-    /// screen with it: nothing else would, once its gesture is over.
-    pub(super) fn drop_drag(&mut self) {
-        if self.drag.take() == Some(Drag::Sun) {
+    /// Lets go of whatever drag is held, and returns it, taking the Sun
+    /// tool's guide off screen with it: nothing else would, once its
+    /// gesture is over.
+    pub(super) fn drop_drag(&mut self) -> Option<Drag> {
+        let drag = self.drag.take();
+        if drag == Some(Drag::Sun) {
             self.pump.preview(Vec::new());
         }
+        drag
     }
 }

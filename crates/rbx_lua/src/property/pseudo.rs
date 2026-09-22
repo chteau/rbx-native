@@ -3,13 +3,12 @@
 //!
 //! `Position`, `Orientation` and `Rotation` are all views onto `CFrame`
 //! (Studio computes them, it never serializes them separately); `BrickColor`
-//! is a legacy palette index that Studio actually stores as `Color3uint8`,
-//! same as the `Color` alias already handles for a plain `Color3`.
+//! is a view onto `Color`, which is all Studio saves.
 
 use std::f32::consts::PI;
 
 use mlua::{IntoLua, Lua, Result, Value};
-use rbx_dom::{CFrameData, Ref, Variant, Vector3Data};
+use rbx_dom::{BrickColor, CFrameData, Color3Data, Ref, Variant, Vector3Data};
 
 use super::missing_instance;
 use crate::ctx::Ctx;
@@ -91,8 +90,48 @@ pub(crate) fn get(lua: &Lua, ctx: &Ctx, referent: Ref, name: &str) -> Result<Opt
                 .into_lua(lua)
                 .map(Some)
         }
+        "BrickColor" => {
+            let Some((_, color)) = brick_color_target(ctx, referent)? else {
+                return Ok(None);
+            };
+            let rgb = match color {
+                Variant::Color3uint8 { r, g, b } => [r, g, b],
+                Variant::Color3(color) => [color.r, color.g, color.b]
+                    .map(|channel| (channel.clamp(0.0, 1.0) * 255.0).round() as u8),
+                _ => return Ok(Some(Value::Nil)),
+            };
+            LuaBrickColor(BrickColor::nearest(rgb))
+                .into_lua(lua)
+                .map(Some)
+        }
         _ => Ok(None),
     }
+}
+
+/// Where a part's `BrickColor` really lives: `Color`, under whichever name
+/// the instance stores it (or its default), since Roblox derives the one
+/// from the other — the closest colour in the table — and saves only
+/// `Color`. `None` for a class with no `BrickColor`.
+fn brick_color_target(ctx: &Ctx, referent: Ref) -> Result<Option<(String, Variant)>> {
+    let dom = ctx.dom();
+    let instance = dom.get(referent).ok_or_else(missing_instance)?;
+    let database = ctx.database();
+    if database
+        .resolve_property(instance.class(), "BrickColor")
+        .is_none()
+    {
+        return Ok(None);
+    }
+    Ok(database
+        .stored_or_default(instance, "Color")
+        .map(|(key, value)| (key.to_owned(), value.clone())))
+}
+
+fn brick_color_expected(value: &Value) -> mlua::Error {
+    mlua::Error::runtime(format!(
+        "Unable to assign property BrickColor. BrickColor expected, got {}",
+        value.type_name()
+    ))
 }
 
 /// Writes a pseudo-property, returning `Ok(false)` for anything that isn't one
@@ -123,37 +162,28 @@ pub(crate) fn set(ctx: &Ctx, referent: Ref, name: &str, value: &Value) -> Result
             Ok(true)
         }
         "BrickColor" => {
-            let dom = ctx.dom();
-            let instance = dom.get(referent).ok_or_else(missing_instance)?;
-            let has_brick_color = ctx
-                .database()
-                .resolve_property(instance.class(), "BrickColor")
-                .is_some();
-            drop(dom);
-            if !has_brick_color {
+            let Some((key, color)) = brick_color_target(ctx, referent)? else {
                 return Ok(false);
-            }
-            let Value::UserData(data) = value else {
-                return Err(mlua::Error::runtime(format!(
-                    "Unable to assign property BrickColor. BrickColor expected, got {}",
-                    value.type_name()
-                )));
             };
-            let brick_color = data.borrow::<LuaBrickColor>().map_err(|_| {
-                mlua::Error::runtime(format!(
-                    "Unable to assign property BrickColor. BrickColor expected, got {}",
-                    value.type_name()
-                ))
-            })?;
-            let (r, g, b) = brick_color.color.ok_or_else(|| {
-                mlua::Error::runtime(format!(
-                    "Unable to assign property BrickColor: number {} has no known color in \
-                     this build's small BrickColor table",
-                    brick_color.number
-                ))
-            })?;
+            let Value::UserData(data) = value else {
+                return Err(brick_color_expected(value));
+            };
+            let brick_color = data
+                .borrow::<LuaBrickColor>()
+                .map_err(|_| brick_color_expected(value))?;
+            let [r, g, b] = brick_color.0.rgb;
+            // In the representation `Color` already holds there: the saved
+            // `Color3uint8`, or a `Color3` a hand-written file kept.
+            let written = match color {
+                Variant::Color3(_) => Variant::Color3(Color3Data {
+                    r: f32::from(r) / 255.0,
+                    g: f32::from(g) / 255.0,
+                    b: f32::from(b) / 255.0,
+                }),
+                _ => Variant::Color3uint8 { r, g, b },
+            };
             ctx.dom_mut()
-                .set_property(referent, "Color3uint8", Variant::Color3uint8 { r, g, b })
+                .set_property(referent, &key, written)
                 .map_err(|error| mlua::Error::runtime(error.to_string()))?;
             Ok(true)
         }

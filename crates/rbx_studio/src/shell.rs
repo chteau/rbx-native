@@ -5,6 +5,7 @@
 
 mod align;
 mod attributes_panel;
+mod brick_color;
 mod change_class;
 mod chrome;
 mod clipboard;
@@ -16,9 +17,11 @@ mod edit;
 mod explorer_edit;
 mod folder_color;
 mod group;
+mod guides;
 mod history;
 mod keys;
 mod layout;
+mod light_guides;
 mod menu;
 mod output;
 mod panel_window;
@@ -44,6 +47,7 @@ mod style_panel;
 mod sun;
 mod toolbar;
 mod tooltip;
+mod viewport_dock;
 mod workspace;
 
 use std::collections::{HashMap, HashSet};
@@ -51,9 +55,9 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use gpui_kit::component::input::{InputEvent, InputState};
-use gpui_kit::component::select::{SearchableVec, Select, SelectEvent, SelectState};
+use gpui_kit::component::select::{SearchableVec, SelectEvent, SelectState};
 use gpui_kit::component::tree::TreeState;
-use gpui_kit::component::{v_flex, IndexPath, Sizable};
+use gpui_kit::component::{v_flex, IndexPath};
 use gpui_kit::*;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
@@ -72,7 +76,7 @@ use crate::pacing::UnfocusedFps;
 use crate::properties::{self, Properties};
 use crate::save::Format;
 use crate::script_editor::ScriptEditor;
-use crate::settings::Settings;
+use crate::settings::{DraggerSettings, Settings};
 use crate::tokens;
 use crate::transform::{Targets, Transform};
 use crate::workspace_view::{AssetWarnings, Opened, PoseSynced, ViewportAction, WorkspaceView};
@@ -82,12 +86,6 @@ use menu::MenuId;
 use quality::{quality_labels, quality_row};
 use selection::{outlined, Selection};
 use toolbar::snap::SnapFields;
-
-/// The quality dropdown's width. Scaled like every other size, or its
-/// longest label ("Automatic") is clipped the moment the UI scale grows.
-fn quality_width() -> Pixels {
-    tokens::scaled_width(132.)
-}
 
 /// The graphics quality dropdown's list: plain labels, since the mode a label
 /// stands for is read back out of the label itself.
@@ -121,6 +119,12 @@ pub(crate) struct Shell {
     /// Whether a part in front of the selection hides its outline box.
     /// Persisted the same way `orthographic` is (see `settings`).
     selection_occluded: bool,
+    /// Whether a selected light draws its guide — Studio's `Show Light
+    /// Guides`. Persisted the same way `orthographic` is (see `settings`).
+    light_guides: bool,
+    /// The guide segments last sent to the viewport, so an edit that leaves
+    /// them as they were sends nothing — see `shell::light_guides`.
+    light_guides_sent: Vec<rbx_viewer::Segment>,
     /// Which of the class icon kit's two variants the Explorer draws.
     /// Persisted (see `settings`); every write goes through
     /// [`Shell::save_settings`].
@@ -130,16 +134,12 @@ pub(crate) struct Shell {
     /// listed once because the menu is rebuilt every frame.
     appearance: crate::packs::Appearance,
     installed_icon_packs: Vec<String>,
-    /// Whether the viewport's corner label shows its frame-rate readout —
-    /// the Stats toggle, next to Orthographic in the same overflow menu (see
-    /// `shell::dock`). Session-only, unlike the two settings above: real
-    /// Studio's own `Window > Performance > Stats` doesn't persist across
-    /// restarts either, so this one lazily doesn't bother with `settings`.
-    stats_shown: bool,
     /// The render loop's frame rate cap while the window is unfocused (see
     /// `pacing::FocusPacing`). Persisted (see `settings`); every write goes
     /// through [`Shell::save_settings`].
     unfocused_fps: UnfocusedFps,
+    /// The dragger guides' switches (see `shell::guides`). Persisted.
+    dragger: DraggerSettings,
     /// The three composite widgets that are one Tab stop each: the
     /// document tab strip, the ribbon's category tabs, and the ribbon's own
     /// controls. See `shell::roving`.
@@ -151,6 +151,9 @@ pub(crate) struct Shell {
     /// get from the panel back to the ribbon, which defeats the entire
     /// point of Tab moving between regions.
     properties_nav: roving::Roving,
+    /// The Viewport dock's settings, one Tab stop for the lot — see
+    /// `shell::viewport_dock`.
+    viewport_nav: roving::Roving,
     /// The window's Tab order, handed out afresh every render — see
     /// `shell::roving::TabOrder`.
     tab_order: roving::TabOrder,
@@ -232,6 +235,12 @@ pub(crate) struct Shell {
     /// persisted — resets to off each launch, same as `output_filter` above.
     output_show_timestamps: bool,
     output_scroll: ScrollHandle,
+    /// The Viewport dock's own, for when it is docked somewhere too short
+    /// for its settings — see `shell::viewport_dock`.
+    viewport_scroll: ScrollHandle,
+    /// Where each of the dock's settings was laid out last frame, so a
+    /// keyboard move can scroll the one it lands on into view.
+    viewport_rows: Rc<std::cell::RefCell<Vec<Bounds<Pixels>>>>,
     /// The Output tab's free-text search box. Session-only and unpersisted,
     /// like `output_filter` beside it — a log you are still reading is not a
     /// setting.
@@ -308,6 +317,7 @@ impl Shell {
             orthographic,
             axis_indicator,
             selection_occluded,
+            light_guides,
             icon_pack,
             unfocused_fps,
             font_scale,
@@ -317,6 +327,7 @@ impl Shell {
             output_collapsed,
             increment_names,
             expand_on_select,
+            dragger,
         } = settings;
         // Before anything renders: every size token is read through these,
         // so a scale or target floor applied after the first frame would
@@ -399,7 +410,7 @@ impl Shell {
                 viewer,
                 dom: dom.clone(),
             };
-            WorkspaceView::new(
+            let mut view = WorkspaceView::new(
                 opened,
                 camera,
                 quality,
@@ -410,7 +421,9 @@ impl Shell {
                 initial_outline,
                 window,
                 cx,
-            )
+            );
+            view.set_dragger(dragger);
+            view
         });
         let camera_synced = cx.subscribe(&viewport, |shell, _, event: &PoseSynced, cx| {
             shell.sync_camera_pose(event.0, cx);
@@ -452,15 +465,18 @@ impl Shell {
             orthographic,
             axis_indicator,
             selection_occluded,
+            light_guides,
+            light_guides_sent: Vec::new(),
             icon_pack,
             appearance: user.appearance,
             installed_icon_packs: user.icon_packs,
-            stats_shown: false,
             unfocused_fps,
+            dragger,
             document_nav: roving::Roving::horizontal(),
             ribbon_tabs_nav: roving::Roving::horizontal(),
             ribbon_nav: roving::Roving::horizontal(),
             properties_nav: roving::Roving::vertical(),
+            viewport_nav: roving::Roving::vertical(),
             tab_order: roving::TabOrder::default(),
             reduce_motion,
             scrub: None,
@@ -493,6 +509,8 @@ impl Shell {
             output_filter: output::OutputFilter::default(),
             output_show_timestamps: false,
             output_scroll: ScrollHandle::new(),
+            viewport_scroll: ScrollHandle::new(),
+            viewport_rows: Rc::default(),
             output_search: cx.new(|cx| InputState::new(window, cx).placeholder("Search")),
             path,
             format,
@@ -533,10 +551,16 @@ impl Shell {
         // `sync_selection` only runs on a selection *change*, so without this
         // an instance selected before the first frame would be outlined and
         // gizmoed but not draggable until it was selected again.
+        shell.covered = initial_targets
+            .iter()
+            .map(|target| target.referent)
+            .collect();
         shell
             .viewport
             .update(cx, |viewport, _| viewport.set_targets(initial_targets));
         shell.sync_snap_neighbours(cx);
+        // Its light guides, for the same reason.
+        shell.sync_light_guides(cx);
 
         // `RBX_STUDIO_TOOL` (see `shell::toolbar`). Before the Command Bar
         // block below rather than after it: a script's reload rebuilds the
@@ -675,6 +699,17 @@ impl Shell {
     /// by a pose update landing mid-edit.
     fn sync_camera_pose(&mut self, pose: rbx_viewer::Pose, cx: &mut Context<Self>) {
         crate::camera::write_pose(&mut self.dom, pose);
+        // Not a `reflect_changes`, so the Properties cache is told here —
+        // only when a camera is among the selection, or a flight would
+        // rebuild a large selection's rows five times a second for nothing.
+        let camera_shown = self.selected_all().iter().any(|&reference| {
+            self.dom
+                .get(reference)
+                .is_some_and(|instance| instance.class() == "Camera")
+        });
+        if camera_shown {
+            self.properties.dom_changed(&[]);
+        }
         cx.notify();
     }
 
@@ -836,8 +871,8 @@ impl Shell {
         cx.notify();
     }
 
-    /// Reopens one, from the View menu or the ribbon's Home tab — the only
-    /// two ways back, which is why both exist.
+    /// Opens (or brings forward) or shuts one, from the View menu or the
+    /// ribbon's Home tab — the only two ways back, which is why both exist.
     pub(crate) fn set_panel_open(
         &mut self,
         panel: layout::Panel,
@@ -853,9 +888,11 @@ impl Shell {
         cx.notify();
     }
 
-    /// Whether a panel is showing anywhere — what a View tick reads.
-    pub(crate) fn is_panel_open(&self, panel: layout::Panel) -> bool {
-        self.layout.is_open(panel)
+    /// Whether a panel is on screen — what a View menu toggle and a ribbon
+    /// tile read, so one hidden behind another tab is brought forward by
+    /// them rather than shut.
+    pub(crate) fn is_panel_showing(&self, panel: layout::Panel) -> bool {
+        self.layout.is_showing(panel)
     }
 
     /// Shows one of a dock's tabs, from a click on it.
@@ -890,12 +927,6 @@ impl Shell {
         cx.notify();
     }
 
-    /// Whether the viewport's main camera is orthographic, for the dock's
-    /// Viewport menu item (see `shell::dock`) to render its checked state.
-    pub(super) fn orthographic(&self) -> bool {
-        self.orthographic
-    }
-
     /// Flips the viewport's main camera between perspective and orthographic
     /// projection — see `WorkspaceView::set_orthographic`.
     fn set_orthographic(&mut self, orthographic: bool, cx: &mut Context<Self>) {
@@ -910,13 +941,6 @@ impl Shell {
         self.save_settings();
     }
 
-    /// Whether the viewport's orientation indicator draws, for the dock's
-    /// Viewport menu item to render its checked state — see
-    /// `set_axis_indicator`.
-    pub(super) fn axis_indicator(&self) -> bool {
-        self.axis_indicator
-    }
-
     /// Shows or hides the top-right orientation indicator — see
     /// `WorkspaceView::set_axis_indicator`.
     fn set_axis_indicator(&mut self, shown: bool, cx: &mut Context<Self>) {
@@ -928,13 +952,6 @@ impl Shell {
         self.viewport
             .update(cx, |viewport, cx| viewport.set_axis_indicator(shown, cx));
         self.save_settings();
-    }
-
-    /// Whether a part in front of the selection hides its outline box, for
-    /// the Viewport overflow menu item to render its checked state — see
-    /// `set_selection_occluded`.
-    pub(super) fn selection_occluded(&self) -> bool {
-        self.selection_occluded
     }
 
     /// Switches the selection outline between drawing through everything
@@ -1015,32 +1032,6 @@ impl Shell {
         cx.notify();
     }
 
-    /// Whether the viewport's corner label shows its frame-rate readout, for
-    /// the dock's Viewport menu item (see `shell::dock`) to render its
-    /// checked state.
-    pub(super) fn stats_shown(&self) -> bool {
-        self.stats_shown
-    }
-
-    /// Flips the viewport corner label's Stats readout on or off — see
-    /// `WorkspaceView::set_stats_shown`.
-    fn set_stats_shown(&mut self, shown: bool, cx: &mut Context<Self>) {
-        if shown == self.stats_shown {
-            return;
-        }
-
-        self.stats_shown = shown;
-        self.viewport
-            .update(cx, |viewport, cx| viewport.set_stats_shown(shown, cx));
-    }
-
-    /// The frame rate preset the render loop caps itself to while the window
-    /// is unfocused, for the dock's Viewport menu item (see `shell::dock`)
-    /// to render its checked state.
-    pub(super) fn unfocused_fps(&self) -> UnfocusedFps {
-        self.unfocused_fps
-    }
-
     /// Switches the unfocused frame rate preset — see
     /// `WorkspaceView::set_unfocused_fps`.
     fn set_unfocused_fps(&mut self, unfocused_fps: UnfocusedFps, cx: &mut Context<Self>) {
@@ -1068,6 +1059,7 @@ impl Shell {
             orthographic: self.orthographic,
             axis_indicator: self.axis_indicator,
             selection_occluded: self.selection_occluded,
+            light_guides: self.light_guides,
             icon_pack: self.icon_pack,
             unfocused_fps: self.unfocused_fps,
             font_scale: tokens::font_scale(),
@@ -1077,44 +1069,11 @@ impl Shell {
             output_collapsed: self.output_collapsed,
             increment_names: self.increment_names,
             expand_on_select: self.expand_on_select,
+            dragger: self.dragger,
         };
         let _ = settings.save();
 
         // Save the current dock layout state
-    }
-
-    /// The place file's name, shown as the dock's own Viewport tab title
-    /// (see `shell::dock`) now that the viewport no longer draws a fake one.
-    /// The graphics-quality dropdown, relocated from the viewport's old fake
-    /// tab bar into the dock's real Viewport title bar via `Panel::title_suffix`
-    /// (see `shell::dock`) — the natural surviving home for a per-view control
-    /// once that hand-rolled strip is gone.
-    /// The graphics-quality dropdown, in the same box every other field in
-    /// the editor wears (`rows::field_box`) rather than in the toolkit's
-    /// own chrome — it is a select like any other, and looked like a
-    /// visitor from a different application floating over the viewport.
-    ///
-    /// Registered in the window's own Tab order (`shell::roving::TabOrder`)
-    /// with no wrapper and no forwarding subscription, unlike the Explorer's
-    /// tree door: `SelectState` already implements `Focusable` and its own
-    /// `focus_handle` is the real one `Select::focus` itself uses, so
-    /// recording that same handle is the whole fix — there is nothing to
-    /// forward focus *to* once Tab lands on it, because it is already
-    /// there. This was, until now, one of the WCAG 2.1.1 gaps the roadmap's
-    /// "most serious accessibility gap left" bullet names by name.
-    pub(super) fn quality_control(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        self.tab_order
-            .register(&self.quality.read(cx).focus_handle(cx));
-        rows::select_box().w(quality_width()).child(
-            Select::new(&self.quality)
-                .appearance(false)
-                .with_size(tokens::field_size())
-                .h_full()
-                .py_0()
-                .pt(tokens::select_inset())
-                .menu_width(quality_width())
-                .accessibility_label("Graphics quality"),
-        )
     }
 
     /// The 3D view itself. No border: Row D's panels are told apart from it
@@ -1310,7 +1269,7 @@ impl Shell {
         } else {
             let folder_color = self.folder_color(reference);
             self.properties
-                .rows(&self.dom, reference, folder_color)
+                .rows(&self.dom, self.selected_all(), folder_color)
                 .into_iter()
                 .find(|candidate| candidate.name == row)
                 .and_then(|candidate| candidate.edit)?

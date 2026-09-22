@@ -147,6 +147,35 @@ fn fire_reads_the_lowercase_size_a_file_may_carry() {
     );
 }
 
+/// What Roblox actually saves these under (`SerializesAs` in
+/// `assets/reflection-defaults.json`), and so what a real file and an edit
+/// to one hold: each reads exactly as its canonical spelling does.
+#[test]
+fn fire_and_smoke_read_the_names_roblox_saves_them_under() {
+    let cases = [
+        ("Fire", "heat_xml", "Heat", -6.0),
+        ("Fire", "size_xml", "Size", 20.0),
+        ("Smoke", "size_xml", "Size", 20.0),
+        ("Smoke", "riseVelocity_xml", "RiseVelocity", -6.0),
+        ("Smoke", "opacity_xml", "Opacity", 0.9),
+    ];
+    for (class, stored, canonical, value) in cases {
+        let saved = plan_of(class, vec![(stored, Variant::Float32(value))]);
+        let named = plan_of(class, vec![(canonical, Variant::Float32(value))]);
+        let default = plan_of(class, vec![]);
+        let read = |plan: &[Emitter]| {
+            (
+                eval_number(&plan[0].size, 0.35),
+                plan[0].direction,
+                eval_number(&plan[0].transparency, 0.0),
+                plan[0].speed,
+            )
+        };
+        assert_eq!(read(&saved), read(&named), "{class}.{stored}");
+        assert_ne!(read(&saved), read(&default), "{class}.{stored} was read");
+    }
+}
+
 /// Documented: `Opacity` works inversely to `Transparency` — 0 invisible, 1
 /// visible.
 #[test]

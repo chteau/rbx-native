@@ -10,10 +10,9 @@ use gpui_kit::assets::IconName;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_dom::Ref;
-use rbx_viewer::pick::{self, Ray};
+use rbx_viewer::pick::{self, PartSurface, Ray};
 use rbx_viewer::sun::{place, Body};
 
-use crate::settle;
 use crate::sun::{self, Mode};
 use crate::tokens;
 use crate::transform::{Action, Tool};
@@ -38,9 +37,10 @@ impl Shell {
                 .into_iter()
                 .filter(|&part| Some(part) != exclude)
                 .find_map(|part| {
-                    let (point, normal) =
-                        pick::surface_hit(&self.dom, &self.database, &meshes, part, ray)?;
-                    Some((part, settle::Surface { point, normal }))
+                    let surface = PartSurface::read(&self.dom, &self.database, &meshes, part)?;
+                    let (distance, normal) = surface.raycast(ray)?;
+                    let point = ray.at(distance);
+                    Some((part, sun::Surface { point, normal }))
                 })
         };
         if first {

@@ -36,6 +36,9 @@ use crate::explorer::{self, insert};
 use super::Shell;
 
 const WORKSPACE_NAME: &str = "Workspace";
+/// `Instance.Archivable` as a file saves it, and as a loaded place holds it
+/// (see `rbx_reflection::ReflectionDatabase::normalize_names`).
+const ARCHIVABLE: &str = "archivable";
 
 /// What one keystroke does at the window level, or `None` if it means
 /// something else — see [`action_for`].
@@ -122,7 +125,7 @@ fn snapshot(dom: &WeakDom, reference: Ref) -> Option<Clipped> {
 /// `Archivable`'s documented default is `true`; only an explicit `false`
 /// excludes an instance from a copy.
 fn archivable(properties: &BTreeMap<String, Variant>) -> bool {
-    !matches!(properties.get("Archivable"), Some(Variant::Bool(false)))
+    !matches!(properties.get(ARCHIVABLE), Some(Variant::Bool(false)))
 }
 
 /// Every entry of `selected` this editor will copy, duplicate or let
@@ -170,11 +173,19 @@ pub(super) fn has_copyable(dom: &WeakDom, database: &ReflectionDatabase, selecte
 /// Nothing below the root needs the same treatment: every descendant that
 /// made it into `node` at all already passed [`archivable`], so it was
 /// already `true` (or absent, which reads the same way).
+///
+/// By leaving the key out rather than writing `true`: absent is the
+/// default, and a value nothing else of its class stores is a column the
+/// binary writer has to fill for every other instance.
 fn materialize(dom: &mut WeakDom, node: &Clipped, parent: Option<Ref>) -> Ref {
     let mut map = HashMap::new();
     let root = create(dom, node, parent, &mut map);
     write_properties(dom, node, &map);
-    let _ = dom.set_property(root, "Archivable", Variant::Bool(true));
+    // The root was just created, so its `Added` is already in the change
+    // log; removing a key through the raw handle needs no entry of its own.
+    if let Some(instance) = dom.get_mut(root) {
+        instance.properties_mut().remove(ARCHIVABLE);
+    }
     root
 }
 

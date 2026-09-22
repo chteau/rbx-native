@@ -184,6 +184,12 @@ pub(super) struct Edits {
     /// first of them, doubles as "is this the step that opens the undo
     /// entry" (see `Shell::slide_row`).
     sliding: Option<String>,
+    /// The open BrickColor picker's keyboard cursor, a cell of
+    /// `shell::brick_color`'s honeycomb, and the handle its palette takes
+    /// focus through — kept here because the popover's content is rebuilt
+    /// on every render.
+    pub(super) brick_cursor: usize,
+    pub(super) brick_focus: Option<FocusHandle>,
 }
 
 impl Edits {
@@ -208,6 +214,7 @@ fn resync_row_widget(
     widget: &RowEditor,
     kind: &EditKind,
     sliding: bool,
+    mixed: bool,
     window: &mut Window,
     cx: &mut App,
 ) {
@@ -228,21 +235,41 @@ fn resync_row_widget(
         }
         (RowEditor::Fields(_, summary, inputs), EditKind::Fields { values, .. })
         | (RowEditor::Groups(_, summary, inputs), EditKind::Groups { values, .. }) => {
-            resync_field(summary, &values.join(", "), window, cx);
+            resync_field(summary, &summary_text(values), window, cx);
             for (input, seed) in inputs.iter().zip(values) {
                 resync_field(input, seed, window, cx);
             }
         }
         (RowEditor::Optional(_, _, inner), EditKind::Optional { inner: kind, .. }) => {
-            resync_row_widget(inner, kind, sliding, window, cx);
+            resync_row_widget(inner, kind, sliding, mixed, window, cx);
         }
-        // `Color` and `Enum` rows have nothing outside their own widget that
-        // writes to an already-selected instance repeatedly the way
-        // `Shell::sync_camera_pose` does — the one place that seeds a
-        // `Color3uint8`/`Enum` on insertion (`shell::keys`'s new-instance
-        // defaults) always does so before that instance is selected, so
-        // there is no stale cache for it to fight.
+        // A part's colour also moves when its `BrickColor` row picks one,
+        // or an undo or a script sets it. Not while the picker is open —
+        // what it shows then is the colour being chosen — nor for a
+        // multi-selection's differing colours, which show none.
+        (RowEditor::Color(state), EditKind::Color { r, g, b }) if !mixed => {
+            let picker = state.read(cx);
+            let stale = picker.value().map(hsla_to_rgb) != Some((*r, *g, *b));
+            if stale && !picker.is_open() {
+                let value = rgb_to_hsla(*r, *g, *b);
+                state.update(cx, |state, cx| state.set_value(value, window, cx));
+            }
+        }
+        // An `Enum` row has nothing outside its own widget that writes to an
+        // already-selected instance repeatedly the way
+        // `Shell::sync_camera_pose` does.
         _ => {}
+    }
+}
+
+/// The whole value, for the field beside a row's expander — empty when any
+/// part is: a multi-selection's parts that differ are left empty (see
+/// `properties::common`), and `4, , 2` is not a value anyone could type.
+fn summary_text(values: &[String]) -> String {
+    if values.iter().any(String::is_empty) {
+        String::new()
+    } else {
+        values.join(", ")
     }
 }
 
@@ -284,11 +311,15 @@ impl Shell {
             let widget = existing.widget.clone();
             let error = existing.error.clone();
             let sliding = self.edits.sliding.as_deref() == Some(row.name.as_str());
-            resync_row_widget(&widget, kind, sliding, window, cx);
+            resync_row_widget(&widget, kind, sliding, row.mixed, window, cx);
             return (widget, error);
         }
 
         let (widget, subscriptions) = self.build_row_widget(row.name.clone(), kind, window, cx);
+        // Selected instances of different colours: no one colour to show.
+        if let (true, RowEditor::Color(state)) = (row.mixed, &widget) {
+            state.update(cx, |state, cx| state.clear_value(window, cx));
+        }
         self.edits.rows.insert(
             row.name.clone(),
             RowEdit {
@@ -308,8 +339,8 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> (RowEditor, Vec<Subscription>) {
         match kind {
-            EditKind::Bool(_) => unreachable!(
-                "EditKind::Bool never reaches here — see this method's caller in shell::panels"
+            EditKind::Bool(_) | EditKind::BrickColor(_) => unreachable!(
+                "a checkbox and a BrickColor picker are built where they render, in shell::panels"
             ),
             EditKind::Text(seed) => {
                 let input = cx.new(|cx| InputState::new(window, cx).default_value(seed.clone()));
@@ -317,7 +348,7 @@ impl Shell {
 
                 // A rail only for a value that has one to run along, and
                 // only when the row is actually holding a number — the
-                // same `EditKind::Text` carries a `BrickColor`'s index and
+                // same `EditKind::Text` carries an attribute's `BrickColor` and
                 // every string in the dump.
                 let bounded = slider_range(&name)
                     .zip(seed.trim().parse::<f32>().ok())
@@ -443,7 +474,7 @@ impl Shell {
         // The same comma-joined spelling `properties::edit::edit_text`
         // produced and `parse` reads back, so what the summary shows is
         // exactly what committing it writes.
-        let summary = cx.new(|cx| InputState::new(window, cx).default_value(values.join(", ")));
+        let summary = cx.new(|cx| InputState::new(window, cx).default_value(summary_text(values)));
         let whole = name.to_owned();
         subscriptions.push(
             cx.subscribe(&summary, move |shell, input, event: &InputEvent, cx| {
@@ -575,12 +606,14 @@ impl Shell {
         cx.notify();
     }
 
-    /// Writes one edit to the selected instance through the Command Bar's own
-    /// take/put-back path, then reflects it exactly as a script's mutation
-    /// would: the Properties panel always re-reads `self.dom` fresh, the
-    /// Explorer only when `Name` moved a row, and the viewport through the
-    /// same `Change` log every other mutation hands it (see
-    /// `Shell::reflect_changes`).
+    /// Writes one edit to every selected instance through the Command Bar's
+    /// own take/put-back path, as one undo step however many there are, then
+    /// reflects it exactly as a script's mutation would: the Properties panel
+    /// always re-reads `self.dom` fresh, the Explorer only when `Name` moved a
+    /// row, and the viewport through the same `Change` log every other
+    /// mutation hands it (see `Shell::reflect_changes`). A folder's colour
+    /// and an attribute are the anchor's alone: the panel offers neither for
+    /// a multi-selection.
     fn apply_edit(
         &mut self,
         name: &str,
@@ -595,9 +628,7 @@ impl Shell {
         // Not a DOM write — see `shell::folder_color`; skips undo history
         // and `WeakDom::set_property` entirely.
         if name == properties::edit::FOLDER_COLOR_PROPERTY {
-            let result = self.commit_folder_color(reference, text, cx);
-            self.scroll_to_row(reference, name);
-            return result;
+            return self.commit_folder_color(reference, text, cx);
         }
 
         // An attribute's value, not a real DOM property — see
@@ -628,8 +659,9 @@ impl Shell {
         if push {
             self.push_history();
         }
+        let selection = self.selected_all().to_vec();
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
-        let result = properties::edit::commit(&mut dom, &self.database, reference, name, text);
+        let result = properties::edit::commit_all(&mut dom, &self.database, &selection, name, text);
         self.dom = dom;
         // Reflected and recorded whether or not the commit below succeeded:
         // a rejected value never reaches `WeakDom::set_property`, so the log
@@ -642,20 +674,13 @@ impl Shell {
         if name == NAME_PROPERTY {
             self.rebuild_explorer(cx);
         }
-        self.scroll_to_row(reference, name);
+        // Nothing scrolls the panel: it keeps its offset across the rebuild
+        // this edit causes, and no row above the edited one changes height
+        // (a row that grows, a ticked Custom box say, grows downwards), so
+        // the row stays exactly where it was clicked. The panel's scroll
+        // handle could not name a row anyway: its one child is the whole
+        // stack of category sections.
         Ok(())
-    }
-
-    /// Brings the row that was just written into view. A property far down
-    /// the alphabet starts scrolled out of the panel's fixed-height list, and
-    /// nothing can scroll it into frame for a screenshot afterwards — see
-    /// `AGENTS.md`'s ban on synthetic input.
-    fn scroll_to_row(&self, reference: rbx_dom::Ref, name: &str) {
-        let folder_color = self.folder_color(reference);
-        let rows = self.properties.rows(&self.dom, reference, folder_color);
-        if let Some(index) = rows.iter().position(|row| row.name == name) {
-            self.properties_scroll.scroll_to_item(index);
-        }
     }
 
     /// Whether the properties panel's `category` section is manually

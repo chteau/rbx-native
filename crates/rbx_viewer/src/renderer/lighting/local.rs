@@ -19,15 +19,17 @@ use crate::lighting::LocalLight;
 pub(super) struct LocalLightRaw {
     /// xyz: world position. w: `Range`, where the falloff reaches zero.
     position_range: [f32; 4],
-    /// rgb: linear radiance inside the near field. w: how far that field
-    /// reaches, which is 0 on anything but a `SurfaceLight`.
-    color_near: [f32; 4],
+    /// rgb: linear radiance. w: half the emitting face along its second axis.
+    color_face: [f32; 4],
     /// xyz: unit cone axis, zero for a light that shines everywhere.
     /// w: cosine of the cone's half-angle.
     direction_cone: [f32; 4],
     /// x: cosine of the inner half-angle the edge is smoothed from, strictly
-    /// greater than `direction_cone.w`. yzw: padding the `vec4` needs anyway.
-    cone_inner: [f32; 4],
+    /// greater than `direction_cone.w`. yzw: half the emitting face along its
+    /// first axis, as a vector — its length is the extent, its direction the
+    /// axis, which is what fits the face in four `vec4`s. Zero for a point
+    /// source, which the shader then treats exactly as one.
+    cone_face: [f32; 4],
 }
 
 impl LocalLightRaw {
@@ -39,14 +41,19 @@ impl LocalLightRaw {
                 light.position.z,
                 light.range,
             ],
-            color_near: [light.color.x, light.color.y, light.color.z, light.near],
+            color_face: [light.color.x, light.color.y, light.color.z, light.face_v],
             direction_cone: [
                 light.direction.x,
                 light.direction.y,
                 light.direction.z,
                 light.cos_outer,
             ],
-            cone_inner: [light.cos_inner, 0.0, 0.0, 0.0],
+            cone_face: [
+                light.cos_inner,
+                light.face_u.x,
+                light.face_u.y,
+                light.face_u.z,
+            ],
         }
     }
 }
@@ -107,7 +114,8 @@ mod tests {
             position: Vec3::new(1.0, 2.0, 3.0),
             color: Vec3::new(0.1, 0.2, 0.3),
             range: 12.0,
-            near: 1.5,
+            face_u: Vec3::new(0.0, 0.0, 2.5),
+            face_v: 1.5,
             direction: -Vec3::Y,
             cos_outer: 0.25,
             cos_inner: 0.5,
@@ -117,8 +125,8 @@ mod tests {
         let raw = LocalLightRaw::new(&light);
 
         assert_eq!(raw.position_range, [1.0, 2.0, 3.0, 12.0]);
-        assert_eq!(raw.color_near, [0.1, 0.2, 0.3, 1.5]);
+        assert_eq!(raw.color_face, [0.1, 0.2, 0.3, 1.5]);
         assert_eq!(raw.direction_cone, [0.0, -1.0, 0.0, 0.25]);
-        assert_eq!(raw.cone_inner, [0.5, 0.0, 0.0, 0.0]);
+        assert_eq!(raw.cone_face, [0.5, 0.0, 0.0, 2.5]);
     }
 }

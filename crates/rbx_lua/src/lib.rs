@@ -16,5 +16,4 @@ mod property;
 mod runtime;
 
 pub use mlua::Error as LuaError;
-pub use property::reflected_property;
 pub use runtime::{Output, Runtime};

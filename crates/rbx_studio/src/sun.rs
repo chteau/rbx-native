@@ -15,8 +15,6 @@ use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_viewer::pick::Ray;
 use rbx_viewer::sun::{Body, Placement};
 
-use crate::settle::Surface;
-
 const LIGHTING_CLASS: &str = "Lighting";
 const CLOCK_TIME: &str = "ClockTime";
 const TIME_OF_DAY: &str = "TimeOfDay";
@@ -28,6 +26,13 @@ const SECONDS_PER_DAY: i64 = 24 * 60 * 60;
 const GUIDE_ARMS: f32 = 3.0;
 /// The cube marking where a shadow lands, in dragger arms across.
 const MARKER_ARMS: f32 = 0.15;
+
+/// A point on some part's drawn surface, and which way that surface looks.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Surface {
+    pub(crate) point: Vec3,
+    pub(crate) normal: Vec3,
+}
 
 /// What a press and drag in the 3D view aims the body by.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -112,7 +117,7 @@ impl SunTool {
     /// here — the one point the rest of the drag measures from.
     ///
     /// `hit` is the drawn surface under a ray, leaving out one part if asked
-    /// (see `shell::sun`, which answers it through `pick::surface_hit`).
+    /// (see `shell::sun`, which answers it through `pick::PartSurface`).
     pub(crate) fn press(
         &mut self,
         ray: Ray,

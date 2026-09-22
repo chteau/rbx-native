@@ -1,8 +1,9 @@
 //! Smaller datatypes: `Vector2`, `UDim`, `UDim2`, `NumberRange`, `BrickColor`.
 
 use mlua::{Lua, MetaMethod, Result, Table, UserData, UserDataFields, UserDataMethods, Value};
-use rbx_dom::{NumberRange, UDim, UDim2, Vector2Data};
+use rbx_dom::{BrickColor, Color3Data, NumberRange, UDim, UDim2, Vector2Data, DEFAULT_BRICK_COLOR};
 
+use super::color3::LuaColor3;
 use super::{from_userdata, number_arg};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -142,54 +143,42 @@ impl mlua::FromLua for LuaNumberRange {
     }
 }
 
-/// A hand-picked slice of Roblox's ~208-entry BrickColor palette: enough names
-/// for common scripts to resolve, not a full reproduction (the API dump carries
-/// no name/colour table to derive one from). Values checked against Roblox's
-/// published palette (number, then RGB): `Number`s 1, 21, 23, 24, 26, 37, 194,
-/// 1003, 1004.
-const NAMED: &[(&str, u32, u8, u8, u8)] = &[
-    ("White", 1, 242, 243, 243),
-    ("Bright red", 21, 196, 40, 28),
-    ("Bright blue", 23, 13, 105, 172),
-    ("Bright yellow", 24, 245, 205, 48),
-    ("Black", 26, 27, 42, 53),
-    ("Bright green", 37, 75, 151, 75),
-    ("Medium stone grey", 194, 163, 162, 165),
-    ("Really black", 1003, 17, 17, 17),
-    ("Really red", 1004, 255, 0, 0),
-];
-
-/// A palette index into Roblox's fixed BrickColor table, with the RGB triple
-/// when `number` is one of the `NAMED` entries above (needed to write a
-/// `BrickColor` into a part's `Color3uint8`; unlisted numbers carry `None`).
+/// One entry of Roblox's `BrickColor` table (see `rbx_dom::BrickColor`),
+/// the same table the Properties panel names a part's colour from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct LuaBrickColor {
-    pub(crate) number: u32,
-    pub(crate) color: Option<(u8, u8, u8)>,
-}
+pub(crate) struct LuaBrickColor(pub(crate) &'static BrickColor);
 
 impl LuaBrickColor {
+    /// A number the table lacks is "Medium stone grey", as
+    /// `BrickColor.new` documents.
     pub(crate) fn from_number(number: u32) -> Self {
-        let color = NAMED
-            .iter()
-            .find(|(_, candidate, ..)| *candidate == number)
-            .map(|(_, _, r, g, b)| (*r, *g, *b));
-        LuaBrickColor { number, color }
+        LuaBrickColor(
+            BrickColor::from_number(number)
+                .or_else(|| BrickColor::from_number(DEFAULT_BRICK_COLOR))
+                .expect("the table holds the default"),
+        )
+    }
+
+    pub(crate) fn number(&self) -> u32 {
+        self.0.number
     }
 }
 
 impl UserData for LuaBrickColor {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
-        fields.add_field_method_get("Number", |_, this| Ok(this.number));
+        fields.add_field_method_get("Number", |_, this| Ok(this.0.number));
+        fields.add_field_method_get("Name", |_, this| Ok(this.0.name));
+        fields.add_field_method_get("Color", |_, this| {
+            let [r, g, b] = this.0.rgb.map(|channel| f32::from(channel) / 255.0);
+            Ok(LuaColor3(Color3Data { r, g, b }))
+        });
     }
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_meta_method(MetaMethod::Eq, |_, this, other: LuaBrickColor| {
             Ok(*this == other)
         });
-        methods.add_meta_method(MetaMethod::ToString, |_, this, ()| {
-            Ok(this.number.to_string())
-        });
+        methods.add_meta_method(MetaMethod::ToString, |_, this, ()| Ok(this.0.name));
     }
 }
 
@@ -297,29 +286,55 @@ pub(crate) fn brick_color(lua: &Lua) -> Result<Table> {
     let table = lua.create_table()?;
     table.set(
         "new",
-        lua.create_function(|_, value: Value| match &value {
-            Value::Integer(number) => Ok(LuaBrickColor::from_number(*number as u32)),
-            Value::Number(number) => Ok(LuaBrickColor::from_number(*number as u32)),
-            Value::String(text) => {
-                let name = text.to_str()?.to_string();
-                NAMED
-                    .iter()
-                    .find(|(candidate, ..)| *candidate == name)
-                    .map(|(_, number, r, g, b)| LuaBrickColor {
-                        number: *number,
-                        color: Some((*r, *g, *b)),
-                    })
-                    .ok_or_else(|| {
-                        mlua::Error::runtime(format!(
-                            "BrickColor.new: \"{name}\" is not one of the names this build knows"
-                        ))
-                    })
+        lua.create_function(|_, args: mlua::MultiValue| {
+            let args: Vec<Value> = args.into_iter().collect();
+            match args.as_slice() {
+                // Three 0-1 channels: the closest colour to them.
+                [r, g, b] => Ok(LuaBrickColor(BrickColor::nearest([
+                    channel_arg(r)?,
+                    channel_arg(g)?,
+                    channel_arg(b)?,
+                ]))),
+                [Value::Integer(number)] => Ok(LuaBrickColor::from_number(*number as u32)),
+                [Value::Number(number)] => Ok(LuaBrickColor::from_number(*number as u32)),
+                // An unknown name is "Medium stone grey" too.
+                [Value::String(text)] => Ok(BrickColor::from_name(&text.to_str()?)
+                    .map(LuaBrickColor)
+                    .unwrap_or_else(|| LuaBrickColor::from_number(DEFAULT_BRICK_COLOR))),
+                [Value::UserData(data)] => {
+                    let color = data
+                        .borrow::<LuaColor3>()
+                        .map_err(|_| mlua::Error::runtime("BrickColor.new expected a Color3"))?;
+                    Ok(LuaBrickColor(BrickColor::nearest(
+                        [color.0.r, color.0.g, color.0.b].map(channel),
+                    )))
+                }
+                other => Err(mlua::Error::runtime(format!(
+                    "BrickColor.new expected a number, a name, a Color3 or three numbers, \
+                     got {} arguments",
+                    other.len()
+                ))),
             }
-            other => Err(mlua::Error::runtime(format!(
-                "BrickColor.new expected a number or a string, got {}",
-                other.type_name()
-            ))),
+        })?,
+    )?;
+    table.set(
+        "palette",
+        lua.create_function(|_, index: u8| {
+            BrickColor::from_palette(index)
+                .map(LuaBrickColor)
+                .ok_or_else(|| mlua::Error::runtime("BrickColor.palette: index out of range"))
         })?,
     )?;
     Ok(table)
+}
+
+/// A 0-1 channel as the byte the table's colours are compared in.
+fn channel(value: f32) -> u8 {
+    (value.clamp(0.0, 1.0) * 255.0).round() as u8
+}
+
+fn channel_arg(value: &Value) -> Result<u8> {
+    number_arg(value)
+        .map(channel)
+        .ok_or_else(|| mlua::Error::runtime("BrickColor.new expected numbers"))
 }

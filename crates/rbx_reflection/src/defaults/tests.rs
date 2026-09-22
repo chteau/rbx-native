@@ -1,4 +1,5 @@
 use super::*;
+use rbx_dom::{FontStyle, Vector3Data};
 
 const API_DUMP_JSON: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -71,6 +72,23 @@ fn a_cframe_default_keeps_its_rows_in_order() {
     assert_eq!(frame.position.y, 20.0);
     assert!(frame.rotation[5] > 0.7 && frame.rotation[8] > 0.7);
     assert!(frame.rotation[7] < -0.7);
+}
+
+#[test]
+fn an_infinite_default_keeps_its_sign() {
+    let db = database();
+
+    assert_eq!(
+        db.default_value("AlignPosition", "MaxVelocity"),
+        Some(&Variant::Float32(f32::INFINITY))
+    );
+    let bound = |name| match db.default_value("WrapTextureTransfer", name) {
+        Some(Variant::Vector2(bound)) => (bound.x, bound.y),
+        other => panic!("{name}: {other:?}"),
+    };
+    // Studio's own: an empty box, the minimum above the maximum.
+    assert_eq!(bound("UVMinBound"), (f32::INFINITY, f32::INFINITY));
+    assert_eq!(bound("UVMaxBound"), (f32::NEG_INFINITY, f32::NEG_INFINITY));
 }
 
 #[test]

@@ -1,8 +1,11 @@
 //! Where a second's worth of frames spent their time.
 //!
-//! Printed once a second on stderr in a debug build, and in a release one with
-//! `RBX_STUDIO_STATS=1`. Both threads write to it — the uploads are timed on the
-//! UI thread, the rest on the render thread — which is what the atomics are for.
+//! Sampled only while something is reading it — the Viewport dock, or
+//! `RBX_STUDIO_STATS=1` (see [`Stats::set_sampling`] and
+//! `Shell::sync_stats`) — and then also printed once a second on stderr in a
+//! debug build, and in a release one with that variable set. Both threads write to it — the uploads are timed on
+//! the UI thread, the rest on the render thread — which is what the atomics
+//! are for.
 //!
 //! The line carries both threads' rates on purpose: the render thread's count
 //! is what it drew, `shown` is what the UI thread actually collected and put
@@ -12,7 +15,7 @@
 //! full frame rate through a view that visibly stutters.
 
 use std::env;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 const STATS_VARIABLE: &str = "RBX_STUDIO_STATS";
@@ -32,17 +35,46 @@ pub(super) struct Stats {
     /// Nanoseconds since the last line was printed, against a start the whole
     /// process shares so both threads can read the same clock without one.
     opened: AtomicU64,
-    /// The last second's frame rate, as `f32` bits — kept regardless of
-    /// [`enabled`], since the corner label's Stats toggle (see
-    /// `WorkspaceView::set_stats_shown`) is a separate on/off switch from the
-    /// stderr dump this module otherwise gates on a debug build or
-    /// `RBX_STUDIO_STATS=1`. `0.0` until the first full second is in.
+    /// The last second's frame rate, as `f32` bits, for the Viewport dock —
+    /// kept regardless of [`enabled`], which only gates the stderr dump.
+    /// `0.0` until the first full second since sampling started is in.
     latest_fps: AtomicU32,
+    /// Whether anything is counted at all. Off unless the Viewport dock is
+    /// on screen: a readout nobody can see is per-frame work for nothing.
+    sampling: AtomicBool,
 }
 
 impl Stats {
+    /// Starts or stops counting. Starting opens a fresh window, so the first
+    /// rate shown is a whole second measured *after* the dock opened rather
+    /// than a stale one from before it closed, or a partial one.
+    pub(super) fn set_sampling(&self, on: bool) {
+        if self.sampling.swap(on, Ordering::Relaxed) == on {
+            return;
+        }
+        for counter in [
+            &self.frames,
+            &self.render,
+            &self.readback,
+            &self.uploads,
+            &self.upload,
+        ] {
+            counter.store(0, Ordering::Relaxed);
+        }
+        self.latest_fps.store(0, Ordering::Relaxed);
+        self.opened
+            .store(nanos(started().elapsed()), Ordering::Relaxed);
+    }
+
+    fn sampling(&self) -> bool {
+        self.sampling.load(Ordering::Relaxed)
+    }
+
     /// One frame queued and one collected, as [`rbx_viewer::Rendered`] timed them.
     pub(super) fn drew(&self, render: Duration, readback: Duration) {
+        if !self.sampling() {
+            return;
+        }
         self.frames.fetch_add(1, Ordering::Relaxed);
         add(&self.render, render);
         add(&self.readback, readback);
@@ -51,10 +83,17 @@ impl Stats {
     /// One frame turned into the image GPUI paints. The atlas upload itself
     /// happens later, inside GPUI's own frame, and cannot be timed from here:
     /// this is the UI thread's share of a frame, which is the actionable half.
+    ///
+    /// The last upload is kept whether or not anything is sampling: the
+    /// automatic quality level reads it (see [`Self::last_upload`]), and that
+    /// has to keep working with the Viewport dock shut.
     pub(super) fn uploaded(&self, took: Duration) {
+        self.latest_upload.store(nanos(took), Ordering::Relaxed);
+        if !self.sampling() {
+            return;
+        }
         self.uploads.fetch_add(1, Ordering::Relaxed);
         add(&self.upload, took);
-        self.latest_upload.store(nanos(took), Ordering::Relaxed);
     }
 
     /// What the UI thread last spent turning a frame into an image.
@@ -70,6 +109,9 @@ impl Stats {
     /// it. `interval` is the budget a frame had, for the line to be read against,
     /// and `level` the graphics quality those frames were drawn at.
     pub(super) fn report(&self, interval: Duration, level: u8) {
+        if !self.sampling() {
+            return;
+        }
         let elapsed = self.since_last_report();
         if elapsed < REPORT_EVERY {
             return;
@@ -118,8 +160,8 @@ impl Stats {
         elapsed
     }
 
-    /// The frame rate `report` last measured, for the corner label's Stats
-    /// toggle to show — see the field.
+    /// The frame rate `report` last measured, for the Viewport dock to show
+    /// — see the field.
     pub(super) fn latest_fps(&self) -> f32 {
         f32::from_bits(self.latest_fps.load(Ordering::Relaxed))
     }
@@ -146,7 +188,13 @@ fn started() -> Instant {
 }
 
 pub(super) fn enabled() -> bool {
-    cfg!(debug_assertions) || env::var(STATS_VARIABLE).is_ok_and(|value| value == "1")
+    cfg!(debug_assertions) || requested()
+}
+
+/// Whether `RBX_STUDIO_STATS=1` asked for the numbers — which also keeps them
+/// sampled with the Viewport dock shut (see `Shell::sync_stats`).
+pub(crate) fn requested() -> bool {
+    env::var(STATS_VARIABLE).is_ok_and(|value| value == "1")
 }
 
 fn add(total: &AtomicU64, took: Duration) {
@@ -193,9 +241,10 @@ fn average(total: u64, count: u64) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::Ordering;
     use std::time::Duration;
 
-    use super::{average, fps, line, Counted, Totals};
+    use super::{average, fps, line, Counted, Stats, Totals};
 
     #[test]
     fn the_line_reads_as_a_rate_against_its_cap_a_level_and_three_averages() {
@@ -250,11 +299,66 @@ mod tests {
     }
 
     // What `Stats::latest_fps` stores — the same rate `line` prints, computed
-    // by the one function both read, so the corner label's toggle and the
-    // stderr dump can never disagree.
+    // by the one function both read, so the Viewport dock and the stderr dump
+    // can never disagree.
     #[test]
     fn fps_is_frames_over_the_window_they_were_counted_in() {
         assert_eq!(fps(60, Duration::from_secs(1)), 60.0);
         assert_eq!(fps(30, Duration::from_millis(1500)), 20.0);
+    }
+
+    // Shut, nothing is counted — the per-frame work stops, not just the
+    // display of it — except the last upload, which automatic quality reads.
+    #[test]
+    fn nothing_is_counted_until_sampling_starts() {
+        let stats = Stats::default();
+        stats.drew(Duration::from_millis(1), Duration::from_millis(2));
+        stats.uploaded(Duration::from_millis(3));
+
+        assert_eq!(stats.frames.load(Ordering::Relaxed), 0);
+        assert_eq!(stats.uploads.load(Ordering::Relaxed), 0);
+        assert_eq!(stats.last_upload(), Duration::from_millis(3));
+    }
+
+    #[test]
+    fn sampling_counts_until_it_is_stopped_again() {
+        let stats = Stats::default();
+        stats.set_sampling(true);
+        stats.drew(Duration::from_millis(1), Duration::from_millis(2));
+        stats.uploaded(Duration::from_millis(3));
+        assert_eq!(stats.frames.load(Ordering::Relaxed), 1);
+        assert_eq!(stats.uploads.load(Ordering::Relaxed), 1);
+
+        stats.set_sampling(false);
+        stats.drew(Duration::from_millis(1), Duration::from_millis(2));
+        assert_eq!(stats.frames.load(Ordering::Relaxed), 0);
+    }
+
+    // Reopening starts from nothing: the rate from before the dock closed is
+    // not shown as though it were current, and frames counted before the
+    // restart do not leak into its first second.
+    #[test]
+    fn restarting_forgets_the_last_rate_and_the_partial_count() {
+        let stats = Stats::default();
+        stats.set_sampling(true);
+        stats.drew(Duration::ZERO, Duration::ZERO);
+        stats.latest_fps.store(60f32.to_bits(), Ordering::Relaxed);
+
+        stats.set_sampling(false);
+        stats.set_sampling(true);
+
+        assert_eq!(stats.latest_fps(), 0.0);
+        assert_eq!(stats.frames.load(Ordering::Relaxed), 0);
+    }
+
+    // A report while shut neither measures nor prints — the window it would
+    // read was never counted.
+    #[test]
+    fn a_report_while_shut_records_no_rate() {
+        let stats = Stats::default();
+        stats.frames.store(90, Ordering::Relaxed);
+        stats.report(Duration::from_millis(16), 21);
+
+        assert_eq!(stats.latest_fps(), 0.0);
     }
 }

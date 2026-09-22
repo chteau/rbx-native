@@ -6,17 +6,9 @@ mod pseudo;
 mod to_lua;
 
 use mlua::{Lua, Result, Value};
-use rbx_dom::{Instance, Ref, Variant};
-use rbx_reflection::{PropertyDescriptor, ReflectionDatabase};
+use rbx_dom::{Ref, Variant};
 
 use crate::ctx::Ctx;
-
-/// Properties whose serialized name differs from the name scripts use.
-///
-/// The API dump carries no serialization info, so the file's spelling is resolved
-/// here. The generic rule below (lowercase first letter, as in `Size` -> `size`)
-/// covers most of them; this table holds what it cannot derive.
-const ALIASES: &[(&str, &str)] = &[("Color", "Color3uint8")];
 
 pub(crate) fn missing_instance() -> mlua::Error {
     mlua::Error::runtime("instance has been destroyed")
@@ -35,15 +27,17 @@ pub(crate) fn get(lua: &Lua, ctx: &Ctx, referent: Ref, name: &str) -> Result<Opt
         let Some(descriptor) = ctx.database().resolve_property(instance.class(), name) else {
             return Ok(None);
         };
-        let key = storage_key(instance, name);
-        (
-            descriptor.value_type.clone(),
-            instance.properties().get(&key).cloned(),
-        )
+        // Whichever name the file stored it under, or the class default:
+        // `part.Transparency` on a part a hand-written file left it off of
+        // reads `0`, as it would in Roblox.
+        let stored = ctx
+            .database()
+            .stored_or_default(instance, name)
+            .map(|(_, value)| value.clone());
+        (descriptor.value_type.clone(), stored)
     };
 
-    // A property the file never stored has no default here: the dump records types,
-    // not default values.
+    // Neither stored nor recorded: a value only a running engine computes.
     let Some(stored) = stored else {
         return Ok(Some(Value::Nil));
     };
@@ -62,8 +56,18 @@ pub(crate) fn set(ctx: &Ctx, referent: Ref, name: &str, value: &Value) -> Result
         let Some(descriptor) = ctx.database().resolve_property(instance.class(), name) else {
             return Ok(false);
         };
-        let key = storage_key(instance, name);
-        let existing = instance.properties().get(&key).cloned();
+        // Under the name the file stored it as, or else the one Roblox saves
+        // it under — `size`, `Color3uint8` — which is what the renderer and
+        // the save path read. The default, when there is one, says which
+        // representation that name holds.
+        let database = ctx.database();
+        let (key, existing) = match database.stored_or_default(instance, name) {
+            Some((key, value)) => (key.to_owned(), Some(value.clone())),
+            None => (
+                database.stored_names(instance.class(), name)[0].to_owned(),
+                None,
+            ),
+        };
         (descriptor.value_type.clone(), key, existing)
     };
 
@@ -73,52 +77,6 @@ pub(crate) fn set(ctx: &Ctx, referent: Ref, name: &str, value: &Value) -> Result
         .set_property(referent, &key, variant)
         .map_err(|error| mlua::Error::runtime(error.to_string()))?;
     Ok(true)
-}
-
-fn storage_key(instance: &Instance, canonical: &str) -> String {
-    if instance.properties().contains_key(canonical) {
-        return canonical.to_string();
-    }
-
-    let mut chars = canonical.chars();
-    let lowered = match chars.next() {
-        Some(first) => first.to_lowercase().collect::<String>() + chars.as_str(),
-        None => String::new(),
-    };
-    if instance.properties().contains_key(&lowered) {
-        return lowered;
-    }
-
-    ALIASES
-        .iter()
-        .find(|(name, alias)| *name == canonical && instance.properties().contains_key(*alias))
-        .map(|(_, alias)| alias.to_string())
-        .unwrap_or_else(|| canonical.to_string())
-}
-
-/// The reflected property that `key`, as a file stores it on an instance of
-/// `class`, stands for: `storage_key` read backwards, through the same rules
-/// and the same alias table, so `size` is `Part.Size` and `Color3uint8` is
-/// `BasePart.Color`. `None` for a key the dump has no property for at all —
-/// `Tags`, `AttributesSerialize` and the other serialized-only data.
-pub fn reflected_property<'a>(
-    database: &'a ReflectionDatabase,
-    class: &str,
-    key: &str,
-) -> Option<&'a PropertyDescriptor> {
-    let resolve = |name: &str| database.resolve_property(class, name);
-    let mut chars = key.chars();
-    let raised = chars
-        .next()
-        .map(|first| first.to_uppercase().collect::<String>() + chars.as_str());
-    resolve(key)
-        .or_else(|| raised.as_deref().and_then(resolve))
-        .or_else(|| {
-            ALIASES
-                .iter()
-                .find(|(_, alias)| *alias == key)
-                .and_then(|(name, _)| resolve(name))
-        })
 }
 
 /// Narrows a freshly built `Variant` to the representation the file already used
@@ -139,26 +97,5 @@ fn keep_representation(existing: Option<&Variant>, value: Variant) -> Variant {
         (Some(Variant::Int64(_)), Variant::Int32(v)) => Variant::Int64(i64::from(*v)),
         (Some(Variant::Int32(_)), Variant::Int64(v)) => Variant::Int32(*v as i32),
         _ => value,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_stored_key_reads_back_as_the_property_scripts_name() {
-        let database = ReflectionDatabase::embedded();
-        let name = |class: &str, key: &str| {
-            reflected_property(&database, class, key).map(|property| property.name.as_str())
-        };
-        assert_eq!(name("Part", "size"), Some("Size"));
-        assert_eq!(name("Part", "shape"), Some("Shape"));
-        assert_eq!(name("Part", "Color3uint8"), Some("Color"));
-        assert_eq!(name("Part", "CFrame"), Some("CFrame"));
-        // Declared on `Part`, so a `MeshPart` has no such property to map to.
-        assert_eq!(name("MeshPart", "shape"), None);
-        assert_eq!(name("Part", "Tags"), None);
-        assert_eq!(name("Part", "AttributesSerialize"), None);
     }
 }

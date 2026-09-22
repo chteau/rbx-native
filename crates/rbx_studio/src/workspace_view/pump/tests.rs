@@ -119,6 +119,38 @@ fn another_command_between_two_batches_keeps_them_apart_and_in_place() {
     assert!(matches!(&folded[2], Command::Changes(_, changes) if changes.len() == 2));
 }
 
+fn lines(layer: usize, count: usize) -> Command {
+    let segment = rbx_viewer::Segment {
+        from: glam::Vec3::ZERO,
+        to: glam::Vec3::X,
+        color: [1.0; 4],
+        on_top: false,
+        width: 1.0,
+    };
+    Command::Lines(layer, vec![segment; count])
+}
+
+// A drag's guides send a list between every two change batches; the
+// batches must still fold, and each layer keep only its latest list.
+#[test]
+fn line_lists_between_batches_fold_away_to_the_last_one() {
+    let folded = coalesce(vec![batch(1), lines(1, 1), batch(2), lines(1, 2)]);
+
+    assert_eq!(folded.len(), 2);
+    assert!(matches!(&folded[0], Command::Changes(_, changes) if changes.len() == 2));
+    assert!(matches!(&folded[1], Command::Lines(1, segments) if segments.len() == 2));
+}
+
+#[test]
+fn each_line_layer_keeps_its_own_latest_list() {
+    let folded = coalesce(vec![lines(0, 5), batch(1), lines(1, 1), lines(1, 3)]);
+
+    assert_eq!(folded.len(), 3);
+    assert!(matches!(&folded[0], Command::Lines(0, segments) if segments.len() == 5));
+    assert!(matches!(&folded[1], Command::Changes(..)));
+    assert!(matches!(&folded[2], Command::Lines(1, segments) if segments.len() == 3));
+}
+
 #[test]
 fn nothing_queued_folds_to_nothing() {
     assert!(coalesce(Vec::new()).is_empty());

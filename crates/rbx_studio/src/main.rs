@@ -51,6 +51,7 @@ mod class_icons;
 mod cli;
 mod command_bar;
 mod display;
+mod dragger;
 mod explorer;
 mod folder_colors;
 mod history;

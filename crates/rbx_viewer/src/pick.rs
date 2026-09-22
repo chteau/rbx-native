@@ -16,6 +16,7 @@
 
 mod mesh;
 mod shape;
+mod surface;
 
 use glam::{Mat4, Vec2, Vec3};
 use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
@@ -27,6 +28,7 @@ use crate::scene::{
 };
 
 pub use mesh::Meshes;
+pub use surface::{PartSurface, Solid};
 
 // Reversed-Z (see `camera::Camera::projection`) puts the near plane at depth 1
 // and the far end at 0, in both the perspective and the orthographic
@@ -163,27 +165,6 @@ fn distance_to(
 
     let (kind, model) = solid_of(dom, database, referent)?;
     shape::hit_key(kind, model, ray)
-}
-
-/// Where `ray` first meets the surface `referent` is drawn with, and that
-/// surface's outward unit normal there — the slope of a wedge, the curve of
-/// a ball or a cylinder, the triangle of a downloaded mesh — resolved
-/// through the same shapes [`parts_along`] tests. `None` when the ray misses,
-/// or starts inside a solid and so enters through no face.
-pub fn surface_hit(
-    dom: &WeakDom,
-    database: &ReflectionDatabase,
-    meshes: &Meshes,
-    referent: Ref,
-    ray: Ray,
-) -> Option<(Vec3, Vec3)> {
-    if let Some((asset, fit)) = file_mesh_fit(dom, database, referent) {
-        if let Some(mesh) = meshes.get(&asset) {
-            return mesh::surface(mesh, fit.transform(mesh), ray);
-        }
-    }
-    let (kind, model) = solid_of(dom, database, referent)?;
-    shape::surface(kind, model, ray)
 }
 
 /// The procedural solid `referent` is drawn as, and the matrix it is drawn

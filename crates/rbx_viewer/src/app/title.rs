@@ -1,11 +1,9 @@
-//! Composes the window title the way `rbxstudio`'s viewport corner label
-//! composes its own text (`workspace_view::label::status`): the frame rate,
-//! once one has been measured, and the flight speed while a fresh reading of
-//! it is still worth showing, joined onto the file name.
+//! Composes the window title: the frame rate, once one has been measured, and
+//! the flight speed while a fresh reading of it is still worth showing, joined
+//! onto the file name.
 
 /// The window title: the file name, then whichever of the frame rate and the
-/// flight speed are worth showing right now, joined the way `rbxstudio`'s
-/// corner label joins its own fields.
+/// flight speed are worth showing right now.
 pub(super) fn title(name: &str, fps: Option<f32>, speed: Option<i64>) -> String {
     let mut parts = Vec::new();
     if let Some(fps) = fps {
@@ -22,9 +20,9 @@ pub(super) fn title(name: &str, fps: Option<f32>, speed: Option<i64>) -> String 
 }
 
 /// The one-line fps/frame-time format both `rbxview`'s title and `rbxstudio`'s
-/// corner label read the same way — `rbx_studio` depends on `rbx_viewer`, never
-/// the other way round, so this lives here and `workspace_view::label::status`
-/// calls it rather than keeping its own copy of the format string.
+/// Viewport dock read the same way — `rbx_studio` depends on `rbx_viewer`, never
+/// the other way round, so this lives here and `workspace_view::label` calls it
+/// rather than keeping its own copy of the format string.
 pub fn readout(fps: f32) -> String {
     format!("{fps:.0} fps\u{b7}{:.1} ms", 1000.0 / fps)
 }

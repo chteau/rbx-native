@@ -107,7 +107,11 @@ impl Render for PanelWindow {
             // The same strip a docked panel wears, minus the tabs: there
             // is only one panel in here, so its name is the window's
             // title and what is left is its own controls.
-            .child(super::chrome::dock_strip(Vec::new(), trailing))
+            .child(super::chrome::dock_strip(
+                Vec::new(),
+                trailing,
+                panel.has_toolbar(),
+            ))
             .children(content)
     }
 }

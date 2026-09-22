@@ -6,7 +6,8 @@ fn spot(position: Vec3, shadows: bool) -> LocalLight {
         position,
         color: Vec3::ONE,
         range: 20.0,
-        near: 0.0,
+        face_u: Vec3::ZERO,
+        face_v: 0.0,
         direction: -Vec3::Y,
         // A 90 degree cone, same as `crate::lighting::local::cone`'s default.
         cos_outer: 45f32.to_radians().cos(),
@@ -21,7 +22,8 @@ fn point(position: Vec3) -> LocalLight {
         position,
         color: Vec3::ONE,
         range: 20.0,
-        near: 0.0,
+        face_u: Vec3::ZERO,
+        face_v: 0.0,
         direction: Vec3::ZERO,
         cos_outer: -2.0,
         cos_inner: -1.0,
@@ -99,6 +101,44 @@ fn a_point_behind_the_light_is_culled() {
     // `local_light_visibility` in lights.wgsl guards on exactly this: a
     // non-positive `w` is what a perspective divide behind the eye produces.
     assert!(clip.w <= 0.0);
+}
+
+/// A 16 by 2 ceiling panel shines its cone from every point of its face, so
+/// its map has to take in the whole frustum that face lights — out to the
+/// far corner of the floor it reaches — and nothing of the part behind it.
+#[test]
+fn a_face_lights_map_covers_the_whole_frustum_it_lights() {
+    let range = 16.0;
+    for angle in [0.0f32, 30.0, 90.0, 150.0] {
+        let half = (0.5 * angle).to_radians();
+        let light = LocalLight {
+            face_u: Vec3::X * 8.0,
+            face_v: 1.0,
+            // The outer edge `crate::lighting::local::cone` gives this Angle.
+            cos_outer: half.cos().min(1.0 - 1e-3),
+            ..spot(Vec3::new(0.0, 10.0, 0.0), true)
+        };
+        let projection = view_projection(&light);
+        let inside = |point: Vec3| {
+            ndc(projection, point).is_some_and(|ndc| {
+                ndc.x.abs() <= 1.0 && ndc.y.abs() <= 1.0 && (0.0..=1.0).contains(&ndc.z)
+            })
+        };
+
+        // The face's own corners, just in front of it, and the far corner of
+        // the lit frustum, a little inside its reach and its edge.
+        let depth = 0.9 * range * half.cos();
+        let grow = depth * half.tan().min(1e3) * 0.99;
+        for (x, z) in [(8.0, 1.0), (-8.0, -1.0)] {
+            assert!(inside(Vec3::new(x, 9.8, z)), "Angle {angle}: face corner");
+            let far = Vec3::new(x + grow.copysign(x), 10.0 - depth, z + grow.copysign(z));
+            assert!(inside(far), "Angle {angle}: far corner {far}");
+        }
+        assert!(
+            !inside(Vec3::new(0.0, 10.5, 0.0)),
+            "the part behind the face"
+        );
+    }
 }
 
 #[test]

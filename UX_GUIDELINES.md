@@ -131,7 +131,7 @@ which is why it is tracked as its own piece of work.
 | Colour | `check_on` `#4A90D9` + `check_on_border`, `check_off` `#222222` + `check_off_border` | the **only** saturated hue in the design. It is the checkbox. Focus and selection borrow it; nothing else may |
 | Radius | `RADIUS` 3 · `RADIUS_TINY` 1 | that is the whole scale. A third radius is a bug |
 | Controls | `check_on` `#3AA0FF` · `check_off` + `check_off_border` · `tab_active_bar` · `select_inset` | the accent, the outline the frame's borderless checkbox needed, and the one compensation this file admits to (see §11) |
-| Dimensions | `topbar_height()` 34 · `menu_bar_height()` 30 · `tabs_height()` 42 · `ribbon_tabs_height()` 28 · `ribbon_height()` 80 · `dock_tabs_height()` 38 · `dock_width()` 300 · `row_height()` 28 · `row_label_width()` 140 · `input_height()` 31 · `checkbox_size()` 15 in a `checkbox_target()` of 26 · … | **functions**, all scaled. Larger than the frame's own numbers because the type is (see below) |
+| Dimensions | `topbar_height()` 34 · `menu_bar_height()` 30 · `tabs_height()` 42 · `ribbon_tabs_height()` 28 · `ribbon_height()` 80 · `dock_tabs_height()` 38 · `dock_width()` 300 · `dock_height()` 178 (the strip and five rows) · `row_height()` 28 · `row_label_width()` 120 · `input_height()` 31 · `checkbox_size()` 15 in a `checkbox_target()` of 26 · … | **functions**, all scaled. Larger than the frame's own numbers because the type is (see below) |
 | Type | `text_md()` 14 · `text_sm()` 13 · `text_xs()` 11, with `line_md()`/`line_sm()`/`line_xs()` | 14 is the default; 13 is section headers and tooltips; 11 is a ribbon tile's label. The frame's own 9/8 is overruled — see §11 |
 | Toolkit | `FIELD_SIZE` | hand this to any `Input`/`Select`/`ColorPicker` so its text comes out at `TEXT_SM` — the toolkit's own smallest step is 12px |
 | Tool accents | `tool_select` `tool_move` `tool_scale` `tool_rotate` `tool_align` `tool_local`, + `tool_wash` and `TOOL_BORDER` | the **only** place a second hue is spent, and only on the active tool's own button. See §4 |
@@ -178,8 +178,8 @@ Shell (v_flex)
 ├─ ROW D  Workspace flex-1  black
 │   ├─ Properties   w 300 (persisted)  DockTabs + p5 content, on `dock`
 │   ├─ ⇔ handle     4px hit on the dock's own surface — no black slot
-│   ├─ Centre       flex-1: document (+ its floating controls) over Output
-│   │   └─ Output   h 160 (80–400), or its 33px tab strip alone when collapsed
+│   ├─ Centre       flex-1: document, nothing floating over it, over the bottom dock
+│   │   └─ Output │ Viewport   tabs; h `dock_height()` (80–400), or Output's strip alone when collapsed
 │   ├─ ⇔ handle
 │   └─ Explorer     w 300 (persisted)  DockTabs + p5 content, on `dock`
 └─ CommandBar      auto    black      a dock's own 5px inset and chrome field
@@ -341,9 +341,13 @@ before changing a button. In short:
   than they are changed, and a number you have to open a popover to see is a
   number nobody trusts.
 - **This project's own additions don't go in the ribbon.** The graphics
-  quality dropdown and the viewport's settings float in the viewport's
-  top-left corner, because they belong to the open document rather than
-  under a Studio-named group.
+  quality dropdown, the viewport's settings and its live frame rate live in
+  the **Viewport dock** — a tab beside Output by default — rather than under
+  a Studio-named group. They used to float over the viewport's corner, and
+  nothing persistent sits over the scene being edited any more: only the
+  transient readouts a gesture produces (the flight speed, a drag's studs).
+  The ribbon's Home tab carries the dock's open/close tile like every other
+  dock's, and the dock samples the frame rate only while it is on screen.
 
 ## 8. Keyboard
 

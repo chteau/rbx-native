@@ -330,13 +330,19 @@ impl Roving {
     /// Handles an arrow/Home/End keystroke, moving focus within the group.
     /// Returns whether it consumed the key.
     ///
+    /// Only while one of the group's own items holds focus. The listener
+    /// sits on the group's container, and a container holds other things —
+    /// the Viewport dock's quality select, a Properties text field, the
+    /// ribbon's snap fields — whose keys bubble through it; a Home pressed
+    /// in an open dropdown belongs to the dropdown.
+    ///
     /// Enter and Space are deliberately **not** here: GPUI already turns
     /// them into an `on_click` on the focused element, so activation is the
     /// same code path a mouse click takes. Two implementations of "what
     /// this button does" is how a keyboard path silently rots.
     pub(crate) fn key(&self, keystroke: &Keystroke, window: &mut Window, cx: &mut App) -> bool {
         let len = self.len.get();
-        if len == 0 {
+        if len == 0 || !self.holds_focus(window) {
             return false;
         }
         let Some(movement) = Move::of(keystroke, self.vertical) else {
@@ -347,6 +353,21 @@ impl Roving {
         self.current.set(next);
         self.handle(next, cx).focus(window, cx);
         true
+    }
+
+    /// The item that stands for the group — the one focused, while focus is
+    /// in it.
+    pub(crate) fn current(&self) -> usize {
+        self.current.get()
+    }
+
+    /// Whether focus is on one of the items the last render built.
+    fn holds_focus(&self, window: &Window) -> bool {
+        self.handles
+            .borrow()
+            .iter()
+            .take(self.len.get())
+            .any(|handle| handle.is_focused(window))
     }
 }
 

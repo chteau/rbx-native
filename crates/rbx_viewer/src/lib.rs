@@ -49,13 +49,15 @@ pub use gizmo::Gizmo;
 pub use gpu::describe_adapter;
 pub use headless::Headless;
 pub use input::{CameraInput, CameraKey};
+pub use lighting::light_guides;
 // An editor placing the sun by pointing at the scene needs the inverse of the
-// sun model the renderer lights with, and nothing else of `lighting`.
+// sun model the renderer lights with.
 pub use lighting::sun;
 pub use load::read_place;
 pub use quality::{FrameRateManager, QualityLevel};
+pub use renderer::Segment;
 pub use scene::{resolved_shape_label, ScrollTarget};
-// `rbxview`'s own title bar and `rbxstudio`'s corner label read fps the same
+// `rbxview`'s own title bar and `rbxstudio`'s Viewport dock read fps the same
 // way; shared here rather than each crate carrying its own copy of the format.
 pub use app::title::readout as fps_readout;
 

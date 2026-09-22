@@ -1,6 +1,7 @@
 //! What an editor tells the renderer to *show*, as opposed to what the place
 //! holds: the outlined selection, the "about to click" hover cue, the ghost
-//! boxes a tool is previewing and the transform gizmo's draggers.
+//! boxes a tool is previewing, the editor's own line segments and the
+//! transform gizmo's draggers.
 //!
 //! Split out of [`Renderer`] because they are one family — none of them is
 //! rebuilt from the DOM, all of them survive a reload through
@@ -82,6 +83,17 @@ impl Renderer {
     /// `renderer::preview`. An empty list clears them.
     pub(crate) fn set_preview(&mut self, device: &wgpu::Device, boxes: &[glam::Mat4]) {
         self.preview.set(device, boxes);
+    }
+
+    /// Replaces one layer of the editor's line segments — see
+    /// `renderer::lines`. An empty list clears it.
+    pub(crate) fn set_lines(
+        &mut self,
+        device: &wgpu::Device,
+        layer: usize,
+        segments: &[super::Segment],
+    ) {
+        self.lines.set(device, layer, segments);
     }
 
     /// Shows or hides the transform tool's draggers over whatever is

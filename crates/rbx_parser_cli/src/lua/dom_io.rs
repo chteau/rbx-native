@@ -30,8 +30,13 @@ pub fn write_dom(path: &Path, dom: &WeakDom) -> Result<(), String> {
 
     match extension {
         "rbxl" | "rbxm" => {
-            let bytes = rbx_binary::serialize(dom)
-                .map_err(|err| format!("failed to serialize '{display}': {err}"))?;
+            // A class default for what an instance does not hold, not a
+            // zero: see `rbx_binary::serialize_with_defaults`.
+            let database = rbx_reflection::ReflectionDatabase::shared();
+            let bytes = rbx_binary::serialize_with_defaults(dom, |class, key| {
+                database.stored_default(class, key).cloned()
+            })
+            .map_err(|err| format!("failed to serialize '{display}': {err}"))?;
             std::fs::write(path, bytes).map_err(|err| format!("failed to write '{display}': {err}"))
         }
         "rbxlx" | "rbxmx" => {

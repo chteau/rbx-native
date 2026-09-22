@@ -527,11 +527,16 @@ pub(super) fn property_expandable(
 /// a state. And it is **26px**, which is the frame's own number and, not by
 /// coincidence, over WCAG 2.5.8's 24x24 target floor; the 10px box this
 /// used to draw was less than a fifth of the required area.
+///
+/// `None` is the indeterminate state a multi-selection's disagreeing
+/// values show: filled like a ticked box, since it is not an empty one, and
+/// marked with a dash.
 pub(super) fn checkbox(
     id: impl Into<ElementId>,
-    checked: bool,
+    checked: impl Into<Option<bool>>,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> Stateful<Div> {
+    let checked = checked.into();
     div()
         .id(id.into())
         // The target, which never goes under 24px …
@@ -557,7 +562,7 @@ pub(super) fn checkbox(
                 .justify_center()
                 .rounded(tokens::RADIUS)
                 .map(|this| {
-                    if checked {
+                    if checked != Some(false) {
                         this.bg(tokens::check_on())
                     } else {
                         this.bg(tokens::check_off())
@@ -565,10 +570,13 @@ pub(super) fn checkbox(
                             .border_color(tokens::check_off_border())
                     }
                 })
-                .when(checked, |this| {
-                    this.text_color(tokens::black())
-                        .child(Icon::new(IconName::Check).size(tokens::text_xs()))
-                }),
+                .when_some(
+                    checked.map_or(Some(IconName::Minus), |on| on.then_some(IconName::Check)),
+                    |this, icon| {
+                        this.text_color(tokens::black())
+                            .child(Icon::new(icon).size(tokens::text_xs()))
+                    },
+                ),
         )
 }
 
@@ -606,14 +614,20 @@ pub(super) fn section_header(
         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
         .on_click(on_click)
         .child(
-            div().flex_none().text_color(tokens::text_label()).child(
-                Icon::new(if open {
-                    IconName::ChevronDown
-                } else {
-                    IconName::ChevronRight
-                })
-                .size(tokens::text_xs()),
-            ),
+            div()
+                .flex_none()
+                // The same slot an expander's chevron sits in, so a
+                // category's name starts on the property names' own edge.
+                .w(tokens::chevron_slot())
+                .text_color(tokens::text_label())
+                .child(
+                    Icon::new(if open {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronRight
+                    })
+                    .size(tokens::text_xs()),
+                ),
         )
         .child(div().flex_1().truncate().child(label))
 }
@@ -641,6 +655,7 @@ pub(super) type OnOpen = Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 /// built. That has to happen per row per render, unlike the graphics-quality
 /// dropdown's one-off registration in `Shell::quality_control`, because a
 /// property row's widget is rebuilt whenever the selection changes.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn render_editor(
     tab_index: isize,
     stops: &TabOrder,
@@ -648,9 +663,12 @@ pub(super) fn render_editor(
     on_flag: impl Fn(usize, bool) -> Box<dyn Fn(&ClickEvent, &mut Window, &mut App)> + 'static,
     on_scrub: OnScrub,
     on_open: OnOpen,
+    window: &Window,
     cx: &mut App,
 ) -> AnyElement {
-    render_row_editor(tab_index, stops, editor, &on_flag, on_scrub, on_open, cx)
+    render_row_editor(
+        tab_index, stops, editor, &on_flag, on_scrub, on_open, window, cx,
+    )
 }
 
 /// One flag's click handler, by its index and the value it currently shows.
@@ -661,6 +679,7 @@ pub(super) fn render_editor(
 /// to its monomorphization.
 type OnFlag<'a> = &'a dyn Fn(usize, bool) -> Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
+#[allow(clippy::too_many_arguments)]
 fn render_row_editor(
     tab_index: isize,
     stops: &TabOrder,
@@ -668,6 +687,7 @@ fn render_row_editor(
     on_flag: OnFlag<'_>,
     on_scrub: OnScrub,
     on_open: OnOpen,
+    window: &Window,
     cx: &mut App,
 ) -> AnyElement {
     match editor {
@@ -818,6 +838,7 @@ fn render_row_editor(
                         &|_, _| Box::new(|_, _, _| {}),
                         on_scrub,
                         on_open,
+                        window,
                         cx,
                     )
                 }))
@@ -870,8 +891,9 @@ fn render_row_editor(
         // step height and aligns the text to the top of *that*, which reads
         // as the whole control sitting a few pixels high in its field.
         RowEditor::Enum(state) => {
-            stops.register(&state.read(cx).focus_handle(cx));
-            select_box()
+            let handle = state.read(cx).focus_handle(cx);
+            stops.register(&handle);
+            select_field(&handle, window, cx)
                 .child(
                     Select::new(&state)
                         .appearance(false)
@@ -999,6 +1021,17 @@ pub(super) fn field_box() -> Div {
 /// [`tokens::field_select`]).
 pub(super) fn select_box() -> Div {
     field_surface(tokens::field_select())
+}
+
+/// A dropdown's box, ringed while keyboard focus is on `handle` — the
+/// toolkit `Select` inside it, or the box itself where the box is the
+/// control. The toolkit draws no ring once its own chrome is off, so
+/// without this a select took focus invisibly. Inset, like the Viewport
+/// dock's quality select: a property's value column clips anything drawn
+/// outside it, and a shadow moves nothing, so the column stays aligned.
+pub(super) fn select_field(handle: &FocusHandle, window: &Window, cx: &App) -> Div {
+    let ringed = handle.contains_focused(window, cx) && window.last_input_was_keyboard();
+    select_box().when(ringed, |this| this.shadow(tokens::focus_ring_inset()))
 }
 
 fn field_surface(surface: Rgba) -> Div {

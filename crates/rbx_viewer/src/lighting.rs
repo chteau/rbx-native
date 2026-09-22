@@ -13,6 +13,7 @@ pub mod sun;
 
 pub(crate) use clouds::Clouds;
 pub(crate) use effects::{Effects, Tonemap};
+pub use local::light_guides;
 pub(crate) use local::{local_lights, LocalLight};
 use sun::sun_direction;
 

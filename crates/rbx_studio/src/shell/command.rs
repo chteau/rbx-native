@@ -225,7 +225,8 @@ impl Shell {
     /// selected part or the tree itself changed, and the boxes a free drag
     /// soft-snaps onto when anything *other* than the selection did — a drag
     /// moves nothing but the selection, and re-reading those per mouse move
-    /// would walk the whole workspace every frame.
+    /// would walk the whole workspace every frame. The selected lights'
+    /// guides are re-read every time: they cost only the selection.
     ///
     /// The one path every mutation takes — a Command Bar script, a
     /// Properties row, a viewport drag, the Explorer's insert, delete and
@@ -235,6 +236,7 @@ impl Shell {
         if changes.is_empty() {
             return;
         }
+        self.properties.dom_changed(changes);
         let refresh = refresh_for(changes, &self.covered);
         // The instances the log names, not the tree: a drag reflects a
         // change every mouse move, and copying the whole place per move
@@ -255,6 +257,7 @@ impl Shell {
         if refresh.neighbours {
             self.sync_snap_neighbours(cx);
         }
+        self.sync_light_guides(cx);
         // A selected instance that changed class is, to everything built
         // from the selection, another selection: its outline, its gizmo and
         // its Properties rows are all read off its class. Checked here, so a

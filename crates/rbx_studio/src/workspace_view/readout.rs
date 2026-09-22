@@ -1,6 +1,7 @@
-//! The live stud-count readout shown near the cursor while a Move or Scale
-//! drag is in progress: how far the selection has travelled, or how much it
-//! has grown, since the handle was grabbed.
+//! The live stud-count readout shown near the cursor while a free (body)
+//! drag is in progress: how far the selection has travelled since it was
+//! grabbed. Handle drags show Studio's own label instead (see
+//! `guides::label_element`).
 //!
 //! An rbx-native addition, not a Roblox Studio one — the roadmap item this
 //! implements says so explicitly. `gizmo.rs`'s own drag math already knows
@@ -20,13 +21,6 @@ const OFFSET_Y: Pixels = px(24.0);
 /// numeric-field precision (two decimal places).
 pub(super) fn moved(distance: f32) -> SharedString {
     SharedString::from(format!("{distance:.2} studs"))
-}
-
-/// How much the dragged axis has grown (or, negative, shrunk) so far, in
-/// studs — signed, since a scale drag can go either way and a shrink should
-/// read distinctly from a move's always-positive distance.
-pub(super) fn grown(delta: f32) -> SharedString {
-    SharedString::from(format!("{delta:+.2} studs"))
 }
 
 /// Where the readout sits: a fixed offset from the cursor, converted from
@@ -53,16 +47,6 @@ mod tests {
     #[test]
     fn a_move_reads_as_a_plain_distance() {
         assert_eq!(moved(3.0_f32.hypot(4.0)), "5.00 studs");
-    }
-
-    #[test]
-    fn a_grow_reads_with_an_explicit_sign() {
-        assert_eq!(grown(2.5), "+2.50 studs");
-    }
-
-    #[test]
-    fn a_shrink_reads_with_a_minus_sign() {
-        assert_eq!(grown(-1.1), "-1.10 studs");
     }
 
     #[test]

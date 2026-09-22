@@ -4,6 +4,7 @@
 //! the binary file format without circular strong references.
 
 pub mod attributes;
+mod brick_color;
 mod change;
 mod dom;
 mod error;
@@ -12,6 +13,7 @@ mod reference;
 pub mod rotation;
 mod variant;
 
+pub use brick_color::{BrickColor, DEFAULT_NUMBER as DEFAULT_BRICK_COLOR};
 pub use change::Change;
 pub use dom::{Snapshot, WeakDom};
 pub use error::DomError;

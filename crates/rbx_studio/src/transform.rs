@@ -120,12 +120,13 @@ pub(crate) struct Snap {
 impl Snap {
     /// Whether this drag actually snaps, given whether `Shift` is held.
     ///
-    /// `Shift` *inverts* rather than enables: "While transforming, you can
-    /// temporarily **toggle** snapping by holding the `Shift` key"
-    /// (`parts/index.md#transform-parts`) — so it snaps a free drag and frees
-    /// a snapped one, and either way only for as long as it is held.
+    /// The docs say `Shift` temporarily "**toggle**[s] snapping"
+    /// (`parts/index.md#transform-parts`) without saying which way. Studio's
+    /// own draggers only ever suspend it: `DraggerFramework`'s
+    /// `shouldGridSnap` is `LinearSnapEnabled and not Shift`, so `Shift`
+    /// frees a snapped drag and does nothing to a free one.
     pub(crate) fn active(self, shift: bool) -> bool {
-        self.enabled != shift
+        self.enabled && !shift
     }
 
     /// The increment this drag should round to, or `0.0` for no grid at all —
@@ -186,6 +187,7 @@ impl Transform {
         self.tool.kind().map(|kind| Gizmo {
             kind,
             local: self.local,
+            held: None,
         })
     }
 
@@ -366,20 +368,6 @@ impl Target {
             ..self
         }
     }
-
-    /// The same part turned and standing somewhere else — what a `T`/`R`
-    /// quarter turn shows while `Shell` is still writing the new `CFrame`.
-    pub(crate) fn turned_to(self, rotation: glam::Mat3, position: glam::Vec3) -> Self {
-        Target {
-            model: Mat4::from_cols(
-                rotation.x_axis.extend(0.0),
-                rotation.y_axis.extend(0.0),
-                rotation.z_axis.extend(0.0),
-                position.extend(1.0),
-            ),
-            ..self
-        }
-    }
 }
 
 /// Where every selected part stands, in selection order.
@@ -552,6 +540,20 @@ impl Targets {
             *target = target.moved_to(target.position() + delta);
         }
         moves
+    }
+
+    /// Every target carried rigidly by `carry` (turned and moved as one)
+    /// from where it stands here.
+    pub(crate) fn carried(&self, carry: Mat4) -> Targets {
+        Targets(
+            self.0
+                .iter()
+                .map(|target| Target {
+                    model: carry * target.model,
+                    ..*target
+                })
+                .collect(),
+        )
     }
 
     /// Replaces the anchor's own placement — what a Scale or Rotate drag

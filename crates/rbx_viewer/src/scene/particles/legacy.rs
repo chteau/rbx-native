@@ -27,8 +27,7 @@ use rbx_dom::Ref;
 
 use super::emitter::{seed_of, spend, time_scale, Emitter, Origin};
 use crate::scene::props::{
-    bool_or, color3_of_any, color_sequence, flat_color, float_of_any, float_or, number_sequence,
-    Properties,
+    bool_or, color3_of_any, color_sequence, flat_color, float_of_any, number_sequence, Properties,
 };
 
 const FIRE: &str = "Fire";
@@ -121,11 +120,13 @@ fn fire(
     budget: &mut u32,
     flame: Flame,
 ) -> Emitter {
-    // Both spellings: the API dump lists `Fire.Size` and a legacy lowercase
-    // `Fire.size`, the same split `BasePart` has.
-    let size = float_of_any(properties, &["Size", "size"], 5.0)
+    // Every spelling a file may hold them under, the one Roblox saves first
+    // (`SerializesAs` in `assets/reflection-defaults.json`): a real `Fire`
+    // stores `size_xml` and `heat_xml`, never `Size` or `Heat`, and an edit
+    // to one keeps writing where the value already is.
+    let size = float_of_any(properties, &["size_xml", "Size", "size"], 5.0)
         .clamp(FIRE_SIZE_RANGE.0, FIRE_SIZE_RANGE.1);
-    let heat = float_or(properties, "Heat", 9.0).clamp(-MAX_RISE, MAX_RISE);
+    let heat = float_of_any(properties, &["heat_xml", "Heat"], 9.0).clamp(-MAX_RISE, MAX_RISE);
     // Positive `Heat` is up, negative is down — documented — and how fast is
     // "the velocity at which particles are emit", with no studs-per-second
     // conversion published. This renderer reads it as a fraction of a stud
@@ -191,15 +192,17 @@ fn fire(
 }
 
 fn smoke(properties: &Properties, origin: Origin, referent: Ref, budget: &mut u32) -> Emitter {
-    let size = float_of_any(properties, &["Size", "size"], 1.0)
+    // Stored spellings first, the same as `fire`'s.
+    let size = float_of_any(properties, &["size_xml", "Size"], 1.0)
         .clamp(SMOKE_SIZE_RANGE.0, SMOKE_SIZE_RANGE.1);
     let studs = size * SMOKE_STUDS;
     // Documented as behaving like `ParticleEmitter.Speed`, so it is read as
     // studs per second directly; negative emits downward.
-    let rise = float_or(properties, "RiseVelocity", 1.0).clamp(-MAX_RISE, MAX_RISE);
+    let rise = float_of_any(properties, &["riseVelocity_xml", "RiseVelocity"], 1.0)
+        .clamp(-MAX_RISE, MAX_RISE);
     // Documented as the inverse of `Transparency`: 0 invisible, 1 visible.
     // The plume still thins out as it disperses, which is this renderer's.
-    let opacity = float_or(properties, "Opacity", 0.5).clamp(0.0, 1.0);
+    let opacity = float_of_any(properties, &["opacity_xml", "Opacity"], 0.5).clamp(0.0, 1.0);
     let rate = 14.0;
     let lifetime = (2.5, 4.0);
 

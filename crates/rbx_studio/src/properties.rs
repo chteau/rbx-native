@@ -1,19 +1,26 @@
-//! Read-only view of one instance's properties: `Name = value` rows spelled
-//! the way `rbxdump` prints them, so the panel and the text dump agree.
+//! The Properties panel's rows for what is selected (see `common` and
+//! `sheet`): `Name = value`, spelled the way `rbxdump` prints them so the
+//! panel and the text dump agree, and the widget each value edits through.
 
-use std::collections::BTreeMap;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, HashMap};
+use std::rc::Rc;
 
 use rbx_dom::{
-    Axes, CFrameData, Color3Data, Content, Faces, Font, PhysicalProperties, Ref, Variant, WeakDom,
+    Axes, CFrameData, Change, Color3Data, Content, Faces, Font, PhysicalProperties, Ref, Variant,
+    WeakDom,
 };
 use rbx_reflection::ReflectionDatabase;
 
 use crate::script_editor::source;
 
 pub(crate) mod attributes;
+mod common;
+mod computed;
 pub(crate) mod edit;
 mod folder_row;
 mod ranges;
+mod sheet;
 
 pub(crate) use ranges::slider_range;
 
@@ -99,8 +106,7 @@ pub(crate) struct FieldGroup {
 pub(crate) enum EditKind {
     /// A single free-text `Input`: scalars, strings, and any compound type
     /// not broken out into its own [`Self::Fields`] row (e.g. `NumberRange`,
-    /// `UDim`, and — since no palette table is bundled here (see
-    /// `edit::edit_text`'s `BrickColor` arm) — `BrickColor`'s raw index).
+    /// `UDim`, and an attribute's `BrickColor`, by number).
     Text(String),
     Bool(bool),
     /// 0-255 sRGB channels, matching how [`color3`] already displays a
@@ -169,6 +175,12 @@ pub(crate) enum EditKind {
         color: bool,
         text: String,
     },
+    /// Any `BrickColor`-typed property, by number — a part's `BrickColor`,
+    /// a `SpawnLocation`'s `TeamColor` — picked from the palette Studio's
+    /// own picker shows. A part's is written as its `Color` (see
+    /// `edit::commit_all`), since that is all Roblox saves; any other as
+    /// itself.
+    BrickColor(u32),
 }
 
 /// One line of the panel.
@@ -183,6 +195,10 @@ pub(crate) struct PropertyRow {
     /// `None` for a type [`Properties::edit_kind`] does not understand,
     /// which keeps the row read-only.
     pub(crate) edit: Option<EditKind>,
+    /// The selected instances do not all hold the same value. `value` is
+    /// then empty and `edit` seeded empty where it can be; the two widgets
+    /// with no empty form — a checkbox, a colour swatch — read this instead.
+    pub(crate) mixed: bool,
 }
 
 /// Groups rows by [`PropertyRow::category`], sorted alphabetically by
@@ -204,95 +220,83 @@ pub(crate) fn group_by_category(rows: Vec<PropertyRow>) -> Vec<(String, Vec<Prop
 /// UI thread to spend several times a second on a moving camera.
 pub(crate) struct Properties {
     db: ReflectionDatabase,
+    /// Each class's rows, worked out the first time one of its instances is
+    /// shown (see `sheet`). A `RefCell` because the panel only ever reads
+    /// through `&self`, on the one UI thread.
+    sheets: RefCell<HashMap<String, Rc<sheet::Sheet>>>,
+    /// The last multi-selection's rows, and that selection: comparing
+    /// every instance's every value costs milliseconds per thousand
+    /// selected, and the panel re-renders several times a second. Dropped
+    /// by [`Self::dom_changed`].
+    common: RefCell<Option<(Vec<Ref>, Vec<PropertyRow>)>>,
+    /// Which parts are joined into assemblies, worked out the first time a
+    /// part's assembly is shown after a joint last changed (see
+    /// `computed::assembly`): a walk of all of `Workspace`, too much to
+    /// repeat for every step of a drag.
+    joints: RefCell<Option<Rc<computed::Joints>>>,
+    /// Each assembly's values, by every part in it, since the DOM last
+    /// changed.
+    assemblies: RefCell<HashMap<Ref, Rc<computed::Assembly>>>,
 }
 
 impl Properties {
     pub(crate) fn new(db: ReflectionDatabase) -> Self {
-        Properties { db }
+        Properties {
+            db,
+            sheets: RefCell::default(),
+            common: RefCell::default(),
+            joints: RefCell::default(),
+            assemblies: RefCell::default(),
+        }
     }
 
-    /// The panel's header: `Part "Baseplate"`.
-    pub(crate) fn title(&self, dom: &WeakDom, reference: Ref) -> Option<String> {
-        let instance = dom.get(reference)?;
-        Some(format!("{} {:?}", instance.class(), instance.name()))
+    /// Something in the DOM changed, as `changes` logs it: a
+    /// multi-selection's cached rows and every assembly's values may no
+    /// longer be what the instances hold, and — only where an instance came,
+    /// went or moved, or a joint's own properties were written — nor the
+    /// joints what joins parts. A lone instance's rows are never cached:
+    /// they cost a tenth of a millisecond, and its folder colour lives
+    /// outside the DOM.
+    pub(crate) fn dom_changed(&self, changes: &[Change]) {
+        self.common.take();
+        self.assemblies.take();
+        if changes.iter().any(computed::moves_joints) {
+            self.joints.take();
+        }
     }
 
-    /// Every property of the instance, sorted by name; nothing for a reference
-    /// the DOM no longer holds. `folder_color` is this instance's tag from
-    /// `crate::folder_colors::FolderColors`, if any — a filesystem-backed
-    /// store this panel never reaches into itself (see `shell::folder_color`)
-    /// — used only to seed the synthetic `Folder` colour row below.
-    pub(crate) fn rows(
-        &self,
-        dom: &WeakDom,
-        reference: Ref,
-        folder_color: Option<(u8, u8, u8)>,
-    ) -> Vec<PropertyRow> {
-        let Some(instance) = dom.get(reference) else {
-            return Vec::new();
-        };
-        let class = instance.class();
-
-        let mut rows: Vec<PropertyRow> = instance
-            .properties()
-            .iter()
-            // Real Studio never lists a `Hidden`-tagged property at all —
-            // e.g. `BasePart.Position`/`Orientation`, exposed only through
-            // the dedicated Position/Orientation UI — not even read-only.
-            .filter(|(name, _)| !self.is_hidden(class, name))
-            // The same rule, for the two the dump has no descriptor to tag
-            // with: the Attributes/Tags section at the bottom of the panel
-            // is their editor (see `attributes::is_backing_store`).
-            .filter(|(name, _)| !attributes::is_backing_store(name))
-            .map(|(name, value)| PropertyRow {
-                name: name.clone(),
-                value: self.format(dom, class, name, value),
-                category: self.category(class, name),
-                edit: self.edit_kind(class, name, value),
-            })
-            .collect();
-
-        // A real file never stores `Name` as a property (see
-        // `rbx_binary::deserializer::NAME_PROPERTY`); the row is synthesized
-        // here so it can still be edited through `edit::commit`'s `set_name`
-        // path. The guard only matters for tests that build an `Instance`
-        // with a `Name` key of their own.
-        if !instance.properties().contains_key(edit::NAME_PROPERTY) {
-            let name = instance.name().to_owned();
-            rows.push(PropertyRow {
-                name: edit::NAME_PROPERTY.to_owned(),
-                value: self.format(
-                    dom,
-                    class,
-                    edit::NAME_PROPERTY,
-                    &Variant::String(name.clone()),
-                ),
-                category: self.category(class, edit::NAME_PROPERTY),
-                edit: Some(EditKind::Text(name)),
-            });
+    /// The panel's header: `Part "Baseplate"` for one instance; for several,
+    /// the nearest class they all are and how many — `BasePart (2)` for a
+    /// `Part` and a `MeshPart`, since those are the properties listed.
+    /// Studio's own wording for a multi-selection is not documented.
+    pub(crate) fn title(&self, dom: &WeakDom, selection: &[Ref]) -> Option<String> {
+        let mut instances = selection.iter().filter_map(|&reference| dom.get(reference));
+        let anchor = instances.next()?;
+        let others: Vec<&str> = instances.map(|instance| instance.class()).collect();
+        if others.is_empty() {
+            return Some(format!("{} {:?}", anchor.class(), anchor.name()));
         }
-
-        if let Some(row) = folder_row::row(
-            class,
-            self.category(class, edit::FOLDER_COLOR_PROPERTY),
-            folder_color,
-        ) {
-            rows.push(row);
-        }
-
-        rows.sort_by(|left, right| left.name.cmp(&right.name));
-        rows
+        let shared = std::iter::successors(Some(anchor.class()), |class| {
+            self.db.class(class)?.superclass.as_deref()
+        })
+        .find(|class| {
+            others
+                .iter()
+                .all(|other| other == class || self.db.is_subclass_of(other, class))
+        })
+        .unwrap_or("Instance");
+        Some(format!("{shared} ({})", others.len() + 1))
     }
 
     /// [`Self::rows`] narrowed to the names the filter box matches.
     pub(crate) fn rows_matching(
         &self,
         dom: &WeakDom,
-        reference: Ref,
+        selection: &[Ref],
         filter: &str,
         folder_color: Option<(u8, u8, u8)>,
     ) -> Vec<PropertyRow> {
-        let mut rows = self.rows(dom, reference, folder_color);
+        let mut rows = self.rows(dom, selection, folder_color);
         rows.retain(|row| matches(&row.name, filter));
         rows
     }
@@ -307,22 +311,28 @@ impl Properties {
             .unwrap_or_else(|| UNCATEGORIZED.to_owned())
     }
 
-    /// Whether the reflection dump tags `class.name` `Hidden` — an unreflected
-    /// property (the dump has never heard of it) defaults to shown, same as
-    /// every other tag-driven default in this codebase.
-    fn is_hidden(&self, class: &str, name: &str) -> bool {
-        self.db
-            .resolve_property(class, name)
-            .is_some_and(|property| property.is_hidden())
-    }
-
-    /// Whether `class.name` should render with no edit affordance — see
-    /// [`rbx_reflection::PropertyDescriptor::is_read_only`]. An unreflected
-    /// property defaults to editable, same as [`Self::is_hidden`].
-    fn is_read_only(&self, class: &str, name: &str) -> bool {
-        self.db
-            .resolve_property(class, name)
-            .is_some_and(|property| property.is_read_only())
+    /// One row. `read_only` is the sheet's verdict on the property (see
+    /// `sheet::read_only`); a type this panel cannot edit is read-only too.
+    fn row(
+        &self,
+        dom: &WeakDom,
+        class: &str,
+        name: &str,
+        category: &str,
+        read_only: bool,
+        value: &Variant,
+    ) -> PropertyRow {
+        PropertyRow {
+            name: name.to_owned(),
+            value: self.format(dom, class, name, value),
+            category: category.to_owned(),
+            edit: if read_only {
+                None
+            } else {
+                self.edit_kind(class, name, value)
+            },
+            mixed: false,
+        }
     }
 
     /// Which widget `value` should edit through; `None` keeps the row
@@ -337,15 +347,6 @@ impl Properties {
             return None;
         }
 
-        // A property the dump says Studio can't save back (or explicitly
-        // marks ReadOnly) gets the same no-edit-affordance treatment as any
-        // other type this panel doesn't understand — e.g. `BasePart.Size`,
-        // which stays visible but read-only (Studio derives it from the
-        // mesh/CFrame rather than storing it directly).
-        if self.is_read_only(class, name) {
-            return None;
-        }
-
         let text = edit::edit_text(value)?;
 
         Some(match value {
@@ -354,6 +355,9 @@ impl Properties {
             // with `attributes::edit_kind_for`, an attribute never being an
             // `Enum` — see that module) has no database to make.
             Variant::Enum(raw) => self.enum_kind(class, name, *raw, text),
+            // Here rather than in `value_edit_kind`: an attribute can hold a
+            // `BrickColor` too, and keeps its plain number field.
+            Variant::BrickColor(number) => EditKind::BrickColor(*number),
             other => value_edit_kind(other, text),
         })
     }
@@ -387,7 +391,10 @@ impl Properties {
             Variant::Int64(number) => number.to_string(),
             Variant::Float32(number) => number.to_string(),
             Variant::Float64(number) => number.to_string(),
-            Variant::BrickColor(number) => format!("BrickColor({number})"),
+            // By name, the way Studio shows it; a number the table lacks
+            // keeps the number.
+            Variant::BrickColor(number) => rbx_dom::BrickColor::from_number(*number)
+                .map_or_else(|| format!("BrickColor({number})"), |color| color.name.to_owned()),
             Variant::Color3(color) => color3(color),
             Variant::Color3uint8 { r, g, b } => format!("({r}, {g}, {b})"),
             Variant::Vector2(v) => format!("({}, {})", v.x, v.y),

@@ -23,6 +23,52 @@
   gap, so the drag is the fast path and the menu is the one that has to
   exist. Both go through one transform, so they cannot disagree. — @chteau
 
+- **A dragged part squares itself onto what it lands on.** Dropping onto a
+  wedge's slope, a ball or a cylinder's side turns the selection onto that
+  face the way Studio's `snapRotationToPrimaryDirection` does, keeping the
+  grab-time orientation otherwise (`Alt` holds it as is), and every one of
+  those surfaces now gets its own frame for the grid snap and guides — a
+  ball's latitude and longitude, a cylinder's cap and side, a mesh's face
+  from the triangles under the cursor. After a handle drag the distance
+  label turns into Studio's measurement box: type a length and the
+  selection moves by exactly that, as one undo step. The handle trails a
+  line back to where the drag began, every guide is Studio's one pixel
+  wide — the line pass now draws after the tone map, so a hairline keeps
+  its colour — and a key press over the viewport no longer wipes the hover
+  ruler and cue until the mouse moves. — @chteau
+
+- **A `SurfaceLight` lights its whole face.** It shone as a cone from the
+  face's centre, so its patch was half the width of the frustum its own
+  guide draws; the shader now measures from the nearest point on the face,
+  and the lit area is the guide's. — @chteau
+
+- **`BrickColor`, and the numbers Studio computes, in Properties.** The
+  full 208-colour table from Roblox's docs backs a `BrickColor` row that
+  reads the nearest palette colour off `Color` and writes a pick back to
+  it, and `rbx_lua`'s `BrickColor` uses the same table now, so the two
+  cannot disagree. `Mass`, `CenterOfMass`, `CurrentPhysicalProperties` and
+  the assembly's mass and centre show read-only, computed only where
+  Roblox documents exactly how. A file that stores `Color` or `Size` under
+  its canonical name renders them — names are normalised once, at load —
+  and a script reading a property the file never stored gets Roblox's
+  default instead of nothing. — @chteau
+
+- **The Viewport dock works from the keyboard and at any UI scale.** Its
+  settings are one Tab stop walked with the arrow keys, the way Properties
+  is, every select shows a focus ring, and the dock keeps its proportions
+  at 0.5× and 2×. — @chteau
+
+- **A binary save no longer zeroes what an instance left unset.** When one
+  Part of a place stored a property and another did not, the writer filled
+  the gap with the type's zero — a Part inserted from the Explorer saved
+  with `CanCollide` off and no size, and one copied Part's `archivable`
+  was enough to make Studio drop every other Part on its next save. The
+  gap is filled with the class's own default now, infinite ones included,
+  and a load never renames a property to a name Studio cannot read back
+  (a package link keeps `PackageIdSerialize`). Move and Scale show only
+  the handle being dragged, as Studio does, and draw over the guides
+  rather than under them. — @chteau
+
 ## 2026-09-21
 
 - **`Highlight` draws.** The class a script reaches for to call attention to
@@ -246,6 +292,68 @@
   drawn with — a wedge's slope, a ball's or a cylinder's curve, the triangle
   of a downloaded mesh — rather than the box around it, through a
   `pick::surface_hit` that resolves shapes the way a click does. — @chteau
+
+- **Studio's light guides.** Select a `SpotLight`, `PointLight` or
+  `SurfaceLight` and the viewport draws how far it reaches, the way Studio's
+  "Show Light Guides" does: three great circles of `Range` around a point
+  light, a spot's cone out to its spherical cap with the axis line running
+  past the rim, and a surface light's frustum from its whole face. The lines
+  take the light's own `Color`, follow a Range/Angle/Face edit live without
+  a reload, and — as Studio's own announcement says — appear only for a
+  selected, enabled light, never for the part it hangs on. They go through
+  a new editor line pass that the dragger guides share, and the toggle lives
+  in the Viewport dock. — @chteau
+
+- **A dragged part lands where Studio lands it, and shows why.** A free
+  mouse drag now snaps to the Move increment the way Studio's draggers do —
+  along the face under the cursor, from that face's nearest corner, not from
+  the world origin — and Shift suspends the snap while it is held rather
+  than inverting it. The guides are read off Studio's own DraggerFramework:
+  a white ruler to the two nearest edges while hovering, a yellow one with
+  minor and major ticks while dragging, a yellow line across the face when
+  the part lines up with one of its edges or its centre, and, on a Move
+  handle, the axis line with a dot wherever the selection's leading face,
+  trailing face or pivot would meet a nearby part — which the drag takes
+  over the grid step when it is the nearer of the two. Each guide is a
+  Viewport-dock toggle named after the Studio setting it mirrors. The
+  selection outline also stops staying behind at a moved part's old
+  position: its mask was rewritten on every move and never uploaded.
+  — @chteau
+
+- **Properties lists what Studio lists, and a multi-selection shares it.**
+  The panel used to show only what the file happened to store, so a
+  hand-written Part had six rows. It now builds the class's whole sheet from
+  the reflection database, fills what the file left out from each class's
+  defaults (recorded beside the API dump from rbx-dom's MIT-licensed
+  database, since Roblox's own dump carries none for inherited properties),
+  and shows `Color`, `Size` and `Shape` rather than the `Color3uint8`,
+  `size` and `shape` a file saves — while an edit still lands under the name
+  the renderer and the writer read. Select several instances and it shows
+  what they share: a value they agree on reads normally, one they don't
+  reads blank (per component, for a vector) or as a dash on a checkbox, and
+  an edit applies to all of them as one undo step. — @chteau
+
+- **The viewport's settings got out of its way.** The quality dropdown, its
+  "…" menu and the quality label floated over the scene; they live in a
+  Viewport dock now, a tab beside Output by default, with the live frame
+  rate beside them — counted only while that dock is on screen, so closing
+  it costs nothing. A panel coming back to an edge joins the dock already
+  there as a tab instead of splitting it, and the View menu brings a hidden
+  tab forward rather than closing it. Properties and Output lost their dead
+  space: names share one left edge with their section headers, the name
+  column is 20px narrower, the bottom dock fills its edge instead of
+  centring in it, and Output's search and filters sit at the right end of
+  its strip. — @chteau
+
+- **Fire, Smoke and freshly inserted lights draw what they should.** A
+  `Fire` or `Smoke` saves its `Size`, `Heat`, `Opacity` and `RiseVelocity`
+  as `size_xml`, `heat_xml` and so on, and the viewer only ever read the
+  plain names — so every real file's values, and every edit to them, were
+  ignored. It reads the saved names now. A light inserted from the Explorer
+  stores nothing, and a `SpotLight` or `SurfaceLight` without a `Face` was
+  simply skipped; every missing light property now falls back to the class
+  default Roblox itself uses, which also means an unstored `Shadows` is off,
+  as the Properties panel already said. — @chteau
 
 ## 2026-09-20
 

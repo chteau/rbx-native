@@ -14,17 +14,15 @@ use super::{boolean, color, number};
 use crate::scene::{cframe_matrix, is_drawable, workspace_descendants};
 use crate::textures::NormalId;
 
+mod guides;
+
+pub use guides::light_guides;
+
 const LIGHT_CLASS: &str = "Light";
 const SPOT_CLASS: &str = "SpotLight";
 const SURFACE_CLASS: &str = "SurfaceLight";
 const ATTACHMENT_CLASS: &str = "Attachment";
 
-/// Studio's own defaults, so a light that omits a property lands where the
-/// property sheet shows it rather than at zero.
-const DEFAULT_BRIGHTNESS: f32 = 1.0;
-const DEFAULT_ANGLE_DEGREES: f32 = 90.0;
-const DEFAULT_RANGE: f32 = 8.0;
-const DEFAULT_SPOT_RANGE: f32 = 16.0;
 /// What Studio's `Range` slider stops at for all three classes.
 const MAX_RANGE: f32 = 60.0;
 const MAX_ANGLE_DEGREES: f32 = 180.0;
@@ -71,9 +69,13 @@ pub(crate) struct LocalLight {
     pub(crate) color: Vec3,
     /// `Range`: where the falloff reaches zero.
     pub(crate) range: f32,
-    /// Studs of full brightness before the falloff starts. Only a
-    /// `SurfaceLight` has one, standing in for the extent of its face.
-    pub(crate) near: f32,
+    /// Half the emitting face along its first axis, as a vector across it,
+    /// and half of it along the second (`direction × face_u`). Only a
+    /// `SurfaceLight` on a part has one: "light emits from the entire
+    /// surface", so its reach is measured from the nearest point of the face
+    /// rather than from `position`, its centre. Zero for a point source.
+    pub(crate) face_u: Vec3,
+    pub(crate) face_v: f32,
     /// Unit cone axis, or [`Vec3::ZERO`] for a light that shines everywhere.
     pub(crate) direction: Vec3,
     pub(crate) cos_outer: f32,
@@ -161,86 +163,93 @@ fn read(
     if !database.is_subclass_of(class, LIGHT_CLASS) {
         return None;
     }
-    let properties = instance.properties();
-    if !boolean(properties.get("Enabled")).unwrap_or(true) {
+    let value = |name: &str| property(database, instance, name);
+    if !boolean(value("Enabled")).unwrap_or(true) {
         return None;
     }
 
     let spot = database.is_subclass_of(class, SPOT_CLASS);
     let surface = database.is_subclass_of(class, SURFACE_CLASS);
-    let default_range = if spot {
-        DEFAULT_SPOT_RANGE
-    } else {
-        DEFAULT_RANGE
-    };
-    let range = number(properties.get("Range"))
-        .unwrap_or(default_range)
-        .clamp(0.0, MAX_RANGE);
-    let brightness = number(properties.get("Brightness"))
-        .unwrap_or(DEFAULT_BRIGHTNESS)
-        .max(0.0);
-    let color = color(properties.get("Color")).unwrap_or(Vec3::ONE) * brightness * RADIANCE_SCALE;
+    let range = range(value("Range"));
+    let brightness = number(value("Brightness")).unwrap_or_default().max(0.0);
+    let color = color(value("Color")).unwrap_or(Vec3::ONE) * brightness * RADIANCE_SCALE;
 
     let mut light = LocalLight {
         position: frame.w_axis.truncate(),
         color,
         range,
-        near: 0.0,
+        face_u: Vec3::ZERO,
+        face_v: 0.0,
         direction: Vec3::ZERO,
         cos_outer: OMNI_COS_OUTER,
         cos_inner: OMNI_COS_INNER,
-        shadows: boolean(properties.get("Shadows")).unwrap_or(true),
+        shadows: boolean(value("Shadows")).unwrap_or_default(),
     };
     if !spot && !surface {
         return Some(light);
     }
 
-    // Both cone classes aim along a face of their part, so a missing or
-    // unreadable `Face` leaves nothing sensible to point at.
-    let face = match properties.get("Face") {
-        Some(&Variant::Enum(raw)) => NormalId::from_ordinal(raw)?,
-        _ => return None,
-    };
+    // Both cone classes aim along a face of their part, so an unreadable
+    // `Face` leaves nothing sensible to point at.
+    let face = face(value("Face"))?;
     let axis = face.axis();
     light.direction = frame.transform_vector3(axis).normalize_or(Vec3::Y);
-    (light.cos_outer, light.cos_inner) = cone(number(properties.get("Angle")));
+    (light.cos_outer, light.cos_inner) = cone(value("Angle"));
     if surface {
-        // The whole face emits, not the part's centre: the light sits on the
-        // face and keeps full brightness across the face's own width, or the
-        // near half of its reach on a face wider than that. Without it a
-        // ceiling panel reads as one hot spot in the middle of itself.
-        let half_depth = 0.5 * size.dot(axis.abs());
-        light.position += light.direction * half_depth;
-        light.near = face_radius(size, axis).min(0.5 * range);
+        // The whole face emits, not the part's centre — the reach
+        // `SurfaceLight`'s guide draws: every point of the face shining the
+        // cone, out to `Range` (see `guides`).
+        let (normal, u, v) = face.axes();
+        let half = |axis: Vec3| 0.5 * size.dot(axis.abs());
+        light.position += light.direction * half(normal);
+        light.face_u = frame.transform_vector3(u).normalize_or_zero() * half(u);
+        light.face_v = half(v);
     }
     Some(light)
 }
 
-/// `(cos_outer, cos_inner)` of a cone of this full `Angle` in degrees.
-fn cone(angle: Option<f32>) -> (f32, f32) {
-    let half = angle
-        .unwrap_or(DEFAULT_ANGLE_DEGREES)
-        .clamp(0.0, MAX_ANGLE_DEGREES)
-        .to_radians()
-        * 0.5;
-    let cos_inner = (half * (1.0 - CONE_SOFTNESS)).cos();
-    (half.cos().min(cos_inner - MIN_CONE_GAP), cos_inner.min(1.0))
+/// `name` as `instance` stores it, or else as a fresh one of its class
+/// holds it: an instance stores only what was written to it, so a light
+/// inserted from the Explorer stores nothing at all and still has to shine
+/// the way the Properties sheet shows it.
+fn property<'a>(
+    database: &'a ReflectionDatabase,
+    instance: &'a Instance,
+    name: &str,
+) -> Option<&'a Variant> {
+    instance
+        .properties()
+        .get(name)
+        .or_else(|| database.default_value(instance.class(), name))
 }
 
-/// Half the shorter side of the face on `axis`, i.e. how far off a panel one has
-/// to stand before it starts looking like a point.
-fn face_radius(size: Vec3, axis: Vec3) -> f32 {
-    let on_face = size - size * axis.abs();
-    let sides = [on_face.x, on_face.y, on_face.z];
-    let shorter = sides
-        .into_iter()
-        .filter(|side| *side > 0.0)
-        .fold(f32::INFINITY, f32::min);
-    if shorter.is_finite() {
-        0.5 * shorter
-    } else {
-        0.0
+fn face(value: Option<&Variant>) -> Option<NormalId> {
+    match value? {
+        &Variant::Enum(raw) => NormalId::from_ordinal(raw),
+        _ => None,
     }
+}
+
+/// `Range`, clamped the way Studio's property sheet has it.
+fn range(value: Option<&Variant>) -> f32 {
+    number(value).unwrap_or_default().clamp(0.0, MAX_RANGE)
+}
+
+/// Half of a full `Angle` in degrees, in radians: the angle between a
+/// cone's axis and its edge.
+fn half_angle(angle: Option<&Variant>) -> f32 {
+    number(angle)
+        .unwrap_or_default()
+        .clamp(0.0, MAX_ANGLE_DEGREES)
+        .to_radians()
+        * 0.5
+}
+
+/// `(cos_outer, cos_inner)` of a cone of this full `Angle` in degrees.
+fn cone(angle: Option<&Variant>) -> (f32, f32) {
+    let half = half_angle(angle);
+    let cos_inner = (half * (1.0 - CONE_SOFTNESS)).cos();
+    (half.cos().min(cos_inner - MIN_CONE_GAP), cos_inner.min(1.0))
 }
 
 fn frame_of(instance: &Instance) -> Option<Mat4> {

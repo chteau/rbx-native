@@ -18,24 +18,25 @@
 //! Which parts each highlight covers is resolved off the DOM in
 //! `scene::highlight`; nothing here reads an `Adornee`.
 
+mod batches;
 mod pipelines;
 
 use std::collections::HashMap;
+use std::ops::Range;
 
 use rbx_assets::AssetRef;
 use rbx_dom::Ref;
 
-use super::cull::visible_runs;
 use super::geometry::Meshes;
 use super::pipeline::Target;
 use super::post::Targets;
 use super::shadow::casters::{self, MeshGeometry};
 use super::slots::keyed::Keyed;
-use super::slots::Roster;
 use crate::scene::{
     DepthMode, Highlight, Part, PartId, Resolved, ResolvedInstance, ShapeKind, MAX_HIGHLIGHTS,
 };
 
+use batches::{claim_runs, draw_order, mesh_batches, shape_batches};
 use pipelines::{Composite, Mask, MaskInstance, Paint};
 
 /// The highlighted unit shapes, drawn against [`Meshes`]' shared buffers.
@@ -43,14 +44,15 @@ use pipelines::{Composite, Mask, MaskInstance, Paint};
 /// filtered by "a highlight covers it" rather than by "it is drawn opaque":
 /// the same part lands at a different slot in each.
 ///
-/// The side data is the instance's depth mode, so one pass over a batch can
-/// pick out the run of instances the pipeline currently bound is for.
-type ShapeBatches = Keyed<ShapeKind, (), MaskInstance, DepthMode, PartId>;
+/// The side data is the instance's [`Claim`], so one pass over a batch can
+/// pick out the run of instances the pipeline currently bound is for, one
+/// highlight at a time.
+type ShapeBatches = Keyed<ShapeKind, (), MaskInstance, Claim, PartId>;
 
 /// The highlighted file meshes, one batch per mesh asset, against
 /// position-only geometry of their own — [`casters::MeshGeometry`], which the
 /// shadow pass builds from the same meshes for the same reason.
-type MeshBatches = Keyed<AssetRef, MeshGeometry, MaskInstance, DepthMode>;
+type MeshBatches = Keyed<AssetRef, MeshGeometry, MaskInstance, Claim>;
 
 /// What a part needs to know about the highlight covering it: which one, as
 /// the 1-based index the mask carries, and which side of the scene's depth it
@@ -77,9 +79,22 @@ pub(super) struct Highlights {
     /// The mask texture and the bind group reading it, reallocated whenever
     /// the frame changes size. `None` until the first frame draws one.
     target: Option<MaskTarget>,
-    /// Which depth modes are in play, so a scene using one never pays for a
-    /// second walk of the batches in the other.
-    modes: Vec<DepthMode>,
+    /// The claims in play, in the order the mask draws them (see
+    /// [`draw_order`]).
+    order: Vec<Claim>,
+    /// Which runs of which batch each claim in `order` draws — a walk of
+    /// every batch per claim, so it is kept until a batch changes rather
+    /// than walked again every frame. `None` when it is owed.
+    runs: Option<Vec<ClaimRuns>>,
+}
+
+/// One claim's share of the batches: for each batch it has instances in,
+/// the batch's position in [`Keyed::groups`] (stable, see `slots::keyed`)
+/// and the runs of its instances.
+struct ClaimRuns {
+    claim: Claim,
+    shapes: Vec<(usize, Vec<Range<u32>>)>,
+    meshes: Vec<(usize, Vec<Range<u32>>)>,
 }
 
 struct Gpu {
@@ -114,7 +129,8 @@ impl Highlights {
             gpu: None,
             format: target,
             target: None,
-            modes: Vec::new(),
+            order: Vec::new(),
+            runs: None,
         };
         pass.rebuild(device, queue, frame, scene);
         pass
@@ -157,15 +173,19 @@ impl Highlights {
     /// is never in these batches to begin with, so this is a no-op for all
     /// but a handful of the edits a drag reports.
     pub(super) fn sync_part(&mut self, device: &wgpu::Device, part: &Part) {
+        // A part no highlight claims is in no batch, now or after.
+        if self.claims.contains_key(&part.referent()) {
+            self.runs = None;
+        }
         let wanted = self
             .claims
             .get(&part.referent())
             .filter(|_| part.is_drawn())
-            .map(|&(index, mode)| {
+            .map(|&claim| {
                 (
                     part.kind,
-                    MaskInstance::new(part.transform.to_cols_array_2d(), index),
-                    mode,
+                    MaskInstance::new(part.transform.to_cols_array_2d(), claim.0),
+                    claim,
                 )
             });
         self.shapes.sync(device, part.id, wanted, |_| Some(()));
@@ -173,6 +193,16 @@ impl Highlights {
 
     pub(super) fn remove_part(&mut self, id: PartId) {
         self.shapes.remove(id);
+        self.runs = None;
+    }
+
+    /// Uploads what [`Self::sync_part`] and [`Self::sync_mesh`] rewrote in
+    /// place — a moved part's record is only marked, like every other
+    /// pass's (see `slots::Slots::flush`), so a highlight or cue left
+    /// unflushed stays drawn where its part used to stand.
+    pub(super) fn flush(&mut self, queue: &wgpu::Queue) {
+        self.shapes.flush(queue);
+        self.meshes.flush(queue);
     }
 
     /// [`Self::sync_part`] for a resolved file mesh. `false` when the mesh is
@@ -184,11 +214,14 @@ impl Highlights {
         resolved: &Resolved,
         instance: &ResolvedInstance,
     ) -> bool {
-        let wanted = self.claims.get(&instance.referent).map(|&(index, mode)| {
+        if self.claims.contains_key(&instance.referent) {
+            self.runs = None;
+        }
+        let wanted = self.claims.get(&instance.referent).map(|&claim| {
             (
                 instance.mesh.clone(),
-                MaskInstance::new(instance.model.to_cols_array_2d(), index),
-                mode,
+                MaskInstance::new(instance.model.to_cols_array_2d(), claim.0),
+                claim,
             )
         });
         self.meshes.sync(device, instance.referent, wanted, |mesh| {
@@ -198,6 +231,7 @@ impl Highlights {
 
     pub(super) fn remove_mesh(&mut self, referent: Ref) {
         self.meshes.remove(referent);
+        self.runs = None;
     }
 
     /// Whether this frame has anything to draw at all. A place with no
@@ -227,7 +261,10 @@ impl Highlights {
             return;
         }
         self.fit(device, size, targets.samples());
-        let (Some(gpu), Some(target)) = (&self.gpu, &self.target) else {
+        if self.runs.is_none() {
+            self.runs = Some(self.plan_runs());
+        }
+        let (Some(gpu), Some(target), Some(runs)) = (&self.gpu, &self.target, &self.runs) else {
             return;
         };
 
@@ -262,8 +299,8 @@ impl Highlights {
             });
 
             pass.set_bind_group(0, frame, &[]);
-            for mode in self.modes.clone() {
-                self.draw_mask(&mut pass, gpu, meshes, mode);
+            for claim in runs {
+                self.draw_mask(&mut pass, gpu, meshes, claim);
             }
         }
 
@@ -289,44 +326,51 @@ impl Highlights {
         pass.draw(0..3, 0..1);
     }
 
-    /// One depth mode's worth of mask draws: every batch, but only the runs
-    /// of instances that mode's pipeline is for — the same
-    /// [`visible_runs`] split the main and shadow passes already cull with,
-    /// asked a different question.
+    /// Every claim's runs, in draw order: each batch split into the runs of
+    /// instances one claim's pipeline is for — the same [`visible_runs`]
+    /// split the main and shadow passes already cull with, asked a
+    /// different question.
+    fn plan_runs(&self) -> Vec<ClaimRuns> {
+        self.order
+            .iter()
+            .map(|&claim| ClaimRuns {
+                claim,
+                shapes: claim_runs(self.shapes.groups(), claim),
+                meshes: claim_runs(self.meshes.groups(), claim),
+            })
+            .collect()
+    }
+
+    /// One claim's mask draws, from its runs as [`Self::plan_runs`] found them.
     fn draw_mask<'p>(
         &'p self,
         pass: &mut wgpu::RenderPass<'p>,
         gpu: &'p Gpu,
         meshes: &Meshes,
-        mode: DepthMode,
+        runs: &ClaimRuns,
     ) {
+        let mode = runs.claim.1;
         pass.set_pipeline(gpu.mask.shapes(mode));
-        for batch in self.shapes.groups() {
+        for (position, ranges) in &runs.shapes {
+            let batch = &self.shapes.groups()[*position];
             let Some(mesh) = meshes.get(batch.key) else {
                 continue;
             };
-            let runs = visible_runs(batch.slots.count(), |index| batch.slots.side(index) == mode);
-            if runs.is_empty() {
-                continue;
-            }
             pass.set_vertex_buffer(1, batch.slots.buffer().slice(..));
-            for run in runs {
-                mesh.draw_range(pass, run);
+            for run in ranges {
+                mesh.draw_range(pass, run.clone());
             }
         }
 
         pass.set_pipeline(gpu.mask.meshes(mode));
-        for batch in self.meshes.groups() {
-            let runs = visible_runs(batch.slots.count(), |index| batch.slots.side(index) == mode);
-            if runs.is_empty() {
-                continue;
-            }
+        for (position, ranges) in &runs.meshes {
+            let batch = &self.meshes.groups()[*position];
             let geometry = &batch.extra;
             pass.set_vertex_buffer(0, geometry.vertices.slice(..));
             pass.set_vertex_buffer(1, batch.slots.buffer().slice(..));
             pass.set_index_buffer(geometry.indices.slice(..), wgpu::IndexFormat::Uint32);
-            for run in runs {
-                pass.draw_indexed(0..geometry.index_count, 0, run);
+            for run in ranges {
+                pass.draw_indexed(0..geometry.index_count, 0, run.clone());
             }
         }
     }
@@ -354,10 +398,7 @@ impl Highlights {
                     .map(move |&referent| (referent, claim))
             })
             .collect();
-        self.modes = [DepthMode::AlwaysOnTop, DepthMode::Occluded]
-            .into_iter()
-            .filter(|&mode| highlights.iter().any(|one| one.depth_mode == mode))
-            .collect();
+        self.order = draw_order(self.claims.values().copied());
 
         let paints: Vec<Paint> = highlights.iter().map(Paint::of).collect();
         if !paints.is_empty() {
@@ -366,6 +407,7 @@ impl Highlights {
 
         self.shapes = shape_batches(device, &self.claims, scene.parts);
         self.meshes = mesh_batches(device, &self.claims, scene.resolved);
+        self.runs = None;
     }
 
     /// The mask target, allocated at `size` and kept until the frame changes
@@ -426,67 +468,6 @@ pub(super) struct Source<'a> {
     pub(super) resolved: &'a Resolved,
 }
 
-fn shape_batches(
-    device: &wgpu::Device,
-    claims: &HashMap<Ref, Claim>,
-    parts: &[Part],
-) -> ShapeBatches {
-    let mut batches = Keyed::new("rbxview highlight shapes");
-    if claims.is_empty() {
-        return batches;
-    }
-    for kind in super::shaped::kinds(parts) {
-        let roster = Roster::from_iter(
-            parts
-                .iter()
-                .filter(|part| part.kind == kind && part.is_drawn())
-                .filter_map(|part| {
-                    let &(index, mode) = claims.get(&part.referent())?;
-                    Some((
-                        part.id,
-                        MaskInstance::new(part.transform.to_cols_array_2d(), index),
-                        mode,
-                    ))
-                }),
-        );
-        if roster.len() > 0 {
-            batches.add_group(device, kind, (), roster);
-        }
-    }
-    batches
-}
-
-fn mesh_batches(
-    device: &wgpu::Device,
-    claims: &HashMap<Ref, Claim>,
-    resolved: &Resolved,
-) -> MeshBatches {
-    let mut batches = Keyed::new("rbxview highlight meshes");
-    let mut order: Vec<AssetRef> = Vec::new();
-    for instance in &resolved.instances {
-        if claims.contains_key(&instance.referent) && !order.contains(&instance.mesh) {
-            order.push(instance.mesh.clone());
-        }
-    }
-    for reference in order {
-        let Some(geometry) = casters::geometry(device, resolved, &reference) else {
-            continue;
-        };
-        let roster = Roster::from_iter(
-            resolved
-                .instances
-                .iter()
-                .filter(|instance| instance.mesh == reference)
-                .filter_map(|instance| {
-                    let &(index, mode) = claims.get(&instance.referent)?;
-                    Some((
-                        instance.referent,
-                        MaskInstance::new(instance.model.to_cols_array_2d(), index),
-                        mode,
-                    ))
-                }),
-        );
-        batches.add_group(device, reference, geometry, roster);
-    }
-    batches
-}
+#[cfg(test)]
+#[path = "highlight/tests.rs"]
+mod tests;

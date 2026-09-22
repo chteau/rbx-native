@@ -466,6 +466,16 @@ pub(crate) fn dock_width() -> f32 {
     300. * font_scale()
 }
 
+/// The bottom dock: its tab strip and five rows under it — Output's log, or
+/// the Viewport dock's settings.
+///
+/// Counted in rows rather than scaled from one number, because a row has
+/// WCAG's 24px floor under it: at 0.5x the rows barely shrink, and a dock
+/// that halved would clip them.
+pub(crate) fn dock_height() -> f32 {
+    f32::from(dock_tabs_height() + row_height() * 5.)
+}
+
 /// A ribbon button, and the stacked-row column beside it.
 pub(crate) fn tile_width() -> Pixels {
     scaled(56.)
@@ -485,8 +495,15 @@ pub(crate) fn row_height() -> Pixels {
     scaled_target(28.)
 }
 
+/// A property row's name column.
+///
+/// Sized for the common `BasePart` names (`CollisionGroup`,
+/// `MaterialVariant`) at [`text_md`], not for the longest one: every pixel
+/// here comes out of the value column on every row, and a panel whose
+/// short names sit a long way from their values has to be dragged wider
+/// just to read them. The rare long name truncates.
 pub(crate) fn row_label_width() -> Pixels {
-    scaled(140.)
+    scaled(120.)
 }
 
 /// A property section's header.
@@ -530,6 +547,15 @@ pub(crate) fn select_inset() -> Pixels {
     scaled(4.5)
 }
 
+/// The room a toolkit `Select` keeps for its chevron, which it draws at a
+/// fixed 15px at an 8px inset (`UX_GUIDELINES.md` §11) whatever the UI
+/// scale. **Not** scaled, deliberately: a select sized as one scaled width
+/// gives its label less and less room as the scale drops, until at 0.5x
+/// "Automatic" no longer fits.
+pub(crate) fn select_chevron_room() -> Pixels {
+    px(31.)
+}
+
 /// `InputsStyle` again: the frame's inputs are padded 8px horizontally.
 pub(crate) fn input_padding() -> Pixels {
     scaled(8.)
@@ -552,12 +578,14 @@ pub(crate) fn checkbox_target() -> Pixels {
     scaled_target(26.)
 }
 
-/// The column a property row's expander chevron sits in — and, because a
-/// child field's name lines up under its parent's rather than under the
-/// chevron, the step one level of nesting indents by. Wide enough for the
-/// [`text_xs`] icon with a hair of air after it.
+/// The column a property row's expander chevron — and a section header's —
+/// sits in, and, because a child field's name lines up under its parent's
+/// rather than under the chevron, the step one level of nesting indents by.
+/// Exactly the [`text_xs`] icon's own box: the glyph already sits well
+/// inside that box, and [`label_gap`] is the air after it, so a wider slot
+/// only pushes every name in the panel further from the edge.
 pub(crate) fn chevron_slot() -> Pixels {
-    scaled(14.)
+    scaled(11.)
 }
 
 /// The rail a property slider runs its value along. Thick enough to carry
@@ -599,8 +627,11 @@ pub(crate) fn row_gap() -> Pixels {
     scaled(8.)
 }
 
+/// A property row's inset from the panel's edge, both sides. Small, because
+/// every name is indented past a chevron's slot on top of it (see
+/// `shell::rows::name_indent`) and the dock already has its own inset.
 pub(crate) fn row_padding() -> Pixels {
-    scaled(8.)
+    scaled(4.)
 }
 
 /// Between a category header and its first row.

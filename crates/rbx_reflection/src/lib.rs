@@ -11,6 +11,7 @@ mod embedded;
 mod enums;
 mod error;
 mod parse;
+mod stored;
 
 pub use class::{ClassDescriptor, PropertyDescriptor};
 pub use database::ReflectionDatabase;

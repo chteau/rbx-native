@@ -12,9 +12,11 @@
 mod changes;
 mod frame;
 mod gizmo;
+mod guides;
 mod hover;
 mod input;
 mod label;
+mod measure;
 mod orientation;
 mod presence;
 mod pump;
@@ -46,6 +48,7 @@ use gizmo::Drag;
 use input::{camera_key, chorded, tool_key, Layout};
 use pump::Pump;
 pub(crate) use scroll::{scrolled, Scroll};
+pub(crate) use stats::requested as stats_requested;
 
 // How long a speed change stays on screen, matching the standalone viewer's
 // title bar.
@@ -112,7 +115,7 @@ pub(crate) enum ViewportAction {
     Moved {
         moves: Vec<(Ref, Vec3)>,
         first: bool,
-        settle: Option<Settle>,
+        settle: Option<Box<Settle>>,
     },
     /// A Scale drag resized the part. The centre travels with it: the face
     /// opposite the grabbed one holds still, so growing the part by a stud
@@ -132,16 +135,6 @@ pub(crate) enum ViewportAction {
         /// centre for every part of a group (see
         /// `transform::Targets::rotate_about`).
         parts: Vec<(Ref, Mat3, Vec3)>,
-        first: bool,
-    },
-    /// `T` or `R` during a cursor drag: a quarter turn about `pivot`, the
-    /// point the part is being held by. `first` marks the gesture's undo step,
-    /// exactly as `Moved` does — a drag that turns the part and then moves it
-    /// is still one drag.
-    Turned {
-        referent: Ref,
-        pivot: Vec3,
-        axis: Vec3,
         first: bool,
     },
     /// The Sun tool's gesture: the ray under the cursor at the press
@@ -272,12 +265,6 @@ pub(crate) struct WorkspaceView {
     /// Viewport panel's overflow menu again (see
     /// `Shell::set_selection_occluded`).
     selection_occluded: bool,
-    /// Whether the corner label shows `pump.stats()`'s frame rate — the
-    /// Viewport panel overflow menu's Stats toggle, next to Orthographic
-    /// (see `Shell::set_stats_shown`). Session-only: real Studio's own
-    /// `Window > Performance > Stats` doesn't persist across restarts
-    /// either.
-    stats_shown: bool,
     /// The transform toolbar's state, pushed down from `Shell` (see
     /// [`WorkspaceView::set_transform`]).
     transform: Transform,
@@ -304,7 +291,10 @@ pub(crate) struct WorkspaceView {
     /// A body grab the last press found on the selection, held back until
     /// `Shell` has resolved the same click against the real geometry (see
     /// `ViewportAction::Pick`'s `held`).
-    pending_grab: Option<Drag>,
+    pending_grab: Option<Ray>,
+    /// Studio's editable measurement box, up after a Move-arrow drag (see
+    /// `measure`).
+    measure: Option<measure::Measure>,
     /// The selection as it stood when the drag in progress grabbed it: what
     /// a group Scale or Rotate measures from, so a gesture is one absolute
     /// factor or turn rather than a running product (see
@@ -320,6 +310,9 @@ pub(crate) struct WorkspaceView {
     /// gesture; `render` only ever shows it while `dragging()` is true, so a
     /// value left over from the drag just released is simply never painted.
     drag_readout: Option<(Point<Pixels>, SharedString)>,
+    /// Studio's dragger guides: what they show now, and what they keep
+    /// between one event and the next (see [`guides`]).
+    guides: guides::State,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
     _subscriptions: [Subscription; 2],
 }
@@ -427,7 +420,6 @@ impl WorkspaceView {
             orthographic,
             axis_indicator,
             selection_occluded,
-            stats_shown: false,
             transform: Transform::default(),
             targets: Targets::default(),
             neighbours: Vec::new(),
@@ -435,9 +427,11 @@ impl WorkspaceView {
             meshes: Meshes::default(),
             drag: None,
             pending_grab: None,
+            measure: None,
             held: Targets::default(),
             dragged: false,
             drag_readout: None,
+            guides: guides::State::default(),
             _subscriptions: [blur, deactivated],
         }
     }
@@ -481,6 +475,7 @@ impl WorkspaceView {
         if self.sized != size {
             self.sized = size;
             self.pump.resize(size);
+            self.send_lines();
         }
 
         // Everything waiting is drained, not just the first: an overtaken frame
@@ -668,15 +663,17 @@ impl WorkspaceView {
         // Only on the press: a tool switch is an edge, not a state the way the
         // camera's own movement keys are.
         if pressed {
-            let key = tool_key(&keystroke.key, layout);
-            if let Some(action) = transform::action_for(key, keystroke.modifiers) {
-                cx.emit(ViewportAction::Tool(action));
-                return;
-            }
             // Only while a part is actually held by its body, and only then:
             // with nothing in hand these are ordinary keys, and swallowing
-            // them would take `r` away from whatever binds it next.
+            // them would take `r` away from whatever binds it next. First,
+            // so that `Alt` — the drag's Hold Orientation — with `R` turns
+            // the part rather than jumping to the rotate increment field.
             if self.turn_key(&keystroke.key, keystroke.modifiers, cx) {
+                return;
+            }
+            let (key, modifiers) = tool_key(&keystroke.key, keystroke.modifiers, layout);
+            if let Some(action) = transform::action_for(key, modifiers) {
+                cx.emit(ViewportAction::Tool(action));
                 return;
             }
         }
@@ -704,7 +701,10 @@ impl WorkspaceView {
 
         self.transform = transform;
         self.drop_drag();
+        self.close_measure();
         self.pump.gizmo(transform.gizmo());
+        self.refresh_guides();
+        self.rehover();
     }
 
     /// Where every selected part stands now: after a selection change, and
@@ -770,17 +770,23 @@ impl WorkspaceView {
         cx.notify();
     }
 
-    /// Turns the corner label's frame-rate readout on or off — see
-    /// `Shell::set_stats_shown`. Pure UI-thread state, unlike quality or
-    /// projection above: `pump.stats()` is already updated by the render
-    /// thread regardless, so nothing about what it draws needs to change.
-    pub(crate) fn set_stats_shown(&mut self, shown: bool, cx: &mut Context<Self>) {
-        if shown == self.stats_shown {
-            return;
-        }
+    /// Starts or stops the frame-rate sampling both threads do — on only
+    /// while the Viewport dock is on screen (see `Shell::sync_stats`). Takes
+    /// `&self`: the switch is an atomic the render thread reads per frame.
+    pub(crate) fn set_stats_sampling(&self, on: bool) {
+        self.pump.stats().set_sampling(on);
+    }
 
-        self.stats_shown = shown;
-        cx.notify();
+    /// What the Viewport dock lists about the view: the frame rate, then the
+    /// quality level — each as a name and a value.
+    pub(crate) fn readout(&self) -> [(&'static str, SharedString); 2] {
+        [
+            (
+                "Frame rate",
+                label::frame_rate(self.pump.stats().latest_fps()),
+            ),
+            ("Quality level", label::quality(self.quality, self.level)),
+        ]
     }
 
     /// Switches which unfocused preset `pacing` caps the render loop to —
@@ -813,18 +819,6 @@ impl WorkspaceView {
             self.interval = next;
             self.pump.set_interval(next);
         }
-    }
-
-    /// What the corner label reads: the speed is passed only while its moment
-    /// on screen lasts, the frame rate only while the Stats toggle is on —
-    /// and `0.0` (no full second counted yet) reads the same as off.
-    fn status_label(&self) -> SharedString {
-        let speed = self.speed_shown_until.map(|_| self.speed);
-        let fps = self
-            .stats_shown
-            .then(|| self.pump.stats().latest_fps())
-            .filter(|fps| *fps > 0.0);
-        label::status(self.quality, self.level, fps, speed)
     }
 }
 
@@ -923,8 +917,14 @@ impl Render for WorkspaceView {
             // `on_mouse_move` to say so — bounds-scoped, like every handler
             // above — so a stale hover box would otherwise outlive it; `false`
             // is exactly that transition (see `Interactivity::on_hover`).
+            // Hit-tested whatever the last input was: GPUI's default reads a
+            // key press as the cursor leaving, and a key typed over the view
+            // (a camera key, a tool shortcut, Ctrl+Z) does not take the
+            // cursor anywhere.
+            .hover_listener_mode(HoverListenerMode::InputModalityIndependent)
             .on_hover(cx.listener(|view, hovering: &bool, _, cx| {
                 if !hovering {
+                    view.left_view();
                     view.hover_pending = None;
                     cx.emit(ViewportAction::Hover {
                         ray: None,
@@ -939,10 +939,22 @@ impl Render for WorkspaceView {
                 let scale = window.scale_factor();
                 view.wheel(event.position, event.delta, event.modifiers.shift, scale);
             }))
-            .on_key_down(cx.listener(|view, event: &KeyDownEvent, _, cx| {
+            .on_key_down(cx.listener(|view, event: &KeyDownEvent, window, cx| {
                 view.note_input();
+                // Typed into the measurement box: its, not the view's —
+                // but `Escape` hands the keyboard back.
+                if view.typing(window, cx) {
+                    if event.keystroke.key == "escape" {
+                        window.focus(&view.focus, cx);
+                    }
+                    return;
+                }
                 view.key(&event.keystroke, true, cx);
             }))
+            // Always, the measurement box's focus or not: a camera key held
+            // as the box took the keyboard is still released here, or the
+            // camera would keep flying. Releasing one never pressed does
+            // nothing.
             .on_key_up(cx.listener(|view, event: &KeyUpEvent, _, cx| {
                 view.key(&event.keystroke, false, cx);
             }))
@@ -959,7 +971,9 @@ impl Render for WorkspaceView {
                 // re-resolve the moment Alt is pressed or released, without
                 // waiting for the cursor to move. Re-queued at the last known
                 // position; suppressed mid-look exactly as an ordinary move is.
-                if !hover::suppressed(view.looking) {
+                if view.dragging() {
+                    view.modifiers_changed(event.modifiers);
+                } else if !hover::suppressed(view.looking) {
                     if let Some(position) = view.cursor {
                         view.hover_pending = Some((position, event.modifiers));
                     }
@@ -996,17 +1010,24 @@ impl Render for WorkspaceView {
                 .left_0()
                 .size_full(),
             )
-            .child(
-                div()
-                    .absolute()
-                    .bottom_2()
-                    .left_2()
-                    .px_2()
-                    .py_0p5()
-                    .bg(rgba(0x14151ae0))
-                    .text_xs()
-                    .text_color(rgb(0xe4e5e9))
-                    .child(self.status_label()),
+            // Only for the moment after the wheel changes the speed: anything
+            // that stays belongs in the Viewport dock, not over the scene.
+            .when_some(
+                self.speed_shown_until.map(|_| label::speed(self.speed)),
+                |this, speed| {
+                    this.child(
+                        div()
+                            .absolute()
+                            .bottom_2()
+                            .left_2()
+                            .px_2()
+                            .py_0p5()
+                            .bg(rgba(0x14151ae0))
+                            .text_xs()
+                            .text_color(rgb(0xe4e5e9))
+                            .child(speed),
+                    )
+                },
             )
             // Only while a drag is actually moving something — see
             // `drag_readout`'s own doc for why a stale value never leaks
@@ -1032,6 +1053,13 @@ impl Render for WorkspaceView {
                     )
                 },
             )
+            .when_some(
+                self.dragging().then(|| self.guides.label.clone()).flatten(),
+                |this, (at, text)| this.child(guides::label_element(at, text)),
+            )
+            .when_some(self.measure_element(window, cx), |this, measure| {
+                this.child(measure)
+            })
             // No pose yet (the very first frame or two, before the render
             // thread's first `Ready` lands — see `self.view`'s own doc) draws
             // nothing rather than a widget with no orientation to show.
@@ -1051,8 +1079,8 @@ impl Render for WorkspaceView {
 /// strength. That is what makes a ring read as passing *through* the
 /// sphere rather than lying on it.
 ///
-/// Placed opposite the quality/speed corner label (bottom-left) rather than
-/// colliding with it.
+/// Placed opposite the speed toast (bottom-left) rather than colliding with
+/// it.
 /// Half the indicator's own square, in px — where a face's unit-radius
 /// centre/corner offsets (see `orientation::Face`) land once scaled and
 /// re-centred inside the widget.

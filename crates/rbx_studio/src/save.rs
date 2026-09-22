@@ -21,6 +21,7 @@ use std::path::Path;
 
 use gpui_kit::Modifiers;
 use rbx_dom::WeakDom;
+use rbx_reflection::ReflectionDatabase;
 
 /// Read once at startup by `Shell::apply_debug_save`; documented in this
 /// module's doc comment.
@@ -49,7 +50,17 @@ impl Format {
 
     fn encode(self, dom: &WeakDom) -> Result<Vec<u8>, String> {
         match self {
-            Format::Binary => rbx_binary::serialize(dom).map_err(|err| err.to_string()),
+            // The class default for whatever an instance does not hold:
+            // a binary file has a value for every instance of a class, and a
+            // zero where the default is `true` (`archivable`, `CanCollide`)
+            // is what Studio would load.
+            Format::Binary => {
+                let database = ReflectionDatabase::shared();
+                rbx_binary::serialize_with_defaults(dom, |class, key| {
+                    database.stored_default(class, key).cloned()
+                })
+                .map_err(|err| err.to_string())
+            }
             Format::Xml => rbx_xml::serialize(dom)
                 .map(String::into_bytes)
                 .map_err(|err| err.to_string()),
@@ -142,6 +153,119 @@ mod tests {
         std::fs::remove_file(&path).ok();
     }
 
+    /// A binary file holds a value for every instance of a class; one an
+    /// instance never had must come back as Roblox's default, not a zero —
+    /// `archivable = false` would make Studio drop a part from its next
+    /// save.
+    #[test]
+    fn a_binary_save_fills_what_an_instance_lacks_with_its_class_default() {
+        let mut dom = WeakDom::new();
+        let stored = dom.new_instance("Part", "Stored", None);
+        dom.new_instance("Part", "Bare", None);
+        for (key, value) in [
+            ("CanCollide", Variant::Bool(false)),
+            ("archivable", Variant::Bool(false)),
+            (
+                "size",
+                Variant::Vector3(rbx_dom::Vector3Data {
+                    x: 1.0,
+                    y: 1.0,
+                    z: 1.0,
+                }),
+            ),
+        ] {
+            dom.set_property(stored, key, value).unwrap();
+        }
+        // Infinite defaults, which JSON has no number for: without them an
+        // AlignPosition was saved unable to move, and a UISizeConstraint
+        // failed the save.
+        let infinite = [
+            (
+                "AlignPosition",
+                "MaxVelocity",
+                Variant::Float32(5.0),
+                Variant::Float32(f32::INFINITY),
+            ),
+            (
+                "UISizeConstraint",
+                "MaxSize",
+                Variant::Vector2(rbx_dom::Vector2Data { x: 5.0, y: 5.0 }),
+                Variant::Vector2(rbx_dom::Vector2Data {
+                    x: f32::INFINITY,
+                    y: f32::INFINITY,
+                }),
+            ),
+        ];
+        for (class, key, value, _) in &infinite {
+            let stored = dom.new_instance(class, "Stored", None);
+            dom.set_property(stored, key, value.clone()).unwrap();
+            dom.new_instance(class, &format!("Bare{class}"), None);
+        }
+        let path = temp_path("defaults.rbxl");
+
+        save(&dom, Format::Binary, &path).unwrap();
+        let reloaded = rbx_binary::deserialize(&std::fs::read(&path).unwrap()).unwrap();
+        std::fs::remove_file(&path).ok();
+
+        let bare = reloaded
+            .get(crate::explorer::find_by_name(&reloaded, "Bare").unwrap())
+            .unwrap()
+            .properties();
+        assert_eq!(bare.get("CanCollide"), Some(&Variant::Bool(true)));
+        assert_eq!(bare.get("archivable"), Some(&Variant::Bool(true)));
+        assert_eq!(
+            bare.get("size"),
+            Some(&Variant::Vector3(rbx_dom::Vector3Data {
+                x: 4.0,
+                y: 1.2,
+                z: 2.0,
+            }))
+        );
+        for (class, key, _, default) in &infinite {
+            let bare = crate::explorer::find_by_name(&reloaded, &format!("Bare{class}")).unwrap();
+            assert_eq!(
+                reloaded.get(bare).unwrap().properties().get(*key),
+                Some(default)
+            );
+        }
+    }
+
+    /// A hand-written place may use a property's canonical name; the place
+    /// is read with the name Studio saves instead (see
+    /// `rbx_reflection::ReflectionDatabase::normalize_names`), and saved
+    /// back with it.
+    #[test]
+    fn a_canonical_name_in_a_file_is_saved_as_studio_saves_it() {
+        let original = temp_path("canonical.rbxlx");
+        std::fs::write(
+            &original,
+            r#"<roblox version="4"><Item class="Part" referent="RBX0"><Properties>
+            <string name="Name">Written</string>
+            <Vector3 name="Size"><X>5</X><Y>6</Y><Z>7</Z></Vector3>
+            <Color3 name="Color"><R>1</R><G>0</G><B>0</B></Color3>
+            </Properties></Item></roblox>"#,
+        )
+        .unwrap();
+
+        let dom = rbx_viewer::read_place(&original).unwrap();
+        let part = crate::explorer::find_by_name(&dom, "Written").unwrap();
+        let properties = dom.get(part).unwrap().properties();
+        assert!(properties.contains_key("size") && !properties.contains_key("Size"));
+        assert_eq!(
+            properties.get("Color3uint8"),
+            Some(&Variant::Color3uint8 { r: 255, g: 0, b: 0 })
+        );
+
+        let saved = temp_path("canonical_saved.rbxlx");
+        save(&dom, Format::Xml, &saved).unwrap();
+        let text = std::fs::read_to_string(&saved).unwrap();
+        assert!(text.contains(r#"name="size""#) && text.contains(r#"name="Color3uint8""#));
+        assert!(!text.contains(r#"name="Size""#) && !text.contains(r#"name="Color""#));
+
+        std::fs::remove_file(&original).ok();
+        std::fs::remove_file(&saved).ok();
+    }
+
     #[test]
     fn sniffing_a_binary_header_picks_binary() {
         let mut dom = WeakDom::new();
@@ -207,9 +331,9 @@ mod tests {
 
     // Mirrors `rbx_binary::serialize`'s own
     // `a_kind_with_no_neutral_value_is_still_rejected_when_missing` test: two
-    // instances of the same class disagree on a property with no neutral
-    // fallback, which is exactly the "script-created instance with an
-    // unfillable type" case the task brief calls out.
+    // instances of the same class disagree on a property with neither a
+    // class default nor a neutral fallback — one the reflection data does
+    // not know, of a type with no neutral value.
     #[test]
     fn a_failed_serialize_never_touches_the_existing_file() {
         let path = temp_path("untouched.rbxl");
@@ -220,7 +344,7 @@ mod tests {
         let _b = dom.new_instance("ParticleEmitter", "B", None);
         dom.set_property(
             a,
-            "Transparency",
+            "NotAProperty",
             Variant::NumberSequence(NumberSequence { keypoints: vec![] }),
         )
         .unwrap();

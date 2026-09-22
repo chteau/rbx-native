@@ -88,8 +88,8 @@ pub(crate) struct Plan {
 /// - Anything else: kept.
 ///
 /// Keys are the file's own spelling (`size`, `Color3uint8`), so each is read
-/// through `rbx_lua::reflected_property` — the same mapping scripts use —
-/// before it is compared with the dump. `fill` is what a fresh `target` is
+/// through `ReflectionDatabase::canonical_name` — the same mapping scripts
+/// and the Properties panel use — before it is compared with the dump. `fill` is what a fresh `target` is
 /// given where the instance has no value at all, in that same spelling.
 pub(crate) fn plan(
     database: &ReflectionDatabase,
@@ -99,7 +99,9 @@ pub(crate) fn plan(
 ) -> Plan {
     let mut plan = Plan::default();
     for (key, value) in instance.properties() {
-        let Some(property) = rbx_lua::reflected_property(database, instance.class(), key) else {
+        let class = instance.class();
+        let Some(property) = database.resolve_property(class, database.canonical_name(class, key))
+        else {
             plan.kept.push(key.clone());
             continue;
         };

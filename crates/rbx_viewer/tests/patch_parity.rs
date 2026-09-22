@@ -655,3 +655,42 @@ fn a_selected_part_is_cued_at_every_graphics_level() {
         );
     }
 }
+
+/// A selected part moved by an edit — a viewport drag, a typed `CFrame`, an
+/// undo, which all reach the viewer as this same patched log — carries its
+/// selection cue with it: the frame is the one a rebuild of the moved DOM,
+/// with the same selection, draws.
+#[test]
+#[ignore = "needs a GPU"]
+fn a_moved_selected_part_takes_its_cue_with_it() {
+    let path = fixture();
+    let mut dom = rbx_viewer::read_place(&path).expect("the fixture parses");
+    let part = *parts(&dom).first().expect("the fixture has a part");
+    let selected = [rbx_viewer::pick::Selected::read(
+        &dom,
+        &rbx_reflection::ReflectionDatabase::embedded(),
+        part,
+    )];
+    let selected_frame = |dom: &WeakDom| {
+        let mut reference = Headless::load(&path, true).expect("the fixture loads");
+        reference.reload(dom).expect("the DOM rebuilds");
+        reference.set_selection(&selected);
+        frame(&mut reference)
+    };
+
+    let mut patched = Headless::load(&path, true).expect("the fixture loads");
+    patched.set_selection(&selected);
+    frame(&mut patched);
+    let before = dom.clone();
+    nudge(&mut dom, part, 5.0);
+    let log = dom.take_changes();
+
+    for (what, state) in [("forward", &dom), ("undo", &before)] {
+        let applied = patched
+            .apply_changes(state, &log)
+            .expect("the edit applies");
+        assert_eq!(applied, Applied::Patched, "{what} must be patched");
+        let ae = differing(&frame(&mut patched), &selected_frame(state));
+        assert_eq!(ae, 0, "{what}: {ae} pixels differ from a rebuild");
+    }
+}

@@ -25,45 +25,12 @@ impl Gpu {
         image_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         let frame = pipeline::frame_layout(device);
-        let build = |label: &str,
-                     shader: &str,
-                     buffer: wgpu::VertexBufferLayout<'_>,
-                     layouts: &[Option<&wgpu::BindGroupLayout>],
-                     on_top: bool| {
-            pipeline::surface(
-                device,
-                target,
-                &Surface {
-                    // An adornment is a thin overlay a camera may well be
-                    // standing inside; culling would leave a hole where its
-                    // near face should be.
-                    cull: None,
-                    // Blended, and writing no depth: an adornment is drawn
-                    // over the scene, not part of it.
-                    translucent: true,
-                    // Reversed-Z, so `GreaterEqual` is the ordinary "in
-                    // front of, or exactly on, what is already there" test —
-                    // the tie matters for a `SurfaceSelection` slab, which
-                    // lies on the very surface it highlights. `Always` is
-                    // what `AlwaysOnTop` means.
-                    compare: if on_top {
-                        wgpu::CompareFunction::Always
-                    } else {
-                        wgpu::CompareFunction::GreaterEqual
-                    },
-                    ..Surface::new(label, shader, layouts, &[Some(buffer)])
-                },
-            )
-        };
-
         let both = |label: &str,
                     shader: &str,
                     buffer: fn() -> wgpu::VertexBufferLayout<'static>,
                     layouts: &[Option<&wgpu::BindGroupLayout>]| {
-            [
-                build(label, shader, buffer(), layouts, false),
-                build(label, shader, buffer(), layouts, true),
-            ]
+            [false, true]
+                .map(|on_top| build(device, target, label, shader, buffer(), layouts, on_top))
         };
 
         Gpu {
@@ -101,6 +68,43 @@ impl Gpu {
     }
 }
 
+/// One adornment pipeline: blended, unculled, depth-tested or — `on_top` —
+/// drawn over everything.
+fn build(
+    device: &wgpu::Device,
+    target: Target,
+    label: &str,
+    shader: &str,
+    buffer: wgpu::VertexBufferLayout<'_>,
+    layouts: &[Option<&wgpu::BindGroupLayout>],
+    on_top: bool,
+) -> wgpu::RenderPipeline {
+    pipeline::surface(
+        device,
+        target,
+        &Surface {
+            // An adornment is a thin overlay a camera may well be
+            // standing inside; culling would leave a hole where its
+            // near face should be.
+            cull: None,
+            // Blended, and writing no depth: an adornment is drawn
+            // over the scene, not part of it.
+            translucent: true,
+            // Reversed-Z, so `GreaterEqual` is the ordinary "in
+            // front of, or exactly on, what is already there" test —
+            // the tie matters for a `SurfaceSelection` slab, which
+            // lies on the very surface it highlights. `Always` is
+            // what `AlwaysOnTop` means.
+            compare: if on_top {
+                wgpu::CompareFunction::Always
+            } else {
+                wgpu::CompareFunction::GreaterEqual
+            },
+            ..Surface::new(label, shader, layouts, &[Some(buffer)])
+        },
+    )
+}
+
 const SOLID_ATTRIBUTES: [wgpu::VertexAttribute; 2] =
     wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x4];
 const LINE_ATTRIBUTES: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32, 3 => Float32, 4 => Float32x4];
@@ -118,7 +122,9 @@ impl Vertex {
 }
 
 impl LineVertex {
-    pub(super) const fn layout() -> wgpu::VertexBufferLayout<'static> {
+    /// Shared with `renderer::lines`, whose lines are built by the same
+    /// `geometry::line`.
+    pub(in crate::renderer) const fn layout() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<LineVertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
