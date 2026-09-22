@@ -7,7 +7,7 @@
 //! database (MIT). rbx-dom generates that database from Studio itself; the
 //! API dump records only types.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
 use rbx_dom::{
@@ -15,7 +15,7 @@ use rbx_dom::{
     FontStyle, NumberRange, NumberSequence, NumberSequenceKeypoint, PhysicalProperties, Rect, UDim,
     UDim2, Variant, Vector2Data, Vector3Data,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
 use crate::database::ReflectionDatabase;
@@ -47,6 +47,10 @@ struct ClassDefaults {
     /// A property, and the name Roblox saves it under.
     #[serde(rename = "SerializesAs", default)]
     serializes_as: HashMap<String, String>,
+    /// A property an alias names that Roblox never saves, so never loads:
+    /// `PackageId`. Read under its alias, but never renamed to.
+    #[serde(rename = "NotLoaded", default)]
+    not_loaded: HashSet<String>,
     #[serde(skip)]
     values: HashMap<String, Variant>,
     #[serde(rename = "Defaults", default)]
@@ -188,6 +192,9 @@ impl ReflectionDatabase {
                 (deprecated, spelling)
             });
             for (spelling, canonical) in spellings {
+                if class_defaults.not_loaded.contains(canonical) {
+                    continue;
+                }
                 let Some(&saved) = self.stored_names(class, canonical).first() else {
                     continue;
                 };
@@ -247,7 +254,7 @@ enum Raw {
     Bool(bool),
     Int32(i32),
     Int64(i64),
-    Float32(f32),
+    Float32(Float),
     Float64(f64),
     String(String),
     Enum(u32),
@@ -255,7 +262,7 @@ enum Raw {
     SecurityCapabilities(u64),
     Color3([f32; 3]),
     Color3uint8([u8; 3]),
-    Vector2([f32; 2]),
+    Vector2([Float; 2]),
     Vector3([f32; 3]),
     Vector3int16([i16; 3]),
     CFrame(RawCFrame),
@@ -274,12 +281,35 @@ enum Raw {
     Content(Value),
 }
 
+/// A float as the file spells it: a number, or `"inf"`/`"-inf"`, which JSON
+/// has no number for (`AlignPosition.MaxVelocity`, `UISizeConstraint.MaxSize`).
+struct Float(f32);
+
+impl<'de> Deserialize<'de> for Float {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Spelled {
+            Number(f32),
+            Word(String),
+        }
+        match Spelled::deserialize(deserializer)? {
+            Spelled::Number(value) => Ok(Float(value)),
+            Spelled::Word(word) if word == "inf" => Ok(Float(f32::INFINITY)),
+            Spelled::Word(word) if word == "-inf" => Ok(Float(f32::NEG_INFINITY)),
+            Spelled::Word(word) => {
+                Err(serde::de::Error::custom(format!("{word:?} is not a float")))
+            }
+        }
+    }
+}
+
 fn variant(value: Value, weight: &impl Fn(&str) -> Option<u16>) -> Option<Variant> {
     Some(match serde_json::from_value::<Raw>(value).ok()? {
         Raw::Bool(value) => Variant::Bool(value),
         Raw::Int32(value) => Variant::Int32(value),
         Raw::Int64(value) => Variant::Int64(value),
-        Raw::Float32(value) => Variant::Float32(value),
+        Raw::Float32(Float(value)) => Variant::Float32(value),
         Raw::Float64(value) => Variant::Float64(value),
         Raw::String(value) => Variant::String(value),
         Raw::Enum(value) => Variant::Enum(value),
@@ -287,7 +317,7 @@ fn variant(value: Value, weight: &impl Fn(&str) -> Option<u16>) -> Option<Varian
         Raw::SecurityCapabilities(value) => Variant::SecurityCapabilities(value),
         Raw::Color3(rgb) => Variant::Color3(color3(rgb)),
         Raw::Color3uint8([r, g, b]) => Variant::Color3uint8 { r, g, b },
-        Raw::Vector2(xy) => Variant::Vector2(vector2(xy)),
+        Raw::Vector2(xy) => Variant::Vector2(vector2(xy.map(|Float(value)| value))),
         Raw::Vector3(xyz) => Variant::Vector3(vector3(xyz)),
         Raw::Vector3int16([x, y, z]) => Variant::Vector3int16 { x, y, z },
         Raw::CFrame(frame) => Variant::CFrame(cframe(frame)),

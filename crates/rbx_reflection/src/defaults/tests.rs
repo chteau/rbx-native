@@ -74,6 +74,23 @@ fn a_cframe_default_keeps_its_rows_in_order() {
 }
 
 #[test]
+fn an_infinite_default_keeps_its_sign() {
+    let db = database();
+
+    assert_eq!(
+        db.default_value("AlignPosition", "MaxVelocity"),
+        Some(&Variant::Float32(f32::INFINITY))
+    );
+    let bound = |name| match db.default_value("WrapTextureTransfer", name) {
+        Some(Variant::Vector2(bound)) => (bound.x, bound.y),
+        other => panic!("{name}: {other:?}"),
+    };
+    // Studio's own: an empty box, the minimum above the maximum.
+    assert_eq!(bound("UVMinBound"), (f32::INFINITY, f32::INFINITY));
+    assert_eq!(bound("UVMaxBound"), (f32::NEG_INFINITY, f32::NEG_INFINITY));
+}
+
+#[test]
 fn a_font_weight_is_turned_from_its_name_into_its_number() {
     let db = database();
 

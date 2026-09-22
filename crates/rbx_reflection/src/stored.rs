@@ -263,20 +263,21 @@ mod tests {
     }
 
     #[test]
-    fn a_spelling_whose_property_only_migrates_is_left_alone() {
+    fn a_spelling_whose_property_only_migrates_is_read_but_left_alone() {
         // `PackageId` is `CanLoad: false`: renaming the old saved name to it
         // would lose the id on Studio's next load.
-        let mut dom = one(
-            "PackageLink",
-            &[(
-                "PackageIdSerialize",
-                Variant::String("rbxassetid://1".into()),
-            )],
-        );
+        let id = Variant::String("rbxassetid://1".into());
+        let mut dom = one("PackageLink", &[("PackageIdSerialize", id.clone())]);
+        let db = database();
 
-        database().normalize_names(&mut dom);
+        db.normalize_names(&mut dom);
 
         assert_eq!(keys(&dom), ["PackageIdSerialize"]);
+        let link = dom.get(Ref::new(1)).unwrap();
+        assert_eq!(
+            db.stored_or_default(link, "PackageId"),
+            Some(("PackageIdSerialize", &id))
+        );
     }
 
     #[test]

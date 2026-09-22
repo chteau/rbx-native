@@ -23,28 +23,51 @@ curl -fsSL "$URL" | jq -r --arg rev "$RBX_DOM_REV" '
   # Not `ContentId`: the DOM holds one as a `String` or a `Content` depending
   # on which file format it came from, so a default has no one right shape.
   # rbx-dom writes a non-finite float as `null`, which cannot say whether it
-  # was +inf, -inf or NaN; such a default is dropped rather than guessed.
+  # was +inf, -inf or NaN. Its msgpack database at the same commit
+  # (rbx_reflection_database/database.msgpack) keeps the sign; these are
+  # every one it has, spelled as strings since JSON has no number for them.
+  # Any other `null` is dropped rather than guessed.
+  def infinite: {
+    AlignOrientation: {MaxAngularVelocity: {Float32: "inf"}},
+    AlignPosition: {MaxVelocity: {Float32: "inf"}},
+    BillboardGui: {MaxDistance: {Float32: "inf"}},
+    CylindricalConstraint: {MotorMaxAcceleration: {Float32: "inf"}},
+    LineForce: {MaxForce: {Float32: "inf"}},
+    PrismaticConstraint: {MotorMaxAcceleration: {Float32: "inf"}},
+    SpringConstraint: {MaxForce: {Float32: "inf"}},
+    TorsionSpringConstraint: {MaxTorque: {Float32: "inf"}},
+    UISizeConstraint: {MaxSize: {Vector2: ["inf", "inf"]}},
+    WrapTextureTransfer: {
+      UVMaxBound: {Vector2: ["-inf", "-inf"]},
+      UVMinBound: {Vector2: ["inf", "inf"]}
+    }
+  };
   # The one real `null` is an absent `OptionalCFrame`: no CFrame at all.
   def exact: has("OptionalCFrame") or ([.[] | .. | nulls] | length == 0);
+  def saved: . == "Serializes" or (type == "object" and has("SerializesAs"));
   {
     Source: ("rojo-rbx/rbx-dom@" + $rev),
     License: "MIT, Copyright (c) 2018-2025 The Rojo Developers",
     Version,
-    Classes: (.Classes | map_values({
-      # An alias is kept only when its canonical is itself saved, under its
-      # own name or another: loading renames an alias to what gets saved,
-      # and a canonical that only migrates (`PackageIdSerialize` to
-      # `PackageId`) or never serializes is a name Studio will not load.
-      Aliases: (.Properties as $properties | $properties
-        | with_entries(select(.value.Kind.Alias
-            and ($properties[.value.Kind.Alias.AliasFor].Kind.Canonical.Serialization
-              | . == "Serializes" or (type == "object" and has("SerializesAs")))))
+    Classes: (.Classes | with_entries(.key as $class | .value |= ({
+      Aliases: (.Properties
+        | with_entries(select(.value.Kind.Alias))
         | map_values(.Kind.Alias.AliasFor)),
+      # Each property an alias names that is never saved, so never loaded
+      # either: `PackageId`, which only migrates to `PackageContent`. A
+      # stored `PackageIdSerialize` reads as it, but keeps its own name.
+      NotLoaded: (.Properties as $properties
+        | [$properties[] | .Kind.Alias.AliasFor // empty
+          | select($properties[.].Kind.Canonical.Serialization | saved | not)]
+        | unique),
       SerializesAs: (.Properties
         | with_entries(select(.value.Kind.Canonical.Serialization | type == "object" and has("SerializesAs")))
         | map_values(.Kind.Canonical.Serialization.SerializesAs)),
-      Defaults: ((.DefaultProperties // {}) | with_entries(select(.value | supported and exact)))
-    } | with_entries(select(.value != {}))) | with_entries(select(.value != {})))
+      Defaults: ((.DefaultProperties // {})
+        | with_entries(if [.value | .. | nulls] | length > 0
+            then .value = (infinite[$class][.key] // .value) else . end)
+        | with_entries(select(.value | supported and exact)))
+    } | with_entries(select(.value | length > 0)))) | with_entries(select(.value != {})))
   }
   # One class per line: small enough to diff, where one line for the whole
   # file or one per number would not be.

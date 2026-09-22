@@ -153,12 +153,12 @@ mod tests {
         std::fs::remove_file(&path).ok();
     }
 
-    /// A binary file holds a value for every instance of a class; one a
-    /// part never had must come back as Roblox's default, not a zero —
-    /// `archivable = false` would make Studio drop the part from its next
+    /// A binary file holds a value for every instance of a class; one an
+    /// instance never had must come back as Roblox's default, not a zero —
+    /// `archivable = false` would make Studio drop a part from its next
     /// save.
     #[test]
-    fn a_binary_save_fills_what_a_part_lacks_with_its_class_default() {
+    fn a_binary_save_fills_what_an_instance_lacks_with_its_class_default() {
         let mut dom = WeakDom::new();
         let stored = dom.new_instance("Part", "Stored", None);
         dom.new_instance("Part", "Bare", None);
@@ -175,6 +175,31 @@ mod tests {
             ),
         ] {
             dom.set_property(stored, key, value).unwrap();
+        }
+        // Infinite defaults, which JSON has no number for: without them an
+        // AlignPosition was saved unable to move, and a UISizeConstraint
+        // failed the save.
+        let infinite = [
+            (
+                "AlignPosition",
+                "MaxVelocity",
+                Variant::Float32(5.0),
+                Variant::Float32(f32::INFINITY),
+            ),
+            (
+                "UISizeConstraint",
+                "MaxSize",
+                Variant::Vector2(rbx_dom::Vector2Data { x: 5.0, y: 5.0 }),
+                Variant::Vector2(rbx_dom::Vector2Data {
+                    x: f32::INFINITY,
+                    y: f32::INFINITY,
+                }),
+            ),
+        ];
+        for (class, key, value, _) in &infinite {
+            let stored = dom.new_instance(class, "Stored", None);
+            dom.set_property(stored, key, value.clone()).unwrap();
+            dom.new_instance(class, &format!("Bare{class}"), None);
         }
         let path = temp_path("defaults.rbxl");
 
@@ -196,6 +221,13 @@ mod tests {
                 z: 2.0,
             }))
         );
+        for (class, key, _, default) in &infinite {
+            let bare = crate::explorer::find_by_name(&reloaded, &format!("Bare{class}")).unwrap();
+            assert_eq!(
+                reloaded.get(bare).unwrap().properties().get(*key),
+                Some(default)
+            );
+        }
     }
 
     /// A hand-written place may use a property's canonical name; the place
