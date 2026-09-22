@@ -36,6 +36,7 @@ pub(crate) enum MenuId {
     InsertScript,
     InsertGui,
     InsertOptions,
+    UiResolution,
 }
 
 impl MenuId {
@@ -49,6 +50,7 @@ impl MenuId {
             MenuId::InsertScript => "menu-insert-script",
             MenuId::InsertGui => "menu-insert-gui",
             MenuId::InsertOptions => "menu-insert-options",
+            MenuId::UiResolution => "menu-ui-resolution",
         }
     }
 }

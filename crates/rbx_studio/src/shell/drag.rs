@@ -290,7 +290,12 @@ impl Shell {
     /// the same `properties::edit::commit` the Properties panel uses, so a
     /// drag and a typed value cannot disagree about what transforming a part
     /// means.
-    fn write_drag(&mut self, first: bool, writes: &[(Ref, &str, String)], cx: &mut Context<Self>) {
+    pub(super) fn write_drag(
+        &mut self,
+        first: bool,
+        writes: &[(Ref, &str, String)],
+        cx: &mut Context<Self>,
+    ) {
         if first {
             self.push_history();
         }

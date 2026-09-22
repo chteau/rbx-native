@@ -36,6 +36,9 @@
 //! `Script`/`LocalScript`/`ModuleScript` in the Script Editor panel exactly as
 //! double-clicking its Explorer row would — the same aid, for the script
 //! editor and its Luau highlighting (see `shell::scripts`).
+//! `RBX_STUDIO_UI_EDITOR=1|<width>x<height>` opens the UI Editor on its
+//! canvas at startup, at that simulated resolution when one is given — the
+//! same aid, for the canvas (see `shell::ui_editor`).
 //! `RBX_STUDIO_GROUP=1` wraps the current selection in a new `Model` exactly
 //! as `Ctrl+G` would; `RBX_STUDIO_UNGROUP=1` unwraps it back out exactly as
 //! `Ctrl+Shift+G` would — the same aid, for the Explorer's Group/Ungroup

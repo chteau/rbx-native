@@ -36,8 +36,8 @@ pub(crate) use layout::StrokePx;
 #[cfg(test)]
 pub(crate) use layout::{resolve, resolve_canvas};
 pub(crate) use layout::{
-    resolve_canvas_with, resolve_with, Element, GradientPx, Grouped, ImageScale, Painted,
-    PixelRect, Rect, TextMeasure, Typeset,
+    resolve_canvas_with, resolve_with, screen_frame, Element, GradientPx, Grouped, ImageScale,
+    Painted, PixelRect, Rect, TextMeasure, Typeset,
 };
 pub(crate) use plan::image_placeholder as gui_image_placeholder;
 #[cfg(test)]

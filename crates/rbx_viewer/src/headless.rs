@@ -29,8 +29,9 @@ mod assets;
 pub struct GuiCanvas {
     /// Tightly packed RGBA8 (sRGB) rows, `width * height * 4` bytes long.
     pub pixels: Vec<u8>,
-    /// Every element as laid out, in paint order — what the canvas is
-    /// hit-tested against.
+    /// The screen's own frame — what its top-level children resolve
+    /// against, below any top-bar inset — then every element as laid out,
+    /// in paint order: what the canvas is hit-tested against.
     pub boxes: Vec<GuiBox>,
 }
 

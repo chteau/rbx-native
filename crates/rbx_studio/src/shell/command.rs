@@ -278,7 +278,6 @@ impl Shell {
     pub(super) fn rebuild_explorer(&mut self, cx: &mut Context<Self>) {
         let explorer =
             Explorer::from_dom(&self.dom, self.icon_pack, &self.folder_colors, &self.path);
-        let items = explorer.items(self.show_all_services);
         // A rename, reparent or destroy can invalidate the selection; kept
         // only if its referent still resolves in the rebuilt tree.
         let kept = self
@@ -287,6 +286,7 @@ impl Shell {
         let preselected = kept.and_then(|reference| explorer.item(reference));
 
         self.explorer = Rc::new(explorer);
+        let items = self.explorer_items();
         self.tree.update(cx, |tree, cx| {
             tree.set_items(items, cx);
             tree.set_selected_item(preselected.as_ref(), cx);

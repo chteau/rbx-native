@@ -27,6 +27,50 @@ pub(crate) const PRESETS: [(&str, u32, u32); 6] = [
     ("Small phone 320×568", 320, 568),
 ];
 
+/// How far the canvas zooms either way.
+const ZOOM_RANGE: (f32, f32) = (0.05, 8.0);
+
+/// Where the canvas sits in its panel: canvas pixel `p` shows at
+/// `pan + p * zoom`, in the panel's own logical pixels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct View {
+    pub(crate) zoom: f32,
+    pub(crate) pan: [f32; 2],
+}
+
+impl View {
+    /// The whole `screen` centred in `panel` with `margin` round it — shrunk
+    /// to fit, but never blown up past 1:1, where the picture (drawn at the
+    /// screen's own resolution) would only go soft.
+    pub(crate) fn fit(panel: [f32; 2], screen: [f32; 2], margin: f32) -> View {
+        let room = [0, 1].map(|axis| (panel[axis] - margin * 2.0).max(1.0) / screen[axis].max(1.0));
+        let zoom = room[0].min(room[1]).clamp(ZOOM_RANGE.0, 1.0);
+        View {
+            zoom,
+            pan: [0, 1].map(|axis| (panel[axis] - screen[axis] * zoom) * 0.5),
+        }
+    }
+
+    pub(crate) fn to_view(&self, p: [f32; 2]) -> [f32; 2] {
+        [0, 1].map(|axis| self.pan[axis] + p[axis] * self.zoom)
+    }
+
+    pub(crate) fn to_canvas(&self, p: [f32; 2]) -> [f32; 2] {
+        [0, 1].map(|axis| (p[axis] - self.pan[axis]) / self.zoom)
+    }
+
+    /// Zoomed by `factor` about `at` (panel pixels), which stays put under
+    /// the pointer the way every canvas editor zooms.
+    pub(crate) fn zoomed(&self, factor: f32, at: [f32; 2]) -> View {
+        let zoom = (self.zoom * factor).clamp(ZOOM_RANGE.0, ZOOM_RANGE.1);
+        let kept = zoom / self.zoom;
+        View {
+            zoom,
+            pan: [0, 1].map(|axis| at[axis] - (at[axis] - self.pan[axis]) * kept),
+        }
+    }
+}
+
 /// An axis-aligned rectangle in canvas pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub(crate) struct Rect {

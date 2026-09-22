@@ -163,6 +163,11 @@ impl Shell {
         let Some(parent) = common_parent(&self.dom, &self.database, &selected) else {
             return;
         };
+        // `GuiObject`s on the UI editor's canvas group into a `Frame`
+        // fitted round them — see `shell::ui_editor::arrange`.
+        if self.group_gui(&selected, parent, cx) {
+            return;
+        }
 
         // See `shell::history`: snapshotted before the mutations below, so
         // one Group is one undo step however many instances it wraps.

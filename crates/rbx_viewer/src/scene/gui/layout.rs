@@ -123,13 +123,7 @@ pub(crate) fn resolve_with<'a>(
 
     let mut elements = Vec::new();
     for screen in order {
-        // `ScreenInsets`: the canvas starts below the top bar, and is that
-        // much shorter, so a `{1, 0}` child still reaches the bottom edge.
-        let frame = Rect {
-            y: screen.top_inset,
-            height: (viewport[1] - screen.top_inset).max(0.0),
-            ..canvas(viewport)
-        };
+        let frame = screen_frame(screen, viewport);
         let start = elements.len();
         children(
             Scope {
@@ -158,6 +152,17 @@ pub(crate) fn resolve_with<'a>(
         }
     }
     elements
+}
+
+/// The box a screen's top-level children resolve against: `ScreenInsets`
+/// starts it below the top bar, and makes it that much shorter, so a
+/// `{1, 0}` child still reaches the bottom edge.
+pub(crate) fn screen_frame(screen: &Screen, viewport: [f32; 2]) -> Rect {
+    Rect {
+        y: screen.top_inset,
+        height: (viewport[1] - screen.top_inset).max(0.0),
+        ..canvas(viewport)
+    }
 }
 
 /// The same resolution for a `BillboardGui`/`SurfaceGui`, against its own

@@ -35,7 +35,8 @@ use crate::fonts::Library;
 use crate::load::Answered;
 use crate::quality::QualityProfile;
 use crate::scene::{
-    gui_layout_with, gui_scroll_target, GuiScreen, GuiScrollWindow, ScrollTarget, SpaceGui,
+    gui_layout_with, gui_screen_frame, gui_scroll_target, GuiScreen, GuiScrollWindow, ScrollTarget,
+    SpaceGui,
 };
 use atlas::Atlas;
 use group::Baked;
@@ -70,7 +71,8 @@ pub(super) struct Gui {
     /// — every enabled one, or the one [`Gui::draw_canvas`] asked for; a
     /// different answer to either rebuilds it.
     built: Option<((u32, u32), Option<Ref>)>,
-    /// Every element of the last layout, in paint order — see [`GuiBox`].
+    /// Every element of the last layout, in paint order — see [`GuiBox`] —
+    /// after, for a canvas, the screen's own box.
     boxes: Vec<GuiBox>,
     /// Every `ScrollingFrame` window of the current overlay, in paint order,
     /// for [`Gui::scroll_target`]. Empty until the first layout.
@@ -324,19 +326,27 @@ impl Gui {
             let mut elements =
                 gui_layout_with(screens, [size.0 as f32, size.1 as f32], &mut self.text);
             // Before the flatten below as well, for the same reason: a
-            // `CanvasGroup`'s children are still things to click on.
-            self.boxes = elements
+            // `CanvasGroup`'s children are still things to click on. A
+            // canvas leads with the screen's own box: the frame its
+            // top-level children resolve against, `ScreenInsets` and all.
+            let placed = |referent, rect: &crate::scene::GuiRect, rotation| GuiBox {
+                referent,
+                rect: [rect.x, rect.y, rect.width, rect.height],
+                rotation,
+            };
+            let viewport = [size.0 as f32, size.1 as f32];
+            let frame = self
+                .screens
                 .iter()
-                .map(|element| GuiBox {
-                    referent: element.referent,
-                    rect: [
-                        element.rect.x,
-                        element.rect.y,
-                        element.rect.width,
-                        element.rect.height,
-                    ],
-                    rotation: element.rotation,
-                })
+                .find(|screen| only == Some(screen.referent))
+                .map(|screen| placed(screen.referent, &gui_screen_frame(screen, viewport), 0.0));
+            self.boxes = frame
+                .into_iter()
+                .chain(
+                    elements
+                        .iter()
+                        .map(|element| placed(element.referent, &element.rect, element.rotation)),
+                )
                 .collect();
             // Before the flatten below, which folds a `CanvasGroup`'s subtree
             // away: a list inside a group still scrolls.
@@ -635,8 +645,13 @@ mod tests {
             wgpu::Color::BLACK,
             &materials.bind_group,
         );
-        assert_eq!(referents(&gui), [menu], "that screen alone");
-        assert_eq!(gui.boxes()[0].rect, [0.0, 0.0, 50.0, 40.0]);
+        assert_eq!(
+            referents(&gui),
+            [hidden, menu],
+            "that screen alone, led by its frame"
+        );
+        assert_eq!(gui.boxes()[0].rect, [0.0, 0.0, 400.0, 300.0]);
+        assert_eq!(gui.boxes()[1].rect, [0.0, 0.0, 50.0, 40.0]);
         queue.submit(std::iter::once(encoder.finish()));
     }
 

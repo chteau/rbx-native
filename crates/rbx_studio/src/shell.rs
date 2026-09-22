@@ -47,6 +47,7 @@ mod style_panel;
 mod sun;
 mod toolbar;
 mod tooltip;
+mod ui_editor;
 mod viewport_dock;
 mod workspace;
 
@@ -79,7 +80,9 @@ use crate::script_editor::ScriptEditor;
 use crate::settings::{DraggerSettings, Settings};
 use crate::tokens;
 use crate::transform::{Targets, Transform};
-use crate::workspace_view::{AssetWarnings, Opened, PoseSynced, ViewportAction, WorkspaceView};
+use crate::workspace_view::{
+    AssetWarnings, CanvasUpdated, Opened, PoseSynced, ViewportAction, WorkspaceView,
+};
 use crate::Place;
 use chrome::{Document, Drag};
 use menu::MenuId;
@@ -218,6 +221,10 @@ pub(crate) struct Shell {
     /// `shell::style_panel`.
     style_edits: style_panel::StyleEdits,
     style_scroll: ScrollHandle,
+    /// The UI Editor document's own state — its sub-tab, the screen on the
+    /// canvas, the pan and zoom, the gesture in flight. See
+    /// `shell::ui_editor`.
+    ui: ui_editor::UiEditor,
     quality: Entity<SelectState<QualityOptions>>,
     /// The canonical, mutable tree a Command Bar script runs against; see
     /// `Place::dom`.
@@ -298,7 +305,7 @@ pub(crate) struct Shell {
     /// is raised with it once rather than fought over every frame.
     window_was_active: bool,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
-    _subscriptions: [Subscription; 12],
+    _subscriptions: [Subscription; 13],
 }
 
 impl Shell {
@@ -443,6 +450,9 @@ impl Shell {
             }
             cx.notify();
         });
+        // The UI editor's canvas is drawn on the viewport's render thread
+        // but shown here, so a new frame of it is this entity's to repaint.
+        let canvas_drawn = cx.subscribe(&viewport, |_, _, _: &CanvasUpdated, cx| cx.notify());
 
         // Built last of Shell::new's entities: its `Action` handlers close
         // over `cx.entity()`, so `Shell` must already be constructible —
@@ -454,6 +464,7 @@ impl Shell {
             SnapFields::new(transform, window, cx);
 
         let initial_targets = Targets::read(&dom, &database, &Vec::from_iter(selected));
+        let ui = ui_editor::UiEditor::new(window, cx);
         let mut shell = Shell {
             menu_bar,
             title: title.into(),
@@ -500,6 +511,7 @@ impl Shell {
             properties_scroll: ScrollHandle::new(),
             style_edits: style_panel::StyleEdits::default(),
             style_scroll: ScrollHandle::new(),
+            ui,
             quality: selector,
             dom,
             history: History::new(DEFAULT_CAP),
@@ -544,6 +556,7 @@ impl Shell {
                 rotate_typed,
                 translate_stepped,
                 rotate_stepped,
+                canvas_drawn,
             ],
         };
 
@@ -561,6 +574,8 @@ impl Shell {
         shell.sync_snap_neighbours(cx);
         // Its light guides, for the same reason.
         shell.sync_light_guides(cx);
+        // And the screen it sits in, for the UI editor's canvas.
+        shell.ui_follow_selection();
 
         // `RBX_STUDIO_TOOL` (see `shell::toolbar`). Before the Command Bar
         // block below rather than after it: a script's reload rebuilds the
@@ -654,6 +669,10 @@ impl Shell {
         // selection blocks above, so the edit it may carry lands on whatever
         // `StyleRule` they selected.
         shell.apply_debug_style_editor(cx);
+
+        // `RBX_STUDIO_UI_EDITOR` (see `shell::ui_editor`): after the selection
+        // blocks, so the screen they selected into is the one on the canvas.
+        shell.apply_debug_ui_editor(cx);
 
         // `RBX_STUDIO_MENU` (see `menu_bar::MenuBar::apply_debug_entry`):
         // the only way to put the keyboard in the menu bar without a
@@ -758,6 +777,7 @@ impl Shell {
         // a drag can settle against, and whatever just started stops being
         // one.
         self.sync_snap_neighbours(cx);
+        self.ui_follow_selection();
         cx.notify();
     }
 
@@ -794,7 +814,7 @@ impl Shell {
         }
 
         self.show_all_services = show_all;
-        let items = self.explorer.items(show_all);
+        let items = self.explorer_items();
         // Replacing the rows drops the tree's selection; putting it back in the
         // same update keeps the observer from ever seeing the gap. A selected
         // root the default set hides is genuinely gone, and stays deselected.
