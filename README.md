@@ -230,6 +230,21 @@ the autonomous-contribution workflow specifically.
   at the scene) inspired this editor's Change Class and sun placement tools.
   No code, assets or interface from either plugin is used: both were
   reimplemented independently from how they behave.
+- **argon-rbx** — [Argon](https://argon.wiki/) (Apache-2.0), the file-sync
+  tool the Script Editor's Argon dock connects to, and its
+  [Studio plugin source](https://github.com/argon-rbx/argon-roblox)
+  (also Apache-2.0), which is how this editor's own Argon client
+  (`crate::argon_client`) confirmed the wire protocol's actual shape —
+  no code from either was copied, but that source is what the client's
+  message and property encoding are read from.
+- **UpliftGames** — [Wally](https://wally.run/) (MPL-2.0), the Luau package
+  manager the Script Editor's Wally dock is built around, and the
+  [`wally` source](https://github.com/UpliftGames/wally) (also MPL-2.0),
+  which is how this editor's own client (`crate::wally_client`) confirmed
+  the registry API's actual response shapes and the real on-disk install
+  layout (`_Index` slots, sibling alias files) that
+  `shell::wally_sync` reproduces — no code was copied, but that source is
+  what the install layout is read from.
 
 ## License
 

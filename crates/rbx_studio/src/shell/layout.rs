@@ -19,6 +19,7 @@
 //! this file rather than unpicking it, because nothing outside it knows
 //! the shape.
 
+use std::cmp::Ordering;
 use std::fmt;
 
 use crate::tokens;
@@ -103,16 +104,25 @@ pub(crate) enum Panel {
     /// The viewport's own settings and live stats — the quality level, the
     /// view toggles, the frame rate — kept off the 3D view itself.
     Viewport,
+    /// Argon (`argon-rbx/argon`) two-way file sync. Script Editor only —
+    /// see `Shell::hidden_panels`.
+    Argon,
+    /// The Wally (`UpliftGames/wally`) package manager. Script Editor
+    /// only — see `Shell::hidden_panels`.
+    Wally,
 }
 
 impl Panel {
     /// In the order a fresh layout seats them, which is what makes the
-    /// Viewport dock a tab beside Output rather than a dock of its own.
-    pub(crate) const ALL: [Panel; 4] = [
+    /// Viewport, Argon and Wally docks tabs beside Output rather than
+    /// docks of their own.
+    pub(crate) const ALL: [Panel; 6] = [
         Panel::Explorer,
         Panel::Properties,
         Panel::Output,
         Panel::Viewport,
+        Panel::Argon,
+        Panel::Wally,
     ];
 
     /// Where this panel lives in a layout nobody has rearranged — also
@@ -122,7 +132,7 @@ impl Panel {
         match self {
             Panel::Explorer => Edge::Right,
             Panel::Properties => Edge::Left,
-            Panel::Output | Panel::Viewport => Edge::Bottom,
+            Panel::Output | Panel::Viewport | Panel::Argon | Panel::Wally => Edge::Bottom,
         }
     }
 
@@ -134,6 +144,8 @@ impl Panel {
             Panel::Properties => "Properties",
             Panel::Output => "Output",
             Panel::Viewport => "Viewport",
+            Panel::Argon => "Argon",
+            Panel::Wally => "Wally",
         }
     }
 
@@ -323,16 +335,25 @@ impl Layout {
     }
 
     /// Takes a panel off whatever holds it, dropping a dock that has just
-    /// lost its last tab and walking back any tab index the removal left
-    /// dangling.
+    /// lost its last tab and keeping its active tab pointed at the same
+    /// panel it was — or, if that panel is the one leaving, at the dock's
+    /// first remaining tab, the same "first of the rest" fallback
+    /// `Shell::dock_showing` uses when a tab is set aside instead of removed.
     fn detach(&mut self, panel: Panel) {
         self.floating.retain(|held| *held != panel);
         self.closed.retain(|held| *held != panel);
         for edge in Edge::ALL {
             let groups = &mut self.edges[edge.index()];
             for group in groups.iter_mut() {
-                group.panels.retain(|held| *held != panel);
-                group.active = group.active.min(group.panels.len().saturating_sub(1));
+                if let Some(index) = group.panels.iter().position(|held| *held == panel) {
+                    group.panels.remove(index);
+                    group.active = match index.cmp(&group.active) {
+                        Ordering::Less => group.active - 1,
+                        Ordering::Equal => 0,
+                        Ordering::Greater => group.active,
+                    };
+                    group.active = group.active.min(group.panels.len().saturating_sub(1));
+                }
             }
             groups.retain(|group| !group.panels.is_empty());
         }

@@ -82,6 +82,11 @@ pub(crate) struct Settings {
     pub(crate) expand_on_select: bool,
     /// The dragger guides' switches — see [`DraggerSettings`].
     pub(crate) dragger: DraggerSettings,
+    /// The Argon dock's address field, as it stood the last time Connect
+    /// actually succeeded — not every keystroke of a draft, and not an
+    /// address that never connected. Empty means "nothing saved yet",
+    /// which `Shell` reads as its own hardcoded `localhost:8000` default.
+    pub(crate) argon_address: String,
 }
 
 impl Default for Settings {
@@ -100,6 +105,7 @@ impl Default for Settings {
             font_scale: 1.,
             large_targets: false,
             reduce_motion: None,
+            argon_address: String::new(),
             // Empty means "whatever the shell's own default is" — the
             // defaults live with the layout in `shell::layout`, and
             // duplicating them here is how the two drift apart.
@@ -264,6 +270,11 @@ fn load_from(path: &Path) -> Settings {
             .and_then(|v| v.as_bool())
             .unwrap_or(true),
         dragger: DraggerSettings::read(&value),
+        argon_address: value
+            .get("argon_address")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned)
+            .unwrap_or_default(),
     }
 }
 
@@ -395,6 +406,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "increment_names": settings.increment_names,
         "expand_on_select": settings.expand_on_select,
         "dragger": settings.dragger.json(),
+        "argon_address": settings.argon_address,
     });
     // A fixed-shape object always serializes; nothing here can fail.
     let bytes = serde_json::to_vec_pretty(&value).expect("settings JSON always serializes");
@@ -519,10 +531,23 @@ mod tests {
             icon_pack: IconPack::Light,
             unfocused_fps: UnfocusedFps::Fps25,
             font_scale: 1.25,
+            argon_address: "argon.example.com:9000".to_owned(),
             ..Settings::default()
         };
         save_to(&settings, &path).unwrap();
         assert_eq!(load_from(&path), settings);
+    }
+
+    #[test]
+    fn a_settings_file_from_before_the_argon_address_existed_reads_as_empty() {
+        let path = temp_settings_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, br#"{"quality": "Automatic"}"#).unwrap();
+
+        // Empty is what `Shell` reads as "nothing saved yet, fall back to
+        // the hardcoded localhost:8000 default" — see `shell.rs`'s own
+        // `argon_address` field init.
+        assert_eq!(load_from(&path).argon_address, "");
     }
 
     #[test]

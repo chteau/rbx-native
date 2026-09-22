@@ -1513,30 +1513,48 @@ against `Roblox/creator-docs` rather than assumed:
     proportions/meshes, or, if a specific official asset id is the more
     faithful source for a given rig, imported directly as a real `.rbxm`
     the same way any other asset import works.
-- [ ] 📋 **Native Argon integration, not Rojo.** Argon (`argon-rbx/argon`,
-  Apache-2.0, open source) is the preferred target — confirmed its project
-  format deliberately matches Rojo's (`*.project.json`/
-  `default.project.json`, the same `*.meta.json` and
-  `*.server.lua`/`*.client.lua`/`*.model.json` conventions), so file-tree ↔
-  DOM import/export and `sourcemap.json` generation (for `luau-lsp`) is
-  effectively the same work either way — implement it once against that
-  shared format. What's genuinely Argon-specific and *not* yet confirmed:
-  its live two-way sync protocol between its CLI and its required Studio
-  plugin isn't documented publicly (a `msgpack-luau` repo in the same org
-  hints at the transport, unconfirmed) — needs its own investigation
-  before committing to real-time sync compatibility with Argon's actual
-  plugin; the file-format side can start now regardless.
-- [ ] 📋 **Wally package manager, built in.** Wally (`UpliftGames/wally`,
-  MPL-2.0) is the de facto Luau/Roblox package manager — a `wally.toml`
-  manifest, a registry index git repo, packages installed as
-  `ModuleScript`s under a `Packages`/`DevPackages` folder that
-  `rbx_binary`/`rbx_xml` already read and write like any other instance
-  tree. Native support means: an `Install`/`Add package` action in
-  `rbxstudio` that shells out to (or reimplements) Wally's resolver and
-  writes the resulting `Packages` tree straight into the open place's DOM,
-  instead of requiring a separate CLI step and a project re-sync. Natural
-  pairing with the Argon/Rojo file-tree work above, since Wally-managed
-  packages live in the same kind of synced folder structure.
+- [x] 📋 **Native Argon integration, not Rojo — live sync.** Argon
+  (`argon-rbx/argon`, Apache-2.0, open source) is the preferred target, and
+  its live two-way sync protocol — previously undocumented — turned out to
+  be readable straight from its own Studio plugin source
+  (`argon-rbx/argon-roblox`, also Apache-2.0): HTTP+MsgPack against
+  `argon serve`, long-polled. `crate::argon_client` implements it (the
+  wire format, the background thread, the `WeakDom` apply/write-back path
+  in `shell::argon_sync`), verified end to end against a real `argon serve`
+  session. `ExecuteCode` (server-sent Luau) is decoded and always
+  discarded — see that module's doc comment. Still open, and genuinely
+  separate from the sync protocol: **file-tree ↔ DOM import/export and
+  `sourcemap.json` generation** — reading/writing a project's
+  `*.project.json`/`default.project.json` tree directly (for `luau-lsp`,
+  and for opening an Argon project without a running server) is unrelated
+  work against the same file-format Rojo also uses, not yet started.
+- [ ] 📋 **Improve Argon's Diff window to look like GitHub's.** The review
+  prompt's Diff window (`shell::argon_diff_window`, PR #85) currently
+  lists additions/updates/removals as plain rows — GitHub's own diff view
+  (unified/split hunks, red/green line backgrounds, +/- gutter markers) is
+  the more legible bar to clear, especially once an update's property
+  values get long. Not scoped in any detail yet.
+- [x] 📋 **Wally package manager, built in.** Wally (`UpliftGames/wally`,
+  MPL-2.0) is the de facto Luau/Roblox package manager. The Wally dock
+  (`shell::scripting_tools`, Script Editor tab only) now searches the real
+  `api.wally.run` registry as you type, and installing a result resolves
+  its *whole* dependency graph — a BFS matching Wally's own resolver shape
+  (`crate::wally_client::resolve`), reusing an already-activated version
+  when one satisfies a new requirement, erroring cleanly on an
+  unsatisfiable one (a real stale dependency, `sleitnick/knit`'s
+  `sleitnick/comm@^0.3`, is this codebase's own test fixture for that
+  path) — then installs every resolved package into the DOM in the same
+  on-disk shape real `wally install` produces: each package's content
+  under `Packages/_Index/<scope>_<name>@<version>/<name>`, one alias
+  `ModuleScript` per dependency edge beside it, and a top-level
+  `Packages/<name>` alias for the package actually picked (`crate::
+  shell::wally_sync`). One `WeakDom` insertion path serves both roles Wally
+  itself splits: with a connected Argon session it reaches disk for free
+  through the write-back sync above; without one, it's native. Two known
+  gaps: version discovery is `package-search` filtered client-side, not a
+  cloned registry index, so a non-default registry isn't supported; and
+  there's no `wally.lock`, so two separate installs can pick different
+  compatible versions of a shared dependency.
 - [ ] 📋 **Native Git integration** — a real panel in `rbxstudio` (diff view,
   stage/commit, branch switch), not relying on the user's own external git
   client. Not scoped in any detail yet.

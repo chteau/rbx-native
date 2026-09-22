@@ -204,6 +204,17 @@ to get lost. Keep it that way: if a panel ever becomes conditional on a tab,
 that rule is broken and the bug it causes (a reset scroll, a lost selection)
 will look like a mystery rather than a layout change.
 
+The one deliberate exception is `Shell::hidden_panels` — a *display* filter
+over Row D, not an unmount. Every hidden panel stays mounted with its state
+intact; only whether its tab draws is conditional, exactly like a dock tab
+set aside behind another. It covers two cases: the UI Editor's canvas sets
+Properties, Output and Viewport aside for the room its own sidebar and
+tools want, and the Script Editor keeps Viewport off its dock (the 3D view
+isn't on screen either way) while bringing up two docks of its own, Argon
+and Wally (`shell::scripting_tools`), that mean nothing anywhere else. A
+panel is never unmounted by this — a hidden dock's contents are exactly
+where they were when it comes back.
+
 **Row D is hand-rolled, not a `DockArea`.** Fixed columns with their own
 min/max and 4px handles can't be expressed through the toolkit's dock, so
 that dependency went away — and with it, dragging panels to rearrange them.

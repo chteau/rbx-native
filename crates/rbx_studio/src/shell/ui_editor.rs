@@ -63,6 +63,11 @@ pub(crate) const UI_EDITOR_VARIABLE: &str = "RBX_STUDIO_UI_EDITOR";
 /// Viewport dock's settings are the 3D view's, which is not on screen.
 const CANVAS_HIDES: [Panel; 3] = [Panel::Properties, Panel::Output, Panel::Viewport];
 
+/// Argon and Wally (`shell::scripting_tools`) have nothing to sync or
+/// resolve outside the Script Editor, so they're seated on the same dock
+/// as Output/Viewport but only ever shown alongside scripts.
+const SCRIPT_TOOLS: [Panel; 2] = [Panel::Argon, Panel::Wally];
+
 const SCREEN_CLASS: &str = "ScreenGui";
 /// What a canvas can put up: every `LayerCollector` a place holds.
 const ROOT_CLASSES: [&str; 3] = [SCREEN_CLASS, "BillboardGui", "SurfaceGui"];
@@ -258,17 +263,25 @@ impl Shell {
         }
     }
 
-    /// The docks left out of the layout while the canvas is up. Nothing in
-    /// the layout itself changes — leaving the canvas shows exactly what
-    /// was there, and a dock that was shut stays shut.
+    /// The docks left out of the layout as things stand: the canvas's own
+    /// set-aside list while it is up, plus Viewport while the Script Editor
+    /// is the document (the 3D view is not on screen either way) or Argon
+    /// and Wally the rest of the time (neither means anything outside it).
+    /// Nothing in the layout itself changes — coming back shows exactly
+    /// what was there, and a dock that was shut stays shut.
     pub(super) fn hidden_panels(&self) -> Vec<Panel> {
-        match self.ui_canvas_active() {
-            true => CANVAS_HIDES
-                .into_iter()
-                .filter(|panel| !self.ui.unhidden.contains(panel))
-                .collect(),
+        let mut hidden = match self.ui_canvas_active() {
+            true => CANVAS_HIDES.to_vec(),
             false => Vec::new(),
+        };
+        match self.document == Document::Scripts {
+            true => hidden.push(Panel::Viewport),
+            false => hidden.extend(SCRIPT_TOOLS),
         }
+        hidden
+            .into_iter()
+            .filter(|panel| !self.ui.unhidden.contains(panel))
+            .collect()
     }
 
     /// A dock asked back by name while the canvas has it set aside.
