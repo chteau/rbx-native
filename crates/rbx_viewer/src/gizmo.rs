@@ -117,6 +117,33 @@ pub struct Gizmo {
     /// The part's own orientation rather than the world's — Studio's
     /// `Ctrl`/`Cmd`+`L` toggle.
     pub local: bool,
+    /// The Move arrow or Scale ball a drag holds, drawn alone while it does:
+    /// Studio's `MoveHandles:_renderDraggingAxisHandles` and
+    /// `ExtrudeHandles:_renderDraggingHandles` each build just the one
+    /// handle being dragged. `None` draws them all.
+    pub held: Option<End>,
+}
+
+/// One Move arrow or Scale ball: the axis it stands on, and which end of it
+/// — what [`Handles::grab_arm`] and [`Faces::grab`] report as a sign.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct End {
+    pub axis: Axis,
+    pub negative: bool,
+}
+
+impl End {
+    pub fn of((axis, sign): (Axis, f32)) -> End {
+        End {
+            axis,
+            negative: sign < 0.0,
+        }
+    }
+
+    /// Whether this is the end `(axis, sign)` names.
+    pub fn is(self, axis: Axis, sign: f32) -> bool {
+        self == End::of((axis, sign))
+    }
 }
 
 /// The Move and Rotate tools' draggers, placed in the world: where they meet,
@@ -158,7 +185,7 @@ impl Handles {
     ///
     /// Both directions of each axis count: Studio's Move gizmo puts an arrow
     /// on each end, and grabbing either drags along the same line.
-    fn grab_arm(&self, ray: Ray) -> Option<(Axis, f32)> {
+    pub fn grab_arm(&self, ray: Ray) -> Option<(Axis, f32)> {
         let reach = PICK_RADIUS * self.arm;
         Axis::ALL
             .into_iter()

@@ -176,6 +176,7 @@ impl Transform {
         self.tool.kind().map(|kind| Gizmo {
             kind,
             local: self.local,
+            held: None,
         })
     }
 

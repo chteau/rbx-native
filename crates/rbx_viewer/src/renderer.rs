@@ -506,7 +506,8 @@ impl Renderer {
         // and this level's render distance. The shadow pass below never uses
         // this — see `Fit::visible` — so a caster it culls can still land a
         // shadow inside the frame.
-        self.draggers.update(queue, self.handles(from), eye);
+        let held = self.gizmo.and_then(|gizmo| gizmo.held);
+        self.draggers.update(queue, self.handles(from), held, eye);
         let frustum = Frustum::new(&self.camera, from, aspect);
         let cull = MainCull::new(&frustum, eye, self.quality.render_distance);
         let (lamp, fit) = self.sun_shadow(from, aspect);
@@ -685,6 +686,7 @@ impl Renderer {
             target,
             targets,
             &self.frame.bind_group,
+            self.draggers.triangles(),
         );
         // After the resolve, not before it: a `ScreenGui` is an overlay, so
         // bloom, depth of field and the tone map must leave it alone. It takes

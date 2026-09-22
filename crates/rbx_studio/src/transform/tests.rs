@@ -189,7 +189,11 @@ fn every_tool_but_select_shows_handles_and_drags() {
         };
         assert_eq!(
             transform.gizmo(),
-            Some(Gizmo { kind, local: false }),
+            Some(Gizmo {
+                kind,
+                local: false,
+                held: None,
+            }),
             "{} draws the wrong handles",
             tool.label()
         );
