@@ -61,6 +61,22 @@ impl Offscreen {
         let instance = gpu::instance();
         let adapter = gpu::adapter(&instance, None)?;
         let (device, queue) = gpu::device(&adapter)?;
+        Ok(Self::on_device(device, queue, world, quality, view))
+    }
+
+    /// Same as [`Offscreen::new`], but on a device/queue the caller already
+    /// has open rather than acquiring its own — what a batch run shares
+    /// across every file instead of paying `gpu::adapter`/`gpu::device` (and
+    /// the driver work behind them) once per file. `wgpu::Device`/`Queue` are
+    /// themselves cheap `Arc` handles, so cloning one into each file's
+    /// `Offscreen` costs nothing beyond the ref count.
+    pub(crate) fn on_device(
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        world: World<'_>,
+        quality: &QualityProfile,
+        view: &View,
+    ) -> Self {
         let renderer = Renderer::new(&device, &queue, FORMAT, world, quality);
 
         let mut offscreen = Offscreen {
@@ -80,7 +96,7 @@ impl Offscreen {
             offscreen.set_lines(layer, segments);
         }
         offscreen.set_gizmo(view.gizmo);
-        Ok(offscreen)
+        offscreen
     }
 
     /// Rebuilds the renderer around `world` on the device it already has —
@@ -311,8 +327,27 @@ pub(crate) struct Framing {
     pub(crate) orthographic: bool,
 }
 
-/// Renders a single frame offscreen and writes it as PNG.
+/// Renders a single frame offscreen and writes it as PNG, on a GPU device of
+/// its own.
 pub(crate) fn write_png(
+    world: World<'_>,
+    quality: &QualityProfile,
+    output: &Path,
+    size: (u32, u32),
+    framing: Framing,
+) -> Result<(), String> {
+    let instance = gpu::instance();
+    let adapter = gpu::adapter(&instance, None)?;
+    let (device, queue) = gpu::device(&adapter)?;
+    write_png_on(&device, &queue, world, quality, output, size, framing)
+}
+
+/// Same as [`write_png`], but on a device/queue the caller already has open —
+/// what a `--batch` run shares across every file. See
+/// [`Offscreen::on_device`].
+pub(crate) fn write_png_on(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
     world: World<'_>,
     quality: &QualityProfile,
     output: &Path,
@@ -325,7 +360,7 @@ pub(crate) fn write_png(
         orthographic: framing.orthographic,
         ..View::default()
     };
-    let mut offscreen = Offscreen::new(world, quality, &view)?;
+    let mut offscreen = Offscreen::on_device(device.clone(), queue.clone(), world, quality, &view);
     // A single offscreen frame is drawn below and nothing after it, so there
     // is no later frame for `Renderer::draw`'s own texture-upload budget to
     // spread the rest of the load across — finish it now instead of writing
