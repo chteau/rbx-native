@@ -342,6 +342,17 @@ impl Headless {
     /// to be called when the tool or its world/local setting changes, not as
     /// the camera moves. The embedder hit-tests the cursor against the same
     /// geometry through [`crate::gizmo`].
+    /// Lays the `ScreenGui` overlay out as a `screen`-pixel device's screen
+    /// and draws it scaled onto each frame, whatever size that is: an editor
+    /// emulating the device a GUI was designed for, in a view of its own
+    /// size. `None` goes back to laying it out at the frame's size.
+    /// [`Headless::gui_scroll_target`] keeps taking points in the frame's
+    /// pixels either way.
+    pub fn set_gui_screen(&mut self, screen: Option<(u32, u32)>) {
+        self.offscreen
+            .with_renderer(|renderer, _, _| renderer.set_gui_screen(screen));
+    }
+
     pub fn set_gizmo(&mut self, gizmo: Option<Gizmo>) {
         self.view.set_gizmo(gizmo);
         self.offscreen.set_gizmo(gizmo);

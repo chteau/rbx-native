@@ -421,6 +421,11 @@ impl Renderer {
 
     /// Draws one `ScreenGui` alone over `backdrop` into `target`, with no
     /// scene pass at all — an editor's 2D canvas (see `Gui::draw_canvas`).
+    /// See `Gui::set_screen`.
+    pub(crate) fn set_gui_screen(&mut self, screen: Option<(u32, u32)>) {
+        self.gui.set_screen(screen);
+    }
+
     pub(crate) fn draw_gui_canvas(
         &mut self,
         device: &wgpu::Device,

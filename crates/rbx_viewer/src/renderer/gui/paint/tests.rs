@@ -278,3 +278,34 @@ fn read_back(
     buffer.unmap();
     pixels
 }
+
+// An emulated screen's clip rectangles land on a smaller frame scaled, never
+// losing an edge row to rounding, and never reaching past the frame.
+#[test]
+fn a_clip_cut_at_the_layout_s_size_is_scaled_onto_the_frame() {
+    use super::super::quads::Scissor;
+    let clip = Scissor {
+        x: 100,
+        y: 50,
+        width: 301,
+        height: 100,
+    };
+    assert_eq!(super::scissor_on(clip, (800, 600), (800, 600)), clip);
+    assert_eq!(
+        super::scissor_on(clip, (800, 600), (400, 300)),
+        Scissor {
+            x: 50,
+            y: 25,
+            width: 151,
+            height: 50
+        }
+    );
+    let edge = Scissor {
+        x: 700,
+        y: 0,
+        width: 100,
+        height: 600,
+    };
+    let on = super::scissor_on(edge, (800, 600), (333, 250));
+    assert!(on.x + on.width <= 333 && on.y + on.height <= 250);
+}

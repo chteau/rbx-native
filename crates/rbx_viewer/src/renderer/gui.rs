@@ -80,6 +80,12 @@ pub(super) struct Gui {
     /// — every enabled one, or the one [`Gui::draw_canvas`] asked for; a
     /// different answer to either rebuilds it.
     built: Option<((u32, u32), Option<Ref>)>,
+    /// The screen the overlay is laid out as, when it is not the frame: a
+    /// device emulated in a smaller view (see [`Gui::set_screen`]).
+    screen_size: Option<(u32, u32)>,
+    /// The frame the overlay last drew onto, for taking a point on it back
+    /// into the layout's pixels.
+    drawn: (u32, u32),
     /// Every element of the last layout, in paint order — see [`GuiBox`] —
     /// after, for a canvas, the screen's own box.
     boxes: Vec<GuiBox>,
@@ -147,6 +153,8 @@ impl Gui {
             format,
             screens: Vec::new(),
             built: None,
+            screen_size: None,
+            drawn: (0, 0),
             boxes: Vec::new(),
             space_canvases: Vec::new(),
             windows: Vec::new(),
@@ -283,14 +291,27 @@ impl Gui {
             self.windows.clear();
             return;
         }
-        self.lay_out(device, queue, size, None, materials);
-        self.screen.draw(
+        let layout = self.screen_size.unwrap_or(size);
+        self.drawn = size;
+        self.lay_out(device, queue, layout, None, materials);
+        self.screen.draw_scaled(
             encoder,
             &pipeline::encoded_view(target),
             wgpu::LoadOp::Load,
             &self.bindings,
-            size,
+            (layout, size),
         );
+    }
+
+    /// Lays the overlay out as a `screen`-pixel screen whatever size the
+    /// frame is, then draws it scaled to the frame — what a GUI designed
+    /// for one device looks like on it, in a view that is not that size.
+    /// `None` lays it out at the frame's own size.
+    pub(super) fn set_screen(&mut self, screen: Option<(u32, u32)>) {
+        if screen != self.screen_size {
+            self.screen_size = screen;
+            self.built = None;
+        }
     }
 
     /// The pixel size [`Gui::draw_canvas`] draws `only` at: `requested` for
@@ -441,6 +462,16 @@ impl Gui {
     /// against the overlay as last laid out — `None` before the first draw,
     /// and until the draw after a rebuild.
     pub(super) fn scroll_target(&self, point: [f32; 2], axis: usize) -> Option<ScrollTarget> {
+        // From the frame's pixels to the layout's, which differ while a
+        // screen is emulated.
+        let layout = self.screen_size.unwrap_or(self.drawn);
+        let point = [0, 1].map(|axis| {
+            let (from, to) = (
+                [self.drawn.0, self.drawn.1][axis],
+                [layout.0, layout.1][axis],
+            );
+            point[axis] * to as f32 / from.max(1) as f32
+        });
         gui_scroll_target(&self.windows, point, axis)
     }
 }

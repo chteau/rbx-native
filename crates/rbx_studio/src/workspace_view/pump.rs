@@ -69,6 +69,9 @@ enum Command {
     /// Which transform tool's draggers to draw over the selection, if any —
     /// see `Headless::set_gizmo`.
     Gizmo(Option<Gizmo>),
+    /// The device screen the `ScreenGui` overlay is laid out as — see
+    /// `Headless::set_gui_screen`.
+    GuiScreen(Option<(u32, u32)>),
     /// Where a tool being configured would put the selection — the Align
     /// popover's live preview. An empty list clears it.
     Preview(Vec<glam::Mat4>),
@@ -239,6 +242,12 @@ impl Pump {
     /// Shows or hides the transform tool's draggers over the selection.
     pub(super) fn gizmo(&self, gizmo: Option<Gizmo>) {
         let _ = self.commands.send(Command::Gizmo(gizmo));
+    }
+
+    /// Lays the GUI overlay out as a `screen`-pixel device, or at the
+    /// frame's own size with `None`.
+    pub(super) fn gui_screen(&self, screen: Option<(u32, u32)>) {
+        let _ = self.commands.send(Command::GuiScreen(screen));
     }
 
     /// Patches the viewer's scene for one edit's `Change` log — see
@@ -644,6 +653,7 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::Preview(boxes) => rendering.viewer.set_preview(boxes),
         Command::Lines(layer, segments) => rendering.viewer.set_lines(layer, segments),
         Command::Gizmo(gizmo) => rendering.viewer.set_gizmo(gizmo),
+        Command::GuiScreen(screen) => rendering.viewer.set_gui_screen(screen),
         Command::Changes(snapshots, changes) => {
             rendering.canvas.touch();
             rendering.mirror.mirror(snapshots);

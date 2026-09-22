@@ -39,6 +39,7 @@ pub(crate) enum MenuId {
     UiResolution,
     UiInsert,
     UiConstraint,
+    ViewportScreen,
 }
 
 impl MenuId {
@@ -55,6 +56,7 @@ impl MenuId {
             MenuId::UiResolution => "menu-ui-resolution",
             MenuId::UiInsert => "menu-ui-insert",
             MenuId::UiConstraint => "menu-ui-constraint",
+            MenuId::ViewportScreen => "menu-viewport-screen",
         }
     }
 }

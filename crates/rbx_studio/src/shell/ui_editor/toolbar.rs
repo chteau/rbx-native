@@ -222,7 +222,11 @@ impl Shell {
     /// Keeps the two size fields showing the resolution, unless one is
     /// being typed in — called while rendering, the only time there is a
     /// `Window` to write a field with, which a menu pick does not have.
-    pub(super) fn sync_size_fields(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(in crate::shell) fn sync_size_fields(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let (width, height) = self.ui.resolution;
         for (input, value) in [
             (self.ui.width.clone(), width),
@@ -272,7 +276,7 @@ fn separator() -> impl IntoElement {
 
 /// One of the width/height fields: the dock search field's own look, sized
 /// for four digits and the field's own padding.
-fn size_field(
+pub(in crate::shell) fn size_field(
     tab_index: isize,
     state: &Entity<gpui_kit::component::input::InputState>,
 ) -> impl IntoElement {

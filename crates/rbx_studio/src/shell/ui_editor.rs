@@ -36,6 +36,8 @@ mod text_edit;
 mod toolbar;
 mod tree;
 
+pub(super) use toolbar::size_field;
+
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -360,11 +362,32 @@ impl Shell {
     }
 
     /// Picks a preset, or a typed size: a new screen to lay the tree out
-    /// against, which the canvas then fits to the panel. Only the canvas
-    /// changes — no window, no other document, no property.
-    fn set_resolution(&mut self, size: (u32, u32), cx: &mut Context<Self>) {
+    /// against, which the canvas then fits to the panel, and which the 3D
+    /// view emulates. No window, no other document, no property changes.
+    pub(super) fn set_resolution(&mut self, size: (u32, u32), cx: &mut Context<Self>) {
         self.ui.resolution = (size.0.clamp(1, 8192), size.1.clamp(1, 8192));
         self.ui.fitted = true;
+        // The screen a GUI is designed at is the one the 3D view shows it
+        // at too, or the viewport would lay it out at whatever size its
+        // panel happens to be (see `WorkspaceView::set_screen`).
+        let screen = self.ui.resolution;
+        self.viewport
+            .update(cx, |view, cx| view.set_screen(Some(screen), cx));
+        cx.notify();
+    }
+
+    /// The width and height fields, shared by the canvas's toolbar and the
+    /// Viewport dock's Screen row — never on screen together, since the
+    /// canvas sets the dock aside.
+    pub(super) fn ui_size_fields(&self) -> (Entity<InputState>, Entity<InputState>) {
+        (self.ui.width.clone(), self.ui.height.clone())
+    }
+
+    /// The Viewport dock's "Viewport size": the 3D view back to its own
+    /// size, the canvas keeping the resolution it had.
+    pub(super) fn clear_viewport_screen(&mut self, cx: &mut Context<Self>) {
+        self.viewport
+            .update(cx, |view, cx| view.set_screen(None, cx));
         cx.notify();
     }
 

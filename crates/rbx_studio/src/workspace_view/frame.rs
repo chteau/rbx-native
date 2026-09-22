@@ -17,6 +17,35 @@ pub(super) struct Viewport {
 }
 
 impl Viewport {
+    /// The panel at `origin`, `size` across — or, emulating a `screen`, the
+    /// largest box of that screen's shape centred in it, the rest left as
+    /// bars: the view a device of that shape would have, at the size the
+    /// panel can show it. The scene renders at this box's size, 1:1 with
+    /// the pixels it is shown in, so every pointer mapping stays as it was;
+    /// only the GUI is laid out at the screen's own size (see
+    /// `Headless::set_gui_screen`).
+    pub(super) fn letterboxed(
+        origin: (u32, u32),
+        size: (u32, u32),
+        screen: Option<(u32, u32)>,
+    ) -> Viewport {
+        let Some((w, h)) = screen.filter(|&(w, h)| w > 0 && h > 0) else {
+            return Viewport { origin, size };
+        };
+        let scale = (size.0 as f64 / w as f64).min(size.1 as f64 / h as f64);
+        let fitted = (
+            ((w as f64 * scale).round() as u32).clamp(1, size.0.max(1)),
+            ((h as f64 * scale).round() as u32).clamp(1, size.1.max(1)),
+        );
+        Viewport {
+            origin: (
+                origin.0 + (size.0.saturating_sub(fitted.0)) / 2,
+                origin.1 + (size.1.saturating_sub(fitted.1)) / 2,
+            ),
+            size: fitted,
+        }
+    }
+
     /// The centre the look gesture pins the pointer to, `None` before the first
     /// layout has given the panel a size.
     pub(super) fn centre(&self) -> Option<(i16, i16)> {
@@ -84,5 +113,35 @@ mod tests {
             .centre(),
             None
         );
+    }
+}
+
+#[cfg(test)]
+mod letterbox_tests {
+    use super::Viewport;
+
+    #[test]
+    fn an_emulated_screen_is_the_largest_box_of_its_shape_centred_in_the_panel() {
+        let native = Viewport::letterboxed((10, 20), (1000, 800), None);
+        assert_eq!(
+            native,
+            Viewport {
+                origin: (10, 20),
+                size: (1000, 800)
+            }
+        );
+        // 16:9 in a taller panel: full width, bars above and below.
+        let wide = Viewport::letterboxed((10, 20), (1000, 800), Some((1920, 1080)));
+        assert_eq!(
+            wide,
+            Viewport {
+                origin: (10, 138),
+                size: (1000, 563)
+            }
+        );
+        // A portrait phone: full height, bars at the sides.
+        let tall = Viewport::letterboxed((0, 0), (1000, 800), Some((390, 844)));
+        assert_eq!(tall.size.1, 800);
+        assert_eq!(tall.origin.0, (1000 - tall.size.0) / 2);
     }
 }

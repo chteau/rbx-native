@@ -11,18 +11,20 @@
 use gpui_kit::assets::IconName;
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::select::Select;
-use gpui_kit::component::{h_flex, v_flex, Sizable as _};
+use gpui_kit::component::{h_flex, v_flex, Icon, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::pacing::UnfocusedFps;
 use crate::settings::DraggerSettings;
 use crate::tokens;
+use crate::ui_canvas::PRESETS;
 
 use super::chrome;
 use super::layout::Panel;
 use super::menu::{self, MenuId};
 use super::rows::{self, checkbox};
+use super::ui_editor::size_field;
 use super::Shell;
 
 /// The quality dropdown's width: its longest label ("Automatic") at the UI
@@ -205,6 +207,61 @@ impl Shell {
             )
     }
 
+    /// The screen the view emulates: "Viewport size" (none — the view's own
+    /// size), a device preset, or a typed size, with a portrait ⇄ landscape
+    /// turn. The same setting as the UI Editor's resolution, so a GUI laid
+    /// out on the canvas is laid out the same in the 3D view.
+    fn screen_rows(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Vec<Div> {
+        let screen = self.viewport.read(cx).emulated_screen();
+        let items = std::iter::once(
+            menu::item("Viewport size")
+                .checked(screen.is_none())
+                .on_click(|shell, cx| shell.clear_viewport_screen(cx)),
+        )
+        .chain(PRESETS.iter().map(|&(label, w, h)| {
+            menu::item(label)
+                .checked(screen == Some((w, h)))
+                .on_click(move |shell, cx| shell.set_resolution((w, h), cx))
+        }))
+        .collect();
+        let label = screen.map_or_else(|| "Viewport size".to_owned(), |(w, h)| format!("{w}×{h}"));
+        let picker = menu::dropdown(
+            self,
+            MenuId::ViewportScreen,
+            chrome::Trigger::new(
+                chrome::button("viewport-screen", label, false)
+                    .gap(px(4.))
+                    .child(Icon::new(IconName::ChevronDown).size(px(10.))),
+            ),
+            items,
+            cx,
+        );
+        let mut rows = vec![field("Screen", picker)];
+        if let Some((w, h)) = screen {
+            self.sync_size_fields(window, cx);
+            rows.push(field(
+                "",
+                h_flex()
+                    .gap(px(2.))
+                    .items_center()
+                    .child(size_field(self.tab_order.next(), &self.ui_size_fields().0))
+                    .child(div().text_color(tokens::text_muted()).child("×"))
+                    .child(size_field(self.tab_order.next(), &self.ui_size_fields().1))
+                    .child(
+                        chrome::icon_button(
+                            "viewport-screen-turn",
+                            IconName::RotateCw,
+                            "Turn the screen: portrait ⇄ landscape",
+                        )
+                        .on_click(cx.listener(move |shell, _, _, cx| {
+                            shell.set_resolution((h, w), cx);
+                        })),
+                    ),
+            ));
+        }
+        rows
+    }
+
     /// Scrolls the dock just far enough to show the setting keyboard focus
     /// has moved to. The list outgrows a short dock, and End or a wrapping
     /// arrow would otherwise put focus on a row scrolled out of sight
@@ -242,7 +299,7 @@ impl Shell {
     /// stops to press through on the way to the next dock.
     pub(super) fn viewport_dock(
         &mut self,
-        window: &Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> (Option<AnyElement>, Option<AnyElement>) {
         let overflow = menu::dropdown(
@@ -267,6 +324,7 @@ impl Shell {
             .w(column)
             .max_w_full()
             .child(field("Graphics quality", self.quality_control(window, cx)))
+            .children(self.screen_rows(window, cx))
             .children(readout.map(|(name, value)| {
                 field(
                     name,
