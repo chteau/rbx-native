@@ -58,6 +58,17 @@
   is, every select shows a focus ring, and the dock keeps its proportions
   at 0.5× and 2×. — @chteau
 
+- **A binary save no longer zeroes what an instance left unset.** When one
+  Part of a place stored a property and another did not, the writer filled
+  the gap with the type's zero — a Part inserted from the Explorer saved
+  with `CanCollide` off and no size, and one copied Part's `archivable`
+  was enough to make Studio drop every other Part on its next save. The
+  gap is filled with the class's own default now, infinite ones included,
+  and a load never renames a property to a name Studio cannot read back
+  (a package link keeps `PackageIdSerialize`). Move and Scale show only
+  the handle being dragged, as Studio does, and draw over the guides
+  rather than under them. — @chteau
+
 ## 2026-09-21
 
 - **`Highlight` draws.** The class a script reaches for to call attention to

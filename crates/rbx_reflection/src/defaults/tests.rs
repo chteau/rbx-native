@@ -1,4 +1,5 @@
 use super::*;
+use rbx_dom::{FontStyle, Vector3Data};
 
 const API_DUMP_JSON: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
