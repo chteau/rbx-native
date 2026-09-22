@@ -296,6 +296,20 @@ impl Shell {
         writes: &[(Ref, &str, String)],
         cx: &mut Context<Self>,
     ) {
+        self.write_drag_after(first, writes, &[], cx);
+    }
+
+    /// [`Shell::write_drag`] for a gesture whose opening step changed the
+    /// tree as well — the UI editor's scrub adding the `UICorner` it then
+    /// rounds: `opened` is that step's log, kept at the head of every later
+    /// step's so the one entry still undoes it.
+    pub(super) fn write_drag_after(
+        &mut self,
+        first: bool,
+        writes: &[(Ref, &str, String)],
+        opened: &[rbx_dom::Change],
+        cx: &mut Context<Self>,
+    ) {
         if first {
             self.push_history();
         }
@@ -311,7 +325,7 @@ impl Shell {
         // either way, here and on undo.
         let changes = self.dom.take_changes();
         self.reflect_changes(&changes, cx);
-        self.record_history_change(changes);
+        self.record_history_change([opened, &changes].concat());
 
         if let Err(err) = written {
             self.output.push_warning(&format!("viewport drag: {err}"));

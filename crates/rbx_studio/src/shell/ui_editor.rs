@@ -9,9 +9,11 @@
 //!   `extend_selection`/`reselect` exactly as an Explorer click sets it, so
 //!   the Explorer and the Properties panel follow the canvas and the canvas
 //!   follows them.
-//! - **Edits** are `Position`/`Size`/`Rotation` text written through
-//!   `Shell::write_drag` — the Properties panel's own commit, one undo step
-//!   per gesture on the one history every other edit uses.
+//! - **Edits** are property text written through `Shell::write_drag` —
+//!   the Properties panel's own commit, one undo step per gesture on the
+//!   one history every other edit uses — or, where they add or take away
+//!   instances (a drawn element, a group, a stroke), `Shell::edit_gui_tree`,
+//!   which logs the tree change and its first values as that one step.
 //! - **The picture** is the 3D view's own GUI renderer drawing the chosen
 //!   `ScreenGui` alone at the simulated resolution, on the same render
 //!   thread (see `workspace_view::canvas`) — with no scene pass: the 3D view
@@ -22,11 +24,17 @@
 
 mod arrange;
 mod canvas;
+mod draw;
 mod gesture;
 mod insert_bar;
+mod inspector;
+mod layout_overlay;
+mod order;
 mod responsive;
 mod sidebar;
+mod text_edit;
 mod toolbar;
+mod tree;
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -41,7 +49,7 @@ use super::chrome::Document;
 use super::layout::Panel;
 use super::roving::Roving;
 use super::Shell;
-use crate::ui_canvas::{guides::Guide, View, PRESETS};
+use crate::ui_canvas::{guides::Guide, Unit, View, PRESETS};
 use crate::workspace_view::CanvasRequest;
 
 /// Read once at startup by `Shell::new`; documented in `main`'s module doc
@@ -99,6 +107,16 @@ pub(super) struct UiEditor {
     /// zooms, and again whenever the screen or the resolution changes.
     fitted: bool,
     gesture: Option<gesture::Gesture>,
+    /// Which half of a `UDim` canvas edits write — the insert bar's switch.
+    unit: Unit,
+    /// The class the next press on the canvas draws, when a tool is armed.
+    tool: Option<&'static str>,
+    /// The sidebar's design fields' own state.
+    inspector: inspector::Inspector,
+    /// The field open over a text element, while its words are edited.
+    text_edit: Option<text_edit::TextEdit>,
+    /// Space is held: a drag pans.
+    panning: bool,
     /// The element under the pointer, and whether Alt is held over it: the
     /// hover outline and the distance readout.
     hovered: Option<Ref>,
@@ -146,6 +164,11 @@ impl UiEditor {
             },
             fitted: true,
             gesture: None,
+            unit: Unit::default(),
+            tool: None,
+            inspector: inspector::Inspector::default(),
+            text_edit: None,
+            panning: false,
             hovered: None,
             measuring: false,
             guides: Vec::new(),
@@ -277,6 +300,7 @@ impl Shell {
     /// `BillboardGui`/`SurfaceGui` as much as a `ScreenGui` — called on
     /// every selection change, from wherever it came.
     pub(super) fn ui_follow_selection(&mut self) {
+        self.ui.inspector.clear();
         let screen = self
             .selected()
             .and_then(|reference| root_of(&self.dom, &self.database, reference));

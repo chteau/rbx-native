@@ -5,7 +5,8 @@
 use std::collections::HashSet;
 use std::rc::Rc;
 
-use gpui_kit::{Context, ScrollStrategy};
+use gpui_kit::component::tree::TreeItem;
+use gpui_kit::{Context, ScrollStrategy, SharedString};
 use rbx_dom::{Change, Ref, WeakDom};
 
 use crate::cli::Launch;
@@ -278,6 +279,11 @@ impl Shell {
     pub(super) fn rebuild_explorer(&mut self, cx: &mut Context<Self>) {
         let explorer =
             Explorer::from_dom(&self.dom, self.icon_pack, &self.folder_colors, &self.path);
+        // Rows open before stay open: an edit that adds a modifier under a
+        // row must not fold up the tree it was made from.
+        let mut open = HashSet::new();
+        expanded_ids(&self.explorer.items(true), &mut open);
+        reopen(&explorer.items(true), &open);
         // A rename, reparent or destroy can invalidate the selection; kept
         // only if its referent still resolves in the rebuilt tree.
         let kept = self
@@ -291,6 +297,27 @@ impl Shell {
             tree.set_items(items, cx);
             tree.set_selected_item(preselected.as_ref(), cx);
         });
+    }
+}
+
+/// Every row under `items` that is open, by id.
+fn expanded_ids(items: &[TreeItem], into: &mut HashSet<SharedString>) {
+    for item in items {
+        if item.is_expanded() {
+            into.insert(item.id.clone());
+        }
+        expanded_ids(&item.children, into);
+    }
+}
+
+/// Opens every row under `items` whose id `open` holds. A `TreeItem`'s
+/// expansion is shared by its clones, so opening a clone opens the row.
+fn reopen(items: &[TreeItem], open: &HashSet<SharedString>) {
+    for item in items {
+        if open.contains(&item.id) {
+            let _ = item.clone().expanded(true);
+        }
+        reopen(&item.children, open);
     }
 }
 
@@ -448,5 +475,22 @@ mod tests {
                 neighbours: false,
             }
         );
+    }
+
+    #[test]
+    fn a_rebuilt_tree_keeps_the_rows_that_were_open() {
+        use gpui_kit::component::tree::TreeItem;
+        let tree = |ids: [&str; 3]| {
+            vec![TreeItem::new(ids[0], "Gui")
+                .child(TreeItem::new(ids[1], "Card").child(TreeItem::new(ids[2], "Row")))]
+        };
+        let before = tree(["gui", "card", "row"]);
+        let _ = before[0].children[0].clone().expanded(true);
+        let mut open = std::collections::HashSet::new();
+        super::expanded_ids(&before, &mut open);
+        let after = tree(["gui", "card", "row"]);
+        super::reopen(&after, &open);
+        assert!(after[0].children[0].is_expanded());
+        assert!(!after[0].is_expanded(), "only what was open opens");
     }
 }

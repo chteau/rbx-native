@@ -190,6 +190,11 @@ impl Shell {
     /// no-op. `pub(crate)`: also `menu_bar`'s Ungroup item's entry point.
     pub(crate) fn ungroup_selected(&mut self, cx: &mut Context<Self>) {
         let selected = self.selected_all().to_vec();
+        // Grouping `Frame`s on the UI editor's canvas come apart where
+        // they stand — see `shell::ui_editor::arrange`.
+        if self.ungroup_gui(&selected, cx) {
+            return;
+        }
         let groups: Vec<(Ref, Option<Ref>, Vec<Ref>)> = selected
             .iter()
             .filter_map(|&reference| {

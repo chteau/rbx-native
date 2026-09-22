@@ -92,6 +92,20 @@ impl Held {
         })
     }
 
+    /// What a `Position` scale of 1 comes to on each axis, in pixels: the
+    /// parent's content box, or nothing where there is none to measure.
+    pub(in crate::shell::ui_editor) fn position_span(&self) -> [f32; 2] {
+        self.parent
+            .map_or([0.0; 2], |parent| [parent.content.w, parent.content.h])
+    }
+
+    /// The same for `Size`, each axis measured along the parent axis
+    /// `SizeConstraint` takes it from, before `UIScale`.
+    pub(in crate::shell::ui_editor) fn size_span(&self) -> [f32; 2] {
+        let span = self.position_span();
+        self.size_axes.map(|axis| span[axis])
+    }
+
     pub(in crate::shell::ui_editor) fn parent_rotation(&self) -> f32 {
         self.parent
             .map_or(self.rotation - self.own_rotation, |parent| parent.rotation)

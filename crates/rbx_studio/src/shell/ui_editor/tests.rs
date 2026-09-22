@@ -33,3 +33,26 @@ fn the_canvas_screen_is_the_screen_gui_the_selection_sits_in() {
         "a screen has no Position"
     );
 }
+
+#[test]
+fn a_square_corner_s_handle_sits_clear_of_the_corner_and_a_round_one_at_its_radius() {
+    use super::gesture::{radius_at, radius_handles};
+    use crate::ui_canvas::Rect;
+    let rect = Rect {
+        x: 0.0,
+        y: 0.0,
+        w: 200.0,
+        h: 100.0,
+    };
+    let square = radius_handles(&rect, 0.0, [0.0; 4], 1.0);
+    assert_eq!(square[0], ([-1, -1], [12.0, 12.0]));
+    let round = radius_handles(&rect, 0.0, [30.0; 4], 1.0);
+    assert_eq!(round[2], ([1, 1], [170.0, 70.0]));
+    // Dragged back onto where it stands, the handle reads its radius.
+    assert_eq!(radius_at(&rect, 0.0, [1, 1], [170.0, 70.0]), 30.0);
+    // Never past a pill's round end, nor out past the corner.
+    assert_eq!(radius_at(&rect, 0.0, [-1, -1], [150.0, 90.0]), 50.0);
+    assert_eq!(radius_at(&rect, 0.0, [-1, -1], [-20.0, -20.0]), 0.0);
+    // Too small on screen for them: none at all.
+    assert!(radius_handles(&rect, 0.0, [0.0; 4], 0.2).is_empty());
+}

@@ -52,6 +52,20 @@ impl View {
         }
     }
 
+    /// `rect` centred in `panel` with `margin` round it, zoomed as far in
+    /// as that takes — zoom to selection, which unlike [`View::fit`] goes
+    /// past 1:1: a small button is what it is asked to show.
+    pub(crate) fn framing(panel: [f32; 2], rect: &Rect, margin: f32) -> View {
+        let size = [rect.w, rect.h];
+        let room = [0, 1].map(|axis| (panel[axis] - margin * 2.0).max(1.0) / size[axis].max(1.0));
+        let zoom = room[0].min(room[1]).clamp(ZOOM_RANGE.0, ZOOM_RANGE.1);
+        let centre = rect.centre();
+        View {
+            zoom,
+            pan: [0, 1].map(|axis| panel[axis] * 0.5 - centre[axis] * zoom),
+        }
+    }
+
     pub(crate) fn to_view(self, p: [f32; 2]) -> [f32; 2] {
         [0, 1].map(|axis| self.pan[axis] + p[axis] * self.zoom)
     }
@@ -326,6 +340,45 @@ pub(crate) fn shifted(udim: Udim2, shift: [f32; 2]) -> Udim2 {
     })
 }
 
+/// Which half of a `UDim` the canvas writes an edit into: whole pixels, or
+/// a share of the parent — the insert bar's Offset/Scale switch. Only the
+/// half named moves; the other keeps whatever it held.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum Unit {
+    #[default]
+    Offset,
+    Scale,
+}
+
+/// [`shifted`] in `unit`: the pixels onto the offsets, or onto the scales
+/// as the share of `span` — what a scale of 1 comes to, in pixels, on each
+/// axis — they are. An axis with no span to divide by takes pixels.
+pub(crate) fn shifted_in(udim: Udim2, shift: [f32; 2], unit: Unit, span: [f32; 2]) -> Udim2 {
+    let pixels = shifted(udim, shift);
+    [0, 1].map(|axis| match unit == Unit::Scale && span[axis] > 0.0 {
+        true => (
+            round_scale(udim[axis].0 + shift[axis] / span[axis]),
+            udim[axis].1,
+        ),
+        false => pixels[axis],
+    })
+}
+
+/// A scale to four places: a ten-thousandth of a 1920-pixel screen is a
+/// fifth of a pixel, and any more places print noise.
+pub(crate) fn round_scale(scale: f32) -> f32 {
+    (scale * 10_000.0).round() / 10_000.0
+}
+
+/// [`resize`] about the box's centre, Alt's convention in Figma and Sketch:
+/// the far sides move as far as the grabbed ones, the other way.
+pub(crate) fn centred(step: Resize, size: [f32; 2]) -> Resize {
+    Resize {
+        grow: [0, 1].map(|axis| (step.grow[axis] * 2.0).max(-size[axis])),
+        centre: [0.0; 2],
+    }
+}
+
 /// The text `properties::edit::commit` reads a `UDim2` back out of.
 pub(crate) fn udim2_text(udim: Udim2) -> String {
     let [(sx, ox), (sy, oy)] = udim;
@@ -342,3 +395,7 @@ pub(crate) fn angle_of(centre: [f32; 2], point: [f32; 2]) -> f32 {
 #[cfg(test)]
 #[path = "ui_canvas/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "ui_canvas/unit_tests.rs"]
+mod unit_tests;

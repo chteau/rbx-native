@@ -19,24 +19,11 @@ use crate::tokens;
 
 use super::super::rows::section_header;
 
-/// The sections a `GuiObject` is laid out in, and the rows each takes, in
-/// order. A row the selection does not have is simply not there.
-const SECTIONS: [(&str, &[&str]); 6] = [
-    (
-        "Layout",
-        &[
-            "Position",
-            "Size",
-            "AnchorPoint",
-            "Rotation",
-            "AutomaticSize",
-            "SizeConstraint",
-            "ZIndex",
-            "LayoutOrder",
-        ],
-    ),
-    ("Fill", &["BackgroundColor3", "BackgroundTransparency"]),
-    ("Stroke", &["BorderColor3", "BorderSizePixel", "BorderMode"]),
+/// The Properties rows a `GuiObject` keeps under the design fields (see
+/// `ui_editor::inspector`), in the sections a UI designer reaches for, and
+/// the rows each takes, in order. A row the selection does not have is
+/// simply not there.
+const SECTIONS: [(&str, &[&str]); 7] = [
     (
         "Text",
         &[
@@ -65,8 +52,43 @@ const SECTIONS: [(&str, &[&str]); 6] = [
         ],
     ),
     (
+        "Input",
+        &[
+            "PlaceholderText",
+            "PlaceholderColor3",
+            "MultiLine",
+            "ClearTextOnFocus",
+            "TextEditable",
+        ],
+    ),
+    (
+        "Scrolling",
+        &[
+            "ScrollingEnabled",
+            "ScrollingDirection",
+            "CanvasSize",
+            "AutomaticCanvasSize",
+            "ElasticBehavior",
+            "ScrollBarThickness",
+            "ScrollBarImageColor3",
+            "ScrollBarImageTransparency",
+            "VerticalScrollBarPosition",
+            "VerticalScrollBarInset",
+            "HorizontalScrollBarInset",
+        ],
+    ),
+    ("Group", &["GroupColor3", "GroupTransparency"]),
+    ("Interaction", &["AutoButtonColor", "Modal", "Selectable"]),
+    (
         "Behavior",
-        &["Visible", "ClipsDescendants", "Active", "Interactable"],
+        &[
+            "AutomaticSize",
+            "SizeConstraint",
+            "ZIndex",
+            "LayoutOrder",
+            "Active",
+            "Interactable",
+        ],
     ),
 ];
 
@@ -74,9 +96,6 @@ const SECTIONS: [(&str, &[&str]); 6] = [
 /// sections start open: it is the long tail, kept reachable rather than
 /// in the way.
 const MORE: &str = "More properties";
-
-/// Rows whose components are what a designer edits, so they open out.
-const OPENED: [&str; 3] = ["Position", "Size", "AnchorPoint"];
 
 /// How wide the sidebar stands.
 const WIDTH: f32 = 280.0;
@@ -94,21 +113,22 @@ impl Shell {
         self.properties_nav.begin(&self.tab_order, None, cx);
 
         let mut sections: Vec<(String, bool, Vec<AnyElement>)> = Vec::new();
-        let mut name = None;
+        // The name heads every selection's sidebar, a screen's and a
+        // modifier's as much as an element's.
+        let (named, rows): (Vec<PropertyRow>, Vec<PropertyRow>) =
+            rows.into_iter().partition(|row| row.name == "Name");
+        let name = named
+            .first()
+            .map(|row| self.property_element(row, false, window, cx));
+        let mut back = None;
         if is_gui_object(&self.dom, &self.database, anchor) {
-            let (named, rest): (Vec<PropertyRow>, Vec<PropertyRow>) =
-                rows.into_iter().partition(|row| row.name == "Name");
-            name = named
-                .first()
-                .map(|row| self.property_element(row, false, window, cx));
-            let mut rest = rest;
+            let mut rest = rows;
             for (title, wanted) in SECTIONS {
                 let mut children = Vec::new();
                 for &property in wanted {
                     if let Some(index) = rest.iter().position(|row| row.name == property) {
                         let row = rest.remove(index);
-                        let opened = OPENED.contains(&property);
-                        children.push(self.property_element(&row, opened, window, cx));
+                        children.push(self.property_element(&row, false, window, cx));
                     }
                 }
                 if !children.is_empty() {
@@ -125,6 +145,22 @@ impl Shell {
             };
             sections.push((MORE.to_owned(), self.is_category_collapsed(MORE), more));
         } else {
+            // A modifier the inspector opened: the way back to its element.
+            if let Some(parent) = self
+                .dom
+                .parent(anchor)
+                .filter(|&parent| is_gui_object(&self.dom, &self.database, parent))
+            {
+                let label = self
+                    .dom
+                    .get(parent)
+                    .map_or_else(String::new, |instance| format!("← {}", instance.name()));
+                back = Some(
+                    super::super::chrome::button("ui-sidebar-back", label, false)
+                        .on_click(cx.listener(move |shell, _, _, cx| shell.select(parent, cx)))
+                        .into_any_element(),
+                );
+            }
             // A screen, a layout, a modifier: nothing here is geometry to
             // sort out, so it reads the way the Properties panel reads it.
             for (category, category_rows) in group_by_category(rows) {
@@ -137,12 +173,18 @@ impl Shell {
             }
         }
 
+        let design = match is_gui_object(&self.dom, &self.database, anchor) {
+            true => self.inspector_sections(window, cx),
+            false => Vec::new(),
+        };
         let handle = cx.entity();
         let body = v_flex()
             .w_full()
             .gap(tokens::header_gap())
             .pb(tokens::panel_padding())
+            .children(back)
             .children(name)
+            .children(design)
             .children(sections.into_iter().map(|(title, open, children)| {
                 let handle = handle.clone();
                 let key = title.clone();

@@ -743,7 +743,7 @@ impl Shell {
 /// A stored sRGB byte triplet as the `Hsla` a `ColorPickerState` edits —
 /// plain RGB↔HSL math, the same (non-linear-light) space the read-only
 /// column already displays these in (see `properties::color3`).
-fn rgb_to_hsla(r: u8, g: u8, b: u8) -> Hsla {
+pub(super) fn rgb_to_hsla(r: u8, g: u8, b: u8) -> Hsla {
     Rgba {
         r: r as f32 / 255.0,
         g: g as f32 / 255.0,
@@ -754,7 +754,7 @@ fn rgb_to_hsla(r: u8, g: u8, b: u8) -> Hsla {
 }
 
 /// The inverse of [`rgb_to_hsla`].
-fn hsla_to_rgb(color: Hsla) -> (u8, u8, u8) {
+pub(super) fn hsla_to_rgb(color: Hsla) -> (u8, u8, u8) {
     let rgba = color.to_rgb();
     let channel = |value: f32| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
     (channel(rgba.r), channel(rgba.g), channel(rgba.b))

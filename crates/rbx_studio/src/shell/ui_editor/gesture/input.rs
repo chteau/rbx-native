@@ -1,11 +1,16 @@
 //! The wheel and the keyboard over the canvas: pan, zoom, nudge, delete,
-//! and Alt for the distance readout.
+//! the drawing tools' keys, paint order, and Alt for the distance readout.
 
 use gpui_kit::*;
 use rbx_dom::Ref;
 
 use super::super::super::Shell;
-use crate::ui_canvas::{position_shift, shifted, udim2_text};
+use super::super::draw::TOOL_KEYS;
+use super::super::order::Arrange;
+use crate::ui_canvas::{position_shift, shifted_in, udim2_text, View};
+
+/// Room left round the selection when the canvas zooms to it.
+const ZOOM_MARGIN: f32 = 64.0;
 
 impl Shell {
     /// The wheel: pan, or with Ctrl (Cmd) held zoom about the pointer.
@@ -40,6 +45,65 @@ impl Shell {
         keystroke: &Keystroke,
         cx: &mut Context<Self>,
     ) -> bool {
+        // Keys typed into the text field over an element are the field's.
+        if self.ui.text_edit.is_some() {
+            if keystroke.key == "escape" {
+                self.end_text_edit(false, cx);
+                return true;
+            }
+            return false;
+        }
+        // Space held turns a drag on the canvas into a pan.
+        if keystroke.key == "space" {
+            self.ui.panning = true;
+            return true;
+        }
+        let bare = !(keystroke.modifiers.control
+            || keystroke.modifiers.platform
+            || keystroke.modifiers.alt
+            || keystroke.modifiers.shift);
+        if let Some(&(_, class)) = TOOL_KEYS
+            .iter()
+            .find(|(key, _)| bare && *key == keystroke.key.as_str())
+        {
+            self.arm_tool(class, cx);
+            return true;
+        }
+        if matches!(keystroke.key.as_str(), "escape" | "v") && bare && self.ui.tool.is_some() {
+            self.ui.tool = None;
+            cx.notify();
+            return true;
+        }
+        if keystroke.key == "escape" && bare {
+            self.deselect(cx);
+            return true;
+        }
+        if keystroke.modifiers.control || keystroke.modifiers.platform {
+            let shift = keystroke.modifiers.shift;
+            let arrange = match keystroke.key.as_str() {
+                "]" | "}" if shift => Some(Arrange::Front),
+                "]" | "}" => Some(Arrange::Forward),
+                "[" | "{" if shift => Some(Arrange::Back),
+                "[" | "{" => Some(Arrange::Backward),
+                _ => None,
+            };
+            if let Some(arrange) = arrange {
+                self.arrange_gui(arrange, cx);
+                return true;
+            }
+            match keystroke.key.as_str() {
+                "0" => {
+                    self.ui.fitted = true;
+                    cx.notify();
+                    return true;
+                }
+                "1" => {
+                    self.zoom_to_selection(cx);
+                    return true;
+                }
+                _ => {}
+            }
+        }
         let step = if keystroke.modifiers.shift { 10.0 } else { 1.0 };
         let nudge = match keystroke.key.as_str() {
             "left" => [-step, 0.0],
@@ -60,11 +124,8 @@ impl Shell {
             .iter()
             .map(|h| {
                 let moved = position_shift(nudge, h.parent_rotation(), h.anchor, [0.0; 2]);
-                (
-                    h.referent,
-                    "Position",
-                    udim2_text(shifted(h.position, moved)),
-                )
+                let position = shifted_in(h.position, moved, self.ui.unit, h.position_span());
+                (h.referent, "Position", udim2_text(position))
             })
             .collect();
         if writes.is_empty() {
@@ -72,6 +133,27 @@ impl Shell {
         }
         self.write_drag(true, &writes, cx);
         true
+    }
+
+    /// Ctrl+1: the selection's frame filling the panel.
+    pub(in crate::shell::ui_editor) fn zoom_to_selection(&mut self, cx: &mut Context<Self>) {
+        let Some((_, boxes)) = self.canvas_boxes(cx) else {
+            return;
+        };
+        let Some((rect, turn)) = self.selection_frame(&boxes) else {
+            return;
+        };
+        let panel = self.ui.bounds.get().size;
+        let panel = [f32::from(panel.width), f32::from(panel.height)];
+        self.ui.view = View::framing(panel, &rect.turned_bounds(turn), ZOOM_MARGIN);
+        self.ui.fitted = false;
+        cx.notify();
+    }
+
+    pub(in crate::shell::ui_editor) fn canvas_key_up(&mut self, keystroke: &Keystroke) {
+        if keystroke.key == "space" {
+            self.ui.panning = false;
+        }
     }
 
     pub(in crate::shell::ui_editor) fn canvas_modifiers(

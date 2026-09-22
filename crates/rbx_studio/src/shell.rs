@@ -1192,12 +1192,14 @@ impl Render for Shell {
                 shell.note_pointer(event.position);
                 shell.drag_resize(event.position, cx);
                 shell.drag_scrub(event.position.x, event.modifiers, window, cx);
+                shell.drag_inspector(event.position.x, event.modifiers, cx);
             }))
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|shell, event: &MouseUpEvent, window, cx| {
                     shell.end_resize(cx);
                     shell.scrub = None;
+                    shell.end_inspector_drag();
                     shell.end_panel_drag(event.position, window.viewport_size(), cx);
                 }),
             )
@@ -1210,6 +1212,7 @@ impl Render for Shell {
                 cx.listener(|shell, event: &MouseUpEvent, window, cx| {
                     shell.end_resize(cx);
                     shell.scrub = None;
+                    shell.end_inspector_drag();
                     shell.end_panel_drag(event.position, window.viewport_size(), cx);
                 }),
             )

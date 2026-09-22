@@ -1,11 +1,15 @@
 //! The canvas element: the chosen screen as the renderer drew it, placed by
 //! the pan and zoom, and every overlay over it — the screen's edge, the
-//! hover and selection outlines, the handles, the guides a drag snapped
-//! onto, the marquee, and the Alt distance readout.
+//! hover and selection outlines, the handles and the size under them, the
+//! guides a drag snapped onto, the marquee, an element being drawn, the
+//! Alt distance readout, and what `canvas::extras` adds.
 
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_viewer::GuiBox;
+
+mod extras;
+mod labels;
 
 use super::gesture::{self, Gesture};
 use super::Shell;
@@ -24,6 +28,8 @@ enum Shape {
     Fill(Vec<[f32; 2]>, Rgba),
     Line([f32; 2], [f32; 2], Rgba),
     Handle([f32; 2], bool),
+    /// A corner radius handle: a small ring.
+    Dot([f32; 2]),
 }
 
 impl Shell {
@@ -61,6 +67,8 @@ impl Shell {
             .size_full()
             .overflow_hidden()
             .bg(tokens::black())
+            .when(self.ui.tool.is_some(), |this| this.cursor_crosshair())
+            .when(self.ui.panning, |this| this.cursor_grab())
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|shell, event: &MouseDownEvent, window, cx| {
@@ -71,6 +79,12 @@ impl Shell {
                 MouseButton::Middle,
                 cx.listener(|shell, event: &MouseDownEvent, _, cx| {
                     shell.canvas_pan_press(event, cx);
+                }),
+            )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|shell, event: &MouseDownEvent, _, cx| {
+                    shell.canvas_menu(event, cx);
                 }),
             )
             .on_mouse_move(cx.listener(|shell, event: &MouseMoveEvent, _, cx| {
@@ -107,6 +121,9 @@ impl Shell {
                     cx.stop_propagation();
                 }
             }))
+            .on_key_up(cx.listener(|shell, event: &KeyUpEvent, _, _| {
+                shell.canvas_key_up(&event.keystroke);
+            }))
             .on_modifiers_changed(cx.listener(|shell, event: &ModifiersChangedEvent, _, cx| {
                 shell.canvas_modifiers(event.modifiers, cx);
             }))
@@ -130,6 +147,7 @@ impl Shell {
                 .size_full(),
             )
             .children(labels)
+            .children(self.text_edit_field(cx))
             .children(hint)
             .child(bar)
             .into_any_element()
@@ -192,6 +210,7 @@ impl Shell {
             }
         }
         let outlined: Vec<(Rect, f32)> = selected.iter().filter_map(|&r| placed(r)).collect();
+        let mut badges = Vec::new();
         for (rect, degrees) in &outlined {
             shapes.push(Shape::Outline(corners(rect, *degrees), accent, 1.0));
         }
@@ -218,6 +237,10 @@ impl Shell {
                     false,
                 ));
             }
+            // Figma's size pill, under whatever the frame's lowest point is.
+            let bounds = rect.turned_bounds(degrees);
+            let under = view.to_view([bounds.x + bounds.w * 0.5, bounds.y + bounds.h]);
+            badges.push(labels::size_badge(under, [rect.w, rect.h]));
         }
 
         for g in &self.ui.guides {
@@ -233,12 +256,19 @@ impl Shell {
             shapes.push(Shape::Fill(area.clone(), accent.opacity(0.12)));
             shapes.push(Shape::Outline(area, accent, 1.0));
         }
+        if let Some(Gesture::Draw { from, to, .. }) = &self.ui.gesture {
+            let drawn = Rect::spanning(*from, *to);
+            shapes.push(Shape::Outline(corners(&drawn, 0.0), accent, 1.0));
+            let under = view.to_view([drawn.x + drawn.w * 0.5, drawn.y + drawn.h]);
+            badges.push(labels::size_badge(under, [drawn.w, drawn.h]));
+        }
 
-        let mut labels = Vec::new();
+        let mut labels = badges;
+        self.overlay_extras(screen_box.as_ref(), boxes, view, &mut shapes, &mut labels);
         for distance in self.measurement(screen_box, boxes, &outlined) {
             let (a, b) = (view.to_view(distance.a), view.to_view(distance.b));
             shapes.push(Shape::Line(a, b, guide));
-            labels.push(distance_label(
+            labels.push(labels::distance_label(
                 [(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5],
                 distance.length,
             ));
@@ -306,22 +336,6 @@ impl Shell {
     }
 }
 
-/// A distance's number, over the middle of its run.
-fn distance_label(at: [f32; 2], length: f32) -> AnyElement {
-    div()
-        .absolute()
-        .left(px(at[0] + 4.0))
-        .top(px(at[1] + 4.0))
-        .px(px(3.))
-        .rounded(tokens::RADIUS_TINY)
-        .bg(tokens::tool_scale())
-        .text_size(tokens::text_xs())
-        .line_height(tokens::line_xs())
-        .text_color(tokens::black())
-        .child(format!("{}", length.round()))
-        .into_any_element()
-}
-
 fn paint(shapes: &[Shape], origin: Point<Pixels>, window: &mut Window) {
     let at = |p: [f32; 2]| point(origin.x + px(p[0]), origin.y + px(p[1]));
     for shape in shapes {
@@ -348,6 +362,14 @@ fn paint(shapes: &[Shape], origin: Point<Pixels>, window: &mut Window) {
                 if let Ok(path) = builder.build() {
                     window.paint_path(path, *colour);
                 }
+            }
+            Shape::Dot(centre) => {
+                let square = |half: f32| Bounds {
+                    origin: at([centre[0] - half, centre[1] - half]),
+                    size: size(px(half * 2.0), px(half * 2.0)),
+                };
+                window.paint_quad(fill(square(3.5), tokens::check_on()).corner_radii(px(3.5)));
+                window.paint_quad(fill(square(2.5), tokens::text_full()).corner_radii(px(2.5)));
             }
             Shape::Handle(centre, round) => {
                 let half = HANDLE_SIZE * 0.5;

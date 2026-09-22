@@ -18,7 +18,7 @@ use super::super::menu::{self, MenuId};
 use super::super::workspace::search_field;
 
 /// One align button: the axis, the side, and how it reads.
-const ALIGNS: [(usize, Mode, IconName, &str); 6] = [
+pub(super) const ALIGNS: [(usize, Mode, IconName, &str); 6] = [
     (0, Mode::Min, IconName::AlignStartVertical, "Align left"),
     (
         0,
@@ -78,7 +78,7 @@ impl Shell {
                 ("ui-align", axis * 3 + mode as usize),
                 icon,
                 label,
-                count >= 2,
+                count >= 1,
             )
             .on_click(cx.listener(move |shell, _, _, cx| shell.align_gui(axis, mode, cx)))
             .into_any_element()

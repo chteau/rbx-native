@@ -12,7 +12,7 @@ use super::{Gesture, Held, ROTATE_STEP, SNAP_REACH};
 use crate::ui_canvas::carry::{self, Carried};
 use crate::ui_canvas::guides;
 use crate::ui_canvas::{
-    angle_of, box_of, position_shift, resize, rotate, shifted, udim2_text, Rect,
+    angle_of, box_of, centred, position_shift, resize, rotate, shifted_in, udim2_text, Rect,
 };
 
 impl Shell {
@@ -85,6 +85,7 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> Gesture {
         let view = self.ui.view;
+        let unit = self.ui.unit;
         // Ctrl held lets go of every snap, Sketch's convention.
         let snapping = !modifiers.control;
         let reach = SNAP_REACH / view.zoom;
@@ -96,6 +97,13 @@ impl Shell {
                 ..
             } => {
                 let mut shift = [0, 1].map(|axis| (at[axis] - start[axis]) / view.zoom);
+                // Shift holds the move to the axis it has gone further along.
+                let locked = modifiers
+                    .shift
+                    .then(|| usize::from(shift[0].abs() >= shift[1].abs()));
+                if let Some(axis) = locked {
+                    shift[axis] = 0.0;
+                }
                 let bounds = held
                     .iter()
                     .map(|h| h.rect.turned_bounds(h.rotation))
@@ -104,18 +112,18 @@ impl Shell {
                 if let (Some(bounds), true) = (bounds, snapping) {
                     let targets = self.snap_targets(&held, cx);
                     let snap = guides::snap_move(&bounds.shifted(shift), &targets, reach);
-                    shift = [0, 1].map(|axis| shift[axis] + snap[axis]);
+                    shift = [0, 1].map(|axis| match Some(axis) == locked {
+                        true => 0.0,
+                        false => shift[axis] + snap[axis],
+                    });
                     self.ui.guides = guides::guides(&bounds.shifted(shift), &targets);
                 }
                 let writes: Vec<(Ref, &str, String)> = held
                     .iter()
                     .map(|h| {
                         let moved = position_shift(shift, h.parent_rotation(), h.anchor, [0.0; 2]);
-                        (
-                            h.referent,
-                            "Position",
-                            udim2_text(shifted(h.position, moved)),
-                        )
+                        let position = shifted_in(h.position, moved, unit, h.position_span());
+                        (h.referent, "Position", udim2_text(position))
                     })
                     .collect();
                 self.write_drag(first, &writes, cx);
@@ -140,7 +148,9 @@ impl Shell {
                 self.ui.guides.clear();
                 // Snapping an edge is only meaningful while the frame is
                 // square to the screen; a turned one has no edge on a line.
-                let targets = match snapping && turn == 0.0 {
+                // Alt resizes about the centre, where one edge's snap would
+                // throw the other off it.
+                let targets = match snapping && turn == 0.0 && !modifiers.alt {
                     true => self.snap_targets(&held, cx),
                     false => Vec::new(),
                 };
@@ -163,7 +173,10 @@ impl Shell {
                 // One element whose shape an aspect constraint decides keeps
                 // its shape: a free stretch would only snap back once drawn.
                 let keep = modifiers.shift || matches!(held.as_slice(), [one] if one.aspect);
-                let step = resize(handle, size, local, keep);
+                let mut step = resize(handle, size, local, keep);
+                if modifiers.alt {
+                    step = centred(step, size);
+                }
                 let centre = rotate(step.centre, turn);
                 let shown = Rect {
                     x: grab.x + centre[0] - step.grow[0] * 0.5,
@@ -183,12 +196,10 @@ impl Shell {
                     // pixel on screen is less than a pixel of offset.
                     let offsets = m.grow.map(|grow| grow / h.size_scale);
                     let position = position_shift(m.centre, h.parent_rotation(), h.anchor, m.grow);
-                    writes.push((h.referent, "Size", udim2_text(shifted(h.size, offsets))));
-                    writes.push((
-                        h.referent,
-                        "Position",
-                        udim2_text(shifted(h.position, position)),
-                    ));
+                    let size = shifted_in(h.size, offsets, unit, h.size_span());
+                    let position = shifted_in(h.position, position, unit, h.position_span());
+                    writes.push((h.referent, "Size", udim2_text(size)));
+                    writes.push((h.referent, "Position", udim2_text(position)));
                     let rect = Rect {
                         x: h.rect.x + m.centre[0] - m.grow[0] * 0.5,
                         y: h.rect.y + m.centre[1] - m.grow[1] * 0.5,
@@ -232,13 +243,9 @@ impl Shell {
                     let rotation = ((h.own_rotation + delta) * 100.0).round() / 100.0;
                     writes.push((h.referent, "Rotation", format!("{rotation}")));
                     if shift != [0.0, 0.0] {
-                        let position =
-                            position_shift(shift, h.parent_rotation(), h.anchor, [0.0; 2]);
-                        writes.push((
-                            h.referent,
-                            "Position",
-                            udim2_text(shifted(h.position, position)),
-                        ));
+                        let moved = position_shift(shift, h.parent_rotation(), h.anchor, [0.0; 2]);
+                        let position = shifted_in(h.position, moved, unit, h.position_span());
+                        writes.push((h.referent, "Position", udim2_text(position)));
                     }
                 }
                 self.write_drag(first, &writes, cx);
@@ -254,6 +261,60 @@ impl Shell {
                 from,
                 to: view.to_canvas(at),
                 extend,
+            },
+            Gesture::Draw { class, from, .. } => {
+                let mut to = view.to_canvas(at);
+                // Shift draws a square, on the longer of the two sides.
+                if modifiers.shift {
+                    let side = (to[0] - from[0]).abs().max((to[1] - from[1]).abs());
+                    to = [0, 1].map(|axis| from[axis] + side.copysign(to[axis] - from[axis]));
+                }
+                Gesture::Draw { class, from, to }
+            }
+            Gesture::Radius {
+                corner,
+                frame,
+                start,
+                grab,
+            } => {
+                let reach = super::radius_at(&frame.0, frame.1, corner, view.to_canvas(at));
+                let most = frame.0.w.min(frame.0.h) * 0.5;
+                let radius = (start + reach - grab).clamp(0.0, most.max(start));
+                self.drag_value_to(radius.round(), cx);
+                Gesture::Radius {
+                    corner,
+                    frame,
+                    start,
+                    grab,
+                }
+            }
+            Gesture::Band {
+                band,
+                at: from,
+                start,
+            } => {
+                let travel = (at[band.axis] - from[band.axis]) / view.zoom * band.sign;
+                self.drag_value_to((start + travel).round().max(0.0), cx);
+                Gesture::Band {
+                    band,
+                    at: from,
+                    start,
+                }
+            }
+            Gesture::Reorder {
+                referent,
+                layout,
+                others,
+                grid,
+                axis,
+                ..
+            } => Gesture::Reorder {
+                referent,
+                layout,
+                others,
+                grid,
+                axis,
+                to: view.to_canvas(at),
             },
             Gesture::Pan { last } => {
                 self.ui.view.pan =

@@ -171,26 +171,50 @@ pub(crate) fn group(members: &[Member], parent: Option<Rect>) -> Option<Grouping
         ),
         members: members
             .iter()
-            .map(|member| {
-                let rect = member.rect;
-                let placed = [
-                    rect.x + member.anchor[0] * rect.w,
-                    rect.y + member.anchor[1] * rect.h,
-                ];
-                let drawn = [rect.w, rect.h].map(|length| length / member.size_scale);
-                (
-                    [0, 1].map(|axis| {
-                        let scaled = member.position[axis].0 != 0.0;
-                        udim(placed[axis] - corner[axis], scaled, Some(size[axis]))
-                    }),
-                    [0, 1].map(|axis| {
-                        let scaled = member.size[axis].0 != 0.0;
-                        udim(drawn[axis], scaled, Some(size[member.size_axes[axis]]))
-                    }),
-                )
-            })
+            .map(|member| place(member, corner, size, member.scaled()))
             .collect(),
     })
+}
+
+impl Member {
+    /// Which axes it is placed, then sized, by scale — the mode each of its
+    /// values keeps when [`place`] moves it to another parent.
+    pub(crate) fn scaled(&self) -> [[bool; 2]; 2] {
+        [self.position, self.size].map(|udim| udim.map(|(scale, _)| scale != 0.0))
+    }
+}
+
+/// The `Position` and `Size` that draw `member`'s box where it is inside a
+/// parent whose content box starts at `corner` and is `extent` across —
+/// both in the parent's own frame — each axis a scale of `extent` where
+/// `scaled` says so (position, then size) and pixels elsewhere. `UIScale`
+/// is divided back out of the size, and `SizeConstraint` picks the axis a
+/// size scale is taken against.
+pub(crate) fn place(
+    member: &Member,
+    corner: [f32; 2],
+    extent: [f32; 2],
+    scaled: [[bool; 2]; 2],
+) -> (Udim2, Udim2) {
+    let rect = member.rect;
+    let placed = [
+        rect.x + member.anchor[0] * rect.w,
+        rect.y + member.anchor[1] * rect.h,
+    ];
+    let drawn = [rect.w, rect.h].map(|length| length / member.size_scale);
+    (
+        [0, 1].map(|axis| {
+            udim(
+                placed[axis] - corner[axis],
+                scaled[0][axis],
+                Some(extent[axis]),
+            )
+        }),
+        [0, 1].map(|axis| {
+            let against = extent[member.size_axes[axis]];
+            udim(drawn[axis], scaled[1][axis], Some(against))
+        }),
+    )
 }
 
 /// `pixels` as a `UDim`: a scale of `against` when `scaled` and there is an

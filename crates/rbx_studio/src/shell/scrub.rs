@@ -58,7 +58,7 @@ impl Scrub {
 
 /// Shift coarsens, Alt refines — the convention every tool with this gesture
 /// shares, so it needs no discovering.
-fn precision(modifiers: Modifiers) -> f32 {
+pub(super) fn precision(modifiers: Modifiers) -> f32 {
     match (modifiers.shift, modifiers.alt) {
         (true, false) => 10.,
         (false, true) => 0.1,

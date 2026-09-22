@@ -9,11 +9,14 @@
 //! gesture, the Properties panel's own commit.
 
 mod frame;
-mod held;
+mod handles;
+pub(super) mod held;
 mod input;
+mod lifecycle;
 mod step;
 
 pub(super) use frame::{frame, frame_of, preview};
+pub(super) use handles::{radius_at, radius_handles};
 pub(super) use held::Held;
 
 use gpui_kit::*;
@@ -21,7 +24,8 @@ use rbx_dom::Ref;
 use rbx_viewer::GuiBox;
 
 use super::super::Shell;
-use crate::ui_canvas::{self, angle_of, box_of, rotate, Handle, Rect};
+use super::layout_overlay::Band;
+use crate::ui_canvas::{self, box_of, rotate, Handle, Rect};
 
 /// How far the pointer travels, in panel pixels, before a press is a drag.
 const DRAG_THRESHOLD: f32 = 3.0;
@@ -51,6 +55,13 @@ pub(super) enum Press {
     Empty {
         extend: bool,
     },
+    /// With a tool armed: a drag draws that class, a click puts one down.
+    Draw(&'static str),
+    /// A corner's radius handle, by which side of the box it is on — that
+    /// corner alone with Alt held, Sketch's convention, all four without.
+    Radius([i8; 2], bool),
+    /// A gap or a side of the padding in the auto layout on show.
+    Band(Band),
 }
 
 #[derive(Debug, Clone)]
@@ -92,6 +103,38 @@ pub(super) enum Gesture {
     },
     Pan {
         last: [f32; 2],
+    },
+    /// An element being drawn, from corner to corner in canvas pixels.
+    Draw {
+        class: &'static str,
+        from: [f32; 2],
+        to: [f32; 2],
+    },
+    /// The corner radius dragged by `corner`'s handle on `frame`: `start`
+    /// is what it was, `grab` what the pointer read where it took hold —
+    /// the handle stands clear of a square corner, and taking hold of it
+    /// must not round the corner by that much.
+    Radius {
+        corner: [i8; 2],
+        frame: (Rect, f32),
+        start: f32,
+        grab: f32,
+    },
+    /// A gap or padding band dragged from `at`, which read `start` then.
+    Band {
+        band: Band,
+        at: [f32; 2],
+        start: f32,
+    },
+    /// A child of a list or grid dragged to a new place in it: `others`
+    /// are the rest in the layout's order, `to` where it is now.
+    Reorder {
+        referent: Ref,
+        layout: Ref,
+        others: Vec<(Ref, Rect)>,
+        grid: bool,
+        axis: usize,
+        to: [f32; 2],
     },
 }
 
@@ -136,14 +179,38 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         window.focus(&self.ui.focus, cx);
+        if self.ui.panning {
+            self.canvas_pan_press(event, cx);
+            return;
+        }
         let at = self.panel_point(event.position);
         let Some((_, boxes)) = self.canvas_boxes(cx) else {
             return;
         };
         let view = self.ui.view;
         let point = view.to_canvas(at);
+        if self.ui.text_edit.is_some() {
+            self.end_text_edit(true, cx);
+        }
+        if let Some(class) = self.ui.tool {
+            self.ui.gesture = Some(Gesture::Pressed {
+                at,
+                press: Press::Draw(class),
+            });
+            cx.notify();
+            return;
+        }
         let frame = self.selection_frame(&boxes);
         let extend = event.modifiers.shift || event.modifiers.control || event.modifiers.platform;
+        // A double-click on a selected text element types into it.
+        if event.click_count >= 2 {
+            if let Some(hit) = ui_canvas::hit(&boxes, point)
+                .filter(|&hit| self.selected_all() == [hit] && self.is_text(hit))
+            {
+                self.begin_text_edit(hit, window, cx);
+                return;
+            }
+        }
         let near = |p: [f32; 2]| {
             let q = view.to_view(p);
             (q[0] - at[0]).hypot(q[1] - at[1]) <= HANDLE_REACH
@@ -165,6 +232,33 @@ impl Shell {
         } else {
             None
         };
+        let press = press
+            .or_else(|| {
+                let (rect, turn) = frame.filter(|_| self.radius_shown())?;
+                radius_handles(&rect, turn, self.radii(), view.zoom)
+                    .into_iter()
+                    .find(|&(_, at)| near(at))
+                    .map(|(corner, _)| Press::Radius(corner, event.modifiers.alt))
+            })
+            .or_else(|| {
+                let (root, _) = self.canvas_boxes(cx)?;
+                let shown = self.shown_layout(&root, &boxes)?;
+                let reach = HANDLE_REACH / view.zoom;
+                shown
+                    .bands
+                    .into_iter()
+                    .find(|band| {
+                        let r = band.rect;
+                        point[0] >= r.x - reach
+                            && point[0] <= r.x + r.w + reach
+                            && point[1] >= r.y - reach
+                            && point[1] <= r.y + r.h + reach
+                            // A band as thin as its reach would swallow
+                            // the edge of every child it runs along.
+                            && (band.gap || r.along(band.axis).1 > 0.0 || !ui_canvas::covers_turned(&shown.container, 0.0, point))
+                    })
+                    .map(Press::Band)
+            });
         let press = press.unwrap_or_else(|| match ui_canvas::hit(&boxes, point) {
             Some(hit) => {
                 // Inside what is already selected, a press holds the
@@ -231,106 +325,6 @@ impl Shell {
             // Alt is a live modifier here, not a tap into the menu bar.
             self.menu_bar.update(cx, |bar, _| bar.interrupt_alt_tap());
         }
-    }
-
-    /// A press that has moved far enough to be a drag: what it grabs.
-    fn begin_drag(
-        &mut self,
-        at: [f32; 2],
-        press: Press,
-        cx: &mut Context<Self>,
-    ) -> Option<Gesture> {
-        let (root, boxes) = self.canvas_boxes(cx)?;
-        let held = self.held_selection(&root, &boxes);
-        let frame = self.selection_frame(&boxes);
-        Some(match press {
-            Press::Element { .. } => Gesture::Move {
-                at,
-                held,
-                shift: [0.0, 0.0],
-                first: true,
-            },
-            Press::Handle(handle) => {
-                let frame = frame.filter(|_| !held.is_empty())?;
-                Gesture::Resize {
-                    at,
-                    held,
-                    handle,
-                    frame,
-                    shown: frame,
-                    preview: Vec::new(),
-                    first: true,
-                }
-            }
-            Press::Knob => {
-                let frame = frame.filter(|_| !held.is_empty())?;
-                Gesture::Rotate {
-                    held,
-                    frame,
-                    from: angle_of(frame.0.centre(), self.ui.view.to_canvas(at)),
-                    delta: 0.0,
-                    first: true,
-                }
-            }
-            Press::Empty { extend } => {
-                let from = self.ui.view.to_canvas(at);
-                Gesture::Marquee {
-                    from,
-                    to: from,
-                    extend,
-                }
-            }
-        })
-    }
-
-    pub(super) fn canvas_release(&mut self, cx: &mut Context<Self>) {
-        let Some(gesture) = self.ui.gesture.take() else {
-            return;
-        };
-        self.ui.guides.clear();
-        match gesture {
-            // A click, not a drag: re-pick what is under the pointer inside
-            // a selection the press held, or clear on empty canvas.
-            Gesture::Pressed { at, press } => match press {
-                Press::Element {
-                    hit,
-                    repick: true,
-                    extend,
-                } => {
-                    let point = self.ui.view.to_canvas(at);
-                    let topmost = self
-                        .canvas_boxes(cx)
-                        .and_then(|(_, boxes)| ui_canvas::hit(&boxes, point))
-                        .unwrap_or(hit);
-                    match extend {
-                        true => self.extend_selection(topmost, cx),
-                        false if self.selected_all() != [topmost] => self.select(topmost, cx),
-                        false => {}
-                    }
-                }
-                Press::Empty { extend: false } => self.deselect(cx),
-                _ => {}
-            },
-            Gesture::Marquee { from, to, extend } => {
-                let Some((_, boxes)) = self.canvas_boxes(cx) else {
-                    return;
-                };
-                let taken =
-                    ui_canvas::marquee(&boxes, Rect::spanning(from, to), |r| self.dom.parent(r));
-                let mut selection = match extend {
-                    true => self.selected_all().to_vec(),
-                    false => Vec::new(),
-                };
-                for referent in taken {
-                    if !selection.contains(&referent) {
-                        selection.push(referent);
-                    }
-                }
-                self.reselect(selection, cx);
-            }
-            _ => {}
-        }
-        cx.notify();
     }
 }
 
