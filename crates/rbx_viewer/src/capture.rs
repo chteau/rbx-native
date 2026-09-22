@@ -252,13 +252,16 @@ impl Offscreen {
     /// Draws `screen` alone over `backdrop` (see `Renderer::draw_gui_canvas`)
     /// and waits for it: a canvas is redrawn only when something on it
     /// changed, so there is no stream of frames to overlap the readback with.
-    /// Returns the pixels and every element as laid out.
+    /// Returns the pixels, every element as laid out, and the size drawn —
+    /// `size`, unless the tree has a canvas size of its own (see
+    /// `Renderer::gui_canvas_size`).
     pub(crate) fn gui_canvas(
         &mut self,
         size: (u32, u32),
         screen: rbx_dom::Ref,
         backdrop: [f32; 3],
-    ) -> Result<(Vec<u8>, Vec<crate::renderer::GuiBox>), String> {
+    ) -> Result<(Vec<u8>, Vec<crate::renderer::GuiBox>, (u32, u32)), String> {
+        let size = self.renderer.gui_canvas_size(screen, size);
         if size.0 == 0 || size.1 == 0 {
             return Err(format!("cannot render a {}x{} canvas", size.0, size.1));
         }
@@ -276,7 +279,7 @@ impl Offscreen {
         );
         let pending = target.copy(&self.device, &self.queue);
         let pixels = target.collect(&self.device, pending)?;
-        Ok((pixels, self.renderer.gui_boxes().to_vec()))
+        Ok((pixels, self.renderer.gui_boxes().to_vec(), size))
     }
 
     /// Drops the queued frame, mapping and all: a readback buffer left mapped is

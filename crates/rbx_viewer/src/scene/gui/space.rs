@@ -85,6 +85,8 @@ pub(crate) enum Anchor {
 /// One `BillboardGui`/`SurfaceGui` reduced to a canvas and a placement.
 #[derive(Clone)]
 pub(crate) struct SpaceGui {
+    /// The `BillboardGui`/`SurfaceGui` itself.
+    pub(crate) referent: Ref,
     /// What the canvas hangs off (see [`adornee`]) — so an edit that moves
     /// that part knows to re-place the canvas, wherever in the tree the
     /// container itself sits.
@@ -279,6 +281,7 @@ fn read(
     }
 
     Some(SpaceGui {
+        referent: instance.referent(),
         adornee,
         canvas,
         always_on_top: always_on_top(properties),

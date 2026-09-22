@@ -27,8 +27,11 @@ mod assets;
 
 /// One [`Headless::render_gui`] frame.
 pub struct GuiCanvas {
-    /// Tightly packed RGBA8 (sRGB) rows, `width * height * 4` bytes long.
+    /// Tightly packed RGBA8 (sRGB) rows, `size.0 * size.1 * 4` bytes long.
     pub pixels: Vec<u8>,
+    /// What was drawn: the size asked for, or a `BillboardGui`/`SurfaceGui`'s
+    /// own canvas size, which is not the caller's to choose.
+    pub size: (u32, u32),
     /// The screen's own frame — what its top-level children resolve
     /// against, below any top-bar inset — then every element as laid out,
     /// in paint order: what the canvas is hit-tested against.
@@ -360,7 +363,8 @@ impl Headless {
     }
 
     /// Draws one `ScreenGui` on its own — enabled or not — laid out against a
-    /// `width`×`height` screen, over a flat `backdrop` (encoded sRGB) with no
+    /// `width`×`height` screen (a `BillboardGui`/`SurfaceGui` at its own
+    /// canvas size instead), over a flat `backdrop` (encoded sRGB) with no
     /// scene behind it: an editor's 2D canvas, through the very layout and
     /// painter the overlay uses. Synchronous, unlike
     /// [`Headless::render_frame`]: call it when the tree changed, not every
@@ -371,10 +375,14 @@ impl Headless {
         (width, height): (u32, u32),
         backdrop: [f32; 3],
     ) -> Result<GuiCanvas, String> {
-        let (pixels, boxes) = self
+        let (pixels, boxes, size) = self
             .offscreen
             .gui_canvas((width, height), screen, backdrop)?;
-        Ok(GuiCanvas { pixels, boxes })
+        Ok(GuiCanvas {
+            pixels,
+            size,
+            boxes,
+        })
     }
 
     /// Advances the camera by `dt` and reports whether the next frame would

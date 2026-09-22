@@ -35,8 +35,8 @@ use crate::fonts::Library;
 use crate::load::Answered;
 use crate::quality::QualityProfile;
 use crate::scene::{
-    gui_layout_with, gui_screen_frame, gui_scroll_target, GuiScreen, GuiScrollWindow, ScrollTarget,
-    SpaceGui,
+    gui_layout_with, gui_screen_frame, gui_scroll_target, GuiRect, GuiScreen, GuiScrollWindow,
+    ScrollTarget, SpaceGui,
 };
 use atlas::Atlas;
 use group::Baked;
@@ -55,6 +55,15 @@ pub struct GuiBox {
     /// the box is rotated by `rotation` degrees clockwise about its centre.
     pub rect: [f32; 4],
     pub rotation: f32,
+    /// The box this element's children resolve against — its rect less
+    /// `UIPadding`, in the same frame — or `None` for a `ScrollingFrame`,
+    /// whose children resolve against its scrolled canvas instead.
+    pub content: Option<[f32; 4]>,
+    /// `UIScale`: what the element's resolved `Size` is multiplied by, so
+    /// one pixel of `Size` offset is this many pixels on screen.
+    pub size_scale: f32,
+    /// Whether an enabled `UIAspectRatioConstraint` decides its shape.
+    pub aspect: bool,
 }
 
 pub(super) struct Gui {
@@ -74,6 +83,9 @@ pub(super) struct Gui {
     /// Every element of the last layout, in paint order — see [`GuiBox`] —
     /// after, for a canvas, the screen's own box.
     boxes: Vec<GuiBox>,
+    /// The pixel size the scene gave each `BillboardGui`/`SurfaceGui` it
+    /// placed in the world, which is what that tree's canvas is drawn at.
+    space_canvases: Vec<(Ref, [f32; 2])>,
     /// Every `ScrollingFrame` window of the current overlay, in paint order,
     /// for [`Gui::scroll_target`]. Empty until the first layout.
     windows: Vec<GuiScrollWindow>,
@@ -136,6 +148,7 @@ impl Gui {
             screens: Vec::new(),
             built: None,
             boxes: Vec::new(),
+            space_canvases: Vec::new(),
             windows: Vec::new(),
             baked: Baked::new(device),
             bindings: Vec::new(),
@@ -205,6 +218,10 @@ impl Gui {
         self.text.adopt(fonts, &faces);
 
         self.screens = screens.to_vec();
+        self.space_canvases = spaces
+            .iter()
+            .map(|gui| (gui.referent, gui.canvas))
+            .collect();
         self.built = None;
         // The wheel's hit list is deliberately left standing: the draw below
         // replaces it wholesale, and until then one layout's worth of stale
@@ -260,7 +277,7 @@ impl Gui {
         size: (u32, u32),
         materials: &wgpu::BindGroup,
     ) {
-        if !self.screens.iter().any(|screen| screen.enabled) {
+        if !self.screens.iter().any(on_overlay) {
             // Nothing to draw and nothing to scroll: the overlay is gone,
             // so the windows `rebuild` left standing have to go with it.
             self.windows.clear();
@@ -276,9 +293,32 @@ impl Gui {
         );
     }
 
-    /// One `ScreenGui` on its own over a flat `backdrop` — an editor's
-    /// canvas: enabled or not, laid out against `size` as if that were the
-    /// whole screen, with nothing of the scene under it. The same layout
+    /// The pixel size [`Gui::draw_canvas`] draws `only` at: `requested` for
+    /// a `ScreenGui`, whose size is the device's to choose; a
+    /// `BillboardGui`/`SurfaceGui`'s own canvas otherwise — the one the scene
+    /// placed it in the world with, or the one its properties give without a
+    /// part.
+    pub(super) fn canvas_size(&self, only: Ref, requested: (u32, u32)) -> (u32, u32) {
+        let space = self
+            .screens
+            .iter()
+            .find(|screen| screen.referent == only)
+            .and_then(|screen| screen.space);
+        let Some(fallback) = space else {
+            return requested;
+        };
+        let [w, h] = self
+            .space_canvases
+            .iter()
+            .find(|(referent, _)| *referent == only)
+            .map_or(fallback, |&(_, canvas)| canvas);
+        ((w.round() as u32).max(1), (h.round() as u32).max(1))
+    }
+
+    /// One `ScreenGui` — or a `BillboardGui`/`SurfaceGui`'s tree — on its own
+    /// over a flat `backdrop`: an editor's canvas, enabled or not, laid out
+    /// against `size` as if that were the whole screen, with nothing of the
+    /// scene under it. The same layout
     /// and painter the overlay uses, so the canvas cannot draw a tree any
     /// differently from the viewport.
     #[allow(clippy::too_many_arguments)]
@@ -321,7 +361,7 @@ impl Gui {
             self.built = Some((size, only));
             let screens = self.screens.iter().filter(|screen| match only {
                 Some(referent) => screen.referent == referent,
-                None => screen.enabled,
+                None => on_overlay(screen),
             });
             let mut elements =
                 gui_layout_with(screens, [size.0 as f32, size.1 as f32], &mut self.text);
@@ -329,24 +369,33 @@ impl Gui {
             // `CanvasGroup`'s children are still things to click on. A
             // canvas leads with the screen's own box: the frame its
             // top-level children resolve against, `ScreenInsets` and all.
-            let placed = |referent, rect: &crate::scene::GuiRect, rotation| GuiBox {
-                referent,
-                rect: [rect.x, rect.y, rect.width, rect.height],
-                rotation,
-            };
+            let corners = |rect: &GuiRect| [rect.x, rect.y, rect.width, rect.height];
             let viewport = [size.0 as f32, size.1 as f32];
             let frame = self
                 .screens
                 .iter()
                 .find(|screen| only == Some(screen.referent))
-                .map(|screen| placed(screen.referent, &gui_screen_frame(screen, viewport), 0.0));
+                .map(|screen| {
+                    let frame = gui_screen_frame(screen, viewport);
+                    GuiBox {
+                        referent: screen.referent,
+                        rect: corners(&frame),
+                        rotation: 0.0,
+                        content: Some(corners(&frame)),
+                        size_scale: 1.0,
+                        aspect: false,
+                    }
+                });
             self.boxes = frame
                 .into_iter()
-                .chain(
-                    elements
-                        .iter()
-                        .map(|element| placed(element.referent, &element.rect, element.rotation)),
-                )
+                .chain(elements.iter().map(|element| GuiBox {
+                    referent: element.referent,
+                    rect: corners(&element.rect),
+                    rotation: element.rotation,
+                    content: element.editable.content.as_ref().map(corners),
+                    size_scale: element.editable.size_scale,
+                    aspect: element.editable.aspect,
+                }))
                 .collect();
             // Before the flatten below, which folds a `CanvasGroup`'s subtree
             // away: a list inside a group still scrolls.
@@ -394,6 +443,12 @@ impl Gui {
     pub(super) fn scroll_target(&self, point: [f32; 2], axis: usize) -> Option<ScrollTarget> {
         gui_scroll_target(&self.windows, point, axis)
     }
+}
+
+/// Whether the screen overlay draws `screen`: an enabled `ScreenGui`, never
+/// a `BillboardGui`/`SurfaceGui`'s tree, which the scene draws in the world.
+fn on_overlay(screen: &GuiScreen) -> bool {
+    screen.enabled && screen.space.is_none()
 }
 
 #[cfg(test)]
@@ -653,6 +708,106 @@ mod tests {
         assert_eq!(gui.boxes()[0].rect, [0.0, 0.0, 400.0, 300.0]);
         assert_eq!(gui.boxes()[1].rect, [0.0, 0.0, 50.0, 40.0]);
         queue.submit(std::iter::once(encoder.finish()));
+    }
+
+    // A `SurfaceGui` on no part is still a canvas an editor can draw, at the
+    // size its own properties give — and a padded, scaled frame on it says
+    // what its children resolve against and what its `Size` is multiplied
+    // by, so an editor never has to lay it out again to write it back.
+    #[test]
+    fn a_surface_canvas_is_drawn_at_its_own_size_with_what_editing_needs() {
+        let Some((device, queue)) = crate::gpu::for_tests() else {
+            return;
+        };
+        let mut dom = WeakDom::new();
+        let surface = dom.new_instance("SurfaceGui", "Sign", None);
+        dom.set_property(surface, "SizingMode", Variant::Enum(0))
+            .unwrap();
+        dom.set_property(
+            surface,
+            "CanvasSize",
+            Variant::Vector2(rbx_dom::Vector2Data { x: 300.0, y: 120.0 }),
+        )
+        .unwrap();
+        let card = dom.new_instance("Frame", "Card", Some(surface));
+        dom.set_property(card, "Size", udim2(100, 60)).unwrap();
+        let padding = dom.new_instance("UIPadding", "UIPadding", Some(card));
+        dom.set_property(
+            padding,
+            "PaddingLeft",
+            Variant::UDim(UDim {
+                scale: 0.0,
+                offset: 10,
+            }),
+        )
+        .unwrap();
+        let scale = dom.new_instance("UIScale", "UIScale", Some(card));
+        dom.set_property(scale, "Scale", Variant::Float32(2.0))
+            .unwrap();
+
+        let mut quality = QualityLevel::Automatic.profile();
+        quality.gui = true;
+        let material_layout = crate::renderer::material::layout(&device);
+        let materials = crate::renderer::material::Materials::new(
+            &device,
+            &queue,
+            &material_layout,
+            &Catalog::new(&WeakDom::new(), &ReflectionDatabase::embedded()),
+            &quality,
+        );
+        let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+        let mut gui = Gui::new(
+            &device,
+            &queue,
+            format,
+            Target {
+                format: crate::renderer::post::HDR_FORMAT,
+                samples: 1,
+            },
+            (&screens(&dom), &[]),
+            (&material_layout, &materials.bind_group),
+            &Answered::new(),
+            &Library::default(),
+            &quality,
+        );
+        let size = gui.canvas_size(surface, (1920, 1080));
+        assert_eq!(size, (300, 120), "its own canvas, not the size asked for");
+
+        let display = device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d {
+                width: size.0,
+                height: size.1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[pipeline::encoded(format)],
+        });
+        let mut encoder = device.create_command_encoder(&Default::default());
+        gui.draw_canvas(
+            &device,
+            &queue,
+            &mut encoder,
+            &display,
+            (size, surface),
+            wgpu::Color::BLACK,
+            &materials.bind_group,
+        );
+        queue.submit(std::iter::once(encoder.finish()));
+
+        let boxes = gui.boxes();
+        assert_eq!(boxes[0].referent, surface);
+        assert_eq!(boxes[0].rect, [0.0, 0.0, 300.0, 120.0]);
+        let placed = boxes[1];
+        assert_eq!(placed.referent, card);
+        assert_eq!(placed.rect, [0.0, 0.0, 200.0, 120.0], "UIScale doubles it");
+        assert_eq!(placed.size_scale, 2.0);
+        assert_eq!(placed.content, Some([10.0, 0.0, 190.0, 120.0]));
+        assert!(!placed.aspect);
     }
 
     // A quality level switched between two scenes has to take on the next

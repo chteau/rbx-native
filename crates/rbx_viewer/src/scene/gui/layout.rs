@@ -44,6 +44,9 @@ pub(crate) struct Element {
     /// The `GuiObject` this was laid out for — a `ScrollingFrame`'s bar
     /// segments carry the frame's own. What an editor hit-tests against.
     pub(crate) referent: Ref,
+    /// What an editor needs to write this element's `UDim2`s back without
+    /// deriving the layout a second time — see [`Editable`].
+    pub(crate) editable: Editable,
     pub(crate) rect: Rect,
     /// The scissor rect inherited from the nearest `ClipsDescendants`
     /// ancestor, if any. Already intersected down the whole chain.
@@ -83,6 +86,30 @@ pub(crate) struct Element {
     /// A `ScrollingFrame`'s window, for a host to hit-test the wheel against
     /// (see `super::wheel`); `None` for every other element.
     pub(crate) scroll: Option<ScrollWindow>,
+}
+
+/// The layout facts behind one element that an editor writing its `Position`
+/// and `Size` has to honour.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Editable {
+    /// The box this element's children resolve against: its rect less
+    /// `UIPadding`, in the same frame as the rect. `None` for a
+    /// `ScrollingFrame`, whose children resolve against its scrolled canvas.
+    pub(crate) content: Option<Rect>,
+    /// `UIScale`: what this element's resolved `Size` is multiplied by.
+    pub(crate) size_scale: f32,
+    /// Whether an enabled `UIAspectRatioConstraint` decides its shape.
+    pub(crate) aspect: bool,
+}
+
+impl Default for Editable {
+    fn default() -> Self {
+        Editable {
+            content: None,
+            size_scale: 1.0,
+            aspect: false,
+        }
+    }
 }
 
 /// A `CanvasGroup`'s tint and the run of elements it applies to.
@@ -229,6 +256,14 @@ pub(in crate::scene::gui) fn emit(
     let start = into.len();
     into.push(Element {
         referent: node.referent,
+        editable: Editable {
+            content: node
+                .scrolling
+                .is_none()
+                .then(|| sizing::padded(node, &rect)),
+            size_scale: node.constraints.scale.unwrap_or(1.0),
+            aspect: node.constraints.aspect.is_some(),
+        },
         rect,
         clip: context.clip,
         rotation: context.angle + node.rotation,

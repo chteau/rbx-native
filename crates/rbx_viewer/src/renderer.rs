@@ -444,6 +444,16 @@ impl Renderer {
         queue.submit(std::iter::once(encoder.finish()));
     }
 
+    /// The pixel size a canvas of `screen` is drawn at — see
+    /// `Gui::canvas_size`.
+    pub(crate) fn gui_canvas_size(
+        &self,
+        screen: rbx_dom::Ref,
+        requested: (u32, u32),
+    ) -> (u32, u32) {
+        self.gui.canvas_size(screen, requested)
+    }
+
     /// Every element the GUI was last laid out with, in paint order.
     pub(crate) fn gui_boxes(&self) -> &[GuiBox] {
         self.gui.boxes()

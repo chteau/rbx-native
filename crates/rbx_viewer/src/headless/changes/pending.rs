@@ -87,7 +87,10 @@ impl Patcher<'_> {
                 .is_subclass_of(instance.class(), "BillboardGui")
                 || self.database.is_subclass_of(instance.class(), "SurfaceGui")
             {
+                // Both: the canvas an editor lays one of these out on is
+                // planned with the screens (see `scene::gui::plan`).
                 self.pending.spaces = true;
+                self.pending.screens = true;
                 return;
             }
             current = dom.parent(referent);
