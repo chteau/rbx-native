@@ -118,9 +118,66 @@ pub(crate) fn incremented_name(dom: &WeakDom, parent: Option<Ref>, base: &str) -
         .unwrap_or_else(|| base.to_owned())
 }
 
+/// The writes that make a freshly inserted `GuiObject` something to see
+/// and grab: `Instance.new`'s own values (see `reflection-defaults.json`)
+/// leave it 0×0, grey, with a border. These are this editor's seed — a
+/// white box, no border, text that says what it is — patterned on what
+/// Studio's own UI insert shows; no docs page publishes that table. Each is
+/// `properties::edit::commit` text, so an insert goes through the same
+/// parser a typed value does. Empty for anything that is not a `GuiObject`.
+pub(crate) fn gui_defaults(
+    database: &ReflectionDatabase,
+    class: &str,
+) -> Vec<(&'static str, &'static str)> {
+    if !database.is_subclass_of(class, "GuiObject") {
+        return Vec::new();
+    }
+    let is = |base: &str| database.is_subclass_of(class, base);
+    let size = match () {
+        _ if is("TextLabel") || is("TextButton") || is("TextBox") => "0, 200, 0, 50",
+        _ if is("ScrollingFrame") => "0, 200, 0, 200",
+        _ => "0, 100, 0, 100",
+    };
+    let mut writes = vec![
+        ("Size", size),
+        ("BackgroundColor3", "255, 255, 255"),
+        ("BorderColor3", "0, 0, 0"),
+        ("BorderSizePixel", "0"),
+    ];
+    let text = match () {
+        _ if is("TextButton") => Some("Button"),
+        _ if is("TextLabel") => Some("Label"),
+        _ if is("TextBox") => Some(""),
+        _ => None,
+    };
+    if let Some(text) = text {
+        writes.extend([
+            ("Text", text),
+            ("TextColor3", "0, 0, 0"),
+            ("TextSize", "14"),
+        ]);
+    }
+    writes
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // A new frame is a box you can see; a new label says so; a layout or
+    // a modifier is left exactly as `Instance.new` makes it.
+    #[test]
+    fn a_new_gui_object_is_seeded_visible_and_nothing_else_is() {
+        let database = database();
+        let frame = gui_defaults(&database, "Frame");
+        assert!(frame.contains(&("Size", "0, 100, 0, 100")));
+        assert!(frame.iter().all(|(name, _)| *name != "Text"));
+        let label = gui_defaults(&database, "TextLabel");
+        assert!(label.contains(&("Text", "Label")));
+        assert!(label.contains(&("Size", "0, 200, 0, 50")));
+        assert!(gui_defaults(&database, "UICorner").is_empty());
+        assert!(gui_defaults(&database, "Part").is_empty());
+    }
 
     fn database() -> ReflectionDatabase {
         ReflectionDatabase::embedded()

@@ -26,6 +26,7 @@ mod menu;
 mod output;
 mod panel_window;
 mod panels;
+mod property_element;
 mod quality;
 mod reparent;
 mod ribbon;
@@ -899,6 +900,10 @@ impl Shell {
         open: bool,
         cx: &mut Context<Self>,
     ) {
+        // Asked for by name, so the canvas stops setting it aside.
+        if open {
+            self.ui_unhide(panel);
+        }
         if open {
             self.layout.open(panel);
         } else {
@@ -912,7 +917,7 @@ impl Shell {
     /// tile read, so one hidden behind another tab is brought forward by
     /// them rather than shut.
     pub(crate) fn is_panel_showing(&self, panel: layout::Panel) -> bool {
-        self.layout.is_showing(panel)
+        self.layout.is_showing(panel) && !self.hidden_panels().contains(&panel)
     }
 
     /// Shows one of a dock's tabs, from a click on it.

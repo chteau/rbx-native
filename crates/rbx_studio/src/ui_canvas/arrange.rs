@@ -76,6 +76,27 @@ pub(crate) fn distribute(boxes: &[Rect], axis: usize) -> Vec<f32> {
     shifts
 }
 
+/// `udim` with its offsets folded into its scales against a parent whose
+/// content is `parent` pixels across: the very same pixels at this size,
+/// and a box that grows and shrinks with its parent at any other — what
+/// "responsive" means for a `UDim2`. An axis with no parent extent to
+/// divide by is left as it was.
+pub(crate) fn to_scale(udim: Udim2, parent: [f32; 2]) -> Udim2 {
+    [0, 1].map(|axis| {
+        let (scale, offset) = udim[axis];
+        match parent[axis] > 0.0 {
+            true => (scale + offset as f32 / parent[axis], 0),
+            false => (scale, offset),
+        }
+    })
+}
+
+/// Whether a `Size` is pixels alone on both axes — a box drawn to a fixed
+/// shape, which a responsive pass keeps that shape with an aspect ratio.
+pub(crate) fn is_fixed(size: Udim2) -> bool {
+    size.iter().all(|&(scale, _)| scale == 0.0)
+}
+
 /// One element a group takes in: where it came out, its `AnchorPoint`, and
 /// the `Position` it came out there from.
 #[derive(Debug, Clone, Copy)]

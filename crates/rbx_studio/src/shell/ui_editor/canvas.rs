@@ -50,6 +50,7 @@ impl Shell {
         };
         let (shapes, labels) = self.overlay(screen_box, &boxes, view, screen_size);
         let hint = self.canvas_hint(request.is_some());
+        let bar = self.insert_bar(cx);
         let bounds = self.ui.bounds.clone();
         let origin = view.to_view([0.0, 0.0]);
 
@@ -130,6 +131,7 @@ impl Shell {
             )
             .children(labels)
             .children(hint)
+            .child(bar)
             .into_any_element()
     }
 
@@ -281,8 +283,9 @@ impl Shell {
             (true, _) => return None,
             (false, true) => "The ScreenGui on the canvas is gone.",
             (false, false) => {
-                "Select a ScreenGui, or anything inside one, to put it on the canvas. \
-                 BillboardGui and SurfaceGui are drawn in the 3D view."
+                "Select a ScreenGui, or anything inside one, to put it on the canvas — \
+                 or start one from the + below. BillboardGui and SurfaceGui are drawn \
+                 in the 3D view."
             }
         };
         Some(

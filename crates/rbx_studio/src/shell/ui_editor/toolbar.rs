@@ -107,6 +107,12 @@ impl Shell {
             count >= 1,
         )
         .on_click(cx.listener(|shell, _, _, cx| shell.group_selected(cx)));
+        let responsive = chrome::icon_button(
+            "ui-responsive",
+            IconName::Scaling,
+            "Make responsive: offsets to scale, fixed shapes kept by aspect ratio",
+        )
+        .on_click(cx.listener(|shell, _, _, cx| shell.make_responsive(cx)));
 
         let presets = PRESETS
             .iter()
@@ -138,11 +144,22 @@ impl Shell {
             .children(distributes)
             .child(separator())
             .child(group)
+            .child(responsive)
             .child(div().flex_1())
             .child(resolution)
             .child(size_field(self.tab_order.next(), &self.ui.width))
             .child(div().text_color(tokens::text_muted()).child("×"))
             .child(size_field(self.tab_order.next(), &self.ui.height))
+            .child(
+                chrome::icon_button(
+                    "ui-orientation",
+                    IconName::RotateCw,
+                    "Turn the screen: portrait ⇄ landscape",
+                )
+                .on_click(cx.listener(move |shell, _, _, cx| {
+                    shell.set_resolution((height, width), cx);
+                })),
+            )
             .child(separator())
             .child(
                 chrome::icon_button("ui-zoom-out", IconName::ZoomOut, "Zoom out").on_click(

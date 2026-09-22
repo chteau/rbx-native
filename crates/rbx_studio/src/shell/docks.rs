@@ -48,8 +48,12 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Vec<AnyElement> {
-        let count = self.layout.groups(edge).len();
-        if count == 0 {
+        // A dock whose every tab the document has set aside is left out
+        // whole, indices and all intact, so a drop still names the real one.
+        let shown: Vec<usize> = (0..self.layout.groups(edge).len())
+            .filter(|&index| self.dock_showing(edge, index).is_some())
+            .collect();
+        if shown.is_empty() {
             return self.ghost_dock(edge, window, cx);
         }
 
@@ -58,11 +62,12 @@ impl Shell {
         // still need the height, and showing another tab — the Viewport
         // dock it shares a strip with by default — opens the edge again.
         let collapsed = self.output_collapsed
-            && count == 1
-            && self.layout.groups(edge)[0].active() == Some(Panel::Output);
+            && shown.len() == 1
+            && self.dock_showing(edge, shown[0]) == Some(Panel::Output);
         let size = self.layout.capped(edge, limit);
 
-        let docks: Vec<AnyElement> = (0..count)
+        let docks: Vec<AnyElement> = shown
+            .into_iter()
             .map(|index| self.dock_group(edge, index, collapsed, window, cx))
             .collect();
 
@@ -92,13 +97,15 @@ impl Shell {
     ) -> AnyElement {
         let group = &self.layout.groups(edge)[index];
         let panels = group.panels().to_vec();
-        let Some(active) = group.active() else {
+        let Some(active) = self.dock_showing(edge, index) else {
             return div().into_any_element();
         };
+        let hidden = self.hidden_panels();
 
         let tabs: Vec<AnyElement> = panels
             .iter()
             .enumerate()
+            .filter(|(_, panel)| !hidden.contains(panel))
             .map(|(tab, panel)| {
                 let title = self.panel_title(*panel);
                 self.dock_tab(*panel, title, edge, index, tab, *panel == active, cx)
@@ -311,6 +318,24 @@ impl Shell {
             drop.update(cx, |shell, cx| shell.land_panel(carried, landing, cx));
         })
         .into_any_element()
+    }
+
+    /// The tab a dock shows: its own active one, or — while the document
+    /// has set that one aside (see `Shell::hidden_panels`) — the first of
+    /// the rest. `None` when every tab it holds is set aside.
+    fn dock_showing(&self, edge: Edge, index: usize) -> Option<Panel> {
+        let group = self.layout.groups(edge).get(index)?;
+        let hidden = self.hidden_panels();
+        group
+            .active()
+            .filter(|active| !hidden.contains(active))
+            .or_else(|| {
+                group
+                    .panels()
+                    .iter()
+                    .copied()
+                    .find(|panel| !hidden.contains(panel))
+            })
     }
 
     /// What a panel's tab reads.

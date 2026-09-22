@@ -18,11 +18,11 @@ pub(in crate::shell::ui_editor) struct Held {
     pub(super) own_rotation: f32,
     pub(in crate::shell::ui_editor) anchor: [f32; 2],
     pub(in crate::shell::ui_editor) position: Udim2,
-    pub(super) size: Udim2,
+    pub(in crate::shell::ui_editor) size: Udim2,
 }
 
 impl Held {
-    pub(super) fn read(dom: &WeakDom, placed: &GuiBox) -> Option<Held> {
+    pub(in crate::shell::ui_editor) fn read(dom: &WeakDom, placed: &GuiBox) -> Option<Held> {
         let properties = dom.get(placed.referent)?.properties();
         let udim2 = |name: &str| match properties.get(name) {
             Some(Variant::UDim2(value)) => [

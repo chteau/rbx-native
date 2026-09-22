@@ -23,6 +23,9 @@
 mod arrange;
 mod canvas;
 mod gesture;
+mod insert_bar;
+mod responsive;
+mod sidebar;
 mod toolbar;
 
 use std::cell::Cell;
@@ -35,6 +38,7 @@ use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use super::chrome::Document;
+use super::layout::Panel;
 use super::roving::Roving;
 use super::Shell;
 use crate::ui_canvas::{guides::Guide, View, PRESETS};
@@ -43,6 +47,11 @@ use crate::workspace_view::CanvasRequest;
 /// Read once at startup by `Shell::new`; documented in `main`'s module doc
 /// comment.
 pub(crate) const UI_EDITOR_VARIABLE: &str = "RBX_STUDIO_UI_EDITOR";
+
+/// The docks the canvas sets aside for the room: its own sidebar stands in
+/// for Properties, Output is height the canvas wants more, and the
+/// Viewport dock's settings are the 3D view's, which is not on screen.
+const CANVAS_HIDES: [Panel; 3] = [Panel::Properties, Panel::Output, Panel::Viewport];
 
 const SCREEN_CLASS: &str = "ScreenGui";
 const GUI_OBJECT_CLASS: &str = "GuiObject";
@@ -100,8 +109,12 @@ pub(super) struct UiEditor {
     width: Entity<InputState>,
     height: Entity<InputState>,
     nav: Roving,
+    sidebar_scroll: ScrollHandle,
     /// Whether the Explorer was last given the UI-only rows.
     filtered: bool,
+    /// Docks the canvas would set aside that were asked back by name this
+    /// visit — see `Shell::hidden_panels`.
+    unhidden: Vec<Panel>,
     _subscriptions: [Subscription; 2],
 }
 
@@ -139,7 +152,9 @@ impl UiEditor {
             width: width_field,
             height: height_field,
             nav: Roving::horizontal(),
+            sidebar_scroll: ScrollHandle::new(),
             filtered: false,
+            unhidden: Vec::new(),
             _subscriptions: subscriptions,
         }
     }
@@ -209,6 +224,26 @@ impl Shell {
         }
     }
 
+    /// The docks left out of the layout while the canvas is up. Nothing in
+    /// the layout itself changes — leaving the canvas shows exactly what
+    /// was there, and a dock that was shut stays shut.
+    pub(super) fn hidden_panels(&self) -> Vec<Panel> {
+        match self.ui_canvas_active() {
+            true => CANVAS_HIDES
+                .into_iter()
+                .filter(|panel| !self.ui.unhidden.contains(panel))
+                .collect(),
+            false => Vec::new(),
+        }
+    }
+
+    /// A dock asked back by name while the canvas has it set aside.
+    pub(super) fn ui_unhide(&mut self, panel: Panel) {
+        if self.hidden_panels().contains(&panel) {
+            self.ui.unhidden.push(panel);
+        }
+    }
+
     /// Swaps the Explorer's rows when the canvas has just come up or gone —
     /// keeping the selected row, as `Shell::set_show_all_services` does.
     fn sync_explorer_filter(&mut self, cx: &mut Context<Self>) {
@@ -217,6 +252,8 @@ impl Shell {
             return;
         }
         self.ui.filtered = filtered;
+        // A fresh visit sets the docks aside again.
+        self.ui.unhidden.clear();
         let items = self.explorer_items();
         let selected = self
             .selected()
@@ -257,7 +294,15 @@ impl Shell {
     pub(super) fn ui_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let strip = self.ui_tabs(cx);
         let body = match self.ui.tab {
-            Tab::Canvas => self.ui_canvas(window, cx),
+            Tab::Canvas => {
+                let canvas = self.ui_canvas(window, cx);
+                let sidebar = self.ui_sidebar(window, cx);
+                gpui_kit::component::h_flex()
+                    .size_full()
+                    .child(div().flex_1().h_full().overflow_hidden().child(canvas))
+                    .child(sidebar)
+                    .into_any_element()
+            }
             Tab::Stylesheet => self.style_editor(window, cx).into_any_element(),
         };
         gpui_kit::component::v_flex()

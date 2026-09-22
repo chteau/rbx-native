@@ -216,6 +216,23 @@ fn a_group_frame_fits_its_members_without_moving_them() {
     );
 }
 
+// Half of a 400-wide parent is 200 pixels however it is spelt: offset in,
+// scale out, and a scale already there keeps its share.
+#[test]
+fn an_offset_folds_into_the_scale_it_stands_for() {
+    assert_eq!(
+        arrange::to_scale([(0.0, 200), (0.25, 30)], [400.0, 300.0]),
+        [(0.5, 0), (0.35, 0)]
+    );
+    assert_eq!(
+        arrange::to_scale([(0.0, 50), (0.0, 10)], [0.0, 100.0]),
+        [(0.0, 50), (0.1, 0)],
+        "no extent to divide by"
+    );
+    assert!(arrange::is_fixed([(0.0, 50), (0.0, 10)]));
+    assert!(!arrange::is_fixed([(1.0, 0), (0.0, 10)]));
+}
+
 // A member placed by scale still gives the parent's origin back: half of a
 // 400-wide parent is 200.
 #[test]
