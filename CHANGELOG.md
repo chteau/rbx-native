@@ -2,6 +2,19 @@
 
 ## 2026-09-22
 
+- **The Argon review prompt has a real Diff window, and the connection
+  address is remembered.** A "Diff" button on the batch review prompt opens
+  a second window (`shell::argon_diff_window`, the same fixed-size floating
+  shape as the `ColorSequence`/`NumberSequence` graph, own title bar and
+  all) listing every addition, update and removal in the pending batch —
+  an addition's own name/class and nested-descendant count, an update's
+  changed properties as "before → after", a removal's name/class. It holds
+  no copy of the batch: every frame it re-reads whatever review is
+  currently pending, so it closes itself the moment Accept or Cancel (still
+  the dock's own buttons) resolves it. Also: the address Connect last
+  actually succeeded with is now saved to `Settings` and reused on the next
+  launch, instead of always starting back at `localhost:8000`. — @chteau
+
 - **The Argon dock talks to the real thing.** Connect now opens an actual
   HTTP+MsgPack connection to a locally-running `argon serve`
   (`crate::argon_client`, the same protocol `argon-rbx/argon`'s own Studio

@@ -4,6 +4,7 @@
 //! dragged to another edge or stacked as tabs.
 
 mod align;
+mod argon_diff_window;
 mod argon_sync;
 mod attributes_panel;
 mod brick_color;
@@ -176,6 +177,10 @@ pub(crate) struct Shell {
     /// its own (see `crate::sequence_window`, which owns everything about
     /// it), kept only so opening a second one replaces the first.
     sequence: Option<WindowHandle<gpui_kit::component::Root>>,
+    /// The open Argon review Diff window, if any — see
+    /// `shell::argon_diff_window`, the same one-window-of-its-own shape as
+    /// [`Self::sequence`] above.
+    argon_diff: Option<WindowHandle<gpui_kit::component::Root>>,
     /// The Explorer's type-ahead buffer — see `shell::tree_keys`.
     typeahead: tree_keys::Typeahead,
     /// The Explorer's own editing affordances — the `+` picker, the
@@ -259,6 +264,13 @@ pub(crate) struct Shell {
     /// The address field on the Argon dock (`shell::scripting_tools`) —
     /// real, editable, local to this window; read by `Shell::argon_connect`.
     argon_address: Entity<InputState>,
+    /// The address `Settings::argon_address` should hold — a plain `String`
+    /// rather than reading `argon_address` above back out, because
+    /// `Shell::save_settings` takes no `cx` and an `Entity<InputState>`
+    /// can't be read without one. Updated only on a successful connect
+    /// (see `Shell::drain_argon_events`), not on every keystroke of a
+    /// draft still being typed.
+    argon_saved_address: String,
     /// The `argon` CLI's version, if it's on PATH — probed once at startup
     /// (see `scripting_tools::detect_argon_version`) and cached here rather
     /// than re-run every frame the dock is open.
@@ -356,6 +368,7 @@ impl Shell {
             increment_names,
             expand_on_select,
             dragger,
+            argon_address: argon_address_setting,
         } = settings;
         // Before anything renders: every size token is read through these,
         // so a scale or target floor applied after the first frame would
@@ -521,6 +534,7 @@ impl Shell {
             reduce_motion,
             scrub: None,
             sequence: None,
+            argon_diff: None,
             tree_focus_handle,
             typeahead: tree_keys::Typeahead::default(),
             explorer_edit: explorer_edit::ExplorerEdit::default(),
@@ -553,7 +567,15 @@ impl Shell {
             viewport_scroll: ScrollHandle::new(),
             viewport_rows: Rc::default(),
             output_search: cx.new(|cx| InputState::new(window, cx).placeholder("Search")),
-            argon_address: cx.new(|cx| InputState::new(window, cx).default_value("localhost:8000")),
+            argon_address: cx.new(|cx| {
+                let seed = if argon_address_setting.is_empty() {
+                    "localhost:8000".to_owned()
+                } else {
+                    argon_address_setting.clone()
+                };
+                InputState::new(window, cx).default_value(seed)
+            }),
+            argon_saved_address: argon_address_setting,
             argon_version: scripting_tools::detect_argon_version(),
             argon: argon_sync::Sync::default(),
             wally_query,
@@ -715,6 +737,12 @@ impl Shell {
         // editor's behalf — the same reason every other debug var here
         // exists.
         shell.apply_debug_argon_connect(window, cx);
+
+        // `RBX_STUDIO_ARGON_DIFF` (see `shell::argon_sync`): after Connect
+        // above, so a real connection can still send a genuine batch — but
+        // this seeds its own synthetic one either way, the only
+        // deterministic way to screenshot the Diff window.
+        shell.apply_debug_argon_diff(cx);
 
         // `RBX_STUDIO_WALLY_INSTALL` (see `shell::wally_sync`): a result
         // row is a dynamically-populated click target, the same reason
@@ -1141,6 +1169,7 @@ impl Shell {
             increment_names: self.increment_names,
             expand_on_select: self.expand_on_select,
             dragger: self.dragger,
+            argon_address: self.argon_saved_address.clone(),
         };
         let _ = settings.save();
 

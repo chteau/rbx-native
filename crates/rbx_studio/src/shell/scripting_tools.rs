@@ -3,14 +3,16 @@
 //! scripting tools `ROADMAP.md` names, seated beside Output so a scripter
 //! never has to leave the bottom edge to reach them.
 //!
-//! Wally's dock is still a placeholder — its resolver is its own dedicated
-//! effort (see `ROADMAP.md`) — but Argon's is a real client for
+//! Both are real clients, not placeholders. Argon's talks
 //! `argon-rbx/argon`'s sync protocol (`crate::argon_client`, wired in here
 //! by `shell::argon_sync`): Connect really opens an HTTP connection to a
 //! locally-running `argon serve`, and the dock's states below
 //! (`NotConnected`/`Connecting`/`Connected`/`Error`, plus the batch review
 //! prompt) mirror Argon's own Studio plugin's state machine — drawn with
-//! this editor's own chrome, tokens and `Button`, not Argon's.
+//! this editor's own chrome, tokens and `Button`, not Argon's. Wally's
+//! searches the real `api.wally.run` registry and resolves a picked
+//! result's whole dependency graph (`crate::wally_client`, wired in here by
+//! `shell::wally_sync`).
 //!
 //! Shown only while the Script Editor document is up — see
 //! `Shell::hidden_panels` — since neither means anything over the 3D view
@@ -66,7 +68,13 @@ impl Shell {
                 .outline()
                 .xsmall()
                 .on_click(cx.listener(|shell, _, _, cx| shell.argon_cancel_pending(cx)));
-            review_prompt_body(additions, updates, removals, accept, cancel).into_any_element()
+            let diff = Button::new("argon-diff")
+                .label("Diff")
+                .outline()
+                .xsmall()
+                .on_click(cx.listener(|shell, _, _, cx| shell.open_argon_diff(cx)));
+            review_prompt_body(additions, updates, removals, diff, accept, cancel)
+                .into_any_element()
         } else {
             match self.argon_state() {
                 SyncState::NotConnected => {
@@ -357,14 +365,16 @@ fn error_body(message: &str, dismiss: Button) -> impl IntoElement {
 /// Argon's own `argon-roblox` plugin shows this as a floating dialog
 /// ("There will be N additions/updates/removals applied compared to the
 /// server", Cancel/Diff/Accept) once an incoming batch crosses its
-/// `Config.ChangesThreshold`; this dock shows the same copy inline instead
-/// of adding a second floating-window subsystem for one dialog. No "Diff"
-/// detail view yet — Accept/Cancel only, see the Argon sync plan's known
-/// simplifications.
+/// `Config.ChangesThreshold`; this dock shows the same copy inline, plus a
+/// real Diff button opening `shell::argon_diff_window` — a second window
+/// rather than a layer over the dock, the same shape as the
+/// `ColorSequence`/`NumberSequence` graph, because a batch's own
+/// before/after property values need real room to read.
 fn review_prompt_body(
     additions: usize,
     updates: usize,
     removals: usize,
+    diff: Button,
     accept: Button,
     cancel: Button,
 ) -> impl IntoElement {
@@ -383,7 +393,8 @@ fn review_prompt_body(
             h_flex()
                 .gap(tokens::label_gap())
                 .child(accept)
-                .child(cancel),
+                .child(cancel)
+                .child(diff),
         )
 }
 

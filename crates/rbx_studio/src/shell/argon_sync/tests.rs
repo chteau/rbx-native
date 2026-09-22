@@ -1,9 +1,9 @@
 // `Shell::argon_connect`/`apply_argon_changes`/etc. need a live GPUI
 // `Context<Shell>` this crate has no headless harness for — the same
 // boundary `shell::history`'s own tests stop at. What's tested here is the
-// pure logic underneath: parsing the dock's address field, and
-// `ordered_parent_first`'s dirty-set ordering (a plain `WeakDom` needs no
-// GPUI context at all).
+// pure logic underneath: parsing the dock's address field,
+// `ordered_parent_first`'s dirty-set ordering, and `count_descendants` (a
+// plain `WeakDom`/`Snapshot` tree needs no GPUI context at all).
 
 use std::collections::HashSet;
 
@@ -102,4 +102,34 @@ fn root_level_referents_need_no_parent_to_be_ready() {
     let ordered = ordered_parent_first(&dom, dirty);
 
     assert_eq!(ordered.len(), 2);
+}
+
+fn snapshot(name: &str, children: Vec<argon_client::Snapshot>) -> argon_client::Snapshot {
+    argon_client::Snapshot {
+        id: ArgonRef::generate(),
+        parent: None,
+        name: name.to_owned(),
+        class: "Folder".to_owned(),
+        properties: Vec::new(),
+        children,
+    }
+}
+
+#[test]
+fn a_leaf_addition_has_no_nested_descendants() {
+    assert_eq!(count_descendants(&snapshot("Leaf", Vec::new()).children), 0);
+}
+
+#[test]
+fn count_descendants_counts_every_level_not_just_direct_children() {
+    let tree = snapshot(
+        "Root",
+        vec![
+            snapshot("A", vec![snapshot("A1", Vec::new())]),
+            snapshot("B", Vec::new()),
+        ],
+    );
+    // A, A1, B — three descendants, not two (the direct-children count
+    // would undercount a nested folder of scripts).
+    assert_eq!(count_descendants(&tree.children), 3);
 }
