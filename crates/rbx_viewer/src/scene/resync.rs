@@ -424,6 +424,30 @@ impl Scene {
         self.gui = super::gui::plan(dom, database, &mut self.materials);
     }
 
+    /// Re-plans the GUI trees `roots` alone, each where it stands in the
+    /// list. `false` — leaving the list to be re-planned whole — when one
+    /// of them is not in it yet: a new tree's place is tree order, which
+    /// only the whole walk knows.
+    pub(crate) fn replan_gui_roots(
+        &mut self,
+        dom: &WeakDom,
+        database: &ReflectionDatabase,
+        roots: &[Ref],
+    ) -> bool {
+        for &root in roots {
+            let Some(index) = self.gui.iter().position(|screen| screen.referent == root) else {
+                return false;
+            };
+            match super::gui::plan_root(dom, database, &mut self.materials, root) {
+                Some(screen) => self.gui[index] = screen,
+                None => {
+                    self.gui.remove(index);
+                }
+            }
+        }
+        true
+    }
+
     /// Re-reads every placeable `BillboardGui`/`SurfaceGui` from `dom`,
     /// measured against the parts as this scene now draws them — the way
     /// [`Scene::from_dom`] did. The whole list, for the same reason

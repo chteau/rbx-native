@@ -116,6 +116,8 @@ pub(super) fn scroll(
                 },
             };
             into.push(Element {
+                referent: node.referent,
+                editable: super::Editable::default(),
                 viewport: None,
                 rect: context.carried(rect),
                 clip: context.clip,

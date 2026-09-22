@@ -36,6 +36,10 @@ pub(crate) enum MenuId {
     InsertScript,
     InsertGui,
     InsertOptions,
+    UiResolution,
+    UiInsert,
+    UiConstraint,
+    ViewportScreen,
 }
 
 impl MenuId {
@@ -49,6 +53,10 @@ impl MenuId {
             MenuId::InsertScript => "menu-insert-script",
             MenuId::InsertGui => "menu-insert-gui",
             MenuId::InsertOptions => "menu-insert-options",
+            MenuId::UiResolution => "menu-ui-resolution",
+            MenuId::UiInsert => "menu-ui-insert",
+            MenuId::UiConstraint => "menu-ui-constraint",
+            MenuId::ViewportScreen => "menu-viewport-screen",
         }
     }
 }
@@ -112,10 +120,25 @@ pub(super) fn dropdown(
     items: Vec<Item>,
     cx: &mut Context<Shell>,
 ) -> impl IntoElement + 'static {
+    dropdown_at(shell, menu, trigger, items, Anchor::TopLeft, cx)
+}
+
+/// [`dropdown`] with the menu's `anchor` corner on the trigger: a trigger
+/// at a window's right edge opens its menu leftwards, one near the bottom
+/// upwards.
+pub(super) fn dropdown_at(
+    shell: &Shell,
+    menu: MenuId,
+    trigger: super::chrome::Trigger,
+    items: Vec<Item>,
+    anchor: Anchor,
+    cx: &mut Context<Shell>,
+) -> impl IntoElement + 'static {
     let handle = cx.entity();
     let open = shell.open_menu == Some(menu);
 
     Popover::new(menu.id())
+        .anchor(anchor)
         .open(open)
         // The popover draws no chrome of its own: §5.4's container *is* the
         // chrome, and two stacked backgrounds would double the border.

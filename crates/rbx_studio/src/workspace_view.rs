@@ -9,6 +9,7 @@
 //! of that but the upload happens on a thread of its own (see [`pump`]); this
 //! module is the UI half — events in, finished frames out.
 
+mod canvas;
 mod changes;
 mod frame;
 mod gizmo;
@@ -43,9 +44,11 @@ use crate::pointer_lock::{self, PointerLock};
 use crate::settle::Settle;
 use crate::transform::{self, Targets, Transform};
 use crate::{display, pacing};
+pub(crate) use canvas::{Canvas, CanvasUpdated};
 use frame::{device_pixels, render_image, Viewport};
 use gizmo::Drag;
 use input::{camera_key, chorded, tool_key, Layout};
+pub(crate) use pump::canvas::Request as CanvasRequest;
 use pump::Pump;
 pub(crate) use scroll::{scrolled, Scroll};
 pub(crate) use stats::requested as stats_requested;
@@ -221,6 +224,12 @@ pub(crate) struct WorkspaceView {
     viewport: Rc<Cell<Viewport>>,
     /// The size the render thread was last told to draw at.
     sized: (u32, u32),
+    /// The device screen the view emulates, if any — see
+    /// `frame::Viewport::letterboxed`.
+    screen: Option<(u32, u32)>,
+    /// The whole panel, in physical pixels: `viewport` less the letterbox
+    /// while a screen is emulated, and what the frame is placed against.
+    panel: Rc<Cell<Viewport>>,
     /// Set by `render` each time GPUI actually paints this view, and cleared by
     /// `advance`, which runs on a plain timer of its own and keeps firing
     /// whether or not the dock currently mounts this panel. The dock renders
@@ -313,6 +322,10 @@ pub(crate) struct WorkspaceView {
     /// Studio's dragger guides: what they show now, and what they keep
     /// between one event and the next (see [`guides`]).
     guides: guides::State,
+    /// The UI editor's canvas: the request last forwarded, and the last
+    /// frame drawn for it — see [`canvas`].
+    canvas_request: Option<CanvasRequest>,
+    canvas: Option<Canvas>,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
     _subscriptions: [Subscription; 2],
 }
@@ -402,6 +415,8 @@ impl WorkspaceView {
             debug_wheel: scroll::debug_wheel(),
             viewport: Rc::new(Cell::new(Viewport::default())),
             sized: (0, 0),
+            screen: None,
+            panel: Rc::default(),
             // Assumed visible until `advance` first has a chance to find out
             // otherwise: `render` runs once as part of mounting, ahead of the
             // first `advance` tick, in the ordinary case of an already-visible
@@ -432,6 +447,8 @@ impl WorkspaceView {
             dragged: false,
             drag_readout: None,
             guides: guides::State::default(),
+            canvas_request: None,
+            canvas: None,
             _subscriptions: [blur, deactivated],
         }
     }
@@ -487,6 +504,7 @@ impl WorkspaceView {
         let mut pose = None;
         let mut warnings = Vec::new();
         let mut scrolls = Vec::new();
+        let mut drawn = None;
         while let Some(ready) = self.pump.poll() {
             speed = Some(ready.speed);
             level = Some(ready.level);
@@ -510,6 +528,12 @@ impl WorkspaceView {
             }
             warnings.extend(ready.warnings);
             scrolls.extend(ready.scrolls);
+            if ready.canvas.is_some() {
+                drawn = ready.canvas;
+            }
+        }
+        if let Some(drawn) = drawn {
+            self.show_canvas(drawn, window, cx);
         }
 
         self.show_speed(speed, now, cx);
@@ -761,6 +785,22 @@ impl WorkspaceView {
     /// Shows or hides the top-right orientation indicator — purely a local
     /// draw toggle, unlike `set_orthographic`: nothing about the camera or
     /// the render thread changes, so this never touches `self.pump`.
+    /// Emulates a `screen`-pixel device in the view: the scene letterboxed
+    /// to its shape, the GUI laid out at its size — or neither, with `None`.
+    pub(crate) fn set_screen(&mut self, screen: Option<(u32, u32)>, cx: &mut Context<Self>) {
+        if screen == self.screen {
+            return;
+        }
+        self.screen = screen;
+        self.pump.gui_screen(screen);
+        cx.notify();
+    }
+
+    /// The device screen the view emulates, if any.
+    pub(crate) fn emulated_screen(&self) -> Option<(u32, u32)> {
+        self.screen
+    }
+
     pub(crate) fn set_axis_indicator(&mut self, shown: bool, cx: &mut Context<Self>) {
         if shown == self.axis_indicator {
             return;
@@ -828,6 +868,8 @@ impl Render for WorkspaceView {
         // `advance` and the `painted` field.
         self.painted.set(true);
         let viewport = self.viewport.clone();
+        let panel = self.panel.clone();
+        let screen = self.screen;
         let scale = window.scale_factor();
         // A frame larger than the window itself would be read back only to be
         // scaled down again.
@@ -980,23 +1022,53 @@ impl Render for WorkspaceView {
                 }
             }))
             .when_some(self.frame.clone(), |this, frame| {
-                this.child(img(frame).size_full().object_fit(ObjectFit::Fill))
+                // Letterboxed, the frame goes exactly where the pointer
+                // mapping has it (`Viewport::letterboxed`, from the last
+                // layout), not wherever the image's own sizing would put it.
+                let placed = self.screen.map(|_| {
+                    let (panel, shown) = (self.panel.get(), self.viewport.get());
+                    let logical = |device: u32| px(device as f32 / scale);
+                    (
+                        logical(shown.origin.0.saturating_sub(panel.origin.0)),
+                        logical(shown.origin.1.saturating_sub(panel.origin.1)),
+                        logical(shown.size.0),
+                        logical(shown.size.1),
+                    )
+                });
+                let image = img(frame).object_fit(ObjectFit::Fill);
+                this.child(match placed {
+                    Some((left, top, width, height)) => {
+                        image.absolute().left(left).top(top).w(width).h(height)
+                    }
+                    None => image.size_full(),
+                })
             })
             // Nothing is painted here: the canvas is only how an element's laid
             // out bounds reach the render loop and the pointer lock.
             .child(
                 canvas(
                     move |bounds, _, _| {
-                        viewport.set(Viewport {
+                        panel.set(Viewport {
                             origin: (
                                 device_pixels(bounds.origin.x, scale),
                                 device_pixels(bounds.origin.y, scale),
                             ),
                             size: (
+                                device_pixels(bounds.size.width, scale),
+                                device_pixels(bounds.size.height, scale),
+                            ),
+                        });
+                        viewport.set(Viewport::letterboxed(
+                            (
+                                device_pixels(bounds.origin.x, scale),
+                                device_pixels(bounds.origin.y, scale),
+                            ),
+                            (
                                 device_pixels(bounds.size.width, scale).min(cap.0),
                                 device_pixels(bounds.size.height, scale).min(cap.1),
                             ),
-                        });
+                            screen,
+                        ));
                     },
                     |_, _: (), _, _| {},
                 )

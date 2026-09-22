@@ -98,6 +98,9 @@ const KNOWN_SERVICES: [&str; 53] = [
     "Workspace",
 ];
 
+/// The classes a UI tree hangs from: the `LayerCollector`s a place holds.
+const UI_ROOT_CLASSES: [&str; 3] = ["ScreenGui", "BillboardGui", "SurfaceGui"];
+
 /// One instance, as the explorer needs it: the DOM's own borrows cannot outlive
 /// the load, and the tree keeps its items for the life of the window.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -246,6 +249,30 @@ impl Explorer {
         } else {
             self.default_items.clone()
         }
+    }
+
+    /// The UI editor's view of the place: every `ScreenGui`, `BillboardGui`
+    /// and `SurfaceGui` as a root of its own, wherever it sits, with
+    /// everything beneath it — and nothing that is not beneath one. The rows
+    /// are the full tree's own, so expanding one here expands it there.
+    pub(crate) fn ui_items(&self) -> Vec<TreeItem> {
+        fn collect(
+            items: &[TreeItem],
+            classes: &HashMap<SharedString, String>,
+            into: &mut Vec<TreeItem>,
+        ) {
+            for item in items {
+                match classes.get(&item.id) {
+                    Some(class) if UI_ROOT_CLASSES.contains(&class.as_str()) => {
+                        into.push(item.clone());
+                    }
+                    _ => collect(&item.children, classes, into),
+                }
+            }
+        }
+        let mut roots = Vec::new();
+        collect(&self.all_items, &self.classes, &mut roots);
+        roots
     }
 
     pub(crate) fn icon(&self, id: &SharedString) -> ClassIcon {

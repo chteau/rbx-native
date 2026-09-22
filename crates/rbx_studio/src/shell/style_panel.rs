@@ -124,11 +124,12 @@ impl Shell {
             )
     }
 
-    /// Brings the panel's dock tab to the front, wherever the layout puts it
-    /// — the View menu's Style Editor item (see `crate::menu_bar`).
+    /// Brings the style sheets to the front: the UI Editor document, on its
+    /// Stylesheet sub-tab — the View menu's Style Editor item (see
+    /// `crate::menu_bar`).
     pub(crate) fn reveal_style_editor(&mut self, cx: &mut Context<Self>) {
-        self.document = super::chrome::Document::StyleEditor;
-        cx.notify();
+        self.set_document(super::chrome::Document::UiEditor, cx);
+        self.show_stylesheet(cx);
     }
 
     /// `RBX_STUDIO_STYLE_EDITOR=1|Prop=value`: documented in this module's

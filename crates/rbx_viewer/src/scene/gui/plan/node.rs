@@ -161,6 +161,15 @@ impl Group {
 /// against the viewport itself.
 #[derive(Clone)]
 pub(crate) struct Screen {
+    pub(crate) referent: Ref,
+    /// `Enabled`. A disabled screen is still planned — an editor laying one
+    /// out on its own needs it — but the overlay leaves it out.
+    pub(crate) enabled: bool,
+    /// A `BillboardGui`/`SurfaceGui`'s tree, planned the same way for an
+    /// editor's canvas, and the pixel size its canvas has when the scene
+    /// does not place it on a part — see `super::gather`. Never drawn by the
+    /// overlay: the scene draws these in the world (`super::super::space`).
+    pub(crate) space: Option<[f32; 2]>,
     pub(in crate::scene::gui) display_order: i32,
     /// `ScreenInsets`: pixels of the viewport's top edge the canvas gives up
     /// to Roblox's top bar.

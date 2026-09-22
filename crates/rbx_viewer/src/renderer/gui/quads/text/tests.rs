@@ -33,6 +33,8 @@ fn text(content: &str) -> GuiText {
 
 fn element(text: GuiText) -> GuiElement {
     GuiElement {
+        referent: rbx_dom::Ref::new(0),
+        editable: Default::default(),
         rect: GuiRect {
             x: 10.3,
             y: 20.7,

@@ -211,3 +211,31 @@ fn a_face_that_is_not_a_font_is_never_adopted() {
     assert!(fonts.loaded.contains(&asset), "not worth a second try");
     assert!(!fonts.adopt(&library, std::slice::from_ref(&face)));
 }
+
+// A layout measures and shapes every label again after each edit; what
+// did not change must come from the caches, and what did must not.
+#[test]
+fn a_repeated_measurement_or_shape_is_served_from_the_cache() {
+    let mut fonts = Typesetter::new();
+    let text = plain(Face::named("Believed", 400, false), 24.0);
+    let first = fonts.measure(&text, 24.0, Some(100.0));
+    assert_eq!(fonts.measure(&text, 24.0, Some(100.0)), first);
+    assert_eq!(fonts.measured.len(), 1);
+    fonts.measure(&text, 30.0, Some(100.0));
+    fonts.measure(&text, 24.0, Some(50.0));
+    assert_eq!(
+        fonts.measured.len(),
+        3,
+        "a new size or width is a new entry"
+    );
+
+    let shaped = fonts.shape_cached(&text, 24.0, None, None);
+    let again = fonts.shape_cached(&text, 24.0, None, None);
+    assert_eq!(bounds(&shaped), bounds(&again));
+    let mut recoloured = text.clone();
+    recoloured.color = [0.0; 3];
+    fonts.shape_cached(&recoloured, 24.0, None, None);
+    assert_eq!(fonts.shaped.len(), 2, "a colour is shaped into the buffer");
+    assert_eq!(fonts.measure(&recoloured, 24.0, Some(100.0)), first);
+    assert_eq!(fonts.measured.len(), 3, "and is no part of a measurement");
+}

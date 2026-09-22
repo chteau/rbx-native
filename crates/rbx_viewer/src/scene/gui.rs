@@ -36,8 +36,8 @@ pub(crate) use layout::StrokePx;
 #[cfg(test)]
 pub(crate) use layout::{resolve, resolve_canvas};
 pub(crate) use layout::{
-    resolve_canvas_with, resolve_with, Element, GradientPx, Grouped, ImageScale, Painted,
-    PixelRect, Rect, TextMeasure, Typeset,
+    resolve_canvas_with, resolve_with, screen_frame, Element, GradientPx, Grouped, ImageScale,
+    Painted, PixelRect, Rect, TextMeasure, Typeset,
 };
 pub(crate) use plan::image_placeholder as gui_image_placeholder;
 #[cfg(test)]
@@ -45,7 +45,7 @@ pub(crate) use plan::GroupTint;
 #[cfg(test)]
 pub(crate) use plan::TextSpan;
 pub(crate) use plan::{
-    plan, span_face, Align, GradientKind, Join, Screen, Text, Tile, ViewCamera, Viewport,
+    plan, plan_root, span_face, Align, GradientKind, Join, Screen, Text, Tile, ViewCamera, Viewport,
 };
 pub(crate) use space::{plan as plan_space, Anchor, SpaceGui};
 pub use wheel::ScrollTarget;

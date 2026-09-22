@@ -415,3 +415,33 @@ fn the_picker_and_the_tree_resolve_one_class_to_one_tile() {
         _ => panic!("Part is covered by the icon kit"),
     }
 }
+
+// The UI editor's Explorer: the UI roots wherever they sit — under
+// `StarterGui` or on a part — each with its whole subtree, and not one row
+// of the rest of the place.
+#[test]
+fn the_ui_view_lists_only_ui_roots_and_what_is_under_them() {
+    let mut dom = WeakDom::new();
+    let workspace = insert(&mut dom, 1, "Workspace", "Workspace");
+    let part = insert(&mut dom, 2, "Part", "Sign");
+    dom.set_parent(part, Some(workspace));
+    let surface = insert(&mut dom, 3, "SurfaceGui", "Face");
+    dom.set_parent(surface, Some(part));
+    let starter = insert(&mut dom, 4, "StarterGui", "StarterGui");
+    let hud = insert(&mut dom, 5, "ScreenGui", "Hud");
+    dom.set_parent(hud, Some(starter));
+    let frame = insert(&mut dom, 6, "Frame", "Bar");
+    dom.set_parent(frame, Some(hud));
+    insert(&mut dom, 7, "Lighting", "Lighting");
+
+    let explorer = from_dom(&dom);
+    let roots = explorer.ui_items();
+    let ids: Vec<&str> = roots.iter().map(|item| item.id.as_ref()).collect();
+    assert_eq!(
+        ids,
+        ["3", "5"],
+        "services first, so Workspace's surface leads"
+    );
+    assert_eq!(roots[1].children.len(), 1);
+    assert_eq!(roots[1].children[0].id.as_ref(), "6");
+}

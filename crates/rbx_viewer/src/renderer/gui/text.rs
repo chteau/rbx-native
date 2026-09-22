@@ -69,6 +69,45 @@ pub(super) struct Typesetter {
     families: HashMap<AssetRef, Family>,
     /// Every face file already handed to the font system.
     loaded: HashSet<AssetRef>,
+    /// Bounds already measured, by what decides them (see [`measure_key`]).
+    /// A `TextScaled` label measures its whole string once per step of the
+    /// size search on every layout, and a layout follows every edit, so a
+    /// canvas drag through a text-heavy screen was spent re-shaping labels
+    /// nothing had changed. Dropped whenever a face lands, which is the one
+    /// thing that changes a measurement without changing the text.
+    measured: HashMap<String, [f32; 2]>,
+    /// Buffers already shaped for drawing, by the whole text (colours
+    /// included: a decoration takes its colour from the shaping) and what
+    /// it was shaped to. Dropped with [`Typesetter::measured`].
+    shaped: HashMap<String, Buffer>,
+}
+
+/// More measurements than any one screen holds; past it the cache starts
+/// over rather than growing without end across edits that change the text.
+const MEASURED_CAP: usize = 16_384;
+
+/// Everything a measurement depends on — the runs and the face, the size
+/// the spans scale from, the spacing, the wrapping, and the size and width
+/// asked for — and nothing it does not (colour, alignment, the stroke).
+fn measure_key(text: &GuiText, size: f32, max_width: Option<f32>) -> String {
+    let spans: Vec<_> = text
+        .spans
+        .iter()
+        .map(|span| {
+            (
+                &span.text,
+                span.bold,
+                span.italic,
+                span.size,
+                &span.family,
+                span.weight,
+            )
+        })
+        .collect();
+    format!(
+        "{spans:?}|{:?}|{}|{}|{}|{}|{size}|{max_width:?}",
+        text.face, text.size, text.line_height, text.wrapped, text.scaled
+    )
 }
 
 impl Typesetter {
@@ -83,6 +122,8 @@ impl Typesetter {
             atlas: GlyphAtlas::new(),
             families: HashMap::new(),
             loaded: HashSet::new(),
+            measured: HashMap::new(),
+            shaped: HashMap::new(),
         }
     }
 
@@ -139,6 +180,10 @@ impl Typesetter {
                 }
                 db.push_face_info(info);
             }
+        }
+        if added {
+            self.measured.clear();
+            self.shaped.clear();
         }
         added
     }
@@ -210,6 +255,28 @@ impl Typesetter {
         buffer
     }
 
+    /// [`Typesetter::shape`], reusing the buffer an identical call shaped
+    /// before — a layout follows every edit, and most text on a screen is
+    /// not what the edit touched.
+    pub(super) fn shape_cached(
+        &mut self,
+        text: &GuiText,
+        size: f32,
+        width: Option<f32>,
+        ellipsize: Option<Ellipsize>,
+    ) -> Buffer {
+        let key = format!("{text:?}|{size}|{width:?}|{ellipsize:?}");
+        if let Some(buffer) = self.shaped.get(&key) {
+            return buffer.clone();
+        }
+        let buffer = self.shape(text, size, width, ellipsize);
+        if self.shaped.len() >= MEASURED_CAP {
+            self.shaped.clear();
+        }
+        self.shaped.insert(key, buffer.clone());
+        buffer
+    }
+
     /// The glyph's place in the atlas, rasterising it on first sight; `None`
     /// for one with no bitmap.
     pub(super) fn glyph(&mut self, key: CacheKey) -> Option<Glyph> {
@@ -260,7 +327,16 @@ impl Typesetter {
 
 impl GuiTextMeasure for Typesetter {
     fn measure(&mut self, text: &GuiText, size: f32, max_width: Option<f32>) -> [f32; 2] {
-        bounds(&self.shape(text, size, max_width, None))
+        let key = measure_key(text, size, max_width);
+        if let Some(&known) = self.measured.get(&key) {
+            return known;
+        }
+        let measured = bounds(&self.shape(text, size, max_width, None));
+        if self.measured.len() >= MEASURED_CAP {
+            self.measured.clear();
+        }
+        self.measured.insert(key, measured);
+        measured
     }
 }
 

@@ -57,6 +57,7 @@ The operations, in the order the harness reports them:
 | `load complete` | The same load through to the frame after the last asset has landed and been swapped in — the finished picture. |
 | `full reload` | The whole scene re-derived from a DOM already in memory, against a place whose assets are all resident. |
 | `patch instance` | One `BasePart`'s `CFrame` moved, patched in place. |
+| `canvas drag step` | One `GuiObject`'s `Position` in the place's largest `ScreenGui` nudged, patched in place, and — for `readable` — the UI editor's canvas drawn and read back with `Headless::render_gui` at 1920x1080: one step of a canvas drag. Skipped in a place with no `ScreenGui`. |
 | `edit: new mesh` / `new texture` | One `MeshPart` edited to name a `MeshId`/`TextureID` this session has never decoded: what the person typing waits for. Staged with `Headless::forget_asset` and a reload, so the fetch behind it is a disk-cache read rather than a download — see `examples/bench/streaming.rs`. |
 | `mesh swapped` / `texture swapped` | The same edit through to the frame that actually shows the asset; `call` is the swap-in rebuild alone. |
 
@@ -275,6 +276,36 @@ is measured flat from 81 to 16 742 instances in the tables above.
 a reason that has nothing to do with unions: this place draws 4 946 parts where
 `marked` draws 293, and a single-instance patch still walks the part list a
 couple of times. That walk is the next thing to make incremental.
+
+## UI editor canvas
+
+A step of a drag on the UI editor's canvas (`canvas drag step` above), on
+`GUI_TEST.rbxl` (3 445 instances, one `ScreenGui` holding nearly all of
+them, 285 elements laid out). Three runs of each side, 60 steps a run, at
+`1e9622e` with the phase back-ported (before) and at the commit after the
+changes below (after):
+
+| | call med | readable med | readable p95 |
+| :--- | ---: | ---: | ---: |
+| before | 1.38–1.85 ms | 26.57–28.18 ms | 28.46–31.78 ms |
+| after | 1.22–1.23 ms | 4.22–4.33 ms | 4.63–4.87 ms |
+
+`full reload` on the same fixture went from 14.16–16.61 ms to 7.97–8.08 ms
+readable, for the same reason.
+
+The patch was never the cost: drawing the canvas was, and nearly all of that
+was text. Every edit lays the screen out again, and every `TextScaled`
+label binary-searches its size by shaping its whole string at each step of
+the search, then shapes it once more to draw it — 17–32 ms of the 25 ms draw.
+The typesetter now keeps what it measured and what it shaped, keyed on
+everything that decides each (`renderer::gui::text`), so a layout after an
+edit re-shapes only the text that changed. Reading the 1920x1080 canvas back
+costs about 0.8 ms of what is left.
+
+Re-planning only the tree an edit touched (`headless::changes::pending`) does
+not show here — this fixture has the one screen — but in a place with more
+than one it takes a drag step's patch from re-planning every screen to
+re-planning one.
 
 ## Why the tracked number has assets off
 

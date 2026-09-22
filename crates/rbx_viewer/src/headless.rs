@@ -19,11 +19,24 @@ use crate::input::{CameraInput, Input};
 use crate::load::{Loaded, Resident, Toggles};
 use crate::pick::Selected;
 use crate::quality::QualityLevel;
-use crate::renderer::Segment;
+use crate::renderer::{GuiBox, Segment};
 use crate::scene::{Bounds, ScrollTarget};
 use crate::view::View;
 
 mod assets;
+
+/// One [`Headless::render_gui`] frame.
+pub struct GuiCanvas {
+    /// Tightly packed RGBA8 (sRGB) rows, `size.0 * size.1 * 4` bytes long.
+    pub pixels: Vec<u8>,
+    /// What was drawn: the size asked for, or a `BillboardGui`/`SurfaceGui`'s
+    /// own canvas size, which is not the caller's to choose.
+    pub size: (u32, u32),
+    /// The screen's own frame — what its top-level children resolve
+    /// against, below any top-bar inset — then every element as laid out,
+    /// in paint order: what the canvas is hit-tested against.
+    pub boxes: Vec<GuiBox>,
+}
 
 /// A loaded place that renders frames on demand, flown with the very same
 /// free-flight camera as the windowed viewer.
@@ -329,6 +342,17 @@ impl Headless {
     /// to be called when the tool or its world/local setting changes, not as
     /// the camera moves. The embedder hit-tests the cursor against the same
     /// geometry through [`crate::gizmo`].
+    /// Lays the `ScreenGui` overlay out as a `screen`-pixel device's screen
+    /// and draws it scaled onto each frame, whatever size that is: an editor
+    /// emulating the device a GUI was designed for, in a view of its own
+    /// size. `None` goes back to laying it out at the frame's size.
+    /// [`Headless::gui_scroll_target`] keeps taking points in the frame's
+    /// pixels either way.
+    pub fn set_gui_screen(&mut self, screen: Option<(u32, u32)>) {
+        self.offscreen
+            .with_renderer(|renderer, _, _| renderer.set_gui_screen(screen));
+    }
+
     pub fn set_gizmo(&mut self, gizmo: Option<Gizmo>) {
         self.view.set_gizmo(gizmo);
         self.offscreen.set_gizmo(gizmo);
@@ -347,6 +371,22 @@ impl Headless {
     /// frame lays the overlay out again.
     pub fn gui_scroll_target(&self, point: [f32; 2], axis: usize) -> Option<ScrollTarget> {
         self.offscreen.renderer().gui_scroll_target(point, axis)
+    }
+
+    /// Draws one `ScreenGui` on its own — enabled or not — laid out against a
+    /// `width`×`height` screen (a `BillboardGui`/`SurfaceGui` at its own
+    /// canvas size instead), over a flat `backdrop` (encoded sRGB) with no
+    /// scene behind it: an editor's 2D canvas, through the very layout and
+    /// painter the overlay uses. Synchronous, unlike
+    /// [`Headless::render_frame`]: call it when the tree changed, not every
+    /// frame.
+    pub fn render_gui(
+        &mut self,
+        screen: Ref,
+        (width, height): (u32, u32),
+        backdrop: [f32; 3],
+    ) -> Result<GuiCanvas, String> {
+        self.offscreen.gui_canvas((width, height), screen, backdrop)
     }
 
     /// Advances the camera by `dt` and reports whether the next frame would

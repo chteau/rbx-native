@@ -145,7 +145,7 @@ impl Patcher<'_> {
                 Ok(())
             }
             Some(Role::Gui) => {
-                self.gui_changed(Some(old_parent));
+                self.gui_changed(Some(old_parent), false);
                 Ok(())
             }
             // A `Folder` (or any other plain container) draws nothing itself,
@@ -153,7 +153,7 @@ impl Patcher<'_> {
             // with it — so the container it left is stale for the same
             // reason a `Frame`'s would be.
             Some(_) if holds_gui(dom, self.database, moved) => {
-                self.gui_changed(Some(old_parent));
+                self.gui_changed(Some(old_parent), false);
                 Ok(())
             }
             _ => Ok(()),
@@ -211,8 +211,10 @@ impl Patcher<'_> {
                 Some(parent) => self.sync_parent_part(parent),
                 None => Ok(()),
             },
+            // A write to the instance itself is `with_children`'s call;
+            // the walk of a structural change's subtree is not.
             Role::Gui => {
-                self.gui_changed(Some(referent));
+                self.gui_changed(Some(referent), with_children);
                 Ok(())
             }
             Role::Material => Err(Rebuild::Materials),
@@ -263,7 +265,7 @@ impl Patcher<'_> {
                 None => Ok(()),
             },
             Role::Gui => {
-                self.gui_changed(known.parent);
+                self.gui_changed(known.parent, false);
                 Ok(())
             }
             Role::Material => Err(Rebuild::Materials),

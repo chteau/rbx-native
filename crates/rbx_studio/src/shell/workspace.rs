@@ -127,10 +127,16 @@ impl Shell {
     /// Whichever editor Row A has open. This is the *only* thing Row A
     /// switches — see this module's own doc comment.
     fn document_content(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        // Every frame, whichever document is up: the render thread draws the
+        // UI editor's canvas only while it is asked for, and stops the frame
+        // it is not.
+        let canvas = self.canvas_request();
+        self.viewport
+            .update(cx, |viewport, _| viewport.set_canvas(canvas));
         match self.document {
             Document::Viewport => self.viewport().into_any_element(),
             Document::Scripts => self.script_editor(window, cx).into_any_element(),
-            Document::StyleEditor => self.style_editor(window, cx).into_any_element(),
+            Document::UiEditor => self.ui_editor(window, cx),
         }
     }
 

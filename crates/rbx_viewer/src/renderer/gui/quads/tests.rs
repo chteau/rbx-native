@@ -15,6 +15,8 @@ fn rect(x: f32, y: f32, width: f32, height: f32) -> GuiRect {
 
 fn element(rect: GuiRect, clip: Option<GuiRect>) -> GuiElement {
     GuiElement {
+        referent: rbx_dom::Ref::new(0),
+        editable: Default::default(),
         rect,
         clip,
         rotation: 0.0,

@@ -95,13 +95,17 @@ impl Shell {
 
     pub(super) fn row_menu_popup(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let target = self.explorer_edit.menu.as_ref()?.target;
-        let live = availability(
+        let mut live = availability(
             &self.dom,
             &self.database,
             self.selected_all(),
             self.clipboard_is_empty(),
             target,
         );
+        // On the UI editor's canvas a group is a `Frame`, and a `Frame`
+        // comes apart again (see `ui_editor::arrange`).
+        let canvas = self.ui_canvas_active();
+        live.ungroup |= canvas && self.ui_can_ungroup();
 
         let rows = [
             row(
@@ -159,7 +163,11 @@ impl Shell {
             row(
                 "group",
                 IconName::Package,
-                "Group as Model",
+                if canvas {
+                    "Group in a Frame"
+                } else {
+                    "Group as Model"
+                },
                 live.group,
                 |shell, _, cx| shell.group_selected(cx),
             ),

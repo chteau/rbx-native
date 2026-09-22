@@ -39,6 +39,10 @@ pub(crate) struct Offscreen {
     target: Option<Target>,
     /// The frame already queued, waiting to be handed back by the next call.
     pending: Option<Pending>,
+    /// What [`Offscreen::gui_canvas`] draws into: a size of its own, so an
+    /// editor switching between the scene and a canvas never resizes the
+    /// other's target out from under it.
+    canvas: Option<Target>,
 }
 
 impl Offscreen {
@@ -65,6 +69,7 @@ impl Offscreen {
             renderer,
             target: None,
             pending: None,
+            canvas: None,
         };
         offscreen.set_orthographic(view.orthographic);
         offscreen.set_selection(&view.selected, world.scene);
@@ -242,6 +247,42 @@ impl Offscreen {
             render: Duration::ZERO,
             readback: waited.elapsed(),
         }))
+    }
+
+    /// Draws `screen` alone over `backdrop` (see `Renderer::draw_gui_canvas`)
+    /// and waits for it: a canvas is redrawn only when something on it
+    /// changed, so there is no stream of frames to overlap the readback with.
+    /// The size drawn is `size`, unless the tree has a canvas size of its
+    /// own (see `Renderer::gui_canvas_size`).
+    pub(crate) fn gui_canvas(
+        &mut self,
+        size: (u32, u32),
+        screen: rbx_dom::Ref,
+        backdrop: [f32; 3],
+    ) -> Result<crate::headless::GuiCanvas, String> {
+        let size = self.renderer.gui_canvas_size(screen, size);
+        if size.0 == 0 || size.1 == 0 {
+            return Err(format!("cannot render a {}x{} canvas", size.0, size.1));
+        }
+        let target = match &mut self.canvas {
+            Some(target) if target.size() == size => target,
+            canvas => canvas.insert(Target::new(&self.device, size)),
+        };
+        let [r, g, b] = backdrop.map(f64::from);
+        self.renderer.draw_gui_canvas(
+            &self.device,
+            &self.queue,
+            target.texture(),
+            (size, screen),
+            wgpu::Color { r, g, b, a: 1.0 },
+        );
+        let pending = target.copy(&self.device, &self.queue);
+        let pixels = target.collect(&self.device, pending)?;
+        Ok(crate::headless::GuiCanvas {
+            pixels,
+            size,
+            boxes: self.renderer.gui_boxes().to_vec(),
+        })
     }
 
     /// Drops the queued frame, mapping and all: a readback buffer left mapped is

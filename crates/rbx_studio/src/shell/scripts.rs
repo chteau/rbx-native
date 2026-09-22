@@ -51,7 +51,7 @@ impl Shell {
         // would throw away an edit in progress.
         if self.scripts.tabs.open(reference) == Opened::Existing {
             self.focus_script(reference, window, cx);
-            self.document = super::chrome::Document::Scripts;
+            self.set_document(super::chrome::Document::Scripts, cx);
             cx.notify();
             return;
         }
@@ -85,7 +85,7 @@ impl Shell {
             },
         );
         self.focus_script(reference, window, cx);
-        self.document = super::chrome::Document::Scripts;
+        self.set_document(super::chrome::Document::Scripts, cx);
         cx.notify();
     }
 

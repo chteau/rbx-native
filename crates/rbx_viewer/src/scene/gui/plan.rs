@@ -51,9 +51,12 @@ pub(crate) use text::{span_face, Text};
 pub(super) use viewport::each_part as each_viewport_part;
 pub(crate) use viewport::{ViewCamera, Viewport};
 
+use super::space::{billboard_canvas, studs, surface_canvas};
 use crate::scene::Catalog;
 
 const SCREEN_CLASS: &str = "ScreenGui";
+const BILLBOARD_CLASS: &str = "BillboardGui";
+const SURFACE_CLASS: &str = "SurfaceGui";
 const ELEMENT_CLASS: &str = "GuiObject";
 /// The three text classes share every text property, so one reader serves
 /// all of them — and their `UIStroke` outlines glyphs rather than the box;
@@ -69,7 +72,11 @@ const GROUP_CLASS: &str = "CanvasGroup";
 /// ever seen on a tree built in code: a place file serializes the property.
 const DEFAULT_BORDER: [f32; 3] = [27.0 / 255.0, 42.0 / 255.0, 53.0 / 255.0];
 
-/// Every enabled `ScreenGui` in the DOM, in the order the tree holds them.
+/// Every `ScreenGui` in the DOM, in the order the tree holds them — disabled
+/// ones too, flagged, so an editor can still lay one out on its own (see
+/// `Screen::enabled`); the overlay itself draws only the enabled. Every
+/// `BillboardGui`/`SurfaceGui` comes too, as a tree for an editor's canvas
+/// alone (see `Screen::space`), placed on a part or not.
 ///
 /// The walk is its own recursion rather than [`crate::scene::descendants`]:
 /// that iterator pops off a stack and so visits children backwards, while a
@@ -90,6 +97,29 @@ pub(crate) fn plan(
     screens
 }
 
+/// The one tree `root` — a `ScreenGui`, `BillboardGui` or `SurfaceGui` —
+/// planned exactly as [`plan`] plans it, without walking the rest of the
+/// DOM: `None` once it is not a tree [`plan`] would list at all (gone, no
+/// such root, or under a `StarterGui` hiding its contents).
+pub(crate) fn plan_root(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    materials: &mut Catalog,
+    root: Ref,
+) -> Option<Screen> {
+    let mut up = dom.parent(root);
+    while let Some(ancestor) = up {
+        if hides_contents(database, dom.get(ancestor)?) {
+            return None;
+        }
+        up = dom.parent(ancestor);
+    }
+    let styles = Styled::for_tree(dom, root);
+    let mut found = Vec::new();
+    gather(dom, database, &styles, materials, root, &mut found);
+    found.into_iter().find(|screen| screen.referent == root)
+}
+
 fn gather(
     dom: &WeakDom,
     database: &ReflectionDatabase,
@@ -108,20 +138,47 @@ fn gather(
     }
     if database.is_subclass_of(instance.class(), SCREEN_CLASS) {
         let properties = styles.properties_of(instance);
-        if flag(properties, "Enabled", true) {
-            let (roots, groups) = elements(dom, database, styles, materials, instance.children());
-            into.push(Screen {
-                display_order: integer(properties, "DisplayOrder", 0),
-                top_inset: constraints::top_bar_inset(properties),
-                global_z_index: constraints::global_z_index(properties),
-                clip_to_safe_area: constraints::clip_to_safe_area(properties),
-                list: layout_of(dom, database, styles, instance.children()),
-                roots,
-                groups,
-            });
-        }
+        let (roots, groups) = elements(dom, database, styles, materials, instance.children());
+        into.push(Screen {
+            referent,
+            enabled: flag(properties, "Enabled", true),
+            space: None,
+            display_order: integer(properties, "DisplayOrder", 0),
+            top_inset: constraints::top_bar_inset(properties),
+            global_z_index: constraints::global_z_index(properties),
+            clip_to_safe_area: constraints::clip_to_safe_area(properties),
+            list: layout_of(dom, database, styles, instance.children()),
+            roots,
+            groups,
+        });
         // A `ScreenGui` never nests inside another, and its own children are
         // already read above.
+        return;
+    }
+    let billboard = database.is_subclass_of(instance.class(), BILLBOARD_CLASS);
+    if billboard || database.is_subclass_of(instance.class(), SURFACE_CLASS) {
+        let properties = styles.properties_of(instance);
+        let (roots, groups) = elements(dom, database, styles, materials, instance.children());
+        // Without a part to measure, a `SurfaceGui` in its default
+        // `PixelsPerStud` mode has no face to count pixels over, and falls
+        // back to the default canvas; the scene's own canvas wins wherever
+        // it placed one (see `renderer::gui`).
+        let canvas = match billboard {
+            true => billboard_canvas(studs(span(properties, "Size"))),
+            false => surface_canvas(properties, [0.0, 0.0]),
+        };
+        into.push(Screen {
+            referent,
+            enabled: flag(properties, "Enabled", true),
+            space: Some(canvas),
+            display_order: 0,
+            top_inset: 0.0,
+            global_z_index: constraints::global_z_index(properties),
+            clip_to_safe_area: false,
+            list: layout_of(dom, database, styles, instance.children()),
+            roots,
+            groups,
+        });
         return;
     }
     for &child in instance.children() {

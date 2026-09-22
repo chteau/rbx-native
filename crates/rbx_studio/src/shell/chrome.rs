@@ -39,18 +39,19 @@ pub(crate) enum Document {
     #[default]
     Viewport,
     Scripts,
-    StyleEditor,
+    /// The 2D canvas and the style sheets — see `shell::ui_editor`.
+    UiEditor,
 }
 
 impl Document {
     pub(super) const ALL: [Document; 3] =
-        [Document::Viewport, Document::Scripts, Document::StyleEditor];
+        [Document::Viewport, Document::Scripts, Document::UiEditor];
 
     fn label(self, place: &SharedString) -> SharedString {
         match self {
             Document::Viewport => place.clone(),
             Document::Scripts => "Script Editor".into(),
-            Document::StyleEditor => "Style Editor".into(),
+            Document::UiEditor => "UI Editor".into(),
         }
     }
 
@@ -58,7 +59,7 @@ impl Document {
         match self {
             Document::Viewport => IconName::Globe,
             Document::Scripts => IconName::Code,
-            Document::StyleEditor => IconName::Palette,
+            Document::UiEditor => IconName::LayoutDashboard,
         }
     }
 }
@@ -223,8 +224,7 @@ impl Shell {
                                 document.label(&place),
                                 document == active,
                                 cx.listener(move |shell, _, _, cx| {
-                                    shell.document = document;
-                                    cx.notify();
+                                    shell.set_document(document, cx);
                                 }),
                             ),
                             cx,
@@ -492,6 +492,25 @@ pub(super) fn dock_tab(
     selected: bool,
     on_close: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> Stateful<Div> {
+    tab_pill(id, title, selected).child(
+        // Only on the tab that is showing: a strip of two tabs with a
+        // cross on each reads as two buttons rather than as one dock,
+        // and the tab you are looking at is the one you would close.
+        div()
+            .id(SharedString::from(format!("dock-close-{id}")))
+            .flex_none()
+            .when(!selected, |this| this.invisible())
+            .cursor_pointer()
+            .text_color(tokens::text_label())
+            .hover(|this| this.text_color(tokens::text_full()))
+            .on_click(on_close)
+            .child(Icon::new(IconName::X).size(tokens::text_xs())),
+    )
+}
+
+/// A dock tab's pill alone, with no close mark: what a panel's own sub-tabs
+/// wear (see `shell::ui_editor`), which switch a view rather than shut one.
+pub(super) fn tab_pill(id: &'static str, title: SharedString, selected: bool) -> Stateful<Div> {
     h_flex()
         // Keyed by the panel rather than by its label: the Properties tab
         // is named after the selected instance, and an element whose id
@@ -522,20 +541,6 @@ pub(super) fn dock_tab(
         })
         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
         .child(div().truncate().child(title))
-        .child(
-            // Only on the tab that is showing: a strip of two tabs with a
-            // cross on each reads as two buttons rather than as one dock,
-            // and the tab you are looking at is the one you would close.
-            div()
-                .id(SharedString::from(format!("dock-close-{id}")))
-                .flex_none()
-                .when(!selected, |this| this.invisible())
-                .cursor_pointer()
-                .text_color(tokens::text_label())
-                .hover(|this| this.text_color(tokens::text_full()))
-                .on_click(on_close)
-                .child(Icon::new(IconName::X).size(tokens::text_xs())),
-        )
 }
 
 /// The strip a dock's tabs sit in, with its own trailing cell for an

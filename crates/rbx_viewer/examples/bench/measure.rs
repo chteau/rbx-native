@@ -5,6 +5,7 @@
 //! asset nobody has fetched.
 
 mod edits;
+mod gui;
 
 use std::path::Path;
 use std::time::Instant;
@@ -80,6 +81,10 @@ pub(crate) fn fixture(path: &Path, args: &Args) -> Result<Measured, String> {
             "single-instance patch skipped: no BasePart in this place is patched in place"
                 .to_string(),
         ),
+    }
+    match gui::drag(path, &mut dom, args)? {
+        Some(phase) => phases.push(phase),
+        None => notes.push("canvas drag skipped: no ScreenGui holds a GuiObject".to_string()),
     }
     match edits::phases(path, &mut dom, args)? {
         Some(edited) => phases.extend(edited),

@@ -300,6 +300,12 @@ impl Shell {
         if let Some(part_shape) = part_defaults_shape(&self.database, class, shape) {
             apply_part_defaults(&mut dom, reference, part_shape);
         }
+        // A seed that were refused would only leave `Instance.new`'s own
+        // value behind, which is still a whole instance.
+        for (name, text) in explorer::insert::gui_defaults(&self.database, class) {
+            let _ =
+                crate::properties::edit::commit(&mut dom, &self.database, reference, name, text);
+        }
         if let Some(text) = source {
             crate::script_editor::source::write(&mut dom, reference, text);
         }

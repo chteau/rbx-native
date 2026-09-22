@@ -163,6 +163,11 @@ impl Shell {
         let Some(parent) = common_parent(&self.dom, &self.database, &selected) else {
             return;
         };
+        // `GuiObject`s on the UI editor's canvas group into a `Frame`
+        // fitted round them — see `shell::ui_editor::arrange`.
+        if self.group_gui(&selected, parent, cx) {
+            return;
+        }
 
         // See `shell::history`: snapshotted before the mutations below, so
         // one Group is one undo step however many instances it wraps.
@@ -185,6 +190,11 @@ impl Shell {
     /// no-op. `pub(crate)`: also `menu_bar`'s Ungroup item's entry point.
     pub(crate) fn ungroup_selected(&mut self, cx: &mut Context<Self>) {
         let selected = self.selected_all().to_vec();
+        // Grouping `Frame`s on the UI editor's canvas come apart where
+        // they stand — see `shell::ui_editor::arrange`.
+        if self.ungroup_gui(&selected, cx) {
+            return;
+        }
         let groups: Vec<(Ref, Option<Ref>, Vec<Ref>)> = selected
             .iter()
             .filter_map(|&reference| {

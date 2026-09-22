@@ -7,6 +7,8 @@
 
 mod text;
 
+use rbx_dom::Ref;
+
 use super::plan::{Align, GroupTint, Node, Screen, Span, Viewport};
 use super::space::SpaceGui;
 use super::wheel::ScrollWindow;
@@ -39,6 +41,12 @@ pub(in crate::scene::gui) use walk::{children, Context, Scope};
 /// One `GuiObject` at its final pixel position, ready to be drawn on its own.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Element {
+    /// The `GuiObject` this was laid out for — a `ScrollingFrame`'s bar
+    /// segments carry the frame's own. What an editor hit-tests against.
+    pub(crate) referent: Ref,
+    /// What an editor needs to write this element's `UDim2`s back without
+    /// deriving the layout a second time — see [`Editable`].
+    pub(crate) editable: Editable,
     pub(crate) rect: Rect,
     /// The scissor rect inherited from the nearest `ClipsDescendants`
     /// ancestor, if any. Already intersected down the whole chain.
@@ -80,6 +88,30 @@ pub(crate) struct Element {
     pub(crate) scroll: Option<ScrollWindow>,
 }
 
+/// The layout facts behind one element that an editor writing its `Position`
+/// and `Size` has to honour.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Editable {
+    /// The box this element's children resolve against: its rect less
+    /// `UIPadding`, in the same frame as the rect. `None` for a
+    /// `ScrollingFrame`, whose children resolve against its scrolled canvas.
+    pub(crate) content: Option<Rect>,
+    /// `UIScale`: what this element's resolved `Size` is multiplied by.
+    pub(crate) size_scale: f32,
+    /// Whether an enabled `UIAspectRatioConstraint` decides its shape.
+    pub(crate) aspect: bool,
+}
+
+impl Default for Editable {
+    fn default() -> Self {
+        Editable {
+            content: None,
+            size_scale: 1.0,
+            aspect: false,
+        }
+    }
+}
+
 /// A `CanvasGroup`'s tint and the run of elements it applies to.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Grouped {
@@ -106,25 +138,19 @@ pub(crate) fn resolve(screens: &[Screen], viewport: [f32; 2]) -> Vec<Element> {
 /// [`resolve`] with the text measured by `measure` — what the renderer calls,
 /// so `TextScaled` and an `AutomaticSize` text box come out at the size the
 /// glyphs will actually take.
-pub(crate) fn resolve_with(
-    screens: &[Screen],
+pub(crate) fn resolve_with<'a>(
+    screens: impl IntoIterator<Item = &'a Screen>,
     viewport: [f32; 2],
     measure: &mut dyn TextMeasure,
 ) -> Vec<Element> {
-    let mut order: Vec<&Screen> = screens.iter().collect();
+    let mut order: Vec<&Screen> = screens.into_iter().collect();
     // Stable, so two screens sharing a `DisplayOrder` keep the order the DOM
     // holds them in rather than an arbitrary one.
     order.sort_by_key(|screen| screen.display_order);
 
     let mut elements = Vec::new();
     for screen in order {
-        // `ScreenInsets`: the canvas starts below the top bar, and is that
-        // much shorter, so a `{1, 0}` child still reaches the bottom edge.
-        let frame = Rect {
-            y: screen.top_inset,
-            height: (viewport[1] - screen.top_inset).max(0.0),
-            ..canvas(viewport)
-        };
+        let frame = screen_frame(screen, viewport);
         let start = elements.len();
         children(
             Scope {
@@ -153,6 +179,17 @@ pub(crate) fn resolve_with(
         }
     }
     elements
+}
+
+/// The box a screen's top-level children resolve against: `ScreenInsets`
+/// starts it below the top bar, and makes it that much shorter, so a
+/// `{1, 0}` child still reaches the bottom edge.
+pub(crate) fn screen_frame(screen: &Screen, viewport: [f32; 2]) -> Rect {
+    Rect {
+        y: screen.top_inset,
+        height: (viewport[1] - screen.top_inset).max(0.0),
+        ..canvas(viewport)
+    }
 }
 
 /// The same resolution for a `BillboardGui`/`SurfaceGui`, against its own
@@ -218,6 +255,15 @@ pub(in crate::scene::gui) fn emit(
     let rounded = corner_radii.iter().any(|&radius| radius > 0.0);
     let start = into.len();
     into.push(Element {
+        referent: node.referent,
+        editable: Editable {
+            content: node
+                .scrolling
+                .is_none()
+                .then(|| sizing::padded(node, &rect)),
+            size_scale: node.constraints.scale.unwrap_or(1.0),
+            aspect: node.constraints.aspect.is_some(),
+        },
         rect,
         clip: context.clip,
         rotation: context.angle + node.rotation,

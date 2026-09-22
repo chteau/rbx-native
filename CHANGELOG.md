@@ -2,6 +2,56 @@
 
 ## 2026-09-22
 
+- **The 3D view shows a GUI at the screen it was built for.** A `ScreenGui`
+  laid out on a 1920×1080 canvas used to be laid out again at whatever size
+  the viewport panel was, so it never looked the way it was built. The
+  Viewport dock has a Screen setting now, the same one as the UI Editor's
+  resolution: pick a device, type a size or turn it, and the scene is
+  letterboxed to that screen's shape with the GUI laid out at its size, as
+  Studio's device emulator shows it. The viewport follows the canvas's
+  resolution from the start, 1920×1080 until another is chosen; "Viewport
+  size" goes back to the panel's own. — @chteau
+
+- **The UI Editor's canvas works like Figma now, and keeps up with a drag.**
+  Its sidebar leads with a design panel — position with align-to-parent and
+  an anchor grid, W/H with an aspect lock, auto layout, opacity, corner
+  radius (per corner too), fill with hex and a gradient, stroke, and
+  constraints — where every number's label scrubs and a value Roblox keeps
+  on a modifier makes the `UICorner`, `UIStroke`, `UIPadding` or layout it
+  needs as you edit it. The insert bar draws: pick a tool (or press F, T,
+  B, X, L, G) and drag the element out where it goes; a switch beside it
+  picks whether the canvas writes Offset or Scale. The canvas shows the
+  selection's size, rounds corners from handles, shows an auto layout's
+  gaps and padding as bands you drag and reorders a list by dragging a
+  child, edits text in place on a double-click, and takes Sketch's keys —
+  paint order, fit and zoom to selection, Space to pan, Shift and Alt on
+  every drag. A drag step on a text-heavy screen went from 27 ms to 4 ms:
+  laying the screen out again after each edit no longer re-shapes every
+  label (see BENCHMARKS.md). Open Explorer rows now stay open across an
+  edit. — @chteau
+
+- **The Style Editor is the UI Editor, with a canvas.** Editing a
+  `ScreenGui` meant picking its descendants out of the Explorer and typing
+  `UDim2`s into Properties, with the 3D view the only picture. The document
+  now opens on a Figma-style canvas beside the unchanged style sheets
+  (its Stylesheet sub-tab): select a `ScreenGui` or anything in it and that
+  screen alone is drawn — by the viewport's own GUI renderer, with no scene
+  behind it — at a device preset, a typed size or turned on its side. Click
+  or marquee to select, drag, resize and rotate one element or the whole
+  selection at once, nudge with the arrows, snap to siblings and the parent
+  along smart guides, hold Alt for distances, align, distribute, group into
+  a fitted `Frame`, insert elements from a floating bar, and make a screen
+  responsive in one click (offsets folded into scale, fixed shapes kept by
+  aspect ratio) — every edit one Ctrl+Z, written the way a typed Properties
+  value is, and measured the way the renderer lays it out: inside the
+  parent's `UIPadding`, through `UIScale`, aspect and size constraints. A
+  part's `SurfaceGui` or a `BillboardGui` goes on the canvas too, at its
+  own canvas size. While it is up the Explorer lists only
+  the UI, and the Properties, Output and Viewport docks step aside for a
+  property sidebar built from the same rows; leaving it puts them back as
+  they were. A new `GuiObject` inserted anywhere is now a visible box rather
+  than a 0×0 one. — @chteau
+
 - **Properties shows a part's `Origin`, and typing one moves it there.**
   Studio lists where a part or model's pivot stands in the world under
   Transform; it was missing here, so filtering for "origin" or "position"
