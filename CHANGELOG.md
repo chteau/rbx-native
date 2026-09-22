@@ -8,9 +8,9 @@
   Viewport dock has a Screen setting now, the same one as the UI Editor's
   resolution: pick a device, type a size or turn it, and the scene is
   letterboxed to that screen's shape with the GUI laid out at its size, as
-  Studio's device emulator shows it. Choosing a resolution on the canvas
-  applies it to the viewport as well; "Viewport size" goes back to the
-  panel's own. — @chteau
+  Studio's device emulator shows it. The viewport follows the canvas's
+  resolution from the start, 1920×1080 until another is chosen; "Viewport
+  size" goes back to the panel's own. — @chteau
 
 - **The UI Editor's canvas works like Figma now, and keeps up with a drag.**
   Its sidebar leads with a design panel — position with align-to-parent and

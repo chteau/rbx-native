@@ -383,6 +383,16 @@ impl Shell {
         (self.ui.width.clone(), self.ui.height.clone())
     }
 
+    /// Puts the canvas's screen on the 3D view at startup: the viewport
+    /// follows the resolution a GUI is designed at from the first frame,
+    /// not only once one is picked. The Viewport dock's "Viewport size"
+    /// still lets it go.
+    pub(super) fn follow_ui_screen(&mut self, cx: &mut Context<Self>) {
+        let screen = self.ui.resolution;
+        self.viewport
+            .update(cx, |view, cx| view.set_screen(Some(screen), cx));
+    }
+
     /// The Viewport dock's "Viewport size": the 3D view back to its own
     /// size, the canvas keeping the resolution it had.
     pub(super) fn clear_viewport_screen(&mut self, cx: &mut Context<Self>) {

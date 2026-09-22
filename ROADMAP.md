@@ -835,7 +835,8 @@ Roblox's own engine.
   - **The 3D view emulates the same screen.** The Viewport dock's Screen
     setting is the canvas's resolution: the scene letterboxes to the
     device's shape and the `ScreenGui` overlay is laid out at its size and
-    drawn scaled into the frame; "Viewport size" turns it off.
+    drawn scaled into the frame, from startup; "Viewport size" turns it
+    off.
   - **Make responsive** folds every `Position`/`Size` offset of the
     selection (or the whole screen) into its scale at the current
     resolution — against the parent's padded box, a `Size` along the axes
