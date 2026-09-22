@@ -1145,8 +1145,11 @@ Roblox's own engine.
   - Export from the row's menu: services and the whole place to Roblox
     (Save/Publish, see below), to a local file; individual instances to
     `.obj` and `.gltf` — genuinely useful native additions since Studio
-    itself has no built-in mesh export, not something to frame as
-    "matching Studio" since it doesn't do this either.
+    itself has no built-in mesh export today. Roblox's own roadmap does
+    list glTF export, pushed from Late 2025 to Late 2026 in its
+    [fall 2026 update](https://devforum.roblox.com/t/creator-roadmap-2026-fall-update/4880208),
+    so `.gltf` may become Studio parity rather than an addition. Check what
+    it actually exports once it ships.
   - **Keep search results browsable without clearing the search field** —
     a real devforum request
     ([`view-descendants-of-matching-instances-in-explorer-search`](https://devforum.roblox.com/t/view-descendants-of-matching-instances-in-explorer-search/4862003),
@@ -1972,6 +1975,208 @@ against `Roblox/creator-docs` rather than assumed:
 - [ ] 📋 macOS build CI. Linux is exercised constantly by development
   itself and Windows has had a job since the one under "Platform:
   Windows"; macOS has neither, and is not a target yet either.
+
+### From Roblox's own Creator Roadmap (2026 fall update)
+
+Roblox's [Creator Roadmap fall 2026 update](https://devforum.roblox.com/t/creator-roadmap-2026-fall-update/4880208)
+(read in full on 2026-09-22) added 72 items after RDC 2026. Every one of
+them is **announced, not shipped**: the date after each is Roblox's own
+target, and the same post pushed 32 earlier items back, some by more than a
+year. None of this should be built against a guessed property name. Where an
+item brings a new class, property or enum value, the work starts once it is
+in the API dump and a real place file carrying it can be read. Until then
+these bullets hold the idea so it isn't lost. They are grouped by the part of
+this project each one would touch, not by Roblox's headings. The items that
+give a Studio replacement nothing to build are listed at the end, so it is
+clear they were considered and not missed.
+
+#### Renderer
+- [ ] 📋 **New primitive shapes: Capsule, Cone, Disc and rounded
+  primitives** (Early 2027). These are new `Enum.PartType` values, and
+  `scene::shape::part_type` sends any value it does not know to
+  `ShapeKind::Box`. A place using one would draw as a block today without a
+  word. Each shape needs its own mesh generator and has to go through the
+  silhouette selection cue. Each also needs a decision on the Scale gizmo's
+  `Alt` lock: a Capsule, a Cone and a Disc all have a round cross-section,
+  like a Cylinder does. Which local axis is the length has to come from
+  Roblox's own geometry once it ships, the way the Cylinder's did, and not
+  from a guess.
+- [ ] 📋 **An in-game orthographic `Camera` projection** (Late 2026), for
+  2D, isometric and precision games. This is different from the editor's
+  own Orthographic viewport toggle (see "What's been implemented" →
+  Renderer), which is a view setting and never touches the file. This one is
+  a property a place's `Camera` carries. Once it exists, the Properties
+  panel shows it as an ordinary row, and anything that draws from the
+  place's own camera honours it through the same
+  `Camera::orthographic_projection` path.
+- [ ] 📋 **Material layering and finer PBR response** (Mid 2027): PBR
+  textures layered under custom masks, plus controls for specular response
+  and more accurate scattering and reflection. This lands in the material
+  pass that was calibrated against real captures (`rbx_materials`,
+  `MaterialVariant`, `SurfaceAppearance`). It needs new captures from real
+  Studio once it ships, the same discipline the lighting model was built
+  under, and not a stretch of today's constants.
+- [ ] 📋 **Emissive textures on UGC avatars, clothing and accessories**
+  (Late 2026): a glow controlled by a texture. `SurfaceAppearance` is drawn
+  today with no emissive term at all. Bloom already exists to carry the
+  glow once the property does.
+- [ ] 📋 **CSG on meshes** (moved from Late 2025 to Late 2026 in the same
+  post). The from-scratch boolean (see CSG above) works on primitives. A
+  `MeshPart` operand means feeding it `rbx_mesh` geometry instead. The open
+  question is what a saved mesh union looks like in the file, which may be
+  the same CSGMDL wall.
+
+#### GUI (renderer and UI Editor)
+- [ ] 📋 **Upgraded UI gradients** (Late 2026): radial and conic
+  gradients, tile modes and scale controls. **Already drawn**: the GUI
+  renderer reads `UIGradient.Type` (`Linear`/`Radial`/`Conical`),
+  `TileMode` and `Scale` (see "What's been implemented" → Renderer). Two
+  things are left. The UI Editor design panel's Fill gradient has no type or
+  tile choice. And the property names should be checked against the dump
+  once Roblox ships them, since the renderer reads them ahead of the
+  embedded dump.
+- [ ] 📋 **UI backdrop blur** (Early 2027): blur whatever is behind a GUI
+  element, at a chosen strength or colour. The 3D `BlurEffect` pass already
+  exists. A backdrop blur is that pass run over the region under the element
+  before the element is composited on top, inside the GUI renderer.
+- [ ] 📋 **Animated image containers and direct sprite sheet import** (both
+  Late 2026). Containers group frames into named clips and play them as
+  native 2D animation. Import brings a sprite sheet in with its loops and
+  metadata attached. The GUI renderer already samples
+  `ImageRectOffset`/`ImageRectSize`, which is one frame of a sheet.
+  Playback runs into the same problem as the `ForceField` shimmer: it puts a
+  clock in a pass that `--screenshot` needs to be repeatable. So the likely
+  split is a still frame (the clip's first) in the viewer and live playback
+  only in the UI Editor's preview. Import is an upload through `rbx_cloud`,
+  like the 3D asset import item. The nearest existing relative is
+  `ParticleEmitter`'s `Flipbook*` properties, which the particle renderer
+  does not read yet either.
+- [ ] 📋 **2D particles** (Late 2026): sparks, smoke and fireworks in screen
+  space, on UI surfaces. The CPU particle simulation behind
+  `ParticleEmitter` already exists in 3D. A GUI emitter would reuse it in
+  screen space, with the same still-frame question as above.
+- [ ] 📋 **Input action label** (Early 2027): UI that shows the right
+  hotkey or button hint for the player's device. In the viewer and the UI
+  Editor, the device picked by the Screen setting (the one both of them
+  share) is the natural choice for which set of hints to draw.
+
+#### Editor
+- [ ] 📋 **Input action manager** (Late 2026): a visual editor for building
+  and checking cross-platform control mappings. Unlike most of this list,
+  what it edits already exists. The Input Action System's
+  `InputContext`/`InputAction`/`InputBinding` are ordinary instances that
+  Roblox has already shipped. That makes a contexts × actions × bindings
+  table, one column per device, that writes real properties through the undo
+  history, buildable now. It is the one item here that does not wait on
+  Roblox. The embedded API dump predates those classes, so the dump needs a
+  refresh first, the same as for `UIShadow`.
+- [ ] 📋 **Branch and merge place files** (Early 2027), with conflict
+  resolution at the property and script level. This project is better
+  placed for this than most, because a place here is already a local file.
+  The core is a three-way DOM merge: instances added, removed or reparented,
+  properties changed, and a script's `Source` merged as text. Instances
+  would be matched by `UniqueId`, which Roblox writes for exactly this kind
+  of identity, rather than by file-local referents. The same merge is the
+  heart of the Native Git integration item above, so it should be built once
+  and used from both. Roblox's version is cloud-side; this one would be
+  local.
+- [ ] ⚠️ **Package overrides** (Late 2026): inspect, diff, selectively
+  revert or publish deliberate edits to a package copy, from the Properties
+  panel. The diff itself is local: a `PackageLink`'s subtree compared,
+  property by property, against the package's published version. Getting
+  that published version is the catch. It has to come from Roblox, and Open
+  Cloud only serves the user's own assets, which is the same wall as
+  Toolbox parity for everyone else's.
+- [ ] 📋 **Project window** (Early 2027): game content organized into
+  folders you can navigate, with readable paths, named asset references and
+  automatic versioning. It overlaps the Argon/Rojo file-tree item (readable
+  paths) and the asset manager below. This one should be decided against the
+  shape Roblox actually ships, not against its one-line description.
+- [ ] ⚠️ **Asset manager with a game inventory** (Late 2026): assets
+  uploaded straight to a game's inventory instead of the account's. There is
+  no asset manager panel here yet. Its upload path would be the 3D import
+  item's Open Cloud client. The unknown is whether Open Cloud's Assets API
+  gains a game inventory as a place to upload to.
+- [ ] 📋 **Unified agentic permission** (Late 2026): one control over what
+  Assistant, MCP, plugins and OCALE may access and do. This project plans
+  both an MCP server (above) and a plugin API (see Plugins above). They should
+  share one permission model from the start rather than each getting its
+  own and being reconciled later.
+- [ ] ⚠️ **Scene generation and a new texture generator** (Late 2026)
+  belong under [AI content generation](#ai-content-generation) below. They
+  have the same backend-agnostic shape, and a generated scene is, in the
+  end, an ordinary instance tree written through the DOM.
+
+#### Animation
+- [ ] 📋 **Animation Graphs**: state-machine nodes and Luau expressions
+  (Mid 2027), motion matching (Early 2027) and root motion (Mid 2027). None
+  of the Animation Graph classes are in the embedded dump yet. The graph
+  itself is authored data, so a node editor for it is reachable, and it
+  could share its widget with the node-based scripting idea above. Running
+  the graph is a different matter. Motion matching in particular is runtime
+  behaviour that the local `KeyframeSequence` playback item could only ever
+  approximate.
+- [ ] 📋 **Avatar Schema changes**: procedural bones (Early 2027), higher
+  mesh resolution (Mid 2027), more FACS controls including individual eyes
+  (Mid 2027), and silhouette-preserving fit for clothing and accessories
+  (Early 2027). These feed into Rig insertion and into the triangle budget
+  the 3D import item checks, once Roblox publishes the new numbers.
+
+#### Terrain
+- [ ] 📋 **Terrain signed distance fields, virtual texturing, path splines,
+  projected decals and scattering** (all Mid 2027). Every one of them
+  depends on voxel storage (see Terrain above). SDF terrain may well
+  *replace* the `SmoothGrid` format that this roadmap already calls its
+  riskiest reverse-engineering item. That is a reason to see what format a
+  Mid-2027 place file actually carries before starting on the old one. Path
+  splines and scattering are tools for the Terrain Editor. Projected decals
+  and virtual texturing are renderer work.
+
+#### Play / Test
+- [ ] ⚠️ **Multiple client views** (Late 2026), **Teleports in Studio** and
+  **on-device testing** (both Early 2027), and **early testing** with up to
+  10 friends (Late 2026). All four ride on the
+  [sandbox design](#play--test-a-private-sandbox--probe).
+  - Multiple clients means several real clients joined to the same sandbox
+    server. Each mirror `LocalScript` already reports its own state.
+  - Teleports need a second sandbox place in the same universe.
+  - On-device testing works because the sandbox is already a real published
+    place a phone can join. Debugging it from the editor goes through the
+    probe's tunnel.
+  - Early testing is the most directly useful. If a private game can grant
+    friends access, testing as a team becomes a setting on the sandbox place
+    instead of a new mechanism.
+- [ ] 📋 **Client sessions & logs** (Late 2026) would feed the Output dock's
+  sandbox-dependent half, if they can be reached over Open Cloud. **Audio
+  debug tools** (Late 2026) have nothing to attach to: this project plays no
+  audio at all today.
+
+#### Nothing for a Studio replacement to build
+- **Engine and cloud runtime**: the improved physics solver, efficient
+  collision pipeline, collision summaries, native object interaction,
+  improved navigation, Instance Streaming's adaptive radius and path
+  pre-fetching, SLIM for NPCs and welded items, the 500-stud minimum draw
+  distance, acoustic simulation, offline play, in-game creation persistence,
+  push notifications, `QueueService`, compute functions, player data
+  management, motion-sensor input and `OrderedDataStore` histograms. These
+  run inside Roblox's engine or cloud (see
+  [Explicitly impossible](#explicitly-impossible-without-robloxs-engine)).
+  Whatever they leave in a place file, such as new properties or service
+  instances, is read and round-tripped like everything else once it reaches
+  the API dump. The Command Bar's Luau DataModel does not fake how they
+  behave.
+- **Platform, discovery, safety, monetization and Creator Hub**: name checks
+  and promotional text, text-to-speech translation, Dutch support, quick
+  words, badge improvements, every moderation and anti-cheat item, the Kids
+  & Select changes, the Safety Callback API, the Wallet, passes surfaced
+  outside the game, observability, the analytics agent and journey
+  analytics. These live on Roblox's website and servers. Three of them touch
+  work already planned here:
+  - The **streamlined publishing flow** and the **pre-publish asset
+    moderation signals** would show up in Save/Publish, if Open Cloud
+    exposes them.
+  - **Free trials for passes** is one more case for the monetization mocking
+    layer below: a pass owned for exactly one session.
 
 ## Explicitly impossible without Roblox's engine
 
