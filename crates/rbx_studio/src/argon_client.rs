@@ -31,7 +31,7 @@ use std::thread::JoinHandle;
 
 pub(crate) use thread::ArgonEvent;
 pub(crate) use value::{decode as decode_value, encode as encode_value};
-pub(crate) use wire::{ArgonRef, Changes, Snapshot, UpdatedSnapshot};
+pub(crate) use wire::{ArgonRef, Changes, Project, Snapshot, UpdatedSnapshot};
 
 /// A live (or connecting, or winding down) connection to one `argon serve`
 /// instance. Dropping it disconnects — same shape as `workspace_view::

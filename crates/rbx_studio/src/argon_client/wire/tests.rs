@@ -28,9 +28,27 @@ fn a_message_envelope_is_a_single_key_map_dispatched_by_that_key() {
         Some(Message::SyncDetails(project)) => {
             assert_eq!(project.name, "MyPlace");
             assert_eq!(project.version, "2.0.13");
+            assert_eq!(project.game_id, None);
+            assert!(project.place_ids.is_empty());
         }
         _ => panic!("expected a SyncDetails message"),
     }
+}
+
+#[test]
+fn a_published_projects_details_carry_its_game_and_place_ids() {
+    let value = map(vec![
+        ("name", Value::from("MyPlace")),
+        ("version", Value::from("2.0.13")),
+        ("gameId", Value::from(1234u64)),
+        (
+            "placeIds",
+            Value::Array(vec![Value::from(56u64), Value::from(78u64)]),
+        ),
+    ]);
+    let project = Project::decode(&value).expect("a project");
+    assert_eq!(project.game_id, Some(1234));
+    assert_eq!(project.place_ids, vec![56, 78]);
 }
 
 #[test]

@@ -278,6 +278,9 @@ pub(crate) struct Shell {
     /// The live connection to an `argon serve` instance, if any — see
     /// `shell::argon_sync`.
     argon: argon_sync::Sync,
+    /// Argon's plugin settings, per level — see `settings::argon`. Written
+    /// back through `Shell::save_settings` like every other preference.
+    argon_settings: crate::settings::argon::ArgonSettings,
     /// The search field on the Wally dock (`shell::scripting_tools`) —
     /// real, editable, local to this window; read by
     /// `Shell::wally_query_changed`.
@@ -369,6 +372,7 @@ impl Shell {
             expand_on_select,
             dragger,
             argon_address: argon_address_setting,
+            argon: argon_settings,
         } = settings;
         // Before anything renders: every size token is read through these,
         // so a scale or target floor applied after the first frame would
@@ -578,6 +582,7 @@ impl Shell {
             argon_saved_address: argon_address_setting,
             argon_version: scripting_tools::detect_argon_version(),
             argon: argon_sync::Sync::default(),
+            argon_settings,
             wally_query,
             wally: wally_sync::Search::default(),
             path,
@@ -738,7 +743,7 @@ impl Shell {
         // click, and nothing else can send one to the window on the
         // editor's behalf — the same reason every other debug var here
         // exists.
-        shell.apply_debug_argon_connect(window, cx);
+        shell.apply_argon_auto_connect(window, cx);
 
         // `RBX_STUDIO_ARGON_DIFF` (see `shell::argon_sync`): after Connect
         // above, so a real connection can still send a genuine batch — but
@@ -1172,6 +1177,7 @@ impl Shell {
             expand_on_select: self.expand_on_select,
             dragger: self.dragger,
             argon_address: self.argon_saved_address.clone(),
+            argon: self.argon_settings.clone(),
         };
         let _ = settings.save();
 

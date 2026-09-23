@@ -19,6 +19,7 @@ use crate::class_icons::IconPack;
 use crate::pacing::UnfocusedFps;
 use crate::shell::{Edge, SavedEdge, SavedGroup, SavedLayout};
 
+pub(crate) mod argon;
 mod dragger;
 
 pub(crate) use dragger::DraggerSettings;
@@ -87,6 +88,8 @@ pub(crate) struct Settings {
     /// address that never connected. Empty means "nothing saved yet",
     /// which `Shell` reads as its own hardcoded `localhost:8000` default.
     pub(crate) argon_address: String,
+    /// Argon's own plugin settings, per level — see [`argon::ArgonSettings`].
+    pub(crate) argon: argon::ArgonSettings,
 }
 
 impl Default for Settings {
@@ -106,6 +109,7 @@ impl Default for Settings {
             large_targets: false,
             reduce_motion: None,
             argon_address: String::new(),
+            argon: argon::ArgonSettings::default(),
             // Empty means "whatever the shell's own default is" — the
             // defaults live with the layout in `shell::layout`, and
             // duplicating them here is how the two drift apart.
@@ -275,6 +279,7 @@ fn load_from(path: &Path) -> Settings {
             .and_then(|v| v.as_str())
             .map(str::to_owned)
             .unwrap_or_default(),
+        argon: argon::ArgonSettings::read(&value),
     }
 }
 
@@ -407,6 +412,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "expand_on_select": settings.expand_on_select,
         "dragger": settings.dragger.json(),
         "argon_address": settings.argon_address,
+        "argon": settings.argon.json(),
     });
     // A fixed-shape object always serializes; nothing here can fail.
     let bytes = serde_json::to_vec_pretty(&value).expect("settings JSON always serializes");

@@ -92,6 +92,7 @@ impl Shell {
                     address,
                     last_sync,
                     direction,
+                    ..
                 } => {
                     let disconnect = field_button(
                         Button::new("argon-disconnect")

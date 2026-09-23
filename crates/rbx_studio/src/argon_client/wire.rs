@@ -81,6 +81,11 @@ fn get_str(value: &Value, key: &str) -> Option<String> {
 pub(crate) struct Project {
     pub(crate) name: String,
     pub(crate) version: String,
+    /// The project's published game and place IDs, as `argon serve`
+    /// reports them (`argon-rbx/argon@3dbed6d:src/project.rs:241-256`,
+    /// camelCase on the wire). Empty for an unpublished project.
+    pub(crate) game_id: Option<u64>,
+    pub(crate) place_ids: Vec<u64>,
 }
 
 impl Project {
@@ -88,6 +93,11 @@ impl Project {
         Some(Project {
             name: get_str(value, "name")?,
             version: get_str(value, "version")?,
+            game_id: map_get(value, "gameId").and_then(Value::as_u64),
+            place_ids: map_get(value, "placeIds")
+                .and_then(Value::as_array)
+                .map(|ids| ids.iter().filter_map(Value::as_u64).collect())
+                .unwrap_or_default(),
         })
     }
 }

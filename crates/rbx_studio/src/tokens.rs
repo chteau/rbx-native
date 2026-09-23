@@ -184,6 +184,12 @@ pub(crate) fn accent_line() -> Rgba {
     }
 }
 
+/// The knob of a switched-on toggle: pure white on the accent track, the
+/// one place the palette goes brighter than `text`.
+pub(crate) fn knob() -> Rgba {
+    rgb(0xFFFFFF)
+}
+
 /// A close-window button's hover background — the one place this UI's
 /// neutral hover isn't the right answer, since closing needs its own cue.
 pub(crate) fn danger_hover() -> Rgba {
@@ -203,12 +209,6 @@ pub(crate) fn check_off_border() -> Rgba {
 /// see [`text`], [`text2`] and [`text3`] for what each tier actually is.
 pub(crate) fn text_full() -> Rgba {
     text()
-}
-
-/// The knob of a switched-on toggle: pure white on the accent track, the
-/// one place the palette goes brighter than `text`.
-pub(crate) fn knob() -> Rgba {
-    rgb(0xFFFFFF)
 }
 pub(crate) fn text_strong() -> Rgba {
     text()

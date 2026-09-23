@@ -133,3 +133,35 @@ fn count_descendants_counts_every_level_not_just_direct_children() {
     // would undercount a nested folder of scripts).
     assert_eq!(count_descendants(&tree.children), 3);
 }
+
+fn project(game_id: Option<u64>, place_ids: Vec<u64>) -> argon_client::Project {
+    argon_client::Project {
+        name: "ArgonTest".to_owned(),
+        version: "2.0.29".to_owned(),
+        game_id,
+        place_ids,
+    }
+}
+
+#[test]
+fn a_published_project_with_one_place_identifies_both_levels() {
+    assert_eq!(
+        level_keys(&project(Some(42), vec![7])),
+        LevelKeys {
+            game: Some("42".to_owned()),
+            place: Some("7".to_owned()),
+        }
+    );
+}
+
+#[test]
+fn an_unpublished_project_identifies_neither_level() {
+    assert_eq!(level_keys(&project(None, vec![])), LevelKeys::default());
+}
+
+#[test]
+fn a_project_with_several_places_leaves_the_place_level_unidentified() {
+    let keys = level_keys(&project(Some(42), vec![7, 8]));
+    assert_eq!(keys.game, Some("42".to_owned()));
+    assert_eq!(keys.place, None);
+}

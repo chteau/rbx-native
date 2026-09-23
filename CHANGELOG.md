@@ -2,6 +2,16 @@
 
 ## 2026-09-23
 
+- **Argon's own settings, per level.** The Argon dock's settings model is
+  now the plugin's: the same 15 settings with the same defaults, resolved
+  Place → Game → Global → default, stored in `settings.json` under `argon`
+  with only the overrides. The Game and Place levels are identified by the
+  connected project's own game and place IDs (an unpublished project has
+  neither). The first setting wired up is Auto Connect, on by default as in
+  the plugin: opening a place now tries the remembered Argon address at
+  once, so a machine without `argon serve` running sees the dock's error
+  state instead of Disconnected until it's dismissed. — @chteau
+
 - **The snap popover follows the redesign board.** Opening the ribbon's
   snap pills now shows a 248px surface with one section per unit: a
   title row with the unit and a switch, then a single-field stepper with

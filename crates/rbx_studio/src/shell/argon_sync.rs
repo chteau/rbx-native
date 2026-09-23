@@ -29,6 +29,7 @@ use gpui_kit::Context;
 use rbx_dom::{Change, Ref, WeakDom};
 
 use crate::argon_client::{self, ArgonClient, ArgonEvent, ArgonRef};
+use crate::settings::argon::{LevelKeys, Setting, Value};
 
 use super::Shell;
 
@@ -67,6 +68,9 @@ pub(super) enum SyncState {
         address: String,
         last_sync: Option<Instant>,
         direction: SyncDirection,
+        /// What the connected project identifies as the Game and Place
+        /// levels of Argon's settings — see [`level_keys`].
+        keys: LevelKeys,
     },
     Error(String),
 }
@@ -362,6 +366,36 @@ impl Shell {
 
     /// The dock's Connect button: reads the address field, opens the
     /// connection, and starts the poll loop that drains it.
+    /// The plugin connects on its own when a place opens if `AutoConnect`
+    /// is on (`argon-roblox@30fd38d:src/App/init.luau:120-125`). The
+    /// `RBX_STUDIO_ARGON_CONNECT` aid wins when it is set, so a scripted
+    /// screenshot gets exactly the address it asked for.
+    pub(super) fn apply_argon_auto_connect(
+        &mut self,
+        window: &mut gpui_kit::Window,
+        cx: &mut Context<Self>,
+    ) {
+        if std::env::var_os(CONNECT_VARIABLE).is_some() {
+            self.apply_debug_argon_connect(window, cx);
+            return;
+        }
+        let keys = self.argon_level_keys();
+        if self.argon_settings.get(Setting::AutoConnect, &keys) == Value::Bool(true) {
+            self.argon_connect(cx);
+        }
+    }
+
+    /// The Game and Place identities Argon's settings resolve against:
+    /// the connected project's, or none while disconnected (the plugin
+    /// keys them on the place's own IDs, `Config.luau:61-62`, which a local
+    /// file doesn't have — see `settings::argon`).
+    pub(super) fn argon_level_keys(&self) -> LevelKeys {
+        match &self.argon.state {
+            SyncState::Connected { keys, .. } => keys.clone(),
+            _ => LevelKeys::default(),
+        }
+    }
+
     pub(super) fn argon_connect(&mut self, cx: &mut Context<Self>) {
         let address = self.argon_address.read(cx).value().to_string();
         let (host, port) = parse_address(&address);
@@ -443,6 +477,7 @@ impl Shell {
                         self.save_settings();
                     }
                     self.argon.state = SyncState::Connected {
+                        keys: level_keys(&project),
                         project: project.name,
                         address,
                         last_sync,
@@ -795,6 +830,20 @@ fn count_descendants(children: &[argon_client::Snapshot]) -> usize {
 /// `"host:port"` (Argon's own default `localhost:8000`) → its two halves,
 /// tolerant of a missing port (falls back to Argon's own default) or a
 /// malformed one.
+/// The settings levels a connected project identifies (option (b) of
+/// #0022, the owner's pick): Game is the project's `game_id`, Place is its
+/// place ID when the project has exactly one — with several there is no
+/// telling which one this file is, so Place stays unidentified.
+fn level_keys(project: &argon_client::Project) -> LevelKeys {
+    LevelKeys {
+        game: project.game_id.map(|id| id.to_string()),
+        place: match project.place_ids.as_slice() {
+            [id] => Some(id.to_string()),
+            _ => None,
+        },
+    }
+}
+
 fn parse_address(address: &str) -> (String, u16) {
     match address.split_once(':') {
         Some((host, port)) => (host.trim().to_owned(), port.trim().parse().unwrap_or(8000)),
