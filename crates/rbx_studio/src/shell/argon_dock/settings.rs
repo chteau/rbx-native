@@ -5,7 +5,6 @@
 //! dropdown and stepper controls live in `controls`.
 
 use gpui_kit::assets::IconName;
-use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{h_flex, v_flex, Icon};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -119,14 +118,48 @@ impl Shell {
             .gap(px(12.))
             .child(header)
             .child(if own_scroll {
+                // The kit's `vertical_scrollbar` follows the theme's mode
+                // (shown while scrolling); a column clipped mid-card needs
+                // its thumb at rest, so this one is always shown: 4px wide,
+                // 2px in from the column's right edge, flush with the top.
+                // The overlay is a sibling of the scroll area rather than a
+                // child, so the scroll offset never moves it.
                 div()
-                    .id("argon-settings-scroll")
+                    .relative()
                     .flex_1()
                     .min_h_0()
-                    .overflow_y_scroll()
-                    .track_scroll(&self.argon_ui.settings_scroll)
-                    .vertical_scrollbar(&self.argon_ui.settings_scroll)
-                    .child(sections.pr(px(12.)))
+                    .child(
+                        div()
+                            .id("argon-settings-scroll")
+                            .size_full()
+                            .overflow_y_scroll()
+                            .track_scroll(&self.argon_ui.settings_scroll)
+                            .child(sections.pr(px(12.))),
+                    )
+                    .child(
+                        div()
+                            .absolute()
+                            .top_0()
+                            .bottom_0()
+                            .left_0()
+                            .right(px(2.))
+                            .child(
+                                gpui_kit::base::Scrollbar::new(&self.argon_ui.settings_scroll)
+                                    .id("argon-settings-scrollbar")
+                                    .axis(Axis::Vertical)
+                                    .mode(gpui_kit::base::ScrollbarMode::Always)
+                                    .styles(|styles| {
+                                        styles.thumb(|thumb| {
+                                            thumb
+                                                .bg(tokens::border2())
+                                                .width(px(4.))
+                                                .inset(px(0.))
+                                                .radius(px(2.))
+                                        })
+                                    })
+                                    .viewport_from_layout(),
+                            ),
+                    )
                     .into_any_element()
             } else {
                 div().flex_none().child(sections).into_any_element()

@@ -108,11 +108,11 @@ pub(super) struct ArgonDock {
     /// accent hairline while either of its two inputs has focus. Not a
     /// tab stop itself.
     field_focus: FocusHandle,
-    /// The installed CLI's version, once a background task has looked
-    /// for the binary and asked it (see [`detect_argon_version`]). `None`
-    /// until then, and for good when there is no CLI: the badge is a late
-    /// fill-in, never a startup stall.
-    version: Option<SharedString>,
+    /// Where the CLI was found and what version it reports, once a
+    /// background task has looked for the binary and asked it (see
+    /// [`detect_argon_version`]). `None` until then, and for good when
+    /// there is no CLI: the badge is a late fill-in, never a startup stall.
+    cli: Option<(std::path::PathBuf, SharedString)>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -130,9 +130,9 @@ impl ArgonDock {
             controls::watch_steps(&diff_limit, Setting::DiffLinesLimit, window, cx),
         ];
         cx.spawn(async move |shell, cx| {
-            let version = cx.background_spawn(async { detect_argon_version() }).await;
+            let cli = cx.background_spawn(async { detect_argon_version() }).await;
             let _ = shell.update(cx, |shell, cx| {
-                shell.argon_ui.version = version;
+                shell.argon_ui.cli = cli;
                 cx.notify();
             });
         })
@@ -148,7 +148,7 @@ impl ArgonDock {
             body_scroll: ScrollHandle::new(),
             settings_scroll: ScrollHandle::new(),
             field_focus: cx.focus_handle().tab_stop(false),
-            version: None,
+            cli: None,
             _subscriptions: subscriptions,
         }
     }
@@ -235,7 +235,7 @@ impl Shell {
     /// short for the connection column, the whole body scrolls instead.
     fn wide_body(&mut self, layout: Layout, short: bool, cx: &mut Context<Self>) -> AnyElement {
         let connection = self.argon_connection(layout, cx).w(px(440.)).flex_none();
-        let settings = self.argon_settings_column(layout, !short, cx);
+        let settings = self.argon_settings_column(layout, !short, cx).h_full();
         h_flex()
             .id("argon-body-scroll")
             .size_full()

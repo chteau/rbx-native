@@ -90,21 +90,17 @@ impl HelpGeometry {
 /// The popover's surface with the four "Getting started" steps and a
 /// caret under it pointing at "?".
 fn help_popover(geometry: HelpGeometry, cx: &mut App) -> AnyElement {
-    // A step's body: one wrapping paragraph, or, when it carries command
-    // chips, a wrapping row of pieces that break only between pieces.
+    // A step's body: a wrapping row of words and command chips.
     let paragraph = |pieces: Vec<AnyElement>| {
         div()
             .w_full()
             .text_size(tokens::text_sm())
             .line_height(tokens::line_sm())
             .text_color(tokens::text2())
-            .map(|this| {
-                if pieces.len() == 1 {
-                    this.children(pieces)
-                } else {
-                    this.flex().flex_wrap().items_center().children(pieces)
-                }
-            })
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .children(pieces)
     };
     let step = |number: &'static str, title: &'static str, body: Vec<AnyElement>| {
         h_flex()
@@ -144,10 +140,32 @@ fn help_popover(geometry: HelpGeometry, cx: &mut App) -> AnyElement {
                     .child(paragraph(body)),
             )
     };
-    let text = |s: &'static str| div().child(s).into_any_element();
-    let strong = |s: &'static str| div().text_color(tokens::text()).child(s).into_any_element();
+    // Text goes in as one element per word (each keeping its trailing
+    // space), so a wrapping row breaks between words and never starts a
+    // line with a space.
+    let words = |s: &'static str, color: Option<Rgba>| -> Vec<AnyElement> {
+        let mut out = Vec::new();
+        let mut rest = s;
+        while !rest.is_empty() {
+            let end = rest.find(' ').map_or(rest.len(), |i| i + 1);
+            let (word, tail) = rest.split_at(end);
+            out.push(
+                div()
+                    .when_some(color, |this, color| this.text_color(color))
+                    .child(word)
+                    .into_any_element(),
+            );
+            rest = tail;
+        }
+        out
+    };
+    let text = |s: &'static str| words(s, None);
+    let strong = |s: &'static str| words(s, Some(tokens::text()));
+    // The chip's borders sit outside the 16px line, as an inline box's
+    // would: 18 tall on screen, 16 in the layout.
     let chip = |s: &'static str| {
         h_flex()
+            .my(px(-1.))
             .px(px(5.))
             .rounded(tokens::RADIUS_BADGE)
             .bg(tokens::dock())
@@ -173,6 +191,7 @@ fn help_popover(geometry: HelpGeometry, cx: &mut App) -> AnyElement {
         .shadow(vec![tokens::floating_shadow()])
         .child(
             h_flex()
+                .h(px(18.))
                 .items_center()
                 .justify_between()
                 .child(
@@ -205,36 +224,42 @@ fn help_popover(geometry: HelpGeometry, cx: &mut App) -> AnyElement {
                 .child(step(
                     "1",
                     "Set up the project",
-                    vec![
-                        text("Run\u{a0}"),
-                        chip("argon init"),
-                        text(", or\u{a0}"),
-                        strong("Argon: Initialize Project"),
-                        text("\u{a0}from the VS Code command palette."),
-                    ],
+                    [
+                        text("Run "),
+                        vec![chip("argon init")],
+                        text(", or "),
+                        strong("Argon: Initialize Project "),
+                        text("from the VS Code command palette."),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .collect(),
                 ))
                 .child(step(
                     "2",
                     "Start the server",
-                    vec![
-                        text("Run\u{a0}"),
-                        chip("argon run"),
-                        text(", or\u{a0}"),
-                        strong("Argon: Start Server"),
-                        text("\u{a0}in VS Code."),
-                    ],
+                    [
+                        text("Run "),
+                        vec![chip("argon run")],
+                        text(", or "),
+                        strong("Argon: Start Server "),
+                        text("in VS Code."),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .collect(),
                 ))
                 .child(step(
                     "3",
                     "Connect",
-                    vec![text("Check that the host and port match the server, then press Connect.")],
+                    text("Check that the host and port match the server, then press Connect."),
                 ))
                 .child(step(
                     "4",
                     "Sync",
-                    vec![text(
+                    text(
                         "Save your files to see changes in Studio. Turn on Two-Way Sync to send Studio edits back to disk.",
-                    )],
+                    ),
                 )),
         );
 
@@ -247,9 +272,9 @@ fn help_popover(geometry: HelpGeometry, cx: &mut App) -> AnyElement {
         .into_any_element()
 }
 
-/// A down-pointing caret under the popover's bottom edge: a `border2`
-/// triangle with a `panel2` one inside it, the way the board's rotated
-/// square reads once only its lower half shows.
+/// A down-pointing caret under the popover's bottom edge: a rotated-square
+/// caret, drawn as a `border2` triangle with a `panel2` one inside it,
+/// because gpui can't rotate a div.
 fn caret(left: f32) -> Div {
     const OUTER: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 7" width="14" height="7"><path d="M0 0h14L7 7z" fill="currentColor"/></svg>"#;
     const INNER: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" width="12" height="6"><path d="M0 0h12L6 6z" fill="currentColor"/></svg>"#;

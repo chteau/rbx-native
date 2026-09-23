@@ -16,6 +16,8 @@ use super::super::argon_sync::{SyncDirection, SyncState};
 use super::super::Shell;
 use super::Layout;
 
+const INSTALL_URL: &str = "https://argon.wiki/docs/installation";
+
 /// The two halves of `host:port`, with the plugin's defaults for whatever
 /// is missing (`Config.luau:41-42`).
 pub(super) fn split_address(address: &str) -> (String, String) {
@@ -44,12 +46,13 @@ fn format_elapsed(at: Instant) -> String {
     }
 }
 
-/// The installed CLI's version as `vX.Y.Z`, or `None` when there is no
-/// CLI. Asked of the binary the file lookup found, once at startup: the
-/// badge next to the dock's title is the only thing that needs it.
-pub(crate) fn detect_argon_version() -> Option<SharedString> {
+/// Where the installed CLI is and its version as `vX.Y.Z`, or `None`
+/// when there is no CLI. The version is asked of the binary the file
+/// lookup found, once at startup: the badge next to the dock's title is
+/// the only thing that needs it.
+pub(crate) fn detect_argon_version() -> Option<(std::path::PathBuf, SharedString)> {
     let binary = super::super::argon_sync::argon_cli_path()?;
-    let output = std::process::Command::new(binary)
+    let output = std::process::Command::new(&binary)
         .arg("--version")
         .output()
         .ok()?;
@@ -61,7 +64,7 @@ pub(crate) fn detect_argon_version() -> Option<SharedString> {
     if version.is_empty() {
         return None;
     }
-    Some(format!("v{version}").into())
+    Some((binary, format!("v{version}").into()))
 }
 
 /// What the column is showing, read off `SyncState` and the pending
@@ -128,18 +131,20 @@ impl Shell {
     /// The whole column: identity row, the line, the action row.
     pub(super) fn argon_connection(&mut self, layout: Layout, cx: &mut Context<Self>) -> Div {
         let view = self.argon_view(cx);
-        let version = self.argon_ui.version.clone();
+        let cli = self.argon_ui.cli.clone();
         v_flex()
             .flex_none()
             .gap(px(14.))
-            .child(identity_row(&view, version))
+            .child(identity_row(&view, cli))
             .child(status_line(&view, layout))
             .child(self.action_row(&view, layout, cx))
     }
 }
 
 /// 28px: the accent mark, "Argon", the CLI version, and the status.
-fn identity_row(view: &View, version: Option<SharedString>) -> Div {
+fn identity_row(view: &View, cli: Option<(std::path::PathBuf, SharedString)>) -> Div {
+    let version = cli.as_ref().map(|(_, version)| version.clone());
+    let path = cli.map(|(path, _)| path);
     h_flex()
         .h(px(28.))
         .items_center()
@@ -178,10 +183,14 @@ fn identity_row(view: &View, version: Option<SharedString>) -> Div {
                 .child(version)
         })))
         .child(div().flex_1())
-        .child(status(view))
+        .child(status(view, path))
 }
 
-fn status(view: &View) -> AnyElement {
+/// The right end of the identity row. Disconnected, it says whether the
+/// CLI is installed: "Installed" with the binary's path as its tooltip,
+/// or "Not installed" with a link to Argon's installation page, since
+/// the plugin's Studio page assumes an install this editor can't.
+fn status(view: &View, cli: Option<std::path::PathBuf>) -> AnyElement {
     let badge = |fill: Rgba, ink: Rgba| {
         h_flex()
             .items_center()
@@ -203,15 +212,48 @@ fn status(view: &View) -> AnyElement {
             .bg(tokens::check_on())
     };
     match view {
-        View::Disconnected => h_flex()
-            .items_center()
-            .gap(px(6.))
-            .text_size(tokens::text_sm())
-            .line_height(tokens::line_sm())
-            .text_color(tokens::text2())
-            .child(Icon::new(IconName::CircleCheck).size(px(13.)))
-            .child("Found on PATH")
-            .into_any_element(),
+        View::Disconnected => match cli {
+            Some(path) => h_flex()
+                .id("argon-installed")
+                .items_center()
+                .gap(px(6.))
+                .text_size(tokens::text_sm())
+                .line_height(tokens::line_sm())
+                .text_color(tokens::text2())
+                .tooltip(move |window, cx| {
+                    super::super::tooltip::text(path.display().to_string(), window, cx)
+                })
+                .child(Icon::new(IconName::CircleCheck).size(px(13.)))
+                .child("Installed")
+                .into_any_element(),
+            None => h_flex()
+                .items_center()
+                .gap(px(10.))
+                .text_size(tokens::text_sm())
+                .line_height(tokens::line_sm())
+                .child(
+                    h_flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .text_color(tokens::text3())
+                        .child(Icon::new(IconName::CircleDashed).size(px(13.)))
+                        .child("Not installed"),
+                )
+                .child(
+                    h_flex()
+                        .id("argon-install")
+                        .items_center()
+                        .gap(px(5.))
+                        .cursor_pointer()
+                        .font_weight(tokens::WEIGHT_SEMIBOLD)
+                        .text_color(tokens::check_on())
+                        .hover(|this| this.text_color(tokens::text()))
+                        .on_click(|_, _, cx| cx.open_url(INSTALL_URL))
+                        .child("Install")
+                        .child(Icon::new(IconName::ExternalLink).size(px(12.))),
+                )
+                .into_any_element(),
+        },
         View::Connecting { .. } => badge(tokens::hover(), tokens::text2())
             .child(Icon::new(IconName::LoaderCircle).size(px(12.)))
             .child("Connecting")

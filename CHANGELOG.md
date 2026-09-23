@@ -13,9 +13,11 @@
   project is connected) and Restore defaults. The dock lays out for its
   own width: two columns above 900 px, stacked below it, one column of
   cards under 588 px, a wrapped action row under 388 px, so it reads the
-  same docked at the bottom, at the side, or floated. The Argon and
-  Wally dock menus are now called "Argon dock options" and "Wally dock
-  options". — @chteau
+  same docked at the bottom, at the side, or floated. While disconnected
+  the dock says whether the Argon CLI is installed (its path in a
+  tooltip) or links to Argon's install page, and the settings column
+  keeps its scroll thumb in view. The Argon and Wally dock menus are now
+  called "Argon dock options" and "Wally dock options". — @chteau
 
 - **Auto Connect stays quiet without Argon.** When the Argon CLI isn't
   installed, opening a place no longer tries to connect and fails; the
