@@ -14,18 +14,16 @@
 //! increment to apply to yet, and a live-looking control that does nothing
 //! would say less than a visibly disabled one.
 
-use gpui_kit::component::checkbox::Checkbox;
-use gpui_kit::component::input::{
-    InputEvent, InputState, NumberInput, NumberInputEvent, StepAction,
-};
-use gpui_kit::component::{v_flex, Sizable as _};
+use gpui_kit::assets::IconName;
+use gpui_kit::component::input::{Input, InputEvent, InputState, NumberInputEvent, StepAction};
+use gpui_kit::component::{h_flex, v_flex, Icon};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::tokens;
 use crate::transform::{self, Action, Snap, SnapKind};
 
-use super::super::Shell;
-use super::{field_label, snap_container};
+use super::super::{rows, Shell};
 
 /// The live text of both increment fields.
 ///
@@ -132,26 +130,54 @@ fn watch_steps(
     )
 }
 
+/// The Move/Scale pill's copy: "1 stud" for exactly one, "N studs" for
+/// anything else.
+pub(super) fn studs(increment: f32) -> String {
+    if increment == 1. {
+        "1 stud".to_owned()
+    } else {
+        format!("{increment} studs")
+    }
+}
+
+/// The section title, spaced for reading. `SnapKind::label` stays
+/// "Move/Scale": it names the element IDs and the shortcut tooltips.
+fn title(kind: SnapKind) -> &'static str {
+    match kind {
+        SnapKind::Translate => "Move / Scale",
+        SnapKind::Rotate => "Rotate",
+    }
+}
+
 impl Shell {
-    /// §2.4's popover body: one labelled field per snap unit, stacked.
-    ///
-    /// The enable checkbox rides on the label rather than sitting beside
-    /// the field, so the row reads as one thing ("Move/Scale snapping, at
-    /// this increment") instead of two controls that happen to be adjacent.
+    /// The popover body, to `Snap-Popover` / `Snap-Popover-RotateOff`: 248
+    /// wide with the hairline inside that width, one section per snap
+    /// unit, a 1px divider with 10px above and below between them.
     pub(super) fn snap_fields_popover(&self, cx: &mut Context<Self>) -> AnyElement {
-        snap_container(
-            SnapKind::ALL
-                .map(|kind| self.snap_field(kind, cx).into_any_element())
-                .into_iter()
-                .collect(),
-        )
+        let [translate, rotate] = SnapKind::ALL;
+        v_flex()
+            .w(px(248.))
+            .p(px(12.))
+            .bg(tokens::field_select())
+            .border_1()
+            .border_color(tokens::border2())
+            .rounded(tokens::RADIUS_CONTAINER)
+            .shadow(vec![tokens::floating_shadow()])
+            .child(self.snap_section(translate, cx))
+            .child(div().h(px(1.)).my(px(10.)).bg(tokens::border()))
+            .child(self.snap_section(rotate, cx))
+            .into_any_element()
     }
 
-    fn snap_field(&self, kind: SnapKind, cx: &mut Context<Self>) -> impl IntoElement {
+    /// One section: a 28px row (title, unit, the switch pushed right), 6px,
+    /// then the 28px stepper. Switched off, the title dims to `text2` and
+    /// the stepper goes flat, `text3`, disabled and out of the Tab order.
+    fn snap_section(&self, kind: SnapKind, cx: &mut Context<Self>) -> impl IntoElement {
         let snap = match kind {
             SnapKind::Translate => self.transform.translate,
             SnapKind::Rotate => self.transform.rotate,
         };
+        let enabled = snap.enabled;
         let handle = cx.entity();
 
         // The field takes its place in the window's own Tab order
@@ -166,29 +192,130 @@ impl Shell {
         // exist on screen. A stop for a control that is not visible is worse
         // than no stop at all, and the order is rebuilt every frame anyway
         // (`TabOrder::restart`), so closing the popover takes them back out
-        // on its own.
-        self.tab_order
-            .register(&self.snap_fields.of(kind).read(cx).focus_handle(cx));
+        // on its own. A disabled stepper is not a stop at all.
+        if enabled {
+            self.tab_order
+                .register(&self.snap_fields.of(kind).read(cx).focus_handle(cx));
+        }
 
         v_flex()
             .w_full()
-            .child(field_label(
-                Checkbox::new(SharedString::from(format!("snap-on-{}", kind.label())))
-                    .label(format!("{} ({})", kind.label(), kind.unit()))
-                    .checked(snap.enabled)
-                    .xsmall()
-                    .on_click(move |_, _, cx| {
-                        handle.update(cx, |shell, cx| {
-                            shell.transform_action(Action::ToggleSnap(kind), cx);
-                        });
-                    }),
-            ))
+            .gap(px(6.))
             .child(
-                div()
-                    .w_full()
-                    .text_size(tokens::text_sm())
-                    .line_height(tokens::line_sm())
-                    .child(NumberInput::new(self.snap_fields.of(kind)).small()),
+                h_flex()
+                    .h(px(28.))
+                    .items_center()
+                    .gap(px(8.))
+                    .child(
+                        div()
+                            .text_size(tokens::text_md())
+                            .line_height(tokens::line_md())
+                            .font_weight(tokens::WEIGHT_SEMIBOLD)
+                            .text_color(if enabled {
+                                tokens::text()
+                            } else {
+                                tokens::text2()
+                            })
+                            .child(title(kind)),
+                    )
+                    .child(
+                        div()
+                            .text_size(tokens::text_sm())
+                            .line_height(tokens::line_sm())
+                            .text_color(tokens::text2())
+                            .child(kind.unit()),
+                    )
+                    .child(div().flex_1())
+                    .child(rows::checkbox(
+                        SharedString::from(format!("snap-on-{}", kind.label())),
+                        enabled,
+                        move |_, _, cx| {
+                            handle.update(cx, |shell, cx| {
+                                shell.transform_action(Action::ToggleSnap(kind), cx);
+                            });
+                        },
+                    )),
             )
+            .child(self.snap_stepper(kind, enabled))
+    }
+
+    /// The stepper: one 28px field, `panel` on a `border2` hairline, with a
+    /// 30px − and + at either end split off by a `border` hairline and the
+    /// value centred between them in mono. Built on the toolkit's base
+    /// number input so the arrow keys and the step subscriptions
+    /// (`watch_steps`) keep working exactly as before.
+    fn snap_stepper(&self, kind: SnapKind, enabled: bool) -> impl IntoElement {
+        let ink = if enabled {
+            tokens::text2()
+        } else {
+            tokens::text3()
+        };
+        let step = move |button: gpui_kit::base::Button, minus: bool| {
+            button
+                .w(px(30.))
+                .h_full()
+                .flex_none()
+                .text_color(ink)
+                .border_color(tokens::border())
+                .map(|this| {
+                    if minus {
+                        this.border_r_1().rounded_l(px(4.))
+                    } else {
+                        this.border_l_1().rounded_r(px(4.))
+                    }
+                })
+                .when(enabled, |this| {
+                    this.hover(|this| this.bg(tokens::hover()).text_color(tokens::text()))
+                })
+                .child(
+                    Icon::new(if minus {
+                        IconName::Minus
+                    } else {
+                        IconName::Plus
+                    })
+                    .size(px(12.)),
+                )
+        };
+
+        gpui_kit::base::NumberInput::new(self.snap_fields.of(kind))
+            .disabled(!enabled)
+            .w_full()
+            .h(px(28.))
+            .rounded(tokens::RADIUS)
+            .border_1()
+            .border_color(if enabled {
+                tokens::border2()
+            } else {
+                tokens::border()
+            })
+            .when(enabled, |this| this.bg(tokens::dock()))
+            .decrement_button(move |button| step(button, true))
+            .increment_button(move |button| step(button, false))
+            .input(
+                Input::new(self.snap_fields.of(kind))
+                    .appearance(false)
+                    .h_full()
+                    .disabled(!enabled)
+                    .text_center()
+                    .font_family(tokens::FONT_FAMILY_MONO)
+                    .text_size(tokens::text_md())
+                    .text_color(if enabled {
+                        tokens::text()
+                    } else {
+                        tokens::text3()
+                    }),
+            )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::studs;
+
+    #[test]
+    fn the_pill_says_stud_for_exactly_one_and_studs_otherwise() {
+        assert_eq!(studs(1.), "1 stud");
+        assert_eq!(studs(2.), "2 studs");
+        assert_eq!(studs(0.5), "0.5 studs");
     }
 }

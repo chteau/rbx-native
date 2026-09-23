@@ -39,10 +39,10 @@ pub(crate) use layout::{edge_from_key, edge_key, Edge, Panel, SavedEdge, SavedGr
 pub(crate) use roving::install as install_key_bindings;
 mod tree_keys;
 
+mod argon_dock;
 mod rows;
 mod save;
 mod script_panel;
-mod scripting_tools;
 mod scripts;
 mod scroll;
 mod scrub;
@@ -53,6 +53,7 @@ mod toolbar;
 mod tooltip;
 mod ui_editor;
 mod viewport_dock;
+mod wally_dock;
 mod wally_sync;
 mod workspace;
 
@@ -261,9 +262,9 @@ pub(crate) struct Shell {
     /// like `output_filter` beside it — a log you are still reading is not a
     /// setting.
     output_search: Entity<InputState>,
-    /// The address field on the Argon dock (`shell::scripting_tools`) —
-    /// real, editable, local to this window; read by `Shell::argon_connect`.
-    argon_address: Entity<InputState>,
+    /// The Argon dock's own state: its fields, the level it edits, the
+    /// bounds its last frame had — see `shell::argon_dock`.
+    argon_ui: argon_dock::ArgonDock,
     /// The address `Settings::argon_address` should hold — a plain `String`
     /// rather than reading `argon_address` above back out, because
     /// `Shell::save_settings` takes no `cx` and an `Entity<InputState>`
@@ -271,13 +272,12 @@ pub(crate) struct Shell {
     /// (see `Shell::drain_argon_events`), not on every keystroke of a
     /// draft still being typed.
     argon_saved_address: String,
-    /// The `argon` CLI's version, if it's on PATH — probed once at startup
-    /// (see `scripting_tools::detect_argon_version`) and cached here rather
-    /// than re-run every frame the dock is open.
-    argon_version: Option<SharedString>,
     /// The live connection to an `argon serve` instance, if any — see
     /// `shell::argon_sync`.
     argon: argon_sync::Sync,
+    /// Argon's plugin settings, per level — see `settings::argon`. Written
+    /// back through `Shell::save_settings` like every other preference.
+    argon_settings: crate::settings::argon::ArgonSettings,
     /// The search field on the Wally dock (`shell::scripting_tools`) —
     /// real, editable, local to this window; read by
     /// `Shell::wally_query_changed`.
@@ -369,6 +369,7 @@ impl Shell {
             expand_on_select,
             dragger,
             argon_address: argon_address_setting,
+            argon: argon_settings,
         } = settings;
         // Before anything renders: every size token is read through these,
         // so a scale or target floor applied after the first frame would
@@ -567,17 +568,10 @@ impl Shell {
             viewport_scroll: ScrollHandle::new(),
             viewport_rows: Rc::default(),
             output_search: cx.new(|cx| InputState::new(window, cx).placeholder("Search")),
-            argon_address: cx.new(|cx| {
-                let seed = if argon_address_setting.is_empty() {
-                    "localhost:8000".to_owned()
-                } else {
-                    argon_address_setting.clone()
-                };
-                InputState::new(window, cx).default_value(seed)
-            }),
+            argon_ui: argon_dock::ArgonDock::new(&argon_address_setting, window, cx),
             argon_saved_address: argon_address_setting,
-            argon_version: scripting_tools::detect_argon_version(),
             argon: argon_sync::Sync::default(),
+            argon_settings,
             wally_query,
             wally: wally_sync::Search::default(),
             path,
@@ -738,7 +732,7 @@ impl Shell {
         // click, and nothing else can send one to the window on the
         // editor's behalf — the same reason every other debug var here
         // exists.
-        shell.apply_debug_argon_connect(window, cx);
+        shell.apply_argon_auto_connect(window, cx);
 
         // `RBX_STUDIO_ARGON_DIFF` (see `shell::argon_sync`): after Connect
         // above, so a real connection can still send a genuine batch — but
@@ -1172,6 +1166,7 @@ impl Shell {
             expand_on_select: self.expand_on_select,
             dragger: self.dragger,
             argon_address: self.argon_saved_address.clone(),
+            argon: self.argon_settings.clone(),
         };
         let _ = settings.save();
 

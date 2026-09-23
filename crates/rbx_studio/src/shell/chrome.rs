@@ -761,7 +761,10 @@ pub(super) fn resize_handle(
 /// what it opened is on screen.
 #[derive(IntoElement)]
 pub(super) struct Trigger {
-    element: Stateful<Div>,
+    build: Box<dyn FnOnce(bool) -> Stateful<Div>>,
+    /// Whether `render` paints the open state itself. A trigger built with
+    /// [`Trigger::with_open`] draws its own instead.
+    styled: bool,
     open: bool,
     accent: Option<Rgba>,
 }
@@ -769,7 +772,21 @@ pub(super) struct Trigger {
 impl Trigger {
     pub(super) fn new(element: Stateful<Div>) -> Self {
         Self {
-            element,
+            build: Box::new(move |_| element),
+            styled: true,
+            open: false,
+            accent: None,
+        }
+    }
+
+    /// A trigger whose children depend on whether its popover is open —
+    /// the snap pills, which each take an accent border while the popover
+    /// shows. `build` gets the open state and draws everything itself;
+    /// `render` adds no styling of its own.
+    pub(super) fn with_open(build: impl FnOnce(bool) -> Stateful<Div> + 'static) -> Self {
+        Self {
+            build: Box::new(build),
+            styled: false,
             open: false,
             accent: None,
         }
@@ -799,7 +816,7 @@ impl Selectable for Trigger {
 impl RenderOnce for Trigger {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         let accent = self.accent;
-        self.element.when(self.open, |this| match accent {
+        (self.build)(self.open).when(self.open && self.styled, |this| match accent {
             Some(accent) => super::ribbon::selected(this, accent),
             None => this
                 .bg(tokens::accent_soft())

@@ -21,6 +21,9 @@ pub(crate) enum ArgonEvent {
     Changes(Changes),
     Error(String),
     Disconnected,
+    /// `POST /open` was refused — the plugin logs this at Debug
+    /// (`Core/init.luau:393-395`).
+    OpenFailed(String),
 }
 
 /// `POST read` long-polls server-side; this has to outlast whatever the
@@ -38,14 +41,18 @@ const CLIENT_VERSION: &str = "2.0.0";
 /// disconnect can take up to [`READ_TIMEOUT`] to actually settle — see
 /// `argon_client`'s own doc). `writes` is drained non-blockingly in the same
 /// gap, each landing as its own short-lived request (see [`write_changes`]).
+#[allow(clippy::too_many_arguments)]
 pub(super) fn run(
     host: String,
     port: u16,
+    https: bool,
     stop: Arc<AtomicBool>,
     events: Sender<ArgonEvent>,
     writes: Receiver<Changes>,
+    opens: Receiver<(ArgonRef, u32)>,
 ) {
-    let base = format!("http://{host}:{port}");
+    let scheme = if https { "https" } else { "http" };
+    let base = format!("{scheme}://{host}:{port}");
     // A 4xx/5xx is turned into `Err` by default, discarding the body —
     // Argon's server puts its actual error ("Already subscribed", a
     // version mismatch, ...) in that body, so status-as-error is switched
@@ -98,6 +105,14 @@ pub(super) fn run(
     while !stop.load(Ordering::Relaxed) {
         match writes.try_recv() {
             Ok(changes) => write_changes(&agent, &base, client_id, &changes),
+            Err(TryRecvError::Empty | TryRecvError::Disconnected) => {}
+        }
+        match opens.try_recv() {
+            Ok((id, line)) => {
+                if let Err(message) = open_in_editor(&agent, &base, id, line) {
+                    let _ = events.send(ArgonEvent::OpenFailed(message));
+                }
+            }
             Err(TryRecvError::Empty | TryRecvError::Disconnected) => {}
         }
         match read_once(&read_agent, &base, client_id) {
@@ -207,6 +222,18 @@ fn subscribe(agent: &ureq::Agent, base: &str, client_id: u32) -> Result<(), Stri
         (Value::from("name"), Value::from("rbx-native")),
     ]);
     post_msgpack(agent, &format!("{base}/subscribe"), &body)?;
+    Ok(())
+}
+
+/// `POST /open`: the server opens the file it has for `instance` in the
+/// OS default editor (`argon@3dbed6d:src/server/open.rs:12-25`; the
+/// plugin sends the same two keys, `Client/init.luau:135-140`).
+fn open_in_editor(agent: &ureq::Agent, base: &str, id: ArgonRef, line: u32) -> Result<(), String> {
+    let body = Value::Map(vec![
+        (Value::from("instance"), id.encode()),
+        (Value::from("line"), Value::from(line)),
+    ]);
+    post_msgpack(agent, &format!("{base}/open"), &body)?;
     Ok(())
 }
 

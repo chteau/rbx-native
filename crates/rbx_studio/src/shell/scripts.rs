@@ -49,6 +49,12 @@ impl Shell {
 
         // An already-open script keeps its editor untouched — re-seeding it
         // would throw away an edit in progress.
+        // Argon's Open In Editor: a synced script opens in the OS editor
+        // through the server instead of here.
+        if self.argon_open_in_editor(reference) {
+            return;
+        }
+
         if self.scripts.tabs.open(reference) == Opened::Existing {
             self.focus_script(reference, window, cx);
             self.set_document(super::chrome::Document::Scripts, cx);

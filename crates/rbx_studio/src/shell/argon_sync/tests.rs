@@ -9,6 +9,11 @@ use std::collections::HashSet;
 
 use rbx_dom::WeakDom;
 
+use super::connection::{level_keys, log_passes, needs_review, parse_address, LogLevel};
+use super::diff_rows::cap_lines;
+use super::diff_rows::count_descendants;
+use super::outgoing::ordered_parent_first;
+use super::outgoing::{script_related, syncs_properties};
 use super::*;
 
 #[test]
@@ -112,6 +117,7 @@ fn snapshot(name: &str, children: Vec<argon_client::Snapshot>) -> argon_client::
         class: "Folder".to_owned(),
         properties: Vec::new(),
         children,
+        keep_unknowns: false,
     }
 }
 
@@ -132,4 +138,87 @@ fn count_descendants_counts_every_level_not_just_direct_children() {
     // A, A1, B — three descendants, not two (the direct-children count
     // would undercount a nested folder of scripts).
     assert_eq!(count_descendants(&tree.children), 3);
+}
+
+fn project(game_id: Option<u64>, place_ids: Vec<u64>) -> argon_client::Project {
+    argon_client::Project {
+        name: "ArgonTest".to_owned(),
+        version: "2.0.29".to_owned(),
+        game_id,
+        place_ids,
+    }
+}
+
+#[test]
+fn a_published_project_with_one_place_identifies_both_levels() {
+    assert_eq!(
+        level_keys(&project(Some(42), vec![7])),
+        LevelKeys {
+            game: Some("42".to_owned()),
+            place: Some("7".to_owned()),
+        }
+    );
+}
+
+#[test]
+fn an_unpublished_project_identifies_neither_level() {
+    assert_eq!(level_keys(&project(None, vec![])), LevelKeys::default());
+}
+
+#[test]
+fn a_project_with_several_places_leaves_the_place_level_unidentified() {
+    let keys = level_keys(&project(Some(42), vec![7, 8]));
+    assert_eq!(keys.game, Some("42".to_owned()));
+    assert_eq!(keys.place, None);
+}
+
+#[test]
+fn a_batch_asks_only_over_the_threshold_and_only_when_prompts_allow() {
+    assert!(!needs_review("Always", false, 5, 5));
+    assert!(needs_review("Always", false, 6, 5));
+    assert!(needs_review("Initial", true, 6, 5));
+    assert!(!needs_review("Initial", false, 6, 5));
+    assert!(!needs_review("Never", true, 100, 5));
+}
+
+#[test]
+fn a_message_shows_when_its_level_is_at_or_below_the_setting_and_never_at_off() {
+    assert!(log_passes(LogLevel::Warn, LogLevel::Error));
+    assert!(log_passes(LogLevel::Warn, LogLevel::Warn));
+    assert!(!log_passes(LogLevel::Warn, LogLevel::Info));
+    assert!(log_passes(LogLevel::Trace, LogLevel::Trace));
+    assert!(!log_passes(LogLevel::Off, LogLevel::Error));
+}
+
+#[test]
+fn the_diff_view_caps_a_source_and_says_how_much_it_left_out() {
+    assert_eq!(cap_lines("a\nb\nc", 3), "a\nb\nc");
+    assert_eq!(cap_lines("a\nb\nc\nd", 3), "a\nb\nc\n-- And 1 more line...");
+    assert_eq!(
+        cap_lines("a\nb\nc\nd\ne", 3),
+        "a\nb\nc\n-- And 2 more lines..."
+    );
+}
+
+#[test]
+fn only_code_mode_keeps_an_instance_that_has_a_script_anywhere_below_it() {
+    let database = rbx_reflection::ReflectionDatabase::shared();
+    let mut dom = WeakDom::new();
+    let folder = dom.new_instance("Folder", "Stuff", None);
+    let part = dom.new_instance("Part", "Baseplate", Some(folder));
+    let nested = dom.new_instance("Folder", "Deeper", Some(folder));
+    let script = dom.new_instance("ModuleScript", "net", Some(nested));
+    assert!(script_related(&dom, database, script));
+    assert!(script_related(&dom, database, nested));
+    assert!(script_related(&dom, database, folder));
+    assert!(!script_related(&dom, database, part));
+}
+
+#[test]
+fn properties_go_back_for_scripts_always_and_for_the_rest_only_when_asked() {
+    let database = rbx_reflection::ReflectionDatabase::shared();
+    assert!(syncs_properties(database, "Script", false));
+    assert!(syncs_properties(database, "ModuleScript", false));
+    assert!(!syncs_properties(database, "Part", false));
+    assert!(syncs_properties(database, "Part", true));
 }

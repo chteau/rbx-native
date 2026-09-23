@@ -109,34 +109,41 @@ impl Shell {
         let handle = cx.entity();
         let translate = self.transform.translate;
         let rotate = self.transform.rotate;
+        let stack = self.ribbon_nav.claim(
+            v_flex()
+                .id("snap-stack")
+                .flex_none()
+                .w(tokens::stack_width())
+                .h_full()
+                .justify_center()
+                .gap(px(6.))
+                .cursor_pointer()
+                .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::chrome())))
+                .tooltip(|window, cx| super::tooltip::text("Snap increments", window, cx)),
+            cx,
+        );
 
         Popover::new("snap-popover")
             .appearance(false)
-            .trigger(super::chrome::Trigger::new(
-                self.ribbon_nav.claim(
-                    v_flex()
-                        .id("snap-stack")
-                        .flex_none()
-                        .w(tokens::stack_width())
-                        .h_full()
-                        .justify_center()
-                        .gap(px(4.))
-                        .cursor_pointer()
-                        .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::chrome())))
-                        .tooltip(|window, cx| super::tooltip::text("Snap increments", window, cx))
-                        .child(snap_readout(
-                            IconName::Magnet,
-                            format!("{} studs", translate.increment),
-                            translate.enabled,
-                        ))
-                        .child(snap_readout(
-                            IconName::RotateCw,
-                            format!("{}°", rotate.increment),
-                            rotate.enabled,
-                        )),
-                    cx,
-                ),
-            ))
+            // The popover opens 6px under the ribbon's bottom edge. The trigger ends 12px above that edge (the ribbon's
+            // 11px bottom padding and its 1px border), and the toolkit
+            // already offsets a popover 4px below its trigger.
+            .mt(px(14.))
+            .trigger(super::chrome::Trigger::with_open(move |open| {
+                stack
+                    .child(snap_readout(
+                        IconName::Magnet,
+                        snap::studs(translate.increment),
+                        translate.enabled,
+                        open,
+                    ))
+                    .child(snap_readout(
+                        IconName::RotateCw,
+                        format!("{}°", rotate.increment),
+                        rotate.enabled,
+                        open,
+                    ))
+            }))
             .content(move |_, _, cx| handle.update(cx, |shell, cx| shell.snap_fields_popover(cx)))
     }
 
@@ -160,8 +167,10 @@ impl Shell {
 
 /// One row of the snap stack. A disabled increment is still *shown* — it is
 /// what snapping would round to the moment it is switched back on — but it
-/// reads as inactive rather than as the value in force.
-fn snap_readout(icon: IconName, value: String, enabled: bool) -> impl IntoElement {
+/// reads as inactive rather than as the value in force. While the popover
+/// is open both pills take the accent hairline and full-strength text, so
+/// the ribbon shows what the popover is editing.
+fn snap_readout(icon: IconName, value: String, enabled: bool, open: bool) -> impl IntoElement {
     h_flex()
         .w_full()
         .flex_none()
@@ -172,39 +181,20 @@ fn snap_readout(icon: IconName, value: String, enabled: bool) -> impl IntoElemen
         .rounded(tokens::RADIUS)
         .bg(tokens::field_select())
         .border_1()
-        .border_color(tokens::border())
+        .border_color(if open {
+            tokens::accent_line()
+        } else {
+            tokens::border()
+        })
         .text_size(tokens::text_sm())
-        .line_height(tokens::line_xs())
-        .text_color(if enabled {
+        .line_height(tokens::line_md())
+        .text_color(if open {
+            tokens::text()
+        } else if enabled {
             tokens::text_label()
         } else {
             tokens::text_disabled()
         })
-        .child(Icon::new(icon).size(tokens::text_xs()))
+        .child(Icon::new(icon).size(px(13.)))
         .child(div().flex_1().truncate().child(SharedString::from(value)))
-}
-
-/// The snap popover's body: the two fields stacked, in a floating surface.
-pub(super) fn snap_container(fields: Vec<AnyElement>) -> AnyElement {
-    v_flex()
-        .w(px(180.))
-        .p(px(10.))
-        .gap(px(10.))
-        .bg(tokens::chrome())
-        .rounded(tokens::RADIUS)
-        .shadow(tokens::elevation())
-        .children(fields)
-        .into_any_element()
-}
-
-/// A field's own label row, above its input.
-pub(super) fn field_label(label: impl IntoElement) -> impl IntoElement {
-    h_flex()
-        .items_center()
-        .gap(px(4.))
-        .mb(px(4.))
-        .text_size(tokens::text_sm())
-        .line_height(tokens::line_sm())
-        .text_color(tokens::text_label())
-        .child(label)
 }

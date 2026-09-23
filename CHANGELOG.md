@@ -2,6 +2,82 @@
 
 ## 2026-09-23
 
+- **The Argon dock is rebuilt to the redesign.** The connection sits on
+  the left: the Argon mark, the CLI's version, and a status badge for
+  Disconnected, Connecting, Connected, Error and a pending review; under
+  it one line of context, then the `host : port` field, a "?" that opens
+  a "Getting started" popover, and the Connect / Disconnect / Dismiss /
+  Accept and Cancel buttons. The plugin's settings fill the right as
+  cards under Connection, Sync, Two-Way Sync and Workflow headers, with a
+  Global / Game / Place switch (Game and Place only once a published
+  project is connected) and Restore defaults. The dock lays out for its
+  own width: two columns above 900 px, stacked below it, one column of
+  cards under 588 px, a wrapped action row under 388 px, so it reads the
+  same docked at the bottom, at the side, or floated. While disconnected
+  the dock says whether the Argon CLI is installed (its path in a
+  tooltip) or links to Argon's install page, and the settings column
+  keeps its scroll thumb in view. The Argon and Wally dock menus are now
+  called "Argon dock options" and "Wally dock options". — @chteau
+
+- **Disconnecting from Argon no longer freezes the app.** Disconnect,
+  and closing a place while connected, used to wait for the connection's
+  background poll to finish, which could hold the whole window for over
+  half a minute. The connection is now dropped at once and winds down on
+  its own. — @chteau
+
+- **Auto Connect stays quiet without Argon.** When the Argon CLI isn't
+  installed, opening a place no longer tries to connect and fails; the
+  dock stays Disconnected and Output notes that Auto Connect was skipped.
+  Connect still works by hand, for a server in WSL or on another
+  machine. — @chteau
+
+- **Connecting to Argon no longer duplicates the place.** Before, every
+  instance the server sent was added on top of what the place already
+  had. Now, on connect, the place and the server's project are matched up
+  by name and class: instances the server knows are updated in place,
+  and instances it doesn't know are removed, unless Keep Unknowns is on
+  or the project marks them as kept. Initial Sync Priority decides who
+  wins: Server (the default) changes the place to match the files, Client
+  changes the files to match the place, None connects without changing
+  either. Override Packages off keeps server changes out of anything
+  under a `PackageLink`. When the connect would change more instances
+  than Changes Threshold allows, the dock asks first, as it does for a
+  live batch. — @chteau
+- **The rest of Argon's settings do what they do in the plugin.** Auto
+  Reconnect retries five seconds after a dropped connection; HTTPS
+  connects over TLS; Two-Way Sync (off by default, as in the plugin)
+  decides whether edits go back to the files at all, with Only Code Mode
+  and Syncback Properties choosing what goes; Display Prompts and Changes
+  Threshold decide when a batch asks first, and the threshold is now
+  "more than", as in the plugin, instead of "five or more"; Open In
+  Editor sends a synced script to your OS editor instead of opening it
+  here; Log Level filters what Argon writes to the Output dock; Diff
+  Lines Limit caps how much of a script the diff window shows. — @chteau
+- **Argon's own settings, per level.** The Argon dock's settings model is
+  now the plugin's: the same 15 settings with the same defaults, resolved
+  Place → Game → Global → default, stored in `settings.json` under `argon`
+  with only the overrides. The Game and Place levels are identified by the
+  connected project's own game and place IDs (an unpublished project has
+  neither). The first setting wired up is Auto Connect, on by default as in
+  the plugin: opening a place now tries the remembered Argon address at
+  once, so a machine without `argon serve` running sees the dock's error
+  state instead of Disconnected until it's dismissed. — @chteau
+
+- **The snap popover follows the redesign board.** Opening the ribbon's
+  snap pills now shows a 248px surface with one section per unit: a
+  title row with the unit and a switch, then a single-field stepper with
+  its − and + at either end and the value centred in mono. A switched-off
+  section goes flat and out of the Tab order, and both pills take the
+  accent hairline while the popover is open. Same increments, same
+  shortcuts, same IDs. The pills themselves grow to the board's 26px with a
+  13px icon and a 6px gap, and a switched-on toggle's knob is pure white
+  everywhere in the editor, as the palette specifies. — @chteau
+
+- **The editor ships its own fonts.** Manrope and JetBrains Mono (both OFL,
+  licences in `assets/fonts/`) are embedded and registered at startup, so
+  the chrome no longer falls back to the platform font on a machine that
+  doesn't have them installed. — @chteau
+
 - **The editor's chrome is restyled: sober, near-black, one accent.** Every
   surface, border, text colour, radius and type size in `tokens.rs` (and the
   toolkit theme mirroring it, `assets/themes/dark-soft.json`) now follows

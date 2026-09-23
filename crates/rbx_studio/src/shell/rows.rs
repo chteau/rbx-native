@@ -600,7 +600,7 @@ pub(super) fn checkbox(
                         .size(tokens::toggle_thumb())
                         .rounded_full()
                         .bg(if on {
-                            tokens::text_full()
+                            tokens::knob()
                         } else {
                             tokens::check_off_border()
                         }),
