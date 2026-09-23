@@ -153,6 +153,7 @@ impl Shell {
             .px(px(9.))
             .text_size(tokens::text_sm())
             .line_height(tokens::line_sm())
+            .font_weight(FontWeight::NORMAL)
             .text_color(tokens::text2())
             .when(ringed, |this| this.shadow(tokens::focus_ring_inset()))
             .child(
