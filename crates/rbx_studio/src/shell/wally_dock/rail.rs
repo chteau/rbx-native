@@ -28,11 +28,17 @@ const PAGES: [(Page, &str, IconName); 3] = [
 ];
 
 impl Shell {
+    /// The rail row (or band segment) drawn as current: the page, except
+    /// while a search is on screen, when none is — a result isn't Home.
+    fn wally_current_row(&self) -> Option<Page> {
+        (self.wally.query.is_empty()).then_some(self.wally_page())
+    }
+
     /// Wide: 14/12 padding, the field, then the page rows 2px apart.
     pub(super) fn rail(&mut self, counts: Counts, cx: &mut Context<Self>) -> Div {
-        let current = self.wally_page();
+        let current = self.wally_current_row();
         let rows = PAGES.map(|(page, label, icon)| {
-            let selected = page == current;
+            let selected = Some(page) == current;
             h_flex()
                 .id(SharedString::from(format!("wally-page-{label}")))
                 .h(px(28.))
@@ -77,9 +83,9 @@ impl Shell {
     /// Narrow: 14px padding at top and sides, the field, 8px, then a
     /// 28px segmented control with the three pages.
     pub(super) fn band(&mut self, counts: Counts, cx: &mut Context<Self>) -> Div {
-        let current = self.wally_page();
+        let current = self.wally_current_row();
         let segments = PAGES.map(|(page, label, _)| {
-            let selected = page == current;
+            let selected = Some(page) == current;
             h_flex()
                 .id(SharedString::from(format!("wally-page-{label}")))
                 .flex_1()
@@ -134,6 +140,7 @@ impl Shell {
     /// query, `accent_line` while focused.
     fn search_field(&mut self, cx: &mut Context<Self>) -> Div {
         let state = self.wally_query.clone();
+        let has_query = !self.wally.query.is_empty();
         let handle = state.read(cx).focus_handle(cx);
         self.tab_order.register(&handle);
         h_flex()
@@ -161,6 +168,25 @@ impl Shell {
                         .text_color(tokens::text()),
                 ),
             )
+            .children(has_query.then(|| {
+                // 20×20 hit area, a 12px ×; clearing the query brings Home back.
+                div()
+                    .id("wally-clear")
+                    .flex_none()
+                    .size(px(20.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(tokens::RADIUS_BADGE)
+                    .cursor_pointer()
+                    .text_color(tokens::text3())
+                    .hover(|this| this.text_color(tokens::text()))
+                    .tooltip(|window, cx| super::super::tooltip::text("Clear search", window, cx))
+                    .on_click(cx.listener(|shell, _, window, cx| {
+                        shell.wally_search_for(String::new(), window, cx);
+                    }))
+                    .child(Icon::new(IconName::X).size(px(12.)))
+            }))
     }
 }
 

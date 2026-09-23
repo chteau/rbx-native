@@ -69,7 +69,19 @@ pub(in crate::shell) fn installed_packages(dom: &WeakDom) -> Vec<Installed> {
         }
         stack.extend(instance.children().iter().copied());
     }
-    found.sort_by(|a, b| (&a.scope, &a.name, &a.version).cmp(&(&b.scope, &b.name, &b.version)));
+    let rank = |realm: Realm| match realm {
+        Realm::Shared => 0,
+        Realm::Server => 1,
+        Realm::Dev => 2,
+    };
+    found.sort_by(|a, b| {
+        (rank(a.realm), &a.scope, &a.name, &a.version).cmp(&(
+            rank(b.realm),
+            &b.scope,
+            &b.name,
+            &b.version,
+        ))
+    });
     found
 }
 
@@ -167,12 +179,6 @@ mod tests {
             summary,
             vec![
                 (
-                    "chteau".into(),
-                    "roblox-supabase".into(),
-                    "1.2.0".into(),
-                    Realm::Server
-                ),
-                (
                     "evaera".into(),
                     "promise".into(),
                     "4.0.0".into(),
@@ -183,6 +189,12 @@ mod tests {
                     "signal".into(),
                     "2.0.3".into(),
                     Realm::Shared
+                ),
+                (
+                    "chteau".into(),
+                    "roblox-supabase".into(),
+                    "1.2.0".into(),
+                    Realm::Server
                 ),
             ]
         );

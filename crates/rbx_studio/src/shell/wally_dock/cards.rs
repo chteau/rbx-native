@@ -238,6 +238,7 @@ pub(super) fn title_row(scope: &str, name: &str, version: &str) -> Div {
         .items_center()
         .gap(px(10.))
         .child(name_span(scope, name, tokens::text_md()))
+        .child(div().flex_1())
         .child(
             div()
                 .flex_none()
@@ -249,10 +250,10 @@ pub(super) fn title_row(scope: &str, name: &str, version: &str) -> Div {
         )
 }
 
-/// `scope/` then the name, one line; the name takes the ellipsis.
+/// `scope/` then the name, one line, sized to its text; the name takes
+/// the ellipsis when its row is short.
 pub(super) fn name_span(scope: &str, name: &str, size: Pixels) -> Div {
     h_flex()
-        .flex_1()
         .min_w_0()
         .text_size(size)
         .line_height(tokens::line_md())
