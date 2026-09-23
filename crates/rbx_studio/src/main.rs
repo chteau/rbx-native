@@ -93,6 +93,7 @@ mod ui_canvas;
 mod wally_client;
 mod workspace_view;
 
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use gpui_kit::component::{Root, Theme, ThemeConfig, ThemeMode, ThemeRegistry, ThemeSet};
@@ -313,15 +314,39 @@ fn first_new_dark(set: &ThemeSet, known: impl Fn(&str) -> bool) -> Option<&Theme
         .find(|theme| theme.mode == ThemeMode::Dark && !known(&theme.name))
 }
 
-/// Points the theme at the design system's own font stack, for whichever of
-/// its families this machine actually has.
+/// The design system's own fonts, shipped with the editor (OFL, see the
+/// licence files next to them) so that no machine has to have them
+/// installed: `fc-query` names them `Manrope` (Regular, Medium, SemiBold,
+/// Bold) and `JetBrains Mono` (Regular, Medium).
+const BUNDLED_FONTS: [&[u8]; 6] = [
+    include_bytes!("../../../assets/fonts/Manrope-Regular.ttf"),
+    include_bytes!("../../../assets/fonts/Manrope-Medium.ttf"),
+    include_bytes!("../../../assets/fonts/Manrope-SemiBold.ttf"),
+    include_bytes!("../../../assets/fonts/Manrope-Bold.ttf"),
+    include_bytes!("../../../assets/fonts/JetBrainsMono-Regular.ttf"),
+    include_bytes!("../../../assets/fonts/JetBrainsMono-Medium.ttf"),
+];
+
+/// Registers the bundled fonts, then points the theme at the design
+/// system's font stack for whichever of its families the text system now
+/// has.
 ///
 /// The theme takes one family name, not a CSS-style stack with fallbacks,
 /// and a name that isn't installed is used as-is rather than falling
 /// through — so the fallback has to happen here, by asking the text system
-/// what exists before naming anything. A machine with neither family keeps
-/// the platform UI font, which is the right answer and not a failure.
+/// what exists before naming anything. Registration failing is reported
+/// and survived: the platform UI font is a worse look, not a reason to
+/// refuse to start.
 fn install_fonts(cx: &mut App) {
+    let fonts = BUNDLED_FONTS
+        .iter()
+        .map(|bytes| Cow::Borrowed(*bytes))
+        .collect();
+    if let Err(err) = cx.text_system().add_fonts(fonts) {
+        eprintln!(
+            "rbxstudio: the bundled fonts could not be registered, using the platform font: {err}"
+        );
+    }
     let installed = cx.text_system().all_font_names();
     let has = |family: &str| installed.iter().any(|name| name == family);
 
@@ -432,6 +457,16 @@ mod tests {
             .find(|theme| theme.name == "rbx-native Dark")
             .expect("a theme named \"rbx-native Dark\"");
         assert_eq!(theme.mode, ThemeMode::Dark);
+    }
+
+    /// Guards `BUNDLED_FONTS`: every embedded file is a TrueType font
+    /// (`sfnt` version 1.0), so a swapped or truncated asset fails here
+    /// rather than as a silent fallback to the platform font at startup.
+    #[test]
+    fn every_bundled_font_is_a_truetype_file() {
+        for font in super::BUNDLED_FONTS {
+            assert_eq!(&font[..4], &[0, 1, 0, 0]);
+        }
     }
 
     fn set(themes: &[(&str, &str)]) -> ThemeSet {

@@ -2,6 +2,11 @@
 
 ## 2026-09-23
 
+- **The editor ships its own fonts.** Manrope and JetBrains Mono (both OFL,
+  licences in `assets/fonts/`) are embedded and registered at startup, so
+  the chrome no longer falls back to the platform font on a machine that
+  doesn't have them installed. — @chteau
+
 - **The editor's chrome is restyled: sober, near-black, one accent.** Every
   surface, border, text colour, radius and type size in `tokens.rs` (and the
   toolkit theme mirroring it, `assets/themes/dark-soft.json`) now follows
