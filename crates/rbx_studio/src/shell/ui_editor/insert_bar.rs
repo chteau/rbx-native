@@ -84,8 +84,8 @@ impl Shell {
                 label,
             )
             .when(self.ui.tool == Some(class), |this| {
-                this.bg(tokens::ribbon_tab_active())
-                    .text_color(tokens::text_full())
+                this.bg(tokens::accent_soft())
+                    .text_color(tokens::check_on())
             })
             .when(!target, |this| this.opacity(0.4).cursor_not_allowed())
             .when(target, |this| {
@@ -164,9 +164,9 @@ impl Shell {
                     .bg(tokens::chrome())
                     .shadow(tokens::elevation())
                     .children(buttons)
-                    .child(div().w(px(1.)).h(px(14.)).mx(px(4.)).bg(tokens::divider()))
+                    .child(div().w(px(1.)).h(px(14.)).mx(px(4.)).bg(tokens::border()))
                     .child(more)
-                    .child(div().w(px(1.)).h(px(14.)).mx(px(4.)).bg(tokens::divider()))
+                    .child(div().w(px(1.)).h(px(14.)).mx(px(4.)).bg(tokens::border()))
                     .child(
                         h_flex()
                             .gap(px(2.))

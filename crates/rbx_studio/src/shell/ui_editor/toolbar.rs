@@ -48,7 +48,7 @@ impl Shell {
             .into_iter()
             .enumerate()
             .map(|(index, tab)| {
-                let pill = chrome::tab_pill(tab.key(), tab.label().into(), tab == active)
+                let pill = chrome::tab_pill(tab.key(), tab.label().into(), tab == active, false)
                     .on_click(cx.listener(move |shell, _, _, cx| shell.set_ui_tab(tab, cx)));
                 self.ui.nav.item(index, pill, cx).into_any_element()
             })
@@ -161,12 +161,12 @@ impl Shell {
             }
             false => vec![
                 resolution.into_any_element(),
-                size_field(self.tab_order.next(), &self.ui.width).into_any_element(),
+                size_field(self.tab_order.next(), &self.ui.width, cx).into_any_element(),
                 div()
                     .text_color(tokens::text_muted())
                     .child("×")
                     .into_any_element(),
-                size_field(self.tab_order.next(), &self.ui.height).into_any_element(),
+                size_field(self.tab_order.next(), &self.ui.height, cx).into_any_element(),
                 chrome::icon_button(
                     "ui-orientation",
                     IconName::RotateCw,
@@ -271,7 +271,7 @@ fn separator() -> impl IntoElement {
         .w(px(1.))
         .h(px(14.))
         .mx(px(4.))
-        .bg(tokens::divider())
+        .bg(tokens::border())
 }
 
 /// One of the width/height fields: the dock search field's own look, sized
@@ -279,9 +279,10 @@ fn separator() -> impl IntoElement {
 pub(in crate::shell) fn size_field(
     tab_index: isize,
     state: &Entity<gpui_kit::component::input::InputState>,
+    cx: &App,
 ) -> impl IntoElement {
     div()
         .w(px(72.))
         .flex_none()
-        .child(search_field(tab_index, state))
+        .child(search_field(tab_index, state, cx))
 }

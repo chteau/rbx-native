@@ -32,6 +32,7 @@ impl Render for DraggedPanel {
             "dragged",
             SharedString::from(self.0.key()),
             true,
+            false,
             |_, _, _| {},
         )
         .opacity(0.8)

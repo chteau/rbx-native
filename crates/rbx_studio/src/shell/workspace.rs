@@ -62,33 +62,46 @@ impl Shell {
         let right = self.dock_edge(Edge::Right, limit, window, cx);
         let bottom = self.dock_edge(Edge::Bottom, limit, window, cx);
 
-        h_flex()
-            // Positioned, so the drop strips can be laid over it — an edge
-            // holding nothing has no column of its own to aim at.
+        // Bottom is a sibling of the left/document/right row, not a child of
+        // its document column: Output reads as the floor the whole
+        // workspace stands on, not a third thing squeezed between two
+        // docks. Left and right still run the window's full height, above
+        // it.
+        v_flex()
             .relative()
             .w_full()
             .flex_1()
             .overflow_hidden()
             .bg(tokens::black())
-            .children(left)
             .child(
-                v_flex()
+                h_flex()
+                    // Positioned, so the drop strips can be laid over it —
+                    // an edge holding nothing has no column of its own to
+                    // aim at.
+                    .relative()
+                    .w_full()
                     .flex_1()
-                    .h_full()
                     .overflow_hidden()
-                    // Nothing floats over the document: the view's own
-                    // settings and numbers are the Viewport dock's (see
-                    // `shell::viewport_dock`).
+                    .children(left)
                     .child(
                         v_flex()
-                            .relative()
                             .flex_1()
+                            .h_full()
                             .overflow_hidden()
-                            .child(document),
+                            // Nothing floats over the document: the view's
+                            // own settings and numbers are the Viewport
+                            // dock's (see `shell::viewport_dock`).
+                            .child(
+                                v_flex()
+                                    .relative()
+                                    .flex_1()
+                                    .overflow_hidden()
+                                    .child(document),
+                            ),
                     )
-                    .children(bottom),
+                    .children(right),
             )
-            .children(right)
+            .children(bottom)
     }
 
     /// The same parts a docked panel renders, for one that has been torn
@@ -193,7 +206,7 @@ impl Shell {
             v_flex()
                 .size_full()
                 .gap(px(10.))
-                .child(search_field(self.tab_order.next(), &self.search))
+                .child(search_field(self.tab_order.next(), &self.search, cx))
                 .child(
                     div()
                         .flex_1()
@@ -384,24 +397,53 @@ impl Shell {
     }
 }
 
-/// A dock's search field: the frame's own, which is a field with a centred
-/// placeholder and no border at all — the surface change is the affordance.
+/// A dock's search field: `field_select`, a hairline `border`, radius
+/// `RADIUS` — the reference's own field look.
 ///
 /// The toolkit `Input` keeps the caret, selection and IME handling; its own
 /// chrome is switched off so this container can be the frame's.
 pub(super) fn search_field(
     tab_index: isize,
     state: &Entity<gpui_kit::component::input::InputState>,
+    cx: &App,
 ) -> impl IntoElement {
+    search_field_sized(tab_index, state, tokens::input_height(), cx)
+}
+
+/// The Output strip's search box: the same field at the shorter height the
+/// reference gives it (5px of vertical padding around 11px text), which is
+/// also what lets it sit centred in a tab strip its dock-sized twin
+/// overflows.
+pub(super) fn search_field_compact(
+    tab_index: isize,
+    state: &Entity<gpui_kit::component::input::InputState>,
+    cx: &App,
+) -> impl IntoElement {
+    search_field_sized(tab_index, state, tokens::strip_field_height(), cx)
+}
+
+fn search_field_sized(
+    tab_index: isize,
+    state: &Entity<gpui_kit::component::input::InputState>,
+    height: Pixels,
+    cx: &App,
+) -> impl IntoElement {
+    // Tracks the input's own handle, so the box wears the reference's
+    // focused border whenever the field inside it has focus.
+    let handle = state.read(cx).focus_handle(cx);
     h_flex()
+        .track_focus(&handle)
+        .focus(|this| this.border_color(tokens::accent_line()))
         .w_full()
-        .h(tokens::input_height())
+        .h(height)
         .flex_none()
         .items_center()
         .justify_center()
         .px(px(8.))
         .rounded(tokens::RADIUS)
-        .bg(tokens::chrome())
+        .bg(tokens::field_select())
+        .border_1()
+        .border_color(tokens::border())
         .text_size(tokens::text_sm())
         .line_height(tokens::line_sm())
         .text_color(tokens::text_strong())

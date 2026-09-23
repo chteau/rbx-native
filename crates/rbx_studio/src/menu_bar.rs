@@ -165,9 +165,9 @@ fn menus() -> Vec<OwnedMenu> {
     ]
 }
 
-/// The bar as it sits under the title bar: the frame's own strip, and the one
-/// surface in the whole design lighter than its neighbours — which is what
-/// separates it from the black above it without a border.
+/// The bar as it sits under the title bar: the frame's own strip, painted
+/// the same ground tone as the title bar above it, so a hairline is what
+/// separates the two rather than a tone neither of them actually has.
 ///
 /// The bar's own `size_full()` needs a definite height to fill, or it either
 /// collapses to nothing or grows to cover the rows below it in a flex column.
@@ -177,6 +177,8 @@ pub(crate) fn bar(menu_bar: &Entity<MenuBar>) -> impl IntoElement {
         .h(tokens::menu_bar_height())
         .flex_none()
         .bg(tokens::menu_bar())
+        .border_b(px(1.))
+        .border_color(tokens::border())
         .text_size(tokens::text_md())
         .line_height(tokens::line_md())
         .child(menu_bar.clone())

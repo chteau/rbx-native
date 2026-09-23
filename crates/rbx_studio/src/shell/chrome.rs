@@ -95,7 +95,7 @@ impl Shell {
     /// dragging it moves the window, and the three buttons on the right are
     /// the only minimize/maximize/close there are.
     pub(super) fn topbar(&self, cx: &mut App) -> impl IntoElement {
-        let title = SharedString::from(format!("{} - RbxNative", self.title));
+        let title = self.title.clone();
 
         h_flex()
             .w_full()
@@ -103,6 +103,8 @@ impl Shell {
             .flex_none()
             .items_center()
             .bg(tokens::black())
+            .border_b(px(1.))
+            .border_color(tokens::border())
             .child(
                 h_flex()
                     .flex_none()
@@ -130,7 +132,8 @@ impl Shell {
                     .overflow_hidden()
                     .text_size(tokens::text_md())
                     .line_height(tokens::line_md())
-                    .text_color(tokens::text_full())
+                    .text_color(tokens::text2())
+                    .gap(px(10.))
                     // The move starts on a *drag*, not on a press. Handing
                     // `start_window_move` to mouse-down grabs the pointer at
                     // the compositor on the first press of every double
@@ -156,6 +159,12 @@ impl Shell {
                             window.zoom_window();
                         }
                     })
+                    .child(
+                        div()
+                            .font_weight(tokens::WEIGHT_SEMIBOLD)
+                            .child("RbxNative"),
+                    )
+                    .child(div().w(px(1.)).h(px(12.)).bg(tokens::border2()))
                     .child(div().truncate().child(title)),
             )
             .child(
@@ -169,6 +178,7 @@ impl Shell {
                         "window-minimize",
                         IconName::Minus,
                         "Minimize",
+                        false,
                         |window| window.minimize_window(),
                     ))
                     .child(window_button(
@@ -176,6 +186,7 @@ impl Shell {
                         "window-maximize",
                         IconName::Square,
                         "Maximize",
+                        false,
                         |window| window.zoom_window(),
                     ))
                     .child(window_button(
@@ -183,6 +194,7 @@ impl Shell {
                         "window-close",
                         IconName::X,
                         "Close",
+                        true,
                         |window| window.remove_window(),
                     )),
             )
@@ -204,8 +216,13 @@ impl Shell {
             .w_full()
             .h(tokens::tabs_height())
             .flex_none()
-            .items_stretch()
-            .bg(tokens::chrome())
+            .items_end()
+            .gap(px(2.))
+            .pt(px(8.))
+            .px(px(12.))
+            .bg(tokens::black())
+            .border_b_1()
+            .border_color(tokens::border())
             .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
                 if shell.document_nav.key(&event.keystroke, window, cx) {
                     cx.stop_propagation();
@@ -262,8 +279,10 @@ impl Shell {
             .w_full()
             .h(tokens::ribbon_tabs_height())
             .flex_none()
-            .items_stretch()
-            .bg(tokens::dock())
+            .items_center()
+            .gap(px(22.))
+            .px(px(16.))
+            .bg(tokens::black())
             .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
                 if shell.ribbon_tabs_nav.key(&event.keystroke, window, cx) {
                     cx.stop_propagation();
@@ -278,19 +297,17 @@ impl Shell {
                         let tab = h_flex()
                             .id(("ribbon-tab", ribbon_tab as usize))
                             .flex_none()
-                            .h_full()
-                            .items_center()
-                            .px(px(10.))
                             .cursor_pointer()
                             .focus_visible(|this| this.shadow(tokens::focus_ring_inset()))
-                            .text_size(tokens::text_sm())
-                            .line_height(tokens::line_sm())
-                            .text_color(tokens::text_full())
+                            .text_size(tokens::text_md())
+                            .line_height(tokens::line_md())
                             .map(|this| {
                                 if ribbon_tab == active {
-                                    this.bg(tokens::ribbon_tab_active())
+                                    this.text_color(tokens::check_on())
+                                        .font_weight(tokens::WEIGHT_BOLD)
                                 } else {
-                                    this.hover(|this| this.bg(tokens::hover()))
+                                    this.text_color(tokens::text_placeholder())
+                                        .hover(|this| this.text_color(tokens::text_full()))
                                 }
                             })
                             .on_click(cx.listener(move |shell, _, _, cx| {
@@ -305,9 +322,10 @@ impl Shell {
     }
 }
 
-/// One document tab: icon, title, close. Fixed width — these do not grow to
-/// fit their titles, which is what keeps the strip from reflowing every
-/// time a place with a longer name is opened.
+/// One document tab: icon, title, close. Sized to its own content, not to a
+/// fixed slot — the reference floats each tab's label at its own width, and
+/// three fixed documents never reflow the strip the way an arbitrary count
+/// of them might.
 fn document_tab(
     document: Document,
     label: SharedString,
@@ -317,44 +335,40 @@ fn document_tab(
     h_flex()
         .id(("document-tab", document as usize))
         .flex_none()
-        .w(tokens::tab_width())
-        .h_full()
         .items_center()
-        .gap(px(10.))
+        .gap(px(7.))
         .px(px(16.))
-        .border_r(px(1.))
-        .border_color(tokens::tab_border())
+        .py(px(8.))
+        .rounded_t(tokens::RADIUS_TILE)
         .relative()
         .cursor_pointer()
         .focus_visible(|this| this.shadow(tokens::focus_ring_inset()))
-        .text_size(tokens::text_md())
-        .line_height(tokens::line_md())
+        .text_size(tokens::text_sm())
+        .line_height(tokens::line_sm())
         .text_color(if active {
             tokens::text_full()
         } else {
-            tokens::text_label()
+            tokens::text_placeholder()
         })
-        .map(|this| {
-            if active {
-                this.bg(tokens::tab_active())
-            } else {
-                this.hover(|this| this.bg(tokens::hover()))
-            }
+        .when(active, |this| {
+            this.bg(tokens::dock())
+                .font_weight(tokens::WEIGHT_SEMIBOLD)
+                .child(
+                    div()
+                        .absolute()
+                        .left(px(10.))
+                        .right(px(10.))
+                        .bottom(px(-1.))
+                        .h(px(2.))
+                        .bg(tokens::tab_active_bar()),
+                )
+        })
+        .when(!active, |this| {
+            this.hover(|this| this.bg(tokens::hover_subtle()))
         })
         .on_click(on_click)
-        .when(active, |this| {
-            this.child(
-                div()
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .right_0()
-                    .h(px(2.))
-                    .bg(tokens::tab_active_bar()),
-            )
-        })
-        .child(Icon::new(document.icon()).size(tokens::text_md()))
-        .child(div().flex_1().truncate().child(label))
+        .child(Icon::new(document.icon()).size(px(13.)))
+        .child(div().truncate().child(label))
     // No close mark. The frame draws one, and §11 already rejects it on
     // a dock tab as "a control that lies" — a document here is a view
     // of the one open place, not a file that closes independently, so
@@ -368,9 +382,10 @@ fn window_button(
     id: &'static str,
     icon: IconName,
     label: &'static str,
+    danger: bool,
     action: fn(&mut Window),
 ) -> impl IntoElement {
-    titlebar_button(Some(focus), id, icon, label, move |_, window, _| {
+    titlebar_button(Some(focus), id, icon, label, danger, move |_, window, _| {
         action(window)
     })
 }
@@ -380,8 +395,14 @@ fn titlebar_button(
     id: &'static str,
     icon: IconName,
     label: &'static str,
+    danger: bool,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
+    let hover_bg = if danger {
+        tokens::danger_hover()
+    } else {
+        tokens::hover()
+    };
     h_flex()
         .id(id)
         .flex_none()
@@ -393,7 +414,7 @@ fn titlebar_button(
         .when_some(focus, |this, focus| this.track_focus(focus))
         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::black())))
         .text_color(tokens::text_label())
-        .hover(|this| this.bg(tokens::hover()).text_color(tokens::text_full()))
+        .hover(move |this| this.bg(hover_bg).text_color(tokens::text_full()))
         .active(|this| this.bg(tokens::ribbon_tab_active()))
         .tooltip(move |window, cx| super::tooltip::text(label, window, cx))
         .on_click(on_click)
@@ -474,6 +495,7 @@ pub(crate) fn panel_topbar(
                     "panel-close",
                     IconName::X,
                     "Close",
+                    true,
                     on_close,
                 )),
         )
@@ -490,9 +512,10 @@ pub(super) fn dock_tab(
     id: &'static str,
     title: SharedString,
     selected: bool,
+    solo: bool,
     on_close: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> Stateful<Div> {
-    tab_pill(id, title, selected).child(
+    tab_pill(id, title, selected, solo).child(
         // Only on the tab that is showing: a strip of two tabs with a
         // cross on each reads as two buttons rather than as one dock,
         // and the tab you are looking at is the one you would close.
@@ -510,7 +533,19 @@ pub(super) fn dock_tab(
 
 /// A dock tab's pill alone, with no close mark: what a panel's own sub-tabs
 /// wear (see `shell::ui_editor`), which switch a view rather than shut one.
-pub(super) fn tab_pill(id: &'static str, title: SharedString, selected: bool) -> Stateful<Div> {
+///
+/// `solo` is the only tab its strip has — Properties and Explorer, almost
+/// always — and reads the way the reference's plain `DockHeader` does: bold
+/// title text on the dock's own ground, no pill fill, nothing to say
+/// "selected" because there is nothing beside it to be selected over. A
+/// real choice (Output/Argon/Wally) keeps the pill so the active one is
+/// still findable at a glance.
+pub(super) fn tab_pill(
+    id: &'static str,
+    title: SharedString,
+    selected: bool,
+    solo: bool,
+) -> Stateful<Div> {
     h_flex()
         // Keyed by the panel rather than by its label: the Properties tab
         // is named after the selected instance, and an element whose id
@@ -523,14 +558,21 @@ pub(super) fn tab_pill(id: &'static str, title: SharedString, selected: bool) ->
         .max_w(px(tokens::dock_width() - 60.))
         .items_center()
         .gap(px(7.))
-        .px(px(6.))
-        .rounded(tokens::RADIUS)
+        .px(px(14.))
+        .py(px(6.))
+        .rounded_t(tokens::RADIUS)
         .text_size(tokens::text_sm())
         .line_height(tokens::line_sm())
         .cursor_pointer()
         .map(|this| {
-            if selected {
-                this.bg(tokens::chrome()).text_color(tokens::text_strong())
+            if solo {
+                this.text_color(tokens::text_strong())
+                    .font_weight(tokens::WEIGHT_BOLD)
+                    .hover(|this| this.bg(tokens::hover()))
+            } else if selected {
+                this.bg(tokens::field_select())
+                    .text_color(tokens::text_strong())
+                    .font_weight(tokens::WEIGHT_SEMIBOLD)
             } else {
                 // An unselected tab keeps the dock's own ground rather than
                 // a second fill: two pills side by side in different greys
@@ -555,9 +597,14 @@ pub(super) fn dock_strip(
         .w_full()
         .h(tokens::dock_tabs_height())
         .flex_none()
-        .items_stretch()
+        .items_center()
         .p(px(5.))
         .gap(px(4.))
+        // The reference's Output toolbar row closes with a hairline; a strip
+        // that is only tabs draws none, the same as its Properties header.
+        .when(toolbar, |this| {
+            this.border_b_1().border_color(tokens::border())
+        })
         .children(tabs)
         .when_some(trailing, |this, trailing| {
             this.child(
@@ -580,7 +627,7 @@ pub(super) fn dock_strip(
                     .gap(px(4.))
                     .pl(px(4.))
                     .border_l(px(1.))
-                    .border_color(tokens::divider())
+                    .border_color(tokens::border())
                     .child(trailing),
             )
         })
@@ -649,8 +696,8 @@ pub(super) fn button(
         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
         .map(|this| {
             if selected {
-                this.bg(tokens::ribbon_tab_active())
-                    .text_color(tokens::text_full())
+                this.bg(tokens::accent_soft())
+                    .text_color(tokens::check_on())
             } else {
                 this.bg(tokens::field_select())
                     .text_color(tokens::text_label())
@@ -702,7 +749,7 @@ pub(super) fn resize_handle(
                         this.h(px(1.)).w_full()
                     }
                 })
-                .group_hover("resize-handle", |this| this.bg(tokens::divider())),
+                .group_hover("resize-handle", |this| this.bg(tokens::border())),
         )
 }
 
@@ -754,7 +801,9 @@ impl RenderOnce for Trigger {
         let accent = self.accent;
         self.element.when(self.open, |this| match accent {
             Some(accent) => super::ribbon::selected(this, accent),
-            None => this.bg(tokens::ribbon_tab_active()),
+            None => this
+                .bg(tokens::accent_soft())
+                .text_color(tokens::check_on()),
         })
     }
 }

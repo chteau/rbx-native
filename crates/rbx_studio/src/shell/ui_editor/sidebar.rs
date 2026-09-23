@@ -241,7 +241,7 @@ fn sidebar(title: Option<SharedString>, empty: &'static str) -> Div {
         .gap(px(8.))
         .bg(tokens::dock())
         .border_l(px(1.))
-        .border_color(tokens::divider())
+        .border_color(tokens::border())
         .child(
             div()
                 .px(px(4.))

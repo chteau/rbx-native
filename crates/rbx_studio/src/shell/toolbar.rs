@@ -87,18 +87,12 @@ impl Shell {
     pub(super) fn local_tile(&self, cx: &mut Context<Self>) -> impl IntoElement + 'static {
         let local = self.transform.local;
 
-        ribbon::tile(
-            &self.ribbon_nav,
-            "tool-local",
-            IconName::Axis3d,
-            "Local",
-            cx,
-        )
-        .when(local, |this| ribbon::selected(this, tokens::tool_local()))
-        .tooltip(|window, cx| super::tooltip::text("Local orientation", window, cx))
-        .on_click(cx.listener(|shell, _, _, cx| {
-            shell.transform_action(Action::ToggleLocal, cx);
-        }))
+        ribbon::cluster_icon(&self.ribbon_nav, "tool-local", IconName::Axis3d, cx)
+            .when(local, |this| ribbon::selected(this, tokens::tool_local()))
+            .tooltip(|window, cx| super::tooltip::text("Local orientation", window, cx))
+            .on_click(cx.listener(|shell, _, _, cx| {
+                shell.transform_action(Action::ToggleLocal, cx);
+            }))
     }
 
     /// The snap increments, as the stack that sits beside the tools: each
@@ -125,6 +119,7 @@ impl Shell {
                         .flex_none()
                         .w(tokens::stack_width())
                         .h_full()
+                        .justify_center()
                         .gap(px(4.))
                         .cursor_pointer()
                         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::chrome())))
@@ -149,11 +144,10 @@ impl Shell {
     pub(super) fn align_control(&self, cx: &mut Context<Self>) -> impl IntoElement + 'static {
         self.align_popover(
             super::chrome::Trigger::new(
-                ribbon::tile(
+                ribbon::cluster_icon(
                     &self.ribbon_nav,
                     "tool-align",
                     IconName::AlignStartVertical,
-                    "Align",
                     cx,
                 )
                 .tooltip(|window, cx| super::tooltip::text("Align selection", window, cx)),
@@ -170,13 +164,16 @@ impl Shell {
 fn snap_readout(icon: IconName, value: String, enabled: bool) -> impl IntoElement {
     h_flex()
         .w_full()
-        .flex_1()
+        .flex_none()
         .items_center()
         .gap(px(6.))
-        .px(px(7.))
+        .px(px(10.))
+        .py(px(4.))
         .rounded(tokens::RADIUS)
-        .bg(tokens::tile())
-        .text_size(tokens::text_xs())
+        .bg(tokens::field_select())
+        .border_1()
+        .border_color(tokens::border())
+        .text_size(tokens::text_sm())
         .line_height(tokens::line_xs())
         .text_color(if enabled {
             tokens::text_label()

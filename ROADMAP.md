@@ -1724,6 +1724,22 @@ against `Roblox/creator-docs` rather than assumed:
   is edited by hand — no pack browser or installer, so a pack is copied in
   by hand, and while an icon pack is chosen at runtime a theme takes
   effect only on the next launch.
+- [x] **"Sober but alive" restyle of the gpui-kit layer (PR #87).** The
+  chrome now follows the redesign reference (`gpui-ref/`, kept out of the
+  repo) token for token: a three-tone surface ramp (`#0A0A0B` / `#121213` /
+  `#191A1C`), three solid text tones, 6%/11% white hairlines, one accent
+  (`#6C7FDB`) spent only on active/selected state, a small radius scale
+  (3–8px), Manrope/JetBrains Mono, and the reference's 10–13px type sizes.
+  Layout, icons, logo and behaviour are the app's own and unchanged, apart
+  from the Output dock now spanning the full width under both side docks
+  and the 3D view no longer letterboxed to the UI Editor's screen by
+  default. Follow-ups still open:
+  - [ ] Explorer rows at the reference's 9px chevron slot and 20px indent
+    (ours: 12px and 12px). Everything else in the reference's Explorer
+    row is in.
+  - [ ] Property controls at the reference's full 130px. They sit at 116px
+    so every `Workspace` name still reads whole at the default dock
+    width; the two go together only once the dock is wider by default.
 - [x] **Soften the editor's visual theme — calmer and lower-contrast,
   closer to real Studio but gentler.** Today's panels are high-contrast
   flat blocks: near-pure black/white backgrounds, hard 1px borders, sharp

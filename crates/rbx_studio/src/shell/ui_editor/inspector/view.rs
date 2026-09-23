@@ -31,7 +31,7 @@ pub(super) fn section(title: &'static str, actions: Vec<AnyElement>, rows: Vec<A
         .pt(px(8.))
         .pb(px(10.))
         .border_b_1()
-        .border_color(tokens::row_divider())
+        .border_color(tokens::border())
         .child(
             h_flex()
                 .w_full()
@@ -68,8 +68,8 @@ pub(super) fn toggle(
     on: bool,
 ) -> Stateful<Div> {
     chrome::icon_button(id, icon, label).when(on, |this| {
-        this.bg(tokens::ribbon_tab_active())
-            .text_color(tokens::text_full())
+        this.bg(tokens::accent_soft())
+            .text_color(tokens::check_on())
     })
 }
 
