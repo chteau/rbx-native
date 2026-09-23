@@ -23,6 +23,7 @@ pub struct Options {
     size: (u32, u32),
     yaw: Option<i32>,
     pitch: Option<i32>,
+    zoom: Option<f32>,
     eye: Option<Position>,
     look_at: Option<Position>,
     textures: bool,
@@ -49,6 +50,7 @@ impl Options {
         let mut size = DEFAULT_SIZE;
         let mut yaw = None;
         let mut pitch = None;
+        let mut zoom = None;
         let mut eye = None;
         let mut look_at = None;
         let mut textures = true;
@@ -74,6 +76,7 @@ impl Options {
                 "--size" => size = parse_size(&value(&mut args, &arg)?)?,
                 "--yaw" => yaw = Some(parse_angle(&value(&mut args, &arg)?)?),
                 "--pitch" => pitch = Some(parse_angle(&value(&mut args, &arg)?)?),
+                "--zoom" => zoom = Some(parse_positive(&value(&mut args, &arg)?)?),
                 "--eye" => eye = Some(parse_vec3(&value(&mut args, &arg)?)?),
                 "--look-at" => look_at = Some(parse_vec3(&value(&mut args, &arg)?)?),
                 "--no-textures" => textures = false,
@@ -110,6 +113,7 @@ impl Options {
             size,
             yaw,
             pitch,
+            zoom,
             eye,
             look_at,
             textures,
@@ -133,7 +137,7 @@ impl Options {
         format!(
             "usage: {program} <file.rbxm|file.rbxl> [--screenshot <out.png>] [--size WxH]\n\
              \x20              [--yaw <degrees>] [--pitch <degrees>]\n\
-             \x20              [--eye X,Y,Z --look-at X,Y,Z] [--no-textures] [--no-materials]\n\
+             \x20              [--zoom <factor>] [--eye X,Y,Z --look-at X,Y,Z] [--no-textures] [--no-materials]\n\
              \x20              [--no-lights] [--no-particles] [--no-beams] [--no-trails]\n\
              \x20              [--no-gui] [--show-development-gui]\n\
              \x20              [--orbit] [--speed <studs/s>] [--sensitivity <deg/px>]\n\
@@ -151,6 +155,9 @@ impl Options {
              \x20 --yaw         angle to look from, in degrees (screenshots only)\n\
              \x20 --pitch       height to look from, in degrees above the scene;\n\
              \x20               negative looks up from underneath (screenshots only)\n\
+             \x20 --zoom        scales the default bounds-framing distance, e.g. 0.5 for\n\
+             \x20               twice as close, 2 for twice as far (default 1, screenshots\n\
+             \x20               only, ignored when --eye/--look-at is given)\n\
              \x20 --eye         camera position in studs, e.g. 1,2,3 — overrides the\n\
              \x20               orbit framing entirely; requires --look-at (screenshots only)\n\
              \x20 --look-at     point the camera looks toward, in studs; requires --eye\n\
@@ -218,6 +225,10 @@ impl Options {
 
     pub(crate) fn pitch(&self) -> Option<f32> {
         self.pitch.map(|degrees| degrees as f32)
+    }
+
+    pub(crate) fn zoom(&self) -> Option<f32> {
+        self.zoom
     }
 
     /// `--eye`/`--look-at` are validated together at parse time: either both

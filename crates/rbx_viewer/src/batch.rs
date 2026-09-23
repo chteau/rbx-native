@@ -57,6 +57,7 @@ pub(crate) fn run(options: &Options, out_dir: &Path) -> Result<(), String> {
     let framing = Framing {
         yaw: options.yaw(),
         pitch: options.pitch(),
+        zoom: options.zoom(),
         eye_look_at,
         orthographic: options.orthographic(),
     };

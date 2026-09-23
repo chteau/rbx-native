@@ -110,6 +110,18 @@ fn yaw_pitch_and_no_textures_are_picked_up() {
 }
 
 #[test]
+fn zoom_is_picked_up_and_must_be_positive() {
+    let options = parse(&["--zoom", "0.5", "m.rbxm"]).unwrap();
+    assert_eq!(options.zoom(), Some(0.5));
+
+    let default = parse(&["m.rbxm"]).unwrap();
+    assert_eq!(default.zoom(), None);
+
+    assert!(parse(&["--zoom", "0", "m.rbxm"]).is_err());
+    assert!(parse(&["--zoom", "-1", "m.rbxm"]).is_err());
+}
+
+#[test]
 fn materials_can_be_turned_off_on_their_own() {
     let options = parse(&["m.rbxm", "--no-materials"]).unwrap();
 

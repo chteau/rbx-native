@@ -406,6 +406,11 @@ impl Renderer {
         self.camera = self.camera.pitched(degrees);
     }
 
+    /// Only the offscreen path uses this: the window orbits at the default distance.
+    pub(crate) fn zoom(&mut self, factor: f32) {
+        self.camera = self.camera.zoomed(factor);
+    }
+
     /// Swaps the main camera between perspective and orthographic projection —
     /// see `Camera::with_orthographic`.
     pub(crate) fn set_orthographic(&mut self, orthographic: bool) {

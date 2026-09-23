@@ -128,6 +128,11 @@ impl Offscreen {
         self.renderer.pitch(degrees);
     }
 
+    /// Scales the orbit distance -- see `Camera::zoomed`.
+    pub(crate) fn zoom(&mut self, factor: f32) {
+        self.renderer.zoom(factor);
+    }
+
     /// Swaps the main camera between perspective and orthographic projection.
     pub(crate) fn set_orthographic(&mut self, orthographic: bool) {
         self.renderer.set_orthographic(orthographic);
@@ -318,6 +323,10 @@ impl Offscreen {
 pub(crate) struct Framing {
     pub(crate) yaw: Option<f32>,
     pub(crate) pitch: Option<f32>,
+    /// Scales the default bounds-framing distance: < 1.0 closer, > 1.0 further. Ignored
+    /// when `eye_look_at` is given, same as `yaw`/`pitch` -- an explicit camera position
+    /// already says exactly how far away it is.
+    pub(crate) zoom: Option<f32>,
     /// When given, places the camera directly instead of framing the scene's
     /// bounds — the only way to get close enough to examine a small prop in a
     /// huge map — and takes over from `yaw`/`pitch` entirely, matching how
@@ -369,6 +378,9 @@ pub(crate) fn write_png_on(
 
     if let Some(degrees) = framing.pitch {
         offscreen.pitch(degrees);
+    }
+    if let Some(factor) = framing.zoom {
+        offscreen.zoom(factor);
     }
 
     let from = match framing.eye_look_at {

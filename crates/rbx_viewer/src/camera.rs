@@ -247,6 +247,17 @@ impl Camera {
         }
     }
 
+    /// Scales the orbit distance `Camera::framing` picked, floored the same way it floors
+    /// distance to begin with so a very small `factor` can't collapse the view volume to
+    /// zero. < 1.0 moves the camera closer (a tighter crop on the scene's own bounds), > 1.0
+    /// further. Only the offscreen screenshot path uses this, same as `pitched`.
+    pub(crate) fn zoomed(self, factor: f32) -> Self {
+        Camera {
+            distance: (self.distance * factor).max(MIN_DISTANCE),
+            ..self
+        }
+    }
+
     pub(crate) fn view_projection(&self, from: Viewpoint, aspect: f32) -> Mat4 {
         let view = match from {
             Viewpoint::Free(pose) => {

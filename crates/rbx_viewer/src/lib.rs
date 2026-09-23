@@ -94,6 +94,7 @@ pub fn run(options: &Options) -> Result<(), String> {
                 capture::Framing {
                     yaw: options.yaw(),
                     pitch: options.pitch(),
+                    zoom: options.zoom(),
                     eye_look_at,
                     orthographic: options.orthographic(),
                 },
