@@ -1357,6 +1357,12 @@ against `Roblox/creator-docs` rather than assumed:
     specifically, not just available for `BasePart.Material`.
 
 ### Editor
+- [ ] ⚠️ **Docks no longer tab into each other.** Dragging a dock's tab
+  onto another dock's tab strip used to join it as a tab (and dropping on
+  a dock's half made a new dock beside it, per the drag-to-rearrange entry
+  above); as of the gpui-kit chrome pass (PR #87) the strip no longer
+  accepts the drop, so docks cannot overlap and become tabs. Regression to
+  find and fix in `shell::docks` / `shell::layout`.
 - [ ] ⚠️ **The viewport goes black, and the render thread's stats stop
   updating, after a full scene reload triggered by a non-interactive,
   scripted run** (`RBX_STUDIO_RUN`/`RBX_STUDIO_EDIT`-driven screenshot
