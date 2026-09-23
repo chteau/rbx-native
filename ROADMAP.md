@@ -1561,6 +1561,13 @@ against `Roblox/creator-docs` rather than assumed:
   cloned registry index, so a non-default registry isn't supported; and
   there's no `wally.lock`, so two separate installs can pick different
   compatible versions of a shared dependency.
+- [ ] 📋 **Wally "Recently published" list.** The Wally dock's Discover
+  page shows the registry's featured packages (the list wally.run's own
+  home page uses); a recently-published list would need a route the
+  registry backend doesn't have (`UpliftGames/wally@f578078:
+  wally-registry-backend/src/main.rs` exposes package-contents,
+  package-metadata, package-search and publish only), so it waits on
+  upstream.
 - [ ] 📋 **Native Git integration** — a real panel in `rbxstudio` (diff view,
   stage/commit, branch switch), not relying on the user's own external git
   client. Not scoped in any detail yet.

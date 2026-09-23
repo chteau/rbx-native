@@ -1,22 +1,73 @@
 //! Installing a resolved graph into the DOM as one undo step. See the
 //! parent module's doc comment for the on-disk layout this reproduces.
+//! The whole graph lands under the realm the user picked — `wally install`
+//! files a dependency under the realm of the section that asked for it,
+//! not the dependency's own — and installing a package the place already
+//! has replaces its old `_Index` slot and re-points its alias, which is
+//! what an update is.
 
 use rbx_dom::{Ref, WeakDom};
 
 use crate::script_editor::source;
 use crate::wally_client::{self, PackageNode, Realm, ResolvedGraph};
 
-use super::InstallState;
+use super::LOG_SOURCE;
+use crate::command_bar::Feedback;
 use crate::shell::Shell;
 use gpui_kit::Context;
 
 impl Shell {
-    pub(super) fn apply_wally_graph(&mut self, graph: ResolvedGraph, cx: &mut Context<Self>) {
+    /// Add on a result card, Update on an Updates row, or the startup
+    /// variable: resolves `scope/name` at `version` (its newest when
+    /// `None`) off the main thread, then installs the graph under `realm`.
+    pub(in crate::shell) fn wally_install(
+        &mut self,
+        scope: String,
+        name: String,
+        version: Option<semver::Version>,
+        realm: Realm,
+        cx: &mut Context<Self>,
+    ) {
+        cx.spawn(async move |shell, cx| {
+            let resolved = {
+                let (scope, name) = (scope.clone(), name.clone());
+                cx.background_executor()
+                    .spawn(async move {
+                        let version = match version {
+                            Some(version) => version,
+                            None => wally_client::latest_version(&scope, &name)?,
+                        };
+                        wally_client::resolve(&scope, &name, version)
+                    })
+                    .await
+            };
+            let _ = shell.update(cx, |shell, cx| match resolved {
+                Ok(graph) => shell.apply_wally_graph(graph, realm, cx),
+                Err(message) => {
+                    shell.output.push(
+                        LOG_SOURCE,
+                        Feedback::Error(format!("Couldn't install {scope}/{name}: {message}")),
+                    );
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn apply_wally_graph(&mut self, graph: ResolvedGraph, realm: Realm, cx: &mut Context<Self>) {
         if graph.packages.is_empty() {
             return;
         }
         self.push_history();
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
+        let root = find_or_create_root(&mut dom, realm);
+        let index_folder = find_or_create_child(&mut dom, root, "_Index");
+        // Installing what the place already has, at any version, replaces
+        // it: the old slot goes before the new one lands.
+        for package in &graph.packages {
+            remove_slots_of(&mut dom, index_folder, &package.scope, &package.name);
+        }
 
         // Pass 1: realize every resolved package's own content under its
         // `_Index` slot, keeping each slot's referent for pass 2's alias
@@ -25,8 +76,6 @@ impl Shell {
         let mut slots: std::collections::HashMap<PackageKey, Ref> =
             std::collections::HashMap::new();
         for package in &graph.packages {
-            let root = find_or_create_root(&mut dom, package.package.manifest.realm);
-            let index_folder = find_or_create_child(&mut dom, root, "_Index");
             let slot = find_or_create_child(&mut dom, index_folder, &slot_name(package));
             realize_node(&mut dom, &package.package.tree, slot);
             slots.insert(package_key(package), slot);
@@ -58,8 +107,7 @@ impl Shell {
         // pulled dependency is reachable only through the alias chain
         // above, exactly like a real `wally install`.
         let root_package = &graph.packages[0];
-        let root = find_or_create_root(&mut dom, root_package.package.manifest.realm);
-        let top_alias = dom.new_instance("ModuleScript", &root_package.name, Some(root));
+        let top_alias = find_or_create_alias(&mut dom, root, &root_package.name);
         source::write(
             &mut dom,
             top_alias,
@@ -71,10 +119,20 @@ impl Shell {
         self.rebuild_explorer(cx);
         self.reflect_changes(&changes, cx);
         self.record_history_change(changes);
-        self.wally.install = InstallState::Installed {
-            name: root_package.name.clone(),
-            count: graph.packages.len(),
+        let installed = match graph.packages.len() {
+            1 => format!(
+                "Installed {}/{} {}",
+                root_package.scope, root_package.name, root_package.version
+            ),
+            n => format!(
+                "Installed {}/{} {} and {} more",
+                root_package.scope,
+                root_package.name,
+                root_package.version,
+                n - 1
+            ),
         };
+        self.output.push(LOG_SOURCE, Feedback::Output(installed));
         cx.notify();
     }
 }
@@ -124,22 +182,74 @@ fn lua_string(text: &str) -> String {
     format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
-/// The root-level `Packages`/`ServerPackages`/`DevPackages` service for one
-/// realm, found by class among this DOM's existing roots (never
-/// duplicated) or created fresh — the same "match an existing root by
-/// class, else make one" pattern `shell::argon_sync::apply_snapshot_node`
-/// already uses for Argon's own root services.
+/// The `Packages`/`ServerPackages`/`DevPackages` container for one realm:
+/// an existing root by class, else a folder of that name anywhere in the
+/// place (a Rojo project keeps `Packages` under `ReplicatedStorage`), else
+/// a fresh root — the same "match an existing root by class, else make
+/// one" pattern `shell::argon_sync::apply_snapshot_node` already uses for
+/// Argon's own root services.
 fn find_or_create_root(dom: &mut WeakDom, realm: Realm) -> Ref {
     let class = match realm {
         Realm::Shared => "Packages",
         Realm::Server => "ServerPackages",
         Realm::Dev => "DevPackages",
     };
-    dom.root_refs()
+    let by_class = dom
+        .root_refs()
         .iter()
         .copied()
-        .find(|&r| dom.get(r).is_some_and(|i| i.class() == class))
+        .find(|&r| dom.get(r).is_some_and(|i| i.class() == class));
+    by_class
+        .or_else(|| find_named(dom, class))
         .unwrap_or_else(|| dom.new_instance(class, class, None))
+}
+
+/// The first instance named `name`, walking from the roots.
+fn find_named(dom: &WeakDom, name: &str) -> Option<Ref> {
+    let mut stack: Vec<Ref> = dom.root_refs().to_vec();
+    while let Some(referent) = stack.pop() {
+        let instance = dom.get(referent)?;
+        if instance.name() == name {
+            return Some(referent);
+        }
+        stack.extend(instance.children().iter().copied());
+    }
+    None
+}
+
+/// Drops every `<scope>_<name>@<version>` slot under `index`, whatever
+/// the version.
+fn remove_slots_of(dom: &mut WeakDom, index: Ref, scope: &str, name: &str) {
+    let prefix = format!("{scope}_{name}@");
+    let stale: Vec<Ref> = dom
+        .get(index)
+        .map(|folder| {
+            folder
+                .children()
+                .iter()
+                .copied()
+                .filter(|&child| {
+                    dom.get(child)
+                        .is_some_and(|c| c.name().starts_with(&prefix))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    for slot in stale {
+        dom.remove(slot);
+    }
+}
+
+/// The top-level alias `ModuleScript` for `name` under `root`, reused when
+/// the place already has one (an update re-points it) or made fresh.
+fn find_or_create_alias(dom: &mut WeakDom, root: Ref, name: &str) -> Ref {
+    let existing = dom.get(root).and_then(|container| {
+        container.children().iter().copied().find(|&child| {
+            dom.get(child)
+                .is_some_and(|c| c.name() == name && c.class() == "ModuleScript")
+        })
+    });
+    existing.unwrap_or_else(|| dom.new_instance("ModuleScript", name, Some(root)))
 }
 
 /// A named child of `parent`, found by exact name (not class — `_Index`

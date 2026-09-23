@@ -37,6 +37,8 @@ pub(crate) enum MenuId {
     ArgonDisplayPrompts,
     ArgonLogLevel,
     WallyOverflow,
+    /// The version picker on the n-th Wally search result.
+    WallyVersion(usize),
     InsertPart,
     InsertScript,
     InsertGui,
@@ -59,6 +61,7 @@ impl MenuId {
             MenuId::ArgonDisplayPrompts => "menu-argon-display-prompts",
             MenuId::ArgonLogLevel => "menu-argon-log-level",
             MenuId::WallyOverflow => "menu-wally",
+            MenuId::WallyVersion(_) => "menu-wally-version",
             MenuId::InsertPart => "menu-insert-part",
             MenuId::InsertScript => "menu-insert-script",
             MenuId::InsertGui => "menu-insert-gui",
@@ -67,6 +70,14 @@ impl MenuId {
             MenuId::UiInsert => "menu-ui-insert",
             MenuId::UiConstraint => "menu-ui-constraint",
             MenuId::ViewportScreen => "menu-viewport-screen",
+        }
+    }
+
+    /// One popover id per menu; an indexed menu carries its index.
+    fn element_id(self) -> ElementId {
+        match self {
+            MenuId::WallyVersion(index) => ElementId::from((self.id(), index)),
+            _ => ElementId::from(self.id()),
         }
     }
 }
@@ -147,7 +158,7 @@ pub(super) fn dropdown_at(
     let handle = cx.entity();
     let open = shell.open_menu == Some(menu);
 
-    Popover::new(menu.id())
+    Popover::new(menu.element_id())
         .anchor(anchor)
         .open(open)
         // The popover draws no chrome of its own: §5.4's container *is* the
