@@ -125,8 +125,7 @@ impl Shell {
 
         Popover::new("snap-popover")
             .appearance(false)
-            // The board opens the popover 6px under the ribbon's bottom
-            // edge. The trigger ends 12px above that edge (the ribbon's
+            // The popover opens 6px under the ribbon's bottom edge. The trigger ends 12px above that edge (the ribbon's
             // 11px bottom padding and its 1px border), and the toolkit
             // already offsets a popover 4px below its trigger.
             .mt(px(14.))

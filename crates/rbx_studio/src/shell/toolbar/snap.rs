@@ -131,7 +131,7 @@ fn watch_steps(
 }
 
 /// The Move/Scale pill's copy: "1 stud" for exactly one, "N studs" for
-/// anything else, as the board writes it.
+/// anything else.
 pub(super) fn studs(increment: f32) -> String {
     if increment == 1. {
         "1 stud".to_owned()
@@ -140,7 +140,7 @@ pub(super) fn studs(increment: f32) -> String {
     }
 }
 
-/// The section title, as the board spells it. `SnapKind::label` stays
+/// The section title, spaced for reading. `SnapKind::label` stays
 /// "Move/Scale": it names the element IDs and the shortcut tooltips.
 fn title(kind: SnapKind) -> &'static str {
     match kind {

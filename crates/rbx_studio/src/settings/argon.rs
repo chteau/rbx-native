@@ -11,8 +11,8 @@
 //!
 //! What identifies a Game or a Place is the plugin's `game.GameId` /
 //! `game.PlaceId` (`Config.luau:61-62`), which a local place file doesn't
-//! have. That choice is the owner's, so this module takes the two keys as
-//! opaque strings ([`LevelKeys`]) and commits to nothing.
+//! have. This module takes the two keys as opaque strings ([`LevelKeys`])
+//! and leaves what they identify to the caller.
 //!
 //! Stored as one `"argon"` object in the settings file: `"global"` holds
 //! the Global overrides, `"game"` and `"place"` map each key to its own.
@@ -166,8 +166,8 @@ impl Level {
 }
 
 /// What identifies the open place's Game and Place levels. `None` means
-/// the level has no identity yet (nothing open, or the owner's decision
-/// pending), and then it holds no overrides and stores none.
+/// the level has no identity (nothing connected, an unpublished project),
+/// and then it holds no overrides and stores none.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct LevelKeys {
     pub(crate) game: Option<String>,

@@ -808,7 +808,7 @@ pub(crate) fn elevation() -> Vec<BoxShadow> {
 
 /// [`elevation`]'s shadow alone, for a surface that draws its hairline as
 /// a real border inside its own width (the snap popover: 248px including
-/// the border, as the board sizes it) rather than as a ring outside it.
+/// the border) rather than as a ring outside it.
 pub(crate) fn floating_shadow() -> BoxShadow {
     BoxShadow {
         color: rgba(0x00000066).into(),
