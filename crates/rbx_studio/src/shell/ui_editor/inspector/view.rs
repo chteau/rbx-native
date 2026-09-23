@@ -31,7 +31,7 @@ pub(super) fn section(title: &'static str, actions: Vec<AnyElement>, rows: Vec<A
         .pt(px(8.))
         .pb(px(10.))
         .border_b_1()
-        .border_color(tokens::row_divider())
+        .border_color(tokens::border())
         .child(
             h_flex()
                 .w_full()

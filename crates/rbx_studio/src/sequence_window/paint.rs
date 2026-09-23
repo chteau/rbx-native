@@ -139,14 +139,14 @@ fn curve(stops: &[Stop], ceiling: f32, rect: Rect, look: Look, window: &mut Wind
                 window,
                 (rect.x, rect.y + f * rect.height),
                 (rect.x + rect.width, rect.y + f * rect.height),
-                tokens::divider(),
+                tokens::border(),
                 1.0,
             );
             line(
                 window,
                 (rect.x + f * rect.width, rect.y),
                 (rect.x + f * rect.width, rect.y + rect.height),
-                tokens::divider(),
+                tokens::border(),
                 1.0,
             );
         }

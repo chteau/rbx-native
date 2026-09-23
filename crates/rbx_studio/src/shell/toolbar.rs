@@ -87,18 +87,12 @@ impl Shell {
     pub(super) fn local_tile(&self, cx: &mut Context<Self>) -> impl IntoElement + 'static {
         let local = self.transform.local;
 
-        ribbon::tile(
-            &self.ribbon_nav,
-            "tool-local",
-            IconName::Axis3d,
-            "Local",
-            cx,
-        )
-        .when(local, |this| ribbon::selected(this, tokens::tool_local()))
-        .tooltip(|window, cx| super::tooltip::text("Local orientation", window, cx))
-        .on_click(cx.listener(|shell, _, _, cx| {
-            shell.transform_action(Action::ToggleLocal, cx);
-        }))
+        ribbon::cluster_icon(&self.ribbon_nav, "tool-local", IconName::Axis3d, cx)
+            .when(local, |this| ribbon::selected(this, tokens::tool_local()))
+            .tooltip(|window, cx| super::tooltip::text("Local orientation", window, cx))
+            .on_click(cx.listener(|shell, _, _, cx| {
+                shell.transform_action(Action::ToggleLocal, cx);
+            }))
     }
 
     /// The snap increments, as the stack that sits beside the tools: each
@@ -149,11 +143,10 @@ impl Shell {
     pub(super) fn align_control(&self, cx: &mut Context<Self>) -> impl IntoElement + 'static {
         self.align_popover(
             super::chrome::Trigger::new(
-                ribbon::tile(
+                ribbon::cluster_icon(
                     &self.ribbon_nav,
                     "tool-align",
                     IconName::AlignStartVertical,
-                    "Align",
                     cx,
                 )
                 .tooltip(|window, cx| super::tooltip::text("Align selection", window, cx)),

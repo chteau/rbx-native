@@ -48,7 +48,7 @@ impl Shell {
             .into_iter()
             .enumerate()
             .map(|(index, tab)| {
-                let pill = chrome::tab_pill(tab.key(), tab.label().into(), tab == active)
+                let pill = chrome::tab_pill(tab.key(), tab.label().into(), tab == active, false)
                     .on_click(cx.listener(move |shell, _, _, cx| shell.set_ui_tab(tab, cx)));
                 self.ui.nav.item(index, pill, cx).into_any_element()
             })
@@ -271,7 +271,7 @@ fn separator() -> impl IntoElement {
         .w(px(1.))
         .h(px(14.))
         .mx(px(4.))
-        .bg(tokens::divider())
+        .bg(tokens::border())
 }
 
 /// One of the width/height fields: the dock search field's own look, sized

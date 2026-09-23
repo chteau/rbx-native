@@ -47,12 +47,14 @@ const SURFACES: [Named; 6] = [
 /// every surface it can sit on.
 #[test]
 fn meaningful_text_clears_aa_on_every_surface() {
-    let tokens: [Named; 5] = [
+    // `text_placeholder` is out: it now aliases `text3`, the reference's own
+    // tertiary/placeholder tier, exempt the same way `text_disabled` is —
+    // see `disabled_text_stays_visible_without_reading_as_available`.
+    let tokens: [Named; 4] = [
         ("text-full", text_full),
         ("text-strong", text_strong),
         ("text-label", text_label),
         ("text-muted", text_muted),
-        ("text-placeholder", text_placeholder),
     ];
 
     for (name, token) in tokens {
@@ -87,34 +89,36 @@ fn disabled_text_stays_visible_without_reading_as_available() {
     }
 }
 
-/// A dock has to be visibly a dock. The frame paints them the same black as
-/// the window behind them, which makes the three docks and the ground one
-/// undifferentiated field — this is the step that separates them, and it
-/// has to survive anyone "simplifying" the palette back down.
-/// A dock has to be visibly a dock, and a dropdown visibly not a text
-/// field. The frame paints every one of these the same black, which makes
-/// the docks and the ground one undifferentiated field.
+/// A dock has to be visibly a dock, and a field visibly a place data goes
+/// in — the reference's own two real steps, off a ground everything else
+/// (a tile, a ribbon body, a dock, an inactive dock tab) sits on at the
+/// exact same tone as its neighbours. `chrome`/`tile`/`menu_bar` being
+/// aliases of `dock`/`black` is asserted structurally, not measured here —
+/// see their own doc comments — so this checks only the two tones that are
+/// genuinely different from each other.
 ///
 /// Measured as a **luminance difference**, not a contrast ratio. Down here
 /// a ratio is the wrong instrument: near black it is dominated by WCAG's
 /// `+0.05` term, so two surfaces 20 sRGB levels apart and two 4 levels
 /// apart score almost the same. The delta is what the eye actually has to
 /// find.
+///
+/// The floor is 0.0025, not the rounder 0.004 an earlier, more separated
+/// palette used: the reference's own `dock` over `black` (`#121213` over
+/// `#0A0A0B`) measures 0.0030, deliberately one of the "tiny variants" the
+/// reference asks for rather than a mistake to widen back out.
 #[test]
-fn each_surface_is_a_visible_step_above_the_one_below_it() {
+fn a_dock_and_a_field_are_each_a_visible_step_above_the_ground() {
     type Step = (&'static str, fn() -> Rgba, fn() -> Rgba);
-    let steps: [Step; 5] = [
+    let steps: [Step; 2] = [
         ("dock over black", dock, black),
-        ("chrome over dock", chrome, dock),
-        ("a dropdown over a text field", field_select, chrome),
-        ("tile over a dropdown", tile, field_select),
-        ("the menu strip over a dock", menu_bar, dock),
+        ("a field over a dock", field_select, dock),
     ];
 
     for (name, over, under) in steps {
         let step = luminance(over()) - luminance(under());
         assert!(
-            step >= 0.004,
+            step >= 0.0025,
             "{name} is a step of {step:.4} — the two surfaces read as one"
         );
     }
@@ -144,14 +148,14 @@ fn a_selection_and_an_open_document_are_visible_as_states() {
     );
 }
 
-/// A checkbox is the only place this UI spends colour on state, so its two
+/// A toggle is the only place this UI spends colour on state, so its two
 /// states have to be told apart at a glance.
 #[test]
-fn a_checkbox_reads_differently_ticked_and_unticked() {
-    let ratio = contrast(check_on(), check_off());
+fn a_toggle_reads_differently_on_and_off() {
+    let ratio = contrast(check_on(), field_select());
     assert!(
         ratio >= 3.,
-        "ticked vs unticked checkbox is {ratio:.2}:1, below the 3:1 non-text floor"
+        "an on vs an off toggle is {ratio:.2}:1, below the 3:1 non-text floor"
     );
 }
 
@@ -173,16 +177,16 @@ fn the_toolkit_theme_paints_the_same_palette_this_module_does() {
     let mirrored: [Named; 14] = [
         ("background", black),
         ("popover.background", chrome),
-        ("border", divider),
-        ("input.border", divider),
-        ("muted.background", chrome),
+        ("border", border),
+        ("input.border", border),
+        ("muted.background", field_select),
         ("sidebar.background", dock),
         ("muted.foreground", text_placeholder),
         ("primary.background", check_on),
         ("ring", check_on),
         ("selection.background", selection),
         ("accent.background", hover),
-        ("tab_bar.background", chrome),
+        ("tab_bar.background", black),
         ("title_bar.background", black),
         ("danger.background", text_error),
     ];
@@ -338,7 +342,6 @@ fn every_scaled_size_actually_follows_the_scale() {
             f32::from(text_sm()),
             f32::from(text_xs()),
             f32::from(ribbon_height()),
-            f32::from(tab_width()),
             f32::from(tool_border()),
             dock_width(),
             dock_height(),

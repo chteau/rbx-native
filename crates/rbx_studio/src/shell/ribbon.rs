@@ -160,9 +160,13 @@ impl Shell {
             // last buttons is WCAG 1.4.4's "loss of content" — the precise
             // thing the scale exists to avoid.
             .overflow_x_scroll()
-            .p(px(5.))
-            .gap(px(10.))
+            .pt(px(9.))
+            .px(px(16.))
+            .pb(px(11.))
+            .gap(px(14.))
             .bg(tokens::chrome())
+            .border_b(px(1.))
+            .border_color(tokens::border())
             // Arrow keys move between the ribbon's buttons rather than
             // leaving it; Enter and Space are left alone, because GPUI
             // already turns those into a click on whichever button holds
@@ -179,21 +183,19 @@ impl Shell {
     /// The four transform tools, the local-axis toggle, Align, and the snap
     /// increments they all obey.
     ///
-    /// The tools, Local and Align sit inside one bordered cluster with a
-    /// caption naming them underneath, rather than as separate tiles each
-    /// carrying its own label — six copies of the same six words is the
-    /// kind of repetition a dense toolbar can't afford, and one legend read
-    /// once a session is worth more than one under every icon. The snap
-    /// readouts stay their own thing beside it: they are values, not tools.
+    /// The tools, Local and Align sit inside one bordered cluster, icon
+    /// only — each still has its own tooltip, so nothing here loses its
+    /// accessible name by dropping a caption nobody needs to read twice.
+    /// The snap readouts stay their own thing beside it: they are values,
+    /// not tools.
     fn transform_tools(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let active = self.transform.tool;
         let cluster: Vec<AnyElement> = Tool::TRANSFORM
             .map(|tool| {
-                tile(
+                cluster_icon(
                     &self.ribbon_nav,
                     ("tool", tool as usize),
                     tool_icon(tool),
-                    tool.label(),
                     cx,
                 )
                 .when(active == tool, |this| selected(this, tool_accent(tool)))
@@ -216,35 +218,22 @@ impl Shell {
             ])
             .collect();
 
-        let caption = Tool::TRANSFORM
-            .into_iter()
-            .map(Tool::label)
-            .chain(["Local", "Align"])
-            .collect::<Vec<_>>()
-            .join(" · ");
-
         vec![
             v_flex()
                 .flex_none()
                 .h_full()
                 .justify_center()
-                .gap(px(4.))
                 .child(
                     h_flex()
                         .flex_none()
-                        .items_stretch()
-                        .rounded(tokens::RADIUS)
+                        .items_center()
+                        .gap(px(4.))
+                        .p(px(5.))
+                        .bg(tokens::field_select())
+                        .rounded(tokens::RADIUS_CONTAINER)
                         .border_1()
-                        .border_color(tokens::divider())
-                        .overflow_hidden()
+                        .border_color(tokens::border())
                         .children(cluster),
-                )
-                .child(
-                    div()
-                        .flex_none()
-                        .text_size(tokens::text_xs())
-                        .text_color(tokens::text_muted())
-                        .child(caption),
                 )
                 .into_any_element(),
             self.snap_stack(cx).into_any_element(),
@@ -607,6 +596,36 @@ pub(super) fn selected(tile: Stateful<Div>, accent: Rgba) -> Stateful<Div> {
         .text_color(accent)
 }
 
+/// A bare icon inside the transform-tools cluster: no fill or radius of its
+/// own at rest, so the icons read as members of one shared card rather than
+/// six tiles glued together — the border and the wash [`selected`] paints
+/// are what a hover or an active tool adds on top of this.
+pub(super) fn cluster_icon(
+    nav: &Roving,
+    id: impl Into<ElementId>,
+    icon: IconName,
+    cx: &mut App,
+) -> Stateful<Div> {
+    // 38x38, well over the WCAG floor: the icons this size sits next to
+    // (Part, Script, UI, Toolbox) are drawn at a similar weight, and a
+    // cluster of small glyphs beside them read as an afterthought.
+    let el = div()
+        .id(id.into())
+        .flex_none()
+        .size(tokens::scaled_width(38.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(tokens::RADIUS_TILE)
+        .cursor_pointer()
+        .text_color(tokens::text_muted())
+        .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
+        .hover(|this| this.bg(tokens::hover()).text_color(tokens::text_full()))
+        .active(|this| this.bg(tokens::ribbon_tab_active()))
+        .child(Icon::new(icon).size(tokens::scaled_width(17.)));
+    nav.claim(el, cx)
+}
+
 /// The frame's tile: icon over label, one hit target, full ribbon height.
 pub(super) fn tile(
     nav: &Roving,
@@ -788,6 +807,6 @@ fn separator() -> AnyElement {
         .self_center()
         .w(px(1.))
         .h(tokens::separator_height())
-        .bg(tokens::divider())
+        .bg(tokens::border())
         .into_any_element()
 }

@@ -1,5 +1,6 @@
 /target
 shots/
+/gpui-ref
 
 # Working notes for the icon kit (spec + style references) — not part of the
 # shipped icon set, and due to be superseded once Studio gets real icon/theme

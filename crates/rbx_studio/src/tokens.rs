@@ -37,41 +37,46 @@ pub(crate) fn black() -> Rgba {
     rgb(0x0A0A0B)
 }
 
-/// A dock's body, and the ribbon's category strip. The frame paints both
-/// black, which makes three docks and the window behind them one
-/// undifferentiated field — you cannot see where the Explorer ends, and
-/// the ribbon's tabs read as a gap rather than as a strip. This is the
-/// first step off the ground, and the seam that makes a dock a dock.
+/// A dock's body, the ribbon's own body, and a ribbon button — every
+/// structural surface in the shell, measured off the reference at a flat
+/// `#121213` with no separate "raised" step for a tile or an active dock
+/// tab. Three tones total in this design, not a ramp: [`black`] for the
+/// ground and the strips that sit directly on it (the tab rows, the menu
+/// strip), this for everything built on top of it, and [`field_select`]
+/// for the one thing that isn't structural — a field somebody types into
+/// or picks from. A tile or a dock reads as itself through its icon, its
+/// label and its border, never through a fill lighter than its neighbours.
 pub(crate) fn dock() -> Rgba {
-    rgb(0x151515)
+    rgb(0x121213)
 }
 
-/// Document tabs, the ribbon body, a dock's active tab, and every input —
-/// the raised-panel tone.
+/// An alias for [`dock`]: document tabs, the ribbon body, a dock's active
+/// tab and a ribbon button all read as the same one surface in the
+/// reference, so this returns the identical value rather than inventing a
+/// second one nothing distinguishes from it.
 pub(crate) fn chrome() -> Rgba {
-    rgb(0x1D1D1D)
+    dock()
 }
 
-/// A **dropdown**, and only a dropdown: one step above the plain value
-/// fields around it.
-///
-/// A select and a text field do different things — one opens, the other
-/// takes typing — and on a dense inspector they were indistinguishable
-/// until you noticed the chevron. This is the difference, and it is a
-/// surface rather than a border so it costs no layout.
+/// A dropdown, a text field, a chip, the Command Bar's own input — every
+/// control someone types into or picks from, one flat tone lighter than
+/// [`dock`]. The reference draws no further distinction between a select
+/// and a plain field: both are "a place data goes in", and both wear this.
 pub(crate) fn field_select() -> Rgba {
-    rgb(0x232323)
+    rgb(0x191A1C)
 }
 
-/// A ribbon button: above [`field_select`], the way a key sits above its
-/// keyboard.
+/// A ribbon button. An alias for [`dock`] — see its own doc comment for
+/// why a tile carries no fill of its own.
 pub(crate) fn tile() -> Rgba {
-    rgb(0x282828)
+    dock()
 }
 
-/// The File/Edit/View menu strip, between the title bar and the tabs.
+/// The File/Edit/View menu strip, between the title bar and the tabs — the
+/// ground's own tone, like the document tabs and the ribbon's category
+/// tabs above the ribbon it belongs to.
 pub(crate) fn menu_bar() -> Rgba {
-    rgb(0x1D1D1D)
+    black()
 }
 
 /// The accent rule along the top of the open document's tab. This is the
@@ -109,59 +114,36 @@ pub(crate) fn selection() -> Rgba {
 
 // ---------------------------------------------------------------- borders
 
-/// Before a dock's trailing cell, and between ribbon groups. Document tabs
-/// no longer draw one between themselves — a floating label with an accent
-/// underline needs no divider to tell it from its neighbour.
-pub(crate) fn divider() -> Rgba {
-    rgba(0xFFFFFF1C)
+/// Every 1px divider and default control border in the design (white 6%).
+pub(crate) fn border() -> Rgba {
+    rgba(0xFFFFFF0F)
 }
 
-/// The seam between two property rows. Fainter than [`divider`] on purpose:
-/// that one separates one region of chrome from the next, while this one
-/// runs under every row in a long list — at full strength it stops reading
-/// as a separator and starts reading as a grid drawn over the panel.
-///
-/// Decorative, so WCAG 1.4.11 does not apply: nothing about a row's meaning
-/// or state is carried by it, and the rows either side are already told
-/// apart by their own content.
-pub(crate) fn row_divider() -> Rgba {
-    rgba(0xFFFFFF0F)
+/// A stronger border, for the handful of places the reference draws one:
+/// the Command Bar, an off toggle's track, a badge, and a control's hover
+/// state (white 11%).
+pub(crate) fn border2() -> Rgba {
+    rgba(0xFFFFFF1C)
 }
 
 // ------------------------------------------------------------------- text
 
-/// The window title, and a ribbon category tab while it isn't the active
-/// one — the active tab's own label switches to [`check_on`] instead, the
-/// one place text itself carries the accent. The only fully white text in
-/// the design otherwise.
-pub(crate) fn text_full() -> Rgba {
-    rgba(0xFFFFFFFF)
+/// Primary text: an active document tab's title, a selected Explorer row,
+/// an editable field's own value.
+pub(crate) fn text() -> Rgba {
+    rgb(0xE2E2E6)
 }
 
-/// A property's value; a dock tab's title.
-pub(crate) fn text_strong() -> Rgba {
-    rgba(0xFFFFFFD1)
+/// Secondary text: property labels, ribbon category tabs, dock titles, an
+/// unselected control's default icon.
+pub(crate) fn text2() -> Rgba {
+    rgb(0x8F8F97)
 }
 
-/// A document tab's title; a ribbon button's label.
-pub(crate) fn text_label() -> Rgba {
-    rgba(0xFFFFFFB8)
-}
-
-/// A property's name.
-pub(crate) fn text_muted() -> Rgba {
-    rgba(0xFFFFFFAD)
-}
-
-/// A search field's placeholder.
-pub(crate) fn text_placeholder() -> Rgba {
-    rgba(0xFFFFFF8F)
-}
-
-/// A read-only property — `Class Name` and friends, which the frame dims on
-/// both sides of the row rather than hiding.
-pub(crate) fn text_disabled() -> Rgba {
-    rgba(0xFFFFFF57)
+/// Tertiary text: placeholders, inactive tabs and labels, chevrons,
+/// read-only values.
+pub(crate) fn text3() -> Rgba {
+    rgb(0x5C5C63)
 }
 
 pub(crate) fn text_error() -> Rgba {
@@ -170,18 +152,15 @@ pub(crate) fn text_error() -> Rgba {
 
 // --------------------------------------------------------------- controls
 
-/// A ticked checkbox, straight off the `InputsStyle` frame — and, through
-/// [`focus_ring`] and [`selection`], the only saturated colour in the whole
-/// UI that isn't a transform tool's own.
+/// The one saturated colour in the whole UI that isn't a transform tool's
+/// own: active/selected text and icons, underlines, an on toggle, the
+/// Command Bar's own `>` prompt.
 pub(crate) fn check_on() -> Rgba {
     rgb(0x6C7FDB)
 }
 
-/// The accent as a wash: an "active" or "selected" surface that *isn't*
-/// carrying the state on its own (a ribbon category tab, an armed tool
-/// button, a panel toggle) — paired with [`accent_line`] or a stronger cue
-/// elsewhere on the same control, never alone on something WCAG 1.4.11
-/// would call a state indicator in its own right (see [`selection`]).
+/// The accent as a wash: the background of an active, selected or
+/// toggled-on item (accent 12%).
 pub(crate) fn accent_soft() -> Rgba {
     Rgba {
         a: 0.12,
@@ -189,35 +168,40 @@ pub(crate) fn accent_soft() -> Rgba {
     }
 }
 
-/// The accent as a 1px line — the border half of an active/selected
-/// control, next to [`accent_soft`]'s fill.
-///
-/// The brief this ramp comes from calls for the accent at 55% here, same as
-/// its `--accent-line` token. That reads fine on the light chrome it was
-/// drawn against; against this app's near-black surfaces a 55% line falls
-/// short of the 3:1 a state's own outline has to clear (WCAG 1.4.11), so
-/// this sits higher — still visibly a tint rather than the solid accent,
-/// but one that survives the surfaces it's actually drawn on.
-pub(crate) fn accent_line() -> Rgba {
-    Rgba {
-        a: 0.8,
-        ..check_on()
-    }
+/// A close-window button's hover background — the one place this UI's
+/// neutral hover isn't the right answer, since closing needs its own cue.
+pub(crate) fn danger_hover() -> Rgba {
+    rgb(0x8A5A55)
 }
 
-/// An unticked one. The frame gives it [`chrome`] and no border at all,
-/// which on a dark dock is a 1.1:1 box — invisible, and a WCAG 1.4.11
-/// failure for a control whose whole job is to show a state. So the fill is
-/// the frame's and the outline below is this project's.
-pub(crate) fn check_off() -> Rgba {
-    chrome()
-}
-
-/// Over the 3:1 floor on every surface an unticked checkbox can land on —
-/// asserted, because it is the only thing distinguishing "off" from
-/// "nothing here".
+/// An unticked toggle's own knob, and its track's border — off the
+/// reference exactly (`#8a8a8a`), and asserted at 3:1 against
+/// [`field_select`], the only thing distinguishing "off" from "nothing
+/// here".
 pub(crate) fn check_off_border() -> Rgba {
     rgb(0x8A8A8A)
+}
+
+/// Aliases onto the three-tone text ramp above, kept so call sites written
+/// against the old six-step alpha ramp don't all need editing at once —
+/// see [`text`], [`text2`] and [`text3`] for what each tier actually is.
+pub(crate) fn text_full() -> Rgba {
+    text()
+}
+pub(crate) fn text_strong() -> Rgba {
+    text()
+}
+pub(crate) fn text_label() -> Rgba {
+    text2()
+}
+pub(crate) fn text_muted() -> Rgba {
+    text2()
+}
+pub(crate) fn text_placeholder() -> Rgba {
+    text3()
+}
+pub(crate) fn text_disabled() -> Rgba {
+    text3()
 }
 
 // ----------------------------------------------------------- tool accents
@@ -299,11 +283,21 @@ pub(crate) fn tool_border() -> Pixels {
     px((1.5 * font_scale()).max(1.5))
 }
 
-/// Everything rounded in this design is rounded by exactly this much:
-/// ribbon buttons, dock tabs, inputs, checkboxes, value fields.
+/// Inputs, dropdowns, pills, small buttons, a document tab's `+`, and
+/// (top corners only) an Output tab — the default radius most controls in
+/// this design wear.
 pub(crate) const RADIUS: Pixels = px(5.);
 /// Except a colour swatch, which is barely rounded at all.
 pub(crate) const RADIUS_TINY: Pixels = px(1.);
+/// Document tabs (top corners only), ribbon tiles, transform tool buttons.
+pub(crate) const RADIUS_TILE: Pixels = px(6.);
+/// Segmented containers (the transform-tools card) and floating surfaces
+/// (menus, popovers, tooltips).
+pub(crate) const RADIUS_CONTAINER: Pixels = px(8.);
+/// A badge (the Command Bar's `Luau`, an attribute's `+`).
+pub(crate) const RADIUS_BADGE: Pixels = px(4.);
+/// An Explorer row.
+pub(crate) const RADIUS_ROW: Pixels = px(4.);
 
 // -------------------------------------------------------------- UI  scale
 //
@@ -388,39 +382,48 @@ fn scaled_target(base: f32) -> Pixels {
 //
 // The frames set body text at 9px. That is unreadable at arm's length on a
 // 1440p panel and fails the *intent* of WCAG 1.4.4 before the scale is even
-// touched, so this is the one place the design is deliberately overruled:
-// the ramp below is the frames' hierarchy at a legible base size.
+// touched, so the previous version of this ramp deliberately overruled it
+// to a legible base size. The reference this module now matches gives
+// exact sizes of its own (10–13px, close to the frame's original 9px
+// hierarchy rather than to that override), and "pixel perfect" is this
+// project's explicit, repeated instruction — so the ramp below is those
+// exact sizes again, still routed through `scaled()`: the UI-scale slider
+// (§ WCAG 1.4.4) is still there to reach for, just recentred on a smaller
+// default rather than starting from an inflated one.
 
-/// The default: property names and values, tree rows, dock tabs, document
-/// tab titles, the window title, the menu bar, ribbon category tabs.
+/// Property names and values, tree rows, dock titles, the title bar, ribbon
+/// category tabs.
 pub(crate) fn text_md() -> Pixels {
-    scaled(14.)
+    scaled(12.)
 }
 
-/// A property section's header, and a tooltip.
+/// Tooltips, dropdowns, value fields, document tabs, menu bar items.
 pub(crate) fn text_sm() -> Pixels {
-    scaled(13.)
+    scaled(11.5)
 }
 
-/// A ribbon button's label, where the word has 42px to fit in.
+/// A ribbon tile's label, a badge, a section header.
 pub(crate) fn text_xs() -> Pixels {
-    scaled(11.)
+    scaled(10.5)
 }
 
 pub(crate) fn line_md() -> Pixels {
-    scaled(20.)
+    scaled(16.)
 }
 
 pub(crate) fn line_sm() -> Pixels {
-    scaled(18.)
+    scaled(16.)
 }
 
 pub(crate) fn line_xs() -> Pixels {
-    scaled(15.)
+    scaled(14.)
 }
 
-/// A property category's header, and nothing else.
+/// A property category's header, an active ribbon category tab, a dock
+/// title, a selected Explorer row's own label.
 pub(crate) const WEIGHT_BOLD: FontWeight = FontWeight::BOLD;
+/// An active document tab, an active Output tab, a selected Explorer row.
+pub(crate) const WEIGHT_SEMIBOLD: FontWeight = FontWeight::SEMIBOLD;
 
 /// The design is set in Manrope. `main::install_fonts` only names it when
 /// the machine actually has it, so one without falls back to the platform
@@ -465,11 +468,6 @@ pub(crate) fn ribbon_height() -> Pixels {
 
 pub(crate) fn dock_tabs_height() -> Pixels {
     scaled(38.)
-}
-
-/// A document tab's fixed width — tabs don't grow to fit their titles here.
-pub(crate) fn tab_width() -> Pixels {
-    scaled(180.)
 }
 
 /// The "+" cell at the end of a tab strip, and its narrower dock twin. Both
@@ -583,19 +581,34 @@ pub(crate) fn input_padding() -> Pixels {
     scaled(8.)
 }
 
-/// The checkbox someone actually sees. 15px — the frame's 26, taken down
-/// twice on review, because at anything larger it was the loudest thing in
-/// a property row and pulled the eye off the values it sits beside.
+/// The switch someone actually sees: a pill, 15px tall — taken down twice on
+/// review from the frame's 26px square checkbox, because at anything larger
+/// it was the loudest thing in a property row and pulled the eye off the
+/// values it sits beside. Kept at the same visual weight now that it is a
+/// toggle rather than a box.
 ///
-/// Shrinking the *box* is fine; shrinking the *target* is not, which is
-/// what [`checkbox_target`] is for. WCAG 2.5.8 is explicit that the icon
+/// Shrinking the *switch* is fine; shrinking the *target* is not, which is
+/// what [`checkbox_target`] is for. WCAG 2.5.8 is explicit that the control
 /// may be smaller than the target it sits in.
-pub(crate) fn checkbox_size() -> Pixels {
-    scaled(15.)
+pub(crate) fn toggle_height() -> Pixels {
+    scaled(17.)
 }
 
-/// The square a click has to land in to toggle that checkbox — never under
-/// WCAG 2.5.8's floor, whatever the box inside it is doing.
+/// The pill's own width — a fixed ratio of its height, not a separate
+/// design value: a toggle narrower than this reads as a lozenge rather than
+/// a track with somewhere to slide to, and one wider looks like a badge.
+pub(crate) fn toggle_width() -> Pixels {
+    scaled(30.)
+}
+
+/// The thumb inside the track, with room to slide from one edge to the
+/// other without ever touching the track's own rounded end.
+pub(crate) fn toggle_thumb() -> Pixels {
+    scaled(13.)
+}
+
+/// The square a click has to land in to flip that toggle — never under
+/// WCAG 2.5.8's floor, whatever the control inside it is doing.
 pub(crate) fn checkbox_target() -> Pixels {
     scaled_target(26.)
 }
@@ -618,7 +631,7 @@ pub(crate) fn slider_rail() -> Pixels {
 }
 
 /// The grip on that rail. Smaller than the strip a click has to land in,
-/// the same way [`checkbox_size`] is smaller than [`checkbox_target`].
+/// the same way [`toggle_height`] is smaller than [`checkbox_target`].
 pub(crate) fn slider_thumb() -> Pixels {
     scaled(13.)
 }
@@ -646,7 +659,7 @@ pub(crate) fn panel_padding() -> Pixels {
 }
 
 pub(crate) fn row_gap() -> Pixels {
-    scaled(8.)
+    scaled(7.)
 }
 
 /// A property row's inset from the panel's edge, both sides. Small, because
@@ -664,7 +677,7 @@ pub(crate) fn section_gap() -> Pixels {
 /// Between one category's last row and the next category's header — the
 /// largest gap in the panel, and deliberately so.
 pub(crate) fn group_gap() -> Pixels {
-    scaled(24.)
+    scaled(16.)
 }
 
 /// Between two category headers with nothing between them. A collapsed
@@ -745,11 +758,11 @@ pub(crate) fn set_reduced_motion(reduced: bool) -> bool {
 /// shadow only deepening the ground beneath it.
 pub(crate) fn elevation() -> Vec<BoxShadow> {
     vec![
-        ring(divider(), 1.),
+        ring(border2(), 1.),
         BoxShadow {
-            color: rgba(0x00000099).into(),
+            color: rgba(0x00000066).into(),
             offset: gpui_kit::point(px(0.), px(4.)),
-            blur_radius: px(16.),
+            blur_radius: px(14.),
             spread_radius: px(0.),
             inset: false,
         },

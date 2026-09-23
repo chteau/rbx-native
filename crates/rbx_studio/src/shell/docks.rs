@@ -101,6 +101,11 @@ impl Shell {
             return div().into_any_element();
         };
         let hidden = self.hidden_panels();
+        let solo = panels
+            .iter()
+            .filter(|panel| !hidden.contains(panel))
+            .count()
+            <= 1;
 
         let tabs: Vec<AnyElement> = panels
             .iter()
@@ -108,7 +113,7 @@ impl Shell {
             .filter(|(_, panel)| !hidden.contains(panel))
             .map(|(tab, panel)| {
                 let title = self.panel_title(*panel);
-                self.dock_tab(*panel, title, edge, index, tab, *panel == active, cx)
+                self.dock_tab(*panel, title, edge, index, tab, *panel == active, solo, cx)
             })
             .collect();
         let (trailing, content) = self.panel_parts(active, collapsed, window, cx);
@@ -124,9 +129,9 @@ impl Shell {
             // another they read as one dock with two headers.
             .when(index > 0, |this| {
                 if edge.is_vertical() {
-                    this.border_t(px(1.)).border_color(tokens::divider())
+                    this.border_t(px(1.)).border_color(tokens::border())
                 } else {
-                    this.border_l(px(1.)).border_color(tokens::divider())
+                    this.border_l(px(1.)).border_color(tokens::border())
                 }
             })
             .child(self.tab_strip(edge, index, tabs, trailing, active.has_toolbar(), cx))
@@ -279,6 +284,7 @@ impl Shell {
     /// own name had to become data (see `shell::layout`) rather than the
     /// function that drew it.
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     fn dock_tab(
         &self,
         panel: Panel,
@@ -287,6 +293,7 @@ impl Shell {
         group: usize,
         tab: usize,
         selected: bool,
+        solo: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let show = cx.entity();
@@ -295,7 +302,7 @@ impl Shell {
         let shut = cx.entity();
         let landing = Landing::Tab { edge, group, tab };
 
-        chrome::dock_tab(panel.key(), title, selected, move |_, _, cx| {
+        chrome::dock_tab(panel.key(), title, selected, solo, move |_, _, cx| {
             shut.update(cx, |shell, cx| shell.close_panel(panel, cx));
         })
         // Mouse-*down*, not click: this element is also the drag handle,
@@ -373,5 +380,5 @@ fn edge_column(edge: Edge, size: f32, collapsed: bool) -> Div {
         Edge::Right => column.border_l(px(1.)),
         Edge::Bottom => column.border_t(px(1.)),
     }
-    .border_color(tokens::divider())
+    .border_color(tokens::border())
 }

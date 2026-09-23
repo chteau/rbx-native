@@ -83,14 +83,14 @@ impl CommandBar {
         v_flex()
             .w_full()
             .flex_none()
-            .p(px(5.))
+            .p(px(8.))
             .gap(px(4.))
-            // On the docks' own surface, not the window's black ground: the
-            // field inside is the same `chrome` every property field is,
-            // and against black it read as a strip rather than as an input.
-            .bg(tokens::dock())
+            // The window's own ground, not a dock's: the field inside it
+            // is the one lighter surface, and against black it reads as an
+            // inset input rather than a second dock stacked on the first.
+            .bg(tokens::black())
             .border_t(px(1.))
-            .border_color(tokens::divider())
+            .border_color(tokens::border())
             .text_size(tokens::text_sm())
             .line_height(tokens::line_sm())
             .when(!label.is_empty(), |this| {
@@ -107,14 +107,34 @@ impl CommandBar {
                     .px(tokens::input_padding())
                     .flex()
                     .items_center()
+                    .gap(px(6.))
                     .rounded(tokens::RADIUS)
-                    .bg(tokens::chrome())
+                    .bg(tokens::field_select())
+                    .border_1()
+                    .border_color(tokens::border())
+                    .child(div().text_color(tokens::check_on()).child(">"))
                     .child(
                         Input::new(&self.input)
                             .appearance(false)
                             .with_size(tokens::field_size())
                             .h(tokens::input_height())
+                            .flex_1()
                             .tab_index(tab_index),
+                    )
+                    // The language this bar always runs, named so the
+                    // field doesn't have to be typed into to learn that.
+                    .child(
+                        div()
+                            .flex_none()
+                            .px(px(6.))
+                            .py(px(2.))
+                            .rounded(tokens::RADIUS)
+                            .bg(tokens::dock())
+                            .border_1()
+                            .border_color(tokens::border())
+                            .text_size(tokens::text_xs())
+                            .text_color(tokens::text_muted())
+                            .child("Luau"),
                     ),
             )
     }

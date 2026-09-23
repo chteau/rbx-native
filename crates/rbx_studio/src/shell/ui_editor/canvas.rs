@@ -178,7 +178,7 @@ impl Shell {
                 },
                 0.0,
             ),
-            tokens::divider(),
+            tokens::border(),
             1.0,
         )];
 

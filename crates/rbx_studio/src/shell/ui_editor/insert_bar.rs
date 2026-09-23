@@ -164,9 +164,9 @@ impl Shell {
                     .bg(tokens::chrome())
                     .shadow(tokens::elevation())
                     .children(buttons)
-                    .child(div().w(px(1.)).h(px(14.)).mx(px(4.)).bg(tokens::divider()))
+                    .child(div().w(px(1.)).h(px(14.)).mx(px(4.)).bg(tokens::border()))
                     .child(more)
-                    .child(div().w(px(1.)).h(px(14.)).mx(px(4.)).bg(tokens::divider()))
+                    .child(div().w(px(1.)).h(px(14.)).mx(px(4.)).bg(tokens::border()))
                     .child(
                         h_flex()
                             .gap(px(2.))

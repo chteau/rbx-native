@@ -258,6 +258,9 @@ impl Shell {
                         IconName::Plus,
                         "Add attribute",
                     )
+                    .rounded(tokens::RADIUS_BADGE)
+                    .bg(tokens::accent_soft())
+                    .text_color(tokens::check_on())
                     .on_click(move |_, _, cx| {
                         handle.update(cx, |shell, cx| shell.commit_add_attribute(cx));
                     }),

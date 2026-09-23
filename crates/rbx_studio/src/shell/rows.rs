@@ -109,12 +109,13 @@ pub(super) fn row(
     };
     let class_icon = class_icon(icon);
 
-    let (hover_bg, selected_bg) = match tint {
+    let (hover_bg, selected_bg, selected_fg) = match tint {
         Some(color) => (
             tag_color(color, HOVER_ALPHA),
             tag_color(color, SELECTED_ALPHA),
+            tokens::text(),
         ),
-        None => (tokens::hover(), tokens::selection()),
+        None => (tokens::hover(), tokens::accent_soft(), tokens::check_on()),
     };
 
     h_flex()
@@ -126,12 +127,16 @@ pub(super) fn row(
         .items_center()
         .gap_x_1()
         .px(px(4.))
-        .rounded(tokens::RADIUS_TINY)
-        .text_size(tokens::text_sm())
-        .line_height(tokens::line_sm())
-        .text_color(tokens::text_strong())
+        .rounded(tokens::RADIUS_ROW)
+        .text_size(tokens::text_md())
+        .line_height(tokens::line_md())
+        .text_color(tokens::text2())
         .cursor_pointer()
-        .when(selected, |this| this.bg(selected_bg))
+        .when(selected, |this| {
+            this.bg(selected_bg)
+                .text_color(selected_fg)
+                .font_weight(tokens::WEIGHT_SEMIBOLD)
+        })
         .when(!selected, |this| this.hover(move |this| this.bg(hover_bg)))
         .children(guide_lines(depth, guides))
         .child(
@@ -210,7 +215,7 @@ fn guide_lines(depth: usize, guides: Guides) -> Vec<AnyElement> {
                     .top_0()
                     .bottom_0()
                     .w(px(1.))
-                    .bg(tokens::divider())
+                    .bg(tokens::border())
                     .into_any_element(),
             );
         } else if last_level {
@@ -221,7 +226,7 @@ fn guide_lines(depth: usize, guides: Guides) -> Vec<AnyElement> {
                     .top_0()
                     .h_1_2()
                     .w(px(1.))
-                    .bg(tokens::divider())
+                    .bg(tokens::border())
                     .into_any_element(),
             );
         }
@@ -234,7 +239,7 @@ fn guide_lines(depth: usize, guides: Guides) -> Vec<AnyElement> {
                     .top_1_2()
                     .w(px(CONNECTOR_WIDTH))
                     .h(px(1.))
-                    .bg(tokens::divider())
+                    .bg(tokens::border())
                     .into_any_element(),
             );
         }
@@ -400,25 +405,14 @@ fn property_shell(
 }
 
 /// Every property row's outer box, whatever shape it takes inside: full
-/// width, its own height, and a hairline under it.
+/// width, its own height, no separator line under it.
 ///
-/// The seam is what lets the rows sit flush against each other. A panel
-/// where a value is two lines tall next to one that is five needs a visible
-/// edge between them, and a gap large enough to do that job alone pushed a
-/// long category off the screen — a hairline costs nothing vertically and
-/// separates better than the space it replaced.
-///
-/// It still needs air either side of it. A line drawn hard against a 31px
-/// field box reads as the box's own border rather than as the boundary
-/// between two rows, so the content is inset by a [`tokens::label_gap`]
-/// top and bottom.
+/// The reference draws no seam between rows — [`tokens::row_gap`]'s 7px
+/// carries the separation instead, which is what lets a value two lines
+/// tall sit next to one that is five without a line drawn hard against
+/// whichever field box happens to be shorter.
 pub(super) fn row_frame() -> Div {
-    v_flex()
-        .w_full()
-        .flex_none()
-        .py(tokens::label_gap())
-        .border_b_1()
-        .border_color(tokens::row_divider())
+    v_flex().w_full().flex_none().py(tokens::label_gap())
 }
 
 /// A numeric row's name column, which is also the control that shows and
@@ -518,25 +512,28 @@ pub(super) fn property_expandable(
         })
 }
 
-/// The `InputsStyle` frame's checkbox: a 26px square at [`tokens::RADIUS`],
-/// filled with the accent when ticked and with [`tokens::chrome`] when not.
+/// The reference's pill toggle: a track at [`tokens::toggle_width`] by
+/// [`tokens::toggle_height`], filled with the accent and a right-parked
+/// thumb when on, [`tokens::field_select`] and a left-parked one when not.
 ///
-/// Two things it does that the frame doesn't. It **outlines** the unticked
-/// state — the frame's borderless `#111` box is 1.11:1 against a black
-/// dock, which fails WCAG 1.4.11 for a control whose entire job is to show
-/// a state. And it is **26px**, which is the frame's own number and, not by
-/// coincidence, over WCAG 2.5.8's 24x24 target floor; the 10px box this
-/// used to draw was less than a fifth of the required area.
+/// The unticked track still **outlines** — [`tokens::check_off_border`],
+/// exactly as the square checkbox this replaced did, and for the same
+/// reason: a borderless track this close in tone to the field surface
+/// around it fails WCAG 1.4.11 for a control whose entire job is to show a
+/// state. The click target stays [`tokens::checkbox_target`], the same
+/// WCAG 2.5.8 floor a visually smaller pill doesn't get to shrink.
 ///
 /// `None` is the indeterminate state a multi-selection's disagreeing
-/// values show: filled like a ticked box, since it is not an empty one, and
-/// marked with a dash.
+/// values show: filled like an on track, since it is not an empty one, its
+/// thumb parked in the middle rather than at either end.
 pub(super) fn checkbox(
     id: impl Into<ElementId>,
     checked: impl Into<Option<bool>>,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> Stateful<Div> {
     let checked = checked.into();
+    let on = checked != Some(false);
+    let inset = (tokens::toggle_height() - tokens::toggle_thumb()) / 2.;
     div()
         .id(id.into())
         // The target, which never goes under 24px …
@@ -544,38 +541,48 @@ pub(super) fn checkbox(
         .size(tokens::checkbox_target())
         .flex()
         .items_center()
-        // … left-aligned inside it, so the box's own left edge lands on the
-        // same line as every field box in the column. Centring the box in a
+        // … left-aligned inside it, so the track's own left edge lands on
+        // the same line as every field box in the column. Centring it in a
         // larger target inset it by half the difference, which read as the
-        // checkbox rows being indented relative to the rest.
+        // toggle rows being indented relative to the rest.
         .justify_start()
         .cursor_pointer()
         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
         .on_click(on_click)
         .child(
-            // … and the box, which is smaller on purpose.
+            // … and the track, which is smaller on purpose.
             div()
+                .relative()
                 .flex_none()
-                .size(tokens::checkbox_size())
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(tokens::RADIUS)
+                .w(tokens::toggle_width())
+                .h(tokens::toggle_height())
+                .rounded_full()
                 .map(|this| {
-                    if checked != Some(false) {
+                    if on {
                         this.bg(tokens::check_on())
                     } else {
-                        this.bg(tokens::check_off())
+                        this.bg(tokens::field_select())
                             .border(px(1.))
                             .border_color(tokens::check_off_border())
                     }
                 })
-                .when_some(
-                    checked.map_or(Some(IconName::Minus), |on| on.then_some(IconName::Check)),
-                    |this, icon| {
-                        this.text_color(tokens::black())
-                            .child(Icon::new(icon).size(tokens::text_xs()))
-                    },
+                .child(
+                    div()
+                        .absolute()
+                        .top(inset)
+                        .map(|this| match checked {
+                            Some(false) => this.left(inset),
+                            Some(true) => this.right(inset),
+                            None => this.left(relative(0.5)).ml(-(tokens::toggle_thumb() / 2.)),
+                        })
+                        .flex_none()
+                        .size(tokens::toggle_thumb())
+                        .rounded_full()
+                        .bg(if on {
+                            tokens::text_full()
+                        } else {
+                            tokens::check_off_border()
+                        }),
                 ),
         )
 }
@@ -596,20 +603,11 @@ pub(super) fn section_header(
         .gap(tokens::label_gap())
         .px(tokens::row_padding())
         .cursor_pointer()
-        // One step above the dock, and the only filled thing in the panel
-        // that is not an input: a category is a tile you click, so it looks
-        // like a surface rather than a line of text floating on the dock.
-        // Rounded because everything else that carries a fill here is.
-        .bg(tokens::chrome())
-        .rounded(tokens::RADIUS)
-        .text_size(tokens::text_sm())
-        .line_height(tokens::line_sm())
+        .rounded(tokens::RADIUS_ROW)
+        .text_size(tokens::text_xs())
+        .line_height(tokens::line_xs())
         .font_weight(tokens::WEIGHT_BOLD)
-        // The brightest step in the ramp, used nowhere else in the panel:
-        // a category is not a property, and on a neutral palette weight and
-        // brightness are the only axes left to say so — the one saturated
-        // colour in the design is spent on the accent and stays there.
-        .text_color(tokens::text_full())
+        .text_color(tokens::text3())
         .hover(|this| this.bg(tokens::hover()))
         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
         .on_click(on_click)
@@ -619,7 +617,7 @@ pub(super) fn section_header(
                 // The same slot an expander's chevron sits in, so a
                 // category's name starts on the property names' own edge.
                 .w(tokens::chevron_slot())
-                .text_color(tokens::text_label())
+                .text_color(tokens::text3())
                 .child(
                     Icon::new(if open {
                         IconName::ChevronDown
@@ -629,7 +627,7 @@ pub(super) fn section_header(
                     .size(tokens::text_xs()),
                 ),
         )
-        .child(div().flex_1().truncate().child(label))
+        .child(div().flex_1().truncate().child(label.to_uppercase()))
 }
 
 /// Turns a row's live widget (see `shell::edit::RowEditor`) into the element
@@ -717,7 +715,7 @@ fn render_row_editor(
                 .tab_index(tab_index)
                 .hover(|this| this.border_color(tokens::check_on()))
                 .border_1()
-                .border_color(tokens::divider())
+                .border_color(tokens::border())
                 .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
                 .on_click(on_open)
                 .children(stops.map(|(kind, stops, ceiling)| {
@@ -770,7 +768,7 @@ fn render_row_editor(
                                 .items_center()
                                 .py(tokens::label_gap())
                                 .border_b_1()
-                                .border_color(tokens::row_divider())
+                                .border_color(tokens::border())
                                 .child(
                                     div()
                                         .flex_none()
@@ -946,7 +944,7 @@ fn number_fields(
                         // list of values.
                         .py(tokens::label_gap())
                         .border_b_1()
-                        .border_color(tokens::row_divider())
+                        .border_color(tokens::border())
                         .rounded(tokens::RADIUS)
                         .hover(|this| this.bg(tokens::hover()))
                         // The *label* is the drag handle, not the field: that is
@@ -1009,12 +1007,12 @@ pub(super) fn text_field(input: &Entity<InputState>, tab_index: isize) -> Div {
     )
 }
 
-/// The `InputsStyle` frame's field: [`tokens::chrome`], 3px radius, 8px of
-/// horizontal padding, 31px tall, and **no border** — the surface change is
-/// the whole affordance. 31px also clears WCAG 2.5.8's 24x24 target floor
-/// without any help from the spacing exception.
+/// The `InputsStyle` frame's field: [`tokens::field_select`], `RADIUS`, 8px
+/// of horizontal padding, 31px tall, and **no border** — the surface change
+/// is the whole affordance. 31px also clears WCAG 2.5.8's 24x24 target
+/// floor without any help from the spacing exception.
 pub(super) fn field_box() -> Div {
-    field_surface(tokens::chrome())
+    field_surface(tokens::field_select())
 }
 
 /// The same box, on the surface a dropdown wears (see
