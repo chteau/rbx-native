@@ -22,6 +22,7 @@ use std::time::SystemTime;
 
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Icon, Sizable};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::tokens;
@@ -250,8 +251,8 @@ impl Shell {
             .child(
                 div()
                     .flex_none()
-                    .text_size(tokens::text_sm())
-                    .line_height(tokens::line_sm())
+                    .text_size(tokens::text_xs())
+                    .line_height(tokens::line_xs())
                     .text_color(tokens::text_placeholder())
                     .child(format!("{} runs", self.output.len())),
             )
@@ -270,33 +271,72 @@ impl Shell {
                         &self.output_search,
                     )),
             )
-            .children(
-                [
-                    OutputFilter::All,
-                    OutputFilter::Output,
-                    OutputFilter::Warnings,
-                    OutputFilter::Errors,
-                ]
-                .map(|level| {
-                    super::chrome::button(
-                        ("output-filter", level as usize),
-                        level.label(),
-                        current == level,
-                    )
-                    .tab_index(self.tab_order.next())
-                    .on_click(cx.listener(move |shell, _, _, cx| {
-                        shell.output_filter = level;
-                        cx.notify();
-                    }))
-                }),
+            .child(
+                // One segmented control, not four separate buttons: the
+                // reference draws the four levels as segments of a single
+                // `field_select` pill, the active one carrying the accent.
+                h_flex()
+                    .flex_none()
+                    .bg(tokens::field_select())
+                    .rounded(tokens::RADIUS)
+                    .p(px(2.))
+                    .gap(px(2.))
+                    .children(
+                        [
+                            OutputFilter::All,
+                            OutputFilter::Output,
+                            OutputFilter::Warnings,
+                            OutputFilter::Errors,
+                        ]
+                        .map(|level| {
+                            let selected = current == level;
+                            h_flex()
+                                .id(("output-filter", level as usize))
+                                .tab_index(self.tab_order.next())
+                                .items_center()
+                                .px(px(9.))
+                                .py(px(3.))
+                                .rounded(tokens::RADIUS_SEGMENT)
+                                .text_size(tokens::text_xs())
+                                .line_height(tokens::line_xs())
+                                .cursor_pointer()
+                                .map(|this| {
+                                    if selected {
+                                        this.bg(tokens::accent_soft())
+                                            .text_color(tokens::check_on())
+                                            .font_weight(tokens::WEIGHT_SEMIBOLD)
+                                    } else {
+                                        this.text_color(tokens::text_placeholder())
+                                            .hover(|this| this.bg(tokens::hover()))
+                                    }
+                                })
+                                .on_click(cx.listener(move |shell, _, _, cx| {
+                                    shell.output_filter = level;
+                                    cx.notify();
+                                }))
+                                .child(level.label())
+                        }),
+                    ),
             )
             .child(
-                super::chrome::button("output-clear", "Clear", false)
+                h_flex()
+                    .id("output-clear")
                     .tab_index(self.tab_order.next())
+                    .flex_none()
+                    .px(px(8.))
+                    .py(px(3.))
+                    .rounded(tokens::RADIUS)
+                    .cursor_pointer()
+                    .text_size(tokens::text_xs())
+                    .line_height(tokens::line_xs())
+                    .text_color(tokens::text_placeholder())
+                    .hover(|this| this.bg(tokens::hover()).text_color(tokens::text_strong()))
+                    .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
                     .on_click(cx.listener(|shell, _, _, cx| {
                         shell.output.clear();
                         cx.notify();
-                    })),
+                    }))
+                    .child("Clear"),
             )
     }
 

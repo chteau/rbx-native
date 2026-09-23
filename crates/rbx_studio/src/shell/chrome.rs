@@ -298,9 +298,6 @@ impl Shell {
                                 if ribbon_tab == active {
                                     this.text_color(tokens::check_on())
                                         .font_weight(tokens::WEIGHT_BOLD)
-                                        .pb(px(6.))
-                                        .border_b(px(2.))
-                                        .border_color(tokens::check_on())
                                 } else {
                                     this.text_color(tokens::text_placeholder())
                                         .hover(|this| this.text_color(tokens::text_full()))

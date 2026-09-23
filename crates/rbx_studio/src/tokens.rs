@@ -298,6 +298,8 @@ pub(crate) const RADIUS_CONTAINER: Pixels = px(8.);
 pub(crate) const RADIUS_BADGE: Pixels = px(4.);
 /// An Explorer row.
 pub(crate) const RADIUS_ROW: Pixels = px(4.);
+/// One segment of the Output panel's filter control.
+pub(crate) const RADIUS_SEGMENT: Pixels = px(3.);
 
 // -------------------------------------------------------------- UI  scale
 //

@@ -397,8 +397,8 @@ impl Shell {
     }
 }
 
-/// A dock's search field: the frame's own, which is a field with a centred
-/// placeholder and no border at all — the surface change is the affordance.
+/// A dock's search field: `field_select`, a hairline `border`, radius
+/// `RADIUS` — the reference's own field look.
 ///
 /// The toolkit `Input` keeps the caret, selection and IME handling; its own
 /// chrome is switched off so this container can be the frame's.
@@ -414,7 +414,9 @@ pub(super) fn search_field(
         .justify_center()
         .px(px(8.))
         .rounded(tokens::RADIUS)
-        .bg(tokens::chrome())
+        .bg(tokens::field_select())
+        .border_1()
+        .border_color(tokens::border())
         .text_size(tokens::text_sm())
         .line_height(tokens::line_sm())
         .text_color(tokens::text_strong())

@@ -119,7 +119,7 @@ impl Shell {
                         .flex_none()
                         .w(tokens::stack_width())
                         .h_full()
-                        .gap(px(4.))
+                        .gap(px(1.))
                         .cursor_pointer()
                         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::chrome())))
                         .tooltip(|window, cx| super::tooltip::text("Snap increments", window, cx))
