@@ -19,7 +19,7 @@ fn collect_finds_place_files_recursively_and_skips_everything_else() {
             path.strip_prefix(root)
                 .unwrap()
                 .to_string_lossy()
-                .into_owned()
+                .replace('\\', "/")
         })
         .collect();
 

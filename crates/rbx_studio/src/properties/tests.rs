@@ -329,7 +329,10 @@ fn an_enum_item_is_also_named_on_its_own() {
         fixture.properties.enum_item("Part", "Material", 256),
         Some("Plastic")
     );
-    assert_eq!(fixture.properties.enum_item("Part", "Material", 999_999), None);
+    assert_eq!(
+        fixture.properties.enum_item("Part", "Material", 999_999),
+        None
+    );
     assert_eq!(fixture.properties.enum_item("Part", "MadeUp", 7), None);
 }
 
