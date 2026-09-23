@@ -11,7 +11,6 @@ use serde::Deserialize;
 
 use super::tree::{self, PackageNode};
 
-const BASE: &str = "https://api.wally.run/v1";
 const CLIENT_VERSION: &str = "0.3.2";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -23,19 +22,37 @@ pub(crate) enum Realm {
     Dev,
 }
 
+impl Realm {
+    pub(crate) const ALL: [Realm; 3] = [Realm::Shared, Realm::Server, Realm::Dev];
+
+    /// The manifest section's name, as the dock's realm switch shows it.
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Realm::Shared => "Shared",
+            Realm::Server => "Server",
+            Realm::Dev => "Dev",
+        }
+    }
+
+    /// Whether a package of realm `package` may be listed under the
+    /// dependency section `self`: Wally's own rule, `Realm::
+    /// is_dependency_valid` (`UpliftGames/wally@f578078:src/manifest.rs:
+    /// 178-186`) — a `shared` section only takes `shared` packages, the
+    /// `server` and `dev` sections take any.
+    pub(crate) fn accepts(self, package: Realm) -> bool {
+        matches!(
+            (self, package),
+            (Realm::Server, _) | (Realm::Dev, _) | (Realm::Shared, Realm::Shared)
+        )
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct RawManifest {
-    package: RawPackage,
     #[serde(default)]
     dependencies: BTreeMap<String, String>,
     #[serde(default, rename = "server-dependencies")]
     server_dependencies: BTreeMap<String, String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RawPackage {
-    #[serde(default)]
-    realm: Realm,
 }
 
 /// One `[dependencies]`/`[server-dependencies]` entry, parsed from its
@@ -50,7 +67,6 @@ pub(crate) struct Dependency {
 }
 
 pub(crate) struct Manifest {
-    pub(crate) realm: Realm,
     pub(crate) dependencies: Vec<Dependency>,
 }
 
@@ -91,10 +107,7 @@ fn parse_manifest(text: &str) -> Result<Manifest, String> {
         .chain(raw.server_dependencies.iter())
         .filter_map(|(alias, value)| parse_requirement(alias, value))
         .collect();
-    Ok(Manifest {
-        realm: raw.package.realm,
-        dependencies,
-    })
+    Ok(Manifest { dependencies })
 }
 
 fn unzip(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>, String> {
@@ -124,7 +137,10 @@ fn unzip(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>, String> {
 
 pub(crate) fn fetch(scope: &str, name: &str, version: &semver::Version) -> Result<Package, String> {
     let mut response = super::agent()
-        .get(format!("{BASE}/package-contents/{scope}/{name}/{version}"))
+        .get(format!(
+            "{}/package-contents/{scope}/{name}/{version}",
+            super::base()
+        ))
         .header("Wally-Version", CLIENT_VERSION)
         .call()
         .map_err(|err| err.to_string())?;
@@ -146,6 +162,16 @@ pub(crate) fn fetch(scope: &str, name: &str, version: &semver::Version) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_shared_section_takes_only_shared_packages() {
+        assert!(Realm::Shared.accepts(Realm::Shared));
+        assert!(!Realm::Shared.accepts(Realm::Server));
+        assert!(!Realm::Shared.accepts(Realm::Dev));
+        assert!(Realm::Server.accepts(Realm::Shared));
+        assert!(Realm::Server.accepts(Realm::Server));
+        assert!(Realm::Dev.accepts(Realm::Server));
+    }
 
     #[test]
     fn a_dependency_value_splits_into_scope_name_and_requirement() {
@@ -182,7 +208,6 @@ Comm = "sleitnick/comm@^0.3"
 Promise = "evaera/promise@^4"
 "#;
         let manifest = parse_manifest(text).unwrap();
-        assert_eq!(manifest.realm, Realm::Shared);
         assert_eq!(manifest.dependencies.len(), 2);
         assert!(manifest.dependencies.iter().any(|d| d.alias == "Comm"));
         assert!(manifest.dependencies.iter().any(|d| d.alias == "Promise"));
@@ -201,13 +226,13 @@ realm = "shared"
     }
 
     #[test]
-    fn realm_defaults_to_shared_when_absent() {
+    fn a_manifest_without_dependency_tables_parses_to_none() {
         let text = r#"
 [package]
 name = "x/y"
 version = "1.0.0"
 "#;
         let manifest = parse_manifest(text).unwrap();
-        assert_eq!(manifest.realm, Realm::Shared);
+        assert!(manifest.dependencies.is_empty());
     }
 }

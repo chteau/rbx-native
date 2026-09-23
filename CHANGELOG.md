@@ -2,6 +2,25 @@
 
 ## 2026-09-23
 
+- **The Viewport dock is laid out to the redesign.** Its settings sit in
+  four sections, Rendering, Camera, Overlays and Dragging & snapping, as
+  columns when the dock is wide, a 2×2 grid at a middling width, and one
+  column when narrow. Every row is a label with its control flush right:
+  the graphics-quality dropdown, the screen size as a width × height
+  field with a swap button and a preset menu, the frame rate with its
+  frame time, and a switch for each view setting. — @chteau
+
+- **The Wally dock is rebuilt to the redesign.** A rail with Home,
+  Installed and Updates sits beside the page; below 720 px it becomes a
+  band over it. Home shows the registry's featured packages and, as you
+  type, search results with a realm switch (Shared / Server / Dev, the
+  sections a package may go in, as Wally allows them), a version picker
+  and Add. Installed reads the place's own `_Index` folders back, with
+  each package's realm and description; Updates lists what the registry
+  has newer, with an Update button that replaces the old version in
+  place. The registry unreachable, the dock says so and offers Try
+  again; install results and registry errors go to Output. — @chteau
+
 - **The Argon dock is rebuilt to the redesign.** The connection sits on
   the left: the Argon mark, the CLI's version, and a status badge for
   Disconnected, Connecting, Connected, Error and a pending review; under

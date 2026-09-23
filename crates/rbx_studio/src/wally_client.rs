@@ -27,6 +27,7 @@
 //! and why that's safe.
 
 mod content;
+mod metadata;
 mod resolve;
 mod search;
 mod tree;
@@ -34,9 +35,25 @@ mod tree;
 use std::time::Duration;
 
 pub(crate) use content::Realm;
+pub(crate) use metadata::{fetch as metadata, Listing, FEATURED};
 pub(crate) use resolve::{resolve, ResolvedGraph, ResolvedPackage};
 pub(crate) use search::{search, SearchResult};
 pub(crate) use tree::PackageNode;
+
+/// `RBX_STUDIO_WALLY_REGISTRY=<url>` points every route at another
+/// registry (a local stand-in for screenshots and tests; the same
+/// screenshot-aid reason every other `RBX_STUDIO_*` variable exists). The
+/// value replaces `https://api.wally.run/v1`, so it ends in `/v1`.
+pub(crate) const REGISTRY_VARIABLE: &str = "RBX_STUDIO_WALLY_REGISTRY";
+
+/// The registry's `/v1` base, without a trailing slash.
+fn base() -> String {
+    std::env::var(REGISTRY_VARIABLE)
+        .ok()
+        .filter(|url| !url.trim().is_empty())
+        .map(|url| url.trim_end_matches('/').to_owned())
+        .unwrap_or_else(|| "https://api.wally.run/v1".to_owned())
+}
 
 fn agent() -> ureq::Agent {
     ureq::Agent::config_builder()

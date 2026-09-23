@@ -7,8 +7,6 @@
 
 use serde::Deserialize;
 
-const BASE: &str = "https://api.wally.run/v1";
-
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct SearchResult {
     pub(crate) scope: String,
@@ -19,7 +17,7 @@ pub(crate) struct SearchResult {
 
 pub(crate) fn search(query: &str) -> Result<Vec<SearchResult>, String> {
     let mut response = super::agent()
-        .get(format!("{BASE}/package-search"))
+        .get(format!("{}/package-search", super::base()))
         .query("query", query)
         .call()
         .map_err(|err| err.to_string())?;

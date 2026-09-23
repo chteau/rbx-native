@@ -265,6 +265,10 @@ pub(crate) struct Shell {
     /// The Argon dock's own state: its fields, the level it edits, the
     /// bounds its last frame had — see `shell::argon_dock`.
     argon_ui: argon_dock::ArgonDock,
+    /// The Wally dock's own state; see `shell::wally_dock`.
+    wally_ui: wally_dock::WallyDock,
+    /// The Viewport dock's own state; see `shell::viewport_dock`.
+    viewport_ui: viewport_dock::ViewportDock,
     /// The address `Settings::argon_address` should hold — a plain `String`
     /// rather than reading `argon_address` above back out, because
     /// `Shell::save_settings` takes no `cx` and an `Entity<InputState>`
@@ -439,8 +443,7 @@ impl Shell {
             }
         });
 
-        let wally_query =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Search Wally packages"));
+        let wally_query = cx.new(|cx| InputState::new(window, cx).placeholder("Search Wally"));
         let wally_query_changed = cx.subscribe(&wally_query, |shell, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
                 shell.wally_query_changed(cx);
@@ -569,6 +572,8 @@ impl Shell {
             viewport_rows: Rc::default(),
             output_search: cx.new(|cx| InputState::new(window, cx).placeholder("Search")),
             argon_ui: argon_dock::ArgonDock::new(&argon_address_setting, window, cx),
+            wally_ui: wally_dock::WallyDock::new(cx),
+            viewport_ui: viewport_dock::ViewportDock::new(),
             argon_saved_address: argon_address_setting,
             argon: argon_sync::Sync::default(),
             argon_settings,

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::wally_client::content::{Dependency, Manifest, Package, Realm};
+use crate::wally_client::content::{Dependency, Manifest, Package};
 use crate::wally_client::tree::PackageNode;
 
 use super::*;
@@ -8,7 +8,6 @@ use super::*;
 fn empty_package(name: &str) -> Package {
     Package {
         manifest: Manifest {
-            realm: Realm::Shared,
             dependencies: Vec::new(),
         },
         tree: PackageNode {
