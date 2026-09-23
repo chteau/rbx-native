@@ -15,7 +15,7 @@ use std::rc::Rc;
 use gpui_kit::assets::IconName;
 use gpui_kit::component::input::InputState;
 use gpui_kit::component::scroll::ScrollableElement as _;
-use gpui_kit::component::{h_flex, v_flex, Icon};
+use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
@@ -182,7 +182,12 @@ impl Shell {
         let overflow = menu::dropdown(
             self,
             MenuId::ArgonOverflow,
-            chrome::Trigger::new(dock_options_button("argon-overflow", "Argon dock options")),
+            chrome::Trigger::new(chrome::dock_options_button(
+                "argon-overflow",
+                IconName::Ellipsis,
+                16.,
+                "Argon dock options",
+            )),
             self.move_items(Panel::Argon),
             cx,
         );
@@ -349,25 +354,6 @@ impl Shell {
             }
         }
     }
-}
-
-/// A dock's tab-row overflow: 28×28, square-bottomed so it sits in the
-/// strip like a tab, a 16px dots icon in `text3`.
-pub(super) fn dock_options_button(id: &'static str, label: &'static str) -> Stateful<Div> {
-    div()
-        .id(id)
-        .flex_none()
-        .size(px(28.))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded_t(tokens::RADIUS)
-        .cursor_pointer()
-        .text_color(tokens::text3())
-        .hover(|this| this.bg(tokens::hover()).text_color(tokens::text()))
-        .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
-        .tooltip(move |window, cx| super::tooltip::text(label, window, cx))
-        .child(Icon::new(IconName::Ellipsis).size(px(16.)))
 }
 
 #[cfg(test)]

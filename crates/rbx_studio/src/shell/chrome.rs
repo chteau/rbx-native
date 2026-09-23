@@ -643,6 +643,30 @@ pub(super) fn dock_content(content: impl IntoElement) -> Div {
         .child(content)
 }
 
+/// A dock's tab-row overflow: 28×28, square-bottomed so it sits in the
+/// strip like a tab, `icon` at `icon_size` in `text3`.
+pub(super) fn dock_options_button(
+    id: &'static str,
+    icon: IconName,
+    icon_size: f32,
+    label: &'static str,
+) -> Stateful<Div> {
+    div()
+        .id(id)
+        .flex_none()
+        .size(px(28.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded_t(tokens::RADIUS)
+        .cursor_pointer()
+        .text_color(tokens::text3())
+        .hover(|this| this.bg(tokens::hover()).text_color(tokens::text()))
+        .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
+        .tooltip(move |window, cx| super::tooltip::text(label, window, cx))
+        .child(Icon::new(icon).size(px(icon_size)))
+}
+
 /// A small icon button for panel chrome: an overflow "…", a collapse
 /// chevron. Icon-only, so it carries a tooltip — which doubles as the
 /// control's accessible label.
