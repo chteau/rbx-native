@@ -26,10 +26,13 @@ pub(super) fn locate() -> Option<PathBuf> {
     find_argon_cli(path.as_deref(), home.as_deref(), cargo_home.as_deref())
 }
 
-/// The first `argon` binary in: every `PATH` entry, `<home>/.argon/bin`,
-/// the toolchain managers' bins, Cargo's bin, and (macOS) Homebrew's. A
-/// Unix match must be a regular file with an executable bit; a Windows
-/// match is `argon.exe`, or on `PATH` any `PATHEXT` extension.
+/// The first `argon` binary in: every absolute `PATH` entry,
+/// `<home>/.argon/bin`, the toolchain managers' bins, Cargo's bin, and
+/// (macOS) Homebrew's. A Unix match must be a regular file with an
+/// executable bit; a Windows match is `argon.exe`, or on `PATH` any
+/// `PATHEXT` extension. A relative or empty `PATH` entry is skipped: it
+/// would resolve against the app's working directory, and a file that
+/// happens to sit there is not an install.
 pub(super) fn find_argon_cli(
     path: Option<&OsStr>,
     home: Option<&Path>,
@@ -38,6 +41,7 @@ pub(super) fn find_argon_cli(
     let on_path = path
         .into_iter()
         .flat_map(std::env::split_paths)
+        .filter(|dir| dir.is_absolute())
         .flat_map(|dir| candidates(&dir, true))
         .find(|candidate| is_executable(candidate));
     if on_path.is_some() {
@@ -211,6 +215,25 @@ mod tests {
         let home = sandbox.dir("home");
         sandbox.binary("home/.argon/bin", false);
         assert_eq!(find_argon_cli(None, Some(&home), None), None);
+    }
+
+    #[test]
+    fn a_relative_or_empty_path_entry_never_matches_the_working_directory() {
+        let sandbox = Sandbox::new("relative");
+        let home = sandbox.dir("home");
+        sandbox.binary("relative/bin", true);
+        // Neither an empty entry nor a relative one may reach into wherever
+        // the process happens to run from; the sandbox has the file at
+        // exactly the relative path named here, if that were resolved
+        // against it.
+        assert_eq!(
+            find_argon_cli(Some(OsStr::new("")), Some(&home), None),
+            None
+        );
+        assert_eq!(
+            find_argon_cli(Some(OsStr::new("relative/bin")), Some(&home), None),
+            None
+        );
     }
 
     #[test]

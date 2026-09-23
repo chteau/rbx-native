@@ -2,6 +2,12 @@
 
 ## 2026-09-23
 
+- **Auto Connect stays quiet without Argon.** When the Argon CLI isn't
+  installed, opening a place no longer tries to connect and fails; the
+  dock stays Disconnected and Output notes that Auto Connect was skipped.
+  Connect still works by hand, for a server in WSL or on another
+  machine. — @chteau
+
 - **Connecting to Argon no longer duplicates the place.** Before, every
   instance the server sent was added on top of what the place already
   had. Now, on connect, the place and the server's project are matched up
