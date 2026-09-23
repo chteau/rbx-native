@@ -797,16 +797,20 @@ pub(crate) fn set_reduced_motion(reduced: bool) -> bool {
 /// invisible — so the separation is carried by the hairline, with the
 /// shadow only deepening the ground beneath it.
 pub(crate) fn elevation() -> Vec<BoxShadow> {
-    vec![
-        ring(border2(), 1.),
-        BoxShadow {
-            color: rgba(0x00000066).into(),
-            offset: gpui_kit::point(px(0.), px(4.)),
-            blur_radius: px(14.),
-            spread_radius: px(0.),
-            inset: false,
-        },
-    ]
+    vec![ring(border2(), 1.), floating_shadow()]
+}
+
+/// [`elevation`]'s shadow alone, for a surface that draws its hairline as
+/// a real border inside its own width (the snap popover: 248px including
+/// the border, as the board sizes it) rather than as a ring outside it.
+pub(crate) fn floating_shadow() -> BoxShadow {
+    BoxShadow {
+        color: rgba(0x00000066).into(),
+        offset: gpui_kit::point(px(0.), px(4.)),
+        blur_radius: px(14.),
+        spread_radius: px(0.),
+        inset: false,
+    }
 }
 
 /// [`focus_ring`] for a control that sits flush against its container's

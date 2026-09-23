@@ -2,6 +2,14 @@
 
 ## 2026-09-23
 
+- **The snap popover follows the redesign board.** Opening the ribbon's
+  snap pills now shows a 248px surface with one section per unit: a
+  title row with the unit and a switch, then a single-field stepper with
+  its − and + at either end and the value centred in mono. A switched-off
+  section goes flat and out of the Tab order, and both pills take the
+  accent hairline while the popover is open. Same increments, same
+  shortcuts, same IDs. — @chteau
+
 - **The editor ships its own fonts.** Manrope and JetBrains Mono (both OFL,
   licences in `assets/fonts/`) are embedded and registered at startup, so
   the chrome no longer falls back to the platform font on a machine that
