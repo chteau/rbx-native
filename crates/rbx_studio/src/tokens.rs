@@ -683,15 +683,6 @@ pub(crate) fn select_inset() -> Pixels {
     scaled(7.5)
 }
 
-/// The room a toolkit `Select` keeps for its chevron, which it draws at a
-/// fixed 15px at an 8px inset (`UX_GUIDELINES.md` §11) whatever the UI
-/// scale. **Not** scaled, deliberately: a select sized as one scaled width
-/// gives its label less and less room as the scale drops, until at 0.5x
-/// "Automatic" no longer fits.
-pub(crate) fn select_chevron_room() -> Pixels {
-    px(24.)
-}
-
 /// `InputsStyle` again: the frame's inputs are padded 8px horizontally.
 pub(crate) fn input_padding() -> Pixels {
     scaled(8.)

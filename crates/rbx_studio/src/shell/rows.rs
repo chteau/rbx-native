@@ -546,8 +546,6 @@ pub(super) fn checkbox(
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> Stateful<Div> {
     let checked = checked.into();
-    let on = checked != Some(false);
-    let inset = (tokens::toggle_height() - tokens::toggle_thumb()) / 2.;
     div()
         .id(id.into())
         // The target, which never goes under 24px …
@@ -564,47 +562,54 @@ pub(super) fn checkbox(
         .cursor_pointer()
         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
         .on_click(on_click)
+        .child(toggle_pill(checked))
+}
+
+/// The pill alone, [`tokens::toggle_width`] by [`tokens::toggle_height`]:
+/// the accent with a right-parked thumb when on, [`tokens::field_select`]
+/// outlined with a left-parked one when off, the thumb in the middle for
+/// `None`. [`checkbox`] wraps it in its click target; a row that is its
+/// own target draws just this.
+pub(super) fn toggle_pill(checked: Option<bool>) -> Div {
+    let on = checked != Some(false);
+    let inset = (tokens::toggle_height() - tokens::toggle_thumb()) / 2.;
+    div()
+        .relative()
+        .flex_none()
+        .w(tokens::toggle_width())
+        .h(tokens::toggle_height())
+        .rounded_full()
+        .map(|this| {
+            if on {
+                this.bg(tokens::check_on())
+            } else {
+                this.bg(tokens::field_select())
+                    .border(px(1.))
+                    .border_color(tokens::check_off_border())
+            }
+        })
         .child(
-            // … and the track, which is smaller on purpose.
             div()
-                .relative()
-                .flex_none()
-                .w(tokens::toggle_width())
-                .h(tokens::toggle_height())
-                .rounded_full()
-                .map(|this| {
-                    if on {
-                        this.bg(tokens::check_on())
-                    } else {
-                        this.bg(tokens::field_select())
-                            .border(px(1.))
-                            .border_color(tokens::check_off_border())
-                    }
+                .absolute()
+                // The off track wears a 1px border and offsets are measured
+                // inside it, so the knob's own offsets drop by one there to
+                // land 2px from the outer edge, the same as the on state's.
+                .map(|this| match checked {
+                    Some(false) => this.top(inset - px(1.)).left(inset - px(1.)),
+                    Some(true) => this.top(inset).right(inset),
+                    None => this
+                        .top(inset)
+                        .left(relative(0.5))
+                        .ml(-(tokens::toggle_thumb() / 2.)),
                 })
-                .child(
-                    div()
-                        .absolute()
-                        // The off track wears a 1px border and offsets are
-                        // measured inside it, so the knob's own offsets drop
-                        // by one there to land 2px from the outer edge, the
-                        // same as the on state's.
-                        .map(|this| match checked {
-                            Some(false) => this.top(inset - px(1.)).left(inset - px(1.)),
-                            Some(true) => this.top(inset).right(inset),
-                            None => this
-                                .top(inset)
-                                .left(relative(0.5))
-                                .ml(-(tokens::toggle_thumb() / 2.)),
-                        })
-                        .flex_none()
-                        .size(tokens::toggle_thumb())
-                        .rounded_full()
-                        .bg(if on {
-                            tokens::knob()
-                        } else {
-                            tokens::check_off_border()
-                        }),
-                ),
+                .flex_none()
+                .size(tokens::toggle_thumb())
+                .rounded_full()
+                .bg(if on {
+                    tokens::knob()
+                } else {
+                    tokens::check_off_border()
+                }),
         )
 }
 

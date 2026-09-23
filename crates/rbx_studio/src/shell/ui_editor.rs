@@ -36,8 +36,6 @@ mod text_edit;
 mod toolbar;
 mod tree;
 
-pub(super) use toolbar::size_field;
-
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -397,6 +395,11 @@ impl Shell {
     /// The width and height fields, shared by the canvas's toolbar and the
     /// Viewport dock's Screen row — never on screen together, since the
     /// canvas sets the dock aside.
+    /// The resolution the canvas and the 3D view's emulated screen share.
+    pub(super) fn ui_resolution(&self) -> (u32, u32) {
+        self.ui.resolution
+    }
+
     pub(super) fn ui_size_fields(&self) -> (Entity<InputState>, Entity<InputState>) {
         (self.ui.width.clone(), self.ui.height.clone())
     }
