@@ -9,6 +9,9 @@ use std::collections::HashSet;
 
 use rbx_dom::WeakDom;
 
+use super::connection::{level_keys, parse_address};
+use super::diff_rows::count_descendants;
+use super::outgoing::ordered_parent_first;
 use super::*;
 
 #[test]
