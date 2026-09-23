@@ -27,7 +27,6 @@ mod wire;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
-use std::thread::JoinHandle;
 
 pub(crate) use thread::ArgonEvent;
 pub(crate) use value::{decode as decode_value, encode as encode_value};
@@ -41,7 +40,6 @@ pub(crate) struct ArgonClient {
     writes: Sender<Changes>,
     opens: Sender<(ArgonRef, u32)>,
     stop: Arc<AtomicBool>,
-    handle: Option<JoinHandle<()>>,
 }
 
 impl ArgonClient {
@@ -54,7 +52,7 @@ impl ArgonClient {
         let (write_tx, write_rx) = std::sync::mpsc::channel();
         let (open_tx, open_rx) = std::sync::mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
-        let handle = std::thread::Builder::new()
+        std::thread::Builder::new()
             .name("rbxstudio-argon".to_owned())
             .spawn({
                 let stop = Arc::clone(&stop);
@@ -66,7 +64,6 @@ impl ArgonClient {
             writes: write_tx,
             opens: open_tx,
             stop,
-            handle: Some(handle),
         }
     }
 
@@ -97,11 +94,12 @@ impl ArgonClient {
 }
 
 impl Drop for ArgonClient {
+    /// Flags the thread to stop and lets it go: it notices at the end of
+    /// its current long-poll (up to `READ_TIMEOUT`) and unsubscribes on
+    /// its way out. Joining it here would hold the UI thread for that
+    /// long on every Disconnect and place close.
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
-        if let Some(handle) = self.handle.take() {
-            let _ = handle.join();
-        }
     }
 }
 

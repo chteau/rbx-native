@@ -19,6 +19,12 @@
   keeps its scroll thumb in view. The Argon and Wally dock menus are now
   called "Argon dock options" and "Wally dock options". — @chteau
 
+- **Disconnecting from Argon no longer freezes the app.** Disconnect,
+  and closing a place while connected, used to wait for the connection's
+  background poll to finish, which could hold the whole window for over
+  half a minute. The connection is now dropped at once and winds down on
+  its own. — @chteau
+
 - **Auto Connect stays quiet without Argon.** When the Argon CLI isn't
   installed, opening a place no longer tries to connect and fails; the
   dock stays Disconnected and Output notes that Auto Connect was skipped.
