@@ -10,7 +10,6 @@ use std::collections::HashSet;
 use rbx_dom::WeakDom;
 
 use super::connection::{level_keys, log_passes, needs_review, parse_address, LogLevel};
-use super::diff_rows::cap_lines;
 use super::diff_rows::count_descendants;
 use super::outgoing::ordered_parent_first;
 use super::outgoing::{script_related, syncs_properties};
@@ -188,16 +187,6 @@ fn a_message_shows_when_its_level_is_at_or_below_the_setting_and_never_at_off() 
     assert!(!log_passes(LogLevel::Warn, LogLevel::Info));
     assert!(log_passes(LogLevel::Trace, LogLevel::Trace));
     assert!(!log_passes(LogLevel::Off, LogLevel::Error));
-}
-
-#[test]
-fn the_diff_view_caps_a_source_and_says_how_much_it_left_out() {
-    assert_eq!(cap_lines("a\nb\nc", 3), "a\nb\nc");
-    assert_eq!(cap_lines("a\nb\nc\nd", 3), "a\nb\nc\n-- And 1 more line...");
-    assert_eq!(
-        cap_lines("a\nb\nc\nd\ne", 3),
-        "a\nb\nc\n-- And 2 more lines..."
-    );
 }
 
 #[test]

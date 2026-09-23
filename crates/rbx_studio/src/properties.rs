@@ -388,7 +388,7 @@ impl Properties {
         }
     }
 
-    fn format(&self, dom: &WeakDom, class: &str, name: &str, value: &Variant) -> String {
+    pub(crate) fn format(&self, dom: &WeakDom, class: &str, name: &str, value: &Variant) -> String {
         match value {
             Variant::String(text) if text.len() > MAX_STRING_LEN => bytes(text.len()),
             Variant::String(text) => format!("{text:?}"),
@@ -474,15 +474,18 @@ impl Properties {
     /// `256 (Plastic)`: the ordinal alone means nothing to a reader, but the
     /// name alone would hide a stale or custom value the dump does not know.
     fn enumeration(&self, class: &str, name: &str, raw: u32) -> String {
-        let resolved = self
-            .db
-            .resolve_property(class, name)
-            .and_then(|property| self.db.enum_name(&property.value_type, raw));
-
-        match resolved {
+        match self.enum_item(class, name, raw) {
             Some(label) => format!("{raw} ({label})"),
             None => raw.to_string(),
         }
+    }
+
+    /// The item name `raw` stands for in `class.name`'s enum, if the dump
+    /// knows it.
+    pub(crate) fn enum_item(&self, class: &str, name: &str, raw: u32) -> Option<&str> {
+        self.db
+            .resolve_property(class, name)
+            .and_then(|property| self.db.enum_name(&property.value_type, raw))
     }
 }
 

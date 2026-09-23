@@ -157,6 +157,42 @@ pub(crate) fn text_error() -> Rgba {
     rgb(0xE06C6C)
 }
 
+/// The Diff window's "added" colour; removals use [`text_error`] and
+/// updates the accent.
+pub(crate) fn diff_add() -> Rgba {
+    rgb(0x74C98F)
+}
+
+/// [`diff_add`] at 10 %: an added code row, an AFTER value chip.
+pub(crate) fn diff_add_soft() -> Rgba {
+    rgba(0x74C98F1A)
+}
+
+/// [`diff_add`] at 16 %: an added row's line-number cells.
+pub(crate) fn diff_add_gutter() -> Rgba {
+    rgba(0x74C98F29)
+}
+
+/// [`diff_add`] at 12 %: the "Added" pill.
+pub(crate) fn diff_add_pill() -> Rgba {
+    rgba(0x74C98F1F)
+}
+
+/// [`text_error`] at 10 %: a removed code row, a BEFORE value chip.
+pub(crate) fn diff_remove_soft() -> Rgba {
+    rgba(0xE06C6C1A)
+}
+
+/// [`text_error`] at 16 %: a removed row's line-number cells.
+pub(crate) fn diff_remove_gutter() -> Rgba {
+    rgba(0xE06C6C29)
+}
+
+/// [`text_error`] at 12 %: the "Removed" pill.
+pub(crate) fn diff_remove_pill() -> Rgba {
+    rgba(0xE06C6C1F)
+}
+
 /// [`text_error`] as a fill, for the badge behind an error's own text.
 pub(crate) fn error_soft() -> Rgba {
     Rgba {

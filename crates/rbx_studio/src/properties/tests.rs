@@ -323,6 +323,17 @@ fn an_unknown_enum_stays_a_bare_ordinal() {
 }
 
 #[test]
+fn an_enum_item_is_also_named_on_its_own() {
+    let fixture = properties(&[]);
+    assert_eq!(
+        fixture.properties.enum_item("Part", "Material", 256),
+        Some("Plastic")
+    );
+    assert_eq!(fixture.properties.enum_item("Part", "Material", 999_999), None);
+    assert_eq!(fixture.properties.enum_item("Part", "MadeUp", 7), None);
+}
+
+#[test]
 fn refs_read_as_the_target_name() {
     assert_eq!(formatted("Parent", Variant::Ref(workspace())), "Workspace");
     assert_eq!(formatted("Dangling", Variant::Ref(Ref::new(99))), "nil");

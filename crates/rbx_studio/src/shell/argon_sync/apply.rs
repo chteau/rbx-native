@@ -10,7 +10,7 @@ use crate::argon_client::{self, ArgonRef};
 use crate::settings::argon::{Setting, Value};
 
 use super::connection::needs_review;
-use super::{initial, PendingReview, Shell, SyncDirection};
+use super::{initial, Shell, SyncDirection};
 
 impl Shell {
     /// A batch from the server, or the initial diff: applied on sight, or
@@ -35,12 +35,7 @@ impl Shell {
             _ => 5,
         };
         if needs_review(prompts, initial, changes.len(), threshold) {
-            self.argon.pending = Some(PendingReview {
-                additions: changes.additions.len(),
-                updates: changes.updates.len(),
-                removals: changes.removals.len(),
-                changes,
-            });
+            self.set_pending(changes);
             cx.notify();
             return;
         }

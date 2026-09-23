@@ -383,3 +383,14 @@ fn the_type_ramp_descends() {
         "a line height at or under its own font size clips descenders"
     );
 }
+
+#[test]
+fn the_diff_colours_are_the_green_and_the_error_red_at_their_alphas() {
+    assert_eq!(diff_add(), rgb(0x74C98F));
+    assert_eq!(diff_add_soft(), rgba(0x74C98F1A));
+    assert_eq!(diff_add_gutter(), rgba(0x74C98F29));
+    assert_eq!(diff_add_pill(), rgba(0x74C98F1F));
+    assert_eq!(diff_remove_soft(), rgba(0xE06C6C1A));
+    assert_eq!(diff_remove_gutter(), rgba(0xE06C6C29));
+    assert_eq!(diff_remove_pill(), rgba(0xE06C6C1F));
+}

@@ -96,6 +96,7 @@ mod workspace_view;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
+use gpui_kit::component::highlighter::HighlightTheme;
 use gpui_kit::component::{Root, Theme, ThemeConfig, ThemeMode, ThemeRegistry, ThemeSet};
 use gpui_kit::*;
 use rbx_dom::{Ref, WeakDom};
@@ -195,6 +196,7 @@ fn main() {
         shell::install_key_bindings(cx);
         menu_bar::install_key_bindings(cx);
         Theme::change(ThemeMode::Dark, None, cx);
+        install_dark_highlight(cx);
 
         cx.spawn(async move |cx| {
             let options = cx.update(|cx| window_options(&title, cx));
@@ -259,6 +261,17 @@ fn install_theme(user_theme: Option<&str>, cx: &mut App) {
     }
     install_user_theme(user_theme, cx);
     install_fonts(cx);
+}
+
+/// GPUI Kit only swaps its syntax palette for the one a theme file's
+/// `highlight` block defines; a theme without one keeps the kit's *light*
+/// palette whatever its mode, which put navy keywords on the editor's near
+/// black. Neither the built-in theme nor most user themes carry a block, so
+/// they get the kit's own dark palette instead.
+fn install_dark_highlight(cx: &mut App) {
+    if Theme::global(cx).dark_theme.highlight.is_none() {
+        Theme::global_mut(cx).highlight_theme = HighlightTheme::default_dark();
+    }
 }
 
 /// Applies the theme `appearance.json` names, from `<config>/themes/`: the

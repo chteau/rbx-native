@@ -99,7 +99,10 @@ impl InputHighlighter for LuauHighlighter {
 /// Separate from `styles` above, and yielding names rather than resolved
 /// `HighlightStyle`s, so the clipping arithmetic can be tested without a
 /// window or a theme.
-fn runs(tokens: &[Token], range: &Range<usize>) -> Vec<(Range<usize>, Option<&'static str>)> {
+pub(crate) fn runs(
+    tokens: &[Token],
+    range: &Range<usize>,
+) -> Vec<(Range<usize>, Option<&'static str>)> {
     let mut runs = Vec::new();
     let mut at = range.start;
 
