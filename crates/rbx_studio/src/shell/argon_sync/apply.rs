@@ -7,18 +7,34 @@ use rbx_dom::{Ref, WeakDom};
 
 use crate::argon_client::{self, ArgonRef};
 
-use super::{initial, PendingReview, Shell, SyncDirection, REVIEW_THRESHOLD};
+use crate::settings::argon::{Setting, Value};
+
+use super::connection::needs_review;
+use super::{initial, PendingReview, Shell, SyncDirection};
 
 impl Shell {
+    /// A batch from the server, or the initial diff: applied on sight, or
+    /// held for Accept / Cancel when Display Prompts and Changes Threshold
+    /// say so (`Core/init.luau:228-243`, `:409-419`).
     pub(super) fn handle_incoming_changes(
         &mut self,
         changes: argon_client::Changes,
+        initial: bool,
         cx: &mut Context<Self>,
     ) {
         if changes.is_empty() {
             return;
         }
-        if changes.len() >= REVIEW_THRESHOLD {
+        let keys = self.argon_level_keys();
+        let prompts = match self.argon_settings.get(Setting::DisplayPrompts, &keys) {
+            Value::Choice(choice) => choice,
+            _ => "Always",
+        };
+        let threshold = match self.argon_settings.get(Setting::ChangesThreshold, &keys) {
+            Value::Number(n) => n,
+            _ => 5,
+        };
+        if needs_review(prompts, initial, changes.len(), threshold) {
             self.argon.pending = Some(PendingReview {
                 additions: changes.additions.len(),
                 updates: changes.updates.len(),
@@ -56,7 +72,7 @@ impl Shell {
             initial::Priority::None => {}
             initial::Priority::Server => {
                 let changes = initial::diff(&self.dom, &self.database, &snapshot, rules, &mut ids);
-                self.handle_incoming_changes(changes, cx);
+                self.handle_incoming_changes(changes, true, cx);
             }
             initial::Priority::Client => {
                 let changes = initial::diff(&self.dom, &self.database, &snapshot, rules, &mut ids);

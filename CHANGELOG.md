@@ -2,20 +2,28 @@
 
 ## 2026-09-23
 
-- **Argon's initial sync is a diff, as in the plugin.** Connecting no
-  longer pours the server's snapshot into the place on top of what's
-  there. The two trees are paired by name and class, then diffed into
-  additions, updates and removals, and Initial Sync Priority decides which
-  way that diff goes: Server applies it here, Client sends it back so the
-  files match the place, None keeps only the pairing. Keep Unknowns and a
-  node's own `keepUnknowns` protect instances the server doesn't have;
-  Override Packages off keeps server changes out of anything under a
-  `PackageLink`. With default settings (Server, Keep Unknowns off) the
-  result is what the plugin gives: instances the server doesn't know are
-  removed rather than kept, instances it does know are updated rather than
-  duplicated, and a diff of five changes or more waits for Accept like a
-  live batch does. — @chteau
-
+- **Connecting to Argon no longer duplicates the place.** Before, every
+  instance the server sent was added on top of what the place already
+  had. Now, on connect, the place and the server's project are matched up
+  by name and class: instances the server knows are updated in place,
+  and instances it doesn't know are removed, unless Keep Unknowns is on
+  or the project marks them as kept. Initial Sync Priority decides who
+  wins: Server (the default) changes the place to match the files, Client
+  changes the files to match the place, None connects without changing
+  either. Override Packages off keeps server changes out of anything
+  under a `PackageLink`. When the connect would change more instances
+  than Changes Threshold allows, the dock asks first, as it does for a
+  live batch. — @chteau
+- **The rest of Argon's settings do what they do in the plugin.** Auto
+  Reconnect retries five seconds after a dropped connection; HTTPS
+  connects over TLS; Two-Way Sync (off by default, as in the plugin)
+  decides whether edits go back to the files at all, with Only Code Mode
+  and Syncback Properties choosing what goes; Display Prompts and Changes
+  Threshold decide when a batch asks first, and the threshold is now
+  "more than", as in the plugin, instead of "five or more"; Open In
+  Editor sends a synced script to your OS editor instead of opening it
+  here; Log Level filters what Argon writes to the Output dock; Diff
+  Lines Limit caps how much of a script the diff window shows. — @chteau
 - **Argon's own settings, per level.** The Argon dock's settings model is
   now the plugin's: the same 15 settings with the same defaults, resolved
   Place → Game → Global → default, stored in `settings.json` under `argon`

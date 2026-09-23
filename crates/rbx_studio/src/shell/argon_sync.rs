@@ -32,10 +32,6 @@ use crate::settings::argon::LevelKeys;
 
 use super::Shell;
 
-/// A batch this many changes or larger is held for Accept/Cancel instead of
-/// applied on sight — the same default `argon-roblox`'s own
-/// `Config.ChangesThreshold` uses.
-const REVIEW_THRESHOLD: usize = 5;
 /// How often the poll loop drains the background thread's channel — also
 /// what keeps the dock's "Ns ago" readout ticking while nothing else is
 /// happening.
@@ -83,7 +79,7 @@ pub(super) enum SyncDirection {
 }
 
 /// An incoming batch large enough to ask before applying — see
-/// [`REVIEW_THRESHOLD`].
+/// `connection::needs_review`.
 pub(super) struct PendingReview {
     pub(super) additions: usize,
     pub(super) updates: usize,

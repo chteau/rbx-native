@@ -6,9 +6,39 @@ use std::collections::HashSet;
 use gpui_kit::Context;
 use rbx_dom::{Change, Ref, WeakDom};
 
+use rbx_reflection::ReflectionDatabase;
+
 use crate::argon_client::{self, ArgonRef};
+use crate::settings::argon::{Setting, Value};
 
 use super::{Shell, SyncDirection, WRITE_DEBOUNCE};
+
+/// The class every script inherits from.
+const SOURCE_CONTAINER: &str = "LuaSourceContainer";
+
+/// The plugin's `isScriptRelated` (`Processor/Read.luau:15-17`): a script,
+/// or an instance with a script somewhere below it.
+pub(super) fn script_related(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> bool {
+    let Some(instance) = dom.get(referent) else {
+        return false;
+    };
+    database.is_subclass_of(instance.class(), SOURCE_CONTAINER)
+        || instance
+            .children()
+            .iter()
+            .any(|&child| script_related(dom, database, child))
+}
+
+/// Whether an instance's properties go back to the server at all
+/// (`Processor/Read.luau:249-258`): always for a script, otherwise only
+/// with Syncback Properties on. Its name and class always do.
+pub(super) fn syncs_properties(
+    database: &ReflectionDatabase,
+    class: &str,
+    syncback_properties: bool,
+) -> bool {
+    database.is_subclass_of(class, SOURCE_CONTAINER) || syncback_properties
+}
 
 impl Shell {
     // ------------------------------------------------------- write-back
@@ -23,6 +53,12 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         if self.argon.client.is_none() || self.argon.applying || changes.is_empty() {
+            return;
+        }
+        // Two-Way Sync off: the plugin's watcher is simply not running
+        // (`Core/init.luau:70-78`, `:127-129`), so nothing goes out.
+        let keys = self.argon_level_keys();
+        if self.argon_settings.get(Setting::TwoWaySync, &keys) != Value::Bool(true) {
             return;
         }
         for change in changes {
@@ -65,6 +101,10 @@ impl Shell {
         }
         let removals = std::mem::take(&mut self.argon.removed);
         let dirty = ordered_parent_first(&self.dom, std::mem::take(&mut self.argon.dirty));
+        let keys = self.argon_level_keys();
+        let only_code = self.argon_settings.get(Setting::OnlyCodeMode, &keys) == Value::Bool(true);
+        let syncback_properties =
+            self.argon_settings.get(Setting::SyncbackProperties, &keys) == Value::Bool(true);
         let Some(client) = &self.argon.client else {
             return;
         };
@@ -74,13 +114,23 @@ impl Shell {
             let Some(instance) = self.dom.get(referent) else {
                 continue;
             };
-            let properties: Vec<(String, rmpv::Value)> = instance
-                .properties()
-                .iter()
-                .filter_map(|(name, variant)| {
-                    argon_client::encode_value(variant).map(|value| (name.clone(), value))
-                })
-                .collect();
+            // Only Code Mode: an instance with no script in it stays local
+            // (`Processor/Read.luau:58-61`, `:178-181`).
+            if only_code && !script_related(&self.dom, &self.database, referent) {
+                continue;
+            }
+            let properties: Vec<(String, rmpv::Value)> =
+                if syncs_properties(&self.database, instance.class(), syncback_properties) {
+                    instance
+                        .properties()
+                        .iter()
+                        .filter_map(|(name, variant)| {
+                            argon_client::encode_value(variant).map(|value| (name.clone(), value))
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                };
             match self.argon.ids_rev.get(&referent).copied() {
                 Some(id) => updates.push(argon_client::UpdatedSnapshot {
                     id,

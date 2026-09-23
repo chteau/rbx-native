@@ -3,9 +3,12 @@
 //! thread's events into `SyncState`, and what a connected project
 //! identifies for the settings levels.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use gpui_kit::Context;
+use rbx_dom::Ref;
+
+use crate::command_bar::Feedback;
 
 use crate::argon_client::{self, ArgonClient, ArgonEvent};
 use crate::settings::argon::{LevelKeys, Setting, Value};
@@ -13,7 +16,107 @@ use crate::settings::argon::{LevelKeys, Setting, Value};
 use super::initial::{Priority, Rules};
 use super::{Shell, Sync, SyncDirection, SyncState, CONNECT_VARIABLE, POLL_INTERVAL};
 
+/// How long Auto Reconnect waits after a failed connection before trying
+/// again (`argon-roblox@30fd38d:src/App/init.luau:59`).
+const RECONNECT_INTERVAL: Duration = Duration::from_secs(5);
+
+/// The Output dock's source column for everything Argon writes.
+const LOG_SOURCE: &str = "argon";
+
+/// The plugin's log levels, in the order its `Log Level` setting ranks
+/// them (`src/Log.luau:35-43`): a message shows when its level is at or
+/// below the setting's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum LogLevel {
+    Off,
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Trace,
+}
+
+impl LogLevel {
+    fn parse(choice: &str) -> LogLevel {
+        match choice {
+            "Off" => LogLevel::Off,
+            "Error" => LogLevel::Error,
+            "Info" => LogLevel::Info,
+            "Debug" => LogLevel::Debug,
+            "Trace" => LogLevel::Trace,
+            _ => LogLevel::Warn,
+        }
+    }
+}
+
+/// Whether a message at `level` gets through a `Log Level` of `setting`
+/// (`Log.luau:56-84`: each writer compares its level to the current one).
+pub(super) fn log_passes(setting: LogLevel, level: LogLevel) -> bool {
+    level != LogLevel::Off && level <= setting
+}
+
+/// Whether a batch asks before it is applied: `Display Prompts` "Always",
+/// "Initial" only for the initial sync, "Never" (`Core/init.luau:409-419`),
+/// and then only when it exceeds `Changes Threshold` (`:233`, a strict
+/// "more than").
+pub(super) fn needs_review(
+    display_prompts: &str,
+    initial: bool,
+    total: usize,
+    threshold: u32,
+) -> bool {
+    let prompts = match display_prompts {
+        "Always" => true,
+        "Initial" => initial,
+        _ => false,
+    };
+    prompts && total > threshold as usize
+}
+
 impl Shell {
+    /// One line in the Output dock, if the `Log Level` setting lets it
+    /// through. Errors and warnings land in their own Output filters;
+    /// everything else is plain output.
+    pub(super) fn argon_log(&mut self, level: LogLevel, message: impl Into<String>) {
+        let keys = self.argon_level_keys();
+        let setting = match self.argon_settings.get(Setting::LogLevel, &keys) {
+            Value::Choice(choice) => LogLevel::parse(choice),
+            _ => LogLevel::Warn,
+        };
+        if !log_passes(setting, level) {
+            return;
+        }
+        let message = message.into();
+        let feedback = match level {
+            LogLevel::Error => Feedback::Error(message),
+            LogLevel::Warn => Feedback::Warning(message),
+            _ => Feedback::Output(message),
+        };
+        self.output.push(LOG_SOURCE, feedback);
+    }
+
+    /// Whether a script should open in the OS editor instead of the
+    /// built-in one, and does so: the plugin's `OpenInEditor`
+    /// (`Core/init.luau:357-395`) forwards a synced script to the server's
+    /// `/open` and closes its own document. Not connected, setting off, or
+    /// a script the server doesn't know: `false`, open it here.
+    pub(in crate::shell) fn argon_open_in_editor(&self, referent: Ref) -> bool {
+        if !matches!(self.argon.state, SyncState::Connected { .. }) {
+            return false;
+        }
+        let keys = self.argon_level_keys();
+        if self.argon_settings.get(Setting::OpenInEditor, &keys) != Value::Bool(true) {
+            return false;
+        }
+        match (&self.argon.client, self.argon.ids_rev.get(&referent)) {
+            (Some(client), Some(&id)) => {
+                client.open(id, 1);
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// `RBX_STUDIO_ARGON_CONNECT`: documented at [`CONNECT_VARIABLE`].
     pub(in crate::shell) fn apply_debug_argon_connect(
         &mut self,
@@ -83,9 +186,12 @@ impl Shell {
     pub(in crate::shell) fn argon_connect(&mut self, cx: &mut Context<Self>) {
         let address = self.argon_address.read(cx).value().to_string();
         let (host, port) = parse_address(&address);
+        let keys = self.argon_level_keys();
+        let https = self.argon_settings.get(Setting::Https, &keys) == Value::Bool(true);
         self.argon.generation = self.argon.generation.wrapping_add(1);
         let generation = self.argon.generation;
-        self.argon.client = Some(ArgonClient::connect(host, port));
+        self.argon_log(LogLevel::Info, format!("Connecting to {host}:{port}"));
+        self.argon.client = Some(ArgonClient::connect(host, port, https));
         self.argon.state = SyncState::Connecting;
         self.argon.pending = None;
         self.spawn_argon_poll(generation, cx);
@@ -160,6 +266,7 @@ impl Shell {
                         self.argon_saved_address = address.clone();
                         self.save_settings();
                     }
+                    self.argon_log(LogLevel::Info, format!("Connected to {}", project.name));
                     self.argon.state = SyncState::Connected {
                         keys: level_keys(&project),
                         project: project.name,
@@ -172,20 +279,59 @@ impl Shell {
                     self.apply_initial_snapshot(snapshot, cx);
                     self.touch_last_sync(SyncDirection::Down, cx);
                 }
-                ArgonEvent::Changes(changes) => self.handle_incoming_changes(changes, cx),
+                ArgonEvent::Changes(changes) => {
+                    self.argon_log(
+                        LogLevel::Debug,
+                        format!("Received {} change(s) from the server", changes.len()),
+                    );
+                    self.handle_incoming_changes(changes, false, cx);
+                }
                 ArgonEvent::Error(message) => {
+                    self.argon_log(LogLevel::Error, message.clone());
                     self.argon.state = SyncState::Error(message);
                     self.argon.client = None;
+                    self.schedule_argon_reconnect(cx);
                 }
                 ArgonEvent::Disconnected => {
                     if !matches!(self.argon.state, SyncState::Error(_)) {
+                        self.argon_log(LogLevel::Info, "Disconnected");
                         self.argon.state = SyncState::NotConnected;
                     }
                     self.argon.client = None;
                 }
+                ArgonEvent::OpenFailed(message) => {
+                    self.argon_log(
+                        LogLevel::Debug,
+                        format!("Failed to open document in editor: {message}"),
+                    );
+                }
             }
         }
         cx.notify();
+    }
+
+    /// Auto Reconnect: five seconds after a failed connection, try again —
+    /// unless something else touched the connection in the meantime
+    /// (`App/init.luau:440-446` checks its `lastUpdate` the same way; the
+    /// generation counter is this side's version of it).
+    fn schedule_argon_reconnect(&mut self, cx: &mut Context<Self>) {
+        let keys = self.argon_level_keys();
+        if self.argon_settings.get(Setting::AutoReconnect, &keys) != Value::Bool(true) {
+            return;
+        }
+        let generation = self.argon.generation;
+        cx.spawn(async move |shell, cx| {
+            cx.background_executor().timer(RECONNECT_INTERVAL).await;
+            let _ = shell.update(cx, |shell, cx| {
+                if shell.argon.generation == generation
+                    && matches!(shell.argon.state, SyncState::Error(_))
+                {
+                    shell.argon_log(LogLevel::Info, "Reconnecting");
+                    shell.argon_connect(cx);
+                }
+            });
+        })
+        .detach();
     }
 
     pub(super) fn touch_last_sync(&mut self, direction: SyncDirection, cx: &mut Context<Self>) {

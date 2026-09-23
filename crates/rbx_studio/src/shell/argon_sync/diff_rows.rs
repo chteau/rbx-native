@@ -8,7 +8,35 @@ use rbx_dom::Ref;
 
 use crate::argon_client::{self, ArgonRef};
 
+use crate::settings::argon::{Setting, Value};
+
 use super::{DiffRow, DiffRowKind, PendingReview, PropertyDiff, Shell, DIFF_VARIABLE};
+
+/// A value as the Diff window prints it. A string (a script's `Source`,
+/// most of the time) is shown line by line, at most `limit` of them and
+/// then the plugin's own trailer (`App/Widgets/ScriptDiff.luau:44-60`);
+/// anything else prints as it is.
+pub(super) fn describe(value: &rbx_dom::Variant, limit: usize) -> String {
+    match value {
+        rbx_dom::Variant::String(text) => cap_lines(text, limit),
+        other => format!("{other:?}"),
+    }
+}
+
+pub(super) fn cap_lines(text: &str, limit: usize) -> String {
+    let total = text.split('\n').count();
+    if total <= limit {
+        return text.to_owned();
+    }
+    let mut shown: Vec<&str> = text.split('\n').take(limit).collect();
+    let remaining = total - limit;
+    let trailer = format!(
+        "-- And {remaining} more line{}...",
+        if remaining == 1 { "" } else { "s" }
+    );
+    shown.push(&trailer);
+    shown.join("\n")
+}
 
 impl Shell {
     /// The pending batch's own rows, read back off whatever this DOM (still
@@ -23,6 +51,11 @@ impl Shell {
         let Some(pending) = &self.argon.pending else {
             return Vec::new();
         };
+        let keys = self.argon_level_keys();
+        let limit = match self.argon_settings.get(Setting::DiffLinesLimit, &keys) {
+            Value::Number(n) => n as usize,
+            _ => 3000,
+        };
         let mut rows = Vec::new();
         for addition in &pending.changes.additions {
             let properties = addition
@@ -33,7 +66,7 @@ impl Shell {
                     Some(PropertyDiff {
                         name: name.clone(),
                         before: None,
-                        after: format!("{after:?}"),
+                        after: describe(&after, limit),
                     })
                 })
                 .collect();
@@ -69,11 +102,11 @@ impl Shell {
                     let after = argon_client::decode_value(encoded)?;
                     let before = existing
                         .and_then(|i| i.properties().get(name))
-                        .map(|value| format!("{value:?}"));
+                        .map(|value| describe(value, limit));
                     Some(PropertyDiff {
                         name: name.clone(),
                         before,
-                        after: format!("{after:?}"),
+                        after: describe(&after, limit),
                     })
                 })
                 .collect();
