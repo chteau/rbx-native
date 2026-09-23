@@ -10,6 +10,7 @@ use gpui_kit::Context;
 use crate::argon_client::{self, ArgonClient, ArgonEvent};
 use crate::settings::argon::{LevelKeys, Setting, Value};
 
+use super::initial::{Priority, Rules};
 use super::{Shell, Sync, SyncDirection, SyncState, CONNECT_VARIABLE, POLL_INTERVAL};
 
 impl Shell {
@@ -59,6 +60,23 @@ impl Shell {
         match &self.argon.state {
             SyncState::Connected { keys, .. } => keys.clone(),
             _ => LevelKeys::default(),
+        }
+    }
+
+    /// What the initial sync reads from the settings, resolved against the
+    /// connected project's levels.
+    pub(super) fn argon_rules(&self) -> Rules {
+        let keys = self.argon_level_keys();
+        let on = |setting| self.argon_settings.get(setting, &keys) == Value::Bool(true);
+        Rules {
+            priority: match self.argon_settings.get(Setting::InitialSyncPriority, &keys) {
+                Value::Choice("Client") => Priority::Client,
+                Value::Choice("None") => Priority::None,
+                _ => Priority::Server,
+            },
+            keep_unknowns: on(Setting::KeepUnknowns),
+            override_packages: on(Setting::OverridePackages),
+            syncback_properties: on(Setting::SyncbackProperties),
         }
     }
 

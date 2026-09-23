@@ -132,7 +132,9 @@ impl Shell {
                 class: "Part".to_owned(),
                 properties: Vec::new(),
                 children: Vec::new(),
+                keep_unknowns: false,
             }],
+            keep_unknowns: false,
         };
 
         let roots: Vec<Ref> = self.dom.root_refs().iter().copied().take(2).collect();

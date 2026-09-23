@@ -207,6 +207,7 @@ fn an_empty_properties_map_encodes_as_the_argon_empty_sentinel() {
         class: "Folder".to_owned(),
         properties: Vec::new(),
         children: Vec::new(),
+        keep_unknowns: false,
     };
     let encoded = snapshot.encode();
     let properties = map_get(&encoded, "properties").unwrap();

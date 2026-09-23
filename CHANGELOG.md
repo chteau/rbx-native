@@ -2,6 +2,20 @@
 
 ## 2026-09-23
 
+- **Argon's initial sync is a diff, as in the plugin.** Connecting no
+  longer pours the server's snapshot into the place on top of what's
+  there. The two trees are paired by name and class, then diffed into
+  additions, updates and removals, and Initial Sync Priority decides which
+  way that diff goes: Server applies it here, Client sends it back so the
+  files match the place, None keeps only the pairing. Keep Unknowns and a
+  node's own `keepUnknowns` protect instances the server doesn't have;
+  Override Packages off keeps server changes out of anything under a
+  `PackageLink`. With default settings (Server, Keep Unknowns off) the
+  result is what the plugin gives: instances the server doesn't know are
+  removed rather than kept, instances it does know are updated rather than
+  duplicated, and a diff of five changes or more waits for Accept like a
+  live batch does. — @chteau
+
 - **Argon's own settings, per level.** The Argon dock's settings model is
   now the plugin's: the same 15 settings with the same defaults, resolved
   Place → Game → Global → default, stored in `settings.json` under `argon`

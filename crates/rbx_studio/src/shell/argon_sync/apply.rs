@@ -7,7 +7,7 @@ use rbx_dom::{Ref, WeakDom};
 
 use crate::argon_client::{self, ArgonRef};
 
-use super::{PendingReview, Shell, SyncDirection, REVIEW_THRESHOLD};
+use super::{initial, PendingReview, Shell, SyncDirection, REVIEW_THRESHOLD};
 
 impl Shell {
     pub(super) fn handle_incoming_changes(
@@ -34,23 +34,41 @@ impl Shell {
 
     // ---------------------------------------------------------- apply path
 
+    /// The server's first snapshot, handled the way the plugin's processor
+    /// does (`argon-rbx/argon-roblox@30fd38d:src/Core/Processor/init.luau`
+    /// and `src/Core/init.luau:86-131`): pair the trees, diff them, then
+    /// let Initial Sync Priority decide which way the diff goes. With
+    /// Server priority the diff is a batch like any other and goes through
+    /// the same review gate; with Client priority it is reversed and
+    /// written to the server; with None only the pairing survives.
     pub(super) fn apply_initial_snapshot(
         &mut self,
         snapshot: argon_client::Snapshot,
         cx: &mut Context<Self>,
     ) {
-        self.push_history();
-        self.argon.applying = true;
-        let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
-        for child in snapshot.children {
-            self.apply_snapshot_node(&mut dom, child, None);
+        let rules = self.argon_rules();
+        let mut ids = initial::Ids {
+            ids: &mut self.argon.ids,
+            ids_rev: &mut self.argon.ids_rev,
+        };
+        initial::hydrate(&self.dom, &snapshot, &mut ids);
+        match rules.priority {
+            initial::Priority::None => {}
+            initial::Priority::Server => {
+                let changes = initial::diff(&self.dom, &self.database, &snapshot, rules, &mut ids);
+                self.handle_incoming_changes(changes, cx);
+            }
+            initial::Priority::Client => {
+                let changes = initial::diff(&self.dom, &self.database, &snapshot, rules, &mut ids);
+                let reversed = initial::reverse(&self.dom, &changes, &mut ids);
+                if let Some(client) = &self.argon.client {
+                    if !reversed.is_empty() {
+                        client.write(reversed);
+                        self.touch_last_sync(SyncDirection::Up, cx);
+                    }
+                }
+            }
         }
-        self.dom = dom;
-        let log = self.dom.take_changes();
-        self.rebuild_explorer(cx);
-        self.reflect_changes(&log, cx);
-        self.argon.applying = false;
-        self.record_history_change(log);
         cx.notify();
     }
 

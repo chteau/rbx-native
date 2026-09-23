@@ -115,6 +115,7 @@ fn snapshot(name: &str, children: Vec<argon_client::Snapshot>) -> argon_client::
         class: "Folder".to_owned(),
         properties: Vec::new(),
         children,
+        keep_unknowns: false,
     }
 }
 

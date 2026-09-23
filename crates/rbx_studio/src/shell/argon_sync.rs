@@ -172,6 +172,7 @@ impl Shell {
 mod apply;
 mod connection;
 mod diff_rows;
+mod initial;
 mod outgoing;
 
 #[cfg(test)]

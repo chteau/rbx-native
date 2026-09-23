@@ -104,6 +104,7 @@ impl Shell {
                         class: instance.class().to_owned(),
                         properties,
                         children: Vec::new(),
+                        keep_unknowns: false,
                     });
                 }
             }
