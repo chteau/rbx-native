@@ -83,7 +83,7 @@ impl Shell {
                     let connect =
                         field_button(Button::new("argon-connect").label("Connect").primary())
                             .on_click(cx.listener(|shell, _, _, cx| shell.argon_connect(cx)));
-                    not_connected_body(version, &self.argon_address, tab_index, connect)
+                    not_connected_body(version, &self.argon_address, tab_index, connect, cx)
                         .into_any_element()
                 }
                 SyncState::Connecting => connecting_body().into_any_element(),
@@ -160,12 +160,11 @@ impl Shell {
             .gap(tokens::group_gap())
             .text_size(tokens::text_sm())
             .line_height(tokens::line_sm())
-            .child(
-                div()
-                    .w_full()
-                    .max_w(px(260.))
-                    .child(search_field(tab_index, &self.wally_query)),
-            )
+            .child(div().w_full().max_w(px(260.)).child(search_field(
+                tab_index,
+                &self.wally_query,
+                cx,
+            )))
             .children(wally_status(self.wally_install_state()))
             .child(v_flex().gap(px(2.)).children(rows));
 
@@ -255,6 +254,7 @@ fn not_connected_body(
     address: &Entity<InputState>,
     tab_index: isize,
     connect: Button,
+    cx: &App,
 ) -> impl IntoElement {
     let (status_icon, status_text): (IconName, SharedString) = match &version {
         Some(version) => (
@@ -287,7 +287,7 @@ fn not_connected_body(
                     div()
                         .flex_1()
                         .max_w(px(220.))
-                        .child(search_field(tab_index, address)),
+                        .child(search_field(tab_index, address, cx)),
                 )
                 .child(connect),
         )

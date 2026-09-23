@@ -95,7 +95,7 @@ impl Shell {
     /// dragging it moves the window, and the three buttons on the right are
     /// the only minimize/maximize/close there are.
     pub(super) fn topbar(&self, cx: &mut App) -> impl IntoElement {
-        let title = SharedString::from(format!("{} - RbxNative", self.title));
+        let title = self.title.clone();
 
         h_flex()
             .w_full()
@@ -132,7 +132,8 @@ impl Shell {
                     .overflow_hidden()
                     .text_size(tokens::text_md())
                     .line_height(tokens::line_md())
-                    .text_color(tokens::text_full())
+                    .text_color(tokens::text2())
+                    .gap(px(10.))
                     // The move starts on a *drag*, not on a press. Handing
                     // `start_window_move` to mouse-down grabs the pointer at
                     // the compositor on the first press of every double
@@ -158,6 +159,12 @@ impl Shell {
                             window.zoom_window();
                         }
                     })
+                    .child(
+                        div()
+                            .font_weight(tokens::WEIGHT_SEMIBOLD)
+                            .child("RbxNative"),
+                    )
+                    .child(div().w(px(1.)).h(px(12.)).bg(tokens::border2()))
                     .child(div().truncate().child(title)),
             )
             .child(
@@ -356,7 +363,9 @@ fn document_tab(
                         .bg(tokens::tab_active_bar()),
                 )
         })
-        .when(!active, |this| this.hover(|this| this.bg(tokens::hover())))
+        .when(!active, |this| {
+            this.hover(|this| this.bg(tokens::hover_subtle()))
+        })
         .on_click(on_click)
         .child(Icon::new(document.icon()).size(px(13.)))
         .child(div().truncate().child(label))
@@ -549,7 +558,8 @@ pub(super) fn tab_pill(
         .max_w(px(tokens::dock_width() - 60.))
         .items_center()
         .gap(px(7.))
-        .px(px(6.))
+        .px(px(14.))
+        .py(px(6.))
         .rounded_t(tokens::RADIUS)
         .text_size(tokens::text_sm())
         .line_height(tokens::line_sm())
@@ -587,9 +597,14 @@ pub(super) fn dock_strip(
         .w_full()
         .h(tokens::dock_tabs_height())
         .flex_none()
-        .items_stretch()
+        .items_center()
         .p(px(5.))
         .gap(px(4.))
+        // The reference's Output toolbar row closes with a hairline; a strip
+        // that is only tabs draws none, the same as its Properties header.
+        .when(toolbar, |this| {
+            this.border_b_1().border_color(tokens::border())
+        })
         .children(tabs)
         .when_some(trailing, |this, trailing| {
             this.child(

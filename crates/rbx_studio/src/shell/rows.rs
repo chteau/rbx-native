@@ -115,7 +115,11 @@ pub(super) fn row(
             tag_color(color, SELECTED_ALPHA),
             tokens::text(),
         ),
-        None => (tokens::hover(), tokens::accent_soft(), tokens::check_on()),
+        None => (
+            tokens::hover_subtle(),
+            tokens::accent_soft(),
+            tokens::check_on(),
+        ),
     };
 
     h_flex()
@@ -271,10 +275,13 @@ pub(super) fn property_row(row: &PropertyRow) -> impl IntoElement {
         // `HistoryId` — and dimming it to match its dimmed label put actual
         // content at 1.7:1. Only the name reads as unavailable.
         div()
-            .flex_1()
+            .flex_none()
+            .max_w(tokens::value_width())
             .truncate()
             .pr(tokens::row_padding())
-            .text_color(tokens::text_muted())
+            .font_family(tokens::FONT_FAMILY_MONO)
+            .text_size(tokens::text_sm())
+            .text_color(tokens::text_placeholder())
             .child(SharedString::from(row.value.clone())),
         None,
     )
@@ -298,7 +305,8 @@ pub(super) fn property_row_control(
         row,
         false,
         div()
-            .flex_1()
+            .flex_none()
+            .w(tokens::value_width())
             .overflow_hidden()
             .pr(tokens::row_padding())
             .child(control),
@@ -359,6 +367,7 @@ fn property_shell(
     value: impl IntoElement,
     error: Option<&str>,
 ) -> impl IntoElement {
+    let name = SharedString::from(row.name.clone());
     row_frame()
         .text_size(tokens::text_md())
         .line_height(tokens::line_md())
@@ -376,8 +385,9 @@ fn property_shell(
                 .hover(|this| this.bg(tokens::hover()))
                 .child(
                     div()
-                        .flex_none()
-                        .w(tokens::row_label_width())
+                        .id(SharedString::from(format!("prop-name-{}", row.name)))
+                        .flex_1()
+                        .min_w(px(0.))
                         .truncate()
                         .pl(name_indent(0))
                         .pr(tokens::label_gap())
@@ -386,6 +396,10 @@ fn property_shell(
                         } else {
                             tokens::text_muted()
                         })
+                        // The longest names (`ClientAnimatorThrottlingMode`)
+                        // truncate at the default dock width whatever the
+                        // control's width; hovering reads them whole.
+                        .tooltip(move |window, cx| super::tooltip::text(name.clone(), window, cx))
                         .child(SharedString::from(row.name.clone())),
                 )
                 .child(value),
@@ -412,7 +426,7 @@ fn property_shell(
 /// tall sit next to one that is five without a line drawn hard against
 /// whichever field box happens to be shorter.
 pub(super) fn row_frame() -> Div {
-    v_flex().w_full().flex_none().py(tokens::label_gap())
+    v_flex().w_full().flex_none()
 }
 
 /// A numeric row's name column, which is also the control that shows and
@@ -538,7 +552,8 @@ pub(super) fn checkbox(
         .id(id.into())
         // The target, which never goes under 24px …
         .flex_none()
-        .size(tokens::checkbox_target())
+        .h(tokens::checkbox_target())
+        .min_w(tokens::checkbox_target())
         .flex()
         .items_center()
         // … left-aligned inside it, so the track's own left edge lands on
@@ -569,11 +584,17 @@ pub(super) fn checkbox(
                 .child(
                     div()
                         .absolute()
-                        .top(inset)
+                        // The off track wears a 1px border and offsets are
+                        // measured inside it, so the knob's own offsets drop
+                        // by one there to land 2px from the outer edge, the
+                        // same as the on state's.
                         .map(|this| match checked {
-                            Some(false) => this.left(inset),
-                            Some(true) => this.right(inset),
-                            None => this.left(relative(0.5)).ml(-(tokens::toggle_thumb() / 2.)),
+                            Some(false) => this.top(inset - px(1.)).left(inset - px(1.)),
+                            Some(true) => this.top(inset).right(inset),
+                            None => this
+                                .top(inset)
+                                .left(relative(0.5))
+                                .ml(-(tokens::toggle_thumb() / 2.)),
                         })
                         .flex_none()
                         .size(tokens::toggle_thumb())
@@ -723,7 +744,7 @@ fn render_row_editor(
                 }))
                 .into_any_element()
         }
-        RowEditor::Text(input) => text_field(&input, tab_index).into_any_element(),
+        RowEditor::Text(input) => text_field(&input, tab_index, cx).into_any_element(),
         // Rail first, number second: the drag is the reason the row looks
         // like this, and the field is what it settles into. The field
         // keeps a fixed width so the rails of a `Lighting` all end on the
@@ -740,7 +761,7 @@ fn render_row_editor(
                     // there is no label in front of this one, and every
                     // value a rail spans is a handful of digits.
                     .w(tokens::scaled_width(52.))
-                    .child(text_field(&input, tab_index)),
+                    .child(text_field(&input, tab_index, cx)),
             )
             .into_any_element(),
         // Captioned lines — a `CFrame`'s Position over its Orientation.
@@ -787,12 +808,13 @@ fn render_row_editor(
                             tab_index,
                             on_scrub.clone(),
                             2,
+                            cx,
                         ))
                 }))
                 .into_any_element()
         }
         RowEditor::Fields(fields, _, inputs) => {
-            number_fields(fields, &inputs, 0, tab_index, on_scrub, 1).into_any_element()
+            number_fields(fields, &inputs, 0, tab_index, on_scrub, 1, cx).into_any_element()
         }
         // The checkbox is the only control an absent value has: there is
         // nothing to edit until it says there is a value. Present, it reads
@@ -924,6 +946,7 @@ fn number_fields(
     tab_index: isize,
     on_scrub: OnScrub,
     depth: usize,
+    cx: &App,
 ) -> Div {
     v_flex()
         .w_full()
@@ -977,7 +1000,7 @@ fn number_fields(
                                 .flex_1()
                                 .overflow_hidden()
                                 .pr(tokens::row_padding())
-                                .child(text_field(input, tab_index)),
+                                .child(text_field(input, tab_index, cx)),
                         )
                 }),
         )
@@ -994,17 +1017,21 @@ pub(super) fn name_indent(depth: usize) -> Pixels {
 
 /// One `Input` in the panel's field box — the value column's whole content
 /// for a scalar row, a summary, or one component.
-pub(super) fn text_field(input: &Entity<InputState>, tab_index: isize) -> Div {
-    field_box().child(
-        Input::new(input)
-            .appearance(false)
-            .with_size(tokens::field_size())
-            .h_full()
-            // Without an index a toolkit input keeps the default 0 and
-            // sorts ahead of every region in the window — a property field
-            // reached before the menu bar.
-            .tab_index(tab_index),
-    )
+pub(super) fn text_field(input: &Entity<InputState>, tab_index: isize, cx: &App) -> Div {
+    let handle = input.read(cx).focus_handle(cx);
+    field_box()
+        .track_focus(&handle)
+        .focus(|this| this.border_color(tokens::accent_line()))
+        .child(
+            Input::new(input)
+                .appearance(false)
+                .with_size(tokens::field_size())
+                .h_full()
+                // Without an index a toolkit input keeps the default 0 and
+                // sorts ahead of every region in the window — a property field
+                // reached before the menu bar.
+                .tab_index(tab_index),
+        )
 }
 
 /// The `InputsStyle` frame's field: [`tokens::field_select`], `RADIUS`, 8px
@@ -1041,4 +1068,6 @@ fn field_surface(surface: Rgba) -> Div {
         .px(tokens::input_padding())
         .rounded(tokens::RADIUS)
         .bg(surface)
+        .border_1()
+        .border_color(tokens::border())
 }

@@ -244,9 +244,17 @@ impl Shell {
                 h_flex()
                     .gap(px(2.))
                     .items_center()
-                    .child(size_field(self.tab_order.next(), &self.ui_size_fields().0))
+                    .child(size_field(
+                        self.tab_order.next(),
+                        &self.ui_size_fields().0,
+                        cx,
+                    ))
                     .child(div().text_color(tokens::text_muted()).child("×"))
-                    .child(size_field(self.tab_order.next(), &self.ui_size_fields().1))
+                    .child(size_field(
+                        self.tab_order.next(),
+                        &self.ui_size_fields().1,
+                        cx,
+                    ))
                     .child(
                         chrome::icon_button(
                             "viewport-screen-turn",

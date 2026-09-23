@@ -98,6 +98,13 @@ pub(crate) fn hover() -> Rgba {
     rgba(0xFFFFFF0D)
 }
 
+/// The quieter hover, for rows and document tabs (white 3%): a list lights
+/// its rows one after another as the pointer crosses them, and at the full
+/// [`hover`] that reads as a wave rather than a cursor.
+pub(crate) fn hover_subtle() -> Rgba {
+    rgba(0xFFFFFF08)
+}
+
 /// A selected Explorer row: the accent, weighted to clear 3:1 against the
 /// dock it sits on — a selection is a state, and WCAG 1.4.11 does not
 /// exempt it — while still leaving its own label at 4.5:1 on top.
@@ -164,6 +171,15 @@ pub(crate) fn check_on() -> Rgba {
 pub(crate) fn accent_soft() -> Rgba {
     Rgba {
         a: 0.12,
+        ..check_on()
+    }
+}
+
+/// The accent as a 1px line: the border a field wears while it has focus
+/// (accent 55%).
+pub(crate) fn accent_line() -> Rgba {
+    Rgba {
+        a: 0.55,
         ..check_on()
     }
 }
@@ -519,23 +535,45 @@ pub(crate) fn row_height() -> Pixels {
 
 /// A property row's name column.
 ///
-/// Sized for the common `BasePart` names (`CollisionGroup`,
-/// `MaterialVariant`) at [`text_md`], not for the longest one: every pixel
-/// here comes out of the value column on every row, and a panel whose
-/// short names sit a long way from their values has to be dragged wider
-/// just to read them. The rare long name truncates.
+/// Sized so the long `Workspace` names (`AllowThirdPartySales`,
+/// `ClientAnimatorThrottling`) read in full at [`text_md`] while a
+/// dropdown beside them still shows `Automatic` whole: a name cut to an
+/// ellipsis is a name a screen reader and a sighted user both have to
+/// guess at. The one name longer still, `FallenPartsDestroyHeight`,
+/// truncates at the default dock width and reads whole once it is
+/// dragged wider.
 pub(crate) fn row_label_width() -> Pixels {
-    scaled(120.)
+    scaled(150.)
+}
+
+/// A property row's control, when it is a single field, dropdown or toggle:
+/// parked at the row's right edge, every remaining pixel going to the name.
+///
+/// 116, not the reference's 130: 14px more for the name at the default
+/// dock width, which is what most of `Workspace`'s longer names need to
+/// read whole. The few longer still (`ClientAnimatorThrottling`) truncate
+/// whatever the control's width and carry their full name in a tooltip
+/// instead (see `shell::rows::property_shell`).
+pub(crate) fn value_width() -> Pixels {
+    scaled(116.)
+}
+
+/// A field that lives in a dock's tab strip (the Output search): the
+/// strip is [`dock_tabs_height`] less its own 5px inset each side, and a
+/// field taller than that overflows it instead of centring in it. Still
+/// over WCAG 2.5.8's floor.
+pub(crate) fn strip_field_height() -> Pixels {
+    scaled_target(27.)
 }
 
 /// A property section's header.
 pub(crate) fn section_height() -> Pixels {
-    scaled(30.)
+    scaled(14.)
 }
 
 /// One Explorer row — clickable, so likewise floored.
 pub(crate) fn tree_row_height() -> Pixels {
-    scaled_target(28.)
+    scaled_target(24.)
 }
 
 /// A text field, a select trigger, a stepper, the search box at the top of
@@ -566,7 +604,7 @@ pub(crate) fn field_min_width() -> Pixels {
 /// If a toolkit upgrade changes the select's internals this will be wrong
 /// and will need re-measuring against a plain text field in the same panel.
 pub(crate) fn select_inset() -> Pixels {
-    scaled(4.5)
+    scaled(7.5)
 }
 
 /// The room a toolkit `Select` keeps for its chevron, which it draws at a
@@ -575,7 +613,7 @@ pub(crate) fn select_inset() -> Pixels {
 /// gives its label less and less room as the scale drops, until at 0.5x
 /// "Automatic" no longer fits.
 pub(crate) fn select_chevron_room() -> Pixels {
-    px(31.)
+    px(24.)
 }
 
 /// `InputsStyle` again: the frame's inputs are padded 8px horizontally.
@@ -673,7 +711,7 @@ pub(crate) fn row_padding() -> Pixels {
 
 /// Between a category header and its first row.
 pub(crate) fn section_gap() -> Pixels {
-    scaled(14.)
+    scaled(7.)
 }
 
 /// Between one category's last row and the next category's header — the

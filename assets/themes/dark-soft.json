@@ -16,7 +16,7 @@
         "caret": "#FFFFFF",
         "muted.background": "#191A1C",
         "muted.foreground": "#5C5C63",
-        "popover.background": "#121213",
+        "popover.background": "#191A1C",
         "popover.foreground": "#E2E2E6",
         "overlay": "#00000099",
         "accent.background": "#FFFFFF0D",

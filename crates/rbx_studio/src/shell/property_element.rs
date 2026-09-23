@@ -3,6 +3,7 @@
 //! rows it picks out — one builder, so the two can never edit a property
 //! differently.
 
+use gpui_kit::component::h_flex;
 use gpui_kit::*;
 
 use crate::properties::{EditKind, PropertyRow};
@@ -58,6 +59,9 @@ impl Shell {
                     ),
                     cx,
                 );
+                // The reference's PropertyRow: label left, control pushed
+                // to the row's right edge.
+                let control = h_flex().w_full().justify_end().pr(px(4.)).child(control);
                 property_row_control(row, control, false, None).into_any_element()
             }
             Some(kind) => {
@@ -114,7 +118,7 @@ impl Shell {
                     );
                     return property_expandable(
                         expander,
-                        text_field(&summary, tab_index),
+                        text_field(&summary, tab_index, cx),
                         fields,
                         error.as_deref(),
                     )

@@ -206,7 +206,7 @@ impl Shell {
             v_flex()
                 .size_full()
                 .gap(px(10.))
-                .child(search_field(self.tab_order.next(), &self.search))
+                .child(search_field(self.tab_order.next(), &self.search, cx))
                 .child(
                     div()
                         .flex_1()
@@ -405,10 +405,37 @@ impl Shell {
 pub(super) fn search_field(
     tab_index: isize,
     state: &Entity<gpui_kit::component::input::InputState>,
+    cx: &App,
 ) -> impl IntoElement {
+    search_field_sized(tab_index, state, tokens::input_height(), cx)
+}
+
+/// The Output strip's search box: the same field at the shorter height the
+/// reference gives it (5px of vertical padding around 11px text), which is
+/// also what lets it sit centred in a tab strip its dock-sized twin
+/// overflows.
+pub(super) fn search_field_compact(
+    tab_index: isize,
+    state: &Entity<gpui_kit::component::input::InputState>,
+    cx: &App,
+) -> impl IntoElement {
+    search_field_sized(tab_index, state, tokens::strip_field_height(), cx)
+}
+
+fn search_field_sized(
+    tab_index: isize,
+    state: &Entity<gpui_kit::component::input::InputState>,
+    height: Pixels,
+    cx: &App,
+) -> impl IntoElement {
+    // Tracks the input's own handle, so the box wears the reference's
+    // focused border whenever the field inside it has focus.
+    let handle = state.read(cx).focus_handle(cx);
     h_flex()
+        .track_focus(&handle)
+        .focus(|this| this.border_color(tokens::accent_line()))
         .w_full()
-        .h(tokens::input_height())
+        .h(height)
         .flex_none()
         .items_center()
         .justify_center()

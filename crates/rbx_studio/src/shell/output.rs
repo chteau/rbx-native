@@ -51,11 +51,9 @@ const SOURCE_MAX_LEN: usize = 80;
 /// this is what shows in the row's source column instead.
 const WARNING_SOURCE: &str = "warning";
 
-/// How wide the search box sits in the Output tab's own title bar. Narrow on
-/// purpose: it shares that strip with the run count, three filter buttons and
-/// Clear, and a box wide enough to read a whole command back would push them
-/// off it.
-const SEARCH_WIDTH: f32 = 140.0;
+/// The narrowest the Output search box may get as the dock shrinks — it
+/// otherwise takes all the width the strip has left.
+const SEARCH_MIN_WIDTH: f32 = 140.0;
 
 /// One run's worth of history: what was typed and what it did.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -246,31 +244,29 @@ impl Shell {
         let current = self.output_filter;
         h_flex()
             .flex_1()
+            .h_full()
             .items_center()
-            .gap(px(4.))
+            .gap(px(8.))
             .child(
                 div()
                     .flex_none()
+                    .ml(px(16.))
                     .text_size(tokens::text_xs())
                     .line_height(tokens::line_xs())
                     .text_color(tokens::text_placeholder())
                     .child(format!("{} runs", self.output.len())),
             )
-            // The count is the tab's caption; the tools sit at the strip's
-            // far end, the way a toolbar's do.
-            .child(div().flex_1())
             // No subscription behind it: the value is read straight off the
             // `InputState` at render, the same way the Properties panel's
-            // own filter box is (`shell::panels`).
-            .child(
-                div()
-                    .flex_none()
-                    .w(px(SEARCH_WIDTH))
-                    .child(super::workspace::search_field(
-                        self.tab_order.next(),
-                        &self.output_search,
-                    )),
-            )
+            // own filter box is (`shell::panels`). Takes all the width the
+            // strip has left, as the reference's own search does.
+            .child(div().flex_1().min_w(px(SEARCH_MIN_WIDTH)).child(
+                super::workspace::search_field_compact(
+                    self.tab_order.next(),
+                    &self.output_search,
+                    cx,
+                ),
+            ))
             .child(
                 // One segmented control, not four separate buttons: the
                 // reference draws the four levels as segments of a single
@@ -366,19 +362,15 @@ impl Shell {
             rows
         };
 
-        v_flex()
-            .size_full()
-            .border_t_1()
-            .border_color(cx.theme().border)
-            .child(
-                div()
-                    .id("output-log")
-                    .flex_1()
-                    .overflow_y_scroll()
-                    .track_scroll(&self.output_scroll)
-                    .child(list)
-                    .vertical_scrollbar(&self.output_scroll),
-            )
+        v_flex().size_full().child(
+            div()
+                .id("output-log")
+                .flex_1()
+                .overflow_y_scroll()
+                .track_scroll(&self.output_scroll)
+                .child(list)
+                .vertical_scrollbar(&self.output_scroll),
+        )
     }
 }
 

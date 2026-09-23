@@ -176,7 +176,7 @@ fn the_toolkit_theme_paints_the_same_palette_this_module_does() {
 
     let mirrored: [Named; 14] = [
         ("background", black),
-        ("popover.background", chrome),
+        ("popover.background", field_select),
         ("border", border),
         ("input.border", border),
         ("muted.background", field_select),

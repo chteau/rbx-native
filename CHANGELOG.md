@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-09-23
+
+- **The editor's chrome is restyled: sober, near-black, one accent.** Every
+  surface, border, text colour, radius and type size in `tokens.rs` (and the
+  toolkit theme mirroring it, `assets/themes/dark-soft.json`) now follows
+  the redesign reference: three surface tones, three text tones, faint
+  white hairlines, and `#6C7FDB` reserved for active and selected state.
+  Booleans in Properties are pill toggles now, not checkboxes. Section
+  headers are small uppercase labels, rows sit 7px apart without separator
+  lines, and a toggle is pinned to the right edge of its row. The ribbon's transform tools sit in
+  one bordered card, the snap values are bordered pills, document tabs
+  float with an accent underline, and a dock with a single tab shows a
+  plain title instead of a tab pill. The Output dock spans the full window
+  width under both side docks, its four level filters are one segmented
+  control, and its search box fills the strip. The Command Bar gets a `>`
+  prompt and a `Luau` badge. The 3D view also stops being letterboxed to the
+  UI Editor's canvas resolution unless the UI Editor is actually open.
+  Properties also gains the reference's breadcrumb (class icon, name,
+  parent) under its filter, controls parked at the row's right edge with
+  the name taking the rest of the row, and every field, search box and the
+  Command Bar show an accent border while focused. Icons, logo, layout and
+  behaviour are otherwise unchanged. — @chteau
+
 ## 2026-09-22
 
 - **The Argon review prompt has a real Diff window, and the connection

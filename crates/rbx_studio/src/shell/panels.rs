@@ -3,7 +3,7 @@
 //! render methods called back into from `shell::dock`'s panel builder.
 
 use gpui_kit::component::scroll::ScrollableElement as _;
-use gpui_kit::component::v_flex;
+use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_dom::Ref;
@@ -129,6 +129,59 @@ impl Shell {
     /// `shell::dock`): what is selected (see `properties::Properties::title`),
     /// or the plain section name when nothing is — the inner header this used
     /// to feed is gone, the dock's own title bar shows it instead.
+    /// The reference's line under the filter: the anchor instance's class
+    /// icon in an accent box, its name, then "— Parent" muted. Absent with
+    /// nothing selected, and for a multi-selection, which has no one name.
+    fn properties_breadcrumb(&self) -> Option<AnyElement> {
+        let [reference] = self.selected_all() else {
+            return None;
+        };
+        let instance = self.dom.get(*reference)?;
+        let parent = self
+            .dom
+            .parent(*reference)
+            .and_then(|parent| self.dom.get(parent))
+            .map(|parent| format!("— {}", parent.name()));
+        let icon = crate::explorer::resolve_icon(instance.class(), self.icon_pack());
+        Some(
+            h_flex()
+                .w_full()
+                .flex_none()
+                .items_center()
+                .gap(px(7.))
+                .px(tokens::row_padding())
+                .child(
+                    div()
+                        .flex_none()
+                        .size(px(22.))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(tokens::RADIUS_BADGE)
+                        .bg(tokens::accent_soft())
+                        .text_color(tokens::check_on())
+                        .child(super::rows::class_icon(icon)),
+                )
+                .child(
+                    div()
+                        .text_size(tokens::text_sm())
+                        .line_height(tokens::line_sm())
+                        .font_weight(tokens::WEIGHT_SEMIBOLD)
+                        .text_color(tokens::text())
+                        .child(SharedString::from(instance.name().to_owned())),
+                )
+                .children(parent.map(|parent| {
+                    div()
+                        .truncate()
+                        .text_size(tokens::text_xs())
+                        .line_height(tokens::line_xs())
+                        .text_color(tokens::text3())
+                        .child(SharedString::from(parent))
+                }))
+                .into_any_element(),
+        )
+    }
+
     pub(super) fn properties_title(&self) -> SharedString {
         self.properties
             .title(&self.dom, self.selected_all())
@@ -193,7 +246,9 @@ impl Shell {
             .child(super::workspace::search_field(
                 self.tab_order.next(),
                 &self.filter,
+                cx,
             ))
+            .children(self.properties_breadcrumb())
             .child(
                 div()
                     .id("properties-rows")
@@ -214,7 +269,7 @@ impl Shell {
                             // collapsed headers are two tiles in a stack;
                             // `group_gap` is spent below, on the open rows,
                             // where there is actually a group to close.
-                            .gap(tokens::header_gap())
+                            .gap(tokens::group_gap())
                             // Bottom only. A matching top pad stacked on
                             // the gap under the search field and left the
                             // first category floating a long way down the
@@ -248,7 +303,7 @@ impl Shell {
                                             v_flex()
                                                 .w_full()
                                                 .pt(tokens::section_gap())
-                                                .pb(tokens::group_gap())
+                                                .gap(tokens::row_gap())
                                                 .children(children),
                                         )
                                     })

@@ -67,8 +67,9 @@ impl CommandBar {
         &self,
         tab_index: isize,
         output_collapsed: bool,
-        _: &App,
+        cx: &App,
     ) -> impl IntoElement {
+        let handle = self.input.read(cx).focus_handle(cx);
         let label = if self.feedback.shown_inline(output_collapsed) {
             self.feedback.label()
         } else {
@@ -111,7 +112,9 @@ impl CommandBar {
                     .rounded(tokens::RADIUS)
                     .bg(tokens::field_select())
                     .border_1()
-                    .border_color(tokens::border())
+                    .border_color(tokens::border2())
+                    .track_focus(&handle)
+                    .focus(|this| this.border_color(tokens::accent_line()))
                     .child(div().text_color(tokens::check_on()).child(">"))
                     .child(
                         Input::new(&self.input)
