@@ -134,10 +134,10 @@ impl Shell {
         self.argon_connect(cx);
     }
 
-    /// The dock's Connect button: reads the address field, opens the
-    /// connection, and starts the poll loop that drains it.
     /// The plugin connects on its own when a place opens if `AutoConnect`
-    /// is on (`argon-roblox@30fd38d:src/App/init.luau:120-125`). The
+    /// is on (`argon-roblox@30fd38d:src/App/init.luau:120-125`) — here
+    /// only when the CLI is installed too, so a machine without Argon
+    /// doesn't open every place to a failed connection. The
     /// `RBX_STUDIO_ARGON_CONNECT` aid wins when it is set, so a scripted
     /// screenshot gets exactly the address it asked for.
     pub(in crate::shell) fn apply_argon_auto_connect(
@@ -150,9 +150,16 @@ impl Shell {
             return;
         }
         let keys = self.argon_level_keys();
-        if self.argon_settings.get(Setting::AutoConnect, &keys) == Value::Bool(true) {
-            self.argon_connect(cx);
+        if self.argon_settings.get(Setting::AutoConnect, &keys) != Value::Bool(true) {
+            return;
         }
+        // Without the CLI on this machine there is nothing to connect to
+        // on its own; the Connect button stays, for a server elsewhere.
+        if super::cli::locate().is_none() {
+            self.argon_log(LogLevel::Info, "Argon CLI not found, Auto Connect skipped");
+            return;
+        }
+        self.argon_connect(cx);
     }
 
     /// The Game and Place identities Argon's settings resolve against:

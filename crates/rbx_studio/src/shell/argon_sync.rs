@@ -166,6 +166,7 @@ impl Shell {
 }
 
 mod apply;
+mod cli;
 mod connection;
 mod diff_rows;
 mod initial;
