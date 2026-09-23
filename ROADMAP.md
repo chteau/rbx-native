@@ -46,6 +46,19 @@ Roblox's own engine.
   full 208-colour table the Properties panel uses.
 - [x] CLI runner (`rbxlua place.rbxl script.luau [--out] [--print-changes]`)
   and an in-editor Command Bar.
+- [x] **New-script templates** — the Model menu now has real
+  `Insert Script`/`Insert LocalScript`/`Insert ModuleScript`/
+  `Insert ModuleScript (Class)` entries (there was previously no menu item
+  or shortcut to insert a script at all), each seeding the new instance's
+  `Source` with a starter template instead of leaving it empty: a plain
+  `print("Hello, world!")` for `Script`/`LocalScript`, a `ModuleScript`
+  returning a table, and a `ModuleScript (Class)` with a `.new()`
+  constructor over a metatable. The set is user-extensible now: a
+  `script_templates` folder in the config directory holds one `.luau` file
+  per template under `Script/`, `LocalScript/` or `ModuleScript/`
+  (`script_templates.rs`), each listed in the ribbon's Script menu by its
+  file name, and a `Default.luau` in a class's folder replaces the built-in
+  starter every new script of that class gets.
 
 ### Renderer (`rbx_viewer`)
 - [x] Lighting model reverse-engineered from Roblox's own decompiled
@@ -366,6 +379,37 @@ Roblox's own engine.
   the Viewport dock can ask for it to be depth-tested
   against the scene instead (`Hide Selection Box Behind Parts`, off by
   default and persisted the same way `Orthographic` is).
+- [x] Legacy union/negate parts reconstruct the real constituent
+  geometry via a from-scratch CSG boolean. The one piece not covered is
+  `MeshData`/CSGMDL, which has its own bullet below and is deliberately
+  not attempted.
+- [x] **Give each of a failed-CSG union's recovered fallback pieces its
+  own identity.** Every piece now carries a `scene::PartId` of its own —
+  the union's referent plus its position in the operation tree's additive
+  order, which the asset's bytes alone decide, so moving or recolouring a
+  union cannot renumber them. `Scene::resync_part` re-derives the pieces
+  from the boolean `load::Resident` already carved and patches each in the
+  slot it had, instead of refusing; `Rebuild::Union` is gone, and so is
+  the reload a union edit used to cost (24.6 ms to 2.1 ms first frame
+  readable on `FindTheCode.rbxl` — see `BENCHMARKS.md`). The union stays
+  one thing to select, outline, click and cast a shadow from: it is
+  placed, and its pieces are not.
+- [x] **The `Handles`/`*HandleAdornment`/`Selection*` Instance family**
+  (`Handles`, `ArcHandles`, `BoxHandleAdornment`, `SphereHandleAdornment`
+  and siblings, `SelectionBox`, `SelectionSphere`) — real, current,
+  documented classes a script or plugin instantiates to draw 3D handles
+  and outlines directly in the viewport, independent of this project's own
+  Move/Scale/Rotate gizmo. **Drawn**, from a place file: see "What's been
+  implemented" → Renderer. Checked directly against
+  `reference/engine/classes/Handles`/`BoxHandleAdornment`/
+  `SphereHandleAdornment`/`SelectionBox` rather than assumed, and **not**
+  modelled on how **Building Tools by F3X** draws its own tools — it
+  isn't: F3X's actual source
+  (`F3XTeam/RBX-Building-Tools`, `Libraries/Handles.lua`) renders plain 2D
+  `ImageButton`s inside a `ScreenGui`, hand-projected from 3D to screen
+  space, the same ordinary GUI machinery this project already renders
+  (see "What's been implemented" → Renderer's GUI containers) — worth not
+  conflating the two mechanisms just because both are called "handles."
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: this project's own flat, from-scratch class icon kit
@@ -843,6 +887,319 @@ Roblox's own engine.
     its `SizeConstraint` names — and gives each pixel-sized box that no
     aspect constraint already shapes a `UIAspectRatioConstraint` at its
     shape, as one undo step.
+- [x] **Align tool**, matching Studio's real Model-tab tool (checked
+  against `studio/align-tool.md` rather than assumed, not the transform
+  gizmos under "What's been implemented" → Editor). Aligns the selected
+  objects' **Min**/**Center**/**Max** bounds
+  along independently-toggled **X**/**Y**/**Z** axes, in **World** or
+  **Local** space, relative to either the **Selection Bounds** (the
+  selection's collective bounding box) or the **Active Object** (the last
+  -selected object in a multi-selection, which stays fixed while the rest
+  align to it) — depended on multi-selection existing first, since aligning
+  a single object to itself is a no-op; multi-selection is now implemented
+  (see "What's been implemented" → Editor), so that dependency is
+  satisfied. Self-contained geometry math over whatever's already selected;
+  no new dependency. Shipped: Min/Center/Max, X/Y/Z, World/Local, Selection
+  Bounds/Active Object, a selected `Model` moving as one rigid body (the
+  docs' "keeping the model intact"), and a compact popover on the
+  transform toolbar rather than a full dialog.
+- [x] **Align's live preview** — the docs' "dynamically previewing the
+  point of alignment before confirming". Opening the popover draws a ghost
+  box where each object would land, redrawn as the toggles and the
+  selection change and cleared when it closes; one box per top-level
+  object, a part keeping its own oriented box and a `Model` taking the box
+  around everything beneath it (the same two answers the selection outline
+  gives). The overlay itself (`renderer::preview`) takes plain world
+  matrices and knows nothing about Align, so the next tool that wants one
+  adds no pass. `RBX_STUDIO_ALIGN=...,preview` shows it without a click,
+  the way that variable already stands in for the popover's own buttons.
+- [x] **DOM editing from the Explorer row** — beyond the old plain
+  insert/delete:
+  - A `+` on the hovered row (`Ctrl+I` from the keyboard) opens a
+    searchable class list that inserts straight under that row, without
+    going through a menu. A class the parent cannot take is **greyed
+    rather than missing**, so the constraint is visible: the rule is
+    exactly the two refusals Roblox's own API dump states — `NotCreatable`
+    (`Instance.new` refuses the class outright) and `Service` (a singleton
+    the `DataModel` owns), since the dump carries no per-class table of
+    legal parents to build anything wider on.
+  - Right-click context menu on a row: **Cut**, **Copy**, **Duplicate**,
+    **Paste Into**, **Rename**, **Insert Object…** (the same picker the
+    `+` opens), **Group as Model**, **Ungroup**, **Delete**. Contextual
+    the way creator-docs describes, but *greyed* rather than absent — each
+    row is enabled by the same guard its own handler returns early on, so
+    a service's menu shows the same shape with most of it unavailable.
+  - **Rename** in the row itself, from the menu or `F2`, committing
+    through the same `WeakDom::set_name` the Properties panel's `Name`
+    field uses. A service is refused, the way it already is for a drag.
+  - **Cut** is real (`Ctrl+X`, the Edit menu, the ribbon tile), built out
+    of Copy and the removal path Delete already had. Deleting a *service*
+    is now refused everywhere, rather than letting one keystroke produce a
+    place file with no `Workspace`.
+  - **Two insertion preferences** real Studio exposes next to the `+`
+    icon's search field (`studio/explorer.md`), behind the same `⋯` and
+    persisted: **increment names for new instances** (numbered names for
+    same-type inserts/pastes/duplicates) and **expand hierarchy when
+    selecting** (whether inserting/pasting/viewport-selecting an instance
+    auto-expands the Explorer tree to reveal it, or only highlights the
+    top-level parent).
+- [x] **Copy/paste/duplicate instances** (`Ctrl+C`/`V`/`D`) — real now,
+  from the keyboard, the Edit menu's Copy/Paste/Paste Into/Duplicate items
+  and the ribbon's Copy, Paste and Duplicate tiles (Cut, never part of
+  this bullet, landed with the Explorer row editing above). Copy is a deep,
+  in-process clipboard, not the system one: descendants come along, a
+  `Ref`/`Content::Object` property pointing at something copied along with
+  it is remapped to point at the copy instead — `Class.Instance:Clone()`'s
+  own documented rule — and the copy is independent of the original. Paste
+  always lands in `Workspace`, matching creator-docs' `explorer.md`, never
+  wherever the selection is; Duplicate lands beside the original in its own
+  existing parent instead. A service can't be copied, pasted or duplicated,
+  the same refusal Group/Ungroup already enforce. One undo step per
+  operation. `Ctrl+Shift+V` is "Paste Into": the clipboard goes into each
+  selected instance instead of `Workspace`, one copy per parent, as
+  creator-docs describes for pasting "into multiple parents". A
+  non-`Archivable` descendant is left out of the copy the way
+  `Instance:Clone()` does (the root itself is always copied, and the copy is
+  always `Archivable`). Still open: the right-click **Paste Options** ⟩
+  **Paste Into At Original Location** the docs mention.
+- [x] Drag-and-drop reparenting in the Explorer tree. Dragging a row
+  onto another reparents onto it, the way creator-docs describes
+  ("simply drag and drop them onto the new parent") — with a ghost under
+  the cursor, the hovered row highlighted only while the drop is legal,
+  the new parent expanded and revealed afterwards, and one undo step per
+  drag. A drop is refused onto the dragged instance itself, into its own
+  subtree, onto the parent it already has, and for a service. Escape
+  abandons a drag in flight (`App::stop_active_drag`, from the
+  window-level key handler), so nothing drops and no undo step is pushed —
+  exercised in the running window, not just compiled. There is no drop
+  *between* rows, which Studio does not offer either.
+- [x] `Rect`, `PhysicalProperties`, `Font` — all three edit now, where all
+  three used to be read-only text. `Rect` is four labeled fields; `Font`
+  turned out to already be editable before this item was picked up (the
+  roadmap text describing it was stale); `PhysicalProperties` was the one
+  that needed a shape rather than a field list, being a real enum rather
+  than a struct.
+  It reuses `EditKind::Optional` — the checkbox-over-an-editor shape
+  `OptionalCFrame` already had — because the two read the same way even
+  though they mean different things: a `Default` carries no numbers at all
+  (the engine derives them from the material), so the five fields appear
+  only under a ticked **Custom** box, which is also how Studio presents it.
+  That is why the checkbox now carries its own caption instead of the one
+  fixed "Has value" wording. Unticking returns the value to `Default`
+  rather than zeroing the numbers, and the fields under an unticked box are
+  seeded from Roblox's `Plastic` defaults (`0.7 / 0.3 / 0.5 / 1 / 1`) so
+  ticking it never commits a row of zeroes.
+- [x] Attributes editor (custom `Instance` attributes, distinct from
+  built-in properties) — a real, commonly-used modern Studio feature, not
+  currently scoped anywhere. The Properties panel now has a dedicated
+  Attributes section (below the reflected categories, matching where real
+  Studio puts it): attributes are listed, added (name + a type picker),
+  renamed, removed, and their values edited through the exact same
+  per-type widgets an ordinary property of that type gets — a `Bool`
+  becomes the panel's checkbox, a `Vector3` becomes three number fields,
+  and so on — never a second set of editors. Name validation follows
+  `Instance:SetAttribute`'s documented rules (alphanumeric plus
+  `.`/`-`/`/`/`_`, ≤100 characters, no `RBX` prefix). `CFrame` is a
+  creatable type now: `rbx_dom::attributes` reads and writes type `0x14` (a
+  position and either a one-byte axis-aligned rotation id or nine raw
+  floats), checked byte for byte against the two examples in `rojo-rbx/
+  rbx-dom`'s attribute format documentation — and, since a blob is packed
+  end to end, an instance whose attributes held a `CFrame` no longer loses
+  every attribute stored after it.
+- [x] **Native Argon integration, not Rojo — live sync.** Argon
+  (`argon-rbx/argon`, Apache-2.0, open source) is the preferred target, and
+  its live two-way sync protocol — previously undocumented — turned out to
+  be readable straight from its own Studio plugin source
+  (`argon-rbx/argon-roblox`, also Apache-2.0): HTTP+MsgPack against
+  `argon serve`, long-polled. `crate::argon_client` implements it (the
+  wire format, the background thread, the `WeakDom` apply/write-back path
+  in `shell::argon_sync`), verified end to end against a real `argon serve`
+  session. `ExecuteCode` (server-sent Luau) is decoded and always
+  discarded — see that module's doc comment. Still open, and genuinely
+  separate from the sync protocol: **file-tree ↔ DOM import/export and
+  `sourcemap.json` generation** — reading/writing a project's
+  `*.project.json`/`default.project.json` tree directly (for `luau-lsp`,
+  and for opening an Argon project without a running server) is unrelated
+  work against the same file-format Rojo also uses, not yet started.
+- [x] **Improve Argon's Diff window to look like GitHub's.** The review
+  prompt's Diff window (`shell::argon_diff_window`) now lists the batch
+  under Additions / Updates / Removals with an added container's subtree
+  beneath it, and shows the selected change on the right: properties
+  before and after as chips, a script's `Source` as a unified diff (a
+  Myers line diff in `argon_diff_window::diff`, hunks with three lines of
+  context, expandable, +/− gutter markers, red/green rows, syntax colours
+  from the active theme, cut off at Diff Lines Limit), and what an added
+  or removed container holds. Resizable; under 760 px the list becomes a
+  picker bar. Split view is not offered.
+- [x] **Wally package manager, built in.** Wally (`UpliftGames/wally`,
+  MPL-2.0) is the de facto Luau/Roblox package manager. The Wally dock
+  (`shell::scripting_tools`, Script Editor tab only) now searches the real
+  `api.wally.run` registry as you type, and installing a result resolves
+  its *whole* dependency graph — a BFS matching Wally's own resolver shape
+  (`crate::wally_client::resolve`), reusing an already-activated version
+  when one satisfies a new requirement, erroring cleanly on an
+  unsatisfiable one (a real stale dependency, `sleitnick/knit`'s
+  `sleitnick/comm@^0.3`, is this codebase's own test fixture for that
+  path) — then installs every resolved package into the DOM in the same
+  on-disk shape real `wally install` produces: each package's content
+  under `Packages/_Index/<scope>_<name>@<version>/<name>`, one alias
+  `ModuleScript` per dependency edge beside it, and a top-level
+  `Packages/<name>` alias for the package actually picked (`crate::
+  shell::wally_sync`). One `WeakDom` insertion path serves both roles Wally
+  itself splits: with a connected Argon session it reaches disk for free
+  through the write-back sync above; without one, it's native. Two known
+  gaps: version discovery is `package-search` filtered client-side, not a
+  cloned registry index, so a non-default registry isn't supported; and
+  there's no `wally.lock`, so two separate installs can pick different
+  compatible versions of a shared dependency.
+- [x] **Icon and theme packs — the editor's look stops being hardcoded.**
+  The Explorer's class icons are now this project's own icon kit rather than
+  Roblox's downloaded sheet (see "What's been implemented" above). Both
+  variants, `assets/icons/default/dark` and `.../light`, are now embedded
+  at compile time, and an **editor setting for dark/light icons** — a
+  "Light Icons" checkbox in the Explorer panel's own overflow menu, next to
+  "Show all services" — picks between them at runtime, dark by default,
+  without a rebuild, persisted the same way `settings.rs`'s existing
+  quality/service-visibility settings are.
+  - **Installable icon packs** (`packs.rs`, `class_icons.rs`): a folder of
+    SVGs under `icon_packs/<name>/` in the config directory, named by
+    `ClassName` (`Part.svg`) or by the kit's tile slug
+    (`humanoid-description.svg`, reaching every class that shares the
+    tile), layered *over* the built-in kit — a pack of three icons is a
+    pack, whatever it leaves out is still the kit's and then Lucide's. The
+    Explorer's overflow menu lists what is installed and the choice
+    persists in `appearance.json`. A drawing is scaled from its own size,
+    not assumed 16x16, and one that will not parse falls through to the kit.
+  - **Installable themes**: a toolkit `ThemeSet` JSON file under
+    `themes/<name>.json`, named by `appearance.json`'s `theme`; its first
+    dark theme (under a name the registry does not already hold — it
+    ignores a duplicate) replaces the built-in at startup. Names read from
+    `appearance.json` are refused unless they are one plain path segment.
+- [x] **"Sober but alive" restyle of the gpui-kit layer (PR #87).** The
+  chrome now follows the redesign reference (`gpui-ref/`, kept out of the
+  repo) token for token: a three-tone surface ramp (`#0A0A0B` / `#121213` /
+  `#191A1C`), three solid text tones, 6%/11% white hairlines, one accent
+  (`#6C7FDB`) spent only on active/selected state, a small radius scale
+  (3–8px), Manrope/JetBrains Mono, and the reference's 10–13px type sizes.
+  Layout, icons, logo and behaviour are the app's own and unchanged, apart
+  from the Output dock now spanning the full width under both side docks
+  and the 3D view no longer letterboxed to the UI Editor's screen by
+  default. Follow-ups still open:
+  - [ ] Explorer rows at the reference's 9px chevron slot and 20px indent
+    (ours: 12px and 12px). Everything else in the reference's Explorer
+    row is in.
+  - [ ] Property controls at the reference's full 130px. They sit at 116px
+    so every `Workspace` name still reads whole at the default dock
+    width; the two go together only once the dock is wider by default.
+- [x] **Soften the editor's visual theme — calmer and lower-contrast,
+  closer to real Studio but gentler.** Today's panels are high-contrast
+  flat blocks: near-pure black/white backgrounds, hard 1px borders, sharp
+  rectangular corners, tight padding, saturated colour used everywhere
+  rather than reserved for anything in particular. Planned direction,
+  taking inspiration (not a straight clone) from a community redesign
+  concept's dock/panel layout and surface treatment — credit
+  [u/1324764019 on the Roblox DevForum](https://www.roblox.com/users/1324764019/profile),
+  [reference screenshot](https://devforum-uploads.s3.dualstack.us-east-2.amazonaws.com/uploads/original/4X/f/0/8/f08fc6d47d3aef25edecb00dd708f13e4f0553c1.png):
+  - **Palette**: a muted 6-8 step neutral grey ramp replacing today's
+    near-black/near-white panel backgrounds — nothing darker than
+    roughly `#1a1a1a`, nothing lighter than roughly `#f0f0f0`.
+  - **Panel separation**: hard 1px borders replaced by either a small
+    background-luminance step between adjacent panels (2-4%) or a soft,
+    low-opacity shadow (<15%) with no visible stroke.
+  - **Corner radius**: a consistent small radius (4-6px) on buttons, icon
+    containers and panel corners — no sharp rectangles.
+  - **Padding**: toolbar buttons and list/tree rows (Explorer, Properties)
+    grow roughly 30-50% over today's values to read as less dense.
+  - **Accent colour**: saturated colour reserved for the selection
+    highlight, the active tab indicator and functional icons; everything
+    else desaturated.
+  - **Typography**: regular/medium weight by default; bold reserved for
+    section headers only.
+  - **Dock/panel structure**: review the reference concept's
+    floating/grouped-tab dock style and propose which pieces (tab
+    grouping, panel grouping, drag handles) fit this project's existing
+    dock layout — presented as options to choose from, not a mandated
+    rebuild.
+  - **Deliverable**: a theme/token file (colours, radii, spacing, font
+    weights) the rest of the UI reads from — a concrete first instance of
+    the theme format the item above calls for — plus a before/after
+    screenshot of one representative panel (the Explorer, or a popup like
+    Store/Upgrades) for review before it rolls out app-wide.
+
+  Shipped: a real design-token module
+  (`crates/rbx_studio/src/tokens.rs`) every piece of chrome reads from —
+  surfaces, state washes, borders, a seven-step text ramp, one radius, the
+  frame's measured dimensions and its type scale — with the palette also
+  expressed as a `ThemeSet`/`ThemeConfig` JSON
+  (`assets/themes/dark-soft.json`) so the toolkit's own widgets follow it
+  without a rebuild, and a test that fails the moment the two disagree.
+
+  The palette is not this bullet's original `#1a1a1a`-to-`#f0f0f0` ramp and
+  the layout is not the DevForum concept's: partway through, the project's
+  own Figma design landed (`RBX-NATIVE`, frame `RbxNative - Studio App`)
+  and the editor was rebuilt against **that** instead, measured rather than
+  interpreted. It is darker than this bullet asked for and answers the same
+  complaints: soft state washes instead of hard borders, a single 3px
+  radius, and exactly one saturated colour in the whole UI (the checkbox
+  blue, which focus and selection borrow and nothing else may).
+
+  The shell is now: a **title bar this editor draws itself** (client-side
+  window decorations — logo, centred title, minimize/maximize/close,
+  drag-to-move), the menu strip, **Row A** document tabs, **Row B** the
+  ribbon's seven category tabs, **Row C** the ribbon, **Row D** a
+  three-column workspace — Properties left, the open document over Output
+  in the middle, Explorer right — each dock a tab strip over an inset body.
+  Ribbon commands are 42px tiles and 78px stacks; the snap increments are a
+  live readout that opens its own editor. Chrome icons are Lucide, the set
+  the design is drawn with; the multi-colour `class_icons` kit stays where
+  identity matters, in the Explorer. Contrast is asserted rather than
+  eyeballed — every meaningful text token clears WCAG AA on every surface
+  it can land on, and the disabled step is asserted from both sides.
+
+  A second pass then grounded the whole thing in WCAG 2.1/2.2 and the
+  WAI-ARIA APG rather than in taste. The editor is keyboard-operable end to
+  end — Tab between regions, arrows within one, the full APG Tree View
+  contract in the Explorer, Escape out of any menu — and three genuine
+  keyboard traps were found and fixed by driving the window. Focus rings
+  appear for keyboard focus only and clear 3:1 on every surface; selection
+  and focus are no longer drawn the same way. There is a persisted UI scale
+  (Ctrl+= / Ctrl+− / Ctrl+0, 0.5x-2.0x) over every font *and* every box, so
+  text reaches 200% without losing layout. Controls are sized to the
+  `InputsStyle` frame and clear WCAG's 24x24 target floor — the checkbox was
+  10px. Each transform tool has its own pastel plus a border, so its state
+  never depends on colour alone. Contrast, target sizes and the toolkit
+  theme mirror are all asserted in tests.
+
+  Dock sizes and the Output dock's collapsed state persist, with a Reset
+  Layout command beside them, and the View menu carries Reduce Motion (which
+  overrides the desktop preference read at startup) and Large Click Targets
+  (WCAG 2.5.5's 44px floor in place of 2.5.8's 24px).
+
+  `UX_GUIDELINES.md` §11 lists every deviation from the frame with its
+  reason, and §1 states where the editor stands against the reference
+  guidance's Stage 1/2/3 — failures included.
+- [x] **Output window: the half of real Studio's filter/display feature
+  set that does not need the sandbox**, checked against `studio/output.md`
+  rather than assumed and built against what the Command Bar and app
+  warnings already put in the dock today:
+  A **Show Timestamp** toggle, in the Output panel's own overflow menu
+  next to Explorer's and Viewport's toggles (`Shell::output_show_timestamps`,
+  `shell/dock.rs`), prints a per-row timestamp in `HH:MM:SS.SSS`; rows now
+  carry a per-kind color and icon in place of the old plain `✕`/`✓`
+  marker — `print`/a successful run in the default text color with a
+  check icon, `warn` in orange with an alert icon, `error` in red with an
+  X icon (`OutputEntry::kind`/`RowKind`, `shell/output.rs`). **Free-text
+  search over the log** is shipped too — a box in the Output tab's own
+  title bar, beside the level filter, matching case-insensitively against
+  both halves of what a row shows (the command and the result) and
+  narrowing *within* the level filter rather than replacing it
+  (`OutputLog::filtered`). The duplicate-display gap is closed: a Command
+  Bar run's outcome used to show twice, once in `command_bar::Feedback`'s
+  label and again as the Output dock's permanent row; the label now
+  appears only while the dock is collapsed
+  (`Feedback::shown_inline`), when it is the one place the result would
+  otherwise be lost — which is why a `Ctrl+S` save, which used to report
+  through the label alone, now logs a `Save` row too.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -870,6 +1227,15 @@ Roblox's own engine.
   `..`, `\`, `:`, an empty or `.` segment, a root or drive prefix, or a
   Windows device name (`NUL`, `CON`, `COM1`…), rather than handed to the
   filesystem.
+- [x] A first real build on Windows, and CI coverage for it — every
+  change now runs `cargo clippy -D warnings`, `cargo build` and
+  `cargo test --workspace` on `windows-latest`
+  (`.github/workflows/ci.yml`). The workspace compiles and its tests pass
+  there. What that job cannot answer is anything about the editor
+  *running*: it is headless, so no window, GPU surface or input path has
+  been exercised on Windows. Launching the editor there is still open, and
+  mouse capture (the bullet above) is the one gap already known about.
+- [x] Daily API-Dump sync (`.github/workflows/sync-api-dump.yml`).
 
 ## What's planned
 
@@ -913,19 +1279,6 @@ Roblox's own engine.
   locally-hosted code-completion API instead — but that's a distinct,
   lower-priority idea worth its own decision on which backend (if any),
   not a default this project should ship opinionated about.
-- [x] **New-script templates** — the Model menu now has real
-  `Insert Script`/`Insert LocalScript`/`Insert ModuleScript`/
-  `Insert ModuleScript (Class)` entries (there was previously no menu item
-  or shortcut to insert a script at all), each seeding the new instance's
-  `Source` with a starter template instead of leaving it empty: a plain
-  `print("Hello, world!")` for `Script`/`LocalScript`, a `ModuleScript`
-  returning a table, and a `ModuleScript (Class)` with a `.new()`
-  constructor over a metatable. The set is user-extensible now: a
-  `script_templates` folder in the config directory holds one `.luau` file
-  per template under `Script/`, `LocalScript/` or `ModuleScript/`
-  (`script_templates.rs`), each listed in the ribbon's Script menu by its
-  file name, and a `Default.luau` in a class's folder replaces the built-in
-  starter every new script of that class gets.
 - [ ] 📋 **Managing script templates from inside the editor.** Authoring
   one today means a file manager and a text editor; there is no UI for
   adding, renaming or deleting a template. The user's extras also appear
@@ -1064,32 +1417,6 @@ Roblox's own engine.
     shape-conformance spec published: this is not a claim of parity with
     it, and the code says so — it is the same answer this renderer already
     gives for the one outline effect that *is* specified as a silhouette.
-- [x] **Align tool**, matching Studio's real Model-tab tool (checked
-  against `studio/align-tool.md` rather than assumed, not the transform
-  gizmos under "What's been implemented" → Editor). Aligns the selected
-  objects' **Min**/**Center**/**Max** bounds
-  along independently-toggled **X**/**Y**/**Z** axes, in **World** or
-  **Local** space, relative to either the **Selection Bounds** (the
-  selection's collective bounding box) or the **Active Object** (the last
-  -selected object in a multi-selection, which stays fixed while the rest
-  align to it) — depended on multi-selection existing first, since aligning
-  a single object to itself is a no-op; multi-selection is now implemented
-  (see "What's been implemented" → Editor), so that dependency is
-  satisfied. Self-contained geometry math over whatever's already selected;
-  no new dependency. Shipped: Min/Center/Max, X/Y/Z, World/Local, Selection
-  Bounds/Active Object, a selected `Model` moving as one rigid body (the
-  docs' "keeping the model intact"), and a compact popover on the
-  transform toolbar rather than a full dialog.
-- [x] **Align's live preview** — the docs' "dynamically previewing the
-  point of alignment before confirming". Opening the popover draws a ghost
-  box where each object would land, redrawn as the toggles and the
-  selection change and cleared when it closes; one box per top-level
-  object, a part keeping its own oriented box and a `Model` taking the box
-  around everything beneath it (the same two answers the selection outline
-  gives). The overlay itself (`renderer::preview`) takes plain world
-  matrices and knows nothing about Align, so the next tool that wants one
-  adds no pass. `RBX_STUDIO_ALIGN=...,preview` shows it without a click,
-  the way that variable already stands in for the popover's own buttons.
 - [ ] 📋 **Pivot tools**, matching Studio's real Model-tab **Edit Pivot**/
   **Reset** tools (checked against `studio/pivot-tools.md`). Today's
   transform gizmos (see "What's been implemented" → Editor) move/rotate/
@@ -1109,36 +1436,6 @@ Roblox's own engine.
   Properties panel's `Origin` row reads a part's or model's pivot the way
   `GetPivot` does and moves the instance the way `PivotTo` does (see
   "What's been implemented" → Editor).
-- [x] **DOM editing from the Explorer row** — beyond the old plain
-  insert/delete:
-  - A `+` on the hovered row (`Ctrl+I` from the keyboard) opens a
-    searchable class list that inserts straight under that row, without
-    going through a menu. A class the parent cannot take is **greyed
-    rather than missing**, so the constraint is visible: the rule is
-    exactly the two refusals Roblox's own API dump states — `NotCreatable`
-    (`Instance.new` refuses the class outright) and `Service` (a singleton
-    the `DataModel` owns), since the dump carries no per-class table of
-    legal parents to build anything wider on.
-  - Right-click context menu on a row: **Cut**, **Copy**, **Duplicate**,
-    **Paste Into**, **Rename**, **Insert Object…** (the same picker the
-    `+` opens), **Group as Model**, **Ungroup**, **Delete**. Contextual
-    the way creator-docs describes, but *greyed* rather than absent — each
-    row is enabled by the same guard its own handler returns early on, so
-    a service's menu shows the same shape with most of it unavailable.
-  - **Rename** in the row itself, from the menu or `F2`, committing
-    through the same `WeakDom::set_name` the Properties panel's `Name`
-    field uses. A service is refused, the way it already is for a drag.
-  - **Cut** is real (`Ctrl+X`, the Edit menu, the ribbon tile), built out
-    of Copy and the removal path Delete already had. Deleting a *service*
-    is now refused everywhere, rather than letting one keystroke produce a
-    place file with no `Workspace`.
-  - **Two insertion preferences** real Studio exposes next to the `+`
-    icon's search field (`studio/explorer.md`), behind the same `⋯` and
-    persisted: **increment names for new instances** (numbered names for
-    same-type inserts/pastes/duplicates) and **expand hierarchy when
-    selecting** (whether inserting/pasting/viewport-selecting an instance
-    auto-expands the Explorer tree to reveal it, or only highlights the
-    top-level parent).
 - [ ] 📋 **Explorer export and searchable-tree browsing** — the two halves
   of Explorer DOM editing that did not land with the row affordances
   above:
@@ -1161,36 +1458,6 @@ Roblox's own engine.
     filtered Explorer tree should stay expandable in place. The Explorer's
     search box is still inert today, so this means building the filter as
     well as keeping it browsable.
-- [x] **Copy/paste/duplicate instances** (`Ctrl+C`/`V`/`D`) — real now,
-  from the keyboard, the Edit menu's Copy/Paste/Paste Into/Duplicate items
-  and the ribbon's Copy, Paste and Duplicate tiles (Cut, never part of
-  this bullet, landed with the Explorer row editing above). Copy is a deep,
-  in-process clipboard, not the system one: descendants come along, a
-  `Ref`/`Content::Object` property pointing at something copied along with
-  it is remapped to point at the copy instead — `Class.Instance:Clone()`'s
-  own documented rule — and the copy is independent of the original. Paste
-  always lands in `Workspace`, matching creator-docs' `explorer.md`, never
-  wherever the selection is; Duplicate lands beside the original in its own
-  existing parent instead. A service can't be copied, pasted or duplicated,
-  the same refusal Group/Ungroup already enforce. One undo step per
-  operation. `Ctrl+Shift+V` is "Paste Into": the clipboard goes into each
-  selected instance instead of `Workspace`, one copy per parent, as
-  creator-docs describes for pasting "into multiple parents". A
-  non-`Archivable` descendant is left out of the copy the way
-  `Instance:Clone()` does (the root itself is always copied, and the copy is
-  always `Archivable`). Still open: the right-click **Paste Options** ⟩
-  **Paste Into At Original Location** the docs mention.
-- [x] Drag-and-drop reparenting in the Explorer tree. Dragging a row
-  onto another reparents onto it, the way creator-docs describes
-  ("simply drag and drop them onto the new parent") — with a ghost under
-  the cursor, the hovered row highlighted only while the drop is legal,
-  the new parent expanded and revealed afterwards, and one undo step per
-  drag. A drop is refused onto the dragged instance itself, into its own
-  subtree, onto the parent it already has, and for a service. Escape
-  abandons a drag in flight (`App::stop_active_drag`, from the
-  window-level key handler), so nothing drops and no undo step is pushed —
-  exercised in the running window, not just compiled. There is no drop
-  *between* rows, which Studio does not offer either.
 - [ ] 📋 **Multi-instance drag from a row outside the selection.** Pressing
   such a row collapses the selection to it before the drag starts, so a
   multi-instance drag only carries the whole selection when grabbed by its
@@ -1227,22 +1494,6 @@ Roblox's own engine.
   tight rows, and a numeric value clipped by a narrow field — went with
   the panel's rework: hairline seams between rows, and a numeric value
   shown whole on its own row with its components behind an expander.
-- [x] `Rect`, `PhysicalProperties`, `Font` — all three edit now, where all
-  three used to be read-only text. `Rect` is four labeled fields; `Font`
-  turned out to already be editable before this item was picked up (the
-  roadmap text describing it was stale); `PhysicalProperties` was the one
-  that needed a shape rather than a field list, being a real enum rather
-  than a struct.
-  It reuses `EditKind::Optional` — the checkbox-over-an-editor shape
-  `OptionalCFrame` already had — because the two read the same way even
-  though they mean different things: a `Default` carries no numbers at all
-  (the engine derives them from the material), so the five fields appear
-  only under a ticked **Custom** box, which is also how Studio presents it.
-  That is why the checkbox now carries its own caption instead of the one
-  fixed "Has value" wording. Unticking returns the value to `Default`
-  rather than zeroing the numbers, and the fields under an unticked box are
-  seeded from Roblox's `Plastic` defaults (`0.7 / 0.3 / 0.5 / 1 / 1`) so
-  ticking it never commits a row of zeroes.
 - [ ] 📋 **A general pass on how Studio renders each type**, rather than
   a generic fallback: go through the API dump's actual type/category
   coverage (`assets/API-Dump.json`, kept current by the daily sync) rather
@@ -1316,21 +1567,6 @@ against `Roblox/creator-docs` rather than assumed:
   because they sound like the same feature.
 
 #### CSG
-- [x] Legacy union/negate parts reconstruct the real constituent
-  geometry via a from-scratch CSG boolean. The one piece not covered is
-  `MeshData`/CSGMDL, which has its own bullet below and is deliberately
-  not attempted.
-- [x] **Give each of a failed-CSG union's recovered fallback pieces its
-  own identity.** Every piece now carries a `scene::PartId` of its own —
-  the union's referent plus its position in the operation tree's additive
-  order, which the asset's bytes alone decide, so moving or recolouring a
-  union cannot renumber them. `Scene::resync_part` re-derives the pieces
-  from the boolean `load::Resident` already carved and patches each in the
-  slot it had, instead of refusing; `Rebuild::Union` is gone, and so is
-  the reload a union edit used to cost (24.6 ms to 2.1 ms first frame
-  readable on `FindTheCode.rbxl` — see `BENCHMARKS.md`). The union stays
-  one thing to select, outline, click and cast a shadow from: it is
-  placed, and its pieces are not.
 - [ ] 📋 `MeshData`/CSGMDL (Roblox's own baked union result format) — see
   [Explicitly impossible](#explicitly-impossible-without-robloxs-engine),
   deliberately not attempted; the from-scratch boolean above is the
@@ -1431,23 +1667,6 @@ against `Roblox/creator-docs` rather than assumed:
   `UniqueId`, `SecurityCapabilities` and `Unknown` stay read-only. They are
   identities and opaque payloads — editing them by hand corrupts a file
   rather than editing it.
-- [x] Attributes editor (custom `Instance` attributes, distinct from
-  built-in properties) — a real, commonly-used modern Studio feature, not
-  currently scoped anywhere. The Properties panel now has a dedicated
-  Attributes section (below the reflected categories, matching where real
-  Studio puts it): attributes are listed, added (name + a type picker),
-  renamed, removed, and their values edited through the exact same
-  per-type widgets an ordinary property of that type gets — a `Bool`
-  becomes the panel's checkbox, a `Vector3` becomes three number fields,
-  and so on — never a second set of editors. Name validation follows
-  `Instance:SetAttribute`'s documented rules (alphanumeric plus
-  `.`/`-`/`/`/`_`, ≤100 characters, no `RBX` prefix). `CFrame` is a
-  creatable type now: `rbx_dom::attributes` reads and writes type `0x14` (a
-  position and either a one-byte axis-aligned rotation id or nine raw
-  floats), checked byte for byte against the two examples in `rojo-rbx/
-  rbx-dom`'s attribute format documentation — and, since a blob is packed
-  end to end, an instance whose attributes held a `CFrame` no longer loses
-  every attribute stored after it.
 - [ ] 📋 **Effects (drop shadows) in the UI Editor's design panel.** Figma's
   Effects section, and Sketch's, is a drop shadow per element, which Roblox
   now does with `UIShadow`. The embedded API dump predates the class and the
@@ -1519,52 +1738,6 @@ against `Roblox/creator-docs` rather than assumed:
     proportions/meshes, or, if a specific official asset id is the more
     faithful source for a given rig, imported directly as a real `.rbxm`
     the same way any other asset import works.
-- [x] 📋 **Native Argon integration, not Rojo — live sync.** Argon
-  (`argon-rbx/argon`, Apache-2.0, open source) is the preferred target, and
-  its live two-way sync protocol — previously undocumented — turned out to
-  be readable straight from its own Studio plugin source
-  (`argon-rbx/argon-roblox`, also Apache-2.0): HTTP+MsgPack against
-  `argon serve`, long-polled. `crate::argon_client` implements it (the
-  wire format, the background thread, the `WeakDom` apply/write-back path
-  in `shell::argon_sync`), verified end to end against a real `argon serve`
-  session. `ExecuteCode` (server-sent Luau) is decoded and always
-  discarded — see that module's doc comment. Still open, and genuinely
-  separate from the sync protocol: **file-tree ↔ DOM import/export and
-  `sourcemap.json` generation** — reading/writing a project's
-  `*.project.json`/`default.project.json` tree directly (for `luau-lsp`,
-  and for opening an Argon project without a running server) is unrelated
-  work against the same file-format Rojo also uses, not yet started.
-- [x] 📋 **Improve Argon's Diff window to look like GitHub's.** The review
-  prompt's Diff window (`shell::argon_diff_window`) now lists the batch
-  under Additions / Updates / Removals with an added container's subtree
-  beneath it, and shows the selected change on the right: properties
-  before and after as chips, a script's `Source` as a unified diff (a
-  Myers line diff in `argon_diff_window::diff`, hunks with three lines of
-  context, expandable, +/− gutter markers, red/green rows, syntax colours
-  from the active theme, cut off at Diff Lines Limit), and what an added
-  or removed container holds. Resizable; under 760 px the list becomes a
-  picker bar. Split view is not offered.
-- [x] 📋 **Wally package manager, built in.** Wally (`UpliftGames/wally`,
-  MPL-2.0) is the de facto Luau/Roblox package manager. The Wally dock
-  (`shell::scripting_tools`, Script Editor tab only) now searches the real
-  `api.wally.run` registry as you type, and installing a result resolves
-  its *whole* dependency graph — a BFS matching Wally's own resolver shape
-  (`crate::wally_client::resolve`), reusing an already-activated version
-  when one satisfies a new requirement, erroring cleanly on an
-  unsatisfiable one (a real stale dependency, `sleitnick/knit`'s
-  `sleitnick/comm@^0.3`, is this codebase's own test fixture for that
-  path) — then installs every resolved package into the DOM in the same
-  on-disk shape real `wally install` produces: each package's content
-  under `Packages/_Index/<scope>_<name>@<version>/<name>`, one alias
-  `ModuleScript` per dependency edge beside it, and a top-level
-  `Packages/<name>` alias for the package actually picked (`crate::
-  shell::wally_sync`). One `WeakDom` insertion path serves both roles Wally
-  itself splits: with a connected Argon session it reaches disk for free
-  through the write-back sync above; without one, it's native. Two known
-  gaps: version discovery is `package-search` filtered client-side, not a
-  cloned registry index, so a non-default registry isn't supported; and
-  there's no `wally.lock`, so two separate installs can pick different
-  compatible versions of a shared dependency.
 - [ ] 📋 **Wally "Recently published" list.** The Wally dock's Discover
   page shows the registry's featured packages (the list wally.run's own
   home page uses); a recently-published list would need a route the
@@ -1710,29 +1883,6 @@ against `Roblox/creator-docs` rather than assumed:
   through the same real-property DOM mutation any other editor action
   does, not a shortcut that could write something a saved place file
   can't actually represent.
-- [x] **Icon and theme packs — the editor's look stops being hardcoded.**
-  The Explorer's class icons are now this project's own icon kit rather than
-  Roblox's downloaded sheet (see "What's been implemented" above). Both
-  variants, `assets/icons/default/dark` and `.../light`, are now embedded
-  at compile time, and an **editor setting for dark/light icons** — a
-  "Light Icons" checkbox in the Explorer panel's own overflow menu, next to
-  "Show all services" — picks between them at runtime, dark by default,
-  without a rebuild, persisted the same way `settings.rs`'s existing
-  quality/service-visibility settings are.
-  - **Installable icon packs** (`packs.rs`, `class_icons.rs`): a folder of
-    SVGs under `icon_packs/<name>/` in the config directory, named by
-    `ClassName` (`Part.svg`) or by the kit's tile slug
-    (`humanoid-description.svg`, reaching every class that shares the
-    tile), layered *over* the built-in kit — a pack of three icons is a
-    pack, whatever it leaves out is still the kit's and then Lucide's. The
-    Explorer's overflow menu lists what is installed and the choice
-    persists in `appearance.json`. A drawing is scaled from its own size,
-    not assumed 16x16, and one that will not parse falls through to the kit.
-  - **Installable themes**: a toolkit `ThemeSet` JSON file under
-    `themes/<name>.json`, named by `appearance.json`'s `theme`; its first
-    dark theme (under a name the registry does not already hold — it
-    ignores a duplicate) replaces the built-in at startup. Names read from
-    `appearance.json` are refused unless they are one plain path segment.
 - [ ] 📋 **A theme that reaches the whole editor, and a way to install
   one.** A theme file replaces the toolkit widgets' colours only: the
   chrome this editor draws itself (`tokens.rs`, hundreds of call sites)
@@ -1741,109 +1891,6 @@ against `Roblox/creator-docs` rather than assumed:
   is edited by hand — no pack browser or installer, so a pack is copied in
   by hand, and while an icon pack is chosen at runtime a theme takes
   effect only on the next launch.
-- [x] **"Sober but alive" restyle of the gpui-kit layer (PR #87).** The
-  chrome now follows the redesign reference (`gpui-ref/`, kept out of the
-  repo) token for token: a three-tone surface ramp (`#0A0A0B` / `#121213` /
-  `#191A1C`), three solid text tones, 6%/11% white hairlines, one accent
-  (`#6C7FDB`) spent only on active/selected state, a small radius scale
-  (3–8px), Manrope/JetBrains Mono, and the reference's 10–13px type sizes.
-  Layout, icons, logo and behaviour are the app's own and unchanged, apart
-  from the Output dock now spanning the full width under both side docks
-  and the 3D view no longer letterboxed to the UI Editor's screen by
-  default. Follow-ups still open:
-  - [ ] Explorer rows at the reference's 9px chevron slot and 20px indent
-    (ours: 12px and 12px). Everything else in the reference's Explorer
-    row is in.
-  - [ ] Property controls at the reference's full 130px. They sit at 116px
-    so every `Workspace` name still reads whole at the default dock
-    width; the two go together only once the dock is wider by default.
-- [x] **Soften the editor's visual theme — calmer and lower-contrast,
-  closer to real Studio but gentler.** Today's panels are high-contrast
-  flat blocks: near-pure black/white backgrounds, hard 1px borders, sharp
-  rectangular corners, tight padding, saturated colour used everywhere
-  rather than reserved for anything in particular. Planned direction,
-  taking inspiration (not a straight clone) from a community redesign
-  concept's dock/panel layout and surface treatment — credit
-  [u/1324764019 on the Roblox DevForum](https://www.roblox.com/users/1324764019/profile),
-  [reference screenshot](https://devforum-uploads.s3.dualstack.us-east-2.amazonaws.com/uploads/original/4X/f/0/8/f08fc6d47d3aef25edecb00dd708f13e4f0553c1.png):
-  - **Palette**: a muted 6-8 step neutral grey ramp replacing today's
-    near-black/near-white panel backgrounds — nothing darker than
-    roughly `#1a1a1a`, nothing lighter than roughly `#f0f0f0`.
-  - **Panel separation**: hard 1px borders replaced by either a small
-    background-luminance step between adjacent panels (2-4%) or a soft,
-    low-opacity shadow (<15%) with no visible stroke.
-  - **Corner radius**: a consistent small radius (4-6px) on buttons, icon
-    containers and panel corners — no sharp rectangles.
-  - **Padding**: toolbar buttons and list/tree rows (Explorer, Properties)
-    grow roughly 30-50% over today's values to read as less dense.
-  - **Accent colour**: saturated colour reserved for the selection
-    highlight, the active tab indicator and functional icons; everything
-    else desaturated.
-  - **Typography**: regular/medium weight by default; bold reserved for
-    section headers only.
-  - **Dock/panel structure**: review the reference concept's
-    floating/grouped-tab dock style and propose which pieces (tab
-    grouping, panel grouping, drag handles) fit this project's existing
-    dock layout — presented as options to choose from, not a mandated
-    rebuild.
-  - **Deliverable**: a theme/token file (colours, radii, spacing, font
-    weights) the rest of the UI reads from — a concrete first instance of
-    the theme format the item above calls for — plus a before/after
-    screenshot of one representative panel (the Explorer, or a popup like
-    Store/Upgrades) for review before it rolls out app-wide.
-
-  Shipped: a real design-token module
-  (`crates/rbx_studio/src/tokens.rs`) every piece of chrome reads from —
-  surfaces, state washes, borders, a seven-step text ramp, one radius, the
-  frame's measured dimensions and its type scale — with the palette also
-  expressed as a `ThemeSet`/`ThemeConfig` JSON
-  (`assets/themes/dark-soft.json`) so the toolkit's own widgets follow it
-  without a rebuild, and a test that fails the moment the two disagree.
-
-  The palette is not this bullet's original `#1a1a1a`-to-`#f0f0f0` ramp and
-  the layout is not the DevForum concept's: partway through, the project's
-  own Figma design landed (`RBX-NATIVE`, frame `RbxNative - Studio App`)
-  and the editor was rebuilt against **that** instead, measured rather than
-  interpreted. It is darker than this bullet asked for and answers the same
-  complaints: soft state washes instead of hard borders, a single 3px
-  radius, and exactly one saturated colour in the whole UI (the checkbox
-  blue, which focus and selection borrow and nothing else may).
-
-  The shell is now: a **title bar this editor draws itself** (client-side
-  window decorations — logo, centred title, minimize/maximize/close,
-  drag-to-move), the menu strip, **Row A** document tabs, **Row B** the
-  ribbon's seven category tabs, **Row C** the ribbon, **Row D** a
-  three-column workspace — Properties left, the open document over Output
-  in the middle, Explorer right — each dock a tab strip over an inset body.
-  Ribbon commands are 42px tiles and 78px stacks; the snap increments are a
-  live readout that opens its own editor. Chrome icons are Lucide, the set
-  the design is drawn with; the multi-colour `class_icons` kit stays where
-  identity matters, in the Explorer. Contrast is asserted rather than
-  eyeballed — every meaningful text token clears WCAG AA on every surface
-  it can land on, and the disabled step is asserted from both sides.
-
-  A second pass then grounded the whole thing in WCAG 2.1/2.2 and the
-  WAI-ARIA APG rather than in taste. The editor is keyboard-operable end to
-  end — Tab between regions, arrows within one, the full APG Tree View
-  contract in the Explorer, Escape out of any menu — and three genuine
-  keyboard traps were found and fixed by driving the window. Focus rings
-  appear for keyboard focus only and clear 3:1 on every surface; selection
-  and focus are no longer drawn the same way. There is a persisted UI scale
-  (Ctrl+= / Ctrl+− / Ctrl+0, 0.5x-2.0x) over every font *and* every box, so
-  text reaches 200% without losing layout. Controls are sized to the
-  `InputsStyle` frame and clear WCAG's 24x24 target floor — the checkbox was
-  10px. Each transform tool has its own pastel plus a border, so its state
-  never depends on colour alone. Contrast, target sizes and the toolkit
-  theme mirror are all asserted in tests.
-
-  Dock sizes and the Output dock's collapsed state persist, with a Reset
-  Layout command beside them, and the View menu carries Reduce Motion (which
-  overrides the desktop preference read at startup) and Large Click Targets
-  (WCAG 2.5.5's 44px floor in place of 2.5.8's 24px).
-
-  `UX_GUIDELINES.md` §11 lists every deviation from the frame with its
-  reason, and §1 states where the editor stands against the reference
-  guidance's Stage 1/2/3 — failures included.
 - [ ] 📋 **What the visual pass left behind**, beyond the items that
   already have their own bullets under "What's planned" → Editor (the
   remaining Stage 2/Stage 3 accessibility items and the property types
@@ -1862,28 +1909,6 @@ against `Roblox/creator-docs` rather than assumed:
 - [ ] 📋 Wiring the Output dock to real script `print`/`warn`/`error` and
   session events (join/leave messages and the like) once a sandbox session
   is running — depends on the sandbox above existing first.
-- [x] **Output window: the half of real Studio's filter/display feature
-  set that does not need the sandbox**, checked against `studio/output.md`
-  rather than assumed and built against what the Command Bar and app
-  warnings already put in the dock today:
-  A **Show Timestamp** toggle, in the Output panel's own overflow menu
-  next to Explorer's and Viewport's toggles (`Shell::output_show_timestamps`,
-  `shell/dock.rs`), prints a per-row timestamp in `HH:MM:SS.SSS`; rows now
-  carry a per-kind color and icon in place of the old plain `✕`/`✓`
-  marker — `print`/a successful run in the default text color with a
-  check icon, `warn` in orange with an alert icon, `error` in red with an
-  X icon (`OutputEntry::kind`/`RowKind`, `shell/output.rs`). **Free-text
-  search over the log** is shipped too — a box in the Output tab's own
-  title bar, beside the level filter, matching case-insensitively against
-  both halves of what a row shows (the command and the result) and
-  narrowing *within* the level filter rather than replacing it
-  (`OutputLog::filtered`). The duplicate-display gap is closed: a Command
-  Bar run's outcome used to show twice, once in `command_bar::Feedback`'s
-  label and again as the Output dock's permanent row; the label now
-  appears only while the dock is collapsed
-  (`Feedback::shown_inline`), when it is the one place the result would
-  otherwise be lost — which is why a `Ctrl+S` save, which used to report
-  through the label alone, now logs a `Save` row too.
 - [ ] 📋 **Output window: the sandbox-dependent half.** Filtering by
   **context** (`Client`/`Server`/`User Plugin`) only means something once
   the sandbox's client/server split exists to produce it, and the **Show
@@ -1944,22 +1969,6 @@ against `Roblox/creator-docs` rather than assumed:
   `HttpService:RequestAsync`) for plugins that don't need Roblox's own UI
   system — see [Explicitly impossible](#explicitly-impossible-without-robloxs-engine)
   for what a plugin fundamentally can't do here.
-- [x] **The `Handles`/`*HandleAdornment`/`Selection*` Instance family**
-  (`Handles`, `ArcHandles`, `BoxHandleAdornment`, `SphereHandleAdornment`
-  and siblings, `SelectionBox`, `SelectionSphere`) — real, current,
-  documented classes a script or plugin instantiates to draw 3D handles
-  and outlines directly in the viewport, independent of this project's own
-  Move/Scale/Rotate gizmo. **Drawn**, from a place file: see "What's been
-  implemented" → Renderer. Checked directly against
-  `reference/engine/classes/Handles`/`BoxHandleAdornment`/
-  `SphereHandleAdornment`/`SelectionBox` rather than assumed, and **not**
-  modelled on how **Building Tools by F3X** draws its own tools — it
-  isn't: F3X's actual source
-  (`F3XTeam/RBX-Building-Tools`, `Libraries/Handles.lua`) renders plain 2D
-  `ImageButton`s inside a `ScreenGui`, hand-projected from 3D to screen
-  space, the same ordinary GUI machinery this project already renders
-  (see "What's been implemented" → Renderer's GUI containers) — worth not
-  conflating the two mechanisms just because both are called "handles."
 - [ ] 📋 **Making those handles interactive.** The docs are explicit that
   a `Handles`/`ArcHandles`/`*HandleAdornment` listens for input only under
   a player's `PlayerGui` or the `CoreGui`, and firing `MouseButton1Down`/
@@ -2009,17 +2018,8 @@ against `Roblox/creator-docs` rather than assumed:
 - [ ] 📋 Mouse capture in the free-flight camera — implemented for X11
   only today (`x11rb`/XFixes); needs a Win32 `ClipCursor`/`SetCursorPos`
   backend.
-- [x] A first real build on Windows, and CI coverage for it — every
-  change now runs `cargo clippy -D warnings`, `cargo build` and
-  `cargo test --workspace` on `windows-latest`
-  (`.github/workflows/ci.yml`). The workspace compiles and its tests pass
-  there. What that job cannot answer is anything about the editor
-  *running*: it is headless, so no window, GPU surface or input path has
-  been exercised on Windows. Launching the editor there is still open, and
-  mouse capture (the bullet above) is the one gap already known about.
 
 ### Tooling / CI
-- [x] Daily API-Dump sync (`.github/workflows/sync-api-dump.yml`).
 - [ ] 📋 A job that rebuilds against the current Studio version and
   compares parsed output to reference dumps, to catch a format drift
   before a user does.
