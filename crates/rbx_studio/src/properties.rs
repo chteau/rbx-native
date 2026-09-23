@@ -388,7 +388,7 @@ impl Properties {
         }
     }
 
-    fn format(&self, dom: &WeakDom, class: &str, name: &str, value: &Variant) -> String {
+    pub(crate) fn format(&self, dom: &WeakDom, class: &str, name: &str, value: &Variant) -> String {
         match value {
             Variant::String(text) if text.len() > MAX_STRING_LEN => bytes(text.len()),
             Variant::String(text) => format!("{text:?}"),

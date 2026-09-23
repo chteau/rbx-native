@@ -83,38 +83,30 @@ pub(super) struct PendingReview {
     pub(super) additions: usize,
     pub(super) updates: usize,
     pub(super) removals: usize,
+    /// Counts up per review, so a Diff window's caches know when the
+    /// batch under them changed.
+    serial: u64,
     changes: argon_client::Changes,
 }
 
-/// One row of the Diff window (`shell::argon_diff_window`) — the batch's
-/// own additions/updates/removals, read back out in a shape a render can
-/// walk without reaching into `argon_client::Changes` itself.
-pub(super) struct DiffRow {
-    pub(super) kind: DiffRowKind,
-    pub(super) name: String,
-    pub(super) class: String,
-    /// A row's own property changes. Empty for a removal — there is nothing
-    /// left to compare once the instance is gone.
-    pub(super) properties: Vec<PropertyDiff>,
-    /// An addition's own descendant count — the batch only lists an
-    /// addition's own subtree once, at its root, so the row that stands for
-    /// a whole new folder of scripts says so rather than looking like one
-    /// bare instance.
-    pub(super) nested: usize,
-}
+impl PendingReview {
+    pub(super) fn new(changes: argon_client::Changes, serial: u64) -> Self {
+        PendingReview {
+            additions: changes.additions.len(),
+            updates: changes.updates.len(),
+            removals: changes.removals.len(),
+            serial,
+            changes,
+        }
+    }
 
-pub(super) enum DiffRowKind {
-    Addition,
-    Update,
-    Removal,
-}
+    pub(super) fn serial(&self) -> u64 {
+        self.serial
+    }
 
-pub(super) struct PropertyDiff {
-    pub(super) name: String,
-    /// `None` for a property an addition is introducing for the first time
-    /// — there is no "before" for a row that didn't exist a moment ago.
-    pub(super) before: Option<String>,
-    pub(super) after: String,
+    pub(super) fn changes(&self) -> &argon_client::Changes {
+        &self.changes
+    }
 }
 
 /// Everything `Shell` owns for one Argon connection. Not present at all
@@ -136,6 +128,8 @@ pub(super) struct Sync {
     removed: Vec<ArgonRef>,
     generation: u64,
     write_generation: u64,
+    /// The serial the next `PendingReview` takes.
+    review_serial: u64,
 }
 
 impl Default for Sync {
@@ -150,6 +144,7 @@ impl Default for Sync {
             dirty: HashSet::new(),
             removed: Vec::new(),
             generation: 0,
+            review_serial: 0,
             write_generation: 0,
         }
     }
@@ -165,6 +160,47 @@ impl Shell {
         &self.argon.state
     }
 
+    /// The connected project's name, or "Argon" while not connected.
+    pub(in crate::shell) fn argon_project_name(&self) -> String {
+        match &self.argon.state {
+            SyncState::Connected { project, .. } => project.clone(),
+            _ => "Argon".to_owned(),
+        }
+    }
+
+    /// The Diff Lines Limit setting at the level in force.
+    pub(in crate::shell) fn argon_diff_lines_limit(&self) -> usize {
+        let keys = self.argon_level_keys();
+        match self
+            .argon_settings
+            .get(crate::settings::argon::Setting::DiffLinesLimit, &keys)
+        {
+            crate::settings::argon::Value::Number(n) => n as usize,
+            _ => 3000,
+        }
+    }
+
+    /// A value in the Properties panel's own words.
+    pub(in crate::shell) fn format_property(
+        &self,
+        class: &str,
+        name: &str,
+        value: &rbx_dom::Variant,
+    ) -> String {
+        self.properties.format(&self.dom, class, name, value)
+    }
+
+    /// Which review is pending, for a cache keyed on it.
+    pub(in crate::shell) fn argon_pending_serial(&self) -> Option<u64> {
+        self.argon.pending.as_ref().map(PendingReview::serial)
+    }
+
+    /// The pending review's batch, wrapped and numbered.
+    pub(super) fn set_pending(&mut self, changes: argon_client::Changes) {
+        self.argon.review_serial += 1;
+        self.argon.pending = Some(PendingReview::new(changes, self.argon.review_serial));
+    }
+
     pub(super) fn argon_pending(&self) -> Option<&PendingReview> {
         self.argon.pending.as_ref()
     }
@@ -173,9 +209,12 @@ impl Shell {
 mod apply;
 mod cli;
 mod connection;
+mod diff_fixture;
 mod diff_rows;
 mod initial;
 mod outgoing;
+
+pub(in crate::shell) use diff_rows::{ChangeKind, DiffNode};
 
 #[cfg(test)]
 mod tests;
