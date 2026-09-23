@@ -204,6 +204,12 @@ pub(crate) fn check_off_border() -> Rgba {
 pub(crate) fn text_full() -> Rgba {
     text()
 }
+
+/// The knob of a switched-on toggle: pure white on the accent track, the
+/// one place the palette goes brighter than `text`.
+pub(crate) fn knob() -> Rgba {
+    rgb(0xFFFFFF)
+}
 pub(crate) fn text_strong() -> Rgba {
     text()
 }
