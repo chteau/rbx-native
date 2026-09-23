@@ -2,6 +2,12 @@
 
 ## 2026-09-23
 
+- **Fixed: the Script Editor coloured code with a light-theme palette.**
+  GPUI Kit only swaps its syntax palette for the one a theme file's
+  `highlight` block defines, and the editor's theme has none, so navy
+  keywords and dark-red builtins landed on the editor's near-black
+  background. Themes without a block now get the kit's dark palette; a
+  user theme with its own block keeps it. — @chteau
 - **The Argon review's Diff window is redesigned.** It opens at 1100×720,
   resizable, with the batch's changes listed on the left under Additions,
   Updates and Removals, an added container's contents as a tree under it,

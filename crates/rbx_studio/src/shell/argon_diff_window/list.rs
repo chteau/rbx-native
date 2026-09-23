@@ -231,8 +231,9 @@ impl ArgonDiffWindow {
             .into_any_element()
     }
 
-    /// The right column of a root row: line counts for a script, the
-    /// nested count for a container, the property count otherwise.
+    /// The right column of a row: line counts for a script, the nested
+    /// count for a container, the property count otherwise — and nothing
+    /// when every count is zero.
     fn row_meta(&mut self, node: &DiffNode) -> AnyElement {
         if node.source.is_some() {
             let (added, removed) = self.line_counts(node);
@@ -241,8 +242,10 @@ impl ArgonDiffWindow {
         }
         let text = if node.nested > 0 {
             format!("+{} nested", node.nested)
-        } else {
+        } else if !node.properties.is_empty() {
             format!("{} props", node.properties.len())
+        } else {
+            return div().into_any_element();
         };
         div()
             .flex_none()

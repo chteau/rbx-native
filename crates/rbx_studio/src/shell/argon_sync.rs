@@ -214,7 +214,7 @@ mod diff_rows;
 mod initial;
 mod outgoing;
 
-pub(in crate::shell) use diff_rows::{ChangeKind, DiffNode};
+pub(in crate::shell) use diff_rows::{ChangeKind, DiffNode, PropertyChange};
 
 #[cfg(test)]
 mod tests;

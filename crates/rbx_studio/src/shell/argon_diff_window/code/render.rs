@@ -88,10 +88,12 @@ impl ArgonDiffWindow {
                             .when_some(cell_bg, |this, bg| this.bg(bg))
                             .child(value.map(|n| n.to_string()).unwrap_or_default())
                     };
+                    // A run carries its font and colour; the size and the
+                    // line height are the row element's, below — gpui lays
+                    // styled text out at the enclosing element's size, not
+                    // the runs'.
                     let style = TextStyle {
                         font_family: tokens::FONT_FAMILY_MONO.into(),
-                        font_size: px(12.).into(),
-                        line_height: px(CODE_ROW).into(),
                         color: tokens::text().into(),
                         font_features: FontFeatures::disable_ligatures(),
                         ..window.text_style()
@@ -114,6 +116,9 @@ impl ArgonDiffWindow {
                         .h(px(CODE_ROW))
                         .w_full()
                         .items_center()
+                        .font_family(tokens::FONT_FAMILY_MONO)
+                        .text_size(px(12.))
+                        .line_height(px(CODE_ROW))
                         .when_some(row_bg, |this, bg| this.bg(bg))
                         .when(unified, |this| {
                             this.child(number(*old)).child(number(*new)).child(

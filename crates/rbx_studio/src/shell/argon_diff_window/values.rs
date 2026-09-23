@@ -9,7 +9,7 @@ use rbx_dom::Variant;
 
 use crate::class_icons::IconPack;
 use crate::explorer::{self, ClassIcon};
-use crate::shell::argon_sync::DiffNode;
+use crate::shell::argon_sync::{DiffNode, PropertyChange};
 use crate::shell::Shell;
 use crate::tokens;
 
@@ -37,16 +37,33 @@ pub(super) fn format_properties(shell: &Shell, node: &DiffNode) -> Vec<Formatted
         .iter()
         .map(|property| FormattedProperty {
             name: property.name.clone(),
-            before: property.before.as_ref().map(|value| Cell {
-                text: SharedString::from(shell.format_property(&node.class, &property.name, value)),
-                swatch: swatch_colour(value),
-            }),
-            after: property.after.as_ref().map(|value| Cell {
-                text: SharedString::from(shell.format_property(&node.class, &property.name, value)),
-                swatch: swatch_colour(value),
-            }),
+            before: property
+                .before
+                .as_ref()
+                .map(|value| cell(shell, node, property, value)),
+            after: property
+                .after
+                .as_ref()
+                .map(|value| cell(shell, node, property, value)),
         })
         .collect()
+}
+
+/// The Properties panel writes an enum as `0 (Automatic)`, the ordinal
+/// kept so a stale value still shows; a chip has room for the name alone.
+fn cell(shell: &Shell, node: &DiffNode, property: &PropertyChange, value: &Variant) -> Cell {
+    let text = match value {
+        Variant::Enum(raw) => shell
+            .properties
+            .enum_item(&node.class, &property.name, *raw)
+            .map(str::to_owned),
+        _ => None,
+    }
+    .unwrap_or_else(|| shell.format_property(&node.class, &property.name, value));
+    Cell {
+        text: SharedString::from(text),
+        swatch: swatch_colour(value),
+    }
 }
 
 /// Which side of a change a chip stands on.
