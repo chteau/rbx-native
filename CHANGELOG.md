@@ -8,7 +8,9 @@
   its − and + at either end and the value centred in mono. A switched-off
   section goes flat and out of the Tab order, and both pills take the
   accent hairline while the popover is open. Same increments, same
-  shortcuts, same IDs. — @chteau
+  shortcuts, same IDs. The pills themselves grow to the board's 26px with a
+  13px icon and a 6px gap, and a switched-on toggle's knob is pure white
+  everywhere in the editor, as the palette specifies. — @chteau
 
 - **The editor ships its own fonts.** Manrope and JetBrains Mono (both OFL,
   licences in `assets/fonts/`) are embedded and registered at startup, so

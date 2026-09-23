@@ -116,7 +116,7 @@ impl Shell {
                 .w(tokens::stack_width())
                 .h_full()
                 .justify_center()
-                .gap(px(4.))
+                .gap(px(6.))
                 .cursor_pointer()
                 .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::chrome())))
                 .tooltip(|window, cx| super::tooltip::text("Snap increments", window, cx)),
@@ -188,7 +188,7 @@ fn snap_readout(icon: IconName, value: String, enabled: bool, open: bool) -> imp
             tokens::border()
         })
         .text_size(tokens::text_sm())
-        .line_height(tokens::line_xs())
+        .line_height(tokens::line_md())
         .text_color(if open {
             tokens::text()
         } else if enabled {
@@ -196,6 +196,6 @@ fn snap_readout(icon: IconName, value: String, enabled: bool, open: bool) -> imp
         } else {
             tokens::text_disabled()
         })
-        .child(Icon::new(icon).size(tokens::text_xs()))
+        .child(Icon::new(icon).size(px(13.)))
         .child(div().flex_1().truncate().child(SharedString::from(value)))
 }
