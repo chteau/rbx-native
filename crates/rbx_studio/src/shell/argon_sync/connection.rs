@@ -127,9 +127,7 @@ impl Shell {
             return;
         };
         if value != "1" {
-            self.argon_address.update(cx, |state, cx| {
-                state.set_value(value, window, cx);
-            });
+            self.argon_ui.set_address(&value, window, cx);
         }
         self.argon_connect(cx);
     }
@@ -191,7 +189,7 @@ impl Shell {
     }
 
     pub(in crate::shell) fn argon_connect(&mut self, cx: &mut Context<Self>) {
-        let address = self.argon_address.read(cx).value().to_string();
+        let address = self.argon_ui.address(cx);
         let (host, port) = parse_address(&address);
         let keys = self.argon_level_keys();
         let https = self.argon_settings.get(Setting::Https, &keys) == Value::Bool(true);
@@ -261,7 +259,7 @@ impl Shell {
         for event in events {
             match event {
                 ArgonEvent::Connected(project) => {
-                    let address = self.argon_address.read(cx).value().to_string();
+                    let address = self.argon_ui.address(cx);
                     let last_sync = match &self.argon.state {
                         SyncState::Connected { last_sync, .. } => *last_sync,
                         _ => None,
@@ -277,7 +275,6 @@ impl Shell {
                     self.argon.state = SyncState::Connected {
                         keys: level_keys(&project),
                         project: project.name,
-                        address,
                         last_sync,
                         direction: SyncDirection::Down,
                     };

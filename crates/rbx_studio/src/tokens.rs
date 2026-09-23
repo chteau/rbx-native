@@ -157,6 +157,14 @@ pub(crate) fn text_error() -> Rgba {
     rgb(0xE06C6C)
 }
 
+/// [`text_error`] as a fill, for the badge behind an error's own text.
+pub(crate) fn error_soft() -> Rgba {
+    Rgba {
+        a: 0.12,
+        ..text_error()
+    }
+}
+
 // --------------------------------------------------------------- controls
 
 /// The one saturated colour in the whole UI that isn't a transform tool's
@@ -182,6 +190,17 @@ pub(crate) fn accent_line() -> Rgba {
         a: 0.55,
         ..check_on()
     }
+}
+
+/// A primary button under the pointer: 5% white over the accent, blended
+/// ahead of time (gpui paints one fill per box).
+pub(crate) fn accent_hover() -> Rgba {
+    rgb(0x7385DD)
+}
+
+/// A secondary button under the pointer.
+pub(crate) fn secondary_hover() -> Rgba {
+    rgb(0x202123)
 }
 
 /// The knob of a switched-on toggle: pure white on the accent track, the
@@ -440,6 +459,57 @@ pub(crate) fn line_sm() -> Pixels {
 }
 
 pub(crate) fn line_xs() -> Pixels {
+    scaled(14.)
+}
+
+/// A dock's own title ("Argon"), a popover's heading ("Getting started").
+pub(crate) fn text_lg() -> Pixels {
+    scaled(13.)
+}
+
+pub(crate) fn line_lg() -> Pixels {
+    scaled(18.)
+}
+
+/// A primary or secondary action button's label (Connect, Disconnect).
+pub(crate) fn text_action() -> Pixels {
+    scaled(12.5)
+}
+
+pub(crate) fn line_action() -> Pixels {
+    scaled(17.)
+}
+
+/// [`text_md`] on a taller line: a dock's one-line description under its
+/// title.
+pub(crate) fn line_md_tall() -> Pixels {
+    scaled(18.)
+}
+
+/// A status badge ("Connected"), an inline command chip in a help text.
+pub(crate) fn text_badge() -> Pixels {
+    scaled(11.)
+}
+
+pub(crate) fn line_badge() -> Pixels {
+    scaled(16.)
+}
+
+/// A ghost button's label ("Restore defaults").
+pub(crate) fn text_ghost() -> Pixels {
+    scaled(11.)
+}
+
+pub(crate) fn line_ghost() -> Pixels {
+    scaled(15.)
+}
+
+/// An uppercase section header, a "WIP" badge.
+pub(crate) fn text_xxs() -> Pixels {
+    scaled(10.)
+}
+
+pub(crate) fn line_xxs() -> Pixels {
     scaled(14.)
 }
 

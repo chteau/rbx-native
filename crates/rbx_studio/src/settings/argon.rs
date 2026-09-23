@@ -152,6 +152,17 @@ impl Value {
     }
 }
 
+impl Value {
+    fn same_kind(&self, other: &Value) -> bool {
+        matches!(
+            (self, other),
+            (Value::Bool(_), Value::Bool(_))
+                | (Value::Choice(_), Value::Choice(_))
+                | (Value::Number(_), Value::Number(_))
+        )
+    }
+}
+
 /// The plugin's three configuration levels, `Config.luau:8`, in the
 /// order they are resolved (`:59`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -163,6 +174,14 @@ pub(crate) enum Level {
 
 impl Level {
     pub(crate) const ALL: [Level; 3] = [Level::Place, Level::Game, Level::Global];
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Level::Place => "Place",
+            Level::Game => "Game",
+            Level::Global => "Global",
+        }
+    }
 }
 
 /// What identifies the open place's Game and Place levels. `None` means
@@ -197,14 +216,72 @@ impl ArgonSettings {
     /// The value in force: Place, then Game, then Global, then the default
     /// (`Config.luau:105-121` with no level).
     pub(crate) fn get(&self, setting: Setting, keys: &LevelKeys) -> Value {
-        self.inherited_from(setting, 0, keys)
-    }
-
-    fn inherited_from(&self, setting: Setting, start: usize, keys: &LevelKeys) -> Value {
-        Level::ALL[start..]
+        Level::ALL
             .iter()
             .find_map(|level| self.overrides(*level, keys)?.get(&setting).cloned())
             .unwrap_or_else(|| setting.default())
+    }
+
+    /// The override stored at exactly `level`, if any — the plugin's
+    /// `Config:get(setting, level, true)` (`Config.luau:91-93`).
+    pub(crate) fn exact(&self, setting: Setting, level: Level, keys: &LevelKeys) -> Option<Value> {
+        self.overrides(level, keys)?.get(&setting).cloned()
+    }
+
+    /// Stores `value` at `level`, dropping the override instead when it is
+    /// the default (`Config.luau:147`). A `value` of the wrong kind for the
+    /// setting, or a level with no key, changes nothing. Returns whether
+    /// anything changed.
+    pub(crate) fn set(
+        &mut self,
+        setting: Setting,
+        value: Value,
+        level: Level,
+        keys: &LevelKeys,
+    ) -> bool {
+        if !value.same_kind(&setting.default()) {
+            return false;
+        }
+        let overrides = match level {
+            Level::Global => &mut self.global,
+            Level::Game => match &keys.game {
+                Some(key) => self.game.entry(key.clone()).or_default(),
+                None => return false,
+            },
+            Level::Place => match &keys.place {
+                Some(key) => self.place.entry(key.clone()).or_default(),
+                None => return false,
+            },
+        };
+        let before = overrides.get(&setting).cloned();
+        if value == setting.default() {
+            overrides.remove(&setting);
+        } else {
+            overrides.insert(setting, value);
+        }
+        let changed = before != overrides.get(&setting).cloned();
+        self.prune();
+        changed
+    }
+
+    /// Empties one level (`Config.luau:162-174`). Returns whether it held
+    /// anything.
+    pub(crate) fn restore_defaults(&mut self, level: Level, keys: &LevelKeys) -> bool {
+        let removed = match level {
+            Level::Global => !std::mem::take(&mut self.global).is_empty(),
+            Level::Game => keys
+                .game
+                .as_ref()
+                .and_then(|key| self.game.remove(key))
+                .is_some_and(|overrides| !overrides.is_empty()),
+            Level::Place => keys
+                .place
+                .as_ref()
+                .and_then(|key| self.place.remove(key))
+                .is_some_and(|overrides| !overrides.is_empty()),
+        };
+        self.prune();
+        removed
     }
 
     /// A key whose overrides are all gone is not worth a line in the file
@@ -276,116 +353,4 @@ fn overrides_json(overrides: &Overrides) -> serde_json::Value {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn keys() -> LevelKeys {
-        LevelKeys {
-            game: Some("game-a".to_owned()),
-            place: Some("place-1".to_owned()),
-        }
-    }
-
-    #[test]
-    fn every_setting_defaults_to_the_plugins_own_value() {
-        let settings = ArgonSettings::default();
-        assert_eq!(
-            settings.get(Setting::AutoConnect, &keys()),
-            Value::Bool(true)
-        );
-        assert_eq!(
-            settings.get(Setting::TwoWaySync, &keys()),
-            Value::Bool(false)
-        );
-        assert_eq!(
-            settings.get(Setting::LogLevel, &keys()),
-            Value::Choice("Warn")
-        );
-        assert_eq!(
-            settings.get(Setting::ChangesThreshold, &keys()),
-            Value::Number(5)
-        );
-        assert_eq!(
-            settings.get(Setting::DiffLinesLimit, &keys()),
-            Value::Number(3000)
-        );
-    }
-
-    #[test]
-    fn place_beats_game_beats_global_beats_the_default() {
-        let keys = keys();
-        let settings = ArgonSettings {
-            global: [(Setting::LogLevel, Value::Choice("Info"))].into(),
-            game: [(
-                "game-a".to_owned(),
-                [(Setting::LogLevel, Value::Choice("Debug"))].into(),
-            )]
-            .into(),
-            place: [(
-                "place-1".to_owned(),
-                [(Setting::LogLevel, Value::Choice("Trace"))].into(),
-            )]
-            .into(),
-        };
-        assert_eq!(
-            settings.get(Setting::LogLevel, &keys),
-            Value::Choice("Trace")
-        );
-        // Another place of the same game inherits the game's override …
-        let other = LevelKeys {
-            place: Some("place-2".to_owned()),
-            ..keys.clone()
-        };
-        assert_eq!(
-            settings.get(Setting::LogLevel, &other),
-            Value::Choice("Debug")
-        );
-        // … and with no identity at all only Global applies.
-        assert_eq!(
-            settings.get(Setting::LogLevel, &LevelKeys::default()),
-            Value::Choice("Info")
-        );
-        assert_eq!(settings.get(Setting::AutoConnect, &keys), Value::Bool(true));
-    }
-
-    #[test]
-    fn overrides_round_trip_through_the_settings_file_shape() {
-        let settings = ArgonSettings {
-            global: [(Setting::AutoReconnect, Value::Bool(true))].into(),
-            game: [(
-                "game-a".to_owned(),
-                [(Setting::InitialSyncPriority, Value::Choice("Client"))].into(),
-            )]
-            .into(),
-            place: [(
-                "place-1".to_owned(),
-                [(Setting::ChangesThreshold, Value::Number(12))].into(),
-            )]
-            .into(),
-        };
-        let file = serde_json::json!({ "argon": settings.json() });
-        assert_eq!(ArgonSettings::read(&file), settings);
-        assert_eq!(
-            file["argon"]["place"]["place-1"]["ChangesThreshold"],
-            serde_json::json!(12)
-        );
-    }
-
-    #[test]
-    fn a_file_from_before_argon_settings_existed_reads_as_all_defaults() {
-        let file = serde_json::json!({ "argon_address": "localhost:8000" });
-        assert_eq!(ArgonSettings::read(&file), ArgonSettings::default());
-    }
-
-    #[test]
-    fn malformed_and_unknown_entries_keep_their_defaults() {
-        let file = serde_json::json!({ "argon": {
-            "global": { "LogLevel": "Loud", "ChangesThreshold": -3, "AutoConnect": "yes", "Nope": 1 },
-            "game": { "g": { "OnlyCodeMode": true } },
-            "place": "not an object"
-        }});
-        let settings = ArgonSettings::read(&file);
-        // `OnlyCodeMode: true` is the default, so the game entry is empty and pruned.
-        assert_eq!(settings, ArgonSettings::default());
-    }
-}
+mod tests;

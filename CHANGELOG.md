@@ -2,6 +2,21 @@
 
 ## 2026-09-23
 
+- **The Argon dock is rebuilt to the redesign.** The connection sits on
+  the left: the Argon mark, the CLI's version, and a status badge for
+  Disconnected, Connecting, Connected, Error and a pending review; under
+  it one line of context, then the `host : port` field, a "?" that opens
+  a "Getting started" popover, and the Connect / Disconnect / Dismiss /
+  Accept and Cancel buttons. The plugin's settings fill the right as
+  cards under Connection, Sync, Two-Way Sync and Workflow headers, with a
+  Global / Game / Place switch (Game and Place only once a published
+  project is connected) and Restore defaults. The dock lays out for its
+  own width: two columns above 900 px, stacked below it, one column of
+  cards under 588 px, a wrapped action row under 388 px, so it reads the
+  same docked at the bottom, at the side, or floated. The Argon and
+  Wally dock menus are now called "Argon dock options" and "Wally dock
+  options". — @chteau
+
 - **Auto Connect stays quiet without Argon.** When the Argon CLI isn't
   installed, opening a place no longer tries to connect and fails; the
   dock stays Disconnected and Output notes that Auto Connect was skipped.

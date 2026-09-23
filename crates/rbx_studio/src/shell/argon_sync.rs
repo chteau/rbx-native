@@ -60,7 +60,6 @@ pub(super) enum SyncState {
     Connecting,
     Connected {
         project: String,
-        address: String,
         last_sync: Option<Instant>,
         direction: SyncDirection,
         /// What the connected project identifies as the Game and Place
@@ -155,6 +154,12 @@ impl Default for Sync {
         }
     }
 }
+
+/// Where the `argon` CLI is on this machine, if anywhere — see `cli`.
+pub(super) fn argon_cli_path() -> Option<std::path::PathBuf> {
+    cli::locate()
+}
+
 impl Shell {
     pub(super) fn argon_state(&self) -> &SyncState {
         &self.argon.state
