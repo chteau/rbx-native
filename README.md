@@ -1,10 +1,29 @@
-# rbx-native
+<br/>
+<div align="center">
+    <h1 align="center">
+        rbx-native
+    </h1>
+    <br>
+    <br>
+    <a href="https://github.com/chteau/rbx-native">
+        <img src="assets/icons/brand/rbxnative-logo.svg" alt="rbx-native logo" width="100">
+    </a>
+    <br>
+    <br>
+    <div align="center">
+        <img src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white" alt="Rust Badge" />
+        <img src="https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Linux Badge" />
+        <img src="https://img.shields.io/badge/Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows Badge" />
+        <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="MIT License Badge" />
+    </div>
+    <br/>
+</div>
 
-Native tooling for Roblox place and model files, written in Rust: a binary
-`.rbxm`/`.rbxl` parser, an XML `.rbxlx`/`.rbxmx` parser, a reflection
-database, a mesh parser, a sandboxed Luau runtime, an Open Cloud client, an
-asset cache, and a wgpu viewer/editor that aims to look and feel like Roblox
-Studio.
+rbx-native is a from-scratch, native replacement for Roblox Studio on Linux and
+Windows, written in Rust: a binary `.rbxm`/`.rbxl` parser, an XML
+`.rbxlx`/`.rbxmx` parser, a reflection database, a mesh parser, a sandboxed
+Luau runtime, an Open Cloud client, an asset cache, and a wgpu viewer/editor
+that aims to look and feel like Roblox Studio.
 
 This is an unofficial, community project, unaffiliated with and not endorsed
 by Roblox Corporation. "Roblox" is a trademark of Roblox Corporation.
@@ -24,13 +43,15 @@ what's done, what's approximated, and what's out of scope on purpose).
 | Platform | State |
 |---|---|
 | Linux (X11) | Primary target. Actively developed and tested on it every day. |
-| Windows | **Builds and passes its tests**, on every change: CI runs `cargo clippy -D warnings`, `cargo build` and `cargo test --workspace` on `windows-latest`. What that does *not* cover is the editor actually running — CI is headless, so no window, GPU surface or input path has ever been exercised on Windows, and `wgpu`/GPUI Kit being cross-platform by design is still the only reason to expect them to work. Known gaps are under [Platform: Windows](ROADMAP.md) in the roadmap; mouse capture in the free-flight camera is the main one (X11-only today). Of the PowerShell helpers in `scripts/`, only `publish-screenshot.ps1` has been run on a real Windows machine. **If you're on Windows, launching the editor and reporting what breaks is the most valuable contribution you can make right now — the compile is the part that's covered.** |
+| Windows | **Supported: the editor runs.** CI also builds it on every change, running `cargo clippy -D warnings`, `cargo build` and `cargo test --workspace` on `windows-latest`. Known gaps are under [Platform: Windows](ROADMAP.md) in the roadmap; mouse capture in the free-flight camera is the main one (X11-only today). Reports of anything that breaks on your machine are welcome. |
 | macOS | Not a target yet. Likely buildable given the dependencies, entirely unverified. |
 | Wayland | Falls back to an uncaptured cursor (no pointer lock) rather than failing outright. |
 
 ## Building
 
-Requires a recent stable Rust toolchain ([rustup.rs](https://rustup.rs)).
+Requires a recent stable Rust toolchain ([rustup.rs](https://rustup.rs)). On
+Windows, rustup's default MSVC toolchain also needs the Visual Studio C++ build
+tools, which its installer offers to set up.
 
 On Linux, the desktop editor (`rbx_studio`) needs a few system packages for
 window/input handling — this list comes from this project's own build
@@ -71,8 +92,7 @@ offscreen frame are both too slow to use otherwise — don't be surprised that
 ```
 
 On Windows, without WSL or Git Bash: `.\scripts\check.ps1` from PowerShell —
-the same gate, native to the platform (untested on a real Windows machine,
-like the rest of this project's Windows story; see
+the same gate, native to the platform (see
 [Platform support](#platform-support)).
 
 Runs the full gate this project holds every change to: `cargo fmt --check`,
