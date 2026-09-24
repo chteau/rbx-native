@@ -42,6 +42,7 @@ mod tree_keys;
 mod argon_dock;
 mod rows;
 mod save;
+mod script_finder;
 mod script_panel;
 mod scripts;
 mod scroll;

@@ -7,6 +7,7 @@
 //! as `shell::edit` takes one — so undo, redo and Ctrl+S need to know nothing
 //! about scripts.
 
+use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::component::input::{EditorState, InputEvent};
@@ -15,7 +16,7 @@ use rbx_dom::Ref;
 
 use crate::explorer;
 use crate::script_editor::tabs::Opened;
-use crate::script_editor::{highlight, source, OpenScript};
+use crate::script_editor::{goto, highlight, source, OpenScript};
 
 use super::Shell;
 
@@ -70,8 +71,11 @@ impl Shell {
                 // Folding needs a parse tree's block extents, which the lexer
                 // this editor highlights with does not produce.
                 .folding(false)
+                // Ctrl+F / Ctrl+H: the editor's own in-script Find/Replace bar.
+                .searchable(true)
                 .default_value(seed);
             state.set_highlighter_factory(highlight::factory(), cx);
+            state.lsp_mut().definition_provider = Some(Rc::new(goto::Declarations));
             state
         });
         let subscription = cx.subscribe(&state, move |shell, _, event: &InputEvent, cx| {
@@ -192,7 +196,7 @@ impl Shell {
     }
 
     /// One keystroke in one tab: marks it dirty and schedules the write.
-    fn script_changed(&mut self, reference: Ref, cx: &mut Context<Self>) {
+    pub(super) fn script_changed(&mut self, reference: Ref, cx: &mut Context<Self>) {
         let Some(open) = self.scripts.open.get_mut(&reference) else {
             return;
         };

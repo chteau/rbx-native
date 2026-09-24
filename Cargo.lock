@@ -6009,9 +6009,11 @@ dependencies = [
 name = "rbx_studio"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "glam",
  "gpui-kit",
  "image",
+ "lsp-types",
  "raw-window-handle",
  "rbx_assets",
  "rbx_binary",

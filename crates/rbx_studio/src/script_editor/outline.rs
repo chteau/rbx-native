@@ -150,10 +150,8 @@ impl Walk {
                     }
                     next_scope += 1;
                 }
-                "end" | "until" | "elseif" => {
-                    if stack.len() > 1 {
-                        stack.pop();
-                    }
+                "end" | "until" | "elseif" if stack.len() > 1 => {
+                    stack.pop();
                 }
                 _ => {}
             }
@@ -261,8 +259,8 @@ fn name_list(tokens: &[Token], start: usize, source: &str) -> Vec<usize> {
             index += 1;
             while let Some(token) = tokens.get(index) {
                 let text = &source[token.range.clone()];
-                let line_break = source[tokens[index - 1].range.end..token.range.start]
-                    .contains('\n');
+                let line_break =
+                    source[tokens[index - 1].range.end..token.range.start].contains('\n');
                 if depth == 0 && (text == "," || text == "=" || line_break) {
                     break;
                 }
@@ -303,8 +301,8 @@ fn parameters(tokens: &[Token], keyword: usize, source: &str) -> Vec<usize> {
             }
             _ => {}
         }
-        let after_separator = index > open
-            && matches!(&source[tokens[index - 1].range.clone()], "(" | ",");
+        let after_separator =
+            index > open && matches!(&source[tokens[index - 1].range.clone()], "(" | ",");
         if depth == 1 && after_separator && is_name(&tokens[index]) {
             names.push(index);
         }

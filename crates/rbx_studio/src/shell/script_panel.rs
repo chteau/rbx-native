@@ -9,13 +9,13 @@
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::input::Editor;
+use gpui_kit::component::input::{Editor, GoToDefinition};
 use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Icon, Sizable};
 use gpui_kit::*;
 use rbx_dom::Ref;
 
-use crate::script_editor::source;
+use crate::script_editor::{outline, source};
 
 use super::Shell;
 
@@ -36,9 +36,23 @@ impl Shell {
 
         v_flex()
             .size_full()
+            .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
+                if shell.handle_finder_key(&event.keystroke, window, cx) {
+                    cx.stop_propagation();
+                }
+            }))
+            // The right-click menu's Go to Definition. The editor's own
+            // handler only jumps to a target a Ctrl-hover already resolved, so
+            // from a plain right-click it would do nothing; taken here first,
+            // it resolves the name under the cursor itself.
+            .capture_action(cx.listener(move |shell, _: &GoToDefinition, window, cx| {
+                shell.go_to_declaration(active, window, cx);
+                cx.stop_propagation();
+            }))
             .child(self.script_tabs(active, cx))
             .child(
                 div()
+                    .relative()
                     .flex_1()
                     .overflow_hidden()
                     .children(self.scripts.open.get(&active).map(|open| {
@@ -46,9 +60,23 @@ impl Shell {
                             .bordered(false)
                             .h(relative(1.0))
                             .w_full()
-                    })),
+                    }))
+                    .children(self.script_finder(cx)),
             )
             .into_any_element()
+    }
+
+    fn go_to_declaration(&mut self, reference: Ref, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(open) = self.scripts.open.get(&reference) else {
+            return;
+        };
+        open.state.update(cx, |state, cx| {
+            let text = state.value().to_string();
+            if let Some(target) = outline::declaration(&text, state.cursor()) {
+                state.set_selected_range(target, cx);
+                state.focus(window, cx);
+            }
+        });
     }
 
     fn script_tabs(&self, active: Ref, cx: &mut Context<Self>) -> impl IntoElement {
