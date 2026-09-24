@@ -1566,6 +1566,25 @@ against `Roblox/creator-docs` rather than assumed:
   it — don't assume it's as easy as the local-authoring case above just
   because they sound like the same feature.
 
+- [ ] 📋 **`AnimationConstraint` rigs, the Avatar Joint Upgrade.** Roblox
+  no longer builds its R15 player characters from `Motor6D`s: with
+  `StarterPlayer.AvatarJointUpgrade` on (the default for new experiences)
+  a character spawns with `AnimationConstraint`s instead, which animate
+  kinematically *and* take part in physical simulation (ragdolls, limb
+  strength). `Motor6D` stays in the engine, but is frozen: new joint
+  features land on `AnimationConstraint` only. Both classes are already in
+  the embedded dump (`AnimationConstraint.Transform` included), so this is
+  reachable data, and it changes the animation items above. Playback and
+  the Animation Editor must drive `AnimationConstraint.Transform` as well
+  as `Motor6D.Transform`, and find a rig's joints by either class (an
+  upgraded rig has no `Motor6D` to find). Rig insertion should emit
+  `AnimationConstraint` joints for R15 when `AvatarJointUpgrade` is on,
+  and `Motor6D` when it is off. The Explorer, the joint gizmos and the
+  "joint" icon treatment should treat the two as the same kind of thing.
+  The simulation half (force-based limbs, ragdolls) is engine physics and
+  stays out of reach, the same as any other physics (see
+  [Explicitly impossible](#explicitly-impossible-without-robloxs-engine)).
+
 #### CSG
 - [ ] 📋 `MeshData`/CSGMDL (Roblox's own baked union result format) — see
   [Explicitly impossible](#explicitly-impossible-without-robloxs-engine),
@@ -1732,7 +1751,7 @@ against `Roblox/creator-docs` rather than assumed:
     committing to it, likely in the same risk tier as other
     account-data-dependent items on this roadmap.
   - Whichever combination is chosen, insert as a real character `Model`
-    (matching Studio's own output: correct joints/`Motor6D`s and
+    (matching Studio's own output: correct joints — `AnimationConstraint`s or `Motor6D`s, see the Avatar Joint Upgrade item above — and
     `Class.Humanoid` so the rig is immediately animatable — ties directly
     into the Animation work above) — either built locally from known
     proportions/meshes, or, if a specific official asset id is the more
@@ -1945,6 +1964,46 @@ against `Roblox/creator-docs` rather than assumed:
   approximates the same effect without needing any Roblox-side cooperation
   at all — this project already owns the transport real Network Simulator
   is throttling a lower-level equivalent of.
+  The current Studio UI is a **Network** button in the playtest toolbar
+  (a Wi-Fi icon and a dropdown) opening a **Network simulation** panel:
+  a **Preset** dropdown (or Custom), then **Inbound** and **Outbound**
+  groups that each carry **Latency** (ms), **Packet loss** (a percent
+  slider) and **Jitter** (ms), and **Apply** / **Save** / **Reset**
+  buttons. That is the shape to copy. One honest limit, which the paragraph
+  above glosses over: the relay only carries the probe's own traffic, not
+  the replication between the real Roblox client and server that Studio's
+  simulator throttles. So this would delay this editor's view of the
+  session, and would not make the *game* feel lag. It cannot test a
+  game's lag handling, and it matters more now that Server Authority
+  (below) is built around exactly that.
+- [ ] ⚠️ **Server Authority (Studio Beta, announced 2026)**, checked
+  against the Creator Hub's `projects/server-authority` page. It is a
+  workspace mode, not an editor feature: `Workspace.AuthorityMode = Server`
+  turns on client prediction, misprediction detection, and rollback with
+  resimulation, and sets five companion `Workspace` properties in one go
+  (`NextGenerationReplication`, `PlayerScriptsUseInputActionSystem`,
+  `SignalBehavior = Deferred`, `UseFixedSimulation`, `StreamingEnabled`).
+  It adds `RunService:BindToSimulation()` and `SetPredictionMode()`, makes
+  the Input Action System the way clients affect state, and syncs custom
+  data on predicted instances through Attributes (64 per instance, names
+  and string values of 50 characters at most). Effect on this project, in
+  three parts:
+  - **Editing is unaffected.** No place format or DOM change. The reachable
+    part is small: once the daily API-dump sync brings the new `Workspace`
+    properties in (only `SignalBehavior` and `StreamingEnabled` are in the
+    embedded dump today), the Properties panel shows them, and setting
+    `AuthorityMode` could flip the five companions together, the way
+    Studio does. Worth a line in the Attributes editor's limits too.
+  - **Running it is impossible.** Prediction, rollback and resimulation
+    are engine behaviour. This is the same wall as physics, listed under
+    "Explicitly impossible".
+  - **The sandbox is affected.** A place using it needs its probe and
+    mirror scripts to obey the same rules (shared `ModuleScript`s
+    initialised from `ReplicatedStorage`, no reliance on `Heartbeat`
+    ordering), and playtest results for such a place are only as good as
+    the real client's. The Network Simulator item above is the one that
+    would matter most for these places, and is the one the relay cannot
+    fully serve.
 - [ ] ⚠️ **Controller Emulator equivalent** — real Studio's tool
   (`studio/controller-emulator.md`) emulates gamepads, VR controllers,
   handhelds, and TV remotes, injecting real input events into a playtest.
@@ -2253,7 +2312,10 @@ and no amount of reverse engineering changes that:
   researchers haven't fully decoded either; not worth chasing when a real
   from-scratch boolean already exists as the actual answer.
 - **Physics simulation and anti-cheat** — proprietary physics engine, no
-  real server authority possible from rbx-native.
+  real server authority possible from rbx-native. That covers Roblox's new
+  Server Authority model too: client prediction, rollback and resimulation
+  are engine behaviour, so only its settings can be edited here (see
+  Play / Test).
 
 ## Possible via a workaround
 
