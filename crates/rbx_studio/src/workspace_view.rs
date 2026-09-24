@@ -87,7 +87,7 @@ impl EventEmitter<AssetWarnings> for WorkspaceView {}
 /// arrives here rather than being carried out on the spot.
 pub(crate) enum ViewportAction {
     /// A click, as the world ray under it — `Shell` resolves what that ray
-    /// actually hits (see `shell::selection::from_click`). `extend` is
+    /// actually hits (see `rbx_viewer::pick::from_click`). `extend` is
     /// `Shift`/`Ctrl`/`Cmd` held: add the hit to the selection (or drop it, if
     /// it was already in) rather than replacing the selection with it.
     ///

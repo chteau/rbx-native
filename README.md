@@ -75,9 +75,30 @@ This builds the whole workspace. Individual binaries:
 |---|---|---|
 | `rbxdump` | `rbx_parser_cli` | Reads a `.rbxm`/`.rbxl`/`.rbxlx`/`.rbxmx` file and prints its instance tree; `--roundtrip <file>` is a continuous-verification tool that re-serializes a file and diffs the result against the original. |
 | `rbxlua` | `rbx_parser_cli` | Runs a Luau script against a place file from the command line (`rbxlua place.rbxl script.luau [--out out.rbxl] [--print-changes]`). |
-| `rbxview` | `rbx_viewer` | A standalone 3D viewer for a place/model file (`rbxview place.rbxl [--screenshot out.png]`). |
+| `rbxview` | `rbx_viewer` | A standalone 3D viewer for a place/model file (`rbxview place.rbxl [--screenshot out.png]`), and the server for its browser build (`rbxview --serve`, below). |
 | `rbxstudio` | `rbx_studio` | The desktop editor (`rbxstudio [--select <name-or-path>] [--run <script.luau>] [--verbose] <place>`; `--help` lists them all). |
 | `rbxcloud` | `rbx_cloud` | An Open Cloud CLI (`whoami`/`list`/`download`/`asset`). |
+
+### The viewer in a browser
+
+`rbxview` also builds for the web (WebGPU: a current Chrome, Edge, Firefox or
+Safari), with the same renderer, asset streaming, union booleans, quality
+levels and camera, plus a read-only Explorer and Studio-style click
+selection:
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version 0.2.128 --locked   # the lockfile's wasm-bindgen
+./scripts/build-web.sh                                        # or scripts/build-web.ps1
+rbxview --serve crates/rbx_viewer/web [place.rbxl] [--port 8123]
+```
+
+Then open <http://127.0.0.1:8123/> and drop a place or model file on the
+page (a place given to `--serve` opens by itself). A browser cannot fetch
+Roblox's assets itself (its CDNs send no CORS headers), so `rbxview --serve`
+resolves them for the page, through the same disk cache, anonymous delivery
+and optional Open Cloud key as the desktop tools; it only listens on
+loopback. `?eye=x,y,z&at=x,y,z` opens the page at a camera position.
 
 A debug build (`cargo build`) works too, but the renderer and editor are
 compiled at `opt-level = 3` even in dev builds (see the workspace

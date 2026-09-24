@@ -118,10 +118,7 @@ pub(super) fn create_pipeline(
     image_layout: &wgpu::BindGroupLayout,
     gradient_layout: &wgpu::BindGroupLayout,
 ) -> wgpu::RenderPipeline {
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("rbxview gui"),
-        source: wgpu::ShaderSource::Wgsl(SHADER.into()),
-    });
+    let shader = crate::gpu::shader(device, "rbxview gui", SHADER);
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("rbxview gui"),
         bind_group_layouts: &[

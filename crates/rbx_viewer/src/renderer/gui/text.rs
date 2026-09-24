@@ -214,6 +214,13 @@ impl Typesetter {
         let Typesetter {
             system, families, ..
         } = self;
+        // No face at all: a browser has no system fonts to fall back on, and
+        // until the place's own faces stream in cosmic-text would panic
+        // looking for a default. The text lays out empty and is shaped
+        // again once they land (see `Typesetter::adopt`).
+        if system.db().faces().next().is_none() {
+            return Buffer::new_empty(metrics(size, text.line_height));
+        }
         // A `<font size>` scales with `TextScaled` like the base size does.
         let scale = size / text.size.max(1.0);
         let mut buffer = Buffer::new(system, metrics(size, text.line_height));

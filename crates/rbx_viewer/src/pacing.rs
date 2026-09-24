@@ -31,18 +31,18 @@ const EMA_ALPHA: f32 = 0.2;
 
 /// A running low-pass estimate of the true frame interval, used to de-noise `dt`
 /// before it drives camera position integration.
-pub(super) struct SmoothedDt {
+pub(crate) struct SmoothedDt {
     average_secs: f32,
 }
 
 impl SmoothedDt {
-    pub(super) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         SmoothedDt { average_secs: 0.0 }
     }
 
     /// Folds `raw` into the running average (clamped first, guarding against one
     /// outlier sample) and returns the updated average as the `dt` to move by.
-    pub(super) fn sample(&mut self, raw: Duration) -> Duration {
+    pub(crate) fn sample(&mut self, raw: Duration) -> Duration {
         let raw_secs = raw.as_secs_f32();
         if self.average_secs <= 0.0 {
             // Nothing to compare against yet; a zero-width band around zero would

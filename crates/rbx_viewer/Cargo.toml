@@ -26,7 +26,6 @@ rbx_binary = { path = "../rbx_binary" }
 rbx_xml = { path = "../rbx_xml" }
 rbx_reflection = { path = "../rbx_reflection", features = ["embedded-dump"] }
 rbx_assets = { path = "../rbx_assets" }
-rbx_cloud = { path = "../rbx_cloud" }
 rbx_materials = { path = "../rbx_materials" }
 rbx_mesh = { path = "../rbx_mesh" }
 wgpu = "30.0"
@@ -46,6 +45,23 @@ swash = { version = "0.2", features = ["render"] }
 # Roblox describes a font family as a small JSON file (`fonts/families/*.json`,
 # see `fonts::Family`); already in `Cargo.lock` through `rbx_cloud`.
 serde_json = "1"
+# `std::time::Instant::now` panics on wasm; this is the same type on native
+# and `performance.now()` in a browser. Already in `Cargo.lock` through winit.
+web-time = "1.1"
+
+# The network: Open Cloud and Roblox's CDNs through a blocking client, which a
+# browser has neither of — a wasm build asks `rbxview --serve` instead.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rbx_cloud = { path = "../rbx_cloud" }
+
+# The browser build (see `web`); every one already in `Cargo.lock` through wgpu
+# and winit.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["Window", "Response", "HtmlCanvasElement", "console"] }
+console_error_panic_hook = "0.1"
 
 [dev-dependencies]
 # `batch`'s own tests write throwaway place files to disk; already resolved in

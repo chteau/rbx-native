@@ -15,9 +15,17 @@
 //! too — see `load::Resident`, which is what knows whether a reference is
 //! already resident or already in flight.
 
+#[cfg(target_arch = "wasm32")]
+mod web;
+
+#[cfg(not(target_arch = "wasm32"))]
 use std::collections::VecDeque;
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::Arc;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::{Condvar, Mutex};
+#[cfg(not(target_arch = "wasm32"))]
 use std::thread;
 #[cfg(test)]
 use std::time::Duration;
@@ -25,6 +33,9 @@ use std::time::Duration;
 use rbx_assets::AssetRef;
 
 use crate::assets::{Failure, Image};
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) use web::Fetcher;
 
 /// Which decoder a reference is bound for.
 ///
@@ -71,6 +82,7 @@ pub(crate) trait Source: Send + Sync + 'static {
     fn bytes(&self, reference: &AssetRef) -> Result<Vec<u8>, Failure>;
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 /// The work every worker shares. `None` once the [`Fetcher`] is gone, which
 /// is the only stop signal a worker waiting on the condvar can be given.
 struct Queue {
@@ -79,11 +91,13 @@ struct Queue {
 }
 
 /// A pool of asset workers and the channel their results come back on.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) struct Fetcher {
     queue: Arc<Queue>,
     landed: Receiver<Landed>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Fetcher {
     /// Starts `workers` threads against `source`.
     ///
@@ -141,6 +155,7 @@ impl Fetcher {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Drop for Fetcher {
     /// Closes the queue and leaves the workers to notice.
     ///
@@ -156,6 +171,7 @@ impl Drop for Fetcher {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn work(queue: &Queue, source: &dyn Source, done: &Sender<Landed>) {
     while let Some((want, reference)) = next(queue) {
         let landed = match want {
@@ -172,6 +188,7 @@ fn work(queue: &Queue, source: &dyn Source, done: &Sender<Landed>) {
 
 /// The next request, waiting for one if the queue is empty; `None` once the
 /// queue is closed, which is this worker's cue to stop.
+#[cfg(not(target_arch = "wasm32"))]
 fn next(queue: &Queue) -> Option<(Want, AssetRef)> {
     let mut waiting = queue.waiting.lock().unwrap_or_else(|e| e.into_inner());
     loop {

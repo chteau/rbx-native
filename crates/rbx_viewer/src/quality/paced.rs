@@ -1,4 +1,5 @@
-//! `--quality auto` in the windowed viewer.
+//! `--quality auto` wherever frames are presented to a display: the windowed
+//! viewer and the browser build.
 //!
 //! The window presents through the swapchain, so its frames are paced by the
 //! display whether they are cheap or not: a loop keeping up measures exactly one
@@ -11,9 +12,7 @@
 
 use std::time::Duration;
 
-use winit::window::Window;
-
-use crate::quality::{FrameRateManager, QualityLevel};
+use super::{FrameRateManager, QualityLevel};
 
 /// What a frame is allowed to cost, as a share of one display refresh. A frame
 /// presented on every refresh costs exactly one; measured against the refresh
@@ -31,7 +30,7 @@ const FALLBACK_HZ: f32 = 60.0;
 const SETTLE_FRAMES: u8 = 3;
 
 /// The frame rate manager, while `--quality auto` is in force.
-pub(super) struct Automatic {
+pub(crate) struct Automatic {
     manager: FrameRateManager,
     /// Frames left to ignore after a switch, so the manager never measures the
     /// switch itself.
@@ -41,20 +40,27 @@ pub(super) struct Automatic {
 impl Automatic {
     /// `None` for any pinned level: there is nothing to manage, and a manager
     /// built anyway would quietly override the level that was asked for.
-    pub(super) fn new(quality: QualityLevel, window: &Window) -> Option<Self> {
+    /// `refresh_hz` is the display's, where the platform will say.
+    pub(crate) fn new(quality: QualityLevel, refresh_hz: Option<f32>) -> Option<Self> {
         if quality != QualityLevel::Automatic {
             return None;
         }
 
         Some(Automatic {
-            manager: FrameRateManager::new(target_hz(refresh_hz(window))),
+            manager: FrameRateManager::new(target_hz(refresh_hz)),
             settling: SETTLE_FRAMES,
         })
     }
 
+    /// The level the manager is at right now.
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn level(&self) -> u8 {
+        self.manager.level()
+    }
+
     /// One presented frame, timed from the last one, and the level to redraw at
     /// if it moved.
-    pub(super) fn record(&mut self, frame: Duration) -> Option<u8> {
+    pub(crate) fn record(&mut self, frame: Duration) -> Option<u8> {
         if self.settling > 0 {
             self.settling -= 1;
             return None;
@@ -67,13 +73,6 @@ impl Automatic {
         }
         level
     }
-}
-
-/// The refresh rate of the display the window is on, as far as the platform will
-/// say. X11 through winit answers in millihertz, and 0 when it cannot answer.
-fn refresh_hz(window: &Window) -> Option<f32> {
-    let millihertz = window.current_monitor()?.refresh_rate_millihertz()?;
-    (millihertz > 0).then(|| millihertz as f32 / 1e3)
 }
 
 fn target_hz(refresh_hz: Option<f32>) -> f32 {

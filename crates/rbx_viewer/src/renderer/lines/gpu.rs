@@ -46,10 +46,7 @@ impl Gpu {
         } else {
             SHADER.to_owned()
         };
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("rbxview lines"),
-            source: wgpu::ShaderSource::Wgsl(source.into()),
-        });
+        let shader = crate::gpu::shader(device, "rbxview lines", &source);
         let depth_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("rbxview lines depth"),
             entries: &[wgpu::BindGroupLayoutEntry {
@@ -102,10 +99,7 @@ impl Gpu {
                 cache: None,
             })
         };
-        let handle_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("rbxview lines handles"),
-            source: wgpu::ShaderSource::Wgsl(HANDLE_SHADER.into()),
-        });
+        let handle_shader = crate::gpu::shader(device, "rbxview lines handles", HANDLE_SHADER);
         // The handles' own triangles, colourless: only the stencil is written.
         // The colour target is still declared, since the pass has one.
         let handles = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {

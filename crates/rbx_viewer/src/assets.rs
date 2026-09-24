@@ -9,10 +9,10 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use rbx_assets::{
-    decode_image, AssetCache, AssetError, AssetFetcher, AssetKind, AssetRef, AssetResolver,
-    FetchError, NativeContent,
-};
+use rbx_assets::{decode_image, AssetError, AssetKind, AssetRef, AssetResolver, FetchError};
+#[cfg(not(target_arch = "wasm32"))]
+use rbx_assets::{AssetCache, AssetFetcher, NativeContent};
+#[cfg(not(target_arch = "wasm32"))]
 use rbx_cloud::{ApiKey, Client, CloudError};
 
 use crate::load::Source;
@@ -48,8 +48,10 @@ impl Image {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 struct CloudFetcher(Client);
 
+#[cfg(not(target_arch = "wasm32"))]
 impl AssetFetcher for CloudFetcher {
     fn fetch_id(&self, id: u64) -> Result<Vec<u8>, FetchError> {
         self.0
@@ -68,6 +70,7 @@ impl AssetFetcher for CloudFetcher {
 /// next load asks with the same key and hears the same thing. A 5xx, a rate
 /// limit `rbx_cloud` already backed off on four times (see its `retry`
 /// module) and a transport error are all about the moment.
+#[cfg(not(target_arch = "wasm32"))]
 fn fetch_error(id: u64, err: CloudError) -> FetchError {
     match err {
         CloudError::Http {
@@ -103,7 +106,7 @@ pub(crate) struct Failure {
 }
 
 impl Failure {
-    fn resolving(reference: &AssetRef, err: &AssetError) -> Self {
+    pub(crate) fn resolving(reference: &AssetRef, err: &AssetError) -> Self {
         Failure {
             warning: format!("{}: {err}", describe(reference)),
             transient: transient(err),
@@ -293,22 +296,30 @@ fn load_with<T: Send>(
     results
 }
 
-fn resolver() -> Result<AssetResolver, String> {
+pub(crate) fn resolver() -> Result<AssetResolver, String> {
     #[cfg(test)]
     {
         if let Some(failure) = tests::forced_failure() {
             return Err(failure);
         }
     }
-    let cache = AssetCache::new(None).map_err(|err| err.to_string())?;
-    let native = NativeContent::new(cache.native_packages_dir());
-    let client = Client::new(ApiKey::from_env_or_config());
+    #[cfg(target_arch = "wasm32")]
+    {
+        // A browser build asks `rbxview --serve` instead — see `web`.
+        Err("no disk cache or network in a browser".to_string())
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let cache = AssetCache::new(None).map_err(|err| err.to_string())?;
+        let native = NativeContent::new(cache.native_packages_dir());
+        let client = Client::new(ApiKey::from_env_or_config());
 
-    Ok(AssetResolver::new(
-        cache,
-        Box::new(CloudFetcher(client)),
-        native,
-    ))
+        Ok(AssetResolver::new(
+            cache,
+            Box::new(CloudFetcher(client)),
+            native,
+        ))
+    }
 }
 
 fn fetch_image(resolver: &AssetResolver, reference: &AssetRef) -> Result<Image, Failure> {
@@ -322,7 +333,13 @@ fn fetch_image(resolver: &AssetResolver, reference: &AssetRef) -> Result<Image, 
     if let Some(inner) = wrapped_image(&asset) {
         asset = resolver.resolve(&inner).map_err(failed)?;
     }
-    let decoded = decode_image(&asset).map_err(failed)?;
+    image(reference, &asset)
+}
+
+/// Decodes what `reference` resolved to — after [`wrapped_image`]'s hop,
+/// which is the caller's, since only it knows how to fetch the inner one.
+pub(crate) fn image(reference: &AssetRef, asset: &rbx_assets::Asset) -> Result<Image, Failure> {
+    let decoded = decode_image(asset).map_err(|err| Failure::resolving(reference, &err))?;
 
     let (width, height) = decoded.dimensions();
     Ok(Image {
@@ -334,7 +351,7 @@ fn fetch_image(resolver: &AssetResolver, reference: &AssetRef) -> Result<Image, 
 
 /// The image a `Decal`/`Texture` model asset wraps, if `asset` is one: the
 /// first `Texture` (or `Image`) content reference found in it.
-fn wrapped_image(asset: &rbx_assets::Asset) -> Option<AssetRef> {
+pub(crate) fn wrapped_image(asset: &rbx_assets::Asset) -> Option<AssetRef> {
     let dom = match asset.kind {
         AssetKind::RobloxXmlModel => {
             rbx_xml::deserialize(std::str::from_utf8(&asset.bytes).ok()?).ok()?
@@ -358,8 +375,12 @@ fn fetch_mesh(resolver: &AssetResolver, reference: &AssetRef) -> Result<rbx_mesh
     let asset = resolver
         .resolve(reference)
         .map_err(|err| Failure::resolving(reference, &err))?;
+    mesh(reference, &asset.bytes)
+}
+
+pub(crate) fn mesh(reference: &AssetRef, bytes: &[u8]) -> Result<rbx_mesh::Mesh, Failure> {
     // The bytes are on disk by now, so a parse that fails would fail again.
-    rbx_mesh::parse(&asset.bytes).map_err(|err| Failure {
+    rbx_mesh::parse(bytes).map_err(|err| Failure {
         warning: format!("{}: {err}", describe(reference)),
         transient: false,
     })
@@ -379,7 +400,7 @@ fn progress(label: &str, done: usize, total: usize) {
     eprint!("\rrbxview: {label} {done}/{total}");
 }
 
-fn describe(reference: &AssetRef) -> String {
+pub(crate) fn describe(reference: &AssetRef) -> String {
     match reference {
         AssetRef::Id(id) => format!("asset {id}"),
         AssetRef::Native(path) => format!("rbxasset://{path}"),

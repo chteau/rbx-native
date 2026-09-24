@@ -505,7 +505,7 @@ fn unit_cube_at(dom: &mut WeakDom, parent: Option<Ref>, x: f32) -> Ref {
 
 /// A `Model` holding two unit cubes four studs apart, one of them buried in a
 /// `Folder` — the shape of a real prop, and what a viewport click actually
-/// selects (see `shell::selection::outermost_model`).
+/// selects (see `rbx_viewer::pick::outermost_model`).
 fn model_of_two_parts() -> (WeakDom, Ref, Ref, Ref) {
     let mut dom = WeakDom::new();
     let model = dom.new_instance("Model", "Revolver", None);

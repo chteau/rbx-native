@@ -202,10 +202,7 @@ fn create(
     target: Target,
     bind_group_layouts: &[Option<&wgpu::BindGroupLayout>],
 ) -> wgpu::RenderPipeline {
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("rbxview sky"),
-        source: wgpu::ShaderSource::Wgsl(SKYBOX_SHADER.into()),
-    });
+    let shader = crate::gpu::shader(device, "rbxview sky", SKYBOX_SHADER);
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("rbxview sky"),

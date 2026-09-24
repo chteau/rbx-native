@@ -2,6 +2,8 @@
 //! the flight speed while a fresh reading of it is still worth showing, joined
 //! onto the file name.
 
+use crate::fps::readout;
+
 /// The window title: the file name, then whichever of the frame rate and the
 /// flight speed are worth showing right now.
 pub(super) fn title(name: &str, fps: Option<f32>, speed: Option<i64>) -> String {
@@ -17,14 +19,6 @@ pub(super) fn title(name: &str, fps: Option<f32>, speed: Option<i64>) -> String 
         return name.to_string();
     }
     format!("{name} — {}", parts.join(" \u{b7} "))
-}
-
-/// The one-line fps/frame-time format both `rbxview`'s title and `rbxstudio`'s
-/// Viewport dock read the same way — `rbx_studio` depends on `rbx_viewer`, never
-/// the other way round, so this lives here and `workspace_view::label` calls it
-/// rather than keeping its own copy of the format string.
-pub fn readout(fps: f32) -> String {
-    format!("{fps:.0} fps\u{b7}{:.1} ms", 1000.0 / fps)
 }
 
 #[cfg(test)]

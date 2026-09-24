@@ -6037,8 +6037,10 @@ name = "rbx_viewer"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "console_error_panic_hook",
  "cosmic-text",
  "glam",
+ "js-sys",
  "png 0.18.1",
  "pollster 1.0.1",
  "rbx_assets",
@@ -6052,6 +6054,10 @@ dependencies = [
  "serde_json",
  "swash",
  "tempfile",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
  "wgpu 30.0.1",
  "winit",
 ]
