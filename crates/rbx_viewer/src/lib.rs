@@ -16,31 +16,48 @@
 //! `rbx_binary` or `rbx_xml` accordingly, so every entry point that opens a
 //! file — including embedders such as `rbxstudio` — shares the one dispatch.
 
+// The browser build (`web`) draws and streams, and nothing more: the editor's
+// half of this crate — edits patched in place, picking, the screenshot and
+// batch paths — has no caller there.
+#![cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]
+
+#[cfg(not(target_arch = "wasm32"))]
 mod app;
 mod assets;
+#[cfg(not(target_arch = "wasm32"))]
 mod batch;
 mod camera;
+#[cfg(not(target_arch = "wasm32"))]
 mod capture;
 mod changes;
 mod cli;
 mod controller;
 mod fonts;
+mod fps;
 pub mod gizmo;
 mod gpu;
+#[cfg(not(target_arch = "wasm32"))]
 mod headless;
 mod input;
 mod lighting;
 mod load;
+mod pacing;
 pub mod pick;
 mod quality;
 mod renderer;
 mod scene;
+#[cfg(not(target_arch = "wasm32"))]
+mod serve;
+pub mod services;
 mod shapes;
 pub mod snap;
 mod textures;
 mod view;
+#[cfg(target_arch = "wasm32")]
+mod web;
 
 pub use camera::Pose;
+#[cfg(not(target_arch = "wasm32"))]
 pub use capture::Rendered;
 pub use changes::{Applied, Rebuild};
 pub use cli::Options;
@@ -48,6 +65,7 @@ pub use gizmo::Gizmo;
 // Only so a report (`examples/bench`) can label its numbers with the GPU that
 // produced them; nothing in the render path itself asks for this.
 pub use gpu::describe_adapter;
+#[cfg(not(target_arch = "wasm32"))]
 pub use headless::{GuiCanvas, Headless};
 pub use input::{CameraInput, CameraKey};
 pub use lighting::light_guides;
@@ -58,13 +76,18 @@ pub use load::read_place;
 pub use quality::{FrameRateManager, QualityLevel};
 pub use renderer::{GuiBox, Segment};
 pub use scene::{resolved_shape_label, ScrollTarget};
+#[cfg(not(target_arch = "wasm32"))]
+pub use serve::{serve, DEFAULT_PORT};
 // `rbxview`'s own title bar and `rbxstudio`'s Viewport dock read fps the same
 // way; shared here rather than each crate carrying its own copy of the format.
-pub use app::title::readout as fps_readout;
+pub use fps::readout as fps_readout;
 
+#[cfg(not(target_arch = "wasm32"))]
 use glam::Vec3;
+#[cfg(not(target_arch = "wasm32"))]
 use load::{Loaded, Toggles};
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn run(options: &Options) -> Result<(), String> {
     if let Some(out_dir) = options.batch() {
         return batch::run(options, out_dir);
@@ -111,6 +134,7 @@ pub fn run(options: &Options) -> Result<(), String> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn toggles(options: &Options) -> Toggles {
     Toggles {
         textures: options.textures(),

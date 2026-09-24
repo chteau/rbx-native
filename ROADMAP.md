@@ -1236,6 +1236,33 @@ Roblox's own engine.
   been exercised on Windows. Launching the editor there is still open, and
   mouse capture (the bullet above) is the one gap already known about.
 - [x] Daily API-Dump sync (`.github/workflows/sync-api-dump.yml`).
+- [x] The viewer in a browser — `rbx_viewer` builds for
+  `wasm32-unknown-unknown` (`scripts/build-web.sh`) and runs on WebGPU
+  with the same renderer, streaming loader, legacy-union booleans,
+  fallbacks, quality levels (`Automatic` included) and camera controller
+  as `rbxview`, plus a read-only Explorer (Studio's service order and
+  default filter, shared through `rbx_viewer::services`) and Studio's
+  click selection (`pick::from_click`, now shared with `rbxstudio`).
+  Switches for GUIs, local lights, shadows, bloom, colour correction,
+  decals, materials, particles, beams, trails and the development GUI.
+  Roblox's CDNs send no CORS headers, so a page cannot fetch assets
+  itself: `rbxview --serve` hosts the page and resolves assets for it
+  through the same cache, anonymous delivery, Open Cloud key and
+  `rbxasset://` content as the desktop tools, on loopback only. What it
+  shares with the desktop build is verified against it: a close-up of a
+  union-heavy place differs from `rbxview --screenshot` by 0.24/255 on
+  average, the overlay chips aside. Two things it needed that the native
+  build had silently: WGSL's derivative-uniformity check, which a
+  browser's compiler enforces and naga never did (turned off per module in
+  `gpu::shader`, which is what native already got), and a fallback when a
+  GUI shapes text before any font face exists (no system fonts in a
+  browser). Rebuilding the material arrays after a pack streams in now
+  copies every layer the old arrays already hold on the GPU instead of
+  mip-mapping it again on the CPU — about a second per landing in the
+  browser, and a real cut to every native swap-in too.
+  Not there yet: WebGL2 (the renderer needs storage buffers and compute),
+  threads (union booleans and decodes run on the page's one thread), and a
+  size diet (the wasm is ~10 MB, mostly the embedded API dump).
 
 ## What's planned
 

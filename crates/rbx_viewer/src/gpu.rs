@@ -5,6 +5,24 @@ pub(crate) fn instance() -> wgpu::Instance {
     wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env())
 }
 
+/// Compiles one WGSL module.
+///
+/// Every shader goes through here for the one directive it prepends. WGSL
+/// forbids an implicit derivative (`textureSample`, `dpdx`) outside uniform
+/// control flow, and a browser's compiler enforces that as an error; naga,
+/// which compiles for every native backend, never checked it, and this
+/// renderer samples behind per-fragment branches throughout. Turning the
+/// check off is what the native build already had: the GPU computes the
+/// derivative per 2x2 quad either way.
+pub(crate) fn shader(device: &wgpu::Device, label: &str, source: &str) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some(label),
+        source: wgpu::ShaderSource::Wgsl(
+            format!("diagnostic(off, derivative_uniformity);\n{source}").into(),
+        ),
+    })
+}
+
 /// Picks an adapter, optionally one able to present to `surface`.
 ///
 /// The chosen adapter and backend are printed: which of Vulkan, GL or a software

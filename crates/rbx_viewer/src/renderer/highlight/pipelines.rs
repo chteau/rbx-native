@@ -95,10 +95,11 @@ impl Mask {
         frame: &wgpu::BindGroupLayout,
         target: Target,
     ) -> Self {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("rbxview highlight mask"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../highlight.wgsl").into()),
-        });
+        let shader = crate::gpu::shader(
+            device,
+            "rbxview highlight mask",
+            include_str!("../highlight.wgsl"),
+        );
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("rbxview highlight mask"),
             bind_group_layouts: &[Some(frame)],
@@ -169,15 +170,14 @@ impl Composite {
     pub(super) fn new(device: &wgpu::Device, target: Target) -> Self {
         let multisampled = target.samples > 1;
         let source = include_str!("../highlight_composite.wgsl");
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("rbxview highlight composite"),
-            source: wgpu::ShaderSource::Wgsl(match multisampled {
-                true => source
-                    .replace(MASK_BINDING, MULTISAMPLED_MASK_BINDING)
-                    .into(),
-                false => source.into(),
-            }),
-        });
+        let shader = crate::gpu::shader(
+            device,
+            "rbxview highlight composite",
+            &match multisampled {
+                true => source.replace(MASK_BINDING, MULTISAMPLED_MASK_BINDING),
+                false => source.to_string(),
+            },
+        );
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("rbxview highlight composite"),
             entries: &[

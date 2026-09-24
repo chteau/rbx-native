@@ -28,6 +28,13 @@ use crate::textures::{self, Decor};
 /// so `rbxview`, `rbxstudio` and their embedders never re-implement the sniff.
 pub fn read_place(path: &Path) -> Result<WeakDom, String> {
     let bytes = std::fs::read(path).map_err(|err| format!("failed to read {path:?}: {err}"))?;
+    parse_place(&bytes, path)
+}
+
+/// [`read_place`] for bytes already in memory — what a browser, which has a
+/// dropped file's contents but no path to read, starts from. `path` only
+/// names the file in an error.
+pub(crate) fn parse_place(bytes: &[u8], path: &Path) -> Result<WeakDom, String> {
     let database = ReflectionDatabase::shared();
     // Both parsers keep a property under whatever name the file used, and a
     // hand-written place may say `Color` or `Size` where Studio saves
@@ -35,15 +42,15 @@ pub fn read_place(path: &Path) -> Result<WeakDom, String> {
     // tree needs to know both — for a binary place by the names its
     // per-class property chunks carry, rather than by visiting every
     // instance.
-    let mut dom = if rbx_xml::is_xml(&bytes) {
-        let text = std::str::from_utf8(&bytes)
+    let mut dom = if rbx_xml::is_xml(bytes) {
+        let text = std::str::from_utf8(bytes)
             .map_err(|err| format!("{path:?} is not valid UTF-8 XML: {err}"))?;
         let mut dom =
             rbx_xml::deserialize(text).map_err(|err| format!("failed to parse {path:?}: {err}"))?;
         database.normalize_names(&mut dom);
         dom
     } else {
-        let (mut dom, names) = rbx_binary::deserialize_with_names(&bytes)
+        let (mut dom, names) = rbx_binary::deserialize_with_names(bytes)
             .map_err(|err| format!("failed to parse {path:?}: {err}"))?;
         database.normalize_spellings(
             &mut dom,

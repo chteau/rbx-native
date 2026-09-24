@@ -15,6 +15,17 @@ use crate::gizmo::Gizmo;
 use crate::scene::Scene;
 
 impl Renderer {
+    /// The matrix the frame drawn `from` projects through, for a host turning
+    /// a click on it into a ray (see `crate::pick::ray_through`).
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn view_projection(
+        &self,
+        from: crate::camera::Viewpoint,
+        aspect: f32,
+    ) -> glam::Mat4 {
+        self.camera.view_projection(from, aspect)
+    }
+
     /// Replaces the outlined selection, rebuilding its tiny vertex buffer right
     /// away rather than waiting for the next `draw`.
     ///

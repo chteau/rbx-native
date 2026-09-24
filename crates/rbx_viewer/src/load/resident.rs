@@ -44,9 +44,10 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use rbx_assets::AssetRef;
+use web_time::Instant;
 
 use super::fetcher::{Fetcher, Landed, Want};
 use crate::assets::{self, Failure, Image, Keyed};
@@ -104,6 +105,7 @@ pub(crate) struct Settled {
 impl Resident {
     /// One that hands every unseen reference to a background pool and never
     /// blocks — see the module doc.
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn streaming() -> Self {
         Resident::fed_by(assets::source())
     }
@@ -111,9 +113,20 @@ impl Resident {
     /// [`Resident::streaming`] against a source of the caller's choosing —
     /// what a test uses to stream assets with no cache directory and no
     /// network anywhere in reach.
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn fed_by(source: Arc<dyn super::fetcher::Source>) -> Self {
         Resident {
             fetcher: Some(Fetcher::new(source, assets::WORKERS)),
+            ..Resident::default()
+        }
+    }
+
+    /// [`Resident::streaming`] in a browser, fetching from the
+    /// `rbxview --serve` whose asset route is at `base`.
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn served_from(base: &str) -> Self {
+        Resident {
+            fetcher: Some(Fetcher::new(base)),
             ..Resident::default()
         }
     }

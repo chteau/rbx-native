@@ -89,15 +89,52 @@ impl Materials {
         catalog: &Catalog,
         quality: &QualityProfile,
     ) -> Self {
+        Materials::building(device, queue, layout, catalog, quality, None)
+    }
+
+    /// [`Materials::new`] for a catalog that differs from the one these
+    /// arrays hold — the rebuild after a pack streams in. Every layer whose
+    /// map the old arrays already hold is copied across on the GPU instead of
+    /// resampled and mip-mapped again: the chain is a CPU box filter over a
+    /// megapixel per map, which is most of a rebuild when only one pack of
+    /// many is new, and all of one on a single-threaded browser.
+    pub(super) fn rebuilt(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        layout: &wgpu::BindGroupLayout,
+        catalog: &Catalog,
+        quality: &QualityProfile,
+    ) -> Self {
+        Materials::building(device, queue, layout, catalog, quality, Some(self))
+    }
+
+    fn building(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        layout: &wgpu::BindGroupLayout,
+        catalog: &Catalog,
+        quality: &QualityProfile,
+        old: Option<&Materials>,
+    ) -> Self {
+        let maps = catalog.resolved_maps();
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("rbxview material array reuse"),
+        });
         let arrays: Vec<wgpu::Texture> = MapKind::ALL
             .iter()
-            .map(|&kind| array(device, queue, catalog, kind))
+            .enumerate()
+            .map(|(index, &kind)| {
+                let old = old.map(|old| (&old.arrays[index], &old.maps[..]));
+                array(device, queue, &mut encoder, catalog, &maps, kind, old)
+            })
             .collect();
+        queue.submit([encoder.finish()]);
 
         Materials {
             bind_group: bind(device, layout, &arrays, quality),
             arrays,
-            maps: catalog.resolved_maps(),
+            maps,
         }
     }
 
@@ -168,12 +205,17 @@ fn bind(
     })
 }
 
-/// Uploads one map kind for every layer, with its whole mip chain.
+/// Uploads one map kind for every layer, with its whole mip chain — or, for
+/// a map `old` (an earlier array of the same kind, and the maps it was built
+/// from) already holds, copies that layer's chain across in `encoder`.
 fn array(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
+    encoder: &mut wgpu::CommandEncoder,
     catalog: &Catalog,
+    maps: &[Maps],
     kind: MapKind,
+    old: Option<(&wgpu::Texture, &[Maps])>,
 ) -> wgpu::Texture {
     let layers = u32::try_from(catalog.layers()).unwrap_or(1).max(1);
     let levels = mip_levels(RESOLUTION);
@@ -184,14 +226,38 @@ fn array(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: format(kind),
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
+
+    // `None` matches `None`: a layer with no such map is the neutral chain
+    // in either array.
+    let held = |layer: usize| -> Option<(&wgpu::Texture, u32)> {
+        let (texture, old_maps) = old?;
+        let map = &maps.get(layer)?[kind.index()];
+        let found = old_maps
+            .iter()
+            .position(|maps| maps[kind.index()] == *map)?;
+        Some((texture, u32::try_from(found).ok()?))
+    };
 
     // Built once and shared by every layer that lacks this map, which is most
     // of them for metalness.
     let mut blank: Option<Vec<Image>> = None;
     for layer in 0..layers {
+        if let Some((source, from)) = held(layer as usize) {
+            for level in 0..levels {
+                let side = RESOLUTION >> level;
+                encoder.copy_texture_to_texture(
+                    layer_copy(source, from, level),
+                    layer_copy(&texture, layer, level),
+                    extent(1, side),
+                );
+            }
+            continue;
+        }
         let chain = match catalog.image(layer as usize, kind) {
             Some(image) => texture::mip_chain(&fit(image, RESOLUTION)),
             None => blank
@@ -204,19 +270,23 @@ fn array(
     texture
 }
 
+fn layer_copy(texture: &wgpu::Texture, layer: u32, level: u32) -> wgpu::TexelCopyTextureInfo<'_> {
+    wgpu::TexelCopyTextureInfo {
+        texture,
+        mip_level: level,
+        origin: wgpu::Origin3d {
+            x: 0,
+            y: 0,
+            z: layer,
+        },
+        aspect: wgpu::TextureAspect::All,
+    }
+}
+
 fn write(queue: &wgpu::Queue, texture: &wgpu::Texture, layer: u32, chain: &[Image]) {
     for (level, mip) in chain.iter().enumerate() {
         queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture,
-                mip_level: u32::try_from(level).unwrap_or(0),
-                origin: wgpu::Origin3d {
-                    x: 0,
-                    y: 0,
-                    z: layer,
-                },
-                aspect: wgpu::TextureAspect::All,
-            },
+            layer_copy(texture, layer, u32::try_from(level).unwrap_or(0)),
             &mip.pixels,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
@@ -289,9 +359,124 @@ fn fit(image: &Image, resolution: u32) -> Image {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeMap, HashMap};
+    use std::sync::Arc;
+
+    use rbx_assets::AssetRef;
+    use rbx_dom::{Variant, WeakDom};
+    use rbx_reflection::ReflectionDatabase;
+
     use super::*;
 
     use crate::quality::QualityLevel;
+
+    /// A catalog holding `materials`, every map of which decoded to one
+    /// four-by-four pattern per reference — distinct enough that a layer
+    /// copied from the wrong place would not read the same.
+    fn catalog(materials: &[&str]) -> Catalog {
+        let database = ReflectionDatabase::embedded();
+        let mut catalog = Catalog::new(&WeakDom::new(), &database);
+        let items = database.enum_items("Material").unwrap();
+        for name in materials {
+            let value = items.iter().find(|(item, _)| item == name).unwrap().1;
+            let properties: BTreeMap<String, Variant> =
+                [("Material".to_string(), Variant::Enum(value))].into();
+            catalog.slot_for(&properties, &database);
+        }
+        let images: HashMap<_, _> = catalog
+            .asset_refs()
+            .into_iter()
+            .map(|reference| {
+                // Off the reference, not its position: the same asset has to
+                // decode the same in both catalogs.
+                let seed = match &reference {
+                    AssetRef::Id(id) => (id % 251) as u8,
+                    _ => 0,
+                };
+                let pixels = (0..16u8)
+                    .flat_map(|texel| [texel * 16, seed, texel ^ seed, 255])
+                    .collect();
+                let image = Image {
+                    width: 4,
+                    height: 4,
+                    pixels,
+                };
+                (reference, Arc::new(image))
+            })
+            .collect();
+        catalog.resolve(images);
+        catalog
+    }
+
+    /// Every texel of `level` of every layer of `texture`.
+    fn read(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        texture: &wgpu::Texture,
+        level: u32,
+    ) -> Vec<u8> {
+        let side = RESOLUTION >> level;
+        let row = side * CHANNELS as u32;
+        let layers = texture.depth_or_array_layers();
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: u64::from(row * side * layers),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&Default::default());
+        encoder.copy_texture_to_buffer(
+            layer_copy(texture, 0, level),
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(row),
+                    rows_per_image: Some(side),
+                },
+            },
+            extent(layers, side),
+        );
+        queue.submit([encoder.finish()]);
+        buffer.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+        device
+            .poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: None,
+            })
+            .unwrap();
+        let bytes = buffer.slice(..).get_mapped_range().unwrap().to_vec();
+        bytes
+    }
+
+    // The swap-in after a pack streams in copies every layer the old arrays
+    // already hold rather than filtering its chain again; what it ends up
+    // holding has to be exactly what a build from scratch would upload,
+    // layers moved to other indices included.
+    #[test]
+    fn a_rebuild_holds_what_a_fresh_build_would() {
+        let Some((device, queue)) = crate::gpu::for_tests() else {
+            return;
+        };
+        let layout = layout(&device);
+        let quality = QualityLevel::default().profile();
+        let before = catalog(&["Plastic", "Wood"]);
+        let after = catalog(&["Brick", "Plastic", "Wood", "Grass"]);
+        assert!(before.resolved_maps() != after.resolved_maps());
+
+        let old = Materials::new(&device, &queue, &layout, &before, &quality);
+        let rebuilt = old.rebuilt(&device, &queue, &layout, &after, &quality);
+        let fresh = Materials::new(&device, &queue, &layout, &after, &quality);
+
+        for (kind, (rebuilt, fresh)) in rebuilt.arrays.iter().zip(&fresh.arrays).enumerate() {
+            for level in [0, 2] {
+                assert!(
+                    read(&device, &queue, rebuilt, level) == read(&device, &queue, fresh, level),
+                    "map kind {kind}, mip {level}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn the_array_carries_a_full_mip_chain() {

@@ -17,6 +17,7 @@ const SETUP_CDN: &str = "https://setup.rbxcdn.com";
 const VERSION_ENDPOINT: &str = "https://setup.rbxcdn.com/versionQTStudio";
 /// Packages have been observed in the tens of MiB; anything past this is
 /// almost certainly a manifest pointing at the wrong URL, not a real package.
+#[cfg(not(target_arch = "wasm32"))]
 const MAX_PACKAGE_DOWNLOAD_BYTES: u64 = 200 * 1024 * 1024;
 
 /// Where a native file's bytes came from, which decides whether the caller
@@ -222,6 +223,7 @@ fn fetch_studio_version() -> Result<String, AssetError> {
     Ok(body.trim().to_string())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn http_get_text(url: &str) -> Result<String, AssetError> {
     let mut response = ureq::get(url)
         .call()
@@ -232,6 +234,7 @@ fn http_get_text(url: &str) -> Result<String, AssetError> {
         .map_err(|e| AssetError::Network(e.to_string()))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn http_get_bytes(url: &str) -> Result<Vec<u8>, AssetError> {
     let mut response = ureq::get(url)
         .call()
@@ -247,6 +250,7 @@ fn http_get_bytes(url: &str) -> Result<Vec<u8>, AssetError> {
         .map_err(|e| AssetError::Network(e.to_string()))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn check_content_length(url: &str, headers: &ureq::http::HeaderMap) -> Result<(), AssetError> {
     let Some(len) = headers
         .get(ureq::http::header::CONTENT_LENGTH)
@@ -263,6 +267,19 @@ fn check_content_length(url: &str, headers: &ureq::http::HeaderMap) -> Result<()
         });
     }
     Ok(())
+}
+
+// A browser has no HTTP client this crate could block on, and Roblox's CDNs
+// send no CORS headers a page could read them through anyway: a wasm build
+// reaches its assets through `rbxview --serve` instead (see `rbx_viewer`).
+#[cfg(target_arch = "wasm32")]
+fn http_get_text(_url: &str) -> Result<String, AssetError> {
+    Err(AssetError::Network("no HTTP client on wasm".to_string()))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn http_get_bytes(_url: &str) -> Result<Vec<u8>, AssetError> {
+    Err(AssetError::Network("no HTTP client on wasm".to_string()))
 }
 
 fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), AssetError> {

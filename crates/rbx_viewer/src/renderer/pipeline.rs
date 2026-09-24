@@ -429,10 +429,7 @@ pub(super) fn surface(
     target: Target,
     surface: &Surface<'_>,
 ) -> wgpu::RenderPipeline {
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some(surface.label),
-        source: wgpu::ShaderSource::Wgsl(surface.shader.into()),
-    });
+    let shader = crate::gpu::shader(device, surface.label, surface.shader);
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some(surface.label),
         bind_group_layouts: surface.layouts,

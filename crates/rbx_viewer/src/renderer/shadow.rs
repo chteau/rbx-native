@@ -601,10 +601,7 @@ fn pipeline(
     layout: &wgpu::BindGroupLayout,
     stride: wgpu::BufferAddress,
 ) -> wgpu::RenderPipeline {
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("rbxview shadow"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("shadow.wgsl").into()),
-    });
+    let shader = crate::gpu::shader(device, "rbxview shadow", include_str!("shadow.wgsl"));
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("rbxview shadow"),
         bind_group_layouts: &[Some(layout)],

@@ -1,4 +1,4 @@
-//! A per-second frame rate for the title bar.
+//! A per-second frame rate for the title bar (and the web page's readout).
 //!
 //! Fed the same wall-clock timestamp `Viewer::redraw` already takes every
 //! frame for `dt` — not a second stopwatch: this just counts how many of
@@ -7,21 +7,23 @@
 //! its Viewport dock's readout, minus the render/readback/upload split that has
 //! no equivalent in a single windowed loop with no render thread of its own.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use web_time::Instant;
 
 /// How long a window's frame count is averaged over before the rate refreshes.
 const WINDOW: Duration = Duration::from_secs(1);
 
 /// Counts frames over a rolling one-second window and keeps the last complete
 /// window's average.
-pub(super) struct FrameRate {
+pub(crate) struct FrameRate {
     window_start: Instant,
     frames: u32,
     latest: Option<f32>,
 }
 
 impl FrameRate {
-    pub(super) fn new(now: Instant) -> Self {
+    pub(crate) fn new(now: Instant) -> Self {
         FrameRate {
             window_start: now,
             frames: 0,
@@ -32,7 +34,7 @@ impl FrameRate {
     /// One frame drawn. Returns whether this call closed a one-second window
     /// and refreshed [`FrameRate::latest`] — the title bar only needs to
     /// redraw itself then, not on every single frame.
-    pub(super) fn record(&mut self, now: Instant) -> bool {
+    pub(crate) fn record(&mut self, now: Instant) -> bool {
         self.frames += 1;
         let elapsed = now.duration_since(self.window_start);
         if elapsed < WINDOW {
@@ -46,9 +48,17 @@ impl FrameRate {
     }
 
     /// The last full window's frame rate, `None` until one has completed.
-    pub(super) fn latest(&self) -> Option<f32> {
+    pub(crate) fn latest(&self) -> Option<f32> {
         self.latest
     }
+}
+
+/// The one-line fps/frame-time format both `rbxview`'s title and `rbxstudio`'s
+/// Viewport dock read the same way — `rbx_studio` depends on `rbx_viewer`, never
+/// the other way round, so this lives here and `workspace_view::label` calls it
+/// rather than keeping its own copy of the format string.
+pub fn readout(fps: f32) -> String {
+    format!("{fps:.0} fps\u{b7}{:.1} ms", 1000.0 / fps)
 }
 
 #[cfg(test)]

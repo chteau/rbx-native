@@ -76,10 +76,7 @@ pub(super) fn create_pipeline(
     camera_layout: &wgpu::BindGroupLayout,
     image_layout: &wgpu::BindGroupLayout,
 ) -> wgpu::RenderPipeline {
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("rbxview trails"),
-        source: wgpu::ShaderSource::Wgsl(SHADER.into()),
-    });
+    let shader = crate::gpu::shader(device, "rbxview trails", SHADER);
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("rbxview trails"),
         bind_group_layouts: &[Some(camera_layout), Some(image_layout)],

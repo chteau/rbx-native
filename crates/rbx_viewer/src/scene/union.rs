@@ -378,19 +378,27 @@ fn evaluate_all(
             .min(std::thread::available_parallelism().map_or(1, |n| n.get()))
             .min(unique.len());
 
-        std::thread::scope(|scope| {
-            for _ in 0..workers {
-                scope.spawn(|| {
-                    while let Some(&asset) = unique.get(next.fetch_add(1, Ordering::Relaxed)) {
-                        let evaluated = evaluate(&assets[asset], database).map(Arc::new);
-                        results
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .insert(asset.clone(), evaluated);
-                    }
-                });
+        let work = || {
+            while let Some(&asset) = unique.get(next.fetch_add(1, Ordering::Relaxed)) {
+                let evaluated = evaluate(&assets[asset], database).map(Arc::new);
+                results
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .insert(asset.clone(), evaluated);
             }
-        });
+        };
+        // One worker is the calling thread itself: no thread to spawn, which
+        // is also the only way this runs at all in a browser (no threads on
+        // wasm, where `available_parallelism` answers an error, so one).
+        if workers <= 1 {
+            work();
+        } else {
+            std::thread::scope(|scope| {
+                for _ in 0..workers {
+                    scope.spawn(work);
+                }
+            });
+        }
         evaluations
             .known
             .extend(results.into_inner().unwrap_or_else(|e| e.into_inner()));

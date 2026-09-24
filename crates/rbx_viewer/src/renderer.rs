@@ -726,8 +726,11 @@ impl Renderer {
 
         // The scene is HDR and unclamped until here: the bloom, the grade and
         // the tone map all live in the resolve.
-        self.post
-            .resolve(&mut encoder, &target.create_view(&Default::default()));
+        let view = target.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(self.post.format),
+            ..Default::default()
+        });
+        self.post.resolve(&mut encoder, &view);
         // Onto the finished frame, so a one-pixel guide keeps its colour
         // (see `renderer::lines`), and under the `ScreenGui` like the rest
         // of the 3D view.

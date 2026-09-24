@@ -22,7 +22,6 @@ use std::collections::{HashMap, HashSet};
 use rbx_assets::AssetRef;
 
 use super::envmap::EnvMap;
-use super::material::Materials;
 use super::pipeline::Shared;
 use super::shaped::{self, Shaped};
 use super::skybox::Skybox;
@@ -76,7 +75,7 @@ impl Renderer {
             self.meshes.ensure(device, kind);
         }
         if !self.materials.holds(scene.materials()) {
-            self.materials = Materials::new(
+            self.materials = self.materials.rebuilt(
                 device,
                 queue,
                 &self.material_layout,

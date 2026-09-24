@@ -2,12 +2,9 @@
 //! orbiting-then-free) camera.
 //!
 //! `--quality auto` is managed here too, from the frame times this loop measures
-//! (see [`quality`]).
+//! (see [`Automatic`]).
 
-mod fps;
 mod input;
-mod pacing;
-mod quality;
 pub(crate) mod title;
 
 use std::sync::Arc;
@@ -23,15 +20,14 @@ use winit::window::{CursorGrabMode, Window, WindowId};
 
 use crate::camera::Viewpoint;
 use crate::controller::{Controller, Start};
+use crate::fps::FrameRate;
 use crate::gpu;
 use crate::input::{CameraInput, Input};
-use crate::quality::{QualityLevel, QualityProfile};
+use crate::pacing::SmoothedDt;
+use crate::quality::{Automatic, QualityLevel, QualityProfile};
 use crate::renderer::{Renderer, World};
 
-use fps::FrameRate;
 use input::{camera_key, wheel_notches};
-use pacing::SmoothedDt;
-use quality::Automatic;
 use title::title;
 
 const INITIAL_SIZE: (u32, u32) = (1280, 720);
@@ -164,7 +160,7 @@ impl Viewer<'_> {
         surface.configure(&device, &config);
 
         let renderer = Renderer::new(&device, &queue, config.format, self.world, &self.profile);
-        self.automatic = Automatic::new(self.quality, &window);
+        self.automatic = Automatic::new(self.quality, refresh_hz(&window));
 
         Ok(Active {
             window,
@@ -312,6 +308,13 @@ impl Viewer<'_> {
             active.window.set_cursor_visible(true);
         }
     }
+}
+
+/// The refresh rate of the display the window is on, as far as the platform will
+/// say. X11 through winit answers in millihertz, and 0 when it cannot answer.
+fn refresh_hz(window: &Window) -> Option<f32> {
+    let millihertz = window.current_monitor()?.refresh_rate_millihertz()?;
+    (millihertz > 0).then(|| millihertz as f32 / 1e3)
 }
 
 impl Active {

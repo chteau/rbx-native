@@ -8,11 +8,13 @@
 //! `Automatic` is [`FrameRateManager`], in `auto`.
 
 mod auto;
+mod paced;
 mod table;
 
 use std::str::FromStr;
 
 pub use auto::FrameRateManager;
+pub(crate) use paced::Automatic;
 pub(crate) use table::MAX_TEXTURE_SIZE;
 
 /// A graphics quality setting: Roblox's own `Automatic`, or one of its 21

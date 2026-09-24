@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rbxview</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #1b1b1f; --panel: rgba(30, 30, 36, 0.92); --line: #3a3a44;
+    --text: #e6e6ea; --muted: #9a9aa6; --accent: #4c8dff; --warn: #e0b050;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 13px/1.4 system-ui, sans-serif; overflow: hidden; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+  #panel { position: fixed; top: 12px; left: 12px; width: 232px; max-height: calc(100% - 24px);
+    overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 12px; backdrop-filter: blur(6px); }
+  h1 { font-size: 13px; margin: 0 0 8px; font-weight: 600; }
+  h2 { font-size: 11px; margin: 12px 0 4px; color: var(--muted); font-weight: 600;
+    text-transform: uppercase; letter-spacing: .04em; }
+  label { display: flex; align-items: center; gap: 8px; padding: 2px 0; cursor: pointer; }
+  select, button { width: 100%; background: #26262d; color: var(--text); border: 1px solid var(--line);
+    border-radius: 5px; padding: 5px 6px; font: inherit; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  #status { position: fixed; right: 12px; bottom: 12px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; color: var(--muted);
+    font-variant-numeric: tabular-nums; }
+  #hint { position: fixed; inset: 0; display: grid; place-items: center; text-align: center;
+    color: var(--muted); pointer-events: none; }
+  #hint strong { color: var(--text); }
+  body.dragging #hint { color: var(--accent); }
+  #warnings { max-height: 140px; overflow: auto; font-size: 11px; color: var(--warn);
+    white-space: pre-wrap; word-break: break-word; margin: 0; }
+  .keys { color: var(--muted); font-size: 11px; margin: 0; }
+  #toggle { position: fixed; top: 12px; left: 256px; width: auto; }
+  #explorer { position: fixed; top: 12px; right: 12px; bottom: 52px; width: 280px;
+    display: flex; flex-direction: column; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 8px; backdrop-filter: blur(6px); }
+  #explorer h1 { padding: 10px 12px 6px; margin: 0; }
+  #tree { flex: 1; overflow: auto; padding: 0 4px 6px; user-select: none; }
+  .row { display: flex; align-items: center; gap: 4px; height: 22px; padding-right: 6px;
+    border-radius: 4px; cursor: default; white-space: nowrap; }
+  .row:hover { background: rgba(255, 255, 255, 0.06); }
+  .row.selected { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+  .twisty { width: 14px; flex: none; text-align: center; color: var(--muted); font-size: 10px; }
+  .name { overflow: hidden; text-overflow: ellipsis; }
+  .class { color: var(--muted); font-size: 11px; margin-left: auto; padding-left: 8px; }
+  #picked { border-top: 1px solid var(--line); padding: 8px 12px; font-size: 12px;
+    color: var(--muted); word-break: break-word; min-height: 34px; }
+  #picked strong { color: var(--text); font-weight: 600; }
+  @media (max-width: 760px) { #explorer { top: auto; height: 40%; left: 12px; width: auto; } }
+</style>
+</head>
+<body>
+<canvas id="canvas" tabindex="0"></canvas>
+<div id="hint"><div><strong>Drop a .rbxl, .rbxm, .rbxlx or .rbxmx here</strong><br>or pick one in the panel</div></div>
+<button id="toggle" title="Show or hide the panels (Tab)">Panels</button>
+<div id="panel">
+  <h1 id="title">rbxview</h1>
+  <button id="pick">Open place or model…</button>
+  <input id="file" type="file" accept=".rbxl,.rbxm,.rbxlx,.rbxmx" hidden>
+
+  <h2>Show</h2>
+  <label><input type="checkbox" data-option="gui" checked> GUIs</label>
+  <label><input type="checkbox" data-option="developmentGui"> Force development GUI</label>
+  <label><input type="checkbox" data-option="lights" checked> Local lights</label>
+  <label><input type="checkbox" data-option="shadows" checked> Shadows</label>
+  <label><input type="checkbox" data-option="bloom" checked> Bloom</label>
+  <label><input type="checkbox" data-option="colorCorrection" checked> Color correction</label>
+  <label><input type="checkbox" data-option="textures" checked> Decals &amp; textures</label>
+  <label><input type="checkbox" data-option="materials" checked> Materials</label>
+  <label><input type="checkbox" data-option="particles" checked> Particles</label>
+  <label><input type="checkbox" data-option="beams" checked> Beams</label>
+  <label><input type="checkbox" data-option="trails" checked> Trails</label>
+
+  <h2>Quality</h2>
+  <select id="quality"></select>
+
+  <h2>Camera</h2>
+  <p class="keys">Right-drag to look · WASD/arrows to fly · Q/E down/up · Shift slow ·
+    wheel to dolly (while looking: flight speed) · F to recentre</p>
+
+  <h2>Warnings</h2>
+  <pre id="warnings"></pre>
+</div>
+<div id="explorer">
+  <h1>Explorer</h1>
+  <div id="tree" role="tree"></div>
+  <div id="picked">Click a part to select it · Shift/Ctrl adds · Alt picks the part behind</div>
+</div>
+<div id="status">no place loaded</div>
+
+<script type="module">
+import init, { Viewer } from "./pkg/rbx_viewer.js";
+
+const $ = (id) => document.getElementById(id);
+const canvas = $("canvas");
+const params = new URLSearchParams(location.search);
+// `rbxview --serve`'s own asset route unless the page is told otherwise.
+const assets = params.get("assets") ?? new URL("asset", location.href).href;
+let viewer = null;
+
+const quality = $("quality");
+quality.add(new Option("Automatic", "0"));
+for (let level = 1; level <= 21; level++) quality.add(new Option(`Level ${level}`, String(level)));
+
+function fit() {
+  const ratio = devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.round(canvas.clientWidth * ratio));
+  canvas.height = Math.max(1, Math.round(canvas.clientHeight * ratio));
+  viewer?.resize(canvas.width, canvas.height);
+}
+new ResizeObserver(fit).observe(canvas);
+fit();
+
+function fail(err) {
+  $("warnings").textContent = String(err?.message ?? err) + "\n" + $("warnings").textContent;
+  console.error(err);
+}
+
+async function open(bytes, name) {
+  try {
+    if (viewer) {
+      viewer.load(bytes, name);
+    } else {
+      viewer = await Viewer.open(canvas, bytes, name, assets);
+      // The viewer opens with everything on; bring it in line with the panel.
+      for (const box of document.querySelectorAll("[data-option]")) {
+        if (box.checked !== box.defaultChecked) viewer.set(box.dataset.option, box.checked);
+      }
+      viewer.set_quality(Number(quality.value));
+      requestAnimationFrame(tick);
+    }
+    $("hint").hidden = true;
+    const eye = params.get("eye"), at = params.get("at");
+    if (eye && at) viewer.look_at(eye.split(",").map(Number), at.split(",").map(Number));
+    buildTree();
+    $("title").textContent = name;
+    document.title = `${name} — rbxview`;
+  } catch (err) {
+    fail(err);
+  }
+}
+
+let lastStatus = 0;
+function tick(now) {
+  try {
+    viewer.frame();
+  } catch (err) {
+    fail(err);
+    return;
+  }
+  if (now - lastStatus > 250) {
+    lastStatus = now;
+    $("status").textContent = viewer.status();
+    const warnings = viewer.warnings();
+    if (warnings.length) $("warnings").textContent += warnings.join("\n") + "\n";
+  }
+  requestAnimationFrame(tick);
+}
+
+// Options and quality.
+for (const box of document.querySelectorAll("[data-option]")) {
+  box.addEventListener("change", () => {
+    try { viewer?.set(box.dataset.option, box.checked); } catch (err) { fail(err); }
+  });
+}
+quality.addEventListener("change", () => viewer?.set_quality(Number(quality.value)));
+
+// Files: the picker, drag and drop, and whatever `rbxview --serve` was given.
+async function openFile(file) {
+  open(new Uint8Array(await file.arrayBuffer()), file.name);
+}
+$("pick").addEventListener("click", () => $("file").click());
+$("file").addEventListener("change", (e) => e.target.files[0] && openFile(e.target.files[0]));
+addEventListener("dragover", (e) => { e.preventDefault(); document.body.classList.add("dragging"); });
+addEventListener("dragleave", () => document.body.classList.remove("dragging"));
+addEventListener("drop", (e) => {
+  e.preventDefault();
+  document.body.classList.remove("dragging");
+  const file = e.dataTransfer.files[0];
+  if (file) openFile(file);
+});
+
+// Camera input, forwarded as is; `Viewer` maps it exactly as the native window does.
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("mousedown", (e) => {
+  canvas.focus();
+  if (e.button !== 2 || !viewer) return;
+  viewer.look(true);
+  canvas.requestPointerLock?.();
+});
+addEventListener("mouseup", (e) => {
+  if (e.button !== 2 || !viewer) return;
+  viewer.look(false);
+  if (document.pointerLockElement === canvas) document.exitPointerLock();
+});
+addEventListener("mousemove", (e) => {
+  if (viewer && document.pointerLockElement === canvas) viewer.mouse_move(e.movementX, e.movementY);
+});
+canvas.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  if (!viewer) return;
+  // Notches, positive away from the user: a mouse notch is ~100 px in pixel
+  // mode and 3 lines in line mode; trackpads land in between, as natively.
+  const perNotch = e.deltaMode === 1 ? 3 : e.deltaMode === 2 ? 1 : 100;
+  viewer.wheel(-e.deltaY / perNotch);
+}, { passive: false });
+function typing(e) {
+  return e.target instanceof HTMLSelectElement;
+}
+addEventListener("keydown", (e) => {
+  if (e.code === "Tab") { e.preventDefault(); togglePanels(); return; }
+  if (viewer && !typing(e) && viewer.key(e.code, true)) e.preventDefault();
+});
+addEventListener("keyup", (e) => {
+  if (viewer && viewer.key(e.code, false)) e.preventDefault();
+});
+addEventListener("blur", () => viewer?.release());
+document.addEventListener("pointerlockchange", () => {
+  // Esc ends pointer lock without a mouseup reaching the page.
+  if (viewer && document.pointerLockElement !== canvas) viewer.look(false);
+});
+function togglePanels() {
+  const hide = !$("panel").hidden;
+  $("panel").hidden = hide;
+  $("explorer").hidden = hide;
+}
+$("toggle").addEventListener("click", togglePanels);
+
+// Selection: a left click on the canvas, Studio's rules (see `Viewer::click`).
+let down = null;
+canvas.addEventListener("pointerdown", (e) => { if (e.button === 0) down = [e.clientX, e.clientY]; });
+canvas.addEventListener("pointerup", (e) => {
+  if (e.button !== 0 || !viewer || !down) return;
+  const moved = Math.hypot(e.clientX - down[0], e.clientY - down[1]);
+  down = null;
+  if (moved > 4) return;
+  const ratio = canvas.width / canvas.clientWidth;
+  const ids = viewer.click(e.offsetX * ratio, e.offsetY * ratio, e.shiftKey || e.ctrlKey || e.metaKey, e.altKey);
+  showSelection(Array.from(ids), true);
+});
+
+// Explorer: the place's tree, read-only, loaded a level at a time.
+const rows = new Map(); // id -> { row, box (children container), depth, loaded }
+function buildTree() {
+  rows.clear();
+  $("tree").replaceChildren(...rowsFor(null, 0));
+  showSelection(Array.from(viewer.selection()), false);
+}
+function rowsFor(parent, depth) {
+  return JSON.parse(viewer.children(parent ?? undefined)).map((node) => {
+    const wrap = document.createElement("div");
+    const row = document.createElement("div");
+    row.className = "row";
+    row.setAttribute("role", "treeitem");
+    row.style.paddingLeft = `${depth * 14 + 2}px`;
+    const twisty = document.createElement("span");
+    twisty.className = "twisty";
+    twisty.textContent = node.children ? "▸" : "";
+    const label = document.createElement("span");
+    label.className = "name";
+    label.textContent = node.name;
+    const cls = document.createElement("span");
+    cls.className = "class";
+    cls.textContent = node.class;
+    row.append(twisty, label, cls);
+    const box = document.createElement("div");
+    box.hidden = true;
+    wrap.append(row, box);
+    const entry = { row, box, depth, loaded: false, twisty, children: node.children };
+    rows.set(node.id, entry);
+    twisty.addEventListener("click", (e) => { e.stopPropagation(); toggle(node.id); });
+    row.addEventListener("dblclick", () => toggle(node.id));
+    row.addEventListener("click", (e) => {
+      const current = Array.from(viewer.selection());
+      let ids = [node.id];
+      if (e.shiftKey || e.ctrlKey || e.metaKey) {
+        ids = current.includes(node.id) ? current.filter((id) => id !== node.id) : [...current, node.id];
+      }
+      viewer.select(ids);
+      showSelection(ids, false);
+    });
+    return wrap;
+  });
+}
+function toggle(id, open) {
+  const entry = rows.get(id);
+  if (!entry || !entry.children) return;
+  open ??= entry.box.hidden;
+  if (open && !entry.loaded) {
+    entry.box.replaceChildren(...rowsFor(id, entry.depth + 1));
+    entry.loaded = true;
+  }
+  entry.box.hidden = !open;
+  entry.twisty.textContent = open ? "▾" : "▸";
+}
+function showSelection(ids, reveal) {
+  for (const { row } of rows.values()) row.classList.remove("selected");
+  if (reveal && ids.length) {
+    // Open every ancestor of the last pick so its row exists.
+    const chain = Array.from(viewer.ancestors(ids[ids.length - 1]));
+    for (const id of chain.slice(0, -1)) toggle(id, true);
+  }
+  for (const id of ids) rows.get(id)?.row.classList.add("selected");
+  if (reveal && ids.length) rows.get(ids[ids.length - 1])?.row.scrollIntoView({ block: "nearest" });
+  const picked = $("picked");
+  if (!ids.length) {
+    picked.textContent = "Nothing selected";
+  } else {
+    const last = ids[ids.length - 1];
+    const path = Array.from(viewer.ancestors(last)).map((id) => viewer.describe(id)).join(".");
+    picked.innerHTML = "";
+    const strong = document.createElement("strong");
+    strong.textContent = path;
+    picked.append(strong, ` (${viewer.class_of(last)})` + (ids.length > 1 ? ` · ${ids.length} selected` : ""));
+  }
+}
+
+await init();
+if (!navigator.gpu) {
+  $("hint").innerHTML = "<div><strong>This browser has no WebGPU.</strong><br>Try a current Chrome, Edge, Firefox or Safari.</div>";
+} else {
+  const place = params.get("place") ?? "place";
+  const response = await fetch(place).catch(() => null);
+  if (response?.ok) open(new Uint8Array(await response.arrayBuffer()), place.split("/").pop());
+}
+</script>
+</body>
+</html>

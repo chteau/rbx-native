@@ -5,18 +5,14 @@ use gpui_kit::Context;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 use rbx_viewer::pick::{self, Selected};
+// Moved to `rbx_viewer::pick` so the browser build clicks the same way;
+// kept reachable here under the name the rest of the shell uses.
+pub(super) use rbx_viewer::pick::from_click;
 
 use crate::explorer;
 use crate::transform::Targets;
 
 use super::Shell;
-
-/// The service a viewport click's search for a `Model` ancestor stops at.
-/// `Workspace` is itself a `Model` subclass in Roblox's own class hierarchy,
-/// so without naming it here every click would "select the model" and land on
-/// the whole workspace.
-const WORKSPACE_CLASS: &str = "Workspace";
-const MODEL_CLASS: &str = "Model";
 
 /// What the viewport outlines for each selected instance: the instance and
 /// every drawable part it stands for, resolved here because only the editor
@@ -155,74 +151,6 @@ impl Selection {
     pub(super) fn of_item(item: Option<&TreeItem>) -> Option<Ref> {
         item.and_then(|item| explorer::item_ref(&item.id))
     }
-}
-
-/// What a click in the 3D view selects, given everything under the cursor
-/// (`hits`, nearest first — see `rbx_viewer::pick::parts_along`) and whatever
-/// is selected now.
-///
-/// Two behaviours, both taken from `creator-docs`
-/// (`parts/models.md#select-models`, `studio/ui-overview.md#selection-cycling`):
-///
-/// - A plain click takes the nearest hit and selects the **outermost model**
-///   it belongs to, which is what makes clicking any wall of a house select
-///   the house.
-/// - `cycling` — Studio's `Alt`/`⌥`-click — steps to "the next further object
-///   behind the currently selected object" instead, one raw part at a time and
-///   without reaching for a model, which is how a child buried inside one is
-///   reached without leaving the viewport. It wraps back to the nearest hit at
-///   the end, so holding `Alt` and clicking repeatedly goes round rather than
-///   sticking on the last one.
-pub(super) fn from_click(
-    dom: &WeakDom,
-    database: &ReflectionDatabase,
-    hits: &[Ref],
-    current: Option<Ref>,
-    cycling: bool,
-) -> Option<Ref> {
-    let &nearest = hits.first()?;
-    if !cycling {
-        return Some(outermost_model(dom, database, nearest));
-    }
-
-    // A selection that is not itself under the cursor — nothing selected, a
-    // model picked by an earlier plain click, or a part elsewhere entirely —
-    // has no "next" to step past, so cycling starts over at the front.
-    let position = current.and_then(|current| hits.iter().position(|&hit| hit == current));
-    Some(match position {
-        Some(position) => hits[(position + 1) % hits.len()],
-        None => nearest,
-    })
-}
-
-/// The highest `Model` `referent` sits inside, or `referent` itself when it
-/// sits in none.
-///
-/// Walks down from the roots rather than up from the hit: an `Instance` here
-/// knows its children but not its parent, and carrying the enclosing model
-/// down the descent answers the question in one pass without building a
-/// parent map for the whole DOM on every click.
-fn outermost_model(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> Ref {
-    let mut pending: Vec<(Ref, Option<Ref>)> =
-        dom.root_refs().iter().map(|&root| (root, None)).collect();
-
-    while let Some((current, model)) = pending.pop() {
-        if current == referent {
-            return model.unwrap_or(referent);
-        }
-        let Some(instance) = dom.get(current) else {
-            continue;
-        };
-        // `or` rather than a replacement: the *outermost* model wins, so a
-        // model nested inside another never overrides it.
-        let model = model.or_else(|| {
-            let class = instance.class();
-            (class != WORKSPACE_CLASS && database.is_subclass_of(class, MODEL_CLASS))
-                .then_some(current)
-        });
-        pending.extend(instance.children().iter().map(|&child| (child, model)));
-    }
-    referent
 }
 
 #[cfg(test)]

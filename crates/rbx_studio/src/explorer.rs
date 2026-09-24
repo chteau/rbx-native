@@ -11,94 +11,18 @@ use gpui_kit::component::tree::TreeItem;
 use gpui_kit::{RenderImage, SharedString};
 use rbx_dom::{Ref, WeakDom};
 
+// Studio's service order and its default-hidden services, shared with the
+// browser build's Explorer (see `rbx_viewer::services`).
+use rbx_viewer::services::rank;
+#[cfg(test)]
+use rbx_viewer::services::SERVICE_ORDER;
+pub(crate) use rbx_viewer::services::{is_default_visible, is_known_service};
+
 use crate::class_icons::{self, IconPack};
 use crate::folder_colors::{FolderColors, FOLDER_CLASS};
 
 pub(crate) mod insert;
 pub(crate) mod reparent;
-
-/// The order Studio lists services in — neither alphabetical nor the order the
-/// file stores them in. Anything else a place has at its root comes after.
-const SERVICE_ORDER: [&str; 14] = [
-    "Workspace",
-    "Players",
-    "Lighting",
-    "MaterialService",
-    "ReplicatedFirst",
-    "ReplicatedStorage",
-    "ServerScriptService",
-    "ServerStorage",
-    "StarterGui",
-    "StarterPack",
-    "StarterPlayer",
-    "Teams",
-    "SoundService",
-    "TextChatService",
-];
-
-/// Every root "service" class Roblox itself creates in a place file, whether
-/// or not Studio's default Explorer view shows it (verified against every
-/// root instance dump across this repo's fixtures). A root class absent from
-/// this list is some real, user-placed instance — never one of the
-/// deliberately-noisy internal ones — so the default filter below must never
-/// hide it.
-const KNOWN_SERVICES: [&str; 55] = [
-    "AssetService",
-    "Chat",
-    "CollectionService",
-    "ContextActionService",
-    "CookiesService",
-    "CSGDictionaryService",
-    "DataStoreService",
-    "Debris",
-    "DevPackages",
-    "GamePassService",
-    "GuidRegistryService",
-    "HttpService",
-    "InsertService",
-    "Instance",
-    "Lighting",
-    "LocalizationService",
-    "LodDataService",
-    "LuaWebService",
-    "MaterialService",
-    "NonReplicatedCSGDictionaryService",
-    "Packages",
-    "PermissionsService",
-    "PhysicsService",
-    "PlayerEmulatorService",
-    "Players",
-    "ProcessInstancePhysicsService",
-    "ProximityPromptService",
-    "ReplicatedFirst",
-    "ReplicatedStorage",
-    "ScriptService",
-    "Selection",
-    "SerializationService",
-    "ServerPackages",
-    "ServerScriptService",
-    "ServerStorage",
-    "ServiceVisibilityService",
-    "SoundService",
-    "StarterGui",
-    "StarterPack",
-    "StarterPlayer",
-    "StudioData",
-    "Teams",
-    "TeleportService",
-    "TestService",
-    "TextChatService",
-    "TimerService",
-    "TouchInputService",
-    "TweenService",
-    "UGCAvatarService",
-    "VideoCaptureService",
-    "VideoService",
-    "VirtualInputManager",
-    "VoiceChatService",
-    "VRService",
-    "Workspace",
-];
 
 /// The classes a UI tree hangs from: the `LayerCollector`s a place holds.
 const UI_ROOT_CLASSES: [&str; 3] = ["ScreenGui", "BillboardGui", "SurfaceGui"];
@@ -409,24 +333,6 @@ fn sort_roots(roots: &mut [Node]) {
                 .then_with(|| left.name.cmp(&right.name)),
         },
     );
-}
-
-fn rank(class: &str) -> Option<usize> {
-    SERVICE_ORDER.iter().position(|service| *service == class)
-}
-
-/// Whether a root of this class is one of the services this Explorer knows,
-/// shown or not. Asked beside the dump's own `Service` tag because a few of
-/// them (`Packages`, `SerializationService`) are not in the dump at all.
-pub(crate) fn is_known_service(class: &str) -> bool {
-    rank(class).is_some() || KNOWN_SERVICES.contains(&class)
-}
-
-/// Whether Studio's default Explorer view shows a root of this class without
-/// the "show all services" toggle: its 14 fixed services, or anything that is
-/// not one of Roblox's own well-known service classes at all.
-fn is_default_visible(class: &str) -> bool {
-    rank(class).is_some() || !KNOWN_SERVICES.contains(&class)
 }
 
 /// `tinted` caches one recolored icon per tag colour actually in use this

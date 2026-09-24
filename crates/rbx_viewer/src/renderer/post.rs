@@ -98,6 +98,10 @@ pub(super) struct Post {
     /// frame has none — a bind group entry cannot be left empty, and most
     /// places hold no glass to copy the scene for.
     empty_refraction: wgpu::TextureView,
+    /// What the resolve writes, which is not always the target's own format:
+    /// a browser canvas is only ever `*8unorm`, and the sRGB encode is had
+    /// through a view of its `-srgb` twin instead (see `web`).
+    pub(super) format: wgpu::TextureFormat,
 }
 
 impl Post {
@@ -150,21 +154,15 @@ impl Post {
                 Some(blur),
             ]
         };
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("rbxview post"),
-            source: wgpu::ShaderSource::Wgsl(SHADER.into()),
-        });
+        let shader = crate::gpu::shader(device, "rbxview post", SHADER);
         // The same shader with the depth binding retyped: WGSL has no
         // `textureLoad` that takes both, and a multisampled texture cannot be
         // declared as a plain `texture_depth_2d` at all.
-        let multisampled_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("rbxview post (msaa depth)"),
-            source: wgpu::ShaderSource::Wgsl(
-                SHADER
-                    .replace(DEPTH_BINDING, MULTISAMPLED_DEPTH_BINDING)
-                    .into(),
-            ),
-        });
+        let multisampled_shader = crate::gpu::shader(
+            device,
+            "rbxview post (msaa depth)",
+            &SHADER.replace(DEPTH_BINDING, MULTISAMPLED_DEPTH_BINDING),
+        );
 
         Post {
             threshold: fullscreen(
@@ -227,6 +225,7 @@ impl Post {
             color_correction: quality.color_correction,
             samples: supported(device, quality.msaa_samples),
             targets: None,
+            format,
             empty_refraction: attachment(
                 device,
                 "rbxview refraction (none)",
