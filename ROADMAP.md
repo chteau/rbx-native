@@ -738,6 +738,11 @@ Roblox's own engine.
     add-cursor-above/below is Ctrl+Alt+Up/Down on Windows, Shift+Alt on
     Linux and Cmd+Alt on macOS. All of it is GPUI Kit's own editor, which
     was multi-cursor already; nothing had to be retrofitted.
+    Ctrl+D (Cmd+D) adds a cursor at the next match of the selection and
+    Shift+Alt+L one at every match, Studio's own bindings: exact case,
+    whole words when started from a bare cursor, wrapping to the top.
+    Adding a selection from outside the widget needed an API upstream
+    keeps private, so `gpui-base` is vendored with it (`vendor/README.md`).
   - **Find/Replace** in the current script: Ctrl+F, and Ctrl+H for
     replace, is the editor's own search bar with a match count, case
     toggle and next/previous.
@@ -1293,15 +1298,10 @@ Roblox's own engine.
 ## What's planned
 
 ### Script authoring — the biggest real gap
-- [ ] 📋 **"Add cursor to next/every matching selection"** in the script
-  editor (Studio's Ctrl+D / select-all-occurrences). The rest of the
-  table-stakes conveniences shipped (see "What's been implemented"); this
-  one needs to add a selection to the editor from outside it, and GPUI
-  Kit 0.6's `EditorState` exposes no multi-selection API to do that with.
-  **Script Analysis** (real Studio's static-analysis pass, in-editor
-  squiggles plus a details window) is closer to genuinely duplicate work
-  with the `luau-lsp` diagnostics below and probably shouldn't be built
-  twice.
+- [ ] 📋 **Script Analysis** (real Studio's static-analysis pass,
+  in-editor squiggles plus a details window) is closer to genuinely
+  duplicate work with the `luau-lsp` diagnostics below and probably
+  shouldn't be built twice.
 - [ ] 📋 `luau-lsp` integration (external LSP-over-stdio process,
   autocomplete/diagnostics) — needs a `sourcemap.json` compatible with
   Rojo's format (see below) and the script editor above.

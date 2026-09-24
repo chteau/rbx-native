@@ -8,8 +8,10 @@
   Filter. Ctrl-click, or Go to Definition in the right-click menu, jumps
   to where a name was declared, resolved by block scope from the lexer's
   tokens without waiting for `luau-lsp`. Multi-cursor editing and column
-  select were already in GPUI Kit's editor. Adding a cursor at the next
-  match is still open, because the kit has no API for it. — @chteau
+  select were already in GPUI Kit's editor. Ctrl+D adds a cursor at the
+  next match of the selection and Shift+Alt+L one at every match, through
+  a vendored `gpui-base` with the one selection API the kit keeps
+  private. — @chteau
 
 ## 2026-09-23
 
