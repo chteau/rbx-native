@@ -11,6 +11,7 @@
 
 pub(crate) mod highlight;
 pub(crate) mod luau;
+pub(crate) mod outline;
 pub(crate) mod source;
 pub(crate) mod tabs;
 
