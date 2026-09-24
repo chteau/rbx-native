@@ -14,7 +14,11 @@ path = "src/main.rs"
 # cursor against them on this side of the thread boundary. Same version
 # `rbx_viewer` pins, so this adds no new dependency version to the tree.
 glam = "0.33"
+# `anyhow` and `lsp-types` are the types GPUI Kit's `DefinitionProvider` trait
+# is written in (Go to Declaration); both are already in the tree through it.
+anyhow = "1"
 gpui-kit = "0.6"
+lsp-types = "0.97"
 # GPUI's own version: a RenderImage is built from its `image::Frame`s, so a
 # second copy of the crate would not typecheck.
 image = "0.25.10"

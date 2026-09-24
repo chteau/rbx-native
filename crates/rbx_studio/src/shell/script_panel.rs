@@ -9,13 +9,13 @@
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::input::Editor;
+use gpui_kit::component::input::{Editor, GoToDefinition};
 use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Icon, Sizable};
 use gpui_kit::*;
 use rbx_dom::Ref;
 
-use crate::script_editor::source;
+use crate::script_editor::{find, outline, source};
 
 use super::Shell;
 
@@ -36,9 +36,27 @@ impl Shell {
 
         v_flex()
             .size_full()
+            .on_key_down(cx.listener(move |shell, event: &KeyDownEvent, window, cx| {
+                // Stopping here also keeps Ctrl+D from reaching the window's
+                // own handler, where it is the Explorer's Duplicate.
+                if shell.handle_finder_key(&event.keystroke, window, cx)
+                    || shell.handle_match_cursor_key(active, &event.keystroke, window, cx)
+                {
+                    cx.stop_propagation();
+                }
+            }))
+            // The right-click menu's Go to Definition. The editor's own
+            // handler only jumps to a target a Ctrl-hover already resolved, so
+            // from a plain right-click it would do nothing; taken here first,
+            // it resolves the name under the cursor itself.
+            .capture_action(cx.listener(move |shell, _: &GoToDefinition, window, cx| {
+                shell.go_to_declaration(active, window, cx);
+                cx.stop_propagation();
+            }))
             .child(self.script_tabs(active, cx))
             .child(
                 div()
+                    .relative()
                     .flex_1()
                     .overflow_hidden()
                     .children(self.scripts.open.get(&active).map(|open| {
@@ -46,9 +64,67 @@ impl Shell {
                             .bordered(false)
                             .h(relative(1.0))
                             .w_full()
-                    })),
+                    }))
+                    .children(self.script_finder(cx)),
             )
             .into_any_element()
+    }
+
+    /// Ctrl+D (Cmd+D) adds a cursor at the next match of the selection,
+    /// Shift+Alt+L one at every match — Studio's own bindings for both. Only
+    /// while the editor itself has focus, so the finder's query field keeps
+    /// its keys.
+    fn handle_match_cursor_key(
+        &mut self,
+        reference: Ref,
+        keystroke: &Keystroke,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let m = keystroke.modifiers;
+        let every = match keystroke.key.as_str() {
+            "d" if m.secondary() && !m.shift && !m.alt => false,
+            "l" if m.shift && m.alt && !m.control && !m.platform => true,
+            _ => return false,
+        };
+        let Some(open) = self.scripts.open.get(&reference) else {
+            return false;
+        };
+        if !open.state.focus_handle(cx).is_focused(window) {
+            return false;
+        }
+        open.state.update(cx, |state, cx| {
+            let text = state.value().to_string();
+            let selections = state.selected_ranges();
+            let extend = if every {
+                find::every_match(&text, &selections)
+            } else {
+                find::next_match(&text, &selections)
+            };
+            let Some(extend) = extend else {
+                return;
+            };
+            if let Some(primary) = extend.primary {
+                state.set_selected_range(primary, cx);
+            }
+            for range in extend.add {
+                state.add_selection(range, cx);
+            }
+        });
+        true
+    }
+
+    fn go_to_declaration(&mut self, reference: Ref, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(open) = self.scripts.open.get(&reference) else {
+            return;
+        };
+        open.state.update(cx, |state, cx| {
+            let text = state.value().to_string();
+            if let Some(target) = outline::declaration(&text, state.cursor()) {
+                state.set_selected_range(target, cx);
+                state.focus(window, cx);
+            }
+        });
     }
 
     fn script_tabs(&self, active: Ref, cx: &mut Context<Self>) -> impl IntoElement {

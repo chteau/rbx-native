@@ -2395,8 +2395,6 @@ dependencies = [
 [[package]]
 name = "gpui-base"
 version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d45dcaaeac889bf1e7757db1beb26c9043c8ea3156651facc11c6be56bb6722"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -6009,9 +6007,11 @@ dependencies = [
 name = "rbx_studio"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "glam",
  "gpui-kit",
  "image",
+ "lsp-types",
  "raw-window-handle",
  "rbx_assets",
  "rbx_binary",

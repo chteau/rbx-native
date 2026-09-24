@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-24
+
+- **The Script Editor gets its table-stakes conveniences.** Ctrl+F and
+  Ctrl+H open the editor's own Find/Replace bar. Ctrl+Shift+F is Find All
+  / Replace All over every open script. Alt+F is Studio's Script Function
+  Filter. Ctrl-click, or Go to Definition in the right-click menu, jumps
+  to where a name was declared, resolved by block scope from the lexer's
+  tokens without waiting for `luau-lsp`. Multi-cursor editing and column
+  select were already in GPUI Kit's editor. Ctrl+D adds a cursor at the
+  next match of the selection and Shift+Alt+L one at every match, through
+  a vendored `gpui-base` with the one selection API the kit keeps
+  private. — @chteau
+
 ## 2026-09-23
 
 - **Fixed: the Script Editor coloured code with a light-theme palette.**

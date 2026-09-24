@@ -731,6 +731,37 @@ Roblox's own engine.
     debugging, and new-script templates. With focus in an editor, Ctrl+Z
     is the editor's own text undo rather than the place's history — the
     split Studio makes — and Edit > Undo still reaches the latter.
+- [x] **Table-stakes script editor conveniences**, per
+  `studio/script-editor.md`, none of them depending on `luau-lsp`.
+  - **Multi-cursor editing**: Alt-click adds a cursor, Alt+Shift-drag
+    (Ctrl+Alt-drag on Linux as well) selects a column block, and
+    add-cursor-above/below is Ctrl+Alt+Up/Down on Windows, Shift+Alt on
+    Linux and Cmd+Alt on macOS. All of it is GPUI Kit's own editor, which
+    was multi-cursor already; nothing had to be retrofitted.
+    Ctrl+D (Cmd+D) adds a cursor at the next match of the selection and
+    Shift+Alt+L one at every match, Studio's own bindings: exact case,
+    whole words when started from a bare cursor, wrapping to the top.
+    Adding a selection from outside the widget needed an API upstream
+    keeps private, so `gpui-base` is vendored with it (`vendor/README.md`).
+  - **Find/Replace** in the current script: Ctrl+F, and Ctrl+H for
+    replace, is the editor's own search bar with a match count, case
+    toggle and next/previous.
+  - **Find All / Replace All** over every open script (Ctrl+Shift+F):
+    an overlay listing each match as its line and `Script:line`, jumping
+    to one on click or Enter. Replace All goes through each tab's
+    editor, so it lands on that tab's own undo stack and reaches
+    `Source` through the usual debounced write.
+  - **Go to Declaration**: Ctrl-hover underlines a name that resolves,
+    and Ctrl-click or the right-click menu's Go to Definition jumps to
+    where it was declared. It resolves locals, parameters and loop
+    variables by block scope, and falls back to a `function` statement
+    whose name ends in the same word, which covers `M.helper()` and
+    `self:method()`. It reads the lexer's tokens with no parse tree
+    (`script_editor::outline`), and works within one script only.
+  - **Script Function Filter** (Alt+F): the same overlay, listing every
+    named function in the current script (`function a.b:c`,
+    `local function f`, `local f = function`) with its line, filtered as
+    you type.
 - [x] **Throttled render loop while the window is unfocused.** Losing OS
   focus (`gpui`'s window activation) caps the viewport's render thread —
   not just the UI thread's own poll rate — to a user-chosen preset, 25 or
@@ -1267,20 +1298,10 @@ Roblox's own engine.
 ## What's planned
 
 ### Script authoring — the biggest real gap
-- [ ] 📋 **Table-stakes editor conveniences**, real and current per
-  `studio/script-editor.md`, worth scoping alongside the editor above
-  rather than as an afterthought since retrofitting multi-cursor support
-  onto a single-cursor text widget later is real rework: multi-cursor
-  editing (add/remove a cursor per click, add-above/below, "add cursor to
-  next/every matching selection", column/block select), a **Find/Replace**
-  widget plus a separate **Find All/Replace All** that searches every open
-  script rather than just the current one, **Go to Declaration**
-  (`Ctrl`-click or right-click on a call), and a **Script Function
-  Filter** (a searchable list of every function declared in the current
-  script, `Alt`+`F`). None of this depends on `luau-lsp`; **Script
-  Analysis** (real Studio's static-analysis pass, in-editor squiggles plus
-  a details window) is closer to genuinely duplicate work with the
-  `luau-lsp` diagnostics below and probably shouldn't be built twice.
+- [ ] 📋 **Script Analysis** (real Studio's static-analysis pass,
+  in-editor squiggles plus a details window) is closer to genuinely
+  duplicate work with the `luau-lsp` diagnostics below and probably
+  shouldn't be built twice.
 - [ ] 📋 `luau-lsp` integration (external LSP-over-stdio process,
   autocomplete/diagnostics) — needs a `sourcemap.json` compatible with
   Rojo's format (see below) and the script editor above.

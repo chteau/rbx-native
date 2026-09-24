@@ -34,3 +34,11 @@ font-types = { opt-level = 3 }
 fontdb = { opt-level = 3 }
 zeno = { opt-level = 3 }
 unicode-linebreak = { opt-level = 3 }
+
+# GPUI Kit's editor keeps its selection list private, and Ctrl+D (add the
+# next match of the selection as another selection) needs to add one from
+# outside. `vendor/gpui-base` is gpui-base 0.6.1 unchanged but for
+# `EditorState::add_selection` (see `vendor/README.md`); drop this once
+# upstream exposes an equivalent.
+[patch.crates-io]
+gpui-base = { path = "vendor/gpui-base" }
