@@ -13,7 +13,10 @@ use std::path::PathBuf;
 use rbx_viewer::QualityLevel;
 
 pub(crate) const USAGE: &str = "\
-usage: rbxstudio [options] <file.rbxl|.rbxm|.rbxlx|.rbxmx>
+usage: rbxstudio [options] [file.rbxl|.rbxm|.rbxlx|.rbxmx]
+
+Without a file, opens the API key setup wizard on first launch and the
+Home screen after that.
 
 options:
   --select <target>[,<target>...]
@@ -36,7 +39,8 @@ options:
 
 /// A parsed command line.
 pub(crate) struct Arguments {
-    pub(crate) path: PathBuf,
+    /// `None` starts at the setup wizard or Home — see `home::route`.
+    pub(crate) path: Option<PathBuf>,
     pub(crate) quality: QualityLevel,
     /// `--select`'s comma list, still raw: the names in it can only be looked
     /// up once the place has been read.
@@ -80,7 +84,7 @@ pub(crate) fn parse(arguments: &[String], default_quality: QualityLevel) -> Resu
     }
 
     Ok(Parsed::Open(Arguments {
-        path: path.ok_or_else(|| "no place file given".to_string())?,
+        path,
         quality,
         select,
         run,

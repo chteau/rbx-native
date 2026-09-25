@@ -35,8 +35,9 @@ struct KeyInfoRaw {
     scopes: Vec<ScopeRaw>,
     enabled: bool,
     expired: bool,
-    #[serde(rename = "expirationTimeUtc")]
-    expiration_time_utc: String,
+    /// Absent or `null` on a key with no expiration.
+    #[serde(rename = "expirationTimeUtc", default)]
+    expiration_time_utc: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -61,7 +62,7 @@ impl From<KeyInfoRaw> for KeyInfo {
             scopes: raw.scopes.into_iter().map(Scope::from).collect(),
             enabled: raw.enabled,
             expired: raw.expired,
-            expiration_time_utc: raw.expiration_time_utc,
+            expiration_time_utc: raw.expiration_time_utc.unwrap_or_default(),
         }
     }
 }
@@ -119,6 +120,16 @@ mod tests {
         assert!(!info.expired);
         assert_eq!(info.expiration_time_utc, "2026-10-12T21:50:06.9160000Z");
         assert_eq!(info.scopes.len(), 3);
+    }
+
+    #[test]
+    fn a_key_without_an_expiration_parses() {
+        let json = SAMPLE.replace(
+            r#""expirationTimeUtc":"2026-10-12T21:50:06.9160000Z","#,
+            r#""expirationTimeUtc":null,"#,
+        );
+        let info: KeyInfo = serde_json::from_str::<KeyInfoRaw>(&json).unwrap().into();
+        assert_eq!(info.expiration_time_utc, "");
     }
 
     #[test]

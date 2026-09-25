@@ -97,107 +97,37 @@ impl Shell {
     pub(super) fn topbar(&self, cx: &mut App) -> impl IntoElement {
         let title = self.title.clone();
 
-        h_flex()
-            .w_full()
-            .h(tokens::topbar_height())
-            .flex_none()
-            .items_center()
-            .bg(tokens::black())
-            .border_b(px(1.))
-            .border_color(tokens::border())
-            .child(
-                h_flex()
-                    .flex_none()
-                    .w(WINDOW_ACTIONS_WIDTH)
-                    .items_center()
-                    .pl(px(12.))
-                    .child(
-                        Icon::empty()
-                            .data(LOGO)
-                            .w(px(23.8))
-                            .h(px(17.))
-                            .text_color(tokens::text_full()),
-                    ),
-            )
-            // Only this middle stretch moves the window: the logo block and
-            // the buttons flanking it are not drag targets, so a click that
-            // lands on a button can never also nudge the window.
-            .child(
-                h_flex()
-                    .id("window-drag")
-                    .flex_1()
-                    .h_full()
-                    .items_center()
-                    .justify_center()
-                    .overflow_hidden()
-                    .text_size(tokens::text_md())
-                    .line_height(tokens::line_md())
-                    .text_color(tokens::text2())
-                    .gap(px(10.))
-                    // The move starts on a *drag*, not on a press. Handing
-                    // `start_window_move` to mouse-down grabs the pointer at
-                    // the compositor on the first press of every double
-                    // click, and the second press is then never delivered —
-                    // which is exactly why double-clicking to maximize did
-                    // nothing until the second attempt. Waiting for actual
-                    // motion costs nothing (a drag always moves) and leaves
-                    // a stationary double click intact.
-                    //
-                    // `zoom_window` is the platform's own call
-                    // (`PlatformWindow::zoom`), so this is macOS's zoom and
-                    // Windows/Linux's maximize rather than one convention
-                    // forced on both. It toggles on X11, Wayland and macOS;
-                    // on Windows it only maximizes, which is GPUI's gap and
-                    // not something this can paper over.
-                    .on_mouse_move(|event: &MouseMoveEvent, window, _| {
-                        if event.pressed_button == Some(MouseButton::Left) {
-                            window.start_window_move();
-                        }
-                    })
-                    .on_click(|event, window, _| {
-                        if event.click_count() >= 2 {
-                            window.zoom_window();
-                        }
-                    })
-                    .child(
-                        div()
-                            .font_weight(tokens::WEIGHT_SEMIBOLD)
-                            .child("RbxNative"),
-                    )
-                    .child(div().w(px(1.)).h(px(12.)).bg(tokens::border2()))
-                    .child(div().truncate().child(title)),
-            )
-            .child(
-                h_flex()
-                    .flex_none()
-                    .w(WINDOW_ACTIONS_WIDTH)
-                    .h_full()
-                    .justify_end()
-                    .child(window_button(
-                        &self.tab_order.claim(cx),
-                        "window-minimize",
-                        IconName::Minus,
-                        "Minimize",
-                        false,
-                        |window| window.minimize_window(),
-                    ))
-                    .child(window_button(
-                        &self.tab_order.claim(cx),
-                        "window-maximize",
-                        IconName::Square,
-                        "Maximize",
-                        false,
-                        |window| window.zoom_window(),
-                    ))
-                    .child(window_button(
-                        &self.tab_order.claim(cx),
-                        "window-close",
-                        IconName::X,
-                        "Close",
-                        true,
-                        |window| window.remove_window(),
-                    )),
-            )
+        topbar_frame(title).child(
+            h_flex()
+                .flex_none()
+                .w(WINDOW_ACTIONS_WIDTH)
+                .h_full()
+                .justify_end()
+                .child(window_button(
+                    &self.tab_order.claim(cx),
+                    "window-minimize",
+                    IconName::Minus,
+                    "Minimize",
+                    false,
+                    |window| window.minimize_window(),
+                ))
+                .child(window_button(
+                    &self.tab_order.claim(cx),
+                    "window-maximize",
+                    IconName::Square,
+                    "Maximize",
+                    false,
+                    |window| window.zoom_window(),
+                ))
+                .child(window_button(
+                    &self.tab_order.claim(cx),
+                    "window-close",
+                    IconName::X,
+                    "Close",
+                    true,
+                    |window| window.remove_window(),
+                )),
+        )
     }
 
     /// **Row A** — which document the centre column shows.
@@ -373,6 +303,125 @@ fn document_tab(
     // a dock tab as "a control that lies" — a document here is a view
     // of the one open place, not a file that closes independently, so
     // the identical argument applies.
+}
+
+/// The title bar every window of this app wears: logo, "RbxNative | title"
+/// centred on the window, and the drag stretch that moves it (double-click
+/// maximises). The caller adds the window buttons at the right.
+pub(crate) fn topbar_frame(title: SharedString) -> Div {
+    h_flex()
+        .w_full()
+        .h(tokens::topbar_height())
+        .flex_none()
+        .items_center()
+        .bg(tokens::black())
+        .border_b(px(1.))
+        .border_color(tokens::border())
+        .child(
+            h_flex()
+                .flex_none()
+                .w(WINDOW_ACTIONS_WIDTH)
+                .items_center()
+                .pl(px(12.))
+                .child(
+                    Icon::empty()
+                        .data(LOGO)
+                        .w(px(23.8))
+                        .h(px(17.))
+                        .text_color(tokens::text_full()),
+                ),
+        )
+        // Only this middle stretch moves the window: the logo block and
+        // the buttons flanking it are not drag targets, so a click that
+        // lands on a button can never also nudge the window.
+        .child(
+            h_flex()
+                .id("window-drag")
+                .flex_1()
+                .h_full()
+                .items_center()
+                .justify_center()
+                .overflow_hidden()
+                .text_size(tokens::text_md())
+                .line_height(tokens::line_md())
+                .text_color(tokens::text2())
+                .gap(px(10.))
+                // The move starts on a *drag*, not on a press. Handing
+                // `start_window_move` to mouse-down grabs the pointer at
+                // the compositor on the first press of every double
+                // click, and the second press is then never delivered —
+                // which is exactly why double-clicking to maximize did
+                // nothing until the second attempt. Waiting for actual
+                // motion costs nothing (a drag always moves) and leaves
+                // a stationary double click intact.
+                //
+                // `zoom_window` is the platform's own call
+                // (`PlatformWindow::zoom`), so this is macOS's zoom and
+                // Windows/Linux's maximize rather than one convention
+                // forced on both. It toggles on X11, Wayland and macOS;
+                // on Windows it only maximizes, which is GPUI's gap and
+                // not something this can paper over.
+                .on_mouse_move(|event: &MouseMoveEvent, window, _| {
+                    if event.pressed_button == Some(MouseButton::Left) {
+                        window.start_window_move();
+                    }
+                })
+                .on_click(|event, window, _| {
+                    if event.click_count() >= 2 {
+                        window.zoom_window();
+                    }
+                })
+                .child(
+                    div()
+                        .font_weight(tokens::WEIGHT_SEMIBOLD)
+                        .child("RbxNative"),
+                )
+                .child(div().w(px(1.)).h(px(12.)).bg(tokens::border2()))
+                .child(div().truncate().child(title)),
+        )
+}
+
+/// [`topbar_frame`] with minimise, maximise and close — for a window with
+/// no tab order of its own (the launcher's). A fixed-size window leaves
+/// maximise out (`resizable`); `on_close` decides what closing means.
+pub(crate) fn window_topbar(
+    title: SharedString,
+    resizable: bool,
+    on_close: impl Fn(&mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    topbar_frame(title).child(
+        h_flex()
+            .flex_none()
+            .w(WINDOW_ACTIONS_WIDTH)
+            .h_full()
+            .justify_end()
+            .child(titlebar_button(
+                None,
+                "window-minimize",
+                IconName::Minus,
+                "Minimize",
+                false,
+                |_, window, _| window.minimize_window(),
+            ))
+            .when(resizable, |this| {
+                this.child(titlebar_button(
+                    None,
+                    "window-maximize",
+                    IconName::Square,
+                    "Maximize",
+                    false,
+                    |_, window, _| window.zoom_window(),
+                ))
+            })
+            .child(titlebar_button(
+                None,
+                "window-close",
+                IconName::X,
+                "Close",
+                true,
+                move |_, window, cx| on_close(window, cx),
+            )),
+    )
 }
 
 /// One window button. Three of these fill the block the title is centred

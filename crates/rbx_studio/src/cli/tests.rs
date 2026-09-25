@@ -29,12 +29,15 @@ fn parse_with_default(values: &[&str]) -> Result<Parsed, String> {
 
 #[test]
 fn a_single_file_is_the_place_to_open() {
-    assert_eq!(open(&["place.rbxl"]).path, PathBuf::from("place.rbxl"));
+    assert_eq!(
+        open(&["place.rbxl"]).path,
+        Some(PathBuf::from("place.rbxl"))
+    );
 }
 
 #[test]
-fn no_argument_is_a_usage_error() {
-    assert!(parse_with_default(&[]).is_err());
+fn no_argument_opens_no_place() {
+    assert_eq!(open(&[]).path, None);
 }
 
 #[test]
@@ -120,7 +123,7 @@ fn run_takes_a_script_path() {
 fn verbose_is_a_flag_with_no_value_of_its_own() {
     let parsed = open(&["--verbose", "place.rbxl"]);
     assert!(parsed.verbose);
-    assert_eq!(parsed.path, PathBuf::from("place.rbxl"));
+    assert_eq!(parsed.path, Some(PathBuf::from("place.rbxl")));
 }
 
 #[test]

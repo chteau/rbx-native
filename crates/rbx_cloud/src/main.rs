@@ -1,15 +1,15 @@
-//! Command-line interface for the Roblox Cloud API: whoami, list experiences,
-//! download a place, or fetch an asset by id.
+//! Command-line interface for the Roblox Cloud API: whoami, check the key's
+//! scopes, list experiences, download a place, or fetch an asset by id.
 
 use std::env::Args;
 use std::process::ExitCode;
 
-use rbx_cloud::{ApiKey, Client, Visibility};
+use rbx_cloud::{ApiKey, Client, Grant, Owner, Visibility};
 
 fn main() -> ExitCode {
     let mut args = std::env::args();
     let program = args.next().unwrap_or_else(|| "rbxcloud".to_string());
-    let usage = format!("usage: {program} <whoami|list|download|asset> [args...]");
+    let usage = format!("usage: {program} <whoami|check|list|download|asset> [args...]");
 
     let Some(command) = args.next() else {
         eprintln!("{usage}");
@@ -20,6 +20,7 @@ fn main() -> ExitCode {
 
     let result = match command.as_str() {
         "whoami" => run_whoami(&client),
+        "check" => run_check(&client),
         "list" => run_list(&client),
         "download" => run_download(&client, &mut args),
         "asset" => run_asset(&client, &mut args),
@@ -59,23 +60,56 @@ fn run_whoami(client: &Client) -> Result<(), String> {
     Ok(())
 }
 
+/// The setup wizard's pass/fail list, on stdout. Exits non-zero when a
+/// required permission is missing, so a script can gate on it.
+fn run_check(client: &Client) -> Result<(), String> {
+    let info = client.introspect().map_err(|err| err.to_string())?;
+    let report = rbx_cloud::check_scopes(&info);
+    if !report.usable {
+        println!("key is disabled or expired");
+    }
+    for check in &report.checks {
+        let status = match &check.grant {
+            Grant::Missing if check.permission.required => "FAIL".to_string(),
+            Grant::Missing => "----".to_string(),
+            Grant::Everywhere => "PASS".to_string(),
+            Grant::Universes(ids) => format!("PASS ({} universes)", ids.len()),
+        };
+        println!(
+            "{status:<20} {:<48} {}",
+            check.permission.scope, check.permission.feature
+        );
+    }
+    if report.ready() {
+        Ok(())
+    } else {
+        Err("the key is missing a required permission".to_string())
+    }
+}
+
 fn run_list(client: &Client) -> Result<(), String> {
-    let experiences = client.list_experiences().map_err(|err| err.to_string())?;
+    let listing = client.list_experiences().map_err(|err| err.to_string())?;
+    let experiences = &listing.experiences;
     if experiences.is_empty() {
         println!("no experiences found");
         return Ok(());
     }
 
     println!(
-        "{:<14} {:<16} {:<9} NAME",
-        "UNIVERSE_ID", "ROOT_PLACE_ID", "VISIBILITY"
+        "{:<14} {:<16} {:<9} {:<14} NAME",
+        "UNIVERSE_ID", "ROOT_PLACE_ID", "VISIBILITY", "OWNER"
     );
-    for experience in &experiences {
+    for experience in experiences {
+        let owner = match experience.owner {
+            Owner::User(id) => format!("user {id}"),
+            Owner::Group(id) => format!("group {id}"),
+        };
         println!(
-            "{:<14} {:<16} {:<9} {}",
+            "{:<14} {:<16} {:<9} {:<14} {}",
             experience.universe_id,
             experience.root_place_id,
             format_visibility(&experience.visibility),
+            owner,
             experience.name
         );
     }

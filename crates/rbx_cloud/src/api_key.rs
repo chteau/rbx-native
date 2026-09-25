@@ -1,7 +1,16 @@
-//! Loading a Roblox Open Cloud API key: `RBX_API_KEY` first, then a config
-//! file (XDG on Linux, `%APPDATA%` on Windows), trimmed either way.
+//! Loading a Roblox Open Cloud API key: `RBX_API_KEY` first, then the key the
+//! editor installed from the OS keyring (see [`ApiKey::install`]), then a
+//! plaintext config file (XDG on Linux, `%APPDATA%` on Windows), trimmed
+//! either way.
 
 use std::path::{Path, PathBuf};
+use std::sync::RwLock;
+
+/// The key a host process read from somewhere this crate cannot reach
+/// itself — `rbxstudio`'s OS keyring entry, which only GPUI's platform layer
+/// can open. Consulted by [`ApiKey::from_env_or_config`], so every `Client`
+/// built afterwards (the viewer's asset fetches included) sees it.
+static INSTALLED: RwLock<Option<ApiKey>> = RwLock::new(None);
 
 /// A Roblox Open Cloud API key.
 ///
@@ -20,11 +29,47 @@ impl ApiKey {
         &self.0
     }
 
-    /// Reads `RBX_API_KEY`, falling back to `$XDG_CONFIG_HOME/rbx-native/api_key`,
+    /// The raw value, for handing to secure storage. Deliberately not
+    /// `as_str`/`Display`: every call site that sees the secret says so.
+    pub fn expose_secret(&self) -> &str {
+        &self.0
+    }
+
+    /// Makes `key` the process-wide key [`from_env_or_config`] returns when
+    /// `RBX_API_KEY` is unset; `None` withdraws it (a key removed or
+    /// replaced from the editor's settings).
+    ///
+    /// [`from_env_or_config`]: Self::from_env_or_config
+    pub fn install(key: Option<ApiKey>) {
+        *INSTALLED.write().unwrap_or_else(|e| e.into_inner()) = key;
+    }
+
+    /// Where the plaintext key file lives, whether or not it exists — so the
+    /// editor can move a key found there into the OS keyring and delete it.
+    pub fn plaintext_file_path() -> Option<PathBuf> {
+        config_file_path(
+            non_empty_env("XDG_CONFIG_HOME"),
+            non_empty_env("APPDATA"),
+            non_empty_env("HOME"),
+        )
+    }
+
+    /// The plaintext key file's key alone, ignoring `RBX_API_KEY` and any
+    /// installed key.
+    pub fn from_plaintext_file() -> Option<Self> {
+        read_key_file(&Self::plaintext_file_path()?)
+    }
+
+    /// Reads `RBX_API_KEY`, then the key [`install`](Self::install)ed from
+    /// the OS keyring, falling back to `$XDG_CONFIG_HOME/rbx-native/api_key`,
     /// `%APPDATA%\rbx-native\api_key` on Windows, or `~/.config/rbx-native/api_key`
     /// as a last resort, trimmed. Returns `None` rather than an error: callers
     /// treat "no key" as "use the anonymous API surface".
     pub fn from_env_or_config() -> Option<Self> {
+        let installed = INSTALLED.read().unwrap_or_else(|e| e.into_inner()).clone();
+        if let Some(key) = installed.filter(|_| non_empty_env("RBX_API_KEY").is_none()) {
+            return Some(key);
+        }
         resolve(
             non_empty_env("RBX_API_KEY"),
             non_empty_env("XDG_CONFIG_HOME"),
