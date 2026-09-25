@@ -1293,8 +1293,7 @@ Roblox's own engine.
   (`.github/workflows/ci.yml`). The workspace compiles and its tests pass
   there. What that job cannot answer is anything about the editor
   *running*: it is headless, so no window, GPU surface or input path has
-  been exercised on Windows. Launching the editor there is still open, and
-  mouse capture (the bullet above) is the one gap already known about.
+  been exercised on Windows. Launching the editor there is still open.
 - [x] Daily API-Dump sync (`.github/workflows/sync-api-dump.yml`).
 - [x] The viewer in a browser — `rbx_viewer` builds for
   `wasm32-unknown-unknown` (`scripts/build-web.sh`) and runs on WebGPU
@@ -2123,9 +2122,12 @@ against `Roblox/creator-docs` rather than assumed:
   -format risk" property as the two items above.
 
 ### Platform: Windows
-- [ ] 📋 Mouse capture in the free-flight camera — implemented for X11
-  only today (`x11rb`/XFixes); needs a Win32 `ClipCursor`/`SetCursorPos`
-  backend.
+- [x] Mouse capture in the free-flight camera — a Win32 backend beside the
+  X11 one in `pointer_lock::server`: `ShowCursor` hides, `SetCursorPos`
+  warps back to the viewport centre after every move. No `ClipCursor`:
+  GPUI already `SetCapture`s on button press, so moves keep arriving
+  between warps. Type-checked for `x86_64-pc-windows-msvc` and built by
+  the Windows CI job, but not yet driven on a real Windows desktop.
 
 ### Tooling / CI
 - [ ] 📋 A job that rebuilds against the current Studio version and

@@ -1,9 +1,16 @@
-//! The X11 requests the pointer lock is made of, and the nothing it becomes
-//! everywhere else.
+//! The X11 requests and Win32 calls the pointer lock is made of, and the
+//! nothing it becomes everywhere else.
 //!
-//! The connection is the lock's own, never GPUI's: warping and hiding are not
-//! part of what GPUI's event loop does, and a second client connection costs one
-//! socket and no synchronisation with it.
+//! On X11 the connection is the lock's own, never GPUI's: warping and hiding are
+//! not part of what GPUI's event loop does, and a second client connection costs
+//! one socket and no synchronisation with it.
+//!
+//! On Windows there is nothing to open. GPUI already calls `SetCapture` on
+//! every button press, so moves keep arriving while the hidden pointer is off
+//! the window between two warps; that is why no `ClipCursor` is taken either.
+
+#[cfg(any(target_os = "linux", windows))]
+use super::{At, WindowId};
 
 #[cfg(target_os = "linux")]
 use std::env;
@@ -47,12 +54,12 @@ impl Server {
     }
 
     /// The pointer's position relative to `window`, in physical pixels.
-    pub(super) fn pointer(&self, window: u32) -> Option<(i16, i16)> {
+    pub(super) fn pointer(&self, window: WindowId) -> Option<At> {
         let reply = self.connection.query_pointer(window).ok()?.reply().ok()?;
         Some((reply.win_x, reply.win_y))
     }
 
-    pub(super) fn warp(&self, window: u32, to: (i16, i16)) {
+    pub(super) fn warp(&self, window: WindowId, to: At) {
         // Failures are dropped throughout: a window already gone, or a server
         // that dislikes the request, must not take the camera down with it.
         let _ = self
@@ -61,14 +68,14 @@ impl Server {
         let _ = self.connection.flush();
     }
 
-    pub(super) fn hide(&self, window: u32) {
+    pub(super) fn hide(&self, window: WindowId) {
         if self.hides {
             let _ = xfixes::hide_cursor(&self.connection, window);
             let _ = self.connection.flush();
         }
     }
 
-    pub(super) fn show(&self, window: u32) {
+    pub(super) fn show(&self, window: WindowId) {
         if self.hides {
             let _ = xfixes::show_cursor(&self.connection, window);
             let _ = self.connection.flush();
@@ -76,30 +83,94 @@ impl Server {
     }
 }
 
+#[cfg(windows)]
+pub(super) struct Server;
+
+#[cfg(windows)]
+impl Server {
+    pub(super) fn open() -> Option<Self> {
+        Some(Server)
+    }
+
+    /// The pointer's position relative to `window`'s client area, in physical
+    /// pixels (GPUI makes the process per-monitor DPI aware).
+    pub(super) fn pointer(&self, window: WindowId) -> Option<At> {
+        use windows_sys::Win32::Foundation::POINT;
+        use windows_sys::Win32::Graphics::Gdi::ScreenToClient;
+        use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
+
+        let mut at = POINT { x: 0, y: 0 };
+        // SAFETY: both calls only write through the pointer they are handed,
+        // and a stale `HWND` makes `ScreenToClient` fail rather than misbehave.
+        let found =
+            unsafe { GetCursorPos(&mut at) != 0 && ScreenToClient(hwnd(window), &mut at) != 0 };
+        if !found {
+            return None;
+        }
+        Some((i16::try_from(at.x).ok()?, i16::try_from(at.y).ok()?))
+    }
+
+    pub(super) fn warp(&self, window: WindowId, to: At) {
+        use windows_sys::Win32::Foundation::POINT;
+        use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
+        use windows_sys::Win32::UI::WindowsAndMessaging::SetCursorPos;
+
+        let mut at = POINT {
+            x: to.0.into(),
+            y: to.1.into(),
+        };
+        // SAFETY: as in `pointer`. Failures are dropped, as on X11.
+        unsafe {
+            if ClientToScreen(hwnd(window), &mut at) != 0 {
+                SetCursorPos(at.x, at.y);
+            }
+        }
+    }
+
+    // `ShowCursor` moves a per-thread counter rather than setting a state, so
+    // the two below must stay paired — which `PointerLock` guarantees by only
+    // showing on the release of a look it hid for. Both run on GPUI's main
+    // thread, the one that owns the window.
+    pub(super) fn hide(&self, _window: WindowId) {
+        // SAFETY: no pointers involved.
+        unsafe { windows_sys::Win32::UI::WindowsAndMessaging::ShowCursor(0) };
+    }
+
+    pub(super) fn show(&self, _window: WindowId) {
+        // SAFETY: no pointers involved.
+        unsafe { windows_sys::Win32::UI::WindowsAndMessaging::ShowCursor(1) };
+    }
+}
+
+#[cfg(windows)]
+fn hwnd(window: WindowId) -> windows_sys::Win32::Foundation::HWND {
+    window as windows_sys::Win32::Foundation::HWND
+}
+
 /// Never constructed: no other backend gets a lock, so every call below is
 /// unreachable by construction rather than by convention.
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub(super) enum Server {}
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 impl Server {
     pub(super) fn open() -> Option<Self> {
         None
     }
 
-    pub(super) fn pointer(&self, _window: u32) -> Option<(i16, i16)> {
+    pub(super) fn pointer(&self, _window: super::WindowId) -> Option<super::At> {
         match *self {}
     }
 
-    pub(super) fn warp(&self, _window: u32, _to: (i16, i16)) {
+    pub(super) fn warp(&self, _window: super::WindowId, _to: super::At) {
         match *self {}
     }
 
-    pub(super) fn hide(&self, _window: u32) {
+    pub(super) fn hide(&self, _window: super::WindowId) {
         match *self {}
     }
 
-    pub(super) fn show(&self, _window: u32) {
+    pub(super) fn show(&self, _window: super::WindowId) {
         match *self {}
     }
 }

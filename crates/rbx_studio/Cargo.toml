@@ -89,6 +89,15 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # is plain TOML, and nothing in this workspace parses that format yet.
 toml = "0.9"
 
+# The pointer lock's Win32 backend (`pointer_lock::server`): cursor warp and
+# hide. Already in the tree (under `mio`, `rustix`, …) at this version.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
 [dev-dependencies]
 # GPUI's headless test window/entity harness (`#[gpui_kit::test]`,
 # `TestAppContext`), for the dock registration regression test in
