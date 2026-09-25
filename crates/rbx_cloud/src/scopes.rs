@@ -19,7 +19,8 @@ pub struct Permission {
     /// `name:operation`, exactly as the Dashboard's operation picker and the
     /// OpenAPI spec spell it.
     pub scope: &'static str,
-    /// The editor feature that stops working without it.
+    /// The editor feature that stops working without it — the wizard's row
+    /// label, worded as Kevin's boards (#0075) have it.
     pub feature: &'static str,
     /// Whether the editor's core loop (open a place from Roblox, save it
     /// back) needs it. Everything else only switches one feature off.
@@ -44,49 +45,58 @@ const fn optional(scope: &'static str, feature: &'static str) -> Permission {
 
 /// Everything the editor can use, required first.
 pub const PERMISSIONS: &[Permission] = &[
-    required("universe-places:write", "Save and Publish places"),
+    required("universe-places:write", "Save and publish places"),
     // The keyed asset-delivery endpoint `Client::download_place` falls back
     // to for a private place.
     required("legacy-asset:manage", "Open private places and assets"),
-    optional("universe.place:read", "Place version history"),
+    optional("universe.place:read", "Version history"),
     optional("universe.place:write", "Place settings and version notes"),
-    optional("universe:write", "Game Settings"),
-    optional("universe.thumbnail:read", "Game Settings thumbnails"),
+    optional("universe:write", "Game settings"),
+    optional("universe.thumbnail:read", "Game settings thumbnails"),
+    optional("legacy-group:manage", "Group experiences on Home"),
+    optional("game-pass:read", "View game passes"),
+    optional("game-pass:write", "Edit game passes"),
+    optional("developer-product:read", "View developer products"),
+    optional("developer-product:write", "Edit developer products"),
+    optional("universe-datastores.control:list", "List data stores"),
+    optional("universe-datastores.objects:list", "Browse data store keys"),
     optional(
-        "legacy-group:manage",
-        "Group experiences on the Home screen",
+        "universe-datastores.objects:read",
+        "Read data store entries",
     ),
-    optional("game-pass:read", "Game passes"),
-    optional("game-pass:write", "Game passes (edit)"),
-    optional("developer-product:read", "Developer products"),
-    optional("developer-product:write", "Developer products (edit)"),
-    optional("universe-datastores.control:list", "Data stores"),
-    optional("universe-datastores.objects:list", "Data stores"),
-    optional("universe-datastores.objects:read", "Data stores"),
-    optional("universe-datastores.objects:create", "Data stores (edit)"),
-    optional("universe-datastores.objects:update", "Data stores (edit)"),
-    optional("universe-datastores.objects:delete", "Data stores (edit)"),
+    optional(
+        "universe-datastores.objects:create",
+        "Create data store entries",
+    ),
+    optional(
+        "universe-datastores.objects:update",
+        "Update data store entries",
+    ),
+    optional(
+        "universe-datastores.objects:delete",
+        "Delete data store entries",
+    ),
     optional(
         "universe.ordered-data-store.scope.entry:read",
-        "Ordered data stores",
+        "Read ordered data stores",
     ),
     optional(
         "universe.ordered-data-store.scope.entry:write",
-        "Ordered data stores (edit)",
+        "Edit ordered data stores",
     ),
     optional(
         "universe.place.luau-execution-session:read",
-        "Run Luau in the cloud",
+        "Read cloud Luau results",
     ),
     optional(
         "universe.place.luau-execution-session:write",
         "Run Luau in the cloud",
     ),
-    optional("asset:read", "Uploaded meshes and images"),
+    optional("asset:read", "Read uploaded meshes and images"),
     optional("asset:write", "Upload meshes and images"),
     optional(
         "universe-messaging-service:publish",
-        "MessagingService publish",
+        "Publish to MessagingService",
     ),
 ];
 

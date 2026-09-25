@@ -10,9 +10,16 @@
 
 use std::process::{Command, Output};
 
+/// Runs the binary against an empty config directory: a launch that got
+/// as far as `key_store::restore` would otherwise move the developer's own
+/// `api_key` file into their keyring and delete it (it happened once).
 fn rbxstudio(arguments: &[&str]) -> Output {
+    let config = std::env::temp_dir().join(format!("rbx_studio_cli_test_{}", std::process::id()));
     Command::new(env!("CARGO_BIN_EXE_rbxstudio"))
         .args(arguments)
+        .env("XDG_CONFIG_HOME", &config)
+        .env("APPDATA", &config)
+        .env_remove("RBX_API_KEY")
         .output()
         .expect("rbxstudio is built alongside this test")
 }

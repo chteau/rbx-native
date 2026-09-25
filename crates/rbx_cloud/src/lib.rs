@@ -11,6 +11,7 @@ mod error;
 mod experiences;
 mod games;
 mod introspect;
+mod places;
 mod publish;
 mod retry;
 mod scopes;
@@ -24,6 +25,7 @@ pub use error::CloudError;
 pub use experiences::{Experience, Experiences, Group};
 pub use games::{Creator, CreatorKind, GameSummary};
 pub use introspect::{KeyInfo, Scope};
+pub use places::place_id_from_link;
 pub use publish::PublishMode;
 pub use scopes::{
     check as check_scopes, Grant, KeyReport, Permission, ScopeCheck, DASHBOARD_API_KEYS_URL,

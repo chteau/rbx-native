@@ -30,4 +30,15 @@ fn introspect_universe_and_download_place() {
         .download_place(TEST_PLACE_ID)
         .expect("place download should succeed");
     assert!(bytes.starts_with(b"<roblox"));
+
+    // A private place reached by its link alone, as Home's "Add by place ID
+    // or URL" does it.
+    let link = format!("https://www.roblox.com/games/{TEST_PLACE_ID}/x");
+    let place_id = rbx_cloud::place_id_from_link(&link).unwrap();
+    let experience = client
+        .experience_of_place(place_id)
+        .expect("place lookup should succeed")
+        .expect("the test place exists");
+    assert_eq!(experience.universe_id, TEST_UNIVERSE_ID);
+    assert_eq!(experience.root_place_id, TEST_PLACE_ID);
 }
