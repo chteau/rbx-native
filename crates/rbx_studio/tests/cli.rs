@@ -42,7 +42,11 @@ fn help_prints_the_usage_text_on_stdout_and_succeeds() {
 
 #[test]
 fn a_usage_error_prints_on_stderr_and_exits_two() {
-    for arguments in [&[][..], &["--bogus", "place.rbxl"][..]] {
+    // A bare launch is not one: it opens the setup wizard or Home.
+    for arguments in [
+        &["one.rbxl", "two.rbxl"][..],
+        &["--bogus", "place.rbxl"][..],
+    ] {
         let output = rbxstudio(arguments);
 
         assert_eq!(output.status.code(), Some(2), "for {arguments:?}");

@@ -6015,6 +6015,7 @@ dependencies = [
  "raw-window-handle",
  "rbx_assets",
  "rbx_binary",
+ "rbx_cloud",
  "rbx_dom",
  "rbx_lua",
  "rbx_reflection",

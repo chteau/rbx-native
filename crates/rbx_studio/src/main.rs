@@ -70,6 +70,12 @@ mod dragger;
 mod explorer;
 mod folder_colors;
 mod history;
+// The launcher's back-end; its Wizard and Home windows land next and call
+// what is unused until then.
+#[allow(dead_code)]
+mod home;
+#[allow(dead_code)]
+mod key_store;
 mod menu_bar;
 mod pacing;
 mod packs;
@@ -172,18 +178,6 @@ fn main() {
     class_icons::set_user_pack(user.icon_overlay.take());
     let theme = user.appearance.theme.clone();
 
-    // Parsing and the asset downloads both block; running them before the
-    // window exists keeps the UI thread from ever stalling on the network.
-    println!("loading {}…", path.display());
-    let place = match load(&path, &launch, settings.icon_pack) {
-        Ok(place) => place,
-        Err(message) => {
-            eprintln!("rbxstudio: {message}");
-            std::process::exit(1);
-        }
-    };
-    let title = SharedString::from(file_name(&path));
-
     // The full Lucide catalog: the menu bar's icons are well outside the
     // default bundle the components themselves use. The Explorer's own class
     // icons are rasterized straight from `class_icons`'s embedded SVGs, not
@@ -199,6 +193,43 @@ fn main() {
         install_dark_highlight(cx);
 
         cx.spawn(async move |cx| {
+            // The stored key has to be in `rbx_cloud` before `load`: the
+            // place's asset downloads authenticate with it.
+            let has_key = key_store::restore(cx).await;
+            let path = match home::route(path, has_key) {
+                home::Route::Editor(path) => path,
+                route => {
+                    // ponytail: the Wizard and Home windows are being
+                    // designed; until they land a bare launch says so.
+                    eprintln!(
+                        "rbxstudio: the {} window is not built yet; pass a place file",
+                        if route == home::Route::Wizard {
+                            "setup wizard"
+                        } else {
+                            "Home"
+                        }
+                    );
+                    std::process::exit(2);
+                }
+            };
+            // Parsing and the asset downloads both block; running them before
+            // the window exists keeps the UI from ever stalling on the network.
+            println!("loading {}…", path.display());
+            let place = match load(&path, &launch, settings.icon_pack) {
+                Ok(place) => place,
+                Err(message) => {
+                    eprintln!("rbxstudio: {message}");
+                    std::process::exit(1);
+                }
+            };
+            if let Err(err) = home::remember(home::RecentPlace {
+                path: std::fs::canonicalize(&path).unwrap_or(path.clone()),
+                universe_id: None,
+                place_id: None,
+            }) {
+                eprintln!("rbxstudio: could not update the Recent list: {err}");
+            }
+            let title = SharedString::from(file_name(&path));
             let options = cx.update(|cx| window_options(&title, cx));
             cx.open_window(options, |window, cx| {
                 let shell =

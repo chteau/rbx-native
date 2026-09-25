@@ -26,6 +26,10 @@ rbx_assets = { path = "../rbx_assets" }
 # Ctrl+S serializes with the same encoder `rbx_viewer::read_place` already
 # pulls in transitively; declared directly since `save` calls it by name.
 rbx_binary = { path = "../rbx_binary" }
+# The Home screen's experience list, the key wizard's scope check, and
+# opening a place straight from Roblox. Already in the tree through
+# `rbx_viewer`'s asset fetches.
+rbx_cloud = { path = "../rbx_cloud" }
 rbx_dom = { path = "../rbx_dom" }
 # The command bar's own Luau VM: already built for `rbx_parser_cli`, so this
 # adds no new dependency version to the tree.
