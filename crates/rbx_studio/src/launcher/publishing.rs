@@ -3,7 +3,6 @@
 //! paste-and-check flow in place of the table, saved on Continue) and
 //! Remove key (after a confirmation).
 
-use std::cell::Cell;
 use std::rc::Rc;
 
 use gpui_kit::component::{h_flex, v_flex};
@@ -21,7 +20,6 @@ pub(super) struct Publishing {
     confirm_remove: bool,
     error: Option<String>,
     on_change: Rc<dyn Fn(&mut App)>,
-    grab: Rc<Cell<bool>>,
     _observe: Vec<Subscription>,
 }
 
@@ -51,7 +49,6 @@ impl Publishing {
             confirm_remove: false,
             error: None,
             on_change,
-            grab: Rc::new(Cell::new(false)),
             _observe: observe,
         };
         match std::env::var(STATE_VARIABLE).as_deref() {
@@ -328,9 +325,9 @@ impl Render for Publishing {
             .font_family(tokens::FONT_FAMILY_UI)
             .text_color(tokens::text())
             .text_size(px(13.))
-            .child(ui::titlebar("Roblox publishing", self.grab.clone(), |window, _| {
-                window.remove_window()
-            }))
+            .child(crate::shell::chrome::window_topbar("Roblox publishing".into(), true,
+                |window, _| window.remove_window(),
+            ))
             .child(
                 v_flex()
                     .flex_1()

@@ -72,7 +72,11 @@ impl HomeWindow {
             .font_family(tokens::FONT_FAMILY_UI)
             .text_color(tokens::text())
             .text_size(px(13.))
-            .child(ui::titlebar(crumb, self.grab.clone(), |_, cx| cx.quit()))
+            .child(crate::shell::chrome::window_topbar(
+                crumb.into(),
+                true,
+                |_, cx| cx.quit(),
+            ))
             .child(
                 h_flex()
                     .flex_1()

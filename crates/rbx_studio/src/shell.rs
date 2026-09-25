@@ -9,7 +9,7 @@ mod argon_sync;
 mod attributes_panel;
 mod brick_color;
 mod change_class;
-mod chrome;
+pub(crate) mod chrome;
 mod clipboard;
 mod command;
 mod dock_drag;

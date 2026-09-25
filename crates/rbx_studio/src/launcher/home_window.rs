@@ -3,10 +3,8 @@
 //! that ends in the editor. State and flows live here; the pages are drawn
 //! in `view`.
 
-use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui_kit::component::input::{InputEvent, InputState};
@@ -87,7 +85,6 @@ pub(crate) struct HomeWindow {
     pub(super) dialog: Option<Dialog>,
     /// Bumped per open, so Cancel drops a download still in flight.
     serial: u64,
-    pub(super) grab: Rc<Cell<bool>>,
     handle: AnyWindowHandle,
     _subscriptions: Vec<Subscription>,
 }
@@ -147,7 +144,6 @@ impl HomeWindow {
             link_open: false,
             dialog: None,
             serial: 0,
-            grab: Rc::new(Cell::new(false)),
             handle: window.window_handle(),
             _subscriptions: subscriptions,
         };

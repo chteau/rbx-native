@@ -1,10 +1,7 @@
 //! The pieces every launcher window is built from, off Kevin's boards
-//! (#0075/#0077): the 34 px title bar, the three button weights, pills,
+//! (#0075/#0077): the three button weights, pills,
 //! the modal frame, section headers. Colours are the shell's own tokens —
 //! the boards' `--panel`/`--panel2`/`--border`… are exactly those values.
-
-use std::cell::Cell;
-use std::rc::Rc;
 
 use gpui_kit::component::{h_flex, v_flex, Icon};
 use gpui_kit::prelude::FluentBuilder;
@@ -48,11 +45,6 @@ pub(super) fn wash() -> Rgba {
 pub(super) fn wash_faint() -> Rgba {
     rgba(0xFFFFFF0A)
 }
-/// `rgba(255,255,255,.12)`: the title bar's window dots.
-pub(super) fn dot() -> Rgba {
-    rgba(0xFFFFFF1F)
-}
-
 /// A Lucide icon from the kit's full catalogue, by file name.
 pub(super) fn icon(name: &'static str, size: f32) -> Icon {
     Icon::empty()
@@ -67,86 +59,6 @@ pub(super) fn text(size: f32, line: f32) -> Div {
 
 pub(super) fn mono(size: f32, line: f32) -> Div {
     text(size, line).font_family(tokens::FONT_FAMILY_MONO)
-}
-
-/// The launcher windows' title bar: accent mark, "RbxNative", a hairline,
-/// the window's own name, and three window dots (minimise, zoom, close).
-/// `on_close` decides what closing means — quitting, for a window that is
-/// the only one open.
-pub(super) fn titlebar(
-    crumb: &'static str,
-    grab: Rc<Cell<bool>>,
-    on_close: impl Fn(&mut Window, &mut App) + 'static,
-) -> impl IntoElement {
-    let dot_button = |id: &'static str, danger: bool| {
-        div()
-            .id(id)
-            .size(px(9.))
-            .rounded_full()
-            .bg(dot())
-            .cursor_pointer()
-            .hover(move |this| {
-                this.bg(if danger {
-                    tokens::text_error()
-                } else {
-                    tokens::text2()
-                })
-            })
-    };
-    h_flex()
-        .h(px(34.))
-        .flex_none()
-        .items_center()
-        .gap(px(10.))
-        .px(px(12.))
-        .bg(bg())
-        .border_b_1()
-        .border_color(tokens::border())
-        .child(div().size(px(15.)).flex_none().rounded(px(4.)).bg(accent()))
-        .child(
-            text(12., 16.)
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(tokens::text2())
-                .child("RbxNative"),
-        )
-        .child(div().w(px(1.)).h(px(12.)).bg(tokens::border2()))
-        .child(text(12., 16.).text_color(tokens::text2()).child(crumb))
-        .child(
-            div()
-                .id("launcher-drag")
-                .flex_1()
-                .h_full()
-                .on_mouse_down(MouseButton::Left, {
-                    let grab = grab.clone();
-                    move |_, _, _| grab.set(true)
-                })
-                .on_mouse_up(MouseButton::Left, {
-                    let grab = grab.clone();
-                    move |_, _, _| grab.set(false)
-                })
-                .on_mouse_move(move |event: &MouseMoveEvent, window, _| {
-                    if grab.get() && event.pressed_button == Some(MouseButton::Left) {
-                        grab.set(false);
-                        window.start_window_move();
-                    }
-                }),
-        )
-        .child(
-            h_flex()
-                .gap(px(8.))
-                .child(
-                    dot_button("launcher-minimize", false)
-                        .on_click(|_, window, _| window.minimize_window()),
-                )
-                .child(
-                    dot_button("launcher-zoom", false)
-                        .on_click(|_, window, _| window.zoom_window()),
-                )
-                .child(
-                    dot_button("launcher-close", true)
-                        .on_click(move |_, window, cx| on_close(window, cx)),
-                ),
-        )
 }
 
 /// The three button weights, 34 tall unless `small` (28, 12 px text).
@@ -356,7 +268,7 @@ pub(super) fn dialog(
         .absolute()
         .left_0()
         .right_0()
-        .top(px(34.))
+        .top(tokens::topbar_height())
         .bottom_0()
         .bg(rgba(0x0000008C))
         .flex()

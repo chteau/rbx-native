@@ -2,8 +2,6 @@
 //! key (the Dashboard walk-through with its three-slide carousel), Paste
 //! and check, Done. Skip for now goes to Home without a key.
 
-use std::cell::Cell;
-use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
 
 use gpui_kit::component::{h_flex, v_flex};
@@ -47,7 +45,6 @@ pub(super) struct Wizard {
     check: Entity<KeyCheck>,
     saving: bool,
     save_error: Option<String>,
-    grab: Rc<Cell<bool>>,
     _observe: Subscription,
 }
 
@@ -76,7 +73,6 @@ impl Wizard {
             check,
             saving: false,
             save_error: None,
-            grab: Rc::new(Cell::new(false)),
             _observe: observe,
         }
     }
@@ -720,9 +716,9 @@ impl Render for Wizard {
             .font_family(tokens::FONT_FAMILY_UI)
             .text_color(tokens::text())
             .text_size(px(13.))
-            .child(ui::titlebar(
-                "Set up publishing",
-                self.grab.clone(),
+            .child(crate::shell::chrome::window_topbar(
+                "Set up publishing".into(),
+                false,
                 |_, cx| cx.quit(),
             ))
             .child(
