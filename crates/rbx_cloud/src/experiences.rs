@@ -2,8 +2,10 @@
 //! restricted scopes from [`Client::introspect`] (the only way to see
 //! private universes), the public game listing of the key's owner, and —
 //! when the key holds `legacy-group:manage` — the public listing of every
-//! group the owner can manage. A private experience on an unrestricted key
-//! stays invisible: Open Cloud has no "list my universes" endpoint.
+//! group the owner can manage, and — with `user.inventory-item:read` — every
+//! place the owner created, private ones included. Without that scope a
+//! private experience on an unrestricted key stays invisible: Open Cloud has
+//! no "list my universes" endpoint.
 
 use std::collections::HashMap;
 
@@ -87,6 +89,14 @@ impl Client {
             Vec::new()
         };
 
+        let can_read_inventory = key_info
+            .scopes
+            .iter()
+            .any(|s| s.name == "user.inventory-item" && s.operations.iter().any(|o| o == "read"));
+        if can_read_inventory {
+            self.add_created_places(key_info.authorized_user_id, &mut by_universe)?;
+        }
+
         let mut public_games = self.public_games_of_user(key_info.authorized_user_id)?;
         for group in &groups {
             public_games.extend(self.public_games_of_group(group.id)?);
@@ -111,6 +121,38 @@ impl Client {
             experiences,
             groups,
         })
+    }
+
+    /// Every universe behind a place the user created, private ones
+    /// included (see `inventory`). Sub-places collapse onto their universe;
+    /// one lookup per new universe.
+    fn add_created_places(
+        &self,
+        user_id: u64,
+        by_universe: &mut HashMap<u64, Experience>,
+    ) -> Result<(), CloudError> {
+        let mut seen: Vec<u64> = by_universe.keys().copied().collect();
+        for place_id in self.created_places(user_id)? {
+            let Some(universe_id) = self.universe_of_place(place_id)? else {
+                continue;
+            };
+            if seen.contains(&universe_id) {
+                continue;
+            }
+            seen.push(universe_id);
+            let universe = self.universe(universe_id)?;
+            by_universe.insert(
+                universe_id,
+                Experience {
+                    universe_id,
+                    root_place_id: universe.root_place_id,
+                    name: universe.display_name,
+                    visibility: universe.visibility,
+                    owner: universe.owner,
+                },
+            );
+        }
+        Ok(())
     }
 
     /// `GET /legacy-develop/v1/user/groups/canmanage` (`legacy-group:manage`).

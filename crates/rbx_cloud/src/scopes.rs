@@ -54,6 +54,12 @@ pub const PERMISSIONS: &[Permission] = &[
     optional("universe:write", "Game settings"),
     optional("universe.thumbnail:read", "Game settings thumbnails"),
     optional("legacy-group:manage", "Group experiences on Home"),
+    // The Inventory API's CREATED_PLACE listing: the one way an unrestricted
+    // key reaches the owner's private experiences.
+    optional(
+        "user.inventory-item:read",
+        "List private experiences on Home",
+    ),
     optional("game-pass:read", "View game passes"),
     optional("game-pass:write", "Edit game passes"),
     optional("developer-product:read", "View developer products"),

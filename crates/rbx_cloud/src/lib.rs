@@ -11,6 +11,7 @@ mod error;
 mod experiences;
 mod games;
 mod introspect;
+mod inventory;
 mod places;
 mod publish;
 mod retry;
