@@ -6008,6 +6008,7 @@ name = "rbx_studio"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "glam",
  "gpui-kit",
  "image",

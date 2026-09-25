@@ -51,7 +51,7 @@ mod selection;
 mod style_panel;
 mod sun;
 mod toolbar;
-mod tooltip;
+pub(crate) mod tooltip;
 mod ui_editor;
 mod viewport_dock;
 mod wally_dock;

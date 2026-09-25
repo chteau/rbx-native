@@ -81,6 +81,10 @@ zip = { version = "8", default-features = false, features = ["deflate"] }
 # new dependency version either; used the same way Wally's own resolver
 # uses it, `VersionReq::matches` against each candidate `Version`.
 semver = "1"
+# Recent's "Today, 1:05 AM": local time needs the zone database, which
+# chrono's `clock` already brings into the tree (with this exact version)
+# through the toolkit, so this adds no new dependency version.
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # The one new dependency this feature needs: a fetched package's `wally.toml`
 # is plain TOML, and nothing in this workspace parses that format yet.
 toml = "0.9"

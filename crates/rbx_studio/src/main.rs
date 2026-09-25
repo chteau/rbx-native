@@ -70,12 +70,9 @@ mod dragger;
 mod explorer;
 mod folder_colors;
 mod history;
-// The launcher's back-end; its Wizard and Home windows land next and call
-// what is unused until then.
-#[allow(dead_code)]
 mod home;
-#[allow(dead_code)]
 mod key_store;
+mod launcher;
 mod menu_bar;
 mod pacing;
 mod packs;
@@ -100,7 +97,9 @@ mod wally_client;
 mod workspace_view;
 
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use gpui_kit::component::highlighter::HighlightTheme;
 use gpui_kit::component::{Root, Theme, ThemeConfig, ThemeMode, ThemeRegistry, ThemeSet};
@@ -196,50 +195,83 @@ fn main() {
             // The stored key has to be in `rbx_cloud` before `load`: the
             // place's asset downloads authenticate with it.
             let has_key = key_store::restore(cx).await;
-            let path = match home::route(path, has_key) {
-                home::Route::Editor(path) => path,
-                route => {
-                    // ponytail: the Wizard and Home windows are being
-                    // designed; until they land a bare launch says so.
-                    eprintln!(
-                        "rbxstudio: the {} window is not built yet; pass a place file",
-                        if route == home::Route::Wizard {
-                            "setup wizard"
-                        } else {
-                            "Home"
-                        }
-                    );
-                    std::process::exit(2);
-                }
+            let boot = EditorBoot {
+                settings,
+                launch,
+                user,
             };
-            // Parsing and the asset downloads both block; running them before
-            // the window exists keeps the UI from ever stalling on the network.
-            println!("loading {}…", path.display());
-            let place = match load(&path, &launch, settings.icon_pack) {
-                Ok(place) => place,
-                Err(message) => {
-                    eprintln!("rbxstudio: {message}");
-                    std::process::exit(1);
+            cx.update(|cx| match home::route(path, has_key) {
+                home::Route::Editor(path) => {
+                    if let Err(failed) = open_editor(&path, boot, cx) {
+                        let (message, _) = *failed;
+                        eprintln!("rbxstudio: {message}");
+                        std::process::exit(1);
+                    }
                 }
-            };
-            if let Err(err) = home::remember(home::RecentPlace {
-                path: std::fs::canonicalize(&path).unwrap_or(path.clone()),
-                universe_id: None,
-                place_id: None,
-            }) {
-                eprintln!("rbxstudio: could not update the Recent list: {err}");
-            }
-            let title = SharedString::from(file_name(&path));
-            let options = cx.update(|cx| window_options(&title, cx));
-            cx.open_window(options, |window, cx| {
-                let shell =
-                    cx.new(|cx| Shell::new(title, place, settings, launch, user, window, cx));
-                cx.new(|cx| Root::new(shell, window, cx))
-            })
-            .expect("failed to open the main window");
+                home::Route::Wizard => launcher::open_wizard(Rc::new(RefCell::new(Some(boot))), cx),
+                home::Route::Home => launcher::open_home(Rc::new(RefCell::new(Some(boot))), cx),
+            });
         })
         .detach();
     });
+}
+
+/// What the editor window needs beyond its place: the resolved settings,
+/// the scripted-launch aids, and the user's packs. `main` builds it; the
+/// launcher holds it until a place is picked.
+pub(crate) struct EditorBoot {
+    settings: Settings,
+    launch: Launch,
+    user: packs::UserContent,
+}
+
+/// Reads `path` and opens the editor on it, recording it in Recent. Hands
+/// `boot` back with the message when the place cannot be read, so the
+/// launcher can offer another.
+///
+/// Parsing and the asset downloads both block; this runs before the editor
+/// window exists, so only the launcher (if any) waits on it.
+pub(crate) fn open_editor(
+    path: &Path,
+    boot: EditorBoot,
+    cx: &mut App,
+) -> Result<(), Box<(String, EditorBoot)>> {
+    let EditorBoot {
+        settings,
+        launch,
+        user,
+    } = boot;
+    println!("loading {}…", path.display());
+    let place = match load(path, &launch, settings.icon_pack) {
+        Ok(place) => place,
+        Err(message) => {
+            return Err(Box::new((
+                message,
+                EditorBoot {
+                    settings,
+                    launch,
+                    user,
+                },
+            )))
+        }
+    };
+    if let Err(err) = home::remember(home::RecentPlace {
+        path: std::fs::canonicalize(path).unwrap_or(path.to_path_buf()),
+        universe_id: None,
+        place_id: None,
+        name: None,
+        opened: None,
+    }) {
+        eprintln!("rbxstudio: could not update the Recent list: {err}");
+    }
+    let title = SharedString::from(file_name(path));
+    let options = window_options(&title, cx);
+    cx.open_window(options, |window, cx| {
+        let shell = cx.new(|cx| Shell::new(title, place, settings, launch, user, window, cx));
+        cx.new(|cx| Root::new(shell, window, cx))
+    })
+    .expect("failed to open the main window");
+    Ok(())
 }
 
 /// A place file, read before the window exists: the tree the Explorer lists,

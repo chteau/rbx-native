@@ -43,6 +43,12 @@ pub(crate) struct RecentPlace {
     pub(crate) universe_id: Option<u64>,
     #[serde(default)]
     pub(crate) place_id: Option<u64>,
+    /// The experience's name, for Recent's linked pill.
+    #[serde(default)]
+    pub(crate) name: Option<String>,
+    /// When it was last opened, in Unix seconds; set by [`remember`].
+    #[serde(default)]
+    pub(crate) opened: Option<i64>,
 }
 
 /// Recent places, most recent first, dropping files that no longer exist.
@@ -77,11 +83,15 @@ fn read_recent(path: &Path) -> Vec<RecentPlace> {
 }
 
 fn with_remembered(mut list: Vec<RecentPlace>, mut place: RecentPlace) -> Vec<RecentPlace> {
+    place.opened = place
+        .opened
+        .or_else(|| Some(chrono::Utc::now().timestamp()));
     if let Some(index) = list.iter().position(|p| p.path == place.path) {
         let old = list.remove(index);
         if place.place_id.is_none() {
             place.universe_id = old.universe_id;
             place.place_id = old.place_id;
+            place.name = place.name.or(old.name);
         }
     }
     list.insert(0, place);
@@ -98,8 +108,6 @@ pub(crate) enum Template {
 }
 
 impl Template {
-    pub(crate) const ALL: [Template; 1] = [Template::Baseplate];
-
     pub(crate) fn name(self) -> &'static str {
         match self {
             Template::Baseplate => "Baseplate",
@@ -110,6 +118,10 @@ impl Template {
     pub(crate) fn create(self, path: &Path) -> Result<(), String> {
         if path.exists() {
             return Err(format!("{} already exists", path.display()));
+        }
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|err| format!("{}: {err}", parent.display()))?;
         }
         save::save(&self.dom(), Format::Binary, path)
     }
@@ -199,6 +211,18 @@ impl Template {
     }
 }
 
+/// Where Home's New place writes: `places/Baseplate.rbxl`, or the first
+/// free `Baseplate N.rbxl` beside it.
+pub(crate) fn new_place_path(template: Template) -> Option<PathBuf> {
+    let dir = places_dir()?;
+    (1..)
+        .map(|n| match n {
+            1 => dir.join(format!("{}.rbxl", template.name())),
+            n => dir.join(format!("{} {n}.rbxl", template.name())),
+        })
+        .find(|path| !path.exists())
+}
+
 /// Where the local copies of places opened from Roblox live: the config
 /// directory, not the cache — this is the user's work until published.
 fn places_dir() -> Option<PathBuf> {
@@ -216,6 +240,33 @@ pub(crate) enum Opened {
     LocalCopy(PathBuf),
 }
 
+/// The local copy an earlier open of `experience` left, if any.
+pub(crate) fn local_copy(experience: &Experience) -> Option<PathBuf> {
+    let dir = places_dir()?;
+    let stem = format!("{}-{}", experience.universe_id, experience.root_place_id);
+    ["rbxl", "rbxlx"]
+        .map(|ext| dir.join(format!("{stem}.{ext}")))
+        .into_iter()
+        .find(|path| path.exists())
+}
+
+/// Why [`open_experience`] failed: the HTTP status when Roblox refused,
+/// and a line for the user.
+#[derive(Debug)]
+pub(crate) struct OpenError {
+    pub(crate) status: Option<u16>,
+    pub(crate) message: String,
+}
+
+impl From<String> for OpenError {
+    fn from(message: String) -> Self {
+        OpenError {
+            status: None,
+            message,
+        }
+    }
+}
+
 /// Downloads `experience`'s root place into [`places_dir`] and records it in
 /// Recent with its ids, so the editor can Save/Publish back to it.
 /// Blocking: call it off the UI thread.
@@ -223,19 +274,22 @@ pub(crate) fn open_experience(
     client: &Client,
     experience: &Experience,
     replace: bool,
-) -> Result<Opened, String> {
-    let dir = places_dir().ok_or("no config directory to download into")?;
+) -> Result<Opened, OpenError> {
+    let dir = places_dir().ok_or("no config directory to download into".to_string())?;
     let stem = format!("{}-{}", experience.universe_id, experience.root_place_id);
-    let existing = ["rbxl", "rbxlx"]
-        .map(|ext| dir.join(format!("{stem}.{ext}")))
-        .into_iter()
-        .find(|path| path.exists());
-    let path = match existing {
+    let existing = local_copy(experience);
+    let path = match existing.clone() {
         Some(path) if !replace => Opened::LocalCopy(path),
         _ => {
             let bytes = client
                 .download_place(experience.root_place_id)
-                .map_err(|err: CloudError| err.to_string())?;
+                .map_err(|err| OpenError {
+                    status: match &err {
+                        CloudError::Http { status, .. } => Some(*status),
+                        _ => None,
+                    },
+                    message: err.to_string(),
+                })?;
             let ext = match Format::sniff(&bytes) {
                 Format::Binary => "rbxl",
                 Format::Xml => "rbxlx",
@@ -256,6 +310,8 @@ pub(crate) fn open_experience(
         path: file,
         universe_id: Some(experience.universe_id),
         place_id: Some(experience.root_place_id),
+        name: Some(experience.name.clone()),
+        opened: None,
     })
     .map_err(|err| err.to_string())?;
     Ok(path)
@@ -270,6 +326,8 @@ mod tests {
             path: PathBuf::from(path),
             universe_id: place_id.map(|id| id + 1000),
             place_id,
+            name: None,
+            opened: Some(1),
         }
     }
 

@@ -14,6 +14,6 @@
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::*;
 
-pub(super) fn text(label: impl Into<SharedString>, window: &mut Window, cx: &mut App) -> AnyView {
+pub(crate) fn text(label: impl Into<SharedString>, window: &mut Window, cx: &mut App) -> AnyView {
     Tooltip::new(label.into()).build(window, cx)
 }
