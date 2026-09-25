@@ -1,4 +1,4 @@
-//! Canned answers for scripted captures of the launcher, so every board
+//! Canned answers for scripted captures of the launcher, so every screen
 //! state can be shot without a network, a key, or a particular account:
 //!
 //! - `RBX_STUDIO_LAUNCHER_KEY=ready|missing|invalid|expired|disabled|network`
@@ -6,7 +6,7 @@
 //!   without the Inventory scope, and Home reads it too.
 //! - `RBX_STUDIO_LAUNCHER_GAMES=list|loading|empty` answers My Games.
 //!
-//! The data is the boards' own (#0075), so a capture diffs against them.
+//! The data matches the design mock-ups, so a capture diffs against them.
 
 use std::collections::HashMap;
 
@@ -32,6 +32,7 @@ pub(super) fn key_status(which: &str) -> Status {
             scope("universe-places", "write", &[]),
             scope("legacy-asset", "manage", &[]),
             scope("user.inventory-item", "read", &[]),
+            scope("legacy-group", "manage", &[]),
             scope("universe.place", "read", &[9828239630]),
             scope("universe", "write", &[9828239630, 9440522195]),
             scope("universe.thumbnail", "read", &[]),

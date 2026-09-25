@@ -1,7 +1,7 @@
-//! The pieces every launcher window is built from, off Kevin's boards
-//! (#0075/#0077): the three button weights, pills,
+//! The pieces every launcher window is built from: the three button
+//! weights, pills,
 //! the modal frame, section headers. Colours are the shell's own tokens —
-//! the boards' `--panel`/`--panel2`/`--border`… are exactly those values.
+//! the design's panel/panel2/border… are exactly those values.
 
 use gpui_kit::component::{h_flex, v_flex, Icon};
 use gpui_kit::prelude::FluentBuilder;
@@ -52,7 +52,7 @@ pub(super) fn icon(name: &'static str, size: f32) -> Icon {
         .size(px(size))
 }
 
-/// Text at one of the boards' sizes: `size`/`line` in px.
+/// Text at a given `size`/`line` height, in px.
 pub(super) fn text(size: f32, line: f32) -> Div {
     div().text_size(px(size)).line_height(px(line))
 }
@@ -346,7 +346,7 @@ pub(super) fn dialog_glyph(glyph: &'static str, fg: Rgba, fill: Rgba) -> AnyElem
         .into_any_element()
 }
 
-/// The single-line field chrome the boards use for search and the place
+/// The single-line field chrome search and the place
 /// link: `w`×32, radius 6, a leading glyph, `border` swapped by state.
 pub(super) fn field_frame(
     width: Option<f32>,

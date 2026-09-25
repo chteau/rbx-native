@@ -1,4 +1,4 @@
-//! Roblox publishing (boards `Key-Manage`, `Key-Remove`): the stored key's
+//! Roblox publishing: the stored key's
 //! status and permission table, Check again, Replace key (the wizard's
 //! paste-and-check flow in place of the table, saved on Continue) and
 //! Remove key (after a confirmation).
@@ -6,6 +6,7 @@
 use std::rc::Rc;
 
 use gpui_kit::component::{h_flex, v_flex};
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use rbx_cloud::ApiKey;
 
@@ -210,8 +211,14 @@ impl Publishing {
                             ),
                     )
                     .child(
-                        ui::button("publishing-check", "Check again", Weight::Secondary, true)
-                            .on_click(move |_, _, cx| current.update(cx, |this, cx| this.run(cx))),
+                        ui::icon_button(
+                            "publishing-check",
+                            "refresh-cw",
+                            "Check again",
+                            Weight::Secondary,
+                            true,
+                        )
+                        .on_click(move |_, _, cx| current.update(cx, |this, cx| this.run(cx))),
                     ),
             )
             .child(
@@ -229,12 +236,18 @@ impl Publishing {
                             .child("Stored encrypted in your system keychain."),
                     )
                     .child(
-                        ui::button("publishing-remove", "Remove key", Weight::Secondary, true)
-                            .text_color(ui::red())
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.confirm_remove = true;
-                                cx.notify();
-                            })),
+                        ui::icon_button(
+                            "publishing-remove",
+                            "trash",
+                            "Remove key",
+                            Weight::Secondary,
+                            true,
+                        )
+                        .text_color(ui::red())
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.confirm_remove = true;
+                            cx.notify();
+                        })),
                     )
                     .child(
                         ui::button("publishing-replace", "Replace key", Weight::Secondary, true)
@@ -250,14 +263,19 @@ impl Publishing {
             )
     }
 
-    fn lower(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn lower(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         if let Some(replacement) = &self.replacement {
             let ready = replacement.read(cx).key().is_some();
             return v_flex()
                 .flex_1()
                 .min_h_0()
                 .gap(px(14.))
-                .child(key_check::field(replacement, cx))
+                .child(key_check::field(replacement, window, cx))
+                .when(matches!(replacement.read(cx).status, Status::Idle), |this| {
+                    this.child(ui::text(12., 17.).text_color(tokens::text3()).child(
+                        "RbxNative checks the new key first. The current one stays until you press Continue.",
+                    ))
+                })
                 .children(key_check::result(replacement, None, cx))
                 .child(div().flex_1())
                 .child(
@@ -286,7 +304,7 @@ impl Publishing {
         }
         match &self.current.read(cx).status {
             Status::Done(checked) if checked.report.usable => {
-                key_check::table(checked, None).into_any_element()
+                key_check::table(checked, None, &self.current.read(cx).scroll).into_any_element()
             }
             _ => key_check::result(&self.current, None, cx)
                 .unwrap_or_else(|| div().into_any_element()),
@@ -295,11 +313,11 @@ impl Publishing {
 }
 
 impl Render for Publishing {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let dialog = self.confirm_remove.then(|| {
             ui::dialog(
                 460.,
-                ui::dialog_glyph("trash-2", ui::red(), ui::red_soft()),
+                ui::dialog_glyph("trash", ui::red(), ui::red_soft()),
                 "Remove this key from RbxNative?",
                 "It\u{2019}s deleted from your system keychain and the setup wizard opens next time. The key keeps working on Roblox until you revoke it on the Creator Dashboard.",
                 None,
@@ -353,7 +371,7 @@ impl Render for Publishing {
                     .children(self.error.clone().map(|error| {
                         ui::text(11.5, 16.).text_color(ui::red()).child(error)
                     }))
-                    .child(self.lower(cx)),
+                    .child(self.lower(window, cx)),
             )
             .children(dialog)
     }

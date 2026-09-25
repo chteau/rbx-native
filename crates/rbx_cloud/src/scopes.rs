@@ -20,7 +20,7 @@ pub struct Permission {
     /// OpenAPI spec spell it.
     pub scope: &'static str,
     /// The editor feature that stops working without it — the wizard's row
-    /// label, worded as Kevin's boards (#0075) have it.
+    /// label.
     pub feature: &'static str,
     /// Whether the editor's core loop (open a place from Roblox, save it
     /// back) needs it. Everything else only switches one feature off.

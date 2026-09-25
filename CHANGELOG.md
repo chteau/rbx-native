@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-09-25
+
+- **A bare `rbxstudio` opens a launcher instead of refusing to start.**
+  The first launch walks through creating an Open Cloud API key on the
+  Creator Dashboard (with a deep link to its API Keys tab), then checks
+  the pasted key against Roblox and lists every permission it holds or
+  lacks, required and optional, with restricted grants named. The key is
+  stored encrypted in the system keychain (Keychain, Credential Manager or
+  Secret Service), never in a plaintext file; an old `api_key` file is
+  moved there and deleted. Every later launch opens Home: New (Baseplate,
+  Open a file), Recent (with the Roblox place each file came from), and
+  My Games (personal and group experiences with their icons, and adding
+  one by its place ID or link), where picking a game downloads it and
+  opens it in the editor without overwriting a local copy unasked. The
+  sidebar's key card opens Roblox publishing, to check, replace or remove
+  the key. `rbxstudio <file>` still opens the editor directly. — @chteau
+- **Inventory → Read is a required API key permission.** The Inventory
+  API's list of created places is the only way an unrestricted key can
+  reach its owner's private experiences, so without it My Games would
+  miss them silently. `rbxcloud check` prints the same pass/fail list the
+  launcher shows. — @chteau
+
 ## 2026-09-24
 
 - **The Script Editor gets its table-stakes conveniences.** Ctrl+F and

@@ -1,7 +1,7 @@
 //! The launcher: the three windows a bare `rbxstudio` opens before any
 //! place is loaded — the API key setup wizard (first launch), Home (every
 //! launch after), and Roblox publishing (the key, from Home's sidebar card).
-//! Laid out after Kevin's boards (#0075/#0077/#0079). What they stand on is
+//! What they stand on is
 //! `crate::home` and `crate::key_store`.
 //!
 //! Only one launcher window is open at a time and it is the app's only
