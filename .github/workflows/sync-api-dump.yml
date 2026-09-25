@@ -22,7 +22,7 @@ jobs:
       - name: Download latest API-Dump.json
         run: |
           VERSION="${{ steps.get_version.outputs.rbx_version }}"
-          curl -s "https://setup.rbxcdn.com/${VERSION}-API-Dump.json" -o assets/API-Dump.json
+          curl -fsS "https://setup.rbxcdn.com/${VERSION}-API-Dump.json" -o assets/API-Dump.json
 
       - name: Check for changes
         id: git_status
@@ -32,6 +32,22 @@ jobs:
           else
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.git_status.outputs.changed == 'true'
+
+      - uses: Swatinem/rust-cache@v2
+        if: steps.git_status.outputs.changed == 'true'
+
+      # Format-drift check: rebuild with the new dump embedded and re-parse
+      # the fixtures against assets/tests/dumps, plus the crates whose tests
+      # read the dump directly. A failure stops the commit below, so dev
+      # never picks up a dump the parser disagrees with; the failed run is
+      # the alert. Only these crates: none of them pulls in GPUI, so no
+      # system packages are needed.
+      - name: Check parsed output against the reference dumps
+        if: steps.git_status.outputs.changed == 'true'
+        run: cargo test -p rbx_parser_cli -p rbx_reflection -p rbx_lua
 
       - name: Commit and push update
         if: steps.git_status.outputs.changed == 'true'

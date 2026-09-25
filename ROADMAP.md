@@ -2130,12 +2130,18 @@ against `Roblox/creator-docs` rather than assumed:
   the Windows CI job, but not yet driven on a real Windows desktop.
 
 ### Tooling / CI
-- [ ] 📋 A job that rebuilds against the current Studio version and
+- [x] A job that rebuilds against the current Studio version and
   compares parsed output to reference dumps, to catch a format drift
-  before a user does.
-- [ ] 📋 macOS build CI. Linux is exercised constantly by development
-  itself and Windows has had a job since the one under "Platform:
-  Windows"; macOS has neither, and is not a target yet either.
+  before a user does — the nightly API-dump sync now runs
+  `rbx_parser_cli`/`rbx_reflection`/`rbx_lua`'s tests with Studio's newest
+  dump embedded before committing it, including a golden comparison of
+  every fixture's `rbxdump` output against `assets/tests/dumps/`. A
+  failure blocks the commit. Ceiling: the fixtures are old saves, so this
+  catches reflection drift (renamed/dropped enums, defaults), not a new
+  binary chunk that only a fresh Studio save would contain.
+- [x] macOS build CI — a `macos-latest` job beside the Windows one:
+  clippy, build and test. macOS is still not a supported target; the job
+  only keeps the workspace from rotting there.
 
 ### From Roblox's own Creator Roadmap (2026 fall update)
 

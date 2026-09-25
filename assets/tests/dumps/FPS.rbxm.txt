@@ -1,0 +1,660 @@
+ModuleScript "FPS" (0)
+  AttributesSerialize = ""
+  Capabilities = SecurityCapabilities(0x0)
+  DefinesCapabilities = false
+  LinkedSource = ""
+  ScriptGuid = "{8D38B54D-C85D-4D71-AA1F-7E9F4C7A4420}"
+  Source = "-- Made by @Cheeteau - https://www.roblox.com/users/925308243/profile\n--[[\n    Single-Script-Architecture root for the FPS system. This is the only module\n    that needs to be required, from either side. A thin client LocalScript and a\n    thin server Script both call FPS.start(), which dispatches to the correct\n    bootstrap based on the runtime context. Everything else lives underneath as\n    organised children: shared, remotes, client, server, and animatable assets.\n--]]\nlocal RunService = game:GetService(\"RunService\")\n\nlocal FPS = {}\n\n-- Public handles to the sub-trees so external code can reach shared data or\n-- remotes without knowing the internal layout.\nFPS.Shared = script.Shared\nFPS.Remotes = script.Remotes\nFPS.Assets = script.Assets\n\n--[[\n    Entry point. Dispatches to the client or server bootstrap depending on where\n    it is required from. Call once per runtime context (the thin loaders do this).\n\n    @returns {nil}\n--]]\nfunction FPS.start()\n    print(\"[FPS] Made by @Cheeteau - https://www.roblox.com/users/925308243/profile\")\n    if RunService:IsServer() then\n        require(script.Server.CombatServer).Start()\n    end\n    if RunService:IsClient() then\n        require(script.Client.FPSController).new():Start()\n    end\nend\n\nreturn FPS\n"
+  SourceAssetId = -1
+  Tags = ""
+  Folder "Shared" (1)
+    AttributesSerialize = ""
+    Capabilities = SecurityCapabilities(0x0)
+    DefinesCapabilities = false
+    IconTint = (0, 0, 0)
+    SourceAssetId = -1
+    Tags = ""
+    ModuleScript "Config" (2)
+      AttributesSerialize = ""
+      Capabilities = SecurityCapabilities(0x0)
+      DefinesCapabilities = false
+      LinkedSource = ""
+      ScriptGuid = "{0E97C7C7-AE24-4853-8AC8-9E2C614CBAFB}"
+      Source = "-- Made by @Cheeteau - https://www.roblox.com/users/925308243/profile\n--[[\n    Global tuning constants. Movement uses Source-engine semantics (accelerate /\n    friction / air-strafe) expressed in studs. Tune freely to change the feel.\n--]]\nlocal Config = {}\n\nConfig.Movement = {\n    MaxGroundSpeed = 24,\n    GroundAccelerate = 10,\n    Friction = 6,\n    StopSpeed = 4,\n    AirAccelerate = 60,\n    AirMaxWishSpeed = 2.5,\n    JumpVelocity = 50,\n    AutoBunnyHop = true,\n    JumpBufferTime = 0.1,\n    CoyoteTime = 0.08,\n    GroundCheckDistance = 3.2,\n    StepHeight = 1.5,\n}\n\nConfig.Camera = { FieldOfView = 90 }\n\nConfig.Viewmodel = {\n    Offset = CFrame.new(0, 0, 0),\n    BobAmount = 0.06,\n    BobSpeed = 9,\n    SwayAmount = 0.04,\n}\n\nConfig.Camera.Tilt = {\n\tMaxAngle = 3,\n\tSensitivity = 1.2,\n\tSpeed = 5,\n}\n\nConfig.DefaultKnife = \"CombatKnife\"\n\nreturn Config\n"
+      SourceAssetId = -1
+      Tags = ""
+    ModuleScript "Types" (3)
+      AttributesSerialize = ""
+      Capabilities = SecurityCapabilities(0x0)
+      DefinesCapabilities = false
+      LinkedSource = ""
+      ScriptGuid = "{5F32BA65-9F2C-417B-AD39-A7CD7F68B52A}"
+      Source = "-- Made by @Cheeteau - https://www.roblox.com/users/925308243/profile\n--[[\n    Shared type definitions. Reference via `local Types = require(...) ; type X = Types.MoveConfig`.\n--]]\nexport type MoveConfig = {\n    Name: string, Damage: number, HitStun: number, Knockback: number,\n    Startup: number, Active: number, Endlag: number,\n    Range: number, HitboxSize: Vector3,\n    AnimationId: string?, SFX: string?,\n}\n\nexport type KnifeConfig = {\n    Name: string, Color: Color3, BladeSize: Vector3,\n    EquipAnimation: string?, UnequipAnimation: string?,\n    EquipSFX: string?, UnequipSFX: string?,\n    Moves: { [string]: MoveConfig },\n}\n\nreturn {}\n"
+      SourceAssetId = -1
+      Tags = ""
+    ModuleScript "Signal" (4)
+      AttributesSerialize = ""
+      Capabilities = SecurityCapabilities(0x0)
+      DefinesCapabilities = false
+      LinkedSource = ""
+      ScriptGuid = "{04102B19-D4C8-4F7E-9B78-2DFACCB1A8D2}"
+      Source = "-- Made by @Cheeteau - https://www.roblox.com/users/925308243/profile\n--[[\n    A lightweight synchronous signal. Avoids BindableEvent overhead and keeps\n    handler invocation deterministic and immediate.\n--]]\nlocal Signal = {}\nSignal.__index = Signal\n\n--[[\n    Creates a new Signal.\n\n    @returns {Signal} - A fresh signal with no listeners\n--]]\nfunction Signal.new()\n    return setmetatable({ _handlers = {} }, Signal)\nend\n\n--[[\n    Connects a listener.\n\n    @param {(...any) -> ()} fn - Callback invoked when the signal fires\n    @returns {() -> ()} - A disconnect function\n--]]\nfunction Signal:Connect(fn)\n    local handlers = self._handlers\n    handlers[fn] = true\n    return function() handlers[fn] = nil end\nend\n\n--[[\n    Fires the signal, invoking every listener synchronously.\n\n    @param {...any} ... - Arguments forwarded to the listeners\n    @returns {nil}\n--]]\nfunction Signal:Fire(...)\n    for fn in pairs(self._handlers) do fn(...) end\nend\n\n--[[\n    Disconnects every listener.\n\n    @returns {nil}\n--]]\nfunction Signal:Destroy()\n    table.clear(self._handlers)\nend\n\nreturn Signal\n"
+      SourceAssetId = -1
+      Tags = ""
+    ModuleScript "KnifeRegistry" (5)
+      AttributesSerialize = ""
+      Capabilities = SecurityCapabilities(0x0)
+      DefinesCapabilities = false
+      LinkedSource = ""
+      ScriptGuid = "{F5D2DD50-8B67-40ED-8E17-E26904628166}"
+      Source = "-- Made by @Cheeteau - https://www.roblox.com/users/925308243/profile\n--[[\n    Loads every knife under shared/knives and returns a map keyed by folder name\n    (the knife id). Each knife folder holds a `config` ModuleScript (DHKSAE data),\n    a `knife` Tool template, and an `animations` folder for future tracks.\n--]]\nlocal registry = {}\n\nfor _, folder in script.Parent.Knives:GetChildren() do\n    if folder:IsA(\"Folder\") then\n        local cfg = folder:FindFirstChild(\"Config\")\n        if cfg and cfg:IsA(\"ModuleScript\") then\n            registry[folder.Name] = require(cfg)\n        end\n    end\nend\n\nreturn registry\n"
+      SourceAssetId = -1
+      Tags = ""
+    Folder "Knives" (6)
+      AttributesSerialize = ""
+      Capabilities = SecurityCapabilities(0x0)
+      DefinesCapabilities = false
+      IconTint = (0, 0, 0)
+      SourceAssetId = -1
+      Tags = ""
+      Folder "CombatKnife" (7)
+        AttributesSerialize = ""
+        Capabilities = SecurityCapabilities(0x0)
+        DefinesCapabilities = false
+        IconTint = (0, 0, 0)
+        SourceAssetId = -1
+        Tags = ""
+        ModuleScript "Config" (8)
+          AttributesSerialize = ""
+          Capabilities = SecurityCapabilities(0x0)
+          DefinesCapabilities = false
+          LinkedSource = ""
+          ScriptGuid = "{4E1E2A9E-34F1-42FC-B5A6-AB56CC0B1C49}"
+          Source = "-- Made by @Cheeteau - https://www.roblox.com/users/925308243/profile\n--[[\n    Combat Knife configuration. DHKSAE moves (Damage, HitStun, Knockback,\n    Startup, Active, Endlag) plus cosmetic data. No animations yet (prototype):\n    AnimationId stays nil and the controller uses these timings directly.\n--]]\nreturn {\n    Name = \"Combat Knife\",\n    Color = Color3.fromRGB(180, 190, 200),\n\tBladeSize = Vector3.new(0.15, 0.15, 1.4),\n\n\tEquipAnimation = nil,   -- ID of the equip animation\n\tUnequipAnimation = nil, -- ID of the unequip animation\n\tEquipSFX = nil,         -- ID of the equip sound\n\tUnequipSFX = nil,       -- ID of the unequip sound\n\n    Moves = {\n\t\tLight = { \n\t\t\tName = \"Light\", \n\t\t\tDamage = 20, \n\t\t\tHitStun = 0.2, \n\t\t\tKnockback = 14,\n\t\t\tStartup = 0.05, \n\t\t\tActive = 0.05,\n\t\t\tEndlag = 0.16, \n\t\t\tRange = 3,\n\t\t\tHitboxSize = Vector3.new(2, 2, 4), \n\t\t\tAnimationId = nil, \n\t\t\tSFX = nil \n\t\t},\n\t\tHeavy = { \n\t\t\tName = \"Heavy\", \n\t\t\tDamage = 45, \n\t\t\tHitStun = 0.45, \n\t\t\tKnockback = 38,\n\t\t\tStartup = 0.18, \n\t\t\tActive = 0.07, \n\t\t\tEndlag = 0.38, \n\t\t\tRange = 2,\n\t\t\tHitboxSize = Vector3.new(2.5, 2.5, 4.5), \n\t\t\tAnimationId = nil, \n\t\t\tSFX = nil \n\t\t},\n    },\n}\n"
+          SourceAssetId = -1
+          Tags = ""
+        Folder "Animations" (9)
+          AttributesSerialize = ""
+          Capabilities = SecurityCapabilities(0x0)
+          DefinesCapabilities = false
+          IconTint = (0, 0, 0)
+          SourceAssetId = -1
+          Tags = ""
+        Tool "Knife" (10)
+          AttributesSerialize = "\u{1}\0\0\0\u{7}\0\0\0KnifeId\u{2}\u{b}\0\0\0CombatKnife"
+          CanBeDropped = false
+          Capabilities = SecurityCapabilities(0x0)
+          DefinesCapabilities = false
+          Enabled = true
+          Grip = pos=(0.48440555, 0, 0.00000075652497) rot=[1.0, -9.858772e-15, 3.0335597e-14, -1.4479303e-14, 0.7071067, 0.7071069, -2.842171e-14, -0.7071069, 0.7071067]
+          LevelOfDetail = 0 (Automatic)
+          ManualActivationOnly = true
+          ModelMeshCFrame = pos=(0, 0, 0) rot=[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+          ModelMeshData = ""
+          ModelMeshSize = (0, 0, 0)
+          ModelStreamingMode = 0 (Default)
+          NeedsPivotMigration = false
+          RequiresHandle = true
+          ScaleFactor = 1
+          SlimHash = ""
+          SourceAssetId = -1
+          Tags = ""
+          TextureId = ""
+          ToolTip = ""
+          WorldPivotData = none
+          Part "Handle" (11)
+            Anchored = false
+            AttributesSerialize = ""
+            AudioCanCollide = true
+            BackParamA = -0.5
+            BackParamB = 0.5
+            BackSurface = 0 (Smooth)
+            BackSurfaceInput = 0 (NoInput)
+            BottomParamA = -0.5
+            BottomParamB = 0.5
+            BottomSurface = 4 (Inlet)
+            BottomSurfaceInput = 0 (NoInput)
+            CFrame = pos=(0, 17, 0) rot=[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+            CanCollide = false
+            CanQuery = true
+            CanTouch = true
+            Capabilities = SecurityCapabilities(0x0)
+            CastShadow = true
+            CollisionGroup = "Default"
+            CollisionGroupId = 0
+            Color3uint8 = (180, 190, 200)
+            CustomPhysicalProperties = Default
+            DefinesCapabilities = false
+            EnableFluidForces = true
+            FrontParamA = -0.5
+            FrontParamB = 0.5
+            FrontSurface = 0 (Smooth)
+            FrontSurfaceInput = 0 (NoInput)
+            LeftParamA = -0.5
+            LeftParamB = 0.5
+            LeftSurface = 0 (Smooth)
+            LeftSurfaceInput = 0 (NoInput)
+            Locked = false
+            Massless = true
+            Material = 272 (SmoothPlastic)
+            MaterialVariantSerialized = ""
+            PivotOffset = pos=(0, 0, 0) rot=[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+            Reflectance = 0
+            RightParamA = -0.5
+            RightParamB = 0.5
+            RightSurface = 0 (Smooth)
+            RightSurfaceInput = 0 (NoInput)
+            RootPriority = 0
+            RotVelocity = (0, 0, 0)
+            SourceAssetId = -1
+            Tags = ""
+            TopParamA = -0.5
+            TopParamB = 0.5
+            TopSurface = 3 (Studs)
+            TopSurfaceInput = 0 (NoInput)
+            Transparency = 0
+            Velocity = (0, 0, 0)
+            formFactorRaw = 1
+            shape = 1
+            size = (0.3, 0.3, 1.5)
+        Folder "Sfx" (12)
+          AttributesSerialize = ""
+          Capabilities = SecurityCapabilities(0x0)
+          DefinesCapabilities = false
+          IconTint = (0, 0, 0)
+          SourceAssetId = -1
+          Tags = ""
+      Folder "Karambit" (13)
+        AttributesSerialize = ""
+        Capabilities = SecurityCapabilities(0x0)
+        DefinesCapabilities = false
+        IconTint = (0, 0, 0)
+        SourceAssetId = -1
+        Tags = ""
+        ModuleScript "Config" (14)
+          AttributesSerialize = ""
+          Capabilities = SecurityCapabilities(0x0)
+          DefinesCapabilities = false
+          LinkedSource = ""
+          ScriptGuid = "{0AA33FDA-A24D-4E7B-8F83-A27EE5EAD3C0}"
+          Source = "-- Made by @Cheeteau - https://www.roblox.com/users/925308243/profile\n--[[\n    Karambit configuration: shorter reach, faster, lower damage. Same schema as\n    the Combat Knife (equip/unequip clips + sounds, per-move swing SFX). All ids\n    nil in this prototype.\n--]]\nreturn {\n\tName = \"Karambit\",\n\tColor = Color3.fromRGB(40, 200, 160),\n\tBladeSize = Vector3.new(0.14, 0.14, 1.0),\n\n\tEquipAnimation = nil,   -- ID of the equip animation\n\tUnequipAnimation = nil, -- ID of the unequip animation\n\tEquipSFX = nil,         -- ID of the equip sound\n\tUnequipSFX = nil,       -- ID of the unequip sound\n\n\tMoves = {\n\t\tLight = { \n\t\t\tName = \"Light\", \n\t\t\tDamage = 20, \n\t\t\tHitStun = 0.2, \n\t\t\tKnockback = 14,\n\t\t\tStartup = 0.05, \n\t\t\tActive = 0.05,\n\t\t\tEndlag = 0.16, \n\t\t\tRange = 3,\n\t\t\tHitboxSize = Vector3.new(2, 2, 4), \n\t\t\tAnimationId = nil, \n\t\t\tSFX = nil \n\t\t},\n\t\tHeavy = { \n\t\t\tName = \"Heavy\", \n\t\t\tDamage = 45, \n\t\t\tHitStun = 0.45, \n\t\t\tKnockback = 38,\n\t\t\tStartup = 0.18, \n\t\t\tActive = 0.07, \n\t\t\tEndlag = 0.38, \n\t\t\tRange = 2,\n\t\t\tHitboxSize = Vector3.new(2.5, 2.5, 4.5), \n\t\t\tAnimationId = nil, \n\t\t\tSFX = nil \n\t\t},\n\t},\n}\n"
+          SourceAssetId = -1
+          Tags = ""
+        Folder "Animations" (15)
+          AttributesSerialize = ""
+          Capabilities = SecurityCapabilities(0x0)
+          DefinesCapabilities = false
+          IconTint = (0, 0, 0)
+          SourceAssetId = -1
+          Tags = ""
+        Tool "Knife" (16)
+          AttributesSerialize = "\u{1}\0\0\0\u{7}\0\0\0KnifeId\u{2}\u{8}\0\0\0Karambit"
+          CanBeDropped = false
+          Capabilities = SecurityCapabilities(0x0)
+          DefinesCapabilities = false
+          Enabled = true
+          Grip = pos=(0.48440552, 0, -0.528656) rot=[1.0, 5.684342e-14, 2.8402194e-14, -2.8402194e-14, -2.2737368e-13, 1.0, 5.684342e-14, -1.0, -2.2737368e-13]
+          LevelOfDetail = 0 (Automatic)
+          ManualActivationOnly = true
+          ModelMeshCFrame = pos=(0, 0, 0) rot=[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+          ModelMeshData = ""
+          ModelMeshSize = (0, 0, 0)
+          ModelStreamingMode = 0 (Default)
+          NeedsPivotMigration = false
+          RequiresHandle = true
+          ScaleFactor = 1
+          SlimHash = ""
+          SourceAssetId = -1
+          Tags = ""
+          TextureId = ""
+          ToolTip = ""
+          WorldPivotData = none
+          Part "Handle" (17)
+            Anchored = false
+            AttributesSerialize = ""
+            AudioCanCollide = true
+            BackParamA = -0.5
+            BackParamB = 0.5
+            BackSurface = 0 (Smooth)
+            BackSurfaceInput = 0 (NoInput)
+            BottomParamA = -0.5
+            BottomParamB = 0.5
+            BottomSurface = 4 (Inlet)
+            BottomSurfaceInput = 0 (NoInput)
+            CFrame = pos=(0, 13, 0) rot=[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+            CanCollide = false
+            CanQuery = true
+            CanTouch = true
+            Capabilities = SecurityCapabilities(0x0)
+            CastShadow = true
+            CollisionGroup = "Default"
+            CollisionGroupId = 0
+            Color3uint8 = (40, 200, 160)
+            CustomPhysicalProperties = Default
+            DefinesCapabilities = false
+            EnableFluidForces = true
+            FrontParamA = -0.5
+            FrontParamB = 0.5
+            FrontSurface = 0 (Smooth)
+            FrontSurfaceInput = 0 (NoInput)
+            LeftParamA = -0.5
+            LeftParamB = 0.5
+            LeftSurface = 0 (Smooth)
+            LeftSurfaceInput = 0 (NoInput)
+            Locked = false
+            Massless = true
+            Material = 272 (SmoothPlastic)
+            MaterialVariantSerialized = ""
+            PivotOffset = pos=(0, 0, 0) rot=[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+            Reflectance = 0
+            RightParamA = -0.5
+            RightParamB = 0.5
+            RightSurface = 0 (Smooth)
+            RightSurfaceInput = 0 (NoInput)
+            RootPriority = 0
+            RotVelocity = (0, 0, 0)
+            SourceAssetId = -1
+            Tags = ""
+            TopParamA = -0.5
+            TopParamB = 0.5
+            TopSurface = 3 (Studs)
+            TopSurfaceInput = 0 (NoInput)
+            Transparency = 0
+            Velocity = (0, 0, 0)
+            formFactorRaw = 1
+            shape = 1
+            size = (0.3, 0.3, 1.1)
+        Folder "Sfx" (18)
+          AttributesSerialize = ""
+          Capabilities = SecurityCapabilities(0x0)
+          DefinesCapabilities = false
+          IconTint = (0, 0, 0)
+          SourceAssetId = -1
+          Tags = ""
+  Folder "Remotes" (19)
+    AttributesSerialize = ""
+    Capabilities = SecurityCapabilities(0x0)
+    DefinesCapabilities = false
+    IconTint = (0, 0, 0)
+    SourceAssetId = -1
+    Tags = ""
+    RemoteEvent "KnifeHit" (20)
+      AttributesSerialize = ""
+      Capabilities = SecurityCapabilities(0x0)
+      DefinesCapabilities = false
+      SourceAssetId = -1
+      Tags = ""
+    RemoteEvent "KnifeEffect" (21)
+      AttributesSerialize = ""
+      Capabilities = SecurityCapabilities(0x0)
+      DefinesCapabilities = false
+      SourceAssetId = -1
+      Tags = ""
+    RemoteEvent "Knockback" (22)
+      AttributesSerialize = ""
+      Capabilities = SecurityCapabilities(0x0)
+      DefinesCapabilities = false
+      SourceAssetId = -1
+      Tags = ""
+  Folder "Client" (23)
+    AttributesSerialize = ""
+    Capabilities = SecurityCapabilities(0x0)
+    DefinesCapabilities = false
+    IconTint = (0, 0, 0)
+    SourceAssetId = -1
+    Tags = ""
+    ModuleScript "FPSController" (24)
+      AttributesSerialize = ""
+      Capabilities = SecurityCapabilities(0x0)
+      DefinesCapabilities = false
+      LinkedSource = ""
+      ScriptGuid = "{B1C93C8B-2A81-4C61-8F3F-3ABF50B0D3B1}"
+      Source = "-- Made by @Cheeteau - https://www.roblox.com/users/925308243/profile\n--[[\n    Client orchestrator. Builds the shared context, instantiates the sibling\n    sub-controllers, wires them, and runs the loops. Required by FPS.start() on\n    the client. The viewmodel and combat are equip-driven: the KnifeController\n    builds the viewmodel and enables combat when a knife Tool is equipped.\n--]]\nlocal Players = game:GetService(\"Players\")\nlocal RunService = game:GetService(\"RunService\")\n\nlocal FPS = script:FindFirstAncestor(\"FPS\")\nlocal Shared = FPS.Shared\nlocal Config = require(Shared.Config)\nlocal Signal = require(Shared.Signal)\n\nlocal Client = FPS.Client.Controllers\nlocal MovementController = require(Client.MovementController)\nlocal InputHandler = require(Client.InputHandler)\nlocal CameraController = require(Client.CameraController)\nlocal ViewmodelController = require(Client.ViewmodelController)\nlocal AnimationController = require(Client.AnimationController)\nlocal CombatController = require(Client.CombatController)\nlocal KnifeController = require(Client.KnifeController)\n\nlocal FPSController = {}\nFPSController.__index = FPSController\n\n--[[\n    Creates the orchestrator.\n\n    @returns {FPSController}\n--]]\nfunction FPSController.new()\n    return setmetatable({ _connections = {} }, FPSController)\nend\n\n--[[\n    Disconnects per-character connections and destroys transient objects. Runs\n    before each (re)build, including on respawn.\n\n    @returns {nil}\n--]]\nfunction FPSController:_teardown()\n    for _, c in self._connections do c:Disconnect() end\n    table.clear(self._connections)\n    if self._input then self._input:Destroy() end\n    if self._knife then self._knife:Destroy() end\n    if self._viewmodel then self._viewmodel:Destroy() end\nend\n\n--[[\n    Starts the controller: waits for the character, builds context and\n    sub-controllers, then binds the physics and render loops. Re-runs on spawn.\n\n    @returns {nil}\n--]]\nfunction FPSController:Start()\n    local player = Players.LocalPlayer\n\n    local function setup(character)\n        self:_teardown()\n\n        local humanoid = character:WaitForChild(\"Humanoid\")\n        local hrp = character:WaitForChild(\"HumanoidRootPart\")\n\n        local context = {\n            Player = player,\n            Character = character,\n            Humanoid = humanoid,\n            HRP = hrp,\n            Camera = workspace.CurrentCamera,\n            Config = Config,\n            KnifeName = nil,\n            Knife = nil,\n            Equipped = false,\n            Remotes = FPS.Remotes,\n        }\n\n        local input = InputHandler.new(context)\n        input.OnAttack = Signal.new()\n        context.InputHandler = input\n\n        local cameraCtrl = CameraController.new(context)\n        local movement = MovementController.new(context)\n        context.Movement = movement\n        local viewmodel = ViewmodelController.new(context)\n        context.Viewmodel = viewmodel\n        local animation = AnimationController.new(context)\n        context.Animation = animation\n        local combat = CombatController.new(context)\n        local knife = KnifeController.new(context)\n\n        input:Start()\n        cameraCtrl:Start()\n        movement:Start()\n        viewmodel:Start()\n        animation:Start()\n        combat:Start()\n        knife:Start() -- hooks tools, auto-equips default -> builds viewmodel\n\n        self._input = input\n        self._movement = movement\n        self._viewmodel = viewmodel\n        self._combat = combat\n        self._knife = knife\n\n        table.insert(self._connections, RunService.Stepped:Connect(function(_, dt)\n            if humanoid.Health <= 0 then return end\n            movement:Update(dt)\n            combat:Update(dt)\n        end))\n\n        table.insert(self._connections, RunService.RenderStepped:Connect(function(dt)\n            viewmodel:Update(dt)\n        end))\n\n        table.insert(self._connections, context.Remotes.Knockback.OnClientEvent:Connect(function(impulse, stun)\n            movement:ApplyKnockback(impulse, stun)\n        end))\n    end\n\n    if player.Character then setup(player.Character) end\n    self._charConn = player.CharacterAdded:Connect(setup)\nend\n\nreturn FPSController\n"
+      SourceAssetId = -1
+      Tags = ""
+    Folder "Controllers" (25)
+      AttributesSerialize = ""
+      Capabilities = SecurityCapabilities(0x0)
+      DefinesCapabilities = false
+      IconTint = (0, 0, 0)
+      SourceAssetId = -1
+      Tags = ""
+      ModuleScript "CameraController" (26)
+        AttributesSerialize = ""
+        Capabilities = SecurityCapabilities(0x0)
+        DefinesCapabilities = false
+        LinkedSource = ""
+        ScriptGuid = "{7234A62F-352B-4EC4-9E44-8F2223E29B84}"
+        Source = "-- Made by @Cheeteau - https://www.roblox.com/users/925308243/profile\n--[[\n    Enforces first-person lock, applies the configured field of view, and adds a\n    subtle camera roll (\"tilt\") proportional to how fast the view is turning, for\n    a more dynamic feel. All tilt parameters live in Config.Camera.Tilt. The roll\n    is applied after the default camera updates each frame (render-step binding),\n    and rolling around the look axis does not affect yaw, so there is no feedback.\n--]]\nlocal Players = game:GetService(\"Players\")\nlocal RunService = game:GetService(\"RunService\")\n\nlocal CameraController = {}\nCameraController.__index = CameraController\n\n--[[\n    Creates a camera controller.\n\n    @param {table} context - Shared FPS context (Config)\n    @returns {CameraController}\n--]]\nfunction CameraController.new(context)\n    return setmetatable({ _ctx = context, _roll = 0, _lastYaw = nil }, CameraController)\nend\n\n--[[\n    Applies one frame of turn-based roll to the camera.\n\n    @param {number} dt - Delta time\n    @param {table} tilt - Config.Camera.Tilt (MaxAngle, Sensitivity, Speed)\n    @returns {nil}\n--]]\nfunction CameraController:_applyTilt(dt, tilt)\n    local cam = workspace.CurrentCamera\n    local look = cam.CFrame.LookVector\n    local yaw = math.atan2(look.X, look.Z)\n    if self._lastYaw == nil then self._lastYaw = yaw end\n    local delta = (yaw - self._lastYaw + math.pi) % (2 * math.pi) - math.pi\n    self._lastYaw = yaw\n\n    local maxRad = math.rad(tilt.MaxAngle)\n    local target = math.clamp(-delta * tilt.Sensitivity, -maxRad, maxRad)\n    self._roll += (target - self._roll) * math.clamp(dt * tilt.Speed, 0, 1)\n    cam.CFrame = cam.CFrame * CFrame.Angles(0, 0, self._roll)\nend\n\n--[[\n    Locks first person, applies FOV, and binds the camera tilt.\n\n    @returns {nil}\n--]]\nfunction CameraController:Start()\n    Players.LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson\n    local camera = workspace.CurrentCamera\n    camera.FieldOfView = self._ctx.Config.Camera.FieldOfView\n    self._ctx.Camera = camera\n\n    local tilt = self._ctx.Config.Camera.Tilt\n    pcall(function() RunService:UnbindFromRenderStep(\"FPSCameraTilt\") end)\n    if tilt and (tilt.MaxAngle or 0) > 0 then\n        RunService:BindToRenderStep(\"FPSCameraTilt\", Enum.RenderPriority.Camera.Value + 1, function(dt)\n            self:_applyTilt(dt, tilt)\n        end)\n    end\nend\n\n--[[\n    Unbinds the tilt render-step.\n\n    @returns {nil}\n--]]\nfunction CameraController:Destroy()\n    pcall(function() RunService:UnbindFromRenderStep(\"FPSCameraTilt\") end)\nend\n\nreturn CameraController\n"
+        SourceAssetId = -1
+        Tags = ""
+      ModuleScript "MovementController" (27)
+        AttributesSerialize = ""
+        Capabilities = SecurityCapabilities(0x0)
+        DefinesCapabilities = false
+        LinkedSource = ""
+        ScriptGuid = "{BA8044D1-03BA-488D-ADEC-A578B9CC1E66}"
+        Source = "-- Made by @Cheeteau - https://www.roblox.com/users/925308243/profile\n--[[\n    Source-engine style movement: ground accelerate + friction, air strafing,\n    bunny-hopping. Takes full authority over velocity via PlatformStand and an\n    upright AlignOrientation. Because PlatformStand also disables the Humanoid's\n    HipHeight maintenance, this controller floats the body itself: each step it\n    raycasts down and snaps the HumanoidRootPart to a computed \"ride height\"\n    (HRP centre to feet), which keeps the legs on the ground and grants free\n    step-up within Config.StepHeight. Friction is skipped on jump frames to\n    preserve bhop speed; air control uses a clamped wish-speed so strafing adds\n    speed.\n--]]\nlocal MovementController = {}\nMovementController.__index = MovementController\n\n--[[\n    Projects a vector onto the horizontal plane.\n\n    @param {Vector3} v - Source vector\n    @returns {Vector3} - Horizontal component\n--]]\nlocal function horizontal(v)\n    return Vector3.new(v.X, 0, v.Z)\nend\n\n--[[\n    Source-style acceleration toward a wish direction with a speed cap.\n\n    @param {Vector3} velocity - Current horizontal velocity\n    @param {Vector3} wishdir - Normalized desired direction\n    @param {number} wishspeed - Target speed along wishdir\n    @param {number} accel - Acceleration coefficient\n    @param {number} dt - Delta time\n    @returns {Vector3} - New horizontal velocity\n--]]\nlocal function accelerate(velocity, wishdir, wishspeed, accel, dt)\n    local current = velocity:Dot(wishdir)\n    local add = wishspeed - current\n    if add <= 0 then return velocity end\n    local accelSpeed = math.min(accel * dt * wishspeed, add)\n    return velocity + wishdir * accelSpeed\nend\n\n--[[\n    Applies Source-style ground friction.\n\n    @param {Vector3} velocity - Current horizontal velocity\n    @param {number} friction - Friction coefficient\n    @param {number} stopSpeed - Floor speed keeping low-speed friction firm\n    @param {number} dt - Delta time\n    @returns {Vector3} - New horizontal velocity\n--]]\nlocal function applyFriction(velocity, friction, stopSpeed, dt)\n    local speed = velocity.Magnitude\n    if speed < 0.0001 then return Vector3.zero end\n    local control = (speed < stopSpeed) and stopSpeed or speed\n    local newSpeed = math.max(speed - control * friction * dt, 0)\n    return velocity * (newSpeed / speed)\nend\n\n--[[\n    Creates a movement controller.\n\n    @param {table} context - Shared FPS context (Character, Humanoid, HRP, Camera, Config, InputHandler)\n    @returns {MovementController}\n--]]\nfunction MovementController.new(context)\n    return setmetatable({\n        _ctx = context, _cfg = context.Config.Movement,\n        _grounded = false, _lastGroundedTime = 0, _stunUntil = 0,\n    }, MovementController)\nend\n\n--[[\n    Enables PlatformStand, creates the upright AlignOrientation and the ground\n    raycast params.\n\n    @returns {nil}\n--]]\nfunction MovementController:Start()\n    local ctx = self._ctx\n    local hrp, humanoid = ctx.HRP, ctx.Humanoid\n    humanoid.PlatformStand = true\n    humanoid.AutoRotate = false\n\n    local attachment = Instance.new(\"Attachment\")\n    attachment.Name = \"MovementAlign\"\n    attachment.Parent = hrp\n\n    local align = Instance.new(\"AlignOrientation\")\n    align.Name = \"MovementUpright\"\n    align.Mode = Enum.OrientationAlignmentMode.OneAttachment\n    align.Attachment0 = attachment\n    align.RigidityEnabled = true\n    align.Parent = hrp\n    self._align = align\n\n    local params = RaycastParams.new()\n    params.FilterType = Enum.RaycastFilterType.Exclude\n    params.FilterDescendantsInstances = { ctx.Character }\n    self._rayParams = params\nend\n\n--[[\n    Adds a knockback impulse and opens a hit-stun window (input ignored).\n\n    @param {Vector3} impulse - World-space velocity to add\n    @param {number} stunDuration - Seconds of input lockout\n    @returns {nil}\n--]]\nfunction MovementController:ApplyKnockback(impulse, stunDuration)\n    self._ctx.HRP.AssemblyLinearVelocity += impulse\n    self._stunUntil = os.clock() + stunDuration\nend\n\n--[[\n    Returns true while in hit-stun.\n\n    @returns {boolean}\n--]]\nfunction MovementController:IsStunned()\n    return os.clock() < self._stunUntil\nend\n\n--[[\n    Per-physics-step update: upright alignment, ride-height float + ground\n    detection, wish direction, friction/air acceleration, jump/bunny-hop, then\n    writes velocity back to the assembly.\n\n    @param {number} dt - Delta time since the last step\n    @returns {nil}\n--]]\nfunction MovementController:Update(dt)\n    local ctx = self._ctx\n    local hrp, cfg, input, character = ctx.HRP, self._cfg, ctx.InputHandler, ctx.Character\n\n    local flatLook = horizontal(ctx.Camera.CFrame.LookVector)\n    if flatLook.Magnitude > 0 then\n        self._align.CFrame = CFrame.lookAt(Vector3.zero, flatLook)\n    end\n\n    -- Ride height = distance from HRP centre to the character's feet, taken from\n    -- the live bounding box so it works for R6 / R15 and while still loading.\n    local boxCF, boxSize = character:GetBoundingBox()\n    local rideHeight = hrp.Position.Y - (boxCF.Position.Y - boxSize.Y / 2)\n\n    local now = os.clock()\n    local velocity = hrp.AssemblyLinearVelocity\n    local vy = velocity.Y\n    local horizVel = horizontal(velocity)\n\n    -- Ground detection within ride height + step tolerance (only when not rising).\n    local rayLen = rideHeight + cfg.StepHeight + 0.5\n    local hit = workspace:Raycast(hrp.Position, Vector3.new(0, -rayLen, 0), self._rayParams)\n    self._grounded = false\n    local groundY\n    if hit then\n        local d = hrp.Position.Y - hit.Position.Y\n        if vy <= 0.5 and d <= rideHeight + 0.5 then\n            self._grounded = true\n            groundY = hit.Position.Y\n        end\n    end\n    if self._grounded then self._lastGroundedTime = now end\n\n    local stunned = self:IsStunned()\n    local wishdir = stunned and Vector3.zero or input:GetWishDir()\n\n    local canCoyote = (now - self._lastGroundedTime) <= cfg.CoyoteTime\n    local wantsJump = not stunned and (input:ConsumeJumpBuffer(cfg.JumpBufferTime)\n        or (cfg.AutoBunnyHop and input:IsJumpHeld()))\n    local jumpedThisFrame = false\n    if wantsJump and (self._grounded or canCoyote) then\n        vy = cfg.JumpVelocity\n        jumpedThisFrame = true\n        self._lastGroundedTime = 0\n    end\n\n    -- Float the body at ride height while grounded (replaces the Humanoid's\n    -- disabled HipHeight maintenance; also gives free step-up within StepHeight).\n    if self._grounded and not jumpedThisFrame and groundY then\n        local pos = hrp.Position\n        hrp.CFrame = CFrame.new(pos.X, groundY + rideHeight, pos.Z) * hrp.CFrame.Rotation\n        vy = 0\n    end\n\n    if self._grounded and not jumpedThisFrame then\n        horizVel = applyFriction(horizVel, cfg.Friction, cfg.StopSpeed, dt)\n    end\n    if wishdir.Magnitude > 0 then\n        if self._grounded and not jumpedThisFrame then\n            horizVel = accelerate(horizVel, wishdir, cfg.MaxGroundSpeed, cfg.GroundAccelerate, dt)\n        else\n            horizVel = accelerate(horizVel, wishdir, cfg.AirMaxWishSpeed, cfg.AirAccelerate, dt)\n        end\n    end\n\n    hrp.AssemblyLinearVelocity = Vector3.new(horizVel.X, vy, horizVel.Z)\nend\n\n--[[\n    Returns current horizontal speed (used by the viewmodel for bobbing).\n\n    @returns {number}\n--]]\nfunction MovementController:GetSpeed()\n    return horizontal(self._ctx.HRP.AssemblyLinearVelocity).Magnitude\nend\n\nreturn MovementController\n"
+        SourceAssetId = -1
+        Tags = ""
+      ModuleScript "InputHandler" (28)
+        AttributesSerialize = ""
+        Capabilities = SecurityCapabilities(0x0)
+        DefinesCapabilities = false
+        LinkedSource = ""
+        ScriptGuid = "{7767E504-2FDE-4C82-9173-1038148B98BA}"
+        Source = "-- Made by @Cheeteau - https://www.roblox.com/users/925308243/profile\n--[[\n    Centralizes input across platforms. Movement reads keyboard WASD first and\n    falls back to Humanoid.MoveDirection (mobile thumbstick / gamepad). Jump comes\n    from Space or the Humanoid.Jump flag (mobile jump button), with buffering.\n    Attacks: left click = Light, right click = Heavy on desktop; on touch, a\n    single tap = Light and a double tap = Heavy. OnAttack is a Signal assigned by\n    the orchestrator, fired with the move name.\n--]]\nlocal UserInputService = game:GetService(\"UserInputService\")\n\nlocal InputHandler = {}\nInputHandler.__index = InputHandler\n\nlocal DOUBLE_TAP_WINDOW = 0.25\n\n--[[\n    Creates an input handler.\n\n    @param {table} context - Shared FPS context (Camera, Humanoid)\n    @returns {InputHandler}\n--]]\nfunction InputHandler.new(context)\n    return setmetatable({\n        _ctx = context, _keys = {}, _jumpHeld = false,\n        _jumpBufferedAt = -math.huge, _connections = {}, OnAttack = nil,\n    }, InputHandler)\nend\n\n--[[\n    Begins listening to input events (keyboard, mouse, touch, jump flag).\n\n    @returns {nil}\n--]]\nfunction InputHandler:Start()\n    local function onBegan(io, processed)\n        if processed then return end\n        local key, mouse = io.KeyCode, io.UserInputType\n        if key == Enum.KeyCode.Space then\n            self._jumpHeld = true\n            self._jumpBufferedAt = os.clock()\n        elseif mouse == Enum.UserInputType.MouseButton1 then\n            if self.OnAttack then self.OnAttack:Fire(\"Light\") end\n        elseif mouse == Enum.UserInputType.MouseButton2 then\n            if self.OnAttack then self.OnAttack:Fire(\"Heavy\") end\n        else\n            self._keys[key] = true\n        end\n    end\n    local function onEnded(io)\n        if io.KeyCode == Enum.KeyCode.Space then\n            self._jumpHeld = false\n        else\n            self._keys[io.KeyCode] = nil\n        end\n    end\n    table.insert(self._connections, UserInputService.InputBegan:Connect(onBegan))\n    table.insert(self._connections, UserInputService.InputEnded:Connect(onEnded))\n\n    -- Mobile attacks: single tap = Light, double tap = Heavy. A token cancels the\n    -- pending Light when a second tap arrives within the window.\n    local lastTap, tapToken = 0, 0\n    table.insert(self._connections, UserInputService.TouchTap:Connect(function(_, processed)\n        if processed or not self.OnAttack then return end\n        local now = os.clock()\n        tapToken += 1\n        if (now - lastTap) <= DOUBLE_TAP_WINDOW then\n            lastTap = 0\n            self.OnAttack:Fire(\"Heavy\")\n        else\n            lastTap = now\n            local myToken = tapToken\n            task.delay(DOUBLE_TAP_WINDOW, function()\n                if myToken == tapToken and self.OnAttack then\n                    self.OnAttack:Fire(\"Light\")\n                end\n            end)\n        end\n    end))\n\n    -- Mobile / gamepad jump: the control scripts raise Humanoid.Jump.\n    local humanoid = self._ctx.Humanoid\n    if humanoid then\n        table.insert(self._connections, humanoid:GetPropertyChangedSignal(\"Jump\"):Connect(function()\n            if humanoid.Jump then\n                self._jumpBufferedAt = os.clock()\n            end\n        end))\n    end\nend\n\n--[[\n    Returns the normalized, horizontal wish direction. Keyboard WASD takes\n    priority; otherwise Humanoid.MoveDirection (thumbstick / gamepad) is used.\n\n    @returns {Vector3} - Unit direction, or zero when there is no input\n--]]\nfunction InputHandler:GetWishDir()\n    local cf = self._ctx.Camera.CFrame\n    local flatLook = Vector3.new(cf.LookVector.X, 0, cf.LookVector.Z)\n    local flatRight = Vector3.new(cf.RightVector.X, 0, cf.RightVector.Z)\n    if flatLook.Magnitude > 0 then flatLook = flatLook.Unit end\n    if flatRight.Magnitude > 0 then flatRight = flatRight.Unit end\n\n    local dir = Vector3.zero\n    if self._keys[Enum.KeyCode.W] then dir += flatLook end\n    if self._keys[Enum.KeyCode.S] then dir -= flatLook end\n    if self._keys[Enum.KeyCode.D] then dir += flatRight end\n    if self._keys[Enum.KeyCode.A] then dir -= flatRight end\n    if dir.Magnitude > 0 then return dir.Unit end\n\n    local humanoid = self._ctx.Humanoid\n    if humanoid then\n        local md = humanoid.MoveDirection\n        md = Vector3.new(md.X, 0, md.Z)\n        if md.Magnitude > 0 then return md.Unit end\n    end\n    return Vector3.zero\nend\n\n--[[\n    Returns whether the jump key is currently held (desktop auto-bhop).\n\n    @returns {boolean}\n--]]\nfunction InputHandler:IsJumpHeld()\n    return self._jumpHeld\nend\n\n--[[\n    Consumes a buffered jump press within the buffer window.\n\n    @param {number} bufferTime - Seconds a press stays valid\n    @returns {boolean} - True if a buffered jump was consumed\n--]]\nfunction InputHandler:ConsumeJumpBuffer(bufferTime)\n    if (os.clock() - self._jumpBufferedAt) <= bufferTime then\n        self._jumpBufferedAt = -math.huge\n        return true\n    end\n    return false\nend\n\n--[[\n    Disconnects all input listeners.\n\n    @returns {nil}\n--]]\nfunction InputHandler:Destroy()\n    for _, c in self._connections do c:Disconnect() end\n    table.clear(self._connections)\nend\n\nreturn InputHandler\n"
+        SourceAssetId = -1
+        Tags = ""
+      ModuleScript "ViewmodelController" (29)
+        AttributesSerialize = ""
+        Capabilities = SecurityCapabilities(0x0)
+        DefinesCapabilities = false
+        LinkedSource = ""
+        ScriptGuid = "{EF0D2E21-C0EE-46F8-B09F-7CEB7DCD72A5}"
+        Source = "-- Made by @Cheeteau - https://www.roblox.com/users/925308243/profile\n--[[\n    Clones the animatable viewmodel rig from FPS.Assets.Viewmodel, prepares it\n    (root anchored, limbs unanchored/massless so Motor6D animation can drive\n    them), and welds a clone of the equipped Tool's Handle to the rig's GripPoint\n    using the Tool.Grip CFrame, so editing the Grip in Studio moves the\n    first-person knife exactly like the third-person one. The real Handle is\n    hidden locally so first person shows only the viewmodel knife. Build / Destroy\n    are driven by the KnifeController on equip / unequip.\n--]]\nlocal UserInputService = game:GetService(\"UserInputService\")\nlocal FPS = script:FindFirstAncestor(\"FPS\")\n\nlocal ViewmodelController = {}\nViewmodelController.__index = ViewmodelController\n\n--[[\n    Creates a viewmodel controller.\n\n    @param {table} context - Shared FPS context (Config, Movement)\n    @returns {ViewmodelController}\n--]]\nfunction ViewmodelController.new(context)\n    return setmetatable({ _ctx = context, _bobPhase = 0, _sway = Vector2.zero }, ViewmodelController)\nend\n\n--[[\n    No-op: the KnifeController builds the viewmodel when a knife is equipped.\n\n    @returns {nil}\n--]]\nfunction ViewmodelController:Start()\nend\n\n--[[\n    Clones and mounts the rig, then attaches the Tool's Handle at the grip.\n\n    @param {table} knife - KnifeConfig (cosmetic fallback)\n    @param {Tool} tool - The equipped Tool whose Handle + Grip drive the knife\n    @returns {nil}\n--]]\nfunction ViewmodelController:BuildViewmodel(knife, tool)\n    self:Destroy()\n\n    local rig = FPS.Assets.Viewmodel:Clone()\n    rig.Name = \"Viewmodel\"\n    for _, d in rig:GetDescendants() do\n        if d:IsA(\"BasePart\") then\n            d.CanCollide = false\n            d.CanQuery = false\n            d.CanTouch = false\n            d.Massless = true\n            d.Anchored = (d == rig.PrimaryPart)\n        end\n    end\n    rig.Parent = workspace.CurrentCamera\n    self._model = rig\n    self._root = rig.PrimaryPart\n    self._animator = rig:FindFirstChildWhichIsA(\"Animator\", true)\n\n    if tool then\n        self._tool = tool\n        local rightArm = rig:FindFirstChild(\"RightArm\")\n        local gripPoint = rightArm and rightArm:FindFirstChild(\"GripPoint\")\n        local template = tool:FindFirstChild(\"Handle\")\n        if rightArm and gripPoint and template then\n            local handle = template:Clone()\n            handle.Name = \"Knife\"\n            handle.Anchored = false\n            handle.CanCollide = false\n            handle.CanQuery = false\n            handle.CanTouch = false\n            handle.Massless = true\n            for _, c in handle:GetChildren() do\n                if c:IsA(\"BaseScript\") then c:Destroy() end\n            end\n            local weld = Instance.new(\"Weld\")\n            weld.Part0 = rightArm\n            weld.Part1 = handle\n            weld.C0 = gripPoint.CFrame -- grip location on the hand\n            weld.C1 = tool.Grip        -- editable Tool.Grip\n            weld.Parent = handle\n            handle.Parent = rig\n        end\n        -- Hide the real (third-person) handle for the local player only.\n        if template then template.LocalTransparencyModifier = 1 end\n    end\nend\n\n--[[\n    Returns the rig's Animator so the AnimationController can load tracks on it.\n\n    @returns {Animator?}\n--]]\nfunction ViewmodelController:GetAnimator()\n    return self._animator\nend\n\n--[[\n    Per-render update: moves the root to follow the camera with bob and sway.\n\n    @param {number} dt - Delta time\n    @returns {nil}\n--]]\nfunction ViewmodelController:Update(dt)\n    if not self._root then return end\n    local cfg = self._ctx.Config.Viewmodel\n    local camera = workspace.CurrentCamera\n    local speed = self._ctx.Movement and self._ctx.Movement:GetSpeed() or 0\n\n    self._bobPhase += dt * cfg.BobSpeed * math.clamp(speed / 16, 0, 1.5)\n    local bobX = math.cos(self._bobPhase) * cfg.BobAmount\n    local bobY = math.abs(math.sin(self._bobPhase)) * cfg.BobAmount\n\n    local delta = UserInputService:GetMouseDelta()\n    self._sway = self._sway:Lerp(Vector2.new(-delta.X, -delta.Y) * cfg.SwayAmount, math.clamp(dt * 10, 0, 1))\n\n    self._root.CFrame = camera.CFrame * cfg.Offset\n        * CFrame.new(bobX + self._sway.X * 0.1, bobY + self._sway.Y * 0.1, 0)\nend\n\n--[[\n    Destroys the rig clone and restores the real handle's local visibility.\n\n    @returns {nil}\n--]]\nfunction ViewmodelController:Destroy()\n    if self._tool then\n        local template = self._tool:FindFirstChild(\"Handle\")\n        if template then template.LocalTransparencyModifier = 0 end\n        self._tool = nil\n    end\n    if self._model then self._model:Destroy() end\n    self._model = nil\n    self._root = nil\n    self._animator = nil\nend\n\nreturn ViewmodelController\n"
+        SourceAssetId = -1
+        Tags = ""
+      ModuleScript "AnimationController" (30)
+        AttributesSerialize = ""
+        Capabilities = SecurityCapabilities(0x0)
+        DefinesCapabilities = false
+        LinkedSource = ""
+        ScriptGuid = "{8EAF0713-42F8-45D1-8ED6-3618700C62BF}"
+        Source = "-- Made by @Cheeteau - https://www.roblox.com/users/925308243/profile\n--[[\n    Drives attack timing and hides whether it comes from animation markers or\n    config values, and also plays simple one-shot clips (equip / unequip). The\n    viewmodel rig is rebuilt on each equip, so the Animator is resolved lazily at\n    play time. PlayAttack returns a handle (ActiveStart / ActiveEnd / Finished)\n    so CombatController is agnostic to the source: a real AnimationId with markers\n    \"ActiveStart\" / \"ActiveEnd\" drives the handle, otherwise the DHKSAE timings.\n--]]\nlocal FPS = script:FindFirstAncestor(\"FPS\")\nlocal Signal = require(FPS.Shared.Signal)\n\nlocal AnimationController = {}\nAnimationController.__index = AnimationController\n\n--[[\n    Creates an animation controller.\n\n    @param {table} context - Shared FPS context (Viewmodel)\n    @returns {AnimationController}\n--]]\nfunction AnimationController.new(context)\n    return setmetatable({ _ctx = context, _tracks = {} }, AnimationController)\nend\n\n--[[\n    Nothing to initialise; the Animator is resolved per-call from the viewmodel.\n\n    @returns {nil}\n--]]\nfunction AnimationController:Start()\nend\n\n--[[\n    Loads and caches an AnimationTrack for an animation id on a given Animator.\n\n    @param {Animator} animator - The viewmodel rig's Animator\n    @param {string} animationId - The rbxassetid string\n    @returns {AnimationTrack}\n--]]\nfunction AnimationController:_getTrack(animator, animationId)\n    self._tracks[animator] = self._tracks[animator] or {}\n    local cache = self._tracks[animator]\n    if cache[animationId] then return cache[animationId] end\n    local anim = Instance.new(\"Animation\")\n    anim.AnimationId = animationId\n    local track = animator:LoadAnimation(anim)\n    cache[animationId] = track\n    return track\nend\n\n--[[\n    Plays a simple one-shot clip (e.g. equip / unequip). No-ops on a nil id.\n\n    @param {string?} animationId - The rbxassetid string, or nil to skip\n    @returns {AnimationTrack?} - The playing track, or nil\n--]]\nfunction AnimationController:PlayClip(animationId)\n    if not animationId or animationId == \"\" then return nil end\n    local animator = self._ctx.Viewmodel:GetAnimator()\n    if not animator then return nil end\n    local track = self:_getTrack(animator, animationId)\n    track:Play()\n    return track\nend\n\n--[[\n    Plays an attack and returns a timing handle. The caller listens to\n    ActiveStart / ActiveEnd / Finished regardless of source.\n\n    @param {table} move - MoveConfig following the DHKSAE pattern\n    @returns {table} - Handle { ActiveStart, ActiveEnd, Finished, Stop }\n--]]\nfunction AnimationController:PlayAttack(move)\n    local handle = {\n        ActiveStart = Signal.new(), ActiveEnd = Signal.new(), Finished = Signal.new(),\n    }\n    local cancelled = false\n    handle.Stop = function() cancelled = true end\n\n    local animator = self._ctx.Viewmodel:GetAnimator()\n    if move.AnimationId and move.AnimationId ~= \"\" and animator then\n        local track = self:_getTrack(animator, move.AnimationId)\n        track:Play()\n        local sc, ec, stc\n        sc = track:GetMarkerReachedSignal(\"ActiveStart\"):Connect(function()\n            if not cancelled then handle.ActiveStart:Fire() end\n        end)\n        ec = track:GetMarkerReachedSignal(\"ActiveEnd\"):Connect(function()\n            if not cancelled then handle.ActiveEnd:Fire() end\n        end)\n        stc = track.Stopped:Connect(function()\n            sc:Disconnect(); ec:Disconnect(); stc:Disconnect()\n            if not cancelled then handle.Finished:Fire() end\n        end)\n        handle.Stop = function() cancelled = true; track:Stop() end\n    else\n        task.delay(move.Startup, function()\n            if not cancelled then handle.ActiveStart:Fire() end\n        end)\n        task.delay(move.Startup + move.Active, function()\n            if not cancelled then handle.ActiveEnd:Fire() end\n        end)\n        task.delay(move.Startup + move.Active + move.Endlag, function()\n            if not cancelled then handle.Finished:Fire() end\n        end)\n    end\n\n    return handle\nend\n\nreturn AnimationController\n"
+        SourceAssetId = -1
+        Tags = ""
+      ModuleScript "CombatController" (31)
+        AttributesSerialize = ""
+        Capabilities = SecurityCapabilities(0x0)
+        DefinesCapabilities = false
+        LinkedSource = ""
+        ScriptGuid = "{B2FF87F4-F0D5-4AD7-875D-565BF963487E}"
+        Source = "-- Made by @Cheeteau - https://www.roblox.com/users/925308243/profile\n--[[\n    Client-side knife combat. Owns the combat state machine\n    (Idle -> Startup -> Active -> Endlag) and performs client-authoritative hit\n    detection during the active window via a block-cast from the camera (never\n    .Touched). Gated on the equipped state. Plays the move's swing SFX on start.\n    On a local hit it reports to the server, which re-validates range and\n    cooldown. Inputs are ignored unless Idle, which prevents spam.\n--]]\nlocal FPS = script:FindFirstAncestor(\"FPS\")\nlocal StateMachine = require(FPS.Client.Util.StateMachine)\nlocal Audio = require(FPS.Client.Util.Audio)\n\nlocal CombatController = {}\nCombatController.__index = CombatController\n\nlocal TRANSITIONS = {\n    Idle = { Startup = true },\n    Startup = { Active = true, Idle = true },\n    Active = { Endlag = true, Idle = true },\n    Endlag = { Idle = true },\n}\n\n--[[\n    Creates a combat controller.\n\n    @param {table} context - Shared FPS context (Character, Camera, Knife, Equipped, Animation, Movement, Remotes, InputHandler)\n    @returns {CombatController}\n--]]\nfunction CombatController.new(context)\n    return setmetatable({\n        _ctx = context, _sm = StateMachine.new(\"Idle\", TRANSITIONS),\n        _activeHits = {}, _activeMove = nil, _scanning = false,\n    }, CombatController)\nend\n\n--[[\n    Wires the attack input signal to the combat entry point.\n\n    @returns {nil}\n--]]\nfunction CombatController:Start()\n    self._ctx.InputHandler.OnAttack:Connect(function(moveName)\n        self:TryAttack(moveName)\n    end)\nend\n\n--[[\n    Attempts to start an attack. Ignored unless a knife is equipped, the machine\n    is Idle, and the character is not stunned.\n\n    @param {string} moveName - Key into the knife's Moves table (\"Light\" / \"Heavy\")\n    @returns {nil}\n--]]\nfunction CombatController:TryAttack(moveName)\n    local ctx = self._ctx\n    if not ctx.Equipped or not ctx.Knife then return end\n    if not self._sm:Is(\"Idle\") then return end\n    if ctx.Movement:IsStunned() then return end\n    local move = ctx.Knife.Moves[moveName]\n    if not move then return end\n\n    self._activeMove = move\n    self._activeHits = {}\n    self._sm:Transition(\"Startup\")\n    Audio(move.SFX, workspace.CurrentCamera)\n\n    local handle = ctx.Animation:PlayAttack(move)\n    handle.ActiveStart:Connect(function()\n        if self._sm:Transition(\"Active\") then self._scanning = true end\n    end)\n    handle.ActiveEnd:Connect(function()\n        self._scanning = false\n        self._sm:Transition(\"Endlag\")\n    end)\n    handle.Finished:Connect(function()\n        self._scanning = false\n        self._sm:Transition(\"Idle\")\n    end)\nend\n\n--[[\n    Per-step hit scan during the Active window. Block-casts forward from the\n    camera; each character is hit at most once per swing.\n\n    @param {number} dt - Delta time\n    @returns {nil}\n--]]\nfunction CombatController:Update(dt)\n    if not self._scanning or not self._activeMove then return end\n    local move = self._activeMove\n    local cf = self._ctx.Camera.CFrame\n    local direction = cf.LookVector * move.Range\n\n    local params = RaycastParams.new()\n    params.FilterType = Enum.RaycastFilterType.Exclude\n    params.FilterDescendantsInstances = { self._ctx.Character, workspace.CurrentCamera }\n\n    local result = workspace:Blockcast(cf, move.HitboxSize, direction, params)\n    if not result then return end\n\n    local model = result.Instance:FindFirstAncestorOfClass(\"Model\")\n    if not model then return end\n    local humanoid = model:FindFirstChildOfClass(\"Humanoid\")\n    if not humanoid or humanoid.Health <= 0 then return end\n    if self._activeHits[model] then return end\n\n    self._activeHits[model] = true\n    self._ctx.Remotes.KnifeHit:FireServer(model, result.Position, self._ctx.KnifeName, move.Name)\nend\n\nreturn CombatController\n"
+        SourceAssetId = -1
+        Tags = ""
+      ModuleScript "KnifeController" (32)
+        AttributesSerialize = ""
+        Capabilities = SecurityCapabilities(0x0)
+        DefinesCapabilities = false
+        LinkedSource = ""
+        ScriptGuid = "{39D2E9C2-CC7B-4338-AF09-E3A946B3F2DB}"
+        Source = "-- Made by @Cheeteau - https://www.roblox.com/users/925308243/profile\n--[[\n    Bridges Roblox Tools to the FPS combat system. Each knife under shared/knives\n    ships a Tool named \"Knife\" carrying a KnifeId attribute. This controller hooks\n    every such Tool's Equipped / Unequipped: on equip it resolves the config,\n    sets the active knife, builds the viewmodel (welding the Tool's Handle at the\n    grip), plays the equip clip + sound and enables combat; on unequip it plays\n    the unequip clip + sound, disables combat and tears the viewmodel down. It\n    also auto-equips the configured default knife on spawn.\n--]]\nlocal FPS = script:FindFirstAncestor(\"FPS\")\nlocal Registry = require(FPS.Shared.KnifeRegistry)\nlocal Audio = require(FPS.Client.Util.Audio)\n\nlocal KnifeController = {}\nKnifeController.__index = KnifeController\n\n--[[\n    Creates a knife controller.\n\n    @param {table} context - Shared FPS context (Player, Character, Humanoid, Config, Viewmodel, Animation)\n    @returns {KnifeController}\n--]]\nfunction KnifeController.new(context)\n    return setmetatable({ _ctx = context, _connections = {}, _equippedTool = nil }, KnifeController)\nend\n\n--[[\n    Hooks existing and future knife Tools, then auto-equips the default knife.\n\n    @returns {nil}\n--]]\nfunction KnifeController:Start()\n    local ctx = self._ctx\n    local player, character = ctx.Player, ctx.Character\n\n    local function hook(tool)\n        if typeof(tool) ~= \"Instance\" or not tool:IsA(\"Tool\") then return end\n        if not tool:GetAttribute(\"KnifeId\") then return end\n        table.insert(self._connections, tool.Equipped:Connect(function()\n            self:_onEquip(tool, tool:GetAttribute(\"KnifeId\"))\n        end))\n        table.insert(self._connections, tool.Unequipped:Connect(function()\n            self:_onUnequip(tool)\n        end))\n    end\n\n    local backpack = player:WaitForChild(\"Backpack\")\n    for _, t in backpack:GetChildren() do hook(t) end\n    for _, t in character:GetChildren() do hook(t) end\n    table.insert(self._connections, backpack.ChildAdded:Connect(hook))\n    table.insert(self._connections, character.ChildAdded:Connect(hook))\n\n    self:_autoEquipDefault(backpack)\nend\n\n--[[\n    Waits for the default knife Tool to be available and equips it.\n\n    @param {Backpack} backpack - The local player's backpack\n    @returns {nil}\n--]]\nfunction KnifeController:_autoEquipDefault(backpack)\n    local ctx = self._ctx\n    local default = ctx.Config.DefaultKnife\n    task.spawn(function()\n        local tool\n        local deadline = os.clock() + 5\n        repeat\n            for _, t in backpack:GetChildren() do\n                if t:IsA(\"Tool\") and t:GetAttribute(\"KnifeId\") == default then tool = t break end\n            end\n            if not tool then task.wait(0.1) end\n        until tool or os.clock() > deadline\n        if tool and ctx.Humanoid and ctx.Humanoid.Health > 0 then\n            ctx.Humanoid:EquipTool(tool)\n        end\n    end)\nend\n\n--[[\n    Activates a knife: sets context, builds the viewmodel, plays equip clip/SFX.\n\n    @param {Tool} tool - The equipped Tool\n    @param {string} id - Its KnifeId\n    @returns {nil}\n--]]\nfunction KnifeController:_onEquip(tool, id)\n    local ctx = self._ctx\n    local config = Registry[id]\n    if not config then return end\n    ctx.Knife = config\n    ctx.KnifeName = id\n    ctx.Equipped = true\n    self._equippedTool = tool\n    ctx.Viewmodel:BuildViewmodel(config, tool)\n    ctx.Animation:PlayClip(config.EquipAnimation)\n    Audio(config.EquipSFX, workspace.CurrentCamera)\nend\n\n--[[\n    Deactivates the current knife: disables combat, plays unequip clip/SFX, then\n    destroys the viewmodel (delayed if there is an unequip clip to show).\n\n    @param {Tool} tool - The unequipped Tool\n    @returns {nil}\n--]]\nfunction KnifeController:_onUnequip(tool)\n    local ctx = self._ctx\n    if self._equippedTool ~= tool then return end\n    ctx.Equipped = false\n    self._equippedTool = nil\n\n    local config = Registry[tool:GetAttribute(\"KnifeId\")]\n    if config then\n        Audio(config.UnequipSFX, workspace.CurrentCamera)\n        local track = ctx.Animation:PlayClip(config.UnequipAnimation)\n        if track then\n            local length = track.Length > 0 and track.Length or 0.4\n            task.delay(length, function() ctx.Viewmodel:Destroy() end)\n            return\n        end\n    end\n    ctx.Viewmodel:Destroy()\nend\n\n--[[\n    Disconnects all listeners.\n\n    @returns {nil}\n--]]\nfunction KnifeController:Destroy()\n    for _, c in self._connections do c:Disconnect() end\n    table.clear(self._connections)\nend\n\nreturn KnifeController\n"
+        SourceAssetId = -1
+        Tags = ""
+    Folder "Util" (33)
+      AttributesSerialize = ""
+      Capabilities = SecurityCapabilities(0x0)
+      DefinesCapabilities = false
+      IconTint = (0, 0, 0)
+      SourceAssetId = -1
+      Tags = ""
+      ModuleScript "StateMachine" (34)
+        AttributesSerialize = ""
+        Capabilities = SecurityCapabilities(0x0)
+        DefinesCapabilities = false
+        LinkedSource = ""
+        ScriptGuid = "{2460E6F3-A54D-4E7F-BCC6-F7654BE94D80}"
+        Source = "-- Made by @Cheeteau - https://www.roblox.com/users/925308243/profile\n--[[\n    A small finite state machine. States are strings; transitions are validated\n    against an allow-list. OnEnter / OnExit callbacks fire on change.\n--]]\nlocal StateMachine = {}\nStateMachine.__index = StateMachine\n\n--[[\n    Creates a new state machine.\n\n    @param {string} initial - The starting state\n    @param {{ [string]: { [string]: boolean } }} transitions - Map of state -> allowed next states\n    @returns {StateMachine}\n--]]\nfunction StateMachine.new(initial, transitions)\n    return setmetatable({\n        _state = initial, _transitions = transitions, _onEnter = {}, _onExit = {},\n    }, StateMachine)\nend\n\n--[[\n    Returns the current state.\n\n    @returns {string}\n--]]\nfunction StateMachine:Get()\n    return self._state\nend\n\n--[[\n    Checks whether the machine is in the given state.\n\n    @param {string} state - State to compare against\n    @returns {boolean}\n--]]\nfunction StateMachine:Is(state)\n    return self._state == state\nend\n\n--[[\n    Registers an enter callback.\n\n    @param {string} state - The state to watch\n    @param {() -> ()} fn - Callback\n    @returns {nil}\n--]]\nfunction StateMachine:OnEnter(state, fn)\n    self._onEnter[state] = fn\nend\n\n--[[\n    Registers an exit callback.\n\n    @param {string} state - The state to watch\n    @param {() -> ()} fn - Callback\n    @returns {nil}\n--]]\nfunction StateMachine:OnExit(state, fn)\n    self._onExit[state] = fn\nend\n\n--[[\n    Attempts a transition, respecting the allow-list.\n\n    @param {string} target - Desired next state\n    @returns {boolean} - True if the transition occurred\n--]]\nfunction StateMachine:Transition(target)\n    local allowed = self._transitions[self._state]\n    if not allowed or not allowed[target] then return false end\n    local exit = self._onExit[self._state]\n    if exit then exit() end\n    self._state = target\n    local enter = self._onEnter[target]\n    if enter then enter() end\n    return true\nend\n\nreturn StateMachine\n"
+        SourceAssetId = -1
+        Tags = ""
+      ModuleScript "Audio" (35)
+        AttributesSerialize = ""
+        Capabilities = SecurityCapabilities(0x0)
+        DefinesCapabilities = false
+        LinkedSource = ""
+        ScriptGuid = "{61B7F0E9-80B5-42E1-BB96-051A9D6D5B1B}"
+        Source = "-- Made by @Cheeteau - https://www.roblox.com/users/925308243/profile\n--[[\n    One-shot sound playback by asset id. Creates a temporary Sound under the\n    given parent (defaults to the camera), plays it, and cleans it up via Debris.\n    No-ops on a nil / empty id so configs can leave any SFX unset.\n--]]\nlocal Debris = game:GetService(\"Debris\")\n\n--[[\n    Plays a one-shot sound.\n\n    @param {string?} soundId - rbxassetid string, or nil/empty to skip\n    @param {Instance?} parent - Where to parent the Sound (default: current camera)\n    @returns {Sound?} - The created Sound, or nil if skipped\n--]]\nlocal function play(soundId, parent)\n    if not soundId or soundId == \"\" then return nil end\n    local sound = Instance.new(\"Sound\")\n    sound.SoundId = soundId\n    sound.Parent = parent or workspace.CurrentCamera\n    sound:Play()\n    Debris:AddItem(sound, 6)\n    return sound\nend\n\nreturn play\n"
+        SourceAssetId = -1
+        Tags = ""
+  Folder "Server" (36)
+    AttributesSerialize = ""
+    Capabilities = SecurityCapabilities(0x0)
+    DefinesCapabilities = false
+    IconTint = (0, 0, 0)
+    SourceAssetId = -1
+    Tags = ""
+    ModuleScript "CombatServer" (37)
+      AttributesSerialize = ""
+      Capabilities = SecurityCapabilities(0x0)
+      DefinesCapabilities = false
+      LinkedSource = ""
+      ScriptGuid = "{BD3029B6-0748-4263-8A9E-C32981F63C84}"
+      Source = "-- Made by @Cheeteau - https://www.roblox.com/users/925308243/profile\n--[[\n    Authoritative knife-combat server module. Gives each player the knife Tools\n    on spawn (cloned from Shared/Knives, renamed to the knife's display name),\n    validates client-reported hits (target validity, attacker cooldown, range\n    with a small latency tolerance) and applies damage. Knockback / hit-stun are\n    forwarded to the victim's client; NPC victims are pushed on the server.\n--]]\nlocal Players = game:GetService(\"Players\")\nlocal FPS = script:FindFirstAncestor(\"FPS\")\nlocal Registry = require(FPS.Shared.KnifeRegistry)\nlocal Remotes = FPS.Remotes\nlocal KnivesFolder = FPS.Shared.Knives\n\nlocal CombatServer = {}\nlocal lastAttack = {}\nlocal RANGE_TOLERANCE = 4\n\n--[[\n    Validates and applies a client-reported knife hit.\n\n    @param {Player} attacker - The firing player\n    @param {Model} target - The reported victim character\n    @param {Vector3} position - Reported hit position (advisory, for effects)\n    @param {string} knifeName - Knife id (registry key)\n    @param {string} moveName - Move key within the knife\n    @returns {nil}\n--]]\nlocal function onKnifeHit(attacker, target, position, knifeName, moveName)\n    local knife = Registry[knifeName]\n    if not knife then return end\n    local move = knife.Moves[moveName]\n    if not move then return end\n\n    local attackerChar = attacker.Character\n    local attackerHRP = attackerChar and attackerChar:FindFirstChild(\"HumanoidRootPart\")\n    if not attackerHRP then return end\n\n    local now = os.clock()\n    local total = move.Startup + move.Active + move.Endlag\n    if lastAttack[attacker] and (now - lastAttack[attacker]) < total * 0.9 then\n        return\n    end\n\n    if typeof(target) ~= \"Instance\" or not target:IsA(\"Model\") then return end\n    local humanoid = target:FindFirstChildOfClass(\"Humanoid\")\n    local targetHRP = target:FindFirstChild(\"HumanoidRootPart\")\n    if not humanoid or not targetHRP or humanoid.Health <= 0 then return end\n\n    local distance = (attackerHRP.Position - targetHRP.Position).Magnitude\n    if distance > move.Range + RANGE_TOLERANCE then return end\n\n    lastAttack[attacker] = now\n    humanoid:TakeDamage(move.Damage)\n\n    local flat = targetHRP.Position - attackerHRP.Position\n    flat = Vector3.new(flat.X, 0, flat.Z)\n    flat = flat.Magnitude > 0 and flat.Unit or attackerHRP.CFrame.LookVector\n    local impulse = flat * move.Knockback + Vector3.new(0, move.Knockback * 0.25, 0)\n\n    local targetPlayer = Players:GetPlayerFromCharacter(target)\n    if targetPlayer then\n        Remotes.Knockback:FireClient(targetPlayer, impulse, move.HitStun)\n    else\n        targetHRP.AssemblyLinearVelocity += impulse\n    end\n\n    Remotes.KnifeEffect:FireAllClients(attacker, target, position, moveName)\nend\n\n--[[\n    Clones every knife Tool into a player's backpack on each spawn, renaming each\n    clone to the knife's display name (its config Name) instead of \"Knife\".\n\n    @param {Player} player - The player to equip\n    @returns {nil}\n--]]\nlocal function giveKnives(player)\n    local function onChar()\n        local backpack = player:WaitForChild(\"Backpack\")\n        for _, t in backpack:GetChildren() do\n            if t:GetAttribute(\"KnifeId\") then t:Destroy() end\n        end\n        for _, folder in KnivesFolder:GetChildren() do\n            local template = folder:FindFirstChild(\"Knife\")\n            if template and template:IsA(\"Tool\") then\n                local clone = template:Clone()\n                local cfg = Registry[folder.Name]\n                clone.Name = (cfg and cfg.Name) or folder.Name\n                clone.Parent = backpack\n            end\n        end\n    end\n    player.CharacterAdded:Connect(onChar)\n    if player.Character then onChar() end\nend\n\n--[[\n    Starts the server: remote handlers, cleanup, and knife distribution.\n\n    @returns {nil}\n--]]\nfunction CombatServer.Start()\n    Remotes.KnifeHit.OnServerEvent:Connect(onKnifeHit)\n    Players.PlayerRemoving:Connect(function(p) lastAttack[p] = nil end)\n    for _, p in Players:GetPlayers() do giveKnives(p) end\n    Players.PlayerAdded:Connect(giveKnives)\nend\n\nreturn CombatServer\n"
+      SourceAssetId = -1
+      Tags = ""
+  Folder "Assets" (38)
+    AttributesSerialize = ""
+    Capabilities = SecurityCapabilities(0x0)
+    DefinesCapabilities = false
+    IconTint = (0, 0, 0)
+    SourceAssetId = -1
+    Tags = ""
+    Model "Viewmodel" (39)
+      AttributesSerialize = ""
+      Capabilities = SecurityCapabilities(0x0)
+      DefinesCapabilities = false
+      LevelOfDetail = 0 (Automatic)
+      ModelMeshCFrame = pos=(0.058190223, 3.9610727, -0.55364215) rot=[1.0, 2.7939673e-9, 5.2154057e-8, 0.0, 0.9999996, 0.0, 5.2154057e-8, 4.1633357e-17, 0.9999996]
+      ModelMeshData = ""
+      ModelMeshSize = (0, 0, 0)
+      ModelStreamingMode = 0 (Default)
+      NeedsPivotMigration = false
+      PrimaryPart = Ref(42)
+      ScaleFactor = 1
+      SlimHash = ""
+      SourceAssetId = -1
+      Tags = ""
+      WorldPivotData = pos=(0.592934, 5.1879344, 1.0553501) rot=[0.9945219, 0.014547551, -0.1035112, 0.0, 0.99026805, 0.1391731, 0.104528464, -0.1384107, 0.98484325]
+      AnimationController "AnimationController" (40)
+        AttributesSerialize = ""
+        Capabilities = SecurityCapabilities(0x0)
+        DefinesCapabilities = false
+        SourceAssetId = -1
+        Tags = ""
+        Animator "Animator" (41)
+          AttributesSerialize = ""
+          Capabilities = SecurityCapabilities(0x0)
+          DefinesCapabilities = false
+          PreferLodEnabled = true
+          SourceAssetId = -1
+          Tags = ""
+      Part "Root" (42)
+        Anchored = false
+        AttributesSerialize = ""
+        AudioCanCollide = true
+        BackParamA = -0.5
+        BackParamB = 0.5
+        BackSurface = 0 (Smooth)
+        BackSurfaceInput = 0 (NoInput)
+        BottomParamA = -0.5
+        BottomParamB = 0.5
+        BottomSurface = 0 (Smooth)
+        BottomSurfaceInput = 0 (NoInput)
+        CFrame = pos=(0.5929342, 5.1879334, 1.0553493) rot=[0.99452186, 0.014547542, -0.103511125, 0.0, 0.99026746, 0.13917302, 0.10452843, -0.13841064, 0.9848428]
+        CanCollide = false
+        CanQuery = false
+        CanTouch = false
+        Capabilities = SecurityCapabilities(0x0)
+        CastShadow = true
+        CollisionGroup = "Default"
+        CollisionGroupId = 0
+        Color3uint8 = (255, 255, 255)
+        CustomPhysicalProperties = Default
+        DefinesCapabilities = false
+        EnableFluidForces = true
+        FrontParamA = -0.5
+        FrontParamB = 0.5
+        FrontSurface = 0 (Smooth)
+        FrontSurfaceInput = 0 (NoInput)
+        LeftParamA = -0.5
+        LeftParamB = 0.5
+        LeftSurface = 0 (Smooth)
+        LeftSurfaceInput = 0 (NoInput)
+        Locked = false
+        Massless = true
+        Material = 272 (SmoothPlastic)
+        MaterialVariantSerialized = ""
+        PivotOffset = pos=(0, 0, 0) rot=[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+        Reflectance = 0
+        RightParamA = -0.5
+        RightParamB = 0.5
+        RightSurface = 0 (Smooth)
+        RightSurfaceInput = 0 (NoInput)
+        RootPriority = 0
+        RotVelocity = (0, 0, 0)
+        SourceAssetId = -1
+        Tags = ""
+        TopParamA = -0.5
+        TopParamB = 0.5
+        TopSurface = 0 (Smooth)
+        TopSurfaceInput = 0 (NoInput)
+        Transparency = 1
+        Velocity = (0, 0, 0)
+        formFactorRaw = 1
+        shape = 1
+        size = (0.2, 0.2, 0.2)
+        Motor6D "RightShoulder" (43)
+          AttributesSerialize = ""
+          C0 = pos=(0.7, -1, -1.9) rot=[0.9945219, 0.0, -0.104528464, -0.014547551, 0.99026805, -0.1384107, 0.1035112, 0.1391731, 0.98484325]
+          C1 = pos=(-0.44324285, -0.0000000000000042776443, -0.19428396) rot=[0.88633555, 2.0528955e-8, -0.46304384, -1.1849886e-9, 1.0, 4.2066556e-8, 0.46304384, -3.673638e-8, 0.8863356]
+          Capabilities = SecurityCapabilities(0x0)
+          DefinesCapabilities = false
+          DesiredAngle = 0
+          Enabled = true
+          MaxVelocity = 0
+          Part0 = Ref(42)
+          Part1 = Ref(45)
+          SourceAssetId = -1
+          Tags = ""
+        Motor6D "LeftShoulder" (44)
+          AttributesSerialize = ""
+          C0 = pos=(-0.7, -1, -1.7) rot=[0.9945219, 0.0, 0.104528464, 0.014547551, 0.99026805, -0.1384107, -0.1035112, 0.1391731, 0.98484325]
+          C1 = pos=(0.65415883, 0, -0.23954482) rot=[0.898734, 0.0, 0.4384944, 0.0, 1.0, 0.0, -0.43849444, 0.0, 0.8987339]
+          Capabilities = SecurityCapabilities(0x0)
+          DefinesCapabilities = false
+          DesiredAngle = 0
+          Enabled = true
+          MaxVelocity = 0
+          Part0 = Ref(42)
+          Part1 = Ref(47)
+          SourceAssetId = -1
+          Tags = ""
+      Part "RightArm" (45)
+        Anchored = false
+        AttributesSerialize = ""
+        AudioCanCollide = true
+        BackParamA = -0.5
+        BackParamB = 0.5
+        BackSurface = 0 (Smooth)
+        BackSurfaceInput = 0 (NoInput)
+        BottomParamA = -0.5
+        BottomParamB = 0.5
+        BottomSurface = 0 (Smooth)
+        BottomSurfaceInput = 0 (NoInput)
+        CFrame = pos=(1.9503655, 3.933237, -0.5362047) rot=[0.96323913, -9.313226e-9, 0.26864573, 2.6077032e-8, 0.99999934, -4.4703484e-8, -0.26864552, 2.9802322e-8, 0.9632388]
+        CanCollide = false
+        CanQuery = false
+        CanTouch = false
+        Capabilities = SecurityCapabilities(0x0)
+        CastShadow = true
+        CollisionGroup = "Default"
+        CollisionGroupId = 0
+        Color3uint8 = (225, 190, 160)
+        CustomPhysicalProperties = Default
+        DefinesCapabilities = false
+        EnableFluidForces = true
+        FrontParamA = -0.5
+        FrontParamB = 0.5
+        FrontSurface = 0 (Smooth)
+        FrontSurfaceInput = 0 (NoInput)
+        LeftParamA = -0.5
+        LeftParamB = 0.5
+        LeftSurface = 0 (Smooth)
+        LeftSurfaceInput = 0 (NoInput)
+        Locked = false
+        Massless = true
+        Material = 272 (SmoothPlastic)
+        MaterialVariantSerialized = ""
+        PivotOffset = pos=(0, 0, 0) rot=[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+        Reflectance = 0
+        RightParamA = -0.5
+        RightParamB = 0.5
+        RightSurface = 0 (Smooth)
+        RightSurfaceInput = 0 (NoInput)
+        RootPriority = 0
+        RotVelocity = (0, 0, 0)
+        SourceAssetId = -1
+        Tags = ""
+        TopParamA = -0.5
+        TopParamB = 0.5
+        TopSurface = 0 (Smooth)
+        TopSurfaceInput = 0 (NoInput)
+        Transparency = 0
+        Velocity = (0, 0, 0)
+        formFactorRaw = 1
+        shape = 1
+        size = (1, 1, 2.5)
+        Attachment "GripPoint" (46)
+          AttributesSerialize = ""
+          CFrame = pos=(0, 0, -1) rot=[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+          Capabilities = SecurityCapabilities(0x0)
+          DefinesCapabilities = false
+          SourceAssetId = -1
+          Tags = ""
+          Visible = false
+      Part "LeftArm" (47)
+        Anchored = false
+        AttributesSerialize = ""
+        AudioCanCollide = true
+        BackParamA = -0.5
+        BackParamB = 0.5
+        BackSurface = 0 (Smooth)
+        BackSurfaceInput = 0 (NoInput)
+        BottomParamA = -0.5
+        BottomParamB = 0.5
+        BottomSurface = 0 (Smooth)
+        BottomSurfaceInput = 0 (NoInput)
+        CFrame = pos=(-0.63476354, 3.961072, -0.6252007) rot=[0.89873385, 0.0, -0.43849453, 0.0, 1.0, 0.0, 0.43849447, 0.0, 0.8987339]
+        CanCollide = false
+        CanQuery = false
+        CanTouch = false
+        Capabilities = SecurityCapabilities(0x0)
+        CastShadow = true
+        CollisionGroup = "Default"
+        CollisionGroupId = 0
+        Color3uint8 = (225, 190, 160)
+        CustomPhysicalProperties = Default
+        DefinesCapabilities = false
+        EnableFluidForces = true
+        FrontParamA = -0.5
+        FrontParamB = 0.5
+        FrontSurface = 0 (Smooth)
+        FrontSurfaceInput = 0 (NoInput)
+        LeftParamA = -0.5
+        LeftParamB = 0.5
+        LeftSurface = 0 (Smooth)
+        LeftSurfaceInput = 0 (NoInput)
+        Locked = false
+        Massless = true
+        Material = 272 (SmoothPlastic)
+        MaterialVariantSerialized = ""
+        PivotOffset = pos=(0, 0, 0) rot=[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+        Reflectance = 0
+        RightParamA = -0.5
+        RightParamB = 0.5
+        RightSurface = 0 (Smooth)
+        RightSurfaceInput = 0 (NoInput)
+        RootPriority = 0
+        RotVelocity = (0, 0, 0)
+        SourceAssetId = -1
+        Tags = ""
+        TopParamA = -0.5
+        TopParamB = 0.5
+        TopSurface = 0 (Smooth)
+        TopSurfaceInput = 0 (NoInput)
+        Transparency = 0
+        Velocity = (0, 0, 0)
+        formFactorRaw = 1
+        shape = 1
+        size = (1, 1, 2.5)
