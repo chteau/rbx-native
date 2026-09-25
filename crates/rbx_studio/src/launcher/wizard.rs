@@ -96,16 +96,23 @@ impl Wizard {
         self.saving = true;
         self.save_error = None;
         cx.notify();
+        let session_key = key.clone();
         cx.spawn(async move |this, cx| {
             let result = crate::key_store::save(key, cx).await;
             let _ = this.update(cx, |this, cx| {
                 this.saving = false;
                 match result {
                     Ok(()) => this.step = Step::Done,
+                    // No keychain to write to (no session bus, no Secret
+                    // Service): the key still works until the app closes,
+                    // and setup opens again next launch. Never a plaintext
+                    // fallback.
                     Err(err) => {
+                        rbx_cloud::ApiKey::install(Some(session_key));
                         this.save_error = Some(format!(
-                            "The key couldn\u{2019}t be stored in your system keychain: {err}"
-                        ))
+                            "Your system keychain couldn\u{2019}t be reached, so the key works until RbxNative closes and setup opens again next launch. ({err})"
+                        ));
+                        this.step = Step::Done;
                     }
                 }
                 cx.notify();
@@ -233,9 +240,6 @@ impl Wizard {
                     "Optional permissions only switch features on. Add them to the key on the Creator Dashboard any time, then check again.",
                 ))
             })
-            .children(self.save_error.clone().map(|error| {
-                ui::text(11.5, 16.).text_color(ui::red()).child(error)
-            }))
             .into_any_element()
     }
 
@@ -273,11 +277,18 @@ impl Wizard {
                 v_flex()
                     .gap(px(10.))
                     .child(Self::feature_card("key-round", summary.0.into(), summary.1.into()))
-                    .child(Self::feature_card(
-                        "shield-check",
-                        "Stored encrypted in your system keychain".into(),
-                        "Your IP restriction and expiration are what make a copied key useless, so keep them on.".into(),
-                    ))
+                    .child(match &self.save_error {
+                        None => Self::feature_card(
+                            "shield-check",
+                            "Stored encrypted in your system keychain".into(),
+                            "Your IP restriction and expiration are what make a copied key useless, so keep them on.".into(),
+                        ),
+                        Some(error) => Self::feature_card(
+                            "triangle-alert",
+                            "Not stored: this session only".into(),
+                            error.clone().into(),
+                        ),
+                    })
                     .child(Self::feature_card(
                         "refresh-cw",
                         "Change it any time".into(),

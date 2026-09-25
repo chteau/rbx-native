@@ -21,6 +21,12 @@
   reach its owner's private experiences, so without it My Games would
   miss them silently. `rbxcloud check` prints the same pass/fail list the
   launcher shows. — @chteau
+- **`rbxstudio --setup` opens the API key wizard even with a key
+  stored**; a key saved there replaces the stored one. When the system
+  keychain can't be reached, the wizard still finishes: the key works
+  until the app closes and Done says it wasn't stored. Home's Open file
+  now reports a file picker that can't open instead of doing nothing.
+  — @chteau
 
 ## 2026-09-24
 

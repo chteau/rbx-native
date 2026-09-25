@@ -145,11 +145,29 @@ impl HomeWindow {
             prompt: Some("Open".into()),
         });
         cx.spawn(async move |this, cx| {
-            if let Ok(Ok(Some(paths))) = picked.await {
-                if let Some(path) = paths.into_iter().next() {
-                    let _ = this.update(cx, |this, cx| this.open_path_later(path, cx));
+            let picked = match picked.await {
+                Ok(picked) => picked,
+                Err(_) => return,
+            };
+            let _ = this.update(cx, |this, cx| match picked {
+                Ok(Some(paths)) => {
+                    if let Some(path) = paths.into_iter().next() {
+                        this.open_path_later(path, cx);
+                    }
                 }
-            }
+                Ok(None) => {}
+                // No file chooser portal, or no session bus to reach one:
+                // say so instead of a button that does nothing.
+                Err(err) => {
+                    this.dialog = Some(Dialog::Error {
+                        experience: None,
+                        title: "Couldn\u{2019}t open the file picker".to_string(),
+                        status: None,
+                        reason: format!("{err:#}"),
+                    });
+                    cx.notify();
+                }
+            });
         })
         .detach();
     }
