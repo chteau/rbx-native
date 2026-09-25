@@ -4,7 +4,7 @@
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
-use rbx_cloud::{Experience, Owner};
+use rbx_cloud::Experience;
 
 use super::*;
 use crate::launcher::home_window::{Games, HomeWindow};
@@ -52,62 +52,76 @@ impl HomeWindow {
                     cx,
                 )
                 .into_any_element(),
-            Games::Loaded(list) if list.experiences.is_empty() => self
-                .empty_state(
-                    "No experiences to show",
-                    "Your key sees every experience you own, public and private. Publish a new place, or add one you can edit by its place ID or link.".to_string(),
-                    true,
-                    cx,
-                )
-                .into_any_element(),
-            Games::Loaded(list) => {
+            Games::Loaded(_) => {
                 let query = self.search.read(cx).value().to_lowercase();
-                let shown: Vec<Experience> = list
-                    .experiences
-                    .iter()
+                let games: Vec<Experience> = self
+                    .owner_games()
+                    .into_iter()
                     .filter(|e| query.is_empty() || e.name.to_lowercase().contains(&query))
-                    .cloned()
                     .collect();
-                let personal: Vec<Experience> =
-                    shown.iter().filter(|e| matches!(e.owner, Owner::User(_))).cloned().collect();
-                let mut group_ids: Vec<u64> = shown
-                    .iter()
-                    .filter_map(|e| match e.owner {
-                        Owner::Group(id) => Some(id),
-                        _ => None,
-                    })
-                    .collect();
-                group_ids.dedup();
-                let groups: Vec<(String, Vec<Experience>)> = group_ids
-                    .iter()
-                    .map(|&id| {
-                        let name = list
-                            .groups
+                let group = self.owner;
+                let fetching = group.is_some() && self.group_loading == group;
+                let busy = if group.is_some() {
+                    fetching
+                } else {
+                    self.refreshing
+                };
+                let (glyph, title): (&'static str, SharedString) = match group {
+                    None => ("house", "Personal".into()),
+                    Some(id) => (
+                        "users",
+                        self.owner_options
                             .iter()
-                            .find(|g| g.id == id)
-                            .map(|g| g.name.clone())
-                            .unwrap_or_else(|| format!("Group {id}"));
-                        let games = shown
-                            .iter()
-                            .filter(|e| e.owner == Owner::Group(id))
-                            .cloned()
-                            .collect();
-                        (name, games)
-                    })
-                    .collect();
+                            .find(|(o, _)| *o == Some(id))
+                            .map(|(_, name)| name.clone())
+                            .unwrap_or_else(|| format!("Group {id}").into()),
+                    ),
+                };
+                let section: AnyElement = if !games.is_empty() {
+                    self.games_section(glyph, title, &games, busy, grid, cx)
+                        .into_any_element()
+                } else if fetching {
+                    v_flex()
+                        .gap(px(12.))
+                        .child(self.section_head_busy(glyph, title, true))
+                        .child(self.skeleton_row(grid, grid.columns))
+                        .into_any_element()
+                } else if group.is_some() || !query.is_empty() {
+                    v_flex()
+                        .gap(px(12.))
+                        .child(self.section_head_busy(glyph, title, false))
+                        .child(ui::text(12.5, 19.).text_color(tokens::text2()).child(
+                            if query.is_empty() {
+                                "This group has no public experiences."
+                            } else {
+                                "No experience matches."
+                            },
+                        ))
+                        .into_any_element()
+                } else {
+                    return v_flex()
+                        .gap(px(20.))
+                        .child(head)
+                        .child(self.empty_state(
+                            "No experiences to show",
+                            "Your key sees every experience you own, public and private. Publish a new place, or add one you can edit by its place ID or link.".to_string(),
+                            true,
+                            cx,
+                        ))
+                        .into_any_element();
+                };
                 v_flex()
                     .gap(px(20.))
-                    .when(self.note_visible(), |this| this.child(self.partial_note(cx)))
+                    .when(self.note_visible(), |this| {
+                        this.child(self.partial_note(cx))
+                    })
                     .when(!self.note_visible() && self.link_open, |this| {
                         this.child(self.link_row(cx))
                     })
-                    .when(!personal.is_empty(), |this| {
-                        this.child(self.games_section("house", "Personal".into(), &personal, grid, cx))
+                    .child(section)
+                    .when(group.is_none() && self.groups_off(), |this| {
+                        this.child(self.groups_off_note(None, cx))
                     })
-                    .children(groups.into_iter().map(|(name, games)| {
-                        self.games_section("users", name.into(), &games, grid, cx)
-                    }))
-                    .when(self.groups_off(), |this| this.child(self.groups_off_note(None, cx)))
                     .into_any_element()
             }
         };
@@ -123,25 +137,48 @@ impl HomeWindow {
         glyph: &'static str,
         title: SharedString,
         games: &[Experience],
+        busy: bool,
         grid: &Grid,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         v_flex()
             .gap(px(12.))
             .child(
-                h_flex()
-                    .h(px(22.))
-                    .items_center()
-                    .gap(px(8.))
-                    .child(ui::icon(glyph, 12.).text_color(tokens::text3()))
-                    .child(Self::section_title(title))
-                    .child(
-                        ui::mono(11., 15.)
-                            .text_color(tokens::text3())
-                            .child(games.len().to_string()),
-                    ),
+                self.section_head_busy(glyph, title, busy).child(
+                    ui::mono(11., 15.)
+                        .text_color(tokens::text3())
+                        .child(games.len().to_string()),
+                ),
             )
             .child(self.card_row(games, grid, cx))
+    }
+
+    /// A section's glyph and title, and "Updating…" while a cached list is
+    /// being refreshed from Roblox.
+    pub(super) fn section_head_busy(
+        &self,
+        glyph: &'static str,
+        title: SharedString,
+        busy: bool,
+    ) -> Div {
+        h_flex()
+            .h(px(22.))
+            .items_center()
+            .gap(px(8.))
+            .child(ui::icon(glyph, 12.).text_color(tokens::text3()))
+            .child(Self::section_title(title))
+            .when(busy, |this| {
+                this.child(
+                    h_flex()
+                        .ml(px(4.))
+                        .gap(px(6.))
+                        .text_size(px(11.5))
+                        .line_height(px(16.))
+                        .text_color(tokens::text3())
+                        .child(ui::spinner("games-updating", 12.))
+                        .child("Updating\u{2026}"),
+                )
+            })
     }
 
     pub(super) fn card_row(

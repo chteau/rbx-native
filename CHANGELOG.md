@@ -27,6 +27,16 @@
   until the app closes and Done says it wasn't stored. Home's Open file
   now reports a file picker that can't open instead of doing nothing.
   — @chteau
+- **My Games opens from a cache and picks an owner from a dropdown.**
+  The last listing and its icons are kept on disk per account, so Home
+  shows them at once and refreshes in the background ("Updating…"),
+  downloading only icons that changed. A dropdown next to the title
+  switches between your own games and each group you manage; a group's
+  games are fetched when it is picked, since Roblox rate-limits the group
+  listing to a few requests every five seconds, which made fetching every
+  group up front take tens of seconds. The personal listing's lookups run
+  in parallel: about 2.5 s instead of 25 on an account with 40 created
+  places and 15 groups. — @chteau
 
 ## 2026-09-24
 

@@ -11,6 +11,8 @@ mod sidebar;
 use std::sync::Arc;
 
 use chrono::{Datelike, Local, TimeZone};
+use gpui_kit::component::select::SearchableVec;
+use gpui_kit::component::IndexPath;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::*;
 use rbx_cloud::Visibility;
@@ -55,6 +57,23 @@ impl HomeWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        if self.owner_options_dirty {
+            self.owner_options_dirty = false;
+            let labels: Vec<SharedString> = self
+                .owner_options
+                .iter()
+                .map(|(_, label)| label.clone())
+                .collect();
+            let selected = self
+                .owner_options
+                .iter()
+                .position(|(owner, _)| *owner == self.owner)
+                .unwrap_or(0);
+            self.owner_select.update(cx, |select, cx| {
+                select.set_items(SearchableVec::new(labels), window, cx);
+                select.set_selected_index(Some(IndexPath::new(selected)), window, cx);
+            });
+        }
         let grid = Grid::new(window);
         let crumb = match self.page {
             Page::Home => "Home",

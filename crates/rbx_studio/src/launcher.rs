@@ -16,6 +16,7 @@ use gpui_kit::*;
 
 use crate::tokens;
 
+mod cache;
 mod fixtures;
 mod home_window;
 mod key_check;

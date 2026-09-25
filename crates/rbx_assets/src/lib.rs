@@ -18,7 +18,7 @@ mod sniff;
 mod sober;
 
 pub use asset_ref::AssetRef;
-pub use cache::AssetCache;
+pub use cache::{cache_root, AssetCache};
 pub use decode::decode_image;
 pub use error::{AssetError, AssetRefError, CacheError, FetchError};
 pub use native::NativeContent;

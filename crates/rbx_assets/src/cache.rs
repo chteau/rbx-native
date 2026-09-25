@@ -60,23 +60,27 @@ impl AssetCache {
 }
 
 fn default_cache_dir() -> Result<PathBuf, CacheError> {
+    cache_root()
+        .map(|root| root.join("assets"))
+        .ok_or(CacheError::NoCacheDir)
+}
+
+/// This project's per-user cache folder — `$XDG_CACHE_HOME/rbx-native`,
+/// `%LOCALAPPDATA%\rbx-native`, or `~/.cache/rbx-native` — which the asset
+/// cache and anything else disposable live under.
+pub fn cache_root() -> Option<PathBuf> {
     if let Some(xdg) = non_empty_env("XDG_CACHE_HOME") {
-        return Ok(PathBuf::from(xdg).join("rbx-native").join("assets"));
+        return Some(PathBuf::from(xdg).join("rbx-native"));
     }
     // Windows has no XDG/HOME convention of its own; %LOCALAPPDATA% is its
     // non-roaming per-user data dir, the natural match for a cache. Checked
     // before HOME so a Windows-native launch never depends on HOME being set
     // (it usually isn't, outside Git Bash/WSL).
     if let Some(local) = non_empty_env("LOCALAPPDATA") {
-        return Ok(PathBuf::from(local).join("rbx-native").join("assets"));
+        return Some(PathBuf::from(local).join("rbx-native"));
     }
-    if let Some(home) = non_empty_env("HOME") {
-        return Ok(PathBuf::from(home)
-            .join(".cache")
-            .join("rbx-native")
-            .join("assets"));
-    }
-    Err(CacheError::NoCacheDir)
+    let home = non_empty_env("HOME")?;
+    Some(PathBuf::from(home).join(".cache").join("rbx-native"))
 }
 
 fn non_empty_env(key: &str) -> Option<String> {
