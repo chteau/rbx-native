@@ -1,11 +1,12 @@
 //! Pointer capture while the camera looks around.
 //!
 //! GPUI exposes no pointer-lock API at all, so the lock is spoken straight to
-//! the X server: hide the cursor, then warp it back to the viewport centre after
-//! every reported move. That is what keeps a long look drag from wandering onto
-//! the Explorer and losing the rest of the turn. Wayland's equivalent lives in a
-//! protocol GPUI does not forward, so there the look keeps working exactly as it
-//! did, with a visible cursor and no capture (see [`server`]).
+//! the windowing system — the X server, or Win32: hide the cursor, then warp it
+//! back to the viewport centre after every reported move. That is what keeps a
+//! long look drag from wandering onto the Explorer and losing the rest of the
+//! turn. Wayland's equivalent lives in a protocol GPUI does not forward, so
+//! there the look keeps working exactly as it did, with a visible cursor and no
+//! capture (see [`server`]).
 
 mod server;
 
@@ -14,12 +15,18 @@ use raw_window_handle::RawWindowHandle;
 
 use server::Server;
 
-/// A pointer position inside the X11 window GPUI drew, in physical pixels.
+/// A pointer position inside the window GPUI drew, in physical pixels.
 type At = (i16, i16);
+
+/// The native window GPUI drew: an X11 window id, or a Win32 `HWND`.
+#[cfg(not(windows))]
+pub(crate) type WindowId = u32;
+#[cfg(windows)]
+pub(crate) type WindowId = isize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Anchor {
-    window: u32,
+    window: WindowId,
     centre: At,
     /// Where the pointer sat when the look started, so releasing puts it back
     /// under the user's hand instead of in the middle of the viewport.
@@ -34,7 +41,7 @@ struct Tracker {
 }
 
 impl Tracker {
-    fn start(&mut self, window: u32, centre: At, at: At) {
+    fn start(&mut self, window: WindowId, centre: At, at: At) {
         self.anchor = Some(Anchor {
             window,
             centre,
@@ -67,8 +74,8 @@ impl Tracker {
 
 pub(crate) struct PointerLock {
     tracker: Tracker,
-    /// `None` when this is not an X11 session, or when the display refused a
-    /// second connection: the look then behaves as it did before any lock.
+    /// `None` when this is neither an X11 session nor Windows, or when the
+    /// display refused a second connection: the look then behaves as it did before any lock.
     server: Option<Server>,
 }
 
@@ -81,9 +88,10 @@ impl PointerLock {
     }
 
     /// Hides the cursor and pins it to `centre`, in physical pixels relative to
-    /// `window`, until [`PointerLock::release`]. Does nothing off X11, and
+    /// `window`, until [`PointerLock::release`]. Does nothing off X11 and
+    /// Windows, and
     /// nothing at all if the pointer cannot be located.
-    pub(crate) fn hold(&mut self, window: u32, centre: At) {
+    pub(crate) fn hold(&mut self, window: WindowId, centre: At) {
         let Some(server) = &self.server else {
             return;
         };
@@ -126,14 +134,18 @@ impl PointerLock {
     }
 }
 
-/// The X11 id of the window GPUI drew, `None` on every other backend.
-pub(crate) fn window_id(window: &Window) -> Option<u32> {
+/// The X11 id or `HWND` of the window GPUI drew, `None` on every other backend.
+pub(crate) fn window_id(window: &Window) -> Option<WindowId> {
     // GPUI's inherent `window_handle` is its own handle type, so the raw one has
     // to be asked for through the trait by name.
     let handle = raw_window_handle::HasWindowHandle::window_handle(window).ok()?;
     match handle.as_raw() {
+        #[cfg(not(windows))]
         RawWindowHandle::Xcb(handle) => Some(handle.window.get()),
+        #[cfg(not(windows))]
         RawWindowHandle::Xlib(handle) => narrow_x11_id(handle.window),
+        #[cfg(windows)]
+        RawWindowHandle::Win32(handle) => Some(handle.hwnd.get()),
         _ => None,
     }
 }
@@ -145,6 +157,7 @@ pub(crate) fn window_id(window: &Window) -> Option<u32> {
 /// over `TryInto` it is the same code on every target, where a concrete
 /// `u32::try_from` is a same-type conversion clippy rejects wherever the widths
 /// happen to match.
+#[cfg(not(windows))]
 fn narrow_x11_id<T: TryInto<u32>>(id: T) -> Option<u32> {
     id.try_into().ok()
 }
@@ -165,11 +178,13 @@ fn x11_session(session: Option<&str>, wayland: Option<&str>) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(windows))]
+    use super::narrow_x11_id;
     #[cfg(target_os = "linux")]
     use super::x11_session;
-    use super::{narrow_x11_id, Tracker};
+    use super::{Tracker, WindowId};
 
-    const WINDOW: u32 = 0x42;
+    const WINDOW: WindowId = 0x42;
     const CENTRE: (i16, i16) = (750, 450);
 
     fn holding() -> Tracker {
@@ -227,6 +242,7 @@ mod tests {
     // Xlib hands the id over as a C `unsigned long`, whatever width that is on
     // the target: a wide one that does not fit the protocol's 32 bits names no
     // window, and a narrow one always fits.
+    #[cfg(not(windows))]
     #[test]
     fn an_xlib_id_is_narrowed_to_the_protocols_width() {
         assert_eq!(narrow_x11_id(WINDOW), Some(WINDOW));
