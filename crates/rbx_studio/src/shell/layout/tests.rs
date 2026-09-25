@@ -334,6 +334,65 @@ fn a_landing_below_the_dock_it_emptied_still_lands_right() {
     );
 }
 
+/// Splitting a dock off its own two-tab dock, below it: the dock it came
+/// from is still there, so the index must not shift — it did, and the
+/// panel landed *above* the dock it was aimed below.
+#[test]
+fn a_tab_split_below_its_own_dock_lands_below() {
+    let mut layout = Layout::default();
+    layout.apply(
+        Panel::Properties,
+        Landing::Tab {
+            edge: Edge::Right,
+            group: 0,
+            tab: 1,
+        },
+    );
+    assert_eq!(
+        shape(&layout, Edge::Right),
+        [[Panel::Explorer, Panel::Properties]]
+    );
+
+    layout.apply(
+        Panel::Properties,
+        Landing::NewGroup {
+            edge: Edge::Right,
+            group: 1,
+        },
+    );
+    assert_eq!(
+        shape(&layout, Edge::Right),
+        [vec![Panel::Explorer], vec![Panel::Properties]]
+    );
+}
+
+/// A lone tab dropped on its own strip with a dock below it: taking it out
+/// removes its dock, and the drop must not fall through to the next one.
+#[test]
+fn a_lone_tab_dropped_on_its_own_strip_does_not_join_the_next_dock() {
+    let mut layout = Layout::default();
+    layout.apply(
+        Panel::Properties,
+        Landing::NewGroup {
+            edge: Edge::Right,
+            group: 1,
+        },
+    );
+    layout.apply(
+        Panel::Explorer,
+        Landing::Tab {
+            edge: Edge::Right,
+            group: 0,
+            tab: 0,
+        },
+    );
+
+    assert_eq!(
+        shape(&layout, Edge::Right),
+        [vec![Panel::Explorer], vec![Panel::Properties]]
+    );
+}
+
 /// An edge nobody put anything on holds nothing, which is what lets the
 /// document take its room.
 #[test]

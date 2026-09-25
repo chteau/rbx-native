@@ -120,9 +120,6 @@ impl Shell {
         let splits = self.split_targets(edge, index, cx);
 
         v_flex()
-            // Positioned, because the split halves are laid over its
-            // content while a drag is in flight.
-            .relative()
             .flex_1()
             .overflow_hidden()
             // A seam between two docks sharing an edge: flush against one
@@ -135,8 +132,17 @@ impl Shell {
                 }
             })
             .child(self.tab_strip(edge, index, tabs, trailing, active.has_toolbar(), cx))
-            .children(content)
-            .children(splits)
+            // The split halves cover the content only, never the strip: a
+            // later-painted overlay takes the drop first, so halves laid
+            // over the whole dock would swallow every drop aimed at a tab.
+            .child(
+                v_flex()
+                    .relative()
+                    .flex_1()
+                    .overflow_hidden()
+                    .children(content)
+                    .children(splits),
+            )
             .into_any_element()
     }
 
@@ -283,7 +289,6 @@ impl Shell {
     /// every editor with movable panels uses — and the reason the panel's
     /// own name had to become data (see `shell::layout`) rather than the
     /// function that drew it.
-    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]
     fn dock_tab(
         &self,

@@ -368,7 +368,7 @@ impl Layout {
         // Read before detaching: the indices a landing carries were
         // computed against the layout as it stands, and taking the panel
         // out first can shift them.
-        let from = self.home_of(panel);
+        let emptied = self.emptied_by_moving(panel);
         match landing {
             Landing::Float => {
                 if self.home_of(panel) == Home::Floating {
@@ -379,9 +379,10 @@ impl Layout {
             }
             Landing::Tab { edge, group, tab } => {
                 self.detach(panel);
-                let index = self.shifted(edge, group, from);
+                let index = Self::shifted(edge, group, emptied);
+                let own = emptied == Some((edge, group));
                 let groups = &mut self.edges[edge.index()];
-                match groups.get_mut(index) {
+                match groups.get_mut(index).filter(|_| !own) {
                     Some(target) => {
                         let at = tab.min(target.panels.len());
                         target.panels.insert(at, panel);
@@ -395,7 +396,7 @@ impl Layout {
             }
             Landing::NewGroup { edge, group } => {
                 self.detach(panel);
-                let index = self.shifted(edge, group, from);
+                let index = Self::shifted(edge, group, emptied);
                 let groups = &mut self.edges[edge.index()];
                 let at = index.min(groups.len());
                 groups.insert(at, Group::new(panel));
@@ -403,16 +404,29 @@ impl Layout {
         }
     }
 
-    /// A group index, corrected for the group that `detach` may have just
-    /// removed from the same edge above it.
-    fn shifted(&self, edge: Edge, group: usize, from: Home) -> usize {
-        match from {
-            Home::Docked {
-                edge: was,
-                group: index,
-            } if was == edge && index < group && self.edges[edge.index()].len() < group + 1 => {
-                group - 1
+    /// The dock that taking `panel` out would remove — the one it is the
+    /// last tab of — if any. Asked before the detach, because afterwards
+    /// the edge's length cannot tell "removed" from "never there".
+    fn emptied_by_moving(&self, panel: Panel) -> Option<(Edge, usize)> {
+        match self.home_of(panel) {
+            Home::Docked { edge, group }
+                if self
+                    .groups(edge)
+                    .get(group)
+                    .map(|held| held.panels.as_slice())
+                    == Some(&[panel]) =>
+            {
+                Some((edge, group))
             }
+            _ => None,
+        }
+    }
+
+    /// A group index, corrected for the dock that `detach` just removed
+    /// from the same edge above it.
+    fn shifted(edge: Edge, group: usize, emptied: Option<(Edge, usize)>) -> usize {
+        match emptied {
+            Some((was, index)) if was == edge && index < group => group - 1,
             _ => group,
         }
     }
