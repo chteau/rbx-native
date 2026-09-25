@@ -762,6 +762,35 @@ Roblox's own engine.
     named function in the current script (`function a.b:c`,
     `local function f`, `local f = function`) with its line, filtered as
     you type.
+- [x] **A launcher: API key setup wizard, Home, Roblox publishing.** A
+  bare `rbxstudio` opens the wizard on first launch (no key stored) and
+  Home after that; `rbxstudio <file>` still opens the editor directly.
+  - **Setup wizard**: walks the Creator Dashboard's real steps (deep
+    link to its API Keys tab, a three-slide walk-through, the settings to
+    use, with restricting by experience and IP/expiration recommended),
+    then checks the pasted key against `api-keys/v1/introspect` and lists
+    every permission it holds or lacks. Three are required —
+    `universe-places:write`, `legacy-asset:manage`,
+    `user.inventory-item:read` — and 22 are optional, each switching on
+    one feature (`rbx_cloud::scopes`; `rbxcloud check` prints the same
+    list). The key form cannot be prefilled from a link: the Dashboard
+    reads nothing but `?activeTab=`.
+  - **Key storage**: the OS credential store (Keychain, Credential
+    Manager, Secret Service) through GPUI's credentials API, never a
+    plaintext file; an old `api_key` file is moved in and deleted once
+    the store reads it back. It is encrypted at rest; a program already
+    running as the same user can still ask the store for it, which is
+    why the wizard pushes IP restriction and expiry.
+  - **Home**: New (Baseplate, Open a file), Recent (last 20, with the
+    Roblox place each file came from), My Games (personal and group
+    experiences with their icons). Private experiences come from the
+    Inventory API's `CREATED_PLACE` listing — Open Cloud has no "list my
+    universes" endpoint, and the Dashboard's own one is cookie-only —
+    and any single one can be added by its place ID or link. Opening a
+    game downloads it into a local copy without overwriting an existing
+    one unasked.
+  - **Roblox publishing**: the stored key's status and permissions,
+    Check again, Replace key, Remove key.
 - [x] **Throttled render loop while the window is unfocused.** Losing OS
   focus (`gpui`'s window activation) caps the viewport's render thread —
   not just the UI thread's own poll rate — to a user-chosen preset, 25 or
@@ -1877,41 +1906,13 @@ against `Roblox/creator-docs` rather than assumed:
   item under "Save/Publish to Roblox from the editor UI" above — that one
   is versions Roblox's servers already have; this one is unsaved local
   work surviving a crash before anything was ever published at all.
-- [ ] 📋 **A Home/launcher screen**, replacing today's file-path-only
-  launch (`rbxstudio <file.rbxl>`) with something closer to real Studio's
-  own start screen. Real Studio's current one has three real, documented
-  areas: **New** (starter templates — Baseplate and Flat Terrain cover the
-  minimum useful set; real Studio's own list is much longer and keeps
-  growing, worth treating as a starting point rather than a fixed target),
-  **My Games**/experiences (a grid or list of places, with thumbnails),
-  and **Recent** (recently opened places). Sorting and grouping by
-  personal vs. group-owned experiences is real Studio behavior too, but
-  its exact current UI wasn't confirmed here — Roblox's own start screen
-  is itself reportedly mid-redesign — worth checking against a real
-  Studio instance rather than guessing at specifics not to be found in
-  today's docs. One thing **not** to copy: real Studio has no account
-  -switcher at all, a genuine, well-known pain point for anyone who
-  manages more than one Roblox account — if this project builds one, it's
-  an rbx-native improvement over Studio, not parity with it, and worth
-  being honest about which it is rather than presenting it as matching an
-  existing Studio feature. No existing open-source tool (Rojo included)
-  was found with a comparable multi-project launcher to learn from either
-  — this would be a genuinely original piece of UI design for this
-  project, not an adaptation of prior art.
-- [ ] 📋 **A first-run setup wizard for the Open Cloud API key** this
-  project already depends on for Save/Publish (see above) — rbx-native's
-  own onboarding need, not a Studio-parity item, since real Studio never
-  asks for one at all (it authenticates by an ordinary Roblox account
-  login this project has no way to perform, not being an authorized
-  first-party client). Walk the exact real steps rather than a bare
-  "paste your key" field: the Creator Dashboard's API Keys tab
-  (`create.roblox.com/dashboard/credentials?activeTab=ApiKeysTab`) →
-  Create API Key → name it → System = **Places API** → scope to one
-  specific experience (or knowingly leave it unrestricted) → choose which
-  read/write operations it grants → optional IP restriction and
-  expiration → Save & Generate — ending with the generated key pasted
-  into this project's own settings. A deep link straight to that
-  Dashboard URL, opened from inside the wizard, saves hunting for it.
+- [ ] 📋 **More New templates on Home.** Home's New section has Baseplate
+  only. Flat Terrain needs a `Terrain.SmoothGrid` writer, which nothing
+  in the tree has yet; a terrain template without its voxels would be a
+  Baseplate by another name. Real Studio's own list keeps growing, so
+  treat it as a starting point. An account switcher (one key per Roblox
+  account) would be an rbx-native addition, not Studio parity — real
+  Studio has none.
 - [ ] 📋 **A Game Settings dialog**, matching real Studio's own (`Home` tab
   → Game Settings, checked against `studio/experience-settings.md` rather
   than assumed) rather than requiring every place-level setting to be
