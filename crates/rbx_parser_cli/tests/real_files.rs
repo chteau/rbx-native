@@ -83,3 +83,52 @@ fn test_place_rbxl_nests_spawn_location_under_workspace() {
         "expected SpawnLocation to be indented deeper than Workspace (descendant), got:\n{output}"
     );
 }
+
+// Golden dumps: each fixture's full rendering, checked in under
+// `assets/tests/dumps/`. The API dump only reaches this output through enum
+// names, so the nightly API-dump sync reruns this against Studio's newest dump
+// before committing it — a renamed or dropped enum item fails here rather than
+// in a user's place. `UPDATE_DUMPS=1 cargo test -p rbx_parser_cli` rewrites
+// them after an intended change.
+#[test]
+fn fixtures_render_as_their_reference_dumps() {
+    let dumps = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tests/dumps");
+    let update = std::env::var_os("UPDATE_DUMPS").is_some();
+    let mut drifted = Vec::new();
+
+    for fixture in ["FPS.rbxm", "TestPlace.rbxl", "DEMO_LIGHTING_MATERIALS.rbxl"] {
+        let actual = render_fixture(fixture);
+        let path = dumps.join(format!("{fixture}.txt"));
+        if update {
+            std::fs::write(&path, &actual).unwrap();
+            continue;
+        }
+        // A Windows checkout may have turned the reference's newlines into CRLF.
+        let expected = std::fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("failed to read {path:?}: {err}"))
+            .replace("\r\n", "\n");
+        if let Some((line, (want, got))) = expected
+            .lines()
+            .zip(actual.lines())
+            .enumerate()
+            .find(|(_, (want, got))| want != got)
+        {
+            drifted.push(format!(
+                "{fixture}:{}\n  reference: {want}\n  now:       {got}",
+                line + 1
+            ));
+        } else if expected.lines().count() != actual.lines().count() {
+            drifted.push(format!(
+                "{fixture}: {} lines in the reference, {} now",
+                expected.lines().count(),
+                actual.lines().count()
+            ));
+        }
+    }
+
+    assert!(
+        drifted.is_empty(),
+        "parsed output drifted from assets/tests/dumps (first difference per file):\n{}",
+        drifted.join("\n")
+    );
+}

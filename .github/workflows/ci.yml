@@ -65,3 +65,28 @@ jobs:
 
       - name: cargo test
         run: cargo test --workspace
+
+  macos:
+    name: Build & test (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Same reasoning as the Windows job: clippy's verdict depends on the
+      # target, and nothing else builds the workspace on macOS. macOS is not
+      # a supported target yet — this keeps it from silently rotting until
+      # it is.
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo build
+        run: cargo build --workspace --all-targets
+
+      - name: cargo test
+        run: cargo test --workspace
