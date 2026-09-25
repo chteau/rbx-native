@@ -156,7 +156,7 @@ pub(crate) fn text3() -> Rgba {
 /// A warning's glyph: something is off but nothing failed (a key that
 /// can't list private experiences).
 pub(crate) fn warning() -> Rgba {
-    rgb(0xE3A34F)
+    rgb(0xD9A55B)
 }
 
 pub(crate) fn text_error() -> Rgba {

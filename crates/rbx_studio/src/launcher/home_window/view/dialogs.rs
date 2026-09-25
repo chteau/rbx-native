@@ -91,13 +91,19 @@ impl HomeWindow {
                     .unwrap_or_default();
                 let body = v_flex()
                     .child(
-                        ui::mono(11., 15.)
+                        // Only the path gives way: the saved time stays whole.
+                        h_flex()
                             .mt(px(12.))
                             .mx(px(20.))
                             .ml(px(78.))
-                            .truncate()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .font_family(tokens::FONT_FAMILY_MONO)
+                            .text_size(px(11.))
+                            .line_height(px(15.))
                             .text_color(tokens::text3())
-                            .child(format!("{}{saved}", display_path(path))),
+                            .child(div().flex_1().min_w_0().truncate().child(display_path(path)))
+                            .child(div().flex_shrink_0().whitespace_nowrap().child(saved)),
                     )
                     .child(
                         v_flex()
