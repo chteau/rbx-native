@@ -1,12 +1,12 @@
 //! `GET /cloud/v2/universes/{id}`: display name, visibility, owner and root
 //! place for one universe.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::client::Client;
 use crate::error::{self, CloudError};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Visibility {
     Public,
     Private,
@@ -16,7 +16,7 @@ pub enum Visibility {
     Other(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Owner {
     User(u64),
     Group(u64),

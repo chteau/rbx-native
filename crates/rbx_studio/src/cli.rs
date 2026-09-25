@@ -31,6 +31,9 @@ options:
   --quality <auto|1..21>
         Graphics quality, spelled the way rbxview spells it. Defaults to
         whatever the editor's own dropdown was last left at.
+  --setup
+        Open the API key setup wizard even when a key is already stored,
+        instead of Home. A key saved there replaces the stored one.
   --verbose
         Narrate startup on stdout: the file read, what --select resolved to,
         what --run reported back.
@@ -50,6 +53,8 @@ pub(crate) struct Arguments {
     /// dock on the first frame.
     pub(crate) run: Option<PathBuf>,
     pub(crate) verbose: bool,
+    /// `--setup`: start at the setup wizard whatever is stored.
+    pub(crate) setup: bool,
 }
 
 /// What [`parse`] concluded: open a place, or print [`USAGE`] and stop.
@@ -68,12 +73,14 @@ pub(crate) fn parse(arguments: &[String], default_quality: QualityLevel) -> Resu
     let mut select = None;
     let mut run = None;
     let mut verbose = false;
+    let mut setup = false;
 
     let mut arguments = arguments.iter();
     while let Some(argument) = arguments.next() {
         match argument.as_str() {
             "--help" | "-h" => return Ok(Parsed::Usage),
             "--verbose" => verbose = true,
+            "--setup" => setup = true,
             "--quality" => quality = value(&mut arguments, "--quality")?.parse()?,
             "--select" => select = Some(value(&mut arguments, "--select")?.clone()),
             "--run" => run = Some(PathBuf::from(value(&mut arguments, "--run")?)),
@@ -89,6 +96,7 @@ pub(crate) fn parse(arguments: &[String], default_quality: QualityLevel) -> Resu
         select,
         run,
         verbose,
+        setup,
     }))
 }
 

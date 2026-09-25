@@ -8,12 +8,16 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use gpui_kit::component::input::{InputEvent, InputState};
+use gpui_kit::component::select::{SearchableVec, SelectEvent, SelectState};
+use gpui_kit::component::IndexPath;
 use gpui_kit::*;
-use rbx_cloud::{ApiKey, Client, Experience, Experiences, Grant, KeyReport};
+use rbx_cloud::{Experience, Experiences, Grant, KeyReport};
 
+use super::cache::GamesCache;
 use super::{fixtures, Boot};
 use crate::home::{self, RecentPlace};
 
+mod games;
 mod open;
 mod view;
 
@@ -90,6 +94,22 @@ pub(crate) struct HomeWindow {
     /// Bumped per open, so Cancel drops a download still in flight.
     pub(super) serial: u64,
     pub(super) handle: AnyWindowHandle,
+    /// The key's account, once checked: whose cache file is in use.
+    pub(super) user_id: Option<u64>,
+    pub(super) cache: GamesCache,
+    /// A cached listing is showing while the fresh one loads.
+    pub(super) refreshing: bool,
+    /// My Games' owner filter: `None` is the key's own account, `Some` a
+    /// group id.
+    pub(super) owner: Option<u64>,
+    /// The group whose games are being fetched.
+    pub(super) group_loading: Option<u64>,
+    pub(super) owner_select: Entity<SelectState<SearchableVec<SharedString>>>,
+    /// The dropdown's rows, in order: `None` is "You".
+    pub(super) owner_options: Vec<(Option<u64>, SharedString)>,
+    /// The rows changed; handed to the dropdown on the next render, which
+    /// is where a window to do it with is at hand.
+    pub(super) owner_options_dirty: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -106,7 +126,23 @@ impl HomeWindow {
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
         let link = cx
             .new(|cx| InputState::new(window, cx).placeholder("Place ID or roblox.com/games link"));
+        let owner_select = cx.new(|cx| {
+            SelectState::new(
+                SearchableVec::new(vec![SharedString::from("You")]),
+                Some(IndexPath::new(0)),
+                window,
+                cx,
+            )
+        });
         let subscriptions = vec![
+            cx.subscribe(&owner_select, |this, _, event: &SelectEvent<_>, cx| {
+                let SelectEvent::Confirm(Some(label)) = event else {
+                    return;
+                };
+                if let Some(&(owner, _)) = this.owner_options.iter().find(|(_, l)| l == label) {
+                    this.pick_owner(owner, cx);
+                }
+            }),
             cx.subscribe(&search, |_, _, event: &InputEvent, cx| {
                 if matches!(event, InputEvent::Change) {
                     cx.notify();
@@ -156,6 +192,14 @@ impl HomeWindow {
             dialog: None,
             serial: 0,
             handle: window.window_handle(),
+            user_id: None,
+            cache: GamesCache::default(),
+            refreshing: false,
+            owner: None,
+            group_loading: None,
+            owner_select,
+            owner_options: vec![(None, "You".into())],
+            owner_options_dirty: true,
             _subscriptions: subscriptions,
         };
         this.reload(cx);
@@ -204,98 +248,22 @@ impl HomeWindow {
         };
     }
 
-    /// (Re)reads the key and My Games — at open, and after the key was
-    /// replaced or removed in Roblox publishing.
-    pub(super) fn reload(&mut self, cx: &mut Context<Self>) {
-        self.recent = home::recent();
-        if let Ok(which) = std::env::var(fixtures::GAMES_VARIABLE) {
-            let key = std::env::var(super::key_check::FIXTURE_VARIABLE)
-                .unwrap_or_else(|_| "ready".to_string());
-            if let super::key_check::Status::Done(checked) = fixtures::key_status(&key) {
-                self.key = KeyState::Ready {
-                    owner: checked.owner,
-                    report: checked.report,
-                };
-            }
-            if which == "nokey" {
-                self.key = KeyState::Missing;
-            }
-            self.games = match fixtures::games(&which) {
-                Some(games) => Games::Loaded(games),
-                None => Games::Loading,
-            };
-            return;
+    /// The groups the owner dropdown lists after "You", by name.
+    pub(super) fn set_groups(&mut self, mut groups: Vec<rbx_cloud::Group>) {
+        groups.sort_by_key(|g| g.name.to_lowercase());
+        let options: Vec<(Option<u64>, SharedString)> = std::iter::once((None, "You".into()))
+            .chain(groups.into_iter().map(|g| (Some(g.id), g.name.into())))
+            .collect();
+        if options != self.owner_options {
+            self.owner_options = options;
+            self.owner_options_dirty = true;
         }
-        let Some(key) = ApiKey::from_env_or_config() else {
-            self.key = KeyState::Missing;
-            self.games = Games::Loaded(Experiences::default());
-            cx.notify();
-            return;
-        };
-        self.key = KeyState::Checking;
-        self.games = Games::Loading;
-        self.icons.clear();
-        cx.notify();
-        let client = Client::new(Some(key));
-        cx.spawn(async move |this, cx| {
-            let checked = cx
-                .background_spawn({
-                    let client = client.clone();
-                    async move {
-                        let info = client.introspect().ok()?;
-                        let owner = client
-                            .user_display_name(info.authorized_user_id)
-                            .unwrap_or_else(|_| format!("User {}", info.authorized_user_id));
-                        Some((owner, rbx_cloud::check_scopes(&info)))
-                    }
-                })
-                .await;
-            let _ = this.update(cx, |this, cx| {
-                this.key = match checked {
-                    Some((owner, report)) => KeyState::Ready { owner, report },
-                    None => KeyState::Unchecked,
-                };
-                cx.notify();
-            });
-            let games = cx
-                .background_spawn({
-                    let client = client.clone();
-                    async move { client.list_experiences() }
-                })
-                .await;
-            let ids: Vec<u64> = match &games {
-                Ok(list) => list.experiences.iter().map(|e| e.universe_id).collect(),
-                Err(_) => Vec::new(),
-            };
-            let _ = this.update(cx, |this, cx| {
-                this.games = match games {
-                    Ok(list) => Games::Loaded(list),
-                    Err(err) => Games::Failed(err.to_string()),
-                };
-                cx.notify();
-            });
-            let urls = cx
-                .background_spawn({
-                    let client = client.clone();
-                    async move { client.game_icon_urls(&ids).unwrap_or_default() }
-                })
-                .await;
-            for (universe_id, url) in urls {
-                let client = client.clone();
-                let image = cx
-                    .background_spawn(
-                        async move { decode_icon(&client.download_image(&url).ok()?) },
-                    )
-                    .await;
-                if let Some(image) = image {
-                    let _ = this.update(cx, |this, cx| {
-                        this.icons.insert(universe_id, image);
-                        cx.notify();
-                    });
-                }
-            }
-        })
-        .detach();
+        if self
+            .owner
+            .is_some_and(|id| !self.owner_options.iter().any(|(o, _)| *o == Some(id)))
+        {
+            self.owner = None;
+        }
     }
 
     /// The report's grants, when the key was checked.
@@ -319,8 +287,9 @@ impl HomeWindow {
     /// the key lists private experiences through the Inventory API, or
     /// every scope it holds is restricted to named universes.
     pub(super) fn note_visible(&self) -> bool {
+        // Nothing to say until the key has been checked.
         let Some(report) = self.report() else {
-            return true;
+            return false;
         };
         let all_restricted = report
             .checks

@@ -21,6 +21,22 @@
   reach its owner's private experiences, so without it My Games would
   miss them silently. `rbxcloud check` prints the same pass/fail list the
   launcher shows. — @chteau
+- **`rbxstudio --setup` opens the API key wizard even with a key
+  stored**; a key saved there replaces the stored one. When the system
+  keychain can't be reached, the wizard still finishes: the key works
+  until the app closes and Done says it wasn't stored. Home's Open file
+  now reports a file picker that can't open instead of doing nothing.
+  — @chteau
+- **My Games opens from a cache and picks an owner from a dropdown.**
+  The last listing and its icons are kept on disk per account, so Home
+  shows them at once and refreshes in the background ("Updating…"),
+  downloading only icons that changed. A dropdown next to the title
+  switches between your own games and each group you manage; a group's
+  games are fetched when it is picked, since Roblox rate-limits the group
+  listing to a few requests every five seconds, which made fetching every
+  group up front take tens of seconds. The personal listing's lookups run
+  in parallel: about 2.5 s instead of 25 on an account with 40 created
+  places and 15 groups. — @chteau
 
 ## 2026-09-24
 

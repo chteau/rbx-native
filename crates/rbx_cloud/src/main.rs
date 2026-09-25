@@ -89,7 +89,17 @@ fn run_check(client: &Client) -> Result<(), String> {
 
 fn run_list(client: &Client) -> Result<(), String> {
     let listing = client.list_experiences().map_err(|err| err.to_string())?;
-    let experiences = &listing.experiences;
+    let mut experiences = listing.experiences.clone();
+    // One group at a time: the group listing is rate-limited per IP, and
+    // the client's retry waits out each 429.
+    for group in &listing.groups {
+        experiences.extend(
+            client
+                .group_experiences(group.id)
+                .map_err(|err| err.to_string())?,
+        );
+    }
+    let experiences = &experiences;
     if experiences.is_empty() {
         println!("no experiences found");
         return Ok(());

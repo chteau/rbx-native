@@ -42,3 +42,35 @@ fn introspect_universe_and_download_place() {
     assert_eq!(experience.universe_id, TEST_UNIVERSE_ID);
     assert_eq!(experience.root_place_id, TEST_PLACE_ID);
 }
+
+/// The personal listing, without any group's games: what Home waits on.
+#[test]
+#[ignore]
+fn listing_is_quick_and_group_games_come_one_group_at_a_time() {
+    let Some(key) = rbx_cloud::ApiKey::from_env_or_config() else {
+        eprintln!("no API key configured (RBX_API_KEY unset), skipping");
+        return;
+    };
+    let client = rbx_cloud::Client::new(Some(key));
+    let started = std::time::Instant::now();
+    let listing = client.list_experiences().expect("listing should succeed");
+    eprintln!(
+        "listed {} experiences and {} groups in {:?}",
+        listing.experiences.len(),
+        listing.groups.len(),
+        started.elapsed()
+    );
+    if let Some(group) = listing.groups.first() {
+        let started = std::time::Instant::now();
+        let games = client.group_experiences(group.id).expect("group listing");
+        eprintln!(
+            "group {} has {} games ({:?})",
+            group.id,
+            games.len(),
+            started.elapsed()
+        );
+        assert!(games
+            .iter()
+            .all(|g| g.owner == rbx_cloud::Owner::Group(group.id)));
+    }
+}

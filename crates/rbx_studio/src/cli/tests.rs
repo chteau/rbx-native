@@ -161,3 +161,10 @@ fn every_flag_the_parser_accepts_appears_in_the_usage_text() {
         );
     }
 }
+
+#[test]
+fn setup_asks_for_the_wizard_with_or_without_a_place() {
+    assert!(!open(&[]).setup);
+    assert!(open(&["--setup"]).setup);
+    assert_eq!(open(&["--setup"]).path, None);
+}

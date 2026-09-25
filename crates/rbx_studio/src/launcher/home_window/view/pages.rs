@@ -1,6 +1,7 @@
 //! Home's page heads and its Home and Recent pages.
 
 use gpui_kit::component::input::Input;
+use gpui_kit::component::select::Select;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
@@ -25,6 +26,7 @@ impl HomeWindow {
             && !self.note_visible()
             && matches!(self.games, Games::Loaded(ref g) if !g.experiences.is_empty());
         let search_left = (grid.content - 360.) / 2.;
+        let owners = self.page == Page::MyGames && self.has_key() && self.owner_options.len() > 1;
         div()
             .relative()
             .h(px(36.))
@@ -37,6 +39,27 @@ impl HomeWindow {
                     .text_color(tokens::text())
                     .child(title),
             )
+            .when(owners, |this| {
+                // Whose games: the account's own, or one group's.
+                this.child(
+                    ui::field_frame(Some(220.), ui::panel2(), tokens::border(), "users")
+                        .ml(px(16.))
+                        .child(
+                            div().flex_1().min_w_0().h_full().child(
+                                Select::new(&self.owner_select)
+                                    .appearance(false)
+                                    .text_color(tokens::text())
+                                    .h_full()
+                                    .py_0()
+                                    .px_0()
+                                    .text_size(px(12.))
+                                    .icon(ui::icon("chevron-down", 12.))
+                                    .menu_width(px(260.))
+                                    .accessibility_label("Whose games"),
+                            ),
+                        ),
+                )
+            })
             .when(search, |this| {
                 this.child(
                     ui::field_frame(Some(360.), ui::panel2(), tokens::border(), "search")
@@ -119,6 +142,7 @@ impl HomeWindow {
             Games::Loaded(list) => list
                 .experiences
                 .iter()
+                .filter(|e| matches!(e.owner, rbx_cloud::Owner::User(_)))
                 .take(grid.columns)
                 .cloned()
                 .collect(),

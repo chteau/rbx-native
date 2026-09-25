@@ -137,6 +137,7 @@ fn main() {
         select,
         run,
         verbose,
+        setup,
     } = match cli::parse(&arguments, settings.quality) {
         Ok(cli::Parsed::Open(parsed)) => parsed,
         Ok(cli::Parsed::Usage) => {
@@ -200,7 +201,7 @@ fn main() {
                 launch,
                 user,
             };
-            cx.update(|cx| match home::route(path, has_key) {
+            cx.update(|cx| match home::route(path, has_key && !setup) {
                 home::Route::Editor(path) => {
                     if let Err(failed) = open_editor(&path, boot, cx) {
                         let (message, _) = *failed;
