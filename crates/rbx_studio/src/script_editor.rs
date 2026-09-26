@@ -12,6 +12,7 @@
 pub(crate) mod find;
 pub(crate) mod goto;
 pub(crate) mod highlight;
+pub(crate) mod lsp;
 pub(crate) mod luau;
 pub(crate) mod outline;
 pub(crate) mod source;
@@ -41,6 +42,8 @@ pub(crate) struct OpenScript {
     /// generation it was scheduled for is still the latest, which is what
     /// collapses a burst of typing into one DOM write and one undo step.
     pub(crate) generation: u64,
+    /// This tab as `luau-lsp` knows it, once the server is up.
+    pub(crate) lsp: Option<std::rc::Rc<lsp::Document>>,
     /// Kept only to stay subscribed to the editor's own change events.
     pub(crate) _subscription: Subscription,
 }

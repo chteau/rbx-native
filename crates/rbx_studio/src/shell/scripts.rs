@@ -91,9 +91,12 @@ impl Shell {
                 synced: text,
                 pending: false,
                 generation: 0,
+                lsp: None,
                 _subscription: subscription,
             },
         );
+        self.ensure_luau_lsp(cx);
+        self.attach_luau_lsp(reference, cx);
         self.focus_script(reference, window, cx);
         self.set_document(super::chrome::Document::Scripts, cx);
         cx.notify();
@@ -147,6 +150,7 @@ impl Shell {
     /// alone — that text is what would be destroyed, and its own commit is
     /// what reaches the DOM next.
     pub(super) fn resync_scripts(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.notice_luau_lsp_dom_change(cx);
         let Shell {
             scripts,
             dom,
@@ -203,6 +207,8 @@ impl Shell {
         open.pending = true;
         open.generation = open.generation.wrapping_add(1);
         let generation = open.generation;
+
+        self.schedule_luau_lsp_refresh(cx);
 
         cx.spawn(async move |shell, cx| {
             cx.background_executor().timer(COMMIT_DELAY).await;

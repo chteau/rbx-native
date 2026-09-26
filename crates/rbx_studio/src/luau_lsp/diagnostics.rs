@@ -36,6 +36,8 @@ pub(crate) fn parse(reply: &Value, mirror: &Mirror) -> Vec<(Ref, Vec<Diagnostic>
 pub(crate) struct Counts {
     pub(crate) errors: usize,
     pub(crate) warnings: usize,
+    /// Information and hints.
+    pub(crate) notes: usize,
 }
 
 pub(crate) fn counts(scripts: &[(Ref, Vec<Diagnostic>)]) -> Counts {
@@ -44,7 +46,7 @@ pub(crate) fn counts(scripts: &[(Ref, Vec<Diagnostic>)]) -> Counts {
         match problem.severity {
             Some(DiagnosticSeverity::ERROR) => counts.errors += 1,
             Some(DiagnosticSeverity::WARNING) => counts.warnings += 1,
-            _ => {}
+            _ => counts.notes += 1,
         }
     }
     counts
@@ -93,7 +95,8 @@ mod tests {
             counts(&scripts),
             Counts {
                 errors: 1,
-                warnings: 1
+                warnings: 1,
+                notes: 0,
             }
         );
     }

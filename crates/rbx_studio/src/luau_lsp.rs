@@ -16,6 +16,7 @@ mod wire;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
@@ -42,9 +43,12 @@ const START_TIMEOUT: Duration = Duration::from_secs(60);
 /// Long enough for a whole-place `workspace/diagnostic` on a large place.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// A folder of this process's own, so two editors never share one.
+/// A folder of its own per call: a mirror deletes its folder when dropped,
+/// so two places opened one after the other in one process must not share.
 pub(crate) fn workspace_root() -> PathBuf {
-    std::env::temp_dir().join(format!("rbx-native-luau-{}", std::process::id()))
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!("rbx-native-luau-{}-{n}", std::process::id()))
 }
 
 /// Starts the server over the mirror at `root` and completes the

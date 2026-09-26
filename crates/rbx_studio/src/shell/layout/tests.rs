@@ -46,7 +46,13 @@ fn the_default_layout_is_the_shell_that_was_hardcoded() {
     assert_eq!(shape(&layout, Edge::Right), [[Panel::Explorer]]);
     assert_eq!(
         shape(&layout, Edge::Bottom),
-        [[Panel::Output, Panel::Viewport, Panel::Argon, Panel::Wally]]
+        [[
+            Panel::Output,
+            Panel::Viewport,
+            Panel::Argon,
+            Panel::Wally,
+            Panel::ScriptAnalysis
+        ]]
     );
     assert!(layout.floating().is_empty());
 }
@@ -93,7 +99,13 @@ fn opening_a_hidden_tab_brings_it_forward() {
     assert!(layout.is_showing(Panel::Viewport));
     assert_eq!(
         shape(&layout, Edge::Bottom),
-        [[Panel::Output, Panel::Viewport, Panel::Argon, Panel::Wally]]
+        [[
+            Panel::Output,
+            Panel::Viewport,
+            Panel::Argon,
+            Panel::Wally,
+            Panel::ScriptAnalysis
+        ]]
     );
 }
 
@@ -118,14 +130,25 @@ fn a_reopened_viewport_dock_is_a_showing_tab_beside_output() {
     layout.close(Panel::Viewport);
     assert_eq!(
         shape(&layout, Edge::Bottom),
-        [[Panel::Output, Panel::Argon, Panel::Wally]]
+        [[
+            Panel::Output,
+            Panel::Argon,
+            Panel::Wally,
+            Panel::ScriptAnalysis
+        ]]
     );
 
     layout.open(Panel::Viewport);
 
     assert_eq!(
         shape(&layout, Edge::Bottom),
-        [[Panel::Output, Panel::Argon, Panel::Wally, Panel::Viewport]]
+        [[
+            Panel::Output,
+            Panel::Argon,
+            Panel::Wally,
+            Panel::ScriptAnalysis,
+            Panel::Viewport
+        ]]
     );
     assert!(layout.is_showing(Panel::Viewport));
 }
@@ -145,7 +168,13 @@ fn a_file_from_before_the_viewport_dock_seats_it_beside_output() {
 
     assert_eq!(
         shape(&layout, Edge::Bottom),
-        [[Panel::Output, Panel::Viewport, Panel::Argon, Panel::Wally]]
+        [[
+            Panel::Output,
+            Panel::Viewport,
+            Panel::Argon,
+            Panel::Wally,
+            Panel::ScriptAnalysis
+        ]]
     );
     assert!(!layout.is_showing(Panel::Viewport));
 }
@@ -401,6 +430,7 @@ fn an_emptied_edge_holds_nothing() {
     layout.close(Panel::Viewport);
     layout.close(Panel::Argon);
     layout.close(Panel::Wally);
+    layout.close(Panel::ScriptAnalysis);
     layout.apply(
         Panel::Output,
         Landing::NewGroup {
@@ -468,7 +498,12 @@ fn a_closed_panel_is_open_nowhere() {
     assert_eq!(layout.home_of(Panel::Output), Home::Closed);
     assert_eq!(
         shape(&layout, Edge::Bottom),
-        [[Panel::Viewport, Panel::Argon, Panel::Wally]]
+        [[
+            Panel::Viewport,
+            Panel::Argon,
+            Panel::Wally,
+            Panel::ScriptAnalysis
+        ]]
     );
 }
 
@@ -483,7 +518,13 @@ fn reopening_a_panel_puts_it_on_its_own_edge() {
     assert!(layout.is_showing(Panel::Output));
     assert_eq!(
         shape(&layout, Edge::Bottom),
-        [[Panel::Viewport, Panel::Argon, Panel::Wally, Panel::Output]]
+        [[
+            Panel::Viewport,
+            Panel::Argon,
+            Panel::Wally,
+            Panel::ScriptAnalysis,
+            Panel::Output
+        ]]
     );
 }
 
