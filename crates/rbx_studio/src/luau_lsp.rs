@@ -2,12 +2,13 @@
 //! server: autocomplete, hover and the diagnostics behind both the editor's
 //! squiggles and the Script Analysis dock.
 //!
-//! The server is an external program — found on `PATH`, or wherever
-//! [`BINARY_VARIABLE`] points — and never bundled. It reads the place through
-//! a [`Mirror`] folder rather than through the DOM, and Roblox's API types
-//! and documentation from the same files its VS Code extension downloads,
-//! cached under this project's cache folder.
+//! The server is a pinned `luau-lsp` release built into this binary
+//! (`bundle`), unless [`BINARY_VARIABLE`] points at another. It reads the
+//! place through a [`Mirror`] folder rather than through the DOM, and
+//! Roblox's API types and documentation through `api`'s cache.
 
+mod api;
+mod bundle;
 mod client;
 pub(crate) mod diagnostics;
 mod mirror;
@@ -19,29 +20,16 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 use std::thread;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
 pub(crate) use client::Client;
 pub(crate) use mirror::Mirror;
 
-/// Overrides where the server binary is looked for; otherwise `luau-lsp` on
-/// `PATH`.
+/// Runs this server binary instead of the bundled one. A target with no
+/// release to bundle looks for `luau-lsp` on `PATH`.
 pub(crate) const BINARY_VARIABLE: &str = "RBX_STUDIO_LUAU_LSP";
-
-/// Roblox's API as a Luau definitions file, regenerated upstream from each
-/// Studio release's API dump. The `None` security level is what an ordinary
-/// place script runs at.
-const DEFINITIONS_URL: &str =
-    "https://raw.githubusercontent.com/JohnnyMorganz/luau-lsp/main/scripts/globalTypes.None.d.luau";
-/// Roblox's own reference text for that API, keyed by the same names: what
-/// fills a completion's or a hover's description. The same file the VS Code
-/// extension fetches.
-const DOCUMENTATION_URL: &str =
-    "https://raw.githubusercontent.com/MaximumADHD/Roblox-Client-Tracker/roblox/api-docs/en-us.json";
-/// Roblox ships weekly; a week-old copy misses at most one release's API.
-const CACHE_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
 /// Loading the definitions file is most of `initialize`'s cost.
 const START_TIMEOUT: Duration = Duration::from_secs(60);
@@ -57,13 +45,19 @@ pub(crate) fn workspace_root() -> PathBuf {
 }
 
 /// Starts the server over the mirror at `root` and completes the
-/// `initialize` handshake. Blocking — downloads the definitions file on a
-/// first run — so it belongs on a background thread.
+/// `initialize` handshake. Blocking — unpacks the server and may download
+/// Roblox's API files — so it belongs on a background thread.
 pub(crate) fn start(root: &Path) -> Result<Client, String> {
-    let binary = std::env::var_os(BINARY_VARIABLE).unwrap_or_else(|| "luau-lsp".into());
-    let definitions = cached(DEFINITIONS_URL, "globalTypes.None.d.luau")?;
-    // Descriptions only; completion and types work without them.
-    let documentation = cached(DOCUMENTATION_URL, "en-us.json").ok();
+    let cache = rbx_assets::cache_root()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("luau-lsp");
+    let binary = match std::env::var_os(BINARY_VARIABLE) {
+        Some(path) => PathBuf::from(path),
+        None => bundle::binary(&cache)
+            .map_err(|error| format!("could not unpack the bundled luau-lsp: {error}"))?
+            .unwrap_or_else(|| "luau-lsp".into()),
+    };
+    let api = api::files(&cache)?;
     let settings = root.join(".luau-lsp-settings.json");
     fs::write(&settings, SETTINGS).map_err(|error| error.to_string())?;
 
@@ -72,9 +66,12 @@ pub(crate) fn start(root: &Path) -> Result<Client, String> {
         .arg("lsp")
         .arg("--stdio")
         .arg(format!("--settings={}", settings.display()))
-        .arg(format!("--definitions=@roblox={}", definitions.display()))
+        .arg(format!(
+            "--definitions=@roblox={}",
+            api.definitions.display()
+        ))
         .current_dir(root);
-    if let Some(documentation) = documentation {
+    if let Some(documentation) = api.documentation {
         command.arg(format!("--docs={}", documentation.display()));
     }
     let client = Client::spawn(command).map_err(|error| match error.kind() {
@@ -140,46 +137,6 @@ const SETTINGS: &str = r#"{
   "luau-lsp.sourcemap.autogenerate": false,
   "luau-lsp.diagnostics.workspace": true
 }"#;
-
-/// A cached copy of `url` named `name`, fetched first if missing or stale.
-/// A failed refresh keeps the stale copy: old types beat no types.
-fn cached(url: &str, name: &str) -> Result<PathBuf, String> {
-    let dir = rbx_assets::cache_root()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("luau-lsp");
-    let path = dir.join(name);
-    let fresh = fs::metadata(&path)
-        .and_then(|meta| meta.modified())
-        .ok()
-        .and_then(|modified| SystemTime::now().duration_since(modified).ok())
-        .is_some_and(|age| age < CACHE_MAX_AGE);
-    if fresh {
-        return Ok(path);
-    }
-    match download(url) {
-        Ok(body) => {
-            fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
-            fs::write(&path, body).map_err(|error| error.to_string())?;
-            Ok(path)
-        }
-        Err(_) if path.exists() => Ok(path),
-        Err(error) => Err(format!("could not download {name}: {error}")),
-    }
-}
-
-fn download(url: &str) -> Result<String, String> {
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(30)))
-        .build()
-        .into();
-    agent
-        .get(url)
-        .call()
-        .map_err(|error| error.to_string())?
-        .body_mut()
-        .read_to_string()
-        .map_err(|error| error.to_string())
-}
 
 /// A request's reply, or why there is none. Blocking.
 pub(crate) fn wait(reply: Receiver<Result<Value, String>>) -> Result<Value, String> {

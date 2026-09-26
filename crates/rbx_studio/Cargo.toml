@@ -102,6 +102,13 @@ windows-sys = { version = "0.61", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 
+[build-dependencies]
+# `build.rs` fetches the bundled `luau-lsp` release and checks its hash. Both
+# are already in the tree at these versions (`ureq` as the HTTP client above,
+# `sha2` under the toolkit), so this adds no new dependency version.
+ureq = "3"
+sha2 = "0.10"
+
 [dev-dependencies]
 # GPUI's headless test window/entity harness (`#[gpui_kit::test]`,
 # `TestAppContext`), for the dock registration regression test in

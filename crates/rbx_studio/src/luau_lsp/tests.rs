@@ -16,11 +16,10 @@ fn a_path_survives_the_round_trip_through_a_uri() {
     assert_eq!(path("https://example.com/12.luau"), None);
 }
 
-/// Needs a real server: `RBX_STUDIO_LUAU_LSP=/path/to/luau-lsp cargo test
-/// -p rbx_studio -- --ignored luau_lsp`, and the network on a first run for
-/// the definitions file.
+/// Runs the bundled server (or `RBX_STUDIO_LUAU_LSP`'s). Needs the network
+/// only when the cache has no copy of Roblox's API yet — the same network
+/// `build.rs` needed to bundle the server in the first place.
 #[test]
-#[ignore]
 fn a_real_server_resolves_the_place_and_reports_problems_in_scripts_nobody_opened() {
     let mut dom = WeakDom::new();
     let storage = dom.new_instance("ReplicatedStorage", "ReplicatedStorage", None);
