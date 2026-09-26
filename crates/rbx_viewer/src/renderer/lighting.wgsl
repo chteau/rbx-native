@@ -9,7 +9,7 @@ struct Uniforms {
     // `@builtin(position)` into the screen UV a refracting surface samples
     // the scene behind itself at (see `material.wgsl`). The outline passes
     // declare the same pair under their own `Frame` struct. z: where the
-    // `ForceField` shimmer is in its cycle, 0 to 1 (`pipeline::shimmer_phase`).
+    // `ForceField` pattern window is in its cycle, 0 to 1 (`pipeline::shimmer_phase`).
     viewport: vec4<f32>,
 }
 

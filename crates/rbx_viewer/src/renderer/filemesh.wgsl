@@ -91,17 +91,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     input.studs_per_tile = in.studs_per_tile;
     input.kind = in.material.y;
 
-    // A `ForceField` does not paint its image on: it shows the image's range
-    // from dark to light (see `material.wgsl`), in the part's own colour, so
-    // the image becomes the shell's pattern and what is dark in it is
-    // see-through.
+    // A `ForceField` does not paint its image on: its red channel picks which
+    // texels show at this moment and its alpha how strongly (see
+    // `force_field_window`), in the part's own colour — the image's own
+    // colour and alpha never reach the frame.
     var alpha = sample.a * in.color.a;
     if input.kind == KIND_FORCE_FIELD {
-        let value = max(sample.r, max(sample.g, sample.b));
         input.albedo = in.color.rgb;
-        input.pattern = value;
-        input.has_pattern = true;
-        alpha *= value;
+        input.pattern = force_field_window(sample.r, uniforms.viewport.z) * sample.a;
+        alpha = in.color.a;
     }
 
     return material_output(input, alpha, in.clip_position.xy / uniforms.viewport.xy);

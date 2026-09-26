@@ -278,9 +278,10 @@ pub(super) fn lighting_buffer(device: &wgpu::Device) -> wgpu::Buffer {
     })
 }
 
-/// How long one `ForceField` shimmer cycle takes. This renderer's own figure:
-/// Roblox publishes no rate for the material's motion.
-const SHIMMER_SECONDS: f64 = 4.0;
+/// How long the `ForceField` window takes to wander its whole path and come
+/// back. Roblox only calls the motion's period "pretty big" (the material's
+/// 2019 DevForum announcement), so the figure is this renderer's own.
+const SHIMMER_SECONDS: f64 = 12.0;
 
 /// Where in its cycle the shimmer is after `elapsed`, in `[0, 1)`.
 ///
@@ -539,10 +540,10 @@ mod tests {
     #[test]
     fn the_shimmer_phase_starts_at_zero_and_wraps_once_a_cycle() {
         assert_eq!(shimmer_phase(Duration::ZERO), 0.0);
-        assert!((shimmer_phase(Duration::from_secs(1)) - 0.25).abs() < 1e-6);
-        assert!(shimmer_phase(Duration::from_secs(4)).abs() < 1e-6);
+        assert!((shimmer_phase(Duration::from_secs(3)) - 0.25).abs() < 1e-6);
+        assert!(shimmer_phase(Duration::from_secs(12)).abs() < 1e-6);
         // A day in, the phase is still exact to well under a frame's step.
-        let day = Duration::from_secs(86_400) + Duration::from_millis(500);
+        let day = Duration::from_secs(86_400) + Duration::from_millis(1500);
         assert!((shimmer_phase(day) - 0.125).abs() < 1e-4);
     }
 }

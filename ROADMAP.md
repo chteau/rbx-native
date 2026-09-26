@@ -78,16 +78,18 @@ Roblox's own engine.
   surface detail that gives real glass its wobble (Roblox documents the
   refraction itself, and that it is dropped on mobile "due to
   computational limitations", but publishes no index or displacement, so
-  the figure is this renderer's). A `ForceField` is drawn as an energy
-  shell: a lattice of cells and a rim that brightens where it is seen
-  edge-on, with bands of glow sweeping up it on the host's clock — held
-  still at 0 for a `--screenshot`, or stepped to any moment with
-  `--elapsed`, so a capture stays repeatable. On a `MeshPart` or file
-  `SpecialMesh` with its own `TextureID`, the image's dark-to-light range
-  is the pattern instead, as Roblox documents for the modern material:
-  dark is see-through, light glows in the part's colour. The lattice, the
-  rate and the look of the sweep are this renderer's own rendition;
-  Roblox publishes none of them.
+  the figure is this renderer's). A `ForceField` follows Roblox's own
+  description of the material (its 2019 DevForum announcement): a shell whose
+  Fresnel-driven transparency makes it faint face-on and solid at its edges,
+  in the part's colour and still on a plain part. On a `MeshPart` or file
+  `SpecialMesh` with its own `TextureID`, the image's red channel is
+  compared against a window of "visible" values that wanders up and down
+  over a long cycle, and its alpha sets how strongly the texels in the window
+  show. The clock is the host's; a `--screenshot` holds it at 0, or at
+  `--elapsed`'s value, so a capture stays repeatable. The window's width and
+  path, the period and the opacities are this renderer's own, since Roblox
+  publishes none of them, and the depth-driven glow where a shell cuts
+  through other geometry is not drawn.
 - [x] Decals/textures projected on real geometry (not just boxes), and
   patched in place — not just redrawn on a full reload — when the
   `CFrame`, size or shape of the part they're pinned to is edited live.

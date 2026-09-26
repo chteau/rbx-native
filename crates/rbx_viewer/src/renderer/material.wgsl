@@ -49,31 +49,34 @@ const GLASS_REFLECTANCE: f32 = 0.3;
 // never drags in something from the far side of the frame.
 const GLASS_REFRACTION: f32 = 0.06;
 
-// A ForceField is a shell of energy rather than a surface, so it is drawn
-// as one: a lattice of cells, and a rim that brightens where the shell is
-// seen edge-on and the eye looks through more of it.
+// A ForceField is a shell of energy rather than a surface. Roblox's own
+// announcement of the current material ("New material - ForceField (v2.0)",
+// DevForum, 2019) describes it as "Fresnel ... driven transparency which
+// makes the force field visible near edges", plus, on a mesh with its own
+// `TextureID`, an animation where "the 'r' channel of texture is used to
+// calculate visibility of force field parts over time (there's a sliding
+// window of currently 'visible' range of values). The alpha channel controls
+// how visible the texture pattern is." Its motion was described by the same
+// engineer as "some pseudorandom smooth change of values with pretty big
+// period". A plain part does not animate and carries no pattern — only the
+// mesh-with-texture case does.
 //
-// Roblox's current `ForceField` material is documented as being driven by
-// the `Class.MeshPart.TextureID` of the mesh it is applied to ("that texture
-// image must have a wide value range since the material displays the range
-// from dark/black to light/white values"), so a mesh with its own image
-// draws that image's value range in place of the lattice (see
-// `filemesh.wgsl`). Nothing is published about the older, texture-less look
-// every ordinary `Part` still gets, nor about how either one moves. The cell
-// size, the line width, both strengths and the shimmer below are therefore
-// this renderer's own rendition of an energy shell, not a reproduction of a
-// published one.
-const FORCE_FIELD_CELL_STUDS: f32 = 2.5;
-const FORCE_FIELD_LINE: f32 = 0.12;
-const FORCE_FIELD_LINE_GLOW: f32 = 1.6;
+// What is not published, and is therefore this renderer's own: how opaque
+// the shell is face-on versus edge-on, how bright the rim and the pattern
+// glow, the window's width (community measurements put the opaque share
+// near 10% at any moment, which a window 0.1 wide gives on an image with
+// evenly spread red values) and the path the window takes. The depth-driven
+// half of that transparency — the glow where the shell cuts through other
+// geometry — is not drawn at all.
 const FORCE_FIELD_RIM_GLOW: f32 = 2.2;
-// The shimmer: bands of glow sweeping up the shell once a cycle
-// (`uniforms.viewport.z`, see `pipeline::shimmer_phase`), this many studs
-// between crests, dimming the pattern to `1 - DEPTH` between them. On a
-// texture-driven shell the image's value shifts the band as well, so its
-// contours ripple rather than the whole image pulsing at once.
-const FORCE_FIELD_WAVE_STUDS: f32 = 5.0;
-const FORCE_FIELD_WAVE_DEPTH: f32 = 0.85;
+const FORCE_FIELD_PATTERN_GLOW: f32 = 1.6;
+// Opacity multipliers on the part's own alpha (itself capped at one half,
+// see `scene::alpha`): faint face-on, fully solid at a grazing edge.
+const FORCE_FIELD_FACE_OPACITY: f32 = 0.4;
+const FORCE_FIELD_EDGE_OPACITY: f32 = 2.0;
+// Where the pattern shows, the shell is solid.
+const FORCE_FIELD_PATTERN_OPACITY: f32 = 2.0;
+const FORCE_FIELD_WINDOW: f32 = 0.1;
 
 // Blinn-Phong from a roughness map: the exponent spans a very broad highlight
 // (2) to a tight one (2048), which is the useful range of
@@ -96,11 +99,10 @@ struct MaterialInput {
     layer: u32,
     studs_per_tile: f32,
     kind: u32,
-    // A `ForceField` mesh's own image, reduced to its value, which replaces
-    // the lattice when `has_pattern` is set. Left zeroed — no pattern — by
-    // every pass with no image of its own.
+    // How much of a `ForceField` mesh's own image is showing here, from
+    // `force_field_window`. Left zeroed — no pattern — by every pass with no
+    // image of its own, which is every plain part.
     pattern: f32,
-    has_pattern: bool,
 }
 
 /// The extent the model matrix scales its unit mesh to, i.e. the part's own
@@ -196,16 +198,10 @@ struct Mapped {
     metalness: f32,
     roughness: f32,
     kind: u32,
-    // Object space, in studs, and the object-space normal beside it: what
-    // the `ForceField` lattice is laid out in and against, so its cells
-    // stay with the part rather than swimming as it moves or turns.
-    object_studs: vec3<f32>,
-    object_normal: vec3<f32>,
-    // Towards the eye, for the rim the same shell brightens at.
+    // Towards the eye, for the rim a `ForceField` brightens at.
     to_eye: vec3<f32>,
     // `MaterialInput`'s, passed through.
     pattern: f32,
-    has_pattern: bool,
 }
 
 /// Whether a material shades procedurally whatever maps it is handed: Neon is
@@ -264,57 +260,44 @@ fn mapped_shade(mapped: Mapped) -> vec3<f32> {
     return shade(surface);
 }
 
-/// The shell's own light: a lattice of cells over the surface, and a rim
-/// that brightens where it is seen edge-on. Added to the shaded tint rather
-/// than replacing it, so a `ForceField` part keeps its own colour.
+/// The shell's own light: a rim that brightens where it is seen edge-on,
+/// and on a textured mesh whatever of its image is showing. Added to the
+/// shaded tint rather than replacing it, so a `ForceField` keeps its colour.
 fn force_field_energy(mapped: Mapped) -> vec3<f32> {
-    let facing = 1.0 - abs(dot(normalize(mapped.geometric_normal), mapped.to_eye));
-    let rim = facing * facing;
-    let lattice = force_field_lattice(mapped.object_studs, mapped.object_normal);
-    let pattern = select(lattice, mapped.pattern, mapped.has_pattern);
-    let along = mapped.object_studs.y / FORCE_FIELD_WAVE_STUDS
-        + select(0.0, mapped.pattern, mapped.has_pattern);
-    let glow = pattern * force_field_shimmer(along, uniforms.viewport.z);
-    return mapped.base_albedo * (glow * FORCE_FIELD_LINE_GLOW + rim * FORCE_FIELD_RIM_GLOW);
+    let rim = force_field_rim(mapped.geometric_normal, mapped.to_eye);
+    return mapped.base_albedo
+        * (mapped.pattern * FORCE_FIELD_PATTERN_GLOW + rim * FORCE_FIELD_RIM_GLOW);
 }
 
-/// How bright the shell's pattern is at `along` (in wave cycles) at `phase`
-/// through the shimmer's own cycle: 1 on a crest, `1 - DEPTH` in a trough.
-/// Travels by exactly one wave per cycle, so the picture at phase 1 is the one
-/// at phase 0 and the loop never jumps.
-fn force_field_shimmer(along: f32, phase: f32) -> f32 {
-    let wave = 0.5 + 0.5 * cos(6.2831855 * (along - phase));
-    return 1.0 - FORCE_FIELD_WAVE_DEPTH * (1.0 - wave);
+/// 0 face-on, 1 edge-on.
+fn force_field_rim(normal: vec3<f32>, to_eye: vec3<f32>) -> f32 {
+    let facing = 1.0 - abs(dot(normalize(normal), to_eye));
+    return facing * facing;
 }
 
-/// How close a point is to a cell edge, 1 on the line and 0 in the middle of
-/// a cell.
+/// How opaque a `ForceField` fragment is: the Fresnel-driven transparency
+/// Roblox describes, faint face-on and solid at the edge, with the image's
+/// visible pattern solid wherever it shows.
+fn force_field_alpha(alpha: f32, rim: f32, pattern: f32) -> f32 {
+    let opacity = mix(FORCE_FIELD_FACE_OPACITY, FORCE_FIELD_EDGE_OPACITY, rim)
+        + pattern * FORCE_FIELD_PATTERN_OPACITY;
+    return clamp(alpha * opacity, 0.0, 1.0);
+}
+
+/// Whether a texel of a `ForceField` mesh's image shows at `phase`: its red
+/// channel against the window of "visible" values Roblox describes, the
+/// window's centre wandering up and down through 0..1 as the cycle runs.
 ///
-/// Three families of parallel lines 60 degrees apart, which is a honeycomb:
-/// cheaper than a hexagon distance field and, at the width a shell's lines
-/// are drawn at, the same picture.
-fn force_field_lattice(object_studs: vec3<f32>, object_normal: vec3<f32>) -> f32 {
-    // Laid out on the two object axes the surface faces least, so the cells
-    // sit *on* the surface rather than being projected through it — the
-    // same face frame the map pack is sampled through.
-    let axis = dominant_axis(object_normal);
-    let frame = face_frame(axis);
-    let p = vec2<f32>(dot(object_studs, frame.u), dot(object_studs, frame.v))
-        / FORCE_FIELD_CELL_STUDS;
-
-    var closest = 1.0;
-    for (var i = 0; i < 3; i++) {
-        let angle = f32(i) * 1.0471976;
-        let direction = vec2<f32>(cos(angle), sin(angle));
-        let along = dot(p, direction);
-        // How far this point is from the nearest line of this family, in
-        // cell widths: the lines sit half a cell into each period, so the
-        // distance is zero exactly there and grows to half a cell between
-        // them.
-        let distance = abs(fract(along) - 0.5);
-        closest = min(closest, distance);
-    }
-    return 1.0 - smoothstep(0.0, FORCE_FIELD_LINE, closest);
+/// Three harmonics of the cycle rather than a noise texture: smooth, never
+/// periodic-looking within one cycle, and exactly the same at phase 1 as at
+/// phase 0, so the loop never jumps. The weights sum to 1, so the centre
+/// spans the whole range at its extremes.
+fn force_field_window(red: f32, phase: f32) -> f32 {
+    let t = 6.2831855 * phase;
+    let wander = 0.5 * sin(t) + 0.3 * sin(2.0 * t + 1.7) + 0.2 * sin(3.0 * t + 4.1);
+    let centre = 0.5 + 0.5 * wander;
+    let half = FORCE_FIELD_WINDOW * 0.5;
+    return 1.0 - smoothstep(half * 0.5, half, abs(red - centre));
 }
 
 /// Projects the map pack along one world axis and samples it, before any
@@ -345,11 +328,8 @@ fn sample_axis(axis: vec3<f32>, input: MaterialInput) -> Mapped {
     mapped.metalness = metalness;
     mapped.roughness = roughness;
     mapped.kind = input.kind;
-    mapped.object_studs = input.object_studs;
-    mapped.object_normal = input.object_normal;
     mapped.to_eye = normalize(lighting.camera.xyz - input.world_position);
     mapped.pattern = input.pattern;
-    mapped.has_pattern = input.has_pattern;
     return mapped;
 }
 
@@ -384,8 +364,13 @@ fn triplanar_weights(normal: vec3<f32>) -> vec3<f32> {
 /// first, is not in what the pane refracts. `screen_uv` is the fragment's
 /// own place in the frame, which is where that copy is read from before the
 /// surface's normal pushes the lookup aside.
-fn material_output(input: MaterialInput, alpha: f32, screen_uv: vec2<f32>) -> vec4<f32> {
+fn material_output(input: MaterialInput, in_alpha: f32, screen_uv: vec2<f32>) -> vec4<f32> {
     let shaded = material_shade_with_normal(input);
+    var alpha = in_alpha;
+    if input.kind == KIND_FORCE_FIELD {
+        let to_eye = normalize(lighting.camera.xyz - input.world_position);
+        alpha = force_field_alpha(alpha, force_field_rim(input.world_normal, to_eye), input.pattern);
+    }
     // A pass with no copy behind it binds one unread texel (a
     // `ViewportFrame`'s own, a place with no glass in it at all): there is
     // nothing to bend, so the pane blends the ordinary way instead.
@@ -454,11 +439,8 @@ fn material_shade_with_normal(input: MaterialInput) -> Shaded {
     mapped.metalness = 0.0;
     mapped.roughness = 0.0;
     mapped.kind = input.kind;
-    mapped.object_studs = input.object_studs;
-    mapped.object_normal = input.object_normal;
     mapped.to_eye = normalize(lighting.camera.xyz - input.world_position);
     mapped.pattern = input.pattern;
-    mapped.has_pattern = input.has_pattern;
 
     if weights.x >= TRIPLANAR_WEIGHT_EPSILON {
         let leg = sample_axis(vec3<f32>(sign_of(n.x), 0.0, 0.0), input);
