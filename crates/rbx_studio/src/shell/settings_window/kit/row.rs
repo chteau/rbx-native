@@ -183,18 +183,62 @@ pub(in crate::shell::settings_window) fn section(
     section: Section,
     shell: &Entity<Shell>,
 ) -> Div {
+    let title = section.title;
+    v_flex()
+        .gap(px(8.))
+        .child(section_title(title))
+        .child(section_card(index, section, shell, None))
+}
+
+/// A section's card alone; `query` marks where each row matches a search.
+pub(in crate::shell::settings_window) fn section_card(
+    index: usize,
+    section: Section,
+    shell: &Entity<Shell>,
+    query: Option<&str>,
+) -> Div {
     let rows = section
         .rows
         .into_iter()
         .enumerate()
-        .map(|(i, row)| render_row((index, i), row, shell));
-    v_flex()
-        .gap(px(8.))
-        .child(section_title(section.title))
-        .child(card().children(section.head).children(rows))
+        .map(|(i, row)| render_row((index, i), row, shell, query));
+    card().children(section.head).children(rows)
 }
 
-fn render_row(id: (usize, usize), row: Row, shell: &Entity<Shell>) -> Stateful<Div> {
+/// `text` with every case-insensitive match of `query` marked in the
+/// accent on its soft wash.
+fn marked(text: SharedString, query: Option<&str>) -> AnyElement {
+    let Some(query) = query.filter(|q| !q.is_empty()) else {
+        return text.into_any_element();
+    };
+    let lower = text.to_lowercase();
+    let needle = query.to_lowercase();
+    // Lowercasing can change a string's byte length (outside ASCII), and
+    // then the offsets found in one don't fit the other.
+    if lower.len() != text.len() {
+        return text.into_any_element();
+    }
+    let style = HighlightStyle {
+        color: Some(tokens::check_on().into()),
+        background_color: Some(tokens::accent_soft().into()),
+        ..Default::default()
+    };
+    let ranges: Vec<_> = lower
+        .match_indices(&needle)
+        .map(|(at, found)| (at..at + found.len(), style))
+        .collect();
+    StyledText::new(text)
+        .with_highlights(ranges)
+        .into_any_element()
+}
+
+fn render_row(
+    id: (usize, usize),
+    row: Row,
+    shell: &Entity<Shell>,
+    query: Option<&str>,
+) -> Stateful<Div> {
+    let label_matched = query.is_some_and(|q| row.label.to_lowercase().contains(&q.to_lowercase()));
     let (label_color, description_color) = if row.soon {
         (tokens::text2(), tokens::text3())
     } else {
@@ -258,7 +302,7 @@ fn render_row(id: (usize, usize), row: Row, shell: &Entity<Shell>) -> Stateful<D
                                             this.font_family(tokens::FONT_FAMILY_MONO)
                                                 .text_size(px(11.5))
                                         })
-                                        .child(row.label),
+                                        .child(marked(row.label.into(), query)),
                                 )
                                 .children(row.chip.map(|chip| {
                                     text(10.5, 14.)
@@ -283,7 +327,9 @@ fn render_row(id: (usize, usize), row: Row, shell: &Entity<Shell>) -> Stateful<D
                                     this.font_family(tokens::FONT_FAMILY_MONO)
                                         .text_size(px(11.))
                                 })
-                                .child(description);
+                                // Marked only where the label didn't
+                                // match: one mark per row says why it's here.
+                                .child(marked(description, query.filter(|_| !label_matched)));
                             if row.keys.is_empty() {
                                 line.into_any_element()
                             } else {

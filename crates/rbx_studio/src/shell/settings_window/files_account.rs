@@ -81,12 +81,22 @@ impl SettingsWindow {
     pub(super) fn account_page(&mut self, cx: &mut Context<Self>) -> Vec<Section> {
         // Checked when the page is first shown, not when the window opens:
         // the check is a round trip to Roblox.
-        let check = self.key.get_or_insert_with(|| {
-            let check = launcher::check_stored_key(cx);
-            cx.observe(&check, |_, _, cx| cx.notify()).detach();
-            check
-        });
-        let summary = launcher::key_summary(check.read(cx), "stored in your system keychain");
+        // A search reads this page's rows too, and shouldn't start one.
+        let summary = if self.key.is_none() && !self.query(cx).is_empty() {
+            launcher::KeySummary {
+                name: "Your key".into(),
+                tag: None,
+                meta: SharedString::default(),
+                owner: None,
+            }
+        } else {
+            let check = self.key.get_or_insert_with(|| {
+                let check = launcher::check_stored_key(cx);
+                cx.observe(&check, |_, _, cx| cx.notify()).detach();
+                check
+            });
+            launcher::key_summary(check.read(cx), "stored in your system keychain")
+        };
         let name: SharedString = match &summary.owner {
             Some(_) => format!("Open Cloud key \u{201c}{}\u{201d}", summary.name).into(),
             None => summary.name.clone(),

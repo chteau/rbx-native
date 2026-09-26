@@ -12,8 +12,7 @@
 
 use std::rc::Rc;
 
-use gpui_kit::component::input::{Input, InputState};
-use gpui_kit::component::scroll::ScrollableElement as _;
+use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::{h_flex, v_flex, Root};
 use gpui_kit::*;
 
@@ -28,11 +27,13 @@ mod dragger;
 mod files_account;
 mod kit;
 mod nav;
+mod page;
 mod panels;
+mod search;
 mod setters;
 mod viewport;
 
-use kit::{text, OnPick, Section};
+use kit::{OnPick, Section};
 use nav::Page;
 
 const WIDTH: f32 = 1040.;
@@ -48,12 +49,16 @@ pub(super) const OPEN_VARIABLE: &str = "RBX_STUDIO_SETTINGS";
 /// `RBX_STUDIO_SETTINGS_SCROLL=<px>` scrolls the page that far down.
 const ADVANCED_VARIABLE: &str = "RBX_STUDIO_SETTINGS_ADVANCED";
 const SCROLL_VARIABLE: &str = "RBX_STUDIO_SETTINGS_SCROLL";
+/// `RBX_STUDIO_SETTINGS_SEARCH=<query>` opens with that search typed.
+const SEARCH_VARIABLE: &str = "RBX_STUDIO_SETTINGS_SEARCH";
 
 pub(crate) struct SettingsWindow {
     shell: Entity<Shell>,
     page: Page,
     search: Entity<InputState>,
     sliders: viewport::Sliders,
+    /// Matching rows per page while a search is typed, for the nav.
+    search_counts: Vec<(Page, usize)>,
     increments: dragger::Increments,
     argon: argon::ArgonControls,
     appearance: appearance::AppearanceControls,
@@ -71,6 +76,9 @@ pub(crate) struct SettingsWindow {
     /// Viewport › Advanced's disclosure.
     advanced_open: bool,
     page_scroll: ScrollHandle,
+    /// The window's own focus, so its keys (`Ctrl F`, `Esc`) reach it
+    /// before anything inside it has been clicked.
+    focus: FocusHandle,
     /// The capture scroll, applied once the page has been laid out (before
     /// that it would be clamped to nothing).
     pending_scroll: Option<f32>,
@@ -133,11 +141,22 @@ impl SettingsWindow {
         subscriptions.extend(picked);
         let (appearance, chosen) = appearance::AppearanceControls::new(&shell, window, cx);
         subscriptions.extend(chosen);
-        let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search settings"));
+        let search = cx.new(|cx| {
+            let mut state = InputState::new(window, cx).placeholder("Search settings");
+            if let Ok(query) = std::env::var(SEARCH_VARIABLE) {
+                state = state.default_value(query);
+            }
+            state
+        });
         // Anything that changes a setting elsewhere — the dock, a menu —
         // notifies the shell; this window has nothing of its own to redraw
         // from.
         subscriptions.push(cx.observe(&shell, |_, _, cx| cx.notify()));
+        subscriptions.push(cx.subscribe(&search, |_, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                cx.notify();
+            }
+        }));
         let page = std::env::var(PAGE_VARIABLE)
             .ok()
             .and_then(|name| Page::from_key(&name))
@@ -147,6 +166,7 @@ impl SettingsWindow {
             page,
             search,
             sliders,
+            search_counts: Vec::new(),
             increments,
             argon,
             appearance,
@@ -158,6 +178,11 @@ impl SettingsWindow {
             key: None,
             advanced_open: std::env::var(ADVANCED_VARIABLE).is_ok(),
             page_scroll: ScrollHandle::new(),
+            focus: {
+                let focus = cx.focus_handle();
+                focus.focus(window, cx);
+                focus
+            },
             pending_scroll: std::env::var(SCROLL_VARIABLE)
                 .ok()
                 .and_then(|y| y.parse::<f32>().ok()),
@@ -195,92 +220,16 @@ impl SettingsWindow {
             _ => Vec::new(),
         }
     }
-
-    /// What a page shows that isn't a section of rows.
-    fn body(&self) -> Option<AnyElement> {
-        (self.page == Page::Beta).then(|| self.beta_body())
-    }
-
-    fn page_view(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let sections = self.sections(window, cx);
-        let body = self.body();
-        let resets: Vec<_> = sections
-            .iter()
-            .flat_map(|section| {
-                section
-                    .rows
-                    .iter()
-                    .filter_map(|row| row.reset.clone())
-                    .chain(section.resets.iter().cloned())
-            })
-            .collect();
-        let shell = self.shell.clone();
-        let reset_page = kit::header_button(
-            "reset-page",
-            "Reset page",
-            (!resets.is_empty()).then_some(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                shell.update(cx, |shell, cx| {
-                    for reset in &resets {
-                        reset(shell, cx);
-                    }
-                })
-            }),
-        );
-        let header_button = match self.page {
-            Page::Argon => Some(self.argon_header(cx)),
-            page if page.has_reset() => Some(reset_page),
-            _ => None,
-        };
-        let lead = (self.page == Page::Argon).then(|| self.argon_scope_bar(cx));
-        let (title, subtitle) = self.page.heading();
-        let shell = self.shell.clone();
-        v_flex()
-            .id("settings-page")
-            .flex_1()
-            .min_w_0()
-            .overflow_y_scroll()
-            .track_scroll(&self.page_scroll)
-            .vertical_scrollbar(&self.page_scroll)
-            .child(
-                v_flex()
-                    .pt(px(26.))
-                    .pr(px(40.))
-                    .pb(px(40.))
-                    .pl(px(36.))
-                    .gap(px(22.))
-                    .child(
-                        h_flex()
-                            .items_start()
-                            .gap(px(16.))
-                            .child(
-                                v_flex()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .gap(px(4.))
-                                    .child(
-                                        text(20., 26.).font_weight(FontWeight::BOLD).child(title),
-                                    )
-                                    .child(
-                                        text(12.5, 18.).text_color(tokens::text2()).child(subtitle),
-                                    ),
-                            )
-                            .children(header_button),
-                    )
-                    .children(lead)
-                    .children(
-                        sections
-                            .into_iter()
-                            .enumerate()
-                            .map(|(i, section)| kit::section(i, section, &shell)),
-                    )
-                    .children(body),
-            )
-    }
 }
 
 impl Render for SettingsWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let page = self.page_view(window, cx);
+        let page = if self.query(cx).is_empty() {
+            self.search_counts.clear();
+            self.page_view(window, cx).into_any_element()
+        } else {
+            self.search_view(window, cx)
+        };
         if let Some(y) = self.pending_scroll {
             let max = self.page_scroll.max_offset().y;
             if max > px(0.) {
@@ -301,12 +250,25 @@ impl Render for SettingsWindow {
         let picker = self.picker_popover(cx);
         v_flex()
             .id("settings-window")
+            .track_focus(&self.focus)
             .size_full()
             .bg(tokens::dock())
-            .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
-                if event.keystroke.key == "escape" && this.picker.take().is_some() {
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                let keystroke = &event.keystroke;
+                if keystroke.key == "escape" {
+                    if this.picker.take().is_none() {
+                        // Esc clears a search before anything else.
+                        if this.query(cx).is_empty() {
+                            return;
+                        }
+                        this.search
+                            .update(cx, |state, cx| state.set_value("", window, cx));
+                    }
                     cx.stop_propagation();
                     cx.notify();
+                } else if keystroke.key == "f" && keystroke.modifiers.control {
+                    this.search.update(cx, |state, cx| state.focus(window, cx));
+                    cx.stop_propagation();
                 }
             }))
             .font_family(tokens::FONT_FAMILY_UI)
@@ -326,34 +288,5 @@ impl Render for SettingsWindow {
                     .child(page),
             )
             .children(picker)
-    }
-}
-
-impl SettingsWindow {
-    fn search_field(&self) -> impl IntoElement {
-        h_flex()
-            .h(px(32.))
-            .flex_none()
-            .gap(px(8.))
-            .pl(px(10.))
-            .pr(px(8.))
-            .items_center()
-            .border_1()
-            .border_color(tokens::border())
-            .rounded(px(6.))
-            .bg(tokens::field_select())
-            .text_color(tokens::text3())
-            .child(kit::icon("search", 14.))
-            .child(
-                div().flex_1().min_w_0().child(
-                    Input::new(&self.search)
-                        .appearance(false)
-                        .px_0()
-                        .text_size(px(12.))
-                        .line_height(px(16.))
-                        .text_color(tokens::text()),
-                ),
-            )
-            .child(kit::key_hint("Ctrl F"))
     }
 }

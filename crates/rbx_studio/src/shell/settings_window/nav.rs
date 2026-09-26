@@ -112,8 +112,12 @@ impl Page {
 
 impl SettingsWindow {
     pub(super) fn nav(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let search = self.search_field(cx);
+        let searching = !self.query(cx).is_empty();
+        let counts = self.search_counts.clone();
         let pages = Page::ALL.into_iter().map(|page| {
             let current = page == self.page;
+            let count = counts.iter().find(|(p, _)| *p == page).map(|(_, n)| *n);
             nav_item(
                 ("page", page as usize),
                 page.glyph(),
@@ -132,6 +136,16 @@ impl SettingsWindow {
                     this
                 }
             })
+            // While searching, a page with no match is dimmed and one with
+            // matches says how many.
+            .when(searching && count.is_none() && !current, |this| {
+                this.text_color(tokens::text3())
+            })
+            .children(count.map(|n| {
+                mono(10.5, 14.)
+                    .text_color(tokens::text3())
+                    .child(n.to_string())
+            }))
             .when(page.soon(), |this| {
                 this.child(soon_pill(("page-soon", page as usize)))
             })
@@ -160,7 +174,7 @@ impl SettingsWindow {
             .pt(px(14.))
             .px(px(12.))
             .pb(px(12.))
-            .child(self.search_field())
+            .child(search)
             .child(v_flex().gap(px(2.)).mt(px(14.)).children(pages))
             .child(
                 div()

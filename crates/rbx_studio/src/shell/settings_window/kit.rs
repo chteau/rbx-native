@@ -16,7 +16,7 @@ pub(super) use controls::{
     ghost_icon, readout, secondary_button, segmented, slider, still_slider, still_toggle,
     ticked_slider, toggle, OnPick,
 };
-pub(super) use row::{section, Reset, Row, Section};
+pub(super) use row::{section, section_card, Reset, Row, Section};
 
 pub(super) fn text(size: f32, line: f32) -> Div {
     div().text_size(px(size)).line_height(px(line))
