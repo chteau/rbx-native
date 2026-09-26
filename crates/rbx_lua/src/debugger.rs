@@ -15,6 +15,8 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::ffi::c_int;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use mlua::chunk::Compiler;
 use mlua::{ffi, Lua};
@@ -81,6 +83,9 @@ struct Session {
 /// watch runs Luau on the same, still single-stepping, thread.
 struct Hook {
     busy: Cell<bool>,
+    /// Set from another thread to stop a script that is running rather than
+    /// paused — one that never reaches a breakpoint, say, or never ends.
+    stop: Arc<AtomicBool>,
     session: RefCell<Session>,
 }
 
@@ -92,6 +97,7 @@ pub(crate) fn run(
     name: &str,
     breakpoints: &[Breakpoint],
     output: Rc<RefCell<Vec<String>>>,
+    stop: Arc<AtomicBool>,
     on_pause: impl FnMut(&Paused) -> Resume + 'static,
 ) -> mlua::Result<()> {
     let chunk = lua
@@ -102,6 +108,7 @@ pub(crate) fn run(
 
     lua.set_app_data(Rc::new(Hook {
         busy: Cell::new(false),
+        stop,
         session: RefCell::new(Session {
             breakpoints: breakpoints.iter().map(|b| (b.line, b.clone())).collect(),
             on_pause: Box::new(on_pause),
@@ -151,9 +158,20 @@ unsafe extern "C-unwind" fn debug_step(state: *mut ffi::lua_State, ar: *mut ffi:
         if hook.busy.replace(true) {
             return;
         }
-        let resume = step(lua, &hook, state, (*ar).currentline);
+        // Checked every instruction, not every line: a one-line endless loop
+        // never reaches a new line.
+        let resume = match hook.stop.load(Ordering::Relaxed) {
+            true => Some(Resume::Stop),
+            false => step(lua, &hook, state, (*ar).currentline),
+        };
         hook.busy.set(false);
-        resume == Some(Resume::Stop)
+        let stop = resume == Some(Resume::Stop);
+        // Latched, so a `pcall` in the script that swallows the error
+        // below is stopped again on its very next instruction.
+        if stop {
+            hook.stop.store(true, Ordering::Relaxed);
+        }
+        stop
     };
     if stop {
         ffi::lua_pushlstring_(state, STOPPED.as_ptr().cast(), STOPPED.len());

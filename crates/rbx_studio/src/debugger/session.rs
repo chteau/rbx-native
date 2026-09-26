@@ -7,7 +7,9 @@
 //! shape `argon_client::thread` uses. The editor decides what to do with
 //! the mutated clone once the run is over.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::Arc;
 use std::thread;
 
 use rbx_dom::WeakDom;
@@ -19,7 +21,8 @@ use rbx_reflection::ReflectionDatabase;
 pub(crate) enum Command {
     Resume(Resume),
     /// Evaluates each watch expression, answered with one
-    /// [`Event::Evaluated`].
+    /// [`Event::Evaluated`] naming each expression beside its value, so an
+    /// answer that crosses an edit of the watch list still lands right.
     Evaluate(Vec<String>),
 }
 
@@ -39,7 +42,7 @@ pub(crate) type Evaluation = Result<String, String>;
 #[derive(Debug)]
 pub(crate) enum Event {
     Paused(Pause),
-    Evaluated(Vec<Evaluation>),
+    Evaluated(Vec<(String, Evaluation)>),
     Finished(Finished),
 }
 
@@ -58,6 +61,7 @@ pub(crate) struct Finished {
 pub(crate) struct Session {
     commands: Sender<Command>,
     events: Receiver<Event>,
+    stop: Arc<AtomicBool>,
 }
 
 impl Session {
@@ -70,10 +74,12 @@ impl Session {
     ) -> Session {
         let (command_tx, command_rx) = mpsc::channel();
         let (event_tx, event_rx) = mpsc::channel();
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_flag = stop.clone();
         thread::Builder::new()
             .name("script-debugger".into())
             .spawn(move || {
-                let finished = run(dom, database, &source, &name, &breakpoints, {
+                let finished = run(dom, database, &source, &name, &breakpoints, stop_flag, {
                     let events = event_tx.clone();
                     move |paused| on_pause(paused, &events, &command_rx)
                 });
@@ -83,7 +89,14 @@ impl Session {
         Session {
             commands: command_tx,
             events: event_rx,
+            stop,
         }
+    }
+
+    /// Stops the script whether it is paused or still running.
+    pub(crate) fn stop(&self) {
+        self.stop.store(true, Ordering::Relaxed);
+        self.send(Command::Resume(Resume::Stop));
     }
 
     /// A run that already finished has nobody listening; that is not an
@@ -111,6 +124,7 @@ fn run(
     source: &str,
     name: &str,
     breakpoints: &[Breakpoint],
+    stop: Arc<AtomicBool>,
     on_pause: impl FnMut(&Paused) -> Resume + 'static,
 ) -> Finished {
     let mut runtime = match Runtime::new(dom, database) {
@@ -123,7 +137,7 @@ fn run(
             }
         }
     };
-    let (output, result) = match runtime.debug(source, name, breakpoints, on_pause) {
+    let (output, result) = match runtime.debug(source, name, breakpoints, stop, on_pause) {
         Ok(output) => (output.lines().to_vec(), Ok(())),
         Err(err) => (Vec::new(), Err(err.to_string())),
     };
@@ -151,7 +165,7 @@ fn on_pause(paused: &Paused, events: &Sender<Event>, commands: &Receiver<Command
             Ok(Command::Evaluate(expressions)) => {
                 let values = expressions
                     .iter()
-                    .map(|expression| paused.evaluate(expression))
+                    .map(|expression| (expression.clone(), paused.evaluate(expression)))
                     .collect();
                 if events.send(Event::Evaluated(values)).is_err() {
                     return Resume::Stop;
@@ -218,8 +232,8 @@ mod tests {
         let Event::Evaluated(values) = session.next_event() else {
             panic!("expected watch values");
         };
-        assert_eq!(values[0], Ok("82".to_owned()));
-        assert!(values[1].is_err());
+        assert_eq!(values[0], ("n * 2".to_owned(), Ok("82".to_owned())));
+        assert!(values[1].1.is_err());
 
         session.send(Command::Resume(Resume::Continue));
         let done = finished(session.next_event());
@@ -233,13 +247,40 @@ mod tests {
     fn dropping_the_session_stops_a_paused_run() {
         let session = start("local a = 1\nlocal b = 2", &[2]);
         paused(session.next_event());
-        let Session { commands, events } = session;
+        let Session {
+            commands, events, ..
+        } = session;
         drop(commands);
         let done = finished(
             events
                 .recv_timeout(std::time::Duration::from_secs(10))
                 .unwrap(),
         );
+        assert!(done.result.unwrap_err().contains(rbx_lua::STOPPED));
+    }
+}
+
+#[cfg(test)]
+mod stop_tests {
+    use rbx_dom::{Instance, Ref};
+
+    use super::*;
+
+    #[test]
+    fn stop_ends_a_script_that_never_pauses() {
+        let mut dom = WeakDom::new();
+        dom.insert(Instance::new(Ref::new(1), "Workspace", "Workspace"));
+        let session = Session::start(
+            dom,
+            ReflectionDatabase::embedded(),
+            "while true do end".into(),
+            "Script".into(),
+            Vec::new(),
+        );
+        session.stop();
+        let Event::Finished(done) = session.next_event() else {
+            panic!("expected the run to finish");
+        };
         assert!(done.result.unwrap_err().contains(rbx_lua::STOPPED));
     }
 }

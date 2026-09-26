@@ -3,6 +3,8 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use rbx_dom::{Instance, Ref, WeakDom};
 use rbx_lua::{Breakpoint, Frame, Paused, Resume, Runtime, Variable, STOPPED};
@@ -12,6 +14,10 @@ fn runtime() -> Runtime {
     let mut dom = WeakDom::new();
     dom.insert(Instance::new(Ref::new(1), "Workspace", "Workspace"));
     Runtime::new(dom, ReflectionDatabase::embedded()).expect("runtime must start")
+}
+
+fn no_stop() -> Arc<AtomicBool> {
+    Arc::new(AtomicBool::new(false))
 }
 
 fn at(line: u32) -> Breakpoint {
@@ -33,7 +39,7 @@ fn debug<T: 'static>(
     let answers = RefCell::new(answers.to_vec());
     let recorder = seen.clone();
     let result = runtime()
-        .debug(source, "Script", breakpoints, move |paused| {
+        .debug(source, "Script", breakpoints, no_stop(), move |paused| {
             recorder.borrow_mut().push(inspect(paused));
             let mut answers = answers.borrow_mut();
             if answers.is_empty() {
@@ -203,7 +209,7 @@ fn stop_abandons_the_script_but_keeps_what_it_already_did() {
     let source = r#"Instance.new("Folder", workspace).Name = "Kept"
 print("never")"#;
     let mut runtime = runtime();
-    let result = runtime.debug(source, "Script", &[at(2)], |_| Resume::Stop);
+    let result = runtime.debug(source, "Script", &[at(2)], no_stop(), |_| Resume::Stop);
     assert!(result.unwrap_err().to_string().contains(STOPPED));
     let dom = runtime.into_dom();
     let workspace = dom.get(Ref::new(1)).unwrap();
@@ -214,7 +220,9 @@ print("never")"#;
 fn a_runtime_is_reusable_after_a_debug_run() {
     let mut runtime = runtime();
     runtime
-        .debug("print(1)", "Script", &[at(1)], |_| Resume::Continue)
+        .debug("print(1)", "Script", &[at(1)], no_stop(), |_| {
+            Resume::Continue
+        })
         .unwrap();
     let output = runtime.run("print(2)").unwrap();
     assert_eq!(output.lines(), ["2"]);
@@ -227,4 +235,25 @@ fn output_printed_before_a_pause_can_be_taken_while_paused() {
     });
     assert_eq!(seen, vec![vec!["a".to_owned()]]);
     assert_eq!(result.unwrap(), vec!["b"]);
+}
+
+#[test]
+fn the_stop_flag_ends_a_script_that_never_pauses() {
+    let stop = no_stop();
+    let flag = stop.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        flag.store(true, Ordering::Relaxed);
+    });
+    let result = runtime().debug("while true do end", "Script", &[], stop, |_| {
+        Resume::Continue
+    });
+    assert!(result.unwrap_err().to_string().contains(STOPPED));
+}
+
+#[test]
+fn a_pcall_cannot_swallow_a_stop() {
+    let source = "pcall(function()\n    local a = 1\nend)\nprint(\"after\")";
+    let (_, result) = debug(source, &[at(2)], &[Resume::Stop], |p| p.line());
+    assert!(result.unwrap_err().contains(STOPPED));
 }

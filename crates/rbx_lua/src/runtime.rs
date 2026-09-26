@@ -2,6 +2,8 @@
 
 use std::cell::{Ref as CellRef, RefCell};
 use std::rc::Rc;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use mlua::chunk::Compiler;
 use mlua::{Lua, Value, Variadic};
@@ -76,12 +78,14 @@ impl Runtime {
     /// Runs a script with the debugger attached: `on_pause` is called, on this
     /// thread and with the script frozen, whenever a breakpoint or a step
     /// request stops it, and says how to carry on. `name` is what the call
-    /// stack and error messages call the chunk.
+    /// stack and error messages call the chunk. Setting `stop`, from any
+    /// thread, stops the script as [`Resume::Stop`] would, paused or not.
     pub fn debug(
         &mut self,
         source: &str,
         name: &str,
         breakpoints: &[Breakpoint],
+        stop: Arc<AtomicBool>,
         on_pause: impl FnMut(&Paused) -> Resume + 'static,
     ) -> Result<Output, LuaError> {
         self.output.borrow_mut().clear();
@@ -91,6 +95,7 @@ impl Runtime {
             name,
             breakpoints,
             self.output.clone(),
+            stop,
             on_pause,
         )?;
         Ok(Output {
