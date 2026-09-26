@@ -85,6 +85,7 @@ pub(super) fn build(
                 // both faces.
                 cull: None,
                 translucent,
+                scene_depth: translucent,
                 ..Surface::new(label, shader, layouts, buffers)
             },
         )

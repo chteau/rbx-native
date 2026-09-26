@@ -82,5 +82,5 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Straight (non-premultiplied) alpha: the translucent pipeline pairs this
     // with src_alpha / one_minus_src_alpha, and the opaque one always gets 1.
-    return material_output(input, in.color.a, in.clip_position.xy / uniforms.viewport.xy);
+    return material_output(input, in.color.a, in.clip_position);
 }

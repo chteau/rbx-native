@@ -78,10 +78,20 @@ Roblox's own engine.
   surface detail that gives real glass its wobble (Roblox documents the
   refraction itself, and that it is dropped on mobile "due to
   computational limitations", but publishes no index or displacement, so
-  the figure is this renderer's). A `ForceField` is drawn as an energy
-  shell: a lattice of cells and a rim that brightens where it is seen
-  edge-on, both this renderer's own rendition — see "What's planned" →
-  Renderer for what of that material is still open.
+  the figure is this renderer's). A `ForceField` follows Roblox's own
+  description of the material (its 2019 DevForum announcement): a shell whose
+  Fresnel-driven transparency makes it faint face-on and solid at its edges,
+  in the part's colour and still on a plain part. On a `MeshPart` or file
+  `SpecialMesh` with its own `TextureID`, the image's red channel is
+  compared against a window of "visible" values that wanders up and down
+  over a long cycle, and its alpha sets how strongly the texels in the window
+  show. The clock is the host's; a `--screenshot` holds it at 0, or at
+  `--elapsed`'s value, so a capture stays repeatable. A shell is drawn from
+  both sides, glows where it cuts through other geometry (read from the
+  opaque scene's depth, and only above quality level 15, where Roblox draws
+  it), and is forced solid wherever a mesh's own vertex alpha drops below 1.
+  The window's width and path, the period, the opacities and the glow's
+  width are this renderer's own, since Roblox publishes none of them.
 - [x] Decals/textures projected on real geometry (not just boxes), and
   patched in place — not just redrawn on a full reload — when the
   `CFrame`, size or shape of the part they're pinned to is edited live.
@@ -1407,17 +1417,6 @@ Roblox's own engine.
   above existing first regardless of which direction it takes.
 
 ### Renderer
-- [ ] 📋 **An animated `ForceField` shimmer**, and the modern material's
-  own `MeshPart.TextureID` source. The shell itself is drawn now (see
-  "What's been implemented" → Renderer), but it does not move: a pattern
-  that animates needs a clock in the material pass, and a `--screenshot`
-  that differed from run to run would be worse than a still one — the same
-  reason a `StyleRule` transition never applies here. Roblox's current
-  `ForceField` material is documented as displaying the dark-to-light range
-  of the `Class.MeshPart.TextureID` of the mesh it is applied to, which
-  this renderer does not feed into the material pass at all; that is the
-  other half, and it needs the mesh's own texture on the material path
-  rather than a second guess at the texture-less look.
 - [ ] 📋 **A 5th "Transform" toolbar button** appears in Studio's current
   toolbar (see the owner-provided screenshot) alongside the now-implemented
   Select/Move/Scale/Rotate (see "What's been implemented" → Editor), but

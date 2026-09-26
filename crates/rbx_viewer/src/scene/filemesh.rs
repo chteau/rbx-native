@@ -316,15 +316,17 @@ fn from_mesh_part(
         _ => super::FALLBACK_COLOR,
     };
 
+    let material = materials.slot_for(properties, database);
+
     Some(Entry {
         referent,
-        material: materials.slot_for(properties, database),
+        material,
         mesh,
         texture,
         appearance,
         fit,
         color: color.map(|channel| super::srgb_to_linear(f32::from(channel) / 255.0)),
-        alpha: 1.0 - super::number(properties.get("Transparency")).clamp(0.0, 1.0),
+        alpha: super::alpha(properties, material.kind),
         reflectance: super::number(properties.get("Reflectance")).clamp(0.0, 1.0),
         casts_shadow: super::casts_shadow(properties),
     })
@@ -356,10 +358,12 @@ fn from_special_mesh_child(
         part_channel * super::srgb_to_linear(tint.to_array()[axis])
     });
 
+    // The part's material, not the mesh's: a SpecialMesh has none.
+    let material = materials.slot_for(part.properties(), database);
+
     Some(Entry {
         referent,
-        // The part's material, not the mesh's: a SpecialMesh has none.
-        material: materials.slot_for(part.properties(), database),
+        material,
         mesh,
         texture,
         // `SurfaceAppearance` is a MeshPart child; a SpecialMesh never has one.
@@ -368,7 +372,7 @@ fn from_special_mesh_child(
         color,
         // A SpecialMesh has no Transparency of its own: the part it hangs under
         // owns both properties.
-        alpha: 1.0 - super::number(part.properties().get("Transparency")).clamp(0.0, 1.0),
+        alpha: super::alpha(part.properties(), material.kind),
         reflectance: super::number(part.properties().get("Reflectance")).clamp(0.0, 1.0),
         casts_shadow: super::casts_shadow(part.properties()),
     })

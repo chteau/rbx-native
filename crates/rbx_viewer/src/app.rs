@@ -212,6 +212,7 @@ impl Viewer<'_> {
             active.renderer.set_quality(&active.device, &self.profile);
         }
 
+        active.renderer.set_elapsed(elapsed);
         if let Err(err) = active.draw(from) {
             self.error = Some(err);
             event_loop.exit();

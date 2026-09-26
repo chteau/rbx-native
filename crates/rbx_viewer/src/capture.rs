@@ -214,6 +214,12 @@ impl Offscreen {
     ///
     /// `None` on the first call, and after every size change: there is no earlier
     /// frame, or none of a size the caller still wants.
+    /// See [`Renderer::set_elapsed`]. The `--screenshot` path only calls it
+    /// with `--elapsed`'s fixed value, which is what keeps it repeatable.
+    pub(crate) fn set_elapsed(&mut self, elapsed: std::time::Duration) {
+        self.renderer.set_elapsed(elapsed);
+    }
+
     pub(crate) fn queue_frame(
         &mut self,
         size: (u32, u32),
@@ -334,6 +340,8 @@ pub(crate) struct Framing {
     /// windowed path.
     pub(crate) eye_look_at: Option<(Vec3, Vec3)>,
     pub(crate) orthographic: bool,
+    /// Where the animation clock stands for this one frame.
+    pub(crate) elapsed: std::time::Duration,
 }
 
 /// Renders a single frame offscreen and writes it as PNG, on a GPU device of
@@ -375,6 +383,7 @@ pub(crate) fn write_png_on(
     // spread the rest of the load across — finish it now instead of writing
     // out a PNG with some textures still on their placeholder.
     offscreen.finish_loading();
+    offscreen.set_elapsed(framing.elapsed);
 
     if let Some(degrees) = framing.pitch {
         offscreen.pitch(degrees);

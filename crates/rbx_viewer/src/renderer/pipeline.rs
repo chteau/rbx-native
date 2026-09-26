@@ -56,8 +56,10 @@ pub(super) const SKYBOX_SHADER: &str = concat!(
 );
 
 // The frame uniform (bind group 0, binding 0): the view-projection matrix,
-// then the viewport's pixel size in a `vec4` (`xy` used, `zw` padding) so the
-// outline shaders can expand their edges to a constant pixel width. Every
+// then the viewport's pixel size in a `vec4` (`xy`, `z` the `ForceField`
+// shimmer's phase, `w` how its intersection glow reads depth — see
+// `intersection_depth`) so the outline shaders can expand their edges to a
+// constant pixel width. Every
 // other surface shader declares only the matrix and reads just the first 64
 // bytes, which stay first.
 const FRAME_SIZE: wgpu::BufferAddress = 64 + 16;
@@ -93,6 +95,8 @@ impl Target {
 pub(super) struct Bindings<'a> {
     pub(super) frame: &'a wgpu::BindGroup,
     pub(super) materials: &'a wgpu::BindGroup,
+    /// Group 3, for the blended pipelines only — see [`super::scene_depth`].
+    pub(super) scene_depth: Option<&'a wgpu::BindGroup>,
 }
 
 /// Everything in bind group 0 the renderer owns once and every pass shares.
@@ -277,6 +281,36 @@ pub(super) fn lighting_buffer(device: &wgpu::Device) -> wgpu::Buffer {
     })
 }
 
+/// How long the `ForceField` window takes to wander its whole path and come
+/// back. Roblox only calls the motion's period "pretty big" (the material's
+/// 2019 DevForum announcement), so the figure is this renderer's own.
+const SHIMMER_SECONDS: f64 = 12.0;
+
+/// Where in its cycle the shimmer is after `elapsed`, in `[0, 1)`.
+///
+/// Wrapped here in `f64` rather than handed to the shader as raw seconds: an
+/// `f32` clock loses the precision a smooth wave needs within hours, and a
+/// phase that wraps exactly never jumps.
+pub(super) fn shimmer_phase(elapsed: std::time::Duration) -> f32 {
+    (elapsed.as_secs_f64() / SHIMMER_SECONDS).fract() as f32
+}
+
+/// How a `ForceField` turns two depth-buffer values into studs apart, packed
+/// into one float for the frame uniform: 0 draws no intersection glow at all,
+/// a positive value is the perspective near plane (depth is `near / distance`
+/// under the infinite reversed-Z projection), and a negative one is minus an
+/// orthographic frame's whole depth span (depth is linear across it).
+pub(super) fn intersection_depth(
+    enabled: bool,
+    orthographic: Option<crate::camera::DepthRange>,
+) -> f32 {
+    match (enabled, orthographic) {
+        (false, _) => 0.0,
+        (true, None) => crate::camera::NEAR_PLANE,
+        (true, Some(range)) => -(range.far - range.near),
+    }
+}
+
 impl Frame {
     pub(super) fn new(
         device: &wgpu::Device,
@@ -306,11 +340,23 @@ impl Frame {
         self.bind_group = bind(device, layout, &self.matrix, shared);
     }
 
-    pub(super) fn write(&self, queue: &wgpu::Queue, matrix: &Mat4, viewport: glam::Vec2) {
+    /// `shimmer` is [`shimmer_phase`]'s: 0 for a pass with no clock.
+    /// `intersections` is [`intersection_depth`]'s: 0 for a pass that draws
+    /// no `ForceField` glow.
+    pub(super) fn write(
+        &self,
+        queue: &wgpu::Queue,
+        matrix: &Mat4,
+        viewport: glam::Vec2,
+        shimmer: f32,
+        intersections: f32,
+    ) {
         let mut data = [0.0f32; 20];
         data[..16].copy_from_slice(&matrix.to_cols_array());
         data[16] = viewport.x;
         data[17] = viewport.y;
+        data[18] = shimmer;
+        data[19] = intersections;
         queue.write_buffer(&self.matrix, 0, bytemuck::cast_slice(&data));
     }
 }
@@ -396,6 +442,10 @@ pub(super) struct Surface<'a> {
     /// instead: it redraws a surface already in the depth buffer, so it has to
     /// win the tie rather than disappear.
     pub(super) compare: wgpu::CompareFunction,
+    /// Whether the fragment shader reads the opaque scene's depth at group 3
+    /// (see [`super::scene_depth`]): only a blended surface can, since only its
+    /// pass holds the depth buffer read-only.
+    pub(super) scene_depth: bool,
     /// `TriangleList` for every surface pass, the outline passes included:
     /// their edges are expanded into screen-space quads (see
     /// `renderer::outline`) rather than drawn as one-pixel lines.
@@ -419,6 +469,7 @@ impl Surface<'_> {
             translucent: false,
             bias: wgpu::DepthBiasState::default(),
             compare: wgpu::CompareFunction::Greater,
+            scene_depth: false,
             topology: wgpu::PrimitiveTopology::TriangleList,
         }
     }
@@ -429,10 +480,20 @@ pub(super) fn surface(
     target: Target,
     surface: &Surface<'_>,
 ) -> wgpu::RenderPipeline {
-    let shader = crate::gpu::shader(device, surface.label, surface.shader);
+    let source =
+        super::scene_depth::with_source(surface.shader, surface.scene_depth, target.samples);
+    let shader = crate::gpu::shader(device, surface.label, &source);
+    let depth_layout = super::scene_depth::layout(device, target.samples);
+    let mut layouts = surface.layouts.to_vec();
+    if surface.scene_depth {
+        // Group 3 whatever the surface's own table stops at: an unused slot
+        // in between stays empty rather than shifting the group down.
+        layouts.resize(3, None);
+        layouts.push(Some(&depth_layout));
+    }
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some(surface.label),
-        bind_group_layouts: surface.layouts,
+        bind_group_layouts: &layouts,
         immediate_size: 0,
     });
 
@@ -484,6 +545,7 @@ pub(super) fn shape_pipelines(
     target: Target,
     frame: &wgpu::BindGroupLayout,
     materials: &wgpu::BindGroupLayout,
+    scene_depth: bool,
 ) -> (wgpu::RenderPipeline, wgpu::RenderPipeline) {
     // The shared groups come first and a pass's own image (which these two have
     // none of) last, so every surface pipeline's layout is a prefix of every
@@ -503,8 +565,62 @@ pub(super) fn shape_pipelines(
             &Surface {
                 label: "rbxview shapes (blended)",
                 translucent: true,
+                scene_depth,
                 ..opaque
             },
         ),
     )
+}
+
+/// The blended shapes' pipeline with the *front* faces culled instead: the
+/// inside of a `ForceField`, which Roblox draws as well as the outside. A
+/// shell's run is drawn through this first and the ordinary blended pipeline
+/// second, so its near side always blends over its far one.
+pub(super) fn inside_pipeline(
+    device: &wgpu::Device,
+    target: Target,
+    frame: &wgpu::BindGroupLayout,
+    materials: &wgpu::BindGroupLayout,
+) -> wgpu::RenderPipeline {
+    let layouts = [Some(frame), Some(materials)];
+    let buffers = [Some(Vertex::layout()), Some(InstanceRaw::layout())];
+    surface(
+        device,
+        target,
+        &Surface {
+            label: "rbxview shapes (blended, inside)",
+            translucent: true,
+            scene_depth: true,
+            cull: Some(wgpu::Face::Front),
+            ..Surface::new("rbxview shapes", BOX_SHADER, &layouts, &buffers)
+        },
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn intersection_depth_packs_off_perspective_and_orthographic_apart() {
+        use crate::camera::DepthRange;
+        let range = DepthRange {
+            near: -100.0,
+            far: 100.0,
+        };
+        assert_eq!(intersection_depth(false, Some(range)), 0.0);
+        assert_eq!(intersection_depth(true, None), crate::camera::NEAR_PLANE);
+        assert_eq!(intersection_depth(true, Some(range)), -200.0);
+    }
+
+    #[test]
+    fn the_shimmer_phase_starts_at_zero_and_wraps_once_a_cycle() {
+        assert_eq!(shimmer_phase(Duration::ZERO), 0.0);
+        assert!((shimmer_phase(Duration::from_secs(3)) - 0.25).abs() < 1e-6);
+        assert!(shimmer_phase(Duration::from_secs(12)).abs() < 1e-6);
+        // A day in, the phase is still exact to well under a frame's step.
+        let day = Duration::from_secs(86_400) + Duration::from_millis(1500);
+        assert!((shimmer_phase(day) - 0.125).abs() < 1e-4);
+    }
 }

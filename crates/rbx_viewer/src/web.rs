@@ -369,6 +369,7 @@ impl Viewer {
                 return Err(JsError::new("the GPU rejected the canvas frame"))
             }
         };
+        self.renderer.set_elapsed(self.start.elapsed());
         self.renderer.draw(
             &self.device,
             &self.queue,

@@ -26,6 +26,7 @@ mod pipeline;
 mod post;
 mod preview;
 mod rebuild;
+mod scene_depth;
 mod selection;
 mod shadow;
 mod shaped;
@@ -113,7 +114,12 @@ pub(crate) struct World<'a> {
 pub(crate) struct Renderer {
     opaque: wgpu::RenderPipeline,
     blended: wgpu::RenderPipeline,
+    /// See [`pipeline::inside_pipeline`].
+    inside: wgpu::RenderPipeline,
     frame: Frame,
+    /// The `ForceField` shimmer's phase, see [`pipeline::shimmer_phase`]. Left
+    /// at 0 by a host with no clock, so a `--screenshot` is the same every run.
+    shimmer: f32,
     /// Bind group 0's layout and bind group 1's, kept for the life of the
     /// renderer: a change of quality level rebuilds those groups (see
     /// [`Renderer::set_quality`]) around re-viewed textures.
@@ -259,7 +265,8 @@ impl Renderer {
         let meshes = Meshes::new(device, shaped::kinds(scene.parts()));
         let material_layout = material::layout(device);
         let (opaque, blended) =
-            pipeline::shape_pipelines(device, target, &layout, &material_layout);
+            pipeline::shape_pipelines(device, target, &layout, &material_layout, true);
+        let inside = pipeline::inside_pipeline(device, target, &layout, &material_layout);
 
         let shadows = Shadows::new(device, scene, quality);
         let shared = Shared {
@@ -307,7 +314,9 @@ impl Renderer {
         Renderer {
             opaque,
             blended,
+            inside,
             frame,
+            shimmer: 0.0,
             lighting: *lighting,
             all_lights: lights.to_vec(),
             lights: allowed,
@@ -520,6 +529,12 @@ impl Renderer {
             .upload_pending(device, queue, &self.quality, usize::MAX);
     }
 
+    /// Moves the `ForceField` shimmer to where it is `elapsed` into the
+    /// host's clock.
+    pub(crate) fn set_elapsed(&mut self, elapsed: std::time::Duration) {
+        self.shimmer = pipeline::shimmer_phase(elapsed);
+    }
+
     pub(crate) fn draw(
         &mut self,
         device: &wgpu::Device,
@@ -552,7 +567,16 @@ impl Renderer {
         let eye = self.camera.eye_position(from);
         let view_projection = self.camera.view_projection(from, aspect);
         let viewport = glam::Vec2::new(size.0 as f32, size.1 as f32);
-        self.frame.write(queue, &view_projection, viewport);
+        self.frame.write(
+            queue,
+            &view_projection,
+            viewport,
+            self.shimmer,
+            pipeline::intersection_depth(
+                self.quality.force_field_intersections,
+                self.camera.orthographic_range(from),
+            ),
+        );
         // The main pass's own visibility test: tight to the camera's frustum
         // and this level's render distance. The shadow pass below never uses
         // this — see `Fit::visible` — so a caster it culls can still land a
@@ -601,13 +625,17 @@ impl Renderer {
 
         let rotation_only = self.camera.view_rotation_projection(from, aspect);
         if let Some(sky) = &self.sky {
-            sky.camera.write(queue, &rotation_only, viewport);
+            sky.camera.write(queue, &rotation_only, viewport, 0.0, 0.0);
         }
         if let Some(stars) = &self.stars {
-            stars.camera.write(queue, &rotation_only, viewport);
+            stars
+                .camera
+                .write(queue, &rotation_only, viewport, 0.0, 0.0);
         }
         if let Some(bodies) = &self.bodies {
-            bodies.camera.write(queue, &rotation_only, viewport);
+            bodies
+                .camera
+                .write(queue, &rotation_only, viewport, 0.0, 0.0);
         }
         // The same matrix the sun disc itself is drawn with, so the god-rays
         // in the resolve can never point anywhere the disc is not.
@@ -662,6 +690,7 @@ impl Renderer {
         // a colour attachment of both. A no-op in a place with no glass,
         // which has no copy to take.
         targets.capture_refraction(&mut encoder);
+        self.translucent_pass(&mut encoder, targets);
         self.overlay_pass(&mut encoder, targets);
 
         // Before particles: sorting the two passes against each other is out

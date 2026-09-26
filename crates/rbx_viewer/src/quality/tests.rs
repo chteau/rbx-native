@@ -213,3 +213,15 @@ fn no_band_asks_to_view_past_the_upload_cap() {
         .iter()
         .all(|profile| profile.texture_max_size <= table::MAX_TEXTURE_SIZE));
 }
+
+// Roblox only draws a `ForceField`'s intersection glow above level 15.
+#[test]
+fn force_field_intersections_start_at_level_16() {
+    assert!(!QualityLevel::Level(15).profile().force_field_intersections);
+    assert!(QualityLevel::Level(16).profile().force_field_intersections);
+    assert!(
+        QualityLevel::Level(QualityLevel::MAX)
+            .profile()
+            .force_field_intersections
+    );
+}

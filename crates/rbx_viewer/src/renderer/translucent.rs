@@ -27,12 +27,16 @@ struct Item {
     /// uses (see `super::cull::MainCull`) — checked in [`Translucent::prepare`]
     /// before an item is even considered for sorting.
     radius: f32,
+    /// Drawn from both sides — see [`super::pipeline::inside_pipeline`].
+    force_field: bool,
     instance: InstanceRaw,
 }
 
-/// A stretch of the sorted buffer sharing one shape, i.e. one draw call.
+/// A stretch of the sorted buffer sharing one shape and one sidedness, i.e.
+/// one draw call (two for a `ForceField`'s, inside then outside).
 struct Run {
     kind: ShapeKind,
+    force_field: bool,
     instances: std::ops::Range<u32>,
 }
 
@@ -171,17 +175,31 @@ impl Translucent {
         queue.write_buffer(buffer, 0, bytemuck::cast_slice(&self.uploaded));
     }
 
-    /// Draws the sorted runs. The caller owns the pipeline and bind group 0.
-    pub(super) fn draw(&self, pass: &mut wgpu::RenderPass<'_>, meshes: &Meshes) {
+    /// Draws the sorted runs. The caller binds the groups and hands over the
+    /// `(outside, inside)` pipelines, `outside` already set: a `ForceField`'s
+    /// run is drawn through `inside` first so its near side blends over its
+    /// far one, and `outside` is put back after it.
+    pub(super) fn draw(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        meshes: &Meshes,
+        (outside, inside): (&wgpu::RenderPipeline, &wgpu::RenderPipeline),
+    ) {
         let Some(buffer) = &self.instances else {
             return;
         };
 
         pass.set_vertex_buffer(1, buffer.slice(..));
         for run in &self.runs {
-            if let Some(mesh) = meshes.get(run.kind) {
+            let Some(mesh) = meshes.get(run.kind) else {
+                continue;
+            };
+            if run.force_field {
+                pass.set_pipeline(inside);
                 mesh.draw_range(pass, run.instances.clone());
+                pass.set_pipeline(outside);
             }
+            mesh.draw_range(pass, run.instances.clone());
         }
     }
 }
@@ -194,6 +212,7 @@ impl Item {
             kind: part.kind,
             center: instance.center(),
             radius: of_part(part).radius(),
+            force_field: part.material.kind == crate::scene::Kind::ForceField,
             instance,
         }
     }
@@ -226,7 +245,8 @@ fn back_to_front(
     });
 }
 
-/// Splits a sorted order into the longest possible runs of one shape.
+/// Splits a sorted order into the longest possible runs of one shape and one
+/// sidedness.
 ///
 /// The sort comes first and the batching second — never the other way round, or
 /// a near window would blend under a far one just because they were different
@@ -235,10 +255,14 @@ fn runs(items: &[Item], order: &[usize]) -> Vec<Run> {
     let mut runs: Vec<Run> = Vec::new();
     for (position, &index) in order.iter().enumerate() {
         let next = position as u32;
+        let item = &items[index];
         match runs.last_mut() {
-            Some(run) if run.kind == items[index].kind => run.instances.end = next + 1,
+            Some(run) if run.kind == item.kind && run.force_field == item.force_field => {
+                run.instances.end = next + 1;
+            }
             _ => runs.push(Run {
-                kind: items[index].kind,
+                kind: item.kind,
+                force_field: item.force_field,
                 instances: next..next + 1,
             }),
         }

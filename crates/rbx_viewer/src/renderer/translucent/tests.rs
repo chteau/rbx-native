@@ -19,6 +19,7 @@ fn item(kind: ShapeKind, center: Vec3) -> Item {
         kind,
         center,
         radius: 1.0,
+        force_field: false,
         instance: InstanceRaw::new(model, [1.0; 3], 0.5, 0.0, plastic()),
     }
 }
@@ -80,6 +81,24 @@ fn runs_cover_the_sorted_order_without_reordering_it() {
             (ShapeKind::Box, 3, 4),
         ]
     );
+}
+
+#[test]
+fn a_force_field_breaks_a_run_of_the_same_shape_so_it_draws_both_sides() {
+    let mut shell = item(ShapeKind::Box, Vec3::new(0.0, 0.0, 20.0));
+    shell.force_field = true;
+    let items = [
+        item(ShapeKind::Box, Vec3::new(0.0, 0.0, 30.0)),
+        shell,
+        item(ShapeKind::Box, Vec3::new(0.0, 0.0, 10.0)),
+    ];
+
+    let order = order_of(&items, Vec3::ZERO);
+    let sides: Vec<(bool, u32, u32)> = runs(&items, &order)
+        .iter()
+        .map(|run| (run.force_field, run.instances.start, run.instances.end))
+        .collect();
+    assert_eq!(sides, vec![(false, 0, 1), (true, 1, 2), (false, 2, 3)]);
 }
 
 #[test]
