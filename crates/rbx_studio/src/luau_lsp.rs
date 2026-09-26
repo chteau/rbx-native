@@ -5,8 +5,8 @@
 //! The server is an external program — found on `PATH`, or wherever
 //! [`BINARY_VARIABLE`] points — and never bundled. It reads the place through
 //! a [`Mirror`] folder rather than through the DOM, and Roblox's API types
-//! from the same definitions file its VS Code extension downloads, cached
-//! under this project's cache folder.
+//! and documentation from the same files its VS Code extension downloads,
+//! cached under this project's cache folder.
 
 mod client;
 pub(crate) mod diagnostics;
@@ -35,8 +35,13 @@ pub(crate) const BINARY_VARIABLE: &str = "RBX_STUDIO_LUAU_LSP";
 /// place script runs at.
 const DEFINITIONS_URL: &str =
     "https://raw.githubusercontent.com/JohnnyMorganz/luau-lsp/main/scripts/globalTypes.None.d.luau";
+/// Roblox's own reference text for that API, keyed by the same names: what
+/// fills a completion's or a hover's description. The same file the VS Code
+/// extension fetches.
+const DOCUMENTATION_URL: &str =
+    "https://raw.githubusercontent.com/MaximumADHD/Roblox-Client-Tracker/roblox/api-docs/en-us.json";
 /// Roblox ships weekly; a week-old copy misses at most one release's API.
-const DEFINITIONS_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+const CACHE_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
 /// Loading the definitions file is most of `initialize`'s cost.
 const START_TIMEOUT: Duration = Duration::from_secs(60);
@@ -56,7 +61,9 @@ pub(crate) fn workspace_root() -> PathBuf {
 /// first run — so it belongs on a background thread.
 pub(crate) fn start(root: &Path) -> Result<Client, String> {
     let binary = std::env::var_os(BINARY_VARIABLE).unwrap_or_else(|| "luau-lsp".into());
-    let definitions = definitions()?;
+    let definitions = cached(DEFINITIONS_URL, "globalTypes.None.d.luau")?;
+    // Descriptions only; completion and types work without them.
+    let documentation = cached(DOCUMENTATION_URL, "en-us.json").ok();
     let settings = root.join(".luau-lsp-settings.json");
     fs::write(&settings, SETTINGS).map_err(|error| error.to_string())?;
 
@@ -67,6 +74,9 @@ pub(crate) fn start(root: &Path) -> Result<Client, String> {
         .arg(format!("--settings={}", settings.display()))
         .arg(format!("--definitions=@roblox={}", definitions.display()))
         .current_dir(root);
+    if let Some(documentation) = documentation {
+        command.arg(format!("--docs={}", documentation.display()));
+    }
     let client = Client::spawn(command).map_err(|error| match error.kind() {
         std::io::ErrorKind::NotFound => {
             format!("luau-lsp was not found on PATH (set {BINARY_VARIABLE} to its path)")
@@ -131,29 +141,29 @@ const SETTINGS: &str = r#"{
   "luau-lsp.diagnostics.workspace": true
 }"#;
 
-/// The cached definitions file, fetched first if missing or stale. A failed
-/// refresh keeps the stale copy: old types beat no types.
-fn definitions() -> Result<PathBuf, String> {
+/// A cached copy of `url` named `name`, fetched first if missing or stale.
+/// A failed refresh keeps the stale copy: old types beat no types.
+fn cached(url: &str, name: &str) -> Result<PathBuf, String> {
     let dir = rbx_assets::cache_root()
         .unwrap_or_else(std::env::temp_dir)
         .join("luau-lsp");
-    let path = dir.join("globalTypes.None.d.luau");
+    let path = dir.join(name);
     let fresh = fs::metadata(&path)
         .and_then(|meta| meta.modified())
         .ok()
         .and_then(|modified| SystemTime::now().duration_since(modified).ok())
-        .is_some_and(|age| age < DEFINITIONS_MAX_AGE);
+        .is_some_and(|age| age < CACHE_MAX_AGE);
     if fresh {
         return Ok(path);
     }
-    match download(DEFINITIONS_URL) {
+    match download(url) {
         Ok(body) => {
             fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
             fs::write(&path, body).map_err(|error| error.to_string())?;
             Ok(path)
         }
         Err(_) if path.exists() => Ok(path),
-        Err(error) => Err(format!("could not download Roblox's API types: {error}")),
+        Err(error) => Err(format!("could not download {name}: {error}")),
     }
 }
 

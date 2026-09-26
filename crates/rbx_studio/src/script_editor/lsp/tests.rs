@@ -76,3 +76,31 @@ fn a_stale_position_is_clamped_into_the_text() {
     // Byte 1 of the two-byte `é` snaps back to its start.
     assert_eq!(editor_offset(&text, Position::new(1, 1)), 3);
 }
+
+#[test]
+fn a_hover_shows_the_problems_under_it_above_the_type() {
+    use lsp_types::{Hover, HoverContents, MarkupContent, MarkupKind};
+
+    use super::hover_text;
+
+    let hover = Hover {
+        contents: HoverContents::Markup(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: "```luau\nlocal x: number\n```".into(),
+        }),
+        range: None,
+    };
+    assert_eq!(hover_text(&[], None), None);
+    assert_eq!(
+        hover_text(&[], Some(&hover)).unwrap(),
+        "```luau\nlocal x: number\n```"
+    );
+    assert_eq!(
+        hover_text(&["unused".into()], Some(&hover)).unwrap(),
+        "unused\n\n---\n\n```luau\nlocal x: number\n```"
+    );
+    assert_eq!(
+        hover_text(&["a".into(), "b".into()], None).unwrap(),
+        "a\n\n---\n\nb"
+    );
+}

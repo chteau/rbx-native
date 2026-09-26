@@ -15,7 +15,7 @@ use gpui_kit::base::input::{CompletionProvider, HoverProvider, Point, Rope, Rope
 use gpui_kit::{App, Task, Window};
 use lsp_types::{
     CompletionContext, CompletionItem, CompletionResponse, CompletionTextEdit, Diagnostic, Hover,
-    Position, Range, TextEdit,
+    HoverContents, MarkedString, MarkupContent, MarkupKind, Position, Range, TextEdit,
 };
 use serde_json::{json, Value};
 
@@ -31,6 +31,9 @@ pub(crate) struct Document {
     uri: String,
     /// The version and text last sent, so an unchanged text sends nothing.
     sent: RefCell<(i32, String)>,
+    /// The problems the editor is showing, as byte ranges and messages:
+    /// hovering one shows its message above the type (see [`Hovers`]).
+    problems: RefCell<Vec<(std::ops::Range<usize>, String)>>,
 }
 
 impl Document {
@@ -43,6 +46,7 @@ impl Document {
             client,
             uri,
             sent: RefCell::new((1, text)),
+            problems: RefCell::default(),
         })
     }
 
@@ -55,6 +59,8 @@ impl Document {
         }
         sent.0 += 1;
         sent.1 = text.to_owned();
+        // The editor drops its problems on any edit, and so does this.
+        self.problems.borrow_mut().clear();
         self.client.notify(
             "textDocument/didChange",
             json!({
@@ -62,6 +68,10 @@ impl Document {
                 "contentChanges": [{"text": text}],
             }),
         );
+    }
+
+    pub(crate) fn set_problems(&self, problems: Vec<(std::ops::Range<usize>, String)>) {
+        *self.problems.borrow_mut() = problems;
     }
 
     fn at(&self, text: &Rope, offset: usize) -> Value {
@@ -125,21 +135,52 @@ impl HoverProvider for Hovers {
         _window: &mut Window,
         cx: &mut App,
     ) -> Task<Result<Option<Hover>>> {
+        let problems: Vec<String> = self
+            .0
+            .problems
+            .borrow()
+            .iter()
+            .filter(|(range, _)| range.start <= offset && offset <= range.end)
+            .map(|(_, message)| message.clone())
+            .collect();
         let reply = self
             .0
             .client
             .request("textDocument/hover", self.0.at(text, offset));
         cx.background_executor().spawn(async move {
-            let reply = luau_lsp::wait(reply).map_err(anyhow::Error::msg)?;
-            let hover: Option<Hover> = serde_json::from_value(reply)?;
-            // Its range is in the server's columns and only narrows what the
-            // popover anchors to; the hovered word does as well.
-            Ok(hover.map(|hover| Hover {
+            // A failed type lookup still leaves the problem worth showing.
+            let hover = luau_lsp::wait(reply)
+                .ok()
+                .and_then(|reply| serde_json::from_value::<Option<Hover>>(reply).ok())
+                .flatten();
+            Ok(hover_text(&problems, hover.as_ref()).map(|text| Hover {
+                contents: HoverContents::Markup(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: text,
+                }),
+                // The server's range is in its own columns, and only narrows
+                // what the popover anchors to; the hovered word does as well.
                 range: None,
-                ..hover
             }))
         })
     }
+}
+
+/// The problems under the pointer, then the server's own hover, as one
+/// Markdown text; `None` when there is neither.
+fn hover_text(problems: &[String], hover: Option<&Hover>) -> Option<String> {
+    let mut parts: Vec<String> = problems.to_vec();
+    if let Some(hover) = hover {
+        parts.push(match &hover.contents {
+            HoverContents::Markup(markup) => markup.value.clone(),
+            HoverContents::Scalar(MarkedString::String(text)) => text.clone(),
+            HoverContents::Scalar(MarkedString::LanguageString(code)) => {
+                format!("```{}\n{}\n```", code.language, code.value)
+            }
+            HoverContents::Array(_) => return None,
+        });
+    }
+    (!parts.is_empty()).then(|| parts.join("\n\n---\n\n"))
 }
 
 /// Where the identifier being typed at `offset` starts: what the server's

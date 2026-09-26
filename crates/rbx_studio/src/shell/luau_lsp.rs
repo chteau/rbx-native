@@ -10,6 +10,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
+use gpui_kit::base::input::RopeExt as _;
 use gpui_kit::*;
 use lsp_types::Diagnostic;
 use rbx_dom::Ref;
@@ -215,9 +216,24 @@ impl Shell {
                 .iter()
                 .find(|(script, _)| script == reference)
                 .map_or(&[][..], |(_, problems)| problems.as_slice());
+            let document = open.lsp.clone();
             open.state.update(cx, |state, cx| {
                 let text = state.text().clone();
                 let moved = editor_diagnostics(&text, problems);
+                if let Some(document) = document {
+                    let offset = |position| text.position_to_offset(position);
+                    document.set_problems(
+                        moved
+                            .iter()
+                            .map(|p| {
+                                (
+                                    offset(&p.range.start)..offset(&p.range.end),
+                                    p.message.clone(),
+                                )
+                            })
+                            .collect(),
+                    );
+                }
                 if let Some(set) = state.diagnostics_mut() {
                     set.reset(&text);
                     set.extend(moved);
