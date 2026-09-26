@@ -131,7 +131,7 @@ fn button_frame(id: impl Into<ElementId>, weight: Weight, small: bool) -> Statef
             .bg(accent())
             .text_color(bg())
             .font_weight(FontWeight::BOLD)
-            .hover(|this| this.bg(tokens::accent_hover())),
+            .hover(|this| tokens::hover_fx(this).bg(tokens::accent_hover())),
         Weight::Danger => base
             .bg(red())
             .text_color(bg())
@@ -142,12 +142,12 @@ fn button_frame(id: impl Into<ElementId>, weight: Weight, small: bool) -> Statef
             .bg(panel2())
             .text_color(tokens::text())
             .font_weight(FontWeight::SEMIBOLD)
-            .hover(|this| this.bg(tokens::secondary_hover())),
+            .hover(|this| tokens::hover_fx(this).bg(tokens::secondary_hover())),
         Weight::Ghost => base
             .px(px(if small { 8. } else { 10. }))
             .text_color(tokens::text2())
             .font_weight(FontWeight::SEMIBOLD)
-            .hover(|this| this.bg(wash()).text_color(tokens::text())),
+            .hover(|this| tokens::hover_fx(this).bg(wash()).text_color(tokens::text())),
     }
 }
 

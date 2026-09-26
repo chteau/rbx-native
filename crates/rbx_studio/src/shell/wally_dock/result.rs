@@ -83,14 +83,14 @@ impl Shell {
                 .px(px(14.))
                 .gap(px(6.))
                 .items_center()
-                .rounded(tokens::RADIUS)
+                .rounded(tokens::radius())
                 .bg(tokens::check_on())
                 .text_size(tokens::text_md())
                 .line_height(tokens::line_md())
                 .font_weight(tokens::WEIGHT_BOLD)
                 .text_color(tokens::black())
                 .cursor_pointer()
-                .hover(|this| this.bg(tokens::accent_hover()))
+                .hover(|this| tokens::hover_fx(this).bg(tokens::accent_hover()))
                 .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::field_select())))
                 .on_click(cx.listener(move |shell, _, _, cx| {
                     shell.wally_install(scope.clone(), name.clone(), version.clone(), realm, cx);
@@ -104,7 +104,7 @@ impl Shell {
                 .w_full()
                 .px(px(14.))
                 .py(px(12.))
-                .rounded(tokens::RADIUS_TILE)
+                .rounded(tokens::radius_tile())
                 .bg(tokens::field_select())
                 .border_1()
                 .border_color(tokens::accent_line())
@@ -159,7 +159,7 @@ impl Shell {
                 .items_center()
                 .justify_center()
                 .when(stacked, |this| this.flex_1())
-                .rounded(tokens::RADIUS_SEGMENT)
+                .rounded(tokens::radius_segment())
                 .text_size(tokens::text_xs())
                 .line_height(tokens::line_xs())
                 .map(|this| {
@@ -171,7 +171,7 @@ impl Shell {
                         this.tab_index(self.tab_order.next())
                             .cursor_pointer()
                             .text_color(tokens::text2())
-                            .hover(|this| this.bg(tokens::hover()))
+                            .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
                             .focus_visible(|this| {
                                 this.shadow(tokens::focus_ring(tokens::field_select()))
                             })
@@ -189,7 +189,7 @@ impl Shell {
             .flex_none()
             .p(px(2.))
             .gap(px(2.))
-            .rounded(tokens::RADIUS)
+            .rounded(tokens::radius())
             .bg(if stacked {
                 tokens::dock()
             } else {
@@ -242,7 +242,7 @@ impl Shell {
             .px(px(9.))
             .items_center()
             .justify_between()
-            .rounded(tokens::RADIUS)
+            .rounded(tokens::radius())
             .bg(tokens::field_select())
             .border_1()
             .border_color(tokens::border())
@@ -250,7 +250,7 @@ impl Shell {
             .line_height(tokens::line_sm())
             .text_color(tokens::text2())
             .cursor_pointer()
-            .hover(|this| this.border_color(tokens::border2()))
+            .hover(|this| tokens::hover_fx(this).border_color(tokens::border2()))
             .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::field_select())))
             .child(div().min_w_0().truncate().child(label))
             .child(Icon::new(IconName::ChevronDown).size(px(10.)));

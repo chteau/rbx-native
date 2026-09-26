@@ -31,7 +31,7 @@ impl Shell {
                     .size(px(34.))
                     .items_center()
                     .justify_center()
-                    .rounded(tokens::RADIUS)
+                    .rounded(tokens::radius())
                     .border_1()
                     .cursor_pointer()
                     .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
@@ -46,7 +46,11 @@ impl Shell {
                         } else {
                             this.border_color(tokens::border())
                                 .text_color(tokens::text2())
-                                .hover(|this| this.bg(tokens::hover()).text_color(tokens::text()))
+                                .hover(|this| {
+                                    tokens::hover_fx(this)
+                                        .bg(tokens::hover())
+                                        .text_color(tokens::text())
+                                })
                         }
                     })
                     .child(Icon::new(IconName::CircleQuestionMark).size(px(15.)))
@@ -113,7 +117,7 @@ fn help_popover(geometry: HelpGeometry, cx: &mut App) -> AnyElement {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .rounded(tokens::RADIUS)
+                    .rounded(tokens::radius())
                     .bg(tokens::dock())
                     .border_1()
                     .border_color(tokens::border2())
@@ -167,7 +171,7 @@ fn help_popover(geometry: HelpGeometry, cx: &mut App) -> AnyElement {
         h_flex()
             .my(px(-1.))
             .px(px(5.))
-            .rounded(tokens::RADIUS_BADGE)
+            .rounded(tokens::radius_badge())
             .bg(tokens::dock())
             .border_1()
             .border_color(tokens::border())
@@ -187,7 +191,7 @@ fn help_popover(geometry: HelpGeometry, cx: &mut App) -> AnyElement {
         .bg(tokens::field_select())
         .border_1()
         .border_color(tokens::border2())
-        .rounded(tokens::RADIUS_CONTAINER)
+        .rounded(tokens::radius_container())
         .shadow(vec![tokens::floating_shadow()])
         .child(
             h_flex()
@@ -212,7 +216,7 @@ fn help_popover(geometry: HelpGeometry, cx: &mut App) -> AnyElement {
                         .line_height(tokens::line_sm())
                         .font_weight(tokens::WEIGHT_SEMIBOLD)
                         .text_color(tokens::check_on())
-                        .hover(|this| this.text_color(tokens::text()))
+                        .hover(|this| tokens::hover_fx(this).text_color(tokens::text()))
                         .on_click(|_, _, cx| cx.open_url(ARGON_WIKI))
                         .child("argon.wiki")
                         .child(Icon::new(IconName::ExternalLink).size(px(12.))),

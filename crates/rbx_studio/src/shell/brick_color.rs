@@ -46,7 +46,7 @@ impl Shell {
             .gap(tokens::label_gap())
             .cursor_pointer()
             .when_some(shown, |this, color| {
-                this.child(swatch(color).size(px(12.)).rounded(tokens::RADIUS_TINY))
+                this.child(swatch(color).size(px(12.)).rounded(tokens::radius_tiny()))
                     .child(div().truncate().child(color.name))
             });
 

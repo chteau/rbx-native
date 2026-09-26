@@ -97,7 +97,7 @@ pub(super) fn class_row(
         .items_center()
         .gap(px(6.))
         .px(px(8.))
-        .rounded(tokens::RADIUS)
+        .rounded(tokens::radius())
         .text_size(tokens::text_sm())
         .line_height(tokens::line_sm())
         .when(highlighted, |this| this.bg(tokens::hover()))
@@ -115,7 +115,7 @@ pub(super) fn class_row(
             None => this
                 .cursor_pointer()
                 .text_color(tokens::text_strong())
-                .hover(|this| this.bg(tokens::hover()))
+                .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
                 .active(|this| this.bg(tokens::selection()))
                 .on_click(cx.listener(move |shell, _, _, cx| {
                     shell.commit_picked(picked.clone(), cx);

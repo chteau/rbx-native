@@ -131,7 +131,7 @@ pub(super) fn row(
         .items_center()
         .gap_x_1()
         .px(px(4.))
-        .rounded(tokens::RADIUS_ROW)
+        .rounded(tokens::radius_row())
         .text_size(tokens::text_md())
         .line_height(tokens::line_md())
         .text_color(tokens::text2())
@@ -141,7 +141,9 @@ pub(super) fn row(
                 .text_color(selected_fg)
                 .font_weight(tokens::WEIGHT_SEMIBOLD)
         })
-        .when(!selected, |this| this.hover(move |this| this.bg(hover_bg)))
+        .when(!selected, |this| {
+            this.hover(move |this| tokens::hover_fx(this).bg(hover_bg))
+        })
         .children(guide_lines(depth, guides))
         .child(
             h_flex()
@@ -325,11 +327,11 @@ fn property_stack(
     row_frame()
         .gap(tokens::label_gap())
         .px(tokens::row_padding())
-        .rounded(tokens::RADIUS)
+        .rounded(tokens::radius())
         .text_size(tokens::text_md())
         .line_height(tokens::line_md())
         .text_color(tokens::text_strong())
-        .hover(|this| this.bg(tokens::hover()))
+        .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
         .child(
             div()
                 .w_full()
@@ -381,8 +383,8 @@ fn property_shell(
                 .min_h(tokens::row_height())
                 .flex_none()
                 .items_center()
-                .rounded(tokens::RADIUS)
-                .hover(|this| this.bg(tokens::hover()))
+                .rounded(tokens::radius())
+                .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
                 .child(
                     div()
                         .id(SharedString::from(format!("prop-name-{}", row.name)))
@@ -500,8 +502,8 @@ pub(super) fn property_expandable(
                 .min_h(tokens::row_height())
                 .flex_none()
                 .items_center()
-                .rounded(tokens::RADIUS)
-                .hover(|this| this.bg(tokens::hover()))
+                .rounded(tokens::radius())
+                .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
                 .child(expander)
                 .child(
                     div()
@@ -629,12 +631,12 @@ pub(super) fn section_header(
         .gap(tokens::label_gap())
         .px(tokens::row_padding())
         .cursor_pointer()
-        .rounded(tokens::RADIUS_ROW)
+        .rounded(tokens::radius_row())
         .text_size(tokens::text_xs())
         .line_height(tokens::line_xs())
         .font_weight(tokens::WEIGHT_BOLD)
         .text_color(tokens::text3())
-        .hover(|this| this.bg(tokens::hover()))
+        .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
         .on_click(on_click)
         .child(
@@ -739,7 +741,7 @@ fn render_row_editor(
                 .bg(tokens::black())
                 .cursor_pointer()
                 .tab_index(tab_index)
-                .hover(|this| this.border_color(tokens::check_on()))
+                .hover(|this| tokens::hover_fx(this).border_color(tokens::check_on()))
                 .border_1()
                 .border_color(tokens::border())
                 .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
@@ -973,8 +975,8 @@ fn number_fields(
                         .py(tokens::label_gap())
                         .border_b_1()
                         .border_color(tokens::border())
-                        .rounded(tokens::RADIUS)
-                        .hover(|this| this.bg(tokens::hover()))
+                        .rounded(tokens::radius())
+                        .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
                         // The *label* is the drag handle, not the field: that is
                         // what leaves a plain click on the field meaning "put the
                         // caret here", and it is where every other tool with this
@@ -992,7 +994,9 @@ fn number_fields(
                                 .text_color(tokens::text_muted())
                                 .when(draggable, |this| {
                                     this.cursor_col_resize()
-                                        .hover(|this| this.text_color(tokens::text_full()))
+                                        .hover(|this| {
+                                            tokens::hover_fx(this).text_color(tokens::text_full())
+                                        })
                                         .on_mouse_down(
                                             MouseButton::Left,
                                             on_scrub(offset + index, field.kind),
@@ -1071,7 +1075,7 @@ fn field_surface(surface: Rgba) -> Div {
         .items_center()
         .overflow_hidden()
         .px(tokens::input_padding())
-        .rounded(tokens::RADIUS)
+        .rounded(tokens::radius())
         .bg(surface)
         .border_1()
         .border_color(tokens::border())

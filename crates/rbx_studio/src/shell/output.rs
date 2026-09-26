@@ -274,7 +274,7 @@ impl Shell {
                 h_flex()
                     .flex_none()
                     .bg(tokens::field_select())
-                    .rounded(tokens::RADIUS)
+                    .rounded(tokens::radius())
                     .p(px(2.))
                     .gap(px(2.))
                     .children(
@@ -292,7 +292,7 @@ impl Shell {
                                 .items_center()
                                 .px(px(9.))
                                 .py(px(3.))
-                                .rounded(tokens::RADIUS_SEGMENT)
+                                .rounded(tokens::radius_segment())
                                 .text_size(tokens::text_xs())
                                 .line_height(tokens::line_xs())
                                 .cursor_pointer()
@@ -302,8 +302,9 @@ impl Shell {
                                             .text_color(tokens::check_on())
                                             .font_weight(tokens::WEIGHT_SEMIBOLD)
                                     } else {
-                                        this.text_color(tokens::text_placeholder())
-                                            .hover(|this| this.bg(tokens::hover()))
+                                        this.text_color(tokens::text_placeholder()).hover(|this| {
+                                            tokens::hover_fx(this).bg(tokens::hover())
+                                        })
                                     }
                                 })
                                 .on_click(cx.listener(move |shell, _, _, cx| {
@@ -321,12 +322,16 @@ impl Shell {
                     .flex_none()
                     .px(px(8.))
                     .py(px(3.))
-                    .rounded(tokens::RADIUS)
+                    .rounded(tokens::radius())
                     .cursor_pointer()
                     .text_size(tokens::text_xs())
                     .line_height(tokens::line_xs())
                     .text_color(tokens::text_placeholder())
-                    .hover(|this| this.bg(tokens::hover()).text_color(tokens::text_strong()))
+                    .hover(|this| {
+                        tokens::hover_fx(this)
+                            .bg(tokens::hover())
+                            .text_color(tokens::text_strong())
+                    })
                     .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
                     .on_click(cx.listener(|shell, _, _, cx| {
                         shell.output.clear();

@@ -13,7 +13,19 @@
   only fetched again when Roblox ships, so completion knows every class,
   member, service and `Enum`, with descriptions. Script Analysis covers
   scripts no tab has open, and clicking a problem jumps to it. — @chteau
-
+- **Themes reach the whole editor, and switch without a restart.** A theme
+  is now a folder with a `manifest.json` (name, author, description,
+  version, preview), and it can restyle everything the editor draws: every
+  colour, the spacing and the type scale, the toolkit's widgets and the
+  class icons. It can also make the window transparent or blurred, add a
+  glow to hover states, and put a background image behind or over the
+  chrome. The editor's own look is now the built-in Default theme, which
+  can't be uninstalled and renders pixel for pixel as before. Anything a
+  theme leaves out, icons included, comes from Default. Naming another
+  theme in `appearance.json`, or saving a file of the active one, applies it
+  within a second. `THEMES.md` documents the format. Installing a theme from
+  a GitHub link works underneath but has no button until the settings
+  screen exists. — @chteau
 - **`ForceField` follows Roblox's own description of the material.** A
   plain part is now a still shell that is faint face-on and solid at its
   edges, instead of an invented honeycomb. A `MeshPart` with a `TextureID`

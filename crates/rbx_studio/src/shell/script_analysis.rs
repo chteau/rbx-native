@@ -73,7 +73,7 @@ impl Shell {
                         .rounded_sm()
                         .text_size(tokens::text_xs())
                         .text_color(tokens::text())
-                        .hover(|this| this.bg(tokens::hover()))
+                        .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
                         .on_click(cx.listener(|shell, _, _, cx| shell.restart_luau_lsp(cx)))
                         .child("Retry"),
                 )
@@ -143,7 +143,7 @@ fn problem_row(
         .pr_2()
         .py_0p5()
         .text_size(tokens::text_xs())
-        .hover(|this| this.bg(tokens::hover()))
+        .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
         .on_click(cx.listener(move |shell, _, window, cx| {
             shell.reveal_problem(script, &target, window, cx);
         }))

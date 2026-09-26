@@ -60,6 +60,7 @@ impl PanelWindow {
             }),
             window_decorations: Some(WindowDecorations::Client),
             app_owns_titlebar_drag: true,
+            window_background: crate::theme::active().effects.window,
             ..Default::default()
         };
 

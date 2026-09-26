@@ -35,7 +35,7 @@ pub(super) fn size_badge(under: [f32; 2], size: [f32; 2]) -> AnyElement {
 fn pill(background: Rgba, text: String) -> Div {
     div()
         .px(px(3.))
-        .rounded(tokens::RADIUS_TINY)
+        .rounded(tokens::radius_tiny())
         .bg(background)
         .text_size(tokens::text_xs())
         .line_height(tokens::line_xs())

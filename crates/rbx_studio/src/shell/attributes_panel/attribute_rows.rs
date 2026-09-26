@@ -172,8 +172,8 @@ impl Shell {
             // rather than one per section.
             .pl(name_indent(0))
             .pr(tokens::row_padding())
-            .rounded(tokens::RADIUS)
-            .hover(|this| this.bg(tokens::hover()))
+            .rounded(tokens::radius())
+            .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
             .child(header)
             .child(control)
             .into_any_element()
@@ -258,7 +258,7 @@ impl Shell {
                         IconName::Plus,
                         "Add attribute",
                     )
-                    .rounded(tokens::RADIUS_BADGE)
+                    .rounded(tokens::radius_badge())
                     .bg(tokens::accent_soft())
                     .text_color(tokens::check_on())
                     .on_click(move |_, _, cx| {

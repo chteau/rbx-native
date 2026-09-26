@@ -441,7 +441,7 @@ fn search_field_sized(
         .items_center()
         .justify_center()
         .px(px(8.))
-        .rounded(tokens::RADIUS)
+        .rounded(tokens::radius())
         .bg(tokens::field_select())
         .border_1()
         .border_color(tokens::border())

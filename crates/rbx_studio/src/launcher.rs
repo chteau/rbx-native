@@ -52,6 +52,7 @@ fn options(
             ..Default::default()
         }),
         window_decorations: Some(WindowDecorations::Client),
+        window_background: crate::theme::active().effects.window,
         ..Default::default()
     }
 }

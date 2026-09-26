@@ -108,7 +108,7 @@ pub(super) fn properties_table(node: &DiffNode, properties: &[FormattedProperty]
     });
     v_flex()
         .flex_none()
-        .rounded(tokens::RADIUS_TILE)
+        .rounded(tokens::radius_tile())
         .bg(tokens::field_select())
         .border_1()
         .border_color(tokens::border())
@@ -130,7 +130,7 @@ pub(super) fn contents_grid(node: &DiffNode, pack: IconPack) -> Div {
                 .px(px(12.))
                 .gap(px(8.))
                 .items_center()
-                .rounded(tokens::RADIUS_TILE)
+                .rounded(tokens::radius_tile())
                 .bg(tokens::field_select())
                 .border_1()
                 .border_color(tokens::border())

@@ -88,7 +88,7 @@ impl Shell {
             .gap(tokens::label_gap())
             .h(tokens::hit_target())
             .px(tokens::input_padding())
-            .rounded(tokens::RADIUS)
+            .rounded(tokens::radius())
             .bg(tokens::field_select())
             .text_size(tokens::text_sm())
             .line_height(tokens::line_sm())

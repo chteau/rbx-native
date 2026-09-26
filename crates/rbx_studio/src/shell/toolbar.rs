@@ -178,7 +178,7 @@ fn snap_readout(icon: IconName, value: String, enabled: bool, open: bool) -> imp
         .gap(px(6.))
         .px(px(10.))
         .py(px(4.))
-        .rounded(tokens::RADIUS)
+        .rounded(tokens::radius())
         .bg(tokens::field_select())
         .border_1()
         .border_color(if open {

@@ -213,7 +213,7 @@ impl HomeWindow {
             .border_color(tokens::border())
             .bg(ui::panel2())
             .cursor_pointer()
-            .hover(|this| this.border_color(tokens::border2()).bg(tokens::secondary_hover()))
+            .hover(|this| tokens::hover_fx(this).border_color(tokens::border2()).bg(tokens::secondary_hover()))
             .child(self.icon_box(game, thumb, 6.))
             .child(
                 h_flex()
@@ -229,7 +229,7 @@ impl HomeWindow {
                             .items_center()
                             .justify_center()
                             .text_color(tokens::text3())
-                            .hover(|this| this.bg(ui::wash()).text_color(tokens::text()))
+                            .hover(|this| tokens::hover_fx(this).bg(ui::wash()).text_color(tokens::text()))
                             .tooltip(|window, cx| {
                                 crate::shell::tooltip::text("Open on the Creator Dashboard", window, cx)
                             })

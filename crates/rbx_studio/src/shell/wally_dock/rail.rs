@@ -45,7 +45,7 @@ impl Shell {
                 .px(px(9.))
                 .gap(px(9.))
                 .items_center()
-                .rounded(tokens::RADIUS)
+                .rounded(tokens::radius())
                 .text_size(tokens::text_md())
                 .line_height(tokens::line_md())
                 .map(|this| {
@@ -58,6 +58,7 @@ impl Shell {
                             .cursor_pointer()
                             .text_color(tokens::text2())
                             .hover(|this| {
+                                let this = tokens::hover_fx(this);
                                 this.bg(tokens::hover_subtle()).text_color(tokens::text())
                             })
                             .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
@@ -95,7 +96,7 @@ impl Shell {
                 .gap(px(6.))
                 .items_center()
                 .justify_center()
-                .rounded(tokens::RADIUS_SEGMENT)
+                .rounded(tokens::radius_segment())
                 .text_size(tokens::text_sm())
                 .line_height(tokens::line_sm())
                 .map(|this| {
@@ -107,7 +108,7 @@ impl Shell {
                         this.tab_index(self.tab_order.next())
                             .cursor_pointer()
                             .text_color(tokens::text2())
-                            .hover(|this| this.bg(tokens::hover()))
+                            .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
                             .focus_visible(|this| {
                                 this.shadow(tokens::focus_ring(tokens::field_select()))
                             })
@@ -130,7 +131,7 @@ impl Shell {
                     .h(px(28.))
                     .p(px(2.))
                     .gap(px(2.))
-                    .rounded(tokens::RADIUS)
+                    .rounded(tokens::radius())
                     .bg(tokens::field_select())
                     .children(segments),
             )
@@ -152,7 +153,7 @@ impl Shell {
             .pr(px(6.))
             .gap(px(8.))
             .items_center()
-            .rounded(tokens::RADIUS)
+            .rounded(tokens::radius())
             .bg(tokens::field_select())
             .border_1()
             .border_color(tokens::border())
@@ -177,10 +178,10 @@ impl Shell {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .rounded(tokens::RADIUS_BADGE)
+                    .rounded(tokens::radius_badge())
                     .cursor_pointer()
                     .text_color(tokens::text3())
-                    .hover(|this| this.text_color(tokens::text()))
+                    .hover(|this| tokens::hover_fx(this).text_color(tokens::text()))
                     .tooltip(|window, cx| super::super::tooltip::text("Clear search", window, cx))
                     .on_click(cx.listener(|shell, _, window, cx| {
                         shell.wally_search_for(String::new(), window, cx);
@@ -208,7 +209,7 @@ fn count_badge(page: Page, counts: Counts, pill_padding: Pixels) -> Option<Div> 
         Page::Updates => (counts.updates > 0).then(|| {
             div()
                 .px(pill_padding)
-                .rounded(tokens::RADIUS_BADGE)
+                .rounded(tokens::radius_badge())
                 .bg(tokens::accent_soft())
                 .text_size(tokens::text_xs())
                 .line_height(tokens::line_xs())

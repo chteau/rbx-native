@@ -52,6 +52,7 @@ mod scrub;
 mod selection;
 mod style_panel;
 mod sun;
+mod theme_live;
 mod toolbar;
 pub(crate) mod tooltip;
 mod ui_editor;
@@ -146,6 +147,11 @@ pub(crate) struct Shell {
     /// listed once because the menu is rebuilt every frame.
     appearance: crate::packs::Appearance,
     installed_icon_packs: Vec<String>,
+    /// The theme on screen — for its icons, which the Explorer's own icon
+    /// pack choice is layered over — and what tells the editor it changed
+    /// (see `shell::theme_live`).
+    theme: crate::theme::ThemePack,
+    theme_watch: crate::theme::Watch,
     /// The render loop's frame rate cap while the window is unfocused (see
     /// `pacing::FocusPacing`). Persisted (see `settings`); every write goes
     /// through [`Shell::save_settings`].
@@ -533,6 +539,8 @@ impl Shell {
             icon_pack,
             appearance: user.appearance,
             installed_icon_packs: user.icon_packs,
+            theme_watch: crate::theme::Watch::new(user.theme.dir.clone()),
+            theme: user.theme,
             unfocused_fps,
             dragger,
             document_nav: roving::Roving::horizontal(),
@@ -767,6 +775,8 @@ impl Shell {
         // script can prove Ctrl+S round-trips whatever every block above just
         // mutated.
         shell.apply_debug_save(cx);
+
+        shell.watch_theme(cx);
 
         shell
     }
@@ -1125,7 +1135,7 @@ impl Shell {
             },
             None => None,
         };
-        crate::class_icons::set_user_pack(overlay);
+        crate::class_icons::set_user_pack(crate::packs::layered(self.theme.icons.clone(), overlay));
         self.appearance.icon_pack = name;
         if let Err(err) = self.appearance.save_icon_pack() {
             self.output
@@ -1300,6 +1310,7 @@ impl Render for Shell {
                     shell.end_panel_drag(event.position, window.viewport_size(), cx);
                 }),
             )
+            .children(self.theme_background(false))
             .child(self.topbar(cx))
             .child(crate::menu_bar::bar(&self.menu_bar))
             .child(self.document_tabs(cx))
@@ -1314,6 +1325,7 @@ impl Render for Shell {
             // a popup nested in the tree's own scrolled, virtualised list
             // is clipped by it.
             .children(self.explorer_popups(cx))
+            .children(self.theme_background(true))
     }
 }
 

@@ -46,7 +46,7 @@ impl Shell {
             .px(px(9.))
             .items_center()
             .gap(px(6.))
-            .rounded(tokens::RADIUS)
+            .rounded(tokens::radius())
             .bg(tokens::dock())
             .border_1()
             .border_color(tokens::border2())
@@ -88,7 +88,11 @@ impl Shell {
                         this.border_l_1().rounded_r(px(4.))
                     }
                 })
-                .hover(|this| this.bg(tokens::hover()).text_color(tokens::text()))
+                .hover(|this| {
+                    tokens::hover_fx(this)
+                        .bg(tokens::hover())
+                        .text_color(tokens::text())
+                })
                 .child(
                     Icon::new(if minus {
                         IconName::Minus
@@ -102,7 +106,7 @@ impl Shell {
             .w(px(88.))
             .h(px(26.))
             .flex_none()
-            .rounded(tokens::RADIUS)
+            .rounded(tokens::radius())
             .border_1()
             .border_color(tokens::border2())
             .bg(tokens::dock())

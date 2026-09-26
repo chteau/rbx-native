@@ -100,7 +100,7 @@ impl HomeWindow {
                         this.border_b_1().border_color(tokens::border())
                     })
                     .cursor_pointer()
-                    .hover(|this| this.bg(tokens::secondary_hover()))
+                    .hover(|this| tokens::hover_fx(this).bg(tokens::secondary_hover()))
                     .child(
                         h_flex()
                             .w(px(name_w))

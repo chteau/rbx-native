@@ -43,7 +43,9 @@ impl HomeWindow {
                             } else {
                                 this.border_color(tokens::border())
                                     .bg(ui::panel2())
-                                    .hover(|this| this.bg(tokens::secondary_hover()))
+                                    .hover(|this| {
+                                        tokens::hover_fx(this).bg(tokens::secondary_hover())
+                                    })
                             }
                         })
                         .child(div().size(px(16.)).flex_none().rounded_full().map(|this| {

@@ -209,7 +209,7 @@ impl ArgonDiffWindow {
             .min_h_0()
             .w_full()
             .min_w_full()
-            .rounded(tokens::RADIUS_TILE)
+            .rounded(tokens::radius_tile())
             .border_1()
             .border_color(tokens::border())
             .bg(tokens::black())
@@ -271,6 +271,7 @@ fn expander(key: usize, hidden: usize, width: f32, this: Entity<ArgonDiffWindow>
         .cursor_pointer()
         .text_color(tokens::text2())
         .hover(|this| {
+            let this = tokens::hover_fx(this);
             this.bg(tokens::secondary_hover())
                 .text_color(tokens::text())
         })

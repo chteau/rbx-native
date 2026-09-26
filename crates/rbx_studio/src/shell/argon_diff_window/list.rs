@@ -100,9 +100,9 @@ impl ArgonDiffWindow {
             .px(px(8.))
             .gap(px(6.))
             .items_center()
-            .rounded(tokens::RADIUS)
+            .rounded(tokens::radius())
             .cursor_pointer()
-            .hover(|this| this.bg(tokens::hover_subtle()))
+            .hover(|this| tokens::hover_fx(this).bg(tokens::hover_subtle()))
             .on_click(cx.listener(move |this, _, _, cx| {
                 if !this.collapsed.remove(&kind) {
                     this.collapsed.insert(kind);
@@ -175,13 +175,13 @@ impl ArgonDiffWindow {
             .pl(px(8. + 16. * depth as f32))
             .gap(px(6.))
             .items_center()
-            .rounded(tokens::RADIUS)
+            .rounded(tokens::radius())
             .cursor_pointer()
             .map(|this| {
                 if selected {
                     this.bg(tokens::accent_soft())
                 } else {
-                    this.hover(|this| this.bg(tokens::hover_subtle()))
+                    this.hover(|this| tokens::hover_fx(this).bg(tokens::hover_subtle()))
                 }
             })
             .on_click(cx.listener(move |this, _, _, cx| {

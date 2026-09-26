@@ -193,6 +193,8 @@ the real answer is simply: it doesn't belong here at all.
   architecture rules every change in this repo follows.
 - [UX_GUIDELINES.md](UX_GUIDELINES.md) — palette, contrast, spacing, radius
   and dock-layout rules for anything touching `rbx_studio`'s look.
+- [THEMES.md](THEMES.md) — installing and writing editor themes: the
+  folder layout, `manifest.json`, every token, effects and icon packs.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — how to propose a change.
 - [CHANGELOG.md](CHANGELOG.md) — a running log of what landed and why.
 - [BENCHMARKS.md](BENCHMARKS.md) — recorded load, reload and frame timings,

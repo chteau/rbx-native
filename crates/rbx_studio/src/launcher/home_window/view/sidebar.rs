@@ -35,6 +35,7 @@ impl HomeWindow {
                             .font_weight(FontWeight::SEMIBOLD)
                     } else {
                         this.text_color(tokens::text2()).hover(|this| {
+                            let this = tokens::hover_fx(this);
                             this.bg(tokens::hover_subtle()).text_color(tokens::text())
                         })
                     }
@@ -90,7 +91,7 @@ impl HomeWindow {
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(tokens::text())
                     .cursor_pointer()
-                    .hover(|this| this.bg(tokens::hover_subtle()))
+                    .hover(|this| tokens::hover_fx(this).bg(tokens::hover_subtle()))
                     .child(
                         h_flex()
                             .size(px(20.))
@@ -118,7 +119,11 @@ impl HomeWindow {
                     .line_height(px(17.))
                     .text_color(tokens::text2())
                     .cursor_pointer()
-                    .hover(|this| this.bg(tokens::hover_subtle()).text_color(tokens::text()))
+                    .hover(|this| {
+                        tokens::hover_fx(this)
+                            .bg(tokens::hover_subtle())
+                            .text_color(tokens::text())
+                    })
                     .child(ui::icon("folder-open", 16.))
                     .child("Open file\u{2026}")
                     .on_click(cx.listener(|this, _, _, cx| this.open_file(cx))),
@@ -162,7 +167,7 @@ impl HomeWindow {
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(ui::accent())
                         .cursor_pointer()
-                        .hover(|this| this.text_color(tokens::text()))
+                        .hover(|this| tokens::hover_fx(this).text_color(tokens::text()))
                         .child("Set up a key")
                         .on_click(cx.listener(|this, _, window, cx| this.set_up_key(window, cx))),
                 )
@@ -197,7 +202,7 @@ impl HomeWindow {
             .border_color(tokens::border())
             .bg(ui::panel())
             .cursor_pointer()
-            .hover(|this| this.bg(tokens::hover_subtle()))
+            .hover(|this| tokens::hover_fx(this).bg(tokens::hover_subtle()))
             .child(
                 h_flex()
                     .size(px(28.))
