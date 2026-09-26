@@ -1,6 +1,7 @@
 //! What a paused script exposes: its call stack, the variables in scope and
 //! expressions evaluated against them.
 
+use std::cell::RefCell;
 use std::ffi::{c_int, CStr};
 use std::mem;
 
@@ -31,6 +32,7 @@ pub struct Paused<'a> {
     /// protected call, which may add a frame on this same thread; the depth
     /// is what finds the paused function again from under it.
     depth: c_int,
+    output: &'a RefCell<Vec<String>>,
 }
 
 /// How deep a table is spelled out before it is shown as `{...}`.
@@ -39,7 +41,12 @@ const TABLE_DEPTH: usize = 2;
 const TABLE_ENTRIES: usize = 8;
 
 impl<'a> Paused<'a> {
-    pub(super) fn new(lua: &'a Lua, state: *mut ffi::lua_State, line: u32) -> Self {
+    pub(super) fn new(
+        lua: &'a Lua,
+        state: *mut ffi::lua_State,
+        line: u32,
+        output: &'a RefCell<Vec<String>>,
+    ) -> Self {
         // SAFETY: only reads the thread's call-info count.
         let depth = unsafe { ffi::lua_stackdepth(state) };
         Paused {
@@ -47,12 +54,19 @@ impl<'a> Paused<'a> {
             state,
             line,
             depth,
+            output,
         }
     }
 
     /// The line about to run, 1-based.
     pub fn line(&self) -> u32 {
         self.line
+    }
+
+    /// Everything printed since the run started or this was last called, so
+    /// a paused script's output can be shown before the run is over.
+    pub fn take_output(&self) -> Vec<String> {
+        std::mem::take(&mut self.output.borrow_mut())
     }
 
     /// Innermost first; native functions (Rust bindings, `pcall`) are left

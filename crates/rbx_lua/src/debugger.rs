@@ -182,7 +182,8 @@ unsafe fn step(lua: &Lua, hook: &Hook, state: *mut ffi::lua_State, line: c_int) 
         Step::Over(from) => depth <= from,
         Step::Out(from) => depth < from,
     };
-    let paused = Paused::new(lua, state, line as u32);
+    let output = Rc::clone(&session.output);
+    let paused = Paused::new(lua, state, line as u32, &output);
     let breaks = match session.breakpoints.get(&(line as u32)) {
         Some(breakpoint) => activate(&paused, breakpoint, &session.output),
         None => false,

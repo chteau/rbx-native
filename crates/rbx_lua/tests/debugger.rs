@@ -219,3 +219,12 @@ fn a_runtime_is_reusable_after_a_debug_run() {
     let output = runtime.run("print(2)").unwrap();
     assert_eq!(output.lines(), ["2"]);
 }
+
+#[test]
+fn output_printed_before_a_pause_can_be_taken_while_paused() {
+    let (seen, result) = debug("print(\"a\")\nprint(\"b\")", &[at(2)], &[], |p| {
+        p.take_output()
+    });
+    assert_eq!(seen, vec![vec!["a".to_owned()]]);
+    assert_eq!(result.unwrap(), vec!["b"]);
+}
