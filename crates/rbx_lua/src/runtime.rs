@@ -9,6 +9,7 @@ use rbx_dom::WeakDom;
 use rbx_reflection::ReflectionDatabase;
 
 use crate::ctx::Ctx;
+use crate::debugger::{self, Breakpoint, Paused, Resume};
 use crate::game::LuaGame;
 use crate::instance::LuaInstance;
 use crate::lua_enum::LuaEnums;
@@ -67,6 +68,31 @@ impl Runtime {
     pub fn run(&mut self, source: &str) -> Result<Output, LuaError> {
         self.output.borrow_mut().clear();
         self.lua.load(source).exec()?;
+        Ok(Output {
+            lines: std::mem::take(&mut self.output.borrow_mut()),
+        })
+    }
+
+    /// Runs a script with the debugger attached: `on_pause` is called, on this
+    /// thread and with the script frozen, whenever a breakpoint or a step
+    /// request stops it, and says how to carry on. `name` is what the call
+    /// stack and error messages call the chunk.
+    pub fn debug(
+        &mut self,
+        source: &str,
+        name: &str,
+        breakpoints: &[Breakpoint],
+        on_pause: impl FnMut(&Paused) -> Resume + 'static,
+    ) -> Result<Output, LuaError> {
+        self.output.borrow_mut().clear();
+        debugger::run(
+            &self.lua,
+            source,
+            name,
+            breakpoints,
+            self.output.clone(),
+            on_pause,
+        )?;
         Ok(Output {
             lines: std::mem::take(&mut self.output.borrow_mut()),
         })

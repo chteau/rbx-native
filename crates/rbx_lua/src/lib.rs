@@ -7,6 +7,7 @@
 
 mod ctx;
 mod datatypes;
+mod debugger;
 mod defaults;
 mod game;
 mod instance;
@@ -15,5 +16,6 @@ mod not_creatable;
 mod property;
 mod runtime;
 
+pub use debugger::{Breakpoint, Frame, Paused, Resume, Variable, STOPPED};
 pub use mlua::Error as LuaError;
 pub use runtime::{Output, Runtime};
