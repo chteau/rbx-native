@@ -22,7 +22,9 @@ use crate::tokens;
 
 use super::Shell;
 
+mod beta;
 mod dragger;
+mod files_account;
 mod kit;
 mod nav;
 mod panels;
@@ -52,6 +54,8 @@ pub(crate) struct SettingsWindow {
     search: Entity<InputState>,
     sliders: viewport::Sliders,
     increments: dragger::Increments,
+    /// Account's key check, started the first time that page is shown.
+    key: Option<Entity<crate::launcher::KeyCheck>>,
     /// Viewport › Advanced's disclosure.
     advanced_open: bool,
     page_scroll: ScrollHandle,
@@ -125,6 +129,7 @@ impl SettingsWindow {
             search,
             sliders,
             increments,
+            key: None,
             advanced_open: std::env::var(ADVANCED_VARIABLE).is_ok(),
             page_scroll: {
                 let scroll = ScrollHandle::new();
@@ -163,12 +168,20 @@ impl SettingsWindow {
             Page::ExplorerOutput => self.explorer_output_page(cx),
             Page::Layout => self.layout_page(cx),
             Page::Accessibility => self.accessibility_page(cx),
+            Page::Files => self.files_page(),
+            Page::Account => self.account_page(cx),
             _ => Vec::new(),
         }
     }
 
+    /// What a page shows that isn't a section of rows.
+    fn body(&self) -> Option<AnyElement> {
+        (self.page == Page::Beta).then(|| self.beta_body())
+    }
+
     fn page_view(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let sections = self.sections(window, cx);
+        let body = self.body();
         let resets: Vec<_> = sections
             .iter()
             .flat_map(|section| section.rows.iter().filter_map(|row| row.reset.clone()))
@@ -235,14 +248,15 @@ impl SettingsWindow {
                                         text(12.5, 18.).text_color(tokens::text2()).child(subtitle),
                                     ),
                             )
-                            .child(reset_page),
+                            .when(self.page.has_reset(), |this| this.child(reset_page)),
                     )
                     .children(
                         sections
                             .into_iter()
                             .enumerate()
                             .map(|(i, section)| kit::section(i, section, &shell)),
-                    ),
+                    )
+                    .children(body),
             )
     }
 }

@@ -68,6 +68,46 @@ pub(in crate::shell::settings_window) fn toggle(
         )
 }
 
+/// `color` as it shows at 40% over a card: what a roadmap row's control
+/// is drawn in. Mixed here rather than left to `opacity`, which GPUI
+/// applies to each shape on its own, so a knob faded over a faded track
+/// lets the track show through it where CSS would fade the two as one.
+pub(in crate::shell::settings_window) fn faded(color: Rgba) -> Rgba {
+    let card = tokens::field_select();
+    let over = |c: f32, under: f32| c * color.a + under * (1. - color.a);
+    let mix = |c: f32, under: f32| 0.4 * over(c, under) + 0.6 * under;
+    Rgba {
+        r: mix(color.r, card.r),
+        g: mix(color.g, card.g),
+        b: mix(color.b, card.b),
+        a: 1.,
+    }
+}
+
+/// [`toggle`] on a roadmap row: faded, and nothing to click.
+pub(in crate::shell::settings_window) fn still_toggle(on: bool) -> Div {
+    div()
+        .relative()
+        .flex_none()
+        .w(px(32.))
+        .h(px(18.))
+        .rounded(px(9.))
+        .bg(faded(if on {
+            tokens::check_on()
+        } else {
+            rgba(0xFFFFFF1A)
+        }))
+        .child(
+            div()
+                .absolute()
+                .top(px(3.))
+                .left(px(if on { 17. } else { 3. }))
+                .size(px(12.))
+                .rounded_full()
+                .bg(faded(if on { tokens::black() } else { tokens::text2() })),
+        )
+}
+
 /// A segmented control: `items` as `(label, selected, on_click)`, items
 /// `h` tall (26, or 24 beside a slider).
 pub(in crate::shell::settings_window) fn segmented(
@@ -170,6 +210,62 @@ fn knob() -> Div {
             spread_radius: px(3.),
             inset: false,
         }])
+}
+
+/// A slider nobody can move, `width` wide: a roadmap row's picture of
+/// one. `ticks` marks that many evenly spaced stops under the rail.
+pub(in crate::shell::settings_window) fn still_slider(
+    fraction: f32,
+    width: f32,
+    ticks: usize,
+) -> Div {
+    let rail = |w: Length, color: Rgba| {
+        div()
+            .absolute()
+            .left_0()
+            .top(px(7.))
+            .h(px(4.))
+            .w(w)
+            .rounded(px(2.))
+            .bg(faded(color))
+    };
+    div()
+        .relative()
+        .flex_none()
+        .w(px(width))
+        .h(px(18.))
+        .child(rail(relative(1.).into(), rgba(0xFFFFFF1A)))
+        .child(rail(relative(fraction).into(), tokens::check_on()))
+        .children((0..ticks).map(|i| {
+            let at = if ticks > 1 {
+                i as f32 / (ticks - 1) as f32
+            } else {
+                0.
+            };
+            div()
+                .absolute()
+                .top(px(14.))
+                .left(px((width * at).min(width - 1.)))
+                .w(px(1.))
+                .h(px(4.))
+                .bg(faded(tokens::border2()))
+        }))
+        .child(
+            div()
+                .absolute()
+                .top(px(2.))
+                .left(px(width * fraction - 7.))
+                .size(px(14.))
+                .rounded_full()
+                .bg(faded(tokens::text()))
+                .shadow(vec![BoxShadow {
+                    color: faded(tokens::accent_soft()).into(),
+                    offset: point(px(0.), px(0.)),
+                    blur_radius: px(0.),
+                    spread_radius: px(3.),
+                    inset: false,
+                }]),
+        )
 }
 
 /// A live slider over `state`, the toolkit's behaviour in this skin.

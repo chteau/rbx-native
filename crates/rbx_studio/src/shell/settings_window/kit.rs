@@ -17,7 +17,8 @@ use super::super::Shell;
 mod controls;
 
 pub(super) use controls::{
-    ghost_icon, readout, secondary_button, segmented, slider, toggle, OnPick,
+    ghost_icon, readout, secondary_button, segmented, slider, still_slider, still_toggle, toggle,
+    OnPick,
 };
 
 /// Puts one setting back to its default.
@@ -28,7 +29,11 @@ pub(super) type Reset = Rc<dyn Fn(&mut Shell, &mut Context<Shell>)>;
 /// what "Reset page" runs.
 pub(super) struct Row {
     pub(super) label: &'static str,
-    pub(super) description: Option<&'static str>,
+    pub(super) description: Option<SharedString>,
+    /// The description is a path or a name, set in mono.
+    pub(super) description_mono: bool,
+    /// A setting that only means something under the one above it.
+    pub(super) indent: bool,
     /// Dimmed and inert: on the roadmap.
     pub(super) soon: bool,
     /// Whether the row wears its own `SOON` pill, rather than sharing its
@@ -36,6 +41,9 @@ pub(super) struct Row {
     pub(super) pill: bool,
     /// A constant's name, set in mono.
     pub(super) mono: bool,
+    /// The control draws its own fade (a still toggle or slider), so the
+    /// row doesn't fade it again.
+    pub(super) self_faded: bool,
     pub(super) reset: Option<Reset>,
     pub(super) control: AnyElement,
     /// A block under the label and control, inside the same row: a grid of
@@ -48,17 +56,30 @@ impl Row {
         Row {
             label,
             description: None,
+            description_mono: false,
+            indent: false,
             soon: false,
             pill: false,
             mono: false,
+            self_faded: false,
             reset: None,
             control: control.into_any_element(),
             below: None,
         }
     }
 
-    pub(super) fn describe(mut self, description: &'static str) -> Self {
-        self.description = Some(description);
+    pub(super) fn describe(mut self, description: impl Into<SharedString>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    pub(super) fn describe_mono(mut self, description: impl Into<SharedString>) -> Self {
+        self.description_mono = true;
+        self.describe(description)
+    }
+
+    pub(super) fn indent(mut self) -> Self {
+        self.indent = true;
         self
     }
 
@@ -79,6 +100,12 @@ impl Row {
     pub(super) fn below(mut self, below: impl IntoElement) -> Self {
         self.below = Some(below.into_any_element());
         self
+    }
+
+    /// [`Row::soon`] for a control that fades itself.
+    pub(super) fn soon_faded(mut self) -> Self {
+        self.self_faded = true;
+        self.soon()
     }
 
     pub(super) fn mono(mut self) -> Self {
@@ -224,7 +251,7 @@ fn render_row(id: (usize, usize), row: Row, shell: &Entity<Shell>) -> Stateful<D
         .flex_none()
         .items_center()
         .gap(px(8.))
-        .when(row.soon, |this| this.opacity(0.4))
+        .when(row.soon && !row.self_faded, |this| this.opacity(0.4))
         .child(row.control);
     div()
         .id(("row", id.0 * 100 + id.1))
@@ -248,7 +275,8 @@ fn render_row(id: (usize, usize), row: Row, shell: &Entity<Shell>) -> Stateful<D
             h_flex()
                 .min_h(px(if row.description.is_some() { 56. } else { 44. }))
                 .py(px(10.))
-                .px(px(16.))
+                .pr(px(16.))
+                .pl(px(if row.indent { 40. } else { 16. }))
                 .gap(px(16.))
                 .items_center()
                 .child(
@@ -277,6 +305,10 @@ fn render_row(id: (usize, usize), row: Row, shell: &Entity<Shell>) -> Stateful<D
                         .children(row.description.map(|description| {
                             text(11.5, 16.)
                                 .text_color(description_color)
+                                .when(row.description_mono, |this| {
+                                    this.font_family(tokens::FONT_FAMILY_MONO)
+                                        .text_size(px(11.))
+                                })
                                 .child(description)
                         })),
                 )

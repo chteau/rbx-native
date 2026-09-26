@@ -6,7 +6,7 @@ use gpui_kit::*;
 
 use crate::tokens;
 
-use super::kit::{icon, secondary_button, segmented, text, toggle, Row, Section};
+use super::kit::{icon, secondary_button, segmented, still_toggle, text, toggle, Row, Section};
 use super::nav::Page;
 use super::SettingsWindow;
 
@@ -273,9 +273,9 @@ impl SettingsWindow {
                     )
                     .describe("Every clickable control grows to at least 44 px, from 24 px.")
                     .changed(large, |shell, cx| shell.toggle_large_targets(cx)),
-                    Row::new("Large primary and destructive buttons", toggle("large-primary", false, |_, _, _| {}))
+                    Row::new("Large primary and destructive buttons", still_toggle(false))
                         .describe("Publish, Delete and the like are 44 px tall even with the option above off.")
-                        .soon(),
+                        .soon_faded(),
                 ],
             ),
             Section::new(

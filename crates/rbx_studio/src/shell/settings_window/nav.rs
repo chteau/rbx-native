@@ -68,6 +68,13 @@ impl Page {
         }
     }
 
+    /// Whether the header offers "Reset page": not where nothing on the
+    /// page is live, and not on Account, whose one live control is a
+    /// window of its own.
+    pub(super) fn has_reset(self) -> bool {
+        !matches!(self, Page::Files | Page::Account | Page::Beta)
+    }
+
     /// Whether the whole page is on the roadmap.
     fn soon(self) -> bool {
         self == Page::Beta
@@ -229,7 +236,7 @@ fn nav_item(
 }
 
 /// `path` with the home directory spelt `~`.
-fn tilde(path: &std::path::Path) -> String {
+pub(super) fn tilde(path: &std::path::Path) -> String {
     let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
     match home
         .as_deref()
