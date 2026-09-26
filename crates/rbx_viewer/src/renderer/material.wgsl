@@ -65,9 +65,10 @@ const GLASS_REFRACTION: f32 = 0.06;
 // the shell is face-on versus edge-on, how bright the rim and the pattern
 // glow, the window's width (community measurements put the opaque share
 // near 10% at any moment, which a window 0.1 wide gives on an image with
-// evenly spread red values) and the path the window takes. The depth-driven
-// half of that transparency — the glow where the shell cuts through other
-// geometry — is not drawn at all.
+// evenly spread red values), the path the window takes, and how wide the
+// depth-driven glow is where the shell cuts through other geometry — which
+// Roblox only draws above quality level 15 (see
+// `QualityProfile::force_field_intersections`).
 const FORCE_FIELD_RIM_GLOW: f32 = 2.2;
 const FORCE_FIELD_PATTERN_GLOW: f32 = 1.6;
 // Opacity multipliers on the part's own alpha (itself capped at one half,
@@ -77,6 +78,8 @@ const FORCE_FIELD_EDGE_OPACITY: f32 = 2.0;
 // Where the pattern shows, the shell is solid.
 const FORCE_FIELD_PATTERN_OPACITY: f32 = 2.0;
 const FORCE_FIELD_WINDOW: f32 = 0.1;
+// How far behind the shell, in studs, other geometry still lights it up.
+const FORCE_FIELD_INTERSECTION_STUDS: f32 = 1.0;
 
 // Blinn-Phong from a roughness map: the exponent spans a very broad highlight
 // (2) to a tight one (2048), which is the useful range of
@@ -103,6 +106,10 @@ struct MaterialInput {
     // `force_field_window`. Left zeroed — no pattern — by every pass with no
     // image of its own, which is every plain part.
     pattern: f32,
+    // How much of an edge a `ForceField` fragment has beyond its Fresnel one:
+    // where it cuts through something (`force_field_intersection`, folded in
+    // by `material_output`) or where a mesh's vertex alpha forces it solid.
+    edge: f32,
 }
 
 /// The extent the model matrix scales its unit mesh to, i.e. the part's own
@@ -202,6 +209,7 @@ struct Mapped {
     to_eye: vec3<f32>,
     // `MaterialInput`'s, passed through.
     pattern: f32,
+    edge: f32,
 }
 
 /// Whether a material shades procedurally whatever maps it is handed: Neon is
@@ -264,7 +272,7 @@ fn mapped_shade(mapped: Mapped) -> vec3<f32> {
 /// and on a textured mesh whatever of its image is showing. Added to the
 /// shaded tint rather than replacing it, so a `ForceField` keeps its colour.
 fn force_field_energy(mapped: Mapped) -> vec3<f32> {
-    let rim = force_field_rim(mapped.geometric_normal, mapped.to_eye);
+    let rim = max(force_field_rim(mapped.geometric_normal, mapped.to_eye), mapped.edge);
     return mapped.base_albedo
         * (mapped.pattern * FORCE_FIELD_PATTERN_GLOW + rim * FORCE_FIELD_RIM_GLOW);
 }
@@ -282,6 +290,26 @@ fn force_field_alpha(alpha: f32, rim: f32, pattern: f32) -> f32 {
     let opacity = mix(FORCE_FIELD_FACE_OPACITY, FORCE_FIELD_EDGE_OPACITY, rim)
         + pattern * FORCE_FIELD_PATTERN_OPACITY;
     return clamp(alpha * opacity, 0.0, 1.0);
+}
+
+/// How close the opaque scene behind a `ForceField` fragment is: 1 where the
+/// shell touches it, falling to 0 once it is `FORCE_FIELD_INTERSECTION_STUDS`
+/// behind. `uniforms.viewport.w` says how to turn depth into studs (see
+/// `pipeline::intersection_depth`), 0 meaning this pass draws no such glow.
+fn force_field_intersection(frag: vec4<f32>) -> f32 {
+    let mode = uniforms.viewport.w;
+    let scene = scene_depth(vec2<i32>(frag.xy));
+    // 0 is the cleared far plane: nothing behind but sky.
+    if mode == 0.0 || scene <= 0.0 {
+        return 0.0;
+    }
+    var gap: f32;
+    if mode > 0.0 {
+        gap = mode / scene - mode / frag.z;
+    } else {
+        gap = (frag.z - scene) * -mode;
+    }
+    return 1.0 - smoothstep(0.0, FORCE_FIELD_INTERSECTION_STUDS, gap);
 }
 
 /// Whether a texel of a `ForceField` mesh's image shows at `phase`: its red
@@ -330,6 +358,7 @@ fn sample_axis(axis: vec3<f32>, input: MaterialInput) -> Mapped {
     mapped.kind = input.kind;
     mapped.to_eye = normalize(lighting.camera.xyz - input.world_position);
     mapped.pattern = input.pattern;
+    mapped.edge = input.edge;
     return mapped;
 }
 
@@ -361,15 +390,22 @@ fn triplanar_weights(normal: vec3<f32>) -> vec3<f32> {
 /// Only the *opaque* scene is there to bend: the copy is taken when the
 /// opaque pass ends (see `post::Targets::capture_refraction`), so a
 /// translucent part standing behind a pane, or a second pane behind the
-/// first, is not in what the pane refracts. `screen_uv` is the fragment's
-/// own place in the frame, which is where that copy is read from before the
-/// surface's normal pushes the lookup aside.
-fn material_output(input: MaterialInput, in_alpha: f32, screen_uv: vec2<f32>) -> vec4<f32> {
-    let shaded = material_shade_with_normal(input);
+/// first, is not in what the pane refracts. `frag` is the fragment's own
+/// `@builtin(position)`: its place in the frame, which is where that copy is
+/// read from before the surface's normal pushes the lookup aside, and its
+/// depth, which a `ForceField` measures the scene behind it against.
+fn material_output(input: MaterialInput, in_alpha: f32, frag: vec4<f32>) -> vec4<f32> {
+    let screen_uv = frag.xy / uniforms.viewport.xy;
+    var surface = input;
+    if input.kind == KIND_FORCE_FIELD {
+        surface.edge = max(input.edge, force_field_intersection(frag));
+    }
+    let shaded = material_shade_with_normal(surface);
     var alpha = in_alpha;
     if input.kind == KIND_FORCE_FIELD {
         let to_eye = normalize(lighting.camera.xyz - input.world_position);
-        alpha = force_field_alpha(alpha, force_field_rim(input.world_normal, to_eye), input.pattern);
+        let rim = max(force_field_rim(input.world_normal, to_eye), surface.edge);
+        alpha = force_field_alpha(alpha, rim, input.pattern);
     }
     // A pass with no copy behind it binds one unread texel (a
     // `ViewportFrame`'s own, a place with no glass in it at all): there is
@@ -441,6 +477,7 @@ fn material_shade_with_normal(input: MaterialInput) -> Shaded {
     mapped.kind = input.kind;
     mapped.to_eye = normalize(lighting.camera.xyz - input.world_position);
     mapped.pattern = input.pattern;
+    mapped.edge = input.edge;
 
     if weights.x >= TRIPLANAR_WEIGHT_EPSILON {
         let leg = sample_axis(vec3<f32>(sign_of(n.x), 0.0, 0.0), input);

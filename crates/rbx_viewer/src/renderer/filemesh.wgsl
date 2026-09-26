@@ -11,6 +11,7 @@ struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
+    @location(12) color: vec4<f32>,
 }
 
 struct InstanceInput {
@@ -40,6 +41,7 @@ struct VertexOutput {
     @location(9) axis_z: vec3<f32>,
     @location(10) @interpolate(flat) material: vec2<u32>,
     @location(11) studs_per_tile: f32,
+    @location(12) vertex_alpha: f32,
 }
 
 @vertex
@@ -71,6 +73,7 @@ fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
     out.axis_z = normalize(model[2].xyz);
     out.material = vec2<u32>(instance.material_layer, instance.material_kind);
     out.studs_per_tile = instance.studs_per_tile;
+    out.vertex_alpha = vertex.color.a;
     return out;
 }
 
@@ -99,8 +102,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     if input.kind == KIND_FORCE_FIELD {
         input.albedo = in.color.rgb;
         input.pattern = force_field_window(sample.r, uniforms.viewport.z) * sample.a;
+        // "Vertex alpha driven outlines that allow having a visible border
+        // even on flat parts of force fields ... 1 is no forced color and 0
+        // is fully forced color" (the material's announcement).
+        input.edge = 1.0 - in.vertex_alpha;
         alpha = in.color.a;
     }
 
-    return material_output(input, alpha, in.clip_position.xy / uniforms.viewport.xy);
+    return material_output(input, alpha, in.clip_position);
 }

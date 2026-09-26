@@ -159,6 +159,12 @@ pub(crate) struct QualityProfile {
     /// in the table — see `renderer::switch`. Clamped down where the adapter
     /// cannot multisample the HDR format (`renderer::post`).
     pub(crate) msaa_samples: u32,
+    /// Whether a `ForceField` glows where it cuts through other geometry.
+    /// Roblox turns that part of the material's transparency "off for
+    /// performance on quality level 15 and below" (a staff reply on the
+    /// DevForum's "Visual inconsistency in ForceField material" report), so
+    /// only the top band has it.
+    pub(crate) force_field_intersections: bool,
 }
 
 #[cfg(test)]

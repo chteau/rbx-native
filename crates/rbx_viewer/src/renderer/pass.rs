@@ -1,15 +1,16 @@
-//! The two colour passes of a frame, and the order everything in them has to
-//! be drawn in.
+//! The colour passes of a frame, and the order everything in them has to be
+//! drawn in.
 //!
 //! Split out of [`super::Renderer::draw`], which is left with what surrounds
 //! them: the per-frame uniforms, the shadow map and the resolve.
 //!
-//! Two rather than one because a `Glass` surface reads the scene behind
+//! More than one because a `Glass` surface reads the scene behind
 //! itself out of a copy (see `renderer::post::Targets::capture_refraction`),
 //! and a texture cannot be both a colour attachment and a bound resource in
 //! the same pass. The opaque half ends, the copy is taken, and everything
-//! that blends over it — the translucent geometry, the editor's own cues —
-//! goes in the second.
+//! that blends over it goes after: the translucent geometry in a pass that
+//! holds depth read-only (so a `ForceField` can read it, see
+//! `renderer::scene_depth`), then the editor's own cues.
 
 use super::cull::MainCull;
 use super::pipeline;
@@ -76,6 +77,7 @@ impl Renderer {
         let bindings = pipeline::Bindings {
             frame: &self.frame.bind_group,
             materials: &self.materials.bind_group,
+            scene_depth: None,
         };
         pass.set_pipeline(&self.opaque);
         pass.set_bind_group(0, bindings.frame, &[]);
@@ -91,9 +93,54 @@ impl Renderer {
         }
     }
 
-    /// Everything that blends over the opaque half, in the same order it was
-    /// drawn in when the two were one pass: the translucent geometry, then
-    /// the adornments the place asks for, then the editor's own cues.
+    /// The translucent geometry, over the opaque half: a pass of its own
+    /// because it holds the depth buffer *read-only*, which is what lets the
+    /// same texture be bound for a `ForceField` to measure itself against
+    /// (see `renderer::scene_depth`). Nothing drawn here writes depth — every
+    /// blended pipeline is built with depth writes off — so it loses nothing.
+    pub(super) fn translucent_pass(&self, encoder: &mut wgpu::CommandEncoder, targets: &Targets) {
+        let (view, resolve) = targets.color();
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("rbxview scene translucent"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                depth_slice: None,
+                resolve_target: resolve,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: targets.depth(),
+                // `None` is read-only: tested against, never written.
+                depth_ops: None,
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+
+        let bindings = pipeline::Bindings {
+            frame: &self.frame.bind_group,
+            materials: &self.materials.bind_group,
+            scene_depth: Some(targets.scene_depth()),
+        };
+        if !self.translucent.is_empty() {
+            pass.set_pipeline(&self.blended);
+            pass.set_bind_group(0, bindings.frame, &[]);
+            pass.set_bind_group(1, bindings.materials, &[]);
+            pass.set_bind_group(3, targets.scene_depth(), &[]);
+            self.translucent
+                .draw(&mut pass, &self.meshes, (&self.blended, &self.inside));
+        }
+        self.filemesh.draw_blended(&mut pass, bindings);
+    }
+
+    /// Everything else that blends over the opaque half, in the order it was
+    /// drawn in when all of it was one pass: the translucent decals, then the
+    /// adornments the place asks for, then the editor's own cues.
     pub(super) fn overlay_pass(&self, encoder: &mut wgpu::CommandEncoder, targets: &Targets) {
         let (view, resolve) = targets.color();
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -123,17 +170,6 @@ impl Renderer {
         });
 
         let decals = self.quality.decals && !self.textured.is_empty();
-        let bindings = pipeline::Bindings {
-            frame: &self.frame.bind_group,
-            materials: &self.materials.bind_group,
-        };
-        if !self.translucent.is_empty() {
-            pass.set_pipeline(&self.blended);
-            pass.set_bind_group(0, bindings.frame, &[]);
-            pass.set_bind_group(1, bindings.materials, &[]);
-            self.translucent.draw(&mut pass, &self.meshes);
-        }
-        self.filemesh.draw_blended(&mut pass, bindings);
         if decals {
             pass.set_bind_group(0, &self.frame.bind_group, &[]);
             self.textured.draw_blended(&mut pass, &self.meshes);

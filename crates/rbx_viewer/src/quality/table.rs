@@ -33,6 +33,7 @@ const BANDS: [(u8, QualityProfile); 8] = [
             trails: true,
             gui: true,
             msaa_samples: 1,
+            force_field_intersections: false,
         },
     ),
     // 3-4: the grade comes back, and a handful of local lights with it.
@@ -57,6 +58,7 @@ const BANDS: [(u8, QualityProfile); 8] = [
             trails: true,
             gui: true,
             msaa_samples: 1,
+            force_field_intersections: false,
         },
     ),
     // 5-6: shadows and Neon's glow appear — the level users notice.
@@ -81,6 +83,7 @@ const BANDS: [(u8, QualityProfile); 8] = [
             trails: true,
             gui: true,
             msaa_samples: 1,
+            force_field_intersections: false,
         },
     ),
     (
@@ -104,6 +107,7 @@ const BANDS: [(u8, QualityProfile); 8] = [
             trails: true,
             gui: true,
             msaa_samples: 1,
+            force_field_intersections: false,
         },
     ),
     (
@@ -127,6 +131,7 @@ const BANDS: [(u8, QualityProfile); 8] = [
             trails: true,
             gui: true,
             msaa_samples: 1,
+            force_field_intersections: false,
         },
     ),
     (
@@ -150,6 +155,7 @@ const BANDS: [(u8, QualityProfile); 8] = [
             trails: true,
             gui: true,
             msaa_samples: 1,
+            force_field_intersections: false,
         },
     ),
     // 10-15: nothing is capped any more; only the distances still grow.
@@ -174,6 +180,7 @@ const BANDS: [(u8, QualityProfile); 8] = [
             trails: true,
             gui: true,
             msaa_samples: 1,
+            force_field_intersections: false,
         },
     ),
     // 16-21: the levels a desktop client actually runs at, and where
@@ -202,6 +209,7 @@ const BANDS: [(u8, QualityProfile); 8] = [
             trails: true,
             gui: true,
             msaa_samples: 4,
+            force_field_intersections: true,
         },
     ),
 ];

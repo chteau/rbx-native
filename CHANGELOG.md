@@ -10,8 +10,12 @@
   alpha sets how strongly those texels show. This runs in the viewer
   window, the browser build and Studio's viewport. A `--screenshot` stays
   the same still frame every run, and the new `--elapsed <seconds>` renders
-  any moment of the cycle. A `ForceField` mesh is also drawn see-through
-  now; before, only plain parts were. — @chteau
+  any moment of the cycle. A shell now shows its far side through its near
+  one, glows where it cuts through other parts at quality levels 16 and up
+  (Roblox turns that off at 15 and below), and goes solid wherever a mesh's
+  vertex colours have their alpha lowered, which is how Roblox lets a mesh
+  draw a border on a flat stretch of shell. A `ForceField` mesh is also drawn
+  see-through now; before, only plain parts were. — @chteau
 
 ## 2026-09-25
 

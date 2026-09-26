@@ -110,7 +110,8 @@ impl Viewports {
                 refraction: &refraction_view,
             },
         );
-        let (opaque, blended) = pipeline::shape_pipelines(device, TARGET, &layout, material_layout);
+        let (opaque, blended) =
+            pipeline::shape_pipelines(device, TARGET, &layout, material_layout, false);
 
         let mut quality = QualityLevel::default().profile();
         quality.render_distance = f32::INFINITY;
@@ -217,6 +218,7 @@ impl Viewports {
             queue,
             &camera.view_projection(aspect),
             Vec2::new(size.0 as f32, size.1 as f32),
+            0.0,
             0.0,
         );
         queue.write_buffer(

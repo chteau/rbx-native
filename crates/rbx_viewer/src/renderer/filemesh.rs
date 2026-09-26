@@ -327,6 +327,9 @@ impl FileMeshes {
                 pass.set_pipeline(pipeline);
                 pass.set_bind_group(0, bindings.frame, &[]);
                 pass.set_bind_group(1, bindings.materials, &[]);
+                if let Some(depth) = bindings.scene_depth {
+                    pass.set_bind_group(3, depth, &[]);
+                }
                 bound = Some(pipeline);
             }
             match geometry.skin {

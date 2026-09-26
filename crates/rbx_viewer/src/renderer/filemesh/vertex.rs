@@ -5,8 +5,15 @@
 use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
 
-const TEXTURED_ATTRIBUTES: [wgpu::VertexAttribute; 3] =
-    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2];
+// The vertex colour sits past the instance attributes (3-11, see
+// `instance::INSTANCE_ATTRIBUTES_AFTER_UV`) rather than before them, so the
+// instance layout the textured pipeline shares stays where it was.
+const TEXTURED_ATTRIBUTES: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
+    0 => Float32x3,
+    1 => Float32x3,
+    2 => Float32x2,
+    12 => Unorm8x4,
+];
 
 const APPEARANCE_ATTRIBUTES: [wgpu::VertexAttribute; 4] =
     wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Float32x4];
@@ -21,6 +28,9 @@ pub(super) struct TexturedVertex {
     position: [f32; 3],
     normal: [f32; 3],
     uv: [f32; 2],
+    /// The mesh file's own RGBA, which only a `ForceField` reads: its alpha
+    /// forces the shell solid there (see `filemesh.wgsl`).
+    color: [u8; 4],
 }
 
 #[repr(C)]
@@ -51,6 +61,7 @@ impl TexturedVertex {
                 position: vertex.position,
                 normal: vertex.normal,
                 uv: vertex.uv,
+                color: vertex.color,
             })
             .collect()
     }
@@ -259,5 +270,19 @@ mod tests {
         assert_eq!(built[1].uv, [1.0, 0.0]);
         assert_eq!(Vec4::from(built[1].tangent).w, 1.0);
         assert_eq!(TexturedVertex::build(&mesh)[1].uv, [1.0, 0.0]);
+    }
+
+    // What a `ForceField` reads its forced outline from; the shader declares
+    // it at the same location (`filemesh.wgsl`'s `VertexInput`).
+    #[test]
+    fn the_vertex_colour_reaches_the_textured_pipeline_past_the_instance_slots() {
+        let mut mesh = quad();
+        mesh.vertices[2].color = [10, 20, 30, 40];
+
+        assert_eq!(TexturedVertex::build(&mesh)[2].color, [10, 20, 30, 40]);
+        assert_eq!(TEXTURED_ATTRIBUTES[3].shader_location, 12);
+        assert_eq!(TEXTURED_ATTRIBUTES[3].offset, 32);
+        assert!(super::super::super::pipeline::FILEMESH_SHADER
+            .contains("@location(12) color: vec4<f32>"));
     }
 }

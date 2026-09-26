@@ -86,10 +86,12 @@ Roblox's own engine.
   compared against a window of "visible" values that wanders up and down
   over a long cycle, and its alpha sets how strongly the texels in the window
   show. The clock is the host's; a `--screenshot` holds it at 0, or at
-  `--elapsed`'s value, so a capture stays repeatable. The window's width and
-  path, the period and the opacities are this renderer's own, since Roblox
-  publishes none of them, and the depth-driven glow where a shell cuts
-  through other geometry is not drawn.
+  `--elapsed`'s value, so a capture stays repeatable. A shell is drawn from
+  both sides, glows where it cuts through other geometry (read from the
+  opaque scene's depth, and only above quality level 15, where Roblox draws
+  it), and is forced solid wherever a mesh's own vertex alpha drops below 1.
+  The window's width and path, the period, the opacities and the glow's
+  width are this renderer's own, since Roblox publishes none of them.
 - [x] Decals/textures projected on real geometry (not just boxes), and
   patched in place — not just redrawn on a full reload — when the
   `CFrame`, size or shape of the part they're pinned to is edited live.

@@ -60,6 +60,9 @@ pub(in crate::renderer) struct Targets {
     /// that writes it, has already ended by the time the resolve runs; the two
     /// share one group because a WebGPU device is only guaranteed four of them.
     pub(super) blur_depth: wgpu::BindGroup,
+    /// `depth` again, for the blended surfaces to read while the translucent
+    /// pass holds it read-only — see `renderer::scene_depth`.
+    scene_depth: wgpu::BindGroup,
     pub(super) chain: Vec<Level>,
     /// The full-frame blur's own chain, sized independently of `chain` since a
     /// `BlurEffect.Size` and a `BloomEffect.Size` need not agree. Empty where the
@@ -95,6 +98,7 @@ impl Targets {
                 blur_chain.last().map_or(&scene, |level| &level.view),
                 &depth,
             ),
+            scene_depth: super::super::scene_depth::bind(device, &depth, samples),
             depth,
             multisampled: (samples > 1)
                 .then(|| attachment(device, "rbxview scene (msaa)", size, HDR_FORMAT, samples)),
@@ -178,6 +182,10 @@ impl Targets {
     /// joining this one's depth buffer has to match.
     pub(in crate::renderer) fn samples(&self) -> u32 {
         self.samples
+    }
+
+    pub(in crate::renderer) fn scene_depth(&self) -> &wgpu::BindGroup {
+        &self.scene_depth
     }
 
     pub(in crate::renderer) fn depth(&self) -> &wgpu::TextureView {

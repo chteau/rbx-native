@@ -55,10 +55,17 @@ impl Renderer {
     /// twice a session.
     fn rebuild_pipelines(&mut self, device: &wgpu::Device) {
         let target = self.target;
-        let (opaque, blended) =
-            pipeline::shape_pipelines(device, target, &self.frame_layout, &self.material_layout);
+        let (opaque, blended) = pipeline::shape_pipelines(
+            device,
+            target,
+            &self.frame_layout,
+            &self.material_layout,
+            true,
+        );
         self.opaque = opaque;
         self.blended = blended;
+        self.inside =
+            pipeline::inside_pipeline(device, target, &self.frame_layout, &self.material_layout);
         self.textured.set_target(device, target, &self.frame_layout);
         self.filemesh
             .set_target(device, target, (&self.frame_layout, &self.material_layout));
