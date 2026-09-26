@@ -1145,6 +1145,24 @@ Roblox's own engine.
     dark theme (under a name the registry does not already hold — it
     ignores a duplicate) replaces the built-in at startup. Names read from
     `appearance.json` are refused unless they are one plain path segment.
+- [x] **A theme that reaches the whole editor** (`theme.rs`, `THEMES.md`).
+  A theme is a folder under `themes/<id>/` with a required `manifest.json`
+  (name, author, description, version, preview image) and optional
+  `theme.json`, `widgets.json` and `icons/`. `tokens.rs` reads every colour
+  and size from the active theme, so the palette, the spacing and the type
+  scale are data now. The editor's own look is the built-in **Default**
+  theme (`assets/themes/default`, author @chteau), which holds every token,
+  can't be uninstalled or shadowed, and renders pixel-identical to the
+  compiled-in values it replaced (verified with a 0-pixel screenshot diff).
+  Other themes are layered over it: a colour can reference another
+  (`@check_on/0.12`), and anything a theme leaves out, icons included, is
+  Default's. Themes can also make the window transparent or blurred, add a
+  hover glow to every hover state the chrome draws, and put a background
+  image behind or over the chrome. A theme applies live when
+  `appearance.json` names another one or its own files are saved. A
+  widgets-only `themes/<name>.json` from before still loads. An installer
+  that downloads a theme from a GitHub repository link, validates it and
+  swaps it in atomically is in place but not yet reachable from the UI.
 - [x] **"Sober but alive" restyle of the gpui-kit layer (PR #87).** The
   chrome now follows the redesign reference (`gpui-ref/`, kept out of the
   repo) token for token: a three-tone surface ramp (`#0A0A0B` / `#121213` /
@@ -1954,14 +1972,16 @@ against `Roblox/creator-docs` rather than assumed:
   through the same real-property DOM mutation any other editor action
   does, not a shortcut that could write something a saved place file
   can't actually represent.
-- [ ] 📋 **A theme that reaches the whole editor, and a way to install
-  one.** A theme file replaces the toolkit widgets' colours only: the
-  chrome this editor draws itself (`tokens.rs`, hundreds of call sites)
-  still reads compiled-in values, so palette, spacing and type scale are
-  not data yet. There is also no in-editor theme chooser — `appearance.json`
-  is edited by hand — no pack browser or installer, so a pack is copied in
-  by hand, and while an icon pack is chosen at runtime a theme takes
-  effect only on the next launch.
+- [ ] 📋 **Choosing and installing themes from inside the editor.** Themes
+  reach the whole editor and switch live (see "What's been implemented"),
+  but picking one still means editing `appearance.json`, and there is no
+  browser of installed themes with their previews, no install-from-link
+  field and no uninstall button. The backend for all three exists and
+  waits for the settings screen (`theme::pack::installed`,
+  `theme::github::install`, `theme::pack::uninstall`). A theme cannot ship
+  fonts yet (the families are fixed to Manrope and JetBrains Mono), and the
+  launcher windows and the 3D viewport's own overlays still paint a handful
+  of literal colours that no theme reaches.
 - [ ] 📋 **What the visual pass left behind**, beyond the items that
   already have their own bullets under "What's planned" → Editor (the
   remaining Stage 2/Stage 3 accessibility items and the property types
