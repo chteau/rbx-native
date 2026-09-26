@@ -1408,16 +1408,29 @@ Roblox's own engine.
 ## What's planned
 
 ### Script authoring — the biggest real gap
-- [ ] 📋 Script debugging — technically reachable via Luau's own debug
-  hooks in `mlua`, large effort, depends on the script editor and, for
-  anything beyond the Command Bar, on the Play workaround below. Real
-  Studio's actual feature set, per `studio/debugging.md`, is worth
-  matching rather than a vague "breakpoints" placeholder: **standard**,
-  **conditional** (breaks only when a given expression is true),
-  **logpoint** (logs to Output without pausing — no breakpoint hit at
-  all), and **temporary** (auto-removes itself after one playtest session)
-  breakpoints, plus **Watch** (expression inspection while paused) and
-  **Call Stack** panels once paused.
+- [x] Script debugging in the Edit context, over Luau's own single-step
+  hook (`lua_singlestep` + the `debugstep` callback, reached through
+  `mlua`'s FFI in `rbx_lua::debugger`). The Script Editor's Debug button
+  (F5) runs the open script against the place on a worker thread, so a
+  paused script blocks only itself. Studio's feature set per
+  `studio/debugging.md`: **standard**, **conditional** (breaks only when
+  its expression is true), **logpoint** (logs to Output without pausing)
+  and **temporary** (removes itself when the run ends) breakpoints, set
+  by clicking the gutter, right-clicking it for the menu, or F9, and
+  edited in an Edit Breakpoint popup (Condition, Log Message, Continue
+  Execution, Remove Breakpoint on Hit, Enabled). Disabled breakpoints show
+  hollow. Resume (F5), Step Into (F11), Step Over (F10), Step Out
+  (Shift+F11) and Stop (Shift+F5), even for a script that never pauses.
+  A **Watch** dock with Variables (locals and upvalues) and My Watches
+  (expressions re-evaluated at every pause), and a **Call Stack** dock.
+  When the run ends, its changes replace the place as one undo step,
+  unless the place was edited while it ran. In that case they are
+  dropped and the Output dock says so.
+- [ ] 📋 Script debugging inside a Play session — the Edit-context
+  debugger above has no Play mode to run in, so a server or client
+  script can only be debugged once the Play workaround below exists.
+  Breakpoints would then trigger in that session's scripts, as Studio's
+  Client/Server "Trigger At" contexts do.
 - [ ] ⚠️ **Inline AI code completion**, matching what real Studio calls
   **Code Assist** (`studio/script-editor.md`) — suggests a line/block of
   code inline as you type or pause, distinct from `luau-lsp`'s
