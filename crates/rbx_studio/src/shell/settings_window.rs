@@ -15,13 +15,13 @@ use std::rc::Rc;
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{h_flex, v_flex, Root};
-use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::tokens;
 
 use super::Shell;
 
+mod argon;
 mod beta;
 mod dragger;
 mod files_account;
@@ -54,6 +54,7 @@ pub(crate) struct SettingsWindow {
     search: Entity<InputState>,
     sliders: viewport::Sliders,
     increments: dragger::Increments,
+    argon: argon::ArgonControls,
     /// Account's key check, started the first time that page is shown.
     key: Option<Entity<crate::launcher::KeyCheck>>,
     /// Viewport › Advanced's disclosure.
@@ -114,6 +115,8 @@ impl SettingsWindow {
         let (sliders, mut subscriptions) = viewport::Sliders::new(&shell, cx);
         let (increments, typed) = dragger::Increments::new(&shell, window, cx);
         subscriptions.extend(typed);
+        let (argon, picked) = argon::ArgonControls::new(window, cx);
+        subscriptions.extend(picked);
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search settings"));
         // Anything that changes a setting elsewhere — the dock, a menu —
         // notifies the shell; this window has nothing of its own to redraw
@@ -129,6 +132,7 @@ impl SettingsWindow {
             search,
             sliders,
             increments,
+            argon,
             key: None,
             advanced_open: std::env::var(ADVANCED_VARIABLE).is_ok(),
             page_scroll: {
@@ -169,6 +173,7 @@ impl SettingsWindow {
             Page::Layout => self.layout_page(cx),
             Page::Accessibility => self.accessibility_page(cx),
             Page::Files => self.files_page(),
+            Page::Argon => self.argon_page(window, cx),
             Page::Account => self.account_page(cx),
             _ => Vec::new(),
         }
@@ -187,35 +192,23 @@ impl SettingsWindow {
             .flat_map(|section| section.rows.iter().filter_map(|row| row.reset.clone()))
             .collect();
         let shell = self.shell.clone();
-        let reset_page = h_flex()
-            .id("reset-page")
-            .flex_none()
-            .h(px(28.))
-            .px(px(8.))
-            .gap(px(6.))
-            .items_center()
-            .rounded(px(5.))
-            .text_size(px(12.))
-            .line_height(px(16.))
-            .font_weight(FontWeight::SEMIBOLD)
-            .child(kit::icon("rotate-ccw", 12.))
-            .child("Reset page")
-            .map(|this| {
-                if resets.is_empty() {
-                    this.text_color(tokens::text3())
-                } else {
-                    this.text_color(tokens::text2())
-                        .cursor_pointer()
-                        .hover(|this| this.bg(tokens::hover()).text_color(tokens::text()))
-                        .on_click(move |_, _, cx| {
-                            shell.update(cx, |shell, cx| {
-                                for reset in &resets {
-                                    reset(shell, cx);
-                                }
-                            })
-                        })
-                }
-            });
+        let reset_page = kit::header_button(
+            "reset-page",
+            "Reset page",
+            (!resets.is_empty()).then_some(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                shell.update(cx, |shell, cx| {
+                    for reset in &resets {
+                        reset(shell, cx);
+                    }
+                })
+            }),
+        );
+        let header_button = match self.page {
+            Page::Argon => Some(self.argon_header(cx)),
+            page if page.has_reset() => Some(reset_page),
+            _ => None,
+        };
+        let lead = (self.page == Page::Argon).then(|| self.argon_scope_bar(cx));
         let (title, subtitle) = self.page.heading();
         let shell = self.shell.clone();
         v_flex()
@@ -248,8 +241,9 @@ impl SettingsWindow {
                                         text(12.5, 18.).text_color(tokens::text2()).child(subtitle),
                                     ),
                             )
-                            .when(self.page.has_reset(), |this| this.child(reset_page)),
+                            .children(header_button),
                     )
+                    .children(lead)
                     .children(
                         sections
                             .into_iter()

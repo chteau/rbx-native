@@ -16,7 +16,7 @@ use super::super::{rows, Shell};
 use super::Layout;
 
 /// The sections and their cards, in the order they read.
-const SECTIONS: [(&str, &[Setting]); 4] = [
+pub(in crate::shell) const SECTIONS: [(&str, &[Setting]); 4] = [
     (
         "CONNECTION",
         &[Setting::AutoConnect, Setting::AutoReconnect, Setting::Https],
@@ -51,7 +51,7 @@ const SECTIONS: [(&str, &[Setting]); 4] = [
 ];
 
 /// A card's title and one-line description.
-fn copy(setting: Setting) -> (&'static str, &'static str) {
+pub(in crate::shell) fn copy(setting: Setting) -> (&'static str, &'static str) {
     match setting {
         Setting::AutoConnect => ("Auto Connect", "Connect when you open a place."),
         Setting::AutoReconnect => (
@@ -66,7 +66,7 @@ fn copy(setting: Setting) -> (&'static str, &'static str) {
         Setting::LiveHydrate => ("Live Hydrate", "Fetch missing instances from the server."),
         Setting::KeepUnknowns => (
             "Keep Unknowns",
-            "Keep instances the file system doesn't have.",
+            "Keep instances the file system doesn\u{2019}t have.",
         ),
         Setting::OverridePackages => (
             "Override Packages",

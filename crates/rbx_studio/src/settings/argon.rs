@@ -264,6 +264,43 @@ impl ArgonSettings {
         changed
     }
 
+    /// What `level` falls back to for `setting`: the nearest level above
+    /// it that overrides it, else the default, reported as Global since
+    /// that is where a default is changed.
+    pub(crate) fn inherited(
+        &self,
+        setting: Setting,
+        level: Level,
+        keys: &LevelKeys,
+    ) -> (Level, Value) {
+        Level::ALL
+            .iter()
+            .skip_while(|above| **above != level)
+            .skip(1)
+            .find_map(|above| Some((*above, self.overrides(*above, keys)?.get(&setting)?.clone())))
+            .unwrap_or_else(|| (Level::Global, setting.default()))
+    }
+
+    /// Drops `level`'s own override of `setting`, so it falls back to what
+    /// it inherits. Returns whether there was one.
+    pub(crate) fn clear(&mut self, setting: Setting, level: Level, keys: &LevelKeys) -> bool {
+        let removed = match level {
+            Level::Global => self.global.remove(&setting).is_some(),
+            Level::Game => keys
+                .game
+                .as_ref()
+                .and_then(|key| self.game.get_mut(key)?.remove(&setting))
+                .is_some(),
+            Level::Place => keys
+                .place
+                .as_ref()
+                .and_then(|key| self.place.get_mut(key)?.remove(&setting))
+                .is_some(),
+        };
+        self.prune();
+        removed
+    }
+
     /// Empties one level (`Config.luau:162-174`). Returns whether it held
     /// anything.
     pub(crate) fn restore_defaults(&mut self, level: Level, keys: &LevelKeys) -> bool {

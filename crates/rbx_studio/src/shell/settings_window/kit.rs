@@ -36,6 +36,8 @@ pub(super) struct Row {
     pub(super) indent: bool,
     /// Dimmed and inert: on the roadmap.
     pub(super) soon: bool,
+    /// A tag after the label: which Argon level a value is set at.
+    pub(super) chip: Option<SharedString>,
     /// Whether the row wears its own `SOON` pill, rather than sharing its
     /// section's.
     pub(super) pill: bool,
@@ -59,6 +61,7 @@ impl Row {
             description_mono: false,
             indent: false,
             soon: false,
+            chip: None,
             pill: false,
             mono: false,
             self_faded: false,
@@ -66,6 +69,11 @@ impl Row {
             control: control.into_any_element(),
             below: None,
         }
+    }
+
+    pub(super) fn chip(mut self, chip: impl Into<SharedString>) -> Self {
+        self.chip = Some(chip.into());
+        self
     }
 
     pub(super) fn describe(mut self, description: impl Into<SharedString>) -> Self {
@@ -298,6 +306,18 @@ fn render_row(id: (usize, usize), row: Row, shell: &Entity<Shell>) -> Stateful<D
                                         })
                                         .child(row.label),
                                 )
+                                .children(row.chip.map(|chip| {
+                                    text(10.5, 14.)
+                                        .h(px(18.))
+                                        .px(px(6.))
+                                        .flex()
+                                        .items_center()
+                                        .rounded(px(4.))
+                                        .bg(tokens::accent_soft())
+                                        .text_color(tokens::check_on())
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .child(chip)
+                                }))
                                 .when(row.pill, |this| {
                                     this.child(soon_pill(("soon", id.0 * 100 + id.1)))
                                 }),
@@ -322,4 +342,34 @@ fn render_row(id: (usize, usize), row: Row, shell: &Entity<Shell>) -> Stateful<D
                 .when(row.soon, |this| this.opacity(0.4))
                 .child(below)
         }))
+}
+
+/// A page header's ghost button ("Reset page", "Restore defaults"): text2
+/// with a reset glyph, or text3 and inert while there is nothing to do.
+pub(super) fn header_button(
+    id: &'static str,
+    label: &'static str,
+    on_click: Option<impl Fn(&ClickEvent, &mut Window, &mut App) + 'static>,
+) -> Stateful<Div> {
+    let base = h_flex()
+        .id(id)
+        .flex_none()
+        .h(px(28.))
+        .px(px(8.))
+        .gap(px(6.))
+        .items_center()
+        .rounded(px(5.))
+        .text_size(px(12.))
+        .line_height(px(16.))
+        .font_weight(FontWeight::SEMIBOLD)
+        .child(icon("rotate-ccw", 12.))
+        .child(label);
+    match on_click {
+        Some(on_click) => base
+            .text_color(tokens::text2())
+            .cursor_pointer()
+            .hover(|this| this.bg(tokens::hover()).text_color(tokens::text()))
+            .on_click(on_click),
+        None => base.text_color(tokens::text3()),
+    }
 }

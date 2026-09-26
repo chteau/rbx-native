@@ -3,6 +3,7 @@
 
 use gpui_kit::*;
 
+use crate::settings::argon::{Level, Setting, Value};
 use crate::transform::{Action, SnapKind};
 
 use super::super::Shell;
@@ -38,5 +39,44 @@ impl Shell {
             SnapKind::Translate => self.transform.translate.increment,
             SnapKind::Rotate => self.transform.rotate.increment,
         }
+    }
+
+    /// Writes `setting` at `level`, which need not be the level the Argon
+    /// dock is editing.
+    pub(in crate::shell) fn argon_set_at(
+        &mut self,
+        level: Level,
+        setting: Setting,
+        value: Value,
+        cx: &mut Context<Self>,
+    ) {
+        let keys = self.argon_level_keys();
+        if self.argon_settings.set(setting, value, level, &keys) {
+            self.save_settings();
+        }
+        cx.notify();
+    }
+
+    /// Drops `level`'s own override of `setting`.
+    pub(in crate::shell) fn argon_clear_at(
+        &mut self,
+        level: Level,
+        setting: Setting,
+        cx: &mut Context<Self>,
+    ) {
+        let keys = self.argon_level_keys();
+        if self.argon_settings.clear(setting, level, &keys) {
+            self.save_settings();
+        }
+        cx.notify();
+    }
+
+    /// Empties `level` (the dock's Restore defaults, at any level).
+    pub(in crate::shell) fn argon_restore_at(&mut self, level: Level, cx: &mut Context<Self>) {
+        let keys = self.argon_level_keys();
+        if self.argon_settings.restore_defaults(level, &keys) {
+            self.save_settings();
+        }
+        cx.notify();
     }
 }

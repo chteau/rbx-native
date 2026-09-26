@@ -3,6 +3,7 @@
 
 use gpui_kit::component::h_flex;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::settings::DraggerSettings;
@@ -179,8 +180,13 @@ impl SettingsWindow {
     }
 }
 
-/// An 80×30 mono field, right-aligned, with its unit after it.
-fn number(input: &Entity<InputState>, unit: &'static str, focused: bool) -> impl IntoElement {
+/// An 80×30 mono field, right-aligned, and its unit after it when it has
+/// one.
+pub(super) fn number(
+    input: &Entity<InputState>,
+    unit: &'static str,
+    focused: bool,
+) -> impl IntoElement {
     h_flex()
         .gap(px(8.))
         .items_center()
@@ -210,10 +216,12 @@ fn number(input: &Entity<InputState>, unit: &'static str, focused: bool) -> impl
                         .text_color(tokens::text()),
                 ),
         )
-        .child(
-            div()
-                .text_size(px(12.))
-                .text_color(tokens::text2())
-                .child(unit),
-        )
+        .when(!unit.is_empty(), |this| {
+            this.child(
+                div()
+                    .text_size(px(12.))
+                    .text_color(tokens::text2())
+                    .child(unit),
+            )
+        })
 }

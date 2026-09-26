@@ -1295,6 +1295,7 @@ impl Render for Shell {
         self.focus_explorer_edit(window, cx);
         // An increment set from Settings has to reach the popover's text.
         self.snap_fields.sync(self.transform, window, cx);
+        self.sync_argon_fields(window, cx);
         v_flex()
             .size_full()
             .bg(tokens::black())
