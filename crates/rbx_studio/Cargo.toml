@@ -18,6 +18,10 @@ glam = "0.33"
 # is written in (Go to Declaration); both are already in the tree through it.
 anyhow = "1"
 gpui-kit = "0.6"
+# Already in the tree under gpui-kit, and patched to `vendor/gpui-base`; named
+# directly only for the script editor's gutter slot, which gpui-kit's own
+# re-exports do not list (see `vendor/README.md`).
+gpui-base = "0.6"
 lsp-types = "0.97"
 # GPUI's own version: a RenderImage is built from its `image::Frame`s, so a
 # second copy of the crate would not typecheck.

@@ -1629,6 +1629,8 @@ pub(super) struct PrepaintState {
     bounds: Bounds<Pixels>,
     /// Fold icon layout data
     fold_icon_layout: FoldIconLayout,
+    /// rbx-native addition: see `super::gutter`.
+    gutter_cells: Vec<gpui::AnyElement>,
     // Inline completion rendering data
     /// Shaped ghost lines to paint after cursor row (completion lines 2+)
     ghost_lines: Vec<ShapedLine>,
@@ -2124,6 +2126,29 @@ impl<M: InputModeKind> Element for TextElement<M> {
             )));
         let fold_icon_layout =
             self.layout_fold_icons(original_x, &bounds, &last_layout, window, cx);
+        // rbx-native addition: see `super::gutter`.
+        let (gutter, folding) = {
+            let state = self.state.read(cx);
+            (state.gutter.clone(), state.mode.is_folding())
+        };
+        let gutter_cells = match gutter {
+            Some(gutter) if last_layout.line_number_width > px(0.) => {
+                let mut width = last_layout.line_number_width - LINE_NUMBER_RIGHT_MARGIN;
+                if folding {
+                    width -= FOLD_ICON_HITBOX_WIDTH;
+                }
+                super::gutter::layout(
+                    &gutter,
+                    original_x,
+                    &bounds,
+                    &last_layout,
+                    width,
+                    window,
+                    cx,
+                )
+            }
+            _ => Vec::new(),
+        };
 
         PrepaintState {
             bounds,
@@ -2140,6 +2165,7 @@ impl<M: InputModeKind> Element for TextElement<M> {
             document_color_paths,
             indent_guides_path,
             fold_icon_layout,
+            gutter_cells,
             ghost_first_line,
             ghost_lines,
             ghost_lines_height,
@@ -2156,7 +2182,15 @@ impl<M: InputModeKind> Element for TextElement<M> {
         window: &mut Window,
         cx: &mut App,
     ) {
-        let (focus_handle, show_cursor, disabled, selected_range, editor_style, editor_paddings) = {
+        let (
+            focus_handle,
+            show_cursor,
+            disabled,
+            selected_range,
+            editor_style,
+            editor_paddings,
+            gutter_highlight,
+        ) = {
             let state = self.state.read(cx);
             (
                 state.focus_handle.clone(),
@@ -2165,6 +2199,7 @@ impl<M: InputModeKind> Element for TextElement<M> {
                 *state.active_selection(),
                 state.editor_style.clone(),
                 state.editor_paddings,
+                state.gutter.as_ref().and_then(|gutter| gutter.highlight),
             )
         };
         let focused = focus_handle.is_focused(window);
@@ -2212,6 +2247,17 @@ impl<M: InputModeKind> Element for TextElement<M> {
                             bg_color,
                         ));
                     }
+                }
+                // rbx-native addition: see `super::gutter`.
+                if let Some((_, color)) = gutter_highlight.filter(|(line, _)| *line == buffer_line)
+                {
+                    window.paint_quad(fill(
+                        Bounds::new(
+                            point(input_bounds.origin.x, p.y),
+                            size(input_bounds.size.width, height),
+                        ),
+                        color,
+                    ));
                 }
                 offset_y += height;
             }
@@ -2432,6 +2478,10 @@ impl<M: InputModeKind> Element for TextElement<M> {
             window,
             cx,
         );
+        // rbx-native addition: see `super::gutter`.
+        for cell in &mut prepaint.gutter_cells {
+            cell.paint(window, cx);
+        }
 
         self.state.update(cx, |state, cx| {
             let geometry_changed = state.last_bounds != Some(bounds)

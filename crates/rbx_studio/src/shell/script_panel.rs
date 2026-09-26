@@ -41,6 +41,7 @@ impl Shell {
                 // own handler, where it is the Explorer's Duplicate.
                 if shell.handle_finder_key(&event.keystroke, window, cx)
                     || shell.handle_match_cursor_key(active, &event.keystroke, window, cx)
+                    || shell.handle_debug_key(&event.keystroke, cx)
                 {
                     cx.stop_propagation();
                 }
@@ -67,6 +68,7 @@ impl Shell {
                     }))
                     .children(self.script_finder(cx)),
             )
+            .children(self.breakpoint_overlay(cx))
             .into_any_element()
     }
 
@@ -168,19 +170,22 @@ impl Shell {
                 )
         });
 
-        h_flex().w_full().child(
-            TabBar::new("script-editor-tabs")
-                .w_full()
-                .underline()
-                .small()
-                .selected_index(selected)
-                .children(tabs)
-                .on_click(cx.listener(move |shell, index: &usize, _, cx| {
-                    if let Some(reference) = clicked.get(*index) {
-                        shell.activate_script(*reference, cx);
-                    }
-                })),
-        )
+        h_flex()
+            .w_full()
+            .child(
+                TabBar::new("script-editor-tabs")
+                    .flex_1()
+                    .underline()
+                    .small()
+                    .selected_index(selected)
+                    .children(tabs)
+                    .on_click(cx.listener(move |shell, index: &usize, _, cx| {
+                        if let Some(reference) = clicked.get(*index) {
+                            shell.activate_script(*reference, cx);
+                        }
+                    })),
+            )
+            .child(self.debug_controls(cx))
     }
 }
 

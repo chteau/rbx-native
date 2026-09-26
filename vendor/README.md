@@ -20,10 +20,17 @@ same reason `on_mouse_move` in `src/input/base/state.rs` no longer raises the
 kit's diagnostic popover (painted boxless in those colours); rbx_studio's
 hover provider shows the problem's message instead.
 
-Both exist because the script editor's Ctrl+D / Shift+Alt+L (add a cursor
+And one gutter slot, `src/input/base/gutter.rs` plus `set_gutter` on the
+editor state and the hooks marked the same way in `src/input/base/element.rs`:
+a per-line marker cell over the line-number column that reports mouse
+presses, and one line painted edge to edge. The script debugger draws its
+breakpoints and the paused line through it; upstream's gutter only has line
+numbers and fold chevrons.
+
+The two selection methods exist because the script editor's Ctrl+D / Shift+Alt+L (add a cursor
 to the next / every match of the selection) has to add selections, and
 upstream keeps the selection list private (still true in 0.6.6).
 
 To upgrade GPUI Kit: re-copy the matching `gpui-base` from
-`~/.cargo/registry/src/*/`, re-apply the two methods and the two diagnostic fixes, and bump the version.
+`~/.cargo/registry/src/*/`, re-apply the two methods, the two diagnostic fixes and the gutter slot, and bump the version.
 Delete this directory and the patch once upstream has an equivalent.

@@ -12,6 +12,7 @@ mod change_class;
 pub(crate) mod chrome;
 mod clipboard;
 mod command;
+mod debugging;
 mod dock_drag;
 mod docks;
 mod drag;
@@ -235,6 +236,8 @@ pub(crate) struct Shell {
     covered: HashSet<Ref>,
     /// Every script open in the Script Editor panel; see `shell::scripts`.
     scripts: ScriptEditor,
+    /// Breakpoints and the debug run, if any — see `shell::debugging`.
+    debug: debugging::Debugging,
     /// `luau-lsp` behind the script editor and Script Analysis; see
     /// `shell::luau_lsp`.
     lsp: luau_lsp::Session,
@@ -569,6 +572,7 @@ impl Shell {
             hovered: Vec::new(),
             covered: HashSet::new(),
             scripts: ScriptEditor::default(),
+            debug: debugging::Debugging::default(),
             lsp: luau_lsp::Session::default(),
             properties_scroll: ScrollHandle::new(),
             style_edits: style_panel::StyleEdits::default(),

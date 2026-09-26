@@ -343,6 +343,8 @@ pub struct InputBaseState<M: InputModeKind> {
     pub(super) display_map: DisplayMap,
     pub(super) undo_manager: UndoManager,
     pub(super) search_session: super::SearchSession,
+    /// rbx-native addition — see [`Self::set_gutter`].
+    pub(super) gutter: Option<super::Gutter>,
     /// Advances every time search is explicitly invoked. See
     /// [`InputBaseState::search_activation_revision`].
     pub(super) search_activation_revision: u64,
@@ -681,6 +683,7 @@ impl<M: InputModeKind> InputBaseState<M> {
             text: "".into(),
             display_map: DisplayMap::new(text_style.font(), window.rem_size(), None),
             search_session: super::SearchSession::default(),
+            gutter: None,
             search_activation_revision: 0,
             searchable: false,
             replaceable: true,
@@ -2153,6 +2156,14 @@ impl<M: InputModeKind> InputBaseState<M> {
         let id = self.selections.generate_id();
         self.selections
             .add(CursorSelection::new(id, offset, offset));
+        cx.notify();
+    }
+
+    /// Per-line markers and one highlighted line in the gutter.
+    ///
+    /// rbx-native addition: upstream's gutter has no slot of its own.
+    pub fn set_gutter(&mut self, gutter: Option<super::Gutter>, cx: &mut Context<Self>) {
+        self.gutter = gutter;
         cx.notify();
     }
 

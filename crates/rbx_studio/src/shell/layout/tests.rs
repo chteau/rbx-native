@@ -51,7 +51,9 @@ fn the_default_layout_is_the_shell_that_was_hardcoded() {
             Panel::Viewport,
             Panel::Argon,
             Panel::Wally,
-            Panel::ScriptAnalysis
+            Panel::ScriptAnalysis,
+            Panel::Watch,
+            Panel::CallStack
         ]]
     );
     assert!(layout.floating().is_empty());
@@ -104,7 +106,9 @@ fn opening_a_hidden_tab_brings_it_forward() {
             Panel::Viewport,
             Panel::Argon,
             Panel::Wally,
-            Panel::ScriptAnalysis
+            Panel::ScriptAnalysis,
+            Panel::Watch,
+            Panel::CallStack
         ]]
     );
 }
@@ -134,7 +138,9 @@ fn a_reopened_viewport_dock_is_a_showing_tab_beside_output() {
             Panel::Output,
             Panel::Argon,
             Panel::Wally,
-            Panel::ScriptAnalysis
+            Panel::ScriptAnalysis,
+            Panel::Watch,
+            Panel::CallStack
         ]]
     );
 
@@ -147,6 +153,8 @@ fn a_reopened_viewport_dock_is_a_showing_tab_beside_output() {
             Panel::Argon,
             Panel::Wally,
             Panel::ScriptAnalysis,
+            Panel::Watch,
+            Panel::CallStack,
             Panel::Viewport
         ]]
     );
@@ -173,7 +181,9 @@ fn a_file_from_before_the_viewport_dock_seats_it_beside_output() {
             Panel::Viewport,
             Panel::Argon,
             Panel::Wally,
-            Panel::ScriptAnalysis
+            Panel::ScriptAnalysis,
+            Panel::Watch,
+            Panel::CallStack
         ]]
     );
     assert!(!layout.is_showing(Panel::Viewport));
@@ -431,6 +441,8 @@ fn an_emptied_edge_holds_nothing() {
     layout.close(Panel::Argon);
     layout.close(Panel::Wally);
     layout.close(Panel::ScriptAnalysis);
+    layout.close(Panel::Watch);
+    layout.close(Panel::CallStack);
     layout.apply(
         Panel::Output,
         Landing::NewGroup {
@@ -502,7 +514,9 @@ fn a_closed_panel_is_open_nowhere() {
             Panel::Viewport,
             Panel::Argon,
             Panel::Wally,
-            Panel::ScriptAnalysis
+            Panel::ScriptAnalysis,
+            Panel::Watch,
+            Panel::CallStack
         ]]
     );
 }
@@ -523,6 +537,8 @@ fn reopening_a_panel_puts_it_on_its_own_edge() {
             Panel::Argon,
             Panel::Wally,
             Panel::ScriptAnalysis,
+            Panel::Watch,
+            Panel::CallStack,
             Panel::Output
         ]]
     );
