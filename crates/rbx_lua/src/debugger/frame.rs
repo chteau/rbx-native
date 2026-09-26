@@ -5,7 +5,9 @@ use std::cell::RefCell;
 use std::ffi::{c_int, CStr};
 use std::mem;
 
-use mlua::{ffi, Lua, MultiValue, Table, Value};
+use std::collections::HashMap;
+
+use mlua::{ffi, Function, Lua, MultiValue, Table, Value};
 
 /// One row of the Call Stack: a Luau function and the line it is on.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,7 +35,13 @@ pub struct Paused<'a> {
     /// is what finds the paused function again from under it.
     depth: c_int,
     output: &'a RefCell<Vec<String>>,
+    compiled: &'a Compiled,
 }
+
+/// Every condition, log message and watch compiled so far this run, by
+/// source text. A breakpoint condition in a hot loop is evaluated on every
+/// pass; compiling it once is most of what that costs.
+pub(super) type Compiled = RefCell<HashMap<String, Function>>;
 
 /// How deep a table is spelled out before it is shown as `{...}`.
 const TABLE_DEPTH: usize = 2;
@@ -46,6 +54,7 @@ impl<'a> Paused<'a> {
         state: *mut ffi::lua_State,
         line: u32,
         output: &'a RefCell<Vec<String>>,
+        compiled: &'a Compiled,
     ) -> Self {
         // SAFETY: only reads the thread's call-info count.
         let depth = unsafe { ffi::lua_stackdepth(state) };
@@ -55,6 +64,7 @@ impl<'a> Paused<'a> {
             line,
             depth,
             output,
+            compiled,
         }
     }
 
@@ -72,6 +82,32 @@ impl<'a> Paused<'a> {
     /// Innermost first; native functions (Rust bindings, `pcall`) are left
     /// out, as Studio's Call Stack leaves out the engine's own frames.
     pub fn call_stack(&self) -> Vec<Frame> {
+        let mut frames: Vec<Frame> = self
+            .luau_frames()
+            .into_iter()
+            .map(|(_, ar)| {
+                // SAFETY: `name` points into the VM's own strings, which the
+                // paused thread keeps alive.
+                let function = match unsafe { c_str(ar.name) } {
+                    Some(name) if !name.is_empty() => name,
+                    _ => format!("function <line {}>", ar.linedefined),
+                };
+                Frame {
+                    function,
+                    line: ar.currentline as u32,
+                }
+            })
+            .collect();
+        // The chunk is always called from Rust, so the outermost Luau frame
+        // is its main function; Luau gives it no name of its own.
+        if let Some(outermost) = frames.last_mut() {
+            outermost.function = "main chunk".to_owned();
+        }
+        frames
+    }
+
+    /// The stack level of each [`Frame`] `call_stack` lists, with its info.
+    fn luau_frames(&self) -> Vec<(c_int, ffi::lua_Debug)> {
         let mut frames = Vec::new();
         for level in 0.. {
             // SAFETY: `lua_getinfo` only writes `ar`; levels past the stack
@@ -81,31 +117,19 @@ impl<'a> Paused<'a> {
                 if ffi::lua_getinfo(self.state, level, c"sln".as_ptr(), &mut ar) == 0 {
                     break;
                 }
-                if ar.currentline < 0 {
-                    continue;
+                if ar.currentline >= 0 {
+                    frames.push((level, ar));
                 }
-                let function = match c_str(ar.name) {
-                    Some(name) if !name.is_empty() => name,
-                    _ => format!("function <line {}>", ar.linedefined),
-                };
-                frames.push(Frame {
-                    function,
-                    line: ar.currentline as u32,
-                });
             }
-        }
-        // The chunk is always called from Rust, so the outermost Luau frame
-        // is its main function; Luau gives it no name of its own.
-        if let Some(outermost) = frames.last_mut() {
-            outermost.function = "main chunk".to_owned();
         }
         frames
     }
 
-    /// The innermost function's locals and upvalues, as Studio's Watch
-    /// window lists them under Variables.
-    pub fn variables(&self) -> Vec<Variable> {
-        self.scope()
+    /// The locals and upvalues of the `frame`-th entry of [`Self::call_stack`]
+    /// (0 is where the script stopped), as Studio's Watch window lists them
+    /// under Variables. Empty for a frame that is not there.
+    pub fn variables(&self, frame: usize) -> Vec<Variable> {
+        self.scope(frame)
             .into_iter()
             .map(|(name, value)| Variable {
                 value: describe(&value, TABLE_DEPTH),
@@ -114,10 +138,10 @@ impl<'a> Paused<'a> {
             .collect()
     }
 
-    /// Evaluates `expression` in the innermost function's scope; several
-    /// results are joined with `, `.
-    pub fn evaluate(&self, expression: &str) -> Result<String, String> {
-        let values = self.eval(expression)?;
+    /// Evaluates `expression` in the scope of the `frame`-th entry of
+    /// [`Self::call_stack`]; several results are joined with `, `.
+    pub fn evaluate(&self, frame: usize, expression: &str) -> Result<String, String> {
+        let values = self.eval(frame, expression)?;
         Ok(values
             .iter()
             .map(|value| describe(value, TABLE_DEPTH))
@@ -126,7 +150,7 @@ impl<'a> Paused<'a> {
     }
 
     pub(super) fn truthy(&self, expression: &str) -> Result<bool, String> {
-        let values = self.eval(expression)?;
+        let values = self.eval(0, expression)?;
         Ok(!matches!(
             values.front(),
             None | Some(Value::Nil) | Some(Value::Boolean(false))
@@ -135,25 +159,41 @@ impl<'a> Paused<'a> {
 
     /// What `print(<expression list>)` would print.
     pub(super) fn print_line(&self, expressions: &str) -> Result<String, String> {
-        let values = self.eval(expressions)?;
+        let values = self.eval(0, expressions)?;
         let parts: Result<Vec<String>, _> = values.iter().map(Value::to_string).collect();
         Ok(parts.map_err(|err| err.to_string())?.join(" "))
     }
 
-    fn eval(&self, expression: &str) -> Result<MultiValue, String> {
-        let env = self.environment().map_err(|err| err.to_string())?;
-        self.lua
-            .load(format!("return {expression}"))
-            .set_name("=watch")
+    fn eval(&self, frame: usize, expression: &str) -> Result<MultiValue, String> {
+        let function = self.compile(expression).map_err(|err| one_line(&err))?;
+        let env = self.environment(frame).map_err(|err| err.to_string())?;
+        function
             .set_environment(env)
-            .eval::<MultiValue>()
+            .map_err(|err| err.to_string())?;
+        function
+            .call::<MultiValue>(())
             .map_err(|err| one_line(&err))
     }
 
+    fn compile(&self, expression: &str) -> mlua::Result<Function> {
+        if let Some(function) = self.compiled.borrow().get(expression) {
+            return Ok(function.clone());
+        }
+        let function = self
+            .lua
+            .load(format!("return {expression}"))
+            .set_name("=watch")
+            .into_function()?;
+        self.compiled
+            .borrow_mut()
+            .insert(expression.to_owned(), function.clone());
+        Ok(function)
+    }
+
     /// A table of the scope, falling back to the globals for everything else.
-    fn environment(&self) -> mlua::Result<Table> {
+    fn environment(&self, frame: usize) -> mlua::Result<Table> {
         let env = self.lua.create_table()?;
-        for (name, value) in self.scope() {
+        for (name, value) in self.scope(frame) {
             env.raw_set(name, value)?;
         }
         let meta = self.lua.create_table()?;
@@ -165,7 +205,10 @@ impl<'a> Paused<'a> {
     /// Upvalues then locals, so a local shadows an upvalue of the same name
     /// and, among locals, the innermost block's wins — the order `lua_getlocal`
     /// numbers them in.
-    fn scope(&self) -> Vec<(String, Value)> {
+    fn scope(&self, frame: usize) -> Vec<(String, Value)> {
+        let Some(&(frame_level, _)) = self.luau_frames().get(frame) else {
+            return Vec::new();
+        };
         let mut names = Vec::new();
         let paused = self.state;
         let depth = self.depth;
@@ -174,7 +217,7 @@ impl<'a> Paused<'a> {
         // results; `lua_xmove` is a no-op when both are the same thread.
         let values = unsafe {
             self.lua.exec_raw::<MultiValue>((), |state| {
-                let level = ffi::lua_stackdepth(paused) - depth;
+                let level = ffi::lua_stackdepth(paused) - depth + frame_level;
                 let mut ar = mem::zeroed::<ffi::lua_Debug>();
                 if ffi::lua_getinfo(paused, level, c"f".as_ptr(), &mut ar) != 0 {
                     // An absolute index: when both are one thread the

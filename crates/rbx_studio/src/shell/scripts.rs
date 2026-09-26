@@ -95,6 +95,7 @@ impl Shell {
                 _subscription: subscription,
             },
         );
+        self.follow_script_edit(reference, cx);
         self.sync_gutters(cx);
         self.ensure_luau_lsp(cx);
         self.attach_luau_lsp(reference, cx);
@@ -175,6 +176,7 @@ impl Shell {
             let state = open.state.clone();
             state.update(cx, |state, cx| state.set_value(text.clone(), window, cx));
             self.mark_synced(reference, text);
+            self.follow_script_edit(reference, cx);
         }
     }
 
@@ -208,6 +210,7 @@ impl Shell {
         open.pending = true;
         open.generation = open.generation.wrapping_add(1);
         let generation = open.generation;
+        self.follow_script_edit(reference, cx);
 
         self.schedule_luau_lsp_refresh(cx);
 

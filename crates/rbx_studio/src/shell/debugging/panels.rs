@@ -131,7 +131,9 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> (Option<AnyElement>, Option<AnyElement>) {
         let overflow = self.dock_overflow(Panel::CallStack, "call-stack-overflow", cx);
-        let pause = self.debug.run.as_ref().and_then(|run| run.pause.as_ref());
+        let run = self.debug.run.as_ref();
+        let selected = run.map_or(0, |run| run.frame);
+        let pause = run.and_then(|run| run.pause.as_ref());
         let rows: Vec<AnyElement> = match pause {
             None => vec![placeholder(self.debug_running())],
             Some(pause) => pause
@@ -140,12 +142,18 @@ impl Shell {
                 .enumerate()
                 .map(|(index, frame)| {
                     h_flex()
+                        .id(("call-stack-frame", index))
                         .w_full()
+                        .cursor_pointer()
+                        .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
+                        .on_click(cx.listener(move |shell, _, _, cx| {
+                            shell.select_frame(index, cx);
+                        }))
                         .gap_2()
                         .px_2()
                         .py_0p5()
                         .text_size(tokens::text_xs())
-                        .when(index == 0, |this| this.bg(tokens::hover()))
+                        .when(index == selected, |this| this.bg(tokens::hover()))
                         .child(
                             div()
                                 .flex_1()

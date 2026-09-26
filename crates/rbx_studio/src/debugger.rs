@@ -121,6 +121,28 @@ impl Breakpoints {
             .collect()
     }
 
+    /// Moves `script`'s breakpoints with an edit that turned its text from
+    /// `old` into `new` (see [`remap_line`]).
+    pub(crate) fn follow_edit(&mut self, script: Ref, old: &str, new: &str) {
+        let Some(lines) = self.scripts.get_mut(&script) else {
+            return;
+        };
+        if lines.is_empty() {
+            return;
+        }
+        let edit = Edit::between(old, new);
+        let mut moved = BTreeMap::new();
+        for (line, mut stored) in std::mem::take(lines) {
+            if let Some(to) = edit.remap(line) {
+                stored.breakpoint.line = to;
+                // Two landing on one line: the one that was already there
+                // (the lower, since lines are visited in order) stays.
+                moved.entry(to).or_insert(stored);
+            }
+        }
+        *lines = moved;
+    }
+
     /// A run of `script` is over: its temporary breakpoints go.
     pub(crate) fn end_run(&mut self, script: Ref) {
         if let Some(lines) = self.scripts.get_mut(&script) {
@@ -129,9 +151,116 @@ impl Breakpoints {
     }
 }
 
+/// One edit to a script, as the lines it left alone: the run of identical
+/// lines at the top and the run at the bottom. Whatever lies between is the
+/// edited block.
+struct Edit {
+    old_lines: usize,
+    new_lines: usize,
+    prefix: usize,
+    suffix: usize,
+}
+
+impl Edit {
+    fn between(old: &str, new: &str) -> Self {
+        let old: Vec<&str> = old.split('\n').collect();
+        let new: Vec<&str> = new.split('\n').collect();
+        let prefix = old.iter().zip(&new).take_while(|(a, b)| a == b).count();
+        let suffix = old[prefix..]
+            .iter()
+            .rev()
+            .zip(new[prefix..].iter().rev())
+            .take_while(|(a, b)| a == b)
+            .count();
+        Edit {
+            old_lines: old.len(),
+            new_lines: new.len(),
+            prefix,
+            suffix,
+        }
+    }
+
+    /// Where 1-based `line` is after the edit. A line above the edited block
+    /// stays put, one below it moves with it; one inside it stays within
+    /// what the block became, and goes if the block was deleted outright —
+    /// a breakpoint on a deleted line is deleted with it.
+    fn remap(&self, line: u32) -> Option<u32> {
+        let index = line as usize - 1;
+        if index < self.prefix {
+            return Some(line);
+        }
+        if index >= self.old_lines - self.suffix {
+            return Some((index + self.new_lines - self.old_lines) as u32 + 1);
+        }
+        let block_end = self.new_lines - self.suffix;
+        (block_end > self.prefix).then(|| index.min(block_end - 1) as u32 + 1)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn remap(old: &str, new: &str, line: u32) -> Option<u32> {
+        Edit::between(old, new).remap(line)
+    }
+
+    #[test]
+    fn lines_below_an_insert_move_down_and_lines_above_stay() {
+        let old = "a\nb\nc";
+        let new = "a\nx\ny\nb\nc";
+        assert_eq!(remap(old, new, 1), Some(1));
+        assert_eq!(remap(old, new, 2), Some(4));
+        assert_eq!(remap(old, new, 3), Some(5));
+    }
+
+    #[test]
+    fn enter_at_the_end_of_a_line_leaves_its_breakpoint_and_moves_the_rest() {
+        // The caret at the end of `b`: `b` is unchanged, a blank line follows.
+        let old = "a\nb\nc";
+        let new = "a\nb\n\nc";
+        assert_eq!(remap(old, new, 2), Some(2));
+        assert_eq!(remap(old, new, 3), Some(4));
+    }
+
+    #[test]
+    fn enter_at_the_start_of_a_line_takes_its_breakpoint_down() {
+        let old = "a\nb\nc";
+        let new = "a\n\nb\nc";
+        assert_eq!(remap(old, new, 2), Some(3));
+    }
+
+    #[test]
+    fn a_deleted_line_takes_its_breakpoint_and_the_rest_move_up() {
+        let old = "a\nb\nc\nd";
+        let new = "a\nd";
+        assert_eq!(remap(old, new, 2), None);
+        assert_eq!(remap(old, new, 3), None);
+        assert_eq!(remap(old, new, 4), Some(2));
+    }
+
+    #[test]
+    fn a_line_edited_in_place_keeps_its_breakpoint() {
+        assert_eq!(remap("a\nb\nc", "a\nB!\nc", 2), Some(2));
+    }
+
+    #[test]
+    fn a_breakpoints_line_follows_the_edit_and_collisions_keep_one() {
+        let mut breakpoints = Breakpoints::default();
+        breakpoints.insert(SCRIPT, 2, Kind::Standard);
+        breakpoints.insert(SCRIPT, 3, Kind::Logpoint);
+        breakpoints.follow_edit(SCRIPT, "a\nb\nc", "x\na\nb\nc");
+        let lines: Vec<u32> = breakpoints.of(SCRIPT).map(|b| b.breakpoint.line).collect();
+        assert_eq!(lines, vec![3, 4]);
+
+        // Replacing lines 3-4 with one line: both land on it, the first stays.
+        breakpoints.follow_edit(SCRIPT, "x\na\nb\nc", "x\na\nz");
+        let kinds: Vec<(u32, Kind)> = breakpoints
+            .of(SCRIPT)
+            .map(|b| (b.breakpoint.line, b.kind()))
+            .collect();
+        assert_eq!(kinds, vec![(3, Kind::Standard)]);
+    }
 
     const SCRIPT: Ref = Ref::new(7);
 

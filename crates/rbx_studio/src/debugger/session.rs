@@ -20,10 +20,23 @@ use rbx_reflection::ReflectionDatabase;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Command {
     Resume(Resume),
-    /// Evaluates each watch expression, answered with one
-    /// [`Event::Evaluated`] naming each expression beside its value, so an
-    /// answer that crosses an edit of the watch list still lands right.
-    Evaluate(Vec<String>),
+    /// Reads one frame of the Call Stack (0 is where the script stopped):
+    /// its variables and each watch expression evaluated in it, answered
+    /// with one [`Event::Inspected`].
+    Inspect {
+        frame: usize,
+        expressions: Vec<String>,
+    },
+}
+
+/// One frame's worth of the Watch dock.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Inspection {
+    pub(crate) frame: usize,
+    pub(crate) variables: Vec<Variable>,
+    /// Each expression beside its value, so an answer that crosses an edit
+    /// of the watch list still lands on the right row.
+    pub(crate) values: Vec<(String, Evaluation)>,
 }
 
 /// Everything the Watch and Call Stack docks show for one pause.
@@ -42,7 +55,7 @@ pub(crate) type Evaluation = Result<String, String>;
 #[derive(Debug)]
 pub(crate) enum Event {
     Paused(Pause),
-    Evaluated(Vec<(String, Evaluation)>),
+    Inspected(Inspection),
     Finished(Finished),
 }
 
@@ -153,7 +166,7 @@ fn on_pause(paused: &Paused, events: &Sender<Event>, commands: &Receiver<Command
     let pause = Pause {
         line: paused.line(),
         stack: paused.call_stack(),
-        variables: paused.variables(),
+        variables: paused.variables(0),
         output: paused.take_output(),
     };
     if events.send(Event::Paused(pause)).is_err() {
@@ -162,12 +175,17 @@ fn on_pause(paused: &Paused, events: &Sender<Event>, commands: &Receiver<Command
     loop {
         match commands.recv() {
             Ok(Command::Resume(resume)) => return resume,
-            Ok(Command::Evaluate(expressions)) => {
+            Ok(Command::Inspect { frame, expressions }) => {
                 let values = expressions
                     .iter()
-                    .map(|expression| (expression.clone(), paused.evaluate(expression)))
+                    .map(|expression| (expression.clone(), paused.evaluate(frame, expression)))
                     .collect();
-                if events.send(Event::Evaluated(values)).is_err() {
+                let inspection = Inspection {
+                    frame,
+                    variables: paused.variables(frame),
+                    values,
+                };
+                if events.send(Event::Inspected(inspection)).is_err() {
                     return Resume::Stop;
                 }
             }
@@ -228,12 +246,19 @@ mod tests {
         assert_eq!(pause.stack[0].function, "main chunk");
         assert_eq!(pause.variables[0].name, "n");
 
-        session.send(Command::Evaluate(vec!["n * 2".into(), "nope()".into()]));
-        let Event::Evaluated(values) = session.next_event() else {
+        session.send(Command::Inspect {
+            frame: 0,
+            expressions: vec!["n * 2".into(), "nope()".into()],
+        });
+        let Event::Inspected(inspection) = session.next_event() else {
             panic!("expected watch values");
         };
-        assert_eq!(values[0], ("n * 2".to_owned(), Ok("82".to_owned())));
-        assert!(values[1].1.is_err());
+        assert_eq!(
+            inspection.values[0],
+            ("n * 2".to_owned(), Ok("82".to_owned()))
+        );
+        assert!(inspection.values[1].1.is_err());
+        assert_eq!(inspection.variables[0].name, "n");
 
         session.send(Command::Resume(Resume::Continue));
         let done = finished(session.next_event());

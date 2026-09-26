@@ -76,7 +76,7 @@ fn a_conditional_breakpoint_only_pauses_while_its_condition_holds() {
         condition: Some("i == 2".into()),
         ..at(3)
     };
-    let (seen, _) = debug(LOOP, &[breakpoint], &[], |p| p.evaluate("i"));
+    let (seen, _) = debug(LOOP, &[breakpoint], &[], |p| p.evaluate(0, "i"));
     assert_eq!(seen, vec![Ok("2".to_owned())]);
 }
 
@@ -171,7 +171,7 @@ local function show(list)
     return count
 end
 show({1, 2})";
-    let (seen, _) = debug(source, &[at(4)], &[], |p| p.variables());
+    let (seen, _) = debug(source, &[at(4)], &[], |p| p.variables(0));
     let names: Vec<Variable> = seen.into_iter().next().unwrap();
     assert_eq!(
         names,
@@ -196,7 +196,7 @@ local function f()
 end
 f()";
     let (seen, _) = debug(source, &[at(3)], &[], |p| {
-        (p.evaluate("base * 2"), p.evaluate("workspace.Name"))
+        (p.evaluate(0, "base * 2"), p.evaluate(0, "workspace.Name"))
     });
     assert_eq!(
         seen,
@@ -261,10 +261,90 @@ fn a_pcall_cannot_swallow_a_stop() {
 #[test]
 fn an_evaluation_error_is_one_line() {
     let (seen, _) = debug("local t = nil\nprint(t)", &[at(2)], &[], |p| {
-        p.evaluate("t.x")
+        p.evaluate(0, "t.x")
     });
     assert_eq!(
         seen,
         vec![Err("watch:1: attempt to index nil with 'x'".to_owned())]
     );
+}
+
+#[test]
+fn a_one_line_loop_pauses_on_every_iteration() {
+    let source = "local t = 0\nfor i = 1, 3 do t += i end\nprint(t)";
+    let (seen, result) = debug(source, &[at(2)], &[], |p| p.evaluate(0, "t"));
+    // The first pause is the loop being entered; each later one is an
+    // iteration starting, before its body has run.
+    assert_eq!(
+        seen,
+        vec![Ok("0".to_owned()), Ok("1".to_owned()), Ok("3".to_owned())]
+    );
+    assert_eq!(result.unwrap(), vec!["6"]);
+}
+
+#[test]
+fn a_one_line_loop_logpoint_logs_every_iteration() {
+    let breakpoint = Breakpoint {
+        log_message: Some("\"t\", t".into()),
+        continue_execution: true,
+        ..at(2)
+    };
+    let source = "local t = 0\nfor i = 1, 3 do t += i end";
+    let (_, result) = debug(source, &[breakpoint], &[], |p| p.line());
+    assert_eq!(result.unwrap(), vec!["t 0", "t 1", "t 3"]);
+}
+
+#[test]
+fn every_activation_of_a_recursive_function_pauses() {
+    let source = "local function count(n)\n    if n == 0 then return 0 end\n    return 1 + count(n - 1)\nend\nprint(count(2))";
+    let (seen, result) = debug(source, &[at(2)], &[], |p| p.evaluate(0, "n"));
+    assert_eq!(
+        seen,
+        vec![Ok("2".to_owned()), Ok("1".to_owned()), Ok("0".to_owned())]
+    );
+    assert_eq!(result.unwrap(), vec!["2"]);
+}
+
+#[test]
+fn a_breakpoint_on_a_blank_line_stops_on_the_next_line_with_code() {
+    let (lines, _) = debug("local a = 1\n\n-- note\nlocal b = 2", &[at(2)], &[], |p| {
+        p.line()
+    });
+    assert_eq!(lines, vec![4]);
+}
+
+#[test]
+fn watches_and_variables_follow_the_chosen_frame() {
+    let (seen, _) = debug(CALLS, &[at(3)], &[], |p| {
+        let names: Vec<String> = p.variables(1).into_iter().map(|v| v.name).collect();
+        (
+            p.evaluate(1, "x"),
+            p.evaluate(0, "sum"),
+            names,
+            p.variables(9),
+        )
+    });
+    let (caller_x, callee_sum, caller_names, missing) = &seen[0];
+    // Paused inside the first `add` call: `x` is not assigned yet.
+    assert_eq!(caller_x, &Ok("nil".to_owned()));
+    assert_eq!(callee_sum, &Ok("3".to_owned()));
+    assert!(caller_names.contains(&"add".to_owned()));
+    assert!(missing.is_empty());
+}
+
+#[test]
+fn a_run_with_no_breakpoint_hit_never_steps() {
+    // Nothing pauses, so nothing should have been asked of `on_pause`, and
+    // the hook must have left the VM as it found it for the next run.
+    let mut runtime = runtime();
+    runtime
+        .debug(
+            "local t = 0\nfor i = 1, 1000 do t += i end",
+            "Script",
+            &[at(99)],
+            no_stop(),
+            |_| panic!("nothing should pause"),
+        )
+        .unwrap();
+    assert_eq!(runtime.run("print(1)").unwrap().lines(), ["1"]);
 }

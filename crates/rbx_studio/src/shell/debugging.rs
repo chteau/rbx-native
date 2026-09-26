@@ -13,6 +13,7 @@ mod breakpoint_menu;
 mod gutter;
 mod panels;
 
+use std::collections::HashMap;
 use std::time::Duration;
 
 use gpui_kit::component::input::InputState;
@@ -21,7 +22,7 @@ use rbx_dom::Ref;
 use rbx_lua::Resume;
 
 use crate::command_bar::Feedback;
-use crate::debugger::session::{Command, Evaluation, Event, Finished, Pause, Session};
+use crate::debugger::session::{Command, Evaluation, Event, Finished, Inspection, Pause, Session};
 use crate::debugger::Breakpoints;
 use crate::script_editor::source;
 
@@ -36,6 +37,9 @@ const POLL_INTERVAL: Duration = Duration::from_millis(30);
 #[derive(Default)]
 pub(super) struct Debugging {
     pub(super) breakpoints: Breakpoints,
+    /// Each open script's text as its breakpoints were last placed against,
+    /// so the next edit can move them (see `Breakpoints::follow_edit`).
+    texts: HashMap<Ref, String>,
     run: Option<Run>,
     /// My Watches, kept across runs as Studio keeps them.
     watches: Vec<Watch>,
@@ -58,6 +62,9 @@ struct Run {
     /// means the place was edited under it.
     revision: u64,
     pause: Option<Pause>,
+    /// The Call Stack row the Watch dock is reading; 0, where the script
+    /// stopped, at every pause.
+    frame: usize,
     /// Whether any pause has been reported yet — the first one opens the
     /// Watch dock.
     paused_once: bool,
@@ -111,6 +118,7 @@ impl Shell {
             name,
             revision: self.history.revision(),
             pause: None,
+            frame: 0,
             paused_once: false,
         });
         for watch in &mut self.debug.watches {
@@ -168,7 +176,7 @@ impl Shell {
         for event in events {
             match event {
                 Event::Paused(pause) => self.on_debug_pause(pause, cx),
-                Event::Evaluated(values) => self.on_watches_evaluated(values),
+                Event::Inspected(inspection) => self.on_inspected(inspection),
                 Event::Finished(finished) => {
                     self.finish_debugging(finished, cx);
                     cx.notify();
@@ -192,10 +200,41 @@ impl Shell {
         }
         let line = pause.line;
         run.pause = Some(pause);
+        run.frame = 0;
         self.request_watch_values();
 
         // Where the script stopped: its tab in front, the caret on the line
         // (which also scrolls it into view), the Watch dock up.
+        self.reveal_line(script, line, cx);
+        if first && !self.is_panel_showing(Panel::Watch) && !self.is_panel_showing(Panel::CallStack)
+        {
+            self.set_panel_open(Panel::Watch, true, cx);
+        }
+        self.sync_gutters(cx);
+    }
+
+    /// Clicking a Call Stack row: the Watch dock reads that frame, and the
+    /// caret goes to the line it is on.
+    pub(super) fn select_frame(&mut self, frame: usize, cx: &mut Context<Self>) {
+        let Some(run) = self.debug.run.as_mut() else {
+            return;
+        };
+        let Some(line) = run
+            .pause
+            .as_ref()
+            .and_then(|pause| pause.stack.get(frame))
+            .map(|entry| entry.line)
+        else {
+            return;
+        };
+        run.frame = frame;
+        let script = run.script;
+        self.request_watch_values();
+        self.reveal_line(script, line, cx);
+        cx.notify();
+    }
+
+    fn reveal_line(&mut self, script: Ref, line: u32, cx: &mut Context<Self>) {
         self.activate_script(script, cx);
         if let Some(open) = self.scripts.open.get(&script) {
             open.state.update(cx, |state, cx| {
@@ -204,15 +243,21 @@ impl Shell {
                 state.set_selected_range(start..start, cx);
             });
         }
-        if first && !self.is_panel_showing(Panel::Watch) && !self.is_panel_showing(Panel::CallStack)
-        {
-            self.set_panel_open(Panel::Watch, true, cx);
-        }
-        self.sync_gutters(cx);
     }
 
-    fn on_watches_evaluated(&mut self, values: Vec<(String, Evaluation)>) {
-        for (expression, value) in values {
+    /// A frame's variables and watch values. One that answers a frame no
+    /// longer selected — the answer crossed another click — is dropped.
+    fn on_inspected(&mut self, inspection: Inspection) {
+        let Some(run) = self.debug.run.as_mut() else {
+            return;
+        };
+        if inspection.frame != run.frame {
+            return;
+        }
+        if let Some(pause) = run.pause.as_mut() {
+            pause.variables = inspection.variables;
+        }
+        for (expression, value) in inspection.values {
             for watch in &mut self.debug.watches {
                 if watch.expression == expression {
                     watch.value = Some(value.clone());
@@ -221,20 +266,22 @@ impl Shell {
         }
     }
 
-    /// Asks the paused run for every watch's value.
+    /// Asks the paused run for the selected frame's variables and every
+    /// watch's value in it.
     fn request_watch_values(&self) {
         let Some(run) = self.debug.run.as_ref().filter(|run| run.pause.is_some()) else {
             return;
         };
-        if !self.debug.watches.is_empty() {
-            let expressions = self
-                .debug
-                .watches
-                .iter()
-                .map(|watch| watch.expression.clone())
-                .collect();
-            run.session.send(Command::Evaluate(expressions));
-        }
+        let expressions = self
+            .debug
+            .watches
+            .iter()
+            .map(|watch| watch.expression.clone())
+            .collect();
+        run.session.send(Command::Inspect {
+            frame: run.frame,
+            expressions,
+        });
     }
 
     fn finish_debugging(&mut self, finished: Finished, cx: &mut Context<Self>) {
@@ -269,6 +316,23 @@ impl Shell {
             }
         }
         self.sync_gutters(cx);
+    }
+
+    /// Moves `script`'s breakpoints with whatever its editor's text did
+    /// since last time. Called on every change to an open tab, typed or
+    /// re-seeded from the DOM; the first call only records the text.
+    pub(super) fn follow_script_edit(&mut self, script: Ref, cx: &mut Context<Self>) {
+        let Some(open) = self.scripts.open.get(&script) else {
+            return;
+        };
+        let text = open.state.read(cx).value().to_string();
+        let Some(old) = self.debug.texts.insert(script, text.clone()) else {
+            return;
+        };
+        if old != text && self.debug.breakpoints.of(script).next().is_some() {
+            self.debug.breakpoints.follow_edit(script, &old, &text);
+            self.sync_gutters(cx);
+        }
     }
 
     /// F5 / F9 / F10 / F11 and their Shift variants — Studio's debugger keys
