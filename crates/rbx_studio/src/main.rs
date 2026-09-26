@@ -73,6 +73,7 @@ mod history;
 mod home;
 mod key_store;
 mod launcher;
+mod luau_lsp;
 mod menu_bar;
 mod pacing;
 mod packs;

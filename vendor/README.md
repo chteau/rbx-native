@@ -11,10 +11,19 @@ addition":
 - `selected_ranges` — every selection's range, primary first.
 - `add_selection` — add a secondary selection from outside the widget.
 
+And one fix in `src/input/editor/highlighting.rs`, marked the same way:
+`InputEditorStyle::resolved` fills unset (transparent) diagnostic colours
+from the palette, as it already does for every other colour. Built without
+its tree-sitter highlighter, GPUI Kit's status colours are a stub that is
+always transparent, so `luau-lsp`'s squiggles painted in nothing. For the
+same reason `on_mouse_move` in `src/input/base/state.rs` no longer raises the
+kit's diagnostic popover (painted boxless in those colours); rbx_studio's
+hover provider shows the problem's message instead.
+
 Both exist because the script editor's Ctrl+D / Shift+Alt+L (add a cursor
 to the next / every match of the selection) has to add selections, and
 upstream keeps the selection list private (still true in 0.6.6).
 
 To upgrade GPUI Kit: re-copy the matching `gpui-base` from
-`~/.cargo/registry/src/*/`, re-apply the two methods, and bump the version.
+`~/.cargo/registry/src/*/`, re-apply the two methods and the two diagnostic fixes, and bump the version.
 Delete this directory and the patch once upstream has an equivalent.

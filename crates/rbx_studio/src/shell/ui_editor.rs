@@ -64,7 +64,7 @@ const CANVAS_HIDES: [Panel; 3] = [Panel::Properties, Panel::Output, Panel::Viewp
 /// Argon and Wally (`shell::scripting_tools`) have nothing to sync or
 /// resolve outside the Script Editor, so they're seated on the same dock
 /// as Output/Viewport but only ever shown alongside scripts.
-const SCRIPT_TOOLS: [Panel; 2] = [Panel::Argon, Panel::Wally];
+const SCRIPT_TOOLS: [Panel; 3] = [Panel::Argon, Panel::Wally, Panel::ScriptAnalysis];
 
 const SCREEN_CLASS: &str = "ScreenGui";
 /// What a canvas can put up: every `LayerCollector` a place holds.

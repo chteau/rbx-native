@@ -2360,7 +2360,11 @@ impl<M: InputModeKind> InputBaseState<M> {
         let (offset, _) = self.index_for_mouse_position(event.position);
         M::on_mouse_move(self, offset, event, window, cx);
 
-        if self.is_code_editor() {
+        // rbx-native addition: the popover this raises is painted in the
+        // kit's status colours, which without its tree-sitter highlighter are
+        // a transparent stub — the message floated over the code with no box.
+        // rbx_studio's hover provider shows the problem instead.
+        if self.is_code_editor() && false {
             if let Some(diagnostic) = self
                 .mode
                 .diagnostics()

@@ -11,7 +11,7 @@
 //! size and file count and every path in it is checked before a byte is
 //! written.
 
-#![cfg_attr(not(test), expect(dead_code, reason = "for the settings screen"))]
+#![expect(dead_code, reason = "for the settings screen")]
 
 use std::fs;
 use std::io::{Cursor, Read};
@@ -140,10 +140,9 @@ fn install_archive(themes: &Path, id: &str, archive: &[u8]) -> Result<Manifest, 
     let files = unzip(archive)?;
     let root = files
         .iter()
-        .filter_map(|(path, _)| {
-            (path.file_name()? == "manifest.json").then(|| path.parent().map(Path::to_path_buf))
-        })
-        .flatten()
+        .map(|(path, _)| path)
+        .filter(|path| path.file_name().is_some_and(|name| name == "manifest.json"))
+        .filter_map(|path| path.parent().map(Path::to_path_buf))
         .min_by_key(|dir| dir.components().count())
         .ok_or("the repository has no manifest.json, so it is not a theme")?;
 

@@ -316,6 +316,11 @@ impl Shell {
         if self.document == Document::Scripts {
             tiles.push((Panel::Argon, IconName::RefreshCw, "Argon"));
             tiles.push((Panel::Wally, IconName::Package, "Wally"));
+            tiles.push((
+                Panel::ScriptAnalysis,
+                IconName::ListChecks,
+                "Script Analysis",
+            ));
         }
         tiles
             .into_iter()

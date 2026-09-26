@@ -288,6 +288,16 @@ the autonomous-contribution workflow specifically.
   layout (`_Index` slots, sibling alias files) that
   `shell::wally_sync` reproduces — no code was copied, but that source is
   what the install layout is read from.
+- **JohnnyMorganz** — [`luau-lsp`](https://github.com/JohnnyMorganz/luau-lsp)
+  (MIT), the language server behind the script editor's autocomplete,
+  hover, Go to Definition and Script Analysis. A pinned release is built
+  into `rbxstudio` (`crates/rbx_studio/build.rs`) and unpacked beside its
+  licence and that of [Luau](https://github.com/luau-lang/luau) (MIT,
+  Roblox), which it is built from
+  (`crates/rbx_studio/third_party/luau-lsp-NOTICE.txt`). Its Roblox API
+  definitions, and Roblox's API reference text from
+  [Roblox-Client-Tracker](https://github.com/MaximumADHD/Roblox-Client-Tracker),
+  are fetched at run time, not shipped.
 
 ## License
 

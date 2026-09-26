@@ -66,6 +66,11 @@ pub(crate) struct History {
     undo: Vec<Entry>,
     redo: Vec<Entry>,
     cap: usize,
+    /// Moves on every push, undo and redo — every way the DOM changes goes
+    /// through one of the three — so a reader that only needs to know
+    /// *whether* the tree moved since it last looked (`luau-lsp`'s copy of
+    /// the place) can compare one number instead of two trees.
+    revision: u64,
 }
 
 impl History {
@@ -74,6 +79,7 @@ impl History {
             undo: Vec::new(),
             redo: Vec::new(),
             cap,
+            revision: 0,
         }
     }
 
@@ -90,6 +96,11 @@ impl History {
             changes: Vec::new(),
         });
         self.redo.clear();
+        self.revision += 1;
+    }
+
+    pub(crate) fn revision(&self) -> u64 {
+        self.revision
     }
 
     /// Attaches `changes` to the entry `push` most recently added — see
@@ -109,6 +120,7 @@ impl History {
     /// nothing to undo — a no-op that leaves both stacks untouched.
     pub(crate) fn undo(&mut self, current: WeakDom) -> Option<(WeakDom, Vec<Change>)> {
         let previous = self.undo.pop()?;
+        self.revision += 1;
         self.redo.push(Entry {
             dom: current,
             changes: previous.changes.clone(),
@@ -122,6 +134,7 @@ impl History {
     /// plus that log.
     pub(crate) fn redo(&mut self, current: WeakDom) -> Option<(WeakDom, Vec<Change>)> {
         let next = self.redo.pop()?;
+        self.revision += 1;
         self.undo.push(Entry {
             dom: current,
             changes: next.changes.clone(),
@@ -270,5 +283,18 @@ mod tests {
     #[test]
     fn z_without_control_does_nothing() {
         assert_eq!(action_for("z", Modifiers::none()), None);
+    }
+
+    #[test]
+    fn revision_moves_on_every_change_and_not_on_a_no_op() {
+        let mut history = History::new(DEFAULT_CAP);
+        assert!(history.undo(named("a")).is_none());
+        assert_eq!(history.revision(), 0);
+        history.push(named("a"));
+        history.undo(named("b"));
+        history.redo(named("a"));
+        assert_eq!(history.revision(), 3);
+        assert!(history.redo(named("b")).is_none());
+        assert_eq!(history.revision(), 3);
     }
 }

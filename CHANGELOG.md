@@ -2,6 +2,17 @@
 
 ## 2026-09-26
 
+- **The script editor now uses `luau-lsp` for autocomplete, hover and
+  error squiggles, and a new Script Analysis dock lists every problem in
+  the place.** `luau-lsp` is built into `rbxstudio`, so there is nothing
+  to install; the editor starts it the first time a script opens. It
+  sees the whole place through a Rojo-format sourcemap, so
+  `require(script.Parent.Module)` and `workspace.Baseplate` both resolve,
+  and Go to Definition follows a name into the module it came from.
+  Roblox's API types and documentation are cached per Studio release and
+  only fetched again when Roblox ships, so completion knows every class,
+  member, service and `Enum`, with descriptions. Script Analysis covers
+  scripts no tab has open, and clicking a problem jumps to it. — @chteau
 - **Themes reach the whole editor, and switch without a restart.** A theme
   is now a folder with a `manifest.json` (name, author, description,
   version, preview), and it can restyle everything the editor draws: every
@@ -15,7 +26,6 @@
   within a second. `THEMES.md` documents the format. Installing a theme from
   a GitHub link works underneath but has no button until the settings
   screen exists. — @chteau
-
 - **`ForceField` follows Roblox's own description of the material.** A
   plain part is now a still shell that is faint face-on and solid at its
   edges, instead of an invented honeycomb. A `MeshPart` with a `TextureID`
