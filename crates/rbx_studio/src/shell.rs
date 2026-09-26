@@ -24,6 +24,7 @@ mod history;
 mod keys;
 mod layout;
 mod light_guides;
+mod luau_lsp;
 mod menu;
 mod output;
 mod panel_window;
@@ -42,6 +43,7 @@ mod tree_keys;
 mod argon_dock;
 mod rows;
 mod save;
+mod script_analysis;
 mod script_finder;
 mod script_panel;
 mod scripts;
@@ -227,6 +229,9 @@ pub(crate) struct Shell {
     covered: HashSet<Ref>,
     /// Every script open in the Script Editor panel; see `shell::scripts`.
     scripts: ScriptEditor,
+    /// `luau-lsp` behind the script editor and Script Analysis; see
+    /// `shell::luau_lsp`.
+    lsp: luau_lsp::Session,
     properties_scroll: ScrollHandle,
     /// The Style Editor panel's open fields and last error; see
     /// `shell::style_panel`.
@@ -556,6 +561,7 @@ impl Shell {
             hovered: Vec::new(),
             covered: HashSet::new(),
             scripts: ScriptEditor::default(),
+            lsp: luau_lsp::Session::default(),
             properties_scroll: ScrollHandle::new(),
             style_edits: style_panel::StyleEdits::default(),
             style_scroll: ScrollHandle::new(),

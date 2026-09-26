@@ -110,19 +110,23 @@ pub(crate) enum Panel {
     /// The Wally (`UpliftGames/wally`) package manager. Script Editor
     /// only — see `Shell::hidden_panels`.
     Wally,
+    /// Every problem `luau-lsp` finds across the place's scripts. Script
+    /// Editor only, like Argon and Wally.
+    ScriptAnalysis,
 }
 
 impl Panel {
     /// In the order a fresh layout seats them, which is what makes the
     /// Viewport, Argon and Wally docks tabs beside Output rather than
     /// docks of their own.
-    pub(crate) const ALL: [Panel; 6] = [
+    pub(crate) const ALL: [Panel; 7] = [
         Panel::Explorer,
         Panel::Properties,
         Panel::Output,
         Panel::Viewport,
         Panel::Argon,
         Panel::Wally,
+        Panel::ScriptAnalysis,
     ];
 
     /// Where this panel lives in a layout nobody has rearranged — also
@@ -132,7 +136,11 @@ impl Panel {
         match self {
             Panel::Explorer => Edge::Right,
             Panel::Properties => Edge::Left,
-            Panel::Output | Panel::Viewport | Panel::Argon | Panel::Wally => Edge::Bottom,
+            Panel::Output
+            | Panel::Viewport
+            | Panel::Argon
+            | Panel::Wally
+            | Panel::ScriptAnalysis => Edge::Bottom,
         }
     }
 
@@ -146,6 +154,7 @@ impl Panel {
             Panel::Viewport => "Viewport",
             Panel::Argon => "Argon",
             Panel::Wally => "Wally",
+            Panel::ScriptAnalysis => "Script Analysis",
         }
     }
 

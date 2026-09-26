@@ -136,6 +136,16 @@ impl InputEditorStyle {
             border: or(self.border, colors.border),
             selection,
             caret: or(self.caret, foreground),
+            // rbx-native addition: without the tree-sitter highlighter the
+            // kit's status colours are a stub that is always transparent,
+            // which is what diagnostics were painted in. The palette has an
+            // error colour; the rest fall back to fixed ones.
+            diagnostics: DiagnosticColors {
+                error: or(self.diagnostics.error, colors.destructive),
+                warning: or(self.diagnostics.warning, gpui::hsla(0.1, 0.62, 0.6, 1.)),
+                info: or(self.diagnostics.info, colors.ring),
+                hint: or(self.diagnostics.hint, colors.muted_foreground),
+            },
             ..self.clone()
         }
     }

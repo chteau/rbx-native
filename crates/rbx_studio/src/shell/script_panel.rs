@@ -115,6 +115,19 @@ impl Shell {
     }
 
     fn go_to_declaration(&mut self, reference: Ref, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.go_to_lsp_definition(reference, window, cx) {
+            self.go_to_lexer_declaration(reference, window, cx);
+        }
+    }
+
+    /// Within this script only, from the lexer: what Go to Definition does
+    /// before `luau-lsp` is up, or when it finds nothing.
+    pub(super) fn go_to_lexer_declaration(
+        &mut self,
+        reference: Ref,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(open) = self.scripts.open.get(&reference) else {
             return;
         };
