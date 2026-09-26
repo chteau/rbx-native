@@ -1261,26 +1261,27 @@ Roblox's own engine.
   otherwise be lost — which is why a `Ctrl+S` save, which used to report
   through the label alone, now logs a `Save` row too.
 - [x] **The viewport no longer goes black, with the render thread's stats
-  frozen, after a scripted full reload** (`RBX_STUDIO_RUN`/`RBX_STUDIO_EDIT`).
-  Fixed by `ab24e6e`, five hours after the bug was filed here (`20cfbe6`). The two were
-  never linked, so a later pass found it "not reproducible" with nothing to
-  explain it. It was a latch, not a stall. The viewport infers that it is
-  on screen from GPUI having repainted it, and a landed frame is ordinarily
-  the only thing that repaints it. A rebuild stalls the frames for seconds,
-  so a mounted panel looked like a tab switched away. It was declared
-  hidden, the render thread stopped, and nothing ever repainted it again.
-  `ab24e6e` measured this: 0 frames against 75/s, and one "declared hidden"
-  with no "visible again". Now the tick that would give up requests one
-  repaint first (`workspace_view::presence`, with the stalled-reload case
-  among its tests). That repaint still lands if the window is hidden or
-  covered: GPUI leaves the window dirty and draws it once it is mapped
-  again. Re-checked on 2026-09-26 on `marked.rbxl` with a scripted `Sky`
-  insert, which drew on both the current build and one with the probe
-  disabled. The editor now repaints for other reasons during a reload, such
-  as Output entries, so the latch no longer shows on its own. The probe is
-  what keeps it closed when nothing else repaints. `patch_parity`'s
-  `a_rebuild_leaves_the_renderer_drawing` separately guards the
-  renderer's side: a refused patch still draws what a reload draws.
+  frozen, after a scripted full reload**
+  (`RBX_STUDIO_RUN`/`RBX_STUDIO_EDIT`). Fixed by `ab24e6e`, five hours after
+  the bug was filed here (`20cfbe6`). The two were never linked, so a later
+  pass found it "not reproducible" with nothing to explain it. It was a
+  latch, not a stall. The viewport infers that it is on screen from GPUI
+  having repainted it, and a landed frame is ordinarily the only thing that
+  repaints it. A rebuild stalls the frames for seconds, so a mounted panel
+  looked like a tab switched away. It was declared hidden, the render thread
+  stopped, and nothing ever repainted it again. `ab24e6e` measured this: 0
+  frames against 75/s, and one "declared hidden" with no "visible again".
+  Now the tick that would give up requests one repaint first
+  (`workspace_view::presence`, with the stalled-reload case among its
+  tests). That repaint still lands if the window is hidden or covered: GPUI
+  leaves the window dirty and draws it once it is mapped again. Re-checked
+  on 2026-09-26 on `marked.rbxl` with a scripted `Sky` insert, which drew on
+  both the current build and one with the probe disabled. The editor now
+  repaints for other reasons during a reload, such as Output entries, so the
+  latch no longer shows on its own. The probe is what keeps it closed when
+  nothing else repaints. `patch_parity`'s
+  `a_rebuild_leaves_the_renderer_drawing` separately guards the renderer's
+  side: a refused patch still draws what a reload draws.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
