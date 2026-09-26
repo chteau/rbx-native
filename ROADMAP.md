@@ -80,8 +80,14 @@ Roblox's own engine.
   computational limitations", but publishes no index or displacement, so
   the figure is this renderer's). A `ForceField` is drawn as an energy
   shell: a lattice of cells and a rim that brightens where it is seen
-  edge-on, both this renderer's own rendition — see "What's planned" →
-  Renderer for what of that material is still open.
+  edge-on, with bands of glow sweeping up it on the host's clock — held
+  still at 0 for a `--screenshot`, or stepped to any moment with
+  `--elapsed`, so a capture stays repeatable. On a `MeshPart` or file
+  `SpecialMesh` with its own `TextureID`, the image's dark-to-light range
+  is the pattern instead, as Roblox documents for the modern material:
+  dark is see-through, light glows in the part's colour. The lattice, the
+  rate and the look of the sweep are this renderer's own rendition;
+  Roblox publishes none of them.
 - [x] Decals/textures projected on real geometry (not just boxes), and
   patched in place — not just redrawn on a full reload — when the
   `CFrame`, size or shape of the part they're pinned to is edited live.
@@ -1407,17 +1413,6 @@ Roblox's own engine.
   above existing first regardless of which direction it takes.
 
 ### Renderer
-- [ ] 📋 **An animated `ForceField` shimmer**, and the modern material's
-  own `MeshPart.TextureID` source. The shell itself is drawn now (see
-  "What's been implemented" → Renderer), but it does not move: a pattern
-  that animates needs a clock in the material pass, and a `--screenshot`
-  that differed from run to run would be worse than a still one — the same
-  reason a `StyleRule` transition never applies here. Roblox's current
-  `ForceField` material is documented as displaying the dark-to-light range
-  of the `Class.MeshPart.TextureID` of the mesh it is applied to, which
-  this renderer does not feed into the material pass at all; that is the
-  other half, and it needs the mesh's own texture on the material path
-  rather than a second guess at the texture-less look.
 - [ ] 📋 **A 5th "Transform" toolbar button** appears in Studio's current
   toolbar (see the owner-provided screenshot) alongside the now-implemented
   Select/Move/Scale/Rotate (see "What's been implemented" → Editor), but

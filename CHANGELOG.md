@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-26
+
+- **`ForceField` shells shimmer, and a textured mesh drives its own.**
+  Bands of glow now sweep up a `ForceField` part once every four seconds
+  in the viewer window, the browser build and Studio's viewport. A
+  `--screenshot` stays at the same still frame every run, and the new
+  `--elapsed <seconds>` renders any moment of the cycle, so a script can
+  step through it frame by frame. A `MeshPart` with a `TextureID` shows
+  that image's dark-to-light range in place of the lattice, which is how
+  Roblox documents the modern material. A `ForceField` mesh is also drawn
+  see-through now; before, only plain parts were. — @chteau
+
 ## 2026-09-25
 
 - **A bare `rbxstudio` opens a launcher instead of refusing to start.**
