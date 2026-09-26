@@ -157,7 +157,7 @@ impl Shell {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .rounded(tokens::RADIUS_BADGE)
+                        .rounded(tokens::radius_badge())
                         .bg(tokens::accent_soft())
                         .text_color(tokens::check_on())
                         .child(super::rows::class_icon(icon)),

@@ -8,7 +8,7 @@
 //!
 //! ```text
 //! <config>/icon_packs/<pack>/<Name>.svg     one folder per pack
-//! <config>/themes/<theme>.json              a GPUI Kit `ThemeSet`
+//! <config>/themes/<theme>/                  a theme folder (see `theme`)
 //! <config>/appearance.json                  {"icon_pack": "<pack>", "theme": "<theme>"}
 //! ```
 //!
@@ -20,10 +20,8 @@
 //! the latter reaching every class that shares a tile — see
 //! `class_icons::CLASS_ICON_SLUGS`.
 //!
-//! What a theme changes: the toolkit's own widgets — inputs, popovers,
-//! scrollbars, the focus ring — which read the registry's active theme. The
-//! editor's hand-built chrome reads `tokens`, whose values are still Rust
-//! constants; `ROADMAP.md` says so under "Icon and theme packs".
+//! A theme can carry an icon pack of its own; a pack chosen here is layered
+//! over it (see [`layered`]).
 //!
 //! Everything here reads files a stranger may have written, so it refuses what
 //! it cannot use — an over-large or non-SVG file, a path that is not a plain
@@ -36,14 +34,11 @@ use std::sync::Arc;
 
 use crate::script_templates::ScriptTemplates;
 use crate::settings::{default_config_dir, write_atomic};
+use crate::theme::ThemePack;
 
 /// A single icon is a 16x16 drawing; 512 KiB is far past any real one and
 /// keeps a stray or generated file from being read whole into memory.
 const MAX_SVG_BYTES: u64 = 512 * 1024;
-
-/// A theme file is a few kilobytes of colours; the same reasoning as
-/// [`MAX_SVG_BYTES`].
-const MAX_THEME_BYTES: u64 = 1024 * 1024;
 
 fn root() -> Option<PathBuf> {
     default_config_dir()
@@ -52,7 +47,7 @@ fn root() -> Option<PathBuf> {
 /// Whether `name` is safe to join onto a directory: one plain segment, no
 /// separators, no `..`, no drive or device tricks. The name comes out of
 /// `appearance.json`, which is data, so it is never trusted to be one.
-fn is_plain_name(name: &str) -> bool {
+pub(crate) fn is_plain_name(name: &str) -> bool {
     !name.is_empty()
         && name != "."
         && name != ".."
@@ -142,6 +137,10 @@ pub(crate) struct UserContent {
     /// Every installed pack's name, for the Explorer menu. Listed once: the
     /// menu is rebuilt every frame.
     pub(crate) icon_packs: Vec<String>,
+    /// The theme `appearance.json` names, or Default when it names none or
+    /// one that will not load — reported on stderr, since no window exists
+    /// yet to show it in.
+    pub(crate) theme: ThemePack,
     pub(crate) script_templates: ScriptTemplates,
 }
 
@@ -152,16 +151,51 @@ impl UserContent {
         if icon_overlay.is_none() {
             appearance.icon_pack = None;
         }
+        let theme = load_theme(appearance.theme.as_deref());
         UserContent {
             appearance,
             icon_overlay,
             icon_packs: installed_icon_packs(),
+            theme,
             script_templates: ScriptTemplates::load(),
         }
     }
 }
 
+/// The theme named `id`, or Default. Problems go to stderr: this runs
+/// before there is an Output dock to put them in.
+pub(crate) fn load_theme(id: Option<&str>) -> ThemePack {
+    let Some(id) = id else {
+        return ThemePack::builtin();
+    };
+    match ThemePack::load(id) {
+        Ok(pack) => {
+            for warning in &pack.warnings {
+                eprintln!("rbxstudio: theme {id:?}: {warning}");
+            }
+            pack
+        }
+        Err(err) => {
+            eprintln!("rbxstudio: theme {id:?} could not be loaded, using Default: {err}");
+            ThemePack::builtin()
+        }
+    }
+}
+
 // -------------------------------------------------------------- icon packs
+
+/// `top`'s drawings over `base`'s: a theme's own icons under the pack
+/// chosen in the Explorer, so choosing a pack never loses the theme's icons
+/// for classes the pack leaves out.
+pub(crate) fn layered(base: Option<IconOverlay>, top: Option<IconOverlay>) -> Option<IconOverlay> {
+    match (base, top) {
+        (Some(mut base), Some(top)) => {
+            base.files.extend(top.files);
+            Some(base)
+        }
+        (base, top) => top.or(base),
+    }
+}
 
 /// One installed pack's SVGs, keyed by lower-cased file stem, read whole at
 /// load so the Explorer never touches the disk while it draws.
@@ -244,27 +278,6 @@ fn folder_names(dir: &Path) -> Vec<String> {
         .collect();
     names.sort_by_cached_key(|name| (name.to_lowercase(), name.clone()));
     names
-}
-
-// ------------------------------------------------------------------ themes
-
-/// The text of `<config>/themes/<name>.json`, or `None` when the name is not
-/// a plain one, the file is missing, unreadable or over [`MAX_THEME_BYTES`].
-/// Parsing it as a `ThemeSet` is the caller's, since only the caller has the
-/// toolkit's registry to load it into.
-pub(crate) fn theme_json(name: &str) -> Option<String> {
-    if !is_plain_name(name) {
-        return None;
-    }
-    theme_json_from(&root()?.join("themes").join(format!("{name}.json")))
-}
-
-pub(crate) fn theme_json_from(path: &Path) -> Option<String> {
-    let meta = fs::metadata(path).ok()?;
-    if !meta.is_file() || meta.len() > MAX_THEME_BYTES {
-        return None;
-    }
-    fs::read_to_string(path).ok()
 }
 
 #[cfg(test)]
@@ -475,15 +488,18 @@ mod tests {
     }
 
     #[test]
-    fn theme_text_is_read_and_a_missing_or_oversized_file_is_not() {
-        let dir = scratch();
-        write(&dir, "Dusk.json", b"{\"themes\":[]}");
-        write(&dir, "Big.json", &vec![b' '; MAX_THEME_BYTES as usize + 1]);
-        assert_eq!(
-            theme_json_from(&dir.join("Dusk.json")).as_deref(),
-            Some("{\"themes\":[]}")
-        );
-        assert_eq!(theme_json_from(&dir.join("Big.json")), None);
-        assert_eq!(theme_json_from(&dir.join("Absent.json")), None);
+    fn a_chosen_pack_draws_over_the_themes_icons_and_both_fall_through() {
+        let theme = IconOverlay::with("Part", b"theme");
+        let mut chosen = IconOverlay::with("Model", b"chosen");
+        chosen
+            .files
+            .insert("part".into(), Arc::from(&b"chosen"[..]));
+        let both = layered(Some(theme.clone()), Some(chosen)).unwrap();
+        assert_eq!(both.svg("Part", None).as_deref(), Some(&b"chosen"[..]));
+
+        let only_theme = layered(Some(theme.clone()), None).unwrap();
+        assert_eq!(only_theme.svg("Part", None).as_deref(), Some(&b"theme"[..]));
+        assert_eq!(layered(None, Some(theme.clone())), Some(theme));
+        assert_eq!(layered(None, None), None);
     }
 }

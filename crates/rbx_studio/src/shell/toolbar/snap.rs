@@ -161,7 +161,7 @@ impl Shell {
             .bg(tokens::field_select())
             .border_1()
             .border_color(tokens::border2())
-            .rounded(tokens::RADIUS_CONTAINER)
+            .rounded(tokens::radius_container())
             .shadow(vec![tokens::floating_shadow()])
             .child(self.snap_section(translate, cx))
             .child(div().h(px(1.)).my(px(10.)).bg(tokens::border()))
@@ -265,7 +265,11 @@ impl Shell {
                     }
                 })
                 .when(enabled, |this| {
-                    this.hover(|this| this.bg(tokens::hover()).text_color(tokens::text()))
+                    this.hover(|this| {
+                        tokens::hover_fx(this)
+                            .bg(tokens::hover())
+                            .text_color(tokens::text())
+                    })
                 })
                 .child(
                     Icon::new(if minus {
@@ -281,7 +285,7 @@ impl Shell {
             .disabled(!enabled)
             .w_full()
             .h(px(28.))
-            .rounded(tokens::RADIUS)
+            .rounded(tokens::radius())
             .border_1()
             .border_color(if enabled {
                 tokens::border2()

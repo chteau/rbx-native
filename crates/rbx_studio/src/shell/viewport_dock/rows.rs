@@ -79,7 +79,7 @@ fn row(label: &'static str, control: impl IntoElement) -> Div {
         .items_center()
         .justify_between()
         .gap(px(16.))
-        .rounded(tokens::RADIUS_BADGE)
+        .rounded(tokens::radius_badge())
         .child(
             div()
                 .min_w_0()
@@ -122,7 +122,7 @@ impl Shell {
                     })
                     .id(SharedString::from(format!("viewport-{label}")))
                     .cursor_pointer()
-                    .hover(|this| this.bg(tokens::hover_subtle()))
+                    .hover(|this| tokens::hover_fx(this).bg(tokens::hover_subtle()))
                     .focus_visible(|this| this.shadow(tokens::focus_ring_inset()))
                     .on_click(move |_, _, cx| {
                         handle.update(cx, |shell, cx| {
@@ -235,10 +235,14 @@ impl Shell {
                     .justify_center()
                     .border_l_1()
                     .border_color(tokens::border())
-                    .rounded_r(tokens::RADIUS_BADGE)
+                    .rounded_r(tokens::radius_badge())
                     .cursor_pointer()
                     .text_color(tokens::text2())
-                    .hover(|this| this.bg(tokens::hover()).text_color(tokens::text()))
+                    .hover(|this| {
+                        tokens::hover_fx(this)
+                            .bg(tokens::hover())
+                            .text_color(tokens::text())
+                    })
                     .focus_visible(|this| this.shadow(tokens::focus_ring_inset()))
                     .tooltip(|window, cx| {
                         super::super::tooltip::text("Screen size presets", window, cx)
@@ -253,7 +257,7 @@ impl Shell {
             .h(px(CONTROL_HEIGHT))
             .flex_none()
             .items_center()
-            .rounded(tokens::RADIUS)
+            .rounded(tokens::radius())
             .bg(tokens::field_select())
             .border_1()
             .border_color(tokens::border())
@@ -278,10 +282,14 @@ impl Shell {
             .flex()
             .items_center()
             .justify_center()
-            .rounded(tokens::RADIUS)
+            .rounded(tokens::radius())
             .cursor_pointer()
             .text_color(tokens::text2())
-            .hover(|this| this.bg(tokens::hover()).text_color(tokens::text()))
+            .hover(|this| {
+                tokens::hover_fx(this)
+                    .bg(tokens::hover())
+                    .text_color(tokens::text())
+            })
             .focus_visible(|this| this.shadow(tokens::focus_ring_inset()))
             .tooltip(|window, cx| super::super::tooltip::text("Swap width and height", window, cx))
             .on_click(cx.listener(move |shell, _, _, cx| {

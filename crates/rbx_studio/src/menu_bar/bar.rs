@@ -305,7 +305,7 @@ impl MenuBar {
             .id(("menu-title", index))
             .relative()
             .track_focus(&handle)
-            .rounded(tokens::RADIUS)
+            .rounded(tokens::radius())
             .when(keyboard, |this| {
                 this.shadow(tokens::focus_ring(tokens::menu_bar()))
             })

@@ -281,7 +281,7 @@ fn footer_button(
             if enabled {
                 this.text_color(tokens::text_strong())
                     .cursor_pointer()
-                    .hover(|this| this.bg(tokens::hover()))
+                    .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
                     .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::chrome())))
                     .on_click(on_click)
             } else {

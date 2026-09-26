@@ -53,7 +53,7 @@ impl ArgonDiffWindow {
             .px(px(9.))
             .gap(px(8.))
             .items_center()
-            .rounded(tokens::RADIUS)
+            .rounded(tokens::radius())
             .bg(tokens::dock())
             .border_1()
             .border_color(tokens::border2())
@@ -148,7 +148,7 @@ fn arrow(id: &'static str, icon: IconName, enabled: bool) -> Stateful<Div> {
         .flex()
         .items_center()
         .justify_center()
-        .rounded(tokens::RADIUS)
+        .rounded(tokens::radius())
         .bg(tokens::field_select())
         .border_1()
         .map(|this| {
@@ -156,7 +156,7 @@ fn arrow(id: &'static str, icon: IconName, enabled: bool) -> Stateful<Div> {
                 this.border_color(tokens::border2())
                     .text_color(tokens::text2())
                     .cursor_pointer()
-                    .hover(|this| this.bg(tokens::secondary_hover()))
+                    .hover(|this| tokens::hover_fx(this).bg(tokens::secondary_hover()))
             } else {
                 this.border_color(tokens::border())
                     .text_color(tokens::text3())

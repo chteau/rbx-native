@@ -37,6 +37,7 @@ impl Shell {
                             .cursor_pointer()
                             .tab_index(self.tab_order.next())
                             .hover(|this| {
+                                let this = tokens::hover_fx(this);
                                 this.border_color(tokens::border2())
                                     .bg(tokens::secondary_hover())
                             })
@@ -95,7 +96,7 @@ impl Shell {
                                         .px(px(5.))
                                         .border_1()
                                         .border_color(tokens::border2())
-                                        .rounded(tokens::RADIUS_BADGE)
+                                        .rounded(tokens::radius_badge())
                                         .text_size(tokens::text_xxs())
                                         .line_height(tokens::line_xxs())
                                         .font_weight(tokens::WEIGHT_SEMIBOLD)
@@ -224,7 +225,7 @@ fn card_frame() -> Div {
         .gap(px(4.))
         .px(px(12.))
         .py(px(10.))
-        .rounded(tokens::RADIUS_TILE)
+        .rounded(tokens::radius_tile())
         .bg(tokens::field_select())
         .border_1()
         .border_color(tokens::border())

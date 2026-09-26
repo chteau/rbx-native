@@ -48,7 +48,7 @@ impl Wizard {
                 })
                 .when(enabled, |this| {
                     this.cursor_pointer()
-                        .hover(|this| this.bg(tokens::secondary_hover()))
+                        .hover(|this| tokens::hover_fx(this).bg(tokens::secondary_hover()))
                 })
                 .child(ui::icon(glyph, 16.))
         };

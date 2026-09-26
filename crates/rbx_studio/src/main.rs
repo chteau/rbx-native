@@ -90,6 +90,7 @@ mod settle;
 mod shell;
 mod style_editor;
 mod sun;
+mod theme;
 mod tokens;
 mod transform;
 mod ui_canvas;
@@ -101,8 +102,7 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use gpui_kit::component::highlighter::HighlightTheme;
-use gpui_kit::component::{Root, Theme, ThemeConfig, ThemeMode, ThemeRegistry, ThemeSet};
+use gpui_kit::component::Root;
 use gpui_kit::*;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
@@ -175,8 +175,11 @@ fn main() {
     // pass before the window exists. The icon pack goes in before `load`: the
     // Explorer's rows resolve their icons while the place is built.
     let mut user = packs::UserContent::load();
-    class_icons::set_user_pack(user.icon_overlay.take());
-    let theme = user.appearance.theme.clone();
+    class_icons::set_user_pack(packs::layered(
+        user.theme.icons.clone(),
+        user.icon_overlay.take(),
+    ));
+    let theme = user.theme.clone();
 
     // The full Lucide catalog: the menu bar's icons are well outside the
     // default bundle the components themselves use. The Explorer's own class
@@ -185,12 +188,11 @@ fn main() {
     let app = gpui_kit::application().with_assets(gpui_kit::assets::AllAssets);
     app.run(move |cx| {
         gpui_kit::init(cx);
-        install_theme(theme.as_deref(), cx);
+        install_fonts(cx);
+        theme::startup(&theme, cx);
         scale::install(cx);
         shell::install_key_bindings(cx);
         menu_bar::install_key_bindings(cx);
-        Theme::change(ThemeMode::Dark, None, cx);
-        install_dark_highlight(cx);
 
         cx.spawn(async move |cx| {
             // The stored key has to be in `rbx_cloud` before `load`: the
@@ -305,92 +307,6 @@ struct Place {
     folder_colors: FolderColors,
 }
 
-/// Swaps GPUI Kit's stock near-black dark theme for this editor's own
-/// lower-contrast palette (`assets/themes/dark-soft.json`), before
-/// [`Theme::change`] below activates it. The file follows GPUI Kit's own
-/// `ThemeSet`/`ThemeConfig` JSON format (any key this leaves unset falls
-/// back to the stock dark theme). A user's own theme file in the same shape
-/// (see [`install_user_theme`]) replaces it afterwards.
-fn install_theme(user_theme: Option<&str>, cx: &mut App) {
-    const THEME: &str = include_str!("../../../assets/themes/dark-soft.json");
-    ThemeRegistry::global_mut(cx)
-        .load_themes_from_str(THEME)
-        .expect("assets/themes/dark-soft.json is valid ThemeSet JSON");
-    if let Some(theme) = ThemeRegistry::global(cx)
-        .themes()
-        .get("rbx-native Dark")
-        .cloned()
-    {
-        Theme::global_mut(cx).dark_theme = theme;
-    }
-    install_user_theme(user_theme, cx);
-    install_fonts(cx);
-}
-
-/// GPUI Kit only swaps its syntax palette for the one a theme file's
-/// `highlight` block defines; a theme without one keeps the kit's *light*
-/// palette whatever its mode, which put navy keywords on the editor's near
-/// black. Neither the built-in theme nor most user themes carry a block, so
-/// they get the kit's own dark palette instead.
-fn install_dark_highlight(cx: &mut App) {
-    if Theme::global(cx).dark_theme.highlight.is_none() {
-        Theme::global_mut(cx).highlight_theme = HighlightTheme::default_dark();
-    }
-}
-
-/// Applies the theme `appearance.json` names, from `<config>/themes/`: the
-/// first dark theme, in the file's own order, that its `ThemeSet` defines
-/// under a name the registry does not already hold — the registry ignores a
-/// duplicate name rather than replacing it, so a file that reused a
-/// built-in's name would otherwise change nothing and say nothing. Anything
-/// wrong with the file is reported on stderr and leaves the built-in theme in
-/// place, with nothing from the file registered.
-///
-/// Only the toolkit's widgets follow it (see `packs`); the chrome this
-/// editor draws itself still reads `tokens`.
-fn install_user_theme(name: Option<&str>, cx: &mut App) {
-    let Some(name) = name else {
-        return;
-    };
-    let Some(json) = packs::theme_json(name) else {
-        eprintln!("rbxstudio: theme {name:?} could not be read from the themes folder");
-        return;
-    };
-    let set = match serde_json::from_str::<ThemeSet>(&json) {
-        Ok(set) => set,
-        Err(err) => {
-            eprintln!("rbxstudio: theme {name:?} is not a valid theme file: {err}");
-            return;
-        }
-    };
-    let registry = ThemeRegistry::global(cx);
-    let Some(picked) = first_new_dark(&set, |theme| registry.themes().contains_key(theme)) else {
-        eprintln!(
-            "rbxstudio: theme {name:?} defines no dark theme with a name of its own; \
-             keeping the built-in"
-        );
-        return;
-    };
-    let picked = picked.name.clone();
-    if let Err(err) = ThemeRegistry::global_mut(cx).load_themes_from_str(&json) {
-        eprintln!("rbxstudio: theme {name:?} could not be loaded: {err}");
-        return;
-    }
-    if let Some(theme) = ThemeRegistry::global(cx).themes().get(&picked).cloned() {
-        Theme::global_mut(cx).dark_theme = theme;
-    }
-}
-
-/// The theme [`install_user_theme`] switches to: the first dark one in `set`,
-/// in the file's own order, that `known` does not already hold. Not the
-/// registry's `sorted_themes()`, which orders by name and would hand a file
-/// that lists `Zenith Dark` before `Aurora Dark` the wrong one.
-fn first_new_dark(set: &ThemeSet, known: impl Fn(&str) -> bool) -> Option<&ThemeConfig> {
-    set.themes
-        .iter()
-        .find(|theme| theme.mode == ThemeMode::Dark && !known(&theme.name))
-}
-
 /// The design system's own fonts, shipped with the editor (OFL, see the
 /// licence files next to them) so that no machine has to have them
 /// installed: `fc-query` names them `Manrope` (Regular, Medium, SemiBold,
@@ -404,16 +320,10 @@ const BUNDLED_FONTS: [&[u8]; 6] = [
     include_bytes!("../../../assets/fonts/JetBrainsMono-Medium.ttf"),
 ];
 
-/// Registers the bundled fonts, then points the theme at the design
-/// system's font stack for whichever of its families the text system now
-/// has.
-///
-/// The theme takes one family name, not a CSS-style stack with fallbacks,
-/// and a name that isn't installed is used as-is rather than falling
-/// through — so the fallback has to happen here, by asking the text system
-/// what exists before naming anything. Registration failing is reported
-/// and survived: the platform UI font is a worse look, not a reason to
-/// refuse to start.
+/// Registers the bundled fonts; `theme` then names them, for whichever of
+/// their families the text system ends up with. Registration failing is
+/// reported and survived: the platform UI font is a worse look, not a
+/// reason to refuse to start.
 fn install_fonts(cx: &mut App) {
     let fonts = BUNDLED_FONTS
         .iter()
@@ -423,16 +333,6 @@ fn install_fonts(cx: &mut App) {
         eprintln!(
             "rbxstudio: the bundled fonts could not be registered, using the platform font: {err}"
         );
-    }
-    let installed = cx.text_system().all_font_names();
-    let has = |family: &str| installed.iter().any(|name| name == family);
-
-    let theme = Theme::global_mut(cx);
-    if has(tokens::FONT_FAMILY_UI) {
-        theme.font_family = tokens::FONT_FAMILY_UI.into();
-    }
-    if has(tokens::FONT_FAMILY_MONO) {
-        theme.mono_font_family = tokens::FONT_FAMILY_MONO.into();
     }
 }
 
@@ -489,6 +389,7 @@ fn window_options(title: &SharedString, cx: &App) -> WindowOptions {
             ..Default::default()
         }),
         window_decorations: Some(WindowDecorations::Client),
+        window_background: crate::theme::active().effects.window,
         ..Default::default()
     }
 }
@@ -516,25 +417,7 @@ fn file_name(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::file_name;
-    use gpui_kit::component::{ThemeMode, ThemeSet};
     use std::path::Path;
-
-    /// Guards `install_theme`'s `include_str!` + `.expect(...)`: a change to
-    /// `assets/themes/dark-soft.json` that breaks its `ThemeSet` shape (a
-    /// typo in a key, invalid JSON) would otherwise only surface as a panic
-    /// the first time `rbxstudio` actually starts.
-    #[test]
-    fn the_bundled_theme_file_parses_as_a_dark_theme_named_for_this_project() {
-        const THEME: &str = include_str!("../../../assets/themes/dark-soft.json");
-        let theme_set: ThemeSet =
-            serde_json::from_str(THEME).expect("assets/themes/dark-soft.json is valid JSON");
-        let theme = theme_set
-            .themes
-            .iter()
-            .find(|theme| theme.name == "rbx-native Dark")
-            .expect("a theme named \"rbx-native Dark\"");
-        assert_eq!(theme.mode, ThemeMode::Dark);
-    }
 
     /// Guards `BUNDLED_FONTS`: every embedded file is a TrueType font
     /// (`sfnt` version 1.0), so a swapped or truncated asset fails here
@@ -544,47 +427,6 @@ mod tests {
         for font in super::BUNDLED_FONTS {
             assert_eq!(&font[..4], &[0, 1, 0, 0]);
         }
-    }
-
-    fn set(themes: &[(&str, &str)]) -> ThemeSet {
-        let entries: Vec<String> = themes
-            .iter()
-            .map(|(name, mode)| format!(r#"{{"name":"{name}","mode":"{mode}"}}"#))
-            .collect();
-        let json = format!(
-            r#"{{"name":"pack","author":"me","themes":[{}]}}"#,
-            entries.join(",")
-        );
-        serde_json::from_str(&json).expect("a minimal theme set parses")
-    }
-
-    /// The registry sorts by name; the file's own order is what a theme
-    /// author wrote and what the doc comment promises.
-    #[test]
-    fn the_first_dark_theme_in_the_file_wins_not_the_alphabetically_first() {
-        let themes = set(&[("Zenith Dark", "dark"), ("Aurora Dark", "dark")]);
-        let picked = super::first_new_dark(&themes, |_| false).map(|t| t.name.to_string());
-        assert_eq!(picked.as_deref(), Some("Zenith Dark"));
-    }
-
-    #[test]
-    fn light_themes_and_names_the_registry_already_holds_are_skipped() {
-        let themes = set(&[
-            ("Dawn", "light"),
-            ("rbx-native Dark", "dark"),
-            ("Dusk", "dark"),
-        ]);
-        let picked = super::first_new_dark(&themes, |name| name == "rbx-native Dark")
-            .map(|t| t.name.to_string());
-        assert_eq!(picked.as_deref(), Some("Dusk"));
-    }
-
-    #[test]
-    fn a_file_with_nothing_to_offer_picks_nothing() {
-        let only_light = set(&[("Dawn", "light")]);
-        assert!(super::first_new_dark(&only_light, |_| false).is_none());
-        let only_known = set(&[("rbx-native Dark", "dark")]);
-        assert!(super::first_new_dark(&only_known, |_| true).is_none());
     }
 
     #[test]

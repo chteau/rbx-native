@@ -100,7 +100,7 @@ impl Shell {
                 .flex()
                 .items_center()
                 .px(px(4.))
-                .rounded(tokens::RADIUS)
+                .rounded(tokens::radius())
                 .bg(tokens::chrome())
                 .shadow(tokens::focus_ring(tokens::black()))
                 .child(

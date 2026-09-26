@@ -30,6 +30,7 @@ fn composite(foreground: Rgba, background: Rgba) -> Rgba {
 }
 
 use gpui_kit::component::Size;
+use gpui_kit::{rgb, rgba};
 
 /// Every surface a label can land on in this design.
 const SURFACES: [Named; 6] = [
@@ -160,7 +161,7 @@ fn a_toggle_reads_differently_on_and_off() {
 }
 
 /// The toolkit's own components — the menu bar, the inputs, the buttons in
-/// the Output strip — are painted from `assets/themes/dark-soft.json`, not
+/// the Output strip — are painted from `assets/themes/default/widgets.json`, not
 /// from this module. That is two copies of one palette, which is exactly
 /// the arrangement that drifts: a colour is changed here, the JSON keeps
 /// the old one, and half the window quietly stops matching the other half.
@@ -168,10 +169,9 @@ fn a_toggle_reads_differently_on_and_off() {
 /// So the JSON is checked against the tokens, key by key.
 #[test]
 fn the_toolkit_theme_paints_the_same_palette_this_module_does() {
-    const THEME: &str = include_str!("../../../../assets/themes/dark-soft.json");
+    const THEME: &str = include_str!("../../../../assets/themes/default/widgets.json");
 
-    let theme: serde_json::Value =
-        serde_json::from_str(THEME).expect("dark-soft.json is valid JSON");
+    let theme: serde_json::Value = serde_json::from_str(THEME).expect("widgets.json is valid JSON");
     let colors = &theme["themes"][0]["colors"];
 
     let mirrored: [Named; 14] = [
@@ -194,23 +194,23 @@ fn the_toolkit_theme_paints_the_same_palette_this_module_does() {
     for (key, token) in mirrored {
         let listed = colors[key]
             .as_str()
-            .unwrap_or_else(|| panic!("dark-soft.json has no {key}"));
+            .unwrap_or_else(|| panic!("widgets.json has no {key}"));
         assert_eq!(
             listed.to_ascii_uppercase(),
             hex(token()),
-            "dark-soft.json's {key} has drifted from the token it mirrors"
+            "widgets.json's {key} has drifted from the token it mirrors"
         );
     }
 
     assert_eq!(
         theme["themes"][0]["radius"].as_f64(),
-        Some(f64::from(f32::from(RADIUS))),
-        "dark-soft.json's radius has drifted from RADIUS"
+        Some(f64::from(f32::from(radius()))),
+        "widgets.json's radius has drifted from radius()"
     );
 }
 
 /// `#RRGGBB`, or `#RRGGBBAA` when the colour is not opaque — the spelling
-/// `dark-soft.json` uses.
+/// `widgets.json` uses.
 fn hex(color: Rgba) -> String {
     let byte = |channel: f32| (channel * 255.).round() as u8;
     let rgb = format!(

@@ -256,7 +256,7 @@ surface it can land on and fails below WCAG AA 4.5:1.
 | `check_off_border` vs `black` *and* `chrome` | ≥ 3:1 on both — asserted |
 | the smallest targets (icon button, checkbox, input, rows) | ≥ 24×24 — asserted |
 
-`assets/themes/dark-soft.json` paints everything the toolkit owns — the menu
+`assets/themes/default/widgets.json` paints everything the toolkit owns — the menu
 bar, inputs, buttons, scrollbars — and is a second copy of this palette,
 which is exactly the arrangement that drifts. So it is asserted key by key
 against the tokens too. **Change a colour in one place and the test tells

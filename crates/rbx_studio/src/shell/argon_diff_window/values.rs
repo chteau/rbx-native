@@ -89,7 +89,7 @@ pub(super) fn chip(id: impl Into<ElementId>, cell: &Cell, side: Side) -> AnyElem
         .px(px(7.))
         .gap(px(6.))
         .items_center()
-        .rounded(tokens::RADIUS_BADGE)
+        .rounded(tokens::radius_badge())
         .bg(bg)
         .font_family(tokens::FONT_FAMILY_MONO)
         .text_size(tokens::text_sm())

@@ -224,7 +224,7 @@ impl Shell {
             .p(px(4.))
             .gap(px(4.))
             .bg(tokens::chrome())
-            .rounded(tokens::RADIUS)
+            .rounded(tokens::radius())
             .shadow(tokens::elevation())
             .on_mouse_down_out(cx.listener(|shell, _: &MouseDownEvent, _, cx| {
                 shell.explorer_edit.picker = None;
@@ -249,7 +249,7 @@ impl Shell {
                             .h(tokens::input_height())
                             .items_center()
                             .px(px(8.))
-                            .rounded(tokens::RADIUS)
+                            .rounded(tokens::radius())
                             .bg(tokens::field_select())
                             .child(
                                 Input::new(&picker.query)

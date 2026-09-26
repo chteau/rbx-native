@@ -209,7 +209,7 @@ pub(super) fn surface() -> Div {
         .p(px(4.))
         .gap(px(1.))
         .bg(tokens::chrome())
-        .rounded(tokens::RADIUS)
+        .rounded(tokens::radius())
         .shadow(tokens::elevation())
 }
 
@@ -262,14 +262,14 @@ pub(super) fn row_chrome(
         .items_center()
         .gap(px(6.))
         .px(px(8.))
-        .rounded(tokens::RADIUS)
+        .rounded(tokens::radius())
         .text_size(tokens::text_sm())
         .line_height(tokens::line_sm())
         .map(|this| {
             if enabled {
                 this.cursor_pointer()
                     .text_color(tokens::text_strong())
-                    .hover(|this| this.bg(tokens::hover()))
+                    .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
                     .active(|this| this.bg(tokens::selection()))
             } else {
                 // `text-disabled` alone, not the spec's further 40% opacity

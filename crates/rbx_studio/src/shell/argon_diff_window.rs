@@ -119,6 +119,7 @@ impl ArgonDiffWindow {
                 ..Default::default()
             }),
             window_decorations: Some(WindowDecorations::Client),
+            window_background: crate::theme::active().effects.window,
             ..Default::default()
         };
 
@@ -226,7 +227,7 @@ impl Render for ArgonDiffWindow {
                     .left(px(14.))
                     .right(px(14.))
                     .max_h(px(360.))
-                    .rounded(tokens::RADIUS)
+                    .rounded(tokens::radius())
                     .bg(tokens::dock())
                     .border_1()
                     .border_color(tokens::border2())

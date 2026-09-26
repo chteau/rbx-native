@@ -107,7 +107,11 @@ pub(in crate::launcher) fn field(
                                     .rounded(px(4.))
                                     .text_color(tokens::text2())
                                     .cursor_pointer()
-                                    .hover(|this| this.bg(ui::wash()).text_color(tokens::text()))
+                                    .hover(|this| {
+                                        tokens::hover_fx(this)
+                                            .bg(ui::wash())
+                                            .text_color(tokens::text())
+                                    })
                                     .child(ui::icon(if revealed { "eye-off" } else { "eye" }, 14.))
                                     .on_click({
                                         let entity = entity.clone();

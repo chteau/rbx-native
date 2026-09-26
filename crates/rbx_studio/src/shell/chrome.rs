@@ -236,8 +236,9 @@ impl Shell {
                                     this.text_color(tokens::check_on())
                                         .font_weight(tokens::WEIGHT_BOLD)
                                 } else {
-                                    this.text_color(tokens::text_placeholder())
-                                        .hover(|this| this.text_color(tokens::text_full()))
+                                    this.text_color(tokens::text_placeholder()).hover(|this| {
+                                        tokens::hover_fx(this).text_color(tokens::text_full())
+                                    })
                                 }
                             })
                             .on_click(cx.listener(move |shell, _, _, cx| {
@@ -269,7 +270,7 @@ fn document_tab(
         .gap(px(7.))
         .px(px(16.))
         .py(px(8.))
-        .rounded_t(tokens::RADIUS_TILE)
+        .rounded_t(tokens::radius_tile())
         .relative()
         .cursor_pointer()
         .focus_visible(|this| this.shadow(tokens::focus_ring_inset()))
@@ -294,7 +295,7 @@ fn document_tab(
                 )
         })
         .when(!active, |this| {
-            this.hover(|this| this.bg(tokens::hover_subtle()))
+            this.hover(|this| tokens::hover_fx(this).bg(tokens::hover_subtle()))
         })
         .on_click(on_click)
         .child(Icon::new(document.icon()).size(px(13.)))
@@ -463,7 +464,11 @@ fn titlebar_button(
         .when_some(focus, |this, focus| this.track_focus(focus))
         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::black())))
         .text_color(tokens::text_label())
-        .hover(move |this| this.bg(hover_bg).text_color(tokens::text_full()))
+        .hover(move |this| {
+            tokens::hover_fx(this)
+                .bg(hover_bg)
+                .text_color(tokens::text_full())
+        })
         .active(|this| this.bg(tokens::ribbon_tab_active()))
         .tooltip(move |window, cx| super::tooltip::text(label, window, cx))
         .on_click(on_click)
@@ -574,7 +579,7 @@ pub(super) fn dock_tab(
             .when(!selected, |this| this.invisible())
             .cursor_pointer()
             .text_color(tokens::text_label())
-            .hover(|this| this.text_color(tokens::text_full()))
+            .hover(|this| tokens::hover_fx(this).text_color(tokens::text_full()))
             .on_click(on_close)
             .child(Icon::new(IconName::X).size(tokens::text_xs())),
     )
@@ -609,7 +614,7 @@ pub(super) fn tab_pill(
         .gap(px(7.))
         .px(px(14.))
         .py(px(6.))
-        .rounded_t(tokens::RADIUS)
+        .rounded_t(tokens::radius())
         .text_size(tokens::text_sm())
         .line_height(tokens::line_sm())
         .cursor_pointer()
@@ -617,7 +622,7 @@ pub(super) fn tab_pill(
             if solo {
                 this.text_color(tokens::text_strong())
                     .font_weight(tokens::WEIGHT_BOLD)
-                    .hover(|this| this.bg(tokens::hover()))
+                    .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
             } else if selected {
                 this.bg(tokens::field_select())
                     .text_color(tokens::text_strong())
@@ -627,7 +632,7 @@ pub(super) fn tab_pill(
                 // a second fill: two pills side by side in different greys
                 // read as two docks, not as one dock's two tabs.
                 this.text_color(tokens::text_muted())
-                    .hover(|this| this.bg(tokens::hover()))
+                    .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
             }
         })
         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
@@ -707,10 +712,14 @@ pub(super) fn dock_options_button(
         .flex()
         .items_center()
         .justify_center()
-        .rounded_t(tokens::RADIUS)
+        .rounded_t(tokens::radius())
         .cursor_pointer()
         .text_color(tokens::text3())
-        .hover(|this| this.bg(tokens::hover()).text_color(tokens::text()))
+        .hover(|this| {
+            tokens::hover_fx(this)
+                .bg(tokens::hover())
+                .text_color(tokens::text())
+        })
         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
         .tooltip(move |window, cx| super::tooltip::text(label, window, cx))
         .child(Icon::new(icon).size(px(icon_size)))
@@ -733,10 +742,14 @@ pub(super) fn icon_button(
         .flex()
         .items_center()
         .justify_center()
-        .rounded(tokens::RADIUS)
+        .rounded(tokens::radius())
         .cursor_pointer()
         .text_color(tokens::text_label())
-        .hover(|this| this.bg(tokens::hover()).text_color(tokens::text_full()))
+        .hover(|this| {
+            tokens::hover_fx(this)
+                .bg(tokens::hover())
+                .text_color(tokens::text_full())
+        })
         .active(|this| this.bg(tokens::ribbon_tab_active()))
         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::black())))
         .tooltip(move |window, cx| super::tooltip::text(label, window, cx))
@@ -762,7 +775,7 @@ pub(super) fn button(
         .items_center()
         .justify_center()
         .px(tokens::input_padding())
-        .rounded(tokens::RADIUS)
+        .rounded(tokens::radius())
         .cursor_pointer()
         .text_size(tokens::text_md())
         .line_height(tokens::line_md())
@@ -774,7 +787,11 @@ pub(super) fn button(
             } else {
                 this.bg(tokens::field_select())
                     .text_color(tokens::text_label())
-                    .hover(|this| this.bg(tokens::hover()).text_color(tokens::text_full()))
+                    .hover(|this| {
+                        tokens::hover_fx(this)
+                            .bg(tokens::hover())
+                            .text_color(tokens::text_full())
+                    })
             }
         })
         .active(|this| this.bg(tokens::ribbon_tab_active()))

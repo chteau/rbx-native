@@ -230,7 +230,7 @@ impl Shell {
                         .gap(px(4.))
                         .p(px(5.))
                         .bg(tokens::field_select())
-                        .rounded(tokens::RADIUS_CONTAINER)
+                        .rounded(tokens::radius_container())
                         .border_1()
                         .border_color(tokens::border())
                         .children(cluster),
@@ -616,11 +616,15 @@ pub(super) fn cluster_icon(
         .flex()
         .items_center()
         .justify_center()
-        .rounded(tokens::RADIUS_TILE)
+        .rounded(tokens::radius_tile())
         .cursor_pointer()
         .text_color(tokens::text_muted())
         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
-        .hover(|this| this.bg(tokens::hover()).text_color(tokens::text_full()))
+        .hover(|this| {
+            tokens::hover_fx(this)
+                .bg(tokens::hover())
+                .text_color(tokens::text_full())
+        })
         .active(|this| this.bg(tokens::ribbon_tab_active()))
         .child(Icon::new(icon).size(tokens::scaled_width(17.)));
     nav.claim(el, cx)
@@ -687,7 +691,7 @@ fn base_tile(
         .py(px(5.))
         .items_center()
         .justify_center()
-        .rounded(tokens::RADIUS)
+        .rounded(tokens::radius())
         .bg(tokens::tile())
         .text_size(tokens::text_xs())
         .line_height(tokens::line_xs())
@@ -699,7 +703,11 @@ fn base_tile(
                 this.focus_visible(|this| this.shadow(tokens::focus_ring(tokens::chrome())))
                     .cursor_pointer()
                     .text_color(tokens::text_label())
-                    .hover(|this| this.bg(tokens::hover()).text_color(tokens::text_full()))
+                    .hover(|this| {
+                        tokens::hover_fx(this)
+                            .bg(tokens::hover())
+                            .text_color(tokens::text_full())
+                    })
                     .active(|this| this.bg(tokens::ribbon_tab_active()))
             } else {
                 this.cursor_not_allowed()
@@ -778,7 +786,11 @@ pub(super) fn live_stack_row(
         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::chrome())))
         .cursor_pointer()
         .text_color(tokens::text_label())
-        .hover(|this| this.bg(tokens::hover()).text_color(tokens::text_full()))
+        .hover(|this| {
+            tokens::hover_fx(this)
+                .bg(tokens::hover())
+                .text_color(tokens::text_full())
+        })
         .active(|this| this.bg(tokens::ribbon_tab_active()));
     nav.claim(row, cx)
 }
@@ -791,7 +803,7 @@ fn base_row(id: &'static str, icon: IconName, label: &'static str) -> Stateful<D
         .items_center()
         .gap(px(6.))
         .px(px(7.))
-        .rounded(tokens::RADIUS)
+        .rounded(tokens::radius())
         .bg(tokens::tile())
         .text_size(tokens::text_xs())
         .line_height(tokens::line_xs())

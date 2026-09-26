@@ -101,14 +101,14 @@ impl Shell {
             .h(px(28.))
             .px(px(14.))
             .items_center()
-            .rounded(tokens::RADIUS)
+            .rounded(tokens::radius())
             .bg(tokens::check_on())
             .text_size(tokens::text_md())
             .line_height(tokens::line_md())
             .font_weight(tokens::WEIGHT_BOLD)
             .text_color(tokens::black())
             .cursor_pointer()
-            .hover(|this| this.bg(tokens::accent_hover()))
+            .hover(|this| tokens::hover_fx(this).bg(tokens::accent_hover()))
             .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::field_select())))
             .on_click(cx.listener(move |shell, _, _, cx| {
                 shell.wally_install(scope.clone(), pkg.clone(), Some(latest.clone()), realm, cx);
@@ -121,11 +121,12 @@ impl Shell {
             .gap(px(16.))
             .px(px(14.))
             .py(px(10.))
-            .rounded(tokens::RADIUS_TILE)
+            .rounded(tokens::radius_tile())
             .bg(tokens::field_select())
             .border_1()
             .border_color(tokens::border())
             .hover(|this| {
+                let this = tokens::hover_fx(this);
                 this.border_color(tokens::border2())
                     .bg(tokens::hover_subtle())
             })

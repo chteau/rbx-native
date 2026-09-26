@@ -111,9 +111,9 @@ pub(super) fn grid(
             .flex()
             .items_center()
             .justify_center()
-            .rounded(tokens::RADIUS_TINY)
+            .rounded(tokens::radius_tiny())
             .cursor_pointer()
-            .hover(|this| this.bg(tokens::hover()))
+            .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
             .on_click(move |_, window, cx| on_pick(cell, window, cx))
             .child(
                 div()
@@ -130,7 +130,7 @@ pub(super) fn grid(
     div()
         .flex_none()
         .p(px(2.))
-        .rounded(tokens::RADIUS)
+        .rounded(tokens::radius())
         .bg(tokens::chrome())
         .child(div().grid().grid_cols(3).children(cells))
         .into_any_element()
@@ -168,7 +168,7 @@ impl Shell {
                     .text_size(tokens::text_sm())
                     .text_color(tokens::text_muted())
                     .cursor_col_resize()
-                    .hover(|this| this.text_color(tokens::text_full()))
+                    .hover(|this| tokens::hover_fx(this).text_color(tokens::text_full()))
                     .on_mouse_down(MouseButton::Left, move |event, _, cx| {
                         let x = event.position.x;
                         handle.update(cx, |shell, _| shell.begin_key_drag(key, x));

@@ -160,7 +160,7 @@ impl Shell {
                     .items_center()
                     .gap(px(2.))
                     .p(px(4.))
-                    .rounded(tokens::RADIUS)
+                    .rounded(tokens::radius())
                     .bg(tokens::chrome())
                     .shadow(tokens::elevation())
                     .children(buttons)
@@ -171,7 +171,7 @@ impl Shell {
                         h_flex()
                             .gap(px(2.))
                             .p(px(2.))
-                            .rounded(tokens::RADIUS)
+                            .rounded(tokens::radius())
                             .bg(tokens::field_select())
                             .children(units),
                     ),

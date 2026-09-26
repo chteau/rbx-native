@@ -182,7 +182,7 @@ impl Shell {
                 .h(px(22.))
                 .px(px(10.))
                 .items_center()
-                .rounded(tokens::RADIUS_SEGMENT)
+                .rounded(tokens::radius_segment())
                 .text_size(tokens::text_xs())
                 .line_height(tokens::line_xs())
                 .map(|this| {
@@ -194,7 +194,7 @@ impl Shell {
                         this.tab_index(self.tab_order.next())
                             .cursor_pointer()
                             .text_color(tokens::text2())
-                            .hover(|this| this.bg(tokens::hover()))
+                            .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
                             .focus_visible(|this| {
                                 this.shadow(tokens::focus_ring(tokens::field_select()))
                             })
@@ -215,10 +215,14 @@ impl Shell {
                 .size(px(26.))
                 .items_center()
                 .justify_center()
-                .rounded(tokens::RADIUS)
+                .rounded(tokens::radius())
                 .cursor_pointer()
                 .text_color(tokens::text2())
-                .hover(|this| this.bg(tokens::hover()).text_color(tokens::text()))
+                .hover(|this| {
+                    tokens::hover_fx(this)
+                        .bg(tokens::hover())
+                        .text_color(tokens::text())
+                })
                 .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
                 .tooltip(|window, cx| super::super::tooltip::text("Restore defaults", window, cx))
                 .on_click(
@@ -234,12 +238,16 @@ impl Shell {
                 .px(px(8.))
                 .items_center()
                 .gap(px(6.))
-                .rounded(tokens::RADIUS)
+                .rounded(tokens::radius())
                 .cursor_pointer()
                 .text_size(tokens::text_ghost())
                 .line_height(tokens::line_ghost())
                 .text_color(tokens::text2())
-                .hover(|this| this.bg(tokens::hover()).text_color(tokens::text()))
+                .hover(|this| {
+                    tokens::hover_fx(this)
+                        .bg(tokens::hover())
+                        .text_color(tokens::text())
+                })
                 .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
                 .on_click(
                     cx.listener(|shell, _, window, cx| shell.argon_restore_defaults(window, cx)),
@@ -264,7 +272,7 @@ impl Shell {
                 h_flex()
                     .p(px(2.))
                     .gap(px(2.))
-                    .rounded(tokens::RADIUS)
+                    .rounded(tokens::radius())
                     .bg(tokens::field_select())
                     .children(segments),
             )
@@ -333,11 +341,11 @@ impl Shell {
             .gap(px(16.))
             .px(px(12.))
             .py(px(10.))
-            .rounded(tokens::RADIUS_TILE)
+            .rounded(tokens::radius_tile())
             .bg(tokens::field_select())
             .border_1()
             .border_color(tokens::border())
-            .hover(|this| this.border_color(tokens::border2()))
+            .hover(|this| tokens::hover_fx(this).border_color(tokens::border2()))
             .child(
                 v_flex()
                     .flex_1()
@@ -356,7 +364,7 @@ impl Shell {
                                 this.child(
                                     div()
                                         .px(px(5.))
-                                        .rounded(tokens::RADIUS_BADGE)
+                                        .rounded(tokens::radius_badge())
                                         .border_1()
                                         .border_color(tokens::border2())
                                         .text_size(tokens::text_xxs())

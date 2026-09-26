@@ -22,7 +22,9 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 
 use gpui_kit::component::Size;
-use gpui_kit::{px, rgb, rgba, BoxShadow, FontWeight, Pixels, Rgba};
+use gpui_kit::{px, BoxShadow, FontWeight, Pixels, Rgba, StyleRefinement, Styled as _};
+
+use crate::theme;
 
 // --------------------------------------------------------------- surfaces
 
@@ -34,7 +36,7 @@ use gpui_kit::{px, rgb, rgba, BoxShadow, FontWeight, Pixels, Rgba};
 /// cast on a tool whose entire job is showing somebody else's colours puts
 /// a thumb on the scale for every material and texture judged against it.
 pub(crate) fn black() -> Rgba {
-    rgb(0x0A0A0B)
+    theme::color("black")
 }
 
 /// A dock's body, the ribbon's own body, and a ribbon button — every
@@ -47,7 +49,7 @@ pub(crate) fn black() -> Rgba {
 /// or picks from. A tile or a dock reads as itself through its icon, its
 /// label and its border, never through a fill lighter than its neighbours.
 pub(crate) fn dock() -> Rgba {
-    rgb(0x121213)
+    theme::color("dock")
 }
 
 /// An alias for [`dock`]: document tabs, the ribbon body, a dock's active
@@ -55,7 +57,7 @@ pub(crate) fn dock() -> Rgba {
 /// reference, so this returns the identical value rather than inventing a
 /// second one nothing distinguishes from it.
 pub(crate) fn chrome() -> Rgba {
-    dock()
+    theme::color("chrome")
 }
 
 /// A dropdown, a text field, a chip, the Command Bar's own input — every
@@ -63,20 +65,20 @@ pub(crate) fn chrome() -> Rgba {
 /// [`dock`]. The reference draws no further distinction between a select
 /// and a plain field: both are "a place data goes in", and both wear this.
 pub(crate) fn field_select() -> Rgba {
-    rgb(0x191A1C)
+    theme::color("field_select")
 }
 
 /// A ribbon button. An alias for [`dock`] — see its own doc comment for
 /// why a tile carries no fill of its own.
 pub(crate) fn tile() -> Rgba {
-    dock()
+    theme::color("tile")
 }
 
 /// The File/Edit/View menu strip, between the title bar and the tabs — the
 /// ground's own tone, like the document tabs and the ribbon's category
 /// tabs above the ribbon it belongs to.
 pub(crate) fn menu_bar() -> Rgba {
-    black()
+    theme::color("menu_bar")
 }
 
 /// The accent rule along the top of the open document's tab. This is the
@@ -84,25 +86,25 @@ pub(crate) fn menu_bar() -> Rgba {
 /// the strip, and a *shape* rather than a tint, so it survives being
 /// printed in grey.
 pub(crate) fn tab_active_bar() -> Rgba {
-    check_on()
+    theme::color("tab_active_bar")
 }
 
 /// The active ribbon category tab, against the black strip it sits in.
 pub(crate) fn ribbon_tab_active() -> Rgba {
-    rgba(0xFFFFFF1A)
+    theme::color("ribbon_tab_active")
 }
 
 /// Hover on anything not already lit. Deliberately slight: this UI is dark
 /// enough that a strong hover reads as a selection instead.
 pub(crate) fn hover() -> Rgba {
-    rgba(0xFFFFFF0D)
+    theme::color("hover")
 }
 
 /// The quieter hover, for rows and document tabs (white 3%): a list lights
 /// its rows one after another as the pointer crosses them, and at the full
 /// [`hover`] that reads as a wave rather than a cursor.
 pub(crate) fn hover_subtle() -> Rgba {
-    rgba(0xFFFFFF08)
+    theme::color("hover_subtle")
 }
 
 /// A selected Explorer row: the accent, weighted to clear 3:1 against the
@@ -116,21 +118,21 @@ pub(crate) fn hover_subtle() -> Rgba {
 /// So the Explorer's selection keeps the stronger wash the old palette
 /// used, just re-hued.
 pub(crate) fn selection() -> Rgba {
-    rgba(0x6C7FDBB8)
+    theme::color("selection")
 }
 
 // ---------------------------------------------------------------- borders
 
 /// Every 1px divider and default control border in the design (white 6%).
 pub(crate) fn border() -> Rgba {
-    rgba(0xFFFFFF0F)
+    theme::color("border")
 }
 
 /// A stronger border, for the handful of places the reference draws one:
 /// the Command Bar, an off toggle's track, a badge, and a control's hover
 /// state (white 11%).
 pub(crate) fn border2() -> Rgba {
-    rgba(0xFFFFFF1C)
+    theme::color("border2")
 }
 
 // ------------------------------------------------------------------- text
@@ -138,73 +140,70 @@ pub(crate) fn border2() -> Rgba {
 /// Primary text: an active document tab's title, a selected Explorer row,
 /// an editable field's own value.
 pub(crate) fn text() -> Rgba {
-    rgb(0xE2E2E6)
+    theme::color("text")
 }
 
 /// Secondary text: property labels, ribbon category tabs, dock titles, an
 /// unselected control's default icon.
 pub(crate) fn text2() -> Rgba {
-    rgb(0x8F8F97)
+    theme::color("text2")
 }
 
 /// Tertiary text: placeholders, inactive tabs and labels, chevrons,
 /// read-only values.
 pub(crate) fn text3() -> Rgba {
-    rgb(0x5C5C63)
+    theme::color("text3")
 }
 
 /// A warning's glyph: something is off but nothing failed (a key that
 /// can't list private experiences).
 pub(crate) fn warning() -> Rgba {
-    rgb(0xD9A55B)
+    theme::color("warning")
 }
 
 pub(crate) fn text_error() -> Rgba {
-    rgb(0xE06C6C)
+    theme::color("text_error")
 }
 
 /// The Diff window's "added" colour; removals use [`text_error`] and
 /// updates the accent.
 pub(crate) fn diff_add() -> Rgba {
-    rgb(0x74C98F)
+    theme::color("diff_add")
 }
 
 /// [`diff_add`] at 10 %: an added code row, an AFTER value chip.
 pub(crate) fn diff_add_soft() -> Rgba {
-    rgba(0x74C98F1A)
+    theme::color("diff_add_soft")
 }
 
 /// [`diff_add`] at 16 %: an added row's line-number cells.
 pub(crate) fn diff_add_gutter() -> Rgba {
-    rgba(0x74C98F29)
+    theme::color("diff_add_gutter")
 }
 
 /// [`diff_add`] at 12 %: the "Added" pill.
 pub(crate) fn diff_add_pill() -> Rgba {
-    rgba(0x74C98F1F)
+    theme::color("diff_add_pill")
 }
 
 /// [`text_error`] at 10 %: a removed code row, a BEFORE value chip.
 pub(crate) fn diff_remove_soft() -> Rgba {
-    rgba(0xE06C6C1A)
+    theme::color("diff_remove_soft")
 }
 
 /// [`text_error`] at 16 %: a removed row's line-number cells.
 pub(crate) fn diff_remove_gutter() -> Rgba {
-    rgba(0xE06C6C29)
+    theme::color("diff_remove_gutter")
 }
 
 /// [`text_error`] at 12 %: the "Removed" pill.
 pub(crate) fn diff_remove_pill() -> Rgba {
-    rgba(0xE06C6C1F)
+    theme::color("diff_remove_pill")
 }
 
 /// [`text_error`] as a fill, for the badge behind an error's own text.
 pub(crate) fn error_soft() -> Rgba {
-    Rgba {
-        a: 0.12,
-        ..text_error()
-    }
+    theme::color("error_soft")
 }
 
 // --------------------------------------------------------------- controls
@@ -213,48 +212,42 @@ pub(crate) fn error_soft() -> Rgba {
 /// own: active/selected text and icons, underlines, an on toggle, the
 /// Command Bar's own `>` prompt.
 pub(crate) fn check_on() -> Rgba {
-    rgb(0x6C7FDB)
+    theme::color("check_on")
 }
 
 /// The accent as a wash: the background of an active, selected or
 /// toggled-on item (accent 12%).
 pub(crate) fn accent_soft() -> Rgba {
-    Rgba {
-        a: 0.12,
-        ..check_on()
-    }
+    theme::color("accent_soft")
 }
 
 /// The accent as a 1px line: the border a field wears while it has focus
 /// (accent 55%).
 pub(crate) fn accent_line() -> Rgba {
-    Rgba {
-        a: 0.55,
-        ..check_on()
-    }
+    theme::color("accent_line")
 }
 
 /// A primary button under the pointer: 5% white over the accent, blended
 /// ahead of time (gpui paints one fill per box).
 pub(crate) fn accent_hover() -> Rgba {
-    rgb(0x7385DD)
+    theme::color("accent_hover")
 }
 
 /// A secondary button under the pointer.
 pub(crate) fn secondary_hover() -> Rgba {
-    rgb(0x202123)
+    theme::color("secondary_hover")
 }
 
 /// The knob of a switched-on toggle: pure white on the accent track, the
 /// one place the palette goes brighter than `text`.
 pub(crate) fn knob() -> Rgba {
-    rgb(0xFFFFFF)
+    theme::color("knob")
 }
 
 /// A close-window button's hover background — the one place this UI's
 /// neutral hover isn't the right answer, since closing needs its own cue.
 pub(crate) fn danger_hover() -> Rgba {
-    rgb(0x8A5A55)
+    theme::color("danger_hover")
 }
 
 /// An unticked toggle's own knob, and its track's border — off the
@@ -262,29 +255,29 @@ pub(crate) fn danger_hover() -> Rgba {
 /// [`field_select`], the only thing distinguishing "off" from "nothing
 /// here".
 pub(crate) fn check_off_border() -> Rgba {
-    rgb(0x8A8A8A)
+    theme::color("check_off_border")
 }
 
 /// Aliases onto the three-tone text ramp above, kept so call sites written
 /// against the old six-step alpha ramp don't all need editing at once —
 /// see [`text`], [`text2`] and [`text3`] for what each tier actually is.
 pub(crate) fn text_full() -> Rgba {
-    text()
+    theme::color("text_full")
 }
 pub(crate) fn text_strong() -> Rgba {
-    text()
+    theme::color("text_strong")
 }
 pub(crate) fn text_label() -> Rgba {
-    text2()
+    theme::color("text_label")
 }
 pub(crate) fn text_muted() -> Rgba {
-    text2()
+    theme::color("text_muted")
 }
 pub(crate) fn text_placeholder() -> Rgba {
-    text3()
+    theme::color("text_placeholder")
 }
 pub(crate) fn text_disabled() -> Rgba {
-    text3()
+    theme::color("text_disabled")
 }
 
 // ----------------------------------------------------------- tool accents
@@ -299,35 +292,35 @@ pub(crate) fn text_disabled() -> Rgba {
 /// pastels sit far above 3:1 on [`tile`], which is the only surface they
 /// appear on.
 pub(crate) fn tool_select() -> Rgba {
-    rgb(0x8FB8FF)
+    theme::color("tool_select")
 }
 
 pub(crate) fn tool_move() -> Rgba {
-    rgb(0x8FE0B0)
+    theme::color("tool_move")
 }
 
 pub(crate) fn tool_scale() -> Rgba {
-    rgb(0xFF9B9B)
+    theme::color("tool_scale")
 }
 
 pub(crate) fn tool_rotate() -> Rgba {
-    rgb(0xFFC98F)
+    theme::color("tool_rotate")
 }
 
 /// Align's own, for the button beside the four tools.
 pub(crate) fn tool_align() -> Rgba {
-    rgb(0xC9A8FF)
+    theme::color("tool_align")
 }
 
 /// The local-orientation toggle's own.
 pub(crate) fn tool_local() -> Rgba {
-    rgb(0x8FE0D8)
+    theme::color("tool_local")
 }
 
 /// The Sun tool's own, on whichever of its Sun and Moon tiles is active.
 /// Yellower than Rotate's orange, so the two never read as one tool.
 pub(crate) fn tool_sun() -> Rgba {
-    rgb(0xFFE88F)
+    theme::color("tool_sun")
 }
 
 /// The same pastel as the fill behind an active tool's icon: the frame's
@@ -369,20 +362,34 @@ pub(crate) fn tool_border() -> Pixels {
 /// Inputs, dropdowns, pills, small buttons, a document tab's `+`, and
 /// (top corners only) an Output tab — the default radius most controls in
 /// this design wear.
-pub(crate) const RADIUS: Pixels = px(5.);
+pub(crate) fn radius() -> Pixels {
+    px(theme::size("radius"))
+}
 /// Except a colour swatch, which is barely rounded at all.
-pub(crate) const RADIUS_TINY: Pixels = px(1.);
+pub(crate) fn radius_tiny() -> Pixels {
+    px(theme::size("radius_tiny"))
+}
 /// Document tabs (top corners only), ribbon tiles, transform tool buttons.
-pub(crate) const RADIUS_TILE: Pixels = px(6.);
+pub(crate) fn radius_tile() -> Pixels {
+    px(theme::size("radius_tile"))
+}
 /// Segmented containers (the transform-tools card) and floating surfaces
 /// (menus, popovers, tooltips).
-pub(crate) const RADIUS_CONTAINER: Pixels = px(8.);
+pub(crate) fn radius_container() -> Pixels {
+    px(theme::size("radius_container"))
+}
 /// A badge (the Command Bar's `Luau`, an attribute's `+`).
-pub(crate) const RADIUS_BADGE: Pixels = px(4.);
+pub(crate) fn radius_badge() -> Pixels {
+    px(theme::size("radius_badge"))
+}
 /// An Explorer row.
-pub(crate) const RADIUS_ROW: Pixels = px(4.);
+pub(crate) fn radius_row() -> Pixels {
+    px(theme::size("radius_row"))
+}
 /// One segment of the Output panel's filter control.
-pub(crate) const RADIUS_SEGMENT: Pixels = px(3.);
+pub(crate) fn radius_segment() -> Pixels {
+    px(theme::size("radius_segment"))
+}
 
 // -------------------------------------------------------------- UI  scale
 //
@@ -479,80 +486,80 @@ fn scaled_target(base: f32) -> Pixels {
 /// Property names and values, tree rows, dock titles, the title bar, ribbon
 /// category tabs.
 pub(crate) fn text_md() -> Pixels {
-    scaled(12.)
+    scaled(theme::size("text_md"))
 }
 
 /// Tooltips, dropdowns, value fields, document tabs, menu bar items.
 pub(crate) fn text_sm() -> Pixels {
-    scaled(11.5)
+    scaled(theme::size("text_sm"))
 }
 
 /// A ribbon tile's label, a badge, a section header.
 pub(crate) fn text_xs() -> Pixels {
-    scaled(10.5)
+    scaled(theme::size("text_xs"))
 }
 
 pub(crate) fn line_md() -> Pixels {
-    scaled(16.)
+    scaled(theme::size("line_md"))
 }
 
 pub(crate) fn line_sm() -> Pixels {
-    scaled(16.)
+    scaled(theme::size("line_sm"))
 }
 
 pub(crate) fn line_xs() -> Pixels {
-    scaled(14.)
+    scaled(theme::size("line_xs"))
 }
 
 /// A dock's own title ("Argon"), a popover's heading ("Getting started").
 pub(crate) fn text_lg() -> Pixels {
-    scaled(13.)
+    scaled(theme::size("text_lg"))
 }
 
 pub(crate) fn line_lg() -> Pixels {
-    scaled(18.)
+    scaled(theme::size("line_lg"))
 }
 
 /// A primary or secondary action button's label (Connect, Disconnect).
 pub(crate) fn text_action() -> Pixels {
-    scaled(12.5)
+    scaled(theme::size("text_action"))
 }
 
 pub(crate) fn line_action() -> Pixels {
-    scaled(17.)
+    scaled(theme::size("line_action"))
 }
 
 /// [`text_md`] on a taller line: a dock's one-line description under its
 /// title.
 pub(crate) fn line_md_tall() -> Pixels {
-    scaled(18.)
+    scaled(theme::size("line_md_tall"))
 }
 
 /// A status badge ("Connected"), an inline command chip in a help text.
 pub(crate) fn text_badge() -> Pixels {
-    scaled(11.)
+    scaled(theme::size("text_badge"))
 }
 
 pub(crate) fn line_badge() -> Pixels {
-    scaled(16.)
+    scaled(theme::size("line_badge"))
 }
 
 /// A ghost button's label ("Restore defaults").
 pub(crate) fn text_ghost() -> Pixels {
-    scaled(11.)
+    scaled(theme::size("text_ghost"))
 }
 
 pub(crate) fn line_ghost() -> Pixels {
-    scaled(15.)
+    scaled(theme::size("line_ghost"))
 }
 
 /// An uppercase section header, a "WIP" badge.
 pub(crate) fn text_xxs() -> Pixels {
-    scaled(10.)
+    scaled(theme::size("text_xxs"))
 }
 
 pub(crate) fn line_xxs() -> Pixels {
-    scaled(14.)
+    scaled(theme::size("line_xxs"))
 }
 
 /// A property category's header, an active ribbon category tab, a dock
@@ -583,43 +590,43 @@ pub(crate) fn field_size() -> Size {
 // labels but left the rows at 20px would just clip them.
 
 pub(crate) fn topbar_height() -> Pixels {
-    scaled(34.)
+    scaled(theme::size("topbar_height"))
 }
 
 pub(crate) fn menu_bar_height() -> Pixels {
-    scaled(30.)
+    scaled(theme::size("menu_bar_height"))
 }
 
 pub(crate) fn tabs_height() -> Pixels {
-    scaled(42.)
+    scaled(theme::size("tabs_height"))
 }
 
 pub(crate) fn ribbon_tabs_height() -> Pixels {
-    scaled(28.)
+    scaled(theme::size("ribbon_tabs_height"))
 }
 
 pub(crate) fn ribbon_height() -> Pixels {
-    scaled(80.)
+    scaled(theme::size("ribbon_height"))
 }
 
 pub(crate) fn dock_tabs_height() -> Pixels {
-    scaled(38.)
+    scaled(theme::size("dock_tabs_height"))
 }
 
 /// The "+" cell at the end of a tab strip, and its narrower dock twin. Both
 /// clear WCAG 2.5.8's 24x24 floor at every scale ≥ 0.6.
 pub(crate) fn tab_add_width() -> Pixels {
-    scaled(42.)
+    scaled(theme::size("tab_add_width"))
 }
 
 pub(crate) fn dock_tab_add_width() -> Pixels {
-    scaled(36.)
+    scaled(theme::size("dock_tab_add_width"))
 }
 
 /// Each side dock. Wider than the frame's 228 because the label column is
 /// wider, because the label is 14px instead of 9px.
 pub(crate) fn dock_width() -> f32 {
-    300. * font_scale()
+    theme::size("dock_width") * font_scale()
 }
 
 /// The bottom dock: its tab strip and five rows under it — Output's log, or
@@ -634,21 +641,21 @@ pub(crate) fn dock_height() -> f32 {
 
 /// A ribbon button, and the stacked-row column beside it.
 pub(crate) fn tile_width() -> Pixels {
-    scaled(56.)
+    scaled(theme::size("tile_width"))
 }
 
 pub(crate) fn stack_width() -> Pixels {
-    scaled(100.)
+    scaled(theme::size("stack_width"))
 }
 
 pub(crate) fn separator_height() -> Pixels {
-    scaled(58.)
+    scaled(theme::size("separator_height"))
 }
 
 /// One property row, and its name column. A row is a pointer target (it
 /// hovers, and its control lives inside it), so it takes the floor.
 pub(crate) fn row_height() -> Pixels {
-    scaled_target(28.)
+    scaled_target(theme::size("row_height"))
 }
 
 /// A property row's name column.
@@ -661,7 +668,7 @@ pub(crate) fn row_height() -> Pixels {
 /// truncates at the default dock width and reads whole once it is
 /// dragged wider.
 pub(crate) fn row_label_width() -> Pixels {
-    scaled(150.)
+    scaled(theme::size("row_label_width"))
 }
 
 /// A property row's control, when it is a single field, dropdown or toggle:
@@ -673,7 +680,7 @@ pub(crate) fn row_label_width() -> Pixels {
 /// whatever the control's width and carry their full name in a tooltip
 /// instead (see `shell::rows::property_shell`).
 pub(crate) fn value_width() -> Pixels {
-    scaled(116.)
+    scaled(theme::size("value_width"))
 }
 
 /// A field that lives in a dock's tab strip (the Output search): the
@@ -681,31 +688,31 @@ pub(crate) fn value_width() -> Pixels {
 /// field taller than that overflows it instead of centring in it. Still
 /// over WCAG 2.5.8's floor.
 pub(crate) fn strip_field_height() -> Pixels {
-    scaled_target(27.)
+    scaled_target(theme::size("strip_field_height"))
 }
 
 /// A property section's header.
 pub(crate) fn section_height() -> Pixels {
-    scaled(14.)
+    scaled(theme::size("section_height"))
 }
 
 /// One Explorer row — clickable, so likewise floored.
 pub(crate) fn tree_row_height() -> Pixels {
-    scaled_target(24.)
+    scaled_target(theme::size("tree_row_height"))
 }
 
 /// A text field, a select trigger, a stepper, the search box at the top of
 /// a dock — all one height, straight off the `InputsStyle` frame, and
 /// comfortably over WCAG 2.5.8's 24x24 target floor.
 pub(crate) fn input_height() -> Pixels {
-    scaled_target(31.)
+    scaled_target(theme::size("input_height"))
 }
 
 /// The narrowest a single field of a composite value (a `Vector3`'s `X`)
 /// may get before it wraps to the next line. Wide enough for a label, a
 /// sign and four digits.
 pub(crate) fn field_min_width() -> Pixels {
-    scaled(76.)
+    scaled(theme::size("field_min_width"))
 }
 
 /// The top inset a toolkit `Select` needs to sit level with the text
@@ -722,12 +729,12 @@ pub(crate) fn field_min_width() -> Pixels {
 /// If a toolkit upgrade changes the select's internals this will be wrong
 /// and will need re-measuring against a plain text field in the same panel.
 pub(crate) fn select_inset() -> Pixels {
-    scaled(7.5)
+    scaled(theme::size("select_inset"))
 }
 
 /// `InputsStyle` again: the frame's inputs are padded 8px horizontally.
 pub(crate) fn input_padding() -> Pixels {
-    scaled(8.)
+    scaled(theme::size("input_padding"))
 }
 
 /// The switch someone actually sees: a pill, 15px tall — taken down twice on
@@ -740,26 +747,26 @@ pub(crate) fn input_padding() -> Pixels {
 /// what [`checkbox_target`] is for. WCAG 2.5.8 is explicit that the control
 /// may be smaller than the target it sits in.
 pub(crate) fn toggle_height() -> Pixels {
-    scaled(17.)
+    scaled(theme::size("toggle_height"))
 }
 
 /// The pill's own width — a fixed ratio of its height, not a separate
 /// design value: a toggle narrower than this reads as a lozenge rather than
 /// a track with somewhere to slide to, and one wider looks like a badge.
 pub(crate) fn toggle_width() -> Pixels {
-    scaled(30.)
+    scaled(theme::size("toggle_width"))
 }
 
 /// The thumb inside the track, with room to slide from one edge to the
 /// other without ever touching the track's own rounded end.
 pub(crate) fn toggle_thumb() -> Pixels {
-    scaled(13.)
+    scaled(theme::size("toggle_thumb"))
 }
 
 /// The square a click has to land in to flip that toggle — never under
 /// WCAG 2.5.8's floor, whatever the control inside it is doing.
 pub(crate) fn checkbox_target() -> Pixels {
-    scaled_target(26.)
+    scaled_target(theme::size("checkbox_target"))
 }
 
 /// The column a property row's expander chevron — and a section header's —
@@ -769,27 +776,27 @@ pub(crate) fn checkbox_target() -> Pixels {
 /// inside that box, and [`label_gap`] is the air after it, so a wider slot
 /// only pushes every name in the panel further from the edge.
 pub(crate) fn chevron_slot() -> Pixels {
-    scaled(11.)
+    scaled(theme::size("chevron_slot"))
 }
 
 /// The rail a property slider runs its value along. Thick enough to carry
 /// the outline an empty one needs (see `shell::rows::slider`), thin enough
 /// that the grip still reads as the control.
 pub(crate) fn slider_rail() -> Pixels {
-    scaled(6.)
+    scaled(theme::size("slider_rail"))
 }
 
 /// The grip on that rail. Smaller than the strip a click has to land in,
 /// the same way [`toggle_height`] is smaller than [`checkbox_target`].
 pub(crate) fn slider_thumb() -> Pixels {
-    scaled(13.)
+    scaled(theme::size("slider_thumb"))
 }
 
 /// Below this a rail has fewer pixels than the value has steps, and
 /// dragging it stops meaning anything. The row lets it push the panel
 /// sideways rather than shrink past it.
 pub(crate) fn slider_min_width() -> Pixels {
-    scaled(60.)
+    scaled(theme::size("slider_min_width"))
 }
 
 /// The smallest square any icon-only button is allowed to be.
@@ -804,29 +811,29 @@ pub(crate) fn hit_target() -> Pixels {
 // undifferentiated block. These four values are that ratio.
 
 pub(crate) fn panel_padding() -> Pixels {
-    scaled(20.)
+    scaled(theme::size("panel_padding"))
 }
 
 pub(crate) fn row_gap() -> Pixels {
-    scaled(7.)
+    scaled(theme::size("row_gap"))
 }
 
 /// A property row's inset from the panel's edge, both sides. Small, because
 /// every name is indented past a chevron's slot on top of it (see
 /// `shell::rows::name_indent`) and the dock already has its own inset.
 pub(crate) fn row_padding() -> Pixels {
-    scaled(4.)
+    scaled(theme::size("row_padding"))
 }
 
 /// Between a category header and its first row.
 pub(crate) fn section_gap() -> Pixels {
-    scaled(7.)
+    scaled(theme::size("section_gap"))
 }
 
 /// Between one category's last row and the next category's header — the
 /// largest gap in the panel, and deliberately so.
 pub(crate) fn group_gap() -> Pixels {
-    scaled(16.)
+    scaled(theme::size("group_gap"))
 }
 
 /// Between two category headers with nothing between them. A collapsed
@@ -834,13 +841,13 @@ pub(crate) fn group_gap() -> Pixels {
 /// `shell::rows::section_header`), so the grouping is read off the fill
 /// and a full [`group_gap`] of dock between two bars just reads as a hole.
 pub(crate) fn header_gap() -> Pixels {
-    scaled(4.)
+    scaled(theme::size("header_gap"))
 }
 
 /// Inside a row, between a label and its own control. Shorter than
 /// [`row_gap`] so each label unambiguously binds to its own input.
 pub(crate) fn label_gap() -> Pixels {
-    scaled(4.)
+    scaled(theme::size("label_gap"))
 }
 
 // -------------------------------------------------------------- behaviour
@@ -901,6 +908,16 @@ pub(crate) fn set_reduced_motion(reduced: bool) -> bool {
     REDUCED_MOTION.swap(reduced, Ordering::Relaxed) != reduced
 }
 
+/// Every hover state the chrome draws starts from this, so an effect a theme
+/// adds beyond the hover fill — a glow, today — reaches all of them. With no
+/// such effect it hands `style` back untouched.
+pub(crate) fn hover_fx(style: StyleRefinement) -> StyleRefinement {
+    match theme::hover_glow() {
+        Some(glow) => style.shadow(vec![glow]),
+        None => style,
+    }
+}
+
 /// A surface that floats over the shell: a menu, a popover, a tooltip.
 /// The frame contains none, and on a UI this dark a drop shadow alone is
 /// invisible — so the separation is carried by the hairline, with the
@@ -914,7 +931,7 @@ pub(crate) fn elevation() -> Vec<BoxShadow> {
 /// the border) rather than as a ring outside it.
 pub(crate) fn floating_shadow() -> BoxShadow {
     BoxShadow {
-        color: rgba(0x00000066).into(),
+        color: theme::color("shadow").into(),
         offset: gpui_kit::point(px(0.), px(4.)),
         blur_radius: px(14.),
         spread_radius: px(0.),

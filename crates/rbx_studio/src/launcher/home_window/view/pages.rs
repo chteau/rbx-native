@@ -281,6 +281,7 @@ impl HomeWindow {
                 })
                 .cursor_pointer()
                 .hover(|this| {
+                    let this = tokens::hover_fx(this);
                     this.border_color(tokens::border2())
                         .bg(tokens::secondary_hover())
                 })
