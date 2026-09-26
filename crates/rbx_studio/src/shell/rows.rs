@@ -109,15 +109,20 @@ pub(super) fn row(
     };
     let class_icon = class_icon(icon);
 
-    let (hover_bg, selected_bg, selected_fg) = match tint {
+    let (hover_bg, selected_bg, selected_fg, selected_bar) = match tint {
         Some(color) => (
             tag_color(color, HOVER_ALPHA),
             tag_color(color, SELECTED_ALPHA),
             tokens::text(),
+            tag_color(color, 0xFF),
         ),
+        // The label in text colour, not the accent: the accent on its own
+        // 12% wash is short of 4.5:1 even for the default Indigo, and the
+        // wash and the bar already say "selected".
         None => (
             tokens::hover_subtle(),
             tokens::accent_soft(),
+            tokens::text(),
             tokens::check_on(),
         ),
     };
@@ -140,6 +145,19 @@ pub(super) fn row(
             this.bg(selected_bg)
                 .text_color(selected_fg)
                 .font_weight(tokens::WEIGHT_SEMIBOLD)
+                // A 2 px bar down the left edge: the selection as a shape,
+                // not only a wash, which is all a 12% tint over the dock
+                // can't carry on its own (WCAG 1.4.11).
+                .child(
+                    div()
+                        .absolute()
+                        .left_0()
+                        .top_0()
+                        .bottom_0()
+                        .w(px(2.))
+                        .rounded_l(tokens::radius_row())
+                        .bg(selected_bar),
+                )
         })
         .when(!selected, |this| {
             this.hover(move |this| tokens::hover_fx(this).bg(hover_bg))

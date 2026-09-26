@@ -25,6 +25,14 @@ mod ui;
 mod wizard;
 
 pub(crate) use home_window::HomeWindow;
+pub(crate) use key_check::{
+    summary as key_summary, KeyCheck, Summary as KeySummary, Tag as KeyTag,
+};
+
+/// A check of the stored key, started now — Settings › Account's card.
+pub(crate) fn check_stored_key(cx: &mut App) -> Entity<KeyCheck> {
+    cx.new(|cx| KeyCheck::with_key(key_check::stored_secret(), cx))
+}
 
 /// What the editor window needs beyond the place, held from `main` until a
 /// place is picked. Taken exactly once.

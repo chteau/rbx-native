@@ -291,8 +291,7 @@ impl Shell {
             menu::item("Show Timestamp")
                 .checked(timestamps)
                 .on_click(move |shell, cx| {
-                    shell.output_show_timestamps = !timestamps;
-                    cx.notify();
+                    shell.set_output_timestamps(!timestamps, cx);
                 }),
         );
         let overflow = menu::dropdown(

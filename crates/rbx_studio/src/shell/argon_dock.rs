@@ -30,7 +30,7 @@ mod actions;
 mod connection;
 mod controls;
 mod help;
-mod settings;
+pub(in crate::shell) mod settings;
 
 pub(super) use connection::detect_argon_version;
 
@@ -339,11 +339,21 @@ impl Shell {
 
     /// Puts the two steppers' text in step with what they show, after a
     /// level change or Restore defaults (their own edits already are).
-    fn sync_argon_fields(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    ///
+    /// Also run every render, since Settings can write either value at the
+    /// level this dock is showing; a field being typed in is left alone.
+    pub(in crate::shell) fn sync_argon_fields(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         for (setting, field) in [
             (Setting::ChangesThreshold, self.argon_ui.threshold.clone()),
             (Setting::DiffLinesLimit, self.argon_ui.diff_limit.clone()),
         ] {
+            if window.is_window_active() && field.read(cx).focus_handle(cx).is_focused(window) {
+                continue;
+            }
             if let Value::Number(n) = self.argon_shown(setting) {
                 let text = n.to_string();
                 field.update(cx, |state, cx| {

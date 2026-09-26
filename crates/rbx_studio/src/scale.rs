@@ -92,7 +92,7 @@ pub(crate) fn install(cx: &mut App) {
 /// wrongly-suppressed animation is a smaller harm than a wrongly-played
 /// one only in the other direction, and guessing "reduce" for everybody
 /// would be its own accessibility problem.
-fn detect_reduced_motion() -> bool {
+pub(crate) fn detect_reduced_motion() -> bool {
     if let Ok(forced) = std::env::var(REDUCE_MOTION_VARIABLE) {
         return matches!(forced.trim(), "1" | "true" | "yes" | "on");
     }

@@ -1343,6 +1343,30 @@ Roblox's own engine.
   `a_rebuild_leaves_the_renderer_drawing` separately guards the renderer's
   side: a refused patch still draws what a reload draws.
 
+- [x] **Studio Settings** (`File › Studio Settings…`, `Alt+S`), real
+  Studio's own `File > Studio Settings` dialog: one window, ten pages
+  behind a nav, every preference the editor keeps, each row reading and
+  writing through the same setter as the View menu, the Viewport dock,
+  the Snap popover, the Explorer's options, the Output panel and the
+  Argon dock, so they always agree and `settings.json` has one writer.
+  Changed-from-default rows carry a dot and a reset, and "Reset page"
+  runs them all. Newly settable: the free camera's **mouse sensitivity,
+  flight speed and smoothing** (0.1–4.0×, and 0–1 where 0 is none; the
+  viewer's `Headless::set_camera_feel`), and persisted for the first time:
+  the snap increments and the Output panel's timestamps. **Appearance**
+  adds a user **accent** (seven presets or a custom colour from an SV
+  square and hue bar), guarded: it must keep dark button text, links and
+  focus rings readable (4.5 / 4.5 / 3:1), a failing colour is offered as
+  the nearest lighter one that passes, and a hue near a status colour is
+  flagged. The accent and per-tool colours (3:1 on the ribbon) live in
+  `appearance.json` and are laid over whichever theme is active, so the
+  whole editor recolours at once. **Argon**'s fifteen settings can be
+  edited at Global, Game or Place scope, with inherited values and
+  overrides shown per row. **Search** (`Ctrl F`) finds any row by label,
+  description or `settings.json` key and shows it live. Keyboard shortcuts
+  stay a window of their own, as in Studio; what the screen still shows as
+  `SOON` is its own bullet under "What's planned".
+
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
 - [x] Windows — asset cache and settings now fall back to
@@ -1921,22 +1945,22 @@ against `Roblox/creator-docs` rather than assumed:
   Everything this bullet and the next few settings-shaped items describe
   needs an actual screen to live in — see **Studio Settings screen**
   below, which is that screen.
-- [ ] 📋 **A Studio Settings screen**, matching real Studio's own
-  `File > Studio Settings` (`Alt`/`⌥`+`S`) rather than leaving every
-  preference above as a value nothing in the UI ever shows or changes.
-  Real Studio's dialog is organized into sections; this project's
-  equivalent doesn't need to match that organization exactly, but should
-  cover at least: free-camera mouse sensitivity (today a hidden CLI flag —
-  the movement-smoothing pass explicitly left this for later) and other
-  camera/control feel settings; the renderer calibration constants and
-  quality/service-visibility defaults from the settings-file item above;
-  and the Auto-Recovery interval from the autosave item below, which real
-  Studio's own docs place inside this exact dialog. **Keyboard shortcuts**
-  are real Studio's own separate `File > Customize Shortcuts` screen
-  (view and rebind any hotkey) — closely related, same File-menu
-  neighbourhood, but its own screen in real Studio rather than a tab of
-  Studio Settings, worth keeping distinct here too rather than merging
-  the two into one dialog Studio itself doesn't have.
+- [ ] 📋 **What Studio Settings still shows as `SOON`.** The screen itself
+  shipped (see "What's been implemented" → Editor); these rows are drawn
+  there, faded and inert, until what they stand for exists:
+  **renderer calibration** (`SUN_BASE`, `ATMOSPHERE_DENSITY_SCALE`,
+  `PLASTIC_SPEC_STRENGTH` and the quality bands as real settings; the two
+  WGSL ones are compile-time shader constants today and need a uniform),
+  **default services** (which services the Explorer lists when Show all
+  services is off), the **Auto-Recovery** toggle, interval and folder and
+  Play's **test-copy name** (waiting on the autosave item below),
+  **several accounts**, **named layouts**, **script font size**, the
+  **High contrast** and **Light** themes, the eyedropper in the colour
+  popover (GPUI has no way to sample the screen), and
+  **Keyboard shortcuts** — real Studio's own separate
+  `File > Customize Shortcuts` screen (view and rebind any hotkey), listed
+  in the Settings nav as its own window rather than merged into the
+  dialog, as Studio keeps it.
 - [ ] 📋 **Discord Rich Presence, switched on from Studio Settings** —
   an rbx-native addition, not Studio parity: real Studio has no built-in
   Discord presence, only third-party plugins and companion apps. A

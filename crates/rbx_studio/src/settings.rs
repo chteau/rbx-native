@@ -20,8 +20,10 @@ use crate::pacing::UnfocusedFps;
 use crate::shell::{Edge, SavedEdge, SavedGroup, SavedLayout};
 
 pub(crate) mod argon;
+mod controls;
 mod dragger;
 
+pub(crate) use controls::{Controls, FEEL_SCALE_RANGE};
 pub(crate) use dragger::DraggerSettings;
 
 /// What persists across a relaunch.
@@ -74,6 +76,8 @@ pub(crate) struct Settings {
     /// whatever the file holds, so nothing here has to validate it.
     pub(crate) docks: SavedLayout,
     pub(crate) output_collapsed: bool,
+    /// Whether Output rows print their time.
+    pub(crate) output_timestamps: bool,
     /// Real Studio's two insertion preferences, off the `⋯` beside the
     /// Explorer's insert search field (`studio/explorer.md`). Both default
     /// on, as they do there: a second `Part` called `Part` is not something
@@ -83,6 +87,8 @@ pub(crate) struct Settings {
     pub(crate) expand_on_select: bool,
     /// The dragger guides' switches — see [`DraggerSettings`].
     pub(crate) dragger: DraggerSettings,
+    /// The camera's feel and the snap increments — see [`Controls`].
+    pub(crate) controls: Controls,
     /// The Argon dock's address field, as it stood the last time Connect
     /// actually succeeded — not every keystroke of a draft, and not an
     /// address that never connected. Empty means "nothing saved yet",
@@ -115,9 +121,11 @@ impl Default for Settings {
             // duplicating them here is how the two drift apart.
             docks: SavedLayout::default(),
             output_collapsed: false,
+            output_timestamps: false,
             increment_names: true,
             expand_on_select: true,
             dragger: DraggerSettings::default(),
+            controls: Controls::default(),
         }
     }
 }
@@ -265,6 +273,10 @@ fn load_from(path: &Path) -> Settings {
             .get("output_collapsed")
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
+        output_timestamps: value
+            .get("output_timestamps")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
         increment_names: value
             .get("increment_names")
             .and_then(|v| v.as_bool())
@@ -274,6 +286,7 @@ fn load_from(path: &Path) -> Settings {
             .and_then(|v| v.as_bool())
             .unwrap_or(true),
         dragger: DraggerSettings::read(&value),
+        controls: Controls::read(&value),
         argon_address: value
             .get("argon_address")
             .and_then(|v| v.as_str())
@@ -372,6 +385,7 @@ fn parse_unfocused_fps(fps: u64) -> UnfocusedFps {
 }
 
 fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
+    let [camera, snap] = settings.controls.json();
     let value = serde_json::json!({
         "quality": format_quality(settings.quality),
         "show_all_services": settings.show_all_services,
@@ -408,9 +422,12 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
             "closed": settings.docks.closed,
         },
         "output_collapsed": settings.output_collapsed,
+        "output_timestamps": settings.output_timestamps,
         "increment_names": settings.increment_names,
         "expand_on_select": settings.expand_on_select,
         "dragger": settings.dragger.json(),
+        "camera": camera,
+        "snap": snap,
         "argon_address": settings.argon_address,
         "argon": settings.argon.json(),
     });
@@ -769,6 +786,7 @@ mod tests {
                 closed: Vec::new(),
             },
             output_collapsed: true,
+            output_timestamps: true,
             large_targets: true,
             reduce_motion: Some(true),
             ..Settings::default()
@@ -778,6 +796,7 @@ mod tests {
         let read = load_from(&path);
         assert_eq!(read.docks, settings.docks, "which panel sits where");
         assert!(read.output_collapsed);
+        assert!(read.output_timestamps);
         assert!(read.large_targets);
         assert_eq!(read.reduce_motion, Some(true));
 

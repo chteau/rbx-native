@@ -34,6 +34,9 @@ pub(crate) const CONTEXT: &str = "RbxMenuBar";
 /// Binds the keys the bar answers, scoped to [`CONTEXT`] so they only mean
 /// anything while focus is inside the bar or the menu it has open.
 pub(crate) fn install_key_bindings(cx: &mut App) {
+    // Real Studio's own shortcut for its Settings dialog. Global, so it
+    // works from anywhere in the editor, and so the File menu shows it.
+    cx.bind_keys([KeyBinding::new("alt-s", super::MenuStudioSettings, None)]);
     cx.bind_keys([
         KeyBinding::new("escape", Cancel, Some(CONTEXT)),
         KeyBinding::new("left", SelectLeft, Some(CONTEXT)),

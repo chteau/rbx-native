@@ -6,7 +6,7 @@
 use gpui_kit::assets::IconName;
 use gpui_kit::component::input::Input;
 use gpui_kit::component::select::Select;
-use gpui_kit::component::{h_flex, v_flex, Icon, Sizable as _};
+use gpui_kit::component::{h_flex, v_flex, Icon, IndexPath, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
@@ -143,7 +143,25 @@ impl Shell {
     /// recording that handle in the window's order is all it takes. The
     /// toolkit draws no focus ring on a select without its own chrome, so
     /// the box draws the editor's, inset, since the row clips outside it.
-    pub(super) fn quality_row(&mut self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn quality_row(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        // The mode can change from elsewhere (Settings); the dropdown keeps
+        // its own selection, so it is brought back in line here.
+        let current = super::super::quality::quality_row(self.quality_choice);
+        if self
+            .quality
+            .read(cx)
+            .selected_index(cx)
+            .map(|index| index.row)
+            != Some(current)
+        {
+            self.quality.update(cx, |state, cx| {
+                state.set_selected_index(Some(IndexPath::new(current)), window, cx)
+            });
+        }
         let handle = self.quality.read(cx).focus_handle(cx);
         self.tab_order.register(&handle);
         let ringed = handle.contains_focused(window, cx) && window.last_input_was_keyboard();

@@ -72,6 +72,9 @@ impl Shell {
         let transform = self.transform;
         self.viewport
             .update(cx, |viewport, _| viewport.set_transform(transform));
+        if matches!(action, Action::SetIncrement(..)) {
+            self.save_settings();
+        }
         cx.notify();
     }
 

@@ -23,12 +23,14 @@ use gpui_kit::{BoxShadow, ObjectFit, Rgba, WindowBackgroundAppearance};
 
 mod apply;
 mod github;
+mod overrides;
 mod pack;
 mod palette;
 mod watch;
 
 pub(crate) use apply::{apply, startup};
-pub(crate) use pack::ThemePack;
+pub(crate) use overrides::Overrides;
+pub(crate) use pack::{installed, themes_dir, ThemePack};
 pub(crate) use watch::{Watch, POLL_INTERVAL};
 
 /// The folder name, and `appearance.json` value, of the built-in theme. No
@@ -103,6 +105,13 @@ fn set_active(palette: Palette) {
     match ACTIVE.write() {
         Ok(mut active) => *active = palette,
         Err(poisoned) => *poisoned.into_inner() = palette,
+    }
+}
+
+impl Palette {
+    /// One colour token of this palette, which need not be the active one.
+    pub(crate) fn color(&self, name: &str) -> Rgba {
+        self.colors.get(name).copied().unwrap_or_default()
     }
 }
 

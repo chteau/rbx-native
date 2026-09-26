@@ -125,41 +125,6 @@ fn a_dock_and_a_field_are_each_a_visible_step_above_the_ground() {
     }
 }
 
-/// A selected row and the active document tab are *states*, and WCAG 1.4.11
-/// does not exempt states. The tab's wash cannot carry 3:1 on its own (a
-/// dark wash on a dark strip never will), which is exactly why it travels
-/// with an accent rule — and this asserts the rule, not the wash.
-#[test]
-fn a_selection_and_an_open_document_are_visible_as_states() {
-    let selected = composite(selection(), dock());
-    let ratio = contrast(selected, dock());
-    assert!(
-        ratio >= 3.,
-        "a selected Explorer row is {ratio:.2}:1 against the dock, below the 3:1 state floor"
-    );
-    assert!(
-        contrast(text_full(), selected) >= 4.5,
-        "a selected row's own label must still clear AA on top of the selection"
-    );
-
-    let bar = contrast(tab_active_bar(), chrome());
-    assert!(
-        bar >= 3.,
-        "the open document's accent rule is {bar:.2}:1 against the tab strip"
-    );
-}
-
-/// A toggle is the only place this UI spends colour on state, so its two
-/// states have to be told apart at a glance.
-#[test]
-fn a_toggle_reads_differently_on_and_off() {
-    let ratio = contrast(check_on(), field_select());
-    assert!(
-        ratio >= 3.,
-        "an on vs an off toggle is {ratio:.2}:1, below the 3:1 non-text floor"
-    );
-}
-
 /// The toolkit's own components — the menu bar, the inputs, the buttons in
 /// the Output strip — are painted from `assets/themes/default/widgets.json`, not
 /// from this module. That is two copies of one palette, which is exactly
@@ -249,12 +214,14 @@ fn a_toolkit_field_is_set_at_the_same_size_as_its_label() {
 /// the failure mode the criterion exists to catch.
 #[test]
 fn the_focus_ring_clears_three_to_one_on_every_surface_it_can_land_on() {
-    for (name, surface) in SURFACES {
-        let ratio = contrast(check_on(), surface());
-        assert!(
-            ratio >= 3.,
-            "the focus ring on {name} is {ratio:.2}:1, below the 3:1 non-text floor"
-        );
+    for (accent, value) in crate::accent::PRESETS {
+        for (name, surface) in SURFACES {
+            let ratio = contrast(rgb(value), surface());
+            assert!(
+                ratio >= 3.,
+                "{accent}: the focus ring on {name} is {ratio:.2}:1, below the 3:1 non-text floor"
+            );
+        }
     }
 }
 

@@ -246,3 +246,69 @@ fn restore_defaults_empties_only_the_level_asked_for() {
     );
     assert!(!settings.restore_defaults(Level::Place, &keys));
 }
+
+#[test]
+fn a_level_inherits_from_the_nearest_level_above_that_overrides() {
+    let keys = keys();
+    let mut settings = ArgonSettings::default();
+    assert_eq!(
+        settings.inherited(Setting::LogLevel, Level::Place, &keys),
+        (Level::Global, Value::Choice("Warn"))
+    );
+    settings.set(
+        Setting::LogLevel,
+        Value::Choice("Info"),
+        Level::Global,
+        &keys,
+    );
+    settings.set(
+        Setting::LogLevel,
+        Value::Choice("Debug"),
+        Level::Game,
+        &keys,
+    );
+    assert_eq!(
+        settings.inherited(Setting::LogLevel, Level::Place, &keys),
+        (Level::Game, Value::Choice("Debug"))
+    );
+    assert_eq!(
+        settings.inherited(Setting::LogLevel, Level::Game, &keys),
+        (Level::Global, Value::Choice("Info"))
+    );
+    assert_eq!(
+        settings.inherited(Setting::LogLevel, Level::Global, &keys),
+        (Level::Global, Value::Choice("Warn"))
+    );
+}
+
+#[test]
+fn clearing_an_override_falls_back_and_leaves_the_other_levels() {
+    let keys = keys();
+    let mut settings = ArgonSettings::default();
+    settings.set(Setting::TwoWaySync, Value::Bool(true), Level::Global, &keys);
+    settings.set(Setting::TwoWaySync, Value::Bool(false), Level::Place, &keys);
+    // Equal to the default, so the plugin's rule drops it rather than store it.
+    assert_eq!(
+        settings.exact(Setting::TwoWaySync, Level::Place, &keys),
+        None
+    );
+
+    settings.set(
+        Setting::LogLevel,
+        Value::Choice("Info"),
+        Level::Place,
+        &keys,
+    );
+    assert!(settings.clear(Setting::LogLevel, Level::Place, &keys));
+    assert!(!settings.clear(Setting::LogLevel, Level::Place, &keys));
+    assert_eq!(
+        settings.get(Setting::LogLevel, &keys),
+        Value::Choice("Warn")
+    );
+    assert_eq!(settings.get(Setting::TwoWaySync, &keys), Value::Bool(true));
+    assert_eq!(settings, {
+        let mut only_global = ArgonSettings::default();
+        only_global.set(Setting::TwoWaySync, Value::Bool(true), Level::Global, &keys);
+        only_global
+    });
+}

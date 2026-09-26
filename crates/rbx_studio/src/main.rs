@@ -32,6 +32,11 @@
 //! rolls the wheel once over viewport pixel `(x, y)` by that many notches
 //! once the first frame is up, the same aid for scrolling a `ScrollingFrame`
 //! drawn in the viewport (see `workspace_view::scroll`).
+//! `RBX_STUDIO_SETTINGS=1` opens Studio Settings with the editor, on the
+//! page `RBX_STUDIO_SETTINGS_PAGE=<first word of its name>` names, with
+//! Viewport › Advanced open under `RBX_STUDIO_SETTINGS_ADVANCED=1` and the
+//! page scrolled `RBX_STUDIO_SETTINGS_SCROLL=<px>` down — the same aid, for
+//! the Settings window (see `shell::settings_window`).
 //! `RBX_STUDIO_OPEN_SCRIPT=<name>[,<name>...]` opens each named
 //! `Script`/`LocalScript`/`ModuleScript` in the Script Editor panel exactly as
 //! double-clicking its Explorer row would — the same aid, for the script
@@ -58,6 +63,7 @@
 //! otherwise only opens once a live `argon serve` session pushes five or
 //! more real changes at once (see `shell::argon_sync`).
 
+mod accent;
 mod align;
 mod argon_client;
 mod camera;
@@ -182,6 +188,7 @@ fn main() {
         user.icon_overlay.take(),
     ));
     let theme = user.theme.clone();
+    let overrides = user.appearance.overrides();
 
     // The full Lucide catalog: the menu bar's icons are well outside the
     // default bundle the components themselves use. The Explorer's own class
@@ -191,7 +198,7 @@ fn main() {
     app.run(move |cx| {
         gpui_kit::init(cx);
         install_fonts(cx);
-        theme::startup(&theme, cx);
+        theme::startup(&theme, &overrides, cx);
         scale::install(cx);
         shell::install_key_bindings(cx);
         menu_bar::install_key_bindings(cx);

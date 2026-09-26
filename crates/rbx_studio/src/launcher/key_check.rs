@@ -38,7 +38,7 @@ pub(super) enum Status {
     Network,
 }
 
-pub(super) struct KeyCheck {
+pub(crate) struct KeyCheck {
     secret: String,
     revealed: bool,
     pub(super) status: Status,
@@ -250,5 +250,78 @@ pub(super) const FIXTURE_VARIABLE: &str = "RBX_STUDIO_LAUNCHER_KEY";
 impl Render for KeyCheck {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         div()
+    }
+}
+
+/// The stored key's secret, or a capture fixture's stand-in, or nothing.
+pub(super) fn stored_secret() -> String {
+    ApiKey::from_env_or_config()
+        .map(|key| key.expose_secret().to_string())
+        .or_else(|| {
+            std::env::var(FIXTURE_VARIABLE)
+                .ok()
+                .map(|_| "x".repeat(964))
+        })
+        .unwrap_or_default()
+}
+
+/// The tag a key card wears beside its name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Tag {
+    Ready,
+    NeedsAttention,
+    Refused,
+}
+
+/// What a key card says about a check: the key's name, its tag, and one
+/// line of detail ending in `tail` once the check is done.
+pub(crate) struct Summary {
+    pub(crate) name: SharedString,
+    pub(crate) tag: Option<Tag>,
+    pub(crate) meta: SharedString,
+    /// The key owner's name, once the check has one.
+    pub(crate) owner: Option<SharedString>,
+}
+
+pub(crate) fn summary(check: &KeyCheck, tail: &str) -> Summary {
+    let summary = |name: &str, tag, meta: String| Summary {
+        name: name.to_owned().into(),
+        tag,
+        meta: meta.into(),
+        owner: None,
+    };
+    match &check.status {
+        Status::Done(checked) => {
+            let expiry = if checked.info.expiration_time_utc.is_empty() {
+                "never expires".to_string()
+            } else {
+                format!("expires {}", short_date(&checked.info.expiration_time_utc))
+            };
+            let tag = if checked.report.ready() {
+                Tag::Ready
+            } else {
+                Tag::NeedsAttention
+            };
+            Summary {
+                owner: Some(checked.owner.clone().into()),
+                ..summary(
+                    &checked.info.name,
+                    Some(tag),
+                    format!("{} \u{b7} {expiry} \u{b7} {tail}", checked.owner),
+                )
+            }
+        }
+        Status::Running => summary("Your key", None, "Checking with Roblox\u{2026}".into()),
+        Status::Idle => summary("No key stored", None, "Replace key to add one.".into()),
+        Status::Invalid(status) => summary(
+            "Your key",
+            Some(Tag::Refused),
+            format!("Roblox answered {status}. Replace it with a working key."),
+        ),
+        Status::Network => summary(
+            "Your key",
+            None,
+            "Couldn\u{2019}t reach Roblox. Check your connection and try again.".into(),
+        ),
     }
 }

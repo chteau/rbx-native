@@ -8,7 +8,6 @@ use std::rc::Rc;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
-use rbx_cloud::ApiKey;
 
 use super::key_check::{self, KeyCheck, Status};
 use super::ui::{self, Weight};
@@ -34,15 +33,7 @@ impl Publishing {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let secret = ApiKey::from_env_or_config()
-            .map(|key| key.expose_secret().to_string())
-            .or_else(|| {
-                std::env::var(key_check::FIXTURE_VARIABLE)
-                    .ok()
-                    .map(|_| "x".repeat(964))
-            })
-            .unwrap_or_default();
-        let current = cx.new(|cx| KeyCheck::with_key(secret, cx));
+        let current = cx.new(|cx| KeyCheck::with_key(key_check::stored_secret(), cx));
         let observe = vec![cx.observe(&current, |_, _, cx| cx.notify())];
         let mut this = Publishing {
             current,
@@ -120,49 +111,13 @@ impl Publishing {
     }
 
     fn status_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.current.read(cx);
-        let (name, tag, meta): (SharedString, Option<Div>, SharedString) = match &state.status {
-            Status::Done(checked) => {
-                let ready = checked.report.ready();
-                let expiry = if checked.info.expiration_time_utc.is_empty() {
-                    "never expires".to_string()
-                } else {
-                    format!(
-                        "expires {}",
-                        key_check::short_date(&checked.info.expiration_time_utc)
-                    )
-                };
-                (
-                    checked.info.name.clone().into(),
-                    Some(if ready {
-                        ui::tag("READY", ui::green(), ui::green_soft())
-                    } else {
-                        ui::tag("NEEDS ATTENTION", ui::red(), ui::red_soft())
-                    }),
-                    format!("{} \u{b7} {expiry} \u{b7} checked just now", checked.owner).into(),
-                )
-            }
-            Status::Running => (
-                "Your key".into(),
-                None,
-                "Checking with Roblox\u{2026}".into(),
-            ),
-            Status::Idle => (
-                "No key stored".into(),
-                None,
-                "Replace key to add one.".into(),
-            ),
-            Status::Invalid(status) => (
-                "Your key".into(),
-                Some(ui::tag("REFUSED", ui::red(), ui::red_soft())),
-                format!("Roblox answered {status}. Replace it with a working key.").into(),
-            ),
-            Status::Network => (
-                "Your key".into(),
-                None,
-                "Couldn\u{2019}t reach Roblox. Check your connection and try again.".into(),
-            ),
-        };
+        let summary = key_check::summary(self.current.read(cx), "checked just now");
+        let tag = summary.tag.map(|tag| match tag {
+            key_check::Tag::Ready => ui::tag("READY", ui::green(), ui::green_soft()),
+            key_check::Tag::NeedsAttention => ui::tag("NEEDS ATTENTION", ui::red(), ui::red_soft()),
+            key_check::Tag::Refused => ui::tag("REFUSED", ui::red(), ui::red_soft()),
+        });
+        let (name, meta) = (summary.name, summary.meta);
         let current = self.current.clone();
         v_flex()
             .gap(px(14.))

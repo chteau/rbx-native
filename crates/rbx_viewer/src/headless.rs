@@ -13,7 +13,7 @@ use rbx_reflection::ReflectionDatabase;
 use crate::camera::{self, Pose, Viewpoint};
 use crate::capture::{Offscreen, Rendered};
 use crate::changes::Roles;
-use crate::controller::{Controller, Start, DEFAULT_SENSITIVITY};
+use crate::controller::{CameraFeel, Controller, Start, DEFAULT_SENSITIVITY};
 use crate::gizmo::Gizmo;
 use crate::input::{CameraInput, Input};
 use crate::load::{Loaded, Resident, Toggles};
@@ -55,6 +55,8 @@ pub struct Headless {
     view: View,
     bounds: Bounds,
     controller: Controller,
+    /// Put back on every controller a reload or `open_at` builds afresh.
+    feel: CameraFeel,
     input: Input,
     /// Wall clock the orbit is driven by, so it turns at the same rate however
     /// many frames the host managed to draw.
@@ -146,6 +148,7 @@ impl Headless {
             view: View::default(),
             bounds,
             controller: Controller::new(Start::Orbit, &bounds, None, DEFAULT_SENSITIVITY),
+            feel: CameraFeel::default(),
             input: Input::default(),
             start: Instant::now(),
             from: Viewpoint::Orbit(0.0),
@@ -196,6 +199,7 @@ impl Headless {
             Some(self.controller.speed()),
             DEFAULT_SENSITIVITY,
         );
+        self.controller.set_feel(self.feel);
         self.bounds = bounds;
         self.uploaded_material_layers = loaded.scene().materials().layers();
         self.loaded = loaded;
@@ -211,6 +215,7 @@ impl Headless {
         pose.fov_degrees = fov_degrees;
         self.controller =
             Controller::new(Start::Pose(pose), &self.bounds, None, DEFAULT_SENSITIVITY);
+        self.controller.set_feel(self.feel);
         self.from = Viewpoint::Free(pose);
     }
 
@@ -413,6 +418,12 @@ impl Headless {
         // or not, and short-circuiting would leave them waiting for a tick
         // that happens to be still.
         moved | self.take_landed_assets()
+    }
+
+    /// How the free camera responds to the mouse and the keys, from now on.
+    pub fn set_camera_feel(&mut self, feel: CameraFeel) {
+        self.feel = feel;
+        self.controller.set_feel(feel);
     }
 
     /// The flight speed in studs per second, for a host that shows it the way
