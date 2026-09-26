@@ -147,7 +147,7 @@ impl<'a> Paused<'a> {
             .set_name("=watch")
             .set_environment(env)
             .eval::<MultiValue>()
-            .map_err(|err| err.to_string())
+            .map_err(|err| one_line(&err))
     }
 
     /// A table of the scope, falling back to the globals for everything else.
@@ -230,6 +230,18 @@ unsafe fn keep(
         }
         _ => ffi::lua_pop(paused, 1),
     }
+}
+
+/// An evaluation error as one line: the message without the `runtime
+/// error: ` prefix or the traceback mlua appends, which only ever points at
+/// the watch's own one-line chunk.
+fn one_line(err: &mlua::Error) -> String {
+    let text = err.to_string();
+    let first = text.lines().next().unwrap_or_default();
+    first
+        .strip_prefix("runtime error: ")
+        .unwrap_or(first)
+        .to_owned()
 }
 
 unsafe fn c_str(ptr: *const std::ffi::c_char) -> Option<String> {

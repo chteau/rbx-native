@@ -257,3 +257,14 @@ fn a_pcall_cannot_swallow_a_stop() {
     let (_, result) = debug(source, &[at(2)], &[Resume::Stop], |p| p.line());
     assert!(result.unwrap_err().contains(STOPPED));
 }
+
+#[test]
+fn an_evaluation_error_is_one_line() {
+    let (seen, _) = debug("local t = nil\nprint(t)", &[at(2)], &[], |p| {
+        p.evaluate("t.x")
+    });
+    assert_eq!(
+        seen,
+        vec![Err("watch:1: attempt to index nil with 'x'".to_owned())]
+    );
+}

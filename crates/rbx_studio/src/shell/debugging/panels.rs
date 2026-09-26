@@ -145,7 +145,7 @@ impl Shell {
                         .px_2()
                         .py_0p5()
                         .text_size(tokens::text_xs())
-                        .when(index == 0, |this| this.bg(tokens::selection()))
+                        .when(index == 0, |this| this.bg(tokens::hover()))
                         .child(
                             div()
                                 .flex_1()
@@ -155,7 +155,7 @@ impl Shell {
                         .child(
                             div()
                                 .flex_none()
-                                .text_color(tokens::text3())
+                                .text_color(tokens::text2())
                                 .child(format!("Line {}", frame.line)),
                         )
                         .into_any_element()

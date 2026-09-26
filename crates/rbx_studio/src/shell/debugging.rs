@@ -161,6 +161,7 @@ impl Shell {
             return false;
         };
         let events = run.session.events();
+
         if events.is_empty() {
             return true;
         }
@@ -245,8 +246,14 @@ impl Shell {
             self.output
                 .push(&run.name, Feedback::Output(finished.output.join("\n")));
         }
-        if let Err(message) = finished.result {
-            self.output.push(&run.name, Feedback::Error(message));
+        match finished.result {
+            // Asked for, so not an error — and its traceback would only
+            // point at wherever the script happened to be.
+            Err(message) if message.contains(rbx_lua::STOPPED) => self
+                .output
+                .push(&run.name, Feedback::Output(rbx_lua::STOPPED.to_owned())),
+            Err(message) => self.output.push(&run.name, Feedback::Error(message)),
+            Ok(()) => {}
         }
         if let Some(dom) = finished.dom {
             if self.history.revision() == run.revision {
@@ -272,13 +279,17 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> bool {
         let shift = keystroke.modifiers.shift;
+        let paused = self.debug_paused();
+        // F10 and F11 are only claimed while paused: F10 is also the
+        // window's own key for the menu bar (see `shell::save`).
+
         match (keystroke.key.as_str(), shift) {
-            ("f5", false) if self.debug_paused() => self.resume_debugging(Resume::Continue, cx),
+            ("f5", false) if paused => self.resume_debugging(Resume::Continue, cx),
             ("f5", false) if !self.debug_running() => self.start_debugging(cx),
-            ("f5", true) => self.stop_debugging(cx),
-            ("f10", false) => self.resume_debugging(Resume::StepOver, cx),
-            ("f11", false) => self.resume_debugging(Resume::StepInto, cx),
-            ("f11", true) => self.resume_debugging(Resume::StepOut, cx),
+            ("f5", true) if self.debug_running() => self.stop_debugging(cx),
+            ("f10", false) if paused => self.resume_debugging(Resume::StepOver, cx),
+            ("f11", false) if paused => self.resume_debugging(Resume::StepInto, cx),
+            ("f11", true) if paused => self.resume_debugging(Resume::StepOut, cx),
             ("f9", false) => self.toggle_breakpoint_at_cursor(cx),
             _ => return false,
         }
