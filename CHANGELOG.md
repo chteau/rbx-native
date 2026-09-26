@@ -2,6 +2,17 @@
 
 ## 2026-09-26
 
+- **Studio Settings (`File › Studio Settings…`, `Alt+S`).** One window
+  for every preference the editor keeps, on ten pages, each row changing
+  the same setting the menus and docks change, so they always agree.
+  The free camera's mouse sensitivity, speed and smoothing can now be
+  set, and the snap increments and Output timestamps are remembered
+  between launches. Appearance adds your own accent colour, checked so
+  buttons, links and focus rings stay readable (a colour that fails is
+  offered lightened until it passes) and applied to the whole editor at
+  once, plus colours for each transform tool. Argon's settings can be
+  edited per game or per place. `Ctrl F` searches every setting by name,
+  description or `settings.json` key. — @chteau
 - **Scripts can be debugged in the Script Editor.** The Debug button (F5)
   runs the open script against the place, and clicking the gutter sets a
   breakpoint. Right-clicking the gutter offers the other kinds Studio
