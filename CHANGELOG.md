@@ -9,11 +9,16 @@
   takes a condition and a log message. A paused script shows where it
   stopped. You can resume it, step into, over or out, or stop it. The new
   Watch dock lists the paused function's variables and evaluates your
-  own watch expressions. The Call Stack dock shows how it got there.
+  own watch expressions. The Call Stack dock shows how it got there, and
+  clicking a row shows that function's variables instead. Breakpoints
+  move with their lines as you edit, and one on a one-line loop stops on
+  every iteration.
   When the script finishes, its changes land as one undo step. If you
   edited the place while it ran, they are discarded, with a warning. It
-  runs on the Luau VM's own single-step hook, on a thread of its own, so
-  the editor stays responsive while a script is paused. — @chteau
+  uses Luau's native breakpoints and steps instruction by instruction
+  only while it has to, so a debug run is about 1.5× slower than a normal
+  one, and it runs on a thread of its own, so the editor stays
+  responsive while a script is paused. — @chteau
 - **The script editor now uses `luau-lsp` for autocomplete, hover and
   error squiggles, and a new Script Analysis dock lists every problem in
   the place.** `luau-lsp` is built into `rbxstudio`, so there is nothing

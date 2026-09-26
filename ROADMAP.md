@@ -1408,21 +1408,27 @@ Roblox's own engine.
 ## What's planned
 
 ### Script authoring — the biggest real gap
-- [x] Script debugging in the Edit context, over Luau's own single-step
-  hook (`lua_singlestep` + the `debugstep` callback, reached through
-  `mlua`'s FFI in `rbx_lua::debugger`). The Script Editor's Debug button
+- [x] Script debugging in the Edit context, over Luau's own debug hooks,
+  reached through `mlua`'s FFI in `rbx_lua::debugger`. Breakpoints are
+  Luau's native `LOP_BREAK` patches, the per-instruction `debugstep`
+  callback runs only while stepping or on a breakpoint line, and Stop is
+  checked in the `interrupt` callback, so a free-running debug run costs
+  about 1.5× a plain one. Each iteration of a one-line loop is its own
+  pass, told apart by statement coverage. The Script Editor's Debug button
   (F5) runs the open script against the place on a worker thread, so a
   paused script blocks only itself. Studio's feature set per
   `studio/debugging.md`: **standard**, **conditional** (breaks only when
   its expression is true), **logpoint** (logs to Output without pausing)
   and **temporary** (removes itself when the run ends) breakpoints, set
-  by clicking the gutter, right-clicking it for the menu, or F9, and
-  edited in an Edit Breakpoint popup (Condition, Log Message, Continue
+  by clicking the gutter, right-clicking it for the menu, or F9, moved
+  with the lines they are on as the script is edited, and edited in an
+  Edit Breakpoint popup (Condition, Log Message, Continue
   Execution, Remove Breakpoint on Hit, Enabled). Disabled breakpoints show
   hollow. Resume (F5), Step Into (F11), Step Over (F10), Step Out
   (Shift+F11) and Stop (Shift+F5), even for a script that never pauses.
   A **Watch** dock with Variables (locals and upvalues) and My Watches
-  (expressions re-evaluated at every pause), and a **Call Stack** dock.
+  (expressions re-evaluated at every pause), and a **Call Stack** dock
+  whose rows pick the frame Watch reads.
   When the run ends, its changes replace the place as one undo step,
   unless the place was edited while it ran. In that case they are
   dropped and the Output dock says so.
