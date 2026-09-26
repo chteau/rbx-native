@@ -21,6 +21,7 @@ use crate::tokens;
 
 use super::Shell;
 
+mod appearance;
 mod argon;
 mod beta;
 mod dragger;
@@ -55,11 +56,24 @@ pub(crate) struct SettingsWindow {
     sliders: viewport::Sliders,
     increments: dragger::Increments,
     argon: argon::ArgonControls,
+    appearance: appearance::AppearanceControls,
+    /// The colour popover, while open.
+    picker: Option<appearance::Picker>,
+    /// Where the Custom accent swatch was laid out, to open the popover
+    /// under it.
+    custom_swatch: std::rc::Rc<std::cell::Cell<Bounds<Pixels>>>,
+    /// `RBX_STUDIO_SETTINGS_PICKER=#RRGGBB`: the custom accent popover
+    /// opens on this colour once the swatch has been laid out, for a
+    /// capture.
+    pending_picker: Option<Rgba>,
     /// Account's key check, started the first time that page is shown.
     key: Option<Entity<crate::launcher::KeyCheck>>,
     /// Viewport › Advanced's disclosure.
     advanced_open: bool,
     page_scroll: ScrollHandle,
+    /// The capture scroll, applied once the page has been laid out (before
+    /// that it would be clamped to nothing).
+    pending_scroll: Option<f32>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -117,6 +131,8 @@ impl SettingsWindow {
         subscriptions.extend(typed);
         let (argon, picked) = argon::ArgonControls::new(window, cx);
         subscriptions.extend(picked);
+        let (appearance, chosen) = appearance::AppearanceControls::new(&shell, window, cx);
+        subscriptions.extend(chosen);
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search settings"));
         // Anything that changes a setting elsewhere — the dock, a menu —
         // notifies the shell; this window has nothing of its own to redraw
@@ -133,18 +149,18 @@ impl SettingsWindow {
             sliders,
             increments,
             argon,
+            appearance,
+            picker: None,
+            custom_swatch: Default::default(),
+            pending_picker: std::env::var("RBX_STUDIO_SETTINGS_PICKER")
+                .ok()
+                .and_then(|hex| crate::accent::parse_hex(&hex)),
             key: None,
             advanced_open: std::env::var(ADVANCED_VARIABLE).is_ok(),
-            page_scroll: {
-                let scroll = ScrollHandle::new();
-                if let Some(y) = std::env::var(SCROLL_VARIABLE)
-                    .ok()
-                    .and_then(|y| y.parse::<f32>().ok())
-                {
-                    scroll.set_offset(point(px(0.), px(-y)));
-                }
-                scroll
-            },
+            page_scroll: ScrollHandle::new(),
+            pending_scroll: std::env::var(SCROLL_VARIABLE)
+                .ok()
+                .and_then(|y| y.parse::<f32>().ok()),
             _subscriptions: subscriptions,
         }
     }
@@ -174,6 +190,7 @@ impl SettingsWindow {
             Page::Accessibility => self.accessibility_page(cx),
             Page::Files => self.files_page(),
             Page::Argon => self.argon_page(window, cx),
+            Page::Appearance => self.appearance_page(window, cx),
             Page::Account => self.account_page(cx),
             _ => Vec::new(),
         }
@@ -189,7 +206,13 @@ impl SettingsWindow {
         let body = self.body();
         let resets: Vec<_> = sections
             .iter()
-            .flat_map(|section| section.rows.iter().filter_map(|row| row.reset.clone()))
+            .flat_map(|section| {
+                section
+                    .rows
+                    .iter()
+                    .filter_map(|row| row.reset.clone())
+                    .chain(section.resets.iter().cloned())
+            })
             .collect();
         let shell = self.shell.clone();
         let reset_page = kit::header_button(
@@ -258,9 +281,34 @@ impl SettingsWindow {
 impl Render for SettingsWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let page = self.page_view(window, cx);
+        if let Some(y) = self.pending_scroll {
+            let max = self.page_scroll.max_offset().y;
+            if max > px(0.) {
+                self.page_scroll.set_offset(point(px(0.), -px(y).min(max)));
+                self.pending_scroll = None;
+            } else {
+                window.request_animation_frame();
+            }
+        }
+        let swatch = self.custom_swatch.get();
+        if swatch.size.width > px(0.) {
+            if let Some(start) = self.pending_picker.take() {
+                let right = window.viewport_size().width - px(40.);
+                let anchor = point(right - px(280.), swatch.bottom() + px(3.));
+                self.open_picker(appearance::Target::Accent, start, anchor, window, cx);
+            }
+        }
+        let picker = self.picker_popover(cx);
         v_flex()
+            .id("settings-window")
             .size_full()
             .bg(tokens::dock())
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                if event.keystroke.key == "escape" && this.picker.take().is_some() {
+                    cx.stop_propagation();
+                    cx.notify();
+                }
+            }))
             .font_family(tokens::FONT_FAMILY_UI)
             .text_size(px(13.))
             .text_color(tokens::text())
@@ -277,6 +325,7 @@ impl Render for SettingsWindow {
                     .child(self.nav(cx))
                     .child(page),
             )
+            .children(picker)
     }
 }
 

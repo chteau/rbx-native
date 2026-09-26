@@ -63,6 +63,7 @@
 //! otherwise only opens once a live `argon serve` session pushes five or
 //! more real changes at once (see `shell::argon_sync`).
 
+mod accent;
 mod align;
 mod argon_client;
 mod camera;
@@ -187,6 +188,7 @@ fn main() {
         user.icon_overlay.take(),
     ));
     let theme = user.theme.clone();
+    let overrides = user.appearance.overrides();
 
     // The full Lucide catalog: the menu bar's icons are well outside the
     // default bundle the components themselves use. The Explorer's own class
@@ -196,7 +198,7 @@ fn main() {
     app.run(move |cx| {
         gpui_kit::init(cx);
         install_fonts(cx);
-        theme::startup(&theme, cx);
+        theme::startup(&theme, &overrides, cx);
         scale::install(cx);
         shell::install_key_bindings(cx);
         menu_bar::install_key_bindings(cx);

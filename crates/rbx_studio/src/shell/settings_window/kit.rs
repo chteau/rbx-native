@@ -4,154 +4,19 @@
 //! design's, in pixels, like the other windows drawn after it (the launcher,
 //! the Argon Diff window); only the window itself follows the UI scale.
 
-use std::rc::Rc;
-
 use gpui_kit::component::{h_flex, v_flex, Icon};
-use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::tokens;
 
-use super::super::Shell;
-
 mod controls;
+mod row;
 
 pub(super) use controls::{
-    ghost_icon, readout, secondary_button, segmented, slider, still_slider, still_toggle, toggle,
-    OnPick,
+    ghost_icon, readout, secondary_button, segmented, slider, still_slider, still_toggle,
+    ticked_slider, toggle, OnPick,
 };
-
-/// Puts one setting back to its default.
-pub(super) type Reset = Rc<dyn Fn(&mut Shell, &mut Context<Shell>)>;
-
-/// One setting's row. `reset` is `Some` exactly when the value differs
-/// from its default: that is what draws the dot and the reset icon, and
-/// what "Reset page" runs.
-pub(super) struct Row {
-    pub(super) label: &'static str,
-    pub(super) description: Option<SharedString>,
-    /// The description is a path or a name, set in mono.
-    pub(super) description_mono: bool,
-    /// A setting that only means something under the one above it.
-    pub(super) indent: bool,
-    /// Dimmed and inert: on the roadmap.
-    pub(super) soon: bool,
-    /// A tag after the label: which Argon level a value is set at.
-    pub(super) chip: Option<SharedString>,
-    /// Whether the row wears its own `SOON` pill, rather than sharing its
-    /// section's.
-    pub(super) pill: bool,
-    /// A constant's name, set in mono.
-    pub(super) mono: bool,
-    /// The control draws its own fade (a still toggle or slider), so the
-    /// row doesn't fade it again.
-    pub(super) self_faded: bool,
-    pub(super) reset: Option<Reset>,
-    pub(super) control: AnyElement,
-    /// A block under the label and control, inside the same row: a grid of
-    /// checkboxes, a list.
-    pub(super) below: Option<AnyElement>,
-}
-
-impl Row {
-    pub(super) fn new(label: &'static str, control: impl IntoElement) -> Self {
-        Row {
-            label,
-            description: None,
-            description_mono: false,
-            indent: false,
-            soon: false,
-            chip: None,
-            pill: false,
-            mono: false,
-            self_faded: false,
-            reset: None,
-            control: control.into_any_element(),
-            below: None,
-        }
-    }
-
-    pub(super) fn chip(mut self, chip: impl Into<SharedString>) -> Self {
-        self.chip = Some(chip.into());
-        self
-    }
-
-    pub(super) fn describe(mut self, description: impl Into<SharedString>) -> Self {
-        self.description = Some(description.into());
-        self
-    }
-
-    pub(super) fn describe_mono(mut self, description: impl Into<SharedString>) -> Self {
-        self.description_mono = true;
-        self.describe(description)
-    }
-
-    pub(super) fn indent(mut self) -> Self {
-        self.indent = true;
-        self
-    }
-
-    /// On the roadmap: dimmed, inert, and marked `SOON`.
-    pub(super) fn soon(mut self) -> Self {
-        self.soon = true;
-        self.pill = true;
-        self
-    }
-
-    /// On the roadmap, inside a block whose `SOON` pill is on its heading:
-    /// dimmed and inert.
-    pub(super) fn inert(mut self) -> Self {
-        self.soon = true;
-        self
-    }
-
-    pub(super) fn below(mut self, below: impl IntoElement) -> Self {
-        self.below = Some(below.into_any_element());
-        self
-    }
-
-    /// [`Row::soon`] for a control that fades itself.
-    pub(super) fn soon_faded(mut self) -> Self {
-        self.self_faded = true;
-        self.soon()
-    }
-
-    pub(super) fn mono(mut self) -> Self {
-        self.mono = true;
-        self
-    }
-
-    /// `reset` when `changed`, so a row only offers it off its default.
-    pub(super) fn changed(
-        mut self,
-        changed: bool,
-        reset: impl Fn(&mut Shell, &mut Context<Shell>) + 'static,
-    ) -> Self {
-        if changed {
-            self.reset = Some(Rc::new(reset));
-        }
-        self
-    }
-}
-
-/// A section: its title, and the card its rows sit in. `soon` pins one pill
-/// on the title for a block that is on the roadmap as a whole.
-pub(super) struct Section {
-    pub(super) title: &'static str,
-    pub(super) rows: Vec<Row>,
-    /// Anything in the card above the rows: a disclosure, say.
-    pub(super) head: Option<AnyElement>,
-}
-
-impl Section {
-    pub(super) fn new(title: &'static str, rows: Vec<Row>) -> Self {
-        Section {
-            title,
-            rows,
-            head: None,
-        }
-    }
-}
+pub(super) use row::{section, Reset, Row, Section};
 
 pub(super) fn text(size: f32, line: f32) -> Div {
     div().text_size(px(size)).line_height(px(line))
@@ -206,17 +71,6 @@ pub(super) fn key_hint(keys: &'static str) -> Div {
         .child(keys)
 }
 
-/// A section title, 8 px above its card.
-fn section_title(title: &'static str) -> Div {
-    h_flex().h(px(18.)).items_center().child(
-        text(10.5, 14.)
-            .font_weight(FontWeight::BOLD)
-            .text_color(tokens::text3())
-            // .07em of 10.5 px.
-            .child(title.to_uppercase()),
-    )
-}
-
 pub(super) fn card() -> Div {
     v_flex()
         .border_1()
@@ -224,124 +78,6 @@ pub(super) fn card() -> Div {
         .rounded(px(8.))
         .bg(tokens::field_select())
         .overflow_hidden()
-}
-
-/// A section's rows, each after the first under a hairline. `shell` is what
-/// the reset icons act on.
-pub(super) fn section(index: usize, section: Section, shell: &Entity<Shell>) -> Div {
-    let rows = section
-        .rows
-        .into_iter()
-        .enumerate()
-        .map(|(i, row)| render_row((index, i), row, shell));
-    v_flex()
-        .gap(px(8.))
-        .child(section_title(section.title))
-        .child(card().children(section.head).children(rows))
-}
-
-fn render_row(id: (usize, usize), row: Row, shell: &Entity<Shell>) -> Stateful<Div> {
-    let (label_color, description_color) = if row.soon {
-        (tokens::text2(), tokens::text3())
-    } else {
-        (tokens::text(), tokens::text2())
-    };
-    let reset = row.reset.clone().map(|reset| {
-        let shell = shell.clone();
-        ghost_icon(
-            ("reset", id.0 * 100 + id.1),
-            "rotate-ccw",
-            "Reset to default",
-        )
-        .on_click(move |_, _, cx| shell.update(cx, |shell, cx| reset(shell, cx)))
-    });
-    let control = h_flex()
-        .flex_none()
-        .items_center()
-        .gap(px(8.))
-        .when(row.soon && !row.self_faded, |this| this.opacity(0.4))
-        .child(row.control);
-    div()
-        .id(("row", id.0 * 100 + id.1))
-        .relative()
-        .when(id.1 > 0, |this| {
-            this.border_t_1().border_color(tokens::border())
-        })
-        .hover(|this| this.bg(rgba(0xFFFFFF04)))
-        .when(row.reset.is_some(), |this| {
-            this.child(
-                div()
-                    .absolute()
-                    .left(px(7.))
-                    .top(px(19.))
-                    .size(px(5.))
-                    .rounded_full()
-                    .bg(tokens::check_on()),
-            )
-        })
-        .child(
-            h_flex()
-                .min_h(px(if row.description.is_some() { 56. } else { 44. }))
-                .py(px(10.))
-                .pr(px(16.))
-                .pl(px(if row.indent { 40. } else { 16. }))
-                .gap(px(16.))
-                .items_center()
-                .child(
-                    v_flex()
-                        .flex_1()
-                        .min_w_0()
-                        .gap(px(2.))
-                        .child(
-                            h_flex()
-                                .gap(px(8.))
-                                .items_center()
-                                .child(
-                                    text(12.5, 17.)
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .text_color(label_color)
-                                        .when(row.mono, |this| {
-                                            this.font_family(tokens::FONT_FAMILY_MONO)
-                                                .text_size(px(11.5))
-                                        })
-                                        .child(row.label),
-                                )
-                                .children(row.chip.map(|chip| {
-                                    text(10.5, 14.)
-                                        .h(px(18.))
-                                        .px(px(6.))
-                                        .flex()
-                                        .items_center()
-                                        .rounded(px(4.))
-                                        .bg(tokens::accent_soft())
-                                        .text_color(tokens::check_on())
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .child(chip)
-                                }))
-                                .when(row.pill, |this| {
-                                    this.child(soon_pill(("soon", id.0 * 100 + id.1)))
-                                }),
-                        )
-                        .children(row.description.map(|description| {
-                            text(11.5, 16.)
-                                .text_color(description_color)
-                                .when(row.description_mono, |this| {
-                                    this.font_family(tokens::FONT_FAMILY_MONO)
-                                        .text_size(px(11.))
-                                })
-                                .child(description)
-                        })),
-                )
-                .children(reset)
-                .child(control),
-        )
-        .children(row.below.map(|below| {
-            div()
-                .pb(px(14.))
-                .px(px(16.))
-                .when(row.soon, |this| this.opacity(0.4))
-                .child(below)
-        }))
 }
 
 /// A page header's ghost button ("Reset page", "Restore defaults"): text2

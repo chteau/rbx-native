@@ -131,33 +131,50 @@ fn a_dock_and_a_field_are_each_a_visible_step_above_the_ground() {
 /// with an accent rule — and this asserts the rule, not the wash.
 #[test]
 fn a_selection_and_an_open_document_are_visible_as_states() {
-    let selected = composite(selection(), dock());
-    let ratio = contrast(selected, dock());
-    assert!(
-        ratio >= 3.,
-        "a selected Explorer row is {ratio:.2}:1 against the dock, below the 3:1 state floor"
-    );
-    assert!(
-        contrast(text_full(), selected) >= 4.5,
-        "a selected row's own label must still clear AA on top of the selection"
-    );
+    // The selection is the accent at the opacity `accent::selection_alpha`
+    // derives for it, up to the default theme's own.
+    for (accent, value) in crate::accent::PRESETS {
+        let alpha = crate::accent::selection_alpha(rgb(value), selection().a);
+        let selected = composite(
+            Rgba {
+                a: alpha,
+                ..rgb(value)
+            },
+            dock(),
+        );
+        let ratio = contrast(selected, dock());
+        assert!(
+            ratio >= 3.,
+            "{accent}: a selected Explorer row is {ratio:.2}:1 against the dock, below the 3:1 state floor"
+        );
+        assert!(
+            contrast(text_full(), selected) >= 4.5,
+            "{accent}: a selected row's own label must still clear AA on top of the selection"
+        );
 
-    let bar = contrast(tab_active_bar(), chrome());
-    assert!(
-        bar >= 3.,
-        "the open document's accent rule is {bar:.2}:1 against the tab strip"
-    );
+        let bar = contrast(rgb(value), chrome());
+        assert!(
+            bar >= 3.,
+            "{accent}: the open document's accent rule is {bar:.2}:1 against the tab strip"
+        );
+    }
 }
 
 /// A toggle is the only place this UI spends colour on state, so its two
 /// states have to be told apart at a glance.
+///
+/// The accent is the user's to pick, so this holds for every preset rather
+/// than for one colour; a custom colour gets the same bar from
+/// `accent::checks` before it can be applied.
 #[test]
 fn a_toggle_reads_differently_on_and_off() {
-    let ratio = contrast(check_on(), field_select());
-    assert!(
-        ratio >= 3.,
-        "an on vs an off toggle is {ratio:.2}:1, below the 3:1 non-text floor"
-    );
+    for (name, value) in crate::accent::PRESETS {
+        let ratio = contrast(rgb(value), field_select());
+        assert!(
+            ratio >= 3.,
+            "{name}: an on vs an off toggle is {ratio:.2}:1, below the 3:1 non-text floor"
+        );
+    }
 }
 
 /// The toolkit's own components — the menu bar, the inputs, the buttons in
@@ -249,12 +266,14 @@ fn a_toolkit_field_is_set_at_the_same_size_as_its_label() {
 /// the failure mode the criterion exists to catch.
 #[test]
 fn the_focus_ring_clears_three_to_one_on_every_surface_it_can_land_on() {
-    for (name, surface) in SURFACES {
-        let ratio = contrast(check_on(), surface());
-        assert!(
-            ratio >= 3.,
-            "the focus ring on {name} is {ratio:.2}:1, below the 3:1 non-text floor"
-        );
+    for (accent, value) in crate::accent::PRESETS {
+        for (name, surface) in SURFACES {
+            let ratio = contrast(rgb(value), surface());
+            assert!(
+                ratio >= 3.,
+                "{accent}: the focus ring on {name} is {ratio:.2}:1, below the 3:1 non-text floor"
+            );
+        }
     }
 }
 

@@ -217,7 +217,6 @@ pub(crate) fn themes_dir() -> Option<PathBuf> {
 
 /// Default first, then every installed theme with a valid manifest, by
 /// name. What a theme chooser lists.
-#[cfg_attr(not(test), expect(dead_code, reason = "for the settings screen"))]
 pub(crate) fn installed(themes: &Path) -> Vec<(String, Manifest)> {
     let mut found: Vec<(String, Manifest)> = fs::read_dir(themes)
         .into_iter()

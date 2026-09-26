@@ -273,9 +273,20 @@ pub(in crate::shell::settings_window) fn slider(
     state: &Entity<SliderState>,
     cx: &App,
 ) -> impl IntoElement {
+    ticked_slider(state, 150., &[], cx)
+}
+
+/// [`slider`], `width` wide, with a tick under the rail at each fraction
+/// in `ticks`.
+pub(in crate::shell::settings_window) fn ticked_slider(
+    state: &Entity<SliderState>,
+    width: f32,
+    ticks: &[f32],
+    cx: &App,
+) -> impl IntoElement {
     let fraction = state.read(cx).percentage().end;
     let [track, knob] = rail(fraction);
-    Behaviour::new(state).flex_none().w(px(150.)).child(
+    Behaviour::new(state).flex_none().w(px(width)).child(
         SliderTrack::new(state)
             .relative()
             .w_full()
@@ -286,13 +297,22 @@ pub(in crate::shell::settings_window) fn slider(
                     .inset_0()
                     .child(track),
             )
+            .children(ticks.iter().map(|at| {
+                div()
+                    .absolute()
+                    .top(px(14.))
+                    .left(px((width * at).min(width - 1.)))
+                    .w(px(1.))
+                    .h(px(4.))
+                    .bg(tokens::border2())
+            }))
             .child(
                 // Centred on the value, as the still one is: at either end
                 // half the knob hangs past the rail.
                 SliderThumb::new(state)
                     .absolute()
                     .top(px(2.))
-                    .left(px(150. * fraction - 7.))
+                    .left(px(width * fraction - 7.))
                     .child(knob),
             ),
     )

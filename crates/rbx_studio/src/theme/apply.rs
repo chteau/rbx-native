@@ -8,21 +8,22 @@ use gpui_kit::component::highlighter::HighlightTheme;
 use gpui_kit::component::{Theme, ThemeMode};
 use gpui_kit::App;
 
+use super::overrides::{recolour, Overrides};
 use super::ThemePack;
 use crate::tokens;
 
 /// Before the first window opens. `main` registers the bundled fonts first,
 /// so [`design_fonts`] can find them.
-pub(crate) fn startup(pack: &ThemePack, cx: &mut App) {
-    super::set_active(pack.palette.clone());
-    widgets(pack, cx);
+pub(crate) fn startup(pack: &ThemePack, overrides: &Overrides, cx: &mut App) {
+    super::set_active(pack.palette.overridden(overrides));
+    widgets(pack, overrides, cx);
 }
 
 /// A switch while the editor is running. The caller re-resolves anything it
 /// cached from the old theme (the Explorer's icons) and re-renders.
-pub(crate) fn apply(pack: &ThemePack, cx: &mut App) {
-    super::set_active(pack.palette.clone());
-    widgets(pack, cx);
+pub(crate) fn apply(pack: &ThemePack, overrides: &Overrides, cx: &mut App) {
+    super::set_active(pack.palette.overridden(overrides));
+    widgets(pack, overrides, cx);
     let appearance = pack.palette.effects.window;
     for handle in cx.windows() {
         let _ = handle.update(cx, |_, window, _| {
@@ -35,8 +36,12 @@ pub(crate) fn apply(pack: &ThemePack, cx: &mut App) {
 /// In the order startup always ran these: the fonts are named before
 /// `Theme::change`, whose own mono-font fallback only steps in while the
 /// family is still the platform default.
-fn widgets(pack: &ThemePack, cx: &mut App) {
-    Theme::global_mut(cx).dark_theme = Rc::new(pack.widgets.clone());
+fn widgets(pack: &ThemePack, overrides: &Overrides, cx: &mut App) {
+    let config = match overrides.accent {
+        Some(to) => recolour(&pack.widgets, pack.palette.colors["check_on"], to),
+        None => pack.widgets.clone(),
+    };
+    Theme::global_mut(cx).dark_theme = Rc::new(config);
     design_fonts(cx);
     Theme::change(ThemeMode::Dark, None, cx);
     // GPUI Kit only swaps its syntax palette for the one a theme file's

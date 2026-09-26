@@ -30,8 +30,10 @@ impl Shell {
     /// that no longer loads is reported in the Output dock and the one on
     /// screen stays — an author mid-edit sees what is wrong with the file
     /// rather than their theme vanishing.
-    fn reload_theme(&mut self, cx: &mut Context<Self>) {
-        let id = packs::Appearance::load()
+    pub(in crate::shell) fn reload_theme(&mut self, cx: &mut Context<Self>) {
+        let appearance = packs::Appearance::load();
+        let overrides = appearance.overrides();
+        let id = appearance
             .theme
             .unwrap_or_else(|| theme::DEFAULT_ID.to_owned());
         let pack = match ThemePack::load(&id) {
@@ -48,7 +50,7 @@ impl Shell {
                 .push_warning(&format!("theme {id:?}: {warning}"));
         }
         self.theme_watch.retarget(pack.dir.clone());
-        theme::apply(&pack, cx);
+        theme::apply(&pack, &overrides, cx);
 
         let chosen = self
             .appearance

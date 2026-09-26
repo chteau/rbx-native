@@ -27,7 +27,7 @@
 //! it cannot use — an over-large or non-SVG file, a path that is not a plain
 //! name — and never fails the editor starting.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -62,6 +62,10 @@ pub(crate) fn is_plain_name(name: &str) -> bool {
 pub(crate) struct Appearance {
     pub(crate) icon_pack: Option<String>,
     pub(crate) theme: Option<String>,
+    /// The user's accent, `#RRGGBB`; `None` keeps the theme's.
+    pub(crate) accent: Option<String>,
+    /// Transform tool colours by tool key (`"move"`), `#RRGGBB` each.
+    pub(crate) tools: BTreeMap<String, String>,
 }
 
 impl Appearance {
@@ -85,9 +89,26 @@ impl Appearance {
                 .filter(|name| is_plain_name(name))
                 .map(str::to_owned)
         };
+        let color = |value: &serde_json::Value| {
+            value
+                .as_str()
+                .and_then(crate::accent::parse_hex)
+                .map(crate::accent::hex)
+        };
         Appearance {
             icon_pack: name("icon_pack"),
             theme: name("theme"),
+            accent: value.get("accent").and_then(color),
+            tools: value
+                .get("tools")
+                .and_then(serde_json::Value::as_object)
+                .map(|tools| {
+                    tools
+                        .iter()
+                        .filter_map(|(tool, value)| Some((tool.clone(), color(value)?)))
+                        .collect()
+                })
+                .unwrap_or_default(),
         }
     }
 
@@ -99,22 +120,71 @@ impl Appearance {
         self.save_icon_pack_to(&dir.join("appearance.json"))
     }
 
-    /// Writes `icon_pack` into the file's own JSON rather than rebuilding the
-    /// file from what [`Appearance::load_from`] accepted: a `theme` it
-    /// refused (or a key from a newer version) belongs to whoever wrote it,
-    /// and a pack that was briefly unreadable at startup must not be
-    /// persisted away by an unrelated change. A file that is not a JSON
-    /// object has nothing worth keeping and is replaced.
+    /// See [`save_key`]: a pack that was briefly unreadable at startup must
+    /// not be persisted away by an unrelated change.
     pub(crate) fn save_icon_pack_to(&self, path: &Path) -> Result<(), String> {
+        let icon_pack = self.icon_pack.clone().map(serde_json::Value::from);
+        save_key(path, "icon_pack", icon_pack)
+    }
+
+    /// Remembers the chosen theme, and nothing else.
+    pub(crate) fn save_theme(&self) -> Result<(), String> {
+        let Some(dir) = root() else {
+            return Err("no config directory".to_owned());
+        };
+        let theme = self.theme.clone().map(serde_json::Value::from);
+        save_key(&dir.join("appearance.json"), "theme", theme)
+    }
+
+    /// Remembers the accent and the tool colours, and nothing else.
+    pub(crate) fn save_colors(&self) -> Result<(), String> {
+        let Some(dir) = root() else {
+            return Err("no config directory".to_owned());
+        };
+        self.save_colors_to(&dir.join("appearance.json"))
+    }
+
+    pub(crate) fn save_colors_to(&self, path: &Path) -> Result<(), String> {
+        save_key(
+            path,
+            "accent",
+            self.accent.clone().map(serde_json::Value::from),
+        )?;
+        let tools = (!self.tools.is_empty()).then(|| serde_json::json!(self.tools));
+        save_key(path, "tools", tools)
+    }
+
+    /// What these colours lay over the theme.
+    pub(crate) fn overrides(&self) -> crate::theme::Overrides {
+        crate::theme::Overrides {
+            accent: self.accent.as_deref().and_then(crate::accent::parse_hex),
+            tools: self
+                .tools
+                .iter()
+                .filter_map(|(tool, color)| {
+                    Some((format!("tool_{tool}"), crate::accent::parse_hex(color)?))
+                })
+                .collect(),
+        }
+    }
+}
+
+/// Writes one key into the file's own JSON rather than rebuilding the file
+/// from what [`Appearance::load_from`] accepted: a value it refused (or a
+/// key from a newer version) belongs to whoever wrote it. `None` removes
+/// the key. A file that is not a JSON object has nothing worth keeping and
+/// is replaced.
+fn save_key(path: &Path, key: &str, entry: Option<serde_json::Value>) -> Result<(), String> {
+    {
         let mut value = fs::read(path)
             .ok()
             .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
             .filter(serde_json::Value::is_object)
             .unwrap_or_else(|| serde_json::json!({}));
         if let Some(object) = value.as_object_mut() {
-            match &self.icon_pack {
-                Some(name) => object.insert("icon_pack".to_owned(), name.clone().into()),
-                None => object.remove("icon_pack"),
+            match entry {
+                Some(entry) => object.insert(key.to_owned(), entry),
+                None => object.remove(key),
             };
         }
         let bytes = serde_json::to_vec_pretty(&value).map_err(|e| e.to_string())?;
@@ -329,7 +399,7 @@ mod tests {
         let path = scratch().join("nested").join("appearance.json");
         let chosen = Appearance {
             icon_pack: Some("Mine".into()),
-            theme: None,
+            ..Appearance::default()
         };
         chosen
             .save_icon_pack_to(&path)
@@ -351,7 +421,7 @@ mod tests {
 
         Appearance {
             icon_pack: Some("New".into()),
-            theme: None,
+            ..Appearance::default()
         }
         .save_icon_pack_to(&path)
         .unwrap();
@@ -387,7 +457,7 @@ mod tests {
 
         Appearance {
             icon_pack: Some("Mine".into()),
-            theme: None,
+            ..Appearance::default()
         }
         .save_icon_pack_to(&path)
         .unwrap();
@@ -396,6 +466,52 @@ mod tests {
             Appearance::load_from(&path).icon_pack.as_deref(),
             Some("Mine")
         );
+    }
+
+    #[test]
+    fn colours_round_trip_and_leave_the_other_keys_alone() {
+        let dir = scratch();
+        write(
+            &dir,
+            "appearance.json",
+            br#"{"theme":"Dusk","icon_pack":"Mine"}"#,
+        );
+        let path = dir.join("appearance.json");
+        let colours = Appearance {
+            accent: Some("#4C9BE8".into()),
+            tools: [("move".to_owned(), "#8FE0B0".to_owned())].into(),
+            ..Appearance::default()
+        };
+        colours.save_colors_to(&path).unwrap();
+        let read = Appearance::load_from(&path);
+        assert_eq!(read.accent.as_deref(), Some("#4C9BE8"));
+        assert_eq!(read.tools, colours.tools);
+        assert_eq!(read.theme.as_deref(), Some("Dusk"));
+        assert_eq!(read.icon_pack.as_deref(), Some("Mine"));
+        let overrides = read.overrides();
+        assert_eq!(
+            overrides.accent.map(crate::accent::hex).as_deref(),
+            Some("#4C9BE8")
+        );
+        assert_eq!(overrides.tools[0].0, "tool_move");
+
+        Appearance::default().save_colors_to(&path).unwrap();
+        let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert!(saved.get("accent").is_none() && saved.get("tools").is_none());
+        assert_eq!(saved["theme"], "Dusk");
+    }
+
+    #[test]
+    fn a_colour_that_is_not_one_is_ignored() {
+        let dir = scratch();
+        write(
+            &dir,
+            "appearance.json",
+            br##"{"accent":"blue","tools":{"move":"#12"}}"##,
+        );
+        let read = Appearance::load_from(&dir.join("appearance.json"));
+        assert_eq!(read.accent, None);
+        assert!(read.tools.is_empty());
     }
 
     #[test]
