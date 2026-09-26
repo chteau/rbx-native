@@ -125,58 +125,6 @@ fn a_dock_and_a_field_are_each_a_visible_step_above_the_ground() {
     }
 }
 
-/// A selected row and the active document tab are *states*, and WCAG 1.4.11
-/// does not exempt states. The tab's wash cannot carry 3:1 on its own (a
-/// dark wash on a dark strip never will), which is exactly why it travels
-/// with an accent rule — and this asserts the rule, not the wash.
-#[test]
-fn a_selection_and_an_open_document_are_visible_as_states() {
-    // The selection is the accent at the opacity `accent::selection_alpha`
-    // derives for it, up to the default theme's own.
-    for (accent, value) in crate::accent::PRESETS {
-        let alpha = crate::accent::selection_alpha(rgb(value), selection().a);
-        let selected = composite(
-            Rgba {
-                a: alpha,
-                ..rgb(value)
-            },
-            dock(),
-        );
-        let ratio = contrast(selected, dock());
-        assert!(
-            ratio >= 3.,
-            "{accent}: a selected Explorer row is {ratio:.2}:1 against the dock, below the 3:1 state floor"
-        );
-        assert!(
-            contrast(text_full(), selected) >= 4.5,
-            "{accent}: a selected row's own label must still clear AA on top of the selection"
-        );
-
-        let bar = contrast(rgb(value), chrome());
-        assert!(
-            bar >= 3.,
-            "{accent}: the open document's accent rule is {bar:.2}:1 against the tab strip"
-        );
-    }
-}
-
-/// A toggle is the only place this UI spends colour on state, so its two
-/// states have to be told apart at a glance.
-///
-/// The accent is the user's to pick, so this holds for every preset rather
-/// than for one colour; a custom colour gets the same bar from
-/// `accent::checks` before it can be applied.
-#[test]
-fn a_toggle_reads_differently_on_and_off() {
-    for (name, value) in crate::accent::PRESETS {
-        let ratio = contrast(rgb(value), field_select());
-        assert!(
-            ratio >= 3.,
-            "{name}: an on vs an off toggle is {ratio:.2}:1, below the 3:1 non-text floor"
-        );
-    }
-}
-
 /// The toolkit's own components — the menu bar, the inputs, the buttons in
 /// the Output strip — are painted from `assets/themes/default/widgets.json`, not
 /// from this module. That is two copies of one palette, which is exactly

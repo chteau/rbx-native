@@ -116,10 +116,13 @@ pub(super) fn row(
             tokens::text(),
             tag_color(color, 0xFF),
         ),
+        // The label in text colour, not the accent: the accent on its own
+        // 12% wash is short of 4.5:1 even for the default Indigo, and the
+        // wash and the bar already say "selected".
         None => (
             tokens::hover_subtle(),
             tokens::accent_soft(),
-            tokens::check_on(),
+            tokens::text(),
             tokens::check_on(),
         ),
     };
