@@ -1260,6 +1260,28 @@ Roblox's own engine.
   (`Feedback::shown_inline`), when it is the one place the result would
   otherwise be lost — which is why a `Ctrl+S` save, which used to report
   through the label alone, now logs a `Save` row too.
+- [x] **The viewport no longer goes black, with the render thread's stats
+  frozen, after a scripted full reload**
+  (`RBX_STUDIO_RUN`/`RBX_STUDIO_EDIT`). Fixed by `ab24e6e`, five hours after
+  the bug was filed here (`20cfbe6`). The two were never linked, so a later
+  pass found it "not reproducible" with nothing to explain it. It was a
+  latch, not a stall. The viewport infers that it is on screen from GPUI
+  having repainted it, and a landed frame is ordinarily the only thing that
+  repaints it. A rebuild stalls the frames for seconds, so a mounted panel
+  looked like a tab switched away. It was declared hidden, the render thread
+  stopped, and nothing ever repainted it again. `ab24e6e` measured this: 0
+  frames against 75/s, and one "declared hidden" with no "visible again".
+  Now the tick that would give up requests one repaint first
+  (`workspace_view::presence`, with the stalled-reload case among its
+  tests). That repaint still lands if the window is hidden or covered: GPUI
+  leaves the window dirty and draws it once it is mapped again. Re-checked
+  on 2026-09-26 on `marked.rbxl` with a scripted `Sky` insert, which drew on
+  both the current build and one with the probe disabled. The editor now
+  repaints for other reasons during a reload, such as Output entries, so the
+  latch no longer shows on its own. The probe is what keeps it closed when
+  nothing else repaints. `patch_parity`'s
+  `a_rebuild_leaves_the_renderer_drawing` separately guards the renderer's
+  side: a refused patch still draws what a reload draws.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -1696,25 +1718,6 @@ against `Roblox/creator-docs` rather than assumed:
   two own-dock drops, which are now fixed: splitting a tab off below its
   own dock landed it above, and a lone tab dropped on its own strip
   joined the next dock.
-- [ ] ⚠️ **The viewport goes black, and the render thread's stats stop
-  updating, after a full scene reload triggered by a non-interactive,
-  scripted run** (`RBX_STUDIO_RUN`/`RBX_STUDIO_EDIT`-driven screenshot
-  automation) — reproduced on a plain, unmodified build when this was
-  written, so no particular fast-path change caused it.
-  **Not reproducible as of 2026-09-21**: four scripted runs that each take
-  the reload path — a `Sky` inserted from the Command Bar, a `Material`
-  edit on `TestPlace.rbxl`, the same edit across every part of
-  `marked.rbxl` (16 742 instances), and a `MeshPart` created with a
-  `MeshId` this session had never fetched — all came back drawing, with
-  the stats line still ticking, on a screenshot of the real window each
-  time. Left open rather than closed: not reproducing is not the same as
-  fixed, and nothing here explains what was seen. What did land is a guard
-  against the symptom — `patch_parity`'s
-  `a_rebuild_leaves_the_renderer_drawing` asserts that an edit the patcher
-  refuses leaves the renderer drawing the very frame a reload of the same
-  DOM draws, which no parity check there would otherwise catch (a rebuild
-  compared against a rebuild agrees with itself perfectly while both draw
-  nothing).
 - [ ] 📋 **The accessibility work the reference guidance calls Stage 2 and
   Stage 3, minus what already shipped.** Stage 1 is met and asserted in
   tests; these are the rest, each small enough to ride along with other
