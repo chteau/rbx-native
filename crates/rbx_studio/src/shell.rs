@@ -269,8 +269,8 @@ pub(crate) struct Shell {
     /// Which levels the Output panel currently shows; see `shell::output`.
     output_filter: output::OutputFilter,
     /// Whether Output rows print their `HH:MM:SS.SSS` timestamp; toggled from
-    /// the panel's overflow menu (see `shell::dock`'s `dropdown_menu`). Not
-    /// persisted — resets to off each launch, same as `output_filter` above.
+    /// the panel's overflow menu (see `shell::dock`'s `dropdown_menu`) and
+    /// Settings. Persisted.
     output_show_timestamps: bool,
     output_scroll: ScrollHandle,
     /// The Viewport dock's own, for when it is docked somewhere too short
@@ -390,6 +390,7 @@ impl Shell {
             reduce_motion,
             docks,
             output_collapsed,
+            output_timestamps,
             increment_names,
             expand_on_select,
             dragger,
@@ -598,7 +599,7 @@ impl Shell {
             command_bar,
             output: output::OutputLog::default(),
             output_filter: output::OutputFilter::default(),
-            output_show_timestamps: false,
+            output_show_timestamps: output_timestamps,
             output_scroll: ScrollHandle::new(),
             viewport_scroll: ScrollHandle::new(),
             viewport_rows: Rc::default(),
@@ -975,8 +976,14 @@ impl Shell {
     /// wants this editor calm on a machine that animates everything else
     /// needs somewhere to say so.
     pub(crate) fn toggle_reduce_motion(&mut self, cx: &mut Context<Self>) {
-        let reduced = !tokens::reduced_motion();
-        self.reduce_motion = Some(reduced);
+        self.set_reduce_motion(Some(!tokens::reduced_motion()), cx);
+    }
+
+    /// Suppresses or restores motion — `None` hands the choice back to the
+    /// desktop — and remembers it.
+    fn set_reduce_motion(&mut self, choice: Option<bool>, cx: &mut Context<Self>) {
+        let reduced = choice.unwrap_or_else(crate::scale::detect_reduced_motion);
+        self.reduce_motion = choice;
         tokens::set_reduced_motion(reduced);
         cx.set_reduce_motion(reduced);
         self.save_settings();
@@ -1230,6 +1237,7 @@ impl Shell {
             reduce_motion: self.reduce_motion,
             docks: self.layout.saved(),
             output_collapsed: self.output_collapsed,
+            output_timestamps: self.output_show_timestamps,
             increment_names: self.increment_names,
             expand_on_select: self.expand_on_select,
             dragger: self.dragger,
@@ -1285,6 +1293,8 @@ impl Render for Shell {
         // Before the tree is built, so the box this focuses is in the very
         // frame that hands it the caret — see `Shell::focus_explorer_edit`.
         self.focus_explorer_edit(window, cx);
+        // An increment set from Settings has to reach the popover's text.
+        self.snap_fields.sync(self.transform, window, cx);
         v_flex()
             .size_full()
             .bg(tokens::black())

@@ -76,6 +76,8 @@ pub(crate) struct Settings {
     /// whatever the file holds, so nothing here has to validate it.
     pub(crate) docks: SavedLayout,
     pub(crate) output_collapsed: bool,
+    /// Whether Output rows print their time.
+    pub(crate) output_timestamps: bool,
     /// Real Studio's two insertion preferences, off the `⋯` beside the
     /// Explorer's insert search field (`studio/explorer.md`). Both default
     /// on, as they do there: a second `Part` called `Part` is not something
@@ -119,6 +121,7 @@ impl Default for Settings {
             // duplicating them here is how the two drift apart.
             docks: SavedLayout::default(),
             output_collapsed: false,
+            output_timestamps: false,
             increment_names: true,
             expand_on_select: true,
             dragger: DraggerSettings::default(),
@@ -270,6 +273,10 @@ fn load_from(path: &Path) -> Settings {
             .get("output_collapsed")
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
+        output_timestamps: value
+            .get("output_timestamps")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
         increment_names: value
             .get("increment_names")
             .and_then(|v| v.as_bool())
@@ -415,6 +422,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
             "closed": settings.docks.closed,
         },
         "output_collapsed": settings.output_collapsed,
+        "output_timestamps": settings.output_timestamps,
         "increment_names": settings.increment_names,
         "expand_on_select": settings.expand_on_select,
         "dragger": settings.dragger.json(),
@@ -778,6 +786,7 @@ mod tests {
                 closed: Vec::new(),
             },
             output_collapsed: true,
+            output_timestamps: true,
             large_targets: true,
             reduce_motion: Some(true),
             ..Settings::default()
@@ -787,6 +796,7 @@ mod tests {
         let read = load_from(&path);
         assert_eq!(read.docks, settings.docks, "which panel sits where");
         assert!(read.output_collapsed);
+        assert!(read.output_timestamps);
         assert!(read.large_targets);
         assert_eq!(read.reduce_motion, Some(true));
 

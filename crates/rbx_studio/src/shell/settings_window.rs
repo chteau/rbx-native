@@ -10,7 +10,10 @@
 //! `settings.json` is written by the one path that already writes it.
 //! Settings apply as they change; there is no Save.
 
+use std::rc::Rc;
+
 use gpui_kit::component::input::{Input, InputState};
+use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{h_flex, v_flex, Root};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -19,11 +22,14 @@ use crate::tokens;
 
 use super::Shell;
 
+mod dragger;
 mod kit;
 mod nav;
+mod panels;
+mod setters;
 mod viewport;
 
-use kit::{text, Section};
+use kit::{text, OnPick, Section};
 use nav::Page;
 
 const WIDTH: f32 = 1040.;
@@ -45,6 +51,7 @@ pub(crate) struct SettingsWindow {
     page: Page,
     search: Entity<InputState>,
     sliders: viewport::Sliders,
+    increments: dragger::Increments,
     /// Viewport › Advanced's disclosure.
     advanced_open: bool,
     page_scroll: ScrollHandle,
@@ -101,6 +108,8 @@ impl SettingsWindow {
 
     fn new(shell: Entity<Shell>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let (sliders, mut subscriptions) = viewport::Sliders::new(&shell, cx);
+        let (increments, typed) = dragger::Increments::new(&shell, window, cx);
+        subscriptions.extend(typed);
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search settings"));
         // Anything that changes a setting elsewhere — the dock, a menu —
         // notifies the shell; this window has nothing of its own to redraw
@@ -115,6 +124,7 @@ impl SettingsWindow {
             page,
             search,
             sliders,
+            increments,
             advanced_open: std::env::var(ADVANCED_VARIABLE).is_ok(),
             page_scroll: {
                 let scroll = ScrollHandle::new();
@@ -139,9 +149,20 @@ impl SettingsWindow {
         move |_, _, cx| shell.update(cx, |shell, cx| f(shell, cx))
     }
 
+    /// Like [`SettingsWindow::set`], for a control that isn't clicked
+    /// through a `ClickEvent` of its own (a segment).
+    fn shell_fn(&self, f: impl Fn(&mut Shell, &mut Context<Shell>) + 'static) -> OnPick {
+        let shell = self.shell.clone();
+        Rc::new(move |_, cx| shell.update(cx, |shell, cx| f(shell, cx)))
+    }
+
     fn sections(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Vec<Section> {
         match self.page {
             Page::Viewport => self.viewport(window, cx),
+            Page::Dragger => self.dragger_page(window, cx),
+            Page::ExplorerOutput => self.explorer_output_page(cx),
+            Page::Layout => self.layout_page(cx),
+            Page::Accessibility => self.accessibility_page(cx),
             _ => Vec::new(),
         }
     }
@@ -190,6 +211,7 @@ impl SettingsWindow {
             .min_w_0()
             .overflow_y_scroll()
             .track_scroll(&self.page_scroll)
+            .vertical_scrollbar(&self.page_scroll)
             .child(
                 v_flex()
                     .pt(px(26.))

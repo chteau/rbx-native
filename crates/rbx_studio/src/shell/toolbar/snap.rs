@@ -57,6 +57,33 @@ impl SnapFields {
         (fields, subscriptions)
     }
 
+    /// Rewrites a field whose text no longer says its increment, as after a
+    /// change from Settings. A field being typed in is left alone: "1." on
+    /// the way to "1.5" is not a disagreement to correct. Focus counts only
+    /// while the window is active: a field left focused in a window behind
+    /// another one is not being typed in.
+    pub(crate) fn sync(
+        &self,
+        transform: crate::transform::Transform,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        for (input, increment) in [
+            (&self.translate, transform.translate.increment),
+            (&self.rotate, transform.rotate.increment),
+        ] {
+            let state = input.read(cx);
+            if (window.is_window_active() && state.focus_handle(cx).is_focused(window))
+                || transform::parse_increment(&state.value()) == Some(increment)
+            {
+                continue;
+            }
+            input.update(cx, |state, cx| {
+                state.set_value(format!("{increment}"), window, cx)
+            });
+        }
+    }
+
     fn of(&self, kind: SnapKind) -> &Entity<InputState> {
         match kind {
             SnapKind::Translate => &self.translate,

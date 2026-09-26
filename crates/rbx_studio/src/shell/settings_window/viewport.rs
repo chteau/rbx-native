@@ -1,8 +1,6 @@
 //! The Viewport page: rendering, overlays, the camera, and the renderer's
 //! calibration constants behind a disclosure.
 
-use std::rc::Rc;
-
 use gpui_kit::component::h_flex;
 use gpui_kit::component::slider::{SliderEvent, SliderState, SliderValue};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -14,9 +12,7 @@ use crate::settings::FEEL_SCALE_RANGE;
 use crate::tokens;
 
 use super::super::Shell;
-use super::kit::{
-    self, mono, readout, segmented, slider, soon_pill, text, toggle, OnPick, Row, Section,
-};
+use super::kit::{self, mono, readout, segmented, slider, soon_pill, text, toggle, Row, Section};
 use super::SettingsWindow;
 
 /// Where Manual starts when the mode was Automatic.
@@ -359,13 +355,6 @@ impl SettingsWindow {
             head: Some(disclosure.into_any_element()),
             ..Section::new("Advanced", rows)
         }
-    }
-
-    /// Like [`SettingsWindow::set`], for a control that isn't clicked
-    /// through a `ClickEvent` of its own (a segment).
-    fn shell_fn(&self, f: impl Fn(&mut Shell, &mut Context<Shell>) + 'static) -> OnPick {
-        let shell = self.shell.clone();
-        Rc::new(move |_, cx| shell.update(cx, |shell, cx| f(shell, cx)))
     }
 }
 

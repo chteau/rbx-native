@@ -201,3 +201,31 @@ pub(in crate::shell::settings_window) fn slider(
             ),
     )
 }
+
+/// A small secondary button: 28 tall, border2 over panel2, a 12 px glyph
+/// before its label.
+pub(in crate::shell::settings_window) fn secondary_button(
+    id: impl Into<ElementId>,
+    glyph: &'static str,
+    label: &'static str,
+) -> Stateful<Div> {
+    h_flex()
+        .id(id.into())
+        .flex_none()
+        .h(px(28.))
+        .px(px(10.))
+        .gap(px(6.))
+        .items_center()
+        .border_1()
+        .border_color(tokens::border2())
+        .rounded(px(5.))
+        .bg(tokens::field_select())
+        .text_size(px(12.))
+        .line_height(px(16.))
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(tokens::text())
+        .cursor_pointer()
+        .hover(|this| this.bg(rgba(0x202123FF)))
+        .child(icon(glyph, 12.))
+        .child(label)
+}

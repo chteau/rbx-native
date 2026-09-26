@@ -41,7 +41,11 @@ impl Shell {
         self.increment_names
     }
 
-    fn set_increment_names(&mut self, increment: bool, cx: &mut Context<Self>) {
+    pub(in crate::shell) fn set_increment_names(
+        &mut self,
+        increment: bool,
+        cx: &mut Context<Self>,
+    ) {
         self.increment_names = increment;
         self.save_settings();
         cx.notify();
@@ -53,7 +57,7 @@ impl Shell {
         self.expand_on_select
     }
 
-    fn set_expand_on_select(&mut self, expand: bool, cx: &mut Context<Self>) {
+    pub(in crate::shell) fn set_expand_on_select(&mut self, expand: bool, cx: &mut Context<Self>) {
         self.expand_on_select = expand;
         self.save_settings();
         cx.notify();

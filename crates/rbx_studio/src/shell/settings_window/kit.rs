@@ -16,7 +16,9 @@ use super::super::Shell;
 
 mod controls;
 
-pub(super) use controls::{ghost_icon, readout, segmented, slider, toggle, OnPick};
+pub(super) use controls::{
+    ghost_icon, readout, secondary_button, segmented, slider, toggle, OnPick,
+};
 
 /// Puts one setting back to its default.
 pub(super) type Reset = Rc<dyn Fn(&mut Shell, &mut Context<Shell>)>;
@@ -36,6 +38,9 @@ pub(super) struct Row {
     pub(super) mono: bool,
     pub(super) reset: Option<Reset>,
     pub(super) control: AnyElement,
+    /// A block under the label and control, inside the same row: a grid of
+    /// checkboxes, a list.
+    pub(super) below: Option<AnyElement>,
 }
 
 impl Row {
@@ -48,6 +53,7 @@ impl Row {
             mono: false,
             reset: None,
             control: control.into_any_element(),
+            below: None,
         }
     }
 
@@ -56,10 +62,22 @@ impl Row {
         self
     }
 
+    /// On the roadmap: dimmed, inert, and marked `SOON`.
+    pub(super) fn soon(mut self) -> Self {
+        self.soon = true;
+        self.pill = true;
+        self
+    }
+
     /// On the roadmap, inside a block whose `SOON` pill is on its heading:
     /// dimmed and inert.
     pub(super) fn inert(mut self) -> Self {
         self.soon = true;
+        self
+    }
+
+    pub(super) fn below(mut self, below: impl IntoElement) -> Self {
+        self.below = Some(below.into_any_element());
         self
     }
 
@@ -265,4 +283,11 @@ fn render_row(id: (usize, usize), row: Row, shell: &Entity<Shell>) -> Stateful<D
                 .children(reset)
                 .child(control),
         )
+        .children(row.below.map(|below| {
+            div()
+                .pb(px(14.))
+                .px(px(16.))
+                .when(row.soon, |this| this.opacity(0.4))
+                .child(below)
+        }))
 }
