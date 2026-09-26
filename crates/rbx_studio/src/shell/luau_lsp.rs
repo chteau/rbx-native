@@ -11,13 +11,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use gpui_kit::base::input::RopeExt as _;
+use gpui_kit::base::input::ShowDocumentHandler;
 use gpui_kit::*;
-use lsp_types::Diagnostic;
+use lsp_types::{Diagnostic, Range};
 use rbx_dom::Ref;
 use serde_json::{json, Value};
 
 use crate::luau_lsp::{self, diagnostics, Client, Mirror};
-use crate::script_editor::lsp::{editor_diagnostics, Completions, Document, Hovers};
+use crate::script_editor::lsp::definition::{self, Definitions};
+use crate::script_editor::lsp::{editor_diagnostics, editor_offset, Completions, Document, Hovers};
 
 use super::Shell;
 
@@ -124,11 +126,30 @@ impl Shell {
         }
         let uri = luau_lsp::uri(&self.lsp.mirror.path_of(reference));
         let text = open.state.read(cx).value().to_string();
-        let document = Document::open(client.clone(), uri, text);
+        let document = Document::open(client.clone(), uri.clone(), text);
+        let shell = cx.weak_entity();
+        // The editor's jump for a definition: its own text it jumps within
+        // itself; another script is the Shell's to open. Deferred, since this
+        // runs inside the editor's own update and the target may be it.
+        let show_document: ShowDocumentHandler = Rc::new(move |params, window, cx| {
+            let target = params.uri.to_string();
+            if definition::same_file(&target, &uri) {
+                return false;
+            }
+            let (shell, selection) = (shell.clone(), params.selection);
+            window.defer(cx, move |window, cx| {
+                let _ = shell.update(cx, |shell, cx| {
+                    shell.reveal_location(&target, selection, window, cx);
+                });
+            });
+            true
+        });
         open.state.update(cx, |state, _| {
             let lsp = state.lsp_mut();
             lsp.completion_provider = Some(Rc::new(Completions(document.clone())));
             lsp.hover_provider = Some(Rc::new(Hovers(document.clone())));
+            lsp.definition_provider = Some(Rc::new(Definitions(document.clone())));
+            lsp.show_document = Some(show_document);
         });
         open.lsp = Some(document);
     }
@@ -253,15 +274,99 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let start = problem.range.start;
+        self.reveal(reference, Range::new(start, start), window, cx);
+    }
+
+    /// A definition in another script: opens it with the name selected.
+    /// Anything outside the place — Roblox's own definitions file — has no
+    /// tab to open, and is left alone.
+    pub(super) fn reveal_location(
+        &mut self,
+        uri: &str,
+        range: Option<Range>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(reference) = luau_lsp::path(uri).and_then(|path| self.lsp.mirror.script_at(&path))
+        else {
+            return;
+        };
+        self.reveal(reference, range.unwrap_or_default(), window, cx);
+    }
+
+    /// Opens `reference` with `range` — in the server's columns — selected.
+    fn reveal(
+        &mut self,
+        reference: Ref,
+        range: Range,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.open_script(reference, window, cx);
         let Some(open) = self.scripts.open.get(&reference) else {
             return;
         };
-        let start = problem.range.start;
         open.state.update(cx, |state, cx| {
-            let offset = crate::script_editor::lsp::editor_offset(state.text(), start);
-            state.set_selected_range(offset..offset, cx);
+            let start = editor_offset(state.text(), range.start);
+            let end = editor_offset(state.text(), range.end);
+            state.set_selected_range(start..end, cx);
             state.focus(window, cx);
         });
+    }
+
+    /// Go to Definition from the right-click menu, asked of the server when
+    /// it is up. `false` when it is not, for the caller's lexer lookup.
+    pub(super) fn go_to_lsp_definition(
+        &mut self,
+        reference: Ref,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(open) = self.scripts.open.get(&reference) else {
+            return false;
+        };
+        let Some(document) = open.lsp.clone() else {
+            return false;
+        };
+        let (text, offset) = {
+            let state = open.state.read(cx);
+            (state.text().clone(), state.cursor())
+        };
+        let reply = document.definition(&text, offset);
+        let own = document.uri().to_owned();
+        cx.spawn_in(window, async move |shell, cx| {
+            let reply = cx
+                .background_executor()
+                .spawn(async move { luau_lsp::wait(reply) })
+                .await;
+            let origin = offset..offset;
+            let link = reply.ok().and_then(|reply| {
+                definition::links(reply, &own, &text, origin)
+                    .into_iter()
+                    .next()
+            });
+            let _ = shell.update_in(cx, |shell, window, cx| match link {
+                Some(link) if definition::same_file(link.target_uri.as_str(), &own) => {
+                    // Already in editor columns; see `definition::links`.
+                    if let Some(open) = shell.scripts.open.get(&reference) {
+                        open.state.update(cx, |state, cx| {
+                            let text = state.text();
+                            let start = text.position_to_offset(&link.target_selection_range.start);
+                            let end = text.position_to_offset(&link.target_selection_range.end);
+                            state.set_selected_range(start..end, cx);
+                            state.focus(window, cx);
+                        });
+                    }
+                }
+                Some(link) => {
+                    let target = link.target_uri.to_string();
+                    shell.reveal_location(&target, Some(link.target_selection_range), window, cx);
+                }
+                None => shell.go_to_lexer_declaration(reference, window, cx),
+            });
+        })
+        .detach();
+        true
     }
 }

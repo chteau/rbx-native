@@ -772,9 +772,11 @@ Roblox's own engine.
     named function in the current script (`function a.b:c`,
     `local function f`, `local f = function`) with its line, filtered as
     you type.
-- [x] **`luau-lsp` integration**: autocomplete, hover and diagnostics
-  in the script editor from an external `luau-lsp` (on `PATH`, or
-  `RBX_STUDIO_LUAU_LSP`), spoken to over stdio (`luau_lsp`).
+- [x] **`luau-lsp` integration**: autocomplete, hover, Go to Definition
+  and diagnostics in the script editor, from `luau-lsp` spoken to over
+  stdio (`luau_lsp`). A pinned release (1.70.0) is built into `rbxstudio`
+  by `build.rs`, checked against its SHA-256, and unpacked into the cache
+  folder on first use; `RBX_STUDIO_LUAU_LSP` runs another.
   - **The place as a workspace**: every script is written to a scratch
     folder, one file per referent, beside a Rojo-format `sourcemap.json`
     of the whole instance tree, non-scripts included, so `require` of a
@@ -782,11 +784,17 @@ Roblox's own engine.
     files only) whenever the undo history moves, and the server is told
     which files changed.
   - **Roblox intellisense**: Roblox's API types and its reference text
-    are the files `luau-lsp`'s VS Code extension uses, downloaded once a
-    week into the cache folder. Completion covers members, services,
+    are the files `luau-lsp`'s VS Code extension uses. They are cached
+    with the Studio version they were fetched for, and asked for again
+    only once Roblox ships a new one, by `ETag`, so an unchanged file is
+    never downloaded twice. Completion covers members, services,
     `Enum`s and class names (`Instance.new("Spaw` offers
     `SpawnLocation`), with each item's type and description; hover shows
     a name's type and Roblox's own documentation.
+  - **Go to Definition** follows a name into another script (a
+    `require`d module's function, say) and opens its tab; Ctrl-click and
+    the right-click menu both go through the server, with the lexer lookup
+    as the fallback.
   - **Squiggles**: the kit's editor draws them, and hovering one shows
     its message above the type. Two small fixes to the vendored
     `gpui-base` were needed for them to show at all (`vendor/README.md`).

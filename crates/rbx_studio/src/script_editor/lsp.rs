@@ -74,6 +74,20 @@ impl Document {
         *self.problems.borrow_mut() = problems;
     }
 
+    pub(crate) fn uri(&self) -> &str {
+        &self.uri
+    }
+
+    /// `textDocument/definition` at `offset`, after syncing `text`.
+    pub(crate) fn definition(
+        &self,
+        text: &Rope,
+        offset: usize,
+    ) -> std::sync::mpsc::Receiver<Result<Value, String>> {
+        self.client
+            .request("textDocument/definition", self.at(text, offset))
+    }
+
     fn at(&self, text: &Rope, offset: usize) -> Value {
         self.sync(&text.to_string());
         json!({"textDocument": {"uri": self.uri}, "position": server_position(text, offset)})
@@ -267,6 +281,8 @@ pub(crate) fn editor_diagnostics(text: &Rope, problems: &[Diagnostic]) -> Vec<Di
         })
         .collect()
 }
+
+pub(crate) mod definition;
 
 #[cfg(test)]
 mod tests;
