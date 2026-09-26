@@ -67,6 +67,10 @@ serde = { version = "1", features = ["derive"] }
 # dock's plain-JSON search calls) is the same feature `rbx_cloud` already
 # turns on for its own `ureq`.
 ureq = { version = "3", features = ["json"] }
+# `luau-lsp` names files by `file://` URI; converting a path both ways,
+# Windows drive letters and percent-escapes included, is exactly this. Already
+# in the tree (under `ureq`), at this version.
+url = "2"
 # Argon's wire protocol is MsgPack, tagged dynamically (`{TypeName: payload}`)
 # rather than shaped for a fixed struct — `rmpv`'s `Value` tree is decoded by
 # tag the same way `rbx_xml::value` dispatches by tag name, not through serde.
