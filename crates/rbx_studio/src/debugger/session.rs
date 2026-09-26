@@ -258,13 +258,6 @@ mod tests {
         );
         assert!(done.result.unwrap_err().contains(rbx_lua::STOPPED));
     }
-}
-
-#[cfg(test)]
-mod stop_tests {
-    use rbx_dom::{Instance, Ref};
-
-    use super::*;
 
     #[test]
     fn stop_ends_a_script_that_never_pauses() {

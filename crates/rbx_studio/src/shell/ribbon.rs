@@ -321,6 +321,8 @@ impl Shell {
                 IconName::ListChecks,
                 "Script Analysis",
             ));
+            tiles.push((Panel::Watch, IconName::Eye, "Watch"));
+            tiles.push((Panel::CallStack, IconName::Layers, "Call Stack"));
         }
         tiles
             .into_iter()

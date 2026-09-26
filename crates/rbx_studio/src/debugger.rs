@@ -78,7 +78,10 @@ impl Breakpoints {
     }
 
     pub(crate) fn of(&self, script: Ref) -> impl Iterator<Item = &Stored> {
-        self.scripts.get(&script).into_iter().flat_map(BTreeMap::values)
+        self.scripts
+            .get(&script)
+            .into_iter()
+            .flat_map(BTreeMap::values)
     }
 
     pub(crate) fn insert(&mut self, script: Ref, line: u32, kind: Kind) {

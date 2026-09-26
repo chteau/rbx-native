@@ -137,6 +137,8 @@ impl Shell {
             Panel::Argon => self.argon_dock(cx),
             Panel::Wally => self.wally_dock(cx),
             Panel::ScriptAnalysis => self.script_analysis_dock(cx),
+            Panel::Watch => self.watch_dock(window, cx),
+            Panel::CallStack => self.call_stack_dock(cx),
         }
     }
 

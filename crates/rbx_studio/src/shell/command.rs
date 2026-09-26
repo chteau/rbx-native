@@ -207,7 +207,7 @@ impl Shell {
     /// model built or destroyed — reaches the viewport as the change log it
     /// produced, patched instance by instance (see
     /// [`Shell::reflect_changes`]); there is no script-shaped fallback.
-    fn rebuild_after_script(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn rebuild_after_script(&mut self, cx: &mut Context<Self>) {
         self.rebuild_explorer(cx);
         let changes = self.dom.take_changes();
         self.reflect_changes(&changes, cx);

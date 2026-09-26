@@ -38,6 +38,8 @@ pub(crate) enum MenuId {
     ArgonLogLevel,
     WallyOverflow,
     ScriptAnalysisOverflow,
+    WatchOverflow,
+    CallStackOverflow,
     /// The version picker on the n-th Wally search result.
     WallyVersion(usize),
     InsertPart,
@@ -63,6 +65,8 @@ impl MenuId {
             MenuId::ArgonLogLevel => "menu-argon-log-level",
             MenuId::WallyOverflow => "menu-wally",
             MenuId::ScriptAnalysisOverflow => "menu-script-analysis",
+            MenuId::WatchOverflow => "menu-watch",
+            MenuId::CallStackOverflow => "menu-call-stack",
             MenuId::WallyVersion(_) => "menu-wally-version",
             MenuId::InsertPart => "menu-insert-part",
             MenuId::InsertScript => "menu-insert-script",

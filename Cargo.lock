@@ -6010,6 +6010,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "glam",
+ "gpui-base",
  "gpui-kit",
  "image",
  "lsp-types",

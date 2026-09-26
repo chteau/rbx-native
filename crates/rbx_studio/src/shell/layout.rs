@@ -113,13 +113,18 @@ pub(crate) enum Panel {
     /// Every problem `luau-lsp` finds across the place's scripts. Script
     /// Editor only, like Argon and Wally.
     ScriptAnalysis,
+    /// A paused debug run's variables and watch expressions. Script Editor
+    /// only.
+    Watch,
+    /// A paused debug run's call stack. Script Editor only.
+    CallStack,
 }
 
 impl Panel {
     /// In the order a fresh layout seats them, which is what makes the
     /// Viewport, Argon and Wally docks tabs beside Output rather than
     /// docks of their own.
-    pub(crate) const ALL: [Panel; 7] = [
+    pub(crate) const ALL: [Panel; 9] = [
         Panel::Explorer,
         Panel::Properties,
         Panel::Output,
@@ -127,6 +132,8 @@ impl Panel {
         Panel::Argon,
         Panel::Wally,
         Panel::ScriptAnalysis,
+        Panel::Watch,
+        Panel::CallStack,
     ];
 
     /// Where this panel lives in a layout nobody has rearranged — also
@@ -140,7 +147,9 @@ impl Panel {
             | Panel::Viewport
             | Panel::Argon
             | Panel::Wally
-            | Panel::ScriptAnalysis => Edge::Bottom,
+            | Panel::ScriptAnalysis
+            | Panel::Watch
+            | Panel::CallStack => Edge::Bottom,
         }
     }
 
@@ -155,6 +164,8 @@ impl Panel {
             Panel::Argon => "Argon",
             Panel::Wally => "Wally",
             Panel::ScriptAnalysis => "Script Analysis",
+            Panel::Watch => "Watch",
+            Panel::CallStack => "Call Stack",
         }
     }
 

@@ -95,6 +95,7 @@ impl Shell {
                 _subscription: subscription,
             },
         );
+        self.sync_gutters(cx);
         self.ensure_luau_lsp(cx);
         self.attach_luau_lsp(reference, cx);
         self.focus_script(reference, window, cx);
