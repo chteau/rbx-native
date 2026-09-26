@@ -41,6 +41,52 @@ pub(crate) const DEFAULT_SENSITIVITY: f32 = 0.1;
 // value to match here — this is this renderer's own feel call, picked to read
 // as smooth without lagging behind the keys.
 const MOVEMENT_TIME_CONSTANT: f32 = 0.06;
+// The `CameraFeel::smoothing` that gives `MOVEMENT_TIME_CONSTANT`: the
+// setting's default reads 0.30 and has to land exactly on this feel.
+const DEFAULT_SMOOTHING: f32 = 0.3;
+
+/// How the free camera responds, as a host's settings put it: each value a
+/// multiplier or amount relative to this renderer's own feel.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CameraFeel {
+    /// Mouse-look speed, times `DEFAULT_SENSITIVITY`.
+    pub sensitivity: f32,
+    /// WASD and wheel-dolly speed, times the current flight speed.
+    pub speed: f32,
+    /// How much moves ease in and out: 0 is none, `DEFAULT_SMOOTHING` is
+    /// `MOVEMENT_TIME_CONSTANT`, and the ease time grows in step with it.
+    pub smoothing: f32,
+}
+
+impl Default for CameraFeel {
+    fn default() -> Self {
+        CameraFeel {
+            sensitivity: 1.0,
+            speed: 1.0,
+            smoothing: DEFAULT_SMOOTHING,
+        }
+    }
+}
+
+/// `CameraFeel` in the units `free_update` works in.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Feel {
+    /// Degrees per pixel of mouse-look.
+    sensitivity: f32,
+    speed_scale: f32,
+    /// The easing time constant, in seconds; 0 snaps.
+    tau: f32,
+}
+
+impl Feel {
+    fn of(feel: CameraFeel) -> Self {
+        Feel {
+            sensitivity: DEFAULT_SENSITIVITY * feel.sensitivity,
+            speed_scale: feel.speed,
+            tau: MOVEMENT_TIME_CONSTANT * feel.smoothing.max(0.0) / DEFAULT_SMOOTHING,
+        }
+    }
+}
 
 enum Mode {
     Orbit,
@@ -74,7 +120,7 @@ pub(crate) struct Controller {
     mode: Mode,
     orbit: bool,
     speed: f32,
-    sensitivity: f32,
+    feel: Feel,
     motion: Motion,
 }
 
@@ -91,13 +137,21 @@ impl Controller {
             speed: speed
                 .unwrap_or_else(|| default_speed(bounds))
                 .clamp(MIN_SPEED, MAX_SPEED),
-            sensitivity,
+            feel: Feel {
+                sensitivity,
+                speed_scale: 1.0,
+                tau: MOVEMENT_TIME_CONSTANT,
+            },
             motion: Motion::default(),
         }
     }
 
     pub(crate) fn speed(&self) -> f32 {
         self.speed
+    }
+
+    pub(crate) fn set_feel(&mut self, feel: CameraFeel) {
+        self.feel = Feel::of(feel);
     }
 
     /// `F`/`Home`: snaps back to the spawn view (or, for `--orbit`, the initial
@@ -157,7 +211,7 @@ impl Controller {
                     input,
                     dt,
                     self.speed,
-                    self.sensitivity,
+                    self.feel,
                     &mut self.motion,
                     orthographic,
                 );
@@ -188,7 +242,7 @@ fn free_update(
     input: &mut Input,
     dt: Duration,
     speed: f32,
-    sensitivity: f32,
+    feel: Feel,
     motion: &mut Motion,
     orthographic: bool,
 ) -> f32 {
@@ -198,11 +252,11 @@ fn free_update(
         // looking down -Z, increasing yaw turns the view towards -X (left in a Y-up
         // right-handed frame), so a rightward mouse move (dx > 0) has to *subtract*
         // from yaw to turn the view right, matching Studio instead of inverting it.
-        pose.yaw -= (dx * sensitivity).to_radians();
+        pose.yaw -= (dx * feel.sensitivity).to_radians();
         // Pitch needs no such flip: `dy` grows downward, and `look_direction`'s
         // vertical component already grows as pitch shrinks, so dy < 0 (mouse up)
         // already looks up — this is a plain, uninverted Y axis.
-        pose.pitch = (pose.pitch + (dy * sensitivity).to_radians()).clamp(
+        pose.pitch = (pose.pitch + (dy * feel.sensitivity).to_radians()).clamp(
             -MAX_PITCH_DEGREES.to_radians(),
             MAX_PITCH_DEGREES.to_radians(),
         );
@@ -226,17 +280,13 @@ fn free_update(
             pose.ortho_scale = (pose.ortho_scale / SPEED_STEP.powf(notches))
                 .clamp(MIN_ORTHO_SCALE, MAX_ORTHO_SCALE);
         } else {
-            motion.dolly_remaining += forward * speed * ZOOM_SECONDS_PER_NOTCH * notches;
+            motion.dolly_remaining +=
+                forward * speed * feel.speed_scale * ZOOM_SECONDS_PER_NOTCH * notches;
         }
     }
     // Ease the dolly hop in over a few frames instead of teleporting the full
     // notch distance in a single tick; `eased` is what's still left to cover.
-    let eased = ease_towards(
-        motion.dolly_remaining,
-        Vec3::ZERO,
-        dt,
-        MOVEMENT_TIME_CONSTANT,
-    );
+    let eased = ease_towards(motion.dolly_remaining, Vec3::ZERO, dt, feel.tau);
     pose.position += motion.dolly_remaining - eased;
     motion.dolly_remaining = eased;
 
@@ -251,7 +301,7 @@ fn free_update(
         } else {
             1.0
         };
-        world * speed * factor
+        world * speed * feel.speed_scale * factor
     };
     // Ease towards the target every frame, not just while a key is held, so
     // releasing WASD decelerates instead of stopping dead. The distance moved
@@ -263,8 +313,7 @@ fn free_update(
     // nobody notices, but real frame times wobble around their average, so
     // the bias itself wobbles frame to frame — jitter with no effect on the
     // reported FPS, since that only ever sees the average.
-    let (velocity, displacement) =
-        ease_and_advance(motion.velocity, target_velocity, dt, MOVEMENT_TIME_CONSTANT);
+    let (velocity, displacement) = ease_and_advance(motion.velocity, target_velocity, dt, feel.tau);
     motion.velocity = velocity;
     pose.position += displacement;
 

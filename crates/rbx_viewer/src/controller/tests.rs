@@ -648,3 +648,62 @@ fn releasing_the_key_coasts_instead_of_stopping_instantly() {
 
     assert_ne!(after_release.position, before_release.position);
 }
+
+fn felt(feel: CameraFeel) -> Controller {
+    let mut controller = Controller::new(Start::Spawn, &bounds(), Some(30.0), DEFAULT_SENSITIVITY);
+    controller.set_feel(feel);
+    controller
+}
+
+#[test]
+fn the_default_feel_is_the_renderers_own() {
+    let feel = Feel::of(CameraFeel::default());
+    assert_eq!(feel.sensitivity, DEFAULT_SENSITIVITY);
+    assert_eq!(feel.speed_scale, 1.0);
+    assert!((feel.tau - MOVEMENT_TIME_CONSTANT).abs() < 1e-6);
+}
+
+#[test]
+fn feel_scales_the_look_and_the_flight() {
+    let dt = Duration::from_millis(100);
+    let start = Camera::spawn_pose(&bounds());
+    let run = |feel: CameraFeel, input: &mut Input| pose(step(&mut felt(feel), input, dt));
+    let twice = CameraFeel {
+        sensitivity: 2.0,
+        speed: 2.0,
+        ..CameraFeel::default()
+    };
+
+    let turned = |feel| (run(feel, &mut looking(10.0, 0.0)).yaw - start.yaw).abs();
+    assert!((turned(twice) - 2.0 * turned(CameraFeel::default())).abs() < 1e-5);
+
+    let flown =
+        |feel| (run(feel, &mut held(&[CameraKey::Forward])).position - start.position).length();
+    assert!((flown(twice) - 2.0 * flown(CameraFeel::default())).abs() < 1e-3);
+}
+
+#[test]
+fn no_smoothing_moves_at_full_speed_from_the_first_frame() {
+    let dt = Duration::from_millis(100);
+    let start = Camera::spawn_pose(&bounds()).position;
+    let snappy = CameraFeel {
+        smoothing: 0.0,
+        ..CameraFeel::default()
+    };
+    let moved = pose(step(
+        &mut felt(snappy),
+        &mut held(&[CameraKey::Forward]),
+        dt,
+    ))
+    .position;
+    // 30 studs/s for a tenth of a second, with no ease-in eating into it.
+    assert!(((moved - start).length() - 3.0).abs() < 1e-3);
+
+    let eased = pose(step(
+        &mut felt(CameraFeel::default()),
+        &mut held(&[CameraKey::Forward]),
+        dt,
+    ))
+    .position;
+    assert!((eased - start).length() < 3.0);
+}
