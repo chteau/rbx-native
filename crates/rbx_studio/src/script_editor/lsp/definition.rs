@@ -96,9 +96,13 @@ mod tests {
     use serde_json::json;
 
     use super::{links, same_file};
+    use crate::luau_lsp;
 
-    const OWN: &str = "file:///tmp/place/7.luau";
-    const OTHER: &str = "file:///tmp/place/9.luau";
+    /// From a real path, since a URI without a drive letter is no file path
+    /// on Windows.
+    fn file(folder: &str, name: &str) -> String {
+        luau_lsp::uri(&std::env::temp_dir().join(folder).join(name))
+    }
 
     fn range(a: (u32, u32), b: (u32, u32)) -> serde_json::Value {
         json!({"start": {"line": a.0, "character": a.1}, "end": {"line": b.0, "character": b.1}})
@@ -108,11 +112,12 @@ mod tests {
     fn a_target_in_this_script_moves_into_editor_columns_and_another_does_not() {
         // `é` is two bytes: byte column 9 is character 8.
         let text = Rope::from("local é = 1\nprint(é)\n");
+        let (own, other) = (file("place", "7.luau"), file("place", "9.luau"));
         let reply = json!([
-            {"uri": OWN, "range": range((0, 9), (0, 10))},
-            {"uri": OTHER, "range": range((0, 9), (0, 10))},
+            {"uri": own, "range": range((0, 9), (0, 10))},
+            {"uri": other, "range": range((0, 9), (0, 10))},
         ]);
-        let found = links(reply, OWN, &text, 0..5);
+        let found = links(reply, &own, &text, 0..5);
         assert_eq!(found.len(), 2);
         assert_eq!(
             found[0].target_selection_range,
@@ -131,21 +136,23 @@ mod tests {
     #[test]
     fn every_reply_shape_is_read() {
         let text = Rope::from("x");
-        let scalar = json!({"uri": OTHER, "range": range((1, 0), (1, 1))});
-        let link = json!([{"targetUri": OTHER, "targetRange": range((0, 0), (3, 0)),
+        let (own, other) = (file("place", "7.luau"), file("place", "9.luau"));
+        let scalar = json!({"uri": other, "range": range((1, 0), (1, 1))});
+        let link = json!([{"targetUri": other, "targetRange": range((0, 0), (3, 0)),
             "targetSelectionRange": range((1, 0), (1, 1))}]);
         for reply in [scalar, link] {
-            let found = links(reply, OWN, &text, 0..1);
+            let found = links(reply, &own, &text, 0..1);
             assert_eq!(found.len(), 1);
             assert_eq!(found[0].target_selection_range.start, Position::new(1, 0));
         }
-        assert!(links(json!(null), OWN, &text, 0..1).is_empty());
+        assert!(links(json!(null), &own, &text, 0..1).is_empty());
     }
 
     #[test]
     fn files_are_compared_by_name() {
-        assert!(same_file(OWN, "file:///TMP/other/7.luau"));
-        assert!(!same_file(OWN, OTHER));
+        let own = file("place", "7.luau");
+        assert!(same_file(&own, &file("other", "7.luau")));
+        assert!(!same_file(&own, &file("place", "9.luau")));
         assert!(!same_file("not a uri", "not a uri"));
     }
 }
