@@ -772,6 +772,30 @@ Roblox's own engine.
     named function in the current script (`function a.b:c`,
     `local function f`, `local f = function`) with its line, filtered as
     you type.
+- [x] **`luau-lsp` integration**: autocomplete, hover and diagnostics
+  in the script editor from an external `luau-lsp` (on `PATH`, or
+  `RBX_STUDIO_LUAU_LSP`), spoken to over stdio (`luau_lsp`).
+  - **The place as a workspace**: every script is written to a scratch
+    folder, one file per referent, beside a Rojo-format `sourcemap.json`
+    of the whole instance tree, non-scripts included, so `require` of a
+    `ModuleScript` and `workspace.Part` resolve. It is rewritten (changed
+    files only) whenever the undo history moves, and the server is told
+    which files changed.
+  - **Roblox intellisense**: Roblox's API types and its reference text
+    are the files `luau-lsp`'s VS Code extension uses, downloaded once a
+    week into the cache folder. Completion covers members, services,
+    `Enum`s and class names (`Instance.new("Spaw` offers
+    `SpawnLocation`), with each item's type and description; hover shows
+    a name's type and Roblox's own documentation.
+  - **Squiggles**: the kit's editor draws them, and hovering one shows
+    its message above the type. Two small fixes to the vendored
+    `gpui-base` were needed for them to show at all (`vendor/README.md`).
+- [x] **Script Analysis**, built on those same diagnostics rather than a
+  second analysis pass: a Script Editor dock listing every problem across
+  the whole place, open or not (`workspace/diagnostic`), grouped under
+  each script's full name with its line and column, and a header count.
+  Clicking a problem opens the script with the cursor on it. It says so
+  when `luau-lsp` is missing or fails to start, with a Retry button.
 - [x] **A launcher: API key setup wizard, Home, Roblox publishing.** A
   bare `rbxstudio` opens the wizard on first launch (no key stored) and
   Home after that; `rbxstudio <file>` still opens the editor directly.
@@ -1358,13 +1382,6 @@ Roblox's own engine.
 ## What's planned
 
 ### Script authoring — the biggest real gap
-- [ ] 📋 **Script Analysis** (real Studio's static-analysis pass,
-  in-editor squiggles plus a details window) is closer to genuinely
-  duplicate work with the `luau-lsp` diagnostics below and probably
-  shouldn't be built twice.
-- [ ] 📋 `luau-lsp` integration (external LSP-over-stdio process,
-  autocomplete/diagnostics) — needs a `sourcemap.json` compatible with
-  Rojo's format (see below) and the script editor above.
 - [ ] 📋 Script debugging — technically reachable via Luau's own debug
   hooks in `mlua`, large effort, depends on the script editor and, for
   anything beyond the Command Bar, on the Play workaround below. Real
