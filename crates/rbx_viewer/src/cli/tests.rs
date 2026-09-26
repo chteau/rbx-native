@@ -1,4 +1,5 @@
 use super::*;
+use std::time::Duration;
 
 fn parse(args: &[&str]) -> Result<Options, String> {
     Options::parse(args.iter().map(|a| a.to_string()))
@@ -63,6 +64,17 @@ fn a_clock_time_is_read_as_fractional_hours() {
     );
     assert!(parse(&["a.rbxl", "--clock-time", "dusk"]).is_err());
     assert!(parse(&["a.rbxl", "--clock-time"]).is_err());
+}
+
+#[test]
+fn elapsed_is_read_as_non_negative_seconds() {
+    let elapsed = |text: &str| parse(&["a.rbxl", "--elapsed", text]).map(|o| o.elapsed());
+
+    assert_eq!(parse(&["a.rbxl"]).unwrap().elapsed(), Duration::ZERO);
+    assert_eq!(elapsed("1.5"), Ok(Duration::from_millis(1500)));
+    assert!(elapsed("-1").is_err());
+    assert!(elapsed("soon").is_err());
+    assert!(parse(&["a.rbxl", "--elapsed"]).is_err());
 }
 
 #[test]

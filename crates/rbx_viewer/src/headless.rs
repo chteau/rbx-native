@@ -486,6 +486,7 @@ impl Headless {
     /// still in flight with [`Headless::take_frame`], or it never reaches the
     /// screen.
     pub fn render_frame(&mut self, width: u32, height: u32) -> Result<Option<Rendered>, String> {
+        self.offscreen.set_elapsed(self.start.elapsed());
         self.offscreen.queue_frame((width, height), self.from)
     }
 

@@ -60,6 +60,7 @@ pub(crate) fn run(options: &Options, out_dir: &Path) -> Result<(), String> {
         zoom: options.zoom(),
         eye_look_at,
         orthographic: options.orthographic(),
+        elapsed: options.elapsed(),
     };
 
     let started = Instant::now();

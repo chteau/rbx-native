@@ -120,6 +120,7 @@ pub fn run(options: &Options) -> Result<(), String> {
                     zoom: options.zoom(),
                     eye_look_at,
                     orthographic: options.orthographic(),
+                    elapsed: options.elapsed(),
                 },
             )
         }

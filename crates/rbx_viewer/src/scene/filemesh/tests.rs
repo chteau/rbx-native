@@ -1,6 +1,8 @@
 use super::*;
 use rbx_dom::{CFrameData, Instance, Vector3Data};
 
+use crate::scene::material::Kind;
+
 const IDENTITY_ROTATION: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
 
 fn database() -> ReflectionDatabase {
@@ -303,3 +305,31 @@ fn a_texture_that_failed_to_download_still_resolves_the_mesh_untextured() {
 
 #[path = "tests/appearance.rs"]
 mod appearance;
+
+#[test]
+fn a_force_field_mesh_part_is_capped_at_half_opaque_like_a_part() {
+    let mut dom = WeakDom::new();
+    let workspace = Ref::new(9000);
+    dom.insert(Instance::new(workspace, "Workspace", "Workspace"));
+    dom.set_parent(workspace, None);
+    let referent = Ref::new(1);
+    let mut instance = Instance::new(referent, "MeshPart", "Shell");
+    let properties = instance.properties_mut();
+    properties.insert(
+        "MeshId".to_string(),
+        Variant::String("rbxassetid://42".to_string()),
+    );
+    // 1584 is `Enum.Material.ForceField` (creator-docs' Material.yaml).
+    properties.insert("Material".to_string(), Variant::Enum(1584));
+    properties.insert("size".to_string(), vector3_variant(4.0, 4.0, 4.0));
+    properties.insert("CFrame".to_string(), cframe_at(0.0, 0.0, 0.0));
+    dom.insert(instance);
+    dom.set_parent(referent, Some(workspace));
+
+    let plan = planned(&dom);
+
+    assert_eq!(plan.entries[0].material.kind, Kind::ForceField);
+    // Half-opaque is what sends it to the blended pipelines, where the
+    // shell's see-through look is drawn at all.
+    assert_eq!(plan.entries[0].alpha, 0.5);
+}

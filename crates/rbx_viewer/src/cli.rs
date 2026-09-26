@@ -38,6 +38,7 @@ pub struct Options {
     speed: Option<f32>,
     sensitivity: f32,
     clock_time: Option<f32>,
+    elapsed: std::time::Duration,
     quality: QualityLevel,
     orthographic: bool,
 }
@@ -65,6 +66,7 @@ impl Options {
         let mut speed = None;
         let mut sensitivity = DEFAULT_SENSITIVITY;
         let mut clock_time = None;
+        let mut elapsed = std::time::Duration::ZERO;
         let mut quality = QualityLevel::default();
         let mut orthographic = false;
 
@@ -91,6 +93,7 @@ impl Options {
                 "--speed" => speed = Some(parse_positive(&value(&mut args, &arg)?)?),
                 "--sensitivity" => sensitivity = parse_positive(&value(&mut args, &arg)?)?,
                 "--clock-time" => clock_time = Some(parse_hours(&value(&mut args, &arg)?)?),
+                "--elapsed" => elapsed = parse_seconds(&value(&mut args, &arg)?)?,
                 "--quality" => quality = value(&mut args, &arg)?.parse()?,
                 "--orthographic" => orthographic = true,
                 flag if flag.starts_with('-') => return Err(format!("unknown option '{flag}'")),
@@ -128,6 +131,7 @@ impl Options {
             speed,
             sensitivity,
             clock_time,
+            elapsed,
             quality,
             orthographic,
         })
@@ -142,7 +146,7 @@ impl Options {
              \x20              [--no-gui] [--show-development-gui]\n\
              \x20              [--orbit] [--speed <studs/s>] [--sensitivity <deg/px>]\n\
              \x20              [--clock-time <hours>] [--quality <auto|1..21>]\n\
-             \x20              [--orthographic]\n\
+             \x20              [--orthographic] [--elapsed <seconds>]\n\
              \x20       {program} <dir> --batch <out-dir> [same framing/quality flags]\n\
              \x20 --screenshot  render a single frame offscreen to a PNG and exit\n\
              \x20 --batch       render every .rbxl/.rbxm/.rbxlx/.rbxmx file under the input\n\
@@ -188,7 +192,10 @@ impl Options {
              \x20               distance, in that rough order. 'auto' lowers the level\n\
              \x20               itself while the window is missing its frame budget\n\
              \x20 --orthographic draw with a parallel projection instead of perspective,\n\
-             \x20               framed at the same apparent scale (screenshots only)",
+             \x20               framed at the same apparent scale (screenshots only)\n\
+             \x20 --elapsed     seconds into the animation clock to draw the frame at\n\
+             \x20               (default 0), so a script can step through a moving\n\
+             \x20               ForceField frame by frame (screenshots only)",
             DEFAULT_SIZE.0,
             DEFAULT_SIZE.1,
             DEFAULT_SPEED,
@@ -296,6 +303,12 @@ impl Options {
         self.clock_time
     }
 
+    /// Where the screenshot's animation clock stands; zero unless asked, so
+    /// the same command always draws the same picture.
+    pub(crate) fn elapsed(&self) -> std::time::Duration {
+        self.elapsed
+    }
+
     pub(crate) fn quality(&self) -> QualityLevel {
         self.quality
     }
@@ -329,6 +342,13 @@ fn parse_angle(text: &str) -> Result<i32, String> {
 // Any hour, including a negative or a 30th: `Lighting` wraps the clock itself,
 // and refusing 25 would only get in the way of a screenshot script stepping
 // through a day.
+fn parse_seconds(text: &str) -> Result<std::time::Duration, String> {
+    text.parse()
+        .ok()
+        .and_then(|seconds| std::time::Duration::try_from_secs_f64(seconds).ok())
+        .ok_or_else(|| format!("'{text}' is not a non-negative number of seconds"))
+}
+
 fn parse_hours(text: &str) -> Result<f32, String> {
     let value: f32 = text
         .parse()

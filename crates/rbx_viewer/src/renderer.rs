@@ -114,6 +114,9 @@ pub(crate) struct Renderer {
     opaque: wgpu::RenderPipeline,
     blended: wgpu::RenderPipeline,
     frame: Frame,
+    /// The `ForceField` shimmer's phase, see [`pipeline::shimmer_phase`]. Left
+    /// at 0 by a host with no clock, so a `--screenshot` is the same every run.
+    shimmer: f32,
     /// Bind group 0's layout and bind group 1's, kept for the life of the
     /// renderer: a change of quality level rebuilds those groups (see
     /// [`Renderer::set_quality`]) around re-viewed textures.
@@ -308,6 +311,7 @@ impl Renderer {
             opaque,
             blended,
             frame,
+            shimmer: 0.0,
             lighting: *lighting,
             all_lights: lights.to_vec(),
             lights: allowed,
@@ -520,6 +524,12 @@ impl Renderer {
             .upload_pending(device, queue, &self.quality, usize::MAX);
     }
 
+    /// Moves the `ForceField` shimmer to where it is `elapsed` into the
+    /// host's clock.
+    pub(crate) fn set_elapsed(&mut self, elapsed: std::time::Duration) {
+        self.shimmer = pipeline::shimmer_phase(elapsed);
+    }
+
     pub(crate) fn draw(
         &mut self,
         device: &wgpu::Device,
@@ -552,7 +562,8 @@ impl Renderer {
         let eye = self.camera.eye_position(from);
         let view_projection = self.camera.view_projection(from, aspect);
         let viewport = glam::Vec2::new(size.0 as f32, size.1 as f32);
-        self.frame.write(queue, &view_projection, viewport);
+        self.frame
+            .write(queue, &view_projection, viewport, self.shimmer);
         // The main pass's own visibility test: tight to the camera's frustum
         // and this level's render distance. The shadow pass below never uses
         // this — see `Fit::visible` — so a caster it culls can still land a
@@ -601,13 +612,13 @@ impl Renderer {
 
         let rotation_only = self.camera.view_rotation_projection(from, aspect);
         if let Some(sky) = &self.sky {
-            sky.camera.write(queue, &rotation_only, viewport);
+            sky.camera.write(queue, &rotation_only, viewport, 0.0);
         }
         if let Some(stars) = &self.stars {
-            stars.camera.write(queue, &rotation_only, viewport);
+            stars.camera.write(queue, &rotation_only, viewport, 0.0);
         }
         if let Some(bodies) = &self.bodies {
-            bodies.camera.write(queue, &rotation_only, viewport);
+            bodies.camera.write(queue, &rotation_only, viewport, 0.0);
         }
         // The same matrix the sun disc itself is drawn with, so the god-rays
         // in the resolve can never point anywhere the disc is not.

@@ -217,6 +217,7 @@ impl Viewports {
             queue,
             &camera.view_projection(aspect),
             Vec2::new(size.0 as f32, size.1 as f32),
+            0.0,
         );
         queue.write_buffer(
             &self.lighting,

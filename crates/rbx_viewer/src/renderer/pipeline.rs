@@ -56,8 +56,9 @@ pub(super) const SKYBOX_SHADER: &str = concat!(
 );
 
 // The frame uniform (bind group 0, binding 0): the view-projection matrix,
-// then the viewport's pixel size in a `vec4` (`xy` used, `zw` padding) so the
-// outline shaders can expand their edges to a constant pixel width. Every
+// then the viewport's pixel size in a `vec4` (`xy`, `z` the `ForceField`
+// shimmer's phase, `w` padding) so the outline shaders can expand their edges
+// to a constant pixel width. Every
 // other surface shader declares only the matrix and reads just the first 64
 // bytes, which stay first.
 const FRAME_SIZE: wgpu::BufferAddress = 64 + 16;
@@ -277,6 +278,19 @@ pub(super) fn lighting_buffer(device: &wgpu::Device) -> wgpu::Buffer {
     })
 }
 
+/// How long one `ForceField` shimmer cycle takes. This renderer's own figure:
+/// Roblox publishes no rate for the material's motion.
+const SHIMMER_SECONDS: f64 = 4.0;
+
+/// Where in its cycle the shimmer is after `elapsed`, in `[0, 1)`.
+///
+/// Wrapped here in `f64` rather than handed to the shader as raw seconds: an
+/// `f32` clock loses the precision a smooth wave needs within hours, and a
+/// phase that wraps exactly never jumps.
+pub(super) fn shimmer_phase(elapsed: std::time::Duration) -> f32 {
+    (elapsed.as_secs_f64() / SHIMMER_SECONDS).fract() as f32
+}
+
 impl Frame {
     pub(super) fn new(
         device: &wgpu::Device,
@@ -306,11 +320,19 @@ impl Frame {
         self.bind_group = bind(device, layout, &self.matrix, shared);
     }
 
-    pub(super) fn write(&self, queue: &wgpu::Queue, matrix: &Mat4, viewport: glam::Vec2) {
+    /// `shimmer` is [`shimmer_phase`]'s: 0 for a pass with no clock.
+    pub(super) fn write(
+        &self,
+        queue: &wgpu::Queue,
+        matrix: &Mat4,
+        viewport: glam::Vec2,
+        shimmer: f32,
+    ) {
         let mut data = [0.0f32; 20];
         data[..16].copy_from_slice(&matrix.to_cols_array());
         data[16] = viewport.x;
         data[17] = viewport.y;
+        data[18] = shimmer;
         queue.write_buffer(&self.matrix, 0, bytemuck::cast_slice(&data));
     }
 }
@@ -507,4 +529,20 @@ pub(super) fn shape_pipelines(
             },
         ),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn the_shimmer_phase_starts_at_zero_and_wraps_once_a_cycle() {
+        assert_eq!(shimmer_phase(Duration::ZERO), 0.0);
+        assert!((shimmer_phase(Duration::from_secs(1)) - 0.25).abs() < 1e-6);
+        assert!(shimmer_phase(Duration::from_secs(4)).abs() < 1e-6);
+        // A day in, the phase is still exact to well under a frame's step.
+        let day = Duration::from_secs(86_400) + Duration::from_millis(500);
+        assert!((shimmer_phase(day) - 0.125).abs() < 1e-4);
+    }
 }

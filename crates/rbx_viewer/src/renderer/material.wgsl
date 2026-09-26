@@ -56,18 +56,24 @@ const GLASS_REFRACTION: f32 = 0.06;
 // Roblox's current `ForceField` material is documented as being driven by
 // the `Class.MeshPart.TextureID` of the mesh it is applied to ("that texture
 // image must have a wide value range since the material displays the range
-// from dark/black to light/white values"), which this renderer does not feed
-// into the material pass at all; nothing is published about the older,
-// texture-less look every ordinary `Part` still gets. The cell size, the
-// line width and both strengths below are therefore this renderer's own
-// rendition of an energy shell, not a reproduction of a published one — and
-// it does not shimmer: the pattern would have to move with a clock, and a
-// `--screenshot` that changed from run to run would be worse than a still
-// one (the same reason a `StyleRule` transition never applies here).
+// from dark/black to light/white values"), so a mesh with its own image
+// draws that image's value range in place of the lattice (see
+// `filemesh.wgsl`). Nothing is published about the older, texture-less look
+// every ordinary `Part` still gets, nor about how either one moves. The cell
+// size, the line width, both strengths and the shimmer below are therefore
+// this renderer's own rendition of an energy shell, not a reproduction of a
+// published one.
 const FORCE_FIELD_CELL_STUDS: f32 = 2.5;
 const FORCE_FIELD_LINE: f32 = 0.12;
 const FORCE_FIELD_LINE_GLOW: f32 = 1.6;
 const FORCE_FIELD_RIM_GLOW: f32 = 2.2;
+// The shimmer: bands of glow sweeping up the shell once a cycle
+// (`uniforms.viewport.z`, see `pipeline::shimmer_phase`), this many studs
+// between crests, dimming the pattern to `1 - DEPTH` between them. On a
+// texture-driven shell the image's value shifts the band as well, so its
+// contours ripple rather than the whole image pulsing at once.
+const FORCE_FIELD_WAVE_STUDS: f32 = 5.0;
+const FORCE_FIELD_WAVE_DEPTH: f32 = 0.85;
 
 // Blinn-Phong from a roughness map: the exponent spans a very broad highlight
 // (2) to a tight one (2048), which is the useful range of
@@ -90,6 +96,11 @@ struct MaterialInput {
     layer: u32,
     studs_per_tile: f32,
     kind: u32,
+    // A `ForceField` mesh's own image, reduced to its value, which replaces
+    // the lattice when `has_pattern` is set. Left zeroed — no pattern — by
+    // every pass with no image of its own.
+    pattern: f32,
+    has_pattern: bool,
 }
 
 /// The extent the model matrix scales its unit mesh to, i.e. the part's own
@@ -192,6 +203,9 @@ struct Mapped {
     object_normal: vec3<f32>,
     // Towards the eye, for the rim the same shell brightens at.
     to_eye: vec3<f32>,
+    // `MaterialInput`'s, passed through.
+    pattern: f32,
+    has_pattern: bool,
 }
 
 /// Whether a material shades procedurally whatever maps it is handed: Neon is
@@ -257,7 +271,20 @@ fn force_field_energy(mapped: Mapped) -> vec3<f32> {
     let facing = 1.0 - abs(dot(normalize(mapped.geometric_normal), mapped.to_eye));
     let rim = facing * facing;
     let lattice = force_field_lattice(mapped.object_studs, mapped.object_normal);
-    return mapped.base_albedo * (lattice * FORCE_FIELD_LINE_GLOW + rim * FORCE_FIELD_RIM_GLOW);
+    let pattern = select(lattice, mapped.pattern, mapped.has_pattern);
+    let along = mapped.object_studs.y / FORCE_FIELD_WAVE_STUDS
+        + select(0.0, mapped.pattern, mapped.has_pattern);
+    let glow = pattern * force_field_shimmer(along, uniforms.viewport.z);
+    return mapped.base_albedo * (glow * FORCE_FIELD_LINE_GLOW + rim * FORCE_FIELD_RIM_GLOW);
+}
+
+/// How bright the shell's pattern is at `along` (in wave cycles) at `phase`
+/// through the shimmer's own cycle: 1 on a crest, `1 - DEPTH` in a trough.
+/// Travels by exactly one wave per cycle, so the picture at phase 1 is the one
+/// at phase 0 and the loop never jumps.
+fn force_field_shimmer(along: f32, phase: f32) -> f32 {
+    let wave = 0.5 + 0.5 * cos(6.2831855 * (along - phase));
+    return 1.0 - FORCE_FIELD_WAVE_DEPTH * (1.0 - wave);
 }
 
 /// How close a point is to a cell edge, 1 on the line and 0 in the middle of
@@ -321,6 +348,8 @@ fn sample_axis(axis: vec3<f32>, input: MaterialInput) -> Mapped {
     mapped.object_studs = input.object_studs;
     mapped.object_normal = input.object_normal;
     mapped.to_eye = normalize(lighting.camera.xyz - input.world_position);
+    mapped.pattern = input.pattern;
+    mapped.has_pattern = input.has_pattern;
     return mapped;
 }
 
@@ -428,6 +457,8 @@ fn material_shade_with_normal(input: MaterialInput) -> Shaded {
     mapped.object_studs = input.object_studs;
     mapped.object_normal = input.object_normal;
     mapped.to_eye = normalize(lighting.camera.xyz - input.world_position);
+    mapped.pattern = input.pattern;
+    mapped.has_pattern = input.has_pattern;
 
     if weights.x >= TRIPLANAR_WEIGHT_EPSILON {
         let leg = sample_axis(vec3<f32>(sign_of(n.x), 0.0, 0.0), input);
