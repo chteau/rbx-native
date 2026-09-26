@@ -266,6 +266,7 @@ impl SettingsWindow {
 
         let mut accent = Section::new("Accent", Vec::new());
         accent.head = Some(self.accent_card(window, cx));
+        accent.keywords = &["accent", "colour", "color", "primary"];
         if accent_changed {
             let reset: Reset = std::rc::Rc::new(|shell, cx| shell.set_accent(None, cx));
             accent.resets.push(reset);

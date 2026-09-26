@@ -72,6 +72,8 @@ fn matches(row: &Row, query: &str) -> bool {
 struct Group {
     page: Page,
     sections: Vec<&'static str>,
+    /// Section heads found by their keywords, shown whole.
+    heads: Vec<AnyElement>,
     rows: Vec<Row>,
 }
 
@@ -89,20 +91,32 @@ impl SettingsWindow {
             let mut group = Group {
                 page,
                 sections: Vec::new(),
+                heads: Vec::new(),
                 rows: Vec::new(),
             };
             for section in sections {
+                let lower = query.to_lowercase();
+                let keyword = section
+                    .keywords
+                    .iter()
+                    .any(|word| word.contains(lower.as_str()));
+                if let Some(head) = section.head.filter(|_| keyword) {
+                    group.sections.push(section.title);
+                    group.heads.push(head);
+                }
                 let found: Vec<Row> = section
                     .rows
                     .into_iter()
                     .filter(|row| matches(row, query))
                     .collect();
-                if !found.is_empty() {
+                if !found.is_empty() && !keyword {
                     group.sections.push(section.title);
+                }
+                if !found.is_empty() {
                     group.rows.extend(found);
                 }
             }
-            if !group.rows.is_empty() {
+            if !group.rows.is_empty() || !group.heads.is_empty() {
                 groups.push(group);
             }
         }
@@ -119,9 +133,12 @@ impl SettingsWindow {
         let groups = self.groups(&query, window, cx);
         self.search_counts = groups
             .iter()
-            .map(|group| (group.page, group.rows.len()))
+            .map(|group| (group.page, group.rows.len() + group.heads.len()))
             .collect();
-        let count: usize = groups.iter().map(|group| group.rows.len()).sum();
+        let count: usize = groups
+            .iter()
+            .map(|group| group.rows.len() + group.heads.len())
+            .sum();
         let heading = match count {
             0 => format!("No results for \u{201c}{query}\u{201d}"),
             1 => format!("1 result for \u{201c}{query}\u{201d}"),
@@ -161,12 +178,13 @@ impl SettingsWindow {
                         .child(group.sections.join(" \u{b7} ")),
                 );
             let section = Section::new("", group.rows);
-            v_flex().gap(px(8.)).child(head).child(kit::section_card(
-                i,
-                section,
-                &shell,
-                Some(&query),
-            ))
+            v_flex()
+                .gap(px(8.))
+                .child(head)
+                .children(group.heads.into_iter().map(|head| kit::card().child(head)))
+                .when(!section.rows.is_empty(), |this| {
+                    this.child(kit::section_card(i, section, &shell, Some(&query)))
+                })
         });
         v_flex()
             .id("settings-search")

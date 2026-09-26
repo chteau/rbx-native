@@ -152,6 +152,9 @@ pub(in crate::shell::settings_window) struct Section {
     pub(in crate::shell::settings_window) head: Option<AnyElement>,
     /// Resets for what the section shows outside its rows, for Reset page.
     pub(in crate::shell::settings_window) resets: Vec<Reset>,
+    /// Words a search finds the section's head by, when the head is the
+    /// setting (the accent card).
+    pub(in crate::shell::settings_window) keywords: &'static [&'static str],
 }
 
 impl Section {
@@ -161,6 +164,7 @@ impl Section {
             rows,
             head: None,
             resets: Vec::new(),
+            keywords: &[],
         }
     }
 }
