@@ -47,6 +47,7 @@ actions!(
     menu_bar,
     [
         MenuSave,
+        MenuStudioSettings,
         MenuUndo,
         MenuRedo,
         MenuInsertPart,
@@ -111,6 +112,8 @@ fn menus() -> Vec<OwnedMenu> {
                 MenuItem::action("Save As…", MenuPlaceholder).disabled(true),
                 MenuItem::separator(),
                 MenuItem::action("Publish to Roblox…", MenuPlaceholder).disabled(true),
+                MenuItem::separator(),
+                MenuItem::action("Studio Settings…", MenuStudioSettings),
             ])
             .owned(),
         Menu::new("Edit")

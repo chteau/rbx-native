@@ -21,6 +21,12 @@ pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
     });
     cx.on_action({
         let shell = shell.clone();
+        move |_: &MenuStudioSettings, cx| {
+            shell.update(cx, |shell, cx| shell.open_settings(cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
         move |_: &MenuReduceMotion, cx| {
             shell.update(cx, |shell, cx| shell.toggle_reduce_motion(cx));
         }

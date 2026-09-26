@@ -754,6 +754,12 @@ impl WorkspaceView {
         cx.notify();
     }
 
+    /// How the free camera turns, flies and eases — the render thread owns
+    /// the viewer, so it takes the change between two frames.
+    pub(crate) fn set_camera_feel(&self, feel: rbx_viewer::CameraFeel) {
+        self.pump.camera_feel(feel);
+    }
+
     /// Swaps the main camera between perspective and orthographic (parallel)
     /// projection at runtime, the same way `set_quality` above switches
     /// levels: the render thread owns the viewer, so the switch happens

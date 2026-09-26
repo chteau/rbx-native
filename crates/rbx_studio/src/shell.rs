@@ -51,6 +51,7 @@ mod scripts;
 mod scroll;
 mod scrub;
 mod selection;
+mod settings_window;
 mod style_panel;
 mod sun;
 mod theme_live;
@@ -159,6 +160,9 @@ pub(crate) struct Shell {
     unfocused_fps: UnfocusedFps,
     /// The dragger guides' switches (see `shell::guides`). Persisted.
     dragger: DraggerSettings,
+    /// The free camera's feel (see `settings::Controls`). Persisted, with
+    /// the snap increments, which live in [`Shell::transform`].
+    camera_feel: rbx_viewer::CameraFeel,
     /// The three composite widgets that are one Tab stop each: the
     /// document tab strip, the ribbon's category tabs, and the ribbon's own
     /// controls. See `shell::roving`.
@@ -192,6 +196,8 @@ pub(crate) struct Shell {
     /// `shell::argon_diff_window`, the same one-window-of-its-own shape as
     /// [`Self::sequence`] above.
     argon_diff: Option<WindowHandle<gpui_kit::component::Root>>,
+    /// Studio Settings, while open — see `settings_window`.
+    settings_window: Option<WindowHandle<gpui_kit::component::Root>>,
     /// The Explorer's type-ahead buffer — see `shell::tree_keys`.
     typeahead: tree_keys::Typeahead,
     /// The Explorer's own editing affordances — the `+` picker, the
@@ -387,6 +393,7 @@ impl Shell {
             increment_names,
             expand_on_select,
             dragger,
+            controls,
             argon_address: argon_address_setting,
             argon: argon_settings,
         } = settings;
@@ -473,6 +480,9 @@ impl Shell {
         });
 
         let initial_outline = outlined(&dom, &database, &Vec::from_iter(selected));
+        let mut transform = Transform::default();
+        transform.translate.increment = controls.move_increment;
+        transform.rotate.increment = controls.rotate_increment;
         let viewport = cx.new(|cx| {
             let opened = Opened {
                 viewer,
@@ -491,6 +501,8 @@ impl Shell {
                 cx,
             );
             view.set_dragger(dragger);
+            view.set_transform(transform);
+            view.set_camera_feel(controls.camera);
             view
         });
         let camera_synced = cx.subscribe(&viewport, |shell, _, event: &PoseSynced, cx| {
@@ -520,7 +532,6 @@ impl Shell {
         // valid as soon as `cx.new` starts building it.
         let menu_bar = crate::menu_bar::build(cx.entity(), cx);
 
-        let transform = Transform::default();
         let (snap_fields, [translate_typed, rotate_typed, translate_stepped, rotate_stepped]) =
             SnapFields::new(transform, window, cx);
 
@@ -546,6 +557,7 @@ impl Shell {
             theme: user.theme,
             unfocused_fps,
             dragger,
+            camera_feel: controls.camera,
             document_nav: roving::Roving::horizontal(),
             ribbon_tabs_nav: roving::Roving::horizontal(),
             ribbon_nav: roving::Roving::horizontal(),
@@ -556,6 +568,7 @@ impl Shell {
             scrub: None,
             sequence: None,
             argon_diff: None,
+            settings_window: None,
             tree_focus_handle,
             typeahead: tree_keys::Typeahead::default(),
             explorer_edit: explorer_edit::ExplorerEdit::default(),
@@ -740,6 +753,12 @@ impl Shell {
         // a screenshot aid proving a just-applied mutation was reverted.
         shell.apply_debug_undo(cx);
 
+        // `RBX_STUDIO_SETTINGS` (see `shell::settings_window`): opens Studio
+        // Settings with the editor, for a capture.
+        if std::env::var_os(settings_window::OPEN_VARIABLE).is_some() {
+            shell.open_settings(cx);
+        }
+
         // `RBX_STUDIO_STYLE_EDITOR` (see `shell::style_panel`): after the
         // selection blocks above, so the edit it may carry lands on whatever
         // `StyleRule` they selected.
@@ -890,10 +909,33 @@ impl Shell {
             return;
         };
 
+        self.set_quality(mode, cx);
+    }
+
+    /// Switches the graphics quality mode. The dock's dropdown catches up
+    /// on its next render (see `viewport_dock::rows`), since moving its
+    /// selection needs that window.
+    fn set_quality(&mut self, mode: QualityLevel, cx: &mut Context<Self>) {
+        if mode == self.quality_choice {
+            return;
+        }
         self.viewport
             .update(cx, |viewport, cx| viewport.set_quality(mode, cx));
         self.quality_choice = mode;
         self.save_settings();
+        cx.notify();
+    }
+
+    /// How the free camera turns, flies and eases.
+    fn set_camera_feel(&mut self, feel: rbx_viewer::CameraFeel, cx: &mut Context<Self>) {
+        if feel == self.camera_feel {
+            return;
+        }
+        self.camera_feel = feel;
+        self.viewport
+            .update(cx, |viewport, _| viewport.set_camera_feel(feel));
+        self.save_settings();
+        cx.notify();
     }
 
     /// Whether the Explorer lists every root, for the dock's Explorer menu
@@ -1191,6 +1233,11 @@ impl Shell {
             increment_names: self.increment_names,
             expand_on_select: self.expand_on_select,
             dragger: self.dragger,
+            controls: crate::settings::Controls {
+                camera: self.camera_feel,
+                move_increment: self.transform.translate.increment,
+                rotate_increment: self.transform.rotate.increment,
+            },
             argon_address: self.argon_saved_address.clone(),
             argon: self.argon_settings.clone(),
         };

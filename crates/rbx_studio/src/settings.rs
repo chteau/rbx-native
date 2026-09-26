@@ -20,8 +20,10 @@ use crate::pacing::UnfocusedFps;
 use crate::shell::{Edge, SavedEdge, SavedGroup, SavedLayout};
 
 pub(crate) mod argon;
+mod controls;
 mod dragger;
 
+pub(crate) use controls::{Controls, FEEL_SCALE_RANGE};
 pub(crate) use dragger::DraggerSettings;
 
 /// What persists across a relaunch.
@@ -83,6 +85,8 @@ pub(crate) struct Settings {
     pub(crate) expand_on_select: bool,
     /// The dragger guides' switches — see [`DraggerSettings`].
     pub(crate) dragger: DraggerSettings,
+    /// The camera's feel and the snap increments — see [`Controls`].
+    pub(crate) controls: Controls,
     /// The Argon dock's address field, as it stood the last time Connect
     /// actually succeeded — not every keystroke of a draft, and not an
     /// address that never connected. Empty means "nothing saved yet",
@@ -118,6 +122,7 @@ impl Default for Settings {
             increment_names: true,
             expand_on_select: true,
             dragger: DraggerSettings::default(),
+            controls: Controls::default(),
         }
     }
 }
@@ -274,6 +279,7 @@ fn load_from(path: &Path) -> Settings {
             .and_then(|v| v.as_bool())
             .unwrap_or(true),
         dragger: DraggerSettings::read(&value),
+        controls: Controls::read(&value),
         argon_address: value
             .get("argon_address")
             .and_then(|v| v.as_str())
@@ -372,6 +378,7 @@ fn parse_unfocused_fps(fps: u64) -> UnfocusedFps {
 }
 
 fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
+    let [camera, snap] = settings.controls.json();
     let value = serde_json::json!({
         "quality": format_quality(settings.quality),
         "show_all_services": settings.show_all_services,
@@ -411,6 +418,8 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "increment_names": settings.increment_names,
         "expand_on_select": settings.expand_on_select,
         "dragger": settings.dragger.json(),
+        "camera": camera,
+        "snap": snap,
         "argon_address": settings.argon_address,
         "argon": settings.argon.json(),
     });

@@ -32,6 +32,11 @@
 //! rolls the wheel once over viewport pixel `(x, y)` by that many notches
 //! once the first frame is up, the same aid for scrolling a `ScrollingFrame`
 //! drawn in the viewport (see `workspace_view::scroll`).
+//! `RBX_STUDIO_SETTINGS=1` opens Studio Settings with the editor, on the
+//! page `RBX_STUDIO_SETTINGS_PAGE=<first word of its name>` names, with
+//! Viewport › Advanced open under `RBX_STUDIO_SETTINGS_ADVANCED=1` and the
+//! page scrolled `RBX_STUDIO_SETTINGS_SCROLL=<px>` down — the same aid, for
+//! the Settings window (see `shell::settings_window`).
 //! `RBX_STUDIO_OPEN_SCRIPT=<name>[,<name>...]` opens each named
 //! `Script`/`LocalScript`/`ModuleScript` in the Script Editor panel exactly as
 //! double-clicking its Explorer row would — the same aid, for the script
