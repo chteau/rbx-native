@@ -302,7 +302,9 @@ impl SettingsWindow {
             .shadow(vec![BoxShadow {
                 color: hsla(0., 0., 0., 0.55),
                 offset: point(px(0.), px(18.)),
-                blur_radius: px(48.),
+                // CSS blurs to twice the radius GPUI does: this is the
+                // design's 48 px.
+                blur_radius: px(24.),
                 spread_radius: px(0.),
                 inset: false,
             }])
