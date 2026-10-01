@@ -11,10 +11,21 @@
 //! Menus are *controlled*: which one is open lives on [`Shell::open_menu`],
 //! not inside the popover. That is what lets an item close its own menu
 //! when clicked, and guarantees two menus can never be open at once.
+//!
+//! The keyboard follows the WAI-ARIA menu pattern: an open menu holds focus,
+//! Up and Down move a highlight through its rows and wrap, Home and End jump
+//! to the ends (the same moves as a roving group, `shell::roving::Move`),
+//! and Enter or Space runs the highlighted row the way a click would. A
+//! disabled row can be highlighted but not run, which is what the pattern
+//! asks of a disabled item. A menu opened from the keyboard starts on its
+//! first row; one opened by the mouse shows no highlight until a key moves
+//! it. Escape closes it from anywhere (see `shell::save`), and the
+//! popover hands focus back to the trigger.
 
 use std::rc::Rc;
 
 use gpui_kit::assets::IconName;
+use gpui_kit::base::actions::Confirm;
 use gpui_kit::component::popover::Popover;
 use gpui_kit::component::{h_flex, v_flex, Icon};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -22,6 +33,7 @@ use gpui_kit::*;
 
 use crate::tokens;
 
+use super::roving::Move;
 use super::Shell;
 
 /// Every menu the shell can open. One value, one menu — `Shell::open_menu`
@@ -89,6 +101,28 @@ impl MenuId {
 }
 
 type Action = Rc<dyn Fn(&mut Shell, &mut Context<Shell>)>;
+
+/// The open menu's keyboard state. One of each is enough: at most one menu
+/// is ever open.
+pub(super) struct MenuNav {
+    focus: FocusHandle,
+    cursor: Option<usize>,
+}
+
+impl MenuNav {
+    pub(super) fn new(cx: &mut App) -> Self {
+        MenuNav {
+            focus: cx.focus_handle(),
+            cursor: None,
+        }
+    }
+}
+
+impl Item {
+    fn is_enabled(&self) -> bool {
+        self.enabled && self.action.is_some()
+    }
+}
 
 /// One row. Built with the `with_*` chain rather than a struct literal so a
 /// plain item stays a one-liner at the call site.
@@ -163,45 +197,89 @@ pub(super) fn dropdown_at(
 ) -> impl IntoElement + 'static {
     let handle = cx.entity();
     let open = shell.open_menu == Some(menu);
+    let len = items.len();
+    let focus = shell.menu_nav.focus.clone();
+    let cursor = shell.menu_nav.cursor.filter(|_| open);
 
     Popover::new(menu.element_id())
         .anchor(anchor)
         .open(open)
+        .track_focus(&focus)
         // The popover draws no chrome of its own: §5.4's container *is* the
         // chrome, and two stacked backgrounds would double the border.
         .appearance(false)
         .on_open_change({
             let handle = handle.clone();
-            move |open, _, cx| {
+            move |open, window, cx| {
                 let open = *open;
+                let keyboard = window.last_input_was_keyboard();
                 handle.update(cx, |shell, cx| {
                     shell.open_menu = open.then_some(menu);
+                    shell.menu_nav.cursor = (open && keyboard)
+                        .then(|| Move::First.from(None, len))
+                        .flatten();
                     cx.notify();
                 });
             }
         })
         .trigger(trigger)
-        .content(move |_, _, _| container(handle.clone(), &items))
+        .content(move |_, _, _| {
+            let actions: Rc<[Option<Action>]> = items
+                .iter()
+                .map(|item| item.is_enabled().then(|| item.action.clone()).flatten())
+                .collect();
+            let key_shell = handle.clone();
+            let confirm_shell = handle.clone();
+            div()
+                .track_focus(&focus)
+                .on_key_down(move |event: &KeyDownEvent, _, cx| {
+                    let Some(movement) = Move::of(&event.keystroke, true) else {
+                        return;
+                    };
+                    cx.stop_propagation();
+                    key_shell.update(cx, |shell, cx| {
+                        shell.menu_nav.cursor = movement.from(shell.menu_nav.cursor, len);
+                        cx.notify();
+                    });
+                })
+                // Enter and Space reach the popover as its `Confirm`: taken
+                // here first, so they run the row rather than only close.
+                .on_action(move |_: &Confirm, _, cx| {
+                    let actions = actions.clone();
+                    confirm_shell.update(cx, |shell, cx| {
+                        let Some(Some(action)) =
+                            shell.menu_nav.cursor.and_then(|index| actions.get(index))
+                        else {
+                            return;
+                        };
+                        let action = action.clone();
+                        shell.open_menu = None;
+                        action(shell, cx);
+                        cx.notify();
+                    });
+                })
+                .child(container(handle.clone(), &items, cursor))
+        })
 }
 
 /// The menu arrives rather than appearing: a short fade with a 4px settle,
 /// on the ease-out every other motion in the editor uses. GPUI has no
 /// element transform, so this is a translation only (see
 /// `UX_GUIDELINES.md`'s deviation list).
-fn container(shell: Entity<Shell>, items: &[Item]) -> impl IntoElement {
-    menu_surface(shell, items).with_animation(
+fn container(shell: Entity<Shell>, items: &[Item], cursor: Option<usize>) -> impl IntoElement {
+    menu_surface(shell, items, cursor).with_animation(
         "menu-open",
         Animation::new(tokens::DURATION_MENU).with_easing(tokens::easing_soft),
         |this, delta| this.opacity(delta).mt(px(-4. + 4. * delta)),
     )
 }
 
-fn menu_surface(shell: Entity<Shell>, items: &[Item]) -> Div {
+fn menu_surface(shell: Entity<Shell>, items: &[Item], cursor: Option<usize>) -> Div {
     surface().children(
         items
             .iter()
             .enumerate()
-            .map(|(index, item)| row(shell.clone(), index, item)),
+            .map(|(index, item)| row(shell.clone(), index, item, cursor == Some(index))),
     )
 }
 
@@ -226,8 +304,8 @@ pub(super) fn surface() -> Div {
 /// action and closes the menu. A real click holds for roughly that long
 /// anyway, and tying the flash to the press means it can never outlive the
 /// menu it is confirming.
-fn row(shell: Entity<Shell>, index: usize, item: &Item) -> impl IntoElement {
-    let enabled = item.enabled && item.action.is_some();
+fn row(shell: Entity<Shell>, index: usize, item: &Item, highlighted: bool) -> impl IntoElement {
+    let enabled = item.is_enabled();
     let action = item.action.clone();
 
     row_chrome(
@@ -237,6 +315,9 @@ fn row(shell: Entity<Shell>, index: usize, item: &Item) -> impl IntoElement {
         enabled,
         item.checked,
     )
+    // The keyboard's highlight wears the hover's surface: one row is "the
+    // one Enter runs", however it got there.
+    .when(highlighted, |this| this.bg(tokens::hover()))
     .when(enabled, |this| {
         this.on_click(move |_, _, cx| {
             let action = action.clone();

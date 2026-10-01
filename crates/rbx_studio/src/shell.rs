@@ -347,6 +347,8 @@ pub(crate) struct Shell {
     /// popover so that opening one closes the last, and so a menu item can
     /// close the menu it was clicked in (see `shell::menu`).
     open_menu: Option<MenuId>,
+    /// The open menu's keyboard focus and highlighted row (see `shell::menu`).
+    menu_nav: menu::MenuNav,
     /// Which panel is on which edge and how big each edge is — the data
     /// that used to be the order of three `.child()` calls (see
     /// `shell::layout`). Persisted, along with the drag in progress if
@@ -626,6 +628,7 @@ impl Shell {
             ribbon_tab: ribbon::Tab::default(),
             document: Document::default(),
             open_menu: None,
+            menu_nav: menu::MenuNav::new(cx),
             // A saved layout wins over the default, and is total over
             // whatever the file actually held (see `layout::Layout::restore`).
             layout: layout::Layout::restore(&docks),

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-01
+
+- **Menus work from the keyboard.** In every dropdown menu (the `⋯`
+  overflow menus, the ribbon's insert menus, the Argon and Wally pickers),
+  Up and Down now move through the rows, Home and End jump to the ends, and
+  Enter or Space picks the highlighted one. Before, an open menu could only
+  be closed from the keyboard, not used. — @Vikmanou
+
 ## 2026-09-30
 
 - **Light and High contrast themes.** Studio Settings › Appearance ›
