@@ -25,6 +25,18 @@ fn a_highlight_on_no_row_yet_starts_from_the_end_the_key_points_at() {
     }
 }
 
+/// A menu whose items shrink while it is open keeps its highlight on a row
+/// that still exists.
+#[test]
+fn a_highlight_past_the_end_lands_on_the_last_row() {
+    assert_eq!(clamp(Some(5), 3), Some(2));
+    assert_eq!(clamp(Some(1), 3), Some(1));
+    assert_eq!(clamp(Some(1), 0), None);
+    assert_eq!(clamp(None, 3), None);
+    assert_eq!(Move::Previous.from(Some(5), 3), Some(1));
+    assert_eq!(Move::Next.from(Some(5), 3), Some(0));
+}
+
 #[test]
 fn home_and_end_reach_the_ends_of_any_strip() {
     assert_eq!(Move::First.apply(2, 5), 0);

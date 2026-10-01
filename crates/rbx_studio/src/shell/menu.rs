@@ -18,8 +18,8 @@
 //! and Enter or Space runs the highlighted row the way a click would. A
 //! disabled row can be highlighted but not run, which is what the pattern
 //! asks of a disabled item. A menu opened from the keyboard starts on its
-//! first row; one opened by the mouse shows no highlight until a key moves
-//! it. Escape closes it from anywhere (see `shell::save`), and the
+//! first row; one opened by the mouse shows no highlight until a key or the
+//! pointer moves it, and Enter there just closes it. Escape closes it from anywhere (see `shell::save`), and the
 //! popover hands focus back to the trigger.
 
 use std::rc::Rc;
@@ -33,7 +33,7 @@ use gpui_kit::*;
 
 use crate::tokens;
 
-use super::roving::Move;
+use super::roving::{clamp, Move};
 use super::Shell;
 
 /// Every menu the shell can open. One value, one menu — `Shell::open_menu`
@@ -199,7 +199,7 @@ pub(super) fn dropdown_at(
     let open = shell.open_menu == Some(menu);
     let len = items.len();
     let focus = shell.menu_nav.focus.clone();
-    let cursor = shell.menu_nav.cursor.filter(|_| open);
+    let cursor = clamp(shell.menu_nav.cursor.filter(|_| open), len);
 
     Popover::new(menu.element_id())
         .anchor(anchor)
@@ -244,15 +244,17 @@ pub(super) fn dropdown_at(
                 })
                 // Enter and Space reach the popover as its `Confirm`: taken
                 // here first, so they run the row rather than only close.
+                // With nothing highlighted (a mouse-opened menu) they go on
+                // to the popover, which closes it as before.
                 .on_action(move |_: &Confirm, _, cx| {
-                    let actions = actions.clone();
+                    let Some(index) = clamp(confirm_shell.read(cx).menu_nav.cursor, len) else {
+                        cx.propagate();
+                        return;
+                    };
+                    let Some(Some(action)) = actions.get(index).cloned() else {
+                        return;
+                    };
                     confirm_shell.update(cx, |shell, cx| {
-                        let Some(Some(action)) =
-                            shell.menu_nav.cursor.and_then(|index| actions.get(index))
-                        else {
-                            return;
-                        };
-                        let action = action.clone();
                         shell.open_menu = None;
                         action(shell, cx);
                         cx.notify();
@@ -315,9 +317,20 @@ fn row(shell: Entity<Shell>, index: usize, item: &Item, highlighted: bool) -> im
         enabled,
         item.checked,
     )
-    // The keyboard's highlight wears the hover's surface: one row is "the
-    // one Enter runs", however it got there.
+    // The keyboard's highlight wears the hover's surface, and the pointer
+    // moves it: one row is "the one Enter runs", however it got there.
     .when(highlighted, |this| this.bg(tokens::hover()))
+    .on_hover({
+        let shell = shell.clone();
+        move |hovered, _, cx| {
+            if *hovered {
+                shell.update(cx, |shell, cx| {
+                    shell.menu_nav.cursor = Some(index);
+                    cx.notify();
+                });
+            }
+        }
+    })
     .when(enabled, |this| {
         this.on_click(move |_, _, cx| {
             let action = action.clone();

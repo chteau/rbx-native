@@ -217,12 +217,19 @@ impl Move {
         if len == 0 {
             return None;
         }
-        Some(match (self, current) {
+        Some(match (self, clamp(current, len)) {
             (Move::Previous | Move::Last, None) => len - 1,
             (_, None) => 0,
             (movement, Some(current)) => movement.apply(current, len),
         })
     }
+}
+
+/// A menu's highlight kept on a row that still exists: its items can shrink
+/// while it is open, which leaves the highlight on the last row, or on
+/// nothing once the menu is empty.
+pub(super) fn clamp(current: Option<usize>, len: usize) -> Option<usize> {
+    current.filter(|_| len > 0).map(|index| index.min(len - 1))
 }
 
 /// One composite widget's keyboard state.

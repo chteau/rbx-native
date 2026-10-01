@@ -1310,6 +1310,10 @@ Roblox's own engine.
   Layout command beside them, and the View menu carries Reduce Motion (which
   overrides the desktop preference read at startup) and Large Click Targets
   (WCAG 2.5.5's 44px floor in place of 2.5.8's 24px).
+
+  `UX_GUIDELINES.md` §11 lists every deviation from the frame with its
+  reason, and §1 states where the editor stands against the reference
+  guidance's Stage 1/2/3 — failures included.
 - [x] **Arrow keys inside the editor's dropdown menus** (`shell::menu`:
   every overflow `⋯`, the ribbon's insert menus, the Argon and Wally
   pickers), per the APG menu pattern: an open menu holds focus, Up/Down
@@ -1317,15 +1321,11 @@ Roblox's own engine.
   runs the highlighted row like a click, and Escape closes it with focus
   back on the trigger. A menu opened from the keyboard starts on its first
   row. Disabled rows take the highlight but cannot run, as the pattern
-  asks. The moves are the roving groups' own (`roving::Move`). The
-  Explorer's right-click menu, which builds its own rows, works the same
-  way, and Shift+F10 or the Menu key opens it on the selected row (at the
-  pointer, where every Explorer popup goes); closing it from the keyboard
-  hands focus back to the tree.
-
-  `UX_GUIDELINES.md` §11 lists every deviation from the frame with its
-  reason, and §1 states where the editor stands against the reference
-  guidance's Stage 1/2/3 — failures included.
+  asks. The pointer moves the same highlight. The moves are the roving
+  groups' own (`roving::Move`). The Explorer's right-click menu, which
+  builds its own rows, works the same way, and Shift+F10 or the Menu key
+  opens it on the selected row (at the pointer, where every Explorer popup
+  goes); closing it from the keyboard hands focus back to the tree.
 - [x] **Output window: the half of real Studio's filter/display feature
   set that does not need the sandbox**, checked against `studio/output.md`
   rather than assumed and built against what the Command Bar and app
