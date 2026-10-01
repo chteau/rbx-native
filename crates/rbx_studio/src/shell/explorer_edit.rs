@@ -47,6 +47,9 @@ pub(super) struct ExplorerEdit {
     /// A box to put the caret in on the next frame — see
     /// [`Shell::focus_explorer_edit`].
     focus_next: Option<Entity<InputState>>,
+    /// The row menu opened this frame and takes focus on the next, for the
+    /// same reason a name box does.
+    focus_menu: bool,
     /// What Change Class last turned something into, most recent first —
     /// suggested again next time. This session's only: a class picked in
     /// one place says little about the next.
@@ -69,6 +72,11 @@ impl Shell {
     /// undone before the caret ever appears — and the blur that undoes it
     /// would take the rename with it.
     pub(super) fn focus_explorer_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if std::mem::take(&mut self.explorer_edit.focus_menu) {
+            if let Some(menu) = &self.explorer_edit.menu {
+                menu.focus(window, cx);
+            }
+        }
         let Some(input) = self.explorer_edit.focus_next.take() else {
             return;
         };

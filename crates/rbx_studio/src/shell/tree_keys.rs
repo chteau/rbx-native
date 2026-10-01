@@ -260,6 +260,9 @@ impl Shell {
         if self.renaming_in_place() {
             return false;
         }
+        if super::explorer_edit::menu::opens_row_menu(keystroke) {
+            return self.open_row_menu_from_keyboard(cx);
+        }
         let Some((len, focused, is_folder, expanded)) = self.tree_focus(cx) else {
             return false;
         };

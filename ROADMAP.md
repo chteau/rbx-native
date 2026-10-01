@@ -1317,7 +1317,11 @@ Roblox's own engine.
   runs the highlighted row like a click, and Escape closes it with focus
   back on the trigger. A menu opened from the keyboard starts on its first
   row. Disabled rows take the highlight but cannot run, as the pattern
-  asks. The moves are the roving groups' own (`roving::Move`).
+  asks. The moves are the roving groups' own (`roving::Move`). The
+  Explorer's right-click menu, which builds its own rows, works the same
+  way, and Shift+F10 or the Menu key opens it on the selected row (at the
+  pointer, where every Explorer popup goes); closing it from the keyboard
+  hands focus back to the tree.
 
   `UX_GUIDELINES.md` §11 lists every deviation from the frame with its
   reason, and §1 states where the editor stands against the reference
@@ -2095,8 +2099,6 @@ against `Roblox/creator-docs` rather than assumed:
   CSS-style property transitions and cannot transform a `Div`;
   `gpui_base::transition` animates one value explicitly (the ghost dock's
   ease uses it), but putting it behind every hover state is a larger job.
-  The Explorer's right-click menu, which builds its own rows rather than
-  going through `shell::menu`, still has no arrow keys either.
 
 ### Play / Test workflow
 - [ ] 📋 The sandbox-place design (private per-developer place, injected

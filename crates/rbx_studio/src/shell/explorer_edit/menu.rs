@@ -16,6 +16,13 @@
 //! Rows are built here rather than through [`menu::item`] because Rename,
 //! Insert and Change Class need a `Window` the controlled dropdown's action type does not
 //! carry; they share [`menu::row_chrome`] so both menus stay one design.
+//!
+//! The keyboard follows the same WAI-ARIA menu pattern as the dropdowns:
+//! Shift+F10 or the Menu key opens it on the selected row (at the pointer,
+//! where every Explorer popup goes); open, it holds focus, Up/Down move a
+//! highlight and wrap, Home/End jump to the ends, Enter or Space runs the
+//! highlighted row, and Escape closes it. Closing it from the keyboard hands
+//! focus back to the tree. Disabled rows take the highlight but cannot run.
 
 use gpui_kit::assets::IconName;
 use gpui_kit::prelude::FluentBuilder as _;
@@ -23,6 +30,7 @@ use gpui_kit::*;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
+use super::super::roving::Move;
 use super::super::{clipboard, group, keys, menu};
 use super::rename::renameable;
 use super::Shell;
@@ -68,9 +76,28 @@ pub(super) fn availability(
 
 /// One open context menu: the row it was opened on, kept so Insert and
 /// Rename act on that row rather than on whatever the selection later
-/// becomes.
+/// becomes, and its keyboard focus and highlight.
 pub(super) struct RowMenu {
     target: Ref,
+    focus: FocusHandle,
+    cursor: Option<usize>,
+}
+
+impl RowMenu {
+    pub(super) fn focus(&self, window: &mut Window, cx: &mut App) {
+        self.focus.focus(window, cx);
+    }
+}
+
+/// Whether `keystroke` asks for the selected row's menu: Shift+F10, or the
+/// Menu key on keyboards that have one, the two every desktop shares.
+pub(in crate::shell) fn opens_row_menu(keystroke: &Keystroke) -> bool {
+    let m = keystroke.modifiers;
+    match keystroke.key.as_str() {
+        "f10" => m.shift && !m.control && !m.alt && !m.platform,
+        "menu" => !m.modified(),
+        _ => false,
+    }
 }
 
 impl Shell {
@@ -89,12 +116,75 @@ impl Shell {
         self.explorer_edit.pointer = position;
         self.explorer_edit.picker = None;
         self.explorer_edit.renaming = None;
-        self.explorer_edit.menu = Some(RowMenu { target });
+        self.explorer_edit.menu = Some(RowMenu {
+            target,
+            focus: cx.focus_handle(),
+            cursor: None,
+        });
+        self.explorer_edit.focus_menu = true;
         cx.notify();
     }
 
+    /// Shift+F10 or the Menu key in the tree: the selected row's menu, at
+    /// the pointer like every Explorer popup, starting on its first row.
+    /// False with nothing selected, so the key falls through.
+    pub(in crate::shell) fn open_row_menu_from_keyboard(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(target) = self.selected() else {
+            return false;
+        };
+        self.open_row_menu(target, self.explorer_edit.pointer, cx);
+        if let Some(menu) = &mut self.explorer_edit.menu {
+            menu.cursor = Some(0);
+        }
+        true
+    }
+
+    /// The open menu's keys. `actions` is each row's handler where the row
+    /// can run, in row order.
+    fn row_menu_key(
+        &mut self,
+        keystroke: &Keystroke,
+        actions: &[Option<RowAction>],
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(menu) = &mut self.explorer_edit.menu else {
+            return false;
+        };
+        if let Some(movement) = Move::of(keystroke, true) {
+            menu.cursor = movement.from(menu.cursor, actions.len());
+            cx.notify();
+            return true;
+        }
+        match keystroke.key.as_str() {
+            "escape" => {
+                self.explorer_edit.menu = None;
+                self.tree_focus_handle.focus(window, cx);
+                cx.notify();
+                true
+            }
+            "enter" | "space" => {
+                let action = menu
+                    .cursor
+                    .and_then(|index| actions.get(index).cloned().flatten());
+                if let Some(action) = action {
+                    // Closed and focus handed back first, as a click does:
+                    // Rename and Insert open something of their own, which
+                    // then takes focus from the tree.
+                    self.explorer_edit.menu = None;
+                    self.tree_focus_handle.focus(window, cx);
+                    action(self, window, cx);
+                    cx.notify();
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
     pub(super) fn row_menu_popup(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let target = self.explorer_edit.menu.as_ref()?.target;
+        let open = self.explorer_edit.menu.as_ref()?;
+        let (target, focus, cursor) = (open.target, open.focus.clone(), open.cursor);
         let mut live = availability(
             &self.dom,
             &self.database,
@@ -185,11 +275,25 @@ impl Shell {
                 live.delete,
                 |shell, _, cx| shell.delete_selected(cx),
             ),
-        ]
-        .map(|row| row.build(cx));
+        ];
+        let actions: Vec<Option<RowAction>> = rows
+            .iter()
+            .map(|row| row.enabled.then(|| row.action.clone()))
+            .collect();
+        let rows = rows
+            .into_iter()
+            .enumerate()
+            .map(|(index, row)| row.build(cursor == Some(index), cx))
+            .collect::<Vec<_>>();
 
         let surface = menu::surface()
             .id("explorer-row-menu")
+            .track_focus(&focus)
+            .on_key_down(cx.listener(move |shell, event: &KeyDownEvent, window, cx| {
+                if shell.row_menu_key(&event.keystroke, &actions, window, cx) {
+                    cx.stop_propagation();
+                }
+            }))
             .occlude()
             .on_mouse_down_out(cx.listener(|shell, _: &MouseDownEvent, _, cx| {
                 shell.explorer_edit.menu = None;
@@ -212,7 +316,7 @@ impl Shell {
 /// What one row does when clicked. A `Window` as well as a `Context`,
 /// unlike the controlled dropdown's own action: Rename and Insert both open
 /// something that needs one.
-type RowAction = Box<dyn Fn(&mut Shell, &mut Window, &mut Context<Shell>)>;
+type RowAction = std::rc::Rc<dyn Fn(&mut Shell, &mut Window, &mut Context<Shell>)>;
 
 /// One row of the menu, before it has a `Context` to bind its handler
 /// through — the array above has to be built as data first so every row can
@@ -237,12 +341,12 @@ fn row(
         icon,
         label,
         enabled,
-        action: Box::new(action),
+        action: std::rc::Rc::new(action),
     }
 }
 
 impl Row {
-    fn build(self, cx: &mut Context<Shell>) -> AnyElement {
+    fn build(self, highlighted: bool, cx: &mut Context<Shell>) -> AnyElement {
         let Row {
             id,
             icon,
@@ -257,6 +361,9 @@ impl Row {
             enabled,
             false,
         )
+        // The keyboard's highlight wears the hover's surface, as in the
+        // dropdowns (`shell::menu`).
+        .when(highlighted, |this| this.bg(crate::tokens::hover()))
         .when(enabled, |this| {
             this.on_click(cx.listener(move |shell, _, window, cx| {
                 // Closed before the action runs, not after: Rename and

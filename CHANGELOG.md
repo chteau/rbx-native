@@ -7,6 +7,10 @@
   Up and Down now move through the rows, Home and End jump to the ends, and
   Enter or Space picks the highlighted one. Before, an open menu could only
   be closed from the keyboard, not used. — @Vikmanou
+- **The Explorer's right-click menu from the keyboard.** Shift+F10 (or
+  the Menu key) opens it on the selected row, and inside it the arrows,
+  Home/End, Enter and Escape work as in the other menus; closing it puts
+  focus back in the tree. — @Vikmanou
 
 ## 2026-09-30
 

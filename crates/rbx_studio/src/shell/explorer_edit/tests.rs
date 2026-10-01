@@ -94,3 +94,28 @@ fn a_service_cannot_be_renamed_but_an_instance_under_it_can() {
     assert!(!renameable(&dom, &database, workspace));
     assert!(renameable(&dom, &database, loose));
 }
+
+fn key(key: &str, shift: bool, control: bool) -> gpui_kit::Keystroke {
+    gpui_kit::Keystroke {
+        modifiers: gpui_kit::Modifiers {
+            shift,
+            control,
+            ..Default::default()
+        },
+        key: key.into(),
+        key_char: None,
+    }
+}
+
+/// Shift+F10 and the Menu key open the row menu; plain F10 is the menu
+/// bar's (see `shell::save`), and a modified Menu key is somebody else's.
+#[test]
+fn shift_f10_and_the_menu_key_open_the_row_menu_and_nothing_else_does() {
+    use super::menu::opens_row_menu;
+    assert!(opens_row_menu(&key("f10", true, false)));
+    assert!(opens_row_menu(&key("menu", false, false)));
+    assert!(!opens_row_menu(&key("f10", false, false)));
+    assert!(!opens_row_menu(&key("f10", true, true)));
+    assert!(!opens_row_menu(&key("menu", true, false)));
+    assert!(!opens_row_menu(&key("down", false, false)));
+}
