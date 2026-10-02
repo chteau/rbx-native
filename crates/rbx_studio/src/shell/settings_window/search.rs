@@ -38,6 +38,7 @@ fn key(label: &str) -> Option<String> {
         "Show all services" => "show_all_services",
         "Increment names" => "increment_names",
         "Expand to selection" => "expand_on_select",
+        "Default services" => "service_overrides",
         "Timestamps" => "output_timestamps",
         "Dock layout" => "docks",
         "Output panel" => "output_collapsed",

@@ -283,8 +283,10 @@ impl Shell {
         // Rows open before stay open: an edit that adds a modifier under a
         // row must not fold up the tree it was made from.
         let mut open = HashSet::new();
-        expanded_ids(&self.explorer.items(true), &mut open);
-        reopen(&explorer.items(true), &open);
+        // Every root, so the overrides don't matter here.
+        let all = explorer::ServiceOverrides::new();
+        expanded_ids(&self.explorer.items(true, &all), &mut open);
+        reopen(&explorer.items(true, &all), &open);
         // A rename, reparent or destroy can invalidate the selection; kept
         // only if its referent still resolves in the rebuilt tree.
         let kept = self

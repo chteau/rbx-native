@@ -64,6 +64,11 @@ impl Shell {
             div()
                 .id("explorer-tree")
                 .size_full()
+                // "Your cursor changes" (creator-docs, `ui/text-input.md`):
+                // a click here sets a `Ref` row instead of selecting.
+                .when(self.edits.ref_pick.is_armed(), |this| {
+                    this.cursor(CursorStyle::Crosshair)
+                })
                 // The tree's keyboard door. `TreeState` owns its own focus
                 // handle privately and never puts it in the tab order, so
                 // the whole APG contract below was reachable by mouse only.

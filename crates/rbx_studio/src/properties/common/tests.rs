@@ -149,6 +149,22 @@ fn a_mixed_flag_set_is_read_only_until_it_agrees() {
 }
 
 #[test]
+fn a_content_naming_an_instance_keeps_a_mixed_row_read_only() {
+    use rbx_dom::Content;
+    let texture = |content| vec![("Texture", Variant::Content(content))];
+    let rows = rows_of(&[
+        (
+            "Decal",
+            "Uri",
+            texture(Content::Uri("rbxassetid://1".into())),
+        ),
+        ("Decal", "Object", texture(Content::Object(WORKSPACE))),
+    ]);
+
+    assert_eq!(row(&rows, "Texture").edit, None);
+}
+
+#[test]
 fn different_classes_keep_only_what_they_share() {
     let part_and_wedge = rows_of(&[("Part", "A", vec![]), ("WedgePart", "B", vec![])]);
     // Every `BasePart` property, but not the `Part`'s own `Shape`.

@@ -123,7 +123,7 @@ fn every_instance_gets_an_icon_by_its_referent() {
 
     let explorer = from_dom(&dom);
 
-    assert_eq!(explorer.items(true).len(), 1);
+    assert_eq!(explorer.items(true, &ServiceOverrides::new()).len(), 1);
     assert!(matches!(explorer.icon(&"7".into()), ClassIcon::Sprite(_)));
     assert!(matches!(
         explorer.icon(&"8".into()),
@@ -176,7 +176,10 @@ fn set_icon_pack_swaps_every_row_s_sprite_without_touching_its_tree_item() {
     assert!(dark_bytes.is_some() && light_bytes.is_some());
     assert_ne!(dark_bytes, light_bytes);
     // The row itself (id, label, children) is unaffected by the pack swap.
-    assert_eq!(dark.items(true)[0].label, light.items(true)[0].label);
+    assert_eq!(
+        dark.items(true, &ServiceOverrides::new())[0].label,
+        light.items(true, &ServiceOverrides::new())[0].label
+    );
 }
 
 #[test]
@@ -211,7 +214,7 @@ fn the_default_view_drops_noisy_services_the_full_view_keeps() {
 
     let labels = |show_all| -> Vec<String> {
         explorer
-            .items(show_all)
+            .items(show_all, &ServiceOverrides::new())
             .iter()
             .map(|item| item.label.to_string())
             .collect()
@@ -467,4 +470,42 @@ fn the_ui_view_lists_only_ui_roots_and_what_is_under_them() {
     );
     assert_eq!(roots[1].children.len(), 1);
     assert_eq!(roots[1].children[0].id.as_ref(), "6");
+}
+
+/// A service the user ticks joins the default view, one they untick leaves
+/// it, and flipping either back removes the override rather than storing
+/// Studio's own answer.
+#[test]
+fn default_services_follow_the_users_overrides_and_store_only_differences() {
+    let mut dom = WeakDom::new();
+    insert(&mut dom, 1, "Workspace", "Workspace");
+    insert(&mut dom, 2, "HttpService", "HttpService");
+    insert(&mut dom, 3, "Teams", "Teams");
+    let explorer = from_dom(&dom);
+    let labels = |overrides: &ServiceOverrides| -> Vec<String> {
+        explorer
+            .items(false, overrides)
+            .iter()
+            .map(|item| item.label.to_string())
+            .collect()
+    };
+    assert_eq!(labels(&ServiceOverrides::new()), ["Workspace", "Teams"]);
+
+    let overrides = toggled(ServiceOverrides::new(), "HttpService");
+    let overrides = toggled(overrides, "Teams");
+    assert_eq!(labels(&overrides), ["Workspace", "HttpService"]);
+    assert_eq!(overrides.get("HttpService"), Some(&true));
+    assert_eq!(overrides.get("Teams"), Some(&false));
+
+    let overrides = toggled(toggled(overrides, "HttpService"), "Teams");
+    assert!(overrides.is_empty());
+    assert_eq!(labels(&overrides), ["Workspace", "Teams"]);
+}
+
+/// An override only reaches a service: a hand-edited `{"Folder": false}`
+/// must not hide the place's own root folders.
+#[test]
+fn an_override_for_a_non_service_class_is_ignored() {
+    let overrides = ServiceOverrides::from([("Folder".to_owned(), false)]);
+    assert!(is_listed("Folder", &overrides));
 }

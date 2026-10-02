@@ -337,6 +337,58 @@ fn an_enum_item_is_also_named_on_its_own() {
 }
 
 #[test]
+fn an_unset_reference_is_listed_as_an_editable_nil() {
+    let mut dom = WeakDom::new();
+    let weld = dom.new_instance("Weld", "Weld", None);
+    let properties = Properties::new(ReflectionDatabase::embedded());
+
+    let rows = properties.rows(&dom, &[weld], None);
+    let part0 = rows
+        .iter()
+        .find(|row| row.name == "Part0")
+        .expect("a fresh Weld still lists Part0");
+
+    assert_eq!(part0.value, "nil");
+    assert_eq!(part0.edit, Some(EditKind::Ref("nil".to_owned())));
+}
+
+#[test]
+fn a_set_reference_edits_through_the_picker_and_parent_stays_read_only() {
+    let fixture = properties(&[]);
+    let mut dom = fixture.dom;
+    let weld = dom.new_instance("Weld", "Weld", Some(workspace()));
+    dom.set_property(weld, "Part0", Variant::Ref(part()))
+        .unwrap();
+
+    let rows = fixture.properties.rows(&dom, &[weld], None);
+    let row = |name: &str| rows.iter().find(|row| row.name == name).unwrap().clone();
+
+    assert_eq!(row("Part0").value, "Baseplate");
+    assert_eq!(
+        row("Part0").edit,
+        Some(EditKind::Ref(part().value().to_string()))
+    );
+    assert_eq!(row("Parent").value, "Workspace");
+    assert_eq!(row("Parent").edit, None);
+}
+
+#[test]
+fn a_mixed_reference_stays_pickable() {
+    let fixture = properties(&[]);
+    let mut dom = fixture.dom;
+    let set = dom.new_instance("Weld", "Weld", Some(workspace()));
+    dom.set_property(set, "Part0", Variant::Ref(part()))
+        .unwrap();
+    let unset = dom.new_instance("Weld", "Weld", Some(workspace()));
+
+    let rows = fixture.properties.rows(&dom, &[set, unset], None);
+    let part0 = rows.iter().find(|row| row.name == "Part0").unwrap();
+
+    assert!(part0.mixed);
+    assert_eq!(part0.edit, Some(EditKind::Ref(String::new())));
+}
+
+#[test]
 fn refs_read_as_the_target_name() {
     assert_eq!(formatted("Parent", Variant::Ref(workspace())), "Workspace");
     assert_eq!(formatted("Dangling", Variant::Ref(Ref::new(99))), "nil");

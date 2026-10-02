@@ -32,6 +32,7 @@ mod panel_window;
 mod panels;
 mod property_element;
 mod quality;
+mod ref_pick;
 mod reparent;
 mod ribbon;
 mod roving;
@@ -120,6 +121,8 @@ pub(crate) struct Shell {
     /// Studio's default service set. Persisted (see `settings`); every write
     /// goes through [`Shell::save_settings`].
     show_all_services: bool,
+    /// See `explorer::ServiceOverrides`; persisted.
+    service_overrides: crate::explorer::ServiceOverrides,
     /// The dropdown's current pick, kept alongside the `Select` entity itself
     /// so a settings write never has to reach into GPUI state to read it back.
     quality_choice: QualityLevel,
@@ -274,6 +277,8 @@ pub(crate) struct Shell {
     /// the panel's overflow menu (see `shell::dock`'s `dropdown_menu`) and
     /// Settings. Persisted.
     output_show_timestamps: bool,
+    /// The Script Editor's text size at 1x; see `Settings::script_font_size`.
+    script_font_size: f32,
     output_scroll: ScrollHandle,
     /// The Viewport dock's own, for when it is docked somewhere too short
     /// for its settings — see `shell::viewport_dock`.
@@ -383,6 +388,7 @@ impl Shell {
         let Settings {
             quality,
             show_all_services,
+            service_overrides,
             orthographic,
             axis_indicator,
             selection_occluded,
@@ -390,6 +396,7 @@ impl Shell {
             icon_pack,
             unfocused_fps,
             font_scale,
+            script_font_size,
             large_targets,
             reduce_motion,
             docks,
@@ -422,7 +429,7 @@ impl Shell {
             format,
             folder_colors,
         } = place;
-        let items = explorer.items(show_all_services);
+        let items = explorer.items(show_all_services, &service_overrides);
 
         let selector = cx.new(|cx| {
             let row = IndexPath::new(quality_row(quality));
@@ -535,7 +542,7 @@ impl Shell {
         // Built last of Shell::new's entities: its `Action` handlers close
         // over `cx.entity()`, so `Shell` must already be constructible —
         // valid as soon as `cx.new` starts building it.
-        let menu_bar = crate::menu_bar::build(cx.entity(), cx);
+        let menu_bar = crate::menu_bar::build(cx.entity(), user.script_templates.extras(), cx);
 
         let (snap_fields, [translate_typed, rotate_typed, translate_stepped, rotate_stepped]) =
             SnapFields::new(transform, window, cx);
@@ -549,6 +556,7 @@ impl Shell {
             explorer: Rc::new(explorer),
             tree,
             show_all_services,
+            service_overrides,
             quality_choice: quality,
             orthographic,
             axis_indicator,
@@ -605,6 +613,7 @@ impl Shell {
             output: output::OutputLog::default(),
             output_filter: output::OutputFilter::default(),
             output_show_timestamps: output_timestamps,
+            script_font_size,
             output_scroll: ScrollHandle::new(),
             viewport_scroll: ScrollHandle::new(),
             viewport_rows: Rc::default(),
@@ -960,6 +969,32 @@ impl Shell {
         }
 
         self.show_all_services = show_all;
+        self.refresh_root_rows(cx);
+    }
+
+    /// Lists or hides one service in the Explorer's default view, from
+    /// Studio Settings' Default services grid.
+    pub(super) fn toggle_default_service(&mut self, class: &str, cx: &mut Context<Self>) {
+        let overrides = std::mem::take(&mut self.service_overrides);
+        self.service_overrides = crate::explorer::toggled(overrides, class);
+        self.refresh_root_rows(cx);
+    }
+
+    pub(super) fn service_overrides(&self) -> &crate::explorer::ServiceOverrides {
+        &self.service_overrides
+    }
+
+    /// Back to Studio's own default services.
+    pub(super) fn reset_service_overrides(&mut self, cx: &mut Context<Self>) {
+        if !self.service_overrides.is_empty() {
+            self.service_overrides.clear();
+            self.refresh_root_rows(cx);
+        }
+    }
+
+    /// Pushes the root rows the visibility settings now call for into the
+    /// tree, and saves them.
+    fn refresh_root_rows(&mut self, cx: &mut Context<Self>) {
         let items = self.explorer_items();
         // Replacing the rows drops the tree's selection; putting it back in the
         // same update keeps the observer from ever seeing the gap. A selected
@@ -1103,6 +1138,22 @@ impl Shell {
         cx.notify();
     }
 
+    pub(super) fn script_font_size(&self) -> f32 {
+        self.script_font_size
+    }
+
+    /// Sets the Script Editor's text size, clamped to what the setting
+    /// accepts, from Studio Settings' Script Font Size field.
+    pub(super) fn set_script_font_size(&mut self, size: f32, cx: &mut Context<Self>) {
+        let size = crate::settings::clamp_script_font_size(size);
+        if size == self.script_font_size {
+            return;
+        }
+        self.script_font_size = size;
+        self.save_settings();
+        cx.notify();
+    }
+
     /// Flips the viewport's main camera between perspective and orthographic
     /// projection — see `WorkspaceView::set_orthographic`.
     fn set_orthographic(&mut self, orthographic: bool, cx: &mut Context<Self>) {
@@ -1236,6 +1287,7 @@ impl Shell {
         let settings = Settings {
             quality: self.quality_choice,
             show_all_services: self.show_all_services,
+            service_overrides: self.service_overrides.clone(),
             orthographic: self.orthographic,
             axis_indicator: self.axis_indicator,
             selection_occluded: self.selection_occluded,
@@ -1243,6 +1295,7 @@ impl Shell {
             icon_pack: self.icon_pack,
             unfocused_fps: self.unfocused_fps,
             font_scale: tokens::font_scale(),
+            script_font_size: self.script_font_size,
             large_targets: tokens::large_targets(),
             reduce_motion: self.reduce_motion,
             docks: self.layout.saved(),

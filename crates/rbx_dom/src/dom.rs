@@ -80,6 +80,30 @@ impl WeakDom {
         Ok(old)
     }
 
+    /// Deletes a single property, returning the value it held (if any). An absent
+    /// key is how this DOM stores a null `Ref` — `Variant` has no null reference,
+    /// and both file formats read their null referent back as a missing property —
+    /// so this is what clearing one means. Logged as a `Change::Property` like a
+    /// write, since every consumer reads the value back from the DOM anyway.
+    pub fn remove_property(
+        &mut self,
+        referent: Ref,
+        name: &str,
+    ) -> Result<Option<Variant>, DomError> {
+        let instance = self
+            .instances
+            .get_mut(&referent)
+            .ok_or(DomError::UnknownInstance(referent))?;
+        let old = instance.properties_mut().remove(name);
+        if old.is_some() {
+            self.changes.push(Change::Property {
+                referent,
+                name: name.to_string(),
+            });
+        }
+        Ok(old)
+    }
+
     /// Renames an instance, returning its previous name. Tracked the same way
     /// `set_property` is: see `Change::Property`'s doc comment for why a rename is
     /// reported under that variant instead of a dedicated one.
@@ -281,6 +305,29 @@ mod tests {
 
         dom.set_parent(child, None);
         assert_eq!(dom.parent(child), None);
+    }
+
+    #[test]
+    fn remove_property_drops_the_key_and_logs_only_a_real_removal() {
+        let mut dom = WeakDom::new();
+        let weld = dom.new_instance("Weld", "Weld", None);
+        dom.set_property(weld, "Part0", Variant::Ref(weld)).unwrap();
+        dom.take_changes();
+
+        let old = dom.remove_property(weld, "Part0").unwrap();
+        assert_eq!(old, Some(Variant::Ref(weld)));
+        assert!(!dom.get(weld).unwrap().properties().contains_key("Part0"));
+        assert_eq!(
+            dom.take_changes(),
+            vec![Change::Property {
+                referent: weld,
+                name: "Part0".to_string()
+            }]
+        );
+
+        assert_eq!(dom.remove_property(weld, "Part0").unwrap(), None);
+        assert!(dom.take_changes().is_empty());
+        assert!(dom.remove_property(Ref::new(99), "Part0").is_err());
     }
 
     #[test]

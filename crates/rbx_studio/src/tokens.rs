@@ -459,7 +459,7 @@ pub(crate) fn set_font_scale(scale: f32) -> bool {
 /// A design value in the scale the frames are drawn at, as the pixels to
 /// actually paint. **Every** size in this module goes through here — a
 /// literal `px()` outside it is a size the accessibility scale can't reach.
-fn scaled(base: f32) -> Pixels {
+pub(crate) fn scaled(base: f32) -> Pixels {
     px(base * font_scale())
 }
 

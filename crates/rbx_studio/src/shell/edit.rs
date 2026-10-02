@@ -190,6 +190,7 @@ pub(super) struct Edits {
     /// on every render.
     pub(super) brick_cursor: usize,
     pub(super) brick_focus: Option<FocusHandle>,
+    pub(super) ref_pick: super::ref_pick::RefPick,
 }
 
 impl Edits {
@@ -198,6 +199,7 @@ impl Edits {
     /// per-instance, so it deliberately survives this.
     pub(super) fn clear(&mut self) {
         self.rows.clear();
+        self.ref_pick = Default::default();
     }
 }
 
@@ -339,8 +341,8 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> (RowEditor, Vec<Subscription>) {
         match kind {
-            EditKind::Bool(_) | EditKind::BrickColor(_) => unreachable!(
-                "a checkbox and a BrickColor picker are built where they render, in shell::panels"
+            EditKind::Bool(_) | EditKind::BrickColor(_) | EditKind::Ref(_) => unreachable!(
+                "a checkbox and the BrickColor and Ref pickers are built where they render, in shell::property_element"
             ),
             EditKind::Text(seed) => {
                 let input = cx.new(|cx| InputState::new(window, cx).default_value(seed.clone()));
@@ -614,7 +616,7 @@ impl Shell {
     /// mutation hands it (see `Shell::reflect_changes`). A folder's colour
     /// and an attribute are the anchor's alone: the panel offers neither for
     /// a multi-selection.
-    fn apply_edit(
+    pub(super) fn apply_edit(
         &mut self,
         name: &str,
         text: &str,
@@ -655,20 +657,29 @@ impl Shell {
             return result;
         }
 
-        // See `shell::history`: snapshotted before the write below.
-        if push {
-            self.push_history();
-        }
+        // See `shell::history`: snapshotted before the write below, and
+        // pushed only once it wrote something (see `push_history_snapshot`).
+        let before = push.then(|| {
+            self.dom.take_changes();
+            self.dom.clone()
+        });
         let selection = self.selected_all().to_vec();
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
         let result = properties::edit::commit_all(&mut dom, &self.database, &selection, name, text);
         self.dom = dom;
-        // Reflected and recorded whether or not the commit below succeeded:
-        // a rejected value never reaches `WeakDom::set_property`, so the log
-        // is simply empty then — nothing to show, nothing to undo.
+        // A rejected value never reaches `WeakDom::set_property`, and a `nil`
+        // reference cleared again removes nothing, so the log is empty then:
+        // nothing to show, and no undo step that reverts nothing.
         let changes = self.dom.take_changes();
         self.reflect_changes(&changes, cx);
-        self.record_history_change(changes);
+        match before {
+            Some(_) if changes.is_empty() => {}
+            Some(before) => {
+                self.push_history_snapshot(before);
+                self.record_history_change(changes);
+            }
+            None => self.record_history_change(changes),
+        }
         result?;
 
         if name == NAME_PROPERTY {

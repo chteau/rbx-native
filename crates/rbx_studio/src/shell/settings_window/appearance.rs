@@ -11,6 +11,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::class_icons::IconPack;
+use crate::settings::SCRIPT_FONT_SIZE;
 use crate::theme;
 use crate::tokens;
 
@@ -58,7 +59,7 @@ pub(super) struct AppearanceControls {
     theme: Entity<SelectState<Choices>>,
     themes: Vec<String>,
     ui_scale: Entity<SliderState>,
-    /// The Script font size field, on the roadmap.
+    /// The Script font size field, in px at 1x.
     script_font: Entity<InputState>,
     /// The repository link Install from GitHub takes.
     link: Entity<InputState>,
@@ -147,7 +148,8 @@ impl AppearanceControls {
                 .step(0.05)
                 .default_value(tokens::font_scale())
         });
-        let script_font = cx.new(|cx| InputState::new(window, cx).default_value("13"));
+        let size = shell.read(cx).script_font_size();
+        let script_font = cx.new(|cx| InputState::new(window, cx).default_value(format!("{size}")));
         let link = cx.new(|cx| InputState::new(window, cx).placeholder("github.com/owner/repo"));
 
         let subscriptions = vec![
@@ -185,6 +187,19 @@ impl AppearanceControls {
                     let scale = (value * 20.).round() / 20.;
                     this.shell
                         .update(cx, |shell, cx| shell.set_font_scale(scale, cx));
+                }
+            }),
+            // As typed, like the snap increments: text that is not yet a
+            // size in range (a `1` on the way to `16`) leaves it alone.
+            cx.subscribe(&script_font, |this, input, event: &InputEvent, cx| {
+                if !matches!(event, InputEvent::Change) {
+                    return;
+                }
+                let (low, high) = crate::settings::SCRIPT_FONT_SIZE_RANGE;
+                let typed = input.read(cx).value().trim().parse::<f32>().ok();
+                if let Some(size) = typed.filter(|size| (low..=high).contains(size)) {
+                    this.shell
+                        .update(cx, |shell, cx| shell.set_script_font_size(size, cx));
                 }
             }),
             cx.subscribe_in(&link, window, |this, _, event: &InputEvent, _, cx| {
@@ -305,10 +320,11 @@ impl SettingsWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Vec<Section> {
-        let (scale, accent_changed, tools_changed) = {
+        let (scale, script_font, accent_changed, tools_changed) = {
             let shell = self.shell.read(cx);
             (
                 tokens::font_scale(),
+                shell.script_font_size(),
                 shell.appearance.accent.is_some(),
                 !shell.appearance.tools.is_empty(),
             )
@@ -317,6 +333,18 @@ impl SettingsWindow {
             self.appearance
                 .ui_scale
                 .update(cx, |state, cx| state.set_value(scale, window, cx));
+        }
+        // Rewritten from the setting once the field isn't being typed in, so
+        // a rejected `80` doesn't stay on screen over the size in effect.
+        let (script_font_focused, typed) = {
+            let state = self.appearance.script_font.read(cx);
+            let typed = state.value().trim().parse::<f32>().ok();
+            (state.focus_handle(cx).is_focused(window), typed)
+        };
+        if !(window.is_window_active() && script_font_focused) && typed != Some(script_font) {
+            self.appearance.script_font.update(cx, |state, cx| {
+                state.set_value(format!("{script_font}"), window, cx)
+            });
         }
         // A card click or an edited appearance.json changes the theme
         // without going through the dropdown.
@@ -452,10 +480,12 @@ impl SettingsWindow {
                 }),
                 Row::new(
                     "Script font size",
-                    number(&self.appearance.script_font, "px", false),
+                    number(&self.appearance.script_font, "px", script_font_focused),
                 )
-                .describe("The Script Editor only, on top of the UI scale.")
-                .soon(),
+                .describe("The Script Editor only, 8 to 32, on top of the UI scale.")
+                .changed(script_font != SCRIPT_FONT_SIZE, |shell, cx| {
+                    shell.set_script_font_size(SCRIPT_FONT_SIZE, cx)
+                }),
             ],
         );
 

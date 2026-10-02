@@ -56,7 +56,7 @@ fn scalar_and_composite_types_have_edit_text() {
 // Anything `parse` cannot round-trip must stay read-only text in the panel.
 #[test]
 fn unsupported_types_have_no_edit_text() {
-    assert_eq!(edit_text(&Variant::Ref(Ref::new(1))), None);
+    assert_eq!(edit_text(&Variant::SharedString(0)), None);
 }
 
 // The row's checkbox and its fields commit through the same textual path, so
@@ -437,7 +437,7 @@ fn number_range_reads_min_then_max() {
 
 #[test]
 fn a_type_edit_text_never_approved_is_rejected_defensively() {
-    let value = Variant::Ref(Ref::new(1));
+    let value = Variant::SharedString(0);
     assert!(parse_as(&value, "1").is_err());
 }
 

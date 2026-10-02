@@ -3,8 +3,9 @@
 Every `Variant` the DOM can hold, what the Properties panel does with it,
 and what a purpose-built editor would be.
 
-**Status: A1, A4, A5, B1, B2, B3, B4, B5, B6, B7 and B8 have shipped.** The rest
-is still the triage list it started as.
+**Status: A1, A4, A5, B1, B2, B3, B4, B5, B6, B7 and B8 have shipped, and B9
+in part (the Explorer pick).** The rest is still the triage list it started
+as.
 
 Two facts that shape the whole list:
 
@@ -75,7 +76,7 @@ orientation.
 | ~~B6~~ | **`PhysicalProperties`** | ✅ **done** — a Custom checkbox over the five numbers | |
 | ~~B7~~ | **`NumberSequence`** | ✅ **done** — a draggable curve with an envelope band, in a graph panel the row opens | |
 | ~~B8~~ | **`ColorSequence`** | ✅ **done** — a gradient ramp with draggable stops and a colour picker, in the same panel | |
-| B9 | **`Ref`** | `ObjectValue.Value`, `Weld.Part0` | an instance picker (Explorer target, or "pick in viewport"). Shows the target's name today |
+| B9 | **`Ref`** | `ObjectValue.Value`, `Weld.Part0` | ✅ **Explorer pick done** — click the row, then the instance in the Explorer; `×` clears it. Still open: "pick in viewport" |
 | B10 | **`Content`** | `Decal.Texture`, `MeshPart.MeshId` | an asset URI field; the `Content::Object` case is a `Ref` picker |
 
 ## C. Fine as they are
@@ -102,6 +103,8 @@ opaque payloads. Editing them by hand corrupts a file rather than editing it.
 - **B9 `Ref`, B10 `Content`** — each is its own editor with its own
   interaction model. Neither fits in a property row. (B7/B8 were the same
   case and got exactly that: a panel of their own, which the row opens.)
+  B9's Explorer pick turned out to fit after all: the row arms it and the
+  Explorer is the panel. Picking in the viewport is what is left of it.
 
 ## Rough sizing for what remains
 

@@ -33,6 +33,7 @@
 
 use gpui_kit::*;
 
+use crate::script_templates::Template;
 use crate::shell::Shell;
 use crate::tokens;
 
@@ -83,12 +84,22 @@ actions!(
     ]
 );
 
+/// Model's entry for one of the user's own script templates (see
+/// `crate::script_templates`), by its place in `ScriptTemplates::extras`:
+/// the one menu item whose action carries data, because the list is the
+/// user's and is only known at startup.
+#[derive(Clone, PartialEq, Eq, serde::Deserialize, gpui_kit::Action)]
+#[action(namespace = menu_bar, no_json)]
+pub(crate) struct MenuInsertTemplate {
+    pub(crate) index: usize,
+}
+
 /// Builds the menu bar and registers its `Action` handlers against `shell`.
 /// Returns the entity `Shell` holds and mounts as the first child of its
 /// render tree (see [`MenuBar::bar`]).
-pub(crate) fn build(shell: Entity<Shell>, cx: &mut App) -> Entity<MenuBar> {
+pub(crate) fn build(shell: Entity<Shell>, templates: &[Template], cx: &mut App) -> Entity<MenuBar> {
     actions::install(shell, cx);
-    MenuBar::new(menus(), cx)
+    MenuBar::new(menus(templates), cx)
 }
 
 /// The menu structure itself. File and Edit hold this editor's real
@@ -100,8 +111,36 @@ pub(crate) fn build(shell: Entity<Shell>, cx: &mut App) -> Entity<MenuBar> {
 /// Group/Ungroup (`shell::group`, Ctrl+G/Ctrl+Shift+G). View's Explorer,
 /// Properties and Command Bar items stay placeholders — those panels have no
 /// show/hide command to wire them to yet — while Style Editor brings its own
-/// Style Editor document to the front (see `shell::style_panel`).
-fn menus() -> Vec<OwnedMenu> {
+/// Style Editor document to the front (see `shell::style_panel`). The
+/// user's own script templates close Model, after a separator, named the way
+/// the ribbon's Script menu names them, so the two menus list the same
+/// things; last because the list is the user's and can run long, and the
+/// popup does not scroll, so it must not push Group/Ungroup out of reach.
+fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
+    let mut model = vec![
+        MenuItem::action("Insert Part", MenuInsertPart),
+        MenuItem::action("Insert Folder", MenuInsertFolder),
+        MenuItem::separator(),
+        MenuItem::action("Insert Script", MenuInsertScript),
+        MenuItem::action("Insert LocalScript", MenuInsertLocalScript),
+        MenuItem::action("Insert ModuleScript", MenuInsertModuleScript),
+        MenuItem::action("Insert ModuleScript (Class)", MenuInsertModuleScriptClass),
+        MenuItem::separator(),
+        MenuItem::action("Insert Object…", MenuPlaceholder).disabled(true),
+        MenuItem::separator(),
+        MenuItem::action("Group", MenuGroup),
+        MenuItem::action("Ungroup", MenuUngroup),
+    ];
+    if !templates.is_empty() {
+        model.push(MenuItem::separator());
+    }
+    model.extend(templates.iter().enumerate().map(|(index, template)| {
+        MenuItem::action(
+            format!("Insert {} ({})", template.name, template.class),
+            MenuInsertTemplate { index },
+        )
+    }));
+
     vec![
         Menu::new("File")
             .items(vec![
@@ -130,22 +169,7 @@ fn menus() -> Vec<OwnedMenu> {
                 MenuItem::action("Delete", MenuDeleteInstance),
             ])
             .owned(),
-        Menu::new("Model")
-            .items(vec![
-                MenuItem::action("Insert Part", MenuInsertPart),
-                MenuItem::action("Insert Folder", MenuInsertFolder),
-                MenuItem::separator(),
-                MenuItem::action("Insert Script", MenuInsertScript),
-                MenuItem::action("Insert LocalScript", MenuInsertLocalScript),
-                MenuItem::action("Insert ModuleScript", MenuInsertModuleScript),
-                MenuItem::action("Insert ModuleScript (Class)", MenuInsertModuleScriptClass),
-                MenuItem::separator(),
-                MenuItem::action("Insert Object…", MenuPlaceholder).disabled(true),
-                MenuItem::separator(),
-                MenuItem::action("Group", MenuGroup),
-                MenuItem::action("Ungroup", MenuUngroup),
-            ])
-            .owned(),
+        Menu::new("Model").items(model).owned(),
         Menu::new("View")
             .items(vec![
                 MenuItem::action("Explorer", MenuToggleExplorer),

@@ -23,7 +23,9 @@
 //!
 //! A property with neither a stored value nor a recorded default is left
 //! out too: what `Mass` or `AssemblyLinearVelocity` hold is computed by a
-//! running engine, and there is nothing true to show for it here.
+//! running engine, and there is nothing true to show for it here. An
+//! instance-typed one is the exception: a file stores a `nil` reference by
+//! leaving it out, so it is listed as `nil` (see `edit::reference`).
 
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
@@ -34,6 +36,7 @@ use rbx_reflection::{PropertyDescriptor, ReflectionDatabase};
 
 use super::computed::COMPUTED;
 use super::edit::pivot::ORIGIN;
+use super::edit::NIL_REF;
 use super::{attributes, edit::NAME_PROPERTY, Properties, UNCATEGORIZED};
 
 /// Two properties every instance has but no file stores, read off the
@@ -117,6 +120,10 @@ impl Sheet {
                     source = Source::BrickColor;
                 } else if default.is_none() && COMPUTED.contains(&property.name.as_str()) {
                     source = Source::Computed;
+                } else if default.is_none() && db.class(&property.value_type).is_some() {
+                    // An unset reference is an absent key, not a missing
+                    // default: listed as `nil`, so it can be picked.
+                    default = Some(Variant::Ref(NIL_REF));
                 }
                 index.insert(property.name.clone(), entries.len());
                 entries.push(Entry {

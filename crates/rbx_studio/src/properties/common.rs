@@ -126,8 +126,16 @@ impl Properties {
 fn mixed(mut row: PropertyRow, values: &[&Variant]) -> PropertyRow {
     row.value.clear();
     row.mixed = true;
+    // Typing writes to every instance, so one holding a value no field can
+    // show (a `Content` naming an instance) keeps the whole row read-only.
+    if values.iter().any(|value| edit::edit_text(value).is_none()) {
+        row.edit = None;
+        return row;
+    }
     row.edit = match row.edit.take() {
         Some(EditKind::Text(_)) => Some(EditKind::Text(String::new())),
+        // An empty field that still arms a pick for every selected instance.
+        Some(EditKind::Ref(_)) => Some(EditKind::Ref(String::new())),
         Some(EditKind::Enum { items, .. }) => Some(EditKind::Enum {
             current: String::new(),
             items,

@@ -29,6 +29,7 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         self.resync_scripts(window, cx);
+        let script_font = self.script_font_size();
 
         let Some(active) = self.scripts.tabs.active() else {
             return no_scripts_open(cx).into_any_element();
@@ -61,7 +62,11 @@ impl Shell {
                     .flex_1()
                     .overflow_hidden()
                     .children(self.scripts.open.get(&active).map(|open| {
+                        // Set on the editor itself, which refines it over the
+                        // theme's code size and keeps its rows in proportion;
+                        // under the UI scale like every other size.
                         Editor::new(&open.state)
+                            .text_size(crate::tokens::scaled(script_font))
                             .bordered(false)
                             .h(relative(1.0))
                             .w_full()

@@ -51,10 +51,11 @@ impl Shell {
     /// landed. Draining the stale change log is then the caller's job too,
     /// for the reason `push_history` does it above.
     ///
-    /// `shell::scripts`'s debounced `Source` write is the one call site that
-    /// needs this — a tab can outlive its script by a frame, and a snapshot
-    /// pushed for a write that never happened is a Ctrl+Z that reverts
-    /// nothing, having cleared the redo stack to offer it.
+    /// `shell::scripts`'s debounced `Source` write needs this — a tab can
+    /// outlive its script by a frame — and so does a Properties edit
+    /// (`Shell::apply_edit`), which can be refused or change nothing. A
+    /// snapshot pushed for a write that never happened is a Ctrl+Z that
+    /// reverts nothing, having cleared the redo stack to offer it.
     pub(super) fn push_history_snapshot(&mut self, before: WeakDom) {
         self.history.push(before);
     }

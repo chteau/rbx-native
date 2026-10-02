@@ -92,6 +92,21 @@ pub(super) fn draggable_row(
 ) -> AnyElement {
     div()
         .id(("explorer-drag", index))
+        // A `Ref` row waiting for its target takes the press before the
+        // tree's own row can select with it (see `shell::ref_pick`). A press,
+        // not a selection change: the arrows and type-ahead move the
+        // selection too, and must not pick; and the row already selected is
+        // a valid target (`ObjectValue.Value` may be the instance itself).
+        .capture_any_mouse_down({
+            let shell = shell.clone();
+            move |event: &MouseDownEvent, _, cx| {
+                if event.button == MouseButton::Left
+                    && shell.update(cx, |shell, cx| shell.finish_ref_pick(target, cx))
+                {
+                    cx.stop_propagation();
+                }
+            }
+        })
         .on_drag(dragged, |dragged, _, _, cx| {
             let label = dragged.label.clone();
             cx.new(|_| DragPreview { label })

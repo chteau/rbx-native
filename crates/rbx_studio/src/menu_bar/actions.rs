@@ -15,6 +15,13 @@ use super::*;
 pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
     cx.on_action({
         let shell = shell.clone();
+        move |action: &MenuInsertTemplate, cx| {
+            let index = action.index;
+            shell.update(cx, |shell, cx| shell.insert_user_template(index, cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
         move |_: &MenuSave, cx| {
             shell.update(cx, |shell, cx| shell.save(cx));
         }

@@ -268,7 +268,9 @@ impl Shell {
     pub(super) fn explorer_items(&self) -> Vec<TreeItem> {
         match self.ui_canvas_active() {
             true => self.explorer.ui_items(),
-            false => self.explorer.items(self.show_all_services),
+            false => self
+                .explorer
+                .items(self.show_all_services, &self.service_overrides),
         }
     }
 

@@ -181,6 +181,11 @@ pub(crate) enum EditKind {
     /// `edit::commit_all`), since that is all Roblox saves; any other as
     /// itself.
     BrickColor(u32),
+    /// An instance-typed property (`ObjectValue.Value`, `Weld.Part0`), by
+    /// the referent text a pick commits (see `edit::reference`). The row
+    /// shows the target's name, which [`PropertyRow::value`] already holds,
+    /// and picks a new one from the Explorer.
+    Ref(String),
 }
 
 /// One line of the panel.
@@ -570,6 +575,7 @@ pub(crate) fn value_edit_kind(value: &Variant, text: String) -> EditKind {
         Variant::Font(_) => fields(FONT, &text),
         Variant::NumberSequence(_) => EditKind::Sequence { color: false, text },
         Variant::ColorSequence(_) => EditKind::Sequence { color: true, text },
+        Variant::Ref(_) => EditKind::Ref(text),
         _ => EditKind::Text(text),
     }
 }

@@ -10,8 +10,9 @@ use super::kit::{icon, secondary_button, segmented, still_toggle, text, toggle, 
 use super::nav::Page;
 use super::SettingsWindow;
 
-/// Default services' grid: the services Studio's Explorer lists, and
-/// whether the default view shows each (`rbx_viewer::services`).
+/// Default services' grid: the services a place usually holds, each ticked
+/// when the Explorer's default view lists it (`explorer::is_listed`) and
+/// flipped by a click.
 const SERVICES: [&str; 12] = [
     "Workspace",
     "Players",
@@ -29,13 +30,14 @@ const SERVICES: [&str; 12] = [
 
 impl SettingsWindow {
     pub(super) fn explorer_output_page(&mut self, cx: &mut Context<Self>) -> Vec<Section> {
-        let (all, increment, expand, timestamps) = {
+        let (all, increment, expand, timestamps, overrides) = {
             let shell = self.shell.read(cx);
             (
                 shell.show_all_services(),
                 shell.increment_names(),
                 shell.expand_on_select,
                 shell.output_show_timestamps,
+                shell.service_overrides().clone(),
             )
         };
         let services = div()
@@ -44,8 +46,11 @@ impl SettingsWindow {
             .gap_y(px(6.))
             .gap_x(px(12.))
             .children(SERVICES.map(|name| {
-                let shown = rbx_viewer::services::is_default_visible(name);
+                let shown = crate::explorer::is_listed(name, &overrides);
                 h_flex()
+                    .id(SharedString::from(format!("service-{name}")))
+                    .cursor_pointer()
+                    .on_click(self.set(move |shell, cx| shell.toggle_default_service(name, cx)))
                     .h(px(22.))
                     .gap(px(8.))
                     .min_w_0()
@@ -101,8 +106,10 @@ impl SettingsWindow {
                 .describe("Open the tree down to whatever you select in the viewport.")
                 .changed(!expand, |shell, cx| shell.set_expand_on_select(true, cx)),
                 Row::new("Default services", div())
-                    .describe("The services listed when Show all services is off.")
-                    .soon()
+                    .describe("Click a service to list or hide it while Show all services is off.")
+                    .changed(!overrides.is_empty(), |shell, cx| {
+                        shell.reset_service_overrides(cx)
+                    })
                     .below(services),
                 Row::new(
                     "Folder colours",

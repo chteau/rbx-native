@@ -33,6 +33,11 @@ impl Shell {
                 let control = self.brick_color_picker(&row.name, current, window, cx);
                 property_row_control(row, control, false, None).into_any_element()
             }
+            Some(EditKind::Ref(_)) => {
+                let control = self.ref_picker(row, window, cx);
+                let error = self.edits.ref_pick.error_for(&row.name).map(str::to_owned);
+                property_row_control(row, control, false, error.as_deref()).into_any_element()
+            }
             // No persistent entity: a checkbox commits straight
             // through the same textual path (`shell::Shell::commit_row`)
             // every other widget uses, via `cx.entity()` since a

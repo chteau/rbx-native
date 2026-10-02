@@ -14,7 +14,8 @@ use crate::reference::Ref;
 /// dispatch on `name`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Change {
-    /// The property named `name` on `referent` was written (inserted or overwritten).
+    /// The property named `name` on `referent` was written (inserted, overwritten
+    /// or removed — see `WeakDom::remove_property`).
     /// The new value is not carried here; read it back from the DOM if needed.
     Property { referent: Ref, name: String },
     /// `referent` moved from parent `old` to parent `new` (`None` means the root level).
