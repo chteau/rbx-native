@@ -10,7 +10,7 @@
 - **The Explorer's right-click menu from the keyboard.** Shift+F10 (or
   the Menu key) opens it on the selected row, and inside it the arrows,
   Home/End, Enter and Escape work as in the other menus; closing it puts
-  focus back in the tree. — @Vikmanou
+  focus back where it was. — @Vikmanou
 
 ## 2026-09-30
 

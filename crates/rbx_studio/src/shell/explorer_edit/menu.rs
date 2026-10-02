@@ -21,8 +21,10 @@
 //! Shift+F10 or the Menu key opens it on the selected row (at the pointer,
 //! where every Explorer popup goes); open, it holds focus, Up/Down move a
 //! highlight and wrap, Home/End jump to the ends, Enter or Space runs the
-//! highlighted row, and Escape closes it. Closing it from the keyboard hands
-//! focus back to the tree. Disabled rows take the highlight but cannot run.
+//! highlighted row, and Escape closes it. However it closes, focus goes
+//! back to wherever it was when the menu opened (the tree, or the UI
+//! editor's canvas). Disabled rows take the highlight but cannot run, and
+//! the pointer moves the same highlight.
 
 use gpui_kit::assets::IconName;
 use gpui_kit::prelude::FluentBuilder as _;
@@ -81,10 +83,15 @@ pub(super) struct RowMenu {
     target: Ref,
     focus: FocusHandle,
     cursor: Option<usize>,
+    /// What had focus before the menu took it, given back on close.
+    previous: Option<FocusHandle>,
 }
 
 impl RowMenu {
-    pub(super) fn focus(&self, window: &mut Window, cx: &mut App) {
+    pub(super) fn focus(&mut self, window: &mut Window, cx: &mut App) {
+        if self.previous.is_none() {
+            self.previous = window.focused(cx);
+        }
         self.focus.focus(window, cx);
     }
 }
@@ -116,10 +123,18 @@ impl Shell {
         self.explorer_edit.pointer = position;
         self.explorer_edit.picker = None;
         self.explorer_edit.renaming = None;
+        // A menu reopened over another keeps what the first one took
+        // focus from, rather than the first menu itself.
+        let previous = self
+            .explorer_edit
+            .menu
+            .take()
+            .and_then(|menu| menu.previous);
         self.explorer_edit.menu = Some(RowMenu {
             target,
             focus: cx.focus_handle(),
             cursor: None,
+            previous,
         });
         self.explorer_edit.focus_menu = true;
         cx.notify();
@@ -137,6 +152,20 @@ impl Shell {
             menu.cursor = Some(0);
         }
         true
+    }
+
+    /// Closes the row menu and, if focus is still in it, hands focus back to
+    /// what had it when the menu opened, as a popover does.
+    fn close_row_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(menu) = self.explorer_edit.menu.take() {
+            if let Some(previous) = menu
+                .previous
+                .filter(|_| menu.focus.contains_focused(window, cx))
+            {
+                previous.focus(window, cx);
+            }
+        }
+        cx.notify();
     }
 
     /// The open menu's keys. `actions` is each row's handler where the row
@@ -158,21 +187,21 @@ impl Shell {
         }
         match keystroke.key.as_str() {
             "escape" => {
-                self.explorer_edit.menu = None;
-                self.tree_focus_handle.focus(window, cx);
-                cx.notify();
+                self.close_row_menu(window, cx);
                 true
             }
             "enter" | "space" => {
-                let action = menu
-                    .cursor
-                    .and_then(|index| actions.get(index).cloned().flatten());
-                if let Some(action) = action {
+                // Nothing highlighted (a right-click open): just close, as
+                // the dropdowns do. A disabled row runs nothing.
+                let Some(index) = menu.cursor else {
+                    self.close_row_menu(window, cx);
+                    return true;
+                };
+                if let Some(action) = actions.get(index).cloned().flatten() {
                     // Closed and focus handed back first, as a click does:
                     // Rename and Insert open something of their own, which
-                    // then takes focus from the tree.
-                    self.explorer_edit.menu = None;
-                    self.tree_focus_handle.focus(window, cx);
+                    // then takes focus from it.
+                    self.close_row_menu(window, cx);
                     action(self, window, cx);
                     cx.notify();
                 }
@@ -283,7 +312,7 @@ impl Shell {
         let rows = rows
             .into_iter()
             .enumerate()
-            .map(|(index, row)| row.build(cursor == Some(index), cx))
+            .map(|(index, row)| row.build(index, cursor == Some(index), cx))
             .collect::<Vec<_>>();
 
         let surface = menu::surface()
@@ -295,9 +324,8 @@ impl Shell {
                 }
             }))
             .occlude()
-            .on_mouse_down_out(cx.listener(|shell, _: &MouseDownEvent, _, cx| {
-                shell.explorer_edit.menu = None;
-                cx.notify();
+            .on_mouse_down_out(cx.listener(|shell, _: &MouseDownEvent, window, cx| {
+                shell.close_row_menu(window, cx);
             }))
             .children(rows);
 
@@ -346,7 +374,7 @@ fn row(
 }
 
 impl Row {
-    fn build(self, highlighted: bool, cx: &mut Context<Shell>) -> AnyElement {
+    fn build(self, index: usize, highlighted: bool, cx: &mut Context<Shell>) -> AnyElement {
         let Row {
             id,
             icon,
@@ -361,15 +389,21 @@ impl Row {
             enabled,
             false,
         )
-        // The keyboard's highlight wears the hover's surface, as in the
-        // dropdowns (`shell::menu`).
+        // The keyboard's highlight wears the hover's surface, and the
+        // pointer moves it, as in the dropdowns (`shell::menu`).
         .when(highlighted, |this| this.bg(crate::tokens::hover()))
+        .on_hover(cx.listener(move |shell, hovered: &bool, _, cx| {
+            if let Some(menu) = shell.explorer_edit.menu.as_mut().filter(|_| *hovered) {
+                menu.cursor = Some(index);
+                cx.notify();
+            }
+        }))
         .when(enabled, |this| {
             this.on_click(cx.listener(move |shell, _, window, cx| {
                 // Closed before the action runs, not after: Rename and
                 // Insert both open something of their own, and clearing
                 // the menu afterwards would take that with it.
-                shell.explorer_edit.menu = None;
+                shell.close_row_menu(window, cx);
                 action(shell, window, cx);
                 cx.notify();
             }))

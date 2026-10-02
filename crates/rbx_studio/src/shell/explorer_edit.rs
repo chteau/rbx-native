@@ -73,7 +73,7 @@ impl Shell {
     /// would take the rename with it.
     pub(super) fn focus_explorer_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if std::mem::take(&mut self.explorer_edit.focus_menu) {
-            if let Some(menu) = &self.explorer_edit.menu {
+            if let Some(menu) = &mut self.explorer_edit.menu {
                 menu.focus(window, cx);
             }
         }

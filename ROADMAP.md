@@ -1325,7 +1325,7 @@ Roblox's own engine.
   groups' own (`roving::Move`). The Explorer's right-click menu, which
   builds its own rows, works the same way, and Shift+F10 or the Menu key
   opens it on the selected row (at the pointer, where every Explorer popup
-  goes); closing it from the keyboard hands focus back to the tree.
+  goes); however it closes, focus goes back to where it was.
 - [x] **Output window: the half of real Studio's filter/display feature
   set that does not need the sandbox**, checked against `studio/output.md`
   rather than assumed and built against what the Command Bar and app
