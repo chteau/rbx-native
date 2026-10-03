@@ -30,12 +30,20 @@ pub(super) fn dropdown(
                 checked,
                 disabled,
                 ..
-            } => menu.menu_with_check_and_disabled(
-                name.clone(),
-                *checked,
-                action.boxed_clone(),
-                *disabled,
-            ),
+            } => match super::icon(action.as_ref()) {
+                Some(icon) => menu.menu_with_icon_and_disabled(
+                    name.clone(),
+                    icon,
+                    action.boxed_clone(),
+                    *disabled,
+                ),
+                None => menu.menu_with_check_and_disabled(
+                    name.clone(),
+                    *checked,
+                    action.boxed_clone(),
+                    *disabled,
+                ),
+            },
             OwnedMenuItem::Separator => menu.separator(),
             // `menus()` builds neither, and there is nothing sensible to draw
             // for an OS-managed menu on this platform.

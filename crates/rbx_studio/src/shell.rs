@@ -56,6 +56,7 @@ mod selection;
 mod settings_window;
 mod style_panel;
 mod sun;
+mod templates_live;
 mod theme_live;
 mod toolbar;
 pub(crate) mod tooltip;
@@ -243,9 +244,11 @@ pub(crate) struct Shell {
     /// This window's own copy/paste clipboard, replaced whole by every
     /// `Ctrl+C` — see `shell::clipboard`.
     clipboard: Vec<clipboard::Clipped>,
-    /// The user's starter scripts, read once at startup — see
-    /// `crate::script_templates`.
+    /// The user's starter scripts, reloaded whenever their folder changes —
+    /// see `crate::script_templates` and `shell::templates_live`.
     script_templates: crate::script_templates::ScriptTemplates,
+    /// The templates folder's fingerprint as of the last load.
+    templates_stamp: u64,
     /// The `BasePart` the cursor was last resolved to be over, if any — see
     /// `shell::drag::hover_in_viewport`. Kept here, alongside `selection`
     /// above, purely to dedupe: the viewport reports cursor motion on every
@@ -635,6 +638,7 @@ impl Shell {
             range_cursor: None,
             clipboard: Vec::new(),
             script_templates: user.script_templates,
+            templates_stamp: 0,
             hovered: Vec::new(),
             covered: HashSet::new(),
             scripts: ScriptEditor::default(),
@@ -860,6 +864,7 @@ impl Shell {
 
         shell.watch_theme(cx);
         shell.watch_recovery(cx);
+        shell.watch_script_templates(cx);
 
         shell
     }

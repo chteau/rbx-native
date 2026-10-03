@@ -31,6 +31,7 @@
 //! (`studio/ui-overview.md`), and this editor's menus are File/Edit/Model/View,
 //! so it goes under View.
 
+use gpui_kit::assets::IconName;
 use gpui_kit::*;
 
 use crate::script_templates::Template;
@@ -50,6 +51,7 @@ actions!(
         MenuSave,
         MenuOpenAutoSaves,
         MenuStudioSettings,
+        MenuScriptTemplates,
         MenuUndo,
         MenuRedo,
         MenuInsertPart,
@@ -101,6 +103,21 @@ pub(crate) struct MenuInsertTemplate {
 pub(crate) fn build(shell: Entity<Shell>, templates: &[Template], cx: &mut App) -> Entity<MenuBar> {
     actions::install(shell, cx);
     MenuBar::new(menus(templates), cx)
+}
+
+/// Rebuilds the menus after the user's templates changed on disk: Model's
+/// template items carry an index into the list, so the old ones would now
+/// point at the wrong template.
+pub(crate) fn refresh(bar: &Entity<MenuBar>, templates: &[Template], cx: &mut App) {
+    bar.update(cx, |bar, cx| bar.set_menus(menus(templates), cx));
+}
+
+/// The few items drawn with an icon: the ones that open a window of their
+/// own rather than act on the place.
+fn icon(action: &dyn gpui_kit::Action) -> Option<IconName> {
+    action
+        .partial_eq(&MenuScriptTemplates)
+        .then_some(IconName::FileCode)
 }
 
 /// The menu structure itself. File and Edit hold this editor's real
@@ -159,6 +176,7 @@ fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
                 MenuItem::action("Open Auto Saves", MenuOpenAutoSaves),
                 MenuItem::separator(),
                 MenuItem::action("Studio Settings…", MenuStudioSettings),
+                MenuItem::action("Script Templates…", MenuScriptTemplates),
             ])
             .owned(),
         Menu::new("Edit")

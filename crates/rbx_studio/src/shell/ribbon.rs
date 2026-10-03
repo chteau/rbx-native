@@ -538,15 +538,24 @@ fn insert_item(
         })
 }
 
-/// The three built-in script classes, then whatever the user has put in
-/// their templates directory, labelled `"<name> (<class>)"` so two templates
-/// of different classes can share a name without being ambiguous.
+/// The three built-in script classes, the way into the templates window,
+/// then whatever the user has put in their templates directory, labelled
+/// `"<name> (<class>)"` so two templates of different classes can share a
+/// name without being ambiguous. Rebuilt every frame, so a template added on
+/// disk shows up as soon as `Shell` reloads the list.
 fn script_items(templates: &ScriptTemplates) -> Vec<menu::Item> {
     let mut items = vec![
         insert_item("Script", IconName::FileCode, "Script", None),
         insert_item("Local Script", IconName::FileCode, "LocalScript", None),
         insert_item("Module Script", IconName::Package, "ModuleScript", None),
+        menu::separator(),
+        menu::item("Manage templates\u{2026}")
+            .icon(IconName::Pencil)
+            .on_click(|shell, cx| shell.open_script_templates(cx)),
     ];
+    if !templates.extras().is_empty() {
+        items.push(menu::separator());
+    }
     items.extend(
         templates
             .extras()

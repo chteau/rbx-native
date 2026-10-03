@@ -57,9 +57,16 @@ impl Watch {
 }
 
 fn stamp(appearance: Option<&Path>, theme: Option<&Path>) -> u64 {
+    fingerprint([appearance, theme].into_iter().flatten())
+}
+
+/// A hash of every path, size and modification time under `roots` — what
+/// changes when anything there is added, removed or saved. Also how
+/// `Shell::watch_script_templates` notices a template edited by hand.
+pub(crate) fn fingerprint<'a>(roots: impl IntoIterator<Item = &'a Path>) -> u64 {
     let mut hasher = DefaultHasher::new();
     let mut budget = MAX_ENTRIES;
-    for root in [appearance, theme].into_iter().flatten() {
+    for root in roots {
         walk(root, &mut hasher, &mut budget);
     }
     hasher.finish()

@@ -118,12 +118,6 @@ impl MenuNav {
     }
 }
 
-impl Item {
-    fn is_enabled(&self) -> bool {
-        self.enabled && self.action.is_some()
-    }
-}
-
 /// One row. Built with the `with_*` chain rather than a struct literal so a
 /// plain item stays a one-liner at the call site.
 pub(super) struct Item {
@@ -132,6 +126,7 @@ pub(super) struct Item {
     enabled: bool,
     checked: bool,
     action: Option<Action>,
+    separator: bool,
 }
 
 pub(super) fn item(label: impl Into<SharedString>) -> Item {
@@ -141,10 +136,23 @@ pub(super) fn item(label: impl Into<SharedString>) -> Item {
         enabled: true,
         checked: false,
         action: None,
+        separator: false,
+    }
+}
+
+/// A hairline between groups of rows; Enter on it does nothing.
+pub(super) fn separator() -> Item {
+    Item {
+        separator: true,
+        ..item("")
     }
 }
 
 impl Item {
+    fn is_enabled(&self) -> bool {
+        self.enabled && self.action.is_some()
+    }
+
     pub(super) fn icon(mut self, icon: IconName) -> Self {
         self.icon = Some(icon);
         self
@@ -277,12 +285,16 @@ fn container(shell: Entity<Shell>, items: &[Item], cursor: Option<usize>) -> imp
 }
 
 fn menu_surface(shell: Entity<Shell>, items: &[Item], cursor: Option<usize>) -> Div {
-    surface().children(
-        items
-            .iter()
-            .enumerate()
-            .map(|(index, item)| row(shell.clone(), index, item, cursor == Some(index))),
-    )
+    surface().children(items.iter().enumerate().map(|(index, item)| {
+        match item.separator {
+            true => div()
+                .h(px(1.))
+                .my(px(3.))
+                .bg(tokens::border())
+                .into_any_element(),
+            false => row(shell.clone(), index, item, cursor == Some(index)).into_any_element(),
+        }
+    }))
 }
 
 /// §9's menu container, without its rows: `chrome`, the one radius, 4px of

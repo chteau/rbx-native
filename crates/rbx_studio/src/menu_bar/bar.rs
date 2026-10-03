@@ -100,6 +100,15 @@ impl MenuBar {
         })
     }
 
+    /// Swaps in rebuilt items; an open dropdown closes rather than go stale.
+    pub(crate) fn set_menus(&mut self, menus: Vec<OwnedMenu>, cx: &mut Context<Self>) {
+        debug_assert_eq!(menus.len(), self.handles.len());
+        self.menus = menus;
+        self.popup = None;
+        self.open = None;
+        cx.notify();
+    }
+
     /// F10, and the completed bare Alt tap, both land here: a toggle, because
     /// the key that reaches into the bar is also the one that gets back out
     /// of it without hunting for Escape.

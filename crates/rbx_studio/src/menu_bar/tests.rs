@@ -1,6 +1,8 @@
 use gpui_kit::{Action as _, OwnedMenuItem};
 
-use super::{menus, MenuInsertTemplate, MenuOpenAutoSaves, MenuPlaceholder};
+use super::{
+    icon, menus, MenuInsertTemplate, MenuOpenAutoSaves, MenuPlaceholder, MenuScriptTemplates,
+};
 use crate::script_templates::Template;
 
 /// Every item in the bar either does something or is visibly greyed out.
@@ -80,6 +82,36 @@ fn file_opens_the_auto_saves_folder() {
         )
     });
     assert!(found);
+}
+
+/// The templates window opens from File, last, right under Studio
+/// Settings, and is the one File item drawn with an icon.
+#[test]
+fn file_ends_with_script_templates_under_studio_settings() {
+    let file = menus(&[])
+        .into_iter()
+        .find(|menu| menu.name == "File")
+        .expect("a File menu");
+    let names: Vec<String> = file
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            OwnedMenuItem::Action { name, .. } => Some(name.to_string()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        names[names.len() - 2..],
+        ["Studio Settings\u{2026}", "Script Templates\u{2026}"]
+    );
+    for item in &file.items {
+        if let OwnedMenuItem::Action { action, .. } = item {
+            assert_eq!(
+                icon(action.as_ref()).is_some(),
+                action.partial_eq(&MenuScriptTemplates)
+            );
+        }
+    }
 }
 
 /// The user's templates close Model after a separator (a long list must

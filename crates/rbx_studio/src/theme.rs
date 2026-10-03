@@ -34,7 +34,7 @@ pub(crate) use apply::{apply, startup};
 pub(crate) use github::{install, Source};
 pub(crate) use overrides::Overrides;
 pub(crate) use pack::{installed, is_reserved, themes_dir, uninstall, ThemePack};
-pub(crate) use watch::{Watch, POLL_INTERVAL};
+pub(crate) use watch::{fingerprint, Watch, POLL_INTERVAL};
 
 /// The folder name, and `appearance.json` value, of the built-in theme. No
 /// installed theme may take it, which is what makes Default impossible to
