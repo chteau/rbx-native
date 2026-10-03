@@ -59,7 +59,14 @@ Roblox's own engine.
   (`script_templates.rs`), each listed by its file name in the ribbon's
   Script menu and at the end of the menu bar's Model menu. A `Default.luau`
   in a class's folder replaces the built-in starter every new script of
-  that class gets.
+  that class gets. The Script Templates window (File › Script Templates…,
+  or the ribbon's Script menu › Manage templates…) manages that folder
+  without a file manager: it creates, renames, duplicates, moves between
+  classes, imports and deletes templates, edits each one in the Script
+  Editor's own editor with autosave (atomic writes, nothing over 256 KiB),
+  customises or resets each class's starter, and lists the files the
+  loader refused with the reason. The Model and Script menus follow the
+  folder live, whether a template changed in the window or by hand.
 
 ### Renderer (`rbx_viewer`)
 - [x] Lighting model reverse-engineered from Roblox's own decompiled
@@ -1677,9 +1684,6 @@ Roblox's own engine.
   locally-hosted code-completion API instead — but that's a distinct,
   lower-priority idea worth its own decision on which backend (if any),
   not a default this project should ship opinionated about.
-- [ ] 📋 **Managing script templates from inside the editor.** Authoring
-  one today means a file manager and a text editor; there is no UI for
-  adding, renaming or deleting a template.
 - [ ] 📋 **Optional, bundled `Fragment` UI framework.** [`Fragment`](https://github.com/chteau/Fragment)
   (MIT, single-file Luau `ModuleScript`, React-inspired: local/global
   state, contexts, reusable components over plain `GuiObject`s) offered as
@@ -1688,10 +1692,10 @@ Roblox's own engine.
   one built without this editor at all. Lightweight enough (one
   `ModuleScript`, no external runtime) that "bundle it, default off" is
   realistic in a way a heavier framework wouldn't be. Natural pairing with
-  the script templates above and, if it lands, the Wally package manager
-  below (Fragment installed as an ordinary Wally dependency rather than a
-  copy-pasted module would be the more maintainable path once Wally
-  exists).
+  the script templates (see "What's been implemented") and, if it lands,
+  the Wally package manager below (Fragment installed as an ordinary
+  Wally dependency rather than a copy-pasted module would be the more
+  maintainable path once Wally exists).
 
 #### Far future: node-based scripting
 - [ ] 📋 A visual, node-graph way to write Luau logic — Unreal Blueprint or

@@ -27,6 +27,7 @@ mod list;
 mod new_dialog;
 mod pane;
 mod rename;
+mod skipped;
 mod status;
 
 const WIDTH: f32 = 1040.;

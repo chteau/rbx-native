@@ -17,7 +17,7 @@ use super::dialogs::Dialog;
 use super::editor::{SaveState, TemplateEditor};
 use super::empty::empty_state;
 use super::kit::{self, ghost_glyph, segment};
-use super::status::{self, Part};
+use super::status::{self, Part, Tone};
 use super::{Selected, TemplatesWindow};
 
 impl TemplatesWindow {
@@ -26,6 +26,16 @@ impl TemplatesWindow {
             return self.editor_pane(editor, window, cx).into_any_element();
         }
         let templates = &self.shell.read(cx).script_templates;
+        if let Some(Selected::Skipped { class, file_name }) = &self.selected {
+            if let Some(skipped) = templates
+                .skipped()
+                .iter()
+                .find(|s| s.class == *class && s.file_name == *file_name)
+                .cloned()
+            {
+                return self.skipped_pane(&skipped, window, cx).into_any_element();
+            }
+        }
         let body = if self.selected.is_none() && templates.extras().is_empty() {
             let folder = templates.dir().map(|dir| dir.to_owned());
             Some(empty_state(folder, cx).into_any_element())
@@ -171,37 +181,41 @@ impl TemplatesWindow {
         let notice = self.notice.as_ref().map(|notice| match notice {
             Notice::MoveFailed { to, reason } => status::banner(
                 "circle-alert",
-                true,
+                Tone::Danger,
                 vec![
                     Part::Lead(format!("Can\u{2019}t move to {to}.").leak()),
                     Part::Plain(format!(" {reason}")),
                 ],
                 window,
             ),
-            Notice::Info(line) => {
-                status::banner("info", false, vec![Part::Plain(line.clone())], window).child(
-                    h_flex()
-                        .id("notice-dismiss")
-                        .flex_none()
-                        .size(px(18.))
-                        .items_center()
-                        .justify_center()
-                        .rounded(px(4.))
-                        .text_color(tokens::text3())
-                        .cursor_pointer()
-                        .hover(|this| this.bg(ui::wash()).text_color(tokens::text()))
-                        .child(icon("x", 11.))
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.notice = None;
-                            cx.notify();
-                        })),
-                )
-            }
+            Notice::Info(line) => status::banner(
+                "info",
+                Tone::Neutral,
+                vec![Part::Plain(line.clone())],
+                window,
+            )
+            .child(
+                h_flex()
+                    .id("notice-dismiss")
+                    .flex_none()
+                    .size(px(18.))
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(4.))
+                    .text_color(tokens::text3())
+                    .cursor_pointer()
+                    .hover(|this| this.bg(ui::wash()).text_color(tokens::text()))
+                    .child(icon("x", 11.))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.notice = None;
+                        cx.notify();
+                    })),
+            ),
         });
         let note = if editor.save == SaveState::TooLarge {
             Some(status::banner(
                 "circle-alert",
-                true,
+                Tone::Danger,
                 vec![
                     Part::Lead("Over the 256 KiB limit."),
                     Part::Plain(
@@ -215,7 +229,7 @@ impl TemplatesWindow {
         } else if starter && mine {
             Some(status::banner(
                 "info",
-                false,
+                Tone::Neutral,
                 vec![
                     Part::Lead("Your version of the starter."),
                     Part::Plain(format!(
@@ -229,7 +243,7 @@ impl TemplatesWindow {
         } else if starter {
             Some(status::banner(
                 "info",
-                false,
+                Tone::Neutral,
                 vec![
                     Part::Lead("Built-in starter."),
                     Part::Plain(format!(

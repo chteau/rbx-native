@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-03
+
+- **Script Templates window.** File › Script Templates… (or the ribbon's
+  Script menu › Manage templates…) opens a window for the starter scripts
+  the Model and Script menus offer, so adding one no longer means a file
+  manager and a text editor. Create a template from empty, a class's
+  starter or a copy of another; rename, duplicate, move it to another
+  class, import `.luau` files or delete it; edit it with autosave; and
+  customise or reset each class's default starter. Files that can't be
+  used as templates are listed with the reason, and the menus update the
+  moment anything in the templates folder changes. — @chteau
+
 ## 2026-10-02
 
 - **No stale tooltips after a scroll.** Scrolling a panel with the wheel

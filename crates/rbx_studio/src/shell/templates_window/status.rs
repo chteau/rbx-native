@@ -21,9 +21,17 @@ pub(super) enum Part {
     File(&'static str),
 }
 
-/// A 10/12-padded banner: a 14 px glyph beside a sentence. `danger` is the
-/// red one the size limit raises; otherwise it's the neutral panel2 note.
-pub(super) fn banner(glyph: &'static str, danger: bool, parts: Vec<Part>, window: &Window) -> Div {
+/// A banner's colour: the neutral panel2 note, the red one for something
+/// that wasn't done, the amber one for a file the loader refused.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Tone {
+    Neutral,
+    Danger,
+    Warning,
+}
+
+/// A 10/12-padded banner: a 14 px glyph beside a sentence.
+pub(super) fn banner(glyph: &'static str, tone: Tone, parts: Vec<Part>, window: &Window) -> Div {
     let base = window.text_style().font();
     let mono_font = font(tokens::FONT_FAMILY_MONO);
     let mut sentence = String::new();
@@ -59,26 +67,37 @@ pub(super) fn banner(glyph: &'static str, danger: bool, parts: Vec<Part>, window
         .px(px(12.))
         .rounded(px(6.))
         .border_1()
-        .map(|this| {
-            if danger {
-                this.bg(Rgba {
+        .map(|this| match tone {
+            Tone::Neutral => this.bg(ui::panel2()).border_color(tokens::border()),
+            Tone::Danger => this
+                .bg(Rgba {
                     a: 0.08,
                     ..ui::red()
                 })
                 .border_color(Rgba {
                     a: 0.22,
                     ..ui::red()
+                }),
+            Tone::Warning => this
+                .bg(Rgba {
+                    a: 0.08,
+                    ..tokens::warning()
                 })
-            } else {
-                this.bg(ui::panel2()).border_color(tokens::border())
-            }
+                .border_color(Rgba {
+                    a: 0.22,
+                    ..tokens::warning()
+                }),
         })
         .child(
             div()
                 .flex_none()
                 .pt(px(1.5))
-                .text_color(if danger { ui::red() } else { tokens::text2() })
-                .child(icon(if danger { "circle-alert" } else { glyph }, 14.)),
+                .text_color(match tone {
+                    Tone::Neutral => tokens::text2(),
+                    Tone::Danger => ui::red(),
+                    Tone::Warning => tokens::warning(),
+                })
+                .child(icon(glyph, 14.)),
         )
         .child(
             text(12., 17.)
