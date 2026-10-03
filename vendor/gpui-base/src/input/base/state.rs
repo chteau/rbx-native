@@ -345,6 +345,10 @@ pub struct InputBaseState<M: InputModeKind> {
     pub(super) search_session: super::SearchSession,
     /// rbx-native addition — see [`Self::set_gutter`].
     pub(super) gutter: Option<super::Gutter>,
+    /// rbx-native addition — see [`Self::set_line_number_gutter`].
+    pub(super) line_number_gutter: Option<(Pixels, Pixels)>,
+    /// rbx-native addition — see [`Self::set_surface_colors`].
+    surface_colors: Option<(gpui::Hsla, gpui::Hsla)>,
     /// Advances every time search is explicitly invoked. See
     /// [`InputBaseState::search_activation_revision`].
     pub(super) search_activation_revision: u64,
@@ -684,6 +688,8 @@ impl<M: InputModeKind> InputBaseState<M> {
             display_map: DisplayMap::new(text_style.font(), window.rem_size(), None),
             search_session: super::SearchSession::default(),
             gutter: None,
+            line_number_gutter: None,
+            surface_colors: None,
             search_activation_revision: 0,
             searchable: false,
             replaceable: true,
@@ -2164,6 +2170,27 @@ impl<M: InputModeKind> InputBaseState<M> {
     /// rbx-native addition: upstream's gutter has no slot of its own.
     pub fn set_gutter(&mut self, gutter: Option<super::Gutter>, cx: &mut Context<Self>) {
         self.gutter = gutter;
+        cx.notify();
+    }
+
+    /// Lays the line-number column out at least `width` wide, with the
+    /// numbers right-aligned `gap` before the text, instead of sizing it to
+    /// the digits plus a fixed margin.
+    ///
+    /// rbx-native addition: upstream's column width is not configurable.
+    pub fn set_line_number_gutter(&mut self, width: Pixels, gap: Pixels, cx: &mut Context<Self>) {
+        self.line_number_gutter = Some((width, gap));
+        cx.notify();
+    }
+
+    /// Paints this editor's background and gutter in `background`, and its
+    /// current line in `active_line`, whatever the theme says — for an editor
+    /// set into a surface of its own.
+    ///
+    /// rbx-native addition: the component re-projects the theme's colours
+    /// onto the state every frame, so there is no other way to keep these.
+    pub fn set_surface_colors(&mut self, background: gpui::Hsla, active_line: gpui::Hsla, cx: &mut Context<Self>) {
+        self.surface_colors = Some((background, active_line));
         cx.notify();
     }
 
@@ -4159,6 +4186,12 @@ impl<M: InputModeKind> Render for InputBaseState<M> {
         self.editor_style = self
             .projected_editor_style
             .resolved(&crate::Theme::global(cx).tokens);
+        // rbx-native addition: see `set_surface_colors`.
+        if let Some((background, active_line)) = self.surface_colors {
+            self.editor_style.background = background;
+            self.editor_style.editor_gutter_background = Some(background);
+            self.editor_style.editor_active_line = Some(active_line);
+        }
         let entity = cx.entity();
         if self._pending_update {
             self.mode.update_highlighter::<M>(

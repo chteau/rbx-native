@@ -17,8 +17,10 @@ use crate::tokens;
 
 use super::Shell;
 
+mod editor;
 mod list;
 mod pane;
+mod status;
 
 const WIDTH: f32 = 1040.;
 const HEIGHT: f32 = 720.;
@@ -96,6 +98,9 @@ pub(crate) struct TemplatesWindow {
     shell: Entity<Shell>,
     filter: Entity<InputState>,
     selected: Option<Selected>,
+    /// The selected template's editor; `None` for a skipped file or no
+    /// selection.
+    editor: Option<editor::TemplateEditor>,
     list_scroll: ScrollHandle,
     /// The window's own focus, so its keys reach it before anything inside
     /// it has been clicked.
@@ -156,8 +161,9 @@ impl TemplatesWindow {
         let subscriptions = vec![
             // A reload — the poll, or this window's own write — notifies
             // the shell; the list is drawn from it.
-            cx.observe(&shell, |this, _, cx| {
+            cx.observe_in(&shell, window, |this, _, window, cx| {
                 this.keep_selection(cx);
+                this.follow_disk(window, cx);
                 cx.notify();
             }),
             cx.subscribe(&filter, |_, _, event: &InputEvent, cx| {
@@ -173,14 +179,17 @@ impl TemplatesWindow {
             .or_else(|| first_template(templates));
         let focus = cx.focus_handle();
         focus.focus(window, cx);
-        TemplatesWindow {
+        let mut this = TemplatesWindow {
             shell,
             filter,
             selected,
+            editor: None,
             list_scroll: ScrollHandle::new(),
             focus,
             _subscriptions: subscriptions,
-        }
+        };
+        this.open_editor(window, cx);
+        this
     }
 
     /// A selected row that vanished on disk (deleted or renamed by hand)
@@ -196,8 +205,12 @@ impl TemplatesWindow {
         self.filter.read(cx).value().trim().to_lowercase()
     }
 
-    fn select(&mut self, row: Selected, cx: &mut Context<Self>) {
+    fn select(&mut self, row: Selected, window: &mut Window, cx: &mut Context<Self>) {
+        if self.selected.as_ref() == Some(&row) {
+            return;
+        }
         self.selected = Some(row);
+        self.open_editor(window, cx);
         cx.notify();
     }
 }
@@ -232,7 +245,7 @@ impl Render for TemplatesWindow {
                     .min_h_0()
                     .items_stretch()
                     .child(self.list(window, cx))
-                    .child(self.pane(cx)),
+                    .child(self.pane(window, cx)),
             )
     }
 }

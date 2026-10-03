@@ -38,6 +38,15 @@ presses, and one line painted edge to edge. The script debugger draws its
 breakpoints and the paused line through it; upstream's gutter only has line
 numbers and fold chevrons.
 
+And two setters on the editor state in `src/input/base/state.rs`, marked the
+same way, for an editor set into a card of its own (the Script Templates
+window): `set_line_number_gutter(width, gap)` lays the line-number column out
+at least `width` wide with the numbers right-aligned `gap` before the text
+(upstream sizes it to the digits plus a fixed 10 px), carried to painting as
+`LastLayout::line_number_offset`; and `set_surface_colors(background,
+active_line)` keeps that editor's background, gutter and current-line colours
+over the theme's, which the component otherwise re-projects every frame.
+
 The two selection methods exist because the script editor's Ctrl+D / Shift+Alt+L (add a cursor
 to the next / every match of the selection) has to add selections, and
 upstream keeps the selection list private (still true in 0.6.6).

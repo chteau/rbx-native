@@ -309,8 +309,8 @@ impl TemplatesWindow {
             })
             .on_click({
                 let view = view.clone();
-                move |_, _, cx| {
-                    view.update(cx, |this, cx| this.select(row.clone(), cx))
+                move |_, window, cx| {
+                    view.update(cx, |this, cx| this.select(row.clone(), window, cx))
                         .ok();
                 }
             })
@@ -344,8 +344,15 @@ fn header(glyph: &'static str, label: &str, count: usize, color: Rgba) -> Div {
         .child(mono(10.5, 14.).child(count.to_string()))
 }
 
-/// `Built-in` (text2 on 5% white) or `Yours` (text on the accent wash).
-fn tag(yours: bool) -> Div {
+/// The class, as a neutral tag: a starter's class can't change.
+pub(super) fn class_tag(class: &'static str) -> Div {
+    tag_frame()
+        .bg(ui::wash())
+        .text_color(tokens::text2())
+        .child(class)
+}
+
+fn tag_frame() -> Div {
     h_flex()
         .flex_none()
         .h(px(18.))
@@ -355,17 +362,21 @@ fn tag(yours: bool) -> Div {
         .text_size(px(10.5))
         .line_height(px(14.))
         .font_weight(FontWeight::SEMIBOLD)
-        .map(|this| {
-            if yours {
-                this.bg(tokens::accent_soft())
-                    .text_color(tokens::text())
-                    .child("Yours")
-            } else {
-                this.bg(ui::wash())
-                    .text_color(tokens::text2())
-                    .child("Built-in")
-            }
-        })
+}
+
+/// `Built-in` (text2 on 5% white) or `Yours` (text on the accent wash).
+pub(super) fn tag(yours: bool) -> Div {
+    tag_frame().map(|this| {
+        if yours {
+            this.bg(tokens::accent_soft())
+                .text_color(tokens::text())
+                .child("Yours")
+        } else {
+            this.bg(ui::wash())
+                .text_color(tokens::text2())
+                .child("Built-in")
+        }
+    })
 }
 
 /// Opens the templates folder, creating it first: a fresh install has none

@@ -969,14 +969,15 @@ impl<M: InputModeKind> TextElement<M> {
         (visible_range, visible_buffer_lines, visible_top)
     }
 
-    /// Return (line_number_width, line_number_len)
+    /// Return (line_number_width, line_number_len, line_number_offset)
     fn layout_line_numbers(
         state: &InputBaseState<M>,
         text: &Rope,
         font_size: Pixels,
         style: &TextStyle,
         window: &mut Window,
-    ) -> (Pixels, usize) {
+    ) -> (Pixels, usize, Pixels) {
+        let mut line_number_offset = px(0.);
         let total_lines = text.lines_len();
         // One extra column beyond the widest line number, so right-aligned
         // numbers keep a gap from the left edge.
@@ -997,7 +998,15 @@ impl<M: InputModeKind> TextElement<M> {
                 None,
             );
 
-            empty_line_number.width + LINE_NUMBER_RIGHT_MARGIN
+            // rbx-native addition: see `set_line_number_gutter`.
+            match state.line_number_gutter {
+                Some((width, gap)) => {
+                    let width = width.max(empty_line_number.width + gap);
+                    line_number_offset = width - gap - empty_line_number.width;
+                    width
+                }
+                None => empty_line_number.width + LINE_NUMBER_RIGHT_MARGIN,
+            }
         } else if state.is_code_editor() {
             LINE_NUMBER_RIGHT_MARGIN
         } else {
@@ -1009,7 +1018,7 @@ impl<M: InputModeKind> TextElement<M> {
             line_number_width += FOLD_ICON_HITBOX_WIDTH
         }
 
-        (line_number_width, line_number_len)
+        (line_number_width, line_number_len, line_number_offset)
     }
 
     /// Layout shaped lines for whitespace indicators (space and tab).
@@ -1786,7 +1795,7 @@ impl<M: InputModeKind> Element for TextElement<M> {
         };
 
         // Calculate the width of the line numbers
-        let (line_number_width, line_number_len) =
+        let (line_number_width, line_number_len, line_number_offset) =
             Self::layout_line_numbers(&state, &text, text_size, &text_style, window);
 
         let mut bounds = bounds;
@@ -1867,6 +1876,7 @@ impl<M: InputModeKind> Element for TextElement<M> {
             wrap_width,
             wrapping_indent,
             line_number_width,
+            line_number_offset,
             space_width,
             lines: Rc::new(vec![]),
             cursor_bounds: None,
@@ -2459,6 +2469,8 @@ impl<M: InputModeKind> Element for TextElement<M> {
                     }
                 }
 
+                // rbx-native addition: see `set_line_number_gutter`.
+                let p = point(p.x + prepaint.last_layout.line_number_offset, p.y);
                 for line in lines {
                     _ = line.paint(p, line_height, TextAlign::Left, None, window, cx);
                     offset_y += line_height;

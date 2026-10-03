@@ -44,6 +44,8 @@ mod names;
 #[cfg_attr(not(test), allow(dead_code))]
 mod store;
 
+pub(crate) use store::StoreError;
+
 /// The classes a template can be for. `LuaSourceContainer` subclasses with a
 /// `Source` a user would author by hand; anything else in the directory is
 /// ignored.

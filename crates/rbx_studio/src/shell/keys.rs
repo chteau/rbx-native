@@ -50,7 +50,10 @@ const MODULE_CLASS_TEMPLATE: &str = concat!(
 /// existed. `ModuleScript` gets [`MODULE_TEMPLATE`]; every other script class
 /// (`Script`, `LocalScript`, and any future `LuaSourceContainer` subclass)
 /// gets [`SCRIPT_TEMPLATE`].
-fn default_template(database: &ReflectionDatabase, class: &str) -> Option<&'static str> {
+pub(in crate::shell) fn default_template(
+    database: &ReflectionDatabase,
+    class: &str,
+) -> Option<&'static str> {
     if !source::is_script_class(database, class) {
         return None;
     }

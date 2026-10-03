@@ -22,6 +22,10 @@ pub(super) struct LastLayout {
     pub(super) wrap_width: Option<Pixels>,
     pub(super) wrapping_indent: WrappingIndent,
     pub(super) line_number_width: Pixels,
+    /// How far right of the gutter's edge the line numbers start: zero
+    /// unless `set_line_number_gutter` widened the column (rbx-native
+    /// addition).
+    pub(super) line_number_offset: Pixels,
     /// Width of one space in the editor font.
     ///
     /// Past the end of a line there are no glyphs to hit-test against, so this is the
