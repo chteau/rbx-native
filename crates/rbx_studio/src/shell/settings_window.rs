@@ -36,6 +36,7 @@ mod viewport;
 
 pub(super) use appearance::Install as ThemeInstall;
 use kit::{OnPick, Section};
+pub(super) use nav::tilde;
 use nav::Page;
 
 const WIDTH: f32 = 1040.;

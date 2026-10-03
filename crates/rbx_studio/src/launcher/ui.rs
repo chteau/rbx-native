@@ -9,68 +9,68 @@ use gpui_kit::*;
 
 use crate::tokens;
 
-pub(super) fn panel() -> Rgba {
+pub(crate) fn panel() -> Rgba {
     tokens::dock()
 }
-pub(super) fn panel2() -> Rgba {
+pub(crate) fn panel2() -> Rgba {
     tokens::field_select()
 }
-pub(super) fn bg() -> Rgba {
+pub(crate) fn bg() -> Rgba {
     tokens::black()
 }
-pub(super) fn accent() -> Rgba {
+pub(crate) fn accent() -> Rgba {
     tokens::check_on()
 }
-pub(super) fn green() -> Rgba {
+pub(crate) fn green() -> Rgba {
     tokens::diff_add()
 }
-pub(super) fn green_soft() -> Rgba {
+pub(crate) fn green_soft() -> Rgba {
     tokens::diff_add_pill()
 }
-pub(super) fn red() -> Rgba {
+pub(crate) fn red() -> Rgba {
     tokens::text_error()
 }
-pub(super) fn red_soft() -> Rgba {
+pub(crate) fn red_soft() -> Rgba {
     tokens::error_soft()
 }
 /// `rgba(224,108,108,.55)`: a field holding an error.
-pub(super) fn red_line() -> Rgba {
+pub(crate) fn red_line() -> Rgba {
     Rgba { a: 0.55, ..red() }
 }
 /// `rgba(255,255,255,.05)`: a neutral pill, a skeleton bar.
-pub(super) fn wash() -> Rgba {
+pub(crate) fn wash() -> Rgba {
     tokens::hover()
 }
 /// `rgba(255,255,255,.04)`: the lighter skeleton bar.
-pub(super) fn wash_faint() -> Rgba {
+pub(crate) fn wash_faint() -> Rgba {
     tokens::wash_faint()
 }
 /// A Lucide icon from the kit's full catalogue, by file name.
-pub(super) fn icon(name: &'static str, size: f32) -> Icon {
+pub(crate) fn icon(name: &'static str, size: f32) -> Icon {
     Icon::empty()
         .path(SharedString::from(format!("icons/{name}.svg")))
         .size(px(size))
 }
 
 /// Text at a given `size`/`line` height, in px.
-pub(super) fn text(size: f32, line: f32) -> Div {
+pub(crate) fn text(size: f32, line: f32) -> Div {
     div().text_size(px(size)).line_height(px(line))
 }
 
-pub(super) fn mono(size: f32, line: f32) -> Div {
+pub(crate) fn mono(size: f32, line: f32) -> Div {
     text(size, line).font_family(tokens::FONT_FAMILY_MONO)
 }
 
 /// The three button weights, 34 tall unless `small` (28, 12 px text).
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum Weight {
+pub(crate) enum Weight {
     Primary,
     Secondary,
     Ghost,
     Danger,
 }
 
-pub(super) fn button(
+pub(crate) fn button(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
     weight: Weight,
@@ -80,7 +80,7 @@ pub(super) fn button(
 }
 
 /// [`button`] with a glyph ahead of its label ("Paste", "Manage key").
-pub(super) fn icon_button(
+pub(crate) fn icon_button(
     id: impl Into<ElementId>,
     glyph: &'static str,
     label: impl Into<SharedString>,
@@ -93,7 +93,7 @@ pub(super) fn icon_button(
 }
 
 /// [`button`] with a trailing ↗ — a link that leaves the app.
-pub(super) fn external_button(
+pub(crate) fn external_button(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
     weight: Weight,
@@ -152,7 +152,7 @@ fn button_frame(id: impl Into<ElementId>, weight: Weight, small: bool) -> Statef
 }
 
 /// A primary button that cannot be pressed yet: `panel2`, hairline, text3.
-pub(super) fn disabled_button(
+pub(crate) fn disabled_button(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
 ) -> Stateful<Div> {
@@ -176,7 +176,7 @@ pub(super) fn disabled_button(
 
 /// `h 20`, radius 4, 10.5/14 semibold: the visibility pill, a restricted
 /// grant, a linked Recent entry (`accent` when `accented`).
-pub(super) fn pill(
+pub(crate) fn pill(
     label: impl Into<SharedString>,
     glyph: Option<&'static str>,
     accented: bool,
@@ -206,7 +206,7 @@ pub(super) fn pill(
 }
 
 /// The `h 18` caps tag: RECOMMENDED, READY.
-pub(super) fn tag(label: &'static str, fg: Rgba, fill: Rgba) -> Div {
+pub(crate) fn tag(label: &'static str, fg: Rgba, fill: Rgba) -> Div {
     h_flex()
         .h(px(18.))
         .flex_none()
@@ -222,7 +222,7 @@ pub(super) fn tag(label: &'static str, fg: Rgba, fill: Rgba) -> Div {
 }
 
 /// A round status glyph: `size` 22 in headers, 16 in table rows.
-pub(super) fn status_dot(glyph: &'static str, fg: Rgba, fill: Option<Rgba>, size: f32) -> Div {
+pub(crate) fn status_dot(glyph: &'static str, fg: Rgba, fill: Option<Rgba>, size: f32) -> Div {
     h_flex()
         .size(px(size))
         .flex_none()
@@ -238,7 +238,7 @@ pub(super) fn status_dot(glyph: &'static str, fg: Rgba, fill: Option<Rgba>, size
 }
 
 /// A turning `loader-circle`, still under reduced motion.
-pub(super) fn spinner(id: &'static str, size: f32) -> AnyElement {
+pub(crate) fn spinner(id: &'static str, size: f32) -> AnyElement {
     let glyph = icon("loader-circle", size);
     if tokens::reduced_motion() {
         return glyph.into_any_element();
@@ -255,7 +255,7 @@ pub(super) fn spinner(id: &'static str, size: f32) -> AnyElement {
 /// The modal every dialog sits in: a 55 % black veil below the title bar,
 /// a `width`-wide card (panel, border2, radius 10), its header row (glyph,
 /// title, text), whatever `body` adds, and the 60 px `panel2` footer.
-pub(super) fn dialog(
+pub(crate) fn dialog(
     width: f32,
     glyph: AnyElement,
     title: impl Into<SharedString>,
@@ -333,7 +333,7 @@ pub(super) fn dialog(
 }
 
 /// The round tinted glyph a failing dialog leads with.
-pub(super) fn dialog_glyph(glyph: &'static str, fg: Rgba, fill: Rgba) -> AnyElement {
+pub(crate) fn dialog_glyph(glyph: &'static str, fg: Rgba, fill: Rgba) -> AnyElement {
     h_flex()
         .size(px(44.))
         .flex_none()
@@ -348,7 +348,7 @@ pub(super) fn dialog_glyph(glyph: &'static str, fg: Rgba, fill: Rgba) -> AnyElem
 
 /// The single-line field chrome search and the place
 /// link: `w`×32, radius 6, a leading glyph, `border` swapped by state.
-pub(super) fn field_frame(
+pub(crate) fn field_frame(
     width: Option<f32>,
     fill: Rgba,
     border: Rgba,

@@ -189,6 +189,7 @@ mod tests {
                 class: "Script",
                 file_name: "Notes.luau".into(),
                 reason: SkipReason::NotUtf8,
+                len: 3,
             }],
             ..ScriptTemplates::default()
         };

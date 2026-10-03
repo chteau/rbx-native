@@ -31,7 +31,6 @@
 //! (`studio/ui-overview.md`), and this editor's menus are File/Edit/Model/View,
 //! so it goes under View.
 
-use gpui_kit::assets::IconName;
 use gpui_kit::*;
 
 use crate::script_templates::Template;
@@ -110,14 +109,6 @@ pub(crate) fn build(shell: Entity<Shell>, templates: &[Template], cx: &mut App) 
 /// point at the wrong template.
 pub(crate) fn refresh(bar: &Entity<MenuBar>, templates: &[Template], cx: &mut App) {
     bar.update(cx, |bar, cx| bar.set_menus(menus(templates), cx));
-}
-
-/// The few items drawn with an icon: the ones that open a window of their
-/// own rather than act on the place.
-fn icon(action: &dyn gpui_kit::Action) -> Option<IconName> {
-    action
-        .partial_eq(&MenuScriptTemplates)
-        .then_some(IconName::FileCode)
 }
 
 /// The menu structure itself. File and Edit hold this editor's real

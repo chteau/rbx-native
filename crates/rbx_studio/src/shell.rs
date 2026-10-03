@@ -57,6 +57,7 @@ mod settings_window;
 mod style_panel;
 mod sun;
 mod templates_live;
+mod templates_window;
 mod theme_live;
 mod toolbar;
 pub(crate) mod tooltip;
@@ -205,6 +206,8 @@ pub(crate) struct Shell {
     argon_diff: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Studio Settings, while open — see `settings_window`.
     settings_window: Option<WindowHandle<gpui_kit::component::Root>>,
+    /// Script Templates, while open — see `templates_window`.
+    templates_window: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Install from GitHub's progress, kept here so it outlives Settings.
     theme_install: settings_window::ThemeInstall,
     /// The Explorer's type-ahead buffer — see `shell::tree_keys`.
@@ -621,6 +624,7 @@ impl Shell {
             sequence: None,
             argon_diff: None,
             settings_window: None,
+            templates_window: None,
             theme_install: settings_window::ThemeInstall::Idle,
             tree_focus_handle,
             typeahead: tree_keys::Typeahead::default(),
@@ -820,6 +824,11 @@ impl Shell {
         // Settings with the editor, for a capture.
         if std::env::var_os(settings_window::OPEN_VARIABLE).is_some() {
             shell.open_settings(cx);
+        }
+        // `RBX_STUDIO_TEMPLATES` (see `shell::templates_window`): the same,
+        // for Script Templates.
+        if std::env::var_os(templates_window::OPEN_VARIABLE).is_some() {
+            shell.open_script_templates(cx);
         }
 
         // `RBX_STUDIO_STYLE_EDITOR` (see `shell::style_panel`): after the

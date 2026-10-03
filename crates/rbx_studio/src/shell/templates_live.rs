@@ -6,7 +6,7 @@
 use gpui_kit::*;
 
 use super::Shell;
-use crate::script_templates::{self, ScriptTemplates};
+use crate::script_templates::ScriptTemplates;
 
 impl Shell {
     /// Polls the templates folder's fingerprint for as long as the window
@@ -41,19 +41,6 @@ impl Shell {
             self.script_templates = templates;
         }
         cx.notify();
-    }
-
-    /// File › Script Templates… and the ribbon's "Manage templates…".
-    pub(crate) fn open_script_templates(&mut self, cx: &mut Context<Self>) {
-        let Some(dir) = script_templates::dir() else {
-            return;
-        };
-        if let Err(err) = std::fs::create_dir_all(&dir) {
-            self.output
-                .push_warning(&format!("couldn't create {}: {err}", dir.display()));
-            return;
-        }
-        cx.open_with_system(&dir);
     }
 }
 

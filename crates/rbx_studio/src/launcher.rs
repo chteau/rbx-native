@@ -21,7 +21,7 @@ mod fixtures;
 mod home_window;
 mod key_check;
 mod publishing;
-mod ui;
+pub(crate) mod ui;
 mod wizard;
 
 pub(crate) use home_window::HomeWindow;

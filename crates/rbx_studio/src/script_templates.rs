@@ -76,6 +76,21 @@ pub(crate) enum SkipReason {
     Unreadable,
 }
 
+impl Skipped {
+    /// The one-line reason the templates list shows under the file name.
+    pub(crate) fn summary(&self) -> String {
+        match self.reason {
+            SkipReason::NotUtf8 => "Not UTF-8 text".to_owned(),
+            SkipReason::TooLarge => format!(
+                "{} KiB, over the {} KiB limit",
+                self.len.div_ceil(1024),
+                MAX_BYTES / 1024
+            ),
+            SkipReason::Unreadable => "Couldn\u{2019}t be read".to_owned(),
+        }
+    }
+}
+
 /// A `.luau` file in a class folder that the loader refused. `file_name`
 /// keeps the extension: it is shown as the file, never as a template name.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,6 +98,8 @@ pub(crate) struct Skipped {
     pub(crate) class: &'static str,
     pub(crate) file_name: String,
     pub(crate) reason: SkipReason,
+    /// Its size in bytes, 0 when even that couldn't be read.
+    pub(crate) len: u64,
 }
 
 /// Everything loaded from a templates directory.
@@ -134,6 +151,7 @@ impl ScriptTemplates {
                             class,
                             file_name: file_name.to_owned(),
                             reason,
+                            len: fs::metadata(&path).map_or(0, |meta| meta.len()),
                         });
                         continue;
                     }

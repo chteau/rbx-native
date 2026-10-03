@@ -252,7 +252,7 @@ fn nav_item(
 }
 
 /// `path` with the home directory spelt `~`.
-pub(super) fn tilde(path: &std::path::Path) -> String {
+pub(in crate::shell) fn tilde(path: &std::path::Path) -> String {
     let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
     match home
         .as_deref()

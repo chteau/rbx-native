@@ -137,3 +137,19 @@ fn refused_files_are_listed_with_their_reason() {
         ]
     );
 }
+
+#[test]
+fn a_refused_file_says_why_in_one_line() {
+    let dir = scratch();
+    write(&dir, "Script/Big Generator.luau", &vec![b'a'; 312 * 1024]);
+    write(&dir, "Script/Notes.luau", &[0xff]);
+    let summaries: Vec<_> = ScriptTemplates::load_from(&dir)
+        .skipped()
+        .iter()
+        .map(Skipped::summary)
+        .collect();
+    assert_eq!(
+        summaries,
+        ["312 KiB, over the 256 KiB limit", "Not UTF-8 text"]
+    );
+}
