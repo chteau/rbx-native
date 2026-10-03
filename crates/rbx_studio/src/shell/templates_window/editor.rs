@@ -120,6 +120,13 @@ impl TemplatesWindow {
             return;
         };
         editor.save = SaveState::Saving;
+        // A refused class change is about the text as it was; typing moves on.
+        if matches!(self.notice, Some(super::actions::Notice::MoveFailed { .. })) {
+            self.notice = None;
+        }
+        let Some(editor) = &mut self.editor else {
+            return;
+        };
         editor.pending = Some(cx.spawn(async move |this, cx| {
             cx.background_executor().timer(SAVE_DELAY).await;
             this.update(cx, |this, cx| this.save_now(cx)).ok();
@@ -205,30 +212,11 @@ impl TemplatesWindow {
         self.after_write(removed, cx);
     }
 
-    /// The Class control: moves the selected template's file into `to`.
-    pub(super) fn move_to_class(
-        &mut self,
-        to: &'static str,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(Selected::Template { class, name }) = self.selected.clone() else {
-            return;
-        };
-        // Whatever is typed but not yet written goes with it.
+    /// Writes now whatever is typed but not yet written.
+    pub(super) fn flush_save(&mut self, cx: &mut Context<Self>) {
         if self.editor.as_ref().is_some_and(|e| e.pending.is_some()) {
             self.save_now(cx);
         }
-        let moved = self
-            .shell
-            .read(cx)
-            .script_templates
-            .move_to(class, &name, to);
-        if moved.is_ok() {
-            self.selected = Some(Selected::Template { class: to, name });
-        }
-        self.after_write(moved, cx);
-        self.follow_disk(window, cx);
     }
 
     /// Reloads after a write the window made, and reports a failed one in

@@ -11,6 +11,7 @@ use crate::launcher::ui::{self, icon, mono, text, Weight};
 use crate::script_templates::CLASSES;
 use crate::tokens;
 
+use super::kit::{open_folder, tag};
 use super::{Selected, TemplatesWindow};
 
 const WIDTH: f32 = 288.;
@@ -61,6 +62,10 @@ impl TemplatesWindow {
                     class,
                     name: template.name.clone(),
                 };
+                if let Some(renaming) = self.rename_row(class, &template.name, class_glyph(class)) {
+                    rows.push(renaming);
+                    continue;
+                }
                 let id = ElementId::Name(format!("template-{class}-{}", template.name).into());
                 rows.push(
                     self.row(id, class_glyph(class), template.name.clone(), row, &view)
@@ -119,7 +124,9 @@ impl TemplatesWindow {
                     .items_center()
                     .child(self.filter_field(window, cx))
                     .child(
-                        ui::icon_button("new", "plus", "New", Weight::Primary, true).px(px(12.)),
+                        ui::icon_button("new", "plus", "New", Weight::Primary, true)
+                            .px(px(12.))
+                            .on_click(cx.listener(|this, _, window, cx| this.open_new(window, cx))),
                     ),
             )
             .child(
@@ -160,6 +167,9 @@ impl TemplatesWindow {
                             .child(
                                 h_flex()
                                     .id("import")
+                                    .on_click(
+                                        cx.listener(|this, _, window, cx| this.import(window, cx)),
+                                    )
                                     .flex_none()
                                     .size(px(24.))
                                     .items_center()
@@ -309,9 +319,17 @@ impl TemplatesWindow {
             })
             .on_click({
                 let view = view.clone();
-                move |_, window, cx| {
-                    view.update(cx, |this, cx| this.select(row.clone(), window, cx))
-                        .ok();
+                move |event, window, cx| {
+                    view.update(cx, |this, cx| {
+                        this.select(row.clone(), window, cx);
+                        // Double-click renames, like F2 and the pencil.
+                        if let (true, Selected::Template { class, name }) =
+                            (event.click_count() >= 2, &row)
+                        {
+                            this.start_rename(class, name.clone(), window, cx);
+                        }
+                    })
+                    .ok();
                 }
             })
     }
@@ -342,48 +360,4 @@ fn header(glyph: &'static str, label: &str, count: usize, color: Rgba) -> Div {
                 .child(label.to_uppercase()),
         )
         .child(mono(10.5, 14.).child(count.to_string()))
-}
-
-/// The class, as a neutral tag: a starter's class can't change.
-pub(super) fn class_tag(class: &'static str) -> Div {
-    tag_frame()
-        .bg(ui::wash())
-        .text_color(tokens::text2())
-        .child(class)
-}
-
-fn tag_frame() -> Div {
-    h_flex()
-        .flex_none()
-        .h(px(18.))
-        .px(px(6.))
-        .items_center()
-        .rounded(px(4.))
-        .text_size(px(10.5))
-        .line_height(px(14.))
-        .font_weight(FontWeight::SEMIBOLD)
-}
-
-/// `Built-in` (text2 on 5% white) or `Yours` (text on the accent wash).
-pub(super) fn tag(yours: bool) -> Div {
-    tag_frame().map(|this| {
-        if yours {
-            this.bg(tokens::accent_soft())
-                .text_color(tokens::text())
-                .child("Yours")
-        } else {
-            this.bg(ui::wash())
-                .text_color(tokens::text2())
-                .child("Built-in")
-        }
-    })
-}
-
-/// Opens the templates folder, creating it first: a fresh install has none
-/// until the first template is written.
-pub(super) fn open_folder(folder: Option<&std::path::Path>, cx: &mut App) {
-    if let Some(folder) = folder {
-        let _ = std::fs::create_dir_all(folder);
-        cx.open_with_system(folder);
-    }
 }

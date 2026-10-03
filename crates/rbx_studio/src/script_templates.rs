@@ -38,13 +38,11 @@ use std::path::{Path, PathBuf};
 
 use crate::settings::default_config_dir;
 
-// The write path lands before the window that calls it.
-#[cfg_attr(not(test), allow(dead_code))]
 mod names;
-#[cfg_attr(not(test), allow(dead_code))]
 mod store;
 
-pub(crate) use store::StoreError;
+pub(crate) use names::NameError;
+pub(crate) use store::{Imported, StoreError};
 
 /// The classes a template can be for. `LuaSourceContainer` subclasses with a
 /// `Source` a user would author by hand; anything else in the directory is
@@ -199,7 +197,6 @@ impl ScriptTemplates {
     }
 
     /// The files the loader refused, grouped like [`Self::extras`].
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn skipped(&self) -> &[Skipped] {
         &self.skipped
     }

@@ -12,8 +12,11 @@ use crate::launcher::ui::{self, icon, mono, text, Weight};
 use crate::script_templates::CLASSES;
 use crate::tokens;
 
+use super::actions::Notice;
+use super::dialogs::Dialog;
 use super::editor::{SaveState, TemplateEditor};
-use super::list::{self, open_folder};
+use super::empty::empty_state;
+use super::kit::{self, ghost_glyph, segment};
 use super::status::{self, Part};
 use super::{Selected, TemplatesWindow};
 
@@ -25,7 +28,7 @@ impl TemplatesWindow {
         let templates = &self.shell.read(cx).script_templates;
         let body = if self.selected.is_none() && templates.extras().is_empty() {
             let folder = templates.dir().map(|dir| dir.to_owned());
-            Some(empty_state(folder).into_any_element())
+            Some(empty_state(folder, cx).into_any_element())
         } else {
             None
         };
@@ -81,21 +84,29 @@ impl TemplatesWindow {
                     )
                     .map(|this| {
                         if starter {
-                            this.child(list::tag(mine))
+                            this.child(kit::tag(mine))
                         } else {
-                            this.child(ghost_glyph("rename", "pencil", "Rename"))
+                            let name = title.to_string();
+                            this.child(ghost_glyph("rename", "pencil", "Rename").on_click(
+                                cx.listener(move |this, _, window, cx| {
+                                    this.start_rename(class, name.clone(), window, cx)
+                                }),
+                            ))
                         }
                     }),
             )
             .child(h_flex().flex_none().gap(px(6.)).items_center().map(|this| {
                 if starter {
-                    this.child(ui::icon_button(
-                        "duplicate-new",
-                        "copy",
-                        "Duplicate as new",
-                        Weight::Secondary,
-                        true,
-                    ))
+                    this.child(
+                        ui::icon_button(
+                            "duplicate-new",
+                            "copy",
+                            "Duplicate as new",
+                            Weight::Secondary,
+                            true,
+                        )
+                        .on_click(cx.listener(|this, _, window, cx| this.duplicate(window, cx))),
+                    )
                     .when(mine, |this| {
                         this.child(
                             ui::icon_button(
@@ -111,16 +122,20 @@ impl TemplatesWindow {
                         )
                     })
                 } else {
-                    this.child(ui::icon_button(
-                        "duplicate",
-                        "copy",
-                        "Duplicate",
-                        Weight::Secondary,
-                        true,
-                    ))
+                    let row = editor.row.clone();
+                    this.child(
+                        ui::icon_button("duplicate", "copy", "Duplicate", Weight::Secondary, true)
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.duplicate(window, cx)),
+                            ),
+                    )
                     .child(
                         ui::icon_button("delete", "trash", "Delete", Weight::Ghost, true)
-                            .text_color(ui::red()),
+                            .text_color(ui::red())
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.dialog = Some(Dialog::Delete(row.clone()));
+                                cx.notify();
+                            })),
                     )
                 }
             }));
@@ -139,7 +154,7 @@ impl TemplatesWindow {
             .child(text(11.5, 16.).text_color(tokens::text2()).child("Class"))
             .map(|this| {
                 if starter {
-                    this.child(list::class_tag(class))
+                    this.child(kit::class_tag(class))
                 } else {
                     this.child(self.class_picker(class, cx))
                 }
@@ -153,6 +168,36 @@ impl TemplatesWindow {
                     .child(path),
             );
 
+        let notice = self.notice.as_ref().map(|notice| match notice {
+            Notice::MoveFailed { to, reason } => status::banner(
+                "circle-alert",
+                true,
+                vec![
+                    Part::Lead(format!("Can\u{2019}t move to {to}.").leak()),
+                    Part::Plain(format!(" {reason}")),
+                ],
+                window,
+            ),
+            Notice::Info(line) => {
+                status::banner("info", false, vec![Part::Plain(line.clone())], window).child(
+                    h_flex()
+                        .id("notice-dismiss")
+                        .flex_none()
+                        .size(px(18.))
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(4.))
+                        .text_color(tokens::text3())
+                        .cursor_pointer()
+                        .hover(|this| this.bg(ui::wash()).text_color(tokens::text()))
+                        .child(icon("x", 11.))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.notice = None;
+                            cx.notify();
+                        })),
+                )
+            }
+        });
         let note = if editor.save == SaveState::TooLarge {
             Some(status::banner(
                 "circle-alert",
@@ -209,6 +254,7 @@ impl TemplatesWindow {
             .pb(px(16.))
             .child(header)
             .child(class_row)
+            .children(notice)
             .children(note)
             .child(
                 div()
@@ -258,109 +304,21 @@ impl TemplatesWindow {
             .rounded(px(6.))
             .bg(ui::panel())
             .children(CLASSES.into_iter().map(|class| {
-                let selected = class == current;
-                h_flex()
-                    .id(ElementId::Name(format!("class-{class}").into()))
-                    .h(px(24.))
-                    .px(px(11.))
-                    .items_center()
-                    .rounded(px(4.))
-                    .text_size(px(11.5))
-                    .line_height(px(16.))
-                    .map(|this| {
-                        if selected {
-                            this.bg(tokens::accent_soft())
-                                .text_color(tokens::text())
-                                .font_weight(FontWeight::SEMIBOLD)
-                        } else {
-                            this.text_color(tokens::text2())
-                                .cursor_pointer()
-                                .hover(|this| this.bg(ui::wash()))
-                                .on_click(cx.listener(move |this, _, window, cx| {
-                                    this.move_to_class(class, window, cx)
-                                }))
-                        }
-                    })
-                    .child(class)
+                let tab = segment(
+                    ElementId::Name(format!("class-{class}").into()),
+                    class,
+                    class == current,
+                    24.,
+                );
+                if class == current {
+                    tab
+                } else {
+                    tab.on_click(
+                        cx.listener(move |this, _, window, cx| {
+                            this.move_to_class(class, window, cx)
+                        }),
+                    )
+                }
             }))
     }
-}
-
-/// A 24 px ghost button holding one glyph, in text3.
-fn ghost_glyph(id: &'static str, glyph: &'static str, label: &'static str) -> Stateful<Div> {
-    h_flex()
-        .id(id)
-        .flex_none()
-        .size(px(24.))
-        .items_center()
-        .justify_center()
-        .rounded(px(5.))
-        .text_color(tokens::text3())
-        .cursor_pointer()
-        .hover(|this| this.bg(ui::wash()).text_color(tokens::text()))
-        .child(icon(glyph, 13.))
-        .tooltip(move |window, cx| super::super::tooltip::text(label, window, cx))
-}
-
-fn empty_state(folder: Option<std::path::PathBuf>) -> impl IntoElement {
-    v_flex()
-        .w(px(420.))
-        .items_center()
-        .gap(px(14.))
-        .text_center()
-        .child(
-            h_flex()
-                .size(px(56.))
-                .items_center()
-                .justify_center()
-                .border_1()
-                .border_color(tokens::border2())
-                .rounded(px(14.))
-                .bg(ui::panel2())
-                .text_color(tokens::text2())
-                .child(icon("file-plus", 22.)),
-        )
-        .child(
-            text(18., 24.)
-                .font_weight(FontWeight::BOLD)
-                .text_color(tokens::text())
-                .child("No templates of your own yet"),
-        )
-        .child(text(12.5, 19.).text_color(tokens::text2()).child(
-            "Every new script starts from a built-in starter. Add your own to get an \
-             Enemy AI module, a tweened door or a camera shake in one click, from the \
-             Model menu and the ribbon\u{2019}s Script tile.",
-        ))
-        .child(
-            h_flex()
-                .gap(px(8.))
-                .pt(px(6.))
-                .items_center()
-                .child(
-                    ui::icon_button("empty-new", "plus", "New template", Weight::Primary, true)
-                        .px(px(12.)),
-                )
-                .child(ui::icon_button(
-                    "empty-import",
-                    "upload",
-                    "Import .luau files\u{2026}",
-                    Weight::Secondary,
-                    true,
-                )),
-        )
-        .child(
-            h_flex()
-                .id("empty-folder")
-                .pt(px(4.))
-                .gap(px(4.))
-                .items_center()
-                .text_size(px(12.))
-                .line_height(px(16.))
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(ui::accent())
-                .cursor_pointer()
-                .child("Open templates folder")
-                .child(icon("external-link", 11.))
-                .on_click(move |_, _, cx| open_folder(folder.as_deref(), cx)),
-        )
 }

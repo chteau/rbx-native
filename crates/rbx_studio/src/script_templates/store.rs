@@ -156,17 +156,6 @@ impl ScriptTemplates {
         Ok(fs::rename(source, target)?)
     }
 
-    /// A copy of `class`'s template `name` called "<name> copy" (or
-    /// "copy 2"…); returns the copy's name.
-    pub(crate) fn duplicate(&self, class: &'static str, name: &str) -> Result<String, StoreError> {
-        let source = fs::read_to_string(self.path_or_err(class, name)?)?;
-        let copy = self
-            .free_name(class, name, " copy")
-            .ok_or(StoreError::Name(NameError::Forbidden))?;
-        self.write(class, &copy, &source)?;
-        Ok(copy)
-    }
-
     /// Removes `class`'s template `stem`; [`super::DEFAULT_STEM`] puts the built-in
     /// starter back.
     pub(crate) fn delete(&self, class: &str, stem: &str) -> Result<(), StoreError> {

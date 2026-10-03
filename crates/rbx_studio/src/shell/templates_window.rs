@@ -17,9 +17,16 @@ use crate::tokens;
 
 use super::Shell;
 
+mod actions;
+mod copy_picker;
+mod dialogs;
 mod editor;
+mod empty;
+mod kit;
 mod list;
+mod new_dialog;
 mod pane;
+mod rename;
 mod status;
 
 const WIDTH: f32 = 1040.;
@@ -101,6 +108,12 @@ pub(crate) struct TemplatesWindow {
     /// The selected template's editor; `None` for a skipped file or no
     /// selection.
     editor: Option<editor::TemplateEditor>,
+    /// The New or Delete dialog, while open.
+    dialog: Option<dialogs::Dialog>,
+    /// The row whose name is being edited in the list.
+    rename: Option<rename::Rename>,
+    /// The banner above the editor, while one applies.
+    notice: Option<actions::Notice>,
     list_scroll: ScrollHandle,
     /// The window's own focus, so its keys reach it before anything inside
     /// it has been clicked.
@@ -184,6 +197,9 @@ impl TemplatesWindow {
             filter,
             selected,
             editor: None,
+            dialog: None,
+            rename: None,
+            notice: None,
             list_scroll: ScrollHandle::new(),
             focus,
             _subscriptions: subscriptions,
@@ -206,9 +222,13 @@ impl TemplatesWindow {
     }
 
     fn select(&mut self, row: Selected, window: &mut Window, cx: &mut Context<Self>) {
+        // The list's keys (F2, Delete) work on the selected row once a row
+        // is clicked, not while the editor or a field has the keyboard.
+        self.focus.focus(window, cx);
         if self.selected.as_ref() == Some(&row) {
             return;
         }
+        self.rename = None;
         self.selected = Some(row);
         self.open_editor(window, cx);
         cx.notify();
@@ -220,13 +240,11 @@ impl Render for TemplatesWindow {
         v_flex()
             .id("templates-window")
             .track_focus(&self.focus)
+            .relative()
             .size_full()
             .bg(tokens::dock())
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                // Esc clears a typed filter before anything else.
-                if event.keystroke.key == "escape" && !this.query(cx).is_empty() {
-                    this.filter
-                        .update(cx, |state, cx| state.set_value("", window, cx));
+                if this.handle_key(&event.keystroke, window, cx) {
                     cx.stop_propagation();
                     cx.notify();
                 }
@@ -247,6 +265,47 @@ impl Render for TemplatesWindow {
                     .child(self.list(window, cx))
                     .child(self.pane(window, cx)),
             )
+            .children(self.dialog_layer(cx))
+    }
+}
+
+impl TemplatesWindow {
+    /// Esc closes a dialog, cancels a rename, then clears the filter;
+    /// Ctrl+N opens New anywhere; F2 and Delete act on the selected row
+    /// while the list has the keyboard.
+    fn handle_key(
+        &mut self,
+        keystroke: &Keystroke,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let m = keystroke.modifiers;
+        match keystroke.key.as_str() {
+            "escape" if self.dialog.is_some() => self.dialog = None,
+            "escape" if self.rename.is_some() => self.cancel_rename(window, cx),
+            "escape" if !self.query(cx).is_empty() => self
+                .filter
+                .update(cx, |state, cx| state.set_value("", window, cx)),
+            "n" if m.secondary() && !m.shift && !m.alt && self.dialog.is_none() => {
+                self.open_new(window, cx)
+            }
+            "f2" if !m.modified() && self.focus.is_focused(window) => {
+                let Some(Selected::Template { class, name }) = self.selected.clone() else {
+                    return false;
+                };
+                self.start_rename(class, name, window, cx);
+            }
+            "delete" if !m.modified() && self.focus.is_focused(window) && self.dialog.is_none() => {
+                match &self.selected {
+                    Some(row @ (Selected::Template { .. } | Selected::Skipped { .. })) => {
+                        self.dialog = Some(dialogs::Dialog::Delete(row.clone()))
+                    }
+                    _ => return false,
+                }
+            }
+            _ => return false,
+        }
+        true
     }
 }
 

@@ -159,30 +159,6 @@ fn moving_to_another_class_applies_that_class_s_clash_rule() {
 }
 
 #[test]
-fn duplicate_counts_up_copies() {
-    let dir = scratch();
-    ScriptTemplates::load_from(&dir)
-        .write("Script", "Door", "body")
-        .unwrap();
-    assert_eq!(
-        ScriptTemplates::load_from(&dir)
-            .duplicate("Script", "Door")
-            .unwrap(),
-        "Door copy"
-    );
-    assert_eq!(
-        ScriptTemplates::load_from(&dir)
-            .duplicate("Script", "Door")
-            .unwrap(),
-        "Door copy 2"
-    );
-    assert_eq!(
-        read(&dir, "Script/Door copy 2.luau").as_deref(),
-        Some("body")
-    );
-}
-
-#[test]
 fn delete_and_delete_skipped_remove_the_file() {
     let dir = scratch();
     let templates = ScriptTemplates::load_from(&dir);
