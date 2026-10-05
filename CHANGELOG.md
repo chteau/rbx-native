@@ -3,8 +3,9 @@
 ## 2026-10-05
 
 - **A `Content` property can name an object.** A Content row that takes
-  one (`Decal.TextureContent`, `ImageLabel.ImageContent`,
-  `MeshPart.MeshContent`, `VideoFrame.VideoContent`) keeps its URI field
+  one — the 14 of the dump's 81 whose creator-docs entry says so, such as
+  `Decal.TextureContent`, `ImageLabel.ImageContent`,
+  `MeshPart.MeshContent` and `VideoFrame.VideoContent` — keeps its URI field
   with a pick button beside it, which arms the same Explorer pick a `Ref`
   row uses; a row already naming an object shows it by name, with `×` to
   clear it back to none. Only the class creator-docs says each property

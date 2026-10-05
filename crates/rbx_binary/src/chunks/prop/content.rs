@@ -3,7 +3,7 @@
 use rbx_dom::{Content, Ref, Variant};
 
 use super::PropValues;
-use crate::codec::Reader;
+use crate::codec::{zigzag_i32, Reader};
 use crate::error::BinaryError;
 
 const SOURCE_NONE: u32 = 0;
@@ -16,11 +16,16 @@ const SOURCE_OBJECT: u32 = 2;
 /// (URIs, then in-file referents, then external referents). Each tag consumes the
 /// next entry of its own pool, so the pools are shorter than the instance count.
 pub(super) fn contents(reader: &mut Reader<'_>, count: usize) -> Result<PropValues, BinaryError> {
-    // TODO: the tags are read as an untransformed Enum array, per the written spec.
-    // rbx-dom's implementation instead zigzags them, and the two disagree for every
-    // value but 0 — which is the only one either fixture contains, so the bytes
-    // cannot settle it. A file with a real Uri or Object Content would.
-    let sources = reader.interleaved_u32(count)?;
+    // The tags are zigzagged `i32`s, not the plain `Enum`s rbx-dom's
+    // `docs/binary.md` types them as: Studio 0.663 writes a Uri tag as raw `2`
+    // (rbx-test-files `models/imagelabel-content/binary.rbxm`, whose two Uri
+    // values and empty object pool fit no other reading), and rbx-dom's own
+    // reader and writer zigzag them too.
+    let sources: Vec<u32> = reader
+        .interleaved_u32(count)?
+        .into_iter()
+        .map(|raw| zigzag_i32(raw) as u32)
+        .collect();
 
     let uris = (0..reader.length()?)
         .map(|_| reader.sized_name())
@@ -69,7 +74,8 @@ mod tests {
     fn payload(sources: &[u32], uris: &[&str], objects: &[i32]) -> Vec<u8> {
         let mut out = Vec::new();
         for column in 0..4 {
-            out.extend(sources.iter().map(|s| s.to_be_bytes()[column]));
+            // Zigzagged, as Studio writes them (see `contents`).
+            out.extend(sources.iter().map(|s| (s << 1).to_be_bytes()[column]));
         }
 
         out.extend_from_slice(&(uris.len() as i32).to_le_bytes());
@@ -99,8 +105,37 @@ mod tests {
         assert_eq!(values[0], Some(Variant::Content(Content::None)));
     }
 
-    // TODO: neither fixture populates the URI or referent pools (every Content in
-    // them is None), so these two branches are only covered synthetically.
+    // The PROP payload of rbx-test-files' `imagelabel-content/binary.rbxm`
+    // (Studio 0.663), copied byte for byte: three ImageLabels' ImageContent,
+    // raw tags 2, 2, 0 and two URIs.
+    #[test]
+    fn a_studio_written_uri_column_decodes_as_uris() {
+        let mut data = vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 0];
+        data.extend_from_slice(&2u32.to_le_bytes());
+        for uri in [
+            "rbxasset://textures/ui/GuiImagePlaceholder.png",
+            "rbxasset://textures/SpawnLocation.png",
+        ] {
+            data.extend_from_slice(&(uri.len() as u32).to_le_bytes());
+            data.extend_from_slice(uri.as_bytes());
+        }
+        data.extend_from_slice(&[0; 8]);
+
+        let values = contents(&mut Reader::new(&data), 3).unwrap();
+        let uri = |s: &str| Some(Variant::Content(Content::Uri(s.to_owned())));
+        assert_eq!(
+            values,
+            vec![
+                uri("rbxasset://textures/ui/GuiImagePlaceholder.png"),
+                uri("rbxasset://textures/SpawnLocation.png"),
+                Some(Variant::Content(Content::None)),
+            ]
+        );
+    }
+
+    // No real file populates the referent pool (rbx-dom's `docs/binary.md`:
+    // "ObjectRefs are not populated outside of copy-and-pasting within
+    // Studio"), so the Object branch is covered synthetically.
     #[test]
     fn each_tag_consumes_its_own_pool_in_order() {
         let data = payload(

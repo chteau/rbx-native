@@ -2,14 +2,14 @@
 
 use rbx_dom::{Content, Variant};
 
-use crate::codec::{encode_referents, interleave_u32};
+use crate::codec::{encode_referents, interleave_zigzag_i32};
 use crate::serialize::prop::map_dense;
 use crate::serialize::writer::Writer;
 use crate::serialize::SerializeError;
 
-const SOURCE_NONE: u32 = 0;
-const SOURCE_URI: u32 = 1;
-const SOURCE_OBJECT: u32 = 2;
+const SOURCE_NONE: i32 = 0;
+const SOURCE_URI: i32 = 1;
+const SOURCE_OBJECT: i32 = 2;
 
 /// Writes a column of source tags followed by the URI pool, then the in-file referent
 /// pool, then an always-empty external-referent pool: this crate never produces content
@@ -24,7 +24,8 @@ pub(super) fn contents(
         _ => None,
     })?;
 
-    let sources: Vec<u32> = contents
+    // Zigzagged, the way Studio writes them (see `chunks::prop::content`).
+    let sources: Vec<i32> = contents
         .iter()
         .map(|c| match c {
             Content::None => SOURCE_NONE,
@@ -48,7 +49,7 @@ pub(super) fn contents(
         .collect();
 
     let mut writer = Writer::new();
-    writer.bytes(&interleave_u32(&sources));
+    writer.bytes(&interleave_zigzag_i32(&sources));
     writer.length(uris.len());
     for uri in uris {
         writer.sized_name(uri);
@@ -85,5 +86,32 @@ mod tests {
         ];
         let payload = contents("Test", "Prop", &values).unwrap();
         assert_eq!(decoded(0x22, 4, &payload), values);
+    }
+
+    // rbx-test-files' `imagelabel-content/binary.rbxm`, saved by Studio
+    // 0.663: the three ImageLabels' ImageContent column must come out byte
+    // for byte as Studio wrote it.
+    #[test]
+    fn a_uri_column_is_written_the_way_studio_writes_it() {
+        let placeholder = "rbxasset://textures/ui/GuiImagePlaceholder.png";
+        let spawn = "rbxasset://textures/SpawnLocation.png";
+        let uri = |s: &str| Some(Variant::Content(Content::Uri(s.to_owned())));
+        let values = vec![
+            uri(placeholder),
+            uri(spawn),
+            Some(Variant::Content(Content::None)),
+        ];
+
+        let mut studio = vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 0, 2, 0, 0, 0];
+        for s in [placeholder, spawn] {
+            studio.extend_from_slice(&(s.len() as u32).to_le_bytes());
+            studio.extend_from_slice(s.as_bytes());
+        }
+        studio.extend_from_slice(&[0; 8]);
+
+        assert_eq!(
+            contents("ImageLabel", "ImageContent", &values).unwrap(),
+            studio
+        );
     }
 }

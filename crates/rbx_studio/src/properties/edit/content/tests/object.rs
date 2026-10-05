@@ -70,6 +70,34 @@ fn each_documented_property_takes_its_documented_object() {
     assert_eq!(class("MeshPart", "TextureContent"), Some("EditableImage"));
     assert_eq!(class("MeshPart", "MeshContent"), Some("EditableMesh"));
     assert_eq!(class("VideoFrame", "VideoContent"), Some("VideoCapture"));
+    assert_eq!(
+        class("SurfaceAppearance", "NormalMapContent"),
+        Some("EditableImage")
+    );
+    // Inherited from the declaring class.
+    assert_eq!(class("SpecialMesh", "MeshContent"), Some("EditableMesh"));
+    assert_eq!(
+        class("SpecialMesh", "TextureContent"),
+        Some("EditableImage")
+    );
+    assert_eq!(class("WrapLayer", "CageMeshContent"), Some("EditableMesh"));
+}
+
+#[test]
+fn an_image_property_the_docs_do_not_extend_to_objects_holds_a_uri_only() {
+    let db = ReflectionDatabase::embedded();
+    let class = |class, name| object_class(&db, class, name);
+    // "does not support EditableImage objects" / "only supports asset URIs".
+    assert_eq!(class("Shirt", "ShirtTemplateContent"), None);
+    assert_eq!(class("Pants", "PantsTemplateContent"), None);
+    assert_eq!(class("Mouse", "IconContent"), None);
+    assert_eq!(class("TerrainDetail", "NormalMapContent"), None);
+    // Silent on objects, so not guessed at.
+    assert_eq!(class("ImageButton", "HoverImageContent"), None);
+    assert_eq!(class("Decal", "ColorMapContent"), None);
+    assert_eq!(class("Sky", "SkyboxUpContent"), None);
+    // Same name as a table entry, on a class that does not declare it.
+    assert_eq!(class("Beam", "TextureContent"), None);
 }
 
 #[test]

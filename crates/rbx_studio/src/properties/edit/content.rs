@@ -28,51 +28,59 @@ pub(super) fn content_text(content: &Content) -> String {
     }
 }
 
-/// The class of object `name` on `class` may hold, or `None` where it holds
-/// a URI only. Creator-docs names three, all runtime `Object`s rather than
-/// `Instance`s: an `EditableImage` "can be used in any Content property
-/// which takes an image" (`EditableImage.yaml`), `MeshPart.MeshContent`
-/// "supports asset URIs and EditableMesh objects", and
-/// `VideoFrame.VideoContent` takes a `VideoCapture`. The dump does not type
-/// a Content property's object, so taking an image, a mesh or a video is
-/// read off the property's name.
+/// Every Content property whose creator-docs entry says it takes an object,
+/// with the class it names: (declaring class, property, object class). The
+/// API dump does not type a Content's object, so this is the docs' word,
+/// property by property — the 81 Content properties of the 2026-10-05 dump
+/// were each checked against their class's `.yaml`. The rest hold a URI
+/// only: most say nothing about objects, and some say outright they take
+/// none (`Shirt.ShirtTemplateContent` "does not support EditableImage
+/// objects", `Mouse.IconContent` "only supports asset URIs").
 ///
-/// A legacy ContentId (`Decal.Texture`, `MeshPart.MeshId`) is saved as a
-/// String, which has no spelling for an object (see `rbx_binary`'s
-/// `unify_content_ids`); its `…Content` twin is where an object goes.
-/// `TexturePackContent` is engine-managed packed data (`Decal.yaml`).
+/// All three object classes are runtime `Object`s, not `Instance`s
+/// (`EditableImage.yaml` and friends: `inherits: Object`).
+const OBJECT_PROPERTIES: [(&str, &str, &str); 14] = [
+    ("AdGui", "FallbackImageContent", "EditableImage"),
+    ("Decal", "TextureContent", "EditableImage"),
+    ("FileMesh", "TextureContent", "EditableImage"),
+    ("ImageButton", "ImageContent", "EditableImage"),
+    ("ImageLabel", "ImageContent", "EditableImage"),
+    ("MeshPart", "TextureContent", "EditableImage"),
+    ("SurfaceAppearance", "ColorMapContent", "EditableImage"),
+    ("SurfaceAppearance", "MetalnessMapContent", "EditableImage"),
+    ("SurfaceAppearance", "NormalMapContent", "EditableImage"),
+    ("SurfaceAppearance", "RoughnessMapContent", "EditableImage"),
+    ("BaseWrap", "CageMeshContent", "EditableMesh"),
+    ("FileMesh", "MeshContent", "EditableMesh"),
+    ("MeshPart", "MeshContent", "EditableMesh"),
+    ("VideoFrame", "VideoContent", "VideoCapture"),
+];
+
+/// The class of object `name` on `class` may hold, or `None` where it holds
+/// a URI only (see [`OBJECT_PROPERTIES`]). Inherited declarations count:
+/// `SpecialMesh` gets `FileMesh`'s, `WrapLayer` `BaseWrap`'s.
+///
+/// A legacy ContentId (`Decal.Texture`, `MeshPart.MeshId`) is never in the
+/// table: it is saved as a String, which has no spelling for an object (see
+/// `rbx_binary`'s `unify_content_ids`); its `…Content` twin is where an
+/// object goes.
 pub(crate) fn object_class(
     db: &ReflectionDatabase,
     class: &str,
     name: &str,
 ) -> Option<&'static str> {
-    const IMAGE: [&str; 8] = [
-        "Image",
-        "Texture",
-        "Map",
-        "Icon",
-        "Skybox",
-        "Template",
-        "Graphic",
-        "EmissiveMask",
-    ];
-    if db.is_content_id(class, name) || name.contains("TexturePack") {
-        None
-    } else if name.contains("Video") {
-        Some("VideoCapture")
-    } else if name.contains("Mesh") {
-        Some("EditableMesh")
-    } else if IMAGE.iter().any(|word| name.contains(word)) {
-        Some("EditableImage")
-    } else {
-        None
-    }
+    OBJECT_PROPERTIES
+        .iter()
+        .find(|(owner, property, _)| {
+            *property == name && (class == *owner || db.is_subclass_of(class, owner))
+        })
+        .map(|&(_, _, object)| object)
 }
 
 /// Whether `target` may be what `name` on `class` names: an instance that
 /// exists, of exactly the class [`object_class`] allows. Exact, because
-/// none of the three has a subclass, and none is in the bundled dump for
-/// `is_subclass_of` to walk. Studio's panel documents no object picker to
+/// none of the three has a subclass in the live dump, and none is in the
+/// bundled one for `is_subclass_of` to walk. Studio's panel documents no object picker to
 /// copy a refusal from, but Roblox says `Content.fromObject` will throw for
 /// anything other than `EditableImage` and `EditableMesh` (devforum, "Major
 /// updates to in-experience Mesh & Image APIs"), so this panel declines to

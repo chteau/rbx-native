@@ -3,9 +3,9 @@
 Every `Variant` the DOM can hold, what the Properties panel does with it,
 and what a purpose-built editor would be.
 
-**Status: A1, A4, A5, B1, B2, B3, B4, B5, B6, B7 and B8 have shipped, and B9
-in part (the Explorer pick).** The rest is still the triage list it started
-as.
+**Status: A1, A4, A5, B1, B2, B3, B4, B5, B6, B7, B8 and B10 have shipped,
+and B9 in part (the Explorer pick).** The rest is still the triage list it
+started as.
 
 Two facts that shape the whole list:
 
@@ -77,7 +77,7 @@ orientation.
 | ~~B7~~ | **`NumberSequence`** | ✅ **done** — a draggable curve with an envelope band, in a graph panel the row opens | |
 | ~~B8~~ | **`ColorSequence`** | ✅ **done** — a gradient ramp with draggable stops and a colour picker, in the same panel | |
 | B9 | **`Ref`** | `ObjectValue.Value`, `Weld.Part0` | ✅ **Explorer pick done** — click the row, then the instance in the Explorer; `×` clears it. Still open: "pick in viewport" |
-| B10 | **`Content`** | `Decal.Texture`, `MeshPart.MeshId` | an asset URI field; the `Content::Object` case is a `Ref` picker |
+| ~~B10~~ | **`Content`** | `Decal.TextureContent`, `MeshPart.MeshContent` | ✅ **done** — an asset URI field, and for the 14 properties creator-docs says take an object, an Explorer pick beside it limited to that class (`EditableImage`, `EditableMesh`, `VideoCapture`). Legacy ContentIds (`Decal.Texture`, `MeshPart.MeshId`) stay URI-only: they save as strings |
 
 ## C. Fine as they are
 
@@ -105,8 +105,9 @@ opaque payloads. Editing them by hand corrupts a file rather than editing it.
   case and got exactly that: a panel of their own, which the row opens.)
   B9's Explorer pick turned out to fit after all: the row arms it and the
   Explorer is the panel. Picking in the viewport is what is left of it.
+  B10 then needed no editor of its own: its object case arms that same pick.
 
 ## Rough sizing for what remains
 
 - **Medium** (a new control, self-contained): A3's weight/style halves
-- **Large** (a new editor with its own interaction): A2, B9, B10
+- **Large** (a new editor with its own interaction): A2, B9
