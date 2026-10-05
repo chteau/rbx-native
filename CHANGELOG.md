@@ -2,6 +2,15 @@
 
 ## 2026-10-05
 
+- **Command palette.** Ctrl+Alt+P — Studio's own key for searching its
+  actions — or View › Command Palette… opens a filter over every command
+  the editor has: each live menu item, the transform tools, and a "Focus"
+  command per dock, so panels can be reached without the mouse. Rows are
+  ranked prefix first, then word starts, then scattered letters, with
+  this session's recent commands floated to the top as Studio's Quick
+  Open does, and each shows its shortcut. Up/Down/Home/End, Enter and
+  Escape work from the field, and focus goes back where it was on close.
+  — @chteau
 - **Smooth terrain and the Terrain Editor.** `Workspace.Terrain`'s
   voxels are read and written: `SmoothGrid`'s layout was worked out from
   a real place, whose terrain re-encodes to its original bytes, and

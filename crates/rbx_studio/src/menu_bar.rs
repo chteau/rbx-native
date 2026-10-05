@@ -77,6 +77,7 @@ actions!(
         MenuReduceMotion,
         MenuLargeTargets,
         MenuResetLayout,
+        MenuCommandPalette,
         /// One per dock, so the View menu can put back one that has been
         /// closed — the only way back, which is why they are real actions
         /// rather than the placeholders they used to be.
@@ -131,7 +132,10 @@ pub(crate) fn refresh(bar: &Entity<MenuBar>, templates: &[Template], cx: &mut Ap
 /// the ribbon's Script menu names them, so the two menus list the same
 /// things; last because the list is the user's and can run long, and the
 /// popup does not scroll, so it must not push Group/Ungroup out of reach.
-fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
+///
+/// Also the command palette's source (`shell::palette`): every enabled item
+/// here is a palette row, so the two cannot list different commands.
+pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
     let mut model = vec![
         MenuItem::action("Insert Part", MenuInsertPart),
         MenuItem::action("Insert Folder", MenuInsertFolder),
@@ -219,6 +223,10 @@ fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
                 MenuItem::action("Large Click Targets", MenuLargeTargets),
                 MenuItem::separator(),
                 MenuItem::action("Reset Layout", MenuResetLayout),
+                // The palette is a keyboard tool, but a shortcut nobody can
+                // find is recall, not recognition: the menu is where its
+                // name and its keys are on show.
+                MenuItem::action("Command Palette…", MenuCommandPalette),
             ])
             .owned(),
     ]

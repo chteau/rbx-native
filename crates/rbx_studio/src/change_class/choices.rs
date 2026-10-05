@@ -160,7 +160,7 @@ fn related(database: &ReflectionDatabase, sources: &[&str]) -> Vec<String> {
 
 /// How good a match is, best first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum Tier {
+pub(crate) enum Tier {
     /// The name starts with the query: `spot` in `SpotLight`.
     Prefix,
     /// The query is the starts of the name's words, in order: `tl` in
@@ -171,14 +171,16 @@ pub(super) enum Tier {
 }
 
 /// How `query` (already lower-case) matches `class`, or `None` when it does
-/// not. Case never matters; the capitals only say where words begin.
-pub(super) fn rank(query: &str, class: &str) -> Option<Tier> {
+/// not. Case never matters; the capitals only say where words begin. The
+/// command palette ranks its spaced labels here too, so whitespace in the
+/// query is a word break the user typed, never a letter that must match.
+pub(crate) fn rank(query: &str, class: &str) -> Option<Tier> {
     let lower = class.to_lowercase();
     if lower.starts_with(query) {
         return Some(Tier::Prefix);
     }
     let words = words(class);
-    let query: Vec<char> = query.chars().collect();
+    let query: Vec<char> = query.chars().filter(|c| !c.is_whitespace()).collect();
     if word_starts(&query, &words) {
         return Some(Tier::WordStart);
     }
@@ -191,15 +193,21 @@ pub(super) fn rank(query: &str, class: &str) -> Option<Tier> {
 
 /// `class` split where a new word begins — at a capital after a lower-case
 /// letter or digit, and at the last capital of a run followed by lower case
-/// (`UIListLayout` is `ui`, `list`, `layout`) — each lower-cased.
+/// (`UIListLayout` is `ui`, `list`, `layout`), and after anything that is
+/// not a letter or digit (`Save to File` is `save`, `to`, `file`) — each
+/// lower-cased, separators dropped.
 fn words(class: &str) -> Vec<Vec<char>> {
     let chars: Vec<char> = class.chars().collect();
     let mut words: Vec<Vec<char>> = Vec::new();
     for (index, &letter) in chars.iter().enumerate() {
+        if !letter.is_alphanumeric() {
+            continue;
+        }
         let before = index.checked_sub(1).map(|i| chars[i]);
         let after = chars.get(index + 1);
         let starts = match before {
             None => true,
+            Some(before) if !before.is_alphanumeric() => true,
             Some(before) if letter.is_uppercase() => {
                 !before.is_uppercase() || after.is_some_and(|a| a.is_lowercase())
             }
