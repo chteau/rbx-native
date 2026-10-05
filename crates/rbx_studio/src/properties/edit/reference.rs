@@ -102,6 +102,18 @@ pub(super) fn check_target(
     }
 }
 
+/// The class `owner`'s `name` holds, as the API dump types it (`BasePart`
+/// for `Weld.Part0`, `Instance` for `ObjectValue.Value`).
+pub(crate) fn held_class<'a>(
+    dom: &WeakDom,
+    db: &'a ReflectionDatabase,
+    owner: Ref,
+    name: &str,
+) -> Option<&'a str> {
+    let class = dom.get(owner)?.class();
+    target_class(db, class, db.canonical_name(class, name))
+}
+
 /// [`check_target`] asked ahead of a pick, under the name the panel lists
 /// `name` by: whether `owner`'s `name` would take `target` at all. What a
 /// viewport pick consults before settling on a whole `Model` for a property

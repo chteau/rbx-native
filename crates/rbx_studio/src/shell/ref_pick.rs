@@ -18,7 +18,7 @@ use gpui_kit::*;
 use rbx_dom::{Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
-use crate::properties::edit::{accepts_ref, ref_text, NIL_REF};
+use crate::properties::edit::{accepts_ref, held_class, ref_text, NIL_REF};
 use crate::properties::{EditKind, PropertyRow};
 use crate::tokens;
 
@@ -33,6 +33,8 @@ use super::Shell;
 pub(super) struct RefPick {
     armed: Option<String>,
     error: Option<(String, String)>,
+    /// The row under the pointer, for the empty field's "Select <Type>…".
+    hovered: Option<String>,
 }
 
 impl RefPick {
@@ -77,15 +79,11 @@ impl Shell {
         // `nil` (and so does an instance named "nil"), and both still have a
         // value to clear.
         let is_nil = matches!(&row.edit, Some(EditKind::Ref(text)) if *text == ref_text(NIL_REF));
-        // Studio's own Properties widget (`InstanceRefPropertyView`) swaps
-        // only an empty field's text for its `InstanceRef.Selecting` string
-        // while picking; a field with a value keeps showing it. The armed
-        // tint and the crosshair carry the mode either way.
-        let label = if armed && is_nil {
-            "Selecting…".to_owned()
-        } else {
-            row.value.clone()
-        };
+        let hovered = self.edits.ref_pick.hovered.as_deref() == Some(row.name.as_str());
+        let class = self
+            .selected()
+            .and_then(|owner| held_class(&self.dom, &self.database, owner, &row.name));
+        let label = field_label(&row.value, is_nil, armed, hovered, class);
 
         let click = cx.entity();
         let click_name = row.name.clone();
@@ -93,6 +91,8 @@ impl Shell {
         let key_name = row.name.clone();
         let clear = cx.entity();
         let clear_name = row.name.clone();
+        let hover = cx.entity();
+        let hover_name = row.name.clone();
         select_field(&focus, window, cx)
             .id(SharedString::from(format!("ref-pick-{}", row.name)))
             .track_focus(&focus)
@@ -105,6 +105,20 @@ impl Shell {
             .on_click(move |_, _, cx| {
                 let name = click_name.clone();
                 click.update(cx, |shell, cx| shell.toggle_ref_pick(&name, cx));
+            })
+            .on_hover(move |&now: &bool, _, cx| {
+                let name = hover_name.clone();
+                hover.update(cx, |shell, cx| {
+                    let pick = &mut shell.edits.ref_pick;
+                    let next = match now {
+                        true => Some(name),
+                        false => pick.hovered.take().filter(|row| *row != name),
+                    };
+                    if pick.hovered != next {
+                        pick.hovered = next;
+                        cx.notify();
+                    }
+                });
             })
             .on_key_down(move |event: &KeyDownEvent, _, cx| {
                 let name = key_name.clone();
@@ -195,6 +209,26 @@ impl Shell {
     }
 }
 
+/// The field's text, after Studio's own widget (`InstanceRefPropertyView`):
+/// an empty field reads its `InstanceRef.Selecting` string while picking and
+/// its `InstanceRef.SelectInstanceType` string, naming the class the
+/// property holds, while the pointer is over it; a field with a value always
+/// shows it. Only the string keys are public, not their English text, so
+/// "Selecting…" and "Select <Type>…" are read off the key names.
+fn field_label(
+    value: &str,
+    is_nil: bool,
+    armed: bool,
+    hovered: bool,
+    class: Option<&str>,
+) -> String {
+    match (is_nil, armed, hovered, class) {
+        (true, true, ..) => "Selecting…".to_owned(),
+        (true, false, true, Some(class)) => format!("Select {class}…"),
+        _ => value.to_owned(),
+    }
+}
+
 /// What a click selects (`selection::from_click`: the outermost `Model`
 /// plain, the part itself with `Alt`), unless the property cannot hold that
 /// and can hold the part actually clicked — a `Weld.Part0` or a
@@ -229,143 +263,4 @@ fn candidate(
 }
 
 #[cfg(test)]
-mod tests {
-    use rbx_dom::{Ref, WeakDom};
-    use rbx_reflection::ReflectionDatabase;
-
-    use super::{candidate, RefPick};
-
-    /// A house model with a handle part inside it, and a `Weld` and an
-    /// `ObjectValue` beside it, all under `Workspace`.
-    struct Place {
-        dom: WeakDom,
-        house: Ref,
-        handle: Ref,
-        weld: Ref,
-        value: Ref,
-    }
-
-    fn place() -> Place {
-        let mut dom = WeakDom::new();
-        let workspace = dom.new_instance("Workspace", "Workspace", None);
-        let house = dom.new_instance("Model", "House", Some(workspace));
-        let handle = dom.new_instance("Part", "Handle", Some(house));
-        let weld = dom.new_instance("Weld", "Weld", Some(workspace));
-        let value = dom.new_instance("ObjectValue", "Value", Some(workspace));
-        Place {
-            dom,
-            house,
-            handle,
-            weld,
-            value,
-        }
-    }
-
-    /// A viewport click on `hits` while `owner`'s `name` is armed.
-    fn pick(place: &Place, owner: Ref, name: &str, hits: &[Ref], alt: bool) -> Option<Ref> {
-        candidate(&place.dom, &db(), hits, &[owner], name, alt)
-    }
-
-    fn db() -> ReflectionDatabase {
-        ReflectionDatabase::embedded()
-    }
-
-    #[test]
-    fn a_plain_click_picks_what_a_click_would_select() {
-        let place = place();
-        // `ObjectValue.Value` holds any instance, so the house a plain click
-        // selects is what it gets — and `Alt` reaches the part, as it does
-        // for a selection.
-        let hits = [place.handle];
-        assert_eq!(
-            pick(&place, place.value, "Value", &hits, false),
-            Some(place.house)
-        );
-        assert_eq!(
-            pick(&place, place.value, "Value", &hits, true),
-            Some(place.handle)
-        );
-    }
-
-    #[test]
-    fn a_part_typed_ref_takes_the_part_under_the_cursor_over_its_model() {
-        let place = place();
-        let hits = [place.handle];
-        assert_eq!(
-            pick(&place, place.weld, "Part0", &hits, false),
-            Some(place.handle)
-        );
-        assert_eq!(
-            pick(&place, place.house, "PrimaryPart", &hits, false),
-            Some(place.handle)
-        );
-    }
-
-    #[test]
-    fn every_selected_owner_has_to_take_the_part() {
-        let mut place = place();
-        let workspace = place.dom.root_refs()[0];
-        let second = place.dom.new_instance("Weld", "Weld2", Some(workspace));
-        let other = place.dom.new_instance("Model", "Truck", Some(workspace));
-        let hits = [place.handle];
-        // Two welds both take the part.
-        assert_eq!(
-            candidate(
-                &place.dom,
-                &db(),
-                &hits,
-                &[place.weld, second],
-                "Part0",
-                false
-            ),
-            Some(place.handle)
-        );
-        // The house would take its own handle as `PrimaryPart`, the truck
-        // would not: the pick stays on the house, which both then refuse,
-        // rather than a part written to one model and refused by the other.
-        assert_eq!(
-            candidate(
-                &place.dom,
-                &db(),
-                &hits,
-                &[place.house, other],
-                "PrimaryPart",
-                false
-            ),
-            Some(place.house)
-        );
-    }
-
-    #[test]
-    fn the_sky_picks_nothing() {
-        let place = place();
-        assert_eq!(pick(&place, place.weld, "Part0", &[], false), None);
-    }
-
-    #[test]
-    fn a_second_click_disarms_and_another_row_takes_the_pick() {
-        let mut pick = RefPick::default();
-        pick.toggle("Part0");
-        assert!(pick.is_armed());
-        pick.toggle("Part0");
-        assert!(!pick.is_armed());
-
-        pick.toggle("Part0");
-        pick.toggle("Part1");
-        assert_eq!(pick.take().as_deref(), Some("Part1"));
-        // Taken once: Escape or a second Explorer press finds nothing armed.
-        assert_eq!(pick.take(), None);
-    }
-
-    #[test]
-    fn arming_clears_the_last_refusal() {
-        let mut pick = RefPick {
-            error: Some(("Part1".to_owned(), "refused".to_owned())),
-            ..RefPick::default()
-        };
-        assert_eq!(pick.error_for("Part1"), Some("refused"));
-        assert_eq!(pick.error_for("Part0"), None);
-        pick.toggle("Part1");
-        assert_eq!(pick.error_for("Part1"), None);
-    }
-}
+mod tests;

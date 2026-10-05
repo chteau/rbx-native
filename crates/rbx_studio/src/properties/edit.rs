@@ -20,7 +20,7 @@ use content::{content_text, parse_content, parse_content_id};
 use font::{font_text, parse_font, synced};
 pub(crate) use many::commit_all;
 use many::stored_or_default;
-pub(crate) use reference::{accepts as accepts_ref, ref_text, NIL_REF};
+pub(crate) use reference::{accepts as accepts_ref, held_class, ref_text, NIL_REF};
 use reference::{check_target, parse_ref};
 use sequence::{
     color_sequence_text, number_sequence_text, parse_color_sequence, parse_number_sequence,
