@@ -382,7 +382,7 @@ pub(crate) fn field_frame(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{button_height, Weight};
 
     /// WCAG 2.5.5: the buttons that commit or destroy are 44 tall in both
     /// sizes, with Large Click Targets off (it is not consulted here at all).
