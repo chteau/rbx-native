@@ -74,9 +74,12 @@ impl Shell {
         let armed = self.edits.ref_pick.armed.as_deref() == Some(row.name.as_str());
         let focus = self.tab_order.claim(cx);
         // Studio's own words for this moment are "Your cursor changes"; the
-        // field says what the changed cursor is waiting for.
+        // field says what the changed cursor is waiting for, in the docs' own
+        // "click the object", short enough for a narrow dock. Where to click
+        // is the crosshair's to say: it shows over the Explorer and the 3D
+        // view alike.
         let label = if armed {
-            "Pick in Explorer or viewport…".to_owned()
+            "Click an object…".to_owned()
         } else {
             row.value.clone()
         };

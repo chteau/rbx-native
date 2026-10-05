@@ -36,6 +36,15 @@
   put, so the place remains one real Studio opens and draws the same.
   Asked for on the DevForum since 2021, and something Studio has no answer
   to. — @chteau
+- **Pick a `Ref` in the 3D view.** With an instance property armed
+  (`Weld.Part0`, `ObjectValue.Value`, a model's `PrimaryPart`), a click in
+  the viewport sets it as well as a click in the Explorer does, the way
+  Studio's docs describe it ("within the game view or Explorer window").
+  It lands on what a click would select — the whole model plain, the part
+  with `Alt` — unless the property only holds a part, when it takes the
+  part under the cursor. The hover outline previews that candidate, the
+  cursor turns to a crosshair, no tool's handles or drag start under the
+  click, and a click on the sky leaves the pick armed. — @chteau
 
 ## 2026-10-04
 
