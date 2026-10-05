@@ -73,20 +73,19 @@ impl Shell {
     ) -> impl IntoElement + 'static {
         let armed = self.edits.ref_pick.armed.as_deref() == Some(row.name.as_str());
         let focus = self.tab_order.claim(cx);
-        // Studio's own words for this moment are "Your cursor changes"; the
-        // field says what the changed cursor is waiting for, in the docs' own
-        // "click the object", short enough for a narrow dock. Where to click
-        // is the crosshair's to say: it shows over the Explorer and the 3D
-        // view alike.
-        let label = if armed {
-            "Click an object…".to_owned()
-        } else {
-            row.value.clone()
-        };
         // By referent, not by the shown name: a dangling target also reads
         // `nil` (and so does an instance named "nil"), and both still have a
         // value to clear.
         let is_nil = matches!(&row.edit, Some(EditKind::Ref(text)) if *text == ref_text(NIL_REF));
+        // Studio's own Properties widget (`InstanceRefPropertyView`) swaps
+        // only an empty field's text for its `InstanceRef.Selecting` string
+        // while picking; a field with a value keeps showing it. The armed
+        // tint and the crosshair carry the mode either way.
+        let label = if armed && is_nil {
+            "Selecting…".to_owned()
+        } else {
+            row.value.clone()
+        };
 
         let click = cx.entity();
         let click_name = row.name.clone();
@@ -125,9 +124,7 @@ impl Shell {
                 div()
                     .flex_1()
                     .truncate()
-                    .when(armed || is_nil, |this| {
-                        this.text_color(tokens::text_placeholder())
-                    })
+                    .when(is_nil, |this| this.text_color(tokens::text_placeholder()))
                     .child(label),
             )
             .when(!armed && !is_nil, |this| {
@@ -174,15 +171,8 @@ impl Shell {
     /// to; `None` for a miss, or with nothing armed.
     pub(super) fn ref_pick_candidate(&self, hits: &[Ref], cycling: bool) -> Option<Ref> {
         let name = self.edits.ref_pick.armed.as_deref()?;
-        let owner = self.selected()?;
-        candidate(
-            &self.dom,
-            &self.database,
-            hits,
-            self.selected(),
-            cycling,
-            |target| accepts_ref(&self.dom, &self.database, owner, name, target),
-        )
+        let owners = self.selected_all();
+        candidate(&self.dom, &self.database, hits, owners, name, cycling)
     }
 
     /// A press on an Explorer row while a pick is armed (see
@@ -208,18 +198,29 @@ impl Shell {
 /// What a click selects (`selection::from_click`: the outermost `Model`
 /// plain, the part itself with `Alt`), unless the property cannot hold that
 /// and can hold the part actually clicked — a `Weld.Part0` or a
-/// `PrimaryPart` clicked on a part inside a model. Studio's docs say only
-/// that the click picks "the object"; landing on a value the row then
-/// refuses would make the plain click useless for every part-typed `Ref`.
+/// `PrimaryPart` clicked on a part inside a model. Studio's own widget hands
+/// its instance picker the property's class (`pickInstanceAsync({className})`
+/// in `InstanceRefPropertyView`), so its pick only ever lands on an instance
+/// of that class; how the native picker itself resolves model against part
+/// is not visible from outside it.
+///
+/// "Can hold" asks every one of `owners`, the whole selection the pick is
+/// written to: a part only the first owner would take is no better than the
+/// model, since the commit refuses it for the rest either way.
 fn candidate(
     dom: &WeakDom,
     db: &ReflectionDatabase,
     hits: &[Ref],
-    current: Option<Ref>,
+    owners: &[Ref],
+    name: &str,
     cycling: bool,
-    accepts: impl Fn(Ref) -> bool,
 ) -> Option<Ref> {
-    let clicked = selection::from_click(dom, db, hits, current, cycling)?;
+    let accepts = |target| {
+        owners
+            .iter()
+            .all(|&owner| accepts_ref(dom, db, owner, name, target))
+    };
+    let clicked = selection::from_click(dom, db, hits, owners.first().copied(), cycling)?;
     let nearest = hits[0];
     Some(match accepts(clicked) || !accepts(nearest) {
         true => clicked,
@@ -232,7 +233,7 @@ mod tests {
     use rbx_dom::{Ref, WeakDom};
     use rbx_reflection::ReflectionDatabase;
 
-    use super::{accepts_ref, candidate, RefPick};
+    use super::{candidate, RefPick};
 
     /// A house model with a handle part inside it, and a `Weld` and an
     /// `ObjectValue` beside it, all under `Workspace`.
@@ -262,10 +263,11 @@ mod tests {
 
     /// A viewport click on `hits` while `owner`'s `name` is armed.
     fn pick(place: &Place, owner: Ref, name: &str, hits: &[Ref], alt: bool) -> Option<Ref> {
-        let db = ReflectionDatabase::embedded();
-        candidate(&place.dom, &db, hits, Some(owner), alt, |target| {
-            accepts_ref(&place.dom, &db, owner, name, target)
-        })
+        candidate(&place.dom, &db(), hits, &[owner], name, alt)
+    }
+
+    fn db() -> ReflectionDatabase {
+        ReflectionDatabase::embedded()
     }
 
     #[test]
@@ -296,6 +298,41 @@ mod tests {
         assert_eq!(
             pick(&place, place.house, "PrimaryPart", &hits, false),
             Some(place.handle)
+        );
+    }
+
+    #[test]
+    fn every_selected_owner_has_to_take_the_part() {
+        let mut place = place();
+        let workspace = place.dom.root_refs()[0];
+        let second = place.dom.new_instance("Weld", "Weld2", Some(workspace));
+        let other = place.dom.new_instance("Model", "Truck", Some(workspace));
+        let hits = [place.handle];
+        // Two welds both take the part.
+        assert_eq!(
+            candidate(
+                &place.dom,
+                &db(),
+                &hits,
+                &[place.weld, second],
+                "Part0",
+                false
+            ),
+            Some(place.handle)
+        );
+        // The house would take its own handle as `PrimaryPart`, the truck
+        // would not: the pick stays on the house, which both then refuse,
+        // rather than a part written to one model and refused by the other.
+        assert_eq!(
+            candidate(
+                &place.dom,
+                &db(),
+                &hits,
+                &[place.house, other],
+                "PrimaryPart",
+                false
+            ),
+            Some(place.house)
         );
     }
 
