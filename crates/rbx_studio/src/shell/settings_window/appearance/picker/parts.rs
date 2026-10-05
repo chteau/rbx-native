@@ -101,6 +101,7 @@ pub(super) fn button(
 ) -> Stateful<Div> {
     let base = h_flex()
         .id(id)
+        .debug_selector(|| id.into())
         .flex_none()
         // The filled button is the one that commits; Cancel keeps 28.
         .h(px(if fill.is_some() { PRIMARY_H } else { 28. }))
@@ -123,5 +124,22 @@ pub(super) fn button(
             .bg(tokens::field_select())
             .font_weight(FontWeight::SEMIBOLD)
             .hover(|this| this.bg(tokens::secondary_hover())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::button;
+    use gpui_kit::rgb;
+
+    /// WCAG 2.5.5: the filled Apply button is 44 tall; Cancel stays 28.
+    #[gpui_kit::test]
+    fn the_apply_button_lays_out_at_least_44_tall(cx: &mut gpui_kit::TestAppContext) {
+        let cx = cx.add_empty_window();
+        let apply = button("picker-apply", "Apply", Some(rgb(0x4488ff).into()));
+        crate::probe::assert_primary(cx, "picker-apply", 200., apply);
+        let cancel = button("picker-cancel", "Cancel", None);
+        let found = crate::probe::size_of(cx, "picker-cancel", 200., cancel);
+        assert!(f32::from(found.height) < 44.);
     }
 }

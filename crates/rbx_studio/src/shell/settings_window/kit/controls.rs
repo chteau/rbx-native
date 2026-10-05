@@ -289,3 +289,38 @@ pub(in crate::shell::settings_window) fn secondary_button(
         .child(icon(glyph, 12.))
         .child(label)
 }
+
+// The destructive variants: WCAG 2.5.5's 44px rather than the compact
+// design's 24 or 28 (see `tokens::primary_target`).
+
+pub(in crate::shell::settings_window) fn destructive_icon(
+    id: impl Into<ElementId>,
+    glyph: &'static str,
+    label: &'static str,
+) -> Stateful<Div> {
+    let id: ElementId = id.into();
+    let probe = id.to_string();
+    ghost_icon(id, glyph, label)
+        .debug_selector(move || probe)
+        .size(tokens::primary_target())
+}
+
+pub(in crate::shell::settings_window) fn destructive_button(
+    id: &'static str,
+    glyph: &'static str,
+    label: &'static str,
+) -> Stateful<Div> {
+    secondary_button(id, glyph, label)
+        .debug_selector(|| id.into())
+        .h(tokens::primary_target())
+}
+
+pub(in crate::shell::settings_window) fn destructive_header(
+    id: &'static str,
+    label: &'static str,
+    on_click: Option<impl Fn(&ClickEvent, &mut Window, &mut App) + 'static>,
+) -> Stateful<Div> {
+    super::header_button(id, label, on_click)
+        .debug_selector(|| id.into())
+        .h(tokens::primary_target())
+}

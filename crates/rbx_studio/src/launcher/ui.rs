@@ -118,13 +118,16 @@ pub(crate) fn button_height(weight: Weight, small: bool) -> f32 {
 
 fn button_frame(id: impl Into<ElementId>, weight: Weight, small: bool) -> Stateful<Div> {
     let h = button_height(weight, small);
+    let id: ElementId = id.into();
+    let probe = id.to_string();
     let (size, line, px_x) = if small {
         (12., 16., 10.)
     } else {
         (12.5, 17., if weight == Weight::Primary { 16. } else { 14. })
     };
     let base = h_flex()
-        .id(id.into())
+        .id(id)
+        .debug_selector(move || probe)
         .h(px(h))
         .min_w(px(44.))
         .flex_none()
@@ -382,7 +385,8 @@ pub(crate) fn field_frame(
 
 #[cfg(test)]
 mod tests {
-    use super::{button_height, Weight};
+    use super::{button, button_height, Weight};
+    use crate::probe::assert_primary;
 
     /// WCAG 2.5.5: the buttons that commit or destroy are 44 tall in both
     /// sizes, with Large Click Targets off (it is not consulted here at all).
@@ -395,5 +399,20 @@ mod tests {
         }
         // Secondary and Ghost keep the compact design.
         assert_eq!(button_height(Weight::Secondary, false), 34.);
+    }
+
+    /// The same floor, measured through gpui layout rather than read off the
+    /// constant: every Primary and Danger button, in both sizes.
+    #[gpui_kit::test]
+    fn primary_and_danger_buttons_lay_out_at_least_44_by_44(cx: &mut gpui_kit::TestAppContext) {
+        let cx = cx.add_empty_window();
+        for (id, weight, small) in [
+            ("primary", Weight::Primary, false),
+            ("primary-small", Weight::Primary, true),
+            ("danger", Weight::Danger, false),
+            ("danger-small", Weight::Danger, true),
+        ] {
+            assert_primary(cx, id, 200., button(id, "OK", weight, small));
+        }
     }
 }

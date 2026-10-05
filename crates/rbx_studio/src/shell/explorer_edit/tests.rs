@@ -151,3 +151,31 @@ fn closing_hands_focus_back_only_when_nothing_else_took_it(cx: &mut gpui_kit::Te
         assert!(tree.is_focused(window));
     });
 }
+
+/// WCAG 2.5.5: the Delete row is 44 tall; the other rows keep the menu's 24.
+#[gpui_kit::test]
+fn the_delete_row_lays_out_at_least_44_tall(cx: &mut gpui_kit::TestAppContext) {
+    use gpui_kit::{ParentElement as _, Styled as _};
+    let cx = cx.add_empty_window();
+    let row = super::menu::chrome("delete", gpui_kit::assets::IconName::Trash, "Delete", true);
+    crate::probe::assert_primary(
+        cx,
+        "row-menu-delete",
+        200.,
+        gpui_kit::div().w(gpui_kit::px(200.)).child(row),
+    );
+    let cut = crate::probe::size_of(
+        cx,
+        "row-menu-cut",
+        200.,
+        gpui_kit::div()
+            .w(gpui_kit::px(200.))
+            .child(super::menu::chrome(
+                "cut",
+                gpui_kit::assets::IconName::Scissors,
+                "Cut",
+                true,
+            )),
+    );
+    assert!(f32::from(cut.height) < 44.);
+}

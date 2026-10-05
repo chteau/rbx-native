@@ -413,6 +413,22 @@ fn row(
     }
 }
 
+/// One row's chrome. Delete is the one destructive row: 44 tall (WCAG 2.5.5)
+/// while the rest keep the menu's 24.
+pub(super) fn chrome(
+    id: &'static str,
+    icon: IconName,
+    label: &'static str,
+    enabled: bool,
+) -> Stateful<Div> {
+    let name = SharedString::from(format!("row-menu-{id}"));
+    menu::row_chrome(name.clone(), Some(icon), label.into(), enabled, false)
+        .debug_selector(move || name.to_string())
+        .when(id == "delete", |this| {
+            this.h(crate::tokens::primary_target())
+        })
+}
+
 impl Row {
     fn build(self, index: usize, highlighted: bool, cx: &mut Context<Shell>) -> AnyElement {
         let Row {
@@ -422,37 +438,26 @@ impl Row {
             enabled,
             action,
         } = self;
-        menu::row_chrome(
-            SharedString::from(format!("row-menu-{id}")),
-            Some(icon),
-            label.into(),
-            enabled,
-            false,
-        )
-        // Delete is the one destructive row: 44 tall (WCAG 2.5.5) while the
-        // rest keep the menu's 24.
-        .when(id == "delete", |this| {
-            this.h(crate::tokens::primary_target())
-        })
-        // The keyboard's highlight wears the hover's surface, and the
-        // pointer moves it, as in the dropdowns (`shell::menu`).
-        .when(highlighted, |this| this.bg(crate::tokens::hover()))
-        .on_hover(cx.listener(move |shell, hovered: &bool, _, cx| {
-            if let Some(menu) = shell.explorer_edit.menu.as_mut().filter(|_| *hovered) {
-                menu.cursor = Some(index);
-                cx.notify();
-            }
-        }))
-        .when(enabled, |this| {
-            this.on_click(cx.listener(move |shell, _, window, cx| {
-                // Closed before the action runs, not after: Rename and
-                // Insert both open something of their own, and clearing
-                // the menu afterwards would take that with it.
-                shell.close_row_menu(window, cx);
-                action(shell, window, cx);
-                cx.notify();
+        chrome(id, icon, label, enabled)
+            // The keyboard's highlight wears the hover's surface, and the
+            // pointer moves it, as in the dropdowns (`shell::menu`).
+            .when(highlighted, |this| this.bg(crate::tokens::hover()))
+            .on_hover(cx.listener(move |shell, hovered: &bool, _, cx| {
+                if let Some(menu) = shell.explorer_edit.menu.as_mut().filter(|_| *hovered) {
+                    menu.cursor = Some(index);
+                    cx.notify();
+                }
             }))
-        })
-        .into_any_element()
+            .when(enabled, |this| {
+                this.on_click(cx.listener(move |shell, _, window, cx| {
+                    // Closed before the action runs, not after: Rename and
+                    // Insert both open something of their own, and clearing
+                    // the menu afterwards would take that with it.
+                    shell.close_row_menu(window, cx);
+                    action(shell, window, cx);
+                    cx.notify();
+                }))
+            })
+            .into_any_element()
     }
 }

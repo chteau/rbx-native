@@ -169,17 +169,21 @@ Blender's "editor-area padding" idea under a clearer name.
 
 **Primary and destructive controls are 44×44 whether or not that option is
 on** (2.5.5 measures the target, and these are where a miss costs
-something): the ribbon's Save, Publish, Delete, Play and Stop tiles
-(`ribbon::primary`, floored by `tokens::primary_target()`), every
-`launcher::ui` Primary or Danger button (`button_height`), the colour
-picker's Apply, the Explorer menu's Delete row, Settings' Delete layout,
-Uninstall theme, Reset layout and Reset all, and the sequence editor's
-Delete stop and Reset. The visual grows with the hit area — gpui has no
-hit slop, and Studio's own Play and Stop are full-height ribbon tiles
-too. Not covered: items in the File menu and the Edit menu, which the
-toolkit's popup sizes at 24 and this crate cannot change per item (Save
-and Publish are also tiles, Delete also a tile and the Delete key), and
-the per-row "reset to default" glyph, which loses nothing.
+something): the menu bar's Save to File, Save to Roblox, Publish to Roblox
+and Delete rows (`menu_bar::popup::PRIMARY_ROWS`, drawn as the toolkit
+popup's custom element items, which keep the action, the shortcut hint
+and keyboard navigation), the ribbon's Play and Stop tiles
+(`ribbon::primary`), every `launcher::ui` Primary or Danger button
+(`button_height`), the colour picker's Apply, the Explorer menu's Delete
+row, Settings' Delete layout, Uninstall theme, Reset layout and Reset all,
+and the sequence editor's Delete stop and Reset. All of them floor at
+`tokens::primary_target()` (44, growing with the UI scale, never shrinking),
+and each is measured through gpui layout in a headless test. The visual
+grows with the hit area — gpui has no hit slop. Studio puts Save and
+Publish in its File menu and Play and Stop in the mezzanine rather than
+as ribbon tiles, so there are no Save, Publish or Delete tiles here.
+The one exception is the per-row "reset to default" glyph, which loses
+nothing.
 
 `tokens::tests` asserts the palette rather than trusting it — see §4.
 

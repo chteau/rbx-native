@@ -260,7 +260,7 @@ fn axis_label(value: f32, top: bool) -> impl IntoElement {
         .child(SharedString::from(crate::shell::format_scrubbed(value)))
 }
 
-fn footer_button(
+pub(super) fn footer_button(
     id: &'static str,
     label: &'static str,
     enabled: bool,
@@ -268,6 +268,7 @@ fn footer_button(
 ) -> impl IntoElement {
     div()
         .id(id)
+        .debug_selector(|| id.into())
         .flex_none()
         // Delete stop is destructive and Reset discards edits: both take
         // WCAG 2.5.5's 44px, not the input row's 24px floor.

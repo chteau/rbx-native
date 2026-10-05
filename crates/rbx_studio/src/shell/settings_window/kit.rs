@@ -11,10 +11,12 @@ use crate::tokens;
 
 mod controls;
 mod row;
+#[cfg(test)]
+mod tests;
 
 pub(super) use controls::{
-    ghost_icon, readout, secondary_button, segmented, slider, still_toggle, ticked_slider, toggle,
-    OnPick,
+    destructive_button, destructive_header, destructive_icon, ghost_icon, readout,
+    secondary_button, segmented, slider, still_toggle, ticked_slider, toggle, OnPick,
 };
 pub(super) use row::{section, section_card, Reset, Row, Section};
 

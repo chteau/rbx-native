@@ -3,11 +3,12 @@
 ## 2026-10-05
 
 - **Save, Publish, Delete, Play and Stop are 44 px targets by default.**
-  They are ribbon tiles now (Save and Publish beside Import, Delete in the
-  Edit group, Stop beside Play), and every confirm or destructive button
-  — dialogs, the colour picker's Apply, Delete layout, Reset layout, the
-  Explorer menu's Delete row, Delete stop — clears WCAG 2.5.5 whether or
-  not Large Click Targets is on. — @chteau
+  The File menu's Save and Publish rows and the Edit menu's Delete row,
+  the Play and Stop tiles (Stop now has a tile of its own), every
+  confirm or destructive button — dialogs, the colour picker's Apply,
+  Delete layout, Reset layout, the Explorer menu's Delete row, Delete
+  stop — clear WCAG 2.5.5 whether or not Large Click Targets is on, each
+  measured by a layout test. — @chteau
 - **Smooth terrain and the Terrain Editor.** `Workspace.Terrain`'s
   voxels are read and written: `SmoothGrid`'s layout was worked out from
   a real place, whose terrain re-encodes to its original bytes, and

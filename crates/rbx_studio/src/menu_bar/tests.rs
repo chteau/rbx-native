@@ -190,3 +190,40 @@ fn the_users_templates_close_the_model_menu() {
         .unwrap();
     assert!(second.partial_eq(&MenuInsertTemplate { index: 1 }));
 }
+
+/// WCAG 2.5.5: Save to File, Save to Roblox, Publish to Roblox and Delete
+/// are drawn as 44px element rows (see `popup::PRIMARY_ROWS`), measured
+/// through the toolkit's own popup layout.
+#[gpui_kit::test]
+fn the_primary_menu_rows_lay_out_at_least_44_tall(cx: &mut gpui_kit::TestAppContext) {
+    use gpui_kit::{point, px, size, AvailableSpace, ParentElement as _};
+    let cx = cx.add_empty_window();
+    let mut found = Vec::new();
+    for menu in menus(&[]) {
+        let items = menu.items.clone();
+        let entity = cx.update(|window, cx| super::popup::dropdown(&items, None, window, cx));
+        cx.draw(
+            point(px(0.), px(0.)),
+            size(
+                AvailableSpace::Definite(px(400.)),
+                AvailableSpace::Definite(px(900.)),
+            ),
+            move |_, _| gpui_kit::div().child(entity),
+        );
+        for name in super::popup::PRIMARY_ROWS {
+            let selector: &'static str = Box::leak(format!("menu-row-{name}").into_boxed_str());
+            if let Some(bounds) = cx.debug_bounds(selector) {
+                assert!(
+                    f32::from(bounds.size.height) >= 44.,
+                    "{name} is {:?} tall",
+                    bounds.size.height
+                );
+                found.push(name);
+            }
+        }
+    }
+    found.sort_unstable();
+    let mut expected = super::popup::PRIMARY_ROWS.to_vec();
+    expected.sort_unstable();
+    assert_eq!(found, expected, "every primary row exists in some menu");
+}

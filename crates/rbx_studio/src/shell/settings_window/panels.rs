@@ -7,7 +7,10 @@ use gpui_kit::*;
 
 use crate::tokens;
 
-use super::kit::{ghost_icon, icon, secondary_button, segmented, text, toggle, Row, Section};
+use super::kit::{
+    destructive_button, destructive_icon, icon, secondary_button, segmented, text, toggle, Row,
+    Section,
+};
 use super::nav::Page;
 use super::SettingsWindow;
 
@@ -204,13 +207,11 @@ impl SettingsWindow {
                         )
                     })
                     .child(
-                        ghost_icon(
+                        destructive_icon(
                             SharedString::from(format!("delete-layout-{name}")),
                             "trash",
                             "Delete",
                         )
-                        // Destructive: 44, not the ghost icon's 24 (WCAG 2.5.5).
-                        .size(tokens::primary_target())
                         .on_click({
                             let shell = self.shell.clone();
                             move |_, _, cx| {
@@ -226,8 +227,7 @@ impl SettingsWindow {
             vec![
                 Row::new(
                     "Dock layout",
-                    secondary_button("reset-layout", "rotate-ccw", "Reset layout")
-                        .h(tokens::primary_target())
+                    destructive_button("reset-layout", "rotate-ccw", "Reset layout")
                         .on_click(self.set(|shell, cx| shell.reset_layout(cx))),
                 )
                 .describe("Which panel sits on which edge, and how big. Saved automatically when you close."),
