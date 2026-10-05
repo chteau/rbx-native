@@ -31,6 +31,13 @@ pub(super) fn contents(reader: &mut Reader<'_>, count: usize) -> Result<PropValu
         .map(|_| reader.sized_name())
         .collect::<Result<Vec<_>, _>>()?;
 
+    // Each pool is consumed front to back, in instance order. Studio's own
+    // URI pool is ordered that way (rbx-test-files `imagelabel-content`), and
+    // so is rbx-dom's object pool as its writer emits it. rbx-dom's *reader*
+    // pops the object pool from the back, so two objects it wrote come back
+    // swapped; no real file populates this pool to say which side Studio
+    // takes, so this follows the writer and the URI pool rather than that
+    // asymmetry.
     let object_count = reader.length()?;
     let objects = reader.referents(object_count)?;
 
