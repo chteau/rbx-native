@@ -29,7 +29,9 @@ it (`hidden_selection`) while a collapsed parent hides its row, so
 expanding the parent selects it again, and a keyboard cursor apart from
 the selection (`focused_ix`, with `focused_index`/`set_focused_index` and
 `TreeEntryState::is_focused`, and `aria_active_descendant` on its row) so the
-Explorer can move focus without selecting, as a multi-selecting tree must.
+Explorer can move focus without selecting, as a multi-selecting tree must,
+and `set_selected_ids`/`is_selected` so every row of the caller's
+multi-selection reports itself selected (`aria_selected`).
 Selecting a row moves the cursor to it; the toolkit's own key handlers act
 on the cursor. All are marked
 "rbx-native addition"; the last is tested from `rbx_studio`

@@ -1,6 +1,6 @@
 use crate::TestSupportExt as _;
 use gpui::StatefulInteractiveElement as _;
-use std::{cell::RefCell, ops::Range, rc::Rc};
+use std::{cell::RefCell, collections::HashSet, ops::Range, rc::Rc};
 
 use gpui::{
     AnyElement, App, Context, ElementId, Entity, EventEmitter, FocusHandle, InteractiveElement,
@@ -174,9 +174,10 @@ impl TreeEntryState {
         self.selected
     }
 
-    /// rbx-native addition: this row is the keyboard cursor *and* the tree
-    /// holds keyboard focus. Says nothing about input modality; a caller
-    /// drawing a ring checks `Window::last_input_was_keyboard` too.
+    /// rbx-native addition: this row is the keyboard cursor. Says nothing
+    /// about whether the tree holds focus — a caller may route focus
+    /// through a wrapper of its own — nor about input modality; a caller
+    /// drawing a ring checks both.
     #[inline]
     pub fn is_focused(self) -> bool {
         self.focused
@@ -205,6 +206,9 @@ pub struct TreeState {
     // tree pattern's Ctrl+Up/Down). Any selection of a row moves it there;
     // `None` falls back to `selected_ix`.
     focused_ix: Option<usize>,
+    // rbx-native addition: every selected item, for a caller that keeps a
+    // multi-selection of its own. `None` means `selected_ix` alone.
+    selected_ids: Option<HashSet<SharedString>>,
     right_clicked_ix: Option<usize>,
     render_item: Rc<RenderItem>,
     list_style: StyleRefinement,
@@ -221,6 +225,7 @@ impl TreeState {
             selected_ix: None,
             hidden_selection: None,
             focused_ix: None,
+            selected_ids: None,
             right_clicked_ix: None,
             render_item: Rc::new(|_, _, _, _, _| div().into_any_element()),
             list_style: StyleRefinement::default(),
@@ -250,6 +255,24 @@ impl TreeState {
     pub fn set_focused_index(&mut self, ix: Option<usize>, cx: &mut Context<Self>) {
         self.focused_ix = ix;
         cx.notify();
+    }
+
+    /// rbx-native addition: the whole selection, by item id, for a caller
+    /// that selects several rows. Each one's row then reports itself
+    /// selected (`aria_selected`, `TreeEntryState::is_selected`), not just
+    /// `selected_index`'s. Kept across `set_items`: it is the caller's
+    /// selection, not the rows'. Does not notify; set it while rendering.
+    pub fn set_selected_ids(&mut self, ids: impl IntoIterator<Item = SharedString>) {
+        self.selected_ids = Some(ids.into_iter().collect());
+    }
+
+    /// rbx-native addition: whether the row at `ix` is selected, by
+    /// `set_selected_ids` where given, else by `selected_index`.
+    pub fn is_selected(&self, ix: usize) -> bool {
+        match (&self.selected_ids, self.entries.get(ix)) {
+            (Some(ids), Some(entry)) => ids.contains(&entry.item.id),
+            _ => Some(ix) == self.selected_ix,
+        }
     }
 
     pub fn selected_index(&self) -> Option<usize> {
@@ -500,8 +523,8 @@ impl Render for TreeState {
                         let entry = &state.entries[ix];
                         let focused = Some(ix) == focused_ix;
                         let entry_state = TreeEntryState {
-                            selected: Some(ix) == state.selected_ix,
-                            focused: focused && state.focus_handle.is_focused(window),
+                            selected: state.is_selected(ix),
+                            focused,
                             right_clicked: Some(ix) == state.right_clicked_ix,
                         };
                         div()

@@ -270,11 +270,7 @@ impl Shell {
             // own filter box is (`shell::panels`). Takes all the width the
             // strip has left, as the reference's own search does.
             .child(div().flex_1().min_w(px(SEARCH_MIN_WIDTH)).child(
-                super::workspace::search_field_compact(
-                    self.tab_order.next(),
-                    &self.output_search,
-                    cx,
-                ),
+                super::workspace::search_field_compact(&self.tab_order, &self.output_search, cx),
             ))
             .child(
                 // One segmented control, not four separate buttons: the

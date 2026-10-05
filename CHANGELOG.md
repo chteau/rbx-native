@@ -9,7 +9,10 @@
   `Ctrl`+Up/Down moves focus without touching the selection, `Ctrl`+Space
   adds or drops the focused row, `Shift`+arrows extend from the anchor and a
   plain arrow still moves and selects. Tabbing into the tree with nothing
-  selected focuses its first row instead of selecting it. — @chteau
+  selected focuses its first row instead of selecting it. Every selected
+  row now tells assistive technology it is selected, and over a tagged
+  Folder's colour the ring turns white or black when the accent would not
+  show. — @chteau
 - **Smooth terrain and the Terrain Editor.** `Workspace.Terrain`'s
   voxels are read and written: `SmoothGrid`'s layout was worked out from
   a real place, whose terrain re-encodes to its original bytes, and

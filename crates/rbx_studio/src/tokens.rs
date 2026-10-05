@@ -1004,13 +1004,58 @@ pub(crate) fn floating_shadow() -> BoxShadow {
 /// perimeter). The criterion's own escape is to go *inside* instead, at
 /// 3px rather than 2 — so that is what this does, and nothing can clip it.
 pub(crate) fn focus_ring_inset() -> Vec<BoxShadow> {
+    focus_ring_inset_in(check_on())
+}
+
+/// [`focus_ring_inset`] in `color`, for a ring drawn over a fill the user
+/// chose (see [`ring_over`]).
+pub(crate) fn focus_ring_inset_in(color: Rgba) -> Vec<BoxShadow> {
     vec![BoxShadow {
-        color: check_on().into(),
+        color: color.into(),
         offset: gpui_kit::point(px(0.), px(0.)),
         blur_radius: px(0.),
         spread_radius: px(3.),
         inset: true,
     }]
+}
+
+/// The colour an inset ring takes over `fills` (each composited on
+/// `ground`): the accent wherever it clears 3:1 against all of them, else
+/// whichever of white and black clears the most. A tagged Folder's row is
+/// filled with whatever colour the user tagged it, a blue as close to the
+/// accent as they like; white or black always gets at least 4.58:1
+/// (√21) against any opaque colour, so the ring never disappears into it.
+pub(crate) fn ring_over(accent: Rgba, ground: Rgba, fills: &[Rgba]) -> Rgba {
+    let backdrops: Vec<Rgba> = std::iter::once(ground)
+        .chain(fills.iter().map(|&fill| composite(fill, ground)))
+        .collect();
+    let worst = |ring: Rgba| {
+        backdrops
+            .iter()
+            .map(|&backdrop| crate::accent::contrast(ring, backdrop))
+            .fold(f32::INFINITY, f32::min)
+    };
+    if worst(accent) >= 3. {
+        return accent;
+    }
+    let white = gpui_kit::rgb(0xFFFFFF);
+    let black = gpui_kit::rgb(0x000000);
+    if worst(white) >= worst(black) {
+        white
+    } else {
+        black
+    }
+}
+
+/// `foreground`, with its own alpha, painted over an opaque `background`.
+pub(crate) fn composite(foreground: Rgba, background: Rgba) -> Rgba {
+    let mix = |f: f32, b: f32| f * foreground.a + b * (1. - foreground.a);
+    Rgba {
+        r: mix(foreground.r, background.r),
+        g: mix(foreground.g, background.g),
+        b: mix(foreground.b, background.b),
+        a: 1.,
+    }
 }
 
 fn ring(color: Rgba, width: f32) -> BoxShadow {

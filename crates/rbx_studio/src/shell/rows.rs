@@ -179,7 +179,13 @@ pub(super) fn row(
         .when(!selected, |this| {
             this.hover(move |this| tokens::hover_fx(this).bg(hover_bg))
         })
-        .when(ringed, |this| this.shadow(tokens::focus_ring_inset()))
+        .when(ringed, |this| {
+            let fill = if selected { selected_bg } else { hover_bg };
+            this.shadow(tokens::focus_ring_inset_in(ring_color(
+                tokens::check_on(),
+                fill,
+            )))
+        })
         .children(guide_lines(depth, guides))
         .child(
             h_flex()
@@ -307,6 +313,13 @@ fn guide_lines(depth: usize, guides: Guides) -> Vec<AnyElement> {
 /// A tagged `Folder`'s stored sRGB byte triplet (the same 0-255,
 /// non-linear-light space `properties::color3` already displays these in) at
 /// `alpha` out of 255.
+/// The focus ring's colour over a row whose fill may be a user's tag
+/// colour (see `tokens::ring_over`): measured against the dock and the
+/// fill on it, since the row shows one or the other.
+fn ring_color(accent: Rgba, fill: Rgba) -> Rgba {
+    tokens::ring_over(accent, tokens::dock(), &[fill])
+}
+
 fn tag_color(color: (u8, u8, u8), alpha: u8) -> Rgba {
     let (r, g, b) = color;
     rgba(((r as u32) << 24) | ((g as u32) << 16) | ((b as u32) << 8) | alpha as u32)
@@ -1130,3 +1143,7 @@ fn field_surface(surface: Rgba) -> Div {
         .border_1()
         .border_color(tokens::border())
 }
+
+#[cfg(test)]
+#[path = "rows/tests.rs"]
+mod tests;

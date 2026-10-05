@@ -324,3 +324,37 @@ fn the_cursor_moves_apart_from_a_multi_selection(cx: &mut gpui_kit::TestAppConte
         assert_eq!(tree.focused_index(), None);
     });
 }
+
+/// A multi-selection reports every one of its rows selected, through the
+/// tree's own entry state (what `aria_selected` is set from), across a
+/// search's `set_items` too; without the set, the single row does.
+#[gpui_kit::test]
+fn every_row_of_a_multi_selection_reports_itself_selected(cx: &mut gpui_kit::TestAppContext) {
+    use gpui_kit::component::tree::TreeItem;
+    use gpui_kit::AppContext as _;
+
+    let rows = || {
+        ["a", "b", "c", "d"]
+            .map(|id| TreeItem::new(id, id))
+            .to_vec()
+    };
+    let tree = cx.new(|cx| TreeState::new(cx).items(rows()));
+    tree.update(cx, |tree, cx| {
+        tree.set_selected_index(Some(0), cx);
+        assert_eq!(
+            (0..4).map(|ix| tree.is_selected(ix)).collect::<Vec<_>>(),
+            [true, false, false, false]
+        );
+        tree.set_selected_ids(["a".into(), "c".into()]);
+        assert_eq!(
+            (0..4).map(|ix| tree.is_selected(ix)).collect::<Vec<_>>(),
+            [true, false, true, false]
+        );
+        tree.set_items(rows(), cx);
+        assert!(
+            tree.is_selected(2),
+            "the caller's selection outlives new rows"
+        );
+        assert!(!tree.is_selected(9), "no row, not selected");
+    });
+}
