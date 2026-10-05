@@ -2,14 +2,20 @@
 
 ## 2026-10-05
 
-- **Command palette.** Ctrl+Alt+P — Studio's own key for searching its
-  actions — or View › Command Palette… opens a filter over every command
-  the editor has: each live menu item, the transform tools, and a "Focus"
-  command per dock, so panels can be reached without the mouse. Rows are
-  ranked prefix first, then word starts, then scattered letters, with
-  this session's recent commands floated to the top as Studio's Quick
-  Open does, and each shows its shortcut. Up/Down/Home/End, Enter and
-  Escape work from the field, and focus goes back where it was on close.
+- **Quick Open and the command palette.** As in Studio, Ctrl+P (View ›
+  Quick Open…) finds any instance in the place by name or path — a script
+  opens in the Script Editor, anything else is selected — and Ctrl+Alt+P
+  (View › Command Palette…) or a leading `>` finds any command instead:
+  each live menu item, the transform tools, the ribbon's live commands
+  (Part shapes, UI inserts, Local, Align, snapping, pivot, Sun, Terrain
+  Editor — now read from one list the ribbon builds from too), and a
+  "Focus" command per dock and document that puts the caret in it, so
+  panels can be reached without the mouse. Rows rank prefix first, then
+  word starts, then scattered letters, with this session's recent ones
+  floated to the top, and each shows its shortcut. Up/Down/Home/End, Enter
+  and Escape work from the field, a screen reader follows the highlighted
+  row, and focus goes back where it was on close. View › Style Editor no
+  longer does nothing when no window manager marks the window active.
   — @chteau
 - **Smooth terrain and the Terrain Editor.** `Workspace.Terrain`'s
   voxels are read and written: `SmoothGrid`'s layout was worked out from

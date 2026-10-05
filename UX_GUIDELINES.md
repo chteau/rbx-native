@@ -106,9 +106,14 @@ The whole dock arrangement persists — which edge, dock and tab each panel
 sits in, every size, what is floating and what is closed — with a Reset
 Layout command beside it (item 9); named layouts do not exist.
 
-**Stage 3 — not started.** No high-contrast theme (item 10), no command
-palette (item 12). Item 11's 44×44 is reachable through Large Click
-Targets but is not the default on primary controls.
+**Stage 3 — the command palette is met.** No high-contrast theme (item
+10). The command palette (item 12) is Studio's Quick Open: Ctrl+P finds an
+instance by name or path, Ctrl+Alt+P or a leading `>` finds any command —
+every live menu item and ribbon command, each with its shortcut, plus a
+"Focus" command per dock and document that puts the caret inside it
+(`shell::palette`). It is an APG combobox whose highlighted option is the
+accessibility tree's focus. Item 11's 44×44 is reachable through Large
+Click Targets but is not the default on primary controls.
 
 **No Level A gap left.** `Select`, `ColorPicker` and `NumberInput` are in
 the Tab order — every `Color3`, every enum and the snap increments

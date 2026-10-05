@@ -235,7 +235,9 @@ fn align_popover(handle: Entity<Shell>, options: align::Options) -> impl IntoEle
                 .on_click({
                     let handle = handle.clone();
                     move |_, _, cx| {
-                        handle.update(cx, |shell, cx| shell.align_selected(cx));
+                        handle.update(cx, |shell, cx| {
+                            super::ribbon::RibbonCommand::Align.run(shell, cx)
+                        });
                     }
                 }),
         )

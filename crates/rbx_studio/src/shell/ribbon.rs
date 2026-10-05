@@ -22,7 +22,6 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::chrome::Document;
-use super::keys::{PART_TYPE_BALL, PART_TYPE_CYLINDER};
 use super::layout::Panel;
 use super::roving::Roving;
 
@@ -32,6 +31,13 @@ use crate::transform::Tool;
 
 use super::menu::{self, MenuId};
 use super::Shell;
+
+mod commands;
+
+pub(super) use commands::{
+    palette_entries, RibbonCommand, GUI_INSERTS, PART_INSERTS, SUN_BODIES, SUN_MODES,
+};
+use commands::{Insert, SCRIPT_INSERTS};
 
 /// The ribbon's category tabs. The frame names six; this editor has real
 /// commands for Home, UI and Model, a page of its own for running a place
@@ -262,23 +268,7 @@ impl Shell {
                 "Part",
                 cx,
             )),
-            vec![
-                insert_item("Block", IconName::Box, "Part", None),
-                insert_item("Sphere", IconName::Circle, "Part", Some(PART_TYPE_BALL)),
-                insert_item("Wedge", IconName::Triangle, "WedgePart", None),
-                insert_item(
-                    "Corner Wedge",
-                    IconName::TriangleRight,
-                    "CornerWedgePart",
-                    None,
-                ),
-                insert_item(
-                    "Cylinder",
-                    IconName::Cylinder,
-                    "Part",
-                    Some(PART_TYPE_CYLINDER),
-                ),
-            ],
+            PART_INSERTS.iter().map(insert_item).collect(),
             cx,
         );
         let script = menu::dropdown(
@@ -359,13 +349,13 @@ impl Shell {
                 cx,
             )),
             vec![
-                insert_item("ScreenGui", IconName::AppWindow, "ScreenGui", None),
-                insert_item("SurfaceGui", IconName::Frame, "SurfaceGui", None),
+                insert_item(&GUI_INSERTS[0]),
+                insert_item(&GUI_INSERTS[1]),
                 // Roblox's own ad surface: it needs a Creator-Dashboard ad
                 // unit behind it to mean anything, which this editor has no
                 // way to provision.
                 menu::item("AdGui").icon(IconName::Megaphone).disabled(),
-                insert_item("BillboardGui", IconName::Presentation, "BillboardGui", None),
+                insert_item(&GUI_INSERTS[2]),
             ],
             cx,
         )
@@ -523,25 +513,12 @@ fn placeholders(page: &'static str, tiles: &[(IconName, &'static str)]) -> Vec<A
         .collect()
 }
 
-/// `shape` (`Enum.PartType`) is only ever `Some` for the Part menu's Sphere
-/// and Cylinder items — they're the only two of the five whose `class`
-/// (`Part`) doesn't already say which shape they are. Block shares that same
-/// class but needs no override: `Shell::insert_instance`'s own defaults
-/// already land on `Enum.PartType.Block`. Wedge/CornerWedge disambiguate
-/// through their own class instead and never carry a `Shape` property at
-/// all — see `rbx_viewer::scene::shape::resolve`.
-fn insert_item(
-    label: &'static str,
-    icon: IconName,
-    class: &'static str,
-    shape: Option<u32>,
-) -> menu::Item {
-    menu::item(label)
-        .icon(icon)
-        .on_click(move |shell, cx| match shape {
-            Some(shape) => shell.insert_part(class, shape, cx),
-            None => shell.insert_instance(class, cx),
-        })
+/// One insert-menu row, running the same [`RibbonCommand`] the command
+/// palette lists for it.
+fn insert_item(item: &'static Insert) -> menu::Item {
+    menu::item(item.label)
+        .icon(item.icon)
+        .on_click(move |shell, cx| RibbonCommand::Insert(item).run(shell, cx))
 }
 
 /// The three built-in script classes, the way into the templates window,
@@ -550,15 +527,13 @@ fn insert_item(
 /// name without being ambiguous. Rebuilt every frame, so a template added on
 /// disk shows up as soon as `Shell` reloads the list.
 fn script_items(templates: &ScriptTemplates) -> Vec<menu::Item> {
-    let mut items = vec![
-        insert_item("Script", IconName::FileCode, "Script", None),
-        insert_item("Local Script", IconName::FileCode, "LocalScript", None),
-        insert_item("Module Script", IconName::Package, "ModuleScript", None),
+    let mut items: Vec<menu::Item> = SCRIPT_INSERTS.iter().map(insert_item).collect();
+    items.extend([
         menu::separator(),
         menu::item("Manage templates\u{2026}")
             .icon(IconName::Pencil)
             .on_click(|shell, cx| shell.open_script_templates(cx)),
-    ];
+    ]);
     if !templates.extras().is_empty() {
         items.push(menu::separator());
     }

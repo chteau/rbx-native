@@ -913,6 +913,12 @@ impl WorkspaceView {
         ]
     }
 
+    /// The 3D view's own keyboard focus — where the tool keys and the
+    /// camera's WASD are bound — for the command palette to hand it on to.
+    pub(crate) fn focus_handle(&self) -> FocusHandle {
+        self.focus.clone()
+    }
+
     /// Switches which unfocused preset `pacing` caps the render loop to —
     /// see `Shell::set_unfocused_fps`. No visible effect while focused, so
     /// unlike `set_quality`/`set_orthographic` this never needs `cx.notify`.

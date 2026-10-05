@@ -37,13 +37,13 @@ pub(crate) fn install_key_bindings(cx: &mut App) {
     // Real Studio's own shortcut for its Settings dialog. Global, so it
     // works from anywhere in the editor, and so the File menu shows it.
     cx.bind_keys([KeyBinding::new("alt-s", super::MenuStudioSettings, None)]);
-    // Studio's Quick Open Actions key (Cmd+Alt+P on a Mac); a binding
-    // rather than a matcher so the View menu shows it beside the item.
-    cx.bind_keys([KeyBinding::new(
-        "secondary-alt-p",
-        super::MenuCommandPalette,
-        None,
-    )]);
+    // Studio's Quick Open and Quick Open Actions keys (Cmd on a Mac);
+    // bindings rather than matchers so the View menu shows them beside
+    // their items.
+    cx.bind_keys([
+        KeyBinding::new("secondary-alt-p", super::MenuCommandPalette, None),
+        KeyBinding::new("secondary-p", super::MenuQuickOpen, None),
+    ]);
     cx.bind_keys([
         KeyBinding::new("escape", Cancel, Some(CONTEXT)),
         KeyBinding::new("left", SelectLeft, Some(CONTEXT)),

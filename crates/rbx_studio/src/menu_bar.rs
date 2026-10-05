@@ -78,6 +78,7 @@ actions!(
         MenuLargeTargets,
         MenuResetLayout,
         MenuCommandPalette,
+        MenuQuickOpen,
         /// One per dock, so the View menu can put back one that has been
         /// closed — the only way back, which is why they are real actions
         /// rather than the placeholders they used to be.
@@ -226,6 +227,7 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
                 // The palette is a keyboard tool, but a shortcut nobody can
                 // find is recall, not recognition: the menu is where its
                 // name and its keys are on show.
+                MenuItem::action("Quick Open…", MenuQuickOpen),
                 MenuItem::action("Command Palette…", MenuCommandPalette),
             ])
             .owned(),

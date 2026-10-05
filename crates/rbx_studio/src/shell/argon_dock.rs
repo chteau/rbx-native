@@ -163,6 +163,12 @@ impl ArgonDock {
         )
     }
 
+    /// The address's first half: where the command palette's "Focus Argon"
+    /// puts the caret, the one field every Argon view shows.
+    pub(super) fn host(&self) -> &Entity<InputState> {
+        &self.host
+    }
+
     /// Puts `host:port` into the two fields.
     pub(super) fn set_address(&self, address: &str, window: &mut Window, cx: &mut App) {
         let (host, port) = connection::split_address(address);

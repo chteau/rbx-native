@@ -286,6 +286,19 @@ impl Shell {
     }
 
     /// The "add a watch" field, made the first time the dock is drawn.
+    /// The caret into the "add a watch" field — the dock's one keyboard
+    /// surface, on the My Watches tab, which this brings forward.
+    pub(in crate::shell) fn focus_watch_input(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.debug.tab = WatchTab::MyWatches;
+        let input = self.watch_input(window, cx);
+        input.update(cx, |state, cx| state.focus(window, cx));
+        cx.notify();
+    }
+
     fn watch_input(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Entity<InputState> {
         if let Some(input) = &self.debug.watch_input {
             return input.clone();
