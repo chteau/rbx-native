@@ -159,7 +159,7 @@ impl Shell {
                             let text = cleared.clone();
                             clear.update(cx, |shell, cx| shell.commit_pick(&name, &text, cx));
                         })
-                        .child(Icon::new(IconName::X).size(px(10.))),
+                        .child(Icon::new(IconName::X).size(tokens::scaled(10.))),
                 )
             })
     }
