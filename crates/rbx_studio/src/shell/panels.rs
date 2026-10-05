@@ -93,7 +93,11 @@ impl Shell {
                 }))
                 .child(
                     base::Tree::new(&self.tree)
-                        .item(move |index, entry, _, _, _| {
+                        .item(move |index, entry, state, window, _| {
+                            // The keyboard cursor, apart from the selection
+                            // (see `shell::tree_keys`), and only once the
+                            // keyboard is what moved it — a click never rings.
+                            let ringed = state.is_focused() && window.last_input_was_keyboard();
                             let guide = guides.get(index).copied().unwrap_or_default();
                             let item = entry.item();
                             let icon = explorer.icon(&item.id);
@@ -106,6 +110,7 @@ impl Shell {
                                     index,
                                     entry,
                                     false,
+                                    ringed,
                                     icon,
                                     tint,
                                     guide,
@@ -120,7 +125,17 @@ impl Shell {
                                 index,
                                 reference,
                                 dragged,
-                                row(&tree, index, entry, highlighted, icon, tint, guide, widgets),
+                                row(
+                                    &tree,
+                                    index,
+                                    entry,
+                                    highlighted,
+                                    ringed,
+                                    icon,
+                                    tint,
+                                    guide,
+                                    widgets,
+                                ),
                             )
                         })
                         .list_style(StyleRefinement::default().flex_grow_1().size_full())

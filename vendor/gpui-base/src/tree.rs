@@ -163,6 +163,8 @@ impl TreeItem {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TreeEntryState {
     selected: bool,
+    // rbx-native addition: see `TreeState::focused_ix`.
+    focused: bool,
     right_clicked: bool,
 }
 
@@ -170,6 +172,14 @@ impl TreeEntryState {
     #[inline]
     pub fn is_selected(self) -> bool {
         self.selected
+    }
+
+    /// rbx-native addition: this row is the keyboard cursor *and* the tree
+    /// holds keyboard focus. Says nothing about input modality; a caller
+    /// drawing a ring checks `Window::last_input_was_keyboard` too.
+    #[inline]
+    pub fn is_focused(self) -> bool {
+        self.focused
     }
 
     #[inline]
@@ -190,6 +200,11 @@ pub struct TreeState {
     // its row, so expanding the parent again selects it again (see
     // `rebuild_entries`). Cleared by any explicit selection or new items.
     hidden_selection: Option<SharedString>,
+    // rbx-native addition: the keyboard cursor, apart from the selection, so
+    // a multi-selecting caller can move focus without selecting (the APG
+    // tree pattern's Ctrl+Up/Down). Any selection of a row moves it there;
+    // `None` falls back to `selected_ix`.
+    focused_ix: Option<usize>,
     right_clicked_ix: Option<usize>,
     render_item: Rc<RenderItem>,
     list_style: StyleRefinement,
@@ -205,6 +220,7 @@ impl TreeState {
             scroll_handle: UniformListScrollHandle::default(),
             selected_ix: None,
             hidden_selection: None,
+            focused_ix: None,
             right_clicked_ix: None,
             render_item: Rc::new(|_, _, _, _, _| div().into_any_element()),
             list_style: StyleRefinement::default(),
@@ -220,7 +236,19 @@ impl TreeState {
         self.replace_items(items.into());
         self.selected_ix = None;
         self.hidden_selection = None;
+        self.focused_ix = None;
         self.right_clicked_ix = None;
+        cx.notify();
+    }
+
+    /// rbx-native addition: the row the keyboard acts on.
+    pub fn focused_index(&self) -> Option<usize> {
+        self.focused_ix.or(self.selected_ix)
+    }
+
+    /// rbx-native addition: moves the keyboard cursor and nothing else.
+    pub fn set_focused_index(&mut self, ix: Option<usize>, cx: &mut Context<Self>) {
+        self.focused_ix = ix;
         cx.notify();
     }
 
@@ -230,6 +258,7 @@ impl TreeState {
 
     pub fn set_selected_index(&mut self, ix: Option<usize>, cx: &mut Context<Self>) {
         self.selected_ix = ix;
+        self.focused_ix = ix.or(self.focused_ix);
         self.hidden_selection = None;
         cx.notify();
     }
@@ -245,6 +274,7 @@ impl TreeState {
         } else {
             self.selected_ix = None;
         }
+        self.focused_ix = self.selected_ix.or(self.focused_ix);
         cx.notify();
     }
 
@@ -356,6 +386,10 @@ impl TreeState {
             .selected_item()
             .map(|item| item.id.clone())
             .or(self.hidden_selection.take());
+        let focused = self
+            .focused_ix
+            .and_then(|ix| self.entries.get(ix))
+            .map(|entry| entry.item.id.clone());
         let roots = self
             .entries
             .iter()
@@ -367,11 +401,15 @@ impl TreeState {
         if self.selected_ix.is_none() {
             self.hidden_selection = selected;
         }
+        // A cursor hidden under a collapsed parent falls back to the
+        // selection rather than being remembered: it is not state the user
+        // asked to keep, only where they were.
+        self.focused_ix = focused.and_then(|id| self.index_of(&id));
     }
 
     fn on_action_confirm(&mut self, _: &Confirm, _: &mut Window, cx: &mut Context<Self>) {
         if self
-            .selected_ix
+            .focused_index()
             .and_then(|ix| self.entries.get(ix).map(|entry| (ix, entry.is_folder())))
             .is_some_and(|(ix, is_folder)| {
                 if is_folder {
@@ -385,7 +423,7 @@ impl TreeState {
     }
 
     fn on_action_left(&mut self, _: &SelectLeft, _: &mut Window, cx: &mut Context<Self>) {
-        if let Some(ix) = self.selected_ix
+        if let Some(ix) = self.focused_index()
             && self
                 .entries
                 .get(ix)
@@ -397,7 +435,7 @@ impl TreeState {
     }
 
     fn on_action_right(&mut self, _: &SelectRight, _: &mut Window, cx: &mut Context<Self>) {
-        if let Some(ix) = self.selected_ix
+        if let Some(ix) = self.focused_index()
             && self
                 .entries
                 .get(ix)
@@ -409,24 +447,26 @@ impl TreeState {
     }
 
     fn on_action_up(&mut self, _: &SelectUp, _: &mut Window, cx: &mut Context<Self>) {
-        let mut ix = self.selected_ix.unwrap_or(0);
+        let mut ix = self.focused_index().unwrap_or(0);
         ix = ix
             .checked_sub(1)
             .unwrap_or_else(|| self.entries.len().saturating_sub(1));
         self.selected_ix = Some(ix);
+        self.focused_ix = Some(ix);
         self.scroll_handle
             .scroll_to_item(ix, gpui::ScrollStrategy::Top);
         cx.notify();
     }
 
     fn on_action_down(&mut self, _: &SelectDown, _: &mut Window, cx: &mut Context<Self>) {
-        let mut ix = self.selected_ix.unwrap_or(0);
+        let mut ix = self.focused_index().unwrap_or(0);
         ix = if ix + 1 < self.entries.len() {
             ix + 1
         } else {
             0
         };
         self.selected_ix = Some(ix);
+        self.focused_ix = Some(ix);
         self.scroll_handle
             .scroll_to_item(ix, gpui::ScrollStrategy::Bottom);
         cx.notify();
@@ -437,6 +477,7 @@ impl TreeState {
     // `toggle_expanded` below. Upstream expands on any click on the row.
     fn on_entry_click(&mut self, ix: usize, cx: &mut Context<Self>) {
         self.selected_ix = Some(ix);
+        self.focused_ix = Some(ix);
         cx.notify();
     }
 
@@ -451,13 +492,16 @@ impl TreeState {
 impl Render for TreeState {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let render_item = self.render_item.clone();
+        let focused_ix = self.focused_index();
         uniform_list("entries", self.entries.len(), {
             cx.processor(move |state, visible_range: Range<usize>, window, cx| {
                 visible_range
                     .map(|ix| {
                         let entry = &state.entries[ix];
+                        let focused = Some(ix) == focused_ix;
                         let entry_state = TreeEntryState {
                             selected: Some(ix) == state.selected_ix,
+                            focused: focused && state.focus_handle.is_focused(window),
                             right_clicked: Some(ix) == state.right_clicked_ix,
                         };
                         div()
@@ -466,6 +510,9 @@ impl Render for TreeState {
                             .role(gpui::Role::TreeItem)
                             .aria_label(entry.item().label.clone())
                             .aria_selected(entry_state.selected)
+                            // rbx-native addition: the cursor, not the
+                            // selection, is what a screen reader follows.
+                            .when(focused, |this| this.aria_active_descendant())
                             .when(entry.is_folder(), |this| {
                                 this.aria_expanded(entry.is_expanded())
                             })

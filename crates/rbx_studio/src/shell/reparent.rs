@@ -160,17 +160,14 @@ pub(super) fn draggable_row(
                 let toggle = modifiers.control || modifiers.platform;
                 let plain = !(modifiers.shift || toggle);
                 if plain && !defers_press(shell.read(cx).selection.all(), target) {
-                    // The tree's row selects it next; see `range_cursor`.
-                    shell.update(cx, |shell, _| shell.range_cursor = None);
+                    // The tree's row selects it next.
                     return;
                 }
                 cx.stop_propagation();
                 shell.update(cx, |shell, cx| {
-                    if plain {
-                        shell.range_cursor = None;
-                    } else if modifiers.shift {
+                    if modifiers.shift {
                         shell.select_range(target, toggle, cx);
-                    } else {
+                    } else if !plain {
                         shell.extend_selection(target, cx);
                         shell.range_anchor = Some(target);
                     }

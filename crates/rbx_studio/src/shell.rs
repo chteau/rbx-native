@@ -250,11 +250,6 @@ pub(crate) struct Shell {
     /// Where a `Shift`-click's range starts in the Explorer: the row last
     /// clicked plainly or with `Ctrl`/`Cmd` (see [`Shell::select_range`]).
     range_anchor: Option<Ref>,
-    /// The row a `Shift`+arrow left the tree's cursor on, which a range from
-    /// the anchor does not start at: `sync_selection` must not read the
-    /// tree pointing there as a plain selection of it. Let go by any other
-    /// selection change and by a plain press on a row.
-    range_cursor: Option<Ref>,
     /// This window's own copy/paste clipboard, replaced whole by every
     /// `Ctrl+C` — see `shell::clipboard`.
     clipboard: Vec<clipboard::Clipped>,
@@ -501,13 +496,13 @@ impl Shell {
             let tree = shell.tree.clone();
             tree.update(cx, |tree, cx| {
                 tree.focus(window, cx);
-                // The APG's "on focus" rule: a tree with nothing selected
-                // puts the cursor on its first node. Without this, arriving
-                // by Tab lands on a tree with no visible position at all —
-                // the keys work, but there is nothing to see them working
-                // on.
-                if tree.selected_index().is_none() {
-                    tree.set_selected_index(Some(0), cx);
+                // The APG's "on focus" rule for a multi-select tree: with
+                // nothing selected, focus goes to the first node — focus,
+                // not selection, so arriving by Tab changes nothing the
+                // Properties panel or the viewport show. Without it the
+                // keys work but there is nothing to see them working on.
+                if tree.focused_index().is_none() {
+                    tree.set_focused_index(Some(0), cx);
                 }
             });
         });
@@ -664,7 +659,6 @@ impl Shell {
             attribute_edits: attributes_panel::AttributeEdits::default(),
             selection: Selection::new(selected),
             range_anchor: None,
-            range_cursor: None,
             clipboard: Vec::new(),
             script_templates: user.script_templates,
             templates_stamp: 0,
@@ -965,8 +959,7 @@ impl Shell {
     /// to what it already showed means the user picked something else.
     fn sync_selection(&mut self, tree: &Entity<TreeState>, cx: &mut Context<Self>) {
         let selected = Selection::of_item(tree.read(cx).selected_item());
-        if selected == self.selection.get() || (selected.is_some() && selected == self.range_cursor)
-        {
+        if selected == self.selection.get() {
             return;
         }
         // A search, or a parent collapsed from its chevron, can leave the
@@ -993,7 +986,6 @@ impl Shell {
     /// Properties editor belonged to the old selection, and the viewport's
     /// outline and draggers have to move to the new one.
     fn selection_changed(&mut self, cx: &mut Context<Self>) {
-        self.range_cursor = None;
         self.edits.clear();
         self.attribute_edits.clear();
         self.sync_viewport_selection(cx);

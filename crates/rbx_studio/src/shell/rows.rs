@@ -97,6 +97,10 @@ pub(super) fn guide_mask(depths: &[usize]) -> Vec<Guides> {
 /// name box while it is being renamed, the `+` while it is hovered — since
 /// only `shell::explorer_edit` knows which row is which.
 ///
+/// `ringed` is the keyboard cursor, drawn as an outline over whatever fill
+/// the row has, so a focused row and a selected one are told apart at a
+/// glance (WCAG 2.4.7). Inset, because the list clips at the row's edges.
+///
 /// Only the chevron expands a row, without selecting it; a click anywhere
 /// else on it selects, as in Studio (creator-docs, `studio/explorer.md`:
 /// "Click the arrow next to a parent branch … to expand/collapse only that
@@ -107,6 +111,7 @@ pub(super) fn row(
     index: usize,
     entry: &TreeEntry,
     selected: bool,
+    ringed: bool,
     icon: ClassIcon,
     tint: Option<(u8, u8, u8)>,
     guides: Guides,
@@ -174,6 +179,7 @@ pub(super) fn row(
         .when(!selected, |this| {
             this.hover(move |this| tokens::hover_fx(this).bg(hover_bg))
         })
+        .when(ringed, |this| this.shadow(tokens::focus_ring_inset()))
         .children(guide_lines(depth, guides))
         .child(
             h_flex()

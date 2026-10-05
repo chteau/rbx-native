@@ -26,7 +26,12 @@ expanding it (Roblox Studio expands from the arrow alone), plus a public
 `rebuild_entries` keeping the selection on its item (by id) rather than on
 a bare index that expanding a row above it would shift, and remembering
 it (`hidden_selection`) while a collapsed parent hides its row, so
-expanding the parent selects it again. All are marked
+expanding the parent selects it again, and a keyboard cursor apart from
+the selection (`focused_ix`, with `focused_index`/`set_focused_index` and
+`TreeEntryState::is_focused`, and `aria_active_descendant` on its row) so the
+Explorer can move focus without selecting, as a multi-selecting tree must.
+Selecting a row moves the cursor to it; the toolkit's own key handlers act
+on the cursor. All are marked
 "rbx-native addition"; the last is tested from `rbx_studio`
 (`shell/tree_keys/tests.rs`), since this crate's own tests do not run
 inside the workspace.
@@ -52,5 +57,5 @@ to the next / every match of the selection) has to add selections, and
 upstream keeps the selection list private (still true in 0.6.6).
 
 To upgrade GPUI Kit: re-copy the matching `gpui-base` from
-`~/.cargo/registry/src/*/`, re-apply the two methods, the two diagnostic fixes, the tree changes and the gutter slot, and bump the version.
+`~/.cargo/registry/src/*/`, re-apply the two methods, the two diagnostic fixes, the tree changes (selection by id, the focus cursor) and the gutter slot, and bump the version.
 Delete this directory and the patch once upstream has an equivalent.

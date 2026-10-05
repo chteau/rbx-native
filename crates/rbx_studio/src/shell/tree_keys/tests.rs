@@ -1,4 +1,5 @@
 use super::*;
+use std::time::Duration;
 
 fn key(name: &str) -> Keystroke {
     Keystroke {
@@ -230,4 +231,96 @@ fn shift_with_a_vertical_move_extends_a_range() {
     assert_eq!(range_nav_for(&shifted("left", false)), None);
     assert_eq!(range_nav_for(&shifted("down", true)), None);
     assert_eq!(range_nav_for(&key("down")), None);
+}
+
+/// The APG's alternative multi-select model: Ctrl (or Cmd) with Up/Down
+/// moves focus alone and with Space toggles; Shift or Alt with it is
+/// something else, and a bare key is the plain contract.
+#[test]
+fn ctrl_moves_focus_or_toggles_and_nothing_else_does() {
+    let with = |name: &str, modifiers: gpui_kit::Modifiers| Keystroke {
+        modifiers,
+        key: name.into(),
+        key_char: None,
+    };
+    let ctrl = gpui_kit::Modifiers {
+        control: true,
+        ..Default::default()
+    };
+    let cmd = gpui_kit::Modifiers {
+        platform: true,
+        ..Default::default()
+    };
+    assert_eq!(
+        focus_key_for(&with("up", ctrl)),
+        Some(FocusKey::Move(Nav::Previous))
+    );
+    assert_eq!(
+        focus_key_for(&with("down", cmd)),
+        Some(FocusKey::Move(Nav::Next))
+    );
+    assert_eq!(focus_key_for(&with("space", ctrl)), Some(FocusKey::Toggle));
+    assert_eq!(focus_key_for(&key("down")), None);
+    assert_eq!(focus_key_for(&key("space")), None);
+    assert_eq!(focus_key_for(&with("left", ctrl)), None);
+    let ctrl_shift = gpui_kit::Modifiers {
+        shift: true,
+        ..ctrl
+    };
+    assert_eq!(focus_key_for(&with("down", ctrl_shift)), None);
+}
+
+/// Focus and selection as two pieces of state, driven the way the Explorer
+/// drives them: a plain move selects where it lands, Ctrl+Down walks the
+/// cursor past a two-row selection without touching it, Ctrl+Space toggles
+/// the row under the cursor in, and a collapse above keeps the cursor on its
+/// item.
+#[gpui_kit::test]
+fn the_cursor_moves_apart_from_a_multi_selection(cx: &mut gpui_kit::TestAppContext) {
+    use super::super::selection::Selection;
+    use gpui_kit::component::tree::TreeItem;
+    use gpui_kit::AppContext as _;
+    use rbx_dom::Ref;
+
+    let [a, b, c, d] = [1, 2, 3, 4].map(Ref::new);
+    let row = |r: Ref| TreeItem::new(crate::explorer::item_id(r), r.value().to_string());
+    let folder = TreeItem::new("folder", "Folder").child(TreeItem::new("leaf", "Leaf"));
+    let tree = cx.new(|cx| TreeState::new(cx).items(vec![folder, row(a), row(b), row(c), row(d)]));
+    let mut selection = Selection::default();
+
+    tree.update(cx, |tree, cx| {
+        // Plain arrow onto `a`: cursor and selection agree.
+        tree.set_selected_index(Some(1), cx);
+        assert_eq!(tree.focused_index(), Some(1));
+        selection.set(Selection::of_item(tree.selected_item()));
+        // Shift+Down extends to `b`: the cursor moves, the anchor stays.
+        selection.replace(vec![a, b]);
+        tree.set_focused_index(Some(2), cx);
+        assert_eq!(tree.selected_index(), Some(1));
+        // Ctrl+Down twice: past `b` onto `d`, selection untouched.
+        tree.set_focused_index(Some(3), cx);
+        tree.set_focused_index(Some(4), cx);
+        assert_eq!(tree.focused_index(), Some(4));
+        assert_eq!(tree.selected_index(), Some(1));
+        assert_eq!(selection.all(), [a, b]);
+        // Ctrl+Space on `d` adds it; on `a`, the anchor, drops it.
+        selection.toggle(d);
+        assert_eq!(selection.all(), [a, b, d]);
+        selection.toggle(a);
+        assert_eq!(selection.get(), Some(b));
+        // Opening the folder above shifts every row; both follow their item.
+        tree.toggle_expanded(0, cx);
+        assert_eq!(tree.focused_index(), Some(5));
+        assert_eq!(tree.selected_index(), Some(2));
+        // A cursor collapsed out of sight falls back to the selected row.
+        tree.set_focused_index(Some(1), cx);
+        tree.toggle_expanded(0, cx);
+        assert_eq!(tree.focused_index(), tree.selected_index());
+        // Selecting nothing leaves the cursor where it was; new items reset it.
+        tree.set_focused_index(Some(3), cx);
+        tree.set_selected_index(None, cx);
+        assert_eq!(tree.focused_index(), Some(3));
+        tree.set_items(vec![row(a)], cx);
+        assert_eq!(tree.focused_index(), None);
+    });
 }

@@ -225,6 +225,22 @@ fn the_focus_ring_clears_three_to_one_on_every_surface_it_can_land_on() {
     }
 }
 
+/// The Explorer's keyboard cursor sits on a selected row as often as on a
+/// bare one, so the ring also has to clear 3:1 against the selection's own
+/// wash (`accent_soft`, the accent at 12%) over the dock.
+#[test]
+fn the_focus_ring_clears_three_to_one_on_a_selected_row() {
+    for (accent, value) in crate::accent::PRESETS {
+        let ring = rgb(value);
+        let wash = composite(Rgba { a: 0.12, ..ring }, dock());
+        let ratio = contrast(ring, wash);
+        assert!(
+            ratio >= 3.,
+            "{accent}: the focus ring on a selected row is {ratio:.2}:1"
+        );
+    }
+}
+
 /// WCAG 1.4.11 for the per-tool pastels. They only ever appear on a ribbon
 /// tile, so that is the surface they are measured against — but an active
 /// tool is also identifiable by its icon shape and its border, so this

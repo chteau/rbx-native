@@ -21,6 +21,15 @@
 //!
 //! And three keys aren't bound at all: Home, End, and type-ahead.
 //!
+//! The Explorer multi-selects, so it also takes the APG's *alternative*
+//! multi-select model, the one that does not need modifier-free toggling:
+//! a plain arrow moves focus and selects, `Shift` extends, `Ctrl`+Up/Down
+//! moves focus alone and `Ctrl`+Space toggles the focused row. Roblox
+//! Studio's own Explorer documents no keyboard focus apart from its
+//! selection (creator-docs `studio/explorer.md` lists only Left/Right), so
+//! the APG is the reference here. The cursor is the toolkit tree's
+//! `focused_index`; the selection is `Shell::selection`.
+//!
 //! So this module intercepts the tree's navigation at the *action* layer —
 //! `capture_action` on `SelectUp`/`Down`/`Left`/`Right` — and hands back
 //! only the two cases where the toolkit is already right (expanding a
@@ -35,7 +44,7 @@
 //! afterwards and overwrote the answer. Type-ahead stays on
 //! `capture_key_down`, since plain letters resolve to no action at all.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use gpui_kit::base::actions::{SelectDown, SelectLeft, SelectRight, SelectUp};
 use gpui_kit::component::tree::TreeState;
@@ -43,13 +52,9 @@ use gpui_kit::{Context, Entity, Keystroke};
 
 use super::Shell;
 
-/// How long a type-ahead buffer survives without another keystroke.
-///
-/// The APG recommends type-ahead for any tree with more than about seven
-/// root nodes, which every real place file has. This is the usual desktop
-/// value: long enough to type "Spawn" without rushing, short enough that
-/// coming back a moment later starts a fresh search.
-const TYPEAHEAD_TIMEOUT: Duration = Duration::from_millis(1000);
+mod typeahead;
+pub(super) use typeahead::Typeahead;
+use typeahead::{typeahead_char, typeahead_target};
 
 /// What a keystroke means to the tree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,6 +112,29 @@ pub(super) fn range_nav_for(keystroke: &Keystroke) -> Option<Nav> {
     }
 }
 
+/// What `Ctrl` (or `Cmd`) does with a key in the tree, by the APG's
+/// alternative multi-select model: Up/Down move the cursor without touching
+/// the selection, Space toggles the row under it. `Shift` with it is a
+/// different command (Ctrl+Shift+click adds a range), not this one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum FocusKey {
+    Move(Nav),
+    Toggle,
+}
+
+pub(super) fn focus_key_for(keystroke: &Keystroke) -> Option<FocusKey> {
+    let modifiers = keystroke.modifiers;
+    if !(modifiers.control || modifiers.platform) || modifiers.shift || modifiers.alt {
+        return None;
+    }
+    match keystroke.key.as_str() {
+        "up" => Some(FocusKey::Move(Nav::Previous)),
+        "down" => Some(FocusKey::Move(Nav::Next)),
+        "space" => Some(FocusKey::Toggle),
+        _ => None,
+    }
+}
+
 /// The four arrows, classified against the focused row's own state. Split
 /// from [`nav_for`] because the arrows arrive as actions and Home/End as
 /// plain keystrokes — the same contract, two delivery paths.
@@ -124,70 +152,6 @@ pub(super) fn arrow(key: &str, is_folder: bool, expanded: bool) -> Option<Nav> {
         "left" => Some(Nav::OutToParent),
         _ => None,
     }
-}
-
-/// A printable character that should extend the type-ahead buffer.
-///
-/// One character, no modifiers: anything else is a command, and a tree that
-/// swallowed Ctrl+C to search for "c" would be worse than one with no
-/// type-ahead at all.
-fn typeahead_char(keystroke: &Keystroke) -> Option<char> {
-    if keystroke.modifiers.control || keystroke.modifiers.alt || keystroke.modifiers.platform {
-        return None;
-    }
-    let text = keystroke.key_char.as_deref().unwrap_or(&keystroke.key);
-    let mut chars = text.chars();
-    match (chars.next(), chars.next()) {
-        (Some(c), None) if !c.is_control() && c != ' ' => Some(c),
-        _ => None,
-    }
-}
-
-/// The type-ahead buffer: what has been typed, and when.
-#[derive(Debug, Default)]
-pub(super) struct Typeahead {
-    query: String,
-    last: Option<Instant>,
-}
-
-impl Typeahead {
-    /// Adds `c`, starting a fresh query if the last keystroke has gone
-    /// stale, and returns the string to match rows against.
-    pub(super) fn push(&mut self, c: char, now: Instant) -> &str {
-        let stale = self
-            .last
-            .is_none_or(|last| now.duration_since(last) > TYPEAHEAD_TIMEOUT);
-        if stale {
-            self.query.clear();
-        }
-        self.last = Some(now);
-        self.query.extend(c.to_lowercase());
-        &self.query
-    }
-}
-
-/// Where a type-ahead search lands, searching forward from `from` and
-/// wrapping once.
-///
-/// Wrapping is right here where it is wrong for the arrows: type-ahead is a
-/// search, and a search that stops at the bottom of the list has simply
-/// failed to find something that is sitting above it.
-pub(super) fn typeahead_target(labels: &[String], from: usize, query: &str) -> Option<usize> {
-    if query.is_empty() || labels.is_empty() {
-        return None;
-    }
-
-    // A repeated single character cycles through the matches rather than
-    // sticking on the first one, which is what makes "p p p" walk the Parts.
-    let start = if query.chars().count() == 1 {
-        from + 1
-    } else {
-        from
-    };
-
-    (0..labels.len())
-        .map(|offset| (start + offset) % labels.len())
-        .find(|&index| labels[index].to_lowercase().starts_with(query))
 }
 
 /// The row a `Left` should move to: the nearest row above that is shallower
@@ -227,7 +191,7 @@ impl Shell {
         if len == 0 {
             return None;
         }
-        let focused = tree.selected_index().unwrap_or(0);
+        let focused = tree.focused_index().unwrap_or(0);
         let entry = tree.entry(focused);
         Some((
             len,
@@ -251,11 +215,9 @@ impl Shell {
             // place, and teleporting from the last row to the first loses
             // the reader. (The toolkit's own handlers wrap, which is a
             // menu's behaviour.)
-            Nav::Previous => focused.saturating_sub(1),
-            Nav::Next => (focused + 1).min(len - 1),
-            Nav::First => 0,
-            Nav::Last => len - 1,
-            Nav::Into => (focused + 1).min(len - 1),
+            Nav::Previous | Nav::Next | Nav::First | Nav::Last | Nav::Into => {
+                step(nav, len, focused)
+            }
             Nav::OutToParent => match parent_of(&self.tree_depths(cx), focused) {
                 Some(parent) => parent,
                 None => return true,
@@ -285,6 +247,24 @@ impl Shell {
             return false;
         };
 
+        match focus_key_for(keystroke) {
+            Some(FocusKey::Move(nav)) => {
+                let target = step(nav, len, focused);
+                self.tree.update(cx, |tree, cx| {
+                    tree.set_focused_index(Some(target), cx);
+                    tree.scroll_to_item(target, gpui_kit::ScrollStrategy::Center);
+                });
+                return true;
+            }
+            Some(FocusKey::Toggle) => {
+                if let Some(&reference) = self.visible_rows(cx).get(focused) {
+                    self.extend_selection(reference, cx);
+                    self.range_anchor = Some(reference);
+                }
+                return true;
+            }
+            None => {}
+        }
         if let Some(nav) = range_nav_for(keystroke) {
             self.extend_tree_range(nav, len, focused, cx);
             return true;
@@ -311,15 +291,10 @@ impl Shell {
 
     /// `Shift`+Up/Down/Home/End: moves the tree's cursor, then selects every
     /// visible row from the range anchor to it, as a `Shift`-click there
-    /// would (see `selection::range`). The anchor stays put; Properties and
-    /// the gizmo stay on it.
+    /// would (see `selection::range`). The anchor stays put and stays the
+    /// tree's selected row; Properties and the gizmo stay on it.
     fn extend_tree_range(&mut self, nav: Nav, len: usize, focused: usize, cx: &mut Context<Self>) {
-        let target = match nav {
-            Nav::Previous => focused.saturating_sub(1),
-            Nav::Next => (focused + 1).min(len - 1),
-            Nav::First => 0,
-            _ => len - 1,
-        };
+        let target = step(nav, len, focused);
         let visible = self.visible_rows(cx);
         let (Some(&from), Some(&to)) = (visible.get(focused), visible.get(target)) else {
             return;
@@ -329,15 +304,17 @@ impl Shell {
             [self.range_anchor, self.selection.get()],
             from,
         );
-        if self
-            .selection
-            .replace(super::selection::range(&visible, anchor, to))
-        {
+        let range = super::selection::range(&visible, anchor, to);
+        let first = range.first().and_then(|&r| self.explorer.item(r));
+        let changed = self.selection.replace(range);
+        self.tree.update(cx, |tree, cx| {
+            tree.set_selected_item(first.as_ref(), cx);
+            tree.set_focused_index(Some(target), cx);
+            tree.scroll_to_item(target, gpui_kit::ScrollStrategy::Center);
+        });
+        if changed {
             self.selection_changed(cx);
         }
-        self.range_cursor = Some(to);
-        let tree = self.tree.clone();
-        self.focus_tree_row(&tree, target, cx);
     }
 
     fn focus_tree_row(&mut self, tree: &Entity<TreeState>, index: usize, cx: &mut Context<Self>) {
@@ -363,6 +340,16 @@ impl Shell {
                     .map(|entry| entry.item().label.to_string())
             })
             .collect()
+    }
+}
+
+/// Where a vertical move lands, never wrapping (see `apply_tree_nav`).
+fn step(nav: Nav, len: usize, focused: usize) -> usize {
+    match nav {
+        Nav::Previous => focused.saturating_sub(1),
+        Nav::First => 0,
+        Nav::Last => len - 1,
+        _ => (focused + 1).min(len - 1),
     }
 }
 
