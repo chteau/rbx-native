@@ -1364,6 +1364,10 @@ impl Shell {
         // re-derived or a 2x scale leaves a 300px dock holding 600px rows.
         self.layout.reset_sizes();
         self.save_settings();
+        // The viewport's overlays are sized by the scale too
+        // (`tokens::viewport_text`), and the view may be floating in a
+        // window of its own that this notify does not reach.
+        self.viewport.update(cx, |_, cx| cx.notify());
         cx.notify();
     }
 
