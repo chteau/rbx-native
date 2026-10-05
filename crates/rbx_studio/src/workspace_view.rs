@@ -1184,7 +1184,7 @@ impl Render for WorkspaceView {
                             .px_2()
                             .py_0p5()
                             .bg(rgba(0x14151ae0))
-                            .text_xs()
+                            .text_size(crate::tokens::viewport_text(12.))
                             .text_color(rgb(0xe4e5e9))
                             .child(speed),
                     )
@@ -1208,7 +1208,7 @@ impl Render for WorkspaceView {
                             .px_2()
                             .py_0p5()
                             .bg(rgba(0x14151ae0))
-                            .text_xs()
+                            .text_size(crate::tokens::viewport_text(12.))
                             .text_color(rgb(0xe4e5e9))
                             .child(text),
                     )
@@ -1257,7 +1257,11 @@ const CUBE_LABEL_HEIGHT: f32 = 14.0;
 /// How far out of the sphere an axis's name sits.
 const LABEL_RADIUS: f32 = 39.0;
 
+/// Drawn at the viewport text size (`tokens::viewport_scale`) as a whole:
+/// its letters are the part that has to be read, and letters grown on a
+/// sphere that did not would land on top of it.
 fn orientation_indicator(pose: Pose) -> impl IntoElement {
+    let k = crate::tokens::viewport_scale();
     let faces = orientation::visible_faces(pose);
     let rings = orientation::axis_rings(pose);
     let labels = orientation::axis_labels(pose);
@@ -1277,13 +1281,13 @@ fn orientation_indicator(pose: Pose) -> impl IntoElement {
         .absolute()
         .top_2()
         .right_2()
-        .size(px(CUBE_SIZE))
+        .size(px(CUBE_SIZE * k))
         .overflow_hidden()
         .tooltip(move |window, cx| {
             gpui_kit::component::tooltip::Tooltip::new(facing.clone()).build(window, cx)
         })
-        .child(orientation_sphere(rings, faces))
-        .children(labels.map(axis_label))
+        .child(orientation_sphere(rings, faces, k))
+        .children(labels.map(|label| axis_label(label, k)))
 }
 
 /// Everything painted rather than laid out: the rings, the sphere's body,
@@ -1291,6 +1295,7 @@ fn orientation_indicator(pose: Pose) -> impl IntoElement {
 fn orientation_sphere(
     rings: [orientation::Ring; 3],
     faces: [orientation::Face; 3],
+    k: f32,
 ) -> impl IntoElement {
     canvas(
         |_, _, _| (),
@@ -1302,18 +1307,18 @@ fn orientation_sphere(
 
             // The half of each ring behind the sphere, dimmed.
             for ring in &rings {
-                stroke_arc(window, &ring.far, ring.color, 0.35, center);
+                stroke_arc(window, &ring.far, ring.color, 0.35, center, k);
             }
 
             // The sphere's body: a flat wash and a rim, which is as much
             // volume as a 2D overlay can honestly claim.
             let mut body = PathBuilder::fill();
-            body.add_polygon(&circle(center, SPHERE_RADIUS), true);
+            body.add_polygon(&circle(center, SPHERE_RADIUS * k), true);
             if let Ok(path) = body.build() {
                 window.paint_path(path, rgba(0x5b8fd44d));
             }
             let mut rim = PathBuilder::stroke(px(1.0));
-            rim.add_polygon(&circle(center, SPHERE_RADIUS), true);
+            rim.add_polygon(&circle(center, SPHERE_RADIUS * k), true);
             if let Ok(path) = rim.build() {
                 window.paint_path(path, rgba(0x9dc4ff66));
             }
@@ -1325,7 +1330,7 @@ fn orientation_sphere(
                 let corners: Vec<_> = face
                     .corners
                     .iter()
-                    .map(|&corner| at(corner, CUBE_RADIUS))
+                    .map(|&corner| at(corner, CUBE_RADIUS * k))
                     .collect();
                 let mut builder = PathBuilder::fill();
                 builder.add_polygon(&corners, true);
@@ -1339,7 +1344,7 @@ fn orientation_sphere(
 
             // …and the half in front of it, at full strength.
             for ring in &rings {
-                stroke_arc(window, &ring.near, ring.color, 1.0, center);
+                stroke_arc(window, &ring.near, ring.color, 1.0, center, k);
             }
         },
     )
@@ -1378,6 +1383,7 @@ fn stroke_arc(
     color: u32,
     alpha: f32,
     center: Point<Pixels>,
+    k: f32,
 ) {
     if arc.len() < 2 {
         return;
@@ -1386,13 +1392,13 @@ fn stroke_arc(
         .iter()
         .map(|&(x, y)| {
             point(
-                center.x + px(x * SPHERE_RADIUS),
-                center.y + px(y * SPHERE_RADIUS),
+                center.x + px(x * SPHERE_RADIUS * k),
+                center.y + px(y * SPHERE_RADIUS * k),
             )
         })
         .collect();
 
-    let mut builder = PathBuilder::stroke(px(RING_WIDTH));
+    let mut builder = PathBuilder::stroke(px(RING_WIDTH * k));
     builder.add_polygon(&points, false);
     if let Ok(path) = builder.build() {
         let mut tint = rgb(color);
@@ -1416,9 +1422,9 @@ fn circle(center: Point<Pixels>, radius: f32) -> Vec<Point<Pixels>> {
 
 /// One axis's name, out past the sphere at that axis's own screen
 /// direction, faded as the axis turns away from the camera.
-fn axis_label(label: orientation::AxisLabel) -> impl IntoElement {
-    let x = CUBE_HALF + label.at.0 * LABEL_RADIUS - CUBE_LABEL_WIDTH / 2.0;
-    let y = CUBE_HALF + label.at.1 * LABEL_RADIUS - CUBE_LABEL_HEIGHT / 2.0;
+fn axis_label(label: orientation::AxisLabel, k: f32) -> impl IntoElement {
+    let x = (CUBE_HALF + label.at.0 * LABEL_RADIUS - CUBE_LABEL_WIDTH / 2.0) * k;
+    let y = (CUBE_HALF + label.at.1 * LABEL_RADIUS - CUBE_LABEL_HEIGHT / 2.0) * k;
     // Never fully transparent: an axis pointing straight away from the
     // camera still has a direction worth knowing.
     let opacity = 0.45 + 0.55 * (label.depth * 0.5 + 0.5);
@@ -1427,12 +1433,12 @@ fn axis_label(label: orientation::AxisLabel) -> impl IntoElement {
         .absolute()
         .top(px(y))
         .left(px(x))
-        .w(px(CUBE_LABEL_WIDTH))
-        .h(px(CUBE_LABEL_HEIGHT))
+        .w(px(CUBE_LABEL_WIDTH * k))
+        .h(px(CUBE_LABEL_HEIGHT * k))
         .flex()
         .items_center()
         .justify_center()
-        .text_size(px(11.))
+        .text_size(px(11. * k))
         .font_weight(FontWeight::BOLD)
         .text_color(rgb(label.color))
         .opacity(opacity)

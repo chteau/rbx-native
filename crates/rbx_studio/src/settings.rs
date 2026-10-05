@@ -69,6 +69,9 @@ pub(crate) struct Settings {
     /// The Script Editor's text size at 1x, in px, before [`Self::font_scale`]
     /// multiplies it like every other size. See [`SCRIPT_FONT_SIZE`].
     pub(crate) script_font_size: f32,
+    /// The size of the text the editor draws over the 3D view, in px at 1x,
+    /// before [`Self::font_scale`] multiplies it. See [`VIEWPORT_FONT_SIZE`].
+    pub(crate) viewport_font_size: f32,
     /// Raises the minimum pointer target from WCAG 2.5.8's 24px floor to
     /// 2.5.5's 44px one — Blender's "editor-area padding" idea, which its
     /// own manual describes as improving usability "on pen tablets, touch
@@ -141,6 +144,26 @@ pub(crate) fn clamp_script_font_size(size: f32) -> f32 {
     }
 }
 
+/// The viewport's default text size: the readouts' own 12px, so a file
+/// without the setting draws the 3D view's text the way it always has. Every
+/// other piece of viewport text grows in proportion to it.
+pub(crate) const VIEWPORT_FONT_SIZE: f32 = 12.;
+
+/// What the Viewport Font Size field accepts: down to the script range's
+/// floor, and up to 200% of the default — WCAG 1.4.4's figure on its own,
+/// before the UI scale doubles it again. Larger and a guide label covers
+/// the part it is measuring.
+pub(crate) const VIEWPORT_FONT_SIZE_RANGE: (f32, f32) = (8., 24.);
+
+/// Clamped rather than rejected, like the script font size.
+pub(crate) fn clamp_viewport_font_size(size: f32) -> f32 {
+    if size.is_finite() {
+        size.clamp(VIEWPORT_FONT_SIZE_RANGE.0, VIEWPORT_FONT_SIZE_RANGE.1)
+    } else {
+        VIEWPORT_FONT_SIZE
+    }
+}
+
 impl Default for Settings {
     /// Same defaults `Shell`/`main` used before either was configurable, so a
     /// missing settings file changes nothing about a first run.
@@ -160,6 +183,7 @@ impl Default for Settings {
             auto_recovery: true,
             recovery_minutes: crate::recovery::INTERVAL_DEFAULT,
             script_font_size: SCRIPT_FONT_SIZE,
+            viewport_font_size: VIEWPORT_FONT_SIZE,
             large_targets: false,
             reduce_motion: None,
             argon_address: String::new(),
@@ -336,6 +360,11 @@ fn load_from(path: &Path) -> Settings {
             .and_then(|v| v.as_f64())
             .map(|size| clamp_script_font_size(size as f32))
             .unwrap_or(SCRIPT_FONT_SIZE),
+        viewport_font_size: value
+            .get("viewport_font_size")
+            .and_then(|v| v.as_f64())
+            .map(|size| clamp_viewport_font_size(size as f32))
+            .unwrap_or(VIEWPORT_FONT_SIZE),
         large_targets: value
             .get("large_targets")
             .and_then(|v| v.as_bool())
@@ -566,6 +595,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "auto_recovery": settings.auto_recovery,
         "recovery_minutes": settings.recovery_minutes,
         "script_font_size": settings.script_font_size,
+        "viewport_font_size": settings.viewport_font_size,
         "large_targets": settings.large_targets,
         "reduce_motion": settings.reduce_motion,
         "docks": layout_json(&settings.docks),
@@ -995,6 +1025,30 @@ mod tests {
         assert_eq!(clamp_script_font_size(2.), SCRIPT_FONT_SIZE_RANGE.0);
         assert_eq!(clamp_script_font_size(f32::NAN), SCRIPT_FONT_SIZE);
         assert_eq!(clamp_script_font_size(16.), 16.);
+    }
+
+    #[test]
+    fn a_viewport_font_size_round_trips_clamps_and_defaults_to_the_readout_size() {
+        let path = temp_settings_path();
+        let settings = Settings {
+            viewport_font_size: 18.,
+            ..Settings::default()
+        };
+        save_to(&settings, &path).expect("save settings");
+        assert_eq!(load_from(&path).viewport_font_size, 18.);
+        // Its own key, not the script editor's.
+        assert_eq!(load_from(&path).script_font_size, SCRIPT_FONT_SIZE);
+
+        std::fs::write(&path, br#"{"show_all_services": true}"#).expect("write settings");
+        assert_eq!(load_from(&path).viewport_font_size, VIEWPORT_FONT_SIZE);
+
+        std::fs::write(&path, br#"{"viewport_font_size": 100}"#).expect("write settings");
+        assert_eq!(
+            load_from(&path).viewport_font_size,
+            VIEWPORT_FONT_SIZE_RANGE.1
+        );
+        assert_eq!(clamp_viewport_font_size(2.), VIEWPORT_FONT_SIZE_RANGE.0);
+        assert_eq!(clamp_viewport_font_size(f32::INFINITY), VIEWPORT_FONT_SIZE);
     }
 
     #[test]

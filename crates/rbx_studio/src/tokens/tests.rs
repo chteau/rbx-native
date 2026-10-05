@@ -327,6 +327,35 @@ fn every_scaled_size_actually_follows_the_scale() {
     }
 }
 
+/// VS Code's split: the viewport's text size moves the viewport's text and
+/// nothing else, and the UI scale still multiplies it.
+#[test]
+fn the_viewport_font_size_scales_viewport_text_only_and_the_ui_scale_multiplies_it() {
+    let _guard = SCALE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let default = crate::settings::VIEWPORT_FONT_SIZE;
+
+    assert_eq!(viewport_text(24.), px(24.), "the default changes nothing");
+    let panel = text_md();
+    set_viewport_font_size(default * 2.);
+    assert_eq!(viewport_text(24.), px(48.));
+    assert_eq!(
+        text_md(),
+        panel,
+        "a panel's text followed the viewport size"
+    );
+    set_font_scale(1.5);
+    assert_eq!(viewport_text(24.), px(72.));
+    set_viewport_font_size(default);
+    assert_eq!(
+        viewport_text(24.),
+        px(36.),
+        "the UI scale alone still applies"
+    );
+    set_font_scale(1.);
+}
+
 /// The UI scale is the app's whole answer to WCAG 1.4.4's 200%, so the top
 /// of its range has to actually reach 200% — and the bottom has to stop
 /// somewhere usable rather than at zero.
