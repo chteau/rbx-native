@@ -5,6 +5,10 @@
 //! Escape, a second click on the row, or a selection change (the Explorer's
 //! arrows and type-ahead included, which move without picking) disarms it;
 //! Delete or Backspace on the row, or its `×`, clears it to `nil`.
+//!
+//! A `Content` row naming an object is this same control, and its URI
+//! field's pick button arms the same pick (see `properties::edit::content`);
+//! its pick commits an object, and clearing it leaves the URI field empty.
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::Icon;
@@ -12,7 +16,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_dom::Ref;
 
-use crate::properties::edit::{ref_text, NIL_REF};
+use crate::properties::edit::{object_text, ref_text, NIL_REF};
 use crate::properties::{EditKind, PropertyRow};
 use crate::tokens;
 
@@ -25,6 +29,9 @@ use super::Shell;
 #[derive(Default)]
 pub(super) struct RefPick {
     armed: Option<String>,
+    /// The armed row is a `Content` one, whose pick commits an object
+    /// rather than a referent (see `properties::edit::object_text`).
+    content: bool,
     error: Option<(String, String)>,
 }
 
@@ -40,11 +47,16 @@ impl RefPick {
         self.armed.is_some()
     }
 
+    pub(super) fn is_armed_for(&self, row: &str) -> bool {
+        self.armed.as_deref() == Some(row)
+    }
+
     /// A click on `name`'s row: arms it, or disarms it if it already was.
     /// Arming another row moves the pick there. Either way the last
     /// refusal is stale.
-    fn toggle(&mut self, name: &str) {
+    fn toggle(&mut self, name: &str, content: bool) {
         self.error = None;
+        self.content = content;
         self.armed = match self.armed.take() {
             Some(armed) if armed == name => None,
             _ => Some(name.to_owned()),
@@ -76,12 +88,23 @@ impl Shell {
         // By referent, not by the shown name: a dangling target also reads
         // `nil` (and so does an instance named "nil"), and both still have a
         // value to clear.
-        let is_nil = matches!(&row.edit, Some(EditKind::Ref(text)) if *text == ref_text(NIL_REF));
+        // A `Content` row clears to none, which is the empty URI field.
+        let (is_nil, content, cleared) = match &row.edit {
+            Some(EditKind::Content { object, .. }) => (!object, true, String::new()),
+            Some(EditKind::Ref(text)) => (*text == ref_text(NIL_REF), false, ref_text(NIL_REF)),
+            _ => (false, false, ref_text(NIL_REF)),
+        };
+        let clear_tip = if content {
+            "Clear (none)"
+        } else {
+            "Clear (nil)"
+        };
 
         let click = cx.entity();
         let click_name = row.name.clone();
         let key = cx.entity();
         let key_name = row.name.clone();
+        let key_cleared = cleared.clone();
         let clear = cx.entity();
         let clear_name = row.name.clone();
         select_field(&focus, window, cx)
@@ -95,18 +118,19 @@ impl Shell {
             })
             .on_click(move |_, _, cx| {
                 let name = click_name.clone();
-                click.update(cx, |shell, cx| shell.toggle_ref_pick(&name, cx));
+                click.update(cx, |shell, cx| shell.toggle_ref_pick(&name, content, cx));
             })
             .on_key_down(move |event: &KeyDownEvent, _, cx| {
                 let name = key_name.clone();
                 match event.keystroke.key.as_str() {
                     "enter" | "space" => {
                         cx.stop_propagation();
-                        key.update(cx, |shell, cx| shell.toggle_ref_pick(&name, cx));
+                        key.update(cx, |shell, cx| shell.toggle_ref_pick(&name, content, cx));
                     }
                     "delete" | "backspace" => {
                         cx.stop_propagation();
-                        key.update(cx, |shell, cx| shell.commit_ref(&name, NIL_REF, cx));
+                        let text = key_cleared.clone();
+                        key.update(cx, |shell, cx| shell.commit_pick(&name, &text, cx));
                     }
                     _ => {}
                 }
@@ -128,19 +152,20 @@ impl Shell {
                         .cursor_pointer()
                         .text_color(tokens::text_placeholder())
                         .hover(|this| this.text_color(tokens::text_full()))
-                        .tooltip(|window, cx| super::tooltip::text("Clear (nil)", window, cx))
+                        .tooltip(move |window, cx| super::tooltip::text(clear_tip, window, cx))
                         .on_click(move |_, _, cx| {
                             cx.stop_propagation();
                             let name = clear_name.clone();
-                            clear.update(cx, |shell, cx| shell.commit_ref(&name, NIL_REF, cx));
+                            let text = cleared.clone();
+                            clear.update(cx, |shell, cx| shell.commit_pick(&name, &text, cx));
                         })
                         .child(Icon::new(IconName::X).size(px(10.))),
                 )
             })
     }
 
-    fn toggle_ref_pick(&mut self, name: &str, cx: &mut Context<Self>) {
-        self.edits.ref_pick.toggle(name);
+    pub(super) fn toggle_ref_pick(&mut self, name: &str, content: bool, cx: &mut Context<Self>) {
+        self.edits.ref_pick.toggle(name, content);
         cx.notify();
     }
 
@@ -157,12 +182,17 @@ impl Shell {
         let Some(name) = self.edits.ref_pick.take() else {
             return false;
         };
-        self.commit_ref(&name, target, cx);
+        let text = if self.edits.ref_pick.content {
+            object_text(target)
+        } else {
+            ref_text(target)
+        };
+        self.commit_pick(&name, &text, cx);
         true
     }
 
-    fn commit_ref(&mut self, name: &str, target: Ref, cx: &mut Context<Self>) {
-        let result = self.apply_edit(name, &ref_text(target), true, cx);
+    fn commit_pick(&mut self, name: &str, text: &str, cx: &mut Context<Self>) {
+        let result = self.apply_edit(name, text, true, cx);
         self.edits.ref_pick.error = result.err().map(|message| (name.to_owned(), message));
         cx.notify();
     }
@@ -175,13 +205,13 @@ mod tests {
     #[test]
     fn a_second_click_disarms_and_another_row_takes_the_pick() {
         let mut pick = RefPick::default();
-        pick.toggle("Part0");
+        pick.toggle("Part0", false);
         assert!(pick.is_armed());
-        pick.toggle("Part0");
+        pick.toggle("Part0", false);
         assert!(!pick.is_armed());
 
-        pick.toggle("Part0");
-        pick.toggle("Part1");
+        pick.toggle("Part0", false);
+        pick.toggle("Part1", false);
         assert_eq!(pick.take().as_deref(), Some("Part1"));
         // Taken once: Escape or a second Explorer press finds nothing armed.
         assert_eq!(pick.take(), None);
@@ -195,7 +225,17 @@ mod tests {
         };
         assert_eq!(pick.error_for("Part1"), Some("refused"));
         assert_eq!(pick.error_for("Part0"), None);
-        pick.toggle("Part1");
+        pick.toggle("Part1", false);
         assert_eq!(pick.error_for("Part1"), None);
+    }
+
+    #[test]
+    fn a_content_row_remembers_its_pick_names_an_object() {
+        let mut pick = RefPick::default();
+        pick.toggle("TextureContent", true);
+        assert!(pick.is_armed_for("TextureContent") && pick.content);
+        // Moving the pick to a `Ref` row commits a referent again.
+        pick.toggle("Part0", false);
+        assert!(!pick.is_armed_for("TextureContent") && !pick.content);
     }
 }

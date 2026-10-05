@@ -4,8 +4,8 @@
 //! lives on `Instance` itself rather than in its property map).
 
 use rbx_dom::{
-    Axes, CFrameData, Color3Data, Faces, NumberRange, PhysicalProperties, Rect, Ref, UDim, UDim2,
-    Variant, Vector2Data, Vector3Data, WeakDom,
+    Axes, CFrameData, Color3Data, Content, Faces, NumberRange, PhysicalProperties, Rect, Ref, UDim,
+    UDim2, Variant, Vector2Data, Vector3Data, WeakDom,
 };
 use rbx_reflection::ReflectionDatabase;
 
@@ -16,7 +16,8 @@ pub(super) mod pivot;
 mod reference;
 mod sequence;
 
-use content::{content_text, parse_content, parse_content_id};
+use content::{check_object, content_text, parse_content, parse_content_id};
+pub(crate) use content::{object_class, object_text};
 use font::{font_text, parse_font, synced};
 pub(crate) use many::commit_all;
 use many::stored_or_default;
@@ -105,7 +106,7 @@ pub(crate) fn edit_text(value: &Variant) -> Option<String> {
         )),
         Variant::Font(font) => Some(font_text(font)),
         Variant::Ref(target) => Some(ref_text(*target)),
-        Variant::Content(content) => content_text(content),
+        Variant::Content(content) => Some(content_text(content)),
         // Keypoints along a `;`, each one's numbers along a `,`. Nobody
         // types this — `crate::sequence_window`'s graph is the editor; see
         // `sequence` for why its commits still come through here.
@@ -240,6 +241,9 @@ pub(crate) fn commit(
     let canonical = db.canonical_name(&class, prop_name);
 
     let value = parse(&current, db, &class, canonical, text)?;
+    if let Variant::Content(Content::Object(target)) = value {
+        check_object(dom, db, &class, canonical, target)?;
+    }
     if let Variant::Ref(target) = value {
         check_target(dom, db, reference, &class, canonical, target)?;
         if target == NIL_REF && canonical == "PrimaryPart" && db.is_subclass_of(&class, "Model") {

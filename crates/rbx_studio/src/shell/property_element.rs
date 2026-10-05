@@ -3,6 +3,7 @@
 //! rows it picks out — one builder, so the two can never edit a property
 //! differently.
 
+use gpui_kit::assets::IconName;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::*;
 
@@ -37,7 +38,12 @@ impl Shell {
                 let control = self.brick_color_picker(&row.name, current, window, cx);
                 property_row_control(row, control, false, None).into_any_element()
             }
-            Some(EditKind::Ref(_)) => {
+            // A `Content` row is the picker while it names an object, or
+            // while its URI field's pick is waiting for one.
+            Some(kind @ (EditKind::Ref(_) | EditKind::Content { .. }))
+                if !matches!(kind, EditKind::Content { object: false, .. })
+                    || self.edits.ref_pick.is_armed_for(&row.name) =>
+            {
                 let control = self.ref_picker(row, window, cx);
                 let error = self.edits.ref_pick.error_for(&row.name).map(str::to_owned);
                 property_row_control(row, control, false, error.as_deref()).into_any_element()
@@ -74,6 +80,16 @@ impl Shell {
                 property_row_control(row, control, false, None).into_any_element()
             }
             Some(kind) => {
+                // A `Content` row in URI mode is the plain URI field, with a
+                // button beside it that arms an object pick.
+                let uri;
+                let (kind, object_pick) = match kind {
+                    EditKind::Content { text, .. } => {
+                        uri = EditKind::Text(text.clone());
+                        (&uri, true)
+                    }
+                    kind => (kind, false),
+                };
                 let tab_index = self.tab_order.next();
                 let (widget, error) = self.edit_row(row, kind, window, cx);
                 // Starting a scrub needs the property's name and
@@ -184,9 +200,45 @@ impl Shell {
                     window,
                     cx,
                 );
+                if object_pick {
+                    // A refused pick has no field of its own to hold it.
+                    let picked = self.edits.ref_pick.error_for(&row.name).map(str::to_owned);
+                    let control = h_flex()
+                        .w_full()
+                        .items_center()
+                        .gap(tokens::label_gap())
+                        .child(div().flex_1().min_w_0().child(control))
+                        .child(self.object_pick_button(&row.name, cx));
+                    let error = error.or(picked);
+                    return property_row_control(row, control, false, error.as_deref())
+                        .into_any_element();
+                }
                 property_row_control(row, control, composite, error.as_deref()).into_any_element()
             }
         }
+    }
+
+    /// The URI field's way into Object mode: arms the same Explorer pick a
+    /// `Ref` row's click does, and the row draws as that picker until the
+    /// pick lands or is backed out of. Studio's own panel documents no
+    /// object picker for a Content property (what is on record is typing an
+    /// asset id into one), so there is no Studio glyph to match: it is the
+    /// toolkit's locate crosshair, and the tooltip says what it does.
+    fn object_pick_button(&mut self, name: &str, cx: &mut Context<Self>) -> impl IntoElement {
+        let handle = cx.entity();
+        let name = name.to_owned();
+        self.properties_nav.claim(
+            super::chrome::icon_button(
+                SharedString::from(format!("content-object-{name}")),
+                IconName::LocateFixed,
+                "Pick an object in the Explorer",
+            )
+            .on_click(move |_, _, cx| {
+                let name = name.clone();
+                handle.update(cx, |shell, cx| shell.toggle_ref_pick(&name, true, cx));
+            }),
+            cx,
+        )
     }
 
     /// A row with nothing to edit itself, only rows beneath it (see

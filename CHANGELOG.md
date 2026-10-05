@@ -2,6 +2,17 @@
 
 ## 2026-10-05
 
+- **A `Content` property can name an object.** A Content row that takes
+  one (`Decal.TextureContent`, `ImageLabel.ImageContent`,
+  `MeshPart.MeshContent`, `VideoFrame.VideoContent`) keeps its URI field
+  with a pick button beside it, which arms the same Explorer pick a `Ref`
+  row uses; a row already naming an object shows it by name, with `×` to
+  clear it back to none. Only the class creator-docs says each property
+  takes is accepted (`EditableImage`, `EditableMesh`, `VideoCapture`), and
+  any other pick is refused under the row, as a `Ref` row refuses; legacy
+  ContentIds (`Decal.Texture`, `MeshPart.MeshId`) stay URI-only, since
+  they are saved as text with no way to spell an object. A picked object
+  survives a binary and an XML save. — @chteau
 - **Smooth terrain and the Terrain Editor.** `Workspace.Terrain`'s
   voxels are read and written: `SmoothGrid`'s layout was worked out from
   a real place, whose terrain re-encodes to its original bytes, and
