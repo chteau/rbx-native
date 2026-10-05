@@ -36,6 +36,8 @@ pub(super) struct Palette {
     open: Option<Open>,
     /// Labels of the commands run this session, most recent first.
     recent: Vec<SharedString>,
+    /// Asked for by the key or the menu, opened by the next render.
+    requested: bool,
 }
 
 struct Open {
@@ -50,10 +52,23 @@ struct Open {
 }
 
 impl Shell {
-    pub(crate) fn open_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.palette.open.is_some() {
-            return;
+    /// The menu action's handler is global and gets no `Window` — and
+    /// `App::active_window` is `None` under a window manager that never
+    /// activates anything — so the opening waits for `Render`, which has one.
+    pub(crate) fn request_palette(&mut self, cx: &mut Context<Self>) {
+        self.palette.requested = true;
+        cx.notify();
+    }
+
+    /// Called from `Render for Shell`, before the tree is built, so the
+    /// field it focuses is in the very frame that shows it.
+    pub(super) fn open_requested_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if std::mem::take(&mut self.palette.requested) && self.palette.open.is_none() {
+            self.open_palette(window, cx);
         }
+    }
+
+    fn open_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let panels = {
             let hidden = self.document_hides();
             super::Panel::ALL

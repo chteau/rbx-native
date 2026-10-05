@@ -1596,6 +1596,7 @@ impl Render for Shell {
         // frame that hands it the caret — see `Shell::focus_explorer_edit`.
         self.focus_explorer_edit(window, cx);
         self.focus_roblox_dialog(window, cx);
+        self.open_requested_palette(window, cx);
         // An increment set from Settings has to reach the popover's text.
         self.snap_fields.sync(self.transform, window, cx);
         self.sync_argon_fields(window, cx);

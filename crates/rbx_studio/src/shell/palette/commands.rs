@@ -91,7 +91,7 @@ pub(in crate::shell) fn registry(
 /// `group`/`keys` match keystrokes in code rather than through a keymap, so
 /// GPUI has no binding to report for them; `tests` holds each entry to the
 /// handler it names, so a changed shortcut cannot leave a stale hint here.
-pub(super) const HINTS: [(fn() -> TypeId, &str); 14] = [
+pub(super) const HINTS: [(ActionType, &str); 14] = [
     (TypeId::of::<MenuSave>, "ctrl-s"),
     (TypeId::of::<MenuUndo>, "ctrl-z"),
     (TypeId::of::<MenuRedo>, "ctrl-y"),
@@ -107,6 +107,10 @@ pub(super) const HINTS: [(fn() -> TypeId, &str); 14] = [
     (TypeId::of::<MenuInsertFolder>, "ctrl-shift-f"),
     (TypeId::of::<MenuStudioSettings>, "alt-s"),
 ];
+
+/// `TypeId::of` for one menu action, called rather than stored because a
+/// `TypeId` cannot be built in a `const`.
+pub(super) type ActionType = fn() -> TypeId;
 
 fn hint(action: &dyn Action) -> Option<&'static str> {
     let id = action.as_any().type_id();

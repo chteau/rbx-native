@@ -222,18 +222,8 @@ pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
     });
     cx.on_action({
         let shell = shell.clone();
-        // Deferred: a keystroke or a menu click dispatches this from inside
-        // the window's own update, where `window.update` cannot reach it.
         move |_: &MenuCommandPalette, cx| {
-            let Some(window) = cx.active_window() else {
-                return;
-            };
-            let shell = shell.clone();
-            cx.defer(move |cx| {
-                let _ = window.update(cx, move |_, window, cx| {
-                    shell.update(cx, |shell, cx| shell.open_palette(window, cx));
-                });
-            });
+            shell.update(cx, |shell, cx| shell.request_palette(cx));
         }
     });
     cx.on_action(move |_: &MenuPlaceholder, _cx| {});
