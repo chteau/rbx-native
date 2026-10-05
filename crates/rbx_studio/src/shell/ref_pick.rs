@@ -5,18 +5,25 @@
 //! Escape, a second click on the row, or a selection change (the Explorer's
 //! arrows and type-ahead included, which move without picking) disarms it;
 //! Delete or Backspace on the row, or its `×`, clears it to `nil`.
+//!
+//! A click in the 3D view picks too — creator-docs once spelled it out for
+//! `ObjectValue.Value`: "click the object you wish to set it to within the
+//! game view or Explorer window". It lands on what a viewport click would
+//! select (see [`candidate`]), and the view's hover outline previews it.
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::Icon;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
-use rbx_dom::Ref;
+use rbx_dom::{Ref, WeakDom};
+use rbx_reflection::ReflectionDatabase;
 
-use crate::properties::edit::{ref_text, NIL_REF};
+use crate::properties::edit::{accepts_ref, ref_text, NIL_REF};
 use crate::properties::{EditKind, PropertyRow};
 use crate::tokens;
 
 use super::rows::select_field;
+use super::selection;
 use super::Shell;
 
 /// Which `Ref` row is waiting for an Explorer click, and the last pick that
@@ -69,7 +76,7 @@ impl Shell {
         // Studio's own words for this moment are "Your cursor changes"; the
         // field says what the changed cursor is waiting for.
         let label = if armed {
-            "Pick in Explorer…".to_owned()
+            "Pick in Explorer or viewport…".to_owned()
         } else {
             row.value.clone()
         };
@@ -141,12 +148,38 @@ impl Shell {
 
     fn toggle_ref_pick(&mut self, name: &str, cx: &mut Context<Self>) {
         self.edits.ref_pick.toggle(name);
+        self.sync_viewport_pick(cx);
         cx.notify();
     }
 
     /// Escape's half of the pick: true when there was one to back out of.
-    pub(super) fn cancel_ref_pick(&mut self) -> bool {
-        self.edits.ref_pick.take().is_some()
+    pub(super) fn cancel_ref_pick(&mut self, cx: &mut Context<Self>) -> bool {
+        let cancelled = self.edits.ref_pick.take().is_some();
+        self.sync_viewport_pick(cx);
+        cancelled
+    }
+
+    /// Tells the 3D view whether its next press picks rather than selects.
+    /// Every path that arms or disarms ends here, a selection change too.
+    pub(super) fn sync_viewport_pick(&self, cx: &mut Context<Self>) {
+        let armed = self.edits.ref_pick.is_armed();
+        self.viewport
+            .update(cx, |viewport, cx| viewport.set_ref_picking(armed, cx));
+    }
+
+    /// What a viewport click under `hits` (nearest first) sets the armed row
+    /// to; `None` for a miss, or with nothing armed.
+    pub(super) fn ref_pick_candidate(&self, hits: &[Ref], cycling: bool) -> Option<Ref> {
+        let name = self.edits.ref_pick.armed.as_deref()?;
+        let owner = self.selected()?;
+        candidate(
+            &self.dom,
+            &self.database,
+            hits,
+            self.selected(),
+            cycling,
+            |target| accepts_ref(&self.dom, &self.database, owner, name, target),
+        )
     }
 
     /// A press on an Explorer row while a pick is armed (see
@@ -157,6 +190,7 @@ impl Shell {
         let Some(name) = self.edits.ref_pick.take() else {
             return false;
         };
+        self.sync_viewport_pick(cx);
         self.commit_ref(&name, target, cx);
         true
     }
@@ -168,9 +202,105 @@ impl Shell {
     }
 }
 
+/// What a click selects (`selection::from_click`: the outermost `Model`
+/// plain, the part itself with `Alt`), unless the property cannot hold that
+/// and can hold the part actually clicked — a `Weld.Part0` or a
+/// `PrimaryPart` clicked on a part inside a model. Studio's docs say only
+/// that the click picks "the object"; landing on a value the row then
+/// refuses would make the plain click useless for every part-typed `Ref`.
+fn candidate(
+    dom: &WeakDom,
+    db: &ReflectionDatabase,
+    hits: &[Ref],
+    current: Option<Ref>,
+    cycling: bool,
+    accepts: impl Fn(Ref) -> bool,
+) -> Option<Ref> {
+    let clicked = selection::from_click(dom, db, hits, current, cycling)?;
+    let nearest = hits[0];
+    Some(match accepts(clicked) || !accepts(nearest) {
+        true => clicked,
+        false => nearest,
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::RefPick;
+    use rbx_dom::{Ref, WeakDom};
+    use rbx_reflection::ReflectionDatabase;
+
+    use super::{accepts_ref, candidate, RefPick};
+
+    /// A house model with a handle part inside it, and a `Weld` and an
+    /// `ObjectValue` beside it, all under `Workspace`.
+    struct Place {
+        dom: WeakDom,
+        house: Ref,
+        handle: Ref,
+        weld: Ref,
+        value: Ref,
+    }
+
+    fn place() -> Place {
+        let mut dom = WeakDom::new();
+        let workspace = dom.new_instance("Workspace", "Workspace", None);
+        let house = dom.new_instance("Model", "House", Some(workspace));
+        let handle = dom.new_instance("Part", "Handle", Some(house));
+        let weld = dom.new_instance("Weld", "Weld", Some(workspace));
+        let value = dom.new_instance("ObjectValue", "Value", Some(workspace));
+        Place {
+            dom,
+            house,
+            handle,
+            weld,
+            value,
+        }
+    }
+
+    /// A viewport click on `hits` while `owner`'s `name` is armed.
+    fn pick(place: &Place, owner: Ref, name: &str, hits: &[Ref], alt: bool) -> Option<Ref> {
+        let db = ReflectionDatabase::embedded();
+        candidate(&place.dom, &db, hits, Some(owner), alt, |target| {
+            accepts_ref(&place.dom, &db, owner, name, target)
+        })
+    }
+
+    #[test]
+    fn a_plain_click_picks_what_a_click_would_select() {
+        let place = place();
+        // `ObjectValue.Value` holds any instance, so the house a plain click
+        // selects is what it gets — and `Alt` reaches the part, as it does
+        // for a selection.
+        let hits = [place.handle];
+        assert_eq!(
+            pick(&place, place.value, "Value", &hits, false),
+            Some(place.house)
+        );
+        assert_eq!(
+            pick(&place, place.value, "Value", &hits, true),
+            Some(place.handle)
+        );
+    }
+
+    #[test]
+    fn a_part_typed_ref_takes_the_part_under_the_cursor_over_its_model() {
+        let place = place();
+        let hits = [place.handle];
+        assert_eq!(
+            pick(&place, place.weld, "Part0", &hits, false),
+            Some(place.handle)
+        );
+        assert_eq!(
+            pick(&place, place.house, "PrimaryPart", &hits, false),
+            Some(place.handle)
+        );
+    }
+
+    #[test]
+    fn the_sky_picks_nothing() {
+        let place = place();
+        assert_eq!(pick(&place, place.weld, "Part0", &[], false), None);
+    }
 
     #[test]
     fn a_second_click_disarms_and_another_row_takes_the_pick() {

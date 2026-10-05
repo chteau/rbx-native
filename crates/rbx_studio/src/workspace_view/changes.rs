@@ -38,6 +38,16 @@ impl WorkspaceView {
         self.pump.hover(selected);
     }
 
+    /// Enters or leaves a Properties `Ref` pick. The hover is resolved again
+    /// at once, since a pick previews a different candidate than a click.
+    pub(crate) fn set_ref_picking(&mut self, picking: bool, cx: &mut gpui_kit::Context<Self>) {
+        if self.ref_picking != picking {
+            self.ref_picking = picking;
+            self.rehover();
+            cx.notify();
+        }
+    }
+
     /// Forwards where a tool being configured would put the selection —
     /// the Align popover's live preview. An empty list clears it.
     pub(crate) fn set_preview(&mut self, boxes: Vec<glam::Mat4>) {

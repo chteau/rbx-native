@@ -338,6 +338,9 @@ pub(crate) struct WorkspaceView {
     /// `Shell` has resolved the same click against the real geometry (see
     /// `ViewportAction::Pick`'s `held`).
     pending_grab: Option<Ray>,
+    /// A Properties `Ref` row is waiting for its target (see
+    /// `shell::ref_pick`): a press only picks, and the cursor says so.
+    ref_picking: bool,
     /// Studio's editable measurement box, up after a Move-arrow drag (see
     /// `measure`).
     measure: Option<measure::Measure>,
@@ -492,6 +495,7 @@ impl WorkspaceView {
             terrain_dial_x: None,
             terrain_modifiers: Modifiers::default(),
             pending_grab: None,
+            ref_picking: false,
             measure: None,
             held: Targets::default(),
             dragged: false,
@@ -975,6 +979,9 @@ impl Render for WorkspaceView {
             .relative()
             .size_full()
             .bg(rgb(0x1c1d20))
+            // The Explorer's own pick cursor, so both places a pick can land
+            // read the same while one is armed.
+            .when(self.ref_picking, |this| this.cursor(CursorStyle::Crosshair))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|view, event: &MouseDownEvent, window, cx| {
