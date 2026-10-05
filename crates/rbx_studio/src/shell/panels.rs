@@ -65,6 +65,9 @@ impl Shell {
         self.tab_order.register(&tree_focus);
         let tree_entity = self.tree.clone();
         let door = tree_focus.clone();
+        // An open name box sits inside the door too, and has focus of its
+        // own: the cursor's ring would be a second focus indicator.
+        let renaming = self.renaming_in_place();
         let tree = self.tree.clone();
 
         super::tree_keys::intercept_arrows(
@@ -106,6 +109,7 @@ impl Shell {
                             // since Tab lands on the door — and only once the
                             // keyboard is what moved it: a click never rings.
                             let ringed = state.is_focused()
+                                && !renaming
                                 && door.contains_focused(window, cx)
                                 && window.last_input_was_keyboard();
                             let guide = guides.get(index).copied().unwrap_or_default();
