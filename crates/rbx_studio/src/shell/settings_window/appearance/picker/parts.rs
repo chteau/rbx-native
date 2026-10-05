@@ -90,6 +90,10 @@ pub(super) fn note(color: Rgba, glyph: &'static str, body: impl IntoElement) -> 
         )
 }
 
+/// WCAG 2.5.5 (see `tokens::primary_target`; the popover is drawn in design
+/// pixels like the rest of this window, so the constant, not the scale).
+pub(super) const PRIMARY_H: f32 = 44.;
+
 pub(super) fn button(
     id: &'static str,
     label: impl Into<SharedString>,
@@ -98,7 +102,8 @@ pub(super) fn button(
     let base = h_flex()
         .id(id)
         .flex_none()
-        .h(px(28.))
+        // The filled button is the one that commits; Cancel keeps 28.
+        .h(px(if fill.is_some() { PRIMARY_H } else { 28. }))
         .items_center()
         .rounded(px(5.))
         .text_size(px(12.))

@@ -61,7 +61,9 @@ pub(crate) fn mono(size: f32, line: f32) -> Div {
     text(size, line).font_family(tokens::FONT_FAMILY_MONO)
 }
 
-/// The three button weights, 34 tall unless `small` (28, 12 px text).
+/// The four button weights, 34 tall unless `small` (28, 12 px text) — except
+/// Primary and Danger, which are the buttons that commit or destroy and are
+/// 44 either way (WCAG 2.5.5; see [`button_height`]).
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Weight {
     Primary,
@@ -102,20 +104,29 @@ pub(crate) fn external_button(
     button(id, label, weight, small).child(icon("external-link", if small { 12. } else { 13. }))
 }
 
+/// A button's height in px. Primary and Danger take 2.5.5's 44 even when
+/// `small`: the visual grows with the hit area because a gpui element has no
+/// separate hit slop, and 44 matches the platform buttons people already
+/// hit (Material 48, Apple 44).
+pub(crate) fn button_height(weight: Weight, small: bool) -> f32 {
+    let h: f32 = if small { 28. } else { 34. };
+    match weight {
+        Weight::Primary | Weight::Danger => h.max(44.),
+        Weight::Secondary | Weight::Ghost => h,
+    }
+}
+
 fn button_frame(id: impl Into<ElementId>, weight: Weight, small: bool) -> Stateful<Div> {
-    let (h, size, line, px_x) = if small {
-        (28., 12., 16., 10.)
+    let h = button_height(weight, small);
+    let (size, line, px_x) = if small {
+        (12., 16., 10.)
     } else {
-        (
-            34.,
-            12.5,
-            17.,
-            if weight == Weight::Primary { 16. } else { 14. },
-        )
+        (12.5, 17., if weight == Weight::Primary { 16. } else { 14. })
     };
     let base = h_flex()
         .id(id.into())
         .h(px(h))
+        .min_w(px(44.))
         .flex_none()
         .items_center()
         .justify_center()
@@ -367,4 +378,22 @@ pub(crate) fn field_frame(
         .bg(fill)
         .text_color(tokens::text3())
         .child(icon(glyph, 13.).flex_none())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// WCAG 2.5.5: the buttons that commit or destroy are 44 tall in both
+    /// sizes, with Large Click Targets off (it is not consulted here at all).
+    #[test]
+    fn primary_and_danger_buttons_are_44_tall_in_every_size() {
+        for weight in [Weight::Primary, Weight::Danger] {
+            for small in [false, true] {
+                assert!(button_height(weight, small) >= 44.);
+            }
+        }
+        // Secondary and Ghost keep the compact design.
+        assert_eq!(button_height(Weight::Secondary, false), 34.);
+    }
 }

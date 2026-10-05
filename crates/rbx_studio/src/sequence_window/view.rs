@@ -269,7 +269,9 @@ fn footer_button(
     div()
         .id(id)
         .flex_none()
-        .h(tokens::input_height())
+        // Delete stop is destructive and Reset discards edits: both take
+        // WCAG 2.5.5's 44px, not the input row's 24px floor.
+        .h(tokens::primary_target())
         .px(tokens::panel_padding())
         .flex()
         .items_center()

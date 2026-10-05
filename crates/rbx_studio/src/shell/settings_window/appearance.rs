@@ -416,13 +416,13 @@ impl SettingsWindow {
                         .child(select(&self.appearance.theme, 200.))
                         .when_some(active, |this, id| {
                             this.child(
-                                ghost_icon("uninstall-theme", "trash", "Uninstall").on_click(
-                                    cx.listener(move |this, _, window, cx| {
+                                ghost_icon("uninstall-theme", "trash", "Uninstall")
+                                    .size(tokens::primary_target())
+                                    .on_click(cx.listener(move |this, _, window, cx| {
                                         this.shell
                                             .update(cx, |shell, cx| shell.uninstall_theme(&id, cx));
                                         this.refresh_themes(window, cx);
-                                    }),
-                                ),
+                                    })),
                             )
                         })
                         .child(open_folder("open-themes", theme::themes_dir())),
@@ -528,7 +528,9 @@ impl SettingsWindow {
                 "reset-tools",
                 "Reset all",
                 tools_changed.then_some(self.set(|shell, cx| shell.reset_tool_colors(cx))),
-            ),
+            )
+            // Wipes every tool colour: 44, like the other destructive buttons.
+            .h(tokens::primary_target()),
         )
         .describe(
             "Each transform tool\u{2019}s pastel on its ribbon button and viewport handles. \

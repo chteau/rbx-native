@@ -492,6 +492,12 @@ pub(crate) fn scaled_width(base: f32) -> Pixels {
 const TARGET_FLOOR: f32 = 24.;
 const TARGET_FLOOR_LARGE: f32 = 44.;
 
+/// What a primary or destructive control (Save, Delete, Play/Stop, a
+/// dialog's confirm) clears whether or not Large Click Targets is on:
+/// 2.5.5's 44px, scaled up with the UI but never down. These are the
+/// controls where a miss costs something, so they do not wait to be asked.
+const PRIMARY_TARGET: f32 = 44.;
+
 static LARGE_TARGETS: AtomicBool = AtomicBool::new(false);
 
 /// Whether the enhanced target floor is in force.
@@ -661,7 +667,9 @@ pub(crate) fn ribbon_tabs_height() -> Pixels {
 }
 
 pub(crate) fn ribbon_height() -> Pixels {
-    scaled(theme::size("ribbon_height"))
+    // The tiles inside lose 20px to the ribbon's padding and the primary ones
+    // keep a 44px floor, so the strip may not shrink below both.
+    scaled(theme::size("ribbon_height")).max(primary_target() + px(20.))
 }
 
 pub(crate) fn dock_tabs_height() -> Pixels {
@@ -854,6 +862,12 @@ pub(crate) fn slider_thumb() -> Pixels {
 /// sideways rather than shrink past it.
 pub(crate) fn slider_min_width() -> Pixels {
     scaled(theme::size("slider_min_width"))
+}
+
+/// The floor under a primary or destructive control's hit area, in both
+/// directions. See [`PRIMARY_TARGET`].
+pub(crate) fn primary_target() -> Pixels {
+    px((PRIMARY_TARGET * font_scale()).max(PRIMARY_TARGET))
 }
 
 /// The smallest square any icon-only button is allowed to be.

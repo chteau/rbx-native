@@ -289,6 +289,32 @@ fn the_smallest_targets_clear_the_minimum_pointer_size_at_every_scale() {
     set_font_scale(1.);
 }
 
+/// WCAG 2.5.5: primary and destructive controls (Save, Delete, Play/Stop,
+/// confirm buttons) are 44x44 with Large Click Targets **off**, at every
+/// scale, and the ribbon strip they sit in leaves room for them. Their
+/// call sites all size themselves from `primary_target()`.
+#[test]
+fn primary_targets_are_44_by_default_at_every_scale() {
+    let _guard = SCALE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    set_large_targets(false);
+
+    for scale in [FONT_SCALE_RANGE.0, 0.75, 1., 1.5, FONT_SCALE_RANGE.1] {
+        set_font_scale(scale);
+        assert!(
+            f32::from(primary_target()) >= 44.,
+            "primary target at {scale}x"
+        );
+        // 20px of ribbon padding around the tile.
+        assert!(
+            f32::from(ribbon_height()) - 20. >= f32::from(primary_target()),
+            "ribbon too short for a primary tile at {scale}x"
+        );
+    }
+    set_font_scale(1.);
+}
+
 /// The scale is a process-wide atomic, and `cargo test` runs these on
 /// threads of one process — so the two tests that move it take turns.
 static SCALE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

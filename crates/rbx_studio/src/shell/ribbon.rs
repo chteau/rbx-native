@@ -121,7 +121,7 @@ impl Shell {
                 self.edit_tiles(cx),
                 self.pivot_tiles(cx),
                 self.sun_tiles(cx),
-                file_tiles(),
+                file_tiles(&self.ribbon_nav, cx),
             ],
             Tab::Test => vec![test_tiles(), viewport_tiles()],
             Tab::Plugins => vec![placeholders(
@@ -468,9 +468,25 @@ impl Shell {
             )
         };
 
+        let delete = if selected
+            .iter()
+            .any(|&r| super::keys::removable(&self.dom, &self.database, r))
+        {
+            primary(tile(nav, "ribbon-delete", IconName::Trash, "Delete", cx))
+                .on_click(cx.listener(|shell, _, _, cx| shell.delete_selected(cx)))
+        } else {
+            primary(unavailable_tile(
+                "ribbon-delete",
+                IconName::Trash,
+                "Delete",
+                "nothing deletable is selected",
+            ))
+        };
+
         vec![
             group.into_any_element(),
             ungroup.into_any_element(),
+            delete.into_any_element(),
             disabled_tile("ribbon-material", IconName::Layers, "Material").into_any_element(),
             disabled_tile("ribbon-color", IconName::Droplet, "Color").into_any_element(),
             disabled_tile("ribbon-lock", IconName::Lock, "Lock").into_any_element(),
@@ -479,22 +495,45 @@ impl Shell {
     }
 }
 
+/// Save and Publish are the editor's commit buttons, so they are tiles
+/// (a tile is 44+ either way) as well as File-menu items, which the
+/// toolkit's popup sizes at 24 and this crate cannot change per item.
 /// Importing meshes and models off disk isn't implemented.
-fn file_tiles() -> Vec<AnyElement> {
-    vec![disabled_tile("ribbon-import", IconName::Import, "Import").into_any_element()]
+fn file_tiles(nav: &Roving, cx: &mut Context<Shell>) -> Vec<AnyElement> {
+    vec![
+        primary(tile(nav, "ribbon-save", IconName::Save, "Save", cx))
+            .on_click(cx.listener(|shell, _, _, cx| shell.save(cx)))
+            .into_any_element(),
+        primary(tile(nav, "ribbon-publish", IconName::Upload, "Publish", cx))
+            .on_click(cx.listener(|shell, _, _, cx| {
+                shell.upload_to_roblox(rbx_cloud::PublishMode::Published, cx)
+            }))
+            .into_any_element(),
+        disabled_tile("ribbon-import", IconName::Import, "Import").into_any_element(),
+    ]
+}
+
+/// A primary or destructive tile's 44x44 floor (WCAG 2.5.5), whatever the
+/// UI scale or Large Click Targets say.
+fn primary(tile: Stateful<Div>) -> Stateful<Div> {
+    tile.min_w(tokens::primary_target())
+        .min_h(tokens::primary_target())
 }
 
 /// `ROADMAP.md`'s Play/Test section still lists the sandbox-place design
 /// all of these would need as open.
 fn test_tiles() -> Vec<AnyElement> {
     vec![
-        disabled_tile("ribbon-play", IconName::Play, "Play").into_any_element(),
+        primary(disabled_tile("ribbon-play", IconName::Play, "Play")).into_any_element(),
+        // Stop is a tile of its own rather than a third stack row: three
+        // rows in an 80px ribbon are ~25px each, and Stop is the control a
+        // person reaches for in a hurry.
         stack(vec![
             stack_row("ribbon-run", IconName::SquarePlay, "Run"),
             stack_row("ribbon-pause", IconName::Pause, "Pause"),
-            stack_row("ribbon-stop", IconName::Square, "Stop"),
         ])
         .into_any_element(),
+        primary(disabled_tile("ribbon-stop", IconName::Square, "Stop")).into_any_element(),
         disabled_tile("ribbon-team", IconName::Users, "Team Test").into_any_element(),
     ]
 }

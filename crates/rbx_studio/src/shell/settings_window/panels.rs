@@ -7,9 +7,7 @@ use gpui_kit::*;
 
 use crate::tokens;
 
-use super::kit::{
-    ghost_icon, icon, secondary_button, segmented, still_toggle, text, toggle, Row, Section,
-};
+use super::kit::{ghost_icon, icon, secondary_button, segmented, text, toggle, Row, Section};
 use super::nav::Page;
 use super::SettingsWindow;
 
@@ -211,6 +209,8 @@ impl SettingsWindow {
                             "trash",
                             "Delete",
                         )
+                        // Destructive: 44, not the ghost icon's 24 (WCAG 2.5.5).
+                        .size(tokens::primary_target())
                         .on_click({
                             let shell = self.shell.clone();
                             move |_, _, cx| {
@@ -227,6 +227,7 @@ impl SettingsWindow {
                 Row::new(
                     "Dock layout",
                     secondary_button("reset-layout", "rotate-ccw", "Reset layout")
+                        .h(tokens::primary_target())
                         .on_click(self.set(|shell, cx| shell.reset_layout(cx))),
                 )
                 .describe("Which panel sits on which edge, and how big. Saved automatically when you close."),
@@ -338,11 +339,11 @@ impl SettingsWindow {
                         "Large click targets",
                         toggle("large-targets", large, self.set(|shell, cx| shell.toggle_large_targets(cx))),
                     )
-                    .describe("Every clickable control grows to at least 44 px, from 24 px.")
+                    .describe(
+                        "Every clickable control grows to at least 44 px, from 24 px. \
+                         Save, Delete, Play and confirm buttons are 44 px either way.",
+                    )
                     .changed(large, |shell, cx| shell.toggle_large_targets(cx)),
-                    Row::new("Large primary and destructive buttons", still_toggle(false))
-                        .describe("Publish, Delete and the like are 44 px tall even with the option above off.")
-                        .soon_faded(),
                 ],
             ),
             Section::new(

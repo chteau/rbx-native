@@ -429,6 +429,11 @@ impl Row {
             enabled,
             false,
         )
+        // Delete is the one destructive row: 44 tall (WCAG 2.5.5) while the
+        // rest keep the menu's 24.
+        .when(id == "delete", |this| {
+            this.h(crate::tokens::primary_target())
+        })
         // The keyboard's highlight wears the hover's surface, and the
         // pointer moves it, as in the dropdowns (`shell::menu`).
         .when(highlighted, |this| this.bg(crate::tokens::hover()))

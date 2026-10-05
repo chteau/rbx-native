@@ -52,7 +52,7 @@ in §11.
 | Large text (≥24px, or ≥18.66px bold) | 3:1 | 1.4.3, AA |
 | Control edges, focus ring, state fills, tool accents | **3:1** | 1.4.11 Non-text Contrast, AA |
 | Focus indicator | **solid 2px**, outset, 3:1 against *both* the control and its background | 2.4.13 Focus Appearance |
-| Pointer target | **24×24** (44×44 with Large Click Targets on) | 2.5.8 Target Size (Minimum), AA / 2.5.5, AAA |
+| Pointer target | **24×24** (44×44 with Large Click Targets on; **44×44 always** on primary and destructive controls) | 2.5.8 Target Size (Minimum), AA / 2.5.5, AAA |
 | Text resize | reaches **200%** | 1.4.4 Resize Text, AA |
 
 Two things about that table are easy to get wrong, and the reference calls
@@ -107,8 +107,9 @@ sits in, every size, what is floating and what is closed — with a Reset
 Layout command beside it (item 9); named layouts do not exist.
 
 **Stage 3 — not started.** No high-contrast theme (item 10), no command
-palette (item 12). Item 11's 44×44 is reachable through Large Click
-Targets but is not the default on primary controls.
+palette (item 12). Item 11's 44×44 is now the default on primary and
+destructive controls (see below); Large Click Targets still raises the
+rest.
 
 **No Level A gap left.** `Select`, `ColorPicker` and `NumberInput` are in
 the Tab order — every `Color3`, every enum and the snap increments
@@ -165,6 +166,20 @@ one exception: it is a WCAG floor rather than a design value, so it never
 shrinks below 24 even at 0.5× — and **View → Large Click Targets** raises
 that floor to 2.5.5's 44px for pen, touch and motor-impaired use, which is
 Blender's "editor-area padding" idea under a clearer name.
+
+**Primary and destructive controls are 44×44 whether or not that option is
+on** (2.5.5 measures the target, and these are where a miss costs
+something): the ribbon's Save, Publish, Delete, Play and Stop tiles
+(`ribbon::primary`, floored by `tokens::primary_target()`), every
+`launcher::ui` Primary or Danger button (`button_height`), the colour
+picker's Apply, the Explorer menu's Delete row, Settings' Delete layout,
+Uninstall theme, Reset layout and Reset all, and the sequence editor's
+Delete stop and Reset. The visual grows with the hit area — gpui has no
+hit slop, and Studio's own Play and Stop are full-height ribbon tiles
+too. Not covered: items in the File menu and the Edit menu, which the
+toolkit's popup sizes at 24 and this crate cannot change per item (Save
+and Publish are also tiles, Delete also a tile and the Delete key), and
+the per-row "reset to default" glyph, which loses nothing.
 
 `tokens::tests` asserts the palette rather than trusting it — see §4.
 
