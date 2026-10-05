@@ -1364,10 +1364,6 @@ impl Shell {
         // re-derived or a 2x scale leaves a 300px dock holding 600px rows.
         self.layout.reset_sizes();
         self.save_settings();
-        // The viewport's overlays are sized by the scale too
-        // (`tokens::viewport_text`), and the view may be floating in a
-        // window of its own that this notify does not reach.
-        self.viewport.update(cx, |_, cx| cx.notify());
         cx.notify();
     }
 
@@ -1395,7 +1391,9 @@ impl Shell {
             return;
         }
         self.save_settings();
-        // The view is its own entity and repaints only when told to.
+        // The shell's own notify below already re-renders the view (uncached,
+        // in this same window); telling it directly keeps that true if it is
+        // ever cached.
         self.viewport.update(cx, |_, cx| cx.notify());
         cx.notify();
     }
