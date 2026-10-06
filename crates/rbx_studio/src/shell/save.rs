@@ -61,8 +61,9 @@ impl Shell {
         if keystroke.key == "escape" && self.close_explorer_popups(window, cx) {
             cx.notify();
         }
-        // An armed `Ref` pick is a mode the Explorer is in; Escape leaves it.
-        if keystroke.key == "escape" && self.cancel_ref_pick() {
+        // An armed `Ref` pick is a mode the Explorer and the 3D view are in;
+        // Escape leaves it.
+        if keystroke.key == "escape" && self.cancel_ref_pick(cx) {
             cx.notify();
         }
         // The same key backs out of a drag in flight — an Explorer row being

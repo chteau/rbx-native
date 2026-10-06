@@ -5,18 +5,25 @@
 //! Escape, a second click on the row, or a selection change (the Explorer's
 //! arrows and type-ahead included, which move without picking) disarms it;
 //! Delete or Backspace on the row, or its `×`, clears it to `nil`.
+//!
+//! A click in the 3D view picks too — creator-docs once spelled it out for
+//! `ObjectValue.Value`: "click the object you wish to set it to within the
+//! game view or Explorer window". It lands on what a viewport click would
+//! select (see [`candidate`]), and the view's hover outline previews it.
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::Icon;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
-use rbx_dom::Ref;
+use rbx_dom::{Ref, WeakDom};
+use rbx_reflection::ReflectionDatabase;
 
-use crate::properties::edit::{ref_text, NIL_REF};
+use crate::properties::edit::{accepts_ref, held_class, ref_text, NIL_REF};
 use crate::properties::{EditKind, PropertyRow};
 use crate::tokens;
 
 use super::rows::select_field;
+use super::selection;
 use super::Shell;
 
 /// Which `Ref` row is waiting for an Explorer click, and the last pick that
@@ -26,6 +33,8 @@ use super::Shell;
 pub(super) struct RefPick {
     armed: Option<String>,
     error: Option<(String, String)>,
+    /// The row under the pointer, for the empty field's "Select <Type>…".
+    hovered: Option<String>,
 }
 
 impl RefPick {
@@ -66,17 +75,15 @@ impl Shell {
     ) -> impl IntoElement + 'static {
         let armed = self.edits.ref_pick.armed.as_deref() == Some(row.name.as_str());
         let focus = self.tab_order.claim(cx);
-        // Studio's own words for this moment are "Your cursor changes"; the
-        // field says what the changed cursor is waiting for.
-        let label = if armed {
-            "Pick in Explorer…".to_owned()
-        } else {
-            row.value.clone()
-        };
         // By referent, not by the shown name: a dangling target also reads
         // `nil` (and so does an instance named "nil"), and both still have a
         // value to clear.
         let is_nil = matches!(&row.edit, Some(EditKind::Ref(text)) if *text == ref_text(NIL_REF));
+        let hovered = self.edits.ref_pick.hovered.as_deref() == Some(row.name.as_str());
+        let class = self
+            .selected()
+            .and_then(|owner| held_class(&self.dom, &self.database, owner, &row.name));
+        let label = field_label(&row.value, is_nil, armed, hovered, class);
 
         let click = cx.entity();
         let click_name = row.name.clone();
@@ -84,6 +91,8 @@ impl Shell {
         let key_name = row.name.clone();
         let clear = cx.entity();
         let clear_name = row.name.clone();
+        let hover = cx.entity();
+        let hover_name = row.name.clone();
         select_field(&focus, window, cx)
             .id(SharedString::from(format!("ref-pick-{}", row.name)))
             .track_focus(&focus)
@@ -96,6 +105,20 @@ impl Shell {
             .on_click(move |_, _, cx| {
                 let name = click_name.clone();
                 click.update(cx, |shell, cx| shell.toggle_ref_pick(&name, cx));
+            })
+            .on_hover(move |&now: &bool, _, cx| {
+                let name = hover_name.clone();
+                hover.update(cx, |shell, cx| {
+                    let pick = &mut shell.edits.ref_pick;
+                    let next = match now {
+                        true => Some(name),
+                        false => pick.hovered.take().filter(|row| *row != name),
+                    };
+                    if pick.hovered != next {
+                        pick.hovered = next;
+                        cx.notify();
+                    }
+                });
             })
             .on_key_down(move |event: &KeyDownEvent, _, cx| {
                 let name = key_name.clone();
@@ -115,9 +138,7 @@ impl Shell {
                 div()
                     .flex_1()
                     .truncate()
-                    .when(armed || is_nil, |this| {
-                        this.text_color(tokens::text_placeholder())
-                    })
+                    .when(is_nil, |this| this.text_color(tokens::text_placeholder()))
                     .child(label),
             )
             .when(!armed && !is_nil, |this| {
@@ -141,12 +162,31 @@ impl Shell {
 
     fn toggle_ref_pick(&mut self, name: &str, cx: &mut Context<Self>) {
         self.edits.ref_pick.toggle(name);
+        self.sync_viewport_pick(cx);
         cx.notify();
     }
 
     /// Escape's half of the pick: true when there was one to back out of.
-    pub(super) fn cancel_ref_pick(&mut self) -> bool {
-        self.edits.ref_pick.take().is_some()
+    pub(super) fn cancel_ref_pick(&mut self, cx: &mut Context<Self>) -> bool {
+        let cancelled = self.edits.ref_pick.take().is_some();
+        self.sync_viewport_pick(cx);
+        cancelled
+    }
+
+    /// Tells the 3D view whether its next press picks rather than selects.
+    /// Every path that arms or disarms ends here, a selection change too.
+    pub(super) fn sync_viewport_pick(&self, cx: &mut Context<Self>) {
+        let armed = self.edits.ref_pick.is_armed();
+        self.viewport
+            .update(cx, |viewport, cx| viewport.set_ref_picking(armed, cx));
+    }
+
+    /// What a viewport click under `hits` (nearest first) sets the armed row
+    /// to; `None` for a miss, or with nothing armed.
+    pub(super) fn ref_pick_candidate(&self, hits: &[Ref], cycling: bool) -> Option<Ref> {
+        let name = self.edits.ref_pick.armed.as_deref()?;
+        let owners = self.selected_all();
+        candidate(&self.dom, &self.database, hits, owners, name, cycling)
     }
 
     /// A press on an Explorer row while a pick is armed (see
@@ -157,6 +197,7 @@ impl Shell {
         let Some(name) = self.edits.ref_pick.take() else {
             return false;
         };
+        self.sync_viewport_pick(cx);
         self.commit_ref(&name, target, cx);
         true
     }
@@ -168,34 +209,58 @@ impl Shell {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::RefPick;
-
-    #[test]
-    fn a_second_click_disarms_and_another_row_takes_the_pick() {
-        let mut pick = RefPick::default();
-        pick.toggle("Part0");
-        assert!(pick.is_armed());
-        pick.toggle("Part0");
-        assert!(!pick.is_armed());
-
-        pick.toggle("Part0");
-        pick.toggle("Part1");
-        assert_eq!(pick.take().as_deref(), Some("Part1"));
-        // Taken once: Escape or a second Explorer press finds nothing armed.
-        assert_eq!(pick.take(), None);
-    }
-
-    #[test]
-    fn arming_clears_the_last_refusal() {
-        let mut pick = RefPick {
-            error: Some(("Part1".to_owned(), "refused".to_owned())),
-            ..RefPick::default()
-        };
-        assert_eq!(pick.error_for("Part1"), Some("refused"));
-        assert_eq!(pick.error_for("Part0"), None);
-        pick.toggle("Part1");
-        assert_eq!(pick.error_for("Part1"), None);
+/// The field's text, after Studio's own widget (`InstanceRefPropertyView`):
+/// an empty field reads its `InstanceRef.Selecting` string while picking and
+/// its `InstanceRef.SelectInstanceType` string, naming the class the
+/// property holds, while the pointer is over it; a field with a value always
+/// shows it. Only the string keys are public, not their English text, so
+/// "Selecting…" and "Select <Type>…" are read off the key names.
+fn field_label(
+    value: &str,
+    is_nil: bool,
+    armed: bool,
+    hovered: bool,
+    class: Option<&str>,
+) -> String {
+    match (is_nil, armed, hovered, class) {
+        (true, true, ..) => "Selecting…".to_owned(),
+        (true, false, true, Some(class)) => format!("Select {class}…"),
+        _ => value.to_owned(),
     }
 }
+
+/// What a click selects (`selection::from_click`: the outermost `Model`
+/// plain, the part itself with `Alt`), unless the property cannot hold that
+/// and can hold the part actually clicked — a `Weld.Part0` or a
+/// `PrimaryPart` clicked on a part inside a model. Studio's own widget hands
+/// its instance picker the property's class (`pickInstanceAsync({className})`
+/// in `InstanceRefPropertyView`), so its pick only ever lands on an instance
+/// of that class; how the native picker itself resolves model against part
+/// is not visible from outside it.
+///
+/// "Can hold" asks every one of `owners`, the whole selection the pick is
+/// written to: a part only the first owner would take is no better than the
+/// model, since the commit refuses it for the rest either way.
+fn candidate(
+    dom: &WeakDom,
+    db: &ReflectionDatabase,
+    hits: &[Ref],
+    owners: &[Ref],
+    name: &str,
+    cycling: bool,
+) -> Option<Ref> {
+    let accepts = |target| {
+        owners
+            .iter()
+            .all(|&owner| accepts_ref(dom, db, owner, name, target))
+    };
+    let clicked = selection::from_click(dom, db, hits, owners.first().copied(), cycling)?;
+    let nearest = hits[0];
+    Some(match accepts(clicked) || !accepts(nearest) {
+        true => clicked,
+        false => nearest,
+    })
+}
+
+#[cfg(test)]
+mod tests;

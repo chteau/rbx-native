@@ -303,6 +303,18 @@ impl WorkspaceView {
         let Some(ray) = self.cursor_ray(position, scale) else {
             return;
         };
+        // An armed `Ref` row takes the press whatever the tool: no handle,
+        // body grab or brush may start under a click that is choosing an
+        // instance, and a pick is one instance, so no extend either.
+        if self.ref_picking {
+            cx.emit(ViewportAction::Pick {
+                ray,
+                cycling: modifiers.alt,
+                extend: false,
+                held: false,
+            });
+            return;
+        }
         // The Sun tool aims at the scene rather than selecting out of it.
         if self.transform.tool == Tool::Sun {
             self.begin(Drag::Sun, cx);
