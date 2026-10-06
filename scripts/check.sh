@@ -13,12 +13,6 @@ run() {
     nice -n 10 "$@"
   fi
 }
-# sccache, when installed, serves a dependency another worktree already built
-# instead of compiling it again — the cost that dominates a fresh worktree's
-# first gate. A wrapper the caller already chose is left alone.
-if [ -z "${RUSTC_WRAPPER:-}" ] && command -v sccache >/dev/null 2>&1; then
-  export RUSTC_WRAPPER=sccache
-fi
 run cargo fmt --all -- --check
 run cargo clippy --workspace --all-targets -- -D warnings
 
@@ -30,14 +24,5 @@ run cargo clippy --workspace --all-targets -- -D warnings
 # own file; `trap` cleans it up on any exit, not just the successful path.
 log="$(mktemp /tmp/rbx-native-test.XXXXXX.log)"
 trap 'rm -f "$log"' EXIT
-if cargo nextest --version >/dev/null 2>&1; then
-  # nextest runs every test binary's tests in one shared pool rather than one
-  # binary after another; it does not run doctests, so those still go
-  # through `cargo test --doc`. Its summary line reads "N tests run: N
-  # passed", which the total below adds to the doctests' "test result" lines.
-  run cargo nextest run --workspace --no-fail-fast "$@" 2>&1 | tee "$log" | grep -aE '^ *(Summary|FAIL|error)'
-  run cargo test --workspace --doc 2>&1 | tee -a "$log" | grep -aE '^(test result|error)'
-else
-  run cargo test --workspace "$@" 2>&1 | tee "$log" | grep -aE '^(test result|running|error|warning: unused)'
-fi
-echo "TOTAL PASSED: $(grep -aoE '(^test result: ok\. [0-9]+ passed|tests run: [0-9]+ passed)' "$log" | grep -oE '[0-9]+ passed' | awk '{s+=$1} END {print s}')"
+run cargo test --workspace "$@" 2>&1 | tee "$log" | grep -aE '^(test result|running|error|warning: unused)'
+echo "TOTAL PASSED: $(grep -aoE '^test result: ok\. [0-9]+ passed' "$log" | awk '{s+=$4} END {print s}')"

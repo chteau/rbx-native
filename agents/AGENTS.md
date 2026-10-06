@@ -78,8 +78,9 @@ automatically; other tools should follow the same document directly.
   --all-targets`); the full gate below runs once, when the work is done. Of
   several agents working at once, give each its own `CARGO_TARGET_DIR`
   rather than one shared, locked one — a shared queue cost hours on a
-  six-branch batch. `check.sh` picks up `cargo-nextest` and `sccache` when
-  they are installed, and works the same without them.
+  six-branch batch. (`cargo-nextest` and `sccache` were measured here and
+  dropped: nextest's process per test made the suite slower, 13 s against
+  `cargo test`'s 9 s, and sccache got no hits across target directories.)
 
 - `./scripts/check.sh` from the repo root is the gate: `cargo fmt --check`,
   `cargo clippy --workspace --all-targets -- -D warnings`,
