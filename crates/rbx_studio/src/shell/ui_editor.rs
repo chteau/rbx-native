@@ -211,7 +211,11 @@ pub(super) fn root_of(dom: &WeakDom, database: &ReflectionDatabase, referent: Re
             .iter()
             .any(|class| database.is_subclass_of(instance.class(), class))
         {
-            return Some(reference);
+            // A `ScreenGui` outside `StarterGui` is never on screen in
+            // Studio, so the canvas does not offer it either.
+            let hidden = database.is_subclass_of(instance.class(), SCREEN_CLASS)
+                && !rbx_viewer::shows_screen(dom, database, reference);
+            return (!hidden).then_some(reference);
         }
         current = dom.parent(reference);
     }
@@ -272,7 +276,18 @@ impl Shell {
     /// tree asks this, so none of them can put the wrong set back.
     pub(super) fn explorer_items(&self) -> Vec<TreeItem> {
         let items = match self.ui_canvas_active() {
-            true => self.explorer.ui_items(),
+            // Only the roots the canvas would take: no screen kept outside
+            // `StarterGui` (see `root_of`).
+            true => self
+                .explorer
+                .ui_items()
+                .into_iter()
+                .filter(|item| {
+                    crate::explorer::item_ref(&item.id).is_none_or(|reference| {
+                        root_of(&self.dom, &self.database, reference) == Some(reference)
+                    })
+                })
+                .collect(),
             false => self
                 .explorer
                 .items(self.show_all_services, &self.service_overrides),

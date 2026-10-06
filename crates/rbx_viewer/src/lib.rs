@@ -78,7 +78,7 @@ pub use lighting::Calibration;
 pub use load::read_place;
 pub use quality::{FrameRateManager, QualityLevel};
 pub use renderer::{GuiBox, Segment};
-pub use scene::{resolved_shape_label, ScrollTarget};
+pub use scene::{resolved_shape_label, shows_screen, ScrollTarget};
 #[cfg(not(target_arch = "wasm32"))]
 pub use serve::{serve, DEFAULT_PORT};
 // `rbxview`'s own title bar and `rbxstudio`'s Viewport dock read fps the same

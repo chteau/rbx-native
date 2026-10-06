@@ -45,6 +45,7 @@ pub(super) use scrolling::Inset;
 pub(super) use scrolling::Scrolling;
 pub(super) use shadow::Shadow;
 pub(super) use starter::hides_contents;
+pub use starter::shows_screen;
 pub(crate) use stroke::Join;
 pub(super) use stroke::{Stroke, StrokePosition};
 #[cfg(test)]
@@ -139,6 +140,11 @@ fn gather(
         return;
     }
     if database.is_subclass_of(instance.class(), SCREEN_CLASS) {
+        // Outside `StarterGui` a screen is a run-time template, not drawn in
+        // edit mode (see `starter::shows_screen`).
+        if !shows_screen(dom, database, referent) {
+            return;
+        }
         let properties = styles.properties_of(instance);
         let (roots, groups) = elements(dom, database, styles, materials, instance.children());
         into.push(Screen {
