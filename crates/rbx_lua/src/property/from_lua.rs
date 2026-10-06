@@ -76,7 +76,9 @@ pub(crate) fn lua_to_variant(
             Value::Boolean(flag) => Ok(Variant::Bool(*flag)),
             other => Err(type_error(name, "boolean", other)),
         },
-        "string" | "ProtectedString" | "BinaryString" => match value {
+        // A ContentId (`Decal.Texture`) is the asset URI as a plain string,
+        // which is how a place file stores one too.
+        "string" | "ProtectedString" | "BinaryString" | "ContentId" => match value {
             Value::String(text) => Ok(Variant::String(text.to_str()?.to_string())),
             other => Err(type_error(name, "string", other)),
         },

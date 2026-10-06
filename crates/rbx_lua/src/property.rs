@@ -100,6 +100,11 @@ fn keep_representation(existing: Option<&Variant>, value: Variant) -> Variant {
         (Some(Variant::Float32(_)), Variant::Float64(v)) => Variant::Float32(*v as f32),
         (Some(Variant::Int64(_)), Variant::Int32(v)) => Variant::Int64(i64::from(*v)),
         (Some(Variant::Int32(_)), Variant::Int64(v)) => Variant::Int32(*v as i32),
+        // A ContentId the file held as a `Content` URI (see
+        // `rbx_xml::value::content`) stays one.
+        (Some(Variant::Content(_)), Variant::String(uri)) => {
+            Variant::Content(rbx_dom::Content::Uri(uri.clone()))
+        }
         _ => value,
     }
 }
