@@ -23,7 +23,11 @@ pub(super) enum Label {
 }
 
 /// A section: its title and the buttons beside it, over its rows.
-pub(super) fn section(title: &'static str, actions: Vec<AnyElement>, rows: Vec<AnyElement>) -> Div {
+pub(in crate::shell::ui_editor) fn section(
+    title: &'static str,
+    actions: Vec<AnyElement>,
+    rows: Vec<AnyElement>,
+) -> Div {
     v_flex()
         .w_full()
         .gap(px(6.))
@@ -51,7 +55,7 @@ pub(super) fn section(title: &'static str, actions: Vec<AnyElement>, rows: Vec<A
 }
 
 /// Fields side by side, sharing the width.
-pub(super) fn line(children: Vec<AnyElement>) -> AnyElement {
+pub(in crate::shell::ui_editor) fn line(children: Vec<AnyElement>) -> AnyElement {
     h_flex()
         .w_full()
         .gap(px(6.))
@@ -84,7 +88,7 @@ pub(super) fn words(text: &'static str) -> AnyElement {
 }
 
 /// A caption in a row, muted — what a group of controls is.
-pub(super) fn caption(text: &'static str) -> AnyElement {
+pub(in crate::shell::ui_editor) fn caption(text: &'static str) -> AnyElement {
     div()
         .flex_none()
         .w(px(64.))

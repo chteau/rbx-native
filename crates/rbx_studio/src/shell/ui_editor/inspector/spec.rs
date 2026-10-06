@@ -41,6 +41,13 @@ pub(in crate::shell::ui_editor) enum Key {
     MinText,
     MaxText,
     Scale,
+    Ambient,
+    LightColor,
+    LightX,
+    LightY,
+    LightZ,
+    ImageTint,
+    ImageAlpha,
 }
 
 /// Each corner's own radius, clockwise from the top left — the order the
@@ -216,6 +223,14 @@ impl Shell {
             Key::MinText => child("UITextSizeConstraint", &["MinTextSize"], &[0], PIXELS),
             Key::MaxText => child("UITextSizeConstraint", &["MaxTextSize"], &[0], PIXELS),
             Key::Scale => child("UIScale", &["Scale"], &[0], FINE),
+            // A `ViewportFrame`'s lighting, for the frame sheet.
+            Key::Ambient => own(&["Ambient"], &[0], Form::Hex),
+            Key::LightColor => own(&["LightColor"], &[0], Form::Hex),
+            Key::LightX => own(&["LightDirection"], &[0], FINE),
+            Key::LightY => own(&["LightDirection"], &[1], FINE),
+            Key::LightZ => own(&["LightDirection"], &[2], FINE),
+            Key::ImageTint => own(&["ImageColor3"], &[0], Form::Hex),
+            Key::ImageAlpha => own(&["ImageTransparency"], &[0], Form::Percent),
         }
     }
 }

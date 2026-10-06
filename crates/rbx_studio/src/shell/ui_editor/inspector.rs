@@ -14,6 +14,7 @@
 //! Properties panel's row for the same value.
 
 mod actions;
+mod frame_lighting;
 mod sections;
 mod spec;
 mod value;
@@ -34,6 +35,7 @@ use rbx_viewer::snap::round_to;
 use spec::Form;
 pub(super) use spec::{Key, On, CORNERS};
 use value::{numbers_of, parse, read, show, write};
+pub(super) use view::{caption, line, section};
 
 /// A label drag in flight.
 struct Drag {

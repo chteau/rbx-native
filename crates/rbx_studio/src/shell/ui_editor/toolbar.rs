@@ -55,9 +55,11 @@ impl Shell {
             .collect();
         let tools = (active == Tab::Canvas).then(|| self.canvas_tools(cx));
 
+        let sheet_open = self.ui.sheet.is_some();
         div()
             .w_full()
             .flex_none()
+            .relative()
             .bg(tokens::dock())
             .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
                 if shell.ui.nav.key(&event.keystroke, window, cx) {
@@ -65,7 +67,15 @@ impl Shell {
                     cx.notify();
                 }
             }))
-            .child(chrome::dock_strip(tabs, tools, true))
+            .child(
+                div()
+                    .when(sheet_open, |this| this.opacity(0.45))
+                    .child(chrome::dock_strip(tabs, tools, true)),
+            )
+            // Inert behind the sheet: a cover takes the clicks.
+            .when(sheet_open, |this| {
+                this.child(div().id("ui-strip-cover").absolute().inset_0().occlude())
+            })
             .into_any_element()
     }
 
@@ -179,6 +189,21 @@ impl Shell {
             ],
         };
 
+        // Only while one `ViewportFrame` alone is selected; the right-hand
+        // cluster does not move when it comes and goes.
+        let edit_frame = self.selected_viewport_frame().map(|_| {
+            super::frame_sheet::text_button(
+                "ui-edit-viewport",
+                IconName::Box,
+                "Edit viewport",
+                super::frame_sheet::Look::On,
+            )
+            .tooltip(|window, cx| {
+                super::super::tooltip::text("Edit the viewport (or double-click it)", window, cx)
+            })
+            .on_click(cx.listener(|shell, _, window, cx| shell.open_frame_sheet(window, cx)))
+        });
+
         let zoom = format!("{:.0}%", self.ui.view.zoom * 100.0);
         h_flex()
             .flex_1()
@@ -190,6 +215,9 @@ impl Shell {
             .child(separator())
             .child(group)
             .child(responsive)
+            .when_some(edit_frame, |this, button| {
+                this.child(super::frame_sheet::separator()).child(button)
+            })
             .child(div().flex_1())
             .children(screen)
             .child(separator())
