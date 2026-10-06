@@ -9,6 +9,17 @@
   Code keeps `editor.fontSize` apart from its zoom. The place's own
   BillboardGui and SurfaceGui text stays as authored, as it does in
   Studio. — @chteau
+- **Keyboard focus apart from selection in the Explorer.** The tree's
+  keyboard cursor is its own state now, drawn as the inset focus ring over
+  whatever fill the row has, so a multi-selection no longer hides where the
+  keyboard is. Following the APG tree pattern's multi-select model:
+  `Ctrl`+Up/Down moves focus without touching the selection, `Ctrl`+Space
+  adds or drops the focused row, `Shift`+arrows extend from the anchor and a
+  plain arrow still moves and selects. Tabbing into the tree with nothing
+  selected focuses its first row instead of selecting it. Every selected
+  row now tells assistive technology it is selected, and over a tagged
+  Folder's colour the ring turns white or black when the accent would not
+  show. — @chteau
 - **Smooth terrain and the Terrain Editor.** `Workspace.Terrain`'s
   voxels are read and written: `SmoothGrid`'s layout was worked out from
   a real place, whose terrain re-encodes to its original bytes, and

@@ -159,8 +159,16 @@ impl Shell {
         self.selection.toggle(reference);
 
         let anchor = self.selection.get().and_then(|r| self.explorer.item(r));
+        let toggled = explorer::item_id(reference);
         let tree = self.tree.clone();
-        tree.update(cx, |tree, cx| tree.set_selected_item(anchor.as_ref(), cx));
+        tree.update(cx, |tree, cx| {
+            tree.set_selected_item(anchor.as_ref(), cx);
+            // The cursor stays on the row just toggled, not on the anchor:
+            // `Ctrl`+Space toggling a row off must not move focus away.
+            if let Some(ix) = tree.index_of(&toggled) {
+                tree.set_focused_index(Some(ix), cx);
+            }
+        });
 
         self.selection_changed(cx);
     }
@@ -198,8 +206,14 @@ impl Shell {
         }
 
         let first = kept.first().and_then(|&r| self.explorer.item(r));
+        let clicked = explorer::item_id(clicked);
         let tree = self.tree.clone();
-        tree.update(cx, |tree, cx| tree.set_selected_item(first.as_ref(), cx));
+        tree.update(cx, |tree, cx| {
+            tree.set_selected_item(first.as_ref(), cx);
+            if let Some(ix) = tree.index_of(&clicked) {
+                tree.set_focused_index(Some(ix), cx);
+            }
+        });
         if self.selection.replace(kept) {
             self.selection_changed(cx);
         }

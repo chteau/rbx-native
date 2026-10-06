@@ -215,7 +215,7 @@ impl Shell {
                                 cx.stop_propagation();
                             }
                         }))
-                        .child(search_field(self.tab_order.next(), &self.search, cx)),
+                        .child(search_field(&self.tab_order, &self.search, cx)),
                 )
                 .child(
                     div()
@@ -408,11 +408,24 @@ impl Shell {
 /// The toolkit `Input` keeps the caret, selection and IME handling; its own
 /// chrome is switched off so this container can be the frame's.
 pub(super) fn search_field(
-    tab_index: isize,
+    order: &super::roving::TabOrder,
     state: &Entity<gpui_kit::component::input::InputState>,
     cx: &App,
 ) -> impl IntoElement {
-    search_field_sized(tab_index, state, tokens::input_height(), cx)
+    search_field_sized(stop(order, state, cx), state, tokens::input_height(), cx)
+}
+
+/// A search box's place in the window's Tab order: an index for the
+/// toolkit, and its handle in the walk `TabOrder::step` takes. Without the
+/// handle, Tab out of the box resumed from wherever the walk last was —
+/// out of the Explorer's search it skipped the tree and left the dock.
+fn stop(
+    order: &super::roving::TabOrder,
+    state: &Entity<gpui_kit::component::input::InputState>,
+    cx: &App,
+) -> isize {
+    order.register(&state.read(cx).focus_handle(cx));
+    order.next()
 }
 
 /// The Output strip's search box: the same field at the shorter height the
@@ -420,11 +433,16 @@ pub(super) fn search_field(
 /// also what lets it sit centred in a tab strip its dock-sized twin
 /// overflows.
 pub(super) fn search_field_compact(
-    tab_index: isize,
+    order: &super::roving::TabOrder,
     state: &Entity<gpui_kit::component::input::InputState>,
     cx: &App,
 ) -> impl IntoElement {
-    search_field_sized(tab_index, state, tokens::strip_field_height(), cx)
+    search_field_sized(
+        stop(order, state, cx),
+        state,
+        tokens::strip_field_height(),
+        cx,
+    )
 }
 
 fn search_field_sized(
