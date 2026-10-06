@@ -1,15 +1,16 @@
 //! Command-line interface for the Roblox Cloud API: whoami, check the key's
-//! scopes, list experiences, download a place, or fetch an asset by id.
+//! scopes, list experiences, download a place, save a place file as a new
+//! (unpublished) version, or fetch an asset by id.
 
 use std::env::Args;
 use std::process::ExitCode;
 
-use rbx_cloud::{ApiKey, Client, Grant, Owner, Visibility};
+use rbx_cloud::{ApiKey, Client, Grant, Owner, PublishMode, Visibility};
 
 fn main() -> ExitCode {
     let mut args = std::env::args();
     let program = args.next().unwrap_or_else(|| "rbxcloud".to_string());
-    let usage = format!("usage: {program} <whoami|check|list|download|asset> [args...]");
+    let usage = format!("usage: {program} <whoami|check|list|download|save|asset> [args...]");
 
     let Some(command) = args.next() else {
         eprintln!("{usage}");
@@ -23,6 +24,7 @@ fn main() -> ExitCode {
         "check" => run_check(&client),
         "list" => run_list(&client),
         "download" => run_download(&client, &mut args),
+        "save" => run_save(&client, &mut args),
         "asset" => run_asset(&client, &mut args),
         other => Err(format!("unknown command '{other}'\n{usage}")),
     };
@@ -143,6 +145,20 @@ fn run_download(client: &Client, args: &mut Args) -> Result<(), String> {
         .map_err(|err| err.to_string())?;
     std::fs::write(&out, &bytes).map_err(|err| format!("failed to write '{out}': {err}"))?;
     println!("wrote {} bytes to {out}", bytes.len());
+    Ok(())
+}
+
+/// `save <universeId> <placeId> <file>`: uploads `file` as a Saved version —
+/// it does not go live — and prints the version number or Roblox's refusal.
+fn run_save(client: &Client, args: &mut Args) -> Result<(), String> {
+    let universe_id = next_u64_arg(args, "universeId")?;
+    let place_id = next_u64_arg(args, "placeId")?;
+    let file = args.next().ok_or("missing <file.rbxl> argument")?;
+    let bytes = std::fs::read(&file).map_err(|err| format!("failed to read '{file}': {err}"))?;
+    let version = client
+        .publish_place(universe_id, place_id, &bytes, PublishMode::Saved)
+        .map_err(|err| err.to_string())?;
+    println!("saved as version {version}");
     Ok(())
 }
 
