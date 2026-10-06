@@ -122,6 +122,7 @@ impl Shell {
     /// Brings an open tab to the front; the dock's tab strip's click handler.
     pub(crate) fn activate_script(&mut self, reference: Ref, cx: &mut Context<Self>) {
         self.scripts.tabs.activate(reference);
+        self.update_discord();
         cx.notify();
     }
 
@@ -131,6 +132,7 @@ impl Shell {
         self.commit_script(reference, None, cx);
         self.scripts.tabs.close(reference);
         self.scripts.open.remove(&reference);
+        self.update_discord();
         cx.notify();
     }
 

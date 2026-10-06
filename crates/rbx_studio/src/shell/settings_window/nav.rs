@@ -72,7 +72,7 @@ impl Page {
     /// page is live, and not on Account, whose one live control is a
     /// window of its own.
     pub(super) fn has_reset(self) -> bool {
-        !matches!(self, Page::Account | Page::Beta)
+        !matches!(self, Page::Beta)
     }
 
     /// Whether the whole page is on the roadmap.

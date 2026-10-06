@@ -246,6 +246,7 @@ impl Shell {
             self.follow_ui_screen(cx);
         }
         self.document = document;
+        self.update_discord();
         self.sync_explorer_filter(cx);
         cx.notify();
     }

@@ -1,0 +1,350 @@
+//! Discord Rich Presence over the local IPC pipe. Runs on a background
+//! thread; the editor sends activity updates and the thread connects,
+//! reconnects and retries silently when Discord is not running.
+
+use std::sync::mpsc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+const CLIENT_ID: &str = "1294805388855246848";
+const RETRY_DELAY: Duration = Duration::from_secs(15);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Activity {
+    pub(crate) place: String,
+    pub(crate) detail: String,
+    pub(crate) started: u64,
+}
+
+enum Message {
+    Update(Activity),
+    Stop,
+}
+
+pub(crate) struct Presence {
+    sender: mpsc::Sender<Message>,
+}
+
+impl Presence {
+    pub(crate) fn start(activity: Activity) -> Self {
+        let (sender, receiver) = mpsc::channel();
+        std::thread::Builder::new()
+            .name("discord-presence".into())
+            .spawn(move || run(receiver, activity))
+            .expect("spawning the Discord presence thread");
+        Presence { sender }
+    }
+
+    pub(crate) fn update(&self, activity: Activity) {
+        let _ = self.sender.send(Message::Update(activity));
+    }
+}
+
+impl Drop for Presence {
+    fn drop(&mut self) {
+        let _ = self.sender.send(Message::Stop);
+    }
+}
+
+fn run(receiver: mpsc::Receiver<Message>, mut activity: Activity) {
+    loop {
+        match try_session(&receiver, &mut activity) {
+            SessionExit::Stop => return,
+            SessionExit::Disconnected => {
+                match receiver.recv_timeout(RETRY_DELAY) {
+                    Ok(Message::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => return,
+                    Ok(Message::Update(new)) => activity = new,
+                    Err(mpsc::RecvTimeoutError::Timeout) => {}
+                }
+            }
+        }
+    }
+}
+
+enum SessionExit {
+    Stop,
+    Disconnected,
+}
+
+fn try_session(receiver: &mpsc::Receiver<Message>, activity: &mut Activity) -> SessionExit {
+    let Some(mut pipe) = ipc::connect() else {
+        return SessionExit::Disconnected;
+    };
+
+    let handshake = format!(r#"{{"v":1,"client_id":"{CLIENT_ID}"}}"#);
+    if ipc::write_frame(&mut pipe, 0, handshake.as_bytes()).is_err() {
+        return SessionExit::Disconnected;
+    }
+    if ipc::read_frame(&mut pipe).is_err() {
+        return SessionExit::Disconnected;
+    }
+
+    if send_activity(&mut pipe, activity).is_err() {
+        return SessionExit::Disconnected;
+    }
+
+    loop {
+        match receiver.recv() {
+            Ok(Message::Update(new)) => {
+                *activity = new;
+                if send_activity(&mut pipe, activity).is_err() {
+                    return SessionExit::Disconnected;
+                }
+            }
+            Ok(Message::Stop) | Err(_) => return SessionExit::Stop,
+        }
+    }
+}
+
+fn send_activity(pipe: &mut ipc::Pipe, activity: &Activity) -> Result<(), ()> {
+    let payload = activity_json(activity);
+    ipc::write_frame(pipe, 1, payload.as_bytes())
+}
+
+fn activity_json(activity: &Activity) -> String {
+    let details = if activity.place.is_empty() {
+        "Editing in RbxNative".to_owned()
+    } else {
+        format!("Editing {}", activity.place)
+    };
+    let state = if activity.detail.is_empty() {
+        None
+    } else {
+        Some(format!(r#","state":"{}""#, json_escape(&activity.detail)))
+    };
+    format!(
+        concat!(
+            r#"{{"cmd":"SET_ACTIVITY","args":{{"pid":{pid},"activity":{{"#,
+            r#""details":"{details}""#,
+            r#"{state}"#,
+            r#","timestamps":{{"start":{start}}}"#,
+            r#","assets":{{"large_image":"rbxnative","large_text":"RbxNative"}}"#,
+            r#"}}}},"nonce":"{nonce}"}}"#,
+        ),
+        pid = std::process::id(),
+        details = json_escape(&details),
+        state = state.as_deref().unwrap_or(""),
+        start = activity.started,
+        nonce = nonce(),
+    )
+}
+
+fn json_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c < '\x20' => {
+                out.push_str(&format!("\\u{:04x}", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+fn nonce() -> String {
+    let t = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    format!("{}.{}", t.as_secs(), t.subsec_nanos())
+}
+
+pub(crate) fn now_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+// ── Platform IPC ────────────────────────────────────────────────────────
+
+mod ipc {
+    use std::io::{Read, Write};
+
+    #[cfg(windows)]
+    pub(super) type Pipe = std::fs::File;
+
+    #[cfg(windows)]
+    pub(super) fn connect() -> Option<Pipe> {
+        for i in 0..10 {
+            let path = format!(r"\\.\pipe\discord-ipc-{i}");
+            if let Ok(pipe) = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&path)
+            {
+                return Some(pipe);
+            }
+        }
+        None
+    }
+
+    #[cfg(not(windows))]
+    pub(super) type Pipe = std::os::unix::net::UnixStream;
+
+    #[cfg(not(windows))]
+    pub(super) fn connect() -> Option<Pipe> {
+        let candidates: Vec<std::path::PathBuf> = [
+            std::env::var("XDG_RUNTIME_DIR").ok(),
+            std::env::var("TMPDIR").ok(),
+            std::env::var("TMP").ok(),
+            std::env::var("TEMP").ok(),
+            Some("/tmp".into()),
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|s| !s.is_empty())
+        .flat_map(|base| {
+            let base = std::path::PathBuf::from(base);
+            [
+                base.clone(),
+                base.join("app/com.discordapp.Discord"),
+                base.join("snap.discord"),
+            ]
+        })
+        .collect();
+
+        for dir in &candidates {
+            for i in 0..10 {
+                let path = dir.join(format!("discord-ipc-{i}"));
+                if let Ok(stream) = std::os::unix::net::UnixStream::connect(&path) {
+                    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(2)));
+                    let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(2)));
+                    return Some(stream);
+                }
+            }
+        }
+        None
+    }
+
+    pub(super) fn write_frame(pipe: &mut Pipe, opcode: u32, payload: &[u8]) -> Result<(), ()> {
+        let mut header = [0u8; 8];
+        header[..4].copy_from_slice(&opcode.to_le_bytes());
+        header[4..].copy_from_slice(&(payload.len() as u32).to_le_bytes());
+        pipe.write_all(&header).map_err(|_| ())?;
+        pipe.write_all(payload).map_err(|_| ())?;
+        pipe.flush().map_err(|_| ())
+    }
+
+    pub(super) fn read_frame(pipe: &mut Pipe) -> Result<Vec<u8>, ()> {
+        let mut header = [0u8; 8];
+        pipe.read_exact(&mut header).map_err(|_| ())?;
+        let len = u32::from_le_bytes([header[4], header[5], header[6], header[7]]) as usize;
+        if len > 1 << 20 {
+            return Err(());
+        }
+        let mut payload = vec![0u8; len];
+        pipe.read_exact(&mut payload).map_err(|_| ())?;
+        Ok(payload)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn activity_json_with_place_and_detail() {
+        let activity = Activity {
+            place: "Baseplate".into(),
+            detail: "ServerScript".into(),
+            started: 1700000000,
+        };
+        let json = activity_json(&activity);
+        assert!(json.contains(r#""cmd":"SET_ACTIVITY""#));
+        assert!(json.contains(r#""details":"Editing Baseplate""#));
+        assert!(json.contains(r#""state":"ServerScript""#));
+        assert!(json.contains(r#""start":1700000000"#));
+        assert!(json.contains(r#""large_image":"rbxnative""#));
+    }
+
+    #[test]
+    fn activity_json_hidden_names() {
+        let activity = Activity {
+            place: String::new(),
+            detail: String::new(),
+            started: 1700000000,
+        };
+        let json = activity_json(&activity);
+        assert!(json.contains(r#""details":"Editing in RbxNative""#));
+        assert!(!json.contains(r#""state""#));
+    }
+
+    #[test]
+    fn json_escape_special_characters() {
+        assert_eq!(json_escape(r#"hello "world""#), r#"hello \"world\""#);
+        assert_eq!(json_escape("back\\slash"), "back\\\\slash");
+        assert_eq!(json_escape("new\nline"), "new\\nline");
+        assert_eq!(json_escape("tab\there"), "tab\\there");
+    }
+
+    #[test]
+    fn json_escape_control_characters() {
+        assert_eq!(json_escape("\x01"), "\\u0001");
+        assert_eq!(json_escape("\x1f"), "\\u001f");
+    }
+
+    #[test]
+    fn json_escape_leaves_normal_text() {
+        assert_eq!(json_escape("Editing MyPlace"), "Editing MyPlace");
+    }
+
+    #[test]
+    fn nonce_is_nonempty() {
+        let n = nonce();
+        assert!(!n.is_empty());
+        assert!(n.contains('.'));
+    }
+
+    #[test]
+    fn now_timestamp_is_recent() {
+        assert!(now_timestamp() > 1_577_836_800);
+    }
+
+    #[test]
+    fn frame_header_layout() {
+        let payload = b"hello";
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&42u32.to_le_bytes());
+        buf.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        buf.extend_from_slice(payload);
+
+        assert_eq!(u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]), 42);
+        assert_eq!(
+            u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]),
+            payload.len() as u32
+        );
+        assert_eq!(&buf[8..], payload);
+    }
+
+    #[test]
+    fn activity_json_escapes_quotes_in_names() {
+        let activity = Activity {
+            place: r#"My "Cool" Place"#.into(),
+            detail: r#"Script"With"Quotes"#.into(),
+            started: 0,
+        };
+        let json = activity_json(&activity);
+        assert!(!json.contains(r#"My "Cool" Place"#));
+        assert!(json.contains(r#"My \"Cool\" Place"#));
+    }
+
+    #[test]
+    fn start_and_drop_does_not_panic() {
+        let presence = Presence::start(Activity {
+            place: "Test".into(),
+            detail: String::new(),
+            started: now_timestamp(),
+        });
+        presence.update(Activity {
+            place: "Test2".into(),
+            detail: "Viewport".into(),
+            started: now_timestamp(),
+        });
+        drop(presence);
+    }
+}

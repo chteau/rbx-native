@@ -13,6 +13,7 @@ pub(crate) mod chrome;
 mod clipboard;
 mod command;
 mod debugging;
+mod discord;
 mod dock_drag;
 mod docks;
 mod drag;
@@ -407,6 +408,11 @@ pub(crate) struct Shell {
     /// marked Active when several names hold the docks' arrangement.
     last_named_layout: Option<String>,
     output_collapsed: bool,
+    discord: Option<crate::discord_presence::Presence>,
+    discord_hide_names: bool,
+    /// The Unix timestamp presence was started — keeps Discord's elapsed
+    /// time stable across activity updates.
+    discord_started: u64,
     drag: Option<Drag>,
     /// The dock currently being dragged by its tab, which is what puts the
     /// drop strips on screen (see `shell::dock_drag`). `None` the rest of
@@ -460,6 +466,8 @@ impl Shell {
             controls,
             argon_address: argon_address_setting,
             argon: argon_settings,
+            discord_presence: discord_presence_enabled,
+            discord_hide_names,
         } = settings;
         // Before anything renders: every size token is read through these,
         // so a scale or target floor applied after the first frame would
@@ -725,6 +733,9 @@ impl Shell {
             panel_windows: HashMap::new(),
             window_was_active: true,
             output_collapsed,
+            discord: None,
+            discord_hide_names,
+            discord_started: 0,
             drag: None,
             _subscriptions: [
                 tree_focused,
@@ -761,6 +772,10 @@ impl Shell {
         shell.sync_light_guides(cx);
         // And the screen it sits in, for the UI editor's canvas.
         shell.ui_follow_selection();
+
+        if discord_presence_enabled {
+            shell.start_discord();
+        }
 
         // `RBX_STUDIO_TOOL` (see `shell::toolbar`). Before the Command Bar
         // block below rather than after it: a script's reload rebuilds the
@@ -1561,6 +1576,8 @@ impl Shell {
             },
             argon_address: self.argon_saved_address.clone(),
             argon: self.argon_settings.clone(),
+            discord_presence: self.discord.is_some(),
+            discord_hide_names: self.discord_hide_names,
         };
         let _ = settings.save();
 
