@@ -39,6 +39,11 @@ impl Shell {
         // selected row, so a `Shift`/`Ctrl`/`Cmd`-click multi-selection would
         // otherwise light up just the anchor.
         let selected: Vec<Ref> = self.selected_all().to_vec();
+        // And handed to the tree, so each of those rows tells assistive
+        // technology it is selected, not just the anchor.
+        self.tree.update(cx, |tree, _| {
+            tree.set_selected_ids(selected.iter().map(|&r| explorer::item_id(r)))
+        });
         // Every tagged `Folder`'s colour, resolved once up front rather than
         // per row — see `shell::folder_color::folder_tints`.
         let tints = self.folder_tints();
@@ -59,6 +64,10 @@ impl Shell {
         let tree_focus = self.tree_focus_handle.clone();
         self.tab_order.register(&tree_focus);
         let tree_entity = self.tree.clone();
+        let door = tree_focus.clone();
+        // An open name box sits inside the door too, and has focus of its
+        // own: the cursor's ring would be a second focus indicator.
+        let renaming = self.renaming_in_place();
         let tree = self.tree.clone();
 
         super::tree_keys::intercept_arrows(
@@ -93,7 +102,16 @@ impl Shell {
                 }))
                 .child(
                     base::Tree::new(&self.tree)
-                        .item(move |index, entry, _, _, _| {
+                        .item(move |index, entry, state, window, cx| {
+                            // The keyboard cursor, apart from the selection
+                            // (see `shell::tree_keys`), while the Explorer
+                            // holds focus — its door or the tree inside it,
+                            // since Tab lands on the door — and only once the
+                            // keyboard is what moved it: a click never rings.
+                            let ringed = state.is_focused()
+                                && !renaming
+                                && door.contains_focused(window, cx)
+                                && window.last_input_was_keyboard();
                             let guide = guides.get(index).copied().unwrap_or_default();
                             let item = entry.item();
                             let icon = explorer.icon(&item.id);
@@ -106,6 +124,7 @@ impl Shell {
                                     index,
                                     entry,
                                     false,
+                                    ringed,
                                     icon,
                                     tint,
                                     guide,
@@ -120,7 +139,17 @@ impl Shell {
                                 index,
                                 reference,
                                 dragged,
-                                row(&tree, index, entry, highlighted, icon, tint, guide, widgets),
+                                row(
+                                    &tree,
+                                    index,
+                                    entry,
+                                    highlighted,
+                                    ringed,
+                                    icon,
+                                    tint,
+                                    guide,
+                                    widgets,
+                                ),
                             )
                         })
                         .list_style(StyleRefinement::default().flex_grow_1().size_full())
@@ -251,7 +280,7 @@ impl Shell {
                 }
             }))
             .child(super::workspace::search_field(
-                self.tab_order.next(),
+                &self.tab_order,
                 &self.filter,
                 cx,
             ))

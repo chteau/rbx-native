@@ -161,12 +161,12 @@ impl Shell {
             }
             false => vec![
                 resolution.into_any_element(),
-                size_field(self.tab_order.next(), &self.ui.width, cx).into_any_element(),
+                size_field(&self.tab_order, &self.ui.width, cx).into_any_element(),
                 div()
                     .text_color(tokens::text_muted())
                     .child("×")
                     .into_any_element(),
-                size_field(self.tab_order.next(), &self.ui.height, cx).into_any_element(),
+                size_field(&self.tab_order, &self.ui.height, cx).into_any_element(),
                 chrome::icon_button(
                     "ui-orientation",
                     IconName::RotateCw,
@@ -277,12 +277,12 @@ fn separator() -> impl IntoElement {
 /// One of the width/height fields: the dock search field's own look, sized
 /// for four digits and the field's own padding.
 pub(in crate::shell) fn size_field(
-    tab_index: isize,
+    order: &crate::shell::roving::TabOrder,
     state: &Entity<gpui_kit::component::input::InputState>,
     cx: &App,
 ) -> impl IntoElement {
     div()
         .w(px(72.))
         .flex_none()
-        .child(search_field(tab_index, state, cx))
+        .child(search_field(order, state, cx))
 }
