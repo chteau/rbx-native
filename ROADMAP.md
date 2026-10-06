@@ -618,20 +618,34 @@ Roblox's own engine.
   - **`Content`** (`Decal.Texture`, `MeshPart.MeshId`): an asset URI field,
     read back the way Roblox's own `Content.fromUri`/`fromAssetId` read
     theirs — an empty field (or asset `0`) clears it to none, and a bare
-    number becomes `rbxassetid://<id>`. A `Content` pointing at an instance
-    in the place stays read-only; wiring an instance picker to it is what is
-    left.
+    number becomes `rbxassetid://<id>`. The 14 `Content` properties
+    creator-docs says take an object (`Decal.TextureContent`,
+    `MeshPart.MeshContent`, `ImageLabel.ImageContent`,
+    `VideoFrame.VideoContent`, …) get a pick button beside the field that
+    arms the same pick as a `Ref` row, limited to that property's class
+    (`EditableImage`, `EditableMesh`, `VideoCapture`); legacy ContentIds
+    (`Decal.Texture`, `MeshPart.MeshId`) stay URI-only, since they save as
+    strings. Binary files read and write `Content` source tags zigzagged, as
+    Studio writes them.
   - **`Origin`**, which Studio lists under Transform: where a part's or
     model's pivot stands in the world, read as `GetPivot` reads it, and
     moved as `PivotTo` moves it when one is typed — a model's parts and its
     pivot together, as one undo step.
   - **Instance references** (`ObjectValue.Value`, `Weld.Part0`) are picked
     the way Studio does it: click the row, then the instance in the
-    Explorer, which sets the property instead of selecting. An unset one is
+    Explorer or the 3D view, which sets the property instead of selecting.
+    A viewport click lands on what a click would select (the model, or the
+    part with Alt), or on the part under the cursor when the property only
+    holds a part; the hover outline previews it. An unset one is
     listed as `nil` rather than left out; Escape backs out of a pick, the
     row's `×` (or Delete) clears it, and an instance of the wrong class for
     the property, per the API dump, is refused, as is a `PrimaryPart`
     outside its model.
+  - **Left as they are, by choice**: `Font` edits as three typed fields; a
+    family list, which would make it a picker, lives in `rbx_viewer`'s font
+    package. `SharedString`, `UniqueId`, `SecurityCapabilities` and
+    `Unknown` stay read-only — identities and opaque payloads, which editing
+    by hand corrupts rather than edits.
   - **Computed, read-only**: `Mass`, `CenterOfMass`,
     `CurrentPhysicalProperties` and the assembly's mass and centre, shown
     only where Roblox documents exactly how they are computed.
@@ -1720,6 +1734,25 @@ Roblox's own engine.
   not before. It defaults to the toolkit's own 13 px code size, so nothing
   changes for a file without the setting; the editor's rows follow the
   size.
+- [x] **The accessibility guidance's Stage 2 and Stage 3**, on top of the
+  Stage 1 baseline:
+  - **Viewport font size** in Studio Settings › Appearance (8 to 24 px,
+    times the UI scale) for the text drawn over the 3D view — readouts,
+    guide labels, the measurement box, the orientation indicator — VS
+    Code's `editor.fontSize` beside `window.zoomLevel`. The place's own
+    BillboardGui and SurfaceGui text stays as authored, as in Studio.
+  - **44×44 targets on primary and destructive controls by default**
+    (WCAG 2.5.5): Play and Stop, the menu bar's Save, Save to Roblox,
+    Publish and Delete rows, the Explorer menu's Delete, and the launcher,
+    Settings, picker and sequence editor's primary and destructive buttons.
+  - **A command palette** that is also Studio's Quick Open: Ctrl+P finds an
+    instance by name or path, Ctrl+Alt+P or a leading `>` finds any
+    command — menu items, ribbon commands, tools, and a "Focus" row per
+    dock and document — each with its shortcut, recent ones first.
+  - **Keyboard focus apart from selection in the Explorer**, after the APG
+    tree pattern's multi-select model: Ctrl+Up/Down moves focus, Ctrl+Space
+    toggles the focused row, and the focus ring stays legible over any
+    Folder tag colour.
 - [x] **Default services** in Studio Settings › Explorer & Output: which
   services the Explorer lists while Show all services is off. Each service
   in the grid is ticked when the default view lists it and flips on a
@@ -2100,51 +2133,6 @@ against `Roblox/creator-docs` rather than assumed:
   [Explicitly impossible](#explicitly-impossible-without-robloxs-engine)).
 
 ### Editor
-- [ ] 📋 **The accessibility work the reference guidance calls Stage 2 and
-  Stage 3, minus what already shipped.** Stage 1 is met and asserted in
-  tests; these are the rest, each small enough to ride along with other
-  work rather than needing its own PR:
-  - **A separate viewport font size**, on top of the UI scale — VS Code's
-    split between `window.zoomLevel` and `editor.fontSize`. The script
-    editor's half shipped as Settings' Script font size; the viewport's
-    text still has only the UI scale.
-  - **44×44 targets on primary and destructive controls by default** (2.5.5),
-    rather than only when Large Click Targets is on — Save, Delete, and
-    Play/Stop once they exist.
-  - **A command palette**, which the same guidance files under "recognition
-    rather than recall" alongside keyboard-driven panel management.
-  - **Keyboard focus shown separately from selection in the Explorer.** The
-    toolkit's `TreeState` tracks a single `selected_ix` and nothing else, so
-    the focused row and the selected rows cannot differ — which matters
-    because the Explorer multi-selects. Needs the toolkit's tree replaced or
-    extended.
-- [ ] 📋 **Property editors for the two `Variant` types that still lack a
-  whole one.** The Properties panel renders a value for every type the DOM
-  can hold, but a `Content` naming an instance is still read-only and `Ref`
-  is picked from the Explorer only. Inventory, rationale and rough sizing live in
-  [`agents/property-editors.md`](agents/property-editors.md); the bullets
-  below are what is left after the `CFrame`/`Ray`/`Vector3int16`/`Faces`/
-  `Axes`/`NumberRange`/`UDim` pass, the `OptionalCFrame` one, and
-  `PhysicalProperties`, `Font` and `BrickColor` (see "What's been
-  implemented" → Editor).
-
-  Each is its own piece of work, so each gets its own PR:
-  - **`Ref`**: picking a target in the 3D viewport as well as the Explorer
-    (the Explorer pick is done, see "What's been implemented" → Editor).
-  - **`Content`**'s `Content::Object` case (`Decal.Texture`,
-    `MeshPart.MeshId` pointing at an instance in the place) still needs the
-    `Ref` picker wired to it. Its asset URI field is done (see "What's been
-    implemented" → Editor).
-
-  Smaller, and not a missing editor: `Font` edits as three typed fields
-  (family, weight, style) by choice — a weight's nine names are quicker
-  typed than picked — so a family list is what would make it a picker,
-  and that lives in `rbx_viewer`'s font package rather than the editor.
-
-  **Deliberately excluded**, so nobody "fixes" them: `SharedString`,
-  `UniqueId`, `SecurityCapabilities` and `Unknown` stay read-only. They are
-  identities and opaque payloads — editing them by hand corrupts a file
-  rather than editing it.
 - [ ] 📋 **Effects (drop shadows) in the UI Editor's design panel.** Figma's
   Effects section, and Sketch's, is a drop shadow per element, which Roblox
   now does with `UIShadow`. The embedded API dump predates the class and the
@@ -2345,9 +2333,7 @@ against `Roblox/creator-docs` rather than assumed:
   3D viewport's own overlays still paint literal colours that no theme
   reaches.
 - [ ] 📋 **What the visual pass left behind**, beyond the items that
-  already have their own bullets under "What's planned" → Editor (the
-  remaining Stage 2/Stage 3 accessibility items and the property types
-  still without an editor): hover feedback is instant — `gpui` has no
+  already have their own bullets under "What's planned" → Editor: hover feedback is instant — `gpui` has no
   CSS-style property transitions and cannot transform a `Div`;
   `gpui_base::transition` animates one value explicitly (the ghost dock's
   ease uses it), but putting it behind every hover state is a larger job.
