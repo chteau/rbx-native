@@ -299,7 +299,13 @@ pub(crate) fn open_editor(
     }) {
         eprintln!("rbxstudio: could not update the Recent list: {err}");
     }
-    let title = SharedString::from(file_name(path));
+    // A place linked to Roblox (opened from Home, or linked since) goes by
+    // its game's name, not the `<universe>-<place>.rbxl` local copy's.
+    let title = SharedString::from(
+        home::link_of(path)
+            .and_then(|link| link.name)
+            .unwrap_or_else(|| file_name(path)),
+    );
     let options = window_options(&title, cx);
     cx.open_window(options, |window, cx| {
         let shell = cx.new(|cx| Shell::new(title, place, settings, launch, user, window, cx));

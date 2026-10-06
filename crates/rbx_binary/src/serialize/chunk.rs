@@ -18,6 +18,20 @@ pub(crate) fn write_chunk(name: &[u8; 4], payload: &[u8]) -> Vec<u8> {
     out
 }
 
+/// The closing `END\0` chunk exactly as Roblox writes it: uncompressed, holding
+/// `</roblox>`. An LZ4 block of an empty payload (one zero byte claiming zero
+/// output) is not something Roblox's own reader accepts.
+pub(crate) fn write_end() -> Vec<u8> {
+    const BODY: &[u8] = b"</roblox>";
+    let mut out = Vec::with_capacity(16 + BODY.len());
+    out.extend_from_slice(b"END\0");
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&(BODY.len() as u32).to_le_bytes());
+    out.extend_from_slice(&[0u8; 4]);
+    out.extend_from_slice(BODY);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -35,11 +49,16 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_payload_round_trips() {
-        let chunk_bytes = write_chunk(b"END\0", &[]);
+    fn the_end_chunk_is_stored_uncompressed_like_roblox_writes_it() {
+        let chunk_bytes = write_end();
+        assert_eq!(
+            &chunk_bytes[4..8],
+            &[0, 0, 0, 0],
+            "compressed length 0 = raw"
+        );
         let chunk = read_chunks(&chunk_bytes).next().unwrap().unwrap();
 
         assert_eq!(chunk.name_str(), "END");
-        assert!(chunk.data.is_empty());
+        assert_eq!(chunk.data, b"</roblox>");
     }
 }

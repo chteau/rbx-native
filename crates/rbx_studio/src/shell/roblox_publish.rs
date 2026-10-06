@@ -234,6 +234,8 @@ impl Shell {
             cx.notify();
             return;
         }
+        self.title = experience.name.clone().into();
+        self.retitle = true;
         self.roblox.changes += 1;
         self.output.push(
             SOURCE,

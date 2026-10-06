@@ -56,6 +56,18 @@ fn a_refused_upload_says_why_in_roblox_terms_and_keeps_the_raw_error() {
         "a dropped connection may follow an upload that landed"
     );
     assert!(describe(&CloudError::NoApiKey).contains("No Open Cloud API key"));
+
+    // Roblox's own reason, when its answer has one, is in the message.
+    let said = upload_with(TARGET, b"", PublishMode::Saved, |_, _, _, _| {
+        Err(CloudError::Refused {
+            status: 400,
+            message: "INVALID_ARGUMENT: bad place file".to_string(),
+        })
+    })
+    .unwrap_err();
+    assert!(said.unchanged);
+    assert!(said.message.starts_with("Roblox rejected the place file."));
+    assert!(said.message.contains("INVALID_ARGUMENT: bad place file"));
 }
 
 #[test]

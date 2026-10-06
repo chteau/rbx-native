@@ -142,7 +142,67 @@ fn a_shared_string_property_mixed_with_plain_empty_strings_round_trips() {
             .unwrap()
             .properties()
             .get("ModelMeshData"),
-        Some(&Variant::String(String::new()))
+        // Read back with its wire type, so the next save writes a
+        // SharedString again rather than a String.
+        Some(&Variant::Unknown {
+            type_id: MESH_DATA_TYPE_ID,
+            raw: Vec::new()
+        })
+    );
+}
+
+/// The group that only ever held empty (valid UTF-8) shared strings: the
+/// file Roblox refused, with `Workspace.ModelMeshData` written back as a
+/// String. Read and written again, it must stay a SharedString.
+#[test]
+fn an_all_empty_shared_string_group_keeps_its_wire_type() {
+    let mut dom = WeakDom::new();
+    let model = dom.new_instance("Model", "Empty", None);
+    dom.set_property(
+        model,
+        "ModelMeshData",
+        Variant::Unknown {
+            type_id: MESH_DATA_TYPE_ID,
+            raw: Vec::new(),
+        },
+    )
+    .unwrap();
+
+    let once = serialize(&deserialize(&serialize(&dom).unwrap()).unwrap()).unwrap();
+    let after = deserialize(&once).unwrap();
+
+    assert_eq!(
+        after.get(model).unwrap().properties().get("ModelMeshData"),
+        Some(&Variant::Unknown {
+            type_id: MESH_DATA_TYPE_ID,
+            raw: Vec::new()
+        })
+    );
+}
+
+/// A SharedString (`Tags`, as Roblox now saves it) on one Part and absent
+/// on a Part a script just added: the gap is filled with an empty
+/// SharedString instead of failing the save.
+#[test]
+fn a_shared_string_some_instances_lack_is_filled_empty() {
+    let mut dom = WeakDom::new();
+    let tagged = dom.new_instance("Part", "Tagged", None);
+    let tags = Variant::Unknown {
+        type_id: MESH_DATA_TYPE_ID,
+        raw: b"Lava".to_vec(),
+    };
+    dom.set_property(tagged, "Tags", tags.clone()).unwrap();
+    let added = dom.new_instance("Part", "Added", None);
+
+    let after = deserialize(&serialize(&dom).expect("a gap must be fillable")).unwrap();
+    let get = |r| after.get(r).unwrap().properties().get("Tags").cloned();
+    assert_eq!(get(tagged), Some(tags));
+    assert_eq!(
+        get(added),
+        Some(Variant::Unknown {
+            type_id: MESH_DATA_TYPE_ID,
+            raw: Vec::new()
+        })
     );
 }
 

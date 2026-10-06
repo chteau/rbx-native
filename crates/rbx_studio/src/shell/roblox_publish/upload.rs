@@ -98,7 +98,9 @@ pub(super) fn upload_with(
 pub(super) fn refused(err: &CloudError) -> bool {
     match err {
         CloudError::NoApiKey | CloudError::RateLimited { .. } => true,
-        CloudError::Http { status, .. } => (400..500).contains(status),
+        CloudError::Http { status, .. } | CloudError::Refused { status, .. } => {
+            (400..500).contains(status)
+        }
         _ => false,
     }
 }
@@ -107,15 +109,19 @@ pub(super) fn refused(err: &CloudError) -> bool {
 /// (`creator-docs`, `reference/cloud/universes-api/v1.json`), ahead of the
 /// raw error, so a refusal says what to fix.
 pub(super) fn describe(err: &CloudError) -> String {
-    let reason = match err {
-        CloudError::Http { status: 400, .. } => "Roblox rejected the place file.",
-        CloudError::Http { status: 401, .. } => {
+    let status = match err {
+        CloudError::Http { status, .. } | CloudError::Refused { status, .. } => Some(*status),
+        _ => None,
+    };
+    let reason = match (status, err) {
+        (Some(400), _) => "Roblox rejected the place file.",
+        (Some(401), _) => {
             "The API key isn\u{2019}t valid for this place: it needs universe-places:write on this experience, or it may have expired or been revoked \u{2014} Home \u{203a} Manage key."
         }
-        CloudError::Http { status: 403, .. } => "Publishing isn\u{2019}t allowed on this place.",
-        CloudError::Http { status: 404, .. } => "The place or its experience doesn\u{2019}t exist.",
-        CloudError::Http { status: 409, .. } => "The place isn\u{2019}t part of that experience.",
-        CloudError::NoApiKey => {
+        (Some(403), _) => "Publishing isn\u{2019}t allowed on this place.",
+        (Some(404), _) => "The place or its experience doesn\u{2019}t exist.",
+        (Some(409), _) => "The place isn\u{2019}t part of that experience.",
+        (_, CloudError::NoApiKey) => {
             return "No Open Cloud API key is set up. Add one from Home \u{203a} Manage key.".to_string()
         }
         _ => return err.to_string(),

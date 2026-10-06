@@ -1,21 +1,25 @@
 //! Command-line interface for the Roblox Cloud API: whoami, check the key's
-//! scopes, list experiences, download a place, or fetch an asset by id.
+//! scopes, list experiences, download a place, save a place file as a new
+//! (unpublished) version, or fetch an asset by id.
 
 use std::env::Args;
 use std::process::ExitCode;
 
-use rbx_cloud::{ApiKey, Client, Grant, Owner, Visibility};
+use rbx_cloud::{ApiKey, Client, Grant, Owner, PublishMode, Visibility};
 
 fn main() -> ExitCode {
     let mut args = std::env::args();
     let program = args.next().unwrap_or_else(|| "rbxcloud".to_string());
-    let usage = format!("usage: {program} <whoami|check|list|download|asset> [args...]");
+    let usage = format!("usage: {program} <whoami|check|list|download|save|asset> [args...]");
 
     let Some(command) = args.next() else {
         eprintln!("{usage}");
         return ExitCode::FAILURE;
     };
 
+    if std::env::var_os("RBX_API_KEY").is_none() {
+        ApiKey::install(keyring_key());
+    }
     let client = Client::new(ApiKey::from_env_or_config());
 
     let result = match command.as_str() {
@@ -23,6 +27,7 @@ fn main() -> ExitCode {
         "check" => run_check(&client),
         "list" => run_list(&client),
         "download" => run_download(&client, &mut args),
+        "save" => run_save(&client, &mut args),
         "asset" => run_asset(&client, &mut args),
         other => Err(format!("unknown command '{other}'\n{usage}")),
     };
@@ -34,6 +39,31 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// The key `rbxstudio` stored in the OS keyring (see `rbx_studio::key_store`),
+/// so the CLI works without `RBX_API_KEY` once the editor's wizard has run.
+#[cfg(target_os = "linux")]
+fn keyring_key() -> Option<ApiKey> {
+    futures_lite::future::block_on(async {
+        let keyring = oo7::Keyring::new().await.ok()?;
+        keyring.unlock().await.ok()?;
+        let items = keyring
+            .search_items(&[("url", "https://apis.roblox.com/rbx-native")])
+            .await
+            .ok()?;
+        let item = items.into_iter().next()?;
+        item.unlock().await.ok()?;
+        let secret = item.secret().await.ok()?;
+        let key = std::str::from_utf8(&secret).ok()?.trim();
+        (!key.is_empty()).then(|| ApiKey::new(key))
+    })
+}
+
+// ponytail: Linux only; macOS Keychain / Windows Credential Manager when the CLI is used there.
+#[cfg(not(target_os = "linux"))]
+fn keyring_key() -> Option<ApiKey> {
+    None
 }
 
 fn run_whoami(client: &Client) -> Result<(), String> {
@@ -143,6 +173,20 @@ fn run_download(client: &Client, args: &mut Args) -> Result<(), String> {
         .map_err(|err| err.to_string())?;
     std::fs::write(&out, &bytes).map_err(|err| format!("failed to write '{out}': {err}"))?;
     println!("wrote {} bytes to {out}", bytes.len());
+    Ok(())
+}
+
+/// `save <universeId> <placeId> <file>`: uploads `file` as a Saved version —
+/// it does not go live — and prints the version number or Roblox's refusal.
+fn run_save(client: &Client, args: &mut Args) -> Result<(), String> {
+    let universe_id = next_u64_arg(args, "universeId")?;
+    let place_id = next_u64_arg(args, "placeId")?;
+    let file = args.next().ok_or("missing <file.rbxl> argument")?;
+    let bytes = std::fs::read(&file).map_err(|err| format!("failed to read '{file}': {err}"))?;
+    let version = client
+        .publish_place(universe_id, place_id, &bytes, PublishMode::Saved)
+        .map_err(|err| err.to_string())?;
+    println!("saved as version {version}");
     Ok(())
 }
 

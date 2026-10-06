@@ -25,12 +25,14 @@ use crate::value::STRING_TYPE_ID;
 /// `Unknown` blobs whose `type_id` is `STRING_TYPE_ID` are written as
 /// `BinaryString` (the only case `scalar::binary_string` round-trips losslessly,
 /// since XML's `BinaryString` carries no side channel for a wire type id — see
-/// its doc comment). Any other `type_id` returns `Unsupported("Unknown")` rather
-/// than silently writing a blob that would read back tagged `STRING_TYPE_ID`.
+/// its doc comment). A SharedString (`type_id` 0x1C) never gets here: the
+/// caller writes it into the `SharedStrings` table. Any other `type_id`
+/// returns `Unsupported("Unknown")` rather than silently writing a blob that
+/// would read back tagged `STRING_TYPE_ID`.
 ///
 /// Returns `Unsupported("SharedString")` for `Variant::SharedString(u32)`: this is
 /// only ever an *unresolved* SSTR table index (a resolved one already decodes to
-/// `Variant::String`, see `rbx_binary`'s own `shared_strings`), so there are no
+/// `Unknown { 0x1C }`, see `rbx_binary`'s own `shared_strings`), so there are no
 /// bytes here to write into a `SharedString` table entry.
 /// Writes the DOM's dedicated `name` field back as an ordinary `string` property,
 /// the inverse of `deserializer`'s `NAME_PROPERTY` redirect.

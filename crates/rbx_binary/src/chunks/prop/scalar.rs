@@ -202,6 +202,9 @@ pub(super) fn physical_properties(
 // Plain interleaved u32 indices into the file's SSTR table (no zigzag, no
 // delta). Resolving them here keeps the table private to this crate; an index we
 // cannot resolve degrades to the raw index so nothing is silently dropped.
+// Always `Unknown { 0x1C }`, never `Variant::String`, even for UTF-8 (often
+// empty) content: the writer picks the wire type from the value's shape, and a
+// SharedString property written back as a String is a file Roblox refuses.
 pub(super) fn shared_strings(
     reader: &mut Reader<'_>,
     count: usize,
@@ -212,7 +215,10 @@ pub(super) fn shared_strings(
             .interleaved_u32(count)?
             .into_iter()
             .map(|index| match shared.get(index as usize) {
-                Some(bytes) => string_value(bytes, SHARED_STRING_TYPE_ID),
+                Some(bytes) => Variant::Unknown {
+                    type_id: SHARED_STRING_TYPE_ID,
+                    raw: bytes.clone(),
+                },
                 None => Variant::SharedString(index),
             })
             .collect(),
@@ -265,7 +271,13 @@ mod tests {
         let table = vec![b"tagged".to_vec()];
         let values = shared_strings(&mut Reader::new(&[0, 0, 0, 0]), 1, &table).unwrap();
 
-        assert_eq!(values[0], Some(Variant::String("tagged".to_owned())));
+        assert_eq!(
+            values[0],
+            Some(Variant::Unknown {
+                type_id: SHARED_STRING_TYPE_ID,
+                raw: b"tagged".to_vec(),
+            })
+        );
     }
 
     #[test]

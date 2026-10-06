@@ -72,7 +72,7 @@ impl Client {
 
 /// A 2xx body as JSON; anything else as an error carrying Roblox's own words
 /// where the body has them.
-fn answer(url: &str, response: crate::client::RawResponse) -> Result<Value, CloudError> {
+pub(crate) fn answer(url: &str, response: crate::client::RawResponse) -> Result<Value, CloudError> {
     if (200..300).contains(&response.status) {
         return Ok(serde_json::from_slice(&response.body)?);
     }

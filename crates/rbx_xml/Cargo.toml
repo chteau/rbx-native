@@ -14,6 +14,9 @@ quick-xml = "0.41"
 # Decodes BinaryString/SharedString payloads (RFC 2045 Base64), as the xml.md
 # spec requires; already resolved in Cargo.lock.
 base64 = "0.22"
+# SharedStrings table keys, MD5 like Studio's own; already in Cargo.lock
+# through rbx_binary.
+md-5 = "0.10"
 
 [dev-dependencies]
 # Cross-checks decoded Variant shapes against the binary parser's own fixtures.
