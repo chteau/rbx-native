@@ -89,6 +89,8 @@ mod menu_bar;
 mod pacing;
 mod packs;
 mod pointer_lock;
+#[cfg(test)]
+mod probe;
 mod properties;
 mod recovery;
 mod render_image;

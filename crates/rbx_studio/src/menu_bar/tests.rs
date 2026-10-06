@@ -190,3 +190,35 @@ fn the_users_templates_close_the_model_menu() {
         .unwrap();
     assert!(second.partial_eq(&MenuInsertTemplate { index: 1 }));
 }
+
+/// WCAG 2.5.5: Save to File, Save to Roblox, Publish to Roblox and Delete
+/// are drawn as 44px element rows (see `popup::PRIMARY_ROWS`), measured
+/// through the toolkit's own popup layout.
+#[gpui_kit::test]
+fn the_primary_menu_rows_lay_out_at_least_44_tall(cx: &mut gpui_kit::TestAppContext) {
+    use gpui_kit::ParentElement as _;
+    let selectors: Vec<&'static str> = super::popup::PRIMARY_ROWS
+        .iter()
+        .map(|name| &*Box::leak(format!("menu-row-{name}").into_boxed_str()))
+        .collect();
+    let mut found = 0;
+    for menu in menus(&[]) {
+        let items = menu.items.clone();
+        let sizes = crate::probe::bounds_of(cx, &selectors, 900., move |window, cx| {
+            gpui_kit::div().child(super::popup::dropdown(&items, None, window, cx))
+        });
+        for (selector, size) in sizes {
+            assert!(
+                f32::from(size.height) >= 44.,
+                "{selector} is {:?} tall",
+                size.height
+            );
+            found += 1;
+        }
+    }
+    assert_eq!(
+        found,
+        selectors.len(),
+        "every primary row exists in some menu"
+    );
+}

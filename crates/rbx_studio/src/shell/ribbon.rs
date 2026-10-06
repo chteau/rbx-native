@@ -484,16 +484,35 @@ fn file_tiles() -> Vec<AnyElement> {
     vec![disabled_tile("ribbon-import", IconName::Import, "Import").into_any_element()]
 }
 
+/// A primary or destructive tile's 44x44 floor (WCAG 2.5.5), whatever the
+/// UI scale or Large Click Targets say.
+pub(super) fn primary(id: &'static str, tile: Stateful<Div>) -> Stateful<Div> {
+    tile.debug_selector(|| id.into())
+        .min_w(tokens::primary_target())
+        .min_h(tokens::primary_target())
+}
+
 /// `ROADMAP.md`'s Play/Test section still lists the sandbox-place design
 /// all of these would need as open.
 fn test_tiles() -> Vec<AnyElement> {
     vec![
-        disabled_tile("ribbon-play", IconName::Play, "Play").into_any_element(),
+        primary(
+            "ribbon-play",
+            disabled_tile("ribbon-play", IconName::Play, "Play"),
+        )
+        .into_any_element(),
+        // Stop is a tile of its own rather than a third stack row: three
+        // rows in an 80px ribbon are ~25px each, and Stop is the control a
+        // person reaches for in a hurry.
         stack(vec![
             stack_row("ribbon-run", IconName::SquarePlay, "Run"),
             stack_row("ribbon-pause", IconName::Pause, "Pause"),
-            stack_row("ribbon-stop", IconName::Square, "Stop"),
         ])
+        .into_any_element(),
+        primary(
+            "ribbon-stop",
+            disabled_tile("ribbon-stop", IconName::Square, "Stop"),
+        )
         .into_any_element(),
         disabled_tile("ribbon-team", IconName::Users, "Team Test").into_any_element(),
     ]
@@ -855,3 +874,7 @@ fn separator() -> AnyElement {
         .bg(tokens::border())
         .into_any_element()
 }
+
+#[cfg(test)]
+#[path = "ribbon_tests.rs"]
+mod tests;
