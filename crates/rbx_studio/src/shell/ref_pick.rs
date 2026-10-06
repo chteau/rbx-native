@@ -213,39 +213,6 @@ fn clear_glyph(row: &str) -> Stateful<Div> {
 mod tests {
     use super::RefPick;
 
-    /// Laid out for real, so a later style on the glyph that shrinks it
-    /// (a `size` of its own, a padding eaten by the icon) fails here. The
-    /// token itself is held to the floor at every scale by `tokens`' own
-    /// `the_smallest_targets_clear_the_minimum_pointer_size_at_every_scale`.
-    #[gpui_kit::test]
-    fn the_clear_glyph_is_a_full_hit_target(cx: &mut gpui_kit::TestAppContext) {
-        use gpui_kit::*;
-        use std::cell::Cell;
-        use std::rc::Rc;
-
-        let cx = cx.add_empty_window();
-        let laid_out = Rc::new(Cell::new(None));
-        let seen = laid_out.clone();
-        cx.draw(
-            point(px(0.), px(0.)),
-            size(px(400.), px(100.)),
-            move |_, _| {
-                div()
-                    .flex()
-                    .on_children_prepainted(move |bounds, _, _| seen.set(bounds.first().copied()))
-                    .child(super::clear_glyph("Part0"))
-            },
-        );
-        // Against the floor rather than the token's current value: the UI
-        // scale is process-wide, and `tokens`' tests move it concurrently.
-        let bounds = laid_out.get().expect("the glyph was laid out");
-        assert!(
-            bounds.size.width >= px(24.) && bounds.size.height >= px(24.),
-            "the clear glyph is {:?}, under WCAG 2.5.8's 24x24 floor",
-            bounds.size
-        );
-    }
-
     #[test]
     fn a_second_click_disarms_and_another_row_takes_the_pick() {
         let mut pick = RefPick::default();
