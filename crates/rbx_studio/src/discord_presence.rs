@@ -49,13 +49,11 @@ fn run(receiver: mpsc::Receiver<Message>, mut activity: Activity) {
     loop {
         match try_session(&receiver, &mut activity) {
             SessionExit::Stop => return,
-            SessionExit::Disconnected => {
-                match receiver.recv_timeout(RETRY_DELAY) {
-                    Ok(Message::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => return,
-                    Ok(Message::Update(new)) => activity = new,
-                    Err(mpsc::RecvTimeoutError::Timeout) => {}
-                }
-            }
+            SessionExit::Disconnected => match receiver.recv_timeout(RETRY_DELAY) {
+                Ok(Message::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => return,
+                Ok(Message::Update(new)) => activity = new,
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+            },
         }
     }
 }

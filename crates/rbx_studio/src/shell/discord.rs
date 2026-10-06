@@ -23,11 +23,7 @@ impl Shell {
         }
     }
 
-    pub(in crate::shell) fn set_discord_presence(
-        &mut self,
-        enabled: bool,
-        cx: &mut Context<Self>,
-    ) {
+    pub(in crate::shell) fn set_discord_presence(&mut self, enabled: bool, cx: &mut Context<Self>) {
         if enabled {
             self.start_discord();
         } else {
@@ -37,11 +33,7 @@ impl Shell {
         cx.notify();
     }
 
-    pub(in crate::shell) fn set_discord_hide_names(
-        &mut self,
-        hide: bool,
-        cx: &mut Context<Self>,
-    ) {
+    pub(in crate::shell) fn set_discord_hide_names(&mut self, hide: bool, cx: &mut Context<Self>) {
         self.discord_hide_names = hide;
         self.update_discord();
         self.save_settings();
@@ -77,7 +69,7 @@ impl Shell {
             Document::Scripts => {
                 let active = self.scripts.tabs.active();
                 match active.and_then(|r| self.dom.get(r)) {
-                    Some(inst) => inst.name.clone(),
+                    Some(inst) => inst.name().clone(),
                     None => "Script Editor".into(),
                 }
             }

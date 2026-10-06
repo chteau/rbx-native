@@ -16,7 +16,7 @@ mod tests;
 
 pub(super) use controls::{
     destructive_button, destructive_header, destructive_icon, ghost_icon, readout,
-    secondary_button, segmented, slider, still_toggle, ticked_slider, toggle, OnPick,
+    secondary_button, segmented, slider, ticked_slider, toggle, OnPick,
 };
 pub(super) use row::{section, section_card, Reset, Row, Section};
 
