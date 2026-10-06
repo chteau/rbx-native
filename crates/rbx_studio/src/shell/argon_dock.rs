@@ -12,9 +12,9 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
+use crate::shell::chrome::ScrollbarY as _;
 use gpui_kit::assets::IconName;
 use gpui_kit::component::input::InputState;
-use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -246,29 +246,42 @@ impl Shell {
     /// short for the connection column, the whole body scrolls instead.
     fn wide_body(&mut self, layout: Layout, short: bool, cx: &mut Context<Self>) -> AnyElement {
         let connection = self.argon_connection(layout, cx).w(px(440.)).flex_none();
-        let settings = self.argon_settings_column(layout, !short, cx).h_full();
-        h_flex()
+        // Full height only while the column scrolls itself; when the whole
+        // body scrolls, the column is as tall as its sections.
+        let settings = self
+            .argon_settings_column(layout, !short, cx)
+            .when(!short, |this| this.h_full());
+        // The columns sit in a row of their own rather than straight in the
+        // scroll area: stretched there, they took the area's height, not
+        // their content's, so a short dock clipped the settings past it and
+        // gave the scroll nothing to reach. A `flex_1` row is at least the
+        // area's height and, when short, as tall as its tallest column.
+        v_flex()
             .id("argon-body-scroll")
             .size_full()
-            .items_stretch()
             .px(px(20.))
             .py(px(18.))
-            .gap(px(24.))
             .bg(tokens::dock())
             .when(short, |this| {
                 this.overflow_y_scroll()
                     .track_scroll(&self.argon_ui.body_scroll)
-                    .vertical_scrollbar(&self.argon_ui.body_scroll)
+                    .scrollbar_y(&self.argon_ui.body_scroll)
             })
-            .child(connection)
             .child(
-                div()
-                    .w(px(1.))
-                    .flex_none()
-                    .self_stretch()
-                    .bg(tokens::border()),
+                h_flex()
+                    .flex_1()
+                    .items_stretch()
+                    .gap(px(24.))
+                    .child(connection)
+                    .child(
+                        div()
+                            .w(px(1.))
+                            .flex_none()
+                            .self_stretch()
+                            .bg(tokens::border()),
+                    )
+                    .child(settings),
             )
-            .child(settings)
             .into_any_element()
     }
 
@@ -285,7 +298,7 @@ impl Shell {
             .bg(tokens::dock())
             .overflow_y_scroll()
             .track_scroll(&self.argon_ui.body_scroll)
-            .vertical_scrollbar(&self.argon_ui.body_scroll)
+            .scrollbar_y(&self.argon_ui.body_scroll)
             .child(connection)
             .child(div().h(px(1.)).w_full().flex_none().bg(tokens::border()))
             .child(settings)

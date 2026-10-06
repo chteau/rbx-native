@@ -6,8 +6,8 @@
 //! same `luau-lsp` pull the editor's squiggles come from (see
 //! `shell::luau_lsp`), so the two always agree.
 
+use crate::shell::chrome::ScrollbarY as _;
 use gpui_kit::assets::IconName;
-use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Icon, Sizable};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -93,8 +93,9 @@ impl Shell {
                 .flex_1()
                 .overflow_y_scroll()
                 .track_scroll(&self.lsp.scroll)
+                .pr(super::chrome::SCROLLBAR_GUTTER)
                 .child(list)
-                .vertical_scrollbar(&self.lsp.scroll),
+                .scrollbar_y(&self.lsp.scroll),
         );
         (
             Some(overflow.into_any_element()),

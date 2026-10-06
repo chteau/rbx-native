@@ -6,8 +6,8 @@ mod brush;
 mod controls;
 mod materials;
 
+use crate::shell::chrome::ScrollbarY as _;
 use gpui_kit::assets::IconName;
-use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::Icon;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -130,7 +130,7 @@ impl Shell {
                     .child(grid)
                     .children(sections),
             )
-            .vertical_scrollbar(&self.terrain_scroll);
+            .scrollbar_y(&self.terrain_scroll);
         (
             Some(overflow.into_any_element()),
             Some(body.into_any_element()),

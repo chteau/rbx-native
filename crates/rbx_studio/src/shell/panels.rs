@@ -2,7 +2,7 @@
 //! (kept under 400 lines per `AGENTS.md`) since both are self-contained
 //! render methods called back into from `shell::dock`'s panel builder.
 
-use gpui_kit::component::scroll::ScrollableElement as _;
+use crate::shell::chrome::ScrollbarY as _;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -156,7 +156,7 @@ impl Shell {
                         .relative()
                         .size_full(),
                 )
-                .vertical_scrollbar(&scroll_handle),
+                .scrollbar_y(&scroll_handle),
             cx,
         )
     }
@@ -291,6 +291,7 @@ impl Shell {
                     .flex_1()
                     .overflow_y_scroll()
                     .track_scroll(&self.properties_scroll)
+                    .pr(super::chrome::SCROLLBAR_GUTTER)
                     .child(
                         v_flex()
                             .w_full()
@@ -350,7 +351,7 @@ impl Shell {
                             // the window" too (see `shell::attributes_panel`).
                             .child(attributes_and_tags),
                     )
-                    .vertical_scrollbar(&self.properties_scroll),
+                    .scrollbar_y(&self.properties_scroll),
             )
     }
 }

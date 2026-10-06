@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use gpui_kit::component::scroll::ScrollableElement as _;
+use crate::shell::chrome::ScrollbarY as _;
 use gpui_kit::*;
 use rbx_cloud::{ApiKey, Client, CloudError, Grant, KeyInfo, KeyReport};
 

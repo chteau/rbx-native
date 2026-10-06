@@ -8,7 +8,7 @@
 //! geometry opened out into fields, and everything else kept one click
 //! away under "More properties".
 
-use gpui_kit::component::scroll::ScrollableElement as _;
+use crate::shell::chrome::ScrollbarY as _;
 use gpui_kit::component::v_flex;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -224,7 +224,7 @@ impl Shell {
                     .overflow_y_scroll()
                     .track_scroll(&scroll)
                     .child(body)
-                    .vertical_scrollbar(&scroll),
+                    .scrollbar_y(&scroll),
             )
             .into_any_element()
     }
