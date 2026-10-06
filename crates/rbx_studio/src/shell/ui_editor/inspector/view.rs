@@ -160,7 +160,7 @@ impl Shell {
             .gap(px(4.))
             .child(
                 div()
-                    .id(("ui-field", key as usize))
+                    .id(SharedString::from(format!("ui-field-{key:?}")))
                     .flex_none()
                     .w(px(14.))
                     .flex()

@@ -51,6 +51,7 @@ fn element(text: GuiText) -> GuiElement {
         image: None,
         corner_radii: [0.0; 4],
         strokes: Vec::new(),
+        shadows: Vec::new(),
         gradient: None,
         text: Some(GuiTypeset { text, size: 20.0 }),
         viewport: None,

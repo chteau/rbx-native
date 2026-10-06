@@ -605,8 +605,12 @@ fn filtered_rows_keep_only_matching_names_in_order() {
             .map(|row| row.name)
             .collect()
     };
-    // `CanQuery` too: never stored here, it shows its class default.
-    assert_eq!(names("can"), ["CanCollide", "CanQuery", "CanTouch"]);
+    // `AudioCanCollide` and `CanQuery` too: never stored here, they show their
+    // class defaults.
+    assert_eq!(
+        names("can"),
+        ["AudioCanCollide", "CanCollide", "CanQuery", "CanTouch"]
+    );
     assert_eq!(names("").len(), properties.rows(part()).len());
     assert!(names("zzz").is_empty());
 }
@@ -1003,6 +1007,7 @@ fn rows_group_by_category_in_studio_order_with_no_empty_groups() {
             "Collision",
             "Part",
             "Assembly",
+            "Permissions",
             "Surface",
         ]
     );

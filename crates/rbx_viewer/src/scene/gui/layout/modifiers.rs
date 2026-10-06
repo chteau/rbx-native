@@ -1,9 +1,11 @@
-//! The pixel form of an element's `UICorner`/`UIStroke`/`UIGradient`, each
+//! The pixel form of an element's `UICorner`/`UIStroke`/`UIShadow`/`UIGradient`, each
 //! resolved against the element's own box the way its docs say.
 
 use rbx_dom::{ColorSequence, NumberSequence};
 
-use super::super::plan::{Corner, Gradient, GradientKind, Join, Stroke, StrokePosition, Tile};
+use super::super::plan::{
+    Corner, Gradient, GradientKind, Join, Shadow, Stroke, StrokePosition, Tile,
+};
 
 /// A `UIStroke` as a band of signed distances from the element's edge.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -23,6 +25,20 @@ pub(crate) struct StrokePx {
     /// renderer knows.
     pub(crate) thickness: f32,
     pub(crate) scaled: bool,
+}
+
+/// A `UIShadow` as the box it fills, relative to the element's own.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ShadowPx {
+    pub(crate) color: [f32; 3],
+    pub(crate) alpha: f32,
+    /// How far the shadow's centre sits from the element's.
+    pub(crate) offset: [f32; 2],
+    /// What `Spread` adds to the element's size; the shadow stays centred
+    /// on the offset point, so each side moves out by half of it.
+    pub(crate) spread: [f32; 2],
+    /// `BlurRadius` in pixels, never negative.
+    pub(crate) blur: f32,
 }
 
 /// A `UIGradient` with its geometry turned into what a fragment needs to
@@ -56,6 +72,19 @@ pub(super) fn radii(corner: Option<&Corner>, size: [f32; 2]) -> [f32; 4] {
     corner
         .radii
         .map(|(scale, offset)| (scale * shorter + offset).clamp(0.0, shorter * 0.5))
+}
+
+/// The docs scale `Offset` and `Spread` by the parent's width and height,
+/// and `BlurRadius` by its shorter side, "treating negative values as 0".
+pub(super) fn shadow(shadow: &Shadow, size: [f32; 2]) -> ShadowPx {
+    let shorter = size[0].min(size[1]).max(0.0);
+    ShadowPx {
+        color: shadow.color,
+        alpha: shadow.alpha,
+        offset: shadow.offset.against(size),
+        spread: shadow.spread.against(size),
+        blur: (shadow.blur.0 * shorter + shadow.blur.1).max(0.0),
+    }
 }
 
 pub(super) fn stroke(stroke: &Stroke, size: [f32; 2]) -> StrokePx {

@@ -47,6 +47,7 @@ fn a_rounded_stroked_shaded_element_draws_through_the_pipeline() {
             thickness: 3.0,
             scaled: false,
         }],
+        shadows: Vec::new(),
         gradient: Some(GuiGradient {
             color: ColorSequence {
                 keypoints: vec![ColorSequenceKeypoint {
@@ -157,6 +158,7 @@ fn a_half_transparent_black_quad_halves_the_encoded_pixel_under_it() {
         z_index: 1,
         corner_radii: [0.0; 4],
         strokes: Vec::new(),
+        shadows: Vec::new(),
         gradient: None,
         text: None,
         viewport: None,

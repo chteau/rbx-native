@@ -152,3 +152,28 @@ fn a_value_the_conversion_cannot_read_is_dropped_alone() {
     assert_eq!(values.get("Kept"), Some(&Variant::Bool(true)));
     assert_eq!(values.len(), 1);
 }
+
+#[test]
+fn a_ui_shadow_is_typed_and_starts_as_studio_inserts_one() {
+    let db = database();
+
+    assert!(db.is_subclass_of("UIShadow", "UIComponent"));
+    let type_of = |name| {
+        db.resolve_property("UIShadow", name)
+            .map(|property| property.value_type.as_str())
+    };
+    assert_eq!(type_of("BlurRadius"), Some("UDim"));
+    assert_eq!(type_of("Offset"), Some("UDim2"));
+    assert_eq!(type_of("Spread"), Some("UDim2"));
+    assert_eq!(type_of("Mode"), Some("ApplyShadowMode"));
+    // The docs: "all shadows render below the parent", so a fresh one sits
+    // at a negative `ZIndex`.
+    assert_eq!(
+        db.default_value("UIShadow", "ZIndex"),
+        Some(&Variant::Int32(-1))
+    );
+    assert_eq!(
+        db.default_value("UIShadow", "Transparency"),
+        Some(&Variant::Float32(0.0))
+    );
+}

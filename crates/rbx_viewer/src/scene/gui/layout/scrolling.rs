@@ -139,6 +139,7 @@ pub(super) fn scroll(
                 }),
                 corner_radii: [0.0; 4],
                 strokes: Vec::new(),
+                shadows: Vec::new(),
                 gradient: None,
                 text: None,
                 group: None,

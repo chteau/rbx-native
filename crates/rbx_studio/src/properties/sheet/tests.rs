@@ -191,12 +191,15 @@ fn a_root_instance_has_no_parent_row() {
 
 #[test]
 fn an_unreflected_saved_spelling_still_shows_under_its_canonical_name() {
-    // `Sandboxed` is newer than the bundled dump; rbx-dom records that a
-    // file saves it as `DefinesCapabilities`.
-    let rows = rows("Part", &[("DefinesCapabilities", Variant::Bool(true))]);
+    // `StyleRule.Properties` is not in the bundled dump; rbx-dom records that
+    // a file saves it as `PropertiesSerialize`.
+    let rows = rows(
+        "StyleRule",
+        &[("PropertiesSerialize", Variant::String(String::new()))],
+    );
 
-    assert_eq!(row(&rows, "Sandboxed").category, "Other");
-    assert!(!names(&rows).contains(&"DefinesCapabilities"));
+    assert_eq!(row(&rows, "Properties").category, "Other");
+    assert!(!names(&rows).contains(&"PropertiesSerialize"));
 }
 
 #[test]

@@ -1,6 +1,6 @@
 //! The canvas sidebar's design fields, Figma's: a `GuiObject`'s position,
-//! size, rotation, opacity, corner radius, fill, stroke, auto layout and
-//! constraints as compact fields that write straight through
+//! size, rotation, opacity, corner radius, fill, stroke, effects, auto
+//! layout and constraints as compact fields that write straight through
 //! `Shell::write_drag` — one undo step per typed value, per colour picked,
 //! per drag of a field's label.
 //!
@@ -14,12 +14,13 @@
 //! Properties panel's row for the same value.
 
 mod actions;
+mod effects;
 mod sections;
 mod spec;
 mod value;
 mod view;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use gpui_kit::component::color_picker::{ColorPickerEvent, ColorPickerState};
 use gpui_kit::component::input::{InputEvent, InputState};
@@ -60,6 +61,9 @@ pub(super) struct Inspector {
     drag: Option<Drag>,
     /// Whether the four corners' own radii are broken out.
     corners: bool,
+    /// The shadows folded to their one-line summary. The panel's own, never
+    /// written to the place, and kept across selections like `corners`.
+    folded: HashSet<Ref>,
 }
 
 impl Inspector {
@@ -94,12 +98,24 @@ impl Shell {
     }
 
     pub(super) fn child_of(&self, element: Ref, class: &str) -> Option<Ref> {
-        let instance = self.dom.get(element)?;
-        instance
-            .children()
+        self.nth_child(element, class, 0)
+    }
+
+    /// `element`'s `n`th child of `class`, in tree order.
+    pub(super) fn nth_child(&self, element: Ref, class: &str, n: usize) -> Option<Ref> {
+        self.children_of(element, class).nth(n)
+    }
+
+    pub(super) fn children_of<'a>(
+        &'a self,
+        element: Ref,
+        class: &'a str,
+    ) -> impl Iterator<Item = Ref> + 'a {
+        let children = self.dom.get(element).map(|i| i.children()).unwrap_or(&[]);
+        children
             .iter()
             .copied()
-            .find(|&child| self.dom.get(child).is_some_and(|i| i.class() == class))
+            .filter(move |&child| self.dom.get(child).is_some_and(|i| i.class() == class))
     }
 
     /// `property`'s numbers on `referent` — its own value, or its class's
@@ -141,6 +157,7 @@ impl Shell {
                     return Some(vec![0.0])
                 }
                 On::Child(class) => self.child_of(element, class)?,
+                On::Nth(class, n) => self.nth_child(element, class, n)?,
             };
             let numbers = self.numbers(target, spec.properties[0])?;
             read(spec.form, spec.parts[0], &numbers)
@@ -165,6 +182,10 @@ impl Shell {
                         missing.push(element);
                         continue;
                     }
+                },
+                On::Nth(class, n) => match self.nth_child(element, class, n) {
+                    Some(child) => child,
+                    None => continue,
                 },
             };
             for &property in spec.properties {

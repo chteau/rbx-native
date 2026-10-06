@@ -33,7 +33,7 @@ use arrange::Arranged as _;
 pub(crate) use arrange::{arrange, Arranged};
 use image::painted;
 pub(crate) use image::{ImageScale, Painted};
-pub(crate) use modifiers::{GradientPx, StrokePx};
+pub(crate) use modifiers::{GradientPx, ShadowPx, StrokePx};
 pub(crate) use rect::Rect;
 pub(crate) use text::{TextMeasure, Typeset};
 pub(in crate::scene::gui) use walk::{children, Context, Scope};
@@ -72,6 +72,9 @@ pub(crate) struct Element {
     pub(crate) corner_radii: [f32; 4],
     /// Every `UIStroke`, in the order they are painted.
     pub(crate) strokes: Vec<StrokePx>,
+    /// Every `UIShadow`, in the order they are painted — all before the
+    /// element itself.
+    pub(crate) shadows: Vec<ShadowPx>,
     pub(crate) gradient: Option<GradientPx>,
     /// A text object's text, drawn over the background and image.
     pub(crate) text: Option<Typeset>,
@@ -278,6 +281,11 @@ pub(in crate::scene::gui) fn emit(
             .strokes
             .iter()
             .map(|stroke| modifiers::stroke(stroke, rect.size()))
+            .collect(),
+        shadows: node
+            .shadows
+            .iter()
+            .map(|shadow| modifiers::shadow(shadow, rect.size()))
             .collect(),
         gradient: node
             .gradient

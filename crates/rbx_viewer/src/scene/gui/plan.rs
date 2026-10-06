@@ -17,6 +17,7 @@ mod layouts;
 mod node;
 mod props;
 mod scrolling;
+mod shadow;
 mod starter;
 mod stroke;
 mod text;
@@ -42,6 +43,7 @@ pub(super) use props::{flag, float, integer, span, vector2};
 #[cfg(test)]
 pub(super) use scrolling::Inset;
 pub(super) use scrolling::Scrolling;
+pub(super) use shadow::Shadow;
 pub(super) use starter::hides_contents;
 pub(crate) use stroke::Join;
 pub(super) use stroke::{Stroke, StrokePosition};
@@ -291,6 +293,7 @@ fn element(
             instance.children(),
             is_text(database, class),
         ),
+        shadows: shadow::read(dom, database, styles, instance.children()),
         gradient: gradient::read(dom, database, styles, instance.children()),
         viewport: viewport::read(dom, database, instance, properties, materials),
         scrolling: database
