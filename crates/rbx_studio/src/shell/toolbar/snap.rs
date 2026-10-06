@@ -374,7 +374,7 @@ impl Shell {
                         enabled,
                         move |_, _, cx| {
                             handle.update(cx, |shell, cx| {
-                                shell.transform_action(Action::ToggleSnap(kind), cx);
+                                super::super::ribbon::RibbonCommand::Snap(kind).run(shell, cx);
                             });
                         },
                     )),

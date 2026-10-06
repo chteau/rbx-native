@@ -30,6 +30,7 @@ mod light_guides;
 mod luau_lsp;
 mod menu;
 mod output;
+mod palette;
 mod panel_window;
 mod panels;
 mod pivot;
@@ -258,6 +259,8 @@ pub(crate) struct Shell {
     script_templates: crate::script_templates::ScriptTemplates,
     /// The templates folder's fingerprint as of the last load.
     templates_stamp: u64,
+    /// The command palette, and what it has run this session.
+    palette: palette::Palette,
     /// The `BasePart` the cursor was last resolved to be over, if any — see
     /// `shell::drag::hover_in_viewport`. Kept here, alongside `selection`
     /// above, purely to dedupe: the viewport reports cursor motion on every
@@ -664,6 +667,7 @@ impl Shell {
             clipboard: Vec::new(),
             script_templates: user.script_templates,
             templates_stamp: 0,
+            palette: palette::Palette::default(),
             hovered: Vec::new(),
             covered: HashSet::new(),
             scripts: ScriptEditor::default(),
@@ -1603,6 +1607,7 @@ impl Render for Shell {
         // frame that hands it the caret — see `Shell::focus_explorer_edit`.
         self.focus_explorer_edit(window, cx);
         self.focus_roblox_dialog(window, cx);
+        self.open_requested_palette(window, cx);
         // An increment set from Settings has to reach the popover's text.
         self.snap_fields.sync(self.transform, window, cx);
         self.sync_argon_fields(window, cx);
@@ -1698,6 +1703,7 @@ impl Render for Shell {
             // is clipped by it.
             .children(self.explorer_popups(cx))
             .children(self.roblox_dialog(cx))
+            .children(self.command_palette(cx))
             .children(self.theme_background(true))
     }
 }

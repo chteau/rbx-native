@@ -14,7 +14,7 @@ use rbx_reflection::ReflectionDatabase;
 
 use crate::explorer;
 
-pub(crate) use choices::{choices, Choices};
+pub(crate) use choices::{choices, letters, rank_split, words, Choices, Tier};
 
 /// Whether anything can be changed *into* `class`: a class the dump knows,
 /// that `Instance.new` accepts and a class picker may show, and that is no
