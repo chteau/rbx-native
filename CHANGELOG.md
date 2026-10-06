@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-06
+
+- **Faster checks.** Test builds keep line tables but drop full debug info,
+  about a third less for the linker to write per test binary, and
+  `./scripts/check.sh` uses `cargo-nextest` and `sccache` when they are
+  installed (falling back to plain `cargo test` when they are not).
+  `agents/AGENTS.md` now asks for targeted tests while iterating and one
+  full gate at the end, with a target directory per parallel agent. — @chteau
+
 ## 2026-10-05
 
 - **A Viewport font size of its own.** Studio Settings › Appearance now

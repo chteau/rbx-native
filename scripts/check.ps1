@@ -9,6 +9,13 @@
 $ErrorActionPreference = "Stop"
 Set-Location (Join-Path $PSScriptRoot "..")
 
+# Same as check.sh: sccache, when installed and no wrapper is set already.
+# check.sh's nextest path is not mirrored here — it would be untested logic
+# on a platform this script already runs untested on.
+if (-not $env:RUSTC_WRAPPER -and (Get-Command sccache -ErrorAction SilentlyContinue)) {
+    $env:RUSTC_WRAPPER = "sccache"
+}
+
 cargo fmt --all -- --check
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
