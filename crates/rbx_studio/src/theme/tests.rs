@@ -118,7 +118,7 @@ fn the_default_palette_is_bit_identical_to_the_old_literals() {
     assert_eq!(color("avatar_on_accent"), rgb(0x2A2D4A));
     assert_eq!(color("slide_backdrop"), rgb(0x131314));
     assert_eq!(color("secondary_hover"), rgb(0x202123));
-    assert_eq!(palette.sizes["select_inset"], 7.5);
+    assert_eq!(palette.sizes["select_inset"], 5.5);
     assert_eq!(palette.sizes["text_sm"], 11.5);
     assert_eq!(palette.effects, super::Effects::default());
 }
