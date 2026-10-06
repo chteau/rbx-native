@@ -1,12 +1,13 @@
 //! The inspector's one-click edits — everything that is not a number: show
 //! and hide, clip, a quarter turn, the anchor grid, the auto layout flow
-//! and its alignment, the aspect lock, and a fill, a stroke, a gradient or
-//! a constraint put on or taken off.
+//! and its alignment, the aspect lock, and a fill, a stroke, a shadow, a
+//! gradient or a constraint put on or taken off.
 
 use gpui_kit::*;
 use rbx_dom::{Ref, Variant};
 
 use super::super::tree::Writes;
+use super::spec::SHADOW;
 use super::Shell;
 use crate::ui_canvas::{box_of, shifted_in, udim2_text};
 
@@ -272,14 +273,54 @@ impl Shell {
             .into_iter()
             .filter(|&element| self.child_of(element, class).is_none())
             .collect();
-        if bare.is_empty() {
+        self.put_modifier(class, bare, cx);
+    }
+
+    /// One more shadow on every inspected element, as the API makes one:
+    /// unlike a stroke, the docs let an element cast several.
+    pub(super) fn add_shadow(&mut self, cx: &mut Context<Self>) {
+        let all = self.inspected();
+        self.put_modifier(SHADOW, all, cx);
+    }
+
+    /// Hides every inspected element's `n`th shadow, or shows it where it is
+    /// hidden on the first — one step, as a flag's toggle is.
+    pub(super) fn toggle_shadow(&mut self, n: usize, cx: &mut Context<Self>) {
+        let shadows: Vec<Ref> = self
+            .inspected()
+            .into_iter()
+            .filter_map(|element| self.nth_child(element, SHADOW, n))
+            .collect();
+        let Some(&first) = shadows.first() else {
+            return;
+        };
+        let on = !self.enabled(first);
+        let writes = shadows
+            .into_iter()
+            .map(|shadow| (shadow, "Enabled", on.to_string()))
+            .collect();
+        self.write_all(writes, cx);
+    }
+
+    /// A modifier's `Enabled`, its default where it stores none.
+    pub(super) fn enabled(&self, modifier: Ref) -> bool {
+        self.dom.get(modifier).is_some_and(|instance| {
+            !matches!(
+                self.database.stored_or_default(instance, "Enabled"),
+                Some((_, Variant::Bool(false)))
+            )
+        })
+    }
+
+    fn put_modifier(&mut self, class: &'static str, on: Vec<Ref>, cx: &mut Context<Self>) {
+        if on.is_empty() {
             return;
         }
         self.edit_gui_tree(
             class,
             |dom, _| {
                 let mut writes = Writes::new();
-                for element in bare {
+                for element in on {
                     let made = dom.new_instance(class, class, Some(element));
                     writes.extend(seed(class).map(|(p, t)| (made, p, t)));
                 }
@@ -291,10 +332,15 @@ impl Shell {
 
     /// Takes every inspected element's `class` off.
     pub(super) fn remove_modifier(&mut self, class: &'static str, cx: &mut Context<Self>) {
+        self.remove_nth(class, 0, cx);
+    }
+
+    /// Takes every inspected element's `n`th `class` off.
+    pub(super) fn remove_nth(&mut self, class: &'static str, n: usize, cx: &mut Context<Self>) {
         let doomed: Vec<Ref> = self
             .inspected()
             .into_iter()
-            .filter_map(|element| self.child_of(element, class))
+            .filter_map(|element| self.nth_child(element, class, n))
             .collect();
         if doomed.is_empty() {
             return;
@@ -325,7 +371,16 @@ impl Shell {
     /// Selects the first inspected element's `class`, for the rows the
     /// inspector does not break out.
     pub(super) fn select_modifier(&mut self, class: &str, cx: &mut Context<Self>) {
-        if let Some(modifier) = self.anchor_child(class) {
+        self.select_nth(class, 0, cx);
+    }
+
+    /// Selects the first inspected element's `n`th `class`.
+    pub(super) fn select_nth(&mut self, class: &str, n: usize, cx: &mut Context<Self>) {
+        let modifier = self
+            .inspected()
+            .first()
+            .and_then(|&element| self.nth_child(element, class, n));
+        if let Some(modifier) = modifier {
             self.select(modifier, cx);
         }
     }

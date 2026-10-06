@@ -23,7 +23,7 @@ pub(super) enum Arrange {
 }
 
 impl Shell {
-    fn z_index(&self, referent: Ref) -> i32 {
+    pub(super) fn z_index(&self, referent: Ref) -> i32 {
         match self
             .dom
             .get(referent)
