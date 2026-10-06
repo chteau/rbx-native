@@ -25,6 +25,7 @@
 mod arrange;
 mod canvas;
 mod draw;
+mod frame_sheet;
 mod gesture;
 mod insert_bar;
 mod inspector;
@@ -146,6 +147,8 @@ pub(super) struct UiEditor {
     /// Docks the canvas would set aside that were asked back by name this
     /// visit — see `Shell::hidden_panels`.
     unhidden: Vec<Panel>,
+    /// The `ViewportFrame` sheet, while one is open over the canvas.
+    sheet: Option<frame_sheet::FrameSheet>,
     _subscriptions: [Subscription; 2],
 }
 
@@ -191,6 +194,7 @@ impl UiEditor {
             sidebar_scroll: ScrollHandle::new(),
             filtered: false,
             unhidden: Vec::new(),
+            sheet: None,
             _subscriptions: subscriptions,
         }
     }
@@ -340,6 +344,7 @@ impl Shell {
     /// every selection change, from wherever it came.
     pub(super) fn ui_follow_selection(&mut self) {
         self.ui.inspector.clear();
+        self.sync_frame_sheet();
         let screen = self
             .selected()
             .and_then(|reference| root_of(&self.dom, &self.database, reference));
@@ -360,6 +365,7 @@ impl Shell {
         self.ui_canvas_active().then_some(CanvasRequest {
             screen,
             size: self.ui.resolution,
+            frame: self.ui.sheet.as_ref().and_then(|sheet| sheet.request.get()),
         })
     }
 
@@ -381,10 +387,19 @@ impl Shell {
         let body = match self.ui.tab {
             Tab::Canvas => {
                 let canvas = self.ui_canvas(window, cx);
+                let sheet = self.frame_sheet(window, cx);
                 let sidebar = self.ui_sidebar(window, cx);
                 gpui_kit::component::h_flex()
                     .size_full()
-                    .child(div().flex_1().h_full().overflow_hidden().child(canvas))
+                    .child(
+                        div()
+                            .flex_1()
+                            .h_full()
+                            .relative()
+                            .overflow_hidden()
+                            .child(canvas)
+                            .children(sheet),
+                    )
                     .child(sidebar)
                     .into_any_element()
             }

@@ -875,6 +875,9 @@ impl Shell {
         // canvas's screen — see its own doc comment for why that no longer
         // happens unconditionally at startup.
         shell.apply_debug_ui_editor(cx);
+        // `RBX_STUDIO_FRAME_SHEET` (see `shell::ui_editor::frame_sheet`):
+        // after the canvas is up, on the `ViewportFrame` selected above.
+        shell.apply_debug_frame_sheet(window, cx);
 
         // `RBX_STUDIO_ARGON_CONNECT` (see `shell::argon_sync`): Connect is a
         // click, and nothing else can send one to the window on the

@@ -127,7 +127,7 @@ pub(crate) fn write_pose(dom: &mut WeakDom, pose: Pose) {
 /// here and read back through [`PlaceCamera::from_dom`] reconstructs the same
 /// eye position and look direction — see this module's
 /// `a_written_pose_round_trips_through_place_camera` test.
-fn cframe_from_pose(pose: Pose) -> CFrameData {
+pub(crate) fn cframe_from_pose(pose: Pose) -> CFrameData {
     let forward = free_flight_direction(pose.yaw, pose.pitch);
     // World up, never derived from the pose: matches `look_to_mat4(_, _,
     // Vec3::Y)`, which is what the renderer actually draws a free pose with —
@@ -155,7 +155,7 @@ fn cframe_from_pose(pose: Pose) -> CFrameData {
 /// forward vector a free-flight `yaw`/`pitch` looks along. The two must stay
 /// in lockstep, which is what this module's round-trip test against
 /// [`look_vector`] guards.
-fn free_flight_direction(yaw: f32, pitch: f32) -> [f32; 3] {
+pub(crate) fn free_flight_direction(yaw: f32, pitch: f32) -> [f32; 3] {
     [
         -(yaw.sin() * pitch.cos()),
         -pitch.sin(),
@@ -186,7 +186,7 @@ fn normalize(v: [f32; 3]) -> [f32; 3] {
 
 /// Roblox's `LookVector`: a CFrame looks down its own -Z, whose axis is the
 /// third column of the row-major 3x3 rotation — hence indices 2, 5 and 8.
-fn look_vector(rotation: &[f32; 9]) -> Option<[f32; 3]> {
+pub(crate) fn look_vector(rotation: &[f32; 9]) -> Option<[f32; 3]> {
     let look = [-rotation[2], -rotation[5], -rotation[8]];
     let length = look.iter().map(|axis| axis * axis).sum::<f32>().sqrt();
 

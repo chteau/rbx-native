@@ -707,3 +707,29 @@ fn no_smoothing_moves_at_full_speed_from_the_first_frame() {
     .position;
     assert!((eased - start).length() < 3.0);
 }
+
+#[test]
+fn a_flight_moves_a_pose_it_does_not_own_and_settles_after_release() {
+    let mut flight = Flight::new(10.0, CameraFeel::default());
+    let mut pose = Camera::spawn_pose(&bounds());
+    let start = pose.position;
+    assert!(!flight.busy(), "nothing held, nothing easing");
+
+    flight.input(CameraInput::Key {
+        key: CameraKey::Forward,
+        pressed: true,
+    });
+    assert!(flight.busy());
+    flight.step(&mut pose, Duration::from_millis(100));
+    assert!(pose.position.z < start.z, "yaw 0 flies down -Z");
+
+    flight.input(CameraInput::Key {
+        key: CameraKey::Forward,
+        pressed: false,
+    });
+    assert!(flight.busy(), "still easing out right after the release");
+    for _ in 0..60 {
+        flight.step(&mut pose, Duration::from_millis(16));
+    }
+    assert!(!flight.busy(), "a second later the move has settled");
+}

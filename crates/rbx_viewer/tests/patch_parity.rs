@@ -694,3 +694,116 @@ fn a_moved_selected_part_takes_its_cue_with_it() {
         assert_eq!(ae, 0, "{what}: {ae} pixels differ from a rebuild");
     }
 }
+
+/// A full-screen `ViewportFrame` looking at one 2-stud part through its own
+/// `Camera`, ten studs back.
+fn viewport_frame(dom: &mut WeakDom) {
+    let workspace = workspace(dom);
+    let screen = dom.new_instance("ScreenGui", "VfScreen", Some(workspace));
+    let frame = dom.new_instance("ViewportFrame", "Vf", Some(screen));
+    dom.set_property(frame, "Size", udim2(1.0)).unwrap();
+    dom.set_property(frame, "BackgroundTransparency", Variant::Float32(1.0))
+        .unwrap();
+    let camera = dom.new_instance("Camera", "VfCamera", Some(frame));
+    dom.set_property(frame, "CurrentCamera", Variant::Ref(camera))
+        .unwrap();
+    let part = dom.new_instance("Part", "VfPart", Some(frame));
+    // The serialized name: a part read from a file carries `size`.
+    dom.set_property(
+        part,
+        "size",
+        Variant::Vector3(rbx_dom::Vector3Data {
+            x: 2.0,
+            y: 2.0,
+            z: 2.0,
+        }),
+    )
+    .unwrap();
+    for (referent, z) in [(camera, 10.0), (part, 0.0)] {
+        dom.set_property(
+            referent,
+            "CFrame",
+            Variant::CFrame(rbx_dom::CFrameData {
+                position: rbx_dom::Vector3Data { x: 0.0, y: 0.0, z },
+                rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+            }),
+        )
+        .unwrap();
+    }
+}
+
+// What a `ViewportFrame` draws comes out of its GUI tree's plan, while its
+// `Camera` and parts are no GUI class at all: a change to either has to
+// re-plan the tree, or the frame keeps showing the old view.
+#[test]
+#[ignore = "needs a GPU"]
+fn a_viewport_frame_s_camera_and_parts_draw_as_a_rebuild_draws_them() {
+    staged("fly a ViewportFrame's camera", viewport_frame, |dom| {
+        nudge(dom, named(dom, "VfCamera"), 1.5)
+    });
+    staged("move a ViewportFrame's part", viewport_frame, |dom| {
+        nudge(dom, named(dom, "VfPart"), 1.0)
+    });
+    staged("drop a part into a ViewportFrame", viewport_frame, |dom| {
+        let frame = named(dom, "Vf");
+        let part = dom.new_instance("Part", "Dropped", Some(frame));
+        dom.set_property(
+            part,
+            "size",
+            Variant::Vector3(rbx_dom::Vector3Data {
+                x: 6.0,
+                y: 1.0,
+                z: 1.0,
+            }),
+        )
+        .unwrap();
+    });
+}
+
+// The editor's own view of one frame is the overlay's bake, at whatever size
+// it asks for: a flown camera shows there, and shows what a rebuild shows.
+#[test]
+#[ignore = "needs a GPU"]
+fn a_viewport_frame_drawn_alone_follows_its_camera() {
+    const ALONE: (u32, u32) = (96, 64);
+    let path = fixture();
+    let mut dom = rbx_viewer::read_place(&path).expect("the fixture parses");
+    let mut patched = Headless::load(&path, true).expect("the fixture loads");
+    viewport_frame(&mut dom);
+    let log = dom.take_changes();
+    patched
+        .apply_changes(&dom, &log)
+        .expect("the frame is added");
+    let frame = named(&dom, "Vf");
+    let backdrop = [0.0, 0.0, 1.0];
+    let before = patched
+        .render_viewport_frame(frame, ALONE, backdrop, true)
+        .expect("the frame draws");
+    let middle = (ALONE.1 as usize / 2 * ALONE.0 as usize + ALONE.0 as usize / 2) * 4;
+    assert_ne!(
+        &before[middle..middle + 4],
+        &[0, 0, 255, 255],
+        "the part fills the middle"
+    );
+    assert_eq!(
+        &before[..4],
+        &[0, 0, 255, 255],
+        "the backdrop shows round it"
+    );
+
+    let camera = named(&dom, "VfCamera");
+    nudge(&mut dom, camera, 4.0);
+    let log = dom.take_changes();
+    patched.apply_changes(&dom, &log).expect("the camera moves");
+    let after = patched
+        .render_viewport_frame(frame, ALONE, backdrop, true)
+        .expect("the frame draws");
+    assert_ne!(before, after, "the camera moved, so the picture did");
+
+    let mut rebuilt = Headless::load(&path, true).expect("the fixture loads");
+    rebuilt.reload(&dom).expect("the DOM rebuilds");
+    let theirs = rebuilt
+        .render_viewport_frame(frame, ALONE, backdrop, true)
+        .expect("the frame draws");
+    assert_eq!(differing(&after, &theirs), 0);
+}

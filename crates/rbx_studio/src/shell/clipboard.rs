@@ -250,6 +250,14 @@ fn duplicate(dom: &mut WeakDom, reference: Ref, increment: bool) -> Option<Ref> 
     Some(copy)
 }
 
+/// A `Clone()` of `source` under `parent`, the way Paste Into lands one:
+/// references inside the copy point at the copy. What the UI editor's frame
+/// sheet inserts into a `ViewportFrame` with.
+pub(super) fn clone_into(dom: &mut WeakDom, source: Ref, parent: Ref) -> Option<Ref> {
+    let node = snapshot(dom, source)?;
+    Some(materialize(dom, &node, Some(parent)))
+}
+
 fn create(
     dom: &mut WeakDom,
     node: &Clipped,

@@ -202,6 +202,14 @@ impl Shell {
         }
         let frame = self.selection_frame(&boxes);
         let extend = event.modifiers.shift || event.modifiers.control || event.modifiers.platform;
+        // A double-click on a selected `ViewportFrame` opens its sheet.
+        if event.click_count >= 2
+            && ui_canvas::hit(&boxes, point)
+                .is_some_and(|hit| self.selected_viewport_frame() == Some(hit))
+        {
+            self.open_frame_sheet(window, cx);
+            return;
+        }
         // A double-click on a selected text element types into it.
         if event.click_count >= 2 {
             if let Some(hit) = ui_canvas::hit(&boxes, point)

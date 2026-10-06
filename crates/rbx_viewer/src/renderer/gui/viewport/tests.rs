@@ -336,3 +336,31 @@ fn the_batch_draws_opaque_shapes_first_and_glass_back_to_front() {
     assert_eq!(instances[2].center().z, -5.0);
     assert_eq!(instances[3].center().z, 5.0);
 }
+
+// The editor's view of a frame lays the bake over the background the way
+// the GUI pass does: the empty clear shows the background (itself over the
+// backdrop), an opaque texel shows through `ImageTransparency`, and the
+// tint multiplies in linear light.
+#[test]
+fn a_frame_drawn_alone_composites_as_the_gui_does() {
+    let look = Look {
+        tint: [1.0, 1.0, 1.0],
+        alpha: 0.5,
+        background: [0.0, 0.0, 0.0],
+        background_alpha: 0.5,
+    };
+    let mut pixels = vec![0, 0, 0, 0, 255, 255, 255, 255];
+    look.composite(&mut pixels, [1.0, 1.0, 1.0]);
+    // Black at half over white is 0.5 encoded; white at half over that 0.75.
+    assert_eq!(&pixels[..4], &[128, 128, 128, 255]);
+    assert_eq!(&pixels[4..], &[191, 191, 191, 255]);
+
+    let red = Look {
+        tint: [1.0, 0.0, 0.0],
+        alpha: 1.0,
+        ..look
+    };
+    let mut pixels = vec![255, 255, 255, 255];
+    red.composite(&mut pixels, [0.0, 0.0, 0.0]);
+    assert_eq!(pixels, [255, 0, 0, 255]);
+}

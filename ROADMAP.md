@@ -1200,6 +1200,33 @@ Roblox's own engine.
     its `SizeConstraint` names — and gives each pixel-sized box that no
     aspect constraint already shapes a `UIAspectRatioConstraint` at its
     shape, as one undo step.
+- [x] **`ViewportFrame` authoring in the UI Editor.** Setting one up in
+  real Studio means creating and parenting the `Camera` by hand, typing or
+  scripting its `CFrame`, cloning the model under the frame, and redoing
+  that with no live preview for every adjustment. Here a `ViewportFrame`
+  selected on the canvas opens a sheet over the canvas (**Edit viewport** in
+  the toolbar, or a double-click) that draws the frame's contents through
+  the viewer's own `ViewportFrame` bake (`Headless::render_viewport_frame`)
+  at the frame's aspect, over its own background:
+  - **A camera written straight to the frame.** Right-drag, WASD and the
+    wheel fly it with the 3D view's own controls (`rbx_viewer::Flight`); a
+    left drag orbits the contents or pans. The pose goes to the frame's
+    `CurrentCamera`, which is created and wired on the first move if the
+    frame has none, and to its hidden `CameraCFrame`/`CameraFieldOfView`,
+    which is what a saved place keeps (`CurrentCamera` itself does not
+    save). A whole flight is one undo step, camera creation included.
+  - **Framing**: Fit contents (F) keeps the view direction and backs off
+    until everything is on the stage, Reset camera (Home) returns to a
+    three-quarter view, and Top view (T) looks straight down. The field of
+    view is a field.
+  - **Insert from Workspace**: a searchable list of the `Workspace`'s
+    `Model`s and `BasePart`s clones one into the frame (a frame not yet
+    looked through gets a camera on it in the same step); the Contents list
+    removes one again.
+  - **Lighting and image**: `Ambient`, `LightColor`, `LightDirection`,
+    `ImageColor3` and `ImageTransparency` as the design panel's own fields,
+    with the picture following live — the viewer now re-plans a frame's
+    tree when anything inside it changes, which it did not before.
 - [x] **Effects (drop shadows) in the UI Editor's design panel.** Figma's
   Effects section, and Sketch's, is a drop shadow per element, which Roblox
   now does with `UIShadow`. The embedded API dump is Roblox's current one
@@ -2147,23 +2174,6 @@ against `Roblox/creator-docs` rather than assumed:
   [Explicitly impossible](#explicitly-impossible-without-robloxs-engine)).
 
 ### Editor
-- [ ] 📋 **`ViewportFrame` authoring in the UI Editor.** The rest of the
-  dedicated UI-editing mode for `StarterGui` has shipped (see "What's been
-  implemented" → Editor → UI Editor); this is what is left of it.
-  Setting one up in real Studio is notoriously painful: the `Camera` has to
-  be created and parented by hand, its `CFrame` typed in or scripted, the
-  model cloned under the frame, and every adjustment means re-running that
-  dance with no live preview. Here a `ViewportFrame` selected on the canvas
-  gets its own editing surface — its own window, or a large pop-out from the
-  UI Editor, since it needs room a dock does not have — that renders the
-  frame's contents exactly as the viewer's `ViewportFrame` support draws
-  them, with a free-flight camera whose pose is written straight to the
-  frame's `CurrentCamera` (created on the spot if the frame has none), an
-  "insert from Workspace" action that clones a selected `Model`/`BasePart`
-  under the frame, framing ("fit the model") buttons, and the frame's
-  `Ambient`/`LightColor`/`LightDirection`/`ImageColor3`/`ImageTransparency`
-  beside it with the result updating live. Every write goes through the undo
-  history like the rest of the tab.
 - [ ] 📋 **3D asset import and round-trip through Roblox**, i.e. import a
   local `.fbx`/`.obj`/`.gltf` (drag-and-drop or
   `Insert > Model/Mesh/Image`), upload it to Roblox as a real asset via

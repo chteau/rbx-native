@@ -2,6 +2,15 @@
 
 ## 2026-10-06
 
+- **ViewportFrame authoring in the UI Editor.** A selected `ViewportFrame`
+  opens a sheet over the canvas that draws its contents large, through the
+  same bake the GUI paints, with a camera to fly, orbit and pan whose pose
+  is written to the frame's `CurrentCamera` (created on the spot) and to the
+  hidden pose a saved place keeps. Fit, reset and top views, a Workspace
+  picker that clones models and parts in, and the frame's lighting and
+  image fields beside it, updating live; a whole flight is one undo step.
+  Edits inside a frame now redraw it, in the 3D view as on the canvas. —
+  @chteau
 - **Drop shadows in the UI Editor.** The bundled API dump is Roblox's
   current one, so `UIShadow` (and the other classes newer than the old
   snapshot) is known to the Properties panel, scripts and both file

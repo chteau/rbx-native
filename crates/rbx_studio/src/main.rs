@@ -44,6 +44,10 @@
 //! `RBX_STUDIO_UI_EDITOR=1|<width>x<height>` opens the UI Editor on its
 //! canvas at startup, at that simulated resolution when one is given — the
 //! same aid, for the canvas (see `shell::ui_editor`).
+//! `RBX_STUDIO_FRAME_SHEET=1|picker|picker:<query>|fit` then opens the
+//! `ViewportFrame` sheet on the selected frame, with the Workspace picker
+//! (searching for `<query>`) or the Fit menu up — the same aid, for the
+//! sheet (see `shell::ui_editor::frame_sheet`).
 //! `RBX_STUDIO_GROUP=1` wraps the current selection in a new `Model` exactly
 //! as `Ctrl+G` would; `RBX_STUDIO_UNGROUP=1` unwraps it back out exactly as
 //! `Ctrl+Shift+G` would — the same aid, for the Explorer's Group/Ungroup
@@ -110,6 +114,7 @@ mod theme;
 mod tokens;
 mod transform;
 mod ui_canvas;
+mod viewport_frame;
 mod wally_client;
 mod workspace_view;
 

@@ -12,7 +12,7 @@ use std::time::Duration;
 use glam::Vec3;
 
 use crate::camera::{self, Camera, Pose, Viewpoint, MAX_ORTHO_SCALE, MIN_ORTHO_SCALE};
-use crate::input::Input;
+use crate::input::{CameraInput, Input};
 use crate::scene::Bounds;
 
 const MIN_SPEED: f32 = 1.0;
@@ -218,6 +218,59 @@ impl Controller {
                 Viewpoint::Free(*pose)
             }
         }
+    }
+}
+
+/// The free camera's flight on its own, over a pose the host keeps — for a
+/// view that is not the scene's, such as an editor flying a
+/// `ViewportFrame`'s `Camera`, whose pose lives in the place itself and is
+/// read back out of it every step. The same step the scene's own camera
+/// takes ([`free_update`]), so the two cannot fly differently.
+pub struct Flight {
+    input: Input,
+    speed: f32,
+    feel: Feel,
+    motion: Motion,
+}
+
+impl Flight {
+    /// `speed` in studs per second, clamped like the scene camera's.
+    pub fn new(speed: f32, feel: CameraFeel) -> Self {
+        Flight {
+            input: Input::default(),
+            speed: speed.clamp(MIN_SPEED, MAX_SPEED),
+            feel: Feel::of(feel),
+            motion: Motion::default(),
+        }
+    }
+
+    pub fn input(&mut self, event: CameraInput) {
+        self.input.apply(event);
+    }
+
+    /// Advances `pose` by `dt`.
+    pub fn step(&mut self, pose: &mut Pose, dt: Duration) {
+        self.speed = free_update(
+            pose,
+            &mut self.input,
+            dt,
+            self.speed,
+            self.feel,
+            &mut self.motion,
+            false,
+        );
+    }
+
+    /// Whether anything is still steering: the look button or a movement key
+    /// held, or a move still easing out. A host stepping on demand keeps
+    /// stepping while this holds, and a gesture ends once it stops.
+    pub fn busy(&self) -> bool {
+        /// Below this an easing move is too slow to see: a hundredth of a
+        /// stud per second, or a hundredth of a stud of dolly still owed.
+        const SETTLED: f32 = 0.01;
+        self.input.requests_free_flight()
+            || self.motion.velocity.length() > SETTLED
+            || self.motion.dolly_remaining.length() > SETTLED
     }
 }
 

@@ -30,7 +30,10 @@ use crate::renderer::geometry::Meshes;
 use crate::renderer::lighting::LightingRaw;
 use crate::renderer::pipeline::{self, Frame, Shared, Target, DEPTH_FORMAT};
 use crate::renderer::shadow::{Fit, Lamp};
-use crate::scene::{GuiElement, GuiImageScale, GuiViewCamera, GuiViewport, Painted, Part};
+use crate::scene::{
+    linear_to_srgb, srgb_to_linear, GuiElement, GuiImageScale, GuiViewCamera, GuiViewport, Painted,
+    Part,
+};
 use batch::{batch, pixels, target};
 use lighting::{lighting_of, StandIns, NO_SKY};
 
@@ -314,6 +317,49 @@ impl Viewports {
         }
         queue.submit(std::iter::once(encoder.finish()));
         texture
+    }
+}
+
+/// How the GUI lays one frame's baked image over the frame's background —
+/// what an editor needs to show the frame on its own, the way the overlay
+/// would (see `Gui::viewport_frame`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Look {
+    /// `ImageColor3`, linear, and `1 - ImageTransparency`.
+    pub(crate) tint: [f32; 3],
+    pub(crate) alpha: f32,
+    /// `BackgroundColor3`, linear, and `1 - BackgroundTransparency`.
+    pub(crate) background: [f32; 3],
+    pub(crate) background_alpha: f32,
+}
+
+impl Look {
+    /// Composites `pixels` — a bake read back, RGBA8 in encoded sRGB — in
+    /// place over the frame's background, itself over `backdrop` (encoded).
+    /// The GUI pass's own arithmetic (`gui.wgsl`): the tint meets the image
+    /// in linear light, and the blend happens on encoded values, since the
+    /// overlay draws through the target's non-sRGB view.
+    pub(crate) fn composite(&self, pixels: &mut [u8], backdrop: [f32; 3]) {
+        let under: [f32; 3] = std::array::from_fn(|channel| {
+            let background = linear_to_srgb(self.background[channel]);
+            background * self.background_alpha + backdrop[channel] * (1.0 - self.background_alpha)
+        });
+        let tinted = self.tint != [1.0, 1.0, 1.0];
+        for pixel in pixels.as_chunks_mut::<4>().0 {
+            let alpha = f32::from(pixel[3]) / 255.0 * self.alpha;
+            for channel in 0..3 {
+                let mut source = f32::from(pixel[channel]) / 255.0;
+                // An untinted image comes back out of the round trip
+                // through linear light unchanged; skipping it keeps a
+                // full-window frame cheap enough to redraw per mouse move.
+                if tinted {
+                    source = linear_to_srgb(srgb_to_linear(source) * self.tint[channel]);
+                }
+                let blended = source * alpha + under[channel] * (1.0 - alpha);
+                pixel[channel] = (blended.clamp(0.0, 1.0) * 255.0).round() as u8;
+            }
+            pixel[3] = 255;
+        }
     }
 }
 
