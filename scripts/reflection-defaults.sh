@@ -11,7 +11,7 @@
 # to take a newer Studio's data.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-RBX_DOM_REV="${RBX_DOM_REV:-bc75fd68cbf5403910e94627492a883701e259d8}"
+RBX_DOM_REV="${RBX_DOM_REV:-dbec31dbe6de9bc7d2b6dd78c35bb67b9236ebda}"
 URL="https://raw.githubusercontent.com/rojo-rbx/rbx-dom/$RBX_DOM_REV/rbx_dom_lua/src/database.json"
 curl -fsSL "$URL" | jq -r --arg rev "$RBX_DOM_REV" '
   def supported: keys[0] | IN(

@@ -2,10 +2,10 @@
 //! a String, read as `""` when unset, and given their default only under a
 //! newer `Content` twin (`TextureContent`, `MeshContent`).
 //!
-//! The bundled API dump predates release 645's split: it spells every ContentId
-//! `Content` and lists none of the true Content properties, which therefore
-//! never match here. A newer dump spells them `ContentId`, so that spelling is
-//! used whenever the dump has any.
+//! Release 645 split the two: a dump from before it spells every ContentId
+//! `Content` and lists none of the true Content properties, while the bundled
+//! one, like any newer dump, spells them `ContentId`. Whichever spelling the
+//! dump uses is the one matched here.
 
 use rbx_dom::{Content, Variant};
 
