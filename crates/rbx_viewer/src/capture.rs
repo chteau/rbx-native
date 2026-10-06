@@ -43,6 +43,9 @@ pub(crate) struct Offscreen {
     /// editor switching between the scene and a canvas never resizes the
     /// other's target out from under it.
     canvas: Option<Target>,
+    /// What [`Offscreen::viewport_frame`] reads a frame's bake back
+    /// through, for the same reason.
+    frame: Option<Target>,
 }
 
 impl Offscreen {
@@ -86,6 +89,7 @@ impl Offscreen {
             target: None,
             pending: None,
             canvas: None,
+            frame: None,
         };
         offscreen.set_orthographic(view.orthographic);
         offscreen.set_selection(&view.selected, world.scene);
@@ -319,6 +323,48 @@ impl Offscreen {
             size,
             boxes: self.renderer.gui_boxes().to_vec(),
         })
+    }
+
+    /// One `ViewportFrame` alone at `size`, composited over its background
+    /// and `backdrop` (encoded sRGB) as the GUI would — see
+    /// `Renderer::viewport_frame` — and waited for, like a canvas.
+    pub(crate) fn viewport_frame(
+        &mut self,
+        size: (u32, u32),
+        frame: rbx_dom::Ref,
+        backdrop: [f32; 3],
+    ) -> Result<Vec<u8>, String> {
+        if size.0 == 0 || size.1 == 0 {
+            return Err(format!("cannot render a {}x{} frame", size.0, size.1));
+        }
+        let (baked, look) = self
+            .renderer
+            .viewport_frame(&self.device, &self.queue, frame, size)
+            .ok_or_else(|| format!("no ViewportFrame {frame:?} is laid out"))?;
+        let mut pixels = match baked {
+            Some(texture) => {
+                let target = match &mut self.frame {
+                    Some(target) if target.size() == size => target,
+                    slot => slot.insert(Target::new(&self.device, size)),
+                };
+                let mut encoder =
+                    self.device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("rbxview viewport frame copy"),
+                        });
+                encoder.copy_texture_to_texture(
+                    texture.as_image_copy(),
+                    target.texture().as_image_copy(),
+                    texture.size(),
+                );
+                self.queue.submit(std::iter::once(encoder.finish()));
+                let pending = target.copy(&self.device, &self.queue);
+                target.collect(&self.device, pending)?
+            }
+            None => vec![0; size.0 as usize * size.1 as usize * 4],
+        };
+        look.composite(&mut pixels, backdrop);
+        Ok(pixels)
     }
 
     /// Drops the queued frame, mapping and all: a readback buffer left mapped is

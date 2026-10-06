@@ -176,6 +176,45 @@ fn vector3(properties: &BTreeMap<String, Variant>, name: &str) -> Option<Vec3> {
     }
 }
 
+/// One `ViewportFrame` as an editor shows it on its own: its 3D content, and
+/// the background the rendered image is laid over.
+pub(crate) struct Framed<'a> {
+    pub(crate) viewport: &'a Viewport,
+    /// `BackgroundColor3`, linear, and `1 - BackgroundTransparency`.
+    pub(crate) background: [f32; 3],
+    pub(crate) background_alpha: f32,
+}
+
+impl super::Screen {
+    /// The `ViewportFrame` `referent` names, if it is planned on this screen.
+    pub(crate) fn viewport_frame(&self, referent: rbx_dom::Ref) -> Option<Framed<'_>> {
+        let node = find(&self.roots, &self.groups, referent)?;
+        Some(Framed {
+            viewport: node.viewport.as_ref()?,
+            background: node.background,
+            background_alpha: node.background_alpha,
+        })
+    }
+}
+
+fn find<'a>(
+    nodes: &'a [super::Node],
+    groups: &'a [super::Group],
+    referent: rbx_dom::Ref,
+) -> Option<&'a super::Node> {
+    nodes
+        .iter()
+        .find_map(|node| match node.referent == referent {
+            true => Some(node),
+            false => find(&node.children, &node.groups, referent),
+        })
+        .or_else(|| {
+            groups
+                .iter()
+                .find_map(|group| find(&group.children, &group.groups, referent))
+        })
+}
+
 /// Every part of every `ViewportFrame` in `node`'s subtree, for the material
 /// re-read a scene does once the packs have landed (see
 /// `Scene::resolve_materials`) — a frame's parts point at the same layers

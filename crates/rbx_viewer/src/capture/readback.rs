@@ -46,7 +46,11 @@ impl Target {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            // `COPY_DST` for a picture drawn elsewhere and only read back
+            // through here — a `ViewportFrame`'s bake (`Offscreen::viewport_frame`).
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::COPY_DST,
             // The GUI overlay composites through the non-sRGB twin of this
             // format (see `renderer::gui::pipeline::encoded`).
             view_formats: &[FORMAT.remove_srgb_suffix()],

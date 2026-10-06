@@ -482,6 +482,18 @@ impl Renderer {
         queue.submit(std::iter::once(encoder.finish()));
     }
 
+    /// One `ViewportFrame` on its own — see `Gui::viewport_frame`.
+    pub(crate) fn viewport_frame(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        frame: rbx_dom::Ref,
+        size: (u32, u32),
+    ) -> Option<(Option<wgpu::Texture>, gui::FrameLook)> {
+        self.gui
+            .viewport_frame(device, queue, &self.materials.bind_group, frame, size)
+    }
+
     /// The pixel size a canvas of `screen` is drawn at — see
     /// `Gui::canvas_size`.
     pub(crate) fn gui_canvas_size(

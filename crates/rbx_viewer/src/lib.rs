@@ -62,7 +62,7 @@ pub use camera::Pose;
 pub use capture::Rendered;
 pub use changes::{Applied, Rebuild};
 pub use cli::Options;
-pub use controller::CameraFeel;
+pub use controller::{CameraFeel, Flight};
 pub use gizmo::Gizmo;
 // Only so a report (`examples/bench`) can label its numbers with the GPU that
 // produced them; nothing in the render path itself asks for this.

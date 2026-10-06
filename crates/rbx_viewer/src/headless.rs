@@ -421,6 +421,23 @@ impl Headless {
         self.offscreen.gui_canvas((width, height), screen, backdrop)
     }
 
+    /// Draws one `ViewportFrame`'s content on its own at `width`×`height`
+    /// — the same bake the GUI paints it from, through its `CurrentCamera`
+    /// (or saved pose), laid over the frame's background and `backdrop`
+    /// (encoded sRGB) with its `ImageColor3`/`ImageTransparency` — for an
+    /// editor that shows the frame larger than it sits on its screen. Tightly
+    /// packed RGBA8 (sRGB) rows. An error when no laid-out tree holds
+    /// `frame`. Synchronous, like [`Headless::render_gui`].
+    pub fn render_viewport_frame(
+        &mut self,
+        frame: Ref,
+        (width, height): (u32, u32),
+        backdrop: [f32; 3],
+    ) -> Result<Vec<u8>, String> {
+        self.offscreen
+            .viewport_frame((width, height), frame, backdrop)
+    }
+
     /// Advances the camera by `dt` and reports whether the next frame would
     /// differ from the last: the view moved, or an asset landed and was swapped
     /// into the picture. A camera at rest over a place whose assets are all in

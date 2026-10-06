@@ -102,6 +102,22 @@ impl Patcher<'_> {
     fn touch(&mut self, touched: &Touched) -> Result<(), Rebuild> {
         let dom = self.dom;
         let referent = touched.referent;
+        // A `ViewportFrame` draws what sits under it out of its GUI tree's
+        // plan, so a change anywhere inside one — its `Camera`, a part, a
+        // model dropped in or taken out — is a change to that tree,
+        // whatever the instance's own role says.
+        let parents = [
+            dom.get(referent).and_then(|_| dom.parent(referent)),
+            touched.old_parent,
+            self.roles.get(referent).and_then(|known| known.parent),
+        ];
+        if let Some(frame) = parents
+            .into_iter()
+            .flatten()
+            .find(|&parent| in_viewport_frame(dom, self.database, parent))
+        {
+            self.gui_changed(Some(frame), !touched.structural);
+        }
         if dom.get(referent).is_none() {
             return self.forget(referent);
         }
@@ -445,4 +461,19 @@ impl Patcher<'_> {
         }
         Ok(())
     }
+}
+
+/// Whether `referent` is a `ViewportFrame` or sits somewhere under one.
+fn in_viewport_frame(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> bool {
+    let mut current = Some(referent);
+    while let Some(at) = current {
+        let Some(instance) = dom.get(at) else {
+            return false;
+        };
+        if database.is_subclass_of(instance.class(), "ViewportFrame") {
+            return true;
+        }
+        current = dom.parent(at);
+    }
+    false
 }

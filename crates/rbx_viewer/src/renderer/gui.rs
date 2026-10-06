@@ -43,6 +43,7 @@ use group::Baked;
 use paint::Painter;
 use space::Space;
 use text::Typesetter;
+pub(crate) use viewport::Look as FrameLook;
 use viewport::Viewports;
 
 /// One laid-out `GuiObject`: where it came to on screen and how far it is
@@ -361,6 +362,44 @@ impl Gui {
             &self.bindings,
             size,
         );
+    }
+
+    /// One `ViewportFrame` drawn on its own at `size`: the very bake the
+    /// overlay paints it from, and how the overlay lays it over the frame's
+    /// background. `None` when no planned tree holds `frame`; no texture
+    /// where the bake has nothing to draw — no camera, no parts.
+    pub(super) fn viewport_frame(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        materials: &wgpu::BindGroup,
+        frame: Ref,
+        size: (u32, u32),
+    ) -> Option<(Option<wgpu::Texture>, FrameLook)> {
+        let framed = self
+            .screens
+            .iter()
+            .find_map(|screen| screen.viewport_frame(frame))?;
+        let viewport = framed.viewport;
+        let look = FrameLook {
+            tint: viewport.tint,
+            alpha: viewport.alpha,
+            background: framed.background,
+            background_alpha: framed.background_alpha,
+        };
+        let parts: Vec<_> = viewport
+            .parts
+            .iter()
+            .filter(|part| part.is_drawn())
+            .collect();
+        let texture = match viewport.camera {
+            Some(camera) if !parts.is_empty() => Some(
+                self.viewports
+                    .render(device, queue, materials, viewport, camera, &parts, size),
+            ),
+            _ => None,
+        };
+        Some((texture, look))
     }
 
     /// Every element of the last layout, in paint order.
