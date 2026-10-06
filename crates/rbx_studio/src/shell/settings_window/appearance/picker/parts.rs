@@ -136,7 +136,7 @@ mod tests {
     #[gpui_kit::test]
     fn the_apply_button_lays_out_at_least_44_tall(cx: &mut gpui_kit::TestAppContext) {
         crate::probe::assert_primary(cx, "picker-apply", 200., |_, _| {
-            button("picker-apply", "Apply", Some(rgb(0x4488ff).into()))
+            button("picker-apply", "Apply", Some(rgb(0x4488ff)))
         });
         let found = crate::probe::size_of(cx, "picker-cancel", 200., |_, _| {
             button("picker-cancel", "Cancel", None)
