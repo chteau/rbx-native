@@ -51,7 +51,11 @@ mod tests {
     #[test]
     fn the_end_chunk_is_stored_uncompressed_like_roblox_writes_it() {
         let chunk_bytes = write_end();
-        assert_eq!(&chunk_bytes[4..8], &[0, 0, 0, 0], "compressed length 0 = raw");
+        assert_eq!(
+            &chunk_bytes[4..8],
+            &[0, 0, 0, 0],
+            "compressed length 0 = raw"
+        );
         let chunk = read_chunks(&chunk_bytes).next().unwrap().unwrap();
 
         assert_eq!(chunk.name_str(), "END");

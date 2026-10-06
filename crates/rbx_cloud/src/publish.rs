@@ -45,7 +45,10 @@ impl Client {
             mode.as_query_value()
         );
         // A refusal carries Roblox's own reason when the body has one.
-        let body = answer(&url, self.post_bytes_raw(&url, content_type_for(bytes), bytes)?)?;
+        let body = answer(
+            &url,
+            self.post_bytes_raw(&url, content_type_for(bytes), bytes)?,
+        )?;
         let parsed: PublishResponseRaw = serde_json::from_value(body)?;
         Ok(parsed.version_number)
     }
