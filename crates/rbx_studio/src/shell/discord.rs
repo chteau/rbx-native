@@ -69,7 +69,7 @@ impl Shell {
             Document::Scripts => {
                 let active = self.scripts.tabs.active();
                 match active.and_then(|r| self.dom.get(r)) {
-                    Some(inst) => inst.name().clone(),
+                    Some(inst) => inst.name().to_string(),
                     None => "Script Editor".into(),
                 }
             }

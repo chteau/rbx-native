@@ -326,9 +326,7 @@ impl SettingsWindow {
                             toggle(
                                 "discord-presence",
                                 enabled,
-                                self.set(move |shell, cx| {
-                                    shell.set_discord_presence(!enabled, cx)
-                                }),
+                                self.set(move |shell, cx| shell.set_discord_presence(!enabled, cx)),
                             ),
                         )
                         .describe(
@@ -340,9 +338,7 @@ impl SettingsWindow {
                             toggle(
                                 "discord-hide-names",
                                 hide,
-                                self.set(move |shell, cx| {
-                                    shell.set_discord_hide_names(!hide, cx)
-                                }),
+                                self.set(move |shell, cx| shell.set_discord_hide_names(!hide, cx)),
                             ),
                         )
                         .describe("Show only that you\u{2019}re in RbxNative.")

@@ -68,46 +68,6 @@ pub(in crate::shell::settings_window) fn toggle(
         )
 }
 
-/// `color` as it shows at 40% over a card: what a roadmap row's control
-/// is drawn in. Mixed here rather than left to `opacity`, which GPUI
-/// applies to each shape on its own, so a knob faded over a faded track
-/// lets the track show through it where CSS would fade the two as one.
-pub(in crate::shell::settings_window) fn faded(color: Rgba) -> Rgba {
-    let card = tokens::field_select();
-    let over = |c: f32, under: f32| c * color.a + under * (1. - color.a);
-    let mix = |c: f32, under: f32| 0.4 * over(c, under) + 0.6 * under;
-    Rgba {
-        r: mix(color.r, card.r),
-        g: mix(color.g, card.g),
-        b: mix(color.b, card.b),
-        a: 1.,
-    }
-}
-
-/// [`toggle`] on a roadmap row: faded, and nothing to click.
-pub(in crate::shell::settings_window) fn still_toggle(on: bool) -> Div {
-    div()
-        .relative()
-        .flex_none()
-        .w(px(32.))
-        .h(px(18.))
-        .rounded(px(9.))
-        .bg(faded(if on {
-            tokens::check_on()
-        } else {
-            tokens::track()
-        }))
-        .child(
-            div()
-                .absolute()
-                .top(px(3.))
-                .left(px(if on { 17. } else { 3. }))
-                .size(px(12.))
-                .rounded_full()
-                .bg(faded(if on { tokens::black() } else { tokens::text2() })),
-        )
-}
-
 /// A segmented control: `items` as `(label, selected, on_click)`, items
 /// `h` tall (26, or 24 beside a slider).
 pub(in crate::shell::settings_window) fn segmented(
