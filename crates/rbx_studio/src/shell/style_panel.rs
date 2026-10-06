@@ -25,10 +25,10 @@
 
 use std::collections::HashMap;
 
+use crate::shell::chrome::ScrollbarY as _;
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
-use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Sizable};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -120,7 +120,7 @@ impl Shell {
                     .overflow_y_scroll()
                     .track_scroll(&self.style_scroll)
                     .child(v_flex().w_full().children(children))
-                    .vertical_scrollbar(&self.style_scroll),
+                    .scrollbar_y(&self.style_scroll),
             )
     }
 

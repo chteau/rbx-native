@@ -106,7 +106,7 @@ pub(in crate::launcher) fn table(
             format!("{opt_on} of {opt_all} on \u{b7} the rest stay off"),
         ))
         .children(rows(false))
-        .vertical_scrollbar(scroll)
+        .scrollbar_y(scroll)
 }
 
 pub(super) fn row(index: usize, check: &ScopeCheck, names: &HashMap<u64, String>) -> AnyElement {

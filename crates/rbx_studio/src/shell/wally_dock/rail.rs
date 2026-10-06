@@ -35,7 +35,9 @@ impl Shell {
     }
 
     /// Wide: 14/12 padding, the field, then the page rows 2px apart.
-    pub(super) fn rail(&mut self, counts: Counts, cx: &mut Context<Self>) -> Div {
+    /// It scrolls on its own, so a dock shorter than the rail still reaches
+    /// its last page.
+    pub(super) fn rail(&mut self, counts: Counts, cx: &mut Context<Self>) -> Stateful<Div> {
         let current = self.wally_current_row();
         let rows = PAGES.map(|(page, label, icon)| {
             let selected = Some(page) == current;
@@ -72,8 +74,10 @@ impl Shell {
                 .children(count_badge(page, counts, px(6.)).map(|badge| badge.ml_auto()))
         });
         v_flex()
+            .id("wally-rail")
             .w(px(RAIL_WIDTH))
             .flex_none()
+            .overflow_y_scroll()
             .py(px(PAGE_PADDING))
             .px(px(12.))
             .gap(px(10.))

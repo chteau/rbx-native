@@ -20,7 +20,7 @@
 
 use std::time::SystemTime;
 
-use gpui_kit::component::scroll::ScrollableElement as _;
+use crate::shell::chrome::ScrollbarY as _;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Icon, Sizable};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -378,8 +378,9 @@ impl Shell {
                 .flex_1()
                 .overflow_y_scroll()
                 .track_scroll(&self.output_scroll)
+                .pr(super::chrome::SCROLLBAR_GUTTER)
                 .child(list)
-                .vertical_scrollbar(&self.output_scroll),
+                .scrollbar_y(&self.output_scroll),
         )
     }
 }

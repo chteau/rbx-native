@@ -2,8 +2,8 @@
 //! under it — or, when the window is narrow, the picker bar that stands
 //! in for it, whose menu is the same list.
 
+use crate::shell::chrome::ScrollbarY as _;
 use gpui_kit::assets::IconName;
-use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{h_flex, v_flex, Icon};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -56,7 +56,7 @@ impl ArgonDiffWindow {
             .overflow_y_scroll()
             .track_scroll(&self.list_scroll)
             .child(div().p(px(8.)).child(body))
-            .vertical_scrollbar(&self.list_scroll)
+            .scrollbar_y(&self.list_scroll)
     }
 
     fn list_row(

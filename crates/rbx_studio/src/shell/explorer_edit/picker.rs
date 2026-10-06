@@ -25,9 +25,9 @@
 //! The arrows are caught at the action layer rather than as keystrokes, for
 //! the reason `shell::tree_keys` gives: the field binds them to its own caret.
 
+use crate::shell::chrome::ScrollbarY as _;
 use gpui_kit::base::input::{MoveDown, MoveUp};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
-use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{h_flex, v_flex, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -303,7 +303,7 @@ impl Shell {
                     .flex_col()
                     .gap(px(1.))
                     .children(painted)
-                    .vertical_scrollbar(&picker.scroll),
+                    .scrollbar_y(&picker.scroll),
             )
             .when(hidden > 0, |this| {
                 this.child(note(format!("{hidden} more — keep typing")))
