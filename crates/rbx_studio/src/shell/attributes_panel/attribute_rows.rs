@@ -173,6 +173,11 @@ impl Shell {
             .pl(name_indent(0))
             .pr(tokens::row_padding())
             .rounded(tokens::radius())
+            // `property_stack`'s text, which this frame had no size of its
+            // own for: the name fell back to the dock's much larger default.
+            .text_size(tokens::text_md())
+            .line_height(tokens::line_md())
+            .text_color(tokens::text_strong())
             .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
             .child(header)
             .child(control)

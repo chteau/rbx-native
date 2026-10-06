@@ -6,7 +6,7 @@
 //! pass — `build` runs once, from `Shell::new`, well before `Shell` ever
 //! renders.
 
-use gpui_kit::{App, Entity};
+use gpui_kit::{App, Entity, WeakEntity};
 use rbx_cloud::PublishMode;
 
 use crate::shell::{Export, Panel, Shell};
@@ -14,36 +14,46 @@ use crate::shell::{Export, Panel, Shell};
 use super::*;
 
 pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
+    // Weak: these listeners are global and outlive the window. File › Close
+    // Place and a later open install a second set for the next editor, and
+    // a strong handle here would keep every closed place's Shell alive.
+    let shell = shell.downgrade();
     cx.on_action(|_: &MenuOpenAutoSaves, cx| crate::recovery::open_folder(cx));
     cx.on_action({
         let shell = shell.clone();
         move |action: &MenuInsertTemplate, cx| {
             let index = action.index;
-            shell.update(cx, |shell, cx| shell.insert_user_template(index, cx));
+            let _ = shell.update(cx, |shell, cx| shell.insert_user_template(index, cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuSave, cx| {
-            shell.update(cx, |shell, cx| shell.save(cx));
+            let _ = shell.update(cx, |shell, cx| shell.save(cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
+        move |_: &MenuClosePlace, cx| {
+            let _ = shell.update(cx, |shell, cx| shell.close_place(cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuSaveToFile, cx| {
-            shell.update(cx, |shell, cx| shell.export_place(Export::Place, cx));
+            let _ = shell.update(cx, |shell, cx| shell.export_place(Export::Place, cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuExportGltf, cx| {
-            shell.update(cx, |shell, cx| shell.export_place(Export::Gltf, cx));
+            let _ = shell.update(cx, |shell, cx| shell.export_place(Export::Gltf, cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuSaveToRoblox, cx| {
-            shell.update(cx, |shell, cx| {
+            let _ = shell.update(cx, |shell, cx| {
                 shell.upload_to_roblox(PublishMode::Saved, cx)
             });
         }
@@ -51,7 +61,7 @@ pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuPublishToRoblox, cx| {
-            shell.update(cx, |shell, cx| {
+            let _ = shell.update(cx, |shell, cx| {
                 shell.upload_to_roblox(PublishMode::Published, cx)
             });
         }
@@ -59,43 +69,43 @@ pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuLinkRobloxPlace, cx| {
-            shell.update(cx, |shell, cx| shell.open_roblox_link(None, cx));
+            let _ = shell.update(cx, |shell, cx| shell.open_roblox_link(None, cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuVersionHistory, cx| {
-            shell.update(cx, |shell, cx| shell.open_version_history(cx));
+            let _ = shell.update(cx, |shell, cx| shell.open_version_history(cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuStudioSettings, cx| {
-            shell.update(cx, |shell, cx| shell.open_settings(cx));
+            let _ = shell.update(cx, |shell, cx| shell.open_settings(cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuScriptTemplates, cx| {
-            shell.update(cx, |shell, cx| shell.open_script_templates(cx));
+            let _ = shell.update(cx, |shell, cx| shell.open_script_templates(cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuReduceMotion, cx| {
-            shell.update(cx, |shell, cx| shell.toggle_reduce_motion(cx));
+            let _ = shell.update(cx, |shell, cx| shell.toggle_reduce_motion(cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuLargeTargets, cx| {
-            shell.update(cx, |shell, cx| shell.toggle_large_targets(cx));
+            let _ = shell.update(cx, |shell, cx| shell.toggle_large_targets(cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuResetLayout, cx| {
-            shell.update(cx, |shell, cx| shell.reset_layout(cx));
+            let _ = shell.update(cx, |shell, cx| shell.reset_layout(cx));
         }
     });
     // A dock closed from its own tab has no tab left to reopen it with, so
@@ -112,97 +122,97 @@ pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuUndo, cx| {
-            shell.update(cx, |shell, cx| shell.undo(cx));
+            let _ = shell.update(cx, |shell, cx| shell.undo(cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuRedo, cx| {
-            shell.update(cx, |shell, cx| shell.redo(cx));
+            let _ = shell.update(cx, |shell, cx| shell.redo(cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuInsertPart, cx| {
-            shell.update(cx, |shell, cx| shell.insert_instance("Part", cx));
+            let _ = shell.update(cx, |shell, cx| shell.insert_instance("Part", cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuInsertFolder, cx| {
-            shell.update(cx, |shell, cx| shell.insert_instance("Folder", cx));
+            let _ = shell.update(cx, |shell, cx| shell.insert_instance("Folder", cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuInsertScript, cx| {
-            shell.update(cx, |shell, cx| shell.insert_instance("Script", cx));
+            let _ = shell.update(cx, |shell, cx| shell.insert_instance("Script", cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuInsertLocalScript, cx| {
-            shell.update(cx, |shell, cx| shell.insert_instance("LocalScript", cx));
+            let _ = shell.update(cx, |shell, cx| shell.insert_instance("LocalScript", cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuInsertModuleScript, cx| {
-            shell.update(cx, |shell, cx| shell.insert_instance("ModuleScript", cx));
+            let _ = shell.update(cx, |shell, cx| shell.insert_instance("ModuleScript", cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuInsertModuleScriptClass, cx| {
-            shell.update(cx, |shell, cx| shell.insert_class_module(cx));
+            let _ = shell.update(cx, |shell, cx| shell.insert_class_module(cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuDeleteInstance, cx| {
-            shell.update(cx, |shell, cx| shell.delete_selected(cx));
+            let _ = shell.update(cx, |shell, cx| shell.delete_selected(cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuCutInstance, cx| {
-            shell.update(cx, |shell, cx| shell.cut_selected(cx));
+            let _ = shell.update(cx, |shell, cx| shell.cut_selected(cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuCopyInstance, cx| {
-            shell.update(cx, |shell, cx| shell.copy_selected(cx));
+            let _ = shell.update(cx, |shell, cx| shell.copy_selected(cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuPasteInstance, cx| {
-            shell.update(cx, |shell, cx| shell.paste_clipboard(cx));
+            let _ = shell.update(cx, |shell, cx| shell.paste_clipboard(cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuPasteIntoInstance, cx| {
-            shell.update(cx, |shell, cx| shell.paste_into_selected(cx));
+            let _ = shell.update(cx, |shell, cx| shell.paste_into_selected(cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuDuplicateInstance, cx| {
-            shell.update(cx, |shell, cx| shell.duplicate_selected(cx));
+            let _ = shell.update(cx, |shell, cx| shell.duplicate_selected(cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuGroup, cx| {
-            shell.update(cx, |shell, cx| shell.group_selected(cx));
+            let _ = shell.update(cx, |shell, cx| shell.group_selected(cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuUngroup, cx| {
-            shell.update(cx, |shell, cx| shell.ungroup_selected(cx));
+            let _ = shell.update(cx, |shell, cx| shell.ungroup_selected(cx));
         }
     });
     // Straight to the shell like every other item: raising the document
@@ -212,19 +222,19 @@ pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuStyleEditor, cx| {
-            shell.update(cx, |shell, cx| shell.reveal_style_editor(cx));
+            let _ = shell.update(cx, |shell, cx| shell.reveal_style_editor(cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuCommandPalette, cx| {
-            shell.update(cx, |shell, cx| shell.request_palette(true, cx));
+            let _ = shell.update(cx, |shell, cx| shell.request_palette(true, cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuQuickOpen, cx| {
-            shell.update(cx, |shell, cx| shell.request_palette(false, cx));
+            let _ = shell.update(cx, |shell, cx| shell.request_palette(false, cx));
         }
     });
     cx.on_action(move |_: &MenuPlaceholder, _cx| {});
@@ -236,15 +246,15 @@ pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
 /// A trait only because `on_action` is generic over the action type and
 /// three near-identical blocks read worse than one.
 trait PanelToggle {
-    fn install(&self, panel: Panel, shell: Entity<Shell>, cx: &mut App);
+    fn install(&self, panel: Panel, shell: WeakEntity<Shell>, cx: &mut App);
 }
 
 macro_rules! panel_toggle {
     ($action:ty) => {
         impl PanelToggle for $action {
-            fn install(&self, panel: Panel, shell: Entity<Shell>, cx: &mut App) {
+            fn install(&self, panel: Panel, shell: WeakEntity<Shell>, cx: &mut App) {
                 cx.on_action(move |_: &$action, cx| {
-                    shell.update(cx, |shell, cx| {
+                    let _ = shell.update(cx, |shell, cx| {
                         let showing = shell.is_panel_showing(panel);
                         shell.set_panel_open(panel, !showing, cx);
                     });

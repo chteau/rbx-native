@@ -179,7 +179,8 @@ fn an_empty_query_lists_everything_recent_first() {
     assert_eq!(rows.len(), commands.len());
     assert_eq!(rows[..2], ["Edit: Redo", "File: Save to File"]);
     // Then registry order, the recent ones not repeated.
-    assert_eq!(rows[2], "File: Save to File As");
+    assert_eq!(rows[2], "File: Close Place");
+    assert_eq!(rows[3], "File: Save to File As");
 }
 
 #[test]
