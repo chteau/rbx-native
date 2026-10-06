@@ -203,6 +203,7 @@ fn collect_values(
         })
         .collect();
     unify_content_ids(&class.class_name, name, &mut values);
+    prop::null_dangling_objects(dom, &mut values);
     if values.iter().any(Option::is_none) {
         fill_missing(&mut values, default(&class.class_name, name));
     }

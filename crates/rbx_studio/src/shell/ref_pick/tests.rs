@@ -140,13 +140,13 @@ fn the_sky_picks_nothing() {
 #[test]
 fn a_second_click_disarms_and_another_row_takes_the_pick() {
     let mut pick = RefPick::default();
-    pick.toggle("Part0");
+    pick.toggle("Part0", false);
     assert!(pick.is_armed());
-    pick.toggle("Part0");
+    pick.toggle("Part0", false);
     assert!(!pick.is_armed());
 
-    pick.toggle("Part0");
-    pick.toggle("Part1");
+    pick.toggle("Part0", false);
+    pick.toggle("Part1", false);
     assert_eq!(pick.take().as_deref(), Some("Part1"));
     // Taken once: Escape or a second Explorer press finds nothing armed.
     assert_eq!(pick.take(), None);
@@ -160,6 +160,16 @@ fn arming_clears_the_last_refusal() {
     };
     assert_eq!(pick.error_for("Part1"), Some("refused"));
     assert_eq!(pick.error_for("Part0"), None);
-    pick.toggle("Part1");
+    pick.toggle("Part1", false);
     assert_eq!(pick.error_for("Part1"), None);
+}
+
+#[test]
+fn a_content_row_remembers_its_pick_names_an_object() {
+    let mut pick = RefPick::default();
+    pick.toggle("TextureContent", true);
+    assert!(pick.is_armed_for("TextureContent") && pick.content);
+    // Moving the pick to a `Ref` row commits a referent again.
+    pick.toggle("Part0", false);
+    assert!(!pick.is_armed_for("TextureContent") && !pick.content);
 }

@@ -16,6 +16,8 @@ mod vector;
 
 use rbx_dom::Variant;
 
+pub(super) use content::null_dangling_objects;
+
 use super::sstr::SharedStringTable;
 use super::SerializeError;
 
