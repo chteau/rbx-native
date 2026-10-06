@@ -22,7 +22,12 @@ const WHITE: [f32; 3] = [1.0; 3];
 /// `renderer::gui::pipeline::encoded`), so a whole stack of them is affine
 /// in what lies under it: `white − black = 255·(1−a)`, `black = c·a`.
 fn unblend(black: &mut [u8], white: &[u8]) {
-    for (b, w) in black.chunks_exact_mut(4).zip(white.chunks_exact(4)) {
+    for (b, w) in black
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .zip(white.as_chunks::<4>().0)
+    {
         let gap: u32 = (0..3).map(|i| u32::from(w[i].saturating_sub(b[i]))).sum();
         let alpha = 255 - (gap / 3).min(255);
         for channel in &mut b[..3] {

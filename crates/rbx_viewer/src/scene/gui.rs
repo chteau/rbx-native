@@ -40,6 +40,7 @@ pub(crate) use layout::{
     Painted, PixelRect, Rect, ShadowPx, TextMeasure, Typeset,
 };
 pub(crate) use plan::image_placeholder as gui_image_placeholder;
+pub use plan::shows_screen;
 #[cfg(test)]
 pub(crate) use plan::GroupTint;
 #[cfg(test)]
@@ -48,7 +49,6 @@ pub(crate) use plan::{
     plan, plan_root, span_face, Align, GradientKind, Join, Screen, Text, Tile, ViewCamera, Viewport,
 };
 pub(crate) use space::{plan as plan_space, Anchor, SpaceGui};
-pub use plan::shows_screen;
 pub use wheel::ScrollTarget;
 pub(crate) use wheel::{scroll_target, ScrollWindow};
 
