@@ -7,7 +7,7 @@
 //! nor the `BillboardGui`/`SurfaceGui` canvases the docs' "contents" covers.
 //! `rbxview --show-development-gui` is the way back to what a player sees.
 
-use rbx_dom::Instance;
+use rbx_dom::{Instance, Ref, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use super::flag;
@@ -24,4 +24,21 @@ pub(in crate::scene::gui) fn hides_contents(
 ) -> bool {
     database.is_subclass_of(instance.class(), STARTER_GUI_CLASS)
         && !flag(instance.properties(), "ShowDevelopmentGui", true)
+}
+
+/// Whether a `ScreenGui` at `referent` is one Studio's edit view puts on
+/// screen: only those under `StarterGui` are. One kept anywhere else in a
+/// place — `ServerScriptService`, `ReplicatedStorage`, `Workspace` — is a
+/// template a script clones at run time, never drawn. The test is "no
+/// service but `StarterGui` above it" rather than "`StarterGui` above it" so
+/// a model file, which has no services at all, still shows its screens.
+pub fn shows_screen(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> bool {
+    let mut up = dom.parent(referent);
+    while let Some(instance) = up.and_then(|ancestor| dom.get(ancestor)) {
+        if database.is_service(instance.class()) {
+            return database.is_subclass_of(instance.class(), STARTER_GUI_CLASS);
+        }
+        up = dom.parent(instance.referent());
+    }
+    true
 }

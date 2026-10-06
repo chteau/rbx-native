@@ -1,9 +1,9 @@
 use gpui_kit::{Action, OwnedMenuItem};
 
 use super::{
-    menus, MenuExportGltf, MenuInsertTemplate, MenuLinkRobloxPlace, MenuOpenAutoSaves,
-    MenuPlaceholder, MenuPublishToRoblox, MenuSave, MenuSaveToFile, MenuSaveToRoblox,
-    MenuVersionHistory,
+    menus, MenuClosePlace, MenuExportGltf, MenuInsertTemplate, MenuLinkRobloxPlace,
+    MenuOpenAutoSaves, MenuPlaceholder, MenuPublishToRoblox, MenuSave, MenuSaveToFile,
+    MenuSaveToRoblox, MenuVersionHistory,
 };
 use crate::script_templates::Template;
 
@@ -84,6 +84,31 @@ fn file_opens_the_auto_saves_folder() {
         )
     });
     assert!(found);
+}
+
+/// Close Place is live and sits right under Open…, where Studio files it.
+#[test]
+fn file_closes_the_place_under_open() {
+    let file = menus(&[])
+        .into_iter()
+        .find(|menu| menu.name == "File")
+        .expect("a File menu");
+    let names: Vec<&str> = file
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            OwnedMenuItem::Action { name, .. } => Some(name.as_ref()),
+            _ => None,
+        })
+        .collect();
+    let close = names.iter().position(|name| *name == "Close Place");
+    let open = names.iter().position(|name| *name == "Open\u{2026}");
+    assert_eq!(close, open.map(|at| at + 1));
+    assert!(file.items.iter().any(|item| matches!(
+        item,
+        OwnedMenuItem::Action { name, action, disabled: false, .. }
+            if name == "Close Place" && action.partial_eq(&MenuClosePlace)
+    )));
 }
 
 /// Save and Publish to Roblox are two live, distinct commands — not one

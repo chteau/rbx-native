@@ -1,8 +1,8 @@
 //! A page as the window shows it: the header with its reset button, the
 //! sections, and the search field that replaces it with results.
 
+use crate::shell::chrome::ScrollbarY as _;
 use gpui_kit::component::input::Input;
-use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -62,7 +62,7 @@ impl SettingsWindow {
             .min_w_0()
             .overflow_y_scroll()
             .track_scroll(&self.page_scroll)
-            .vertical_scrollbar(&self.page_scroll)
+            .scrollbar_y(&self.page_scroll)
             .child(
                 v_flex()
                     .pt(px(26.))

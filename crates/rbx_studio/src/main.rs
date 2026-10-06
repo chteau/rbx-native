@@ -203,15 +203,7 @@ fn main() {
     ));
     let theme = user.theme.clone();
     let overrides = user.appearance.overrides();
-    // A light theme draws the kit's light icons, as switching to one does
-    // (see `Shell::reload_theme`), whatever an earlier session left behind.
-    let settings = match theme.palette.mode {
-        ThemeMode::Light => Settings {
-            icon_pack: IconPack::Light,
-            ..settings
-        },
-        ThemeMode::Dark => settings,
-    };
+    let settings = themed(settings, theme.palette.mode);
 
     // The full Lucide catalog: the menu bar's icons are well outside the
     // default bundle the components themselves use. The Explorer's own class
@@ -250,6 +242,32 @@ fn main() {
         })
         .detach();
     });
+}
+
+/// A light theme draws the kit's light icons, as switching to one does (see
+/// `Shell::reload_theme`), whatever an earlier session left behind.
+fn themed(settings: Settings, mode: ThemeMode) -> Settings {
+    match mode {
+        ThemeMode::Light => Settings {
+            icon_pack: IconPack::Light,
+            ..settings
+        },
+        ThemeMode::Dark => settings,
+    }
+}
+
+/// File › Close Place's way back: Home again, with a boot read from disk as
+/// `main` reads it (the session saved its settings as they changed). The
+/// launch aids (`--select`, `--run`) were for the first place only.
+pub(crate) fn open_home_again(cx: &mut App) {
+    let user = packs::UserContent::load();
+    let settings = themed(Settings::load(), user.theme.palette.mode);
+    let boot = EditorBoot {
+        settings,
+        launch: Launch::default(),
+        user,
+    };
+    launcher::open_home(Rc::new(RefCell::new(Some(boot))), cx);
 }
 
 /// What the editor window needs beyond its place: the resolved settings,
@@ -300,7 +318,13 @@ pub(crate) fn open_editor(
     }) {
         eprintln!("rbxstudio: could not update the Recent list: {err}");
     }
-    let title = SharedString::from(file_name(path));
+    // A place linked to Roblox (opened from Home, or linked since) goes by
+    // its game's name, not the `<universe>-<place>.rbxl` local copy's.
+    let title = SharedString::from(
+        home::link_of(path)
+            .and_then(|link| link.name)
+            .unwrap_or_else(|| file_name(path)),
+    );
     let options = window_options(&title, cx);
     cx.open_window(options, |window, cx| {
         let shell = cx.new(|cx| Shell::new(title, place, settings, launch, user, window, cx));

@@ -290,7 +290,8 @@ fn emissive_mask_content_is_empty_on_both_decals() {
 }
 
 // The whole point of the exercise: nothing in either file falls back to `Unknown`
-// any more except the two String properties that hold non-UTF-8 blobs.
+// any more except the two String properties that hold non-UTF-8 blobs and
+// SharedStrings, which stay `Unknown { 0x1C }` so a save keeps their wire type.
 #[test]
 fn only_non_utf8_string_blobs_still_degrade_to_unknown() {
     let mut unknown = Vec::new();
@@ -302,6 +303,9 @@ fn only_non_utf8_string_blobs_still_degrade_to_unknown() {
             };
             for (name, value) in instance.properties() {
                 if let Variant::Unknown { type_id, .. } = value {
+                    if *type_id == 0x1C {
+                        continue;
+                    }
                     unknown.push((name.clone(), *type_id));
                 }
             }

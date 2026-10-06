@@ -820,9 +820,11 @@ pub(crate) fn field_min_width() -> Pixels {
 /// its own fixed step height and **top-aligns** it inside whatever height
 /// it is given, so a select dropped into a 31px field box rides 2-4px high
 /// depending on its padding. Its text also sits ~1.5px above its own row's
-/// centre. Together that is the 4.5px below — a compensation for somebody
-/// else's layout, which is why it is one named value here rather than a
-/// bare `px()` at the call site, and why it scales with everything else.
+/// centre. Together that is `select_inset` in `theme.json` — a compensation
+/// for somebody else's layout, which is why it is one named value here
+/// rather than a bare `px()` at the call site, and why it scales with
+/// everything else. Last measured at 1x: 5.5 puts the label's ink centre on
+/// the box's centre, as a text field's is (7.5 left it 2px low).
 ///
 /// If a toolkit upgrade changes the select's internals this will be wrong
 /// and will need re-measuring against a plain text field in the same panel.

@@ -11,6 +11,7 @@ mod brick_color;
 mod change_class;
 pub(crate) mod chrome;
 mod clipboard;
+mod close_place;
 mod command;
 mod debugging;
 mod discord;
@@ -355,6 +356,14 @@ pub(crate) struct Shell {
     /// File › Save/Publish to Roblox's dialogs and in-flight upload; see
     /// `shell::roblox_publish`.
     roblox: roblox_publish::RobloxPublish,
+    /// File › Close Place's unsaved-changes prompt is up; see
+    /// `shell::close_place`.
+    close_prompt: bool,
+    /// Held by the prompt while it is up, so Escape reaches the window's
+    /// key handler rather than whatever panel had focus.
+    close_focus: FocusHandle,
+    /// This editor's window, which Close Place removes from outside it.
+    window_handle: AnyWindowHandle,
     /// This place's `Folder` colour tags; see `shell::folder_color`.
     folder_colors: FolderColors,
     /// Which transform tool the toolbar has active, and whether its draggers
@@ -699,6 +708,9 @@ impl Shell {
             viewport_rows: Rc::default(),
             output_search: cx.new(|cx| InputState::new(window, cx).placeholder("Search")),
             roblox: roblox_publish::RobloxPublish::new(cx),
+            close_prompt: false,
+            close_focus: cx.focus_handle(),
+            window_handle: window.window_handle(),
             argon_ui: argon_dock::ArgonDock::new(&argon_address_setting, window, cx),
             wally_ui: wally_dock::WallyDock::new(cx),
             viewport_ui: viewport_dock::ViewportDock::new(),
@@ -1627,6 +1639,9 @@ impl Render for Shell {
         // frame that hands it the caret — see `Shell::focus_explorer_edit`.
         self.focus_explorer_edit(window, cx);
         self.focus_roblox_dialog(window, cx);
+        if self.close_prompt && !self.close_focus.is_focused(window) {
+            self.close_focus.focus(window, cx);
+        }
         self.open_requested_palette(window, cx);
         // An increment set from Settings has to reach the popover's text.
         self.snap_fields.sync(self.transform, window, cx);
@@ -1723,6 +1738,7 @@ impl Render for Shell {
             // is clipped by it.
             .children(self.explorer_popups(cx))
             .children(self.roblox_dialog(cx))
+            .children(self.close_place_dialog(cx))
             .children(self.command_palette(cx))
             .children(self.theme_background(true))
     }

@@ -5,7 +5,7 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum CloudError {
-    #[error("no API key configured (set RBX_API_KEY or ~/.config/rbx-native/api_key)")]
+    #[error("no API key configured (set RBX_API_KEY, store one with `rbxstudio --setup`, or write ~/.config/rbx-native/api_key)")]
     NoApiKey,
 
     #[error("asset {asset_id} requires authentication and no API key is configured")]

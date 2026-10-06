@@ -113,6 +113,11 @@ fn format_value(class: &str, prop_name: &str, value: &Variant, db: &ReflectionDa
         Variant::Content(Content::None) => "Content(none)".to_owned(),
         Variant::Content(Content::Uri(uri)) => format!("Content({uri:?})"),
         Variant::Content(Content::Object(r)) => format!("Content(Ref({}))", r.value()),
+        // A SharedString keeps its wire type as `Unknown { 0x1C }`; text
+        // content still reads as the string it is.
+        Variant::Unknown { type_id: 0x1C, raw } if std::str::from_utf8(raw).is_ok() => {
+            format!("{:?}", String::from_utf8_lossy(raw))
+        }
         Variant::Unknown { type_id, raw } => {
             format!("Unknown(type={type_id:#04x}, len={})", raw.len())
         }

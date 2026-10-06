@@ -13,8 +13,8 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
+use crate::shell::chrome::ScrollbarY as _;
 use gpui_kit::assets::IconName;
-use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::*;
 
@@ -258,7 +258,7 @@ impl Shell {
                     .line_height(tokens::line_md())
                     .child(sections),
             )
-            .vertical_scrollbar(&self.viewport_scroll);
+            .scrollbar_y(&self.viewport_scroll);
 
         let width = self.viewport_ui.width.clone();
         let height = self.viewport_ui.height.clone();

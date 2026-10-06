@@ -25,6 +25,33 @@ use crate::tokens;
 use super::layout::Edge;
 use super::Shell;
 
+/// Room a scroll area with no right padding of its own keeps clear for
+/// [`ScrollbarY`]'s thumb (the kit's 6px thumb, 4px in from the edge, plus
+/// air), so the thumb never lands on a row's trailing control.
+pub(crate) const SCROLLBAR_GUTTER: Pixels = px(12.);
+
+/// A vertical scrollbar for a scroll area, added as the area's own child —
+/// in place of the kit's `vertical_scrollbar`, which measures its track
+/// from its own layout box. Inside the area that box is shifted by the
+/// scroll offset like any other child, so scrolling down slid the whole
+/// track up and the thumb with it: the thumb ran the wrong way and left
+/// the viewport. This one takes its track from the scroll handle's
+/// viewport bounds, which stay put.
+pub(crate) trait ScrollbarY: ParentElement + Sized {
+    #[track_caller]
+    fn scrollbar_y<H: base::ScrollbarHandle + Clone>(self, handle: &H) -> Self {
+        let id = ElementId::CodeLocation(*std::panic::Location::caller());
+        self.child(
+            div()
+                .absolute()
+                .inset_0()
+                .child(base::Scrollbar::new(handle).id(id).axis(Axis::Vertical)),
+        )
+    }
+}
+
+impl<E: ParentElement> ScrollbarY for E {}
+
 /// The mark at the top-left, exported from the same Figma file as the rest
 /// of this frame. GPUI paints an SVG as a mask, so this renders as a white
 /// silhouette of the logo rather than with its own fills — which is what

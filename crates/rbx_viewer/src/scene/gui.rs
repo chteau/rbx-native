@@ -40,6 +40,7 @@ pub(crate) use layout::{
     Painted, PixelRect, Rect, ShadowPx, TextMeasure, Typeset,
 };
 pub(crate) use plan::image_placeholder as gui_image_placeholder;
+pub use plan::shows_screen;
 #[cfg(test)]
 pub(crate) use plan::GroupTint;
 #[cfg(test)]

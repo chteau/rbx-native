@@ -5943,6 +5943,8 @@ dependencies = [
 name = "rbx_cloud"
 version = "0.1.0"
 dependencies = [
+ "futures-lite",
+ "oo7",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
@@ -6086,6 +6088,7 @@ name = "rbx_xml"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "md-5",
  "quick-xml",
  "rbx_binary",
  "rbx_dom",

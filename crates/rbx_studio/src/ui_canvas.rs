@@ -66,6 +66,22 @@ impl View {
         }
     }
 
+    /// The editor's dot grid: the panel-pixel spacing and the first dot's
+    /// offset on each axis. Dots sit every 20 canvas pixels, doubled or
+    /// halved until they land 16–32 panel pixels apart, so the grid stays
+    /// pinned to the canvas as it pans and zooms without crowding or
+    /// thinning out.
+    pub(crate) fn dot_grid(self) -> (f32, [f32; 2]) {
+        let mut gap = 20.0 * self.zoom.max(1e-3);
+        while gap < 16.0 {
+            gap *= 2.0;
+        }
+        while gap >= 32.0 {
+            gap *= 0.5;
+        }
+        (gap, self.pan.map(|pan| pan.rem_euclid(gap)))
+    }
+
     pub(crate) fn to_view(self, p: [f32; 2]) -> [f32; 2] {
         [0, 1].map(|axis| self.pan[axis] + p[axis] * self.zoom)
     }

@@ -8,7 +8,8 @@
 use serde::Deserialize;
 
 use crate::client::Client;
-use crate::error::{self, CloudError};
+use crate::create_asset::answer;
+use crate::error::CloudError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PublishMode {
@@ -43,15 +44,12 @@ impl Client {
             "https://apis.roblox.com/universes/v1/{universe_id}/places/{place_id}/versions?versionType={}",
             mode.as_query_value()
         );
-        let response = self.post_bytes_raw(&url, content_type_for(bytes), bytes)?;
-        if !(200..300).contains(&response.status) {
-            return Err(error::error_for_status(
-                &url,
-                response.status,
-                &response.headers,
-            ));
-        }
-        let parsed: PublishResponseRaw = serde_json::from_slice(&response.body)?;
+        // A refusal carries Roblox's own reason when the body has one.
+        let body = answer(
+            &url,
+            self.post_bytes_raw(&url, content_type_for(bytes), bytes)?,
+        )?;
+        let parsed: PublishResponseRaw = serde_json::from_value(body)?;
         Ok(parsed.version_number)
     }
 }

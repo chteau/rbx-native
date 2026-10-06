@@ -110,7 +110,7 @@
     "tree_row_height": 24,
     "input_height": 31,
     "field_min_width": 76,
-    "select_inset": 7.5,
+    "select_inset": 5.5,
     "input_padding": 8,
     "toggle_height": 17,
     "toggle_width": 30,

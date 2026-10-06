@@ -35,6 +35,10 @@ pub(super) struct Recovery {
     _lock: Option<std::fs::File>,
     /// The place changed since the last copy (or since it was saved).
     changed: bool,
+    /// The place changed since it was opened or last saved; unlike
+    /// `changed`, a recovery copy does not clear it. File › Close Place asks
+    /// before discarding it.
+    unsaved: bool,
     /// When the last copy was taken; the place opening counts as one, so
     /// the first copy waits a full interval.
     last: Instant,
@@ -57,6 +61,7 @@ impl Recovery {
             copy: None,
             _lock: None,
             changed: false,
+            unsaved: false,
             last: Instant::now(),
             writing: false,
             wrote: false,
@@ -78,6 +83,11 @@ impl Recovery {
     /// steps do.
     pub(super) fn changed(&mut self) {
         self.changed = true;
+        self.unsaved = true;
+    }
+
+    pub(super) fn unsaved(&self) -> bool {
+        self.unsaved
     }
 }
 
@@ -249,6 +259,7 @@ impl Shell {
     pub(super) fn saved(&mut self) {
         let state = &mut self.recovery;
         state.changed = false;
+        state.unsaved = false;
         state.last = Instant::now();
         state.saves += 1;
         if std::mem::take(&mut state.wrote) {

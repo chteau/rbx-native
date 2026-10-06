@@ -2,8 +2,7 @@
 
 use rbx_dom::Variant;
 
-use super::scalar::string_value;
-use super::{Ctx, UNKNOWN_TAG_TYPE_ID};
+use super::{Ctx, SHARED_STRING_TYPE_ID, UNKNOWN_TAG_TYPE_ID};
 
 pub(crate) fn reference(text: &str, ctx: &Ctx<'_>) -> Option<Variant> {
     if text == "null" {
@@ -15,10 +14,14 @@ pub(crate) fn reference(text: &str, ctx: &Ctx<'_>) -> Option<Variant> {
 }
 
 // SharedString and NetAssetRef are wire-identical: both point at the same table,
-// keyed by its `md5` attribute.
+// keyed by its `md5` attribute. Read as `Unknown { 0x1C }`, the shape the
+// binary reader gives a SharedString, so either writer keeps the type.
 pub(crate) fn shared_string(text: &str, ctx: &Ctx<'_>) -> Variant {
     match ctx.shared.get(text) {
-        Some(bytes) => string_value(bytes),
+        Some(bytes) => Variant::Unknown {
+            type_id: SHARED_STRING_TYPE_ID,
+            raw: bytes.clone(),
+        },
         // No numeric SSTR index exists in XML to fall back to (unlike the binary
         // format's `Variant::SharedString(u32)`), so an unresolved key degrades to
         // `Unknown` instead, keeping the raw key visible rather than dropping it.
@@ -85,7 +88,10 @@ mod tests {
         };
         assert_eq!(
             shared_string("md5key", &ctx),
-            Variant::String("tagged".to_owned())
+            Variant::Unknown {
+                type_id: SHARED_STRING_TYPE_ID,
+                raw: b"tagged".to_vec()
+            }
         );
     }
 }

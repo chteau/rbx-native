@@ -49,6 +49,7 @@ actions!(
     [
         MenuSave,
         MenuSaveToFile,
+        MenuClosePlace,
         MenuExportGltf,
         MenuSaveToRoblox,
         MenuPublishToRoblox,
@@ -166,6 +167,9 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
             .items(vec![
                 MenuItem::action("New", MenuPlaceholder).disabled(true),
                 MenuItem::action("Open…", MenuPlaceholder).disabled(true),
+                // Studio's place for it, under Open. Back to Home; asks
+                // first when there are unsaved changes (`shell::close_place`).
+                MenuItem::action("Close Place", MenuClosePlace),
                 MenuItem::separator(),
                 // Studio's names: Save to File writes back to the file
                 // being edited (Ctrl+S), Save to File As… asks for a new one
