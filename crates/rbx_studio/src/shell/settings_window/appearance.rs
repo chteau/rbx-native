@@ -18,7 +18,7 @@ use crate::tokens;
 use super::super::toolbar::snap::NumberField;
 use super::dragger::{committed, number};
 use super::kit::{
-    self, ghost_icon, icon, readout, secondary_button, ticked_slider, Reset, Row, Section,
+    self, destructive_icon, icon, readout, secondary_button, ticked_slider, Reset, Row, Section,
 };
 use super::SettingsWindow;
 
@@ -437,7 +437,7 @@ impl SettingsWindow {
                         .child(select(&self.appearance.theme, 200.))
                         .when_some(active, |this, id| {
                             this.child(
-                                ghost_icon("uninstall-theme", "trash", "Uninstall").on_click(
+                                destructive_icon("uninstall-theme", "trash", "Uninstall").on_click(
                                     cx.listener(move |this, _, window, cx| {
                                         this.shell
                                             .update(cx, |shell, cx| shell.uninstall_theme(&id, cx));
@@ -560,7 +560,7 @@ impl SettingsWindow {
         });
         let mut tool_row = Row::new(
             "Tool colours",
-            kit::header_button(
+            kit::destructive_header(
                 "reset-tools",
                 "Reset all",
                 tools_changed.then_some(self.set(|shell, cx| shell.reset_tool_colors(cx))),
