@@ -342,6 +342,13 @@ fn quick_open_lists_every_instance_by_name_and_path() {
     let found = filter(&rows, "tower", &[]);
     assert_eq!(found[0], 1);
     assert!(found.contains(&2), "Door's path holds Tower");
+    // A path counts by its word starts, never by letters scattered along
+    // it: "Workspace" holds a "p", which does not make Door a match.
+    let found = filter(&rows, "p", &[]);
+    assert!(
+        !found.contains(&2),
+        "Door matched on its path's scattered p"
+    );
     // Recent instances lead an empty query, as in Studio.
     let recent: Vec<SharedString> = vec!["ServerStorage.SpareDoor".into()];
     let found = filter(&rows, "", &recent);

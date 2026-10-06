@@ -34,13 +34,13 @@ fn walk(dom: &WeakDom, reference: Ref, parent: Option<&str>, rows: &mut Vec<Comm
         None => name.to_owned(),
     };
     let label = SharedString::from(path);
-    rows.push(Command {
-        name: name.to_owned().into(),
-        detail: Some(label.clone()),
-        label: label.clone(),
-        hint: None,
-        run: Run::Instance(reference),
-    });
+    rows.push(Command::new(
+        label.clone(),
+        name.to_owned().into(),
+        Some(label.clone()),
+        None,
+        Run::Instance(reference),
+    ));
     for &child in instance.children() {
         walk(dom, child, Some(&label), rows);
     }

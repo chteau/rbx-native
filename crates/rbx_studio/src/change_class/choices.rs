@@ -175,19 +175,46 @@ pub(crate) enum Tier {
 /// command palette ranks its spaced labels here too, so whitespace in the
 /// query is a word break the user typed, never a letter that must match.
 pub(crate) fn rank(query: &str, class: &str) -> Option<Tier> {
-    let lower = class.to_lowercase();
+    rank_split(
+        query,
+        &letters(query),
+        &class.to_lowercase(),
+        &words(class),
+        true,
+    )
+}
+
+/// `query`'s letters, whitespace dropped, for [`rank_split`].
+pub(crate) fn letters(query: &str) -> Vec<char> {
+    query.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
+/// [`rank`] with everything that depends on one side only computed by the
+/// caller — `lower` and `words` once per name, `letters` once per query —
+/// for the command palette, which ranks every instance in a place on each
+/// keystroke. With `scattered` false only the prefix and word-start tiers
+/// count: on long dotted paths nearly every query's letters appear
+/// somewhere, so a scattered match there says nothing.
+pub(crate) fn rank_split(
+    query: &str,
+    letters: &[char],
+    lower: &str,
+    words: &[Vec<char>],
+    scattered: bool,
+) -> Option<Tier> {
     if lower.starts_with(query) {
         return Some(Tier::Prefix);
     }
-    let words = words(class);
-    let query: Vec<char> = query.chars().filter(|c| !c.is_whitespace()).collect();
-    if word_starts(&query, &words) {
+    if word_starts(letters, words) {
         return Some(Tier::WordStart);
     }
-    let mut letters = lower.chars();
-    query
+    if !scattered {
+        return None;
+    }
+    let mut chars = lower.chars();
+    letters
         .iter()
-        .all(|wanted| letters.any(|letter| letter == *wanted))
+        .all(|wanted| chars.any(|letter| letter == *wanted))
         .then_some(Tier::Scattered)
 }
 
@@ -196,7 +223,7 @@ pub(crate) fn rank(query: &str, class: &str) -> Option<Tier> {
 /// (`UIListLayout` is `ui`, `list`, `layout`), and after anything that is
 /// not a letter or digit (`Save to File` is `save`, `to`, `file`) — each
 /// lower-cased, separators dropped.
-fn words(class: &str) -> Vec<Vec<char>> {
+pub(crate) fn words(class: &str) -> Vec<Vec<char>> {
     let chars: Vec<char> = class.chars().collect();
     let mut words: Vec<Vec<char>> = Vec::new();
     for (index, &letter) in chars.iter().enumerate() {

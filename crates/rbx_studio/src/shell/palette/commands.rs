@@ -9,7 +9,7 @@ use std::any::TypeId;
 use gpui_kit::{Action, OwnedMenu, OwnedMenuItem, SharedString};
 use rbx_dom::Ref;
 
-use crate::change_class::{rank, Tier};
+use crate::change_class::{letters, rank_split, words, Tier};
 use crate::menu_bar::*;
 use crate::shell::chrome::Document;
 use crate::shell::ribbon::{self, RibbonCommand};
@@ -45,9 +45,46 @@ pub(in crate::shell) struct Command {
     /// In `Keystroke::parse` form; see [`display`].
     pub(in crate::shell) hint: Option<&'static str>,
     pub(in crate::shell) run: Run,
+    /// `name` and `label` lower-cased and split into words once, here,
+    /// rather than on every keystroke for every row: Quick Open ranks every
+    /// instance in the place (see `change_class::rank_split`).
+    name_key: Key,
+    label_key: Key,
+}
+
+struct Key {
+    lower: String,
+    words: Vec<Vec<char>>,
+}
+
+impl Key {
+    fn new(text: &str) -> Self {
+        Self {
+            lower: text.to_lowercase(),
+            words: words(text),
+        }
+    }
 }
 
 impl Command {
+    pub(in crate::shell) fn new(
+        label: SharedString,
+        name: SharedString,
+        detail: Option<SharedString>,
+        hint: Option<&'static str>,
+        run: Run,
+    ) -> Self {
+        Self {
+            name_key: Key::new(&name),
+            label_key: Key::new(&label),
+            label,
+            name,
+            detail,
+            hint,
+            run,
+        }
+    }
+
     /// What the row reads: an instance by its name (its path is the
     /// detail), a command by its whole label.
     pub(in crate::shell) fn text(&self) -> SharedString {
@@ -73,12 +110,14 @@ pub(in crate::shell) fn registry(
     menus: &[OwnedMenu],
     panels: impl IntoIterator<Item = Panel>,
 ) -> Vec<Command> {
-    let command = |category: &str, name: &str, hint, run| Command {
-        label: format!("{category}: {name}").into(),
-        name: name.to_owned().into(),
-        detail: None,
-        hint,
-        run,
+    let command = |category: &str, name: &str, hint, run| {
+        Command::new(
+            format!("{category}: {name}").into(),
+            name.to_owned().into(),
+            None,
+            hint,
+            run,
+        )
     };
     let mut commands = Vec::new();
     for menu in menus {
@@ -193,9 +232,15 @@ pub(super) fn wants_actions(query: &str) -> bool {
 /// Studio's Quick Open floats recent items to the top, so `recent` (labels,
 /// most recent first) leads an empty query and breaks ties within a match
 /// tier; registry order breaks the rest. Action mode's leading `>` is not
-/// part of what is searched for.
+/// part of what is searched for. The label (category or path) counts only
+/// as a prefix or by word starts: scattered across a long dotted path,
+/// almost any letters match.
 pub(super) fn filter(commands: &[Command], query: &str, recent: &[SharedString]) -> Vec<usize> {
     let query = query.trim().trim_start_matches('>').trim().to_lowercase();
+    let letters = letters(&query);
+    let rank_one = |key: &Key, scattered: bool| {
+        rank_split(&query, &letters, &key.lower, &key.words, scattered)
+    };
     let recency = |command: &Command| {
         recent
             .iter()
@@ -211,8 +256,8 @@ pub(super) fn filter(commands: &[Command], query: &str, recent: &[SharedString])
             let (tier, by_label) = match query.is_empty() {
                 true => (Tier::Prefix, false),
                 false => [
-                    rank(&query, &command.name).map(|tier| (tier, false)),
-                    rank(&query, &command.label).map(|tier| (tier, true)),
+                    rank_one(&command.name_key, true).map(|tier| (tier, false)),
+                    rank_one(&command.label_key, false).map(|tier| (tier, true)),
                 ]
                 .into_iter()
                 .flatten()
