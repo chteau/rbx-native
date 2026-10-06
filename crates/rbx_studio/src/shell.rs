@@ -998,6 +998,7 @@ impl Shell {
         self.range_cursor = None;
         self.edits.clear();
         self.attribute_edits.clear();
+        self.sync_viewport_pick(cx);
         self.sync_viewport_selection(cx);
         // A click on the very part the cursor was already hovering would
         // otherwise leave its hover box drawn right under the new selection

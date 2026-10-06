@@ -97,6 +97,7 @@ impl Shell {
         let meshes = self.viewport.read(cx).meshes().clone();
         let grid = self.viewport.read(cx).hover_grid();
         let covered = self.covered.clone();
+        let picking = self.edits.ref_pick.is_armed();
         let mut target = None;
         let hovered: Vec<Selected> = ray
             .and_then(|ray| {
@@ -111,8 +112,16 @@ impl Shell {
                 // part is the nearest hit (distance zero), and only cycling
                 // from the current selection reaches the child in front of it,
                 // for the hover exactly as for the click.
-                let referent =
-                    selection::from_click(&self.dom, &self.database, &hits, self.selected(), alt)?;
+                let referent = match picking {
+                    true => self.ref_pick_candidate(&hits, alt)?,
+                    false => selection::from_click(
+                        &self.dom,
+                        &self.database,
+                        &hits,
+                        self.selected(),
+                        alt,
+                    )?,
+                };
                 // Studio's hover ruler measures the face of whatever the
                 // cursor is over — selected or not — once there is something
                 // selectable there at all.
@@ -127,7 +136,11 @@ impl Shell {
                     // second box right under the selection's own outline, so it
                     // is dropped (see `Shell::selection_changed` for the other
                     // half of this).
-                    .find(|entry| entry.parts().iter().any(|part| !covered.contains(part)))
+                    // A pick's candidate stays, though: a `Model`'s own part
+                    // is exactly what its `PrimaryPart` pick is after.
+                    .find(|entry| {
+                        picking || entry.parts().iter().any(|part| !covered.contains(part))
+                    })
                     .map(|entry| vec![entry])
             })
             .unwrap_or_default();
@@ -169,6 +182,16 @@ impl Shell {
         // triangles actually drawn rather than the box around them.
         let meshes = self.viewport.read(cx).meshes().clone();
         let hits = pick::parts_along(&self.dom, &self.database, &meshes, ray);
+        // An armed `Ref` row takes the click as its value instead (see
+        // `shell::ref_pick`). The sky picks nothing and keeps the pick armed:
+        // a miss is not a selection change, and must not deselect the
+        // instance whose row is waiting.
+        if self.edits.ref_pick.is_armed() {
+            if let Some(target) = self.ref_pick_candidate(&hits, cycling) {
+                self.finish_ref_pick(target, cx);
+            }
+            return;
+        }
         if held {
             let outlined = selection::outlined(&self.dom, &self.database, self.selected_all());
             let covered = selection::covers(&outlined, hits.first().copied());
