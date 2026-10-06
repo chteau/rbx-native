@@ -27,6 +27,21 @@
   Delete layout, Reset layout, the Explorer menu's Delete row, Delete
   stop — clear WCAG 2.5.5 whether or not Large Click Targets is on, each
   measured by a layout test. — @chteau
+- **Quick Open and the command palette.** As in Studio, Ctrl+P (View ›
+  Quick Open…) finds any instance in the place by name or path — a script
+  opens in the Script Editor, anything else is selected — and Ctrl+Alt+P
+  (View › Command Palette…) or a leading `>` finds any command instead:
+  each live menu item, the transform tools, the ribbon's live commands
+  (Part shapes, UI inserts, Local, Align, snapping, pivot, Sun, Terrain
+  Editor — now read from one list the ribbon builds from too), and a
+  "Focus" command per dock and document that puts the caret in it, so
+  panels can be reached without the mouse. Rows rank prefix first, then
+  word starts, then scattered letters, with this session's recent ones
+  floated to the top, and each shows its shortcut. Up/Down/Home/End, Enter
+  and Escape work from the field, a screen reader follows the highlighted
+  row, and focus goes back where it was on close. View › Style Editor no
+  longer does nothing when no window manager marks the window active.
+  — @chteau
 - **Smooth terrain and the Terrain Editor.** `Workspace.Terrain`'s
   voxels are read and written: `SmoothGrid`'s layout was worked out from
   a real place, whose terrain re-encodes to its original bytes, and

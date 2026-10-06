@@ -160,7 +160,7 @@ fn related(database: &ReflectionDatabase, sources: &[&str]) -> Vec<String> {
 
 /// How good a match is, best first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum Tier {
+pub(crate) enum Tier {
     /// The name starts with the query: `spot` in `SpotLight`.
     Prefix,
     /// The query is the starts of the name's words, in order: `tl` in
@@ -171,35 +171,70 @@ pub(super) enum Tier {
 }
 
 /// How `query` (already lower-case) matches `class`, or `None` when it does
-/// not. Case never matters; the capitals only say where words begin.
-pub(super) fn rank(query: &str, class: &str) -> Option<Tier> {
-    let lower = class.to_lowercase();
+/// not. Case never matters; the capitals only say where words begin. The
+/// command palette ranks its spaced labels here too, so whitespace in the
+/// query is a word break the user typed, never a letter that must match.
+pub(crate) fn rank(query: &str, class: &str) -> Option<Tier> {
+    rank_split(
+        query,
+        &letters(query),
+        &class.to_lowercase(),
+        &words(class),
+        true,
+    )
+}
+
+/// `query`'s letters, whitespace dropped, for [`rank_split`].
+pub(crate) fn letters(query: &str) -> Vec<char> {
+    query.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
+/// [`rank`] with everything that depends on one side only computed by the
+/// caller — `lower` and `words` once per name, `letters` once per query —
+/// for the command palette, which ranks every instance in a place on each
+/// keystroke. With `scattered` false only the prefix and word-start tiers
+/// count: on long dotted paths nearly every query's letters appear
+/// somewhere, so a scattered match there says nothing.
+pub(crate) fn rank_split(
+    query: &str,
+    letters: &[char],
+    lower: &str,
+    words: &[Vec<char>],
+    scattered: bool,
+) -> Option<Tier> {
     if lower.starts_with(query) {
         return Some(Tier::Prefix);
     }
-    let words = words(class);
-    let query: Vec<char> = query.chars().collect();
-    if word_starts(&query, &words) {
+    if word_starts(letters, words) {
         return Some(Tier::WordStart);
     }
-    let mut letters = lower.chars();
-    query
+    if !scattered {
+        return None;
+    }
+    let mut chars = lower.chars();
+    letters
         .iter()
-        .all(|wanted| letters.any(|letter| letter == *wanted))
+        .all(|wanted| chars.any(|letter| letter == *wanted))
         .then_some(Tier::Scattered)
 }
 
 /// `class` split where a new word begins — at a capital after a lower-case
 /// letter or digit, and at the last capital of a run followed by lower case
-/// (`UIListLayout` is `ui`, `list`, `layout`) — each lower-cased.
-fn words(class: &str) -> Vec<Vec<char>> {
+/// (`UIListLayout` is `ui`, `list`, `layout`), and after anything that is
+/// not a letter or digit (`Save to File` is `save`, `to`, `file`) — each
+/// lower-cased, separators dropped.
+pub(crate) fn words(class: &str) -> Vec<Vec<char>> {
     let chars: Vec<char> = class.chars().collect();
     let mut words: Vec<Vec<char>> = Vec::new();
     for (index, &letter) in chars.iter().enumerate() {
+        if !letter.is_alphanumeric() {
+            continue;
+        }
         let before = index.checked_sub(1).map(|i| chars[i]);
         let after = chars.get(index + 1);
         let starts = match before {
             None => true,
+            Some(before) if !before.is_alphanumeric() => true,
             Some(before) if letter.is_uppercase() => {
                 !before.is_uppercase() || after.is_some_and(|a| a.is_lowercase())
             }

@@ -205,19 +205,26 @@ pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
             shell.update(cx, |shell, cx| shell.ungroup_selected(cx));
         }
     });
-    // The one item here that needs a `Window`: raising a dock tab moves a
-    // panel, and `App::on_action` hands this handler only an `App`. The
-    // active window is this app's only window.
+    // Straight to the shell like every other item: raising the document
+    // needs no `Window`. Going through `App::active_window` instead did
+    // nothing at all wherever no window manager marks the window active
+    // (a bare X server), since that is `None` there.
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuStyleEditor, cx| {
-            let Some(window) = cx.active_window() else {
-                return;
-            };
-            let shell = shell.clone();
-            let _ = window.update(cx, move |_, _window, cx| {
-                shell.update(cx, |shell, cx| shell.reveal_style_editor(cx));
-            });
+            shell.update(cx, |shell, cx| shell.reveal_style_editor(cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
+        move |_: &MenuCommandPalette, cx| {
+            shell.update(cx, |shell, cx| shell.request_palette(true, cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
+        move |_: &MenuQuickOpen, cx| {
+            shell.update(cx, |shell, cx| shell.request_palette(false, cx));
         }
     });
     cx.on_action(move |_: &MenuPlaceholder, _cx| {});

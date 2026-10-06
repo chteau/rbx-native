@@ -13,7 +13,7 @@ use rbx_dom::Ref;
 use rbx_viewer::pick;
 
 use crate::tokens;
-use crate::transform::{self, Action, Tool};
+use crate::transform::{self, Tool};
 
 use super::ribbon;
 use super::Shell;
@@ -91,7 +91,7 @@ impl Shell {
                 )
             })
             .on_click(cx.listener(|shell, _, _, cx| {
-                shell.transform_action(Action::Use(Tool::Pivot), cx);
+                ribbon::RibbonCommand::EditPivot.run(shell, cx);
             }));
 
         let snap_on = self.transform.pivot_snap;
@@ -106,7 +106,7 @@ impl Shell {
                 )
             })
             .on_click(cx.listener(|shell, _, _, cx| {
-                shell.transform_action(Action::TogglePivotSnap, cx);
+                ribbon::RibbonCommand::PivotSnap.run(shell, cx);
             }));
         let reset = if self.pivot_owners().is_empty() {
             ribbon::unavailable_row("ribbon-pivot-reset", IconName::RotateCcw, "Reset", NOTHING)
@@ -119,7 +119,9 @@ impl Shell {
                         cx,
                     )
                 })
-                .on_click(cx.listener(|shell, _, _, cx| shell.reset_pivot(cx)))
+                .on_click(cx.listener(|shell, _, _, cx| {
+                    ribbon::RibbonCommand::PivotReset.run(shell, cx);
+                }))
         };
 
         vec![

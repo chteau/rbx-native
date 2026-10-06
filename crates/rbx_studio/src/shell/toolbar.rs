@@ -103,7 +103,7 @@ impl Shell {
             .when(local, |this| ribbon::selected(this, tokens::tool_local()))
             .tooltip(|window, cx| super::tooltip::text("Local orientation", window, cx))
             .on_click(cx.listener(|shell, _, _, cx| {
-                shell.transform_action(Action::ToggleLocal, cx);
+                ribbon::RibbonCommand::Local.run(shell, cx);
             }))
     }
 

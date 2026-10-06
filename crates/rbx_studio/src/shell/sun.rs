@@ -80,7 +80,12 @@ impl Shell {
     }
 
     /// Enters the Sun tool, placing `body`, or keeps it with a new `mode`.
-    fn use_sun(&mut self, body: Option<Body>, mode: Option<Mode>, cx: &mut Context<Self>) {
+    pub(super) fn use_sun(
+        &mut self,
+        body: Option<Body>,
+        mode: Option<Mode>,
+        cx: &mut Context<Self>,
+    ) {
         if let Some(body) = body {
             self.sun.body = body;
         }
@@ -95,10 +100,13 @@ impl Shell {
     /// gesture enters the tool too: nobody picks one to leave it unused.
     pub(super) fn sun_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let nav = &self.ribbon_nav;
-        let bodies = [
-            (Body::Sun, "ribbon-sun", IconName::Sun, "Sun"),
-            (Body::Moon, "ribbon-moon", IconName::Moon, "Moon"),
-        ];
+        let bodies = ribbon::SUN_BODIES.map(|(body, label)| {
+            let (id, icon) = match body {
+                Body::Sun => ("ribbon-sun", IconName::Sun),
+                Body::Moon => ("ribbon-moon", IconName::Moon),
+            };
+            (body, id, icon, label)
+        });
         let rows = |pair: [Mode; 2]| pair.map(|mode| (mode, mode_id(mode), mode_icon(mode)));
 
         if sun::lighting(&self.dom).is_none() {
@@ -108,7 +116,7 @@ impl Shell {
                     ribbon::unavailable_tile(id, icon, label, NO_LIGHTING).into_any_element()
                 })
                 .collect();
-            for pair in [[Mode::Sky, Mode::Face], [Mode::Shadow, Mode::Glint]] {
+            for pair in ribbon::SUN_MODES {
                 let rows = rows(pair).map(|(mode, id, icon)| {
                     ribbon::unavailable_row(id, icon, mode.label(), NO_LIGHTING)
                 });
@@ -134,12 +142,12 @@ impl Shell {
                         )
                     })
                     .on_click(cx.listener(move |shell, _, _, cx| {
-                        shell.use_sun(Some(body), None, cx);
+                        ribbon::RibbonCommand::SunBody(body).run(shell, cx);
                     }))
                     .into_any_element()
             })
             .collect();
-        for pair in [[Mode::Sky, Mode::Face], [Mode::Shadow, Mode::Glint]] {
+        for pair in ribbon::SUN_MODES {
             let rows = rows(pair).map(|(mode, id, icon)| {
                 // Marked only while the tool is in use: a remembered choice
                 // on an idle tool would spend the accent on nothing active.
@@ -155,7 +163,7 @@ impl Shell {
                         )
                     })
                     .on_click(cx.listener(move |shell, _, _, cx| {
-                        shell.use_sun(None, Some(mode), cx);
+                        ribbon::RibbonCommand::SunMode(mode).run(shell, cx);
                     }))
             });
             group.push(ribbon::stack(rows.into()).into_any_element());

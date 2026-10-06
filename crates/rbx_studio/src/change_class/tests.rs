@@ -378,6 +378,16 @@ fn matches_rank_prefix_then_word_starts_then_scattered() {
     assert_eq!(rank("zz", "TextLabel"), None);
 }
 
+#[test]
+fn spaced_labels_split_into_words_at_every_separator() {
+    assert_eq!(rank("stf", "File: Save to File"), Some(Tier::WordStart));
+    assert_eq!(rank("save as", "Save to File As…"), Some(Tier::WordStart));
+    assert_eq!(rank("fsave", "File: Save to File"), Some(Tier::WordStart));
+    assert_eq!(rank("save", "Save to File"), Some(Tier::Prefix));
+    // A typed space is a word break, not a letter to find.
+    assert_eq!(rank("ex plorer", "View: Explorer"), Some(Tier::WordStart));
+}
+
 fn first_match(query: &str) -> String {
     choices(&database(), &["Part"], &[], query).rest[0]
         .class

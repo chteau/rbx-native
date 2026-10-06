@@ -186,7 +186,9 @@ impl Shell {
         .tooltip(|window, cx| {
             super::tooltip::text("Terrain Editor — create and sculpt terrain", window, cx)
         })
-        .on_click(cx.listener(move |shell, _, _, cx| shell.toggle_terrain_editor(!showing, cx)))
+        .on_click(cx.listener(|shell, _, _, cx| {
+            super::ribbon::RibbonCommand::TerrainEditor.run(shell, cx);
+        }))
         .into_any_element()]
     }
 

@@ -287,14 +287,25 @@ impl Shell {
             true => CANVAS_HIDES.to_vec(),
             false => Vec::new(),
         };
-        match self.document == Document::Scripts {
-            true => hidden.push(Panel::Viewport),
-            false => hidden.extend(SCRIPT_TOOLS),
-        }
+        hidden.extend(self.document_hides());
         hidden
             .into_iter()
             .filter(|panel| !self.ui.unhidden.contains(panel))
             .collect()
+    }
+
+    /// Keyboard focus onto the canvas, where its nudge and delete keys live.
+    pub(super) fn focus_ui_canvas(&self, window: &mut Window, cx: &mut App) {
+        window.focus(&self.ui.focus, cx);
+    }
+
+    /// The docks the current document leaves out whatever is asked —
+    /// unlike the canvas's set-asides, which asking for one by name undoes.
+    pub(super) fn document_hides(&self) -> Vec<Panel> {
+        match self.document == Document::Scripts {
+            true => vec![Panel::Viewport],
+            false => SCRIPT_TOOLS.to_vec(),
+        }
     }
 
     /// A dock asked back by name while the canvas has it set aside.

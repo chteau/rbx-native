@@ -196,7 +196,7 @@ impl Shell {
             .any(|open| open.state.focus_handle(cx).contains_focused(window, cx))
     }
 
-    fn focus_script(&self, reference: Ref, window: &mut Window, cx: &mut App) {
+    pub(super) fn focus_script(&self, reference: Ref, window: &mut Window, cx: &mut App) {
         if let Some(open) = self.scripts.open.get(&reference) {
             window.focus(&open.state.focus_handle(cx), cx);
         }
