@@ -61,9 +61,8 @@ pub(crate) fn mono(size: f32, line: f32) -> Div {
     text(size, line).font_family(tokens::FONT_FAMILY_MONO)
 }
 
-/// The four button weights, 34 tall unless `small` (28, 12 px text) — except
-/// Primary and Danger, which are the buttons that commit or destroy and are
-/// 44 either way (WCAG 2.5.5; see [`button_height`]).
+/// The four button weights, all 34 tall unless `small` (28, 12 px text);
+/// see [`button_height`].
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Weight {
     Primary,
@@ -104,26 +103,27 @@ pub(crate) fn external_button(
     button(id, label, weight, small).child(icon("external-link", if small { 12. } else { 13. }))
 }
 
-/// A button's height in px. Primary and Danger take 2.5.5's 44 even when
-/// `small`: the visual grows with the hit area because a gpui element has no
-/// separate hit slop, and 44 matches the platform buttons people already
-/// hit (Material 48, Apple 44).
-pub(crate) fn button_height(weight: Weight, small: bool) -> f32 {
+/// A button's height in px, the same for every weight so a Primary sits
+/// level with the Cancel beside it. Large Click Targets raises them all to
+/// WCAG 2.5.5's 44 (a gpui element has no separate hit slop, so the visual
+/// grows with the hit area).
+pub(crate) fn button_height(small: bool) -> f32 {
     let h: f32 = if small { 28. } else { 34. };
-    match weight {
-        Weight::Primary | Weight::Danger => h.max(44.),
-        Weight::Secondary | Weight::Ghost => h,
+    if tokens::large_targets() {
+        h.max(44.)
+    } else {
+        h
     }
 }
 
 fn button_frame(id: impl Into<ElementId>, weight: Weight, small: bool) -> Stateful<Div> {
-    let h = button_height(weight, small);
+    let h = button_height(small);
     let id: ElementId = id.into();
     let probe = id.to_string();
     let (size, line, px_x) = if small {
         (12., 16., 10.)
     } else {
-        (12.5, 17., if weight == Weight::Primary { 16. } else { 14. })
+        (12.5, 17., 14.)
     };
     let base = h_flex()
         .id(id)
@@ -141,12 +141,22 @@ fn button_frame(id: impl Into<ElementId>, weight: Weight, small: bool) -> Statef
         .cursor_pointer()
         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())));
     match weight {
+        // The filled weights carry Secondary's 1px border in their own fill,
+        // so all three lay out to the same box for the same label.
         Weight::Primary => base
+            .border_1()
+            .border_color(accent())
             .bg(accent())
             .text_color(bg())
             .font_weight(FontWeight::BOLD)
-            .hover(|this| tokens::hover_fx(this).bg(tokens::accent_hover())),
+            .hover(|this| {
+                tokens::hover_fx(this)
+                    .bg(tokens::accent_hover())
+                    .border_color(tokens::accent_hover())
+            }),
         Weight::Danger => base
+            .border_1()
+            .border_color(red())
             .bg(red())
             .text_color(bg())
             .font_weight(FontWeight::BOLD),
@@ -385,33 +395,35 @@ pub(crate) fn field_frame(
 
 #[cfg(test)]
 mod tests {
-    use super::{button, button_height, Weight};
-    use crate::probe::assert_primary;
+    use super::{button, Weight};
+    use gpui_kit::component::h_flex;
+    use gpui_kit::ParentElement;
 
-    /// WCAG 2.5.5: the buttons that commit or destroy are 44 tall in both
-    /// sizes, with Large Click Targets off (it is not consulted here at all).
-    #[test]
-    fn primary_and_danger_buttons_are_44_tall_in_every_size() {
-        for weight in [Weight::Primary, Weight::Danger] {
-            for small in [false, true] {
-                assert!(button_height(weight, small) >= 44.);
-            }
-        }
-        // Secondary and Ghost keep the compact design.
-        assert_eq!(button_height(Weight::Secondary, false), 34.);
-    }
-
-    /// The same floor, measured through gpui layout rather than read off the
-    /// constant: every Primary and Danger button, in both sizes.
+    /// Primary and Danger lay out to exactly the Secondary box for the same
+    /// label, in both sizes: one layout, so Large Click Targets cannot move
+    /// between the measurements.
     #[gpui_kit::test]
-    fn primary_and_danger_buttons_lay_out_at_least_44_by_44(cx: &mut gpui_kit::TestAppContext) {
-        for (id, weight, small) in [
-            ("primary", Weight::Primary, false),
-            ("primary-small", Weight::Primary, true),
-            ("danger", Weight::Danger, false),
-            ("danger-small", Weight::Danger, true),
-        ] {
-            assert_primary(cx, id, 200., move |_, _| button(id, "OK", weight, small));
+    fn every_weight_lays_out_to_the_secondary_box(cx: &mut gpui_kit::TestAppContext) {
+        for small in [false, true] {
+            let ids = ["w-secondary", "w-primary", "w-danger"];
+            let sizes = crate::probe::bounds_of(cx, &ids, 200., move |_, _| {
+                h_flex()
+                    .child(button("w-secondary", "Publish", Weight::Secondary, small))
+                    .child(button("w-primary", "Publish", Weight::Primary, small))
+                    .child(button("w-danger", "Publish", Weight::Danger, small))
+            });
+            assert_eq!(sizes.len(), 3);
+            let secondary = sizes[0].1;
+            for (id, size) in &sizes[1..] {
+                // Bold vs semibold shapes a slightly different label width;
+                // the box (height, padding, border) must match exactly.
+                assert_eq!(size.height, secondary.height, "{id} height, small={small}");
+                let dw = (f32::from(size.width) - f32::from(secondary.width)).abs();
+                assert!(
+                    dw < 4.,
+                    "{id} is {dw}px off Secondary's width, small={small}"
+                );
+            }
         }
     }
 }

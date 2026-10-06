@@ -158,6 +158,10 @@ impl Shell {
             // in the Explorer retitles the tab.
             let label = source::label(&self.dom, reference).unwrap_or_default();
             Tab::new()
+                // The kit's Underline variant pads nothing, which leaves the
+                // glyph flush with the tab's edge; the document tabs above
+                // (`chrome::document_tab`) lead with 16.
+                .pl(px(16.))
                 .label(SharedString::from(label))
                 // `prefix`, not `icon`: a `Tab` given an icon draws *only*
                 // the icon, and a tab strip of identical file glyphs says
