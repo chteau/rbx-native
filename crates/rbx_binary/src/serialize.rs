@@ -268,6 +268,15 @@ fn neutral_for(sample: &Variant) -> Option<Variant> {
         Variant::Float32(_) => Some(Variant::Float32(0.0)),
         Variant::Float64(_) => Some(Variant::Float64(0.0)),
         Variant::String(_) => Some(Variant::String(String::new())),
+        // A String or SharedString kept as raw bytes (what a non-UTF-8 String
+        // and every SharedString read back as): empty bytes, the same empty
+        // value. Other unknown wire types have no known empty encoding.
+        Variant::Unknown { type_id, .. } if matches!(*type_id, 0x01 | 0x1C) => {
+            Some(Variant::Unknown {
+                type_id: *type_id,
+                raw: Vec::new(),
+            })
+        }
         Variant::Vector3(_) => Some(Variant::Vector3(Vector3Data {
             x: 0.0,
             y: 0.0,
