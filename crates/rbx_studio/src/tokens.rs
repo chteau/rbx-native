@@ -449,9 +449,10 @@ pub(crate) fn radius_segment() -> Pixels {
 // -------------------------------------------------------------- UI  scale
 //
 // Blender's model, and for Blender's reason: one multiplier over fonts
-// *and* the boxes they sit in, rather than VS Code's split between UI zoom
-// and editor font size. A dense inspector whose text grows but whose rows
-// don't is worse than either.
+// *and* the boxes they sit in. A dense inspector whose text grows but whose
+// rows don't is worse than either. VS Code's separate editor font size
+// exists only on top of it, for the two surfaces with no rows to clip: the
+// Script Editor and the 3D view (see "Viewport text" below).
 //
 // This is how this app meets WCAG 1.4.4 (Resize Text, 200%) — a native app
 // has no browser zoom, so the settings-based scale *is* the mechanism.
@@ -484,6 +485,38 @@ pub(crate) fn scaled(base: f32) -> Pixels {
 /// to its own longest label, say — and they still have to follow the scale.
 pub(crate) fn scaled_width(base: f32) -> Pixels {
     scaled(base)
+}
+
+// --------------------------------------------------------- Viewport text
+//
+// VS Code's split between `window.zoomLevel` and `editor.fontSize`, for the
+// 3D view: the text the editor draws over the scene (readouts, guide
+// labels, the measurement box, the orientation indicator's letters) has its
+// own size, and the UI scale multiplies it like everything else. Place
+// content — a BillboardGui's or SurfaceGui's text — is not on this dial:
+// it is what the place looks like, and Studio never rescales it either.
+
+static VIEWPORT_FONT_SIZE: AtomicU32 =
+    AtomicU32::new(crate::settings::VIEWPORT_FONT_SIZE.to_bits());
+
+/// Takes an already-clamped size (`settings::clamp_viewport_font_size`);
+/// returns whether it changed, like [`set_font_scale`].
+pub(crate) fn set_viewport_font_size(size: f32) -> bool {
+    f32::from_bits(VIEWPORT_FONT_SIZE.swap(size.to_bits(), Ordering::Relaxed)) != size
+}
+
+pub(crate) fn viewport_font_size() -> f32 {
+    f32::from_bits(VIEWPORT_FONT_SIZE.load(Ordering::Relaxed))
+}
+
+/// What a viewport overlay designed at `base` px paints at: grown by the
+/// viewport font size against its default, then by the UI scale.
+pub(crate) fn viewport_scale() -> f32 {
+    viewport_font_size() / crate::settings::VIEWPORT_FONT_SIZE * font_scale()
+}
+
+pub(crate) fn viewport_text(base: f32) -> Pixels {
+    px(base * viewport_scale())
 }
 
 /// WCAG 2.5.8's minimum pointer target, and 2.5.5's enhanced one. Floors,

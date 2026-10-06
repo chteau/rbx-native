@@ -11,7 +11,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::class_icons::IconPack;
-use crate::settings::SCRIPT_FONT_SIZE;
+use crate::settings::{SCRIPT_FONT_SIZE, VIEWPORT_FONT_SIZE};
 use crate::theme;
 use crate::tokens;
 
@@ -62,6 +62,8 @@ pub(super) struct AppearanceControls {
     ui_scale: Entity<SliderState>,
     /// The Script font size field, in px at 1x.
     pub(super) script_font: NumberField,
+    /// The Viewport font size field, in px at 1x.
+    pub(super) viewport_font: NumberField,
     /// The repository link Install from GitHub takes.
     link: Entity<InputState>,
     /// Whether the shell's install was running when last seen, to clear
@@ -160,6 +162,19 @@ impl AppearanceControls {
             }
             this.shell.read(cx).script_font_size()
         });
+        let (viewport_font, viewport_typed) = NumberField::new(
+            tokens::viewport_font_size(),
+            window,
+            cx,
+            |this, text, cx| {
+                let range = crate::settings::VIEWPORT_FONT_SIZE_RANGE;
+                if let Some(size) = committed(text, range, true) {
+                    this.shell
+                        .update(cx, |shell, cx| shell.set_viewport_font_size(size, cx));
+                }
+                tokens::viewport_font_size()
+            },
+        );
         let link = cx.new(|cx| InputState::new(window, cx).placeholder("github.com/owner/repo"));
 
         let subscriptions = vec![
@@ -200,6 +215,7 @@ impl AppearanceControls {
                 }
             }),
             typed,
+            viewport_typed,
             cx.subscribe_in(&link, window, |this, _, event: &InputEvent, _, cx| {
                 if matches!(event, InputEvent::PressEnter { .. }) {
                     this.install_theme(cx);
@@ -229,6 +245,7 @@ impl AppearanceControls {
                 themes,
                 ui_scale,
                 script_font,
+                viewport_font,
                 link,
                 installing,
             },
@@ -333,6 +350,10 @@ impl SettingsWindow {
                 .update(cx, |state, cx| state.set_value(scale, window, cx));
         }
         let script_font_focused = (self.appearance.script_font.input.read(cx))
+            .focus_handle(cx)
+            .is_focused(window);
+        let viewport_font = tokens::viewport_font_size();
+        let viewport_font_focused = (self.appearance.viewport_font.input.read(cx))
             .focus_handle(cx)
             .is_focused(window);
         // A card click or an edited appearance.json changes the theme
@@ -478,6 +499,21 @@ impl SettingsWindow {
                 .describe("The Script Editor only, 8 to 32, on top of the UI scale.")
                 .changed(script_font != SCRIPT_FONT_SIZE, |shell, cx| {
                     shell.set_script_font_size(SCRIPT_FONT_SIZE, cx)
+                }),
+                Row::new(
+                    "Viewport font size",
+                    number(
+                        &self.appearance.viewport_font.input,
+                        "px",
+                        viewport_font_focused,
+                    ),
+                )
+                .describe(
+                    "Text the editor draws over the 3D view, 8 to 24, on top of the UI scale. \
+                     Not the place\u{2019}s own GUIs.",
+                )
+                .changed(viewport_font != VIEWPORT_FONT_SIZE, |shell, cx| {
+                    shell.set_viewport_font_size(VIEWPORT_FONT_SIZE, cx)
                 }),
             ],
         );

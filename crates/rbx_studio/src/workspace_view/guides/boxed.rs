@@ -4,9 +4,10 @@
 
 use gpui_kit::*;
 
-/// The measurement text's size: Studio's `SourceSansBold` 24.
+/// The measurement text's size: Studio's `SourceSansBold` 24, at the
+/// viewport's own text size (`tokens::viewport_text`).
 pub(in crate::workspace_view) fn label_text() -> Pixels {
-    px(24.0 * crate::tokens::font_scale())
+    crate::tokens::viewport_text(24.0)
 }
 
 /// Studio's floating measurement box, legacy dark theme: a white bold number

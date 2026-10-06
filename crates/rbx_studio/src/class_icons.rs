@@ -77,6 +77,11 @@ pub(crate) fn icon_tile(class: &str, pack: IconPack) -> Option<Arc<RenderImage>>
     let installed = USER_PACK.read().ok().and_then(|pack| pack.clone());
     let tile = icon_tile_over(class, pack, installed.as_deref());
     if let Ok(mut cache) = TILE_CACHE.write() {
+        // Another thread may have missed alongside this one and stored its
+        // own copy first; keep that one, so every caller shares one image.
+        if let Some(hit) = cache.get(pack, class) {
+            return hit;
+        }
         cache.insert(pack, class, tile.clone());
     }
     tile

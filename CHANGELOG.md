@@ -2,6 +2,13 @@
 
 ## 2026-10-05
 
+- **A Viewport font size of its own.** Studio Settings › Appearance now
+  sizes the text drawn over the 3D view — drag and speed readouts, guide
+  labels, the measurement box, the orientation indicator — separately
+  from the panels, 8 to 24px and multiplied by the UI scale, the way VS
+  Code keeps `editor.fontSize` apart from its zoom. The place's own
+  BillboardGui and SurfaceGui text stays as authored, as it does in
+  Studio. — @chteau
 - **Smooth terrain and the Terrain Editor.** `Workspace.Terrain`'s
   voxels are read and written: `SmoothGrid`'s layout was worked out from
   a real place, whose terrain re-encodes to its original bytes, and

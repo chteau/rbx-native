@@ -98,9 +98,14 @@ first four are asserted in `tokens::tests` rather than eyeballed, and the
 target-size test runs at **every** scale, not just at 1.0× where none of
 those tokens can fail.
 
-**Stage 2 — met, with one gap.** The UI scale (item 7) is there; the
-reference's separate editor/viewport font size is not, and is not missed
-yet. Large Click Targets and a Reduce Motion toggle (item 8) live in the
+**Stage 2 — met.** The UI scale (item 7) is there, and VS Code's split
+on top of it: Studio Settings › Appearance has a Script font size and a
+Viewport font size, each multiplied by the UI scale. The viewport's covers
+every piece of text the editor draws over the 3D view — the drag and speed
+readouts, the guide labels, the measurement box, the orientation
+indicator — through `tokens::viewport_text`, and never the place's own
+BillboardGui/SurfaceGui text, which is content Studio does not rescale
+either. Large Click Targets and a Reduce Motion toggle (item 8) live in the
 View menu, the latter overriding a desktop preference read at startup.
 The whole dock arrangement persists — which edge, dock and tab each panel
 sits in, every size, what is floating and what is closed — with a Reset
@@ -517,7 +522,6 @@ to lie — not a shortcut:
 | Every control in the Tab order | every control but the menu bar, which F10 or a bare Alt tap reaches instead | the desktop convention: a region everyone has to Tab through on the way to the ribbon is not what it asks for. `Select`, `ColorPicker` and `NumberInput` are in the order — their state entities are `Focusable`, so `shell::roving::TabOrder` records each handle directly, no wrapper needed. No Level A gap remains (2.1.1 Keyboard) |
 | No slider anywhere in the frame | a rail beside the number field, on the bounded properties only | the frame is silent, so §1's rule applies and this file decides. Built from `gpui_base`'s unstyled slider parts rather than the toolkit's finished `Slider`, whose rail, thumb and target are all sized in `rem` and would ignore the UI scale. Skinned as a field box: `chrome` fill, no border, `check_on` for what is set |
 | A slider in the Tab order | mouse and assistive-technology only | `SliderState` is not `Focusable`, so `shell::roving::TabOrder` has no handle to record. Not a Level A gap: the rail is a decoration on a row whose number field *is* a Tab stop and takes the same value typed, and `gpui_base` gives the rail `Role::Slider` with working increment/decrement actions |
-| A separate editor/viewport font size | one UI scale over everything | the reference notes VS Code splits them; nothing here needs a text size independent of its chrome yet |
 | Named dock layouts | one layout, plus Reset | the arrangement persists and can be reset; saving several under names is a feature, not a floor |
 
 ## 12. Verifying a visual change

@@ -449,6 +449,7 @@ impl Shell {
             auto_recovery,
             recovery_minutes,
             script_font_size,
+            viewport_font_size,
             large_targets,
             reduce_motion,
             docks,
@@ -466,6 +467,7 @@ impl Shell {
         // so a scale or target floor applied after the first frame would
         // flash.
         tokens::set_font_scale(font_scale);
+        tokens::set_viewport_font_size(viewport_font_size);
         tokens::set_large_targets(large_targets);
         if let Some(reduced) = reduce_motion {
             tokens::set_reduced_motion(reduced);
@@ -1381,6 +1383,21 @@ impl Shell {
         cx.notify();
     }
 
+    /// Sets the 3D view's own text size, clamped, from Studio Settings'
+    /// Viewport Font Size field. Kept in `tokens` like the UI scale, because
+    /// the overlays that read it are free functions with no `Shell` to ask.
+    pub(super) fn set_viewport_font_size(&mut self, size: f32, cx: &mut Context<Self>) {
+        if !tokens::set_viewport_font_size(crate::settings::clamp_viewport_font_size(size)) {
+            return;
+        }
+        self.save_settings();
+        // The shell's own notify below already re-renders the view (uncached,
+        // in this same window); telling it directly keeps that true if it is
+        // ever cached.
+        self.viewport.update(cx, |_, cx| cx.notify());
+        cx.notify();
+    }
+
     /// Flips the viewport's main camera between perspective and orthographic
     /// projection — see `WorkspaceView::set_orthographic`.
     fn set_orthographic(&mut self, orthographic: bool, cx: &mut Context<Self>) {
@@ -1526,6 +1543,7 @@ impl Shell {
             auto_recovery: self.recovery.enabled(),
             recovery_minutes: self.recovery.minutes(),
             script_font_size: self.script_font_size,
+            viewport_font_size: tokens::viewport_font_size(),
             large_targets: tokens::large_targets(),
             reduce_motion: self.reduce_motion,
             docks: self.layout.saved(),

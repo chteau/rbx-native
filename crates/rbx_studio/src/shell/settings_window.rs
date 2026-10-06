@@ -150,13 +150,17 @@ impl SettingsWindow {
         .ok()
     }
 
-    /// The six number fields with their settings' values.
-    fn numbers(&self, cx: &App) -> [(&NumberField, f32); 6] {
+    /// The seven number fields with their settings' values.
+    fn numbers(&self, cx: &App) -> [(&NumberField, f32); 7] {
         use crate::transform::SnapKind;
         let shell = self.shell.read(cx);
         let calibration = shell.calibration();
         [
             (&self.appearance.script_font, shell.script_font_size()),
+            (
+                &self.appearance.viewport_font,
+                crate::tokens::viewport_font_size(),
+            ),
             (&self.calibration.sun_base, calibration.sun_base),
             (
                 &self.calibration.atmosphere,
