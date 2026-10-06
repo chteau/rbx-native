@@ -6,6 +6,14 @@ members = ["crates/*"]
 edition = "2021"
 license = "MIT"
 
+# Test builds keep line tables (backtraces still name file and line) but drop
+# full debug info: it roughly doubles what the linker has to write for every
+# test binary, which is most of the time a `./scripts/check.sh` spends after
+# an edit. A debugger session wants `cargo build`'s dev profile, which keeps
+# the full info.
+[profile.test]
+debug = "line-tables-only"
+
 # GPUI Kit's own recommendation: the toolkit and its text/layout stack are far
 # too slow unoptimised, even for a debug build of the editor.
 [profile.dev.package]
