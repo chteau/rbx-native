@@ -326,18 +326,19 @@ impl Offscreen {
     }
 
     /// One `ViewportFrame` alone at `size`, composited over its background
-    /// and `backdrop` (encoded sRGB) as the GUI would — see
+    /// (when `background`) and `backdrop` (encoded sRGB) as the GUI would — see
     /// `Renderer::viewport_frame` — and waited for, like a canvas.
     pub(crate) fn viewport_frame(
         &mut self,
         size: (u32, u32),
         frame: rbx_dom::Ref,
         backdrop: [f32; 3],
+        background: bool,
     ) -> Result<Vec<u8>, String> {
         if size.0 == 0 || size.1 == 0 {
             return Err(format!("cannot render a {}x{} frame", size.0, size.1));
         }
-        let (baked, look) = self
+        let (baked, mut look) = self
             .renderer
             .viewport_frame(&self.device, &self.queue, frame, size)
             .ok_or_else(|| format!("no ViewportFrame {frame:?} is laid out"))?;
@@ -363,6 +364,9 @@ impl Offscreen {
             }
             None => vec![0; size.0 as usize * size.1 as usize * 4],
         };
+        if !background {
+            look.background_alpha = 0.0;
+        }
         look.composite(&mut pixels, backdrop);
         Ok(pixels)
     }

@@ -423,8 +423,9 @@ impl Headless {
 
     /// Draws one `ViewportFrame`'s content on its own at `width`×`height`
     /// — the same bake the GUI paints it from, through its `CurrentCamera`
-    /// (or saved pose), laid over the frame's background and `backdrop`
-    /// (encoded sRGB) with its `ImageColor3`/`ImageTransparency` — for an
+    /// (or saved pose), laid over the frame's background (unless
+    /// `background` is off) and `backdrop` (encoded sRGB) with its
+    /// `ImageColor3`/`ImageTransparency` — for an
     /// editor that shows the frame larger than it sits on its screen. Tightly
     /// packed RGBA8 (sRGB) rows. An error when no laid-out tree holds
     /// `frame`. Synchronous, like [`Headless::render_gui`].
@@ -433,9 +434,10 @@ impl Headless {
         frame: Ref,
         (width, height): (u32, u32),
         backdrop: [f32; 3],
+        background: bool,
     ) -> Result<Vec<u8>, String> {
         self.offscreen
-            .viewport_frame((width, height), frame, backdrop)
+            .viewport_frame((width, height), frame, backdrop, background)
     }
 
     /// Advances the camera by `dt` and reports whether the next frame would

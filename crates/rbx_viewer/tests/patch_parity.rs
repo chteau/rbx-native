@@ -777,7 +777,7 @@ fn a_viewport_frame_drawn_alone_follows_its_camera() {
     let frame = named(&dom, "Vf");
     let backdrop = [0.0, 0.0, 1.0];
     let before = patched
-        .render_viewport_frame(frame, ALONE, backdrop)
+        .render_viewport_frame(frame, ALONE, backdrop, true)
         .expect("the frame draws");
     let middle = (ALONE.1 as usize / 2 * ALONE.0 as usize + ALONE.0 as usize / 2) * 4;
     assert_ne!(
@@ -796,14 +796,14 @@ fn a_viewport_frame_drawn_alone_follows_its_camera() {
     let log = dom.take_changes();
     patched.apply_changes(&dom, &log).expect("the camera moves");
     let after = patched
-        .render_viewport_frame(frame, ALONE, backdrop)
+        .render_viewport_frame(frame, ALONE, backdrop, true)
         .expect("the frame draws");
     assert_ne!(before, after, "the camera moved, so the picture did");
 
     let mut rebuilt = Headless::load(&path, true).expect("the fixture loads");
     rebuilt.reload(&dom).expect("the DOM rebuilds");
     let theirs = rebuilt
-        .render_viewport_frame(frame, ALONE, backdrop)
+        .render_viewport_frame(frame, ALONE, backdrop, true)
         .expect("the frame draws");
     assert_eq!(differing(&after, &theirs), 0);
 }

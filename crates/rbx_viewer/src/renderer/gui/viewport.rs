@@ -345,7 +345,7 @@ impl Look {
             background * self.background_alpha + backdrop[channel] * (1.0 - self.background_alpha)
         });
         let tinted = self.tint != [1.0, 1.0, 1.0];
-        for pixel in pixels.chunks_exact_mut(4) {
+        for pixel in pixels.as_chunks_mut::<4>().0 {
             let alpha = f32::from(pixel[3]) / 255.0 * self.alpha;
             for channel in 0..3 {
                 let mut source = f32::from(pixel[channel]) / 255.0;
