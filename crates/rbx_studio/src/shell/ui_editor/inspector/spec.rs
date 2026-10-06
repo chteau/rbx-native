@@ -24,6 +24,14 @@ pub(in crate::shell::ui_editor) enum Key {
     Stroke,
     StrokeAlpha,
     StrokeWidth,
+    /// The fields of the element's `n`th `UIShadow`, in tree order.
+    ShadowColor(usize),
+    ShadowAlpha(usize),
+    ShadowX(usize),
+    ShadowY(usize),
+    ShadowBlur(usize),
+    ShadowSpreadX(usize),
+    ShadowSpreadY(usize),
     Gap,
     GridGapX,
     GridGapY,
@@ -76,11 +84,14 @@ impl Key {
     }
 }
 
-/// Where a value lives: on the element, or on its first child of a class.
+/// Where a value lives: on the element, on its first child of a class, or
+/// on its `n`th — a modifier an element may hold several of, which a field
+/// never makes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::shell::ui_editor) enum On {
     Own,
     Child(&'static str),
+    Nth(&'static str, usize),
 }
 
 /// How a stored value reads in its field.
@@ -94,6 +105,8 @@ pub(super) enum Form {
     /// A `Color3`, as six hex digits.
     Hex,
 }
+
+pub(in crate::shell::ui_editor) const SHADOW: &str = "UIShadow";
 
 const PIXELS: Form = Form::Number {
     step: 1.0,
@@ -136,6 +149,12 @@ impl Shell {
         };
         let child = |class, properties, parts, form| Spec {
             on: On::Child(class),
+            properties,
+            parts,
+            form,
+        };
+        let shadow = |n, properties, parts, form| Spec {
+            on: On::Nth(SHADOW, n),
             properties,
             parts,
             form,
@@ -190,6 +209,15 @@ impl Shell {
                     whole: false,
                 },
             ),
+            Key::ShadowColor(n) => shadow(n, &["Color"], &[0], Form::Hex),
+            Key::ShadowAlpha(n) => shadow(n, &["Transparency"], &[0], Form::Percent),
+            // The offsets: a pixel shadow is what Figma's numbers are, and
+            // the scales stay as written.
+            Key::ShadowX(n) => shadow(n, &["Offset"], &[1], PIXELS),
+            Key::ShadowY(n) => shadow(n, &["Offset"], &[3], PIXELS),
+            Key::ShadowBlur(n) => shadow(n, &["BlurRadius"], &[1], PIXELS),
+            Key::ShadowSpreadX(n) => shadow(n, &["Spread"], &[1], PIXELS),
+            Key::ShadowSpreadY(n) => shadow(n, &["Spread"], &[3], PIXELS),
             Key::Gap if self.anchor_child("UIGridLayout").is_some() => {
                 child("UIGridLayout", &["CellPadding"], &[1, 3], PIXELS)
             }

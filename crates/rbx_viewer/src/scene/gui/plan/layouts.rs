@@ -188,9 +188,8 @@ pub(in crate::scene::gui) fn layout_of(
 
 /// Whether `class` is `target` or a subclass of it.
 ///
-/// The name is checked first because the bundled API dump is a snapshot: it
-/// has never heard of `UIFlexItem`, and an unknown class is not a subclass of
-/// anything. Every class matched here is a leaf in Roblox's own hierarchy, so
+/// The name is checked first because the bundled API dump is a snapshot: a
+/// class newer than it is not a subclass of anything. Every class matched here is a leaf in Roblox's own hierarchy, so
 /// the name alone would in fact do — the database lookup only keeps a future
 /// subclass working.
 fn is(database: &ReflectionDatabase, class: &str, target: &str) -> bool {

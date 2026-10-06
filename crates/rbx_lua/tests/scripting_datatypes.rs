@@ -142,7 +142,7 @@ fn font_face_round_trips_while_the_legacy_font_enum_still_reads() {
             r#"
             local cfg = game:FindFirstChild("BubbleChatConfiguration", true)
             print(cfg.FontFace.Family, cfg.FontFace.Weight, cfg.FontFace.Style)
-            print(typeof(cfg.Font) == "number" or typeof(cfg.Font) == "EnumItem")
+            print(cfg.Font)
 
             cfg.FontFace = Font.new("rbx://foo", 700, "Italic")
             print(cfg.FontFace.Family, cfg.FontFace.Weight, cfg.FontFace.Style)
@@ -154,7 +154,7 @@ fn font_face_round_trips_while_the_legacy_font_enum_still_reads() {
         output.lines(),
         [
             "rbxasset://fonts/families/BuilderSans.json 500 Normal",
-            "true",
+            "Enum.Font.BuilderSansMedium",
             "rbx://foo 700 Italic",
         ]
     );

@@ -4,7 +4,9 @@
 //! them with.
 
 use super::super::pipeline::{mode, VertexRaw};
-use crate::scene::{GuiElement, GuiGradient, GuiGradientKind, GuiJoin, GuiRect, GuiTile};
+use crate::scene::{
+    GuiElement, GuiGradient, GuiGradientKind, GuiJoin, GuiRect, GuiShadow, GuiTile,
+};
 
 /// `GuiObject.Rotation` about one fixed pivot, shared by every quad an
 /// element contributes (background, border bands, image) so they turn
@@ -62,6 +64,10 @@ pub(super) struct Shape {
     pub(super) half: [f32; 2],
     pub(super) radii: [f32; 4],
     pub(super) join: GuiJoin,
+    /// How far either side of the outline coverage fades over, in pixels:
+    /// a blurred shadow's edge. Zero is the ordinary one-pixel
+    /// anti-aliasing ramp.
+    pub(super) soft: f32,
 }
 
 impl Shape {
@@ -73,6 +79,44 @@ impl Shape {
             half: [element.rect.width * 0.5, element.rect.height * 0.5],
             radii: element.corner_radii,
             join: GuiJoin::Round,
+            soft: 0.0,
+        }
+    }
+
+    /// A `UIShadow`'s box: the element's own shape moved by `Offset` and
+    /// grown by `Spread` about its centre, its corners rounded as the
+    /// element's (the docs: a `UICorner` on the parent rounds the shadow
+    /// too) but never past half the shadow's shorter side, and its edge
+    /// faded over `BlurRadius`. How Roblox's blur falls off is not
+    /// documented; this eases over the radius either side of the edge, the
+    /// spread a CSS `box-shadow` blur of the same radius has.
+    pub(super) fn shadow(element: &GuiElement, shadow: &GuiShadow) -> Self {
+        let own = Shape::of(element);
+        let half = [
+            (own.half[0] + shadow.spread[0] * 0.5).max(0.0),
+            (own.half[1] + shadow.spread[1] * 0.5).max(0.0),
+        ];
+        let most = half[0].min(half[1]);
+        Shape {
+            center: [
+                own.center[0] + shadow.offset[0],
+                own.center[1] + shadow.offset[1],
+            ],
+            half,
+            radii: own.radii.map(|radius| radius.min(most)),
+            join: GuiJoin::Round,
+            soft: shadow.blur,
+        }
+    }
+
+    /// The quad that holds every pixel the shape covers, its fade included.
+    pub(super) fn bounds(&self) -> GuiRect {
+        let margin = self.soft + 1.0;
+        GuiRect {
+            x: self.center[0] - self.half[0] - margin,
+            y: self.center[1] - self.half[1] - margin,
+            width: 2.0 * (self.half[0] + margin),
+            height: 2.0 * (self.half[1] + margin),
         }
     }
 
@@ -146,6 +190,7 @@ pub(super) fn quad(
         half: shape.half,
         radii: shape.radii,
         band: paint.band,
+        soft: shape.soft,
         gradient,
         gradient_row,
         mode,

@@ -1,8 +1,9 @@
-//! What a `UICorner`, `UIStroke` or `UIGradient` puts on the vertices: the
-//! element's own frame for the distance field, the stroke band, the ramp row.
+//! What a `UICorner`, `UIStroke`, `UIShadow` or `UIGradient` puts on the
+//! vertices: the element's own frame for the distance field, the stroke band,
+//! the shadow's box and blur, the ramp row.
 
 use super::*;
-use crate::scene::{GuiGradient, GuiGradientKind, GuiJoin, GuiStroke, GuiTile};
+use crate::scene::{GuiGradient, GuiGradientKind, GuiJoin, GuiShadow, GuiStroke, GuiTile};
 use rbx_dom::{Color3Data, ColorSequence, ColorSequenceKeypoint, NumberSequence};
 
 fn rounded(radius: f32) -> GuiElement {
@@ -197,4 +198,88 @@ fn the_mode_packs_three_ordinals_without_overlap() {
     assert_eq!(mode & 3, 2);
     assert_eq!((mode >> 2) & 3, 1);
     assert_eq!((mode >> 4) & 3, 2);
+}
+
+fn shadow(offset: [f32; 2], spread: [f32; 2], blur: f32) -> GuiShadow {
+    GuiShadow {
+        color: [0.0; 3],
+        alpha: 0.5,
+        offset,
+        spread,
+        blur,
+    }
+}
+
+#[test]
+fn a_shadow_is_drawn_first_moved_grown_and_faded_over_its_blur() {
+    let mut card = rounded(8.0);
+    card.shadows = vec![shadow([4.0, 6.0], [10.0, 20.0], 5.0)];
+
+    let (vertices, runs, _) = build(&[card], &HashMap::new(), VIEWPORT);
+
+    // The shadow's quad, then the background's, in one untextured run.
+    assert_eq!(vertices.len(), 12);
+    assert_eq!(runs.len(), 1);
+    let under = &vertices[..6];
+    assert!(under.iter().all(|vertex| vertex.alpha == 0.5
+        && vertex.half == [105.0, 60.0]
+        && vertex.radii == [8.0; 4]
+        && vertex.soft == 5.0
+        && vertex.band == FILL));
+    // Centred on the card's centre (200, 100) plus the offset, and reaching
+    // the blur and a pixel of ramp past the grown box.
+    let xs = under.iter().map(|vertex| vertex.position[0]);
+    let ys = under.iter().map(|vertex| vertex.position[1]);
+    assert_eq!(xs.clone().fold(f32::MAX, f32::min), 204.0 - 105.0 - 6.0);
+    assert_eq!(ys.fold(f32::MIN, f32::max), 106.0 + 60.0 + 6.0);
+    assert!(vertices[6..].iter().all(|vertex| vertex.soft == 0.0));
+}
+
+#[test]
+fn a_shrunken_shadow_never_rounds_past_half_its_own_side() {
+    let mut card = rounded(40.0);
+    card.shadows = vec![shadow([0.0, 0.0], [-100.0, -80.0], 0.0)];
+
+    let (vertices, _, _) = build(&[card], &HashMap::new(), VIEWPORT);
+
+    assert_eq!(vertices[0].half, [50.0, 10.0]);
+    assert_eq!(vertices[0].radii, [10.0; 4]);
+}
+
+#[test]
+fn a_shadow_turns_with_its_rotated_parent_about_the_parents_centre() {
+    let mut card = rounded(0.0);
+    card.rotation = 90.0;
+    card.shadows = vec![shadow([20.0, 0.0], [0.0, 0.0], 0.0)];
+
+    let (vertices, _, _) = build(&[card], &HashMap::new(), VIEWPORT);
+
+    // An offset to the right ends up below the centre once turned clockwise.
+    let center = |quad: &[VertexRaw]| {
+        let n = quad.len() as f32;
+        quad.iter().fold([0.0, 0.0], |sum, vertex| {
+            [
+                sum[0] + vertex.position[0] / n,
+                sum[1] + vertex.position[1] / n,
+            ]
+        })
+    };
+    let [x, y] = center(&vertices[..6]);
+    assert!(
+        (x - 200.0).abs() < 1e-3 && (y - 120.0).abs() < 1e-3,
+        "{x}, {y}"
+    );
+}
+
+#[test]
+fn a_clear_shadow_puts_nothing_down() {
+    let mut card = rounded(8.0);
+    card.shadows = vec![GuiShadow {
+        alpha: 0.0,
+        ..shadow([4.0, 4.0], [0.0, 0.0], 2.0)
+    }];
+
+    let (vertices, _, _) = build(&[card], &HashMap::new(), VIEWPORT);
+
+    assert_eq!(vertices.len(), 6);
 }

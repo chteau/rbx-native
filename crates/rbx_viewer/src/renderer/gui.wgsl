@@ -34,9 +34,10 @@ struct VertexInput {
     @location(5) half: vec2<f32>,
     @location(6) radii: vec4<f32>,
     @location(7) band: vec2<f32>,
-    @location(8) gradient: vec4<f32>,
-    @location(9) gradient_row: f32,
-    @location(10) mode: u32,
+    @location(8) soft: f32,
+    @location(9) gradient: vec4<f32>,
+    @location(10) gradient_row: f32,
+    @location(11) mode: u32,
 }
 
 struct VertexOutput {
@@ -51,6 +52,7 @@ struct VertexOutput {
     @location(7) @interpolate(flat) gradient: vec4<f32>,
     @location(8) @interpolate(flat) gradient_row: f32,
     @location(9) @interpolate(flat) mode: u32,
+    @location(10) @interpolate(flat) soft: f32,
 }
 
 @vertex
@@ -73,6 +75,7 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     out.gradient = in.gradient;
     out.gradient_row = in.gradient_row;
     out.mode = in.mode;
+    out.soft = in.soft;
     return out;
 }
 
@@ -137,6 +140,17 @@ fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
     return select(high, low, c <= vec3<f32>(0.04045 / 12.92));
 }
 
+// Coverage `x` pixels inside one edge of a band. A hard edge is one pixel
+// of linear ramp, landing on half coverage at the edge itself so a
+// pixel-aligned sharp box stays crisp; a soft one (a `UIShadow`'s blur)
+// eases over `soft` pixels either side of it instead.
+fn edge(x: f32, soft: f32) -> f32 {
+    if soft > 0.0 {
+        return smoothstep(-soft, soft, x);
+    }
+    return clamp(x + 0.5, 0.0, 1.0);
+}
+
 // `GradientTileMode`: 0 clamp, 1 repeat, 2 mirror.
 fn tiled(t: f32, tile: u32) -> f32 {
     if tile == 1u {
@@ -156,9 +170,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let r = corner_radius(in.local, in.radii);
     let d = box_distance(in.local, in.half, r, join);
-    // One pixel of linear ramp at each edge of the band: the edge itself
-    // lands on half coverage, so a pixel-aligned sharp box stays crisp.
-    let coverage = clamp(d - in.band.x + 0.5, 0.0, 1.0) * clamp(in.band.y - d + 0.5, 0.0, 1.0);
+    let coverage = edge(d - in.band.x, in.soft) * edge(in.band.y - d, in.soft);
 
     var color = in.color;
     var alpha = in.alpha * coverage;

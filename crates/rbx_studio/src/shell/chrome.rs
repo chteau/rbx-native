@@ -735,7 +735,18 @@ pub(super) fn icon_button(
     icon: IconName,
     label: &'static str,
 ) -> Stateful<Div> {
-    icon_glyph_button(id, icon).tooltip(move |window, cx| super::tooltip::text(label, window, cx))
+    icon_glyph_button(id, icon, false)
+        .tooltip(move |window, cx| super::tooltip::text(label, window, cx))
+}
+
+/// [`icon_button`] for a removal, red under the pointer.
+pub(super) fn danger_icon_button(
+    id: impl Into<ElementId>,
+    icon: IconName,
+    label: &'static str,
+) -> Stateful<Div> {
+    icon_glyph_button(id, icon, true)
+        .tooltip(move |window, cx| super::tooltip::text(label, window, cx))
 }
 
 /// [`icon_button`] opening a menu: its tooltip rides on the [`Trigger`],
@@ -745,10 +756,16 @@ pub(super) fn icon_trigger(
     icon: IconName,
     label: &'static str,
 ) -> Trigger {
-    Trigger::new(icon_glyph_button(id, icon)).tooltip(label)
+    Trigger::new(icon_glyph_button(id, icon, false)).tooltip(label)
 }
 
-fn icon_glyph_button(id: impl Into<ElementId>, icon: IconName) -> Stateful<Div> {
+fn icon_glyph_button(id: impl Into<ElementId>, icon: IconName, danger: bool) -> Stateful<Div> {
+    // GPUI takes one hover style per element, so the danger colours are
+    // chosen here rather than laid over the plain ones.
+    let (hover_bg, hover_text) = match danger {
+        true => (tokens::diff_remove_pill(), tokens::text_error()),
+        false => (tokens::hover(), tokens::text_full()),
+    };
     div()
         .id(id.into())
         .flex_none()
@@ -761,11 +778,7 @@ fn icon_glyph_button(id: impl Into<ElementId>, icon: IconName) -> Stateful<Div> 
         .rounded(tokens::radius())
         .cursor_pointer()
         .text_color(tokens::text_label())
-        .hover(|this| {
-            tokens::hover_fx(this)
-                .bg(tokens::hover())
-                .text_color(tokens::text_full())
-        })
+        .hover(move |this| tokens::hover_fx(this).bg(hover_bg).text_color(hover_text))
         .active(|this| this.bg(tokens::ribbon_tab_active()))
         .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::black())))
         .child(Icon::new(icon).size(tokens::text_md()))

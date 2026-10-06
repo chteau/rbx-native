@@ -11,6 +11,14 @@
   image fields beside it, updating live; a whole flight is one undo step.
   Edits inside a frame now redraw it, in the 3D view as on the canvas. —
   @chteau
+- **Drop shadows in the UI Editor.** The bundled API dump is Roblox's
+  current one, so `UIShadow` (and the other classes newer than the old
+  snapshot) is known to the Properties panel, scripts and both file
+  formats. The GUI renderer draws each enabled shadow under its parent in
+  the parent's rounded shape, offset, spread and blurred as set, and the
+  design panel gets Figma's Effects section: one foldable group per shadow,
+  in draw order, with its colour, offset, blur and spread, an eye to hide it
+  and a `+` that adds one. — @chteau
 - **Faster checks.** Test builds keep line tables but drop full debug info,
   about a third less for the linker to write per test binary.
   `agents/AGENTS.md` now asks for targeted tests while iterating and one

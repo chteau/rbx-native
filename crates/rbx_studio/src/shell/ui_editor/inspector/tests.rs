@@ -1,5 +1,6 @@
 use rbx_dom::Variant;
 
+use super::effects::draw_order;
 use super::spec::{Form, On, Spec};
 use super::value::{numbers_of, parse, read, show, write};
 
@@ -88,4 +89,10 @@ fn a_value_s_numbers_are_the_ones_the_properties_panel_spells() {
     });
     assert_eq!(numbers_of(&udim2), Some(vec![0.5, -4.0, 0.0, 12.0]));
     assert_eq!(numbers_of(&Variant::Bool(true)), None);
+}
+
+#[test]
+fn shadows_list_in_the_order_they_draw() {
+    // `ZIndex` ascending, ties in tree order: the renderer's stacking.
+    assert_eq!(draw_order([-1, -3, -1, -2].into_iter()), vec![1, 3, 0, 2]);
 }

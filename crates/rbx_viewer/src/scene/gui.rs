@@ -23,7 +23,7 @@
 //! `UIComponent` family the layouts are read (see [`plan::Layout`]) along
 //! with `UIFlexItem`, everything that changes an element's size —
 //! `UIPadding`, `UIScale`, the `UIConstraint` classes — and the appearance
-//! modifiers `UICorner`, `UIStroke` and `UIGradient`.
+//! modifiers `UICorner`, `UIStroke`, `UIShadow` and `UIGradient`.
 
 mod layout;
 mod plan;
@@ -37,7 +37,7 @@ pub(crate) use layout::StrokePx;
 pub(crate) use layout::{resolve, resolve_canvas};
 pub(crate) use layout::{
     resolve_canvas_with, resolve_with, screen_frame, Element, GradientPx, Grouped, ImageScale,
-    Painted, PixelRect, Rect, TextMeasure, Typeset,
+    Painted, PixelRect, Rect, ShadowPx, TextMeasure, Typeset,
 };
 pub(crate) use plan::image_placeholder as gui_image_placeholder;
 #[cfg(test)]

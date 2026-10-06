@@ -3,7 +3,7 @@ Workspace "Workspace" (0)
   AirTurbulenceIntensity = 0
   AllowThirdPartySales = false
   AttributesSerialize = ""
-  AuthorityMode = 1
+  AuthorityMode = 1 (Automatic)
   AutoSimulate = true
   AvatarUnificationMode = 0 (Default)
   Capabilities = SecurityCapabilities(0x0)
@@ -12,8 +12,8 @@ Workspace "Workspace" (0)
   CurrentCamera = Ref(1)
   DefinesCapabilities = false
   DistributedGameTime = 0
-  EnableSLIMAvatars = 0
-  ExpandedTerrain = 0
+  EnableSLIMAvatars = 0 (Default)
+  ExpandedTerrain = 0 (Default)
   ExplicitAutoJoints = true
   FallHeightEnabled = true
   FallenPartsDestroyHeight = -500
@@ -23,31 +23,31 @@ Workspace "Workspace" (0)
   GravityDirection = (0, -1, 0)
   HistoryId = 00000000000000000000000000000000
   IKControlConstraintSupport = 0 (Default)
-  ImprovedAnimationConstraint = 0
-  ImprovedPhysicsReplication = 0
-  LayeredClothingCacheOptimizations = 0
+  ImprovedAnimationConstraint = 0 (Default)
+  ImprovedPhysicsReplication = 0 (Default)
+  LayeredClothingCacheOptimizations = 0 (Default)
   LevelOfDetail = 0 (Automatic)
-  LuauTypeCheckMode = 0
+  LuauTypeCheckMode = 0 (Default)
   MeshPartHeadsAndAccessories = 0 (Default)
-  MeshStreamingAndImprovedLods = 0
+  MeshStreamingAndImprovedLods = 0 (Default)
   ModelMeshCFrame = pos=(0, 0, 0) rot=[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
   ModelMeshData = ""
   ModelMeshSize = (0, 0, 0)
   ModelStreamingBehavior = 0 (Default)
   ModelStreamingMode = 0 (Default)
   NeedsPivotMigration = false
-  NextGenerationReplication = 0
-  PathfindingUseImprovedSearch = 0
+  NextGenerationReplication = 0 (Default)
+  PathfindingUseImprovedSearch = 0 (Default)
   PhysicsSteppingMethod = 0 (Default)
-  PlayerCharacterDestroyBehavior = 0
-  PlayerScriptsUseInputActionSystem = 2
-  PredictiveStreamingMode = 0
-  PrimalPhysicsSolver = 0
+  PlayerCharacterDestroyBehavior = 0 (Default)
+  PlayerScriptsUseInputActionSystem = 2 (Enabled)
+  PredictiveStreamingMode = 0 (Default)
+  PrimalPhysicsSolver = 0 (Default)
   RejectCharacterDeletions = 0 (Default)
-  RenderingCacheOptimizations = 0
+  RenderingCacheOptimizations = 0 (Default)
   ReplicateInstanceDestroySetting = 0 (Default)
   Retargeting = 0 (Default)
-  SandboxedInstanceMode = 0
+  SandboxedInstanceMode = 0 (Default)
   ScaleFactor = 1
   SignalBehavior2 = 2
   SimulationRate = 1
@@ -61,13 +61,13 @@ Workspace "Workspace" (0)
   StreamingTargetRadius = 1024
   Tags = ""
   TerrainWeldsFixed = true
-  TouchEventsUseCollisionGroups = 0
+  TouchEventsUseCollisionGroups = 0 (Default)
   TouchesUseCollisionGroups = false
   UniqueId = 000000020ab801660684263dab2af0f1
-  UseFixedSimulation = 0
-  UseInputSink = 0
-  UseNewLuauTypeSolver = 2
-  ValidateEnabledProximityPrompt = 0
+  UseFixedSimulation = 0 (Default)
+  UseInputSink = 0 (Default)
+  UseNewLuauTypeSolver = 2 (Enabled)
+  ValidateEnabledProximityPrompt = 0 (Default)
   Wind = 0
   WindDirection = (0, 0, 0)
   WorldPivotData = pos=(0, 0, 0) rot=[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
@@ -6070,10 +6070,10 @@ SoundService "SoundService" (115)
   AcousticSimulationEnabled = false
   AmbientReverb = 0 (NoReverb)
   AttributesSerialize = ""
-  AudioApiByDefault = 0
+  AudioApiByDefault = 0 (Default)
   Capabilities = SecurityCapabilities(0x0)
-  CharacterSoundsUseNewApi = 0
-  DefaultListenerLocation = 3
+  CharacterSoundsUseNewApi = 0 (Default)
+  DefaultListenerLocation = 3 (Camera)
   DefinesCapabilities = false
   DiffractionEnabled = true
   DistanceFactor = 3.33
@@ -6081,7 +6081,7 @@ SoundService "SoundService" (115)
   HistoryId = 00000000000000000000000000000000
   IsNewExpForAudioApiByDefault = false
   ListenerCFrame = pos=(0, 0, 0) rot=[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
-  ListenerType = 0
+  ListenerType = 0 (Camera)
   OcclusionEnabled = true
   RespectFilteringEnabled = true
   ReverbEnabled = true
@@ -6216,7 +6216,7 @@ TextChatService "TextChatService" (124)
   HasSeenDeprecationDialog = false
   HistoryId = 00000000000000000000000000000000
   IsLegacyChatDisabled = true
-  PlatformIntegratedChat = 0
+  PlatformIntegratedChat = 0 (Default)
   SourceAssetId = -1
   Tags = ""
   UniqueId = 000003840ab801660684263dab2af0f1
@@ -6269,7 +6269,7 @@ TextChatService "TextChatService" (124)
     Capabilities = SecurityCapabilities(0x0)
     DefinesCapabilities = false
     Enabled = true
-    Font = 47
+    Font = 47 (BuilderSansMedium)
     FontFace = Font { family: "rbxasset://fonts/families/BuilderSans.json", weight: 500, style: Normal, cached: "rbxasset://fonts/BuilderSans-Medium.otf" }
     HistoryId = 00000000000000000000000000000000
     LocalPlayerStudsOffset = (0, 0, 0)
@@ -6295,9 +6295,9 @@ TextChatService "TextChatService" (124)
       Scale = 1
       SourceAssetId = -1
       Tags = ""
-      TileMode = 0
+      TileMode = 0 (Clamp)
       Transparency = NumberSequence[0: 0 ±0, 1: 0 ±0]
-      Type = 0
+      Type = 0 (Linear)
       UniqueId = 000003fd0ab801660684263dab2af0f1
     ImageLabel "ImageLabel" (129)
       Active = false
@@ -6464,7 +6464,7 @@ StarterPlayer "StarterPlayer" (136)
   HistoryId = 00000000000000000000000000000000
   LoadCharacterAppearance = true
   LoadCharacterLayeredClothing = 0
-  LuaCharacterController = 0
+  LuaCharacterController = 0 (Default)
   NameDisplayDistance = 100
   PlayerModuleStatus = 0
   SourceAssetId = -1
@@ -6498,7 +6498,7 @@ StarterPack "StarterPack" (139)
 StarterGui "StarterGui" (140)
   AttributesSerialize = ""
   Capabilities = SecurityCapabilities(0x0)
-  ClipsDescendantsSupportsRotation = 0
+  ClipsDescendantsSupportsRotation = 0 (Default)
   DefinesCapabilities = false
   HistoryId = 00000000000000000000000000000000
   ResetPlayerGuiOnSpawn = true
@@ -6589,11 +6589,11 @@ VRService "VRService" (150)
   AutomaticScaling = 0 (World)
   AvatarGestures = false
   Capabilities = SecurityCapabilities(0x0)
-  ControllerModels = 1
+  ControllerModels = 1 (Transparent)
   DefinesCapabilities = false
   FadeOutViewOnCollision = true
   HistoryId = 00000000000000000000000000000000
-  LaserPointer = 1
+  LaserPointer = 1 (Pointer)
   SourceAssetId = -1
   Tags = ""
   UniqueId = 000003a10ab801660684263dab2af0f1
@@ -6738,14 +6738,14 @@ Lighting "Lighting" (166)
   EnvironmentDiffuseScale = 1
   EnvironmentSpecularScale = 1
   ExposureCompensation = 0
-  ExtendLightRangeTo120 = 0
+  ExtendLightRangeTo120 = 0 (Default)
   FogColor = (0.75294125, 0.75294125, 0.75294125)
   FogEnd = 100000
   FogStart = 0
   GeographicLatitude = 0
   GlobalShadows = true
   HistoryId = 00000000000000000000000000000000
-  LightingStyle = 1
+  LightingStyle = 1 (Soft)
   OutdoorAmbient = (0.27450982, 0.27450982, 0.27450982)
   Outlines = false
   PrioritizeLightingQuality = true
@@ -6889,15 +6889,15 @@ VirtualInputManager "VirtualInputManager" (177)
 VoiceChatService "VoiceChatService" (178)
   AttributesSerialize = ""
   Capabilities = SecurityCapabilities(0x0)
-  DefaultDistanceAttenuation = 0
+  DefaultDistanceAttenuation = 0 (Inverse)
   DefinesCapabilities = false
   EnableDefaultVoice = true
-  EnableVoiceVolumeControls = 0
+  EnableVoiceVolumeControls = 0 (Default)
   HistoryId = 00000000000000000000000000000000
   SourceAssetId = -1
   Tags = ""
   UniqueId = 000003ea0ab801660684263dab2af0f1
-  UseAudioApi = 2
+  UseAudioApi = 2 (Enabled)
 VideoService "VideoService" (179)
   AttributesSerialize = ""
   Capabilities = SecurityCapabilities(0x0)

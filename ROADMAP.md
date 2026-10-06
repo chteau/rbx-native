@@ -1227,6 +1227,20 @@ Roblox's own engine.
     `ImageColor3` and `ImageTransparency` as the design panel's own fields,
     with the picture following live — the viewer now re-plans a frame's
     tree when anything inside it changes, which it did not before.
+- [x] **Effects (drop shadows) in the UI Editor's design panel.** Figma's
+  Effects section, and Sketch's, is a drop shadow per element, which Roblox
+  now does with `UIShadow`. The embedded API dump is Roblox's current one
+  (with rbx-dom's class defaults beside it), so `UIShadow` reads, edits and
+  saves in both formats. The GUI renderer draws every enabled shadow under
+  its parent, lowest `ZIndex` first, in the parent's `UICorner` shape and
+  turning with its `Rotation`: `Offset`, `Spread` and `BlurRadius` resolve
+  against the parent's size as the docs say, and the blur fades over its
+  radius the way a CSS `box-shadow` does, since Roblox documents no falloff.
+  The design panel's Effects section lists an element's shadows in that
+  order, each a foldable group (colour and opacity, Offset X/Y, Blur, Spread
+  X/Y) with an eye to hide it and a `−` to remove it; its `+` adds one with
+  the API's defaults, one undo step through the same path as Stroke. `Inset`
+  and `Mode = Text`, which the docs list as unsupported, are left as stored.
 - [x] **Align tool**, matching Studio's real Model-tab tool (checked
   against `studio/align-tool.md` rather than assumed, not the transform
   gizmos under "What's been implemented" → Editor). Aligns the selected
@@ -2160,11 +2174,6 @@ against `Roblox/creator-docs` rather than assumed:
   [Explicitly impossible](#explicitly-impossible-without-robloxs-engine)).
 
 ### Editor
-- [ ] 📋 **Effects (drop shadows) in the UI Editor's design panel.** Figma's
-  Effects section, and Sketch's, is a drop shadow per element, which Roblox
-  now does with `UIShadow`. The embedded API dump predates the class and the
-  GUI renderer draws none, so both come first; the panel's `+` then makes one
-  the way Stroke makes a `UIStroke`.
 - [ ] 📋 **3D asset import and round-trip through Roblox**, i.e. import a
   local `.fbx`/`.obj`/`.gltf` (drag-and-drop or
   `Insert > Model/Mesh/Image`), upload it to Roblox as a real asset via
@@ -2593,8 +2602,8 @@ clear they were considered and not missed.
   Roblox has already shipped. That makes a contexts × actions × bindings
   table, one column per device, that writes real properties through the undo
   history, buildable now. It is the one item here that does not wait on
-  Roblox. The embedded API dump predates those classes, so the dump needs a
-  refresh first, the same as for `UIShadow`.
+  Roblox. The embedded API dump now carries those classes (it was refreshed
+  for `UIShadow`).
 - [ ] 📋 **Branch and merge place files** (Early 2027), with conflict
   resolution at the property and script level. This project is better
   placed for this than most, because a place here is already a local file.

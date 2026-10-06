@@ -22,6 +22,7 @@ fn plain() -> (Paint<'static>, Shape) {
             half: [UNBOUNDED, UNBOUNDED],
             radii: [0.0; 4],
             join: GuiJoin::Round,
+            soft: 0.0,
         },
     )
 }

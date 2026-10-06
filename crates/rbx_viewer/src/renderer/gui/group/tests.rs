@@ -30,6 +30,7 @@ fn boxed(x: f32, y: f32, width: f32, height: f32, alpha: f32) -> GuiElement {
         image: None,
         corner_radii: [0.0; 4],
         strokes: Vec::new(),
+        shadows: Vec::new(),
         gradient: None,
         text: None,
         group: None,

@@ -327,7 +327,7 @@ fn scripts_guis_lights_and_values_are_offered_their_siblings() {
         vec!["SpotLight", "SurfaceLight"]
     );
     let frame = suggested(&["Frame"], &[]);
-    for class in ["TextLabel", "TextButton", "ImageLabel", "ScrollingFrame"] {
+    for class in ["TextBox", "TextButton", "ImageLabel", "ScrollingFrame"] {
         assert!(frame.iter().any(|c| c == class), "{class} in {frame:?}");
     }
     assert!(suggested(&["IntValue"], &[])
@@ -338,8 +338,8 @@ fn scripts_guis_lights_and_values_are_offered_their_siblings() {
 // Relatives stop short of `Instance`, where everything is related.
 #[test]
 fn a_class_with_no_near_family_is_offered_only_what_was_used_recently() {
-    let recent = vec!["Model".to_owned(), "Configuration".to_owned()];
-    assert_eq!(suggested(&["Folder"], &recent), recent);
+    let recent = vec!["Model".to_owned(), "Folder".to_owned()];
+    assert_eq!(suggested(&["Configuration"], &recent), recent);
 }
 
 #[test]

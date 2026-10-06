@@ -1,6 +1,6 @@
 //! The inspector's sections, top to bottom as Figma orders them: where the
 //! element is, how it is sized and lays its children out, how it looks,
-//! its fill, its stroke, and the constraints on it.
+//! its fill, its stroke, its effects, and the constraints on it.
 
 use gpui_kit::assets::IconName;
 use gpui_kit::*;
@@ -67,6 +67,7 @@ impl Shell {
             self.appearance_section(window, cx),
             self.fill_section(window, cx),
             self.stroke_section(window, cx),
+            self.effects_section(window, cx),
             self.constraints_section(window, cx),
         ]
     }
@@ -378,7 +379,7 @@ impl Shell {
     }
 }
 
-fn add_button(
+pub(super) fn add_button(
     id: impl Into<ElementId>,
     label: &'static str,
     cx: &mut Context<Shell>,
@@ -389,7 +390,7 @@ fn add_button(
         .into_any_element()
 }
 
-fn remove_button(
+pub(super) fn remove_button(
     id: impl Into<ElementId>,
     label: &'static str,
     cx: &mut Context<Shell>,

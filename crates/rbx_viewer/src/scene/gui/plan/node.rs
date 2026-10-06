@@ -8,7 +8,8 @@ use rbx_dom::Ref;
 use super::viewport;
 use super::{Border, Fill, SizeAxes};
 use super::{
-    Constraints, Corner, FlexItem, Gradient, GroupTint, Layout, Scrolling, Stroke, Text, Viewport,
+    Constraints, Corner, FlexItem, Gradient, GroupTint, Layout, Scrolling, Shadow, Stroke, Text,
+    Viewport,
 };
 use crate::fonts::Face;
 use crate::scene::Part;
@@ -75,6 +76,8 @@ pub(in crate::scene::gui) struct Node {
     pub(in crate::scene::gui) corner: Option<Corner>,
     /// Every enabled `UIStroke`, lowest `ZIndex` first.
     pub(in crate::scene::gui) strokes: Vec<Stroke>,
+    /// Every enabled `UIShadow`, lowest `ZIndex` first.
+    pub(in crate::scene::gui) shadows: Vec<Shadow>,
     pub(in crate::scene::gui) gradient: Option<Gradient>,
     /// A `ViewportFrame`'s 3D content, rendered into a texture the box then
     /// shows like an image.
@@ -99,6 +102,7 @@ impl Node {
                 viewport.alpha > 0.0 && viewport.camera.is_some() && !viewport.parts.is_empty()
             })
             || self.strokes.iter().any(|stroke| stroke.alpha > 0.0)
+            || self.shadows.iter().any(|shadow| shadow.alpha > 0.0)
             || self.text.as_ref().is_some_and(Text::visible)
             // A fixed `CanvasSize` can overflow an empty frame, and the bar
             // that shows for it is paint of its own.
