@@ -65,6 +65,26 @@ fn a_screen_outside_the_starter_gui_is_unaffected() {
     assert_eq!(rects(&dom), [FRAME]);
 }
 
+/// Studio's edit view draws only `StarterGui`'s screens: one kept in
+/// another service (a script's template) is not planned at all, however
+/// deep it sits. A model file with no services keeps its root screens.
+#[test]
+fn a_screen_in_another_service_is_not_planned() {
+    let mut dom = starter_gui(None);
+    let scripts = dom.new_instance("ServerScriptService", "ServerScriptService", None);
+    let folder = dom.new_instance("Folder", "Utils", Some(scripts));
+    let gui = dom.new_instance("ScreenGui", "TipJar", Some(folder));
+    frame(
+        &mut dom,
+        gui,
+        udim2(0.0, 0, 0.0, 0),
+        udim2(0.0, 5, 0.0, 5),
+    );
+
+    assert_eq!(rects(&dom), [FRAME]);
+    assert!(screens(&dom).iter().all(|screen| screen.referent != gui));
+}
+
 /// `rbxview --show-development-gui`.
 #[test]
 fn the_command_line_override_puts_the_hidden_screen_back() {

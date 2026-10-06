@@ -127,6 +127,16 @@ impl Shell {
             .on_modifiers_changed(cx.listener(|shell, event: &ModifiersChangedEvent, _, cx| {
                 shell.canvas_modifiers(event.modifiers, cx);
             }))
+            // Under the picture, which comes back transparent wherever the
+            // GUI leaves the screen bare.
+            .child(
+                canvas(
+                    |_, _, _| {},
+                    move |laid_out, _, window, _| paint_dots(view, laid_out, window),
+                )
+                .absolute()
+                .size_full(),
+            )
             .when_some(image, |this, image| {
                 this.child(
                     img(image)
@@ -333,6 +343,33 @@ impl Shell {
                 .child(text)
                 .into_any_element(),
         )
+    }
+}
+
+/// The dot grid over the whole panel (see `View::dot_grid`), as one path of
+/// small squares rather than an element or a quad per dot.
+fn paint_dots(view: View, bounds: Bounds<Pixels>, window: &mut Window) {
+    const HALF: f32 = 1.0;
+    let (gap, first) = view.dot_grid();
+    let [width, height] = [f32::from(bounds.size.width), f32::from(bounds.size.height)];
+    let at = |x: f32, y: f32| point(bounds.origin.x + px(x), bounds.origin.y + px(y));
+    let mut path: Option<Path<Pixels>> = None;
+    let mut x = first[0];
+    while x < width {
+        let mut y = first[1];
+        while y < height {
+            let corner = at(x - HALF, y - HALF);
+            let path = path.get_or_insert_with(|| Path::new(corner));
+            path.move_to(corner);
+            path.line_to(at(x + HALF, y - HALF));
+            path.line_to(at(x + HALF, y + HALF));
+            path.line_to(at(x - HALF, y + HALF));
+            y += gap;
+        }
+        x += gap;
+    }
+    if let Some(path) = path {
+        window.paint_path(path, tokens::border2());
     }
 }
 

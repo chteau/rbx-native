@@ -44,7 +44,7 @@ pub(crate) use filemesh::{
     fit_of as file_mesh_fit, AlphaMode, Appearance, Resolved, ResolvedInstance,
 };
 pub(crate) use gui::gui_image_placeholder;
-pub use gui::ScrollTarget;
+pub use gui::{shows_screen, ScrollTarget};
 #[cfg(test)]
 pub(crate) use gui::{
     plan as gui_plan, GroupTint as GuiGroupTint, StrokePx as GuiStroke, TextSpan as GuiTextSpan,

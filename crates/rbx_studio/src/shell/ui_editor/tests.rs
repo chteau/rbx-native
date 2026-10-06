@@ -23,6 +23,10 @@ fn the_canvas_screen_is_the_screen_gui_the_selection_sits_in() {
     assert_eq!(root_of(&dom, &database, label), Some(hud));
     assert_eq!(root_of(&dom, &database, text), Some(surface));
     assert_eq!(root_of(&dom, &database, sign), None);
+    let scripts = dom.new_instance("ServerScriptService", "ServerScriptService", None);
+    let template = dom.new_instance("ScreenGui", "TipJar", Some(scripts));
+    let inside = dom.new_instance("Frame", "Inside", Some(template));
+    assert_eq!(root_of(&dom, &database, inside), None, "outside StarterGui");
     assert!(takes_resolution(&dom, &database, hud));
     assert!(!takes_resolution(&dom, &database, surface), "its own size");
 

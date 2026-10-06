@@ -10,10 +10,30 @@
 use rbx_dom::Ref;
 use rbx_viewer::{GuiBox, Headless};
 
-/// The flat ground a canvas is drawn on, in encoded sRGB: a mid grey, light
-/// enough that a black frame reads against it and dark enough that a white
-/// one does, which is the one thing a GUI backdrop has to get right.
-const BACKDROP: [f32; 3] = [0.24, 0.24, 0.25];
+/// The canvas comes back transparent where the GUI is, so the editor's dot
+/// grid shows through it: drawn once over black and once over white (see
+/// [`unblend`]).
+const BLACK: [f32; 3] = [0.0; 3];
+const WHITE: [f32; 3] = [1.0; 3];
+
+/// Recovers a straight-alpha picture from the same canvas drawn over black
+/// (`black`, rewritten in place) and over white. Every GUI blend is
+/// `c·a + under·(1−a)` in encoded sRGB (see `rbx_viewer`'s
+/// `renderer::gui::pipeline::encoded`), so a whole stack of them is affine
+/// in what lies under it: `white − black = 255·(1−a)`, `black = c·a`.
+fn unblend(black: &mut [u8], white: &[u8]) {
+    for (b, w) in black.chunks_exact_mut(4).zip(white.chunks_exact(4)) {
+        let gap: u32 = (0..3).map(|i| u32::from(w[i].saturating_sub(b[i]))).sum();
+        let alpha = 255 - (gap / 3).min(255);
+        for channel in &mut b[..3] {
+            *channel = match alpha {
+                0 => 0,
+                _ => (u32::from(*channel) * 255 / alpha).min(255) as u8,
+            };
+        }
+        b[3] = alpha as u8;
+    }
+}
 
 /// Which screen to draw, and at what simulated resolution — and, while the
 /// UI editor's frame sheet is open, the one `ViewportFrame` it shows larger.
@@ -74,7 +94,16 @@ impl Canvas {
     pub(super) fn draw(&mut self, viewer: &mut Headless) -> Option<Drawn> {
         let request = self.request.filter(|_| self.dirty)?;
         self.dirty = false;
-        match viewer.render_gui(request.screen, request.size, BACKDROP) {
+        // ponytail: two full draws per change; clearing to transparent with a
+        // fixed alpha blend in the GUI pipelines would make it one.
+        let drawn = viewer
+            .render_gui(request.screen, request.size, WHITE)
+            .and_then(|white| {
+                let mut black = viewer.render_gui(request.screen, request.size, BLACK)?;
+                unblend(&mut black.pixels, &white.pixels);
+                Ok(black)
+            });
+        match drawn {
             // After the canvas: its layout is what plans the frame's tree.
             Ok(canvas) => Some(Drawn {
                 request,
@@ -108,6 +137,15 @@ mod tests {
             size: (1920, 1080),
             frame: None,
         })
+    }
+
+    #[test]
+    fn unblending_recovers_coverage_and_straight_colour() {
+        // Clear, opaque red, and red at half coverage.
+        let mut black = vec![0, 0, 0, 255, 200, 0, 0, 255, 100, 0, 0, 255];
+        let white = [255, 255, 255, 255, 200, 0, 0, 255, 228, 128, 128, 255];
+        unblend(&mut black, &white);
+        assert_eq!(black, [0, 0, 0, 0, 200, 0, 0, 255, 200, 0, 0, 127]);
     }
 
     #[test]

@@ -211,7 +211,11 @@ pub(super) fn root_of(dom: &WeakDom, database: &ReflectionDatabase, referent: Re
             .iter()
             .any(|class| database.is_subclass_of(instance.class(), class))
         {
-            return Some(reference);
+            // A `ScreenGui` outside `StarterGui` is never on screen in
+            // Studio, so the canvas does not offer it either.
+            let hidden = database.is_subclass_of(instance.class(), SCREEN_CLASS)
+                && !rbx_viewer::shows_screen(dom, database, reference);
+            return (!hidden).then_some(reference);
         }
         current = dom.parent(reference);
     }

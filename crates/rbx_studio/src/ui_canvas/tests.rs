@@ -391,3 +391,22 @@ fn zooming_keeps_the_point_under_the_pointer() {
     assert_eq!(zoomed.zoom, 1.0);
     assert!(close(zoomed.to_canvas(at), under));
 }
+
+#[test]
+fn the_dot_grid_stays_on_canvas_pixels_and_between_16_and_32_apart() {
+    for zoom in [0.1, 0.37, 0.5, 1.0, 1.6, 4.0, 10.0] {
+        let view = View {
+            zoom,
+            pan: [-55.0, 13.0],
+        };
+        let (gap, first) = view.dot_grid();
+        assert!((16.0..32.0).contains(&gap), "zoom {zoom}: {gap}");
+        // A dot on the canvas origin, and every gap from it.
+        let origin = view.to_view([0.0, 0.0]);
+        for axis in 0..2 {
+            let steps = (origin[axis] - first[axis]) / gap;
+            assert!((steps - steps.round()).abs() < 1e-3, "zoom {zoom}");
+            assert!((0.0..gap).contains(&first[axis]));
+        }
+    }
+}
