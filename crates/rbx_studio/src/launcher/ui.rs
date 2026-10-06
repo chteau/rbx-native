@@ -405,14 +405,13 @@ mod tests {
     /// constant: every Primary and Danger button, in both sizes.
     #[gpui_kit::test]
     fn primary_and_danger_buttons_lay_out_at_least_44_by_44(cx: &mut gpui_kit::TestAppContext) {
-        let cx = cx.add_empty_window();
         for (id, weight, small) in [
             ("primary", Weight::Primary, false),
             ("primary-small", Weight::Primary, true),
             ("danger", Weight::Danger, false),
             ("danger-small", Weight::Danger, true),
         ] {
-            assert_primary(cx, id, 200., button(id, "OK", weight, small));
+            assert_primary(cx, id, 200., move |_, _| button(id, "OK", weight, small));
         }
     }
 }

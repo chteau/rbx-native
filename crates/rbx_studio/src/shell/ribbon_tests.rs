@@ -9,14 +9,10 @@ use crate::probe::assert_primary;
 /// Large Click Targets off.
 #[gpui_kit::test]
 fn the_play_and_stop_tiles_lay_out_at_least_44_by_44(cx: &mut gpui_kit::TestAppContext) {
-    let cx = cx.add_empty_window();
     let area = f32::from(tokens::ribbon_height()) - 20.;
     for id in ["ribbon-play", "ribbon-stop"] {
-        assert_primary(
-            cx,
-            id,
-            area,
-            h_flex().h(px(area)).items_stretch().children(test_tiles()),
-        );
+        assert_primary(cx, id, area, move |_, _| {
+            h_flex().h(px(area)).items_stretch().children(test_tiles())
+        });
     }
 }

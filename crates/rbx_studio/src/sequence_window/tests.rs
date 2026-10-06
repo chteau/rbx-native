@@ -51,9 +51,9 @@ fn the_footer_reads_the_selected_stop() {
 /// WCAG 2.5.5: the sequence editor's Delete stop and Reset are 44 tall.
 #[gpui_kit::test]
 fn the_footer_buttons_lay_out_at_least_44_tall(cx: &mut gpui_kit::TestAppContext) {
-    let cx = cx.add_empty_window();
     for id in ["sequence-delete", "sequence-reset"] {
-        let button = super::view::footer_button(id, "Delete stop", true, |_, _, _| {});
-        crate::probe::assert_primary(cx, id, 200., button);
+        crate::probe::assert_primary(cx, id, 200., move |_, _| {
+            super::view::footer_button(id, "Delete stop", true, |_, _, _| {})
+        });
     }
 }

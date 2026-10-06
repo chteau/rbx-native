@@ -135,11 +135,12 @@ mod tests {
     /// WCAG 2.5.5: the filled Apply button is 44 tall; Cancel stays 28.
     #[gpui_kit::test]
     fn the_apply_button_lays_out_at_least_44_tall(cx: &mut gpui_kit::TestAppContext) {
-        let cx = cx.add_empty_window();
-        let apply = button("picker-apply", "Apply", Some(rgb(0x4488ff).into()));
-        crate::probe::assert_primary(cx, "picker-apply", 200., apply);
-        let cancel = button("picker-cancel", "Cancel", None);
-        let found = crate::probe::size_of(cx, "picker-cancel", 200., cancel);
+        crate::probe::assert_primary(cx, "picker-apply", 200., |_, _| {
+            button("picker-apply", "Apply", Some(rgb(0x4488ff).into()))
+        });
+        let found = crate::probe::size_of(cx, "picker-cancel", 200., |_, _| {
+            button("picker-cancel", "Cancel", None)
+        });
         assert!(f32::from(found.height) < 44.);
     }
 }

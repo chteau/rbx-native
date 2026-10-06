@@ -196,34 +196,29 @@ fn the_users_templates_close_the_model_menu() {
 /// through the toolkit's own popup layout.
 #[gpui_kit::test]
 fn the_primary_menu_rows_lay_out_at_least_44_tall(cx: &mut gpui_kit::TestAppContext) {
-    use gpui_kit::{point, px, size, AvailableSpace, ParentElement as _};
-    let cx = cx.add_empty_window();
-    let mut found = Vec::new();
+    use gpui_kit::ParentElement as _;
+    let selectors: Vec<&'static str> = super::popup::PRIMARY_ROWS
+        .iter()
+        .map(|name| &*Box::leak(format!("menu-row-{name}").into_boxed_str()))
+        .collect();
+    let mut found = 0;
     for menu in menus(&[]) {
         let items = menu.items.clone();
-        let entity = cx.update(|window, cx| super::popup::dropdown(&items, None, window, cx));
-        cx.draw(
-            point(px(0.), px(0.)),
-            size(
-                AvailableSpace::Definite(px(400.)),
-                AvailableSpace::Definite(px(900.)),
-            ),
-            move |_, _| gpui_kit::div().child(entity),
-        );
-        for name in super::popup::PRIMARY_ROWS {
-            let selector: &'static str = Box::leak(format!("menu-row-{name}").into_boxed_str());
-            if let Some(bounds) = cx.debug_bounds(selector) {
-                assert!(
-                    f32::from(bounds.size.height) >= 44.,
-                    "{name} is {:?} tall",
-                    bounds.size.height
-                );
-                found.push(name);
-            }
+        let sizes = crate::probe::bounds_of(cx, &selectors, 900., move |window, cx| {
+            gpui_kit::div().child(super::popup::dropdown(&items, None, window, cx))
+        });
+        for (selector, size) in sizes {
+            assert!(
+                f32::from(size.height) >= 44.,
+                "{selector} is {:?} tall",
+                size.height
+            );
+            found += 1;
         }
     }
-    found.sort_unstable();
-    let mut expected = super::popup::PRIMARY_ROWS.to_vec();
-    expected.sort_unstable();
-    assert_eq!(found, expected, "every primary row exists in some menu");
+    assert_eq!(
+        found,
+        selectors.len(),
+        "every primary row exists in some menu"
+    );
 }
