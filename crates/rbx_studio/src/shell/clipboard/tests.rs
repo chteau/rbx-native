@@ -370,3 +370,28 @@ fn a_duplicate_lands_right_after_its_original() {
     );
     assert_eq!(dom.get(lobby_copy).unwrap().name(), "Lobby1");
 }
+
+// The frame sheet's insert: a `Clone()` into the frame, the original left
+// where it was, and a reference inside the copy pointing at the copy.
+#[test]
+fn a_model_cloned_into_a_frame_leaves_the_original_and_remaps_its_references() {
+    let mut dom = WeakDom::new();
+    let workspace = dom.new_instance("Workspace", "Workspace", None);
+    let model = dom.new_instance("Model", "House", Some(workspace));
+    let roof = dom.new_instance("Part", "Roof", Some(model));
+    dom.set_property(model, "PrimaryPart", Variant::Ref(roof))
+        .unwrap();
+    let frame = dom.new_instance("ViewportFrame", "Preview", None);
+
+    let copy = clone_into(&mut dom, model, frame).expect("the model is there");
+
+    assert_eq!(dom.parent(copy), Some(frame));
+    assert_eq!(dom.parent(model), Some(workspace), "the original stays");
+    let copied_roof = dom.get(copy).unwrap().children()[0];
+    assert_ne!(copied_roof, roof);
+    assert_eq!(dom.get(copied_roof).unwrap().name(), "Roof");
+    assert_eq!(
+        dom.get(copy).unwrap().properties().get("PrimaryPart"),
+        Some(&Variant::Ref(copied_roof))
+    );
+}
