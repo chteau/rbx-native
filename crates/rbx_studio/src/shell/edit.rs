@@ -341,8 +341,11 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> (RowEditor, Vec<Subscription>) {
         match kind {
-            EditKind::Bool(_) | EditKind::BrickColor(_) | EditKind::Ref(_) => unreachable!(
-                "a checkbox and the BrickColor and Ref pickers are built where they render, in shell::property_element"
+            EditKind::Bool(_)
+            | EditKind::BrickColor(_)
+            | EditKind::Ref(_)
+            | EditKind::Content { .. } => unreachable!(
+                "a checkbox, the BrickColor and Ref pickers and a Content row's URI field are built where they render, in shell::property_element"
             ),
             EditKind::Text(seed) => {
                 let input = cx.new(|cx| InputState::new(window, cx).default_value(seed.clone()));

@@ -149,7 +149,7 @@ fn a_mixed_flag_set_is_read_only_until_it_agrees() {
 }
 
 #[test]
-fn a_content_naming_an_instance_keeps_a_mixed_row_read_only() {
+fn a_content_naming_an_instance_leaves_a_mixed_row_an_empty_uri_field() {
     use rbx_dom::Content;
     let texture = |content| vec![("Texture", Variant::Content(content))];
     let rows = rows_of(&[
@@ -161,7 +161,12 @@ fn a_content_naming_an_instance_keeps_a_mixed_row_read_only() {
         ("Decal", "Object", texture(Content::Object(WORKSPACE))),
     ]);
 
-    assert_eq!(row(&rows, "Texture").edit, None);
+    // An object now has a text spelling (`edit::object_text`), so a typed
+    // URI can replace both values; `Texture` is a ContentId, so no pick.
+    assert_eq!(
+        row(&rows, "Texture").edit,
+        Some(EditKind::Text(String::new()))
+    );
 }
 
 #[test]

@@ -187,6 +187,15 @@ pub(crate) enum EditKind {
     /// shows the target's name, which [`PropertyRow::value`] already holds,
     /// and picks a new one from the Explorer.
     Ref(String),
+    /// A `Content` property that may name an object as well as hold a URI
+    /// (`edit::object_class`): the URI field with a pick beside it while
+    /// `object` is false, the `Ref` row's picker while it is true. `text` is
+    /// `edit::edit_text`'s. A Content that can only hold a URI is a plain
+    /// `Text` row.
+    Content {
+        object: bool,
+        text: String,
+    },
 }
 
 /// One line of the panel.
@@ -437,6 +446,18 @@ impl Properties {
             // Here rather than in `value_edit_kind`: an attribute can hold a
             // `BrickColor` too, and keeps its plain number field.
             Variant::BrickColor(number) => EditKind::BrickColor(*number),
+            // Needs the database too, to know whether the property takes an
+            // object at all. One already holding an object it should not
+            // still shows it by name, with a `×` to clear it.
+            Variant::Content(content)
+                if matches!(content, Content::Object(_))
+                    || edit::object_class(&self.db, class, name).is_some() =>
+            {
+                EditKind::Content {
+                    object: matches!(content, Content::Object(_)),
+                    text,
+                }
+            }
             other => value_edit_kind(other, text),
         })
     }
