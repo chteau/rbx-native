@@ -7,7 +7,11 @@
 mod value;
 mod writer;
 
-use rbx_dom::{Ref, WeakDom};
+use std::collections::BTreeMap;
+
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use md5::{Digest, Md5};
+use rbx_dom::{Ref, Variant, WeakDom};
 
 use crate::error::XmlError;
 use writer::Writer;
@@ -26,11 +30,9 @@ const EXPLICIT_AUTO_JOINTS: (&str, &str) = ("ExplicitAutoJoints", "true");
 /// though not necessarily with the same numeric `Ref` values (the reader assigns
 /// its own referents in file order on every parse; see its `assign_referents`).
 ///
-/// A `SharedStrings` table is never emitted: every string-shaped property is
-/// written as a plain `string` element rather than a `SharedString` reference,
-/// the same simplification `rbx_binary`'s serializer makes for its SSTR chunk
-/// (a `Variant` never remembers which of the two produced it, so there is
-/// nothing to decide between here).
+/// A SharedString (`Variant::Unknown { 0x1C }`, how both readers hand one
+/// back) is written as a `SharedString` reference into a `SharedStrings`
+/// table after the last `Item`, keyed by its MD5 like Studio's own files.
 pub fn serialize(dom: &WeakDom) -> Result<String, XmlError> {
     let mut writer = Writer::new();
 
@@ -40,15 +42,28 @@ pub fn serialize(dom: &WeakDom) -> Result<String, XmlError> {
         &[("name", EXPLICIT_AUTO_JOINTS.0)],
         EXPLICIT_AUTO_JOINTS.1,
     );
+    let mut shared = BTreeMap::new();
     for &root in dom.root_refs() {
-        write_item(&mut writer, dom, root)?;
+        write_item(&mut writer, dom, root, &mut shared)?;
+    }
+    if !shared.is_empty() {
+        writer.open("SharedStrings", &[]);
+        for (key, raw) in &shared {
+            writer.leaf("SharedString", &[("md5", key)], &STANDARD.encode(raw));
+        }
+        writer.close("SharedStrings");
     }
     writer.close("roblox");
 
     Ok(writer.into_string())
 }
 
-fn write_item(writer: &mut Writer, dom: &WeakDom, this: Ref) -> Result<(), XmlError> {
+fn write_item<'a>(
+    writer: &mut Writer,
+    dom: &'a WeakDom,
+    this: Ref,
+    shared: &mut BTreeMap<String, &'a [u8]>,
+) -> Result<(), XmlError> {
     // `this` always comes from `dom`'s own `root_refs`/`children`, so it is
     // always present; a missing entry would mean `WeakDom`'s own tree invariant
     // (every referent in `children`/`root_refs` has a matching instance) broke.
@@ -67,12 +82,19 @@ fn write_item(writer: &mut Writer, dom: &WeakDom, this: Ref) -> Result<(), XmlEr
     // as an ordinary `string` property here to match.
     value::string_property(writer, instance.name());
     for (name, prop_value) in instance.properties() {
-        value::encode(writer, name, prop_value)?;
+        match prop_value {
+            Variant::Unknown { type_id: 0x1C, raw } => {
+                let key = STANDARD.encode(Md5::digest(raw));
+                writer.leaf("SharedString", &[("name", name)], &key);
+                shared.insert(key, raw);
+            }
+            _ => value::encode(writer, name, prop_value)?,
+        }
     }
     writer.close("Properties");
 
     for &child in instance.children() {
-        write_item(writer, dom, child)?;
+        write_item(writer, dom, child, shared)?;
     }
 
     writer.close("Item");
@@ -194,6 +216,28 @@ mod tests {
             .collect();
         textures.sort_by_key(|v| format!("{v:?}"));
         assert_eq!(textures, vec![Some(content), Some(string)]);
+    }
+
+    #[test]
+    fn shared_strings_round_trip_through_one_deduplicated_table() {
+        let mut dom = WeakDom::new();
+        let mesh = Variant::Unknown {
+            type_id: 0x1C,
+            raw: vec![0xFF, 1, 2],
+        };
+        let a = dom.new_instance("Model", "A", None);
+        let b = dom.new_instance("Model", "B", None);
+        dom.set_property(a, "ModelMeshData", mesh.clone()).unwrap();
+        dom.set_property(b, "ModelMeshData", mesh.clone()).unwrap();
+
+        let xml = serialize(&dom).unwrap();
+        assert_eq!(xml.matches("<SharedString md5=").count(), 1);
+
+        let back = crate::deserialize(&xml).unwrap();
+        for &root in back.root_refs() {
+            let got = back.get(root).unwrap().properties().get("ModelMeshData");
+            assert_eq!(got, Some(&mesh));
+        }
     }
 
     #[test]

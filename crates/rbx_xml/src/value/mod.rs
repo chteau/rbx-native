@@ -30,6 +30,9 @@ pub(crate) const UNKNOWN_TAG_TYPE_ID: u8 = 0xFF;
 // non-UTF-8 BinaryString/SharedString payload degrades exactly the way the
 // binary parser's own string decoder degrades a non-UTF-8 String property.
 pub(crate) const STRING_TYPE_ID: u8 = 0x01;
+/// The binary format's SharedString type id, which a SharedString read from
+/// either format is tagged with.
+pub(crate) const SHARED_STRING_TYPE_ID: u8 = 0x1C;
 
 /// Referent and shared-string lookup tables threaded through every decoder that
 /// needs to resolve a `Ref`, a `Content`'s `Ref` child, or a `SharedString`/`NetAssetRef`.

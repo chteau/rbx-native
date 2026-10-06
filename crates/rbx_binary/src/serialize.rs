@@ -1,7 +1,7 @@
 //! Binary format serialization: the encode counterpart of the whole `deserialize` pipeline.
 //!
 //! Entry point: [`serialize`]. Builds a class/referent layout from the DOM, then writes
-//! the header and chunks the reader expects: META, SSTR, one INST+PROP group per class,
+//! the header and chunks the reader expects: SSTR, one INST+PROP group per class,
 //! PRNT, END.
 
 mod chunk;
@@ -107,7 +107,6 @@ pub fn serialize_with_defaults(
 
     let mut out = Vec::with_capacity(4096);
     out.extend_from_slice(&file_header(&plan));
-    out.extend(chunk::write_chunk(b"META", &meta_payload()));
     out.extend(chunk::write_chunk(b"SSTR", &table.write()));
 
     for class in &plan.classes {
@@ -124,7 +123,7 @@ pub fn serialize_with_defaults(
     }
 
     out.extend(chunk::write_chunk(b"PRNT", &prnt::write(&plan)));
-    out.extend(chunk::write_chunk(b"END\0", &[]));
+    out.extend(chunk::write_end());
 
     Ok(out)
 }
@@ -152,14 +151,6 @@ fn file_header(plan: &Plan) -> [u8; 32] {
     header[16..20].copy_from_slice(&(plan.classes.len() as i32).to_le_bytes());
     header[20..24].copy_from_slice(&(plan.order.len() as i32).to_le_bytes());
     header
-}
-
-// No metadata flags are round-tripped by this crate (deserializer never reads META),
-// so an empty table is always valid and keeps the chunk purely structural.
-fn meta_payload() -> Vec<u8> {
-    let mut writer = Writer::new();
-    writer.length(0);
-    writer.into_bytes()
 }
 
 fn prop_header(class_id: i32, name: &str, type_id: u8, payload: &[u8]) -> Vec<u8> {

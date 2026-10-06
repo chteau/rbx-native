@@ -6086,6 +6086,7 @@ name = "rbx_xml"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "md-5",
  "quick-xml",
  "rbx_binary",
  "rbx_dom",

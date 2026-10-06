@@ -166,8 +166,8 @@ fn unknown_blob_with_string_type_id_round_trips_losslessly() {
     );
 }
 
-// A `type_id` other than `STRING_TYPE_ID` has no faithful XML representation
-// (see `serializer::value::encode`): writing it as `BinaryString` would read
+// A `type_id` other than `STRING_TYPE_ID` or SharedString's 28 has no
+// faithful XML representation (see `serializer::value::encode`): writing it as `BinaryString` would read
 // back tagged 1 instead of its real id, silently corrupting the property.
 // `serialize` must refuse it rather than produce that corrupted file.
 #[test]
@@ -176,9 +176,9 @@ fn unknown_blob_with_other_type_id_is_rejected_instead_of_corrupted() {
     dom.insert(Instance::new(Ref::new(1), "Part", "Part"));
     dom.set_property(
         Ref::new(1),
-        "PhysicalConfigData",
+        "MadeUp",
         Variant::Unknown {
-            type_id: 28,
+            type_id: 0x7E,
             raw: vec![0x01, 0x02, 0x03],
         },
     )

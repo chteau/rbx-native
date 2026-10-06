@@ -142,7 +142,41 @@ fn a_shared_string_property_mixed_with_plain_empty_strings_round_trips() {
             .unwrap()
             .properties()
             .get("ModelMeshData"),
-        Some(&Variant::String(String::new()))
+        // Read back with its wire type, so the next save writes a
+        // SharedString again rather than a String.
+        Some(&Variant::Unknown {
+            type_id: MESH_DATA_TYPE_ID,
+            raw: Vec::new()
+        })
+    );
+}
+
+/// The group that only ever held empty (valid UTF-8) shared strings: the
+/// file Roblox refused, with `Workspace.ModelMeshData` written back as a
+/// String. Read and written again, it must stay a SharedString.
+#[test]
+fn an_all_empty_shared_string_group_keeps_its_wire_type() {
+    let mut dom = WeakDom::new();
+    let model = dom.new_instance("Model", "Empty", None);
+    dom.set_property(
+        model,
+        "ModelMeshData",
+        Variant::Unknown {
+            type_id: MESH_DATA_TYPE_ID,
+            raw: Vec::new(),
+        },
+    )
+    .unwrap();
+
+    let once = serialize(&deserialize(&serialize(&dom).unwrap()).unwrap()).unwrap();
+    let after = deserialize(&once).unwrap();
+
+    assert_eq!(
+        after.get(model).unwrap().properties().get("ModelMeshData"),
+        Some(&Variant::Unknown {
+            type_id: MESH_DATA_TYPE_ID,
+            raw: Vec::new()
+        })
     );
 }
 

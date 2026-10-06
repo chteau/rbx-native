@@ -227,7 +227,10 @@ mod tests {
         let a = dom.get(dom.root_refs()[0]).unwrap();
         assert_eq!(
             a.properties().get("Source"),
-            Some(&Variant::String("tagged".to_owned()))
+            Some(&Variant::Unknown {
+                type_id: 0x1C,
+                raw: b"tagged".to_vec()
+            })
         );
     }
 
