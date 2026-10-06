@@ -10,7 +10,7 @@ use std::sync::Arc;
 use gpui_kit::{Context, RenderImage, Window};
 use rbx_viewer::GuiBox;
 
-use super::pump::canvas::{Drawn, Request};
+use super::pump::canvas::{Drawn, FrameRequest, Request};
 use super::{frame, WorkspaceView};
 
 /// A new canvas frame has arrived; whoever shows it repaints.
@@ -26,6 +26,8 @@ pub(crate) struct Canvas {
     pub(crate) size: (u32, u32),
     pub(crate) image: Arc<RenderImage>,
     pub(crate) boxes: Vec<GuiBox>,
+    /// The `ViewportFrame` the frame sheet shows, drawn alone.
+    pub(crate) frame: Option<(FrameRequest, Arc<RenderImage>)>,
 }
 
 impl WorkspaceView {
@@ -53,16 +55,24 @@ impl WorkspaceView {
         let Some(image) = frame::render_image(drawn.pixels, width, height) else {
             return;
         };
-        // The old image has to leave GPUI's atlas, or every redraw of a
+        let frame = drawn.frame.and_then(|(request, pixels)| {
+            let (width, height) = request.size;
+            Some((request, frame::render_image(pixels, width, height)?))
+        });
+        // The old images have to leave GPUI's atlas, or every redraw of a
         // canvas leaks one frame's worth of texture.
         if let Some(old) = self.canvas.take() {
             cx.drop_image(old.image, Some(window));
+            if let Some((_, image)) = old.frame {
+                cx.drop_image(image, Some(window));
+            }
         }
         self.canvas = Some(Canvas {
             request: drawn.request,
             size: drawn.size,
             image,
             boxes: drawn.boxes,
+            frame,
         });
         cx.emit(CanvasUpdated);
     }

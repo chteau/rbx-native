@@ -15,11 +15,24 @@ use rbx_viewer::{GuiBox, Headless};
 /// one does, which is the one thing a GUI backdrop has to get right.
 const BACKDROP: [f32; 3] = [0.24, 0.24, 0.25];
 
-/// Which screen to draw, and at what simulated resolution.
+/// Which screen to draw, and at what simulated resolution — and, while the
+/// UI editor's frame sheet is open, the one `ViewportFrame` it shows larger.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Request {
     pub(crate) screen: Ref,
     pub(crate) size: (u32, u32),
+    pub(crate) frame: Option<FrameRequest>,
+}
+
+/// One `ViewportFrame` drawn alone (see
+/// `rbx_viewer::Headless::render_viewport_frame`): at `size`, over its own
+/// background or not, and over `backdrop` (encoded sRGB, 0–255).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FrameRequest {
+    pub(crate) frame: Ref,
+    pub(crate) size: (u32, u32),
+    pub(crate) background: bool,
+    pub(crate) backdrop: [u8; 3],
 }
 
 /// A drawn canvas, as the UI thread receives it.
@@ -30,6 +43,8 @@ pub(crate) struct Drawn {
     pub(crate) size: (u32, u32),
     pub(crate) pixels: Vec<u8>,
     pub(crate) boxes: Vec<GuiBox>,
+    /// The frame drawn alone, when one was asked for and could be.
+    pub(crate) frame: Option<(FrameRequest, Vec<u8>)>,
 }
 
 /// What the render loop keeps between ticks: the standing request, and
@@ -60,11 +75,20 @@ impl Canvas {
         let request = self.request.filter(|_| self.dirty)?;
         self.dirty = false;
         match viewer.render_gui(request.screen, request.size, BACKDROP) {
+            // After the canvas: its layout is what plans the frame's tree.
             Ok(canvas) => Some(Drawn {
                 request,
                 size: canvas.size,
                 pixels: canvas.pixels,
                 boxes: canvas.boxes,
+                frame: request.frame.and_then(|frame| {
+                    let backdrop = frame.backdrop.map(|channel| f32::from(channel) / 255.0);
+                    viewer
+                        .render_viewport_frame(frame.frame, frame.size, backdrop, frame.background)
+                        .map_err(|err| eprintln!("rbxstudio: viewport frame: {err}"))
+                        .ok()
+                        .map(|pixels| (frame, pixels))
+                }),
             }),
             Err(err) => {
                 eprintln!("rbxstudio: canvas: {err}");
@@ -82,6 +106,7 @@ mod tests {
         Some(Request {
             screen: Ref::new(screen),
             size: (1920, 1080),
+            frame: None,
         })
     }
 
