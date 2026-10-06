@@ -2592,8 +2592,8 @@ clear they were considered and not missed.
   Roblox has already shipped. That makes a contexts × actions × bindings
   table, one column per device, that writes real properties through the undo
   history, buildable now. It is the one item here that does not wait on
-  Roblox. The embedded API dump predates those classes, so the dump needs a
-  refresh first, the same as for `UIShadow`.
+  Roblox. The embedded API dump now carries those classes (it was refreshed
+  for `UIShadow`).
 - [ ] 📋 **Branch and merge place files** (Early 2027), with conflict
   resolution at the property and script level. This project is better
   placed for this than most, because a place here is already a local file.
