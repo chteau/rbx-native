@@ -276,7 +276,18 @@ impl Shell {
     /// tree asks this, so none of them can put the wrong set back.
     pub(super) fn explorer_items(&self) -> Vec<TreeItem> {
         let items = match self.ui_canvas_active() {
-            true => self.explorer.ui_items(),
+            // Only the roots the canvas would take: no screen kept outside
+            // `StarterGui` (see `root_of`).
+            true => self
+                .explorer
+                .ui_items()
+                .into_iter()
+                .filter(|item| {
+                    crate::explorer::item_ref(&item.id).is_none_or(|reference| {
+                        root_of(&self.dom, &self.database, reference) == Some(reference)
+                    })
+                })
+                .collect(),
             false => self
                 .explorer
                 .items(self.show_all_services, &self.service_overrides),
