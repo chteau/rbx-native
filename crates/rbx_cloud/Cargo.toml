@@ -13,3 +13,9 @@ ureq = { version = "3", features = ["json", "gzip"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
+
+# The CLI reads the key rbxstudio stored in the keyring; same oo7 build GPUI
+# already pulls in, so nothing new in Cargo.lock.
+[target.'cfg(target_os = "linux")'.dependencies]
+oo7 = { version = "0.6", default-features = false, features = ["async-std", "native_crypto"] }
+futures-lite = "2"
