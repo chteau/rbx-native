@@ -55,9 +55,9 @@ pub(crate) use gui::{
     span_face as gui_span_face, Align as GuiAlign, Anchor as GuiAnchor, Element as GuiElement,
     GradientKind as GuiGradientKind, GradientPx as GuiGradient, Grouped as GuiGroup,
     ImageScale as GuiImageScale, Join as GuiJoin, Painted, PixelRect as GuiPixelRect,
-    Rect as GuiRect, Screen as GuiScreen, ScrollWindow as GuiScrollWindow, SpaceGui,
-    Text as GuiText, TextMeasure as GuiTextMeasure, Tile as GuiTile, Typeset as GuiTypeset,
-    ViewCamera as GuiViewCamera, Viewport as GuiViewport,
+    Rect as GuiRect, Screen as GuiScreen, ScrollWindow as GuiScrollWindow, ShadowPx as GuiShadow,
+    SpaceGui, Text as GuiText, TextMeasure as GuiTextMeasure, Tile as GuiTile,
+    Typeset as GuiTypeset, ViewCamera as GuiViewCamera, Viewport as GuiViewport,
 };
 pub(crate) use highlight::{DepthMode, Highlight, MAX_HIGHLIGHTS};
 pub(crate) use identity::PartId;

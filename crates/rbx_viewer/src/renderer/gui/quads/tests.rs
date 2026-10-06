@@ -28,6 +28,7 @@ fn element(rect: GuiRect, clip: Option<GuiRect>) -> GuiElement {
         image: None,
         corner_radii: [0.0; 4],
         strokes: Vec::new(),
+        shadows: Vec::new(),
         gradient: None,
         text: None,
         viewport: None,

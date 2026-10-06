@@ -97,6 +97,32 @@ fn build_once(
             .as_ref()
             .map(|gradient| (rows.row(gradient), gradient));
 
+        // Under everything the element draws: the docs put every shadow
+        // "below the parent", lowest `ZIndex` first, and turn it with the
+        // parent's `Rotation` — about the parent's own centre, so an
+        // `Offset` turns with it.
+        let start = vertices.len();
+        for shadow in &element.shadows {
+            if shadow.alpha > 0.0 {
+                let paint = Paint {
+                    color: shadow.color,
+                    alpha: shadow.alpha,
+                    band: FILL,
+                    gradient: None,
+                };
+                let shape = Shape::shadow(element, shadow);
+                quad(
+                    &shape.bounds(),
+                    UV_WHOLE,
+                    &paint,
+                    &shape,
+                    &spin,
+                    &mut vertices,
+                );
+            }
+        }
+        extend(&mut runs, WHITE, scissor, start..vertices.len());
+
         let start = vertices.len();
         if let Some((group, slot)) = element
             .group

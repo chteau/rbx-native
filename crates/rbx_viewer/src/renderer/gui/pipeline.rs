@@ -33,6 +33,8 @@ pub(super) struct VertexRaw {
     /// The signed distances from the box outline the fragment is kept
     /// between, so one shader covers a fill (`[-∞, 0]`) and a stroke band.
     pub(super) band: [f32; 2],
+    /// `Shape::soft`: how wide the band's edges fade.
+    pub(super) soft: f32,
     /// `GuiGradient::origin` then `::axis`.
     pub(super) gradient: [f32; 4],
     /// The ramp's row in the gradient texture, negative for none.
@@ -41,7 +43,7 @@ pub(super) struct VertexRaw {
     pub(super) mode: u32,
 }
 
-const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 11] = wgpu::vertex_attr_array![
+const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 12] = wgpu::vertex_attr_array![
     0 => Float32x2,
     1 => Float32x2,
     2 => Float32x3,
@@ -50,9 +52,10 @@ const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 11] = wgpu::vertex_attr_array![
     5 => Float32x2,
     6 => Float32x4,
     7 => Float32x2,
-    8 => Float32x4,
-    9 => Float32,
-    10 => Uint32,
+    8 => Float32,
+    9 => Float32x4,
+    10 => Float32,
+    11 => Uint32,
 ];
 
 /// Three two-bit enum ordinals in one attribute: bits 0–1 the
