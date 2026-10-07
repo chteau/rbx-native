@@ -1241,6 +1241,19 @@ Roblox's own engine.
   X/Y) with an eye to hide it and a `−` to remove it; its `+` adds one with
   the API's defaults, one undo step through the same path as Stroke. `Inset`
   and `Mode = Text`, which the docs list as unsupported, are left as stored.
+- [x] **Import from Figma** (`rbx_figma`, `shell/ui_editor/figma.rs`). The
+  UI Editor's `+` menu opens a panel that signs in to Figma with OAuth 2 and
+  PKCE (client id committed, client secret read at compile time from
+  `RBX_FIGMA_CLIENT_SECRET` and never stored in the repo; a build without
+  it says to rebuild with it), keeps the tokens in the OS keyring and
+  refreshes them, reads a frame link, infers Roblox classes and properties
+  from the node JSON, uploads image fills and rendered vector groups as
+  decals through `rbx_cloud` once each (cache by `imageRef` and PNG hash),
+  and inserts the tree under the open `ScreenGui` as one undo step, with
+  uncertain guesses listed for review. Left for later: `UIGridLayout` for
+  wrapping auto layout, rich text and mixed text styles, rotation,
+  `UIFlexItem` for fill sizing, line height, JPEG fills (uploaded as PNG
+  today), and a live end-to-end import, which has not been run yet.
 - [x] **Align tool**, matching Studio's real Model-tab tool (checked
   against `studio/align-tool.md` rather than assumed, not the transform
   gizmos under "What's been implemented" → Editor). Aligns the selected

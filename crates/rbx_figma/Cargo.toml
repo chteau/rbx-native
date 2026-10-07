@@ -1,0 +1,27 @@
+[package]
+name = "rbx_figma"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+# Figma sign-in (OAuth 2 + PKCE), its REST API, and the Figma → Roblox GUI
+# translation behind the UI Editor's "Import from Figma…". Every dependency is
+# already in the tree, so this crate adds no new version to Cargo.lock.
+[dependencies]
+# PKCE challenges and the token request's Basic auth (`rbx_viewer`, `rbx_xml`).
+base64 = "0.22"
+# The PKCE verifier and `state` (GPUI's own, through `rand`).
+getrandom = "0.3"
+rbx_dom = { path = "../rbx_dom" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# The PKCE challenge and the upload cache's content hash (`rbx_studio`).
+sha2 = "0.10"
+# Same blocking client and features `rbx_cloud` uses.
+ureq = { version = "3", features = ["json", "gzip"] }
+# Query strings, forms and Figma links (`rbx_studio`).
+url = "2"
+
+[dev-dependencies]
+# Checks every property the importer writes against the API dump.
+rbx_reflection = { path = "../rbx_reflection", features = ["embedded-dump"] }

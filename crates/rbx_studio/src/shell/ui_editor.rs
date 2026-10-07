@@ -25,6 +25,7 @@
 mod arrange;
 mod canvas;
 mod draw;
+mod figma;
 mod frame_sheet;
 mod gesture;
 mod insert_bar;
@@ -149,6 +150,8 @@ pub(super) struct UiEditor {
     unhidden: Vec<Panel>,
     /// The `ViewportFrame` sheet, while one is open over the canvas.
     sheet: Option<frame_sheet::FrameSheet>,
+    /// The "Import from Figma…" panel.
+    figma: figma::Figma,
     _subscriptions: [Subscription; 2],
 }
 
@@ -195,6 +198,7 @@ impl UiEditor {
             filtered: false,
             unhidden: Vec::new(),
             sheet: None,
+            figma: figma::Figma::new(window, cx),
             _subscriptions: subscriptions,
         }
     }

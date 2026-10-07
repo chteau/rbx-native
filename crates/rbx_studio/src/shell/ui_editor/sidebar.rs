@@ -102,6 +102,9 @@ const WIDTH: f32 = 280.0;
 
 impl Shell {
     pub(super) fn ui_sidebar(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        if self.ui.figma.open {
+            return self.figma_panel(cx);
+        }
         let Some(anchor) = self.selected() else {
             return sidebar(None, "Select an element on the canvas to edit it here.")
                 .into_any_element();
@@ -232,7 +235,7 @@ impl Shell {
 
 /// The sidebar's column: the dock's own surface and hairline, a title,
 /// and — with nothing to show — a line saying so.
-fn sidebar(title: Option<SharedString>, empty: &'static str) -> Div {
+pub(super) fn sidebar(title: Option<SharedString>, empty: &'static str) -> Div {
     v_flex()
         .flex_none()
         .w(px(WIDTH))

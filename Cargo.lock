@@ -5960,6 +5960,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "rbx_figma"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "getrandom 0.3.4",
+ "rbx_dom",
+ "rbx_reflection",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "ureq",
+ "url",
+]
+
+[[package]]
 name = "rbx_lua"
 version = "0.1.0"
 dependencies = [
@@ -6021,6 +6036,7 @@ dependencies = [
  "rbx_binary",
  "rbx_cloud",
  "rbx_dom",
+ "rbx_figma",
  "rbx_lua",
  "rbx_mesh",
  "rbx_reflection",

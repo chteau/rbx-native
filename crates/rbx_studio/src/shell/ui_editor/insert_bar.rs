@@ -129,6 +129,13 @@ impl Shell {
                 false => item.disabled(),
             }
         }))
+        .chain(std::iter::once({
+            let item = menu::item("Import from Figma\u{2026}");
+            match target {
+                true => item.on_click(|shell, cx| shell.open_figma(cx)),
+                false => item.disabled(),
+            }
+        }))
         .collect();
         // Upwards: the bar sits on the canvas's bottom edge.
         let more = menu::dropdown_at(

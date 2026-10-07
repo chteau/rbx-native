@@ -35,6 +35,9 @@ rbx_binary = { path = "../rbx_binary" }
 # `rbx_viewer`'s asset fetches.
 rbx_cloud = { path = "../rbx_cloud" }
 rbx_dom = { path = "../rbx_dom" }
+# The UI Editor's "Import from Figma…": sign-in, the API and the class
+# guesses. Its own dependencies are all already in the tree.
+rbx_figma = { path = "../rbx_figma" }
 # The command bar's own Luau VM: already built for `rbx_parser_cli`, so this
 # adds no new dependency version to the tree.
 rbx_lua = { path = "../rbx_lua" }

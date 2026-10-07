@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-10-07
+
+- **Import from Figma in the UI Editor.** The canvas's `+` menu has
+  "Import from Figma…": connect once (Figma's OAuth 2 with PKCE, through the
+  browser and back to `127.0.0.1:47823`; the sign-in is kept in the OS
+  credential store beside the Open Cloud key), paste a frame link, and the
+  frame lands under the open `ScreenGui` as one undo step. Classes are
+  inferred (a frame with a click reaction is a `TextButton`, a text field
+  shape a `TextBox`, an image fill an `ImageLabel`, a vector-only group one
+  rendered `ImageLabel`, an overflowing clip a `ScrollingFrame`), with
+  constraints turned into position, size and anchor, auto layout into
+  `UIListLayout`/`UIPadding`, and corners, strokes, gradients and drop
+  shadows into their modifiers. Pictures go up through the Open Cloud key
+  as decals, each once: a cache remembers what was uploaded. Guesses that
+  were shaky are listed under "Review" in the panel. Signing in needs the
+  app's client secret at build time: build with
+  `RBX_FIGMA_CLIENT_SECRET=… cargo build -p rbx_studio`; without it the
+  panel says so instead of connecting. — @chteau
+
 ## 2026-10-06
 
 - **Discord Rich Presence, switched on from Studio Settings.** A toggle in
