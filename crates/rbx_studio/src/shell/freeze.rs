@@ -238,7 +238,7 @@ pub(super) fn resolve(
 
 /// The scope that is missing, ahead of the raw error, where that is what it
 /// most likely means.
-fn describe(err: &CloudError) -> String {
+pub(super) fn describe(err: &CloudError) -> String {
     match err {
         CloudError::Http { status: 401 | 403, .. } | CloudError::Refused { status: 401 | 403, .. } => format!(
             "The API key can\u{2019}t upload assets: it needs the asset:read and asset:write permissions \u{2014} Home \u{203a} Manage key. ({err})"

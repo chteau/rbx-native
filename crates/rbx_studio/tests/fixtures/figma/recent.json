@@ -1,0 +1,5 @@
+[
+  { "key": "FixtureShopKey", "name": "Obby Shop UI", "thumbnail_url": "thumb-shop.png", "opened": 1791331200 },
+  { "key": "FixtureHudKey", "name": "Racing HUD", "thumbnail_url": "thumb-hud.png", "opened": 1791158400 },
+  { "key": "FixtureLobbyKey", "name": "Lobby menus (old)", "thumbnail_url": null, "opened": 1790553600 }
+]

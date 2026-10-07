@@ -1,7 +1,8 @@
 //! `POST /assets/v1/assets` and `GET /assets/v1/operations/{id}`: upload a
 //! new asset through the key, then wait for Roblox to finish processing it.
 //!
-//! Only the `Model` type is wrapped. It is the one route the Assets API opens
+//! Two types are wrapped: `Decal` for PNGs (the Figma import's images) and
+//! `Model` for geometry. `Model` is the one route the Assets API opens
 //! to geometry nobody downloaded from Roblox first (`creator-docs`,
 //! `cloud/guides/usage-assets.md`): a `Mesh` upload "only accepts content
 //! downloaded from the Asset delivery API", while a `Model` takes `.fbx` or
@@ -43,8 +44,58 @@ impl Client {
         user_id: u64,
         file: &ModelFile,
     ) -> Result<u64, CloudError> {
+        self.create_asset("Model", display_name, description, user_id, file)
+    }
+
+    /// Uploads a PNG, JPEG or BMP (told apart by their first bytes, since a
+    /// Figma image fill comes back in whatever format went in) as a new
+    /// `Decal` asset owned by `user_id` and waits for
+    /// Roblox to process it. Returns the new asset's id, used as
+    /// `rbxassetid://<id>` in `ImageLabel.Image`; the creator docs do not
+    /// say in as many words that a decal upload's id is the image itself,
+    /// which `image_round_trip` checks live.
+    pub fn create_image_asset(
+        &self,
+        display_name: &str,
+        description: &str,
+        user_id: u64,
+        image: &[u8],
+    ) -> Result<u64, CloudError> {
+        let (name, content_type) = Self::image_kind(image);
+        let file = ModelFile {
+            name,
+            content_type,
+            bytes: image,
+        };
+        self.create_asset("Decal", display_name, description, user_id, &file)
+    }
+
+    /// Unknown bytes go up as PNG and Roblox's own check names the problem.
+    fn image_kind(bytes: &[u8]) -> (&'static str, &'static str) {
+        match bytes {
+            [0xFF, 0xD8, 0xFF, ..] => ("image.jpg", "image/jpeg"),
+            [b'B', b'M', ..] => ("image.bmp", "image/bmp"),
+            _ => ("image.png", "image/png"),
+        }
+    }
+
+    fn create_asset(
+        &self,
+        asset_type: &str,
+        display_name: &str,
+        description: &str,
+        user_id: u64,
+        file: &ModelFile,
+    ) -> Result<u64, CloudError> {
         let boundary = boundary(file.bytes);
-        let body = multipart(display_name, description, user_id, file, &boundary);
+        let body = multipart(
+            asset_type,
+            display_name,
+            description,
+            user_id,
+            file,
+            &boundary,
+        );
         let content_type = format!("multipart/form-data; boundary={boundary}");
         let response = self.post_bytes_raw(CREATE_URL, &content_type, &body)?;
         let operation = answer(CREATE_URL, response)?;
@@ -150,6 +201,7 @@ fn operation_url(operation: &Value) -> Result<String, CloudError> {
 /// The `request` and `fileContent` fields the endpoint takes, as
 /// `multipart/form-data`.
 fn multipart(
+    asset_type: &str,
     display_name: &str,
     description: &str,
     user_id: u64,
@@ -157,7 +209,7 @@ fn multipart(
     boundary: &str,
 ) -> Vec<u8> {
     let request = json!({
-        "assetType": "Model",
+        "assetType": asset_type,
         "displayName": display_name,
         "description": description,
         "creationContext": { "creator": { "userId": user_id.to_string() } },
@@ -207,7 +259,7 @@ mod tests {
             content_type: "model/gltf+json",
             bytes: b"{}",
         };
-        let body = multipart("Name", "Desc", 42, &file, "B");
+        let body = multipart("Model", "Name", "Desc", 42, &file, "B");
         let text = String::from_utf8(body).unwrap();
         assert!(text.starts_with("--B\r\nContent-Disposition: form-data; name=\"request\""));
         assert!(text.contains("\"assetType\":\"Model\""));
@@ -215,6 +267,58 @@ mod tests {
         assert!(text.contains(
             "filename=\"freeze.gltf\"\r\nContent-Type: model/gltf+json\r\n\r\n{}\r\n--B--\r\n"
         ));
+    }
+
+    #[test]
+    fn image_bytes_are_sniffed() {
+        assert_eq!(Client::image_kind(b"\xFF\xD8\xFF\xE0jfif").1, "image/jpeg");
+        assert_eq!(Client::image_kind(b"BM...").1, "image/bmp");
+        assert_eq!(Client::image_kind(b"\x89PNG\r\n").1, "image/png");
+    }
+
+    #[test]
+    fn an_image_goes_up_as_a_png_decal() {
+        let file = ModelFile {
+            name: "image.png",
+            content_type: "image/png",
+            bytes: b"png",
+        };
+        let body = multipart("Decal", "Icon", "", 7, &file, "B");
+        let text = String::from_utf8(body).unwrap();
+        assert!(text.contains("\"assetType\":\"Decal\""));
+        assert!(text.contains("filename=\"image.png\"\r\nContent-Type: image/png\r\n\r\npng\r\n"));
+    }
+
+    /// Uploads a 1 × 1 PNG as a `Decal` through the stored key (it needs
+    /// `asset:read` and `asset:write`) and checks the id it returns
+    /// downloads as the image itself, not a decal model wrapping one.
+    /// Creates a real asset in the key owner's inventory, hence ignored:
+    /// `cargo test -p rbx_cloud image_round_trip -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn image_round_trip() {
+        const PNG: &[u8] = &[
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00,
+            0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78,
+            0x9c, 0x63, 0xf8, 0xcf, 0xc0, 0xf0, 0x1f, 0x00, 0x05, 0x00, 0x01, 0xff, 0x89, 0x99,
+            0x3d, 0x1d, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+        ];
+        let client = Client::new(crate::ApiKey::from_env_or_config());
+        let user = client.introspect().unwrap().authorized_user_id;
+        let id = client
+            .create_image_asset("rbx-native image test", "", user, PNG)
+            .unwrap();
+        std::thread::sleep(Duration::from_secs(5));
+        let content = client.asset(id).unwrap();
+        eprintln!(
+            "decal upload gave asset {id}: {} bytes",
+            content.bytes.len()
+        );
+        assert!(
+            content.bytes.starts_with(b"\x89PNG"),
+            "asset {id} is not the image itself"
+        );
     }
 
     #[test]

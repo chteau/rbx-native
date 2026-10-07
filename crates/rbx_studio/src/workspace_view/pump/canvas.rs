@@ -106,6 +106,18 @@ impl Canvas {
             .and_then(|white| {
                 let mut black = viewer.render_gui(request.screen, request.size, BLACK)?;
                 unblend(&mut black.pixels, &white.pixels);
+                // `RBX_STUDIO_CANVAS_DUMP=<path.png>`: the canvas exactly as
+                // drawn, straight alpha, for pixel comparisons.
+                if let Some(path) = std::env::var_os("RBX_STUDIO_CANVAS_DUMP") {
+                    let (width, height) = black.size;
+                    let _ = image::save_buffer(
+                        path,
+                        &black.pixels,
+                        width,
+                        height,
+                        image::ExtendedColorType::Rgba8,
+                    );
+                }
                 Ok(black)
             });
         match drawn {

@@ -232,7 +232,7 @@ impl Shell {
 
 /// The sidebar's column: the dock's own surface and hairline, a title,
 /// and — with nothing to show — a line saying so.
-fn sidebar(title: Option<SharedString>, empty: &'static str) -> Div {
+pub(super) fn sidebar(title: Option<SharedString>, empty: &'static str) -> Div {
     v_flex()
         .flex_none()
         .w(px(WIDTH))

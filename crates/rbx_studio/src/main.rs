@@ -89,6 +89,7 @@ mod discord_presence;
 mod display;
 mod dragger;
 mod explorer;
+mod figma_store;
 mod folder_colors;
 mod freeze;
 mod history;

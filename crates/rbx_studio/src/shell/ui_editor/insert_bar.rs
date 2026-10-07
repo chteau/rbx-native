@@ -63,7 +63,7 @@ impl Shell {
         Some(inside.unwrap_or(screen))
     }
 
-    fn insert_on_canvas(&mut self, class: &str, cx: &mut Context<Self>) {
+    pub(super) fn insert_on_canvas(&mut self, class: &str, cx: &mut Context<Self>) {
         let parent = match class {
             // A screen goes where Studio's own do, and becomes the canvas's
             // as soon as the insert selects it.
@@ -126,6 +126,13 @@ impl Shell {
             let item = menu::item(class);
             match target {
                 true => item.on_click(move |shell, cx| shell.insert_on_canvas(class, cx)),
+                false => item.disabled(),
+            }
+        }))
+        .chain(std::iter::once({
+            let item = menu::item("Import from Figma\u{2026}");
+            match target {
+                true => item.on_click(|shell, cx| shell.open_figma(cx)),
                 false => item.disabled(),
             }
         }))

@@ -1,5 +1,37 @@
 # Changelog
 
+## 2026-10-07
+
+- **Import from Figma in the UI Editor.** The canvas's `+` menu has
+  "Import from Figma…": connect once (Figma's OAuth 2 with PKCE, through the
+  browser and back to `127.0.0.1:47823`; the sign-in is kept in the OS
+  credential store beside the Open Cloud key), paste a frame link, and the
+  frame lands under the open `ScreenGui` as one undo step. Classes are
+  inferred (a frame with a click reaction is a `TextButton`, a text field
+  shape a `TextBox`, an image fill an `ImageLabel`, a vector-only group one
+  rendered `ImageLabel`, an overflowing clip a `ScrollingFrame`), with
+  constraints turned into position, size and anchor, auto layout into
+  `UIListLayout`/`UIPadding`, and corners, strokes, gradients and drop
+  shadows into their modifiers. Pictures go up through the Open Cloud key
+  as decals, each once: a cache remembers what was uploaded. Signing in
+  needs the app's client secret at build time, from `RBX_FIGMA_CLIENT_SECRET`
+  or the gitignored `.env` at the checkout's root. — @chteau
+- **Figma import, second round.** The import is now a window of its own: a
+  list of recently opened files, a field for a file or frame link, and the
+  file as a tree that loads one level at a time down to any node, with a
+  preview of the selected row. Picking a node opens a review step (name,
+  class dropdown, confidence and notes per row, low-confidence rows marked,
+  flatten-to-image per row); only Import changes the place, as one undo
+  step. Inference now covers wrapping auto layout (`UIGridLayout`), mixed
+  text styles (RichText), rotation, fill and hug sizing (`UIFlexItem`,
+  `AutomaticSize`), line height, TextScaled with a `UITextSizeConstraint`,
+  clipping, gradients on fills, text and strokes, image and pattern fills
+  behind children, and stacked fills; a compatibility table at the top of
+  `infer.rs` lists what maps, what is approximated and what is dropped,
+  and every approximation leaves a note. JPEG fills upload as JPEG.
+  FigBloxUI's Shop_Frame imports to a near pixel match with Figma's own
+  render. — @chteau
+
 ## 2026-10-06
 
 - **Graph mode in the Script Editor.** A Code | Graph toggle in a new

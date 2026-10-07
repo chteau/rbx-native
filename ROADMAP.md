@@ -1280,6 +1280,31 @@ Roblox's own engine.
   X/Y) with an eye to hide it and a `−` to remove it; its `+` adds one with
   the API's defaults, one undo step through the same path as Stroke. `Inset`
   and `Mode = Text`, which the docs list as unsupported, are left as stored.
+- [x] **Import from Figma** (`rbx_figma`, `shell/ui_editor/figma.rs`). The
+  UI Editor's `+` menu opens a panel that signs in to Figma with OAuth 2 and
+  PKCE (client id committed, client secret read at compile time from
+  `RBX_FIGMA_CLIENT_SECRET` and never stored in the repo; a build without
+  it says to rebuild with it), keeps the tokens in the OS keyring and
+  refreshes them, reads a frame link, infers Roblox classes and properties
+  from the node JSON, uploads image fills and rendered vector groups as
+  decals through `rbx_cloud` once each (cache by `imageRef` and PNG hash),
+  and inserts the tree under the open `ScreenGui` as one undo step, with
+  uncertain guesses listed for review. Second round: a browser window
+  (recent files, paste a link, a lazily loaded node tree with a preview), a
+  review step before import, and the rest of the inference (grid layouts,
+  rich text, rotation, flex sizing, line height, TextScaled, clipping,
+  gradients everywhere, image and pattern fills behind children). Live
+  check: FigBloxUI's Shop_Frame matches Figma's render to font
+  antialiasing. Open:
+  - Other frames of that file still need the same live comparison (Figma
+    rate-limited the render endpoint during the first pass: the starter
+    plan's high-cost bucket, with a Retry-After of about 4.5 days).
+  - No folder browsing: Figma's folder-listing endpoints (and the older
+    projects ones) are closed to public OAuth apps, so files are reached
+    through recent history or a pasted link.
+  - Image crops (`imageTransform`) only leave a note.
+  - A solid fill under an image fill is flattened to a render instead of an
+    `ImageLabel` with a background colour.
 - [x] **Align tool**, matching Studio's real Model-tab tool (checked
   against `studio/align-tool.md` rather than assumed, not the transform
   gizmos under "What's been implemented" → Editor). Aligns the selected
