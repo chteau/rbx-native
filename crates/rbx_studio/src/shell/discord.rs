@@ -1,6 +1,8 @@
 //! Shell ↔ Discord Rich Presence: start, stop, and update when the
 //! active document or script tab changes.
 
+use std::time::Duration;
+
 use gpui_kit::Context;
 
 use crate::discord_presence::{self, Activity, Kind, Presence};
@@ -59,6 +61,38 @@ impl Shell {
             detail,
             started: self.discord_started,
             kind: self.discord_kind(),
+        }
+    }
+
+    /// The main window losing focus is not idleness on its own: focus may
+    /// have gone to Settings or another of the editor's windows. Idle is
+    /// no editor window focused at all, checked every `IDLE_AFTER` until
+    /// the main window is back, which also keeps alt-tabbing from flapping.
+    pub(super) fn discord_window_activation(&mut self, active: bool, cx: &mut Context<Self>) {
+        const IDLE_AFTER: Duration = Duration::from_secs(60);
+        if active || self.discord.is_none() {
+            self.discord_idle_check = None;
+            self.set_discord_idle(false);
+            return;
+        }
+        if self.discord_idle_check.is_some() {
+            return;
+        }
+        self.discord_idle_check = Some(cx.spawn(async move |shell, cx| loop {
+            cx.background_executor().timer(IDLE_AFTER).await;
+            let checked = shell.update(cx, |shell, cx| {
+                shell.set_discord_idle(cx.active_window().is_none());
+            });
+            if checked.is_err() {
+                return;
+            }
+        }));
+    }
+
+    fn set_discord_idle(&mut self, idle: bool) {
+        if self.discord_idle != idle {
+            self.discord_idle = idle;
+            self.update_discord();
         }
     }
 

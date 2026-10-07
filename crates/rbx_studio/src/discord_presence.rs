@@ -3,10 +3,14 @@
 //! reconnects and retries silently when Discord is not running.
 
 use std::sync::mpsc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const CLIENT_ID: &str = "1557174796435980338";
 const RETRY_DELAY: Duration = Duration::from_secs(15);
+/// Discord accepts five `SET_ACTIVITY` per 20 seconds and drops the rest,
+/// which could leave a stale activity showing; updates closer together
+/// than this are coalesced into the newest one instead.
+const MIN_SPACING: Duration = Duration::from_secs(4);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Activity {
@@ -100,30 +104,66 @@ fn try_session(receiver: &mpsc::Receiver<Message>, activity: &mut Activity) -> S
     if ipc::write_frame(&mut pipe, 0, handshake.as_bytes()).is_err() {
         return SessionExit::Disconnected;
     }
-    if ipc::read_frame(&mut pipe).is_err() {
-        return SessionExit::Disconnected;
+    // A rejected client id answers with a close frame instead of READY.
+    match read_reply(&mut pipe) {
+        Ok(reply) if reply.contains(r#""evt":"READY""#) => {}
+        _ => return SessionExit::Disconnected,
     }
 
     if send_activity(&mut pipe, activity).is_err() {
         return SessionExit::Disconnected;
     }
+    let mut sent = Instant::now();
 
     loop {
         match receiver.recv() {
-            Ok(Message::Update(new)) => {
-                *activity = new;
-                if send_activity(&mut pipe, activity).is_err() {
-                    return SessionExit::Disconnected;
-                }
-            }
+            Ok(Message::Update(new)) => *activity = new,
             Ok(Message::Stop) | Err(_) => return SessionExit::Stop,
         }
+        loop {
+            let wait = MIN_SPACING.saturating_sub(sent.elapsed());
+            if wait.is_zero() {
+                break;
+            }
+            match receiver.recv_timeout(wait) {
+                Ok(Message::Update(new)) => *activity = new,
+                Ok(Message::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    return SessionExit::Stop;
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => break,
+            }
+        }
+        if send_activity(&mut pipe, activity).is_err() {
+            return SessionExit::Disconnected;
+        }
+        sent = Instant::now();
     }
 }
 
+/// Sends one activity and reads Discord's answer to it, so replies never
+/// pile up unread in the socket and a rejection is at least reported.
 fn send_activity(pipe: &mut ipc::Pipe, activity: &Activity) -> Result<(), ()> {
     let payload = activity_json(activity);
-    ipc::write_frame(pipe, 1, payload.as_bytes())
+    ipc::write_frame(pipe, 1, payload.as_bytes())?;
+    let reply = read_reply(pipe)?;
+    if reply.contains(r#""evt":"ERROR""#) {
+        eprintln!("Discord rejected the presence update: {reply}");
+    }
+    Ok(())
+}
+
+/// The next data frame, answering any ping on the way. Opcodes: 0
+/// handshake, 1 frame, 2 close, 3 ping, 4 pong; a close (or anything
+/// unknown) ends the session.
+fn read_reply(pipe: &mut ipc::Pipe) -> Result<String, ()> {
+    loop {
+        let (opcode, payload) = ipc::read_frame(pipe)?;
+        match opcode {
+            1 => return Ok(String::from_utf8_lossy(&payload).into_owned()),
+            3 => ipc::write_frame(pipe, 4, &payload)?,
+            _ => return Err(()),
+        }
+    }
 }
 
 fn activity_json(activity: &Activity) -> String {
@@ -227,16 +267,7 @@ mod ipc {
         .into_iter()
         .flatten()
         .filter(|s| !s.is_empty())
-        .flat_map(|base| {
-            let base = std::path::PathBuf::from(base);
-            [
-                base.clone(),
-                base.join("app/com.discordapp.Discord"),
-                // Vesktop's Flatpak runs arRPC inside its own sandbox.
-                base.join(".flatpak/dev.vencord.Vesktop/xdg-run"),
-                base.join("snap.discord"),
-            ]
-        })
+        .flat_map(|base| sandbox_dirs(std::path::PathBuf::from(base)))
         .collect();
 
         for dir in &candidates {
@@ -252,6 +283,30 @@ mod ipc {
         None
     }
 
+    /// `base` itself plus every sandboxed client's view of it, found by
+    /// listing rather than by app id so any Discord build or modded client
+    /// is found: `app/<id>` (the official Flatpak), `.flatpak/<id>/xdg-run`
+    /// (Vesktop and other Flatpaks running arRPC) and `snap.<name>` (Snap).
+    #[cfg(not(windows))]
+    pub(super) fn sandbox_dirs(base: std::path::PathBuf) -> Vec<std::path::PathBuf> {
+        let children = |dir: std::path::PathBuf| {
+            std::fs::read_dir(dir)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|entry| entry.path())
+        };
+        let mut dirs = vec![base.clone()];
+        dirs.extend(children(base.join("app")));
+        dirs.extend(children(base.join(".flatpak")).map(|dir| dir.join("xdg-run")));
+        dirs.extend(children(base).filter(|dir| {
+            dir.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("snap."))
+        }));
+        dirs
+    }
+
     pub(super) fn write_frame(pipe: &mut Pipe, opcode: u32, payload: &[u8]) -> Result<(), ()> {
         let mut header = [0u8; 8];
         header[..4].copy_from_slice(&opcode.to_le_bytes());
@@ -261,7 +316,7 @@ mod ipc {
         pipe.flush().map_err(|_| ())
     }
 
-    pub(super) fn read_frame(pipe: &mut Pipe) -> Result<Vec<u8>, ()> {
+    pub(super) fn read_frame(pipe: &mut Pipe) -> Result<(u32, Vec<u8>), ()> {
         let mut header = [0u8; 8];
         pipe.read_exact(&mut header).map_err(|_| ())?;
         let len = u32::from_le_bytes([header[4], header[5], header[6], header[7]]) as usize;
@@ -270,7 +325,8 @@ mod ipc {
         }
         let mut payload = vec![0u8; len];
         pipe.read_exact(&mut payload).map_err(|_| ())?;
-        Ok(payload)
+        let opcode = u32::from_le_bytes([header[0], header[1], header[2], header[3]]);
+        Ok((opcode, payload))
     }
 }
 
@@ -383,5 +439,33 @@ mod tests {
             kind: Kind::Building,
         });
         drop(presence);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn sandbox_dirs_finds_flatpak_and_snap_clients() {
+        let base = std::env::temp_dir().join(format!("rbx-discord-{}", std::process::id()));
+        for dir in [
+            "app/com.discordapp.Discord",
+            ".flatpak/dev.vencord.Vesktop/xdg-run",
+            "snap.discord",
+            "unrelated",
+        ] {
+            std::fs::create_dir_all(base.join(dir)).unwrap();
+        }
+        let dirs = ipc::sandbox_dirs(base.clone());
+        std::fs::remove_dir_all(&base).unwrap();
+        for dir in [
+            "",
+            "app/com.discordapp.Discord",
+            ".flatpak/dev.vencord.Vesktop/xdg-run",
+            "snap.discord",
+        ] {
+            assert!(
+                dirs.contains(&base.join(dir)),
+                "{dir} missing from {dirs:?}"
+            );
+        }
+        assert!(!dirs.contains(&base.join("unrelated")));
     }
 }

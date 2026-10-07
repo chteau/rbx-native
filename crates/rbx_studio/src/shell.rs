@@ -422,8 +422,10 @@ pub(crate) struct Shell {
     /// The Unix timestamp presence was started — keeps Discord's elapsed
     /// time stable across activity updates.
     discord_started: u64,
-    /// The main window is in the background, shown as idling.
+    /// No editor window has had focus for a while, shown as idling.
     discord_idle: bool,
+    /// Polls for idleness while the main window is in the background.
+    discord_idle_check: Option<Task<()>>,
     drag: Option<Drag>,
     /// The dock currently being dragged by its tab, which is what puts the
     /// drop strips on screen (see `shell::dock_drag`). `None` the rest of
@@ -632,9 +634,8 @@ impl Shell {
         let initial_targets = Targets::read(&dom, &database, &Vec::from_iter(selected));
         let ui = ui_editor::UiEditor::new(window, cx);
         let recovery = recovery::Recovery::new(auto_recovery, recovery_minutes, &path);
-        let window_activated = cx.observe_window_activation(window, |shell, window, _| {
-            shell.discord_idle = !window.is_window_active();
-            shell.update_discord();
+        let window_activated = cx.observe_window_activation(window, |shell, window, cx| {
+            shell.discord_window_activation(window.is_window_active(), cx);
         });
 
         let mut shell = Shell {
@@ -756,6 +757,7 @@ impl Shell {
             discord_hide_names,
             discord_started: 0,
             discord_idle: false,
+            discord_idle_check: None,
             drag: None,
             _subscriptions: [
                 tree_focused,
