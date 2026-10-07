@@ -5,7 +5,7 @@
 use std::sync::mpsc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-const CLIENT_ID: &str = "1294805388855246848";
+const CLIENT_ID: &str = "1557174796435980338";
 const RETRY_DELAY: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13,6 +13,34 @@ pub(crate) struct Activity {
     pub(crate) place: String,
     pub(crate) detail: String,
     pub(crate) started: u64,
+    pub(crate) kind: Kind,
+}
+
+/// What the user is doing, which picks the large image. Each variant's
+/// asset key is uploaded to the Discord application; `instudio` is the
+/// small badge on every one of them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Kind {
+    Building,
+    Scripting,
+    UiDesigning,
+    /// No editor drives this yet; the asset is uploaded for when an
+    /// animation editor lands.
+    #[allow(dead_code)]
+    Animating,
+    Idling,
+}
+
+impl Kind {
+    fn asset(self) -> (&'static str, &'static str) {
+        match self {
+            Kind::Building => ("building", "Building"),
+            Kind::Scripting => ("scripting", "Scripting"),
+            Kind::UiDesigning => ("uidesigning", "Designing UI"),
+            Kind::Animating => ("animating", "Animating"),
+            Kind::Idling => ("idling", "Idle"),
+        }
+    }
 }
 
 enum Message {
@@ -115,13 +143,16 @@ fn activity_json(activity: &Activity) -> String {
             r#""details":"{details}""#,
             r#"{state}"#,
             r#","timestamps":{{"start":{start}}}"#,
-            r#","assets":{{"large_image":"rbxnative","large_text":"RbxNative"}}"#,
+            r#","assets":{{"large_image":"{image}","large_text":"{image_text}""#,
+            r#","small_image":"instudio","small_text":"RbxNative"}}"#,
             r#"}}}},"nonce":"{nonce}"}}"#,
         ),
         pid = std::process::id(),
         details = json_escape(&details),
         state = state.as_deref().unwrap_or(""),
         start = activity.started,
+        image = activity.kind.asset().0,
+        image_text = activity.kind.asset().1,
         nonce = nonce(),
     )
 }
@@ -251,13 +282,15 @@ mod tests {
             place: "Baseplate".into(),
             detail: "ServerScript".into(),
             started: 1700000000,
+            kind: Kind::Building,
         };
         let json = activity_json(&activity);
         assert!(json.contains(r#""cmd":"SET_ACTIVITY""#));
         assert!(json.contains(r#""details":"Editing Baseplate""#));
         assert!(json.contains(r#""state":"ServerScript""#));
         assert!(json.contains(r#""start":1700000000"#));
-        assert!(json.contains(r#""large_image":"rbxnative""#));
+        assert!(json.contains(r#""large_image":"building""#));
+        assert!(json.contains(r#""small_image":"instudio""#));
     }
 
     #[test]
@@ -266,6 +299,7 @@ mod tests {
             place: String::new(),
             detail: String::new(),
             started: 1700000000,
+            kind: Kind::Building,
         };
         let json = activity_json(&activity);
         assert!(json.contains(r#""details":"Editing in RbxNative""#));
@@ -325,6 +359,7 @@ mod tests {
             place: r#"My "Cool" Place"#.into(),
             detail: r#"Script"With"Quotes"#.into(),
             started: 0,
+            kind: Kind::Building,
         };
         let json = activity_json(&activity);
         assert!(!json.contains(r#"My "Cool" Place"#));
@@ -337,11 +372,13 @@ mod tests {
             place: "Test".into(),
             detail: String::new(),
             started: now_timestamp(),
+            kind: Kind::Building,
         });
         presence.update(Activity {
             place: "Test2".into(),
             detail: "Viewport".into(),
             started: now_timestamp(),
+            kind: Kind::Building,
         });
         drop(presence);
     }

@@ -3,7 +3,7 @@
 
 use gpui_kit::Context;
 
-use crate::discord_presence::{self, Activity, Presence};
+use crate::discord_presence::{self, Activity, Kind, Presence};
 
 use super::Shell;
 
@@ -58,6 +58,19 @@ impl Shell {
             place,
             detail,
             started: self.discord_started,
+            kind: self.discord_kind(),
+        }
+    }
+
+    fn discord_kind(&self) -> Kind {
+        use super::chrome::Document;
+        if self.discord_idle {
+            return Kind::Idling;
+        }
+        match self.document {
+            Document::Viewport => Kind::Building,
+            Document::UiEditor => Kind::UiDesigning,
+            Document::Scripts => Kind::Scripting,
         }
     }
 
