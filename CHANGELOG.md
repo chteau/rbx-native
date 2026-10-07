@@ -13,11 +13,24 @@
   constraints turned into position, size and anchor, auto layout into
   `UIListLayout`/`UIPadding`, and corners, strokes, gradients and drop
   shadows into their modifiers. Pictures go up through the Open Cloud key
-  as decals, each once: a cache remembers what was uploaded. Guesses that
-  were shaky are listed under "Review" in the panel. Signing in needs the
-  app's client secret at build time: build with
-  `RBX_FIGMA_CLIENT_SECRET=… cargo build -p rbx_studio`; without it the
-  panel says so instead of connecting. — @chteau
+  as decals, each once: a cache remembers what was uploaded. Signing in
+  needs the app's client secret at build time, from `RBX_FIGMA_CLIENT_SECRET`
+  or the gitignored `.env` at the checkout's root. — @chteau
+- **Figma import, second round.** The import is now a window of its own: a
+  list of recently opened files, a field for a file or frame link, and the
+  file as a tree that loads one level at a time down to any node, with a
+  preview of the selected row. Picking a node opens a review step (name,
+  class dropdown, confidence and notes per row, low-confidence rows marked,
+  flatten-to-image per row); only Import changes the place, as one undo
+  step. Inference now covers wrapping auto layout (`UIGridLayout`), mixed
+  text styles (RichText), rotation, fill and hug sizing (`UIFlexItem`,
+  `AutomaticSize`), line height, TextScaled with a `UITextSizeConstraint`,
+  clipping, gradients on fills, text and strokes, image and pattern fills
+  behind children, and stacked fills; a compatibility table at the top of
+  `infer.rs` lists what maps, what is approximated and what is dropped,
+  and every approximation leaves a note. JPEG fills upload as JPEG.
+  FigBloxUI's Shop_Frame imports to a near pixel match with Figma's own
+  render. — @chteau
 
 ## 2026-10-06
 

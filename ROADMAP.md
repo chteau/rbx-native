@@ -1250,10 +1250,21 @@ Roblox's own engine.
   from the node JSON, uploads image fills and rendered vector groups as
   decals through `rbx_cloud` once each (cache by `imageRef` and PNG hash),
   and inserts the tree under the open `ScreenGui` as one undo step, with
-  uncertain guesses listed for review. Left for later: `UIGridLayout` for
-  wrapping auto layout, rich text and mixed text styles, rotation,
-  `UIFlexItem` for fill sizing, line height, JPEG fills (uploaded as PNG
-  today), and a live end-to-end import, which has not been run yet.
+  uncertain guesses listed for review. Second round: a browser window
+  (recent files, paste a link, a lazily loaded node tree with a preview), a
+  review step before import, and the rest of the inference (grid layouts,
+  rich text, rotation, flex sizing, line height, TextScaled, clipping,
+  gradients everywhere, image and pattern fills behind children). Live
+  check: FigBloxUI's Shop_Frame matches Figma's render to font
+  antialiasing. Open:
+  - Other frames of that file still need the same live comparison (Figma
+    rate-limited the render endpoint during the first pass).
+  - No folder browsing: Figma's folder-listing endpoints (and the older
+    projects ones) are closed to public OAuth apps, so files are reached
+    through recent history or a pasted link.
+  - Image crops (`imageTransform`) only leave a note.
+  - A solid fill under an image fill is flattened to a render instead of an
+    `ImageLabel` with a background colour.
 - [x] **Align tool**, matching Studio's real Model-tab tool (checked
   against `studio/align-tool.md` rather than assumed, not the transform
   gizmos under "What's been implemented" → Editor). Aligns the selected
