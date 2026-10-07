@@ -136,13 +136,10 @@ pub(crate) enum Code {
     Event(Option<&'static str>),
     /// A statement in a run, carried on by its exec output.
     Statement(&'static str),
-    /// A value. `call` marks one that does work or can change between
-    /// reads (a lookup, a clone), so it is read once into a local rather
-    /// than repeated at every use.
+    /// A value. One read twice or more is read once into a local first.
     Expression {
         template: &'static str,
         prec: Prec,
-        call: bool,
     },
     Branch,
     ForEach,
@@ -296,6 +293,7 @@ impl Kind {
         pins
     }
 
+    #[cfg(test)]
     pub(crate) fn input(&self, name: &str) -> Option<&'static Pin> {
         self.inputs.iter().find(|pin| pin.name == name)
     }

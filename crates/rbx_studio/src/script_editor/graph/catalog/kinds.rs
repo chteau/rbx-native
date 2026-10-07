@@ -45,18 +45,13 @@ pub(super) const IN: Pin = exec("");
 pub(super) const THEN: Pin = exec("");
 
 pub(super) const fn expression(template: &'static str, prec: Prec) -> Code {
-    Code::Expression {
-        template,
-        prec,
-        call: false,
-    }
+    Code::Expression { template, prec }
 }
 
 pub(super) const fn call(template: &'static str) -> Code {
     Code::Expression {
         template,
         prec: Prec::Atom,
-        call: true,
     }
 }
 
