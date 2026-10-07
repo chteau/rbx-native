@@ -56,7 +56,9 @@ mod rows;
 mod save;
 mod script_analysis;
 mod script_finder;
+mod script_graph;
 mod script_panel;
+mod script_toolbar;
 mod scripts;
 mod scroll;
 mod scrub;
@@ -197,6 +199,8 @@ pub(crate) struct Shell {
     /// The Viewport dock's settings, one Tab stop for the lot — see
     /// `shell::viewport_dock`.
     viewport_nav: roving::Roving,
+    /// The Script Editor's Code | Graph pills — see `shell::script_panel`.
+    script_view_nav: roving::Roving,
     /// The window's Tab order, handed out afresh every render — see
     /// `shell::roving::TabOrder`.
     tab_order: roving::TabOrder,
@@ -278,6 +282,8 @@ pub(crate) struct Shell {
     covered: HashSet<Ref>,
     /// Every script open in the Script Editor panel; see `shell::scripts`.
     scripts: ScriptEditor,
+    /// Each open tab's Graph side, once shown — see `shell::script_graph`.
+    graphs: std::collections::HashMap<Ref, script_graph::GraphEditor>,
     /// Breakpoints and the debug run, if any — see `shell::debugging`.
     debug: debugging::Debugging,
     /// `luau-lsp` behind the script editor and Script Analysis; see
@@ -308,6 +314,9 @@ pub(crate) struct Shell {
     /// the panel's overflow menu (see `shell::dock`'s `dropdown_menu`) and
     /// Settings. Persisted.
     output_show_timestamps: bool,
+    /// Whether opening a script's Graph side tidies it; persisted (see
+    /// `settings`), written through `Shell::set_optimize_graph_on_open`.
+    optimize_graph_on_open: bool,
     /// The Script Editor's text size at 1x; see `Settings::script_font_size`.
     script_font_size: f32,
     output_scroll: ScrollHandle,
@@ -473,6 +482,7 @@ impl Shell {
             named_layouts,
             output_collapsed,
             output_timestamps,
+            optimize_graph_on_open,
             increment_names,
             expand_on_select,
             dragger,
@@ -667,6 +677,7 @@ impl Shell {
             ribbon_nav: roving::Roving::horizontal(),
             properties_nav: roving::Roving::vertical(),
             viewport_nav: roving::Roving::vertical(),
+            script_view_nav: roving::Roving::horizontal(),
             tab_order: roving::TabOrder::default(),
             reduce_motion,
             scrub: None,
@@ -696,6 +707,7 @@ impl Shell {
             hovered: Vec::new(),
             covered: HashSet::new(),
             scripts: ScriptEditor::default(),
+            graphs: std::collections::HashMap::new(),
             debug: debugging::Debugging::default(),
             lsp: luau_lsp::Session::default(),
             properties_scroll: ScrollHandle::new(),
@@ -710,6 +722,7 @@ impl Shell {
             output: output::OutputLog::default(),
             output_filter: output::OutputFilter::default(),
             output_show_timestamps: output_timestamps,
+            optimize_graph_on_open,
             script_font_size,
             output_scroll: ScrollHandle::new(),
             viewport_scroll: ScrollHandle::new(),
@@ -1589,6 +1602,7 @@ impl Shell {
             named_layouts: self.named_layouts.clone(),
             output_collapsed: self.output_collapsed,
             output_timestamps: self.output_show_timestamps,
+            optimize_graph_on_open: self.optimize_graph_on_open,
             increment_names: self.increment_names,
             expand_on_select: self.expand_on_select,
             dragger: self.dragger,

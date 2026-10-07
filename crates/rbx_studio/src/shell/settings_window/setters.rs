@@ -15,6 +15,16 @@ impl Shell {
         cx.notify();
     }
 
+    pub(in crate::shell) fn set_optimize_graph_on_open(
+        &mut self,
+        on: bool,
+        cx: &mut Context<Self>,
+    ) {
+        self.optimize_graph_on_open = on;
+        self.save_settings();
+        cx.notify();
+    }
+
     pub(in crate::shell) fn set_output_collapsed(
         &mut self,
         collapsed: bool,

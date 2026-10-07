@@ -15,7 +15,7 @@ use gpui_kit::*;
 use rbx_dom::Ref;
 
 use crate::explorer;
-use crate::script_editor::tabs::Opened;
+use crate::script_editor::tabs::{Opened, View};
 use crate::script_editor::{goto, highlight, source, OpenScript};
 
 use super::Shell;
@@ -23,6 +23,10 @@ use super::Shell;
 /// Read once at startup by `Shell::new`; documented in `main`'s module doc
 /// comment alongside the other debug aids.
 pub(crate) const OPEN_VARIABLE: &str = "RBX_STUDIO_OPEN_SCRIPT";
+/// Read by the same startup pass; documented beside [`OPEN_VARIABLE`].
+const VIEW_VARIABLE: &str = "RBX_STUDIO_SCRIPT_VIEW";
+/// The same pass's last step; documented beside [`OPEN_VARIABLE`].
+const MENU_VARIABLE: &str = "RBX_STUDIO_GRAPH_MENU";
 
 /// How long typing must pause before a tab's text is written to the DOM.
 ///
@@ -117,6 +121,20 @@ impl Shell {
                 self.open_script(reference, window, cx);
             }
         }
+        let (Ok(spec), Some(active)) = (std::env::var(VIEW_VARIABLE), self.scripts.tabs.active())
+        else {
+            return;
+        };
+        let spec = spec.trim();
+        if spec == "graph" || spec.starts_with("graph=") {
+            self.scripts.tabs.set_view(active, View::Graph);
+        }
+        if let Some(path) = spec.strip_prefix("graph=") {
+            self.seed_graph(active, std::path::Path::new(path), cx);
+        }
+        if let Ok(query) = std::env::var(MENU_VARIABLE) {
+            self.debug_graph_menu(active, &query, window, cx);
+        }
     }
 
     /// Brings an open tab to the front; the dock's tab strip's click handler.
@@ -166,6 +184,7 @@ impl Shell {
             .retain(|reference| source::is_script(dom, database, reference));
         let live = scripts.tabs.all().to_vec();
         scripts.open.retain(|reference, _| live.contains(reference));
+        self.prune_graph_editors();
 
         for reference in live {
             let Some(open) = self.scripts.open.get(&reference) else {

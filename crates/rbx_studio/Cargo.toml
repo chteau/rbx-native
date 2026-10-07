@@ -55,6 +55,8 @@ rbx_viewer = { path = "../rbx_viewer" }
 # Same reasoning as `rbx_binary` above: `save` sniffs and writes XML place
 # files with this crate's already-tested `is_xml`/`serialize`.
 rbx_xml = { path = "../rbx_xml" }
+# Lossless Luau parser the script graph is built from.
+full_moon = { version = "3", features = ["luau"] }
 # Dock layout and editor settings, persisted to disk as JSON.
 serde_json = "1"
 # This project's own class icons (`class_icons::DefaultIcons`), embedded at

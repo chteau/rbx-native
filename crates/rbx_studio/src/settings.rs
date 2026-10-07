@@ -97,6 +97,9 @@ pub(crate) struct Settings {
     pub(crate) output_collapsed: bool,
     /// Whether Output rows print their time.
     pub(crate) output_timestamps: bool,
+    /// Whether opening a script's Graph side tidies it, rather than
+    /// restoring the layout saved for it.
+    pub(crate) optimize_graph_on_open: bool,
     /// Real Studio's two insertion preferences, off the `⋯` beside the
     /// Explorer's insert search field (`studio/explorer.md`). Both default
     /// on, as they do there: a second `Part` called `Part` is not something
@@ -198,6 +201,7 @@ impl Default for Settings {
             named_layouts: Vec::new(),
             output_collapsed: false,
             output_timestamps: false,
+            optimize_graph_on_open: false,
             increment_names: true,
             expand_on_select: true,
             dragger: DraggerSettings::default(),
@@ -383,6 +387,10 @@ fn load_from(path: &Path) -> Settings {
             .unwrap_or(false),
         output_timestamps: value
             .get("output_timestamps")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        optimize_graph_on_open: value
+            .get("optimize_graph_on_open")
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
         increment_names: value
@@ -622,6 +630,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
             .collect::<Vec<_>>(),
         "output_collapsed": settings.output_collapsed,
         "output_timestamps": settings.output_timestamps,
+        "optimize_graph_on_open": settings.optimize_graph_on_open,
         "increment_names": settings.increment_names,
         "expand_on_select": settings.expand_on_select,
         "dragger": settings.dragger.json(),
