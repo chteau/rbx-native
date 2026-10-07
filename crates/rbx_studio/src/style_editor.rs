@@ -98,20 +98,6 @@ pub(crate) enum StyleRow {
     },
 }
 
-impl StyleRow {
-    /// The instance selecting this row selects, so the Properties panel
-    /// shows it. A property row has no instance of its own; it stands for
-    /// the rule that holds it.
-    pub(crate) fn referent(&self) -> Ref {
-        match self {
-            StyleRow::Sheet { referent, .. }
-            | StyleRow::Derive { referent, .. }
-            | StyleRow::Rule { referent, .. } => *referent,
-            StyleRow::Property { rule, .. } => *rule,
-        }
-    }
-}
-
 /// Every `StyleSheet` in the place and what hangs off it, in tree order.
 pub(crate) fn rows(dom: &WeakDom) -> Vec<StyleRow> {
     let mut rows = Vec::new();

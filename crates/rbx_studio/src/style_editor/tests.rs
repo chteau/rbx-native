@@ -89,12 +89,15 @@ fn every_sheet_derive_rule_and_property_becomes_a_row() {
 fn a_property_row_selects_its_rule() {
     let (dom, _, _, card, _) = styled();
 
-    let property = rows(&dom)
+    let rule = rows(&dom)
         .into_iter()
-        .find(|row| matches!(row, StyleRow::Property { .. }))
+        .find_map(|row| match row {
+            StyleRow::Property { rule, .. } => Some(rule),
+            _ => None,
+        })
         .expect("the card rule's property");
 
-    assert_eq!(property.referent(), card);
+    assert_eq!(rule, card);
 }
 
 /// Adding, changing and dropping a property all go through the blob, so this
