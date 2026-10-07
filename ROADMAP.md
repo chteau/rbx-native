@@ -1027,7 +1027,8 @@ Roblox's own engine.
   and Player Added, Branch/For Each/Repeat/Wait, instance lookups,
   properties, attributes and tags, logic, maths, values, Print/Warn) with
   typed, colour-coded pins. The canvas pans and zooms, draws a dot grid,
-  wires, named group frames and a minimap; nodes are added from a
+  wires, named group frames (resized from their edges and corners) and a
+  minimap; nodes are added from a
   searchable menu (Shift+A, a double-click, or a wire dropped on nothing,
   which narrows it to nodes that wire can end on), wired by dragging pins
   (a wired input gives its wire back), moved, box-selected, duplicated,
@@ -1035,9 +1036,17 @@ Roblox's own engine.
   wrong type is refused with the reason; a graph that cannot compile marks
   the node at fault, names the first problem in the status line and leaves
   the code alone, and statements no event leads to are counted there as
-  never running. Code edited by hand after its graph was saved is flagged,
-  with a button to replace it with the graph's. Every edit is one undo
-  step in the place's history.
+  never running. A script written as code opens **drawn from its code**:
+  statements the node set writes (events, calls, property writes, `if`,
+  numeric and generic `for`, locals, lookups, maths with its brackets)
+  become nodes, and the rest stays as written in Luau Code nodes. Each
+  import is checked by compiling it again and comparing tokens and
+  comments; a statement that would come out different is kept as written
+  instead, so no code is lost. Code edited by hand after its graph was
+  saved is flagged, with buttons to read it back into the graph or
+  replace it with the graph's; until then, graph edits save the graph and
+  leave that code alone. Every edit is one undo step in the place's
+  history.
 - [x] **A launcher: API key setup wizard, Home, Roblox publishing.** A
   bare `rbxstudio` opens the wizard on first launch (no key stored) and
   Home after that; `rbxstudio <file>` still opens the editor directly.
@@ -2129,13 +2138,15 @@ Roblox's own engine.
   not a default this project should ship opinionated about.
 
 #### Far future: node-based scripting
-- [ ] 📋 Importing an existing code script into Graph mode: parse its
-  Luau and lay out as nodes whatever the node set can express (events,
-  `if`, property reads and writes, calls, maths, locals), with a clear
-  "this cannot be drawn" state naming the line for the rest. Today a
-  script written as code opens on an empty graph that replaces its code
-  once built, and code edited after its graph was saved can only be
-  overwritten from the graph, not read back into it.
+- [ ] 📋 Drawing more of a script's code as nodes. The importer keeps as
+  Luau Code nodes whatever has no node kind (`local function`, `while`,
+  `repeat … until`, `return`, tables, multiple assignment, method calls
+  outside the catalog) and expressions whose brackets the compiler would
+  write differently (`1 - 2 - 3`). Each needs a node kind or a codegen
+  change first. Comments survive, but only inside Luau Code nodes. An
+  event whose kept-as-written code reads its parameters (`hit` in a
+  Touched handler) stays Luau whole, because the compiler names
+  parameters itself; a per-pin name the compiler honours would fix it.
 
 ### Renderer
 #### Animation
