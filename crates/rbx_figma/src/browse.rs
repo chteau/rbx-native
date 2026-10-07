@@ -163,7 +163,7 @@ fn str_of(v: &Value, k: &str) -> String {
 
 /// `v` as a row, with `depth` levels of its children (hidden ones left out,
 /// since the import skips them too).
-fn item_of(v: &Value, depth: u32) -> Item {
+pub fn item_of(v: &Value, depth: u32) -> Item {
     Item {
         id: str_of(v, "id"),
         name: str_of(v, "name"),
@@ -180,7 +180,7 @@ fn item_of(v: &Value, depth: u32) -> Item {
     }
 }
 
-fn outline_of(key: &str, file: &Value) -> Outline {
+pub fn outline_of(key: &str, file: &Value) -> Outline {
     let pages = file
         .get("document")
         .map(|d| item_of(d, 2).children.unwrap_or_default())

@@ -150,8 +150,8 @@ pub(super) struct UiEditor {
     unhidden: Vec<Panel>,
     /// The `ViewportFrame` sheet, while one is open over the canvas.
     sheet: Option<frame_sheet::FrameSheet>,
-    /// The "Import from Figma…" panel.
-    figma: figma::Figma,
+    /// The "Import from Figma…" window, while open.
+    figma: Option<WindowHandle<gpui_kit::component::Root>>,
     _subscriptions: [Subscription; 2],
 }
 
@@ -198,7 +198,7 @@ impl UiEditor {
             filtered: false,
             unhidden: Vec::new(),
             sheet: None,
-            figma: figma::Figma::new(window, cx),
+            figma: None,
             _subscriptions: subscriptions,
         }
     }
