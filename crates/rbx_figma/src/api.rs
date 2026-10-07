@@ -38,6 +38,9 @@ impl Session {
     }
 
     fn refresh(&mut self) -> Result<(), String> {
+        if self.tokens.refresh_token.is_empty() {
+            return Err("The Figma token (RBX_FIGMA_TOKEN) was refused or has expired.".into());
+        }
         self.tokens = oauth::refresh(&self.tokens).map_err(|err| {
             format!("Figma sign-in expired and couldn\u{2019}t be renewed; connect again. ({err})")
         })?;
@@ -53,14 +56,12 @@ impl Session {
         let mut renewed = false;
         let mut attempt = 0;
         loop {
+            let auth = header(&self.tokens.access_token);
             attempt += 1;
             let mut response = self
                 .agent
                 .get(&format!("{API}{path}"))
-                .header(
-                    "Authorization",
-                    &format!("Bearer {}", self.tokens.access_token),
-                )
+                .header(auth.0, &auth.1)
                 .call()
                 .map_err(|err| format!("Couldn\u{2019}t reach Figma: {err}"))?;
             let status = response.status().as_u16();
@@ -122,6 +123,15 @@ impl Session {
             .limit(64 * 1024 * 1024)
             .read_to_vec()
             .map_err(|err| err.to_string())
+    }
+}
+
+/// Personal access tokens go in their own header; OAuth tokens are bearer.
+fn header(token: &str) -> (&'static str, String) {
+    if token.starts_with("figd_") {
+        ("X-Figma-Token", token.to_string())
+    } else {
+        ("Authorization", format!("Bearer {token}"))
     }
 }
 
