@@ -32,7 +32,8 @@
 //! | GRADIENT_LINEAR | Supported: `UIGradient` (colour, transparency, rotation from the handles) |
 //! | GRADIENT_RADIAL, GRADIENT_DIAMOND | Approximated: linear from the centre handle towards handle 2 |
 //! | GRADIENT_ANGULAR | Impossible on leaves (rendered); linear on containers, Low |
-//! | IMAGE fill FILL / FIT / STRETCH / TILE | Supported: `ScaleType` Crop / Fit / Stretch / Tile; TILE's `TileSize` approximated |
+//! | IMAGE fill FILL / FIT / STRETCH / TILE | Supported: `ScaleType` Crop / Fit / Stretch / Tile (`TileSize` set on upload, from the image's size) |
+//! | PATTERN fill | Supported on containers: its source node rendered once and tiled (`ScaleType` Tile) under the content; hexagonal tiling and spacing approximated |
 //! | IMAGE with `imageTransform` (crop), rotation, filters | Approximated: shown uncropped / unfiltered |
 //! | VIDEO fill | Impossible: rendered on leaves, dropped on containers |
 //! | stacked fills | Rendered on leaves; on containers each fill is its own layer under the content |
@@ -62,7 +63,7 @@
 //! | `textCase` | Supported: UPPER / LOWER / TITLE rewrite the characters, SMALL_CAPS uses `<sc>` |
 //! | `textDecoration` | Supported: `<u>` / `<s>` |
 //! | line height | Supported: `LineHeight` (clamped to 1..3: approximated) |
-//! | text size | Supported: `TextScaled` + `UITextSizeConstraint` capped at the design size |
+//! | text size | Supported: `TextSize` is Figma's size × 1.2 (a Roblox line, not an em); `TextScaled` + `UITextSizeConstraint` capped at it |
 //! | `textTruncation` ENDING | Supported: `TextTruncate` AtEnd |
 //! | JUSTIFIED, letter spacing, paragraph spacing / indent, lists, `maxLines`, hyperlinks, OpenType flags | Approximated: dropped with a note |
 //! | text paint other than solid or gradient | Dropped, Low |
@@ -90,6 +91,20 @@ pub struct Node {
     pub id: String,
     /// How sure the class guess and the paint translation are.
     pub confidence: Confidence,
+    /// A tiled picture's `TileSize`, which needs the picture's own size:
+    /// [`crate::import`] sets it once it has the PNG.
+    pub tile: Option<Tile>,
+}
+
+/// How a tiled picture's tiles are sized and placed.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Tile {
+    /// Figma's `scalingFactor`: a tile is the picture's size times this.
+    pub factor: f64,
+    /// The box the tiles fill, and whether they are centred in it on each
+    /// axis (Figma's CENTER alignment) rather than starting at its corner.
+    pub size: (f64, f64),
+    pub centred: (bool, bool),
 }
 
 /// How much a node's translation can be trusted, for the review step.
@@ -134,6 +149,7 @@ impl Node {
             image: None,
             id: String::new(),
             confidence: Confidence::High,
+            tile: None,
         }
     }
 
@@ -172,6 +188,41 @@ impl Node {
         self.image = Some(Image::Render(self.id.clone()));
         self.confidence = Confidence::High;
         self.note("flattened to an image in review");
+    }
+
+    /// Sizes a tiled picture's tiles once the picture's size (in design
+    /// pixels) is known; see [`Tile`]. Roblox starts tiles at the corner,
+    /// so a centred grid moves the layer out by the part of a tile that
+    /// pokes past the edge.
+    // ponytail: the shifted layer relies on its parent clipping (Figma's
+    // pattern frames do); an unclipped one shows up to a tile outside.
+    pub fn lay_tiles(&mut self, picture: (f64, f64)) {
+        let Some(tile) = self.tile else { return };
+        let (w, h) = (picture.0 * tile.factor, picture.1 * tile.factor);
+        if w < 0.5 || h < 0.5 {
+            return;
+        }
+        self.set("TileSize", udim2(w, h));
+        let shift = |centred: bool, size: f64, t: f64| {
+            let phase = ((size - t) / 2.0).rem_euclid(t);
+            if centred && phase > 0.01 {
+                t - phase
+            } else {
+                0.0
+            }
+        };
+        let dx = shift(tile.centred.0, tile.size.0, w);
+        let dy = shift(tile.centred.1, tile.size.1, h);
+        if dx > 0.0 || dy > 0.0 {
+            self.set("Position", udim2(-dx, -dy));
+            self.set(
+                "Size",
+                Variant::UDim2(UDim2 {
+                    x: udim(1.0, dx),
+                    y: udim(1.0, dy),
+                }),
+            );
+        }
     }
 
     fn set(&mut self, name: &'static str, value: Variant) {
@@ -631,7 +682,8 @@ fn limits(out: &mut Node, v: &Value) {
 /// its transform mirrors it. Figma's `relativeTransform` is
 /// `[[cos θ, sin θ, x], [-sin θ, cos θ, y]]` for a counter-clockwise θ in a
 /// y-down space, so the x axis lands at `atan2(m10, m00)` clockwise. Without
-/// it, `rotation` (radians, counter-clockwise) is negated.
+/// it, `rotation` (radians) already turns clockwise on screen: FigBloxUI's
+/// spring (`6:3`, `rotation` -1.309) renders turned 75° counter-clockwise.
 fn rotation_of(v: &Value) -> (f64, bool) {
     if let Some(m) = v.get("relativeTransform").and_then(Value::as_array) {
         let at = |r: usize, c: usize| {
@@ -643,7 +695,7 @@ fn rotation_of(v: &Value) -> (f64, bool) {
         let (a, b, c, d) = (at(0, 0), at(0, 1), at(1, 0), at(1, 1));
         return (c.atan2(a).to_degrees(), a * d - b * c < 0.0);
     }
-    (-num(v, "rotation").unwrap_or(0.0).to_degrees(), false)
+    (num(v, "rotation").unwrap_or(0.0).to_degrees(), false)
 }
 
 /// The unrotated box, centred where the rotated bounding box is: from `size`
@@ -807,6 +859,11 @@ fn design_node(v: &Value, parent: Option<&Parent>, inherited: f64, order: i32) -
                 "IMAGE" => {
                     let mut layer = Node::new("ImageLabel", &format!("{name}Image"));
                     image_fill(&mut layer, fill, rect, opacity);
+                    layer
+                }
+                "PATTERN" => {
+                    let mut layer = Node::new("ImageLabel", &format!("{name}Pattern"));
+                    pattern(&mut layer, fill, rect, opacity);
                     layer
                 }
                 "SOLID" | "GRADIENT_LINEAR" | "GRADIENT_RADIAL" | "GRADIENT_DIAMOND"
@@ -1013,11 +1070,45 @@ fn paint(out: &mut Node, fill: &Value, rect: Rect, opacity: f64) {
     }
 }
 
+/// A PATTERN fill: its source node, rendered, tiled over the box. Figma
+/// scales the source by `scalingFactor` and centres or starts the tiles per
+/// axis; the tile size waits for the render (see [`Tile`]).
+fn pattern(out: &mut Node, fill: &Value, rect: Rect, opacity: f64) {
+    out.set(
+        "ImageTransparency",
+        Variant::Float32((1.0 - num(fill, "opacity").unwrap_or(1.0) * opacity) as f32),
+    );
+    out.set("ScaleType", Variant::Enum(2));
+    let factor = num(fill, "scalingFactor").unwrap_or(1.0);
+    out.set("TileSize", udim2(rect.w * factor, rect.h * factor));
+    out.tile = Some(Tile {
+        factor,
+        size: (rect.w, rect.h),
+        centred: (
+            text(fill, "horizontalAlignment") == "CENTER",
+            text(fill, "verticalAlignment") == "CENTER",
+        ),
+    });
+    if text(fill, "tileType") != "RECTANGULAR" {
+        out.approx("hexagonal pattern tiled as a grid");
+    }
+    let spacing = fill.get("spacing").unwrap_or(&Value::Null);
+    if num(spacing, "x").unwrap_or(0.0).abs() > 0.01
+        || num(spacing, "y").unwrap_or(0.0).abs() > 0.01
+    {
+        out.approx("pattern spacing dropped; tiles touch");
+    }
+    if text(fill, "horizontalAlignment") == "END" || text(fill, "verticalAlignment") == "END" {
+        out.approx("pattern aligned to its start, not its end");
+    }
+    out.image = Some(Image::Render(text(fill, "sourceNodeId").to_string()));
+}
+
 /// An image fill on an `ImageLabel` / `ImageButton`.
 ///
 /// TILE's `TileSize` is Figma's `scalingFactor` times the image's pixel
-/// size, which only the importer knows once it has downloaded the image:
-/// here the node's size stands in, and the review note says so.
+/// size, which only the importer knows once it has downloaded the image
+/// (see [`Tile`]): until then the node's size stands in.
 fn image_fill(out: &mut Node, fill: &Value, rect: Rect, opacity: f64) {
     out.set(
         "ImageTransparency",
@@ -1035,9 +1126,11 @@ fn image_fill(out: &mut Node, fill: &Value, rect: Rect, opacity: f64) {
     if mode == "TILE" {
         let factor = num(fill, "scalingFactor").unwrap_or(1.0);
         out.set("TileSize", udim2(rect.w * factor, rect.h * factor));
-        out.approx(format!(
-            "tiled image: TileSize is the frame size × {factor}, not the image's own size"
-        ));
+        out.tile = Some(Tile {
+            factor,
+            size: (rect.w, rect.h),
+            centred: (false, false),
+        });
     } else if cropped || mode == "CROP" {
         out.approx("cropped image shown whole; its crop needs the image's pixel size");
     }
@@ -1054,6 +1147,12 @@ fn image_fill(out: &mut Node, fill: &Value, rect: Rect, opacity: f64) {
 }
 
 const INPUT_HINTS: [&str; 5] = ["input", "textbox", "textfield", "text field", "placeholder"];
+
+/// Roblox's `TextSize` per Figma `fontSize`: Figma sizes an em, Roblox a
+/// line ("the line height equal to the `TextSize` property", Roblox's docs on
+/// `Font`), which Studio captures put at 1.2 ems for every family measured
+/// (the viewer's `LINE_EM`). Without it every label draws a sixth small.
+const LINE_EM: f64 = 1.2;
 
 /// Figma family names with spaces dropped, as the Roblox family they map to.
 const FONTS: [(&str, &str); 22] = [
@@ -1144,7 +1243,8 @@ fn text_node(
     out.set("BackgroundTransparency", Variant::Float32(1.0));
     out.set("BorderSizePixel", Variant::Int32(0));
     let style = v.get("style").unwrap_or(&Value::Null);
-    let size = num(style, "fontSize").unwrap_or(14.0);
+    let em = num(style, "fontSize").unwrap_or(14.0);
+    let size = em * LINE_EM;
     if input {
         out.set(
             "PlaceholderText",
@@ -1160,7 +1260,7 @@ fn text_node(
             out.set("RichText", Variant::Bool(true));
         }
     }
-    out.set("TextSize", Variant::Float32(size as f32));
+    out.set("TextSize", Variant::Float32(size.round() as f32));
     text_paint(&mut out, v, rect, opacity, input);
     let x = match text(style, "textAlignHorizontal") {
         "RIGHT" => 1,
@@ -1188,8 +1288,9 @@ fn text_node(
         out.approx(note);
     }
     if text(style, "lineHeightUnit") != "INTRINSIC_%" && size > 0.0 {
+        // Figma's line pitch over Roblox's line (`TextSize`).
         let ratio = num(style, "lineHeightPercentFontSize")
-            .map(|p| p / 100.0)
+            .map(|p| p / 100.0 / LINE_EM)
             .or_else(|| num(style, "lineHeightPx").map(|px| px / size));
         if let Some(ratio) = ratio {
             let kept = ratio.clamp(1.0, 3.0);
@@ -1391,7 +1492,7 @@ fn styled_run(out: &mut Node, o: &Value, inner: &str) -> String {
         }
     }
     if let Some(size) = num(o, "fontSize") {
-        attrs.push_str(&format!(" size=\"{}\"", size.round()));
+        attrs.push_str(&format!(" size=\"{}\"", (size * LINE_EM).round()));
     }
     if o.get("fontWeight").is_some() {
         attrs.push_str(&format!(" weight=\"{}\"", weight(o)));

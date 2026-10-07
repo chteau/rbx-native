@@ -64,7 +64,7 @@ fn text_keeps_its_words_alignment_and_font() {
     let root = infer(&frame("Menu", vec![label("Title", 10.0, 20.0)])).unwrap();
     let text = &root.children[0];
     assert_eq!(text.class, "TextLabel");
-    assert_eq!(text.get("TextSize"), Some(&Variant::Float32(18.0)));
+    assert_eq!(text.get("TextSize"), Some(&Variant::Float32(22.0)));
     assert_eq!(text.get("TextXAlignment"), Some(&Variant::Enum(2)));
     assert_eq!(text.get("TextYAlignment"), Some(&Variant::Enum(1)));
     assert_eq!(
@@ -357,7 +357,8 @@ fn line_height_is_a_ratio_clamped_to_roblox_range() {
     let mut text = label("Body", 0.0, 0.0);
     text["style"]["lineHeightPx"] = json!(27);
     let text = infer(&text).unwrap();
-    assert_eq!(text.get("LineHeight"), Some(&Variant::Float32(1.5)));
+    // 27 px between lines over a 21.6 px Roblox line (18 px × 1.2).
+    assert_eq!(text.get("LineHeight"), Some(&Variant::Float32(1.25)));
     assert!(text.review.is_none());
 
     let mut tall = label("Body", 0.0, 0.0);
@@ -371,9 +372,10 @@ fn line_height_is_a_ratio_clamped_to_roblox_range() {
 fn text_scales_down_but_never_past_its_design_size() {
     let text = infer(&label("Title", 0.0, 0.0)).unwrap();
     assert_eq!(text.get("TextScaled"), Some(&Variant::Bool(true)));
-    assert_eq!(text.get("TextSize"), Some(&Variant::Float32(18.0)));
+    // An 18 px Figma em is a 21.6 px Roblox line.
+    assert_eq!(text.get("TextSize"), Some(&Variant::Float32(22.0)));
     let cap = only(&text, "UITextSizeConstraint");
-    assert_eq!(cap.get("MaxTextSize"), Some(&Variant::Int32(18)));
+    assert_eq!(cap.get("MaxTextSize"), Some(&Variant::Int32(22)));
     assert_eq!(cap.get("MinTextSize"), Some(&Variant::Int32(1)));
 
     let mut hugging = label("Title", 0.0, 0.0);
@@ -564,6 +566,28 @@ fn strokes_follow_glyphs_on_text_and_the_border_elsewhere() {
 }
 
 #[test]
+fn a_pattern_fill_tiles_its_rendered_source() {
+    let mut card = frame("Card", vec![label("Price", 100.0, 100.0)]);
+    card["fills"] = json!([solid(1.0, 1.0, 1.0), {
+        "type": "PATTERN", "sourceNodeId": "2:2", "tileType": "RECTANGULAR",
+        "scalingFactor": 0.4, "spacing": { "x": 0.0, "y": 0.0 }, "opacity": 0.2,
+        "horizontalAlignment": "CENTER", "verticalAlignment": "START" }]);
+    let card = infer(&card).unwrap();
+    let layer = &card.children[0];
+    assert_eq!(layer.class, "ImageLabel");
+    assert_eq!(layer.name, "CardPattern");
+    assert_eq!(layer.image, Some(Image::Render("2:2".into())));
+    assert_eq!(layer.get("ScaleType"), Some(&Variant::Enum(2)));
+    assert_eq!(layer.get("ImageTransparency"), Some(&Variant::Float32(0.8)));
+    assert_eq!(layer.get("Size"), Some(&full()));
+    let tile = layer.tile.unwrap();
+    assert_eq!(tile.size, (400.0, 300.0));
+    assert_eq!(tile.centred, (true, false));
+    assert!((tile.factor - 0.4).abs() < 1e-9);
+    assert!(layer.review.is_none());
+}
+
+#[test]
 fn an_image_fill_under_children_is_a_first_child_layer() {
     let mut card = frame("Card", vec![label("Price", 100.0, 100.0)]);
     card["cornerRadius"] = json!(8);
@@ -585,7 +609,14 @@ fn an_image_fill_under_children_is_a_first_child_layer() {
     assert_eq!(layer.get("ImageTransparency"), Some(&Variant::Float32(0.5)));
     assert_eq!(layer.get("ScaleType"), Some(&Variant::Enum(2)));
     assert_eq!(layer.get("TileSize"), Some(&udim2(200.0, 150.0)));
-    assert!(layer.review.as_deref().unwrap().contains("TileSize"));
+    assert_eq!(
+        layer.tile,
+        Some(Tile {
+            factor: 0.5,
+            size: (400.0, 300.0),
+            centred: (false, false)
+        })
+    );
     only(layer, "UICorner");
     only(&card, "UICorner");
     assert!(card.children.iter().any(|c| c.class == "TextLabel"));

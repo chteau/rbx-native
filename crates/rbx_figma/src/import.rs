@@ -112,10 +112,21 @@ pub fn resolve_images(
             Image::Fill(image_ref) => Some(format!("ref:{image_ref}")),
             Image::Render(_) => None,
         };
-        let cached = by_ref.as_ref().and_then(|k| cache.ids.get(k).copied());
+        // A tiled picture's tiles need its size, so it is always fetched.
+        let cached = by_ref
+            .as_ref()
+            .filter(|_| node.tile.is_none())
+            .and_then(|k| cache.ids.get(k).copied());
         let id = match cached {
             Some(id) => Ok(id),
             None => download(&image).and_then(|png| {
+                if let Some((w, h)) = png_size(&png) {
+                    let scale = match image {
+                        Image::Render(_) => f64::from(RENDER_SCALE),
+                        Image::Fill(_) => 1.0,
+                    };
+                    node.lay_tiles((f64::from(w) / scale, f64::from(h) / scale));
+                }
                 let by_hash = hash_key(&png);
                 match cache.ids.get(&by_hash).copied() {
                     Some(id) => Ok(id),
@@ -142,6 +153,15 @@ pub fn resolve_images(
         }
     });
     result
+}
+
+/// A PNG's width and height, from its header.
+fn png_size(png: &[u8]) -> Option<(u32, u32)> {
+    if png.get(..8)? != b"\x89PNG\r\n\x1a\n" || png.get(12..16)? != b"IHDR" {
+        return None;
+    }
+    let word = |at: usize| Some(u32::from_be_bytes(png.get(at..at + 4)?.try_into().ok()?));
+    Some((word(16)?, word(20)?))
 }
 
 /// The raw answer of the last import, for diagnosing what inference made of
@@ -201,7 +221,9 @@ pub fn finish(
     let mut fills = BTreeSet::new();
     let mut renders = BTreeSet::new();
     tree.walk_mut(&mut |node| match &node.image {
-        Some(Image::Fill(image_ref)) if !cache.ids.contains_key(&format!("ref:{image_ref}")) => {
+        Some(Image::Fill(image_ref))
+            if node.tile.is_some() || !cache.ids.contains_key(&format!("ref:{image_ref}")) =>
+        {
             fills.insert(image_ref.clone());
         }
         Some(Image::Render(id)) => {
@@ -308,6 +330,64 @@ mod tests {
         let id = |n: u64| Some(Variant::String(format!("rbxassetid://{n}")));
         assert_eq!(ids, [id(101), id(101), id(101), id(102), id(7)]);
         assert_eq!(cache.ids.get(&hash_key(b"pixels")), Some(&101));
+    }
+
+    /// A PNG header claiming `w` × `h`.
+    fn png(w: u32, h: u32) -> Vec<u8> {
+        let mut png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+        png.extend(w.to_be_bytes());
+        png.extend(h.to_be_bytes());
+        png
+    }
+
+    #[test]
+    fn tiles_take_their_size_from_the_picture() {
+        let mut pattern = infer::infer(&serde_json::json!({
+            "type": "FRAME", "name": "Card",
+            "absoluteBoundingBox": { "x": 0, "y": 0, "width": 100, "height": 50 },
+            "fills": [{ "type": "PATTERN", "sourceNodeId": "2:2", "tileType": "RECTANGULAR",
+                        "scalingFactor": 0.5, "horizontalAlignment": "CENTER",
+                        "verticalAlignment": "START" }],
+            "children": [{ "type": "FRAME", "name": "Inside" }],
+        }))
+        .unwrap();
+        let mut cache = Cache::default();
+        cache.ids.insert("ref:known".into(), 7);
+        let mut tiled = image_node("Tiled", Image::Fill("known".into()));
+        tiled.tile = Some(infer::Tile {
+            factor: 2.0,
+            size: (10.0, 10.0),
+            centred: (false, false),
+        });
+        pattern.children.push(tiled);
+        let mut downloads = 0;
+        resolve_images(
+            &mut pattern,
+            &mut cache,
+            |image| {
+                downloads += 1;
+                // The render is at RENDER_SCALE: 48 × 40 is a 24 × 20 source.
+                Ok(match image {
+                    Image::Render(_) => png(48, 40),
+                    Image::Fill(_) => png(3, 4),
+                })
+            },
+            |_, _| Ok(9),
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(downloads, 2, "a tiled picture is fetched for its size");
+        let layer = &pattern.children[0];
+        let offsets = |n: &Node, p: &str| match n.get(p) {
+            Some(Variant::UDim2(u)) => (u.x.scale, u.x.offset, u.y.scale, u.y.offset),
+            other => panic!("{p}: {other:?}"),
+        };
+        assert_eq!(offsets(layer, "TileSize"), (0.0, 12, 0.0, 10));
+        // 100 wide, 12 a tile, centred: a tile edge at 44, so the layer
+        // starts 4 px out (44 - 3 × 12 = 8, a tile back is -4).
+        assert_eq!(offsets(layer, "Position"), (0.0, -4, 0.0, 0));
+        assert_eq!(offsets(layer, "Size"), (1.0, 4, 1.0, 0));
+        assert_eq!(offsets(&pattern.children[2], "TileSize"), (0.0, 6, 0.0, 8));
     }
 
     #[test]
