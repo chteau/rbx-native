@@ -280,6 +280,18 @@ impl Shell {
             }
         }));
 
+        // Muted glyphs fall below 3:1 on the selection fill, so a selected
+        // header draws its buttons in full text.
+        let on_selection = |button: Stateful<Div>| match selected {
+            true => button.text_color(tokens::text_full()),
+            false => button,
+        };
+        let (chevron, add_rule) = (on_selection(chevron), on_selection(add_rule));
+        let link = match link_target {
+            Some(_) => on_selection(link),
+            None => link,
+        };
+
         self.style_line(("style-sheet", id), sheet, selected, 0, cx)
             .child(chevron)
             .child(
