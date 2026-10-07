@@ -7,7 +7,7 @@
 //! output `n` on the right. Text widths are estimated from character
 //! counts, generously, so a label never runs into the edge.
 
-use super::catalog::{self, Kind, Pin, PinType};
+use super::catalog::{self, Pin, PinType};
 use super::{End, Graph, Group, Node, NodeId};
 
 pub(crate) const HEADER: f32 = 26.0;
@@ -115,7 +115,8 @@ pub(crate) fn chip_text(text: &str) -> String {
 }
 
 pub(crate) fn chip_width(text: &str) -> f32 {
-    chip_text(text).chars().count() as f32 * MONO + 12.0
+    // An empty text pin still shows a chip wide enough to click.
+    chip_text(text).chars().count().max(2) as f32 * MONO + 12.0
 }
 
 pub(crate) fn label_width(text: &str) -> f32 {
@@ -125,9 +126,9 @@ pub(crate) fn label_width(text: &str) -> f32 {
 /// Where an input's chip sits on the canvas: right after its label, which
 /// is drawn at this same estimate so a click lands where the chip is.
 pub(crate) fn chip_rect(graph: &Graph, node: &Node, name: &str) -> Option<Rect> {
-    let kind = catalog::kind(&node.kind)?;
-    let row = kind.inputs.iter().position(|pin| pin.name == name)?;
-    let pin = &kind.inputs[row];
+    let pins = graph.pins(node.id).inputs;
+    let row = pins.iter().position(|pin| pin.name == name)?;
+    let pin = &pins[row];
     let text = chip(graph, node, pin)?;
     let label = label(graph, node, pin, Side::Input);
     let gap = if label.is_empty() { 0.0 } else { 6.0 };
@@ -142,8 +143,7 @@ pub(crate) fn chip_rect(graph: &Graph, node: &Node, name: &str) -> Option<Rect> 
 /// The input chip under a canvas point, if any.
 pub(crate) fn chip_at(graph: &Graph, p: [f32; 2]) -> Option<End> {
     graph.nodes.iter().rev().find_map(|node| {
-        let kind = catalog::kind(&node.kind)?;
-        kind.inputs.iter().find_map(|pin| {
+        graph.pins(node.id).inputs.iter().find_map(|pin| {
             chip_rect(graph, node, pin.name)
                 .filter(|rect| rect.contains(p))
                 .map(|_| End::new(node.id, pin.name))
@@ -151,9 +151,6 @@ pub(crate) fn chip_at(graph: &Graph, p: [f32; 2]) -> Option<End> {
     })
 }
 
-pub(crate) fn rows(kind: &Kind) -> usize {
-    kind.inputs.len().max(kind.outputs.len()).max(1)
-}
 
 pub(crate) fn rect(graph: &Graph, node: &Node) -> Rect {
     let Some(kind) = catalog::kind(&node.kind) else {
@@ -165,13 +162,14 @@ pub(crate) fn rect(graph: &Graph, node: &Node) -> Rect {
         };
     };
     let title = 34.0 + kind.title.chars().count() as f32 * CHAR + 16.0;
-    let widest = (0..rows(kind))
+    let pins = graph.pins(node.id);
+    let widest = (0..pins.rows())
         .map(|row| {
-            let left = kind.inputs.get(row).map_or(0.0, |pin| {
+            let left = pins.inputs.get(row).map_or(0.0, |pin| {
                 let text = label_width(&label(graph, node, pin, Side::Input));
                 text + chip(graph, node, pin).map_or(0.0, |chip| 6.0 + chip_width(&chip))
             });
-            let right = kind.outputs.get(row).map_or(0.0, |pin| {
+            let right = pins.outputs.get(row).map_or(0.0, |pin| {
                 label_width(&label(graph, node, pin, Side::Output))
             });
             14.0 + left + 18.0 + right + 14.0
@@ -181,7 +179,7 @@ pub(crate) fn rect(graph: &Graph, node: &Node) -> Rect {
         x: node.x,
         y: node.y,
         w: (widest.max(MIN_WIDTH) / 10.0).ceil() * 10.0,
-        h: HEADER + TOP + ROW * rows(kind) as f32 + BOTTOM,
+        h: HEADER + TOP + ROW * pins.rows() as f32 + BOTTOM,
     }
 }
 
@@ -193,10 +191,9 @@ pub(crate) fn row_centre(row: usize) -> f32 {
 /// A pin's centre on the canvas.
 pub(crate) fn pin(graph: &Graph, end: &End, side: Side) -> Option<[f32; 2]> {
     let node = graph.node(end.node)?;
-    let kind = catalog::kind(&node.kind)?;
     let pins = match side {
-        Side::Input => kind.inputs,
-        Side::Output => kind.outputs,
+        Side::Input => graph.pins(node.id).inputs,
+        Side::Output => graph.pins(node.id).outputs,
     };
     let row = pins.iter().position(|pin| pin.name == end.pin)?;
     let rect = rect(graph, node);
@@ -221,15 +218,17 @@ pub(crate) fn node_at(graph: &Graph, p: [f32; 2]) -> Option<NodeId> {
 pub(crate) fn pin_at(graph: &Graph, p: [f32; 2], reach: f32) -> Option<(End, Side)> {
     let mut best: Option<(f32, End, Side)> = None;
     for node in graph.nodes.iter().rev() {
-        let Some(kind) = catalog::kind(&node.kind) else {
-            continue;
-        };
         let rect = rect(graph, node);
+        let all = graph.pins(node.id);
         for (side, pins, x) in [
-            (Side::Input, kind.inputs, rect.x),
-            (Side::Output, kind.outputs, rect.x + rect.w),
+            (Side::Input, all.inputs, rect.x),
+            (Side::Output, all.outputs, rect.x + rect.w),
         ] {
             for (row, pin) in pins.iter().enumerate() {
+                // Typed text takes no wire.
+                if pin.ty == PinType::Word {
+                    continue;
+                }
                 let at = [x, rect.y + row_centre(row)];
                 let distance = ((at[0] - p[0]).powi(2) + (at[1] - p[1]).powi(2)).sqrt();
                 if distance <= reach && best.as_ref().is_none_or(|(d, _, _)| distance < *d) {

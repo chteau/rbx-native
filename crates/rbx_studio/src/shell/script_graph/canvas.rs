@@ -15,7 +15,7 @@ pub(in crate::shell) use overlays::MinimapFrame;
 
 use super::nodes::{self, Mark};
 use super::{problems, style, Gesture, GraphEditor};
-use crate::script_editor::graph::catalog::{self, PinType};
+use crate::script_editor::graph::catalog::PinType;
 use crate::script_editor::graph::layout::{self, Rect, Side};
 use crate::script_editor::graph::{End, Graph};
 use crate::script_editor::source;
@@ -269,11 +269,9 @@ fn strokes(editor: &GraphEditor, graph: &Graph) -> Vec<Stroke> {
 fn pins(graph: &Graph, view: View) -> Vec<([f32; 2], PinType, bool, f32)> {
     let mut out = Vec::new();
     for node in &graph.nodes {
-        let Some(kind) = catalog::kind(&node.kind) else {
-            continue;
-        };
-        for (side, pins) in [(Side::Input, kind.inputs), (Side::Output, kind.outputs)] {
-            for pin in pins {
+        let all = graph.pins(node.id);
+        for (side, pins) in [(Side::Input, all.inputs), (Side::Output, all.outputs)] {
+            for pin in pins.into_iter().filter(|pin| pin.ty != PinType::Word) {
                 let end = End::new(node.id, pin.name);
                 let Some(at) = layout::pin(graph, &end, side) else {
                     continue;

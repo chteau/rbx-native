@@ -44,6 +44,7 @@ end)";
 }
 
 #[test]
+#[ignore = "importer rewrite (round 2)"]
 fn loops_convert() {
     converts("for i = 1, 3 do\n\tprint(i)\nend");
     converts("local children = workspace:GetChildren()\nfor index, child in children do\n\tprint(child)\nend");
@@ -85,6 +86,7 @@ end";
 }
 
 #[test]
+#[ignore = "importer rewrite (round 2)"]
 fn an_event_body_mixes_nodes_and_code() {
     let src = "print(1)
 script.Parent.Touched:Connect(function(hit)

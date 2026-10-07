@@ -90,7 +90,7 @@ pub(super) const KINDS: &[Kind] = &[
         Code::Branch,
     ),
     node(
-        "for_each",
+        "for_each_item",
         "For Each",
         Flow,
         pins![IN, wired("List", List)],
@@ -103,7 +103,7 @@ pub(super) const KINDS: &[Kind] = &[
         Code::ForEach,
     ),
     node(
-        "repeat",
+        "repeat_times",
         "Repeat",
         Flow,
         pins![IN, literal("Count", Number, "3")],

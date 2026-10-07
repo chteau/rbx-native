@@ -16,6 +16,7 @@ pub(super) fn pin(ty: PinType) -> Rgba {
         PinType::Instance => 0x7286e0,
         PinType::List => 0xb48ee0,
         PinType::Any => 0x9aa0aa,
+        PinType::Word => 0xc9ccd3,
     })
 }
 
@@ -30,6 +31,7 @@ pub(super) fn header(category: Category) -> (Rgba, Rgba) {
         Category::Math => (0x233528, 0x6fcf8f),
         Category::Values => (0x262b3a, 0x7286e0),
         Category::Output => (0x2b2c31, 0xb8bcc6),
+        Category::Code => (0x2a2a3a, 0xa9a0e0),
     };
     (rgb(fill), rgb(icon))
 }
@@ -44,6 +46,7 @@ pub(super) fn icon(category: Category) -> IconName {
         Category::Math => IconName::Calculator,
         Category::Values => IconName::Hash,
         Category::Output => IconName::Terminal,
+        Category::Code => IconName::Code,
     }
 }
 

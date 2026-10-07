@@ -102,7 +102,7 @@ fn loops_name_their_outputs_and_carry_on_when_done() {
     let mut g = Graph::default();
     let start = add(&mut g, "start", [0.0, 0.0]);
     let children = add(&mut g, "get_children", [0.0, 0.0]);
-    let each = add(&mut g, "for_each", [0.0, 0.0]);
+    let each = add(&mut g, "for_each_item", [0.0, 0.0]);
     let destroy = add(&mut g, "destroy", [0.0, 0.0]);
     let done = add(&mut g, "print", [0.0, 0.0]);
     let path = add(&mut g, "instance", [0.0, 0.0]);
@@ -114,8 +114,7 @@ fn loops_name_their_outputs_and_carry_on_when_done() {
     wire(&mut g, (each, "Completed"), (done, ""));
     assert_eq!(
         compile(&g).unwrap(),
-        "local children = workspace:GetChildren()\n\
-         for index, item in children do\n\
+        "for index, item in workspace:GetChildren() do\n\
          \titem:Destroy()\n\
          end\n\
          print(\"Hello\")\n"

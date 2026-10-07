@@ -1,8 +1,8 @@
 //! A script drawn as nodes and wires. The graph compiles to Luau
 //! ([`codegen`]) that is written to the script's `Source`, so a place keeps
 //! running in Roblox with nothing added; the graph itself is kept, as JSON,
-//! in the script's [`ATTRIBUTE`] attribute, which a save, a publish and a
-//! sync carry along and the engine ignores.
+//! in the script's [`ATTRIBUTE`] attribute. Nothing writes that any more:
+//! the script's `Source` is the one truth, and an old attribute is ignored.
 //!
 //! Only the data and its rules live here — what may connect to what, and
 //! what removing a node takes with it — so they can be tested without a
@@ -17,7 +17,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use catalog::{Kind, PinType};
+use catalog::{Kind, Pin, PinType, Pins};
 
 /// Roblox reserves attribute names starting `RBX`, so the graph's is plain.
 pub(crate) const ATTRIBUTE: &str = "ScriptGraph";
@@ -128,12 +128,19 @@ impl Graph {
     /// Adds a node of `kind` with its top-left corner at `at`.
     pub(crate) fn add(&mut self, kind: &Kind, at: [f32; 2]) -> NodeId {
         let id = self.nodes.iter().map(|node| node.id + 1).max().unwrap_or(1);
+        // A repeat starts with one instance even where it may have none.
+        let values = kind
+            .repeats
+            .iter()
+            .filter(|repeat| repeat.min == 0)
+            .map(|repeat| (repeat.count.to_owned(), "1".to_owned()))
+            .collect();
         self.nodes.push(Node {
             id,
             kind: kind.key.to_owned(),
             x: at[0],
             y: at[1],
-            values: BTreeMap::new(),
+            values,
         });
         id
     }
@@ -143,6 +150,22 @@ impl Graph {
         self.nodes.retain(|node| !ids.contains(&node.id));
         self.wires
             .retain(|wire| !ids.contains(&wire.from.node) && !ids.contains(&wire.to.node));
+    }
+
+    /// The pins this node has: its kind's, plus as many of each repeat as
+    /// it holds. Empty for a kind this build lacks.
+    pub(crate) fn pins(&self, id: NodeId) -> Pins {
+        self.node(id)
+            .and_then(|node| catalog::kind(&node.kind).map(|kind| kind.pins(&node.values)))
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn input_pin(&self, id: NodeId, name: &str) -> Option<Pin> {
+        self.pins(id).input(name)
+    }
+
+    pub(crate) fn output_pin(&self, id: NodeId, name: &str) -> Option<Pin> {
+        self.pins(id).output(name)
     }
 
     /// The wire ending on an input, if one does.
@@ -164,8 +187,7 @@ impl Graph {
         if let Some(value) = node.values.get(&end.pin) {
             return Some(value.clone());
         }
-        catalog::kind(&node.kind)?
-            .input(&end.pin)?
+        self.input_pin(end.node, &end.pin)?
             .default
             .map(str::to_owned)
     }
@@ -181,12 +203,10 @@ impl Graph {
     /// run-order input takes any number, as runs merge into it.
     pub(crate) fn connect(&mut self, from: End, to: End) -> Result<(), Refused> {
         let out = self
-            .kind_of(from.node)
-            .and_then(|kind| kind.output(&from.pin))
+            .output_pin(from.node, &from.pin)
             .ok_or(Refused::NoSuchPin)?;
         let into = self
-            .kind_of(to.node)
-            .and_then(|kind| kind.input(&to.pin))
+            .input_pin(to.node, &to.pin)
             .ok_or(Refused::NoSuchPin)?;
         if from.node == to.node {
             return Err(Refused::SameNode);
@@ -249,8 +269,7 @@ impl Graph {
     }
 
     pub(crate) fn is_exec(&self, from: &End) -> bool {
-        self.kind_of(from.node)
-            .and_then(|kind| kind.output(&from.pin))
+        self.output_pin(from.node, &from.pin)
             .is_some_and(|pin| pin.ty == PinType::Exec)
     }
 }

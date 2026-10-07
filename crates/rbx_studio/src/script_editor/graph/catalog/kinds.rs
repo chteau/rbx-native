@@ -2,7 +2,7 @@
 //! `n` shares a row with output `n` (see `graph::layout`), which is why a
 //! run-order pin always comes first on both sides.
 
-use super::{Category, Code, Kind, Pin, PinType, Prec};
+use super::{Category, Code, Kind, Pin, PinType, Prec, Repeat, Syn};
 
 /// A list of pins as a `'static` slice: a pin built by a `const fn` is not
 /// promoted on its own when it sits in a call's argument.
@@ -14,6 +14,7 @@ macro_rules! pins {
 
 mod events;
 mod instances;
+mod syntax;
 mod values;
 
 pub(super) const fn exec(name: &'static str) -> Pin {
@@ -75,6 +76,7 @@ pub(super) const fn node(
         outputs,
         code,
         names_local: None,
+        repeats: &[],
     }
 }
 
@@ -125,4 +127,17 @@ pub(super) const fn binary(
 }
 
 /// The table, section by section, in add-menu order.
-pub(crate) const SECTIONS: [&[Kind]; 3] = [events::KINDS, instances::KINDS, values::KINDS];
+pub(crate) const SECTIONS: [&[Kind]; 4] = [
+    events::KINDS,
+    instances::KINDS,
+    values::KINDS,
+    syntax::KINDS,
+];
+
+impl Kind {
+    /// This kind with pins that come in a number.
+    pub(super) const fn repeating(mut self, repeats: &'static [Repeat]) -> Kind {
+        self.repeats = repeats;
+        self
+    }
+}

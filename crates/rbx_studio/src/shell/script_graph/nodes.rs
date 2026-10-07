@@ -96,7 +96,8 @@ pub(super) fn node(graph: &Graph, node: &Node, view: View, mark: Mark) -> AnyEle
             .child(text)
     };
     let mut rows: Vec<AnyElement> = Vec::new();
-    for (row, pin) in kind.inputs.iter().enumerate() {
+    let pins = graph.pins(node.id);
+    for (row, pin) in pins.inputs.iter().enumerate() {
         let name = layout::label(graph, node, pin, Side::Input);
         if !name.is_empty() {
             rows.push(label(name, 14.0, row, false).into_any_element());
@@ -129,7 +130,7 @@ pub(super) fn node(graph: &Graph, node: &Node, view: View, mark: Mark) -> AnyEle
             );
         }
     }
-    for (row, pin) in kind.outputs.iter().enumerate() {
+    for (row, pin) in pins.outputs.iter().enumerate() {
         let name = layout::label(graph, node, pin, Side::Output);
         if !name.is_empty() {
             rows.push(label(name, 14.0, row, true).into_any_element());

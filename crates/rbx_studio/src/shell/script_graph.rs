@@ -214,8 +214,11 @@ impl Shell {
             .iter()
             .min_by_key(|node| node.id)
             .and_then(|node| {
-                let kind = graph.kind_of(node.id)?;
-                let pin = kind.outputs.iter().find(|pin| pin.ty != PinType::Exec)?;
+                let pin = graph
+                    .pins(node.id)
+                    .outputs
+                    .into_iter()
+                    .find(|pin| pin.ty != PinType::Exec)?;
                 Some((
                     End::new(node.id, pin.name),
                     Side::Output,
@@ -426,10 +429,9 @@ fn problems(graph: &Graph) -> Vec<Problem> {
 
 /// The type a wire out of `end` carries.
 fn wire_type(graph: &Graph, end: &End, side: Side) -> Option<PinType> {
-    let kind = graph.kind_of(end.node)?;
     let pin = match side {
-        Side::Input => kind.input(&end.pin),
-        Side::Output => kind.output(&end.pin),
+        Side::Input => graph.input_pin(end.node, &end.pin),
+        Side::Output => graph.output_pin(end.node, &end.pin),
     }?;
     Some(pin.ty)
 }

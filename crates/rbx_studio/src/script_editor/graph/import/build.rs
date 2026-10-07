@@ -407,7 +407,7 @@ impl<'a> Builder<'a> {
                 let mut inner = binds.clone();
                 let node = if b - a >= 5 && p.is(a + 1, ",") && p.is(a + 3, "in") {
                     let (index, item) = (name(*a)?, name(a + 2)?);
-                    let kind = catalog::kind("for_each")?;
+                    let kind = catalog::kind("for_each_item")?;
                     let node = self.add(kind);
                     if !self.feed(node, kind.input("List")?, a + 4, *b, Ctx::Free, binds) {
                         return None;
@@ -418,7 +418,7 @@ impl<'a> Builder<'a> {
                 } else if b - a >= 5 && p.is(a + 1, "=") && p.text(a + 2) == "1" && p.is(a + 3, ",")
                 {
                     let index = name(*a)?;
-                    let kind = catalog::kind("repeat")?;
+                    let kind = catalog::kind("repeat_times")?;
                     let node = self.add(kind);
                     if !self.feed(node, kind.input("Count")?, a + 4, *b, Ctx::Free, binds) {
                         return None;

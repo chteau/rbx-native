@@ -31,7 +31,7 @@ pub(crate) fn idle(graph: &Graph) -> Vec<NodeId> {
                 matches!(
                     kind.code,
                     Code::Statement(_) | Code::Branch | Code::ForEach | Code::Repeat | Code::Raw
-                )
+                ) || matches!(kind.code, Code::Syntax(syn) if !syn.is_value())
             })
         })
         .map(|node| node.id)

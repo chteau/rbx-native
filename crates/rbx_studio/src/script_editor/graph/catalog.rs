@@ -4,6 +4,9 @@
 
 mod kinds;
 
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Mutex;
+
 /// Every kind, in add-menu order.
 pub(crate) fn all() -> impl Iterator<Item = &'static Kind> {
     kinds::SECTIONS.iter().flat_map(|section| section.iter())
@@ -24,13 +27,17 @@ pub(crate) enum PinType {
     Instance,
     List,
     Any,
+    /// A piece of code text typed on the node (a name, an operator, a
+    /// type, a comment) and written as it stands. Never wired.
+    Word,
 }
 
 impl PinType {
     /// Whether a wire carrying `from` may end on a pin of this type. `Any`
-    /// takes and gives every value, never the run order.
+    /// takes and gives every value, never the run order or a word.
     pub(crate) fn accepts(self, from: PinType) -> bool {
         match (self, from) {
+            (PinType::Word, _) | (_, PinType::Word) => false,
             (PinType::Exec, _) | (_, PinType::Exec) => self == from,
             (PinType::Any, _) | (_, PinType::Any) => true,
             _ => self == from,
@@ -46,6 +53,7 @@ impl PinType {
             PinType::Instance => "Instance",
             PinType::List => "list",
             PinType::Any => "any",
+            PinType::Word => "text",
         }
     }
 }
@@ -70,6 +78,8 @@ pub(crate) enum Category {
     Math,
     Values,
     Output,
+    /// Generic Luau syntax: what the other kinds do not cover by name.
+    Code,
 }
 
 impl Category {
@@ -83,6 +93,7 @@ impl Category {
             Category::Math => "Math",
             Category::Values => "Values",
             Category::Output => "Output",
+            Category::Code => "Code",
         }
     }
 }
@@ -92,6 +103,8 @@ impl Category {
 /// indexed or called without them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Prec {
+    /// `if a then b else c` as a value: binds looser than everything.
+    If,
     Or,
     And,
     Compare,
@@ -100,7 +113,16 @@ pub(crate) enum Prec {
     Mul,
     Unary,
     Pow,
+    /// `x :: T` binds tighter than every operator.
+    Cast,
     Atom,
+}
+
+impl Prec {
+    /// `..` and `^` group to the right, as does a prefix operator.
+    pub(crate) fn right_assoc(self) -> bool {
+        matches!(self, Prec::Concat | Prec::Pow | Prec::Unary)
+    }
 }
 
 /// The Luau a node stands for. Templates name inputs as `{Pin}`; `{.Pin}`
@@ -129,6 +151,102 @@ pub(crate) enum Code {
     /// to where the run puts it. What an import cannot draw as nodes
     /// becomes one of these, so no code is ever dropped.
     Raw,
+    /// A piece of Luau syntax with no template of its own: written by
+    /// `codegen`, which knows how each reads.
+    Syntax(Syn),
+}
+
+/// The generic syntax kinds. Statements first, then values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Syn {
+    Local,
+    Assign,
+    Compound,
+    Call,
+    Method,
+    If,
+    While,
+    RepeatUntil,
+    ForCount,
+    ForIn,
+    Do,
+    Function,
+    Return,
+    Break,
+    Continue,
+    Type,
+    Comment,
+    Get,
+    Field,
+    Index,
+    CallValue,
+    MethodValue,
+    Literal,
+    Binary,
+    Unary,
+    Paren,
+    FunctionValue,
+    Table,
+    Pair,
+    IfValue,
+    Interp,
+    Cast,
+}
+
+impl Syn {
+    /// Whether this is a value rather than a statement.
+    pub(crate) fn is_value(self) -> bool {
+        self as u8 >= Syn::Get as u8
+    }
+}
+
+/// Pins that come in a number, kept in the node's `values[count]`
+/// (`#args`): instance `i` of a pin named `Input` is `Input 1`, `Input 2`...
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Repeat {
+    pub(crate) count: &'static str,
+    pub(crate) inputs: &'static [Pin],
+    pub(crate) outputs: &'static [Pin],
+    /// How many a node has while `count` is unset.
+    pub(crate) min: usize,
+}
+
+/// The pins one node has: its kind's, then each repeat's, as many as it holds.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Pins {
+    pub(crate) inputs: Vec<Pin>,
+    pub(crate) outputs: Vec<Pin>,
+}
+
+impl Pins {
+    pub(crate) fn input(&self, name: &str) -> Option<Pin> {
+        self.inputs.iter().find(|pin| pin.name == name).copied()
+    }
+
+    pub(crate) fn output(&self, name: &str) -> Option<Pin> {
+        self.outputs.iter().find(|pin| pin.name == name).copied()
+    }
+
+    /// Rows a node draws: input `n` shares one with output `n`.
+    pub(crate) fn rows(&self) -> usize {
+        self.inputs.len().max(self.outputs.len()).max(1)
+    }
+}
+
+/// `"Input 2"` as a `'static` name. ponytail: leaked, bounded by the
+/// distinct names a graph ever holds; a pool if that ever grows.
+fn numbered(base: &str, i: usize) -> &'static str {
+    static POOL: Mutex<BTreeSet<&'static str>> = Mutex::new(BTreeSet::new());
+    let name = format!("{base} {i}");
+    let mut pool = POOL.lock().unwrap_or_else(|e| e.into_inner());
+    match pool.get(name.as_str()) {
+        Some(name) => name,
+        None => {
+            let name: &'static str = Box::leak(name.into_boxed_str());
+            pool.insert(name);
+            name
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -142,15 +260,44 @@ pub(crate) struct Kind {
     /// The input whose literal names the local a value is read into
     /// (`FindFirstChildOfClass("Humanoid")` becomes `humanoid`).
     pub(crate) names_local: Option<&'static str>,
+    pub(crate) repeats: &'static [Repeat],
 }
 
 impl Kind {
-    pub(crate) fn input(&self, name: &str) -> Option<&'static Pin> {
-        self.inputs.iter().find(|pin| pin.name == name)
+    /// The pins of a node of this kind holding `values`.
+    pub(crate) fn pins(&self, values: &BTreeMap<String, String>) -> Pins {
+        self.pins_with(|repeat| repeat.count_in(values))
     }
 
-    pub(crate) fn output(&self, name: &str) -> Option<&'static Pin> {
-        self.outputs.iter().find(|pin| pin.name == name)
+    /// The pins a node of this kind has with every repeat at least once,
+    /// for the add menu to find one a dragged wire fits.
+    pub(crate) fn sample_pins(&self) -> Pins {
+        self.pins_with(|repeat| repeat.min.max(1))
+    }
+
+    fn pins_with(&self, count: impl Fn(&Repeat) -> usize) -> Pins {
+        let mut pins = Pins {
+            inputs: self.inputs.to_vec(),
+            outputs: self.outputs.to_vec(),
+        };
+        for repeat in self.repeats {
+            for i in 1..=count(repeat) {
+                for (list, from) in [
+                    (&mut pins.inputs, repeat.inputs),
+                    (&mut pins.outputs, repeat.outputs),
+                ] {
+                    list.extend(from.iter().map(|pin| Pin {
+                        name: numbered(pin.name, i),
+                        ..*pin
+                    }));
+                }
+            }
+        }
+        pins
+    }
+
+    pub(crate) fn input(&self, name: &str) -> Option<&'static Pin> {
+        self.inputs.iter().find(|pin| pin.name == name)
     }
 
     pub(crate) fn is_event(&self) -> bool {
@@ -160,8 +307,23 @@ impl Kind {
     /// The type this node takes first, then gives first, for the add
     /// menu's `Instance → Instance` column. Run-order pins are left out.
     pub(crate) fn signature(&self) -> (Option<PinType>, Option<PinType>) {
-        let first = |pins: &[Pin]| pins.iter().map(|p| p.ty).find(|&ty| ty != PinType::Exec);
-        (first(self.inputs), first(self.outputs))
+        let first = |pins: &[Pin]| {
+            pins.iter()
+                .map(|p| p.ty)
+                .find(|&ty| ty != PinType::Exec && ty != PinType::Word)
+        };
+        let sample = self.sample_pins();
+        (first(&sample.inputs), first(&sample.outputs))
+    }
+}
+
+impl Repeat {
+    /// How many instances `values` asks for: `count`, never under `min`.
+    pub(crate) fn count_in(&self, values: &BTreeMap<String, String>) -> usize {
+        values
+            .get(self.count)
+            .and_then(|n| n.trim().parse().ok())
+            .map_or(self.min, |n: usize| n.max(self.min))
     }
 }
 
@@ -182,10 +344,11 @@ pub(crate) enum Wanted {
 impl Wanted {
     /// The pin on `kind` a wire wanting this would end on: the first that
     /// fits.
-    pub(crate) fn pin(self, kind: &Kind) -> Option<&'static Pin> {
+    pub(crate) fn pin(self, kind: &Kind) -> Option<Pin> {
+        let pins = kind.sample_pins();
         match self {
-            Wanted::Input(ty) => kind.inputs.iter().find(|pin| pin.ty.accepts(ty)),
-            Wanted::Output(ty) => kind.outputs.iter().find(|pin| ty.accepts(pin.ty)),
+            Wanted::Input(ty) => pins.inputs.into_iter().find(|pin| pin.ty.accepts(ty)),
+            Wanted::Output(ty) => pins.outputs.into_iter().find(|pin| ty.accepts(pin.ty)),
         }
     }
 }

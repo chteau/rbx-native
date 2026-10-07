@@ -6,7 +6,10 @@ use super::super::catalog::{PinType, Prec};
 /// Whether an expression can be indexed or called as written: a name or a
 /// call can, a literal string or number cannot.
 pub(crate) fn indexable(text: &str) -> bool {
-    !text.starts_with(['"', '-']) && !text.starts_with(|c: char| c.is_ascii_digit())
+    let word = text.split(|c: char| !c.is_ascii_alphanumeric() && c != '_').next();
+    !text.starts_with(['"', '\'', '`', '{', '[', '.', '-'])
+        && !text.starts_with(|c: char| c.is_ascii_digit())
+        && !matches!(word, Some("function" | "true" | "false" | "nil"))
 }
 
 /// A typed literal as Luau, or why it is not one.
@@ -46,6 +49,7 @@ pub(crate) fn literal(text: &str, ty: PinType) -> Result<(String, Prec), String>
                 .unwrap_or(text);
             Ok((quote(inner), Prec::Atom))
         }
+        PinType::Word => Ok((text.to_owned(), Prec::Atom)),
         PinType::Exec | PinType::List => Err("needs a wire".into()),
     }
 }
