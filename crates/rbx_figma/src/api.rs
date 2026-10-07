@@ -96,7 +96,7 @@ impl Session {
                     self.refresh()?;
                     renewed = true;
                 }
-                429 if attempt < ATTEMPTS => std::thread::sleep(wait),
+                429 if attempt < ATTEMPTS && wait <= LONGEST_WAIT => std::thread::sleep(wait),
                 403 => {
                     return Err(format!(
                         "Figma refused access to this file (403): {}",
@@ -104,10 +104,13 @@ impl Session {
                     ))
                 }
                 404 => return Err("Figma has no such file or frame (404); check the link".into()),
-                429 => return Err(format!(
-                    "Figma is rate-limiting this account (429; {}); wait a minute and import again",
-                    limits.join(", ")
-                )),
+                429 => {
+                    return Err(format!(
+                        "Figma is rate-limiting this account (429; {}); try again {}",
+                        limits.join(", "),
+                        later(wait)
+                    ))
+                }
                 _ => return Err(format!("Figma answered {status}: {}", said(&body))),
             }
         }
@@ -164,13 +167,24 @@ fn said(body: &[u8]) -> String {
 }
 
 /// How long to wait before attempt `attempt + 1`: Figma's `Retry-After` when
-/// it gives one, capped, else a doubling second.
+/// it gives one (a starter plan's quota can come back days later), else a
+/// doubling second.
 fn retry_after(header: Option<&str>, attempt: u32) -> Duration {
     header
         .and_then(|v| v.trim().parse::<u64>().ok())
         .map(Duration::from_secs)
         .unwrap_or(Duration::from_secs(1 << attempt))
-        .min(LONGEST_WAIT)
+}
+
+/// "in about 4 days", for the rate-limit message.
+fn later(wait: Duration) -> String {
+    let (minutes, hours) = (wait.as_secs().div_ceil(60), wait.as_secs().div_ceil(3600));
+    match () {
+        _ if minutes <= 1 => "in a minute".into(),
+        _ if minutes < 120 => format!("in about {minutes} minutes"),
+        _ if hours < 48 => format!("in about {hours} hours"),
+        _ => format!("in about {} days", hours.div_ceil(24)),
+    }
 }
 
 #[cfg(test)]
@@ -180,7 +194,10 @@ mod tests {
     #[test]
     fn rate_limits_wait_as_told_within_a_cap() {
         assert_eq!(retry_after(Some("3"), 1), Duration::from_secs(3));
-        assert_eq!(retry_after(Some("3600"), 1), LONGEST_WAIT);
+        assert_eq!(retry_after(Some("3600"), 1), Duration::from_secs(3600));
+        assert_eq!(later(Duration::from_secs(20)), "in a minute");
+        assert_eq!(later(Duration::from_secs(3600)), "in about 60 minutes");
+        assert_eq!(later(Duration::from_secs(393_791)), "in about 5 days");
         assert_eq!(retry_after(None, 2), Duration::from_secs(4));
         assert!(expired(br#"{"status":403,"err":"Token expired"}"#));
         assert!(!expired(br#"{"status":403,"err":"File not shared"}"#));

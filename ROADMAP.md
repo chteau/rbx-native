@@ -1258,7 +1258,8 @@ Roblox's own engine.
   check: FigBloxUI's Shop_Frame matches Figma's render to font
   antialiasing. Open:
   - Other frames of that file still need the same live comparison (Figma
-    rate-limited the render endpoint during the first pass).
+    rate-limited the render endpoint during the first pass: the starter
+    plan's high-cost bucket, with a Retry-After of about 4.5 days).
   - No folder browsing: Figma's folder-listing endpoints (and the older
     projects ones) are closed to public OAuth apps, so files are reached
     through recent history or a pasted link.
