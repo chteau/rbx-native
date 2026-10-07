@@ -7,6 +7,9 @@
 //! output `n` on the right. Text widths are estimated from character
 //! counts, generously, so a label never runs into the edge.
 
+mod tidy;
+pub(crate) use tidy::{place_new, tidy};
+
 use super::catalog::{self, Pin, PinType};
 use super::{End, Graph, Group, Node, NodeId};
 
