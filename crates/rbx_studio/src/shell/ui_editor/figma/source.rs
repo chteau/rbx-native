@@ -174,6 +174,32 @@ impl Source {
         )
     }
 
+    /// Figma's own render of the frame at 1x, saved in `dir` as
+    /// `<id>.figma.png` (`RBX_STUDIO_FIGMA_REFERENCE`).
+    pub fn reference(self, link: Link, dir: PathBuf) -> Reply<PathBuf> {
+        self.run(
+            move |session| {
+                let ids = url::form_urlencoded::byte_serialize(link.node_id.as_bytes())
+                    .collect::<String>();
+                let answer = session.get_json(&format!(
+                    "/v1/images/{}?ids={ids}&format=png&scale=1",
+                    link.file_key
+                ))?;
+                let url = answer
+                    .get("images")
+                    .and_then(|images| images.get(&link.node_id))
+                    .and_then(Value::as_str)
+                    .ok_or("Figma has no picture of that node")?;
+                let png = session.download(url)?;
+                let path = dir.join(format!("{}.figma.png", link.node_id.replace(':', "-")));
+                std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+                std::fs::write(&path, png).map_err(|e| e.to_string())?;
+                Ok(path)
+            },
+            |_| Err("No reference render offline".into()),
+        )
+    }
+
     /// Reads the frame and infers its tree; nothing is uploaded yet.
     pub fn prepare(self, link: Link, progress: Arc<Mutex<String>>) -> Reply<Node> {
         let dump = figma_dir().map(|dir| dir.join("last-import"));

@@ -10,6 +10,14 @@
 //! (`review` on its node `1:2`). `RBX_STUDIO_FIGMA_EXPAND=id,id` expands
 //! rows in order and `RBX_STUDIO_FIGMA_SELECT=id` selects one;
 //! `RBX_STUDIO_FIGMA_MENU=id` opens a review row's class menu.
+//!
+//! Parity checks: `RBX_STUDIO_FIGMA_IMPORT=<frame link>` imports that frame
+//! the way Import does (on a fresh full-screen `ScreenGui`, so pair it with
+//! `RBX_STUDIO_UI_EDITOR=1`), then sizes the canvas to the frame; with a
+//! file link it opens the file instead. `RBX_STUDIO_FIGMA_REFERENCE=<dir>`
+//! saves Figma's own 1x render of that frame there as `<id>.figma.png`, and
+//! `RBX_STUDIO_FIGMA_OUTLINE=<path>` writes each opened file's top-level
+//! nodes (page, id, type, name) to `path`.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
@@ -33,6 +41,9 @@ pub(in crate::shell) const OPEN_VARIABLE: &str = "RBX_STUDIO_FIGMA";
 const EXPAND_VARIABLE: &str = "RBX_STUDIO_FIGMA_EXPAND";
 const SELECT_VARIABLE: &str = "RBX_STUDIO_FIGMA_SELECT";
 const MENU_VARIABLE: &str = "RBX_STUDIO_FIGMA_MENU";
+pub(in crate::shell) const IMPORT_VARIABLE: &str = "RBX_STUDIO_FIGMA_IMPORT";
+const REFERENCE_VARIABLE: &str = "RBX_STUDIO_FIGMA_REFERENCE";
+const OUTLINE_VARIABLE: &str = "RBX_STUDIO_FIGMA_OUTLINE";
 
 const WIDTH: f32 = 960.;
 const HEIGHT: f32 = 640.;
@@ -88,6 +99,8 @@ pub(super) struct FigmaWindow {
     select_after: Option<String>,
     menu_after: Option<String>,
     debug_page: Option<String>,
+    /// `RBX_STUDIO_FIGMA_IMPORT`: import as soon as review has the tree.
+    auto_import: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -169,6 +182,7 @@ impl FigmaWindow {
             select_after: std::env::var(SELECT_VARIABLE).ok(),
             menu_after: std::env::var(MENU_VARIABLE).ok(),
             debug_page: std::env::var(OPEN_VARIABLE).ok(),
+            auto_import: false,
             _subscriptions: subscriptions,
         };
         if this.source.is_some() {
@@ -215,6 +229,29 @@ impl FigmaWindow {
                 cx,
             ),
             _ => {}
+        }
+        if let Ok(text) = std::env::var(IMPORT_VARIABLE) {
+            match link::parse_any(&text) {
+                Ok((key, None)) => self.open_file(key, cx),
+                Ok((file_key, Some(node_id))) => {
+                    let link = Link { file_key, node_id };
+                    if let Some(dir) = std::env::var_os(REFERENCE_VARIABLE) {
+                        let asked = link.clone();
+                        self.call(
+                            move |source| source.reference(asked, dir.into()),
+                            |_, result, _| {
+                                if let Ok(path) = result {
+                                    eprintln!("rbxstudio: Figma reference at {}", path.display());
+                                }
+                            },
+                            cx,
+                        );
+                    }
+                    self.auto_import = true;
+                    self.review(link, cx);
+                }
+                Err(err) => self.report(Err(err), cx),
+            }
         }
     }
 
@@ -378,6 +415,18 @@ impl FigmaWindow {
                         );
                     }
                 }
+                if let Some(path) = std::env::var_os(OUTLINE_VARIABLE) {
+                    let mut lines = String::new();
+                    for page in &outline.pages {
+                        for item in page.children.iter().flatten() {
+                            lines += &format!(
+                                "{}\t{}\t{}\t{}\n",
+                                page.name, item.id, item.kind, item.name
+                            );
+                        }
+                    }
+                    let _ = std::fs::write(path, lines);
+                }
                 if let Page::File(browse) = &mut this.page {
                     browse.outline = Some(outline);
                 }
@@ -491,11 +540,14 @@ impl FigmaWindow {
         let progress = self.progress.clone();
         self.call(
             move |source| source.prepare(link, progress),
-            |this, result, _| {
+            |this, result, cx| {
                 let menu = this.menu_after.take();
                 if let (Page::Review(review), Ok(tree)) = (&mut this.page, result) {
                     review.tree = Some(tree);
                     review.menu = menu;
+                    if this.auto_import {
+                        this.import(cx);
+                    }
                 }
             },
             cx,
@@ -526,9 +578,14 @@ impl FigmaWindow {
             move |source| source.finish(file_key, tree, progress),
             |this, result, cx| {
                 let Ok(tree) = result else { return };
+                let auto = std::mem::take(&mut this.auto_import);
                 let outcome = this.shell.update(cx, |shell, cx| {
+                    let size = auto.then(|| super::frame_size(&tree)).flatten();
                     let outcome = shell.insert_figma_tree(tree, cx);
                     shell.figma_feedback(&outcome, cx);
+                    if let Some(size) = size {
+                        shell.set_resolution(size, cx);
+                    }
                     outcome
                 });
                 this.report(outcome, cx);

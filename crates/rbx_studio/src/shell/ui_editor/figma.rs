@@ -48,7 +48,18 @@ impl Shell {
 
     /// `RBX_STUDIO_FIGMA`; see the module doc.
     pub(in crate::shell) fn apply_debug_figma(&mut self, cx: &mut Context<Self>) {
-        if std::env::var_os(window::OPEN_VARIABLE).is_some() {
+        if std::env::var_os(window::IMPORT_VARIABLE).is_some() {
+            // A screen of its own, drawn edge to edge like Figma's frame.
+            self.insert_on_canvas("ScreenGui", cx);
+            if let Some(screen) = self.canvas_request().map(|request| request.screen) {
+                let _ =
+                    self.dom
+                        .set_property(screen, "IgnoreGuiInset", rbx_dom::Variant::Bool(true));
+            }
+        }
+        if std::env::var_os(window::OPEN_VARIABLE).is_some()
+            || std::env::var_os(window::IMPORT_VARIABLE).is_some()
+        {
             self.open_figma(cx);
         }
     }
@@ -82,6 +93,18 @@ impl Shell {
         self.record_history_change(changes);
         Ok("Imported from Figma.".into())
     }
+}
+
+/// The root's size in pixels, for a parity import's canvas.
+fn frame_size(tree: &Node) -> Option<(u32, u32)> {
+    tree.properties
+        .iter()
+        .find_map(|(name, value)| match (name, value) {
+            (&"Size", rbx_dom::Variant::UDim2(size)) => {
+                Some((size.x.offset.max(1) as u32, size.y.offset.max(1) as u32))
+            }
+            _ => None,
+        })
 }
 
 /// Whether `class` (or a class it inherits) has `property`. A class the

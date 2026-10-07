@@ -63,7 +63,7 @@ impl Shell {
         Some(inside.unwrap_or(screen))
     }
 
-    fn insert_on_canvas(&mut self, class: &str, cx: &mut Context<Self>) {
+    pub(super) fn insert_on_canvas(&mut self, class: &str, cx: &mut Context<Self>) {
         let parent = match class {
             // A screen goes where Studio's own do, and becomes the canvas's
             // as soon as the insert selects it.
