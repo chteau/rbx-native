@@ -1,9 +1,66 @@
 use super::super::catalog;
 use super::super::{End, Graph, Group};
 use super::{
-    chip, chip_at, chip_rect, chip_text, group_title, group_title_at, node_at, pin, pin_at, rect,
-    row_centre, Side, CHIP_CHARS, PIN_REACH,
+    chip, chip_at, chip_rect, chip_text, group_handle_at, group_title, group_title_at, node_at,
+    pin, pin_at, rect, resized, row_centre, Handle, Side, CHIP_CHARS, PIN_REACH,
 };
+
+fn framed() -> Graph {
+    let mut g = Graph::default();
+    g.groups.push(Group {
+        title: "Box".into(),
+        x: 100.0,
+        y: 100.0,
+        w: 400.0,
+        h: 300.0,
+    });
+    g
+}
+
+#[test]
+fn handles_are_found_on_corners_and_edges_only() {
+    let g = framed();
+    let at = |p| group_handle_at(&g, p, 8.0);
+    assert_eq!(at([500.0, 400.0]), Some((0, Handle::SouthEast)));
+    assert_eq!(at([102.0, 99.0]), Some((0, Handle::NorthWest)));
+    assert_eq!(at([498.0, 101.0]), Some((0, Handle::NorthEast)));
+    assert_eq!(at([100.0, 399.0]), Some((0, Handle::SouthWest)));
+    assert_eq!(at([300.0, 403.0]), Some((0, Handle::South)));
+    assert_eq!(at([300.0, 97.0]), Some((0, Handle::North)));
+    assert_eq!(at([97.0, 250.0]), Some((0, Handle::West)));
+    assert_eq!(at([503.0, 250.0]), Some((0, Handle::East)));
+    assert_eq!(at([300.0, 250.0]), None);
+    assert_eq!(at([600.0, 250.0]), None);
+}
+
+#[test]
+fn resizing_from_each_handle_moves_its_edges() {
+    let g = &framed().groups[0];
+    let size = |h| {
+        let r = resized(g, h, [30.0, 20.0]);
+        [r.x, r.y, r.w, r.h]
+    };
+    assert_eq!(size(Handle::SouthEast), [100.0, 100.0, 430.0, 320.0]);
+    assert_eq!(size(Handle::East), [100.0, 100.0, 430.0, 300.0]);
+    assert_eq!(size(Handle::South), [100.0, 100.0, 400.0, 320.0]);
+    assert_eq!(size(Handle::NorthWest), [130.0, 120.0, 370.0, 280.0]);
+    assert_eq!(size(Handle::West), [130.0, 100.0, 370.0, 300.0]);
+    assert_eq!(size(Handle::North), [100.0, 120.0, 400.0, 280.0]);
+    assert_eq!(size(Handle::NorthEast), [100.0, 120.0, 430.0, 280.0]);
+    assert_eq!(size(Handle::SouthWest), [130.0, 100.0, 370.0, 320.0]);
+}
+
+#[test]
+fn a_resize_stops_at_the_minimum_and_keeps_the_far_edge() {
+    let g = &framed().groups[0];
+    let r = resized(g, Handle::NorthWest, [900.0, 900.0]);
+    assert_eq!((r.x + r.w, r.y + r.h), (500.0, 400.0));
+    assert_eq!(r.h, 60.0);
+    assert!(r.w >= group_title(g).w);
+    let r = resized(g, Handle::SouthEast, [-900.0, -900.0]);
+    assert_eq!((r.x, r.y, r.h), (100.0, 100.0, 60.0));
+    assert!(r.w >= group_title(g).w);
+}
 
 #[test]
 fn input_n_and_output_n_share_a_row() {

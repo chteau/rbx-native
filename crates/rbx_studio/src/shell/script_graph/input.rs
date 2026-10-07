@@ -162,6 +162,19 @@ impl Shell {
             cx.notify();
             return;
         }
+        let handle_reach = layout::HANDLE_REACH / editor.view.zoom.clamp(0.5, 1.5);
+        if let Some((index, handle)) = layout::group_handle_at(graph, p, handle_reach) {
+            editor.group = Some(index);
+            editor.selection.clear();
+            editor.gesture = Some(Gesture::Resize {
+                index,
+                handle,
+                from: p,
+                origin: graph.groups[index].clone(),
+            });
+            cx.notify();
+            return;
+        }
         editor.group = None;
         let shift = event.modifiers.shift;
         if let Some(id) = layout::node_at(graph, p) {
@@ -250,6 +263,17 @@ impl Shell {
                     }
                 }
             }
+            Gesture::Resize {
+                index,
+                handle,
+                from,
+                origin,
+            } => {
+                let delta = [p[0] - from[0], p[1] - from[1]];
+                if let Some(frame) = editor.graph.groups.get_mut(*index) {
+                    *frame = layout::resized(origin, *handle, delta);
+                }
+            }
             Gesture::Wire { to, .. } => *to = p,
             Gesture::Marquee { from, to, keep } => {
                 *to = p;
@@ -290,6 +314,11 @@ impl Shell {
                 if moved {
                     self.commit_graph(reference, cx);
                 }
+                cx.notify();
+            }
+            // commit_graph writes nothing when the frame ended where it began.
+            Gesture::Resize { .. } => {
+                self.commit_graph(reference, cx);
                 cx.notify();
             }
             Gesture::Wire { end, side, .. } => {

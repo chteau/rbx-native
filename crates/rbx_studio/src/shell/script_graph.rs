@@ -26,8 +26,8 @@ use rbx_dom::{Ref, Variant};
 use crate::properties::attributes;
 use crate::script_editor::graph::catalog::{PinType, Wanted};
 use crate::script_editor::graph::codegen::{self, Problem};
-use crate::script_editor::graph::layout::Side;
-use crate::script_editor::graph::{End, Graph, NodeId, ATTRIBUTE};
+use crate::script_editor::graph::layout::{Handle, Side};
+use crate::script_editor::graph::{End, Graph, Group, NodeId, ATTRIBUTE};
 use crate::script_editor::source;
 use crate::ui_canvas::View;
 
@@ -55,6 +55,14 @@ enum Gesture {
         origins: Vec<(NodeId, [f32; 2])>,
         group: Option<(usize, [f32; 2])>,
         moved: bool,
+    },
+    /// A group frame's side or corner dragged; `origin` is the frame as
+    /// the press found it.
+    Resize {
+        index: usize,
+        handle: Handle,
+        from: [f32; 2],
+        origin: Group,
     },
     /// A wire being drawn out of `end`, which sits on `side` of its node.
     Wire {

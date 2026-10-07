@@ -258,6 +258,94 @@ pub(crate) fn group_title_at(graph: &Graph, p: [f32; 2]) -> Option<usize> {
         .find(|&index| group_title(&graph.groups[index]).contains(p))
 }
 
+/// How near a group's edge a press grabs it, in canvas units.
+pub(crate) const HANDLE_REACH: f32 = 8.0;
+/// The shortest a group frame can be dragged to.
+const GROUP_MIN_H: f32 = 60.0;
+
+/// Which side or corner of a group frame a resize drag holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Handle {
+    North,
+    South,
+    East,
+    West,
+    NorthEast,
+    NorthWest,
+    SouthEast,
+    SouthWest,
+}
+
+impl Handle {
+    /// The edges it moves: (left, right, top, bottom).
+    fn edges(self) -> (bool, bool, bool, bool) {
+        use Handle::*;
+        (
+            matches!(self, West | NorthWest | SouthWest),
+            matches!(self, East | NorthEast | SouthEast),
+            matches!(self, North | NorthEast | NorthWest),
+            matches!(self, South | SouthEast | SouthWest),
+        )
+    }
+}
+
+/// The handle of `group` under `p`, corners before edges.
+fn handle_of(group: &Group, p: [f32; 2], reach: f32) -> Option<Handle> {
+    let (right, bottom) = (group.x + group.w, group.y + group.h);
+    let near = |a: f32, b: f32| (a - b).abs() <= reach;
+    let inside_x = p[0] >= group.x - reach && p[0] <= right + reach;
+    let inside_y = p[1] >= group.y - reach && p[1] <= bottom + reach;
+    let (west, east) = (near(p[0], group.x), near(p[0], right));
+    let (north, south) = (near(p[1], group.y), near(p[1], bottom));
+    match (west, east, north, south) {
+        (true, _, true, _) => Some(Handle::NorthWest),
+        (_, true, true, _) => Some(Handle::NorthEast),
+        (true, _, _, true) => Some(Handle::SouthWest),
+        (_, true, _, true) => Some(Handle::SouthEast),
+        (true, ..) if inside_y => Some(Handle::West),
+        (_, true, ..) if inside_y => Some(Handle::East),
+        (_, _, true, _) if inside_x => Some(Handle::North),
+        (_, _, _, true) if inside_x => Some(Handle::South),
+        _ => None,
+    }
+}
+
+/// The group and handle under a canvas point; later groups win.
+pub(crate) fn group_handle_at(graph: &Graph, p: [f32; 2], reach: f32) -> Option<(usize, Handle)> {
+    (0..graph.groups.len())
+        .rev()
+        .find_map(|index| handle_of(&graph.groups[index], p, reach).map(|h| (index, h)))
+}
+
+/// `group` with `handle` dragged by `delta` canvas units, never narrower
+/// than its title nor shorter than `GROUP_MIN_H`. Taken from the group as
+/// it was when the drag began, so the clamp does not accumulate drift.
+pub(crate) fn resized(group: &Group, handle: Handle, delta: [f32; 2]) -> Group {
+    let (left, right, top, bottom) = handle.edges();
+    let min_w = group_title(group).w + 24.0;
+    let (mut x0, mut x1) = (group.x, group.x + group.w);
+    let (mut y0, mut y1) = (group.y, group.y + group.h);
+    if left {
+        x0 = (x0 + delta[0]).min(x1 - min_w);
+    }
+    if right {
+        x1 = (x1 + delta[0]).max(x0 + min_w);
+    }
+    if top {
+        y0 = (y0 + delta[1]).min(y1 - GROUP_MIN_H);
+    }
+    if bottom {
+        y1 = (y1 + delta[1]).max(y0 + GROUP_MIN_H);
+    }
+    Group {
+        title: group.title.clone(),
+        x: x0.round(),
+        y: y0.round(),
+        w: (x1 - x0).round(),
+        h: (y1 - y0).round(),
+    }
+}
+
 /// Everything on the canvas: nodes and groups. `None` for an empty graph.
 pub(crate) fn extent(graph: &Graph) -> Option<Rect> {
     let nodes = graph.nodes.iter().map(|node| rect(graph, node));
