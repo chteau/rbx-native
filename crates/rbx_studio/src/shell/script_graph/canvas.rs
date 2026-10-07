@@ -11,6 +11,8 @@ use rbx_dom::Ref;
 
 mod overlays;
 
+pub(in crate::shell) use overlays::MinimapFrame;
+
 use super::nodes::{self, Mark};
 use super::{problems, style, Gesture, GraphEditor};
 use crate::script_editor::graph::catalog::{self, PinType};

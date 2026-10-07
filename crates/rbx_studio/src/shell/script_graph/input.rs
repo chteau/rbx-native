@@ -230,6 +230,7 @@ impl Shell {
             return;
         };
         let panel = editor.panel(position);
+        let size = editor.panel_size();
         editor.pointer = panel;
         let p = editor.view.to_canvas(panel);
         let Some(gesture) = editor.gesture.as_mut() else {
@@ -240,6 +241,10 @@ impl Shell {
                 editor.view.pan[0] += panel[0] - last[0];
                 editor.view.pan[1] += panel[1] - last[1];
                 *last = panel;
+                editor.fitted = false;
+            }
+            Gesture::Minimap(frame) => {
+                frame.centre(&mut editor.view, size, position);
                 editor.fitted = false;
             }
             Gesture::Move {
@@ -309,7 +314,7 @@ impl Shell {
         let panel = editor.panel(position);
         let p = editor.view.to_canvas(panel);
         match gesture {
-            Gesture::Pan { .. } | Gesture::Marquee { .. } => cx.notify(),
+            Gesture::Pan { .. } | Gesture::Marquee { .. } | Gesture::Minimap(_) => cx.notify(),
             Gesture::Move { moved, .. } => {
                 if moved {
                     self.commit_graph(reference, cx);
@@ -373,6 +378,11 @@ impl Shell {
         let Some(editor) = self.graphs.get_mut(&reference) else {
             return false;
         };
+        // Keys typed into the add menu's search or a literal's field
+        // bubble up here too; they are text, not canvas commands.
+        if editor.menu.is_some() || editor.literal.is_some() {
+            return false;
+        }
         let m = keystroke.modifiers;
         match keystroke.key.as_str() {
             "space" => {

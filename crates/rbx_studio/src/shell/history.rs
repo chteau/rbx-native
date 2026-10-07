@@ -130,7 +130,7 @@ impl Shell {
     ) {
         // See `Shell::script_editor_focused`: the script editor owns Ctrl+Z
         // while it has focus.
-        if self.script_editor_focused(window, cx) {
+        if self.script_editor_focused(window, cx) || self.graph_field_focused() {
             return;
         }
         match history::action_for(&keystroke.key, keystroke.modifiers) {

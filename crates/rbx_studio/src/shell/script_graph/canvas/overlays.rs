@@ -7,12 +7,13 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_dom::Ref;
 
-use super::super::{style, GraphEditor};
+use super::super::{style, Gesture, GraphEditor};
 use super::{point_at, MINIMAP};
 use crate::script_editor::graph::catalog;
 use crate::script_editor::graph::layout::{self, Rect};
-use crate::script_editor::graph::{codegen, Graph};
+use crate::script_editor::graph::{codegen, import, Graph};
 use crate::tokens;
+use crate::ui_canvas::View;
 
 use super::super::super::Shell;
 
@@ -25,15 +26,18 @@ pub(super) fn banner(
     reference: Ref,
     cx: &mut Context<Shell>,
 ) -> Option<AnyElement> {
-    let compiled = codegen::compile(graph).ok();
-    let (text, action) = match (&editor.synced, compiled) {
-        (None, _) if !code.trim().is_empty() => (
-            "This script is written as code. A graph built here replaces its code once it compiles.",
-            false,
-        ),
-        (Some(_), Some(compiled)) if !graph.nodes.is_empty() && compiled != code => {
+    let Ok(compiled) = codegen::compile(graph) else {
+        return None;
+    };
+    let same = import::same(code, &compiled);
+    let (text, action) = match &editor.synced {
+        _ if !same && !(graph.nodes.is_empty() && code.trim().is_empty()) => {
             ("The code was edited after this graph was saved.", true)
         }
+        None if !code.trim().is_empty() => (
+            "Drawn from this script's code. Parts with no node are kept as Luau Code nodes.",
+            false,
+        ),
         _ => return None,
     };
     Some(
@@ -60,6 +64,14 @@ pub(super) fn banner(
                     .child(text)
                     .when(action, |this| {
                         this.child(
+                            Button::new("graph-read-code")
+                                .label("Read code into graph")
+                                .small()
+                                .on_click(cx.listener(move |shell, _, _, cx| {
+                                    shell.code_to_graph(reference, cx);
+                                })),
+                        )
+                        .child(
                             Button::new("graph-replace-code")
                                 .label("Replace code with graph")
                                 .small()
@@ -112,26 +124,8 @@ pub(super) fn minimap(
         })
         .collect();
     let window_rect = map(seen);
-    let centre_at = move |shell: &mut Shell, position: Point<Pixels>, origin: Point<Pixels>| {
-        let local = [
-            f32::from(position.x - origin.x),
-            f32::from(position.y - origin.y),
-        ];
-        let target = [
-            world.x + (local[0] - offset[0]) / scale,
-            world.y + (local[1] - offset[1]) / scale,
-        ];
-        if let Some(editor) = shell.graphs.get_mut(&reference) {
-            let panel = editor.panel_size();
-            editor.view.pan = [
-                panel[0] * 0.5 - target[0] * editor.view.zoom,
-                panel[1] * 0.5 - target[1] * editor.view.zoom,
-            ];
-            editor.fitted = false;
-        }
-    };
     let origin = std::rc::Rc::new(std::cell::Cell::new(Point::default()));
-    let (down, moved) = (origin.clone(), origin.clone());
+    let down = origin.clone();
     div()
         .id("graph-minimap")
         .absolute()
@@ -147,17 +141,25 @@ pub(super) fn minimap(
         .on_mouse_down(
             MouseButton::Left,
             cx.listener(move |shell, event: &MouseDownEvent, _, cx| {
-                centre_at(shell, event.position, down.get());
+                let frame = MinimapFrame {
+                    origin: down.get(),
+                    world,
+                    offset,
+                    scale,
+                };
+                if let Some(editor) = shell.graphs.get_mut(&reference) {
+                    let size = editor.panel_size();
+                    frame.centre(&mut editor.view, size, event.position);
+                    editor.fitted = false;
+                    // The canvas's own move and release carry the drag on,
+                    // with the map as the press found it: the map rescales
+                    // as the view moves, and must not shift under the pointer.
+                    editor.gesture = Some(Gesture::Minimap(frame));
+                }
                 cx.stop_propagation();
                 cx.notify();
             }),
         )
-        .on_mouse_move(cx.listener(move |shell, event: &MouseMoveEvent, _, cx| {
-            if event.pressed_button == Some(MouseButton::Left) {
-                centre_at(shell, event.position, moved.get());
-                cx.notify();
-            }
-        }))
         .child(
             canvas(
                 move |laid_out, _, _| origin.set(laid_out.origin),
@@ -186,4 +188,37 @@ pub(super) fn minimap(
             .size_full(),
         )
         .into_any_element()
+}
+
+/// Where the minimap was, and how it mapped the canvas, when it was pressed.
+#[derive(Debug, Clone, Copy)]
+pub(in crate::shell) struct MinimapFrame {
+    origin: Point<Pixels>,
+    world: Rect,
+    offset: [f32; 2],
+    scale: f32,
+}
+
+impl MinimapFrame {
+    /// Pans `view` (of a panel `size` big) to centre on the canvas point
+    /// under `position` on the map.
+    pub(in crate::shell) fn centre(
+        &self,
+        view: &mut View,
+        size: [f32; 2],
+        position: Point<Pixels>,
+    ) {
+        let local = [
+            f32::from(position.x - self.origin.x),
+            f32::from(position.y - self.origin.y),
+        ];
+        let target = [
+            self.world.x + (local[0] - self.offset[0]) / self.scale,
+            self.world.y + (local[1] - self.offset[1]) / self.scale,
+        ];
+        view.pan = [
+            size[0] * 0.5 - target[0] * view.zoom,
+            size[1] * 0.5 - target[1] * view.zoom,
+        ];
+    }
 }

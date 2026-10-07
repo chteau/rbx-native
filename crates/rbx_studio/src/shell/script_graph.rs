@@ -27,7 +27,7 @@ use crate::properties::attributes;
 use crate::script_editor::graph::catalog::{PinType, Wanted};
 use crate::script_editor::graph::codegen::{self, Problem};
 use crate::script_editor::graph::layout::{Handle, Side};
-use crate::script_editor::graph::{End, Graph, Group, NodeId, ATTRIBUTE};
+use crate::script_editor::graph::{import, End, Graph, Group, NodeId, ATTRIBUTE};
 use crate::script_editor::source;
 use crate::ui_canvas::View;
 
@@ -75,6 +75,9 @@ enum Gesture {
         to: [f32; 2],
         keep: BTreeSet<NodeId>,
     },
+    /// A press in the minimap, centring the view wherever the pointer goes,
+    /// on or off the map.
+    Minimap(canvas::MinimapFrame),
 }
 
 pub(super) struct GraphEditor {
@@ -153,12 +156,17 @@ impl Shell {
     /// the DOM's attribute.
     fn graph_editor_for(&mut self, reference: Ref, cx: &mut App) -> &mut GraphEditor {
         let text = graph_text(&self.dom, reference);
+        let fresh = !self.graphs.contains_key(&reference);
         let editor = self
             .graphs
             .entry(reference)
             .or_insert_with(|| GraphEditor::new(cx));
-        if editor.gesture.is_none() && editor.synced != text {
-            editor.graph = text.as_deref().and_then(Graph::parse).unwrap_or_default();
+        if editor.gesture.is_none() && (fresh || editor.synced != text) {
+            // A script with no graph yet is drawn from its code.
+            editor.graph = match text.as_deref().and_then(Graph::parse) {
+                Some(graph) => graph,
+                None => import::import(&source::read(&self.dom, reference).unwrap_or_default()),
+            };
             editor
                 .selection
                 .retain(|id| editor.graph.node(*id).is_some());
@@ -234,19 +242,56 @@ impl Shell {
 
     /// Writes the editor's graph to the DOM if it changed: the attribute,
     /// and `Source` when it compiles. One undo step.
+    ///
+    /// Code edited since the graph was saved is left alone: the graph is
+    /// saved but the code stays, until the banner's Replace says otherwise.
     fn commit_graph(&mut self, reference: Ref, cx: &mut Context<Self>) {
         let Some(editor) = self.graphs.get(&reference) else {
             return;
         };
-        let json = editor.graph.to_json();
-        if editor.synced.as_deref() == Some(json.as_str()) {
+        if editor.synced.as_deref() == Some(editor.graph.to_json().as_str()) {
             return;
         }
-        let code = codegen::compile(&editor.graph).ok();
         // Typing still on its debounce in the Code side belongs to the
         // state of the script before this write, not after it.
         self.flush_script_edits(cx);
+        let Some(editor) = self.graphs.get(&reference) else {
+            return;
+        };
+        let json = editor.graph.to_json();
+        let current = source::read(&self.dom, reference).unwrap_or_default();
+        let edited = editor
+            .synced
+            .as_deref()
+            .and_then(Graph::parse)
+            .and_then(|saved| codegen::compile(&saved).ok())
+            .is_some_and(|saved| !import::same(&current, &saved));
+        let code = codegen::compile(&editor.graph).ok().filter(|_| !edited);
         self.write_graph(reference, Some(json), code, cx);
+    }
+
+    /// Redraws the graph from the script's code, for code edited since
+    /// the graph was saved. The code itself is left as it is.
+    fn code_to_graph(&mut self, reference: Ref, cx: &mut Context<Self>) {
+        self.flush_script_edits(cx);
+        let code = source::read(&self.dom, reference).unwrap_or_default();
+        let Some(editor) = self.graphs.get_mut(&reference) else {
+            return;
+        };
+        editor.graph = import::import(&code);
+        editor.selection.clear();
+        editor.group = None;
+        editor.fitted = true;
+        let json = editor.graph.to_json();
+        self.write_graph(reference, Some(json), None, cx);
+    }
+
+    /// Whether the menu or a literal's field is taking typing, so Ctrl+Z
+    /// is that field's and not the place's.
+    pub(super) fn graph_field_focused(&self) -> bool {
+        self.graphs
+            .values()
+            .any(|editor| editor.menu.is_some() || editor.literal.is_some())
     }
 
     /// Replaces the script's code with what its graph compiles to, for a
