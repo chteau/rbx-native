@@ -100,10 +100,11 @@ const SUBSTITUTES: [(&str, u64); 2] = [
 ];
 
 /// The catalogue asset that stands in for `path`, if any — see [`SUBSTITUTES`].
+/// Case-blind, like `rbxasset://` paths in Studio.
 pub fn substitute_for(path: &str) -> Option<u64> {
     SUBSTITUTES
         .iter()
-        .find(|(native, _)| *native == path)
+        .find(|(native, _)| native.eq_ignore_ascii_case(path))
         .map(|(_, id)| *id)
 }
 
@@ -191,6 +192,10 @@ mod tests {
     fn only_the_files_the_packages_lack_have_a_substitute() {
         assert_eq!(
             substitute_for("textures/SpawnLocation.png"),
+            Some(6891610111)
+        );
+        assert_eq!(
+            substitute_for("Textures/SpawnLocation.png"),
             Some(6891610111)
         );
         assert_eq!(

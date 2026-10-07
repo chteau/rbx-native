@@ -169,9 +169,11 @@ impl NativeContent {
 
 /// Maps a `rbxasset://` path's top-level directory to the Studio content
 /// package(s) that can contain it, in the order they should be tried.
+/// Case-blind like Studio on Windows: places saved by Roblox name
+/// `rbxasset://Textures/SpawnLocation.png`.
 fn package_candidates_for_path(path: &str) -> Option<Vec<&'static str>> {
-    let top_level = path.split('/').next().unwrap_or("");
-    match top_level {
+    let top_level = path.split('/').next().unwrap_or("").to_ascii_lowercase();
+    match top_level.as_str() {
         "textures" => Some(vec!["content-textures2.zip", "content-textures3.zip"]),
         // Studio's default skybox panels (`sky512_*.tex`) live in the textures
         // package under a `sky\` entry prefix, not in content-sky.zip with the
@@ -302,6 +304,10 @@ mod tests {
     fn maps_textures_to_both_packages_in_order() {
         assert_eq!(
             package_candidates_for_path("textures/SpawnLocation.png"),
+            Some(vec!["content-textures2.zip", "content-textures3.zip"])
+        );
+        assert_eq!(
+            package_candidates_for_path("Textures/SpawnLocation.png"),
             Some(vec!["content-textures2.zip", "content-textures3.zip"])
         );
     }
