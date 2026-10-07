@@ -1,11 +1,11 @@
 use std::collections::BTreeSet;
 
-use super::{kind, search, Code, PinType, Wanted, KINDS};
+use super::{all, count, kind, search, Code, PinType, Wanted};
 
 #[test]
 fn every_key_is_unique_and_resolves() {
-    let keys: BTreeSet<_> = KINDS.iter().map(|kind| kind.key).collect();
-    assert_eq!(keys.len(), KINDS.len());
+    let keys: BTreeSet<_> = all().map(|kind| kind.key).collect();
+    assert_eq!(keys.len(), count());
     for key in keys {
         assert_eq!(kind(key).unwrap().key, key);
     }
@@ -13,7 +13,7 @@ fn every_key_is_unique_and_resolves() {
 
 #[test]
 fn every_template_names_only_its_own_inputs() {
-    for kind in KINDS {
+    for kind in all() {
         let template = match kind.code {
             Code::Statement(t) | Code::Event(Some(t)) => t,
             Code::Expression { template, .. } => template,
@@ -31,7 +31,7 @@ fn every_template_names_only_its_own_inputs() {
 
 #[test]
 fn run_order_pins_lead_each_side() {
-    for kind in KINDS {
+    for kind in all() {
         for pins in [kind.inputs, kind.outputs] {
             let first_value = pins.iter().position(|pin| pin.ty != PinType::Exec);
             let last_exec = pins.iter().rposition(|pin| pin.ty == PinType::Exec);

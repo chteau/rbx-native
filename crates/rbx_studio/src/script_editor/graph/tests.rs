@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use super::catalog::{self, PinType};
-use super::{End, Graph, Refused};
+use super::{End, Graph, Group, Refused};
 
 fn add(graph: &mut Graph, key: &str) -> u32 {
     graph.add(catalog::kind(key).unwrap(), [0.0, 0.0])
@@ -127,4 +127,21 @@ fn an_unwired_input_reads_its_default_until_typed_over() {
     graph.set_value(&class, "Tool".into());
     assert_eq!(graph.value(&class).as_deref(), Some("Tool"));
     assert_eq!(graph.value(&End::new(find, "Parent")), None);
+}
+
+#[test]
+fn a_group_moves_the_nodes_drawn_wholly_inside_it() {
+    let mut graph = Graph::default();
+    let inside = graph.add(catalog::kind("print").unwrap(), [40.0, 40.0]);
+    let astride = graph.add(catalog::kind("print").unwrap(), [380.0, 40.0]);
+    graph.groups.push(Group {
+        title: "Group".into(),
+        x: 0.0,
+        y: 0.0,
+        w: 400.0,
+        h: 200.0,
+    });
+    assert_eq!(graph.nodes_within(0), vec![inside]);
+    assert!(!graph.nodes_within(0).contains(&astride));
+    assert!(graph.nodes_within(1).is_empty());
 }

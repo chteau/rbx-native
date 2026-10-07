@@ -41,7 +41,12 @@
 //! `Script`/`LocalScript`/`ModuleScript` in the Script Editor panel exactly as
 //! double-clicking its Explorer row would — the same aid, for the script
 //! editor and its Luau highlighting (see `shell::scripts`).
-//! `RBX_STUDIO_SCRIPT_VIEW=graph` then puts the front tab on its Graph side.
+//! `RBX_STUDIO_SCRIPT_VIEW=graph[=<file>]` then puts the front tab on its
+//! Graph side, first saving the graph JSON in `<file>` as its graph through
+//! the same path an edit on the canvas takes.
+//! `RBX_STUDIO_GRAPH_MENU=<query>` then opens the graph's add menu with
+//! `<query>` typed, as if a wire had been dropped from the first node's
+//! first value output (or as Shift+A would, on an empty graph).
 //! `RBX_STUDIO_UI_EDITOR=1|<width>x<height>` opens the UI Editor on its
 //! canvas at startup, at that simulated resolution when one is given — the
 //! same aid, for the canvas (see `shell::ui_editor`).

@@ -56,7 +56,9 @@ mod rows;
 mod save;
 mod script_analysis;
 mod script_finder;
+mod script_graph;
 mod script_panel;
+mod script_toolbar;
 mod scripts;
 mod scroll;
 mod scrub;
@@ -280,6 +282,8 @@ pub(crate) struct Shell {
     covered: HashSet<Ref>,
     /// Every script open in the Script Editor panel; see `shell::scripts`.
     scripts: ScriptEditor,
+    /// Each open tab's Graph side, once shown — see `shell::script_graph`.
+    graphs: std::collections::HashMap<Ref, script_graph::GraphEditor>,
     /// Breakpoints and the debug run, if any — see `shell::debugging`.
     debug: debugging::Debugging,
     /// `luau-lsp` behind the script editor and Script Analysis; see
@@ -699,6 +703,7 @@ impl Shell {
             hovered: Vec::new(),
             covered: HashSet::new(),
             scripts: ScriptEditor::default(),
+            graphs: std::collections::HashMap::new(),
             debug: debugging::Debugging::default(),
             lsp: luau_lsp::Session::default(),
             properties_scroll: ScrollHandle::new(),

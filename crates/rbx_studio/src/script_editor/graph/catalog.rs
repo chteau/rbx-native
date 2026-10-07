@@ -1,11 +1,17 @@
 //! Every kind of node a graph can hold: its pins, where it sits in the add
-//! menu, and the Luau it stands for. The table itself is
-//! [`kinds::KINDS`]; this module is what the rest of the graph reads it
-//! through.
+//! menu, and the Luau it stands for. The table itself is in [`kinds`];
+//! this module is what the rest of the graph reads it through.
 
 mod kinds;
 
-pub(crate) use kinds::KINDS;
+/// Every kind, in add-menu order.
+pub(crate) fn all() -> impl Iterator<Item = &'static Kind> {
+    kinds::SECTIONS.iter().flat_map(|section| section.iter())
+}
+
+pub(crate) fn count() -> usize {
+    kinds::SECTIONS.iter().map(|section| section.len()).sum()
+}
 
 /// What travels along a wire. `Exec` is the order statements run in; every
 /// other type is a value.
@@ -156,7 +162,7 @@ impl Kind {
 }
 
 pub(crate) fn kind(key: &str) -> Option<&'static Kind> {
-    KINDS.iter().find(|kind| kind.key == key)
+    all().find(|kind| kind.key == key)
 }
 
 /// Which way a wire being dragged from a pin still has to go: the menu
@@ -184,8 +190,7 @@ impl Wanted {
 /// of it, narrowed to the ones `wanted` fits, in menu order.
 pub(crate) fn search(query: &str, wanted: Option<Wanted>) -> Vec<&'static Kind> {
     let words: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
-    let mut found: Vec<&'static Kind> = KINDS
-        .iter()
+    let mut found: Vec<&'static Kind> = all()
         .filter(|kind| {
             let title = kind.title.to_lowercase();
             words.iter().all(|word| title.contains(word.as_str()))

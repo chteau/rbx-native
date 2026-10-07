@@ -2,11 +2,15 @@
 
 ## 2026-10-06
 
-- **A Code | Graph toggle in the Script Editor.** Two pills under the
-  script tabs, styled like the UI Editor's Canvas | Stylesheet ones and
-  remembered per tab. Graph is only the entry point for node-based
-  scripting, which has no design yet, so it shows a placeholder and the
-  script stays text. — @Vikmanou
+- **Graph mode in the Script Editor.** A Code | Graph toggle in a new
+  toolbar over each script switches between its code and a node graph in
+  the spirit of Unreal Blueprint. The graph compiles to the script's
+  Luau, so places run in Roblox unchanged, and is kept in a `ScriptGraph`
+  attribute that saves and syncs carry. About seventy typed nodes, a
+  searchable add menu that a dropped wire filters to what fits, wire
+  dragging with type checks, groups, a minimap, and one undo step per
+  edit. The Code side gains the same toolbar and a status line with the
+  cursor position and this script's problems. — @Vikmanou
 - **Discord Rich Presence, switched on from Studio Settings.** A toggle in
   Studio Settings › Account that shows the open place, what's being edited
   (a script name, the viewport or the UI Editor) and elapsed time on the

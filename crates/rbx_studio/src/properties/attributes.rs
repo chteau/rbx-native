@@ -376,6 +376,22 @@ pub(crate) fn set_attribute_value(
     write_attributes(dom, reference, &current)
 }
 
+/// Sets one attribute, or drops it for `None`, whatever was there — for a
+/// writer that owns its attribute outright, as the script graph does.
+pub(crate) fn put_attribute(
+    dom: &mut WeakDom,
+    reference: Ref,
+    name: &str,
+    value: Option<Variant>,
+) -> Result<(), String> {
+    let mut current = attributes(dom, reference);
+    match value {
+        Some(value) => current.insert(name.to_owned(), value),
+        None => current.remove(name),
+    };
+    write_attributes(dom, reference, &current)
+}
+
 fn write_attributes(
     dom: &mut WeakDom,
     reference: Ref,

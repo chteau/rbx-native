@@ -1,5 +1,6 @@
 //! What the dock's Script Editor panel draws: a tab strip, then the active
-//! script's Code | Graph toggle, over its editor.
+//! script's toolbar (`shell::script_toolbar`) over its code or its graph,
+//! then the status line.
 //!
 //! The tabs are drawn here rather than made dock panels of their own. A dock
 //! tab is a persisted, rearrangeable part of the window layout, and an open
@@ -18,9 +19,8 @@ use rbx_dom::Ref;
 
 use crate::script_editor::tabs::View;
 use crate::script_editor::{find, outline, source};
-use crate::tokens;
 
-use super::{chrome, Shell};
+use super::Shell;
 
 impl Shell {
     /// The Script Editor panel. Reconciles every open tab against the DOM
@@ -60,7 +60,7 @@ impl Shell {
                 cx.stop_propagation();
             }))
             .child(self.script_tabs(active, cx))
-            .child(self.script_views(active, view, cx))
+            .child(self.script_toolbar(active, view, cx))
             .child(div().relative().flex_1().overflow_hidden().map(|this| {
                 match view {
                     View::Code => this
@@ -76,48 +76,17 @@ impl Shell {
                                 .w_full()
                         }))
                         .children(self.script_finder(cx)),
-                    View::Graph => this.child(graph_placeholder(cx)),
+                    View::Graph => this.child(self.graph_view(active, window, cx)),
                 }
             }))
+            .child(self.script_status_bar(active, view, window, cx))
             .when(view == View::Code, |this| {
                 this.children(self.breakpoint_overlay(cx))
             })
             .into_any_element()
     }
 
-    /// The Code | Graph pills, drawn as the UI Editor's Canvas | Stylesheet
-    /// ones are (`ui_editor::toolbar`) and kept per tab.
-    fn script_views(&mut self, active: Ref, view: View, cx: &mut Context<Self>) -> AnyElement {
-        self.script_view_nav
-            .begin(&self.tab_order, Some(View::ALL.len()), cx);
-        let pills: Vec<AnyElement> = View::ALL
-            .into_iter()
-            .enumerate()
-            .map(|(index, option)| {
-                let pill =
-                    chrome::tab_pill(option.key(), option.label().into(), option == view, false)
-                        .on_click(cx.listener(move |shell, _, window, cx| {
-                            shell.set_script_view(active, option, window, cx);
-                        }));
-                self.script_view_nav
-                    .item(index, pill, cx)
-                    .into_any_element()
-            })
-            .collect();
-        div()
-            .w_full()
-            .flex_none()
-            .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
-                if shell.script_view_nav.key(&event.keystroke, window, cx) {
-                    cx.stop_propagation();
-                    cx.notify();
-                }
-            }))
-            .child(chrome::dock_strip(pills, None, true))
-            .into_any_element()
-    }
-
-    fn set_script_view(
+    pub(super) fn set_script_view(
         &mut self,
         reference: Ref,
         view: View,
@@ -127,8 +96,9 @@ impl Shell {
         if !self.scripts.tabs.set_view(reference, view) {
             return;
         }
-        if view == View::Code {
-            self.focus_script(reference, window, cx);
+        match view {
+            View::Code => self.focus_script(reference, window, cx),
+            View::Graph => self.focus_graph(reference, window, cx),
         }
         cx.notify();
     }
@@ -272,26 +242,5 @@ fn no_scripts_open(cx: &App) -> impl IntoElement {
                 .text_xs()
                 .text_color(cx.theme().muted_foreground)
                 .child("Double-click a Script in the Explorer to edit it"),
-        )
-}
-
-/// The Graph side, until node-based scripting has a design to build.
-fn graph_placeholder(cx: &App) -> impl IntoElement {
-    v_flex()
-        .size_full()
-        .items_center()
-        .justify_center()
-        .gap_2()
-        .bg(tokens::dock())
-        .child(
-            Icon::new(IconName::Network)
-                .large()
-                .text_color(cx.theme().muted_foreground),
-        )
-        .child(
-            div()
-                .text_xs()
-                .text_color(cx.theme().muted_foreground)
-                .child("Graph mode is not built yet. This script is still edited as code."),
         )
 }

@@ -225,6 +225,28 @@ impl Graph {
         false
     }
 
+    /// The nodes drawn wholly inside a group's frame — what moves with it.
+    pub(crate) fn nodes_within(&self, group: usize) -> Vec<NodeId> {
+        let Some(group) = self.groups.get(group) else {
+            return Vec::new();
+        };
+        let frame = layout::Rect {
+            x: group.x,
+            y: group.y,
+            w: group.w,
+            h: group.h,
+        };
+        self.nodes
+            .iter()
+            .filter(|node| {
+                let rect = layout::rect(self, node);
+                frame.contains([rect.x, rect.y])
+                    && frame.contains([rect.x + rect.w, rect.y + rect.h])
+            })
+            .map(|node| node.id)
+            .collect()
+    }
+
     pub(crate) fn is_exec(&self, from: &End) -> bool {
         self.kind_of(from.node)
             .and_then(|kind| kind.output(&from.pin))

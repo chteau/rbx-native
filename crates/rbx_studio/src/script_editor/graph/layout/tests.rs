@@ -1,6 +1,9 @@
 use super::super::catalog;
-use super::super::{End, Graph};
-use super::{chip, chip_text, node_at, pin, pin_at, rect, row_centre, Side, CHIP_CHARS, PIN_REACH};
+use super::super::{End, Graph, Group};
+use super::{
+    chip, chip_at, chip_rect, chip_text, group_title, group_title_at, node_at, pin, pin_at, rect,
+    row_centre, Side, CHIP_CHARS, PIN_REACH,
+};
 
 #[test]
 fn input_n_and_output_n_share_a_row() {
@@ -64,4 +67,31 @@ fn a_press_finds_the_topmost_node_and_the_nearest_pin() {
     let (end, side) = pin_at(&g, [value[0] + 3.0, value[1]], PIN_REACH).unwrap();
     assert_eq!((end, side), (End::new(above, "Value"), Side::Input));
     assert!(pin_at(&g, [value[0] + 40.0, value[1]], PIN_REACH).is_none());
+}
+
+#[test]
+fn a_chip_is_found_where_it_is_drawn() {
+    let mut g = Graph::default();
+    let find = g.add(catalog::kind("find_child_of_class").unwrap(), [40.0, 40.0]);
+    let class = chip_rect(&g, g.node(find).unwrap(), "Class").unwrap();
+    let inside = [class.x + 2.0, class.y + class.h * 0.5];
+    assert_eq!(chip_at(&g, inside), Some(End::new(find, "Class")));
+    assert!(chip_rect(&g, g.node(find).unwrap(), "Parent").is_none());
+    assert_eq!(chip_at(&g, [class.x - 4.0, class.y + 2.0]), None);
+}
+
+#[test]
+fn a_group_title_is_found_astride_its_top_edge() {
+    let mut g = Graph::default();
+    g.groups.push(Group {
+        title: "Damage on touch".into(),
+        x: 0.0,
+        y: 100.0,
+        w: 600.0,
+        h: 300.0,
+    });
+    let title = group_title(&g.groups[0]);
+    assert_eq!(group_title_at(&g, [title.x + 4.0, 100.0]), Some(0));
+    assert_eq!(group_title_at(&g, [title.x + title.w + 20.0, 100.0]), None);
+    assert_eq!(group_title_at(&g, [title.x + 4.0, 200.0]), None);
 }

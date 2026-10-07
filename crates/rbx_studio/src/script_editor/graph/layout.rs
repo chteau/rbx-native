@@ -8,7 +8,7 @@
 //! counts, generously, so a label never runs into the edge.
 
 use super::catalog::{self, Kind, Pin, PinType};
-use super::{End, Graph, Node, NodeId};
+use super::{End, Graph, Group, Node, NodeId};
 
 pub(crate) const HEADER: f32 = 26.0;
 pub(crate) const ROW: f32 = 22.0;
@@ -109,8 +109,41 @@ pub(crate) fn chip_text(text: &str) -> String {
     }
 }
 
-fn chip_width(text: &str) -> f32 {
+pub(crate) fn chip_width(text: &str) -> f32 {
     chip_text(text).chars().count() as f32 * MONO + 12.0
+}
+
+pub(crate) fn label_width(text: &str) -> f32 {
+    text.chars().count() as f32 * CHAR
+}
+
+/// Where an input's chip sits on the canvas: right after its label, which
+/// is drawn at this same estimate so a click lands where the chip is.
+pub(crate) fn chip_rect(graph: &Graph, node: &Node, name: &str) -> Option<Rect> {
+    let kind = catalog::kind(&node.kind)?;
+    let row = kind.inputs.iter().position(|pin| pin.name == name)?;
+    let pin = &kind.inputs[row];
+    let text = chip(graph, node, pin)?;
+    let label = label(graph, node, pin, Side::Input);
+    let gap = if label.is_empty() { 0.0 } else { 6.0 };
+    Some(Rect {
+        x: node.x + 14.0 + label_width(&label) + gap,
+        y: node.y + row_centre(row) - 8.0,
+        w: chip_width(&text),
+        h: 16.0,
+    })
+}
+
+/// The input chip under a canvas point, if any.
+pub(crate) fn chip_at(graph: &Graph, p: [f32; 2]) -> Option<End> {
+    graph.nodes.iter().rev().find_map(|node| {
+        let kind = catalog::kind(&node.kind)?;
+        kind.inputs.iter().find_map(|pin| {
+            chip_rect(graph, node, pin.name)
+                .filter(|rect| rect.contains(p))
+                .map(|_| End::new(node.id, pin.name))
+        })
+    })
 }
 
 pub(crate) fn rows(kind: &Kind) -> usize {
@@ -130,11 +163,11 @@ pub(crate) fn rect(graph: &Graph, node: &Node) -> Rect {
     let widest = (0..rows(kind))
         .map(|row| {
             let left = kind.inputs.get(row).map_or(0.0, |pin| {
-                let text = label(graph, node, pin, Side::Input).chars().count() as f32 * CHAR;
+                let text = label_width(&label(graph, node, pin, Side::Input));
                 text + chip(graph, node, pin).map_or(0.0, |chip| 6.0 + chip_width(&chip))
             });
             let right = kind.outputs.get(row).map_or(0.0, |pin| {
-                label(graph, node, pin, Side::Output).chars().count() as f32 * CHAR
+                label_width(&label(graph, node, pin, Side::Output))
             });
             14.0 + left + 18.0 + right + 14.0
         })
@@ -201,6 +234,23 @@ pub(crate) fn pin_at(graph: &Graph, p: [f32; 2], reach: f32) -> Option<(End, Sid
         }
     }
     best.map(|(_, end, side)| (end, side))
+}
+
+/// The band a group's title is drawn in, astride its top edge.
+pub(crate) fn group_title(group: &Group) -> Rect {
+    Rect {
+        x: group.x + 12.0,
+        y: group.y - 10.0,
+        w: label_width(&group.title) + 12.0,
+        h: 20.0,
+    }
+}
+
+/// The group whose title is under a canvas point; later groups win.
+pub(crate) fn group_title_at(graph: &Graph, p: [f32; 2]) -> Option<usize> {
+    (0..graph.groups.len())
+        .rev()
+        .find(|&index| group_title(&graph.groups[index]).contains(p))
 }
 
 /// Everything on the canvas: nodes and groups. `None` for an empty graph.

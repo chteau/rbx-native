@@ -1015,12 +1015,26 @@ Roblox's own engine.
   each script's full name with its line and column, and a header count.
   Clicking a problem opens the script with the cursor on it. It says so
   when `luau-lsp` is missing or fails to start, with a Retry button.
-- [x] **A Code | Graph toggle in the Script Editor**, the entry point for
-  node-based scripting: two pills under the script tabs, drawn as the UI
-  Editor's Canvas | Stylesheet ones are and kept per tab (a tab opens on
-  Code again once closed). Graph shows a placeholder saying it is not
-  built yet; the script stays text either way, and nothing about the
-  graph itself is decided by it.
+- [x] **Graph mode: writing a script as a node graph**, in the spirit of
+  Unreal Blueprint and Blender's nodes. A Code | Graph toggle in a new
+  Script Editor toolbar (with the script's path, undo/redo and its own
+  tools per side) and a status line under it (`Ln 7, Col 22 · Luau · no
+  errors` on the Code side, node, wire and error counts on the Graph
+  side). The graph **compiles to Luau** written to the script's `Source`,
+  so a place runs in Roblox with nothing added; the graph itself is kept
+  as JSON in the script's `ScriptGraph` attribute, which saves, publishes
+  and syncs carry along. About seventy node kinds (events such as Touched
+  and Player Added, Branch/For Each/Repeat/Wait, instance lookups,
+  properties, attributes and tags, logic, maths, values, Print/Warn) with
+  typed, colour-coded pins. The canvas pans and zooms, draws a dot grid,
+  wires, named group frames and a minimap; nodes are added from a
+  searchable menu (Shift+A, a double-click, or a wire dropped on nothing,
+  which narrows it to nodes that wire can end on), wired by dragging pins
+  (a wired input gives its wire back), moved, box-selected, duplicated,
+  grouped and deleted, and literals are typed in place. A wire of the
+  wrong type is refused with the reason; a graph that cannot compile marks
+  the node at fault and leaves the code alone. Every edit is one undo
+  step in the place's history.
 - [x] **A launcher: API key setup wizard, Home, Roblox publishing.** A
   bare `rbxstudio` opens the wizard on first launch (no key stored) and
   Home after that; `rbxstudio <file>` still opens the editor directly.
@@ -2112,17 +2126,13 @@ Roblox's own engine.
   not a default this project should ship opinionated about.
 
 #### Far future: node-based scripting
-- [ ] 📋 A visual, node-graph way to write Luau logic behind the Script
-  Editor's Graph side (only the Code | Graph toggle and a placeholder exist
-  so far) — Unreal Blueprint or
-  Blender's shader/geometry nodes, not Node.js. Explicitly a long-horizon,
-  unscoped idea at this point, recorded here so it isn't lost rather than
-  because there's a design yet: no decision made on node-graph-to-Luau
-  compilation vs. a node graph that *is* the runtime representation (an
-  interpreter over the graph itself), what subset of the language is
-  representable as nodes, or how it'd interoperate with hand-written
-  script modules in the same place. Depends on the real script editor
-  above existing first regardless of which direction it takes.
+- [ ] 📋 Importing an existing code script into Graph mode: parse its
+  Luau and lay out as nodes whatever the node set can express (events,
+  `if`, property reads and writes, calls, maths, locals), with a clear
+  "this cannot be drawn" state naming the line for the rest. Today a
+  script written as code opens on an empty graph that replaces its code
+  once built, and code edited after its graph was saved can only be
+  overwritten from the graph, not read back into it.
 
 ### Renderer
 #### Animation
