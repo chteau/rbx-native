@@ -9,7 +9,8 @@
   attribute that saves and syncs carry. About seventy typed nodes, a
   searchable add menu that a dropped wire filters to what fits, wire
   dragging with type checks, groups, a minimap, and one undo step per
-  edit. The Code side gains the same toolbar and a status line with the
+  edit; a graph that cannot compile names its first problem and leaves the
+  code alone. The Code side gains the same toolbar and a status line with the
   cursor position and this script's problems. — @Vikmanou
 - **Discord Rich Presence, switched on from Studio Settings.** A toggle in
   Studio Settings › Account that shows the open place, what's being edited

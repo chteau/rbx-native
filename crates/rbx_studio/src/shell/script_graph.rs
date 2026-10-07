@@ -74,8 +74,8 @@ pub(super) struct GraphEditor {
     /// The attribute text `graph` was last read from or written as.
     synced: Option<String>,
     view: View,
-    /// Whether `view` still follows the graph's extent — until the first
-    /// pan or zoom.
+    /// Whether the next frame with a size frames the whole graph: set when
+    /// the editor is made and by Fit, spent as soon as it is applied.
     fitted: bool,
     selection: BTreeSet<NodeId>,
     /// A group picked by its title: Delete removes the frame, not its nodes.
@@ -321,11 +321,23 @@ impl Shell {
             }
             _ => {
                 parts.push(plural(graph.wires.len(), "wire"));
-                parts.push(match (&editor.notice, problems(graph).len()) {
+                let found = problems(graph);
+                parts.push(match (&editor.notice, found.first()) {
                     (Some(notice), _) => notice.clone(),
-                    (None, 0) => "no errors".into(),
-                    (None, n) => plural(n, "error"),
+                    (None, None) => "no errors".into(),
+                    // The first one named: the node at fault is outlined,
+                    // but not while it is the one selected.
+                    (None, Some(first)) => {
+                        format!("{} · {}", plural(found.len(), "error"), first.message)
+                    }
                 });
+                // Legal but easy to miss: a statement no event leads to
+                // compiles to nothing.
+                match codegen::idle(graph).len() {
+                    0 => {}
+                    1 => parts.push("1 node never runs".into()),
+                    n => parts.push(format!("{n} nodes never run")),
+                }
             }
         }
         Some(GraphStatus {

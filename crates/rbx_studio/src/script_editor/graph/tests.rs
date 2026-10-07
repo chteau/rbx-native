@@ -145,3 +145,41 @@ fn a_group_moves_the_nodes_drawn_wholly_inside_it() {
     assert!(!graph.nodes_within(0).contains(&astride));
     assert!(graph.nodes_within(1).is_empty());
 }
+
+/// The graph lives in an attribute so it travels with the place: both file
+/// formats must hand back exactly the text written.
+#[test]
+fn a_graph_survives_saving_the_place_in_either_format() {
+    use rbx_dom::{Variant, WeakDom};
+
+    use crate::properties::attributes::{attributes, put_attribute};
+
+    let mut graph = Graph::default();
+    let start = add(&mut graph, "start");
+    let print = add(&mut graph, "print");
+    graph
+        .connect(End::new(start, ""), End::new(print, ""))
+        .unwrap();
+    let json = graph.to_json();
+
+    let mut dom = WeakDom::new();
+    let script = dom.new_instance("Script", "Script", None);
+    put_attribute(
+        &mut dom,
+        script,
+        super::ATTRIBUTE,
+        Some(Variant::String(json.clone())),
+    )
+    .unwrap();
+
+    let binary = rbx_binary::deserialize(&rbx_binary::serialize(&dom).unwrap()).unwrap();
+    let xml = rbx_xml::deserialize(&rbx_xml::serialize(&dom).unwrap()).unwrap();
+    for reloaded in [binary, xml] {
+        let script = reloaded.root_refs()[0];
+        let text = match attributes(&reloaded, script).remove(super::ATTRIBUTE) {
+            Some(Variant::String(text)) => text,
+            other => panic!("no graph attribute after a reload: {other:?}"),
+        };
+        assert_eq!(Graph::parse(&text), Some(graph.clone()));
+    }
+}

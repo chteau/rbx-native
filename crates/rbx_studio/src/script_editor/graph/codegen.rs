@@ -14,8 +14,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::catalog::{self, Code, Kind, PinType, Prec};
 use super::{End, Graph, NodeId};
 
+mod idle;
 mod literal;
 
+pub(crate) use idle::idle;
 use literal::{indexable, lower_first, TAKEN};
 pub(crate) use literal::{is_identifier, literal, quote};
 

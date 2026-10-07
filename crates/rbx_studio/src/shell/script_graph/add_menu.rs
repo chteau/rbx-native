@@ -282,6 +282,23 @@ fn filter_line(wanted: Wanted) -> AnyElement {
         Wanted::Input(ty) => ("take", ty),
         Wanted::Output(ty) => ("give", ty),
     };
+    if ty == PinType::Exec {
+        let text = match wanted {
+            Wanted::Input(_) => "Nodes that run next",
+            Wanted::Output(_) => "Nodes that run before",
+        };
+        return div()
+            .flex()
+            .items_center()
+            .gap(px(6.0))
+            .px(px(12.0))
+            .pb(px(6.0))
+            .text_size(tokens::text_xs())
+            .text_color(tokens::text_muted())
+            .child(div().size(px(7.0)).rounded_full().bg(style::pin(ty)))
+            .child(text)
+            .into_any_element();
+    }
     let article = match ty.name().starts_with(['a', 'e', 'i', 'o', 'u', 'I']) {
         true => "an",
         false => "a",

@@ -155,13 +155,16 @@ pub(super) fn reference_key(reference: Ref) -> SharedString {
     SharedString::from(format!("script-graph-{reference:?}"))
 }
 
-/// Frames the whole graph the first time it is shown, and again until the
-/// user pans or zooms — never past 100%, where text is drawn at its size.
+/// Frames the whole graph once, the first time the canvas has a size to
+/// frame it in — never past 100%, where text is drawn at its size. Only
+/// once: refitting as nodes are added would move the canvas under the
+/// pointer that is placing them. An empty graph keeps the plain 100% view.
 fn fit(editor: &mut GraphEditor) {
     let panel = editor.panel_size();
     if !editor.fitted || panel[0] < 2.0 {
         return;
     }
+    editor.fitted = false;
     let Some(extent) = layout::extent(&editor.graph) else {
         return;
     };

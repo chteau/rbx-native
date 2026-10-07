@@ -1033,7 +1033,10 @@ Roblox's own engine.
   (a wired input gives its wire back), moved, box-selected, duplicated,
   grouped and deleted, and literals are typed in place. A wire of the
   wrong type is refused with the reason; a graph that cannot compile marks
-  the node at fault and leaves the code alone. Every edit is one undo
+  the node at fault, names the first problem in the status line and leaves
+  the code alone, and statements no event leads to are counted there as
+  never running. Code edited by hand after its graph was saved is flagged,
+  with a button to replace it with the graph's. Every edit is one undo
   step in the place's history.
 - [x] **A launcher: API key setup wizard, Home, Roblox publishing.** A
   bare `rbxstudio` opens the wizard on first launch (no key stored) and

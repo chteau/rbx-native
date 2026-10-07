@@ -95,8 +95,13 @@ pub(crate) fn chip(graph: &Graph, node: &Node, pin: &Pin) -> Option<String> {
         return None;
     }
     let value = graph.value(&end)?;
+    // As the code will read it: a string quoted, and an `any` literal the
+    // way `codegen::literal` settles it (a bare word is a string).
     Some(match pin.ty {
         PinType::String => super::codegen::quote(&value),
+        PinType::Any => {
+            super::codegen::literal(&value, PinType::Any).map_or(value, |(text, _)| text)
+        }
         _ => value,
     })
 }

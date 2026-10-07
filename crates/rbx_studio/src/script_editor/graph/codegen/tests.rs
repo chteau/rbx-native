@@ -1,6 +1,6 @@
 use super::super::catalog::{self, PinType, Prec};
 use super::super::{End, Graph};
-use super::{compile, literal, quote};
+use super::{compile, idle, literal, quote};
 
 fn add(graph: &mut Graph, key: &str, at: [f32; 2]) -> u32 {
     graph.add(catalog::kind(key).unwrap(), at)
@@ -202,4 +202,24 @@ fn an_unknown_kind_is_a_problem_not_a_panic() {
     let id = add(&mut g, "print", [0.0, 0.0]);
     g.node_mut(id).unwrap().kind = "from_the_future".into();
     assert_eq!(compile(&g).unwrap_err()[0].node, id);
+}
+
+#[test]
+fn statements_no_event_reaches_are_reported_idle() {
+    let mut g = Graph::default();
+    let start = add(&mut g, "start", [0.0, 0.0]);
+    let wired = add(&mut g, "print", [0.0, 0.0]);
+    let after = add(&mut g, "wait", [0.0, 0.0]);
+    let loose = add(&mut g, "print", [0.0, 0.0]);
+    let value = add(&mut g, "number", [0.0, 0.0]);
+    wire(&mut g, (start, ""), (wired, ""));
+    wire(&mut g, (wired, ""), (after, ""));
+    assert_eq!(idle(&g), vec![loose]);
+    assert!(!idle(&g).contains(&value));
+    assert_eq!(
+        compile(&g).unwrap(),
+        "print(\"Hello\")
+task.wait(1)
+"
+    );
 }

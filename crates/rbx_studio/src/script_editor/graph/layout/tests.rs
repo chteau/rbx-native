@@ -95,3 +95,20 @@ fn a_group_title_is_found_astride_its_top_edge() {
     assert_eq!(group_title_at(&g, [title.x + title.w + 20.0, 100.0]), None);
     assert_eq!(group_title_at(&g, [title.x + 4.0, 200.0]), None);
 }
+
+#[test]
+fn an_any_chip_shows_its_literal_as_the_code_reads_it() {
+    let mut g = Graph::default();
+    let print = g.add(catalog::kind("print").unwrap(), [0.0, 0.0]);
+    let value = *catalog::kind("print").unwrap().input("Value").unwrap();
+    g.set_value(&End::new(print, "Value"), "hi".into());
+    assert_eq!(
+        chip(&g, g.node(print).unwrap(), &value).as_deref(),
+        Some("\"hi\"")
+    );
+    g.set_value(&End::new(print, "Value"), "25".into());
+    assert_eq!(
+        chip(&g, g.node(print).unwrap(), &value).as_deref(),
+        Some("25")
+    );
+}
