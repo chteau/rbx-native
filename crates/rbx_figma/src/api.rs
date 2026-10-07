@@ -72,6 +72,18 @@ impl Session {
                     .and_then(|v| v.to_str().ok()),
                 attempt,
             );
+            // Figma's rate-limit headers say which bucket ran dry; none is secret.
+            let limits: Vec<String> = [
+                "retry-after",
+                "x-figma-plan-tier",
+                "x-figma-rate-limit-type",
+            ]
+            .iter()
+            .filter_map(|name| {
+                let value = response.headers().get(*name)?.to_str().ok()?;
+                Some(format!("{name}: {value}"))
+            })
+            .collect();
             let body = response
                 .body_mut()
                 .with_config()
@@ -92,12 +104,10 @@ impl Session {
                     ))
                 }
                 404 => return Err("Figma has no such file or frame (404); check the link".into()),
-                429 => {
-                    return Err(
-                        "Figma is rate-limiting this account (429); wait a minute and import again"
-                            .into(),
-                    )
-                }
+                429 => return Err(format!(
+                    "Figma is rate-limiting this account (429; {}); wait a minute and import again",
+                    limits.join(", ")
+                )),
                 _ => return Err(format!("Figma answered {status}: {}", said(&body))),
             }
         }
