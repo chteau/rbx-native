@@ -181,7 +181,7 @@ fn fit(editor: &mut GraphEditor) -> bool {
         (panel[0] - FIT_MARGIN * 2.0).max(1.0) / extent.w.max(1.0),
         (panel[1] - FIT_MARGIN * 2.0).max(1.0) / extent.h.max(1.0),
     ];
-    let zoom = room[0].min(room[1]).clamp(0.25, 1.0);
+    let zoom = room[0].min(room[1]).clamp(0.1, 1.0);
     editor.view = View {
         zoom,
         pan: [

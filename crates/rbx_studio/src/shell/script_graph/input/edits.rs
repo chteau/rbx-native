@@ -140,10 +140,10 @@ impl Shell {
     }
 }
 
-/// The graph's zoom stays between 25% and 200%: below, text is unreadable;
+/// The graph's zoom stays between 10% and 200%: below, nodes are specks;
 /// above, nothing more is learned.
 fn clamp_zoom(view: crate::ui_canvas::View, at: [f32; 2]) -> crate::ui_canvas::View {
-    let zoom = view.zoom.clamp(0.25, 2.0);
+    let zoom = view.zoom.clamp(0.1, 2.0);
     if zoom == view.zoom {
         return view;
     }
