@@ -46,7 +46,11 @@ impl Shell {
         let Some(editor) = self.graphs.get_mut(&reference) else {
             return div().into_any_element();
         };
-        fit(editor);
+        if fit(editor) {
+            // The toolbar's zoom was drawn before this frame's fit; a
+            // notify inside the draw is lost, so ask on the next frame.
+            cx.on_next_frame(window, |_, _, cx| cx.notify());
+        }
         let view = editor.view;
         let graph = editor.graph.clone();
         let broken: BTreeSet<_> = problems(&graph).iter().map(|p| p.node).collect();
@@ -161,14 +165,14 @@ pub(super) fn reference_key(reference: Ref) -> SharedString {
 /// frame it in — never past 100%, where text is drawn at its size. Only
 /// once: refitting as nodes are added would move the canvas under the
 /// pointer that is placing them. An empty graph keeps the plain 100% view.
-fn fit(editor: &mut GraphEditor) {
+fn fit(editor: &mut GraphEditor) -> bool {
     let panel = editor.panel_size();
     if !editor.fitted || panel[0] < 2.0 {
-        return;
+        return false;
     }
     editor.fitted = false;
     let Some(extent) = layout::extent(&editor.graph) else {
-        return;
+        return false;
     };
     let room = [
         (panel[0] - FIT_MARGIN * 2.0).max(1.0) / extent.w.max(1.0),
@@ -182,6 +186,7 @@ fn fit(editor: &mut GraphEditor) {
             panel[1] * 0.5 - (extent.y + extent.h * 0.5) * zoom,
         ],
     };
+    true
 }
 
 pub(super) fn fit_now(editor: &mut GraphEditor) {

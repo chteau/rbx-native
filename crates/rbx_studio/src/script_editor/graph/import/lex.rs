@@ -71,9 +71,8 @@ pub(super) fn lex(src: &str) -> Option<Lexed> {
         {
             while i < bytes.len() {
                 let d = bytes[i];
-                if (d == b'+' || d == b'-') && matches!(bytes[i - 1], b'e' | b'E') {
-                    i += 1;
-                } else if d.is_ascii_alphanumeric() || d == b'_' || d == b'.' {
+                let exponent_sign = (d == b'+' || d == b'-') && matches!(bytes[i - 1], b'e' | b'E');
+                if exponent_sign || d.is_ascii_alphanumeric() || d == b'_' || d == b'.' {
                     i += 1;
                 } else {
                     break;
