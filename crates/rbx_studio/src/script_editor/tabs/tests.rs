@@ -1,6 +1,6 @@
 use rbx_dom::Ref;
 
-use super::{Opened, Tabs};
+use super::{Opened, Tabs, View};
 
 fn script(id: u32) -> Ref {
     Ref::new(id)
@@ -179,4 +179,59 @@ fn retain_keeps_everything_when_nothing_was_removed() {
     tabs.retain(|_| true);
     assert_eq!(tabs.all(), [script(1), script(2), script(3)]);
     assert_eq!(tabs.active(), Some(script(3)));
+}
+
+#[test]
+fn a_tab_opens_on_its_code() {
+    let mut tabs = Tabs::default();
+    tabs.open(script(1));
+    assert_eq!(tabs.view(script(1)), View::Code);
+}
+
+#[test]
+fn each_tab_keeps_its_own_view() {
+    let mut tabs = Tabs::default();
+    tabs.open(script(1));
+    tabs.open(script(2));
+
+    assert!(tabs.set_view(script(1), View::Graph));
+    assert_eq!(tabs.view(script(1)), View::Graph);
+    assert_eq!(tabs.view(script(2)), View::Code);
+
+    // Switching tabs and back leaves the graph up.
+    tabs.activate(script(2));
+    tabs.activate(script(1));
+    assert_eq!(tabs.view(script(1)), View::Graph);
+
+    assert!(tabs.set_view(script(1), View::Code));
+    assert_eq!(tabs.view(script(1)), View::Code);
+}
+
+#[test]
+fn setting_the_view_a_tab_already_shows_changes_nothing() {
+    let mut tabs = Tabs::default();
+    tabs.open(script(1));
+    assert!(!tabs.set_view(script(1), View::Code));
+    assert!(tabs.set_view(script(1), View::Graph));
+    assert!(!tabs.set_view(script(1), View::Graph));
+}
+
+#[test]
+fn a_script_with_no_tab_takes_no_view() {
+    let mut tabs = Tabs::default();
+    assert!(!tabs.set_view(script(1), View::Graph));
+    // Opening it afterwards still lands on its code.
+    tabs.open(script(1));
+    assert_eq!(tabs.view(script(1)), View::Code);
+}
+
+#[test]
+fn closing_a_tab_forgets_its_view() {
+    let mut tabs = Tabs::default();
+    tabs.open(script(1));
+    tabs.set_view(script(1), View::Graph);
+
+    tabs.close(script(1));
+    tabs.open(script(1));
+    assert_eq!(tabs.view(script(1)), View::Code);
 }

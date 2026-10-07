@@ -197,6 +197,8 @@ pub(crate) struct Shell {
     /// The Viewport dock's settings, one Tab stop for the lot — see
     /// `shell::viewport_dock`.
     viewport_nav: roving::Roving,
+    /// The Script Editor's Code | Graph pills — see `shell::script_panel`.
+    script_view_nav: roving::Roving,
     /// The window's Tab order, handed out afresh every render — see
     /// `shell::roving::TabOrder`.
     tab_order: roving::TabOrder,
@@ -667,6 +669,7 @@ impl Shell {
             ribbon_nav: roving::Roving::horizontal(),
             properties_nav: roving::Roving::vertical(),
             viewport_nav: roving::Roving::vertical(),
+            script_view_nav: roving::Roving::horizontal(),
             tab_order: roving::TabOrder::default(),
             reduce_motion,
             scrub: None,

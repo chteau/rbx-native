@@ -1,4 +1,5 @@
-//! Which scripts have a tab open, and which of them is in front.
+//! Which scripts have a tab open, which of them is in front, and which side
+//! of the Code | Graph toggle each one shows.
 //!
 //! Only the bookkeeping: the editor widget behind each tab lives in
 //! [`super::ScriptEditor`], keyed by the same referent. Kept apart so the
@@ -21,11 +22,43 @@ pub(crate) enum Opened {
     Existing,
 }
 
+/// A tab's two views of one script. The Graph side is only an entry point:
+/// node-based scripting has no design yet (whether a graph compiles to Luau
+/// or is run as is, and what can be a node), so it draws a placeholder and
+/// the script stays text either way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum View {
+    #[default]
+    Code,
+    Graph,
+}
+
+impl View {
+    pub(crate) const ALL: [View; 2] = [View::Code, View::Graph];
+
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            View::Code => "script-view-code",
+            View::Graph => "script-view-graph",
+        }
+    }
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            View::Code => "Code",
+            View::Graph => "Graph",
+        }
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct Tabs {
     /// Open tabs left to right, in the order they were first opened.
     open: Vec<Ref>,
     active: Option<Ref>,
+    /// The open tabs showing [`View::Graph`]; every other one shows code.
+    /// Dropped with its tab, so a script opens on its code again.
+    graph: Vec<Ref>,
 }
 
 impl Tabs {
@@ -51,6 +84,7 @@ impl Tabs {
             return;
         };
         self.open.remove(index);
+        self.graph.retain(|graph| *graph != reference);
         if self.active != Some(reference) {
             return;
         }
@@ -88,5 +122,25 @@ impl Tabs {
 
     pub(crate) fn active(&self) -> Option<Ref> {
         self.active
+    }
+
+    pub(crate) fn view(&self, reference: Ref) -> View {
+        match self.graph.contains(&reference) {
+            true => View::Graph,
+            false => View::Code,
+        }
+    }
+
+    /// Switches one tab's view, reporting whether anything changed. A
+    /// referent with no tab is ignored, as [`Self::activate`] ignores one.
+    pub(crate) fn set_view(&mut self, reference: Ref, view: View) -> bool {
+        if !self.open.contains(&reference) || self.view(reference) == view {
+            return false;
+        }
+        match view {
+            View::Graph => self.graph.push(reference),
+            View::Code => self.graph.retain(|graph| *graph != reference),
+        }
+        true
     }
 }

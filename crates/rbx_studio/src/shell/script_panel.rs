@@ -1,5 +1,5 @@
-//! What the dock's Script Editor panel draws: a tab strip over the active
-//! script's editor.
+//! What the dock's Script Editor panel draws: a tab strip, then the active
+//! script's Code | Graph toggle, over its editor.
 //!
 //! The tabs are drawn here rather than made dock panels of their own. A dock
 //! tab is a persisted, rearrangeable part of the window layout, and an open
@@ -12,12 +12,15 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Editor, GoToDefinition};
 use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Icon, Sizable};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_dom::Ref;
 
+use crate::script_editor::tabs::View;
 use crate::script_editor::{find, outline, source};
+use crate::tokens;
 
-use super::Shell;
+use super::{chrome, Shell};
 
 impl Shell {
     /// The Script Editor panel. Reconciles every open tab against the DOM
@@ -34,6 +37,7 @@ impl Shell {
         let Some(active) = self.scripts.tabs.active() else {
             return no_scripts_open(cx).into_any_element();
         };
+        let view = self.scripts.tabs.view(active);
 
         v_flex()
             .size_full()
@@ -56,25 +60,77 @@ impl Shell {
                 cx.stop_propagation();
             }))
             .child(self.script_tabs(active, cx))
-            .child(
-                div()
-                    .relative()
-                    .flex_1()
-                    .overflow_hidden()
-                    .children(self.scripts.open.get(&active).map(|open| {
-                        // Set on the editor itself, which refines it over the
-                        // theme's code size and keeps its rows in proportion;
-                        // under the UI scale like every other size.
-                        Editor::new(&open.state)
-                            .text_size(crate::tokens::scaled(script_font))
-                            .bordered(false)
-                            .h(relative(1.0))
-                            .w_full()
-                    }))
-                    .children(self.script_finder(cx)),
-            )
-            .children(self.breakpoint_overlay(cx))
+            .child(self.script_views(active, view, cx))
+            .child(div().relative().flex_1().overflow_hidden().map(|this| {
+                match view {
+                    View::Code => this
+                        .children(self.scripts.open.get(&active).map(|open| {
+                            // Set on the editor itself, which refines it
+                            // over the theme's code size and keeps its
+                            // rows in proportion; under the UI scale like
+                            // every other size.
+                            Editor::new(&open.state)
+                                .text_size(crate::tokens::scaled(script_font))
+                                .bordered(false)
+                                .h(relative(1.0))
+                                .w_full()
+                        }))
+                        .children(self.script_finder(cx)),
+                    View::Graph => this.child(graph_placeholder(cx)),
+                }
+            }))
+            .when(view == View::Code, |this| {
+                this.children(self.breakpoint_overlay(cx))
+            })
             .into_any_element()
+    }
+
+    /// The Code | Graph pills, drawn as the UI Editor's Canvas | Stylesheet
+    /// ones are (`ui_editor::toolbar`) and kept per tab.
+    fn script_views(&mut self, active: Ref, view: View, cx: &mut Context<Self>) -> AnyElement {
+        self.script_view_nav
+            .begin(&self.tab_order, Some(View::ALL.len()), cx);
+        let pills: Vec<AnyElement> = View::ALL
+            .into_iter()
+            .enumerate()
+            .map(|(index, option)| {
+                let pill =
+                    chrome::tab_pill(option.key(), option.label().into(), option == view, false)
+                        .on_click(cx.listener(move |shell, _, window, cx| {
+                            shell.set_script_view(active, option, window, cx);
+                        }));
+                self.script_view_nav
+                    .item(index, pill, cx)
+                    .into_any_element()
+            })
+            .collect();
+        div()
+            .w_full()
+            .flex_none()
+            .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
+                if shell.script_view_nav.key(&event.keystroke, window, cx) {
+                    cx.stop_propagation();
+                    cx.notify();
+                }
+            }))
+            .child(chrome::dock_strip(pills, None, true))
+            .into_any_element()
+    }
+
+    fn set_script_view(
+        &mut self,
+        reference: Ref,
+        view: View,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.scripts.tabs.set_view(reference, view) {
+            return;
+        }
+        if view == View::Code {
+            self.focus_script(reference, window, cx);
+        }
+        cx.notify();
     }
 
     /// Ctrl+D (Cmd+D) adds a cursor at the next match of the selection,
@@ -216,5 +272,26 @@ fn no_scripts_open(cx: &App) -> impl IntoElement {
                 .text_xs()
                 .text_color(cx.theme().muted_foreground)
                 .child("Double-click a Script in the Explorer to edit it"),
+        )
+}
+
+/// The Graph side, until node-based scripting has a design to build.
+fn graph_placeholder(cx: &App) -> impl IntoElement {
+    v_flex()
+        .size_full()
+        .items_center()
+        .justify_center()
+        .gap_2()
+        .bg(tokens::dock())
+        .child(
+            Icon::new(IconName::Network)
+                .large()
+                .text_color(cx.theme().muted_foreground),
+        )
+        .child(
+            div()
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                .child("Graph mode is not built yet. This script is still edited as code."),
         )
 }

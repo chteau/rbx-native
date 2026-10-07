@@ -15,7 +15,7 @@ use gpui_kit::*;
 use rbx_dom::Ref;
 
 use crate::explorer;
-use crate::script_editor::tabs::Opened;
+use crate::script_editor::tabs::{Opened, View};
 use crate::script_editor::{goto, highlight, source, OpenScript};
 
 use super::Shell;
@@ -23,6 +23,8 @@ use super::Shell;
 /// Read once at startup by `Shell::new`; documented in `main`'s module doc
 /// comment alongside the other debug aids.
 pub(crate) const OPEN_VARIABLE: &str = "RBX_STUDIO_OPEN_SCRIPT";
+/// Read by the same startup pass; documented beside [`OPEN_VARIABLE`].
+const VIEW_VARIABLE: &str = "RBX_STUDIO_SCRIPT_VIEW";
 
 /// How long typing must pause before a tab's text is written to the DOM.
 ///
@@ -116,6 +118,10 @@ impl Shell {
             if let Some(reference) = explorer::find_by_name(&self.dom, name) {
                 self.open_script(reference, window, cx);
             }
+        }
+        let graph = std::env::var(VIEW_VARIABLE).is_ok_and(|view| view.trim() == "graph");
+        if let (true, Some(active)) = (graph, self.scripts.tabs.active()) {
+            self.scripts.tabs.set_view(active, View::Graph);
         }
     }
 

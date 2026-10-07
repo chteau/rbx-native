@@ -1015,6 +1015,12 @@ Roblox's own engine.
   each script's full name with its line and column, and a header count.
   Clicking a problem opens the script with the cursor on it. It says so
   when `luau-lsp` is missing or fails to start, with a Retry button.
+- [x] **A Code | Graph toggle in the Script Editor**, the entry point for
+  node-based scripting: two pills under the script tabs, drawn as the UI
+  Editor's Canvas | Stylesheet ones are and kept per tab (a tab opens on
+  Code again once closed). Graph shows a placeholder saying it is not
+  built yet; the script stays text either way, and nothing about the
+  graph itself is decided by it.
 - [x] **A launcher: API key setup wizard, Home, Roblox publishing.** A
   bare `rbxstudio` opens the wizard on first launch (no key stored) and
   Home after that; `rbxstudio <file>` still opens the editor directly.
@@ -2106,7 +2112,9 @@ Roblox's own engine.
   not a default this project should ship opinionated about.
 
 #### Far future: node-based scripting
-- [ ] 📋 A visual, node-graph way to write Luau logic — Unreal Blueprint or
+- [ ] 📋 A visual, node-graph way to write Luau logic behind the Script
+  Editor's Graph side (only the Code | Graph toggle and a placeholder exist
+  so far) — Unreal Blueprint or
   Blender's shader/geometry nodes, not Node.js. Explicitly a long-horizon,
   unscoped idea at this point, recorded here so it isn't lost rather than
   because there's a design yet: no decision made on node-graph-to-Luau

@@ -41,6 +41,7 @@
 //! `Script`/`LocalScript`/`ModuleScript` in the Script Editor panel exactly as
 //! double-clicking its Explorer row would — the same aid, for the script
 //! editor and its Luau highlighting (see `shell::scripts`).
+//! `RBX_STUDIO_SCRIPT_VIEW=graph` then puts the front tab on its Graph side.
 //! `RBX_STUDIO_UI_EDITOR=1|<width>x<height>` opens the UI Editor on its
 //! canvas at startup, at that simulated resolution when one is given — the
 //! same aid, for the canvas (see `shell::ui_editor`).
