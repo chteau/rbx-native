@@ -59,7 +59,11 @@ fn fill(g: &mut Graph, node: u32, values: &[(&str, &str)], wired: &[(&str, &str)
 #[test]
 fn every_generic_statement_kind_compiles() {
     let cases = [
-        ("local", run("local", &[("Value 1", "1")], &[]), "local x = 1\n"),
+        (
+            "local",
+            run("local", &[("Value 1", "1")], &[]),
+            "local x = 1\n",
+        ),
         (
             "assign",
             run("assign", &[("Value 1", "2")], &[("Target 1", "a")]),
@@ -77,11 +81,23 @@ fn every_generic_statement_kind_compiles() {
         ),
         (
             "method",
-            run("method", &[("Method", "Destroy"), ("#args", "0")], &[("Object", "part")]),
+            run(
+                "method",
+                &[("Method", "Destroy"), ("#args", "0")],
+                &[("Object", "part")],
+            ),
             "part:Destroy()\n",
         ),
-        ("if", run("if", &[("Condition 1", "true")], &[]), "if true then\nend\n"),
-        ("while", run("while", &[("Condition", "true")], &[]), "while true do\nend\n"),
+        (
+            "if",
+            run("if", &[("Condition 1", "true")], &[]),
+            "if true then\nend\n",
+        ),
+        (
+            "while",
+            run("while", &[("Condition", "true")], &[]),
+            "while true do\nend\n",
+        ),
         (
             "repeat",
             run("repeat", &[("Condition", "true")], &[]),
@@ -103,7 +119,11 @@ fn every_generic_statement_kind_compiles() {
             run("function", &[("Parameters", "a, b")], &[]),
             "function name(a, b)\nend\n",
         ),
-        ("return", run("return", &[("Value 1", "7")], &[]), "return 7\n"),
+        (
+            "return",
+            run("return", &[("Value 1", "7")], &[]),
+            "return 7\n",
+        ),
         ("break", run("break", &[], &[]), "break\n"),
         ("continue", run("continue", &[], &[]), "continue\n"),
         (
@@ -111,7 +131,11 @@ fn every_generic_statement_kind_compiles() {
             run("type", &[("Text", "type N = number")], &[]),
             "type N = number\n",
         ),
-        ("comment", run("comment", &[("Text", "-- hi")], &[]), "-- hi\n"),
+        (
+            "comment",
+            run("comment", &[("Text", "-- hi")], &[]),
+            "-- hi\n",
+        ),
     ];
     for (key, got, want) in cases {
         assert_eq!(got, want, "{key}");
@@ -121,7 +145,11 @@ fn every_generic_statement_kind_compiles() {
 #[test]
 fn every_generic_value_kind_compiles() {
     let cases = [
-        ("get", show("get", &[("Name", "speed")], &[]), "print(speed)\n"),
+        (
+            "get",
+            show("get", &[("Name", "speed")], &[]),
+            "print(speed)\n",
+        ),
         (
             "field",
             show("field", &[("Name", "Position")], &[("Object", "part")]),
@@ -139,10 +167,18 @@ fn every_generic_value_kind_compiles() {
         ),
         (
             "method_value",
-            show("method_value", &[("Method", "Clone"), ("#args", "0")], &[("Object", "p")]),
+            show(
+                "method_value",
+                &[("Method", "Clone"), ("#args", "0")],
+                &[("Object", "p")],
+            ),
             "print(p:Clone())\n",
         ),
-        ("literal", show("literal", &[("Text", "42")], &[]), "print(42)\n"),
+        (
+            "literal",
+            show("literal", &[("Text", "42")], &[]),
+            "print(42)\n",
+        ),
         (
             "binary",
             show("binary", &[("A", "1"), ("Op", "*"), ("B", "2")], &[]),
@@ -153,8 +189,16 @@ fn every_generic_value_kind_compiles() {
             show("unary", &[("Op", "-"), ("Value", "5")], &[]),
             "print(-5)\n",
         ),
-        ("paren", show("paren", &[("Value", "5")], &[]), "print((5))\n"),
-        ("table", show("table", &[("Item 1", "5")], &[]), "print({5})\n"),
+        (
+            "paren",
+            show("paren", &[("Value", "5")], &[]),
+            "print((5))\n",
+        ),
+        (
+            "table",
+            show("table", &[("Item 1", "5")], &[]),
+            "print({5})\n",
+        ),
         (
             "pair",
             show("pair", &[("Key", "a"), ("Value", "1")], &[]),

@@ -2,15 +2,21 @@
 //! has shown it, drawing and editing the graph `script_editor::graph`
 //! defines.
 //!
-//! The DOM stays the only copy that counts, as it is for code. The graph is
-//! read from the script's attribute whenever that text moves (an undo, a
-//! sync), and every finished edit — a drop, a wire, a typed literal —
-//! writes the attribute and, when the graph compiles, `Source`, as one undo
-//! step. A drag in flight edits only the copy here, so a node dragged
-//! across the canvas is one step, not one per frame.
+//! `Source` is the only copy that counts, as it is for code. Opening the
+//! side imports the script; every finished edit — a drop, a wire, a typed
+//! literal — compiles the graph and, when that differs from `Source`,
+//! writes it as one undo step, then imports it again so the graph on screen
+//! is what the code says. A change to `Source` from anywhere else (typing in
+//! Code, undo, a sync) rebuilds the graph the same way. Positions, groups
+//! and the selection are carried over by `graph::sync`, and the layout is
+//! remembered per machine by `graph::saved`. A drag in flight edits only
+//! the copy here, so a node dragged across the canvas is one step, not one
+//! per frame.
 
 mod add_menu;
+mod arrange;
 mod canvas;
+mod context;
 mod input;
 mod literal;
 mod nodes;
@@ -21,13 +27,14 @@ use std::collections::BTreeSet;
 use std::rc::Rc;
 
 use gpui_kit::*;
-use rbx_dom::{Ref, Variant};
+use rbx_dom::Ref;
 
-use crate::properties::attributes;
 use crate::script_editor::graph::catalog::{PinType, Wanted};
-use crate::script_editor::graph::codegen::{self, Problem};
-use crate::script_editor::graph::layout::{Handle, Side};
-use crate::script_editor::graph::{import, End, Graph, Group, NodeId, ATTRIBUTE};
+use crate::script_editor::graph::codegen::{self, Origins, Problem};
+use crate::script_editor::graph::import::Broken;
+use crate::script_editor::graph::layout::{self as graph_layout, Handle, Side};
+use crate::script_editor::graph::saved::{self, LayoutKey};
+use crate::script_editor::graph::{import, sync, End, Graph, Group, NodeId};
 use crate::script_editor::source;
 use crate::ui_canvas::View;
 
@@ -82,8 +89,26 @@ enum Gesture {
 
 pub(super) struct GraphEditor {
     graph: Graph,
-    /// The attribute text `graph` was last read from or written as.
-    synced: Option<String>,
+    /// Where each statement of the imported script came from, so one the
+    /// graph has not changed compiles back byte for byte.
+    origins: Origins,
+    /// The `Source` `graph` was last imported from or compiled to. When
+    /// `Source` is anything else it changed behind the graph's back, and the
+    /// graph is rebuilt.
+    built_from: Option<String>,
+    /// Set when the script does not parse: it is shown as one code block.
+    broken: Option<Broken>,
+    /// Where this script's layout is remembered.
+    key: Option<LayoutKey>,
+    /// Layout changes (a drag, Optimize graph) that Ctrl+Z takes back
+    /// before it reaches the DOM's own history.
+    layout_undo: Vec<arrange::LayoutSnapshot>,
+    /// Whether the last thing done was a layout change.
+    layout_last: bool,
+    /// Counts layout saves asked for, so only the last of a burst of wheel
+    /// events writes.
+    save_epoch: u64,
+    context: Option<context::ContextMenu>,
     view: View,
     /// Whether the next frame with a size frames the whole graph: set when
     /// the editor is made and by Fit, spent as soon as it is applied.
@@ -110,7 +135,14 @@ impl GraphEditor {
     fn new(cx: &mut App) -> Self {
         GraphEditor {
             graph: Graph::default(),
-            synced: None,
+            origins: Origins::default(),
+            built_from: None,
+            broken: None,
+            key: None,
+            layout_undo: Vec::new(),
+            layout_last: false,
+            save_epoch: 0,
+            context: None,
             view: View {
                 zoom: 1.0,
                 pan: [24.0, 24.0],
@@ -143,6 +175,57 @@ impl GraphEditor {
             f32::from(position.y - origin.y),
         ]
     }
+
+    /// The graph as `source` says it, laid out as this machine last left
+    /// it, or tidied when there is no such layout or `optimize` asks.
+    fn open(&mut self, source: &str, optimize: bool) {
+        let imported = import::import(source);
+        self.graph = imported.graph;
+        self.origins = imported.origins;
+        self.broken = imported.broken;
+        self.built_from = Some(source.to_owned());
+        let saved = match optimize {
+            true => None,
+            false => self.key.as_ref().and_then(saved::load),
+        };
+        match saved {
+            Some(layout) => {
+                let anchors = codegen::anchors(&self.graph);
+                let placed = saved::apply(&mut self.graph, &anchors, &layout);
+                graph_layout::place_new(&mut self.graph, &placed);
+                if let Some(view) = layout.view {
+                    self.view = View {
+                        zoom: view.zoom,
+                        pan: [view.pan_x, view.pan_y],
+                    };
+                    self.fitted = false;
+                }
+            }
+            None => {
+                graph_layout::tidy(&mut self.graph);
+                self.save_layout();
+            }
+        }
+    }
+
+    /// The graph rebuilt from `source`, which changed outside the graph:
+    /// what the edit left alone stays where it was.
+    fn rebuild(&mut self, source: &str) {
+        let imported = import::import(source);
+        let mut graph = imported.graph;
+        let carried = sync::carry(&self.graph, &mut graph, &self.selection);
+        self.graph = graph;
+        self.origins = imported.origins;
+        self.broken = imported.broken;
+        self.built_from = Some(source.to_owned());
+        self.selection = carried.selection;
+        self.group = self.group.filter(|&i| i < self.graph.groups.len());
+        self.context = None;
+        // Snapshots name nodes by number, and the numbers have changed.
+        self.layout_undo.clear();
+        self.layout_last = false;
+        self.save_layout();
+    }
 }
 
 /// What the status bar reads for the Graph side.
@@ -153,32 +236,32 @@ pub(super) struct GraphStatus {
 
 impl Shell {
     /// The editor for `reference`, made on first use and kept in step with
-    /// the DOM's attribute.
+    /// the script's `Source`.
     fn graph_editor_for(&mut self, reference: Ref, cx: &mut App) -> &mut GraphEditor {
-        let text = graph_text(&self.dom, reference);
-        let fresh = !self.graphs.contains_key(&reference);
-        let editor = self
-            .graphs
-            .entry(reference)
-            .or_insert_with(|| GraphEditor::new(cx));
-        if editor.gesture.is_none() && (fresh || editor.synced != text) {
-            // A script with no graph yet is drawn from its code.
-            editor.graph = match text.as_deref().and_then(Graph::parse) {
-                Some(graph) => graph,
-                None => import::import(&source::read(&self.dom, reference).unwrap_or_default()).graph,
-            };
-            editor
-                .selection
-                .retain(|id| editor.graph.node(*id).is_some());
-            editor.group = editor.group.filter(|&i| i < editor.graph.groups.len());
-            editor.synced = text;
+        let text = source::read(&self.dom, reference).unwrap_or_default();
+        if !self.graphs.contains_key(&reference) {
+            let mut editor = GraphEditor::new(cx);
+            editor.key = Some(self.layout_key(reference));
+            editor.open(&text, self.optimize_graph_on_open);
+            self.graphs.insert(reference, editor);
+        }
+        let editor = self.graphs.get_mut(&reference).expect("inserted above");
+        if editor.gesture.is_none() && editor.built_from.as_deref() != Some(text.as_str()) {
+            editor.rebuild(&text);
         }
         editor
     }
 
-    /// `RBX_STUDIO_SCRIPT_VIEW=graph=<file>`: the graph in `path` saved as
-    /// `reference`'s, through the canvas's own commit. A file that does not
-    /// hold a graph is ignored.
+    /// Which saved layout is this script's: the place file, or the Roblox
+    /// place it was opened from, and the script's path in it.
+    fn layout_key(&self, reference: Ref) -> LayoutKey {
+        let cloud = crate::home::link_of(&self.path).map(|link| link.place_id);
+        saved::key_for(&self.path, cloud, &self.dom, reference)
+    }
+
+    /// `RBX_STUDIO_SCRIPT_VIEW=graph=<file>`: the graph in `path` compiled
+    /// into `reference`'s `Source`, through the canvas's own commit. A file
+    /// that does not hold a graph is ignored.
     pub(super) fn seed_graph(
         &mut self,
         reference: Ref,
@@ -191,7 +274,9 @@ impl Shell {
         else {
             return;
         };
-        self.graph_editor_for(reference, cx).graph = graph;
+        let editor = self.graph_editor_for(reference, cx);
+        editor.graph = graph;
+        editor.origins = Origins::default();
         self.commit_graph(reference, cx);
     }
 
@@ -243,50 +328,37 @@ impl Shell {
         self.graphs.retain(|reference, _| open.contains(reference));
     }
 
-    /// Writes the editor's graph to the DOM if it changed: the attribute,
-    /// and `Source` when it compiles. One undo step.
-    ///
-    /// Code edited since the graph was saved is left alone: the graph is
-    /// saved but the code stays, until the banner's Replace says otherwise.
+    /// Finishes a graph edit: compiles the graph and, when that is not what
+    /// `Source` holds, writes it (one undo step) and imports it again,
+    /// carrying positions, groups and the selection over. A graph that does
+    /// not compile is left on screen with its problems and writes nothing.
+    /// Compiling to what `Source` already is — a move, a loose node, a
+    /// group — keeps the graph as it is.
     fn commit_graph(&mut self, reference: Ref, cx: &mut Context<Self>) {
-        let Some(editor) = self.graphs.get(&reference) else {
-            return;
-        };
-        if editor.synced.as_deref() == Some(editor.graph.to_json().as_str()) {
-            return;
-        }
         // Typing still on its debounce in the Code side belongs to the
         // state of the script before this write, not after it.
         self.flush_script_edits(cx);
-        let Some(editor) = self.graphs.get(&reference) else {
-            return;
-        };
-        let json = editor.graph.to_json();
         let current = source::read(&self.dom, reference).unwrap_or_default();
-        let edited = editor
-            .synced
-            .as_deref()
-            .and_then(Graph::parse)
-            .and_then(|saved| codegen::compile(&saved).ok())
-            .is_some_and(|saved| !import::same(&current, &saved));
-        let code = codegen::compile(&editor.graph).ok().filter(|_| !edited);
-        self.write_graph(reference, Some(json), code, cx);
-    }
-
-    /// Redraws the graph from the script's code, for code edited since
-    /// the graph was saved. The code itself is left as it is.
-    fn code_to_graph(&mut self, reference: Ref, cx: &mut Context<Self>) {
-        self.flush_script_edits(cx);
-        let code = source::read(&self.dom, reference).unwrap_or_default();
         let Some(editor) = self.graphs.get_mut(&reference) else {
             return;
         };
-        editor.graph = import::import(&code).graph;
-        editor.selection.clear();
-        editor.group = None;
-        editor.fitted = true;
-        let json = editor.graph.to_json();
-        self.write_graph(reference, Some(json), None, cx);
+        editor.layout_last = false;
+        let Ok(code) = codegen::compile_with(&editor.graph, &editor.origins) else {
+            editor.save_layout();
+            cx.notify();
+            return;
+        };
+        if code == current {
+            editor.built_from = Some(current);
+            editor.save_layout();
+            cx.notify();
+            return;
+        }
+        self.write_source(reference, &code, cx);
+        if let Some(editor) = self.graphs.get_mut(&reference) {
+            editor.rebuild(&code);
+        }
+        cx.notify();
     }
 
     /// Whether the menu or a literal's field is taking typing, so Ctrl+Z
@@ -297,45 +369,18 @@ impl Shell {
             .any(|editor| editor.menu.is_some() || editor.literal.is_some())
     }
 
-    /// Replaces the script's code with what its graph compiles to, for a
-    /// script whose code was edited since its graph was last saved.
-    fn graph_to_code(&mut self, reference: Ref, cx: &mut Context<Self>) {
-        let Some(code) = self
-            .graphs
-            .get(&reference)
-            .and_then(|editor| codegen::compile(&editor.graph).ok())
-        else {
-            return;
-        };
-        self.flush_script_edits(cx);
-        self.write_graph(reference, None, Some(code), cx);
-    }
-
-    fn write_graph(
-        &mut self,
-        reference: Ref,
-        json: Option<String>,
-        code: Option<String>,
-        cx: &mut Context<Self>,
-    ) {
+    /// Writes `code` to the script's `Source` as one undo step.
+    fn write_source(&mut self, reference: Ref, code: &str, cx: &mut Context<Self>) {
         self.dom.take_changes();
         let before = self.dom.clone();
-        if let Some(json) = &json {
-            let value = Some(Variant::String(json.clone()));
-            if attributes::put_attribute(&mut self.dom, reference, ATTRIBUTE, value).is_err() {
-                return;
-            }
+        if source::is(&self.dom, reference, code) {
+            return;
         }
-        if let Some(code) = code.filter(|code| !source::is(&self.dom, reference, code)) {
-            source::write(&mut self.dom, reference, &code);
-        }
+        source::write(&mut self.dom, reference, code);
         self.push_history_snapshot(before);
         self.properties.dom_changed(&[]);
         let changes = self.dom.take_changes();
         self.record_history_change(changes);
-        if let (Some(json), Some(editor)) = (json, self.graphs.get_mut(&reference)) {
-            editor.synced = Some(json);
-        }
         cx.notify();
     }
 
@@ -377,7 +422,7 @@ impl Shell {
             }
             _ => {
                 parts.push(plural(graph.wires.len(), "wire"));
-                let found = problems(graph);
+                let found = problems(graph, &editor.origins);
                 parts.push(match (&editor.notice, found.first()) {
                     (Some(notice), _) => notice.clone(),
                     (None, None) => "no errors".into(),
@@ -415,16 +460,10 @@ impl Shell {
     }
 }
 
-/// The attribute's text, when the script has one.
-fn graph_text(dom: &rbx_dom::WeakDom, reference: Ref) -> Option<String> {
-    match attributes::attributes(dom, reference).remove(ATTRIBUTE) {
-        Some(Variant::String(text)) => Some(text),
-        _ => None,
-    }
-}
-
-fn problems(graph: &Graph) -> Vec<Problem> {
-    codegen::compile(graph).err().unwrap_or_default()
+fn problems(graph: &Graph, origins: &Origins) -> Vec<Problem> {
+    codegen::compile_with(graph, origins)
+        .err()
+        .unwrap_or_default()
 }
 
 /// The type a wire out of `end` carries.

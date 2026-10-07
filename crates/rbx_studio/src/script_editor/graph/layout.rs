@@ -154,6 +154,17 @@ pub(crate) fn chip_at(graph: &Graph, p: [f32; 2]) -> Option<End> {
     })
 }
 
+/// The first input of `id` with a typed value to edit, which Enter opens
+/// from the keyboard.
+pub(crate) fn first_chip(graph: &Graph, id: NodeId) -> Option<End> {
+    let node = graph.node(id)?;
+    graph
+        .pins(id)
+        .inputs
+        .iter()
+        .find(|pin| chip_rect(graph, node, pin.name).is_some())
+        .map(|pin| End::new(id, pin.name))
+}
 
 pub(crate) fn rect(graph: &Graph, node: &Node) -> Rect {
     let Some(kind) = catalog::kind(&node.kind) else {

@@ -172,11 +172,21 @@ impl<'g> Compiler<'g> {
         let mut take = |code: &str| self.names.extend(import::names(code));
         for node in &self.graph.nodes {
             if node.kind == "luau" {
-                take(&self.graph.value(&End::new(node.id, "Code")).unwrap_or_default());
+                take(
+                    &self
+                        .graph
+                        .value(&End::new(node.id, "Code"))
+                        .unwrap_or_default(),
+                );
             }
             for pin in self.graph.pins(node.id).inputs {
                 if pin.ty == PinType::Word {
-                    take(&self.graph.value(&End::new(node.id, pin.name)).unwrap_or_default());
+                    take(
+                        &self
+                            .graph
+                            .value(&End::new(node.id, pin.name))
+                            .unwrap_or_default(),
+                    );
                 }
             }
         }
@@ -587,7 +597,10 @@ impl<'g> Compiler<'g> {
         let node = self.graph.node(from.node)?;
         let around = |key: &str| node.values.get(key).cloned().unwrap_or_default();
         result.map(|(text, prec)| {
-            (format!("{}{text}{}", around("@lead"), around("@trail")), prec)
+            (
+                format!("{}{text}{}", around("@lead"), around("@trail")),
+                prec,
+            )
         })
     }
 
@@ -691,7 +704,7 @@ fn wrap(text: String, needs: bool) -> String {
 }
 
 #[cfg(test)]
+mod generic_tests;
+#[cfg(test)]
 #[path = "codegen/tests.rs"]
 mod tests;
-#[cfg(test)]
-mod generic_tests;

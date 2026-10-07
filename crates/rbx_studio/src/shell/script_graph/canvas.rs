@@ -18,7 +18,6 @@ use super::{problems, style, Gesture, GraphEditor};
 use crate::script_editor::graph::catalog::PinType;
 use crate::script_editor::graph::layout::{self, Rect, Side};
 use crate::script_editor::graph::{End, Graph};
-use crate::script_editor::source;
 use crate::tokens;
 use crate::ui_canvas::View;
 use overlays::{banner, minimap};
@@ -42,7 +41,6 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let code = source::read(&self.dom, reference).unwrap_or_default();
         let Some(editor) = self.graphs.get_mut(&reference) else {
             return div().into_any_element();
         };
@@ -53,7 +51,10 @@ impl Shell {
         }
         let view = editor.view;
         let graph = editor.graph.clone();
-        let broken: BTreeSet<_> = problems(&graph).iter().map(|p| p.node).collect();
+        let broken: BTreeSet<_> = problems(&graph, &editor.origins)
+            .iter()
+            .map(|p| p.node)
+            .collect();
         let marks = |id| match (editor.selection.contains(&id), broken.contains(&id)) {
             (true, _) => Mark::Selected,
             (false, true) => Mark::Problem,
@@ -98,9 +99,10 @@ impl Shell {
         let focus = editor.focus.clone();
         let zoom = view.zoom;
         let empty = graph.nodes.is_empty();
-        let banner = banner(editor, &graph, &code, reference, cx);
+        let banner = banner(editor);
         let minimap = (!empty).then(|| minimap(editor, &graph, reference, cx));
         let menu = self.add_menu_element(reference, cx);
+        let context = self.context_menu_element(reference, cx);
         let literal = self.literal_element(reference, cx);
         let _ = window;
 
@@ -152,6 +154,7 @@ impl Shell {
                     .child(format!("{:.0}%", zoom * 100.0)),
             )
             .children(menu)
+            .children(context)
             .into_any_element()
     }
 }

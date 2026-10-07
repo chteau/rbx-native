@@ -78,6 +78,11 @@ impl Shell {
     /// Undo item's entry point, so a menu click runs the exact same path
     /// Ctrl+Z does.
     pub(crate) fn undo(&mut self, cx: &mut Context<Self>) {
+        // In the Graph side a move or Optimize graph is undone first; it
+        // never reached the DOM.
+        if self.undo_graph_layout(cx) {
+            return;
+        }
         // A script editor's text reaches the DOM on a debounce (see
         // `shell::scripts`), so without this an undo moments after typing
         // would step over text that had not become a history entry yet, and

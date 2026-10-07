@@ -232,6 +232,16 @@ impl Shell {
             ))
             .child(divider())
             .child(tool(
+                "graph-optimize",
+                IconName::Sparkle,
+                "Optimize graph: tidy the layout",
+                false,
+                cx,
+                move |shell, _, cx| {
+                    shell.optimize_graph(active, cx);
+                },
+            ))
+            .child(tool(
                 "graph-fit",
                 IconName::Maximize,
                 "Fit the graph (F)",
@@ -386,6 +396,9 @@ fn tool(
         .justify_center()
         .rounded(tokens::radius())
         .cursor_pointer()
+        .role(Role::Button)
+        .aria_label(label)
+        .aria_selected(on)
         .when(on, |this| this.bg(tokens::accent_soft()))
         .hover(|this| this.bg(tokens::hover()))
         .tooltip(move |window, cx| super::tooltip::text(label, window, cx))

@@ -222,7 +222,8 @@ impl Compiler<'_> {
                         false => self.put(format!("return {}", values.join(", "))),
                     }
                     // Comments after it: nothing can follow a return to hold them.
-                    if let Some(after) = self.graph.node(node).and_then(|n| n.values.get("@after")) {
+                    if let Some(after) = self.graph.node(node).and_then(|n| n.values.get("@after"))
+                    {
                         self.out.push_str(after);
                     }
                 }
@@ -248,7 +249,11 @@ impl Compiler<'_> {
             self.put(format!("{word} {condition} then"));
             self.block(&End::new(node, &format!("Then {}", i + 1)), scope);
         }
-        let wired = self.graph.wires_from(&End::new(node, "Else")).next().is_some();
+        let wired = self
+            .graph
+            .wires_from(&End::new(node, "Else"))
+            .next()
+            .is_some();
         if wired || self.hidden(node, "@else") == "1" {
             self.put("else");
             self.block(&End::new(node, "Else"), scope);
@@ -309,7 +314,8 @@ impl Compiler<'_> {
                 let parent = op_prec(op);
                 let a = wrap(a, operand_needs(pa, parent, true));
                 // `a ^ -b` reads as written; a prefix operator binds the exponent.
-                let right = operand_needs(pb, parent, false) && !(parent == Prec::Pow && pb == Prec::Unary);
+                let right =
+                    operand_needs(pb, parent, false) && !(parent == Prec::Pow && pb == Prec::Unary);
                 let b = wrap(b, right);
                 Some((format!("{a} {op} {b}"), parent))
             }
@@ -406,7 +412,11 @@ impl Compiler<'_> {
                 true => item.clone(),
                 false => format!("{key} = {item}"),
             };
-            let sep = match self.graph.node(node).and_then(|node| node.values.get(&format!("@sep{n}"))) {
+            let sep = match self
+                .graph
+                .node(node)
+                .and_then(|node| node.values.get(&format!("@sep{n}")))
+            {
                 Some(sep) => sep.clone(),
                 None if n < items.len() => ",".into(),
                 None => String::new(),

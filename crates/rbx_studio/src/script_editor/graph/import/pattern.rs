@@ -6,7 +6,7 @@
 use std::sync::OnceLock;
 
 use super::super::catalog::{self, Code, Kind};
-use super::tree::{snippet, Style, E, F, K, SK, S};
+use super::tree::{snippet, Style, E, F, K, S, SK};
 
 /// A match: the kind, and what the source holds where its template has
 /// holes (`{Pin}` takes a whole expression, `{.Pin}` a field name).
@@ -50,16 +50,22 @@ fn holed(template: &str) -> String {
 
 fn parse(kind: &'static Kind, template: &str, value: bool) -> Option<Pattern> {
     let text = holed(template);
-    let src = if value { format!("local _ = {text}") } else { text };
+    let src = if value {
+        format!("local _ = {text}")
+    } else {
+        text
+    };
     let tree = snippet(&src)?;
     let shape = match &tree.block.items.first()? {
-        super::tree::Item::S(S { k: SK::Local { vals, .. }, .. }) if value => {
-            Shape::Value(vals.first()?.clone())
-        }
+        super::tree::Item::S(S {
+            k: SK::Local { vals, .. },
+            ..
+        }) if value => Shape::Value(vals.first()?.clone()),
         super::tree::Item::S(S { k: SK::Call(e), .. }) if !value => Shape::Call(e.clone()),
-        super::tree::Item::S(S { k: SK::Assign(t, v), .. }) if !value => {
-            Shape::Assign(t.first()?.clone(), v.first()?.clone())
-        }
+        super::tree::Item::S(S {
+            k: SK::Assign(t, v),
+            ..
+        }) if !value => Shape::Assign(t.first()?.clone(), v.first()?.clone()),
         _ => return None,
     };
     Some(Pattern { kind, src, shape })
@@ -73,7 +79,11 @@ fn patterns() -> &'static [Pattern] {
                 Code::Event(Some(t)) => parse(kind, t, true),
                 Code::Statement(t) => parse(kind, t, false),
                 // A template that is only a hole would match everything.
-                Code::Expression { template, .. } if !(template.matches('{').count() == 1 && template.starts_with('{') && template.ends_with('}')) => {
+                Code::Expression { template, .. }
+                    if !(template.matches('{').count() == 1
+                        && template.starts_with('{')
+                        && template.ends_with('}')) =>
+                {
                     parse(kind, template, true)
                 }
                 _ => None,
@@ -85,7 +95,10 @@ fn patterns() -> &'static [Pattern] {
 fn same_shape<'e>(p: &E, ps: &str, e: &'e E, src: &str, hit: &mut Hit<'e>) -> bool {
     let all = |ps_list: &[E], list: &'e [E], hit: &mut Hit<'e>| {
         ps_list.len() == list.len()
-            && ps_list.iter().zip(list).all(|(p, e)| same_shape(p, ps, e, src, hit))
+            && ps_list
+                .iter()
+                .zip(list)
+                .all(|(p, e)| same_shape(p, ps, e, src, hit))
     };
     match (&p.k, &e.k) {
         (K::Name(n), _) if n.starts_with("__H_") => {
@@ -197,7 +210,12 @@ pub(super) fn event<'e>(src: &str, call: &'e E) -> Option<(Hit<'e>, &'e F)> {
             };
             let mut h = hit(p.kind);
             let fits = same_shape(shape, &p.src, signal, src, &mut h);
-            let params = p.kind.outputs.iter().filter(|o| o.ty != catalog::PinType::Exec).count();
+            let params = p
+                .kind
+                .outputs
+                .iter()
+                .filter(|o| o.ty != catalog::PinType::Exec)
+                .count();
             (fits && f.names.len() <= params).then_some((h, &**f))
         })
 }

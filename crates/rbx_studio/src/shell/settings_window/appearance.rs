@@ -18,7 +18,8 @@ use crate::tokens;
 use super::super::toolbar::snap::NumberField;
 use super::dragger::{committed, number};
 use super::kit::{
-    self, destructive_icon, icon, readout, secondary_button, ticked_slider, Reset, Row, Section,
+    self, destructive_icon, icon, readout, secondary_button, ticked_slider, toggle, Reset, Row,
+    Section,
 };
 use super::SettingsWindow;
 
@@ -335,11 +336,12 @@ impl SettingsWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Vec<Section> {
-        let (scale, script_font, accent_changed, tools_changed) = {
+        let (scale, script_font, optimize_graph, accent_changed, tools_changed) = {
             let shell = self.shell.read(cx);
             (
                 tokens::font_scale(),
                 shell.script_font_size(),
+                shell.optimize_graph_on_open,
                 shell.appearance.accent.is_some(),
                 !shell.appearance.tools.is_empty(),
             )
@@ -499,6 +501,18 @@ impl SettingsWindow {
                 .describe("The Script Editor only, 8 to 32, on top of the UI scale.")
                 .changed(script_font != SCRIPT_FONT_SIZE, |shell, cx| {
                     shell.set_script_font_size(SCRIPT_FONT_SIZE, cx)
+                }),
+                Row::new(
+                    "Optimize graph when opening a script",
+                    toggle(
+                        "optimize-graph",
+                        optimize_graph,
+                        self.set(move |shell, cx| shell.set_optimize_graph_on_open(!optimize_graph, cx)),
+                    ),
+                )
+                .describe("Tidies a script\u{2019}s node layout every time its Graph side opens, instead of restoring where you left the nodes.")
+                .changed(optimize_graph, |shell, cx| {
+                    shell.set_optimize_graph_on_open(false, cx)
                 }),
                 Row::new(
                     "Viewport font size",

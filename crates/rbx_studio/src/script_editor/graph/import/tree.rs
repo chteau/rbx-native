@@ -185,7 +185,9 @@ fn lo_of<N: Node>(n: &N) -> usize {
 /// The node's own end can stop short of a closing brace in a table type, so
 /// the last of its tokens counts too.
 fn hi_of<N: Node>(n: &N) -> usize {
-    n.tokens().map(tok_hi).fold(pos(n.end_position(), 0), usize::max)
+    n.tokens()
+        .map(tok_hi)
+        .fold(pos(n.end_position(), 0), usize::max)
 }
 
 fn tok_lo(t: &TokenReference) -> usize {
@@ -313,7 +315,9 @@ impl Cx<'_> {
         let k = match s {
             ast::LastStmt::Break(_) => SK::Break,
             ast::LastStmt::Continue(_) => SK::Continue,
-            ast::LastStmt::Return(r) => SK::Return(r.returns().iter().map(|e| self.expr(e)).collect()),
+            ast::LastStmt::Return(r) => {
+                SK::Return(r.returns().iter().map(|e| self.expr(e)).collect())
+            }
             _ => SK::Bad,
         };
         S { k, lo, hi }
@@ -350,7 +354,10 @@ impl Cx<'_> {
             ),
             Stmt::FunctionCall(c) => SK::Call(self.call(c)),
             Stmt::If(i) => {
-                if i.binding().is_some() || i.else_if().is_some_and(|e| e.iter().any(|e| e.binding().is_some())) {
+                if i.binding().is_some()
+                    || i.else_if()
+                        .is_some_and(|e| e.iter().any(|e| e.binding().is_some()))
+                {
                     return SK::Bad;
                 }
                 let mut arms = Vec::new();
@@ -388,7 +395,10 @@ impl Cx<'_> {
                 self.expr(r.until()),
             ),
             Stmt::NumericFor(f) => SK::ForCount {
-                var: self.text(tok_lo(f.index_variable()), tok_lo(f.equal_token())).trim_end().to_owned(),
+                var: self
+                    .text(tok_lo(f.index_variable()), tok_lo(f.equal_token()))
+                    .trim_end()
+                    .to_owned(),
                 name: f.index_variable().token().to_string(),
                 from: self.expr(f.start()),
                 to: self.expr(f.end()),
@@ -404,14 +414,19 @@ impl Cx<'_> {
                     body: self.block(f.block(), tok_hi(f.do_token()), tok_lo(f.end_token())),
                 }
             }
-            Stmt::Do(d) => SK::Do(self.block(d.block(), tok_hi(d.do_token()), tok_lo(d.end_token()))),
+            Stmt::Do(d) => {
+                SK::Do(self.block(d.block(), tok_hi(d.do_token()), tok_lo(d.end_token())))
+            }
             Stmt::FunctionDeclaration(d) => {
                 let name = d.name();
                 SK::Function {
                     attrs: self.attrs(d.attributes()),
                     local: false,
                     name: self.text(lo_of(name), hi_of(name)),
-                    root: name.names().first().map_or_else(String::new, |p| p.value().token().to_string()),
+                    root: name
+                        .names()
+                        .first()
+                        .map_or_else(String::new, |p| p.value().token().to_string()),
                     f: self.body(d.body()),
                 }
             }
@@ -452,12 +467,18 @@ impl Cx<'_> {
         }
         F {
             attrs: String::new(),
-            generics: b.generics().map(|g| self.text(lo_of(g), hi_of(g))).unwrap_or_default(),
+            generics: b
+                .generics()
+                .map(|g| self.text(lo_of(g), hi_of(g)))
+                .unwrap_or_default(),
             params: self.text(open, close),
             names,
             vararg,
             typed: b.type_specifiers().any(|t| t.is_some()),
-            returns: b.return_type().map(|r| self.text(lo_of(r), hi_of(r))).unwrap_or_default(),
+            returns: b
+                .return_type()
+                .map(|r| self.text(lo_of(r), hi_of(r)))
+                .unwrap_or_default(),
             body: self.block(b.block(), after.max(close + 1), tok_lo(b.end_token())),
         }
     }
@@ -469,7 +490,12 @@ impl Cx<'_> {
                 lo: tok_lo(t),
                 hi: tok_hi(t),
             },
-            ast::Var::Expression(v) => self.chain(v.prefix(), v.suffixes().collect(), lo_of(v.as_ref()), hi_of(v.as_ref())),
+            ast::Var::Expression(v) => self.chain(
+                v.prefix(),
+                v.suffixes().collect(),
+                lo_of(v.as_ref()),
+                hi_of(v.as_ref()),
+            ),
             _ => self.bad(v),
         }
     }
@@ -502,8 +528,12 @@ impl Cx<'_> {
             let end = hi_of(s);
             let base = Box::new(cur);
             let k = match s {
-                ast::Suffix::Index(ast::Index::Dot { name, .. }) => K::Field(base, name.token().to_string()),
-                ast::Suffix::Index(ast::Index::Brackets { expression, .. }) => K::Index(base, Box::new(self.expr(expression))),
+                ast::Suffix::Index(ast::Index::Dot { name, .. }) => {
+                    K::Field(base, name.token().to_string())
+                }
+                ast::Suffix::Index(ast::Index::Brackets { expression, .. }) => {
+                    K::Index(base, Box::new(self.expr(expression)))
+                }
                 ast::Suffix::Call(ast::Call::AnonymousCall(args)) => match self.args(args) {
                     Some((a, st)) => K::Call(base, a, st),
                     None => return E { k: K::Bad, lo, hi },
@@ -527,9 +557,10 @@ impl Cx<'_> {
 
     fn args(&self, a: &ast::FunctionArgs) -> Option<(Vec<E>, Style)> {
         match a {
-            ast::FunctionArgs::Parentheses { arguments, .. } => {
-                Some((arguments.iter().map(|e| self.expr(e)).collect(), Style::Paren))
-            }
+            ast::FunctionArgs::Parentheses { arguments, .. } => Some((
+                arguments.iter().map(|e| self.expr(e)).collect(),
+                Style::Paren,
+            )),
             ast::FunctionArgs::String(t) => {
                 let text = self.text(tok_lo(t), tok_hi(t));
                 // Anything else would not print back bare.
@@ -543,9 +574,7 @@ impl Cx<'_> {
                 };
                 Some((vec![e], Style::Str))
             }
-            ast::FunctionArgs::TableConstructor(t) => {
-                Some((vec![self.table(t)], Style::Table))
-            }
+            ast::FunctionArgs::TableConstructor(t) => Some((vec![self.table(t)], Style::Table)),
             _ => None,
         }
     }
@@ -600,9 +629,10 @@ impl Cx<'_> {
                 self.text(lo_of(binop), hi_of(binop)),
                 Box::new(self.expr(rhs)),
             ),
-            Expression::UnaryOperator { unop, expression } => {
-                K::Un(self.text(lo_of(unop), hi_of(unop)), Box::new(self.expr(expression)))
-            }
+            Expression::UnaryOperator { unop, expression } => K::Un(
+                self.text(lo_of(unop), hi_of(unop)),
+                Box::new(self.expr(expression)),
+            ),
             Expression::Parentheses { expression, .. } => K::Paren(Box::new(self.expr(expression))),
             Expression::Function(f) => {
                 let mut func = self.body(f.body());
@@ -612,13 +642,24 @@ impl Cx<'_> {
             Expression::FunctionCall(c) => return self.call(c),
             Expression::Var(v) => return self.var(v),
             Expression::Number(_) | Expression::String(_) | Expression::Symbol(_) => K::Lit,
-            Expression::TypeAssertion { expression, type_assertion } => K::Cast(
+            Expression::TypeAssertion {
+                expression,
+                type_assertion,
+            } => K::Cast(
                 Box::new(self.expr(expression)),
-                self.text(lo_of(type_assertion.cast_to()), hi_of(type_assertion.cast_to())).trim().to_owned(),
+                self.text(
+                    lo_of(type_assertion.cast_to()),
+                    hi_of(type_assertion.cast_to()),
+                )
+                .trim()
+                .to_owned(),
             ),
             Expression::TableConstructor(t) => return self.table(t),
             Expression::IfExpression(i) => {
-                if i.binding().is_some() || i.else_if_expressions().is_some_and(|v| v.iter().any(|e| e.binding().is_some())) {
+                if i.binding().is_some()
+                    || i.else_if_expressions()
+                        .is_some_and(|v| v.iter().any(|e| e.binding().is_some()))
+                {
                     K::Bad
                 } else {
                     let mut arms = vec![(self.expr(i.condition()), self.expr(i.if_expression()))];
@@ -631,7 +672,8 @@ impl Cx<'_> {
             Expression::InterpolatedString(s) => {
                 let mut segs = Vec::new();
                 let mut exprs = Vec::new();
-                let inner = |t: &TokenReference| self.text(tok_lo(t) + 1, tok_hi(t).saturating_sub(1));
+                let inner =
+                    |t: &TokenReference| self.text(tok_lo(t) + 1, tok_hi(t).saturating_sub(1));
                 for seg in s.segments() {
                     segs.push(inner(&seg.literal));
                     exprs.push(self.expr(&seg.expression));

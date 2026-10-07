@@ -1,9 +1,6 @@
 //! What sits over the canvas rather than on it: the note when graph and
 //! code disagree, and the minimap.
 
-use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::Sizable as _;
-use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_dom::Ref;
 
@@ -11,35 +8,20 @@ use super::super::{style, Gesture, GraphEditor};
 use super::{point_at, MINIMAP};
 use crate::script_editor::graph::catalog;
 use crate::script_editor::graph::layout::{self, Rect};
-use crate::script_editor::graph::{codegen, import, Graph};
+use crate::script_editor::graph::Graph;
 use crate::tokens;
 use crate::ui_canvas::View;
 
 use super::super::super::Shell;
 
-/// A note across the top when the graph and the code disagree: code edited
-/// since the graph was saved, or a script that is still code alone.
-pub(super) fn banner(
-    editor: &GraphEditor,
-    graph: &Graph,
-    code: &str,
-    reference: Ref,
-    cx: &mut Context<Shell>,
-) -> Option<AnyElement> {
-    let Ok(compiled) = codegen::compile(graph) else {
-        return None;
-    };
-    let same = import::same(code, &compiled);
-    let (text, action) = match &editor.synced {
-        _ if !same && !(graph.nodes.is_empty() && code.trim().is_empty()) => {
-            ("The code was edited after this graph was saved.", true)
-        }
-        None if !code.trim().is_empty() => (
-            "Drawn from this script's code. Parts with no node are kept as Luau Code nodes.",
-            false,
-        ),
-        _ => return None,
-    };
+/// A warning across the top when the script does not parse and so is shown
+/// as one code block.
+pub(super) fn banner(editor: &GraphEditor) -> Option<AnyElement> {
+    let broken = editor.broken.as_ref()?;
+    let text = format!(
+        "This script has a syntax error on line {}, so it is shown as one code block. Fix it in Code mode to see it as nodes.",
+        broken.line
+    );
     Some(
         div()
             .absolute()
@@ -50,11 +32,15 @@ pub(super) fn banner(
             .justify_center()
             .child(
                 div()
+                    .id("graph-broken-banner")
+                    .role(Role::Alert)
+                    .aria_label(format!("{text} {}", broken.message))
                     .flex()
-                    .items_center()
-                    .gap(px(10.0))
+                    .flex_col()
+                    .gap(px(2.0))
                     .px(px(12.0))
                     .py(px(6.0))
+                    .max_w(px(640.0))
                     .rounded(tokens::radius())
                     .bg(tokens::tile())
                     .border_1()
@@ -62,25 +48,12 @@ pub(super) fn banner(
                     .text_size(tokens::text_sm())
                     .text_color(tokens::text())
                     .child(text)
-                    .when(action, |this| {
-                        this.child(
-                            Button::new("graph-read-code")
-                                .label("Read code into graph")
-                                .small()
-                                .on_click(cx.listener(move |shell, _, _, cx| {
-                                    shell.code_to_graph(reference, cx);
-                                })),
-                        )
-                        .child(
-                            Button::new("graph-replace-code")
-                                .label("Replace code with graph")
-                                .small()
-                                .primary()
-                                .on_click(cx.listener(move |shell, _, _, cx| {
-                                    shell.graph_to_code(reference, cx);
-                                })),
-                        )
-                    }),
+                    .child(
+                        div()
+                            .text_size(tokens::text_xs())
+                            .text_color(tokens::text_muted())
+                            .child(broken.message.clone()),
+                    ),
             )
             .into_any_element(),
     )

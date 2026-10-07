@@ -11,7 +11,7 @@ use gpui_kit::*;
 use super::style;
 use crate::script_editor::graph::catalog::{self, PinType};
 use crate::script_editor::graph::layout::{self, Side};
-use crate::script_editor::graph::{Graph, Node};
+use crate::script_editor::graph::{End, Graph, Node};
 use crate::tokens;
 use crate::ui_canvas::View;
 
@@ -137,7 +137,65 @@ pub(super) fn node(graph: &Graph, node: &Node, view: View, mark: Mark) -> AnyEle
         }
     }
 
+    let title = |id: u32| {
+        graph
+            .kind_of(id)
+            .map_or_else(|| "unknown".to_owned(), |kind| kind.title.to_owned())
+    };
+    // The pins are painted on a layer of their own, so each gets an
+    // invisible element here for a screen reader to find.
+    let mut handles: Vec<AnyElement> = Vec::new();
+    let sides = [(Side::Input, &pins.inputs), (Side::Output, &pins.outputs)];
+    for (side, list) in sides {
+        for (row, pin) in list.iter().enumerate() {
+            let end = End::new(node.id, pin.name);
+            let name = match pin.name.is_empty() {
+                true => "Run",
+                false => pin.name,
+            };
+            let links: Vec<String> = match side {
+                Side::Input => graph
+                    .wire_into(&end)
+                    .map(|wire| title(wire.from.node))
+                    .into_iter()
+                    .collect(),
+                Side::Output => graph
+                    .wires_from(&end)
+                    .map(|wire| title(wire.to.node))
+                    .collect(),
+            };
+            let words = match side {
+                Side::Input => "input",
+                Side::Output => "output",
+            };
+            let label = match links.is_empty() {
+                true => format!("{name} {words}"),
+                false => format!("{name} {words}, connected to {}", links.join(", ")),
+            };
+            let slot = node.id as usize * 1024 + row * 2 + (side == Side::Output) as usize;
+            handles.push(
+                div()
+                    .id(("graph-pin", slot))
+                    .role(Role::Group)
+                    .aria_label(label)
+                    .absolute()
+                    .top(s(layout::row_centre(row) - 6.0))
+                    .w(s(12.0))
+                    .h(s(12.0))
+                    .map(|this| match side {
+                        Side::Input => this.left_0(),
+                        Side::Output => this.right_0(),
+                    })
+                    .into_any_element(),
+            );
+        }
+    }
+
     div()
+        .id(("graph-node", node.id as usize))
+        .role(Role::Group)
+        .aria_label(format!("{} node", kind.title))
+        .aria_selected(mark == Mark::Selected)
         .absolute()
         .left(px(at[0]))
         .top(px(at[1]))
@@ -151,6 +209,7 @@ pub(super) fn node(graph: &Graph, node: &Node, view: View, mark: Mark) -> AnyEle
         .shadow_md()
         .child(header)
         .children(rows)
+        .children(handles)
         .into_any_element()
 }
 

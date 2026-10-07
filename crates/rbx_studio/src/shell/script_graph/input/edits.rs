@@ -37,12 +37,17 @@ impl Shell {
             editor.view.pan = [editor.view.pan[0] + dx, editor.view.pan[1] + dy];
         }
         editor.fitted = false;
+        self.save_layout_soon(reference, cx);
         cx.notify();
     }
 
     /// Ctrl+D: copies of the selection, with the wires among them, a
     /// little down and to the right.
-    pub(super) fn duplicate_graph_selection(&mut self, reference: Ref, cx: &mut Context<Self>) {
+    pub(in crate::shell) fn duplicate_graph_selection(
+        &mut self,
+        reference: Ref,
+        cx: &mut Context<Self>,
+    ) {
         let Some(editor) = self.graphs.get_mut(&reference) else {
             return;
         };
@@ -122,12 +127,14 @@ impl Shell {
         let centre = [panel[0] * 0.5, panel[1] * 0.5];
         editor.view = clamp_zoom(editor.view.zoomed(factor, centre), centre);
         editor.fitted = false;
+        self.save_layout_soon(reference, cx);
         cx.notify();
     }
 
     pub(in crate::shell) fn graph_fit(&mut self, reference: Ref, cx: &mut Context<Self>) {
         if let Some(editor) = self.graphs.get_mut(&reference) {
             canvas::fit_now(editor);
+            self.save_layout_soon(reference, cx);
             cx.notify();
         }
     }

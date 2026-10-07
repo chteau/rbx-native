@@ -6,7 +6,9 @@ use super::super::catalog::{PinType, Prec};
 /// Whether an expression can be indexed or called as written: a name or a
 /// call can, a literal string or number cannot.
 pub(crate) fn indexable(text: &str) -> bool {
-    let word = text.split(|c: char| !c.is_ascii_alphanumeric() && c != '_').next();
+    let word = text
+        .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+        .next();
     !text.starts_with(['"', '\'', '`', '{', '[', '.', '-'])
         && !text.starts_with(|c: char| c.is_ascii_digit())
         && !matches!(word, Some("function" | "true" | "false" | "nil"))

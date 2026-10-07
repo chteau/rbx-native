@@ -33,7 +33,11 @@ fn first_diff(a: &str, b: &str) -> String {
             return format!("line {}: {x:?} vs {y:?}", n + 1);
         }
     }
-    format!("length {} vs {} lines", a.lines().count(), b.lines().count())
+    format!(
+        "length {} vs {} lines",
+        a.lines().count(),
+        b.lines().count()
+    )
 }
 
 #[derive(Clone)]
@@ -330,9 +334,8 @@ impl B<'_> {
     }
 
     fn scan_func(&self, f: &F, name: &str, u: &mut Use) {
-        u.blocked |= has_word(&f.params, name)
-            || has_word(&f.generics, name)
-            || has_word(&f.returns, name);
+        u.blocked |=
+            has_word(&f.params, name) || has_word(&f.generics, name) || has_word(&f.returns, name);
         self.scan_block(&f.body, 0, f.body.items.len(), name, u);
     }
 
@@ -354,7 +357,12 @@ impl B<'_> {
     fn scan_stmt(&self, s: &S, name: &str, u: &mut Use) {
         let ex = |e: &E, u: &mut Use| self.scan_expr(e, name, true, u);
         match &s.k {
-            SK::Local { names, text, typed, vals } => {
+            SK::Local {
+                names,
+                text,
+                typed,
+                vals,
+            } => {
                 u.blocked |= names.iter().any(|n| n == name) || (*typed && has_word(text, name));
                 vals.iter().for_each(|e| ex(e, u));
             }
@@ -380,14 +388,26 @@ impl B<'_> {
                 ex(c, u);
                 self.scan_block(b, 0, b.items.len(), name, u);
             }
-            SK::ForCount { var, name: n, from, to, step, body } => {
+            SK::ForCount {
+                var,
+                name: n,
+                from,
+                to,
+                step,
+                body,
+            } => {
                 u.blocked |= n == name || has_word(var, name);
                 ex(from, u);
                 ex(to, u);
                 step.iter().for_each(|e| ex(e, u));
                 self.scan_block(body, 0, body.items.len(), name, u);
             }
-            SK::ForEach { vars, names, vals, body } => {
+            SK::ForEach {
+                vars,
+                names,
+                vals,
+                body,
+            } => {
                 u.blocked |= names.iter().any(|n| n == name) || has_word(vars, name);
                 vals.iter().for_each(|e| ex(e, u));
                 self.scan_block(body, 0, body.items.len(), name, u);
@@ -430,7 +450,17 @@ impl B<'_> {
     /// least twice by what follows (the very next statement among the
     /// readers), and never written.
     fn is_fold(&self, items: &[Item], k: usize, limit: usize) -> bool {
-        let Some(Item::S(S { k: SK::Local { names, typed: false, vals, .. }, .. })) = items.get(k) else {
+        let Some(Item::S(S {
+            k:
+                SK::Local {
+                    names,
+                    typed: false,
+                    vals,
+                    ..
+                },
+            ..
+        })) = items.get(k)
+        else {
             return false;
         };
         let ([name], [value]) = (names.as_slice(), vals.as_slice()) else {
@@ -456,7 +486,10 @@ impl B<'_> {
 
     fn last_reader(&self, items: &[Item], k: usize, limit: usize) -> usize {
         let name = match &items[k] {
-            Item::S(S { k: SK::Local { names, .. }, .. }) => names[0].as_str(),
+            Item::S(S {
+                k: SK::Local { names, .. },
+                ..
+            }) => names[0].as_str(),
             _ => return k,
         };
         (k + 1..limit)
@@ -491,7 +524,11 @@ impl B<'_> {
         let mut i = 0;
         while i < n {
             let limit = (i + 1..n).find(|&j| events[j]).unwrap_or(n);
-            let mut end = if events[i] { i + 1 } else { self.extent(&tree.block, i, limit) };
+            let mut end = if events[i] {
+                i + 1
+            } else {
+                self.extent(&tree.block, i, limit)
+            };
             let mut levels = vec![(true, true), (false, true), (false, false)].into_iter();
             loop {
                 let Some((fold, recog)) = levels.next() else {
@@ -519,7 +556,13 @@ impl B<'_> {
         let items = &b.items;
         let (mut end, mut k) = (i + 1, i);
         while k < end {
-            if matches!(items[k], Item::S(S { k: SK::Return(_), .. })) {
+            if matches!(
+                items[k],
+                Item::S(S {
+                    k: SK::Return(_),
+                    ..
+                })
+            ) {
                 end = limit;
             }
             if self.is_fold(items, k, limit) {
@@ -543,7 +586,9 @@ impl B<'_> {
         } else {
             self.seq(b, i, end).map(|(head, tail)| (head, Some(tail)))
         };
-        let ok = !self.failed && built.is_some() && self.verify(&mark, built.as_ref().map(|b| b.0), event, lo, hi);
+        let ok = !self.failed
+            && built.is_some()
+            && self.verify(&mark, built.as_ref().map(|b| b.0), event, lo, hi);
         if !ok {
             self.rollback(&mark);
             return false;
@@ -580,7 +625,14 @@ impl B<'_> {
         self.link(tail, End::new(head, ""));
     }
 
-    fn verify(&mut self, mark: &Mark, head: Option<NodeId>, event: bool, lo: usize, hi: usize) -> bool {
+    fn verify(
+        &mut self,
+        mark: &Mark,
+        head: Option<NodeId>,
+        event: bool,
+        lo: usize,
+        hi: usize,
+    ) -> bool {
         let Some(head) = head else {
             return false;
         };
@@ -594,7 +646,10 @@ impl B<'_> {
                 return false;
             };
             let start = sub.add(kind, [0.0, 0.0]);
-            if sub.connect(End::new(start, ""), End::new(head, "")).is_err() {
+            if sub
+                .connect(End::new(start, ""), End::new(head, ""))
+                .is_err()
+            {
                 return false;
             }
         }
@@ -613,15 +668,16 @@ impl B<'_> {
     /// The piece as Luau Code, as written: the importer's last resort.
     fn fallback(&mut self, b: &Block, i: usize) {
         let (lo, hi) = b.items[i].span();
-        let text = self.src[lo..hi].trim_end_matches([';', ' ', '\t', '\r', '\n']).to_owned();
+        let text = self.src[lo..hi]
+            .trim_end_matches([';', ' ', '\t', '\r', '\n'])
+            .to_owned();
         FALLBACKS.with(|f| {
-            f.borrow_mut()
-                .push(format!(
-                    "{} ... first difference: {}\n--- compiled:\n{}",
-                    text.lines().next().unwrap_or_default(),
-                    first_diff(&text, &self.out),
-                    self.out
-                ))
+            f.borrow_mut().push(format!(
+                "{} ... first difference: {}\n--- compiled:\n{}",
+                text.lines().next().unwrap_or_default(),
+                first_diff(&text, &self.out),
+                self.out
+            ))
         });
         let node = self.luau(&text);
         self.origin(b, i, i + 1, node, Vec::new(), Vec::new());
@@ -635,8 +691,20 @@ impl B<'_> {
         node
     }
 
-    fn origin(&mut self, b: &Block, i: usize, next: usize, node: NodeId, declares: Vec<(End, String)>, needs: Vec<(End, String)>) {
-        let prev = if i == 0 { b.lo } else { b.items[i - 1].span().1 };
+    fn origin(
+        &mut self,
+        b: &Block,
+        i: usize,
+        next: usize,
+        node: NodeId,
+        declares: Vec<(End, String)>,
+        needs: Vec<(End, String)>,
+    ) {
+        let prev = if i == 0 {
+            b.lo
+        } else {
+            b.items[i - 1].span().1
+        };
         let (lo, _) = b.items[i].span();
         let hi = b.items[next - 1].span().1;
         self.o.stmts.insert(
@@ -654,7 +722,10 @@ impl B<'_> {
     // Events.
 
     fn event(&mut self, b: &Block, i: usize) -> Option<NodeId> {
-        let Item::S(S { k: SK::Call(call), .. }) = &b.items[i] else {
+        let Item::S(S {
+            k: SK::Call(call), ..
+        }) = &b.items[i]
+        else {
             return None;
         };
         let (hit, f) = pattern::event(self.src, call)?;
@@ -707,7 +778,11 @@ impl B<'_> {
                     }
                 }
             }
-            tail = self.g.kind_of(node).and_then(codegen::continuation).map(|pin| End::new(node, pin));
+            tail = self
+                .g
+                .kind_of(node)
+                .and_then(codegen::continuation)
+                .map(|pin| End::new(node, pin));
             i = next;
         }
         head.map(|h| (h, tail))
@@ -744,7 +819,11 @@ impl B<'_> {
 
     /// `local name = value` drawn as the value alone, shared by its readers.
     fn fold_local(&mut self, item: &Item) -> Option<(End, String)> {
-        let Item::S(S { k: SK::Local { names, vals, .. }, .. }) = item else {
+        let Item::S(S {
+            k: SK::Local { names, vals, .. },
+            ..
+        }) = item
+        else {
             return None;
         };
         let end = match self.expr(&vals[0], PinType::Any, false) {
@@ -757,8 +836,7 @@ impl B<'_> {
     }
 
     fn catalog_node(&mut self, hit: &Hit<'_>) -> NodeId
-    where
-    {
+where {
         let node = self.add(hit.kind.key);
         for (pin, e) in &hit.holes {
             self.bind_tree(node, pin, e);
@@ -790,7 +868,9 @@ impl B<'_> {
         }
         let mut next = j + 1;
         let node = match &s.k {
-            SK::Local { names, text, vals, .. } => {
+            SK::Local {
+                names, text, vals, ..
+            } => {
                 let node = self.add("local");
                 self.word(node, "Names", text);
                 self.set(node, "#values", vals.len().to_string());
@@ -851,7 +931,14 @@ impl B<'_> {
                 self.scopes.pop();
                 node
             }
-            SK::ForCount { var, name, from, to, step, body } => {
+            SK::ForCount {
+                var,
+                name,
+                from,
+                to,
+                step,
+                body,
+            } => {
                 let node = self.add("for_count");
                 self.word(node, "Variable", var);
                 self.bind(node, "From", from);
@@ -862,7 +949,12 @@ impl B<'_> {
                 self.nested(node, "Do", body, std::slice::from_ref(name));
                 node
             }
-            SK::ForEach { vars, names, vals, body } => {
+            SK::ForEach {
+                vars,
+                names,
+                vals,
+                body,
+            } => {
                 let node = self.add("for_each");
                 self.word(node, "Variables", vars);
                 self.set(node, "#values", vals.len().to_string());
@@ -877,7 +969,13 @@ impl B<'_> {
                 self.nested(node, "Do", body, &[]);
                 node
             }
-            SK::Function { attrs, local, name, f, .. } => {
+            SK::Function {
+                attrs,
+                local,
+                name,
+                f,
+                ..
+            } => {
                 let node = self.add("function");
                 if *local {
                     self.set(node, "@local", "1");
@@ -965,7 +1063,11 @@ impl B<'_> {
         if !f.params.is_empty() {
             self.word(node, "Parameters", &f.params);
         }
-        for (key, text) in [("@attributes", attrs), ("@generics", f.generics.as_str()), ("@returns", f.returns.as_str())] {
+        for (key, text) in [
+            ("@attributes", attrs),
+            ("@generics", f.generics.as_str()),
+            ("@returns", f.returns.as_str()),
+        ] {
             if !text.is_empty() {
                 self.set(node, key, text);
             }
@@ -1041,7 +1143,9 @@ impl B<'_> {
                 }
                 options.insert(0, text.clone());
             }
-            K::Un(op, inner) if op == "-" && matches!(inner.k, K::Lit) && plain => options.push(text.clone()),
+            K::Un(op, inner) if op == "-" && matches!(inner.k, K::Lit) && plain => {
+                options.push(text.clone())
+            }
             K::Name(_) | K::Field(..) if plain && self.global_path(e) => options.push(text.clone()),
             _ => {}
         }
@@ -1053,7 +1157,10 @@ impl B<'_> {
     /// `script`, `game.Players`: a chain of fields on a name nothing declares.
     fn global_path(&self, e: &E) -> bool {
         match &e.k {
-            K::Name(n) => matches!(n.as_str(), "script" | "workspace" | "game") && matches!(self.lookup(n), Bind::Plain),
+            K::Name(n) => {
+                matches!(n.as_str(), "script" | "workspace" | "game")
+                    && matches!(self.lookup(n), Bind::Plain)
+            }
             K::Field(base, _) => self.global_path(base),
             _ => false,
         }

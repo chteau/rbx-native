@@ -1,8 +1,8 @@
 //! A script drawn as nodes and wires. The graph compiles to Luau
 //! ([`codegen`]) that is written to the script's `Source`, so a place keeps
-//! running in Roblox with nothing added; the graph itself is kept, as JSON,
-//! in the script's [`ATTRIBUTE`] attribute. Nothing writes that any more:
-//! the script's `Source` is the one truth, and an old attribute is ignored.
+//! running in Roblox with nothing added; the graph is not stored anywhere:
+//! the script's `Source` is the one truth, the graph is imported from it,
+//! and an old `ScriptGraph` attribute is ignored.
 //!
 //! Only the data and its rules live here — what may connect to what, and
 //! what removing a node takes with it — so they can be tested without a
@@ -13,15 +13,13 @@ pub(crate) mod codegen;
 pub(crate) mod import;
 pub(crate) mod layout;
 pub(crate) mod saved;
+pub(crate) mod sync;
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
 use catalog::{Kind, Pin, PinType, Pins};
-
-/// Roblox reserves attribute names starting `RBX`, so the graph's is plain.
-pub(crate) const ATTRIBUTE: &str = "ScriptGraph";
 
 pub(crate) type NodeId = u32;
 
@@ -110,6 +108,7 @@ impl Graph {
         serde_json::from_str(text).ok()
     }
 
+    #[cfg(test)]
     pub(crate) fn to_json(&self) -> String {
         serde_json::to_string(self).unwrap_or_default()
     }
@@ -206,9 +205,7 @@ impl Graph {
         let out = self
             .output_pin(from.node, &from.pin)
             .ok_or(Refused::NoSuchPin)?;
-        let into = self
-            .input_pin(to.node, &to.pin)
-            .ok_or(Refused::NoSuchPin)?;
+        let into = self.input_pin(to.node, &to.pin).ok_or(Refused::NoSuchPin)?;
         if from.node == to.node {
             return Err(Refused::SameNode);
         }

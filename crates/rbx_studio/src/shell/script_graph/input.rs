@@ -47,6 +47,16 @@ impl Shell {
                     });
                 }),
             )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |shell, event: &MouseDownEvent, window, cx| {
+                    let Some(editor) = shell.graphs.get(&reference) else {
+                        return;
+                    };
+                    let panel = editor.panel(event.position);
+                    shell.open_context_menu(reference, panel, window, cx);
+                }),
+            )
             .on_mouse_move(cx.listener(move |shell, event: &MouseMoveEvent, _, cx| {
                 shell.graph_drag(reference, event.position, cx);
             }))
@@ -100,6 +110,7 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         self.close_add_menu(reference, cx);
+        self.close_context_menu(reference, cx);
         self.end_literal_edit(reference, true, cx);
         let Some(editor) = self.graphs.get_mut(&reference) else {
             return;
@@ -159,6 +170,7 @@ impl Shell {
                 group: Some((index, frame)),
                 moved: false,
             });
+            editor.push_layout();
             cx.notify();
             return;
         }
@@ -172,6 +184,7 @@ impl Shell {
                 from: p,
                 origin: graph.groups[index].clone(),
             });
+            editor.push_layout();
             cx.notify();
             return;
         }
@@ -205,6 +218,7 @@ impl Shell {
                 group: None,
                 moved: false,
             });
+            editor.push_layout();
             cx.notify();
             return;
         }
@@ -314,16 +328,20 @@ impl Shell {
         let panel = editor.panel(position);
         let p = editor.view.to_canvas(panel);
         match gesture {
-            Gesture::Pan { .. } | Gesture::Marquee { .. } | Gesture::Minimap(_) => cx.notify(),
-            Gesture::Move { moved, .. } => {
-                if moved {
-                    self.commit_graph(reference, cx);
-                }
+            Gesture::Marquee { .. } => cx.notify(),
+            // Where the view ended up is part of the saved layout.
+            Gesture::Pan { .. } | Gesture::Minimap(_) => {
+                self.save_layout_soon(reference, cx);
                 cx.notify();
             }
-            // commit_graph writes nothing when the frame ended where it began.
-            Gesture::Resize { .. } => {
+            Gesture::Move { .. } | Gesture::Resize { .. } => {
+                // Moving never changes the code, so this saves the layout
+                // and writes nothing; the step the press pushed stays only
+                // if something moved.
                 self.commit_graph(reference, cx);
+                if let Some(editor) = self.graphs.get_mut(&reference) {
+                    editor.settle_layout();
+                }
                 cx.notify();
             }
             Gesture::Wire { end, side, .. } => {
@@ -366,8 +384,7 @@ impl Shell {
         }
     }
 
-    /// Keys with the canvas focused. Undo and redo are the window's, and
-    /// reach the graph back through its attribute.
+    /// Keys with the canvas focused. Undo and redo are the window's.
     fn graph_key(
         &mut self,
         reference: Ref,
@@ -425,6 +442,37 @@ impl Shell {
                 cx.notify();
                 true
             }
+            "tab" | "down" | "right" | "up" | "left" if !m.secondary() && !m.alt => {
+                let back = matches!(keystroke.key.as_str(), "up" | "left")
+                    || (keystroke.key == "tab" && m.shift);
+                step_selection(editor, back);
+                cx.notify();
+                true
+            }
+            "enter" if editor.selection.len() == 1 => {
+                let end = editor
+                    .selection
+                    .iter()
+                    .next()
+                    .and_then(|id| layout::first_chip(&editor.graph, *id));
+                match end {
+                    Some(end) => {
+                        self.begin_literal_edit(reference, Target::Pin(end), window, cx);
+                        true
+                    }
+                    None => false,
+                }
+            }
+            "f10" if m.shift => {
+                let at = editor.pointer;
+                self.open_context_menu(reference, at, window, cx);
+                true
+            }
+            "escape" if editor.context.is_some() => {
+                editor.context = None;
+                cx.notify();
+                true
+            }
             "escape" => {
                 editor.gesture = None;
                 editor.selection.clear();
@@ -434,5 +482,50 @@ impl Shell {
             }
             _ => false,
         }
+    }
+}
+
+/// Tab and the arrows: the next (or previous) node in run order, scrolled
+/// into view when it is not.
+fn step_selection(editor: &mut super::GraphEditor, back: bool) {
+    let order = crate::script_editor::graph::sync::exec_order(&editor.graph, &editor.origins);
+    if order.is_empty() {
+        return;
+    }
+    let at = match editor.selection.len() {
+        1 => editor
+            .selection
+            .iter()
+            .next()
+            .and_then(|id| order.iter().position(|o| o == id)),
+        _ => None,
+    };
+    let next = match (at, back) {
+        (None, false) => 0,
+        (None, true) => order.len() - 1,
+        (Some(i), false) => (i + 1) % order.len(),
+        (Some(i), true) => (i + order.len() - 1) % order.len(),
+    };
+    let id = order[next];
+    editor.selection = BTreeSet::from([id]);
+    editor.group = None;
+    let Some(node) = editor.graph.node(id) else {
+        return;
+    };
+    let rect = layout::rect(&editor.graph, node);
+    let z = editor.view.zoom;
+    let from = editor.view.to_view([rect.x, rect.y]);
+    let size = editor.panel_size();
+    let inside = from[0] >= 0.0
+        && from[1] >= 0.0
+        && from[0] + rect.w * z <= size[0]
+        && from[1] + rect.h * z <= size[1];
+    if !inside {
+        let middle = editor
+            .view
+            .to_view([rect.x + rect.w * 0.5, rect.y + rect.h * 0.5]);
+        editor.view.pan[0] += size[0] * 0.5 - middle[0];
+        editor.view.pan[1] += size[1] * 0.5 - middle[1];
+        editor.fitted = false;
     }
 }

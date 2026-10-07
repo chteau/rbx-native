@@ -35,7 +35,11 @@ fn sources() -> Vec<(String, String)> {
     files.sort();
     let mut out = Vec::new();
     for path in files {
-        let name = path.strip_prefix(root()).unwrap_or(&path).display().to_string();
+        let name = path
+            .strip_prefix(root())
+            .unwrap_or(&path)
+            .display()
+            .to_string();
         match path.extension().and_then(|e| e.to_str()) {
             Some("lua" | "luau") => {
                 if let Ok(text) = std::fs::read_to_string(&path) {
@@ -51,7 +55,10 @@ fn sources() -> Vec<(String, String)> {
     let edge = include_str!("corpus_edge.luau");
     out.push(("corpus_edge.luau".to_owned(), edge.to_owned()));
     out.push(("corpus_edge (CRLF)".to_owned(), edge.replace('\n', "\r\n")));
-    out.push(("corpus_edge (spaces)".to_owned(), edge.replace('\t', "    ")));
+    out.push((
+        "corpus_edge (spaces)".to_owned(),
+        edge.replace('\t', "    "),
+    ));
     out
 }
 
@@ -84,7 +91,12 @@ fn shape(graph: &Graph) -> (BTreeMap<String, usize>, usize, Vec<u64>) {
     let mut prints: Vec<u64> = graph
         .nodes
         .iter()
-        .filter(|n| matches!(n.kind.as_str(), "start") || graph.kind_of(n.id).is_some_and(|k| matches!(k.code, super::super::catalog::Code::Event(_))))
+        .filter(|n| {
+            matches!(n.kind.as_str(), "start")
+                || graph
+                    .kind_of(n.id)
+                    .is_some_and(|k| matches!(k.code, super::super::catalog::Code::Event(_)))
+        })
         .map(|n| fingerprint(graph, n.id))
         .collect();
     prints.sort_unstable();
@@ -109,7 +121,8 @@ fn check(src: &str) -> Result<(), String> {
     if out != src {
         return Err(format!("round trip: {}", first_diff(src, &out)));
     }
-    let plain = codegen::compile(&got.graph).map_err(|p| format!("plain compile failed: {} problems", p.len()))?;
+    let plain = codegen::compile(&got.graph)
+        .map_err(|p| format!("plain compile failed: {} problems", p.len()))?;
     if !same(&plain, src) {
         return Err(format!("not same: {}", first_diff(src, &plain)));
     }

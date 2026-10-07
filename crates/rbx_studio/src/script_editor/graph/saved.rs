@@ -1,4 +1,3 @@
-#![allow(dead_code)] // ponytail: drop once the UI wires load/save
 //! The graph editor's layout for one script, remembered on this machine
 //! only: node positions, groups and the camera, keyed by each node's
 //! codegen anchor so they survive edits that renumber the graph.

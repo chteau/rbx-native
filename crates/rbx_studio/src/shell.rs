@@ -314,6 +314,9 @@ pub(crate) struct Shell {
     /// the panel's overflow menu (see `shell::dock`'s `dropdown_menu`) and
     /// Settings. Persisted.
     output_show_timestamps: bool,
+    /// Whether opening a script's Graph side tidies it; persisted (see
+    /// `settings`), written through `Shell::set_optimize_graph_on_open`.
+    optimize_graph_on_open: bool,
     /// The Script Editor's text size at 1x; see `Settings::script_font_size`.
     script_font_size: f32,
     output_scroll: ScrollHandle,
@@ -479,6 +482,7 @@ impl Shell {
             named_layouts,
             output_collapsed,
             output_timestamps,
+            optimize_graph_on_open,
             increment_names,
             expand_on_select,
             dragger,
@@ -718,6 +722,7 @@ impl Shell {
             output: output::OutputLog::default(),
             output_filter: output::OutputFilter::default(),
             output_show_timestamps: output_timestamps,
+            optimize_graph_on_open,
             script_font_size,
             output_scroll: ScrollHandle::new(),
             viewport_scroll: ScrollHandle::new(),
@@ -1596,6 +1601,7 @@ impl Shell {
             named_layouts: self.named_layouts.clone(),
             output_collapsed: self.output_collapsed,
             output_timestamps: self.output_show_timestamps,
+            optimize_graph_on_open: self.optimize_graph_on_open,
             increment_names: self.increment_names,
             expand_on_select: self.expand_on_select,
             dragger: self.dragger,

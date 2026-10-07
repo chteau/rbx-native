@@ -4,12 +4,20 @@ use super::import;
 fn round(src: &str) -> super::Imported {
     let got = import(src);
     assert!(got.broken.is_none(), "{:?}", got.broken.map(|b| b.message));
-    assert_eq!(codegen::compile_with(&got.graph, &got.origins).as_deref(), Ok(src));
+    assert_eq!(
+        codegen::compile_with(&got.graph, &got.origins).as_deref(),
+        Ok(src)
+    );
     got
 }
 
 fn kinds(src: &str) -> Vec<String> {
-    round(src).graph.nodes.iter().map(|n| n.kind.clone()).collect()
+    round(src)
+        .graph
+        .nodes
+        .iter()
+        .map(|n| n.kind.clone())
+        .collect()
 }
 
 #[test]
@@ -26,7 +34,10 @@ fn event_params_become_outputs() {
         .iter()
         .find(|n| n.values.keys().any(|k| k.starts_with("@name:")))
         .expect("event node");
-    assert_eq!(event.values.values().next().map(String::as_str), Some("child"));
+    assert_eq!(
+        event.values.values().next().map(String::as_str),
+        Some("child")
+    );
 }
 
 #[test]

@@ -87,14 +87,7 @@ pub(super) const KINDS: &[Kind] = &[
         Syn::Method,
     )
     .repeating(repeats![repeat!("#args", 0, val("Input", "nil"))]),
-    syn(
-        "if",
-        "If",
-        pins![IN],
-        pins![THEN, exec("Else")],
-        Syn::If,
-    )
-    .repeating(repeats![Repeat {
+    syn("if", "If", pins![IN], pins![THEN, exec("Else")], Syn::If).repeating(repeats![Repeat {
         count: "#branches",
         inputs: pins![val("Condition", "true")],
         outputs: pins![exec("Then")],
@@ -143,8 +136,11 @@ pub(super) const KINDS: &[Kind] = &[
         pins![THEN, exec("Body")],
         Syn::Function,
     ),
-    syn("return", "Return", pins![IN], pins![], Syn::Return)
-        .repeating(repeats![repeat!("#values", 0, val("Value", "nil"))]),
+    syn("return", "Return", pins![IN], pins![], Syn::Return).repeating(repeats![repeat!(
+        "#values",
+        0,
+        val("Value", "nil")
+    )]),
     syn("break", "Stop loop", pins![IN], pins![THEN], Syn::Break),
     syn(
         "continue",
@@ -168,7 +164,13 @@ pub(super) const KINDS: &[Kind] = &[
         Syn::Comment,
     ),
     // Values.
-    syn("get", "Variable", pins![word("Name", "x")], pins![VALUE], Syn::Get),
+    syn(
+        "get",
+        "Variable",
+        pins![word("Name", "x")],
+        pins![VALUE],
+        Syn::Get,
+    ),
     syn(
         "field",
         "Get field",
@@ -234,8 +236,11 @@ pub(super) const KINDS: &[Kind] = &[
         pins![exec("Body"), VALUE],
         Syn::FunctionValue,
     ),
-    syn("table", "Table", pins![], pins![VALUE], Syn::Table)
-        .repeating(repeats![repeat!("#fields", 0, val("Item", "nil"))]),
+    syn("table", "Table", pins![], pins![VALUE], Syn::Table).repeating(repeats![repeat!(
+        "#fields",
+        0,
+        val("Item", "nil")
+    )]),
     syn(
         "pair",
         "Keyed item",
@@ -243,13 +248,19 @@ pub(super) const KINDS: &[Kind] = &[
         pins![VALUE],
         Syn::Pair,
     ),
-    syn("if_value", "Choose", pins![val("Else", "nil")], pins![VALUE], Syn::IfValue)
-        .repeating(repeats![Repeat {
-            count: "#branches",
-            inputs: pins![val("Condition", "true"), val("Then", "nil")],
-            outputs: pins![],
-            min: 1,
-        }]),
+    syn(
+        "if_value",
+        "Choose",
+        pins![val("Else", "nil")],
+        pins![VALUE],
+        Syn::IfValue,
+    )
+    .repeating(repeats![Repeat {
+        count: "#branches",
+        inputs: pins![val("Condition", "true"), val("Then", "nil")],
+        outputs: pins![],
+        min: 1,
+    }]),
     syn(
         "interp",
         "Text with values",
