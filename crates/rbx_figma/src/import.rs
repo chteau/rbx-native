@@ -3,7 +3,7 @@
 //! Figma's `imageRef` and by PNG hash) and written into `Image`.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use rbx_dom::Variant;
 use serde_json::Value;
@@ -144,6 +144,16 @@ pub fn resolve_images(
     result
 }
 
+/// The raw answer of the last import, for diagnosing what inference made of
+/// a real file. Best effort: a failed write never stops the import.
+fn write_dump(dir: &Path, name: &str, value: &Value) {
+    let _ = std::fs::create_dir_all(dir);
+    let _ = std::fs::write(
+        dir.join(name),
+        serde_json::to_vec_pretty(value).unwrap_or_default(),
+    );
+}
+
 fn count(node: &Node) -> usize {
     usize::from(node.image.is_some()) + node.children.iter().map(count).sum::<usize>()
 }
@@ -155,9 +165,13 @@ pub fn import(
     cache: &mut Cache,
     upload: impl FnMut(&str, &[u8]) -> Result<u64, String>,
     mut progress: impl FnMut(String),
+    dump: Option<&Path>,
 ) -> Result<Node, String> {
     progress("Reading the frame from Figma\u{2026}".into());
     let root = fetch_root(session, link)?;
+    if let Some(dir) = dump {
+        write_dump(dir, "node.json", &root);
+    }
     let mut tree = infer::infer(&root)?;
 
     let mut fills = BTreeSet::new();
@@ -180,7 +194,7 @@ pub fn import(
             );
         }
     };
-    if !fills.is_empty() {
+    if !fills.is_empty() || dump.is_some() {
         progress("Finding image fills\u{2026}".into());
         add(
             &session.get_json(&format!("/v1/files/{}/images", link.file_key))?,
@@ -197,6 +211,9 @@ pub fn import(
             ))?,
             "/images",
         );
+    }
+    if let Some(dir) = dump {
+        write_dump(dir, "images.json", &serde_json::json!(urls));
     }
     let session = &*session;
     resolve_images(

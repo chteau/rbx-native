@@ -319,8 +319,9 @@ fn fetch(
         .introspect()
         .map_err(|e| describe(&e))?
         .authorized_user_id;
-    let path = rbx_assets::cache_root()
-        .map(|root| root.join("figma").join(format!("uploads-{user}.json")));
+    let figma_dir = rbx_assets::cache_root().map(|root| root.join("figma"));
+    let dump = figma_dir.as_ref().map(|dir| dir.join("last-import"));
+    let path = figma_dir.map(|dir| dir.join(format!("uploads-{user}.json")));
     let mut cache = path.map(Cache::open).unwrap_or_default();
     let mut session = Session::new(tokens);
     let tree = rbx_figma::import::import(
@@ -333,6 +334,7 @@ fn fetch(
                 .map_err(|e| describe(&e))
         },
         |line| *progress.lock().unwrap() = line,
+        dump.as_deref(),
     )?;
     let refreshed = session.refreshed.then(|| session.tokens().clone());
     Ok((tree, refreshed))
