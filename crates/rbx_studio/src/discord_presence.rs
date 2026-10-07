@@ -232,6 +232,8 @@ mod ipc {
             [
                 base.clone(),
                 base.join("app/com.discordapp.Discord"),
+                // Vesktop's Flatpak runs arRPC inside its own sandbox.
+                base.join(".flatpak/dev.vencord.Vesktop/xdg-run"),
                 base.join("snap.discord"),
             ]
         })
