@@ -1,5 +1,6 @@
-//! What the dock's Script Editor panel draws: a tab strip over the active
-//! script's editor.
+//! What the dock's Script Editor panel draws: a tab strip, then the active
+//! script's toolbar (`shell::script_toolbar`) over its code or its graph,
+//! then the status line.
 //!
 //! The tabs are drawn here rather than made dock panels of their own. A dock
 //! tab is a persisted, rearrangeable part of the window layout, and an open
@@ -12,9 +13,11 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Editor, GoToDefinition};
 use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Icon, Sizable};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_dom::Ref;
 
+use crate::script_editor::tabs::View;
 use crate::script_editor::{find, outline, source};
 
 use super::Shell;
@@ -34,6 +37,7 @@ impl Shell {
         let Some(active) = self.scripts.tabs.active() else {
             return no_scripts_open(cx).into_any_element();
         };
+        let view = self.scripts.tabs.view(active);
 
         v_flex()
             .size_full()
@@ -56,25 +60,47 @@ impl Shell {
                 cx.stop_propagation();
             }))
             .child(self.script_tabs(active, cx))
-            .child(
-                div()
-                    .relative()
-                    .flex_1()
-                    .overflow_hidden()
-                    .children(self.scripts.open.get(&active).map(|open| {
-                        // Set on the editor itself, which refines it over the
-                        // theme's code size and keeps its rows in proportion;
-                        // under the UI scale like every other size.
-                        Editor::new(&open.state)
-                            .text_size(crate::tokens::scaled(script_font))
-                            .bordered(false)
-                            .h(relative(1.0))
-                            .w_full()
-                    }))
-                    .children(self.script_finder(cx)),
-            )
-            .children(self.breakpoint_overlay(cx))
+            .child(self.script_toolbar(active, view, cx))
+            .child(div().relative().flex_1().overflow_hidden().map(|this| {
+                match view {
+                    View::Code => this
+                        .children(self.scripts.open.get(&active).map(|open| {
+                            // Set on the editor itself, which refines it
+                            // over the theme's code size and keeps its
+                            // rows in proportion; under the UI scale like
+                            // every other size.
+                            Editor::new(&open.state)
+                                .text_size(crate::tokens::scaled(script_font))
+                                .bordered(false)
+                                .h(relative(1.0))
+                                .w_full()
+                        }))
+                        .children(self.script_finder(cx)),
+                    View::Graph => this.child(self.graph_view(active, window, cx)),
+                }
+            }))
+            .child(self.script_status_bar(active, view, window, cx))
+            .when(view == View::Code, |this| {
+                this.children(self.breakpoint_overlay(cx))
+            })
             .into_any_element()
+    }
+
+    pub(super) fn set_script_view(
+        &mut self,
+        reference: Ref,
+        view: View,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.scripts.tabs.set_view(reference, view) {
+            return;
+        }
+        match view {
+            View::Code => self.focus_script(reference, window, cx),
+            View::Graph => self.focus_graph(reference, window, cx),
+        }
+        cx.notify();
     }
 
     /// Ctrl+D (Cmd+D) adds a cursor at the next match of the selection,

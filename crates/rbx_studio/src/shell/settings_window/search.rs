@@ -45,6 +45,7 @@ fn key(label: &str) -> Option<String> {
         "Reduce motion" => "reduce_motion",
         "Large click targets" => "large_targets",
         "UI scale" => "font_scale",
+        "Optimize graph when opening a script" => "optimize_graph_on_open",
         "Installed themes" => "theme",
         "Icon pack" => "icon_pack",
         "Tool colours" => "tools",

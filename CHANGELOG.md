@@ -2,6 +2,22 @@
 
 ## 2026-10-06
 
+- **Graph mode in the Script Editor.** A Code | Graph toggle in a new
+  toolbar over each script shows its code as a node graph in the spirit of
+  Unreal Blueprint, for people new to scripting and for accessibility.
+  The script's Luau stays the only copy: places still save plain Luau,
+  and the graph is drawn from the code each time Graph mode opens. Every
+  Luau construct becomes nodes (functions, loops, tables, operators,
+  types, comments as notes), familiar calls get friendly plain-language
+  nodes, and every script in the test places comes back from the graph
+  byte for byte; a script with a syntax error opens as one code block
+  under a warning. Graph edits rewrite only the statements they touch, as
+  one undo step. **Optimize graph** tidies the layout (flow left to
+  right, few crossings, no overlaps), and node positions are remembered
+  per script on this machine, never in the place. Wire dragging with type
+  checks, resizable groups, a minimap, screen-reader labels and keyboard
+  navigation; the Code side gains the same toolbar and a status line with
+  the cursor position and this script's problems. — @Vikmanou
 - **Discord Rich Presence, switched on from Studio Settings.** A toggle in
   Studio Settings › Account that shows the open place, what's being edited
   (a script name, the viewport or the UI Editor) and elapsed time on the

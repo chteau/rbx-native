@@ -1015,6 +1015,45 @@ Roblox's own engine.
   each script's full name with its line and column, and a header count.
   Clicking a problem opens the script with the cursor on it. It says so
   when `luau-lsp` is missing or fails to start, with a Retry button.
+- [x] **Graph mode: a script shown as a node graph**, in the spirit of
+  Unreal Blueprint and Blender's nodes, for people new to scripting and
+  for accessibility. A Code | Graph toggle in a new Script Editor toolbar
+  (with the script's path, undo/redo and its own tools per side) and a
+  status line under it (`Ln 7, Col 22 · Luau · no errors` on the Code
+  side, node, wire and error counts on the Graph side). The script's
+  **Luau `Source` stays the only copy**: places save plain Luau and
+  nothing graph-related, and Graph mode draws the graph from `Source`
+  each time it opens and whenever the code changes elsewhere (an edit in
+  Code mode, undo, a sync). Every Luau construct becomes nodes, parsed
+  with full_moon: events with their parameters, functions and methods,
+  closures, `if`/`elseif`, every loop with `break` and `continue`,
+  returns, tables, indexing, multiple and compound assignment, varargs,
+  string interpolation, operators with Luau's precedence, if-expressions,
+  types, `require` and globals, and comments as Note nodes where they
+  stand; familiar calls get friendly nodes (Print, Find First Child,
+  Touched…) with plain-language names. A corpus test checks that every
+  script in the test places and a sample of edge cases comes back from
+  the graph byte for byte. A script that does not parse opens as one code
+  block under a warning naming the line. Editing the graph writes Luau
+  back to `Source` at once, as one undo step, rewriting only the
+  statements it touched; opening the graph or tidying it never changes
+  the code. About seventy friendly node kinds plus the language ones with
+  typed, colour-coded pins. The canvas pans and zooms, draws a dot grid,
+  wires, named group frames (resized from their edges and corners) and a
+  minimap; nodes are added from a searchable menu (Shift+A, a
+  double-click, or a wire dropped on nothing, which narrows it to nodes
+  that wire can end on), wired by dragging pins, moved, box-selected,
+  duplicated, grouped and deleted, literals and names are typed in place,
+  and calls, tables and returns grow inputs from the node's menu. **Optimize
+  graph** (toolbar and canvas menu, or on every open from Studio Settings)
+  lays the graph out in layers: flow left to right, values beside what
+  reads them, few crossings, no overlaps, groups kept around their nodes,
+  undone in one step. Node positions, groups and the view are remembered
+  per script on this machine, matched to the code they came from, so
+  editing the code elsewhere keeps the untouched nodes in place; they are
+  never written into the place or the Argon project. Nodes, pins and the
+  toolbar carry screen-reader labels, Tab and the arrows walk the nodes in
+  run order, Enter edits a field, Shift+F10 opens a node's menu.
 - [x] **A launcher: API key setup wizard, Home, Roblox publishing.** A
   bare `rbxstudio` opens the wizard on first launch (no key stored) and
   Home after that; `rbxstudio <file>` still opens the editor directly.
@@ -2105,17 +2144,6 @@ Roblox's own engine.
   lower-priority idea worth its own decision on which backend (if any),
   not a default this project should ship opinionated about.
 
-#### Far future: node-based scripting
-- [ ] 📋 A visual, node-graph way to write Luau logic — Unreal Blueprint or
-  Blender's shader/geometry nodes, not Node.js. Explicitly a long-horizon,
-  unscoped idea at this point, recorded here so it isn't lost rather than
-  because there's a design yet: no decision made on node-graph-to-Luau
-  compilation vs. a node graph that *is* the runtime representation (an
-  interpreter over the graph itself), what subset of the language is
-  representable as nodes, or how it'd interoperate with hand-written
-  script modules in the same place. Depends on the real script editor
-  above existing first regardless of which direction it takes.
-
 ### Renderer
 #### Animation
 Two genuinely different feasibility tiers here, easy to conflate — verified
@@ -2646,7 +2674,7 @@ clear they were considered and not missed.
   (Mid 2027), motion matching (Early 2027) and root motion (Mid 2027). None
   of the Animation Graph classes are in the embedded dump yet. The graph
   itself is authored data, so a node editor for it is reachable, and it
-  could share its widget with the node-based scripting idea above. Running
+  could share its widget with Graph mode in the Script Editor. Running
   the graph is a different matter. Motion matching in particular is runtime
   behaviour that the local `KeyframeSequence` playback item could only ever
   approximate.

@@ -11,6 +11,7 @@
 
 pub(crate) mod find;
 pub(crate) mod goto;
+pub(crate) mod graph;
 pub(crate) mod highlight;
 pub(crate) mod lsp;
 pub(crate) mod luau;
