@@ -76,7 +76,14 @@ impl Client {
         file: &ModelFile,
     ) -> Result<u64, CloudError> {
         let boundary = boundary(file.bytes);
-        let body = multipart(asset_type, display_name, description, user_id, file, &boundary);
+        let body = multipart(
+            asset_type,
+            display_name,
+            description,
+            user_id,
+            file,
+            &boundary,
+        );
         let content_type = format!("multipart/form-data; boundary={boundary}");
         let response = self.post_bytes_raw(CREATE_URL, &content_type, &body)?;
         let operation = answer(CREATE_URL, response)?;
@@ -285,7 +292,10 @@ mod tests {
             .unwrap();
         std::thread::sleep(Duration::from_secs(5));
         let content = client.asset(id).unwrap();
-        eprintln!("decal upload gave asset {id}: {} bytes", content.bytes.len());
+        eprintln!(
+            "decal upload gave asset {id}: {} bytes",
+            content.bytes.len()
+        );
         assert!(
             content.bytes.starts_with(b"\x89PNG"),
             "asset {id} is not the image itself"

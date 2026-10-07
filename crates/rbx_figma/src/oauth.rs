@@ -26,7 +26,8 @@ const TOKEN_URL: &str = "https://api.figma.com/v1/oauth/token";
 const REFRESH_URL: &str = "https://api.figma.com/v1/oauth/refresh";
 
 /// What a build without the secret says instead of signing in.
-pub const NO_SECRET: &str = "This build has no Figma client secret, so it can\u{2019}t sign in to Figma. \
+pub const NO_SECRET: &str =
+    "This build has no Figma client secret, so it can\u{2019}t sign in to Figma. \
      Rebuild with RBX_FIGMA_CLIENT_SECRET set to the app\u{2019}s secret \
      (RBX_FIGMA_CLIENT_SECRET=\u{2026} cargo build -p rbx_studio).";
 
@@ -96,7 +97,10 @@ pub fn parse_callback(request_line: &str, state: &str) -> Result<Option<String>,
         }
     }
     if got_state.as_deref() != Some(state) {
-        return Err("Figma\u{2019}s answer doesn\u{2019}t match this sign-in (state mismatch); try again".into());
+        return Err(
+            "Figma\u{2019}s answer doesn\u{2019}t match this sign-in (state mismatch); try again"
+                .into(),
+        );
     }
     if let Some(error) = error {
         return Err(format!("Figma refused the sign-in: {error}"));
@@ -156,8 +160,14 @@ fn answer(mut stream: TcpStream, state: &str) -> Option<Result<String, String>> 
     let parsed = parse_callback(&line, state).transpose();
     let (status, text) = match &parsed {
         None => ("404 Not Found", "Not found."),
-        Some(Ok(_)) => ("200 OK", "Signed in to Figma. You can close this tab and go back to rbx-native."),
-        Some(Err(_)) => ("400 Bad Request", "Figma sign-in failed. Go back to rbx-native for details."),
+        Some(Ok(_)) => (
+            "200 OK",
+            "Signed in to Figma. You can close this tab and go back to rbx-native.",
+        ),
+        Some(Err(_)) => (
+            "400 Bad Request",
+            "Figma sign-in failed. Go back to rbx-native for details.",
+        ),
     };
     let page = format!("<!doctype html><meta charset=utf-8><title>rbx-native</title><p style=\"font:16px sans-serif\">{text}</p>");
     let _ = write!(
@@ -248,7 +258,10 @@ fn send(form: &Form) -> Result<Vec<u8>, String> {
     if !(200..300).contains(&status) {
         return Err(format!(
             "Figma refused the sign-in ({status}): {}",
-            String::from_utf8_lossy(&body).chars().take(200).collect::<String>()
+            String::from_utf8_lossy(&body)
+                .chars()
+                .take(200)
+                .collect::<String>()
         ));
     }
     Ok(body)
@@ -332,10 +345,14 @@ mod tests {
     fn the_callback_gives_its_code_only_for_this_state() {
         let line = "GET /figma/callback?code=abc%2B1&state=s1 HTTP/1.1\r\n";
         assert_eq!(parse_callback(line, "s1"), Ok(Some("abc+1".into())));
-        assert!(parse_callback(line, "s2").unwrap_err().contains("state mismatch"));
+        assert!(parse_callback(line, "s2")
+            .unwrap_err()
+            .contains("state mismatch"));
         assert_eq!(parse_callback("GET /favicon.ico HTTP/1.1", "s1"), Ok(None));
         let denied = "GET /figma/callback?error=access_denied&state=s1 HTTP/1.1";
-        assert!(parse_callback(denied, "s1").unwrap_err().contains("access_denied"));
+        assert!(parse_callback(denied, "s1")
+            .unwrap_err()
+            .contains("access_denied"));
     }
 
     #[test]
@@ -343,7 +360,10 @@ mod tests {
         let form = token_request("sec", "c0de", "ver");
         assert_eq!(form.url, "https://api.figma.com/v1/oauth/token");
         // base64("1hoFla9Afel8DR7jhxqFvb:sec")
-        assert_eq!(form.authorization, format!("Basic {}", STANDARD.encode("1hoFla9Afel8DR7jhxqFvb:sec")));
+        assert_eq!(
+            form.authorization,
+            format!("Basic {}", STANDARD.encode("1hoFla9Afel8DR7jhxqFvb:sec"))
+        );
         assert_eq!(
             form.body,
             "redirect_uri=http%3A%2F%2F127.0.0.1%3A47823%2Ffigma%2Fcallback\
@@ -358,10 +378,24 @@ mod tests {
     fn token_answers_become_tokens() {
         let token = br#"{"user_id":1,"user_id_string":"1","access_token":"a","token_type":"bearer","expires_in":7776000,"refresh_token":"r"}"#;
         let tokens = parse_tokens(token, 100, None).unwrap();
-        assert_eq!(tokens, Tokens { access_token: "a".into(), refresh_token: "r".into(), expires_at: 7776100 });
+        assert_eq!(
+            tokens,
+            Tokens {
+                access_token: "a".into(),
+                refresh_token: "r".into(),
+                expires_at: 7776100
+            }
+        );
         let refreshed = br#"{"access_token":"b","token_type":"bearer","expires_in":10}"#;
         let tokens = parse_tokens(refreshed, 5, Some("r")).unwrap();
-        assert_eq!((tokens.access_token.as_str(), tokens.refresh_token.as_str(), tokens.expires_at), ("b", "r", 15));
+        assert_eq!(
+            (
+                tokens.access_token.as_str(),
+                tokens.refresh_token.as_str(),
+                tokens.expires_at
+            ),
+            ("b", "r", 15)
+        );
         assert!(tokens.stale(0));
         assert!(parse_tokens(refreshed, 5, None).is_err());
     }

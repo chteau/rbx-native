@@ -22,9 +22,16 @@ fn query(value: &str) -> String {
 
 /// The JSON of the frame `link` names.
 pub fn fetch_root(session: &mut Session, link: &Link) -> Result<Value, String> {
-    let mut answer = session.get_json(&format!("/v1/files/{}/nodes?ids={}", link.file_key, query(&link.node_id)))?;
+    let mut answer = session.get_json(&format!(
+        "/v1/files/{}/nodes?ids={}",
+        link.file_key,
+        query(&link.node_id)
+    ))?;
     answer
-        .pointer_mut(&format!("/nodes/{}/document", link.node_id.replace('~', "~0").replace('/', "~1")))
+        .pointer_mut(&format!(
+            "/nodes/{}/document",
+            link.node_id.replace('~', "~0").replace('/', "~1")
+        ))
         .map(Value::take)
         .filter(|v| !v.is_null())
         .ok_or_else(|| format!("That file has no frame {}", link.node_id))
@@ -44,7 +51,10 @@ impl Cache {
             .ok()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
             .unwrap_or_default();
-        Cache { path: Some(path), ids }
+        Cache {
+            path: Some(path),
+            ids,
+        }
     }
 
     fn remember(&mut self, keys: &[String], id: u64) {
@@ -56,14 +66,23 @@ impl Cache {
                 let _ = std::fs::create_dir_all(dir);
             }
             // A lost cache only costs a re-upload next time.
-            let _ = std::fs::write(path, serde_json::to_vec_pretty(&self.ids).unwrap_or_default());
+            let _ = std::fs::write(
+                path,
+                serde_json::to_vec_pretty(&self.ids).unwrap_or_default(),
+            );
         }
     }
 }
 
 fn hash_key(png: &[u8]) -> String {
     let digest = Sha256::digest(png);
-    format!("png:{}", digest.iter().map(|b| format!("{b:02x}")).collect::<String>())
+    format!(
+        "png:{}",
+        digest
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>()
+    )
 }
 
 /// Uploads (or finds in `cache`) every node's picture and points its
@@ -84,7 +103,9 @@ pub fn resolve_images(
         if result.is_err() {
             return;
         }
-        let Some(image) = node.image.clone() else { return };
+        let Some(image) = node.image.clone() else {
+            return;
+        };
         done += 1;
         progress(format!("Uploading images ({done}/{total})\u{2026}"));
         let by_ref = match &image {
@@ -101,14 +122,21 @@ pub fn resolve_images(
                     None => upload(&node.name, &png),
                 }
                 .inspect(|&id| {
-                    cache.remember(&[Some(by_hash), by_ref.clone()].into_iter().flatten().collect::<Vec<_>>(), id);
+                    cache.remember(
+                        &[Some(by_hash), by_ref.clone()]
+                            .into_iter()
+                            .flatten()
+                            .collect::<Vec<_>>(),
+                        id,
+                    );
                 })
             }),
         };
         match id {
             Ok(id) => {
                 node.properties.retain(|(n, _)| *n != "Image");
-                node.properties.push(("Image", Variant::String(format!("rbxassetid://{id}"))));
+                node.properties
+                    .push(("Image", Variant::String(format!("rbxassetid://{id}"))));
             }
             Err(err) => result = Err(format!("{err} (on {:?})", node.name)),
         }
@@ -146,12 +174,18 @@ pub fn import(
     let mut urls: BTreeMap<String, String> = BTreeMap::new();
     let mut add = |answer: &Value, pointer: &str| {
         if let Some(map) = answer.pointer(pointer).and_then(Value::as_object) {
-            urls.extend(map.iter().filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string()))));
+            urls.extend(
+                map.iter()
+                    .filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string()))),
+            );
         }
     };
     if !fills.is_empty() {
         progress("Finding image fills\u{2026}".into());
-        add(&session.get_json(&format!("/v1/files/{}/images", link.file_key))?, "/meta/images");
+        add(
+            &session.get_json(&format!("/v1/files/{}/images", link.file_key))?,
+            "/meta/images",
+        );
     }
     if !renders.is_empty() {
         progress(format!("Rendering {} vector pieces\u{2026}", renders.len()));
@@ -222,7 +256,11 @@ mod tests {
         )
         .unwrap();
         assert_eq!(uploads, ["Root", "New"]);
-        assert_eq!(downloads.len(), 3, "a known imageRef isn't downloaded again");
+        assert_eq!(
+            downloads.len(),
+            3,
+            "a known imageRef isn't downloaded again"
+        );
         let ids: Vec<_> = std::iter::once(&root)
             .chain(&root.children)
             .map(|n| n.get("Image").cloned())
@@ -235,8 +273,14 @@ mod tests {
     #[test]
     fn a_failed_upload_stops_the_import() {
         let mut root = image_node("Root", Image::Render("1:1".into()));
-        let err = resolve_images(&mut root, &mut Cache::default(), |_| Ok(vec![1]), |_, _| Err("403".into()), |_| {})
-            .unwrap_err();
+        let err = resolve_images(
+            &mut root,
+            &mut Cache::default(),
+            |_| Ok(vec![1]),
+            |_, _| Err("403".into()),
+            |_| {},
+        )
+        .unwrap_err();
         assert!(err.contains("403") && err.contains("Root"));
         assert!(root.get("Image").is_none());
     }

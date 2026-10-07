@@ -39,10 +39,18 @@ mod tests {
     #[test]
     fn design_and_file_links_parse() {
         let link = parse("https://www.figma.com/design/AbC123/My-UI?node-id=1-2&t=x").unwrap();
-        assert_eq!(link, Link { file_key: "AbC123".into(), node_id: "1:2".into() });
+        assert_eq!(
+            link,
+            Link {
+                file_key: "AbC123".into(),
+                node_id: "1:2".into()
+            }
+        );
         let old = parse(" https://figma.com/file/K9/x?node-id=10%3A20 ").unwrap();
         assert_eq!(old.node_id, "10:20");
-        assert!(parse("https://www.figma.com/design/AbC123/My-UI").unwrap_err().contains("names no frame"));
+        assert!(parse("https://www.figma.com/design/AbC123/My-UI")
+            .unwrap_err()
+            .contains("names no frame"));
         assert!(parse("https://evil.example/design/A/B?node-id=1-2").is_err());
         assert!(parse("https://www.figma.com/community/x?node-id=1-2").is_err());
     }

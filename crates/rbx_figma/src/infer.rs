@@ -57,7 +57,10 @@ impl Node {
     }
 
     pub fn get(&self, name: &str) -> Option<&Variant> {
-        self.properties.iter().find(|(n, _)| *n == name).map(|(_, v)| v)
+        self.properties
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, v)| v)
     }
 
     fn note(&mut self, why: impl Into<String>) {
@@ -80,8 +83,17 @@ impl Node {
     pub fn outline(&self) -> String {
         let mut out = String::new();
         fn line(node: &Node, depth: usize, out: &mut String) {
-            let review = node.review.as_deref().map(|r| format!("  [review: {r}]")).unwrap_or_default();
-            out.push_str(&format!("{}{} {:?}{review}\n", "  ".repeat(depth), node.class, node.name));
+            let review = node
+                .review
+                .as_deref()
+                .map(|r| format!("  [review: {r}]"))
+                .unwrap_or_default();
+            out.push_str(&format!(
+                "{}{} {:?}{review}\n",
+                "  ".repeat(depth),
+                node.class,
+                node.name
+            ));
             for child in &node.children {
                 line(child, depth + 1, out);
             }
@@ -169,13 +181,22 @@ fn udim2(x: f64, y: f64) -> Variant {
     })
 }
 
-const VECTORS: [&str; 5] = ["VECTOR", "BOOLEAN_OPERATION", "STAR", "LINE", "REGULAR_POLYGON"];
+const VECTORS: [&str; 5] = [
+    "VECTOR",
+    "BOOLEAN_OPERATION",
+    "STAR",
+    "LINE",
+    "REGULAR_POLYGON",
+];
 
 fn clicks(v: &Value) -> bool {
     ["interactions", "reactions"].iter().any(|key| {
-        list(v, key)
-            .iter()
-            .any(|r| matches!(r.pointer("/trigger/type").and_then(Value::as_str), Some("ON_CLICK" | "ON_PRESS")))
+        list(v, key).iter().any(|r| {
+            matches!(
+                r.pointer("/trigger/type").and_then(Value::as_str),
+                Some("ON_CLICK" | "ON_PRESS")
+            )
+        })
     })
 }
 
@@ -222,7 +243,10 @@ fn unsupported(v: &Value, fills: &[&Value]) -> Option<String> {
         .map(|f| text(f, "type"))
         .find(|k| k.starts_with("GRADIENT_") && *k != "GRADIENT_LINEAR")
     {
-        return Some(format!("a {} gradient", kind.trim_start_matches("GRADIENT_").to_lowercase()));
+        return Some(format!(
+            "a {} gradient",
+            kind.trim_start_matches("GRADIENT_").to_lowercase()
+        ));
     }
     list(v, "effects")
         .iter()
@@ -235,7 +259,11 @@ fn unsupported(v: &Value, fills: &[&Value]) -> Option<String> {
 fn axis(constraint: &str, at: f64, size: f64, parent: f64) -> (f32, UDim, UDim) {
     match constraint {
         "RIGHT" | "BOTTOM" => (1.0, udim(1.0, -(parent - at - size)), udim(0.0, size)),
-        "CENTER" => (0.5, udim(0.5, at + size / 2.0 - parent / 2.0), udim(0.0, size)),
+        "CENTER" => (
+            0.5,
+            udim(0.5, at + size / 2.0 - parent / 2.0),
+            udim(0.0, size),
+        ),
         "LEFT_RIGHT" | "TOP_BOTTOM" => (0.0, udim(0.0, at), udim(1.0, size - parent)),
         "SCALE" if parent > 0.0 => (
             0.0,
@@ -248,7 +276,10 @@ fn axis(constraint: &str, at: f64, size: f64, parent: f64) -> (f32, UDim, UDim) 
 
 fn place(out: &mut Node, v: &Value, rect: Rect, parent: Option<&Parent>, order: i32) {
     let Some(parent) = parent else {
-        out.set("AnchorPoint", Variant::Vector2(Vector2Data { x: 0.5, y: 0.5 }));
+        out.set(
+            "AnchorPoint",
+            Variant::Vector2(Vector2Data { x: 0.5, y: 0.5 }),
+        );
         out.set(
             "Position",
             Variant::UDim2(UDim2 {
@@ -268,10 +299,23 @@ fn place(out: &mut Node, v: &Value, rect: Rect, parent: Option<&Parent>, order: 
         return;
     }
     let constraints = v.get("constraints").unwrap_or(&Value::Null);
-    let (ax, px, sx) = axis(text(constraints, "horizontal"), rect.x - parent.rect.x, rect.w, parent.rect.w);
-    let (ay, py, sy) = axis(text(constraints, "vertical"), rect.y - parent.rect.y, rect.h, parent.rect.h);
+    let (ax, px, sx) = axis(
+        text(constraints, "horizontal"),
+        rect.x - parent.rect.x,
+        rect.w,
+        parent.rect.w,
+    );
+    let (ay, py, sy) = axis(
+        text(constraints, "vertical"),
+        rect.y - parent.rect.y,
+        rect.h,
+        parent.rect.h,
+    );
     if ax != 0.0 || ay != 0.0 {
-        out.set("AnchorPoint", Variant::Vector2(Vector2Data { x: ax, y: ay }));
+        out.set(
+            "AnchorPoint",
+            Variant::Vector2(Vector2Data { x: ax, y: ay }),
+        );
     }
     out.set("Position", Variant::UDim2(UDim2 { x: px, y: py }));
     out.set("Size", Variant::UDim2(UDim2 { x: sx, y: sy }));
@@ -291,13 +335,19 @@ fn node(v: &Value, parent: Option<&Parent>, inherited: f64, order: i32) -> Optio
     let flatten = unsupported(v, &fills);
 
     // A picture of the node: vectors, and leaves whose paint Roblox lacks.
-    if kind != "TEXT" && ((all_vector(v) && (parent.is_some() || VECTORS.contains(&kind))) || (flatten.is_some() && children.is_empty())) {
+    if kind != "TEXT"
+        && ((all_vector(v) && (parent.is_some() || VECTORS.contains(&kind)))
+            || (flatten.is_some() && children.is_empty()))
+    {
         let mut out = Node::new("ImageLabel", name);
         let bounds = rect_of(v, "absoluteRenderBounds").unwrap_or(rect);
         place(&mut out, v, bounds, parent, order);
         out.set("BackgroundTransparency", Variant::Float32(1.0));
         out.set("BorderSizePixel", Variant::Int32(0));
-        out.set("ImageTransparency", Variant::Float32((1.0 - inherited) as f32));
+        out.set(
+            "ImageTransparency",
+            Variant::Float32((1.0 - inherited) as f32),
+        );
         out.image = Some(Image::Render(text(v, "id").to_string()));
         if let Some(why) = flatten {
             out.note(format!("flattened to an image: {why}"));
@@ -311,13 +361,22 @@ fn node(v: &Value, parent: Option<&Parent>, inherited: f64, order: i32) -> Optio
 
     let image_fill = fills.last().filter(|f| text(f, "type") == "IMAGE").copied();
     let component = matches!(kind, "COMPONENT" | "INSTANCE" | "COMPONENT_SET");
-    let button_name = lower.contains("button") || lower.split(|c: char| !c.is_alphanumeric()).any(|w| w == "btn");
+    let button_name = lower.contains("button")
+        || lower
+            .split(|c: char| !c.is_alphanumeric())
+            .any(|w| w == "btn");
     let variants = lower.contains("hover") || lower.contains("pressed");
     let button = clicks(v) || (component && (button_name || variants));
     let overflows = v.get("clipsContent").and_then(Value::as_bool) == Some(true)
-        && children.iter().filter_map(|c| rect_of(c, "absoluteBoundingBox")).any(|c| {
-            c.x < rect.x - 0.5 || c.y < rect.y - 0.5 || c.x + c.w > rect.x + rect.w + 0.5 || c.y + c.h > rect.y + rect.h + 0.5
-        });
+        && children
+            .iter()
+            .filter_map(|c| rect_of(c, "absoluteBoundingBox"))
+            .any(|c| {
+                c.x < rect.x - 0.5
+                    || c.y < rect.y - 0.5
+                    || c.x + c.w > rect.x + rect.w + 0.5
+                    || c.y + c.h > rect.y + rect.h + 0.5
+            });
     let class = match () {
         _ if button && image_fill.is_none() && has_text(v) => "TextButton",
         _ if button => "ImageButton",
@@ -328,7 +387,17 @@ fn node(v: &Value, parent: Option<&Parent>, inherited: f64, order: i32) -> Optio
     let mut out = Node::new(class, name);
     place(&mut out, v, rect, parent, order);
     out.set("BorderSizePixel", Variant::Int32(0));
-    if !matches!(kind, "FRAME" | "GROUP" | "RECTANGLE" | "ELLIPSE" | "COMPONENT" | "INSTANCE" | "COMPONENT_SET" | "SECTION") {
+    if !matches!(
+        kind,
+        "FRAME"
+            | "GROUP"
+            | "RECTANGLE"
+            | "ELLIPSE"
+            | "COMPONENT"
+            | "INSTANCE"
+            | "COMPONENT_SET"
+            | "SECTION"
+    ) {
         out.note(format!("Figma {} read as a {class}", kind.to_lowercase()));
     }
     if class == "TextButton" {
@@ -346,11 +415,24 @@ fn node(v: &Value, parent: Option<&Parent>, inherited: f64, order: i32) -> Optio
             "SOLID" => {
                 let (c, a) = color(fill.get("color").unwrap_or(&Value::Null));
                 out.set("BackgroundColor3", Variant::Color3(c));
-                out.set("BackgroundTransparency", Variant::Float32((1.0 - a * alpha) as f32));
+                out.set(
+                    "BackgroundTransparency",
+                    Variant::Float32((1.0 - a * alpha) as f32),
+                );
             }
             "GRADIENT_LINEAR" => {
-                out.set("BackgroundColor3", Variant::Color3(Color3Data { r: 1.0, g: 1.0, b: 1.0 }));
-                out.set("BackgroundTransparency", Variant::Float32((1.0 - alpha) as f32));
+                out.set(
+                    "BackgroundColor3",
+                    Variant::Color3(Color3Data {
+                        r: 1.0,
+                        g: 1.0,
+                        b: 1.0,
+                    }),
+                );
+                out.set(
+                    "BackgroundTransparency",
+                    Variant::Float32((1.0 - alpha) as f32),
+                );
                 out.children.push(gradient(fill, rect));
             }
             "IMAGE" => {
@@ -388,7 +470,9 @@ fn node(v: &Value, parent: Option<&Parent>, inherited: f64, order: i32) -> Optio
         let (right, bottom) = children
             .iter()
             .filter_map(|c| rect_of(c, "absoluteBoundingBox"))
-            .fold((rect.w, rect.h), |(r, b), c| (r.max(c.x + c.w - rect.x), b.max(c.y + c.h - rect.y)));
+            .fold((rect.w, rect.h), |(r, b), c| {
+                (r.max(c.x + c.w - rect.x), b.max(c.y + c.h - rect.y))
+            });
         out.set("CanvasSize", udim2(right, bottom));
     }
 
@@ -400,7 +484,8 @@ fn node(v: &Value, parent: Option<&Parent>, inherited: f64, order: i32) -> Optio
     let mut order = 0;
     for child in children {
         order += 1;
-        out.children.extend(node(child, Some(&here), opacity, order));
+        out.children
+            .extend(node(child, Some(&here), opacity, order));
     }
     Some(out)
 }
@@ -436,10 +521,16 @@ const FONTS: [(&str, &str); 22] = [
 fn font(style: &Value) -> (Font, Option<String>) {
     let family = text(style, "fontFamily");
     let key: String = family.chars().filter(|c| !c.is_whitespace()).collect();
-    let found = FONTS.iter().find(|(k, _)| k.eq_ignore_ascii_case(&key)).map(|(_, f)| *f);
+    let found = FONTS
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(&key))
+        .map(|(_, f)| *f);
     let weight = num(style, "fontWeight").unwrap_or(400.0);
     let font = Font {
-        family: format!("rbxasset://fonts/families/{}.json", found.unwrap_or("BuilderSans")),
+        family: format!(
+            "rbxasset://fonts/families/{}.json",
+            found.unwrap_or("BuilderSans")
+        ),
         weight: ((weight / 100.0).round() * 100.0).clamp(100.0, 900.0) as u16,
         style: if style.get("italic").and_then(Value::as_bool) == Some(true) {
             FontStyle::Italic
@@ -449,15 +540,26 @@ fn font(style: &Value) -> (Font, Option<String>) {
         cached_face_id: None,
     };
     let note = match found {
-        None if !family.is_empty() => Some(format!("font {family} isn\u{2019}t on Roblox; Builder Sans stands in")),
+        None if !family.is_empty() => Some(format!(
+            "font {family} isn\u{2019}t on Roblox; Builder Sans stands in"
+        )),
         _ => None,
     };
     (font, note)
 }
 
-fn text_node(v: &Value, parent: Option<&Parent>, rect: Rect, opacity: f64, order: i32, lower: &str) -> Node {
+fn text_node(
+    v: &Value,
+    parent: Option<&Parent>,
+    rect: Rect,
+    opacity: f64,
+    order: i32,
+    lower: &str,
+) -> Node {
     let parent_name = parent.map_or(String::new(), |p| p.name.to_lowercase());
-    let input = INPUT_HINTS.iter().any(|h| lower.contains(h) || parent_name.contains(h));
+    let input = INPUT_HINTS
+        .iter()
+        .any(|h| lower.contains(h) || parent_name.contains(h));
     let mut out = Node::new(if input { "TextBox" } else { "TextLabel" }, text(v, "name"));
     place(&mut out, v, rect, parent, order);
     out.set("BackgroundTransparency", Variant::Float32(1.0));
@@ -472,12 +574,22 @@ fn text_node(v: &Value, parent: Option<&Parent>, rect: Rect, opacity: f64, order
     } else {
         out.set("Text", Variant::String(characters));
     }
-    out.set("TextSize", Variant::Float32(num(style, "fontSize").unwrap_or(14.0) as f32));
+    out.set(
+        "TextSize",
+        Variant::Float32(num(style, "fontSize").unwrap_or(14.0) as f32),
+    );
     let fills = list(v, "fills");
     if let Some(fill) = fills.last() {
         let (c, a) = color(fill.get("color").unwrap_or(&Value::Null));
         let alpha = a * num(fill, "opacity").unwrap_or(1.0) * opacity;
-        out.set(if input { "PlaceholderColor3" } else { "TextColor3" }, Variant::Color3(c));
+        out.set(
+            if input {
+                "PlaceholderColor3"
+            } else {
+                "TextColor3"
+            },
+            Variant::Color3(c),
+        );
         out.set("TextColor3", Variant::Color3(c));
         out.set("TextTransparency", Variant::Float32((1.0 - alpha) as f32));
         if text(fill, "type") != "SOLID" || fills.len() > 1 {
@@ -496,7 +608,10 @@ fn text_node(v: &Value, parent: Option<&Parent>, rect: Rect, opacity: f64, order
     };
     out.set("TextXAlignment", Variant::Enum(x));
     out.set("TextYAlignment", Variant::Enum(y));
-    out.set("TextWrapped", Variant::Bool(text(style, "textAutoResize") != "WIDTH_AND_HEIGHT"));
+    out.set(
+        "TextWrapped",
+        Variant::Bool(text(style, "textAutoResize") != "WIDTH_AND_HEIGHT"),
+    );
     let (face, note) = font(style);
     out.set("FontFace", Variant::Font(face));
     if let Some(note) = note {
@@ -521,7 +636,10 @@ fn corner(scale: f32, radius: f64) -> Node {
 
 fn stroke(v: &Value, opacity: f64, text_stroke: bool) -> Option<Node> {
     let weight = num(v, "strokeWeight").filter(|w| *w > 0.0)?;
-    let paint = list(v, "strokes").into_iter().rev().find(|s| text(s, "type") == "SOLID")?;
+    let paint = list(v, "strokes")
+        .into_iter()
+        .rev()
+        .find(|s| text(s, "type") == "SOLID")?;
     let (c, a) = color(paint.get("color").unwrap_or(&Value::Null));
     let mut out = Node::new("UIStroke", "UIStroke");
     out.set("Color", Variant::Color3(c));
@@ -530,21 +648,32 @@ fn stroke(v: &Value, opacity: f64, text_stroke: bool) -> Option<Node> {
         "Transparency",
         Variant::Float32((1.0 - a * num(paint, "opacity").unwrap_or(1.0) * opacity) as f32),
     );
-    out.set("ApplyStrokeMode", Variant::Enum(if text_stroke { 0 } else { 1 }));
+    out.set(
+        "ApplyStrokeMode",
+        Variant::Enum(if text_stroke { 0 } else { 1 }),
+    );
     Some(out)
 }
 
 fn shadow(v: &Value) -> Option<Node> {
-    let effect = list(v, "effects").into_iter().find(|e| text(e, "type") == "DROP_SHADOW")?;
+    let effect = list(v, "effects")
+        .into_iter()
+        .find(|e| text(e, "type") == "DROP_SHADOW")?;
     let (c, a) = color(effect.get("color").unwrap_or(&Value::Null));
     let at = effect.get("offset").unwrap_or(&Value::Null);
     let spread = num(effect, "spread").unwrap_or(0.0);
     let mut out = Node::new("UIShadow", "UIShadow");
     out.set("Color", Variant::Color3(c));
     out.set("Transparency", Variant::Float32((1.0 - a) as f32));
-    out.set("Offset", udim2(num(at, "x").unwrap_or(0.0), num(at, "y").unwrap_or(0.0)));
+    out.set(
+        "Offset",
+        udim2(num(at, "x").unwrap_or(0.0), num(at, "y").unwrap_or(0.0)),
+    );
     out.set("Spread", udim2(spread, spread));
-    out.set("BlurRadius", Variant::UDim(udim(0.0, num(effect, "radius").unwrap_or(0.0))));
+    out.set(
+        "BlurRadius",
+        Variant::UDim(udim(0.0, num(effect, "radius").unwrap_or(0.0))),
+    );
     Some(out)
 }
 
@@ -556,14 +685,28 @@ fn gradient(fill: &Value, rect: Rect) -> Node {
     for stop in stops.iter().take(20) {
         let time = num(stop, "position").unwrap_or(0.0).clamp(0.0, 1.0) as f32;
         let (c, a) = color(stop.get("color").unwrap_or(&Value::Null));
-        colors.push(ColorSequenceKeypoint { time, color: c, envelope: 0.0 });
-        alphas.push(NumberSequenceKeypoint { time, value: (1.0 - a * alpha) as f32, envelope: 0.0 });
+        colors.push(ColorSequenceKeypoint {
+            time,
+            color: c,
+            envelope: 0.0,
+        });
+        alphas.push(NumberSequenceKeypoint {
+            time,
+            value: (1.0 - a * alpha) as f32,
+            envelope: 0.0,
+        });
     }
     // Roblox wants keypoints at exactly 0 and 1.
     if let (Some(first), Some(last)) = (colors.first().cloned(), colors.last().cloned()) {
         if first.time > 0.0 {
             colors.insert(0, ColorSequenceKeypoint { time: 0.0, ..first });
-            alphas.insert(0, NumberSequenceKeypoint { time: 0.0, ..alphas[0] });
+            alphas.insert(
+                0,
+                NumberSequenceKeypoint {
+                    time: 0.0,
+                    ..alphas[0]
+                },
+            );
         }
         if last.time < 1.0 {
             colors.push(ColorSequenceKeypoint { time: 1.0, ..last });
@@ -581,17 +724,29 @@ fn gradient(fill: &Value, rect: Rect) -> Node {
         _ => 0.0,
     };
     let mut out = Node::new("UIGradient", "UIGradient");
-    out.set("Color", Variant::ColorSequence(ColorSequence { keypoints: colors }));
-    out.set("Transparency", Variant::NumberSequence(NumberSequence { keypoints: alphas }));
+    out.set(
+        "Color",
+        Variant::ColorSequence(ColorSequence { keypoints: colors }),
+    );
+    out.set(
+        "Transparency",
+        Variant::NumberSequence(NumberSequence { keypoints: alphas }),
+    );
     out.set("Rotation", Variant::Float32(rotation as f32));
     out
 }
 
 fn list_layout(v: &Value, horizontal: bool) -> Vec<Node> {
     let mut layout = Node::new("UIListLayout", "UIListLayout");
-    layout.set("FillDirection", Variant::Enum(if horizontal { 0 } else { 1 }));
+    layout.set(
+        "FillDirection",
+        Variant::Enum(if horizontal { 0 } else { 1 }),
+    );
     layout.set("SortOrder", Variant::Enum(2));
-    layout.set("Padding", Variant::UDim(udim(0.0, num(v, "itemSpacing").unwrap_or(0.0))));
+    layout.set(
+        "Padding",
+        Variant::UDim(udim(0.0, num(v, "itemSpacing").unwrap_or(0.0))),
+    );
     let primary = text(v, "primaryAxisAlignItems");
     let counter = text(v, "counterAxisAlignItems");
     let h_of = |a: &str| match a {
@@ -604,11 +759,22 @@ fn list_layout(v: &Value, horizontal: bool) -> Vec<Node> {
         "MAX" => 2,
         _ => 1,
     };
-    let (h, vert) = if horizontal { (h_of(primary), v_of(counter)) } else { (h_of(counter), v_of(primary)) };
+    let (h, vert) = if horizontal {
+        (h_of(primary), v_of(counter))
+    } else {
+        (h_of(counter), v_of(primary))
+    };
     layout.set("HorizontalAlignment", Variant::Enum(h));
     layout.set("VerticalAlignment", Variant::Enum(vert));
     if primary == "SPACE_BETWEEN" {
-        layout.set(if horizontal { "HorizontalFlex" } else { "VerticalFlex" }, Variant::Enum(3));
+        layout.set(
+            if horizontal {
+                "HorizontalFlex"
+            } else {
+                "VerticalFlex"
+            },
+            Variant::Enum(3),
+        );
     }
     if text(v, "layoutWrap") == "WRAP" {
         layout.set("Wraps", Variant::Bool(true));
@@ -623,7 +789,10 @@ fn list_layout(v: &Value, horizontal: bool) -> Vec<Node> {
     if pads.iter().any(|(_, k)| num(v, k).unwrap_or(0.0) != 0.0) {
         let mut padding = Node::new("UIPadding", "UIPadding");
         for (property, key) in pads {
-            padding.set(property, Variant::UDim(udim(0.0, num(v, key).unwrap_or(0.0))));
+            padding.set(
+                property,
+                Variant::UDim(udim(0.0, num(v, key).unwrap_or(0.0))),
+            );
         }
         out.push(padding);
     }

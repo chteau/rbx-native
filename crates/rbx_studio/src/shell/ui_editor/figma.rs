@@ -126,7 +126,9 @@ impl Shell {
         self.ui.figma.status = None;
         *self.ui.figma.progress.lock().unwrap() = first.to_string();
         cx.spawn(async move |this, cx| loop {
-            cx.background_executor().timer(Duration::from_millis(250)).await;
+            cx.background_executor()
+                .timer(Duration::from_millis(250))
+                .await;
             let busy = this.update(cx, |shell, cx| {
                 cx.notify();
                 shell.ui.figma.busy
@@ -177,7 +179,11 @@ impl Shell {
     /// The whole tree under `screen`, as one undo step.
     fn insert_figma_tree(&mut self, screen: Ref, tree: Node, cx: &mut Context<Self>) {
         if self.dom.get(screen).is_none() {
-            return self.figma_status(true, "The ScreenGui was removed during the import.".into(), cx);
+            return self.figma_status(
+                true,
+                "The ScreenGui was removed during the import.".into(),
+                cx,
+            );
         }
         self.push_history();
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
@@ -220,25 +226,21 @@ impl Shell {
         if oauth::CLIENT_SECRET.is_none() {
             body = body.child(line(oauth::NO_SECRET.into(), tokens::text_muted()));
         } else if connected {
-            body = body.child(
-                action("figma-disconnect", "Disconnect", !busy).on_click(cx.listener(
-                    move |shell, _, _, cx| {
-                        if !busy {
-                            shell.figma_disconnect(cx);
-                        }
-                    },
-                )),
-            );
+            body = body.child(action("figma-disconnect", "Disconnect", !busy).on_click(
+                cx.listener(move |shell, _, _, cx| {
+                    if !busy {
+                        shell.figma_disconnect(cx);
+                    }
+                }),
+            ));
         } else {
-            body = body.child(
-                action("figma-connect", "Connect to Figma", !busy).on_click(cx.listener(
-                    move |shell, _, _, cx| {
-                        if !busy {
-                            shell.figma_connect(cx);
-                        }
-                    },
-                )),
-            );
+            body = body.child(action("figma-connect", "Connect to Figma", !busy).on_click(
+                cx.listener(move |shell, _, _, cx| {
+                    if !busy {
+                        shell.figma_connect(cx);
+                    }
+                }),
+            ));
         }
         let can_import = connected && !busy;
         body = body
@@ -256,7 +258,11 @@ impl Shell {
             let text = figma.progress.lock().unwrap().clone();
             body = body.child(line(text.into(), tokens::text_muted()));
         } else if let Some((error, text)) = &figma.status {
-            let color = if *error { tokens::text_error() } else { tokens::text_muted() };
+            let color = if *error {
+                tokens::text_error()
+            } else {
+                tokens::text_muted()
+            };
             body = body.child(line(text.clone().into(), color));
         }
         if !figma.review.is_empty() {
@@ -266,7 +272,11 @@ impl Shell {
             ));
             for (index, (reference, why)) in figma.review.iter().enumerate() {
                 let reference = *reference;
-                let name = self.dom.get(reference).map(|i| i.name().to_string()).unwrap_or_default();
+                let name = self
+                    .dom
+                    .get(reference)
+                    .map(|i| i.name().to_string())
+                    .unwrap_or_default();
                 body = body.child(
                     chrome::button(("figma-review", index), format!("{name}: {why}"), false)
                         .justify_start()
@@ -275,13 +285,21 @@ impl Shell {
             }
         }
         body = body.child(
-            chrome::button("figma-close", "Close", false).on_click(cx.listener(|shell, _, _, cx| {
-                shell.ui.figma.open = false;
-                cx.notify();
-            })),
+            chrome::button("figma-close", "Close", false).on_click(cx.listener(
+                |shell, _, _, cx| {
+                    shell.ui.figma.open = false;
+                    cx.notify();
+                },
+            )),
         );
         super::sidebar::sidebar(Some("Import from Figma".into()), "")
-            .child(div().id("figma-panel").flex_1().overflow_y_scroll().child(body))
+            .child(
+                div()
+                    .id("figma-panel")
+                    .flex_1()
+                    .overflow_y_scroll()
+                    .child(body),
+            )
             .into_any_element()
     }
 }
@@ -297,7 +315,10 @@ fn fetch(
         .ok_or("No Open Cloud API key is set up. Add one from Home \u{203a} Manage key.")?;
     let client = Client::new(Some(key));
     let describe = super::super::freeze::describe;
-    let user = client.introspect().map_err(|e| describe(&e))?.authorized_user_id;
+    let user = client
+        .introspect()
+        .map_err(|e| describe(&e))?
+        .authorized_user_id;
     let path = rbx_assets::cache_root()
         .map(|root| root.join("figma").join(format!("uploads-{user}.json")));
     let mut cache = path.map(Cache::open).unwrap_or_default();

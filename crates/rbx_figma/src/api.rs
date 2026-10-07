@@ -38,8 +38,9 @@ impl Session {
     }
 
     fn refresh(&mut self) -> Result<(), String> {
-        self.tokens = oauth::refresh(&self.tokens)
-            .map_err(|err| format!("Figma sign-in expired and couldn\u{2019}t be renewed; connect again. ({err})"))?;
+        self.tokens = oauth::refresh(&self.tokens).map_err(|err| {
+            format!("Figma sign-in expired and couldn\u{2019}t be renewed; connect again. ({err})")
+        })?;
         self.refreshed = true;
         Ok(())
     }
@@ -56,11 +57,20 @@ impl Session {
             let mut response = self
                 .agent
                 .get(&format!("{API}{path}"))
-                .header("Authorization", &format!("Bearer {}", self.tokens.access_token))
+                .header(
+                    "Authorization",
+                    &format!("Bearer {}", self.tokens.access_token),
+                )
                 .call()
                 .map_err(|err| format!("Couldn\u{2019}t reach Figma: {err}"))?;
             let status = response.status().as_u16();
-            let wait = retry_after(response.headers().get("retry-after").and_then(|v| v.to_str().ok()), attempt);
+            let wait = retry_after(
+                response
+                    .headers()
+                    .get("retry-after")
+                    .and_then(|v| v.to_str().ok()),
+                attempt,
+            );
             let body = response
                 .body_mut()
                 .with_config()
@@ -74,9 +84,19 @@ impl Session {
                     renewed = true;
                 }
                 429 if attempt < ATTEMPTS => std::thread::sleep(wait),
-                403 => return Err(format!("Figma refused access to this file (403): {}", said(&body))),
+                403 => {
+                    return Err(format!(
+                        "Figma refused access to this file (403): {}",
+                        said(&body)
+                    ))
+                }
                 404 => return Err("Figma has no such file or frame (404); check the link".into()),
-                429 => return Err("Figma is rate-limiting this account (429); wait a minute and import again".into()),
+                429 => {
+                    return Err(
+                        "Figma is rate-limiting this account (429); wait a minute and import again"
+                            .into(),
+                    )
+                }
                 _ => return Err(format!("Figma answered {status}: {}", said(&body))),
             }
         }
@@ -91,7 +111,10 @@ impl Session {
             .call()
             .map_err(|err| format!("Couldn\u{2019}t download a Figma image: {err}"))?;
         if !response.status().is_success() {
-            return Err(format!("Figma image download answered {}", response.status()));
+            return Err(format!(
+                "Figma image download answered {}",
+                response.status()
+            ));
         }
         response
             .body_mut()
@@ -150,7 +173,9 @@ mod tests {
     #[ignore]
     fn live_frame() {
         let token = std::env::var("RBX_FIGMA_TOKEN").expect("RBX_FIGMA_TOKEN");
-        let link = crate::link::parse(&std::env::var("RBX_FIGMA_TEST_URL").expect("RBX_FIGMA_TEST_URL")).unwrap();
+        let link =
+            crate::link::parse(&std::env::var("RBX_FIGMA_TEST_URL").expect("RBX_FIGMA_TEST_URL"))
+                .unwrap();
         let mut session = Session::new(Tokens {
             access_token: token,
             refresh_token: String::new(),

@@ -41,8 +41,17 @@ fn a_click_reaction_makes_a_text_button() {
     let button = &root.children[0];
     assert_eq!(button.class, "TextButton");
     assert_eq!(button.get("Text"), Some(&Variant::String(String::new())));
-    assert_eq!(only(button, "UICorner").get("CornerRadius"), Some(&Variant::UDim(UDim { scale: 0.0, offset: 8 })));
-    assert_eq!(only(button, "TextLabel").get("Text"), Some(&Variant::String("Play".into())));
+    assert_eq!(
+        only(button, "UICorner").get("CornerRadius"),
+        Some(&Variant::UDim(UDim {
+            scale: 0.0,
+            offset: 8
+        }))
+    );
+    assert_eq!(
+        only(button, "TextLabel").get("Text"),
+        Some(&Variant::String("Play".into()))
+    );
     assert!(button.review.is_none());
 
     let mut icon_button = frame("Close", vec![]);
@@ -60,9 +69,14 @@ fn text_keeps_its_words_alignment_and_font() {
     assert_eq!(text.get("TextYAlignment"), Some(&Variant::Enum(1)));
     assert_eq!(
         text.get("Position"),
-        Some(&Variant::UDim2(UDim2 { x: udim(0.0, 10.0), y: udim(0.0, 20.0) }))
+        Some(&Variant::UDim2(UDim2 {
+            x: udim(0.0, 10.0),
+            y: udim(0.0, 20.0)
+        }))
     );
-    let Some(Variant::Font(font)) = text.get("FontFace") else { panic!("no font") };
+    let Some(Variant::Font(font)) = text.get("FontFace") else {
+        panic!("no font")
+    };
     assert_eq!(font.family, "rbxasset://fonts/families/BuilderSans.json");
     assert_eq!(font.weight, 700);
 
@@ -74,7 +88,10 @@ fn text_keeps_its_words_alignment_and_font() {
     let field = infer(&frame("Email input", vec![label("Hint", 0.0, 0.0)])).unwrap();
     let field = &field.children[0];
     assert_eq!(field.class, "TextBox");
-    assert_eq!(field.get("PlaceholderText"), Some(&Variant::String("Play".into())));
+    assert_eq!(
+        field.get("PlaceholderText"),
+        Some(&Variant::String("Play".into()))
+    );
     assert!(field.review.is_some());
 }
 
@@ -103,7 +120,10 @@ fn a_vector_icon_is_rendered_to_one_image() {
     assert_eq!(icon.class, "ImageLabel");
     assert!(icon.children.is_empty());
     assert_eq!(icon.image, Some(Image::Render("5:5".into())));
-    assert_eq!(icon.get("BackgroundTransparency"), Some(&Variant::Float32(1.0)));
+    assert_eq!(
+        icon.get("BackgroundTransparency"),
+        Some(&Variant::Float32(1.0))
+    );
 }
 
 #[test]
@@ -120,8 +140,15 @@ fn auto_layout_becomes_a_list_layout_with_padding() {
     assert_eq!(layout.get("Padding"), Some(&Variant::UDim(udim(0.0, 12.0))));
     assert_eq!(layout.get("HorizontalAlignment"), Some(&Variant::Enum(0)));
     assert_eq!(layout.get("VerticalFlex"), Some(&Variant::Enum(3)));
-    assert_eq!(only(&list, "UIPadding").get("PaddingLeft"), Some(&Variant::UDim(udim(0.0, 16.0))));
-    let orders: Vec<_> = list.children.iter().filter_map(|c| c.get("LayoutOrder")).collect();
+    assert_eq!(
+        only(&list, "UIPadding").get("PaddingLeft"),
+        Some(&Variant::UDim(udim(0.0, 16.0)))
+    );
+    let orders: Vec<_> = list
+        .children
+        .iter()
+        .filter_map(|c| c.get("LayoutOrder"))
+        .collect();
     assert_eq!(orders, [&Variant::Int32(1), &Variant::Int32(2)]);
 }
 
@@ -147,14 +174,23 @@ fn constraints_anchor_to_the_right_edge_and_stretch() {
     text["constraints"] = json!({ "horizontal": "RIGHT", "vertical": "TOP_BOTTOM" });
     let root = infer(&frame("Menu", vec![text])).unwrap();
     let text = &root.children[0];
-    assert_eq!(text.get("AnchorPoint"), Some(&Variant::Vector2(Vector2Data { x: 1.0, y: 0.0 })));
+    assert_eq!(
+        text.get("AnchorPoint"),
+        Some(&Variant::Vector2(Vector2Data { x: 1.0, y: 0.0 }))
+    );
     assert_eq!(
         text.get("Position"),
-        Some(&Variant::UDim2(UDim2 { x: udim(1.0, -20.0), y: udim(0.0, 0.0) }))
+        Some(&Variant::UDim2(UDim2 {
+            x: udim(1.0, -20.0),
+            y: udim(0.0, 0.0)
+        }))
     );
     assert_eq!(
         text.get("Size"),
-        Some(&Variant::UDim2(UDim2 { x: udim(0.0, 80.0), y: udim(1.0, -280.0) }))
+        Some(&Variant::UDim2(UDim2 {
+            x: udim(0.0, 80.0),
+            y: udim(1.0, -280.0)
+        }))
     );
 }
 
@@ -167,7 +203,8 @@ fn every_property_written_is_in_the_api_dump() {
     everything["cornerRadius"] = json!(4);
     everything["clipsContent"] = json!(true);
     everything["strokeWeight"] = json!(2);
-    everything["strokes"] = json!([{ "type": "SOLID", "color": { "r": 0.0, "g": 0.0, "b": 0.0, "a": 1.0 } }]);
+    everything["strokes"] =
+        json!([{ "type": "SOLID", "color": { "r": 0.0, "g": 0.0, "b": 0.0, "a": 1.0 } }]);
     everything["effects"] = json!([{ "type": "DROP_SHADOW", "color": { "r": 0.0, "g": 0.0, "b": 0.0, "a": 0.5 },
                                      "offset": { "x": 0, "y": 4 }, "radius": 8, "spread": 2 }]);
     everything["layoutMode"] = json!("HORIZONTAL");
@@ -191,7 +228,16 @@ fn every_property_written_is_in_the_api_dump() {
     let ellipse = json!({ "type": "ELLIPSE", "name": "Dot", "absoluteBoundingBox": bounds(0.0, 0.0, 4.0, 4.0),
                           "fills": [{ "type": "SOLID", "color": { "r": 1, "g": 1, "b": 1, "a": 1 } }],
                           "children": [] });
-    everything["children"] = json!([label("Title", 0.0, 0.0), label("Email input", 0.0, 0.0), image, photo, button, overflow, vector, ellipse]);
+    everything["children"] = json!([
+        label("Title", 0.0, 0.0),
+        label("Email input", 0.0, 0.0),
+        image,
+        photo,
+        button,
+        overflow,
+        vector,
+        ellipse
+    ]);
 
     let mut root = infer(&everything).unwrap();
     let mut classes = std::collections::BTreeSet::new();
@@ -217,12 +263,27 @@ fn every_property_written_is_in_the_api_dump() {
                 Variant::Enum(ordinal) => db.enum_name(kind, *ordinal).is_some(),
                 other => panic!("{}.{name} has an unchecked kind {other:?}", node.class),
             };
-            assert!(ok, "{}.{name} is a {kind} in the dump, not {value:?}", node.class);
+            assert!(
+                ok,
+                "{}.{name} is a {kind} in the dump, not {value:?}",
+                node.class
+            );
         }
     });
     for class in [
-        "Frame", "TextLabel", "TextBox", "TextButton", "ImageButton", "ImageLabel", "ScrollingFrame",
-        "UICorner", "UIStroke", "UIShadow", "UIGradient", "UIListLayout", "UIPadding",
+        "Frame",
+        "TextLabel",
+        "TextBox",
+        "TextButton",
+        "ImageButton",
+        "ImageLabel",
+        "ScrollingFrame",
+        "UICorner",
+        "UIStroke",
+        "UIShadow",
+        "UIGradient",
+        "UIListLayout",
+        "UIPadding",
     ] {
         assert!(classes.contains(class), "the fixture never made a {class}");
     }

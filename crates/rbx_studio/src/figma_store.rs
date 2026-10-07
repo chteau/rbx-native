@@ -17,7 +17,8 @@ pub(crate) async fn load(cx: &mut AsyncApp) -> anyhow::Result<Option<Tokens>> {
 /// Stores `tokens`, replacing any there.
 pub(crate) async fn save(tokens: &Tokens, cx: &mut AsyncApp) -> anyhow::Result<()> {
     let secret = encode(tokens);
-    cx.update(|cx| cx.write_credentials(URL, ACCOUNT, &secret)).await?;
+    cx.update(|cx| cx.write_credentials(URL, ACCOUNT, &secret))
+        .await?;
     Ok(())
 }
 
