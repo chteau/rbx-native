@@ -755,7 +755,11 @@ impl Renderer {
         // render pass that reads those buffers.
         self.translucent.prepare(queue, eye, &cull);
         self.filemesh.prepare(queue, eye);
-        self.terrain.grass.prepare(device, queue, eye);
+        self.terrain
+            .grass
+            .prepare(device, queue, eye, |center, radius| {
+                cull.visible(center, radius)
+            });
         // A `SelectionSphere`'s outline faces the eye, so its vertices are
         // the camera's to decide — and a buffer written here cannot be
         // written inside the pass that reads it.
