@@ -221,6 +221,10 @@ impl Compiler<'_> {
                         true => self.put("return"),
                         false => self.put(format!("return {}", values.join(", "))),
                     }
+                    // Comments after it: nothing can follow a return to hold them.
+                    if let Some(after) = self.graph.node(node).and_then(|n| n.values.get("@after")) {
+                        self.out.push_str(after);
+                    }
                 }
             }
             Syn::Break => self.put("break"),
@@ -304,7 +308,9 @@ impl Compiler<'_> {
                 let op = op.trim();
                 let parent = op_prec(op);
                 let a = wrap(a, operand_needs(pa, parent, true));
-                let b = wrap(b, operand_needs(pb, parent, false));
+                // `a ^ -b` reads as written; a prefix operator binds the exponent.
+                let right = operand_needs(pb, parent, false) && !(parent == Prec::Pow && pb == Prec::Unary);
+                let b = wrap(b, right);
                 Some((format!("{a} {op} {b}"), parent))
             }
             Syn::Unary => {
@@ -423,6 +429,14 @@ impl Compiler<'_> {
                 }
             }
             text.push_str(&format!("{item}{sep}"));
+        }
+        // Comments between the last field and the brace.
+        let tail = self.hidden(node, "@tail");
+        if !tail.is_empty() {
+            match multiline {
+                true => text.push_str(&format!("\n{tabs}{tail}")),
+                false => text.push_str(&format!(" {tail} ")),
+            }
         }
         if multiline {
             text.push_str(&format!("\n{}", "\t".repeat(self.indent)));

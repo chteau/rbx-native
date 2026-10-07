@@ -165,7 +165,7 @@ impl Shell {
             // A script with no graph yet is drawn from its code.
             editor.graph = match text.as_deref().and_then(Graph::parse) {
                 Some(graph) => graph,
-                None => import::import(&source::read(&self.dom, reference).unwrap_or_default()),
+                None => import::import(&source::read(&self.dom, reference).unwrap_or_default()).graph,
             };
             editor
                 .selection
@@ -281,7 +281,7 @@ impl Shell {
         let Some(editor) = self.graphs.get_mut(&reference) else {
             return;
         };
-        editor.graph = import::import(&code);
+        editor.graph = import::import(&code).graph;
         editor.selection.clear();
         editor.group = None;
         editor.fitted = true;

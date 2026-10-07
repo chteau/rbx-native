@@ -1,34 +1,57 @@
-//! Luau read back into a graph. Statements a catalog node writes are drawn
-//! as that node; everything else stays as written, in Luau Code nodes, so
-//! an import never loses code. The result is checked: it must compile to
-//! the same tokens and comments as the source (locals may be renamed), and
-//! any statement that would come out different is kept as written instead.
+//! Luau read back into a graph. Every construct becomes generic syntax
+//! nodes; a catalog node stands in only where it writes the same tokens.
+//! Each piece is checked against its source, and one that would come out
+//! different is kept as written in a Luau Code node.
 
-mod build;
-mod lex;
-mod parse;
+mod emit;
+mod pattern;
+mod tree;
 
-use std::collections::{HashMap, HashSet};
+#[cfg(test)]
+mod corpus;
+#[cfg(test)]
+#[path = "import/tests.rs"]
+mod tests;
 
-use super::catalog;
-use super::codegen;
+use std::collections::HashSet;
+
+use super::catalog::{self, PinType};
+use super::codegen::Origins;
 use super::{End, Graph, NodeId};
-use lex::{Lexed, T};
+
+/// A script read back: its graph, where its statements came from, and the
+/// syntax error when it did not parse (the graph then holds it whole).
+pub(crate) struct Imported {
+    pub(crate) graph: Graph,
+    pub(crate) origins: Origins,
+    pub(crate) broken: Option<Broken>,
+}
+
+pub(crate) struct Broken {
+    pub(crate) line: usize,
+    pub(crate) message: String,
+}
+
+/// Token and comment spans of `code`, or none when it does not parse.
+fn spans(code: &str) -> Option<tree::Tree> {
+    tree::snippet(code)
+}
 
 /// The names a piece of Luau reads or writes, so generated locals avoid
-/// them. Anything word-like when the text does not lex.
+/// them. Anything word-like when it does not parse.
 pub(crate) fn names(code: &str) -> Vec<String> {
     fn words(text: &str) -> impl Iterator<Item = String> + '_ {
         text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
             .filter(|word| word.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_'))
             .map(str::to_owned)
     }
-    match lex::lex(code) {
-        Some(lexed) => lexed
-            .toks
+    match spans(code) {
+        Some(t) => t
+            .tokens
             .iter()
-            .filter(|tok| matches!(tok.t, T::Name | T::Interp))
-            .flat_map(|tok| words(&code[tok.start..tok.end]).collect::<Vec<_>>())
+            .map(|&(a, b)| &code[a..b])
+            .filter(|text| text.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_'))
+            .map(str::to_owned)
             .collect(),
         None => words(code).collect(),
     }
@@ -40,12 +63,11 @@ pub(crate) fn raw_lines(code: &str) -> Vec<(&str, bool)> {
     if code.is_empty() {
         return Vec::new();
     }
-    let spans: Option<Vec<(usize, usize)>> = lex::lex(code).map(|lexed| {
-        lexed
-            .toks
+    let spans: Option<Vec<(usize, usize)>> = spans(code).map(|t| {
+        t.tokens
             .iter()
-            .map(|tok| (tok.start, tok.end))
-            .chain(lexed.comments.iter().copied())
+            .copied()
+            .chain(t.comments.iter().map(|c| (c.lo, c.hi)))
             .filter(|&(a, b)| code[a..b].contains('\n'))
             .collect()
     });
@@ -64,78 +86,68 @@ pub(crate) fn raw_lines(code: &str) -> Vec<(&str, bool)> {
         .collect()
 }
 
-/// Whether `b` is `a` again, as far as the importer's check goes: the
-/// same tokens and comments, locals renamed consistently.
+/// Whether `b` is `a` again: the same tokens and the same comments.
 pub(crate) fn same(a: &str, b: &str) -> bool {
-    match lex::lex(a) {
-        Some(lexed) => verify(&lexed, a, b).is_ok(),
-        None => a == b,
-    }
+    let (Some(x), Some(y)) = (spans(a), spans(b)) else {
+        return a == b;
+    };
+    let toks = |t: &tree::Tree, s: &str| -> Vec<String> {
+        // A `;` between statements or fields is not code; the origin keeps it.
+        t.tokens
+            .iter()
+            .map(|&(lo, hi)| &s[lo..hi])
+            .filter(|text| *text != ";")
+            .map(str::to_owned)
+            .collect()
+    };
+    let notes = |t: &tree::Tree, s: &str| -> Vec<String> {
+        t.comments
+            .iter()
+            .map(|c| s[c.lo..c.hi].trim_end().to_owned())
+            .collect()
+    };
+    toks(&x, a) == toks(&y, b) && notes(&x, a) == notes(&y, b)
 }
 
 /// `source` as a graph that compiles back to the same code.
-pub(crate) fn import(source: &str) -> Graph {
+pub(crate) fn import(source: &str) -> Imported {
     if source.trim().is_empty() {
-        return Graph::default();
-    }
-    let Some(lexed) = lex::lex(source) else {
-        return whole(source);
-    };
-    let p = parse::P {
-        src: source,
-        toks: &lexed.toks,
-    };
-    let Some((top, _)) = p.block(0, &[], 0) else {
-        return whole(source);
-    };
-    let mut pinned = HashSet::new();
-    // ponytail: rebuilds the whole graph per statement kept as written;
-    // fine for scripts of a few hundred lines.
-    loop {
-        let mut builder = build::Builder::new(&p, &lexed.comments, &pinned);
-        builder.top(&top.stmts, top.lo, top.hi);
-        let pin = match codegen::compile(&builder.graph) {
-            Err(problems) => problems
-                .first()
-                .and_then(|problem| builder.owner.get(&problem.node).copied()),
-            Ok(out) => match verify(&lexed, source, &out) {
-                Ok(()) => {
-                    let mut graph = builder.graph;
-                    layout(&mut graph, &builder.items);
-                    return graph;
-                }
-                Err(Some(n)) => culprit(&builder.converted, n),
-                Err(None) => None,
-            },
+        return Imported {
+            graph: Graph::default(),
+            origins: Origins::default(),
+            broken: None,
         };
-        match pin {
-            Some(key) if pinned.insert(key) => {}
-            _ => return whole(source),
-        }
     }
-}
-
-/// The statement to keep as written for a difference at source token `n`:
-/// the innermost converted one holding it, or the last one before it.
-fn culprit(converted: &[(usize, usize)], n: usize) -> Option<usize> {
-    converted
-        .iter()
-        .filter(|&&(lo, hi)| lo <= n && n < hi)
-        .min_by_key(|&&(lo, hi)| hi - lo)
-        .or_else(|| {
-            converted
-                .iter()
-                .filter(|&&(_, hi)| hi <= n)
-                .max_by_key(|&&(_, hi)| hi)
-        })
-        .map(|&(lo, _)| lo)
+    let ast = match full_moon::parse(source) {
+        Ok(ast) => ast,
+        Err(errors) => {
+            let (line, message) = errors.first().map_or((1, String::new()), |e| {
+                (e.range().0.line(), e.error_message().to_string())
+            });
+            let (graph, origins) = whole(source);
+            return Imported {
+                graph,
+                origins,
+                broken: Some(Broken { line, message }),
+            };
+        }
+    };
+    let tree = tree::tree(source, &ast);
+    let (mut graph, origins) = emit::build(source, &tree);
+    layout(&mut graph, &origins.order);
+    Imported {
+        graph,
+        origins,
+        broken: None,
+    }
 }
 
 /// The whole text as one Luau Code node, run at the start.
-fn whole(source: &str) -> Graph {
+fn whole(source: &str) -> (Graph, Origins) {
     let mut graph = Graph::default();
+    let mut origins = Origins::default();
     let (Some(start), Some(luau)) = (catalog::kind("start"), catalog::kind("luau")) else {
-        return graph;
+        return (graph, origins);
     };
     let start = graph.add(start, [0.0, 0.0]);
     let raw = graph.add(luau, [0.0, 0.0]);
@@ -145,83 +157,8 @@ fn whole(source: &str) -> Graph {
     );
     let _ = graph.connect(End::new(start, ""), End::new(raw, ""));
     layout(&mut graph, &[start]);
-    graph
-}
-
-/// Whether `out` is the source again: the same comments, and the same
-/// tokens but for locals and parameters renamed consistently. On a
-/// difference, the source token it shows at, where there is one.
-fn verify(src: &Lexed, source: &str, out: &str) -> Result<(), Option<usize>> {
-    let made = lex::lex(out).ok_or(None)?;
-    let comments = |lexed: &Lexed, text: &str| -> Vec<String> {
-        lexed
-            .comments
-            .iter()
-            .map(|&(a, b)| text[a..b].trim_end().to_owned())
-            .collect()
-    };
-    if comments(src, source) != comments(&made, out) {
-        return Err(None);
-    }
-    let slice = |text: &str, tok: &lex::Tok| -> String { text[tok.start..tok.end].to_owned() };
-    let mut fwd: HashMap<String, (String, usize)> = HashMap::new();
-    let mut back: HashMap<String, String> = HashMap::new();
-    let (mut binding, mut pending_fn, mut params) = (false, false, false);
-    for n in 0..src.toks.len().max(made.toks.len()) {
-        let (Some(s), Some(o)) = (src.toks.get(n), made.toks.get(n)) else {
-            return Err(Some(n.min(src.toks.len().saturating_sub(1))));
-        };
-        if s.t != o.t {
-            return Err(Some(n));
-        }
-        let (st, ot) = (slice(source, s), slice(out, o));
-        match s.t {
-            T::Name => {
-                if binding || params {
-                    if back.get(&ot).is_some_and(|was| *was != st) {
-                        return Err(Some(n));
-                    }
-                    back.insert(ot.clone(), st.clone());
-                    fwd.insert(st, (ot, n));
-                    continue;
-                }
-                match fwd.get(&st) {
-                    Some((mapped, site)) if *mapped != ot => return Err(Some(*site)),
-                    Some(_) => {}
-                    None if st != ot => return Err(Some(n)),
-                    None => {}
-                }
-                if back.get(&ot).is_some_and(|was| *was != st) {
-                    return Err(Some(n));
-                }
-            }
-            T::Str => {
-                if st != ot
-                    && (lex::unquote(&st).is_none() || lex::unquote(&st) != lex::unquote(&ot))
-                {
-                    return Err(Some(n));
-                }
-            }
-            _ if st != ot => return Err(Some(n)),
-            _ => {}
-        }
-        match st.as_str() {
-            "local" | "for" if s.t == T::Keyword => binding = true,
-            "," | ":" if binding => {}
-            "function" if s.t == T::Keyword => {
-                binding = false;
-                pending_fn = true;
-            }
-            "(" if pending_fn => {
-                pending_fn = false;
-                params = true;
-            }
-            ")" if params => params = false,
-            _ if s.t != T::Name => binding = false,
-            _ => {}
-        }
-    }
-    Ok(())
+    origins.order.push(start);
+    (graph, origins)
 }
 
 /// Each event (or run of top-level code) in a row of its own, its run
@@ -239,16 +176,15 @@ fn place(graph: &mut Graph, node: NodeId, x: f32, y: f32, placed: &mut HashSet<N
     if !placed.insert(node) {
         return y;
     }
-    let Some(kind) = graph.kind_of(node) else {
-        return y;
-    };
     if let Some(at) = graph.node_mut(node) {
         (at.x, at.y) = (x, y);
     }
     let rect = graph.node(node).map(|at| super::layout::rect(graph, at));
     let (w, h) = rect.map_or((200.0, 60.0), |rect| (rect.w, rect.h));
-    let targets = |graph: &Graph, pins: &[&str]| -> Vec<NodeId> {
-        pins.iter()
+    let pins = graph.pins(node);
+    let targets = |graph: &Graph, names: &[&str]| -> Vec<NodeId> {
+        names
+            .iter()
             .flat_map(|pin| {
                 graph
                     .wires_from(&End::new(node, pin))
@@ -261,10 +197,10 @@ fn place(graph: &mut Graph, node: NodeId, x: f32, y: f32, placed: &mut HashSet<N
     for next in targets(graph, &["", "Completed"]) {
         bottom = bottom.max(place(graph, next, x + w + 60.0, y, placed));
     }
-    let values: Vec<NodeId> = kind
+    let values: Vec<NodeId> = pins
         .inputs
         .iter()
-        .filter(|pin| pin.ty != catalog::PinType::Exec)
+        .filter(|pin| pin.ty != PinType::Exec)
         .filter_map(|pin| {
             graph
                 .wire_into(&End::new(node, pin.name))
@@ -276,12 +212,14 @@ fn place(graph: &mut Graph, node: NodeId, x: f32, y: f32, placed: &mut HashSet<N
         below = place(graph, value, x + 20.0, below + 20.0, placed);
     }
     bottom = bottom.max(below);
-    for inner in targets(graph, &["True", "False", "Loop"]) {
-        bottom = place(graph, inner, x + 40.0, bottom + 20.0, placed);
+    let inner: Vec<&str> = pins
+        .outputs
+        .iter()
+        .filter(|pin| pin.ty == PinType::Exec && !matches!(pin.name, "" | "Completed"))
+        .map(|pin| pin.name)
+        .collect();
+    for next in targets(graph, &inner) {
+        bottom = place(graph, next, x + 40.0, bottom + 20.0, placed);
     }
     bottom
 }
-
-#[cfg(test)]
-#[path = "import/tests.rs"]
-mod tests;
