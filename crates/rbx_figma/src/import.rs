@@ -167,13 +167,37 @@ pub fn import(
     mut progress: impl FnMut(String),
     dump: Option<&Path>,
 ) -> Result<Node, String> {
+    let tree = prepare(session, link, &mut progress, dump)?;
+    finish(session, &link.file_key, tree, cache, upload, progress, dump)
+}
+
+/// The first half, before the review step: the frame's JSON and the tree
+/// inferred from it, with nothing uploaded yet.
+pub fn prepare(
+    session: &mut Session,
+    link: &Link,
+    mut progress: impl FnMut(String),
+    dump: Option<&Path>,
+) -> Result<Node, String> {
     progress("Reading the frame from Figma\u{2026}".into());
     let root = fetch_root(session, link)?;
     if let Some(dir) = dump {
         write_dump(dir, "node.json", &root);
     }
-    let mut tree = infer::infer(&root)?;
+    infer::infer(&root)
+}
 
+/// The second half, after review: renders and uploads every picture the
+/// (possibly edited) tree needs and points each `Image` at its asset.
+pub fn finish(
+    session: &mut Session,
+    file_key: &str,
+    mut tree: Node,
+    cache: &mut Cache,
+    upload: impl FnMut(&str, &[u8]) -> Result<u64, String>,
+    mut progress: impl FnMut(String),
+    dump: Option<&Path>,
+) -> Result<Node, String> {
     let mut fills = BTreeSet::new();
     let mut renders = BTreeSet::new();
     tree.walk_mut(&mut |node| match &node.image {
@@ -197,7 +221,7 @@ pub fn import(
     if !fills.is_empty() || dump.is_some() {
         progress("Finding image fills\u{2026}".into());
         add(
-            &session.get_json(&format!("/v1/files/{}/images", link.file_key))?,
+            &session.get_json(&format!("/v1/files/{file_key}/images"))?,
             "/meta/images",
         );
     }
@@ -206,8 +230,7 @@ pub fn import(
         let ids = query(&renders.into_iter().collect::<Vec<_>>().join(","));
         add(
             &session.get_json(&format!(
-                "/v1/images/{}?ids={ids}&format=png&scale={RENDER_SCALE}",
-                link.file_key
+                "/v1/images/{file_key}?ids={ids}&format=png&scale={RENDER_SCALE}"
             ))?,
             "/images",
         );

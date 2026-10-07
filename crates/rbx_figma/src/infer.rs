@@ -29,7 +29,34 @@ pub struct Node {
     pub review: Option<String>,
     /// The picture its `Image` needs, uploaded by [`crate::import`].
     pub image: Option<Image>,
+    /// Figma's node id (`1:2`); empty on the `UI*` modifiers inference adds.
+    pub id: String,
+    /// How sure the class guess and the paint translation are.
+    pub confidence: Confidence,
 }
+
+/// How much a node's translation can be trusted, for the review step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub enum Confidence {
+    /// Guessed from a name, or drawn differently: look at it.
+    Low,
+    /// Something was approximated, but the class is solid.
+    Medium,
+    #[default]
+    High,
+}
+
+/// The classes the review step offers when a guess is wrong.
+pub const CLASSES: [&str; 8] = [
+    "Frame",
+    "TextLabel",
+    "TextButton",
+    "TextBox",
+    "ImageLabel",
+    "ImageButton",
+    "ScrollingFrame",
+    "CanvasGroup",
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Image {
@@ -48,7 +75,46 @@ impl Node {
             children: Vec::new(),
             review: None,
             image: None,
+            id: String::new(),
+            confidence: Confidence::High,
         }
+    }
+
+    /// Whether this is a GUI object from the design rather than a `UI*`
+    /// modifier inference added.
+    pub fn is_design(&self) -> bool {
+        !self.id.is_empty()
+    }
+
+    /// Swaps the class picked in review. Properties the new class lacks are
+    /// left for the caller to drop against the reflection database.
+    pub fn set_class(&mut self, class: &'static str) {
+        if class != self.class {
+            self.note(format!("class changed in review from {}", self.class));
+            self.class = class;
+            self.confidence = Confidence::High;
+        }
+    }
+
+    /// Replaces the node and its subtree with one picture of it, rendered by
+    /// Figma: where it sits stays, everything drawn inside goes into the PNG.
+    pub fn flatten(&mut self) {
+        const KEEP: [&str; 6] = [
+            "AnchorPoint",
+            "Position",
+            "Size",
+            "LayoutOrder",
+            "Rotation",
+            "ZIndex",
+        ];
+        self.class = "ImageLabel";
+        self.properties.retain(|(n, _)| KEEP.contains(n));
+        self.set("BackgroundTransparency", Variant::Float32(1.0));
+        self.set("BorderSizePixel", Variant::Int32(0));
+        self.children.clear();
+        self.image = Some(Image::Render(self.id.clone()));
+        self.confidence = Confidence::High;
+        self.note("flattened to an image in review");
     }
 
     fn set(&mut self, name: &'static str, value: Variant) {
@@ -120,6 +186,12 @@ struct Parent<'a> {
 /// The tree for `root`, a frame centred in the screen it lands in.
 pub fn infer(root: &Value) -> Result<Node, String> {
     node(root, None, 1.0, 0).ok_or_else(|| "That frame is hidden in Figma".to_string())
+}
+
+fn node(v: &Value, parent: Option<&Parent>, inherited: f64, order: i32) -> Option<Node> {
+    let mut out = design_node(v, parent, inherited, order)?;
+    out.id = text(v, "id").to_string();
+    Some(out)
 }
 
 fn text<'a>(v: &'a Value, key: &str) -> &'a str {
@@ -321,7 +393,7 @@ fn place(out: &mut Node, v: &Value, rect: Rect, parent: Option<&Parent>, order: 
     out.set("Size", Variant::UDim2(UDim2 { x: sx, y: sy }));
 }
 
-fn node(v: &Value, parent: Option<&Parent>, inherited: f64, order: i32) -> Option<Node> {
+fn design_node(v: &Value, parent: Option<&Parent>, inherited: f64, order: i32) -> Option<Node> {
     if !visible(v) {
         return None;
     }

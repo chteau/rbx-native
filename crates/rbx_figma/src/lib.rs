@@ -2,6 +2,7 @@
 //! UI Editor's "Import from Figma…".
 
 pub mod api;
+pub mod browse;
 pub mod import;
 pub mod infer;
 pub mod link;

@@ -8,7 +8,27 @@ pub struct Link {
     pub node_id: String,
 }
 
+/// The file a link names, and the frame if it names one: the browser opens
+/// either.
+pub fn parse_any(text: &str) -> Result<(String, Option<String>), String> {
+    match parse(text) {
+        Ok(link) => Ok((link.file_key, Some(link.node_id))),
+        Err(_) => file_of(text).map(|(_, key)| (key, None)),
+    }
+}
+
 pub fn parse(text: &str) -> Result<Link, String> {
+    let (url, file_key) = file_of(text)?;
+    let node_id = url
+        .query_pairs()
+        .find(|(key, _)| key == "node-id")
+        .map(|(_, value)| value.replace('-', ":"))
+        .filter(|id| !id.is_empty())
+        .ok_or("Select a frame in Figma and copy its link (Copy link to selection): this one names no frame")?;
+    Ok(Link { file_key, node_id })
+}
+
+fn file_of(text: &str) -> Result<(url::Url, String), String> {
     let url = url::Url::parse(text.trim()).map_err(|_| "That isn\u{2019}t a link".to_string())?;
     let host = url.host_str().unwrap_or("");
     if host != "figma.com" && !host.ends_with(".figma.com") {
@@ -23,13 +43,7 @@ pub fn parse(text: &str) -> Result<Link, String> {
         }
         _ => return Err("That Figma link names no file".into()),
     };
-    let node_id = url
-        .query_pairs()
-        .find(|(key, _)| key == "node-id")
-        .map(|(_, value)| value.replace('-', ":"))
-        .filter(|id| !id.is_empty())
-        .ok_or("Select a frame in Figma and copy its link (Copy link to selection): this one names no frame")?;
-    Ok(Link { file_key, node_id })
+    Ok((url, file_key))
 }
 
 #[cfg(test)]
@@ -53,5 +67,16 @@ mod tests {
             .contains("names no frame"));
         assert!(parse("https://evil.example/design/A/B?node-id=1-2").is_err());
         assert!(parse("https://www.figma.com/community/x?node-id=1-2").is_err());
+        assert_eq!(
+            parse_any("https://www.figma.com/design/AbC123/My-UI").unwrap(),
+            ("AbC123".into(), None)
+        );
+        assert_eq!(
+            parse_any("https://www.figma.com/design/AbC123/My-UI?node-id=1-2")
+                .unwrap()
+                .1
+                .as_deref(),
+            Some("1:2")
+        );
     }
 }

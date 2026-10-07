@@ -47,7 +47,9 @@ impl Client {
         self.create_asset("Model", display_name, description, user_id, file)
     }
 
-    /// Uploads a PNG as a new `Decal` asset owned by `user_id` and waits for
+    /// Uploads a PNG, JPEG or BMP (told apart by their first bytes, since a
+    /// Figma image fill comes back in whatever format went in) as a new
+    /// `Decal` asset owned by `user_id` and waits for
     /// Roblox to process it. Returns the new asset's id, used as
     /// `rbxassetid://<id>` in `ImageLabel.Image`; the creator docs do not
     /// say in as many words that a decal upload's id is the image itself,
@@ -57,14 +59,24 @@ impl Client {
         display_name: &str,
         description: &str,
         user_id: u64,
-        png: &[u8],
+        image: &[u8],
     ) -> Result<u64, CloudError> {
+        let (name, content_type) = Self::image_kind(image);
         let file = ModelFile {
-            name: "image.png",
-            content_type: "image/png",
-            bytes: png,
+            name,
+            content_type,
+            bytes: image,
         };
         self.create_asset("Decal", display_name, description, user_id, &file)
+    }
+
+    /// Unknown bytes go up as PNG and Roblox's own check names the problem.
+    fn image_kind(bytes: &[u8]) -> (&'static str, &'static str) {
+        match bytes {
+            [0xFF, 0xD8, 0xFF, ..] => ("image.jpg", "image/jpeg"),
+            [b'B', b'M', ..] => ("image.bmp", "image/bmp"),
+            _ => ("image.png", "image/png"),
+        }
     }
 
     fn create_asset(
@@ -255,6 +267,13 @@ mod tests {
         assert!(text.contains(
             "filename=\"freeze.gltf\"\r\nContent-Type: model/gltf+json\r\n\r\n{}\r\n--B--\r\n"
         ));
+    }
+
+    #[test]
+    fn image_bytes_are_sniffed() {
+        assert_eq!(Client::image_kind(b"\xFF\xD8\xFF\xE0jfif").1, "image/jpeg");
+        assert_eq!(Client::image_kind(b"BM...").1, "image/bmp");
+        assert_eq!(Client::image_kind(b"\x89PNG\r\n").1, "image/png");
     }
 
     #[test]
