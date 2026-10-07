@@ -2276,7 +2276,7 @@ against `Roblox/creator-docs` rather than assumed:
   of a repository named `light` or `high-contrast` still lands in a folder
   the built-in theme shadows (`theme::github`'s `Source::id` reserves only
   `default`; `theme::is_reserved` is the check to use).
-- [ ] 📋 **Discord Rich Presence, switched on from Studio Settings** —
+- [x] 📋 **Discord Rich Presence, switched on from Studio Settings** —
   an rbx-native addition, not Studio parity: real Studio has no built-in
   Discord presence, only third-party plugins and companion apps. A
   checkbox in the Studio Settings screen above (off by default) that

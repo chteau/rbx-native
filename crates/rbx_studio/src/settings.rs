@@ -115,6 +115,9 @@ pub(crate) struct Settings {
     pub(crate) argon_address: String,
     /// Argon's own plugin settings, per level — see [`argon::ArgonSettings`].
     pub(crate) argon: argon::ArgonSettings,
+    pub(crate) discord_presence: bool,
+    /// Defaults on: names are hidden unless the user opts in.
+    pub(crate) discord_hide_names: bool,
 }
 
 /// A dock layout saved under a name.
@@ -199,6 +202,8 @@ impl Default for Settings {
             expand_on_select: true,
             dragger: DraggerSettings::default(),
             controls: Controls::default(),
+            discord_presence: false,
+            discord_hide_names: true,
         }
     }
 }
@@ -396,6 +401,14 @@ fn load_from(path: &Path) -> Settings {
             .map(str::to_owned)
             .unwrap_or_default(),
         argon: argon::ArgonSettings::read(&value),
+        discord_presence: value
+            .get("discord_presence")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        discord_hide_names: value
+            .get("discord_hide_names")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true),
     }
 }
 
@@ -616,6 +629,8 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "snap": snap,
         "argon_address": settings.argon_address,
         "argon": settings.argon.json(),
+        "discord_presence": settings.discord_presence,
+        "discord_hide_names": settings.discord_hide_names,
     });
     // A fixed-shape object always serializes; nothing here can fail.
     let bytes = serde_json::to_vec_pretty(&value).expect("settings JSON always serializes");
@@ -1199,5 +1214,27 @@ mod tests {
         // an overflow reaches this: a literal too big for f64 stops
         // `serde_json` parsing the document at all.
         assert_eq!(read.docks.edges[1].size, 0., "nor is an overflow");
+    }
+
+    #[test]
+    fn discord_presence_round_trips_and_defaults_off_with_names_hidden() {
+        let path = temp_settings_path();
+        let settings = Settings {
+            discord_presence: true,
+            discord_hide_names: false,
+            ..Settings::default()
+        };
+        save_to(&settings, &path).unwrap();
+        let read = load_from(&path);
+        assert!(read.discord_presence);
+        assert!(!read.discord_hide_names);
+
+        // A file from before these fields existed defaults them conservatively.
+        let path = temp_settings_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, br#"{"quality": "Automatic"}"#).unwrap();
+        let read = load_from(&path);
+        assert!(!read.discord_presence);
+        assert!(read.discord_hide_names);
     }
 }

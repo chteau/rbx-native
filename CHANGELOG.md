@@ -2,6 +2,14 @@
 
 ## 2026-10-06
 
+- **Discord Rich Presence, switched on from Studio Settings.** A toggle in
+  Studio Settings › Account that shows the open place, what's being edited
+  (a script name, the viewport or the UI Editor) and elapsed time on the
+  user's Discord profile. Off by default; a second toggle hides place and
+  script names for anyone working on something unannounced. Connects over
+  Discord's local IPC pipe (named pipe on Windows, Unix socket on Linux
+  with Flatpak and Snap path probing) on a background thread; no Discord
+  running means silently nothing. — @Vikmanou
 - **ViewportFrame authoring in the UI Editor.** A selected `ViewportFrame`
   opens a sheet over the canvas that draws its contents large, through the
   same bake the GUI paints, with a camera to fly, orbit and pan whose pose

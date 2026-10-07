@@ -1,7 +1,6 @@
-//! The Files & recovery and Account pages. Auto-Recovery is live; the
-//! test-copy name waits on Play, and on Account everything but the key card
-//! is on the roadmap: several accounts and Discord presence are each a
-//! planned item of their own.
+//! The Files & recovery and Account pages. Auto-Recovery and Discord
+//! Rich Presence are live; the test-copy name waits on Play, and on
+//! Account the multi-account switcher is still on the roadmap.
 
 use gpui_kit::component::slider::{SliderEvent, SliderState, SliderValue};
 use gpui_kit::component::{h_flex, v_flex};
@@ -12,7 +11,7 @@ use crate::recovery::{self, INTERVAL_DEFAULT, INTERVAL_MINUTES};
 use crate::tokens;
 
 use super::kit::{
-    icon, mono, readout, secondary_button, still_toggle, text, ticked_slider, toggle, Row, Section,
+    icon, mono, readout, secondary_button, text, ticked_slider, toggle, Row, Section,
 };
 use super::nav::tilde;
 use super::{SettingsWindow, Shell};
@@ -316,20 +315,38 @@ impl SettingsWindow {
                         .below(accounts)],
                 )
             },
-            Section::new(
-                "Discord",
-                vec![
-                    Row::new("Rich Presence", still_toggle(false))
+            {
+                let enabled = self.shell.read(cx).discord.is_some();
+                let hide = self.shell.read(cx).discord_hide_names;
+                Section::new(
+                    "Discord",
+                    vec![
+                        Row::new(
+                            "Rich Presence",
+                            toggle(
+                                "discord-presence",
+                                enabled,
+                                self.set(move |shell, cx| shell.set_discord_presence(!enabled, cx)),
+                            ),
+                        )
                         .describe(
                             "Show \u{201c}Editing in RbxNative\u{201d} on your Discord profile.",
                         )
-                        .soon_faded(),
-                    Row::new("Hide place and script names", still_toggle(true))
+                        .changed(enabled, |shell, cx| shell.set_discord_presence(false, cx)),
+                        Row::new(
+                            "Hide place and script names",
+                            toggle(
+                                "discord-hide-names",
+                                hide,
+                                self.set(move |shell, cx| shell.set_discord_hide_names(!hide, cx)),
+                            ),
+                        )
                         .describe("Show only that you\u{2019}re in RbxNative.")
                         .indent()
-                        .soon_faded(),
-                ],
-            ),
+                        .changed(!hide, |shell, cx| shell.set_discord_hide_names(true, cx)),
+                    ],
+                )
+            },
         ]
     }
 }

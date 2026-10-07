@@ -79,6 +79,7 @@ mod class_icons;
 mod cli;
 mod command_bar;
 mod debugger;
+mod discord_presence;
 mod display;
 mod dragger;
 mod explorer;

@@ -14,6 +14,7 @@ mod clipboard;
 mod close_place;
 mod command;
 mod debugging;
+mod discord;
 mod dock_drag;
 mod docks;
 mod drag;
@@ -416,6 +417,15 @@ pub(crate) struct Shell {
     /// marked Active when several names hold the docks' arrangement.
     last_named_layout: Option<String>,
     output_collapsed: bool,
+    discord: Option<crate::discord_presence::Presence>,
+    discord_hide_names: bool,
+    /// The Unix timestamp presence was started — keeps Discord's elapsed
+    /// time stable across activity updates.
+    discord_started: u64,
+    /// No editor window has had focus for a while, shown as idling.
+    discord_idle: bool,
+    /// Polls for idleness while the main window is in the background.
+    discord_idle_check: Option<Task<()>>,
     drag: Option<Drag>,
     /// The dock currently being dragged by its tab, which is what puts the
     /// drop strips on screen (see `shell::dock_drag`). `None` the rest of
@@ -428,7 +438,7 @@ pub(crate) struct Shell {
     /// is raised with it once rather than fought over every frame.
     window_was_active: bool,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
-    _subscriptions: [Subscription; 15],
+    _subscriptions: [Subscription; 16],
 }
 
 impl Shell {
@@ -469,6 +479,8 @@ impl Shell {
             controls,
             argon_address: argon_address_setting,
             argon: argon_settings,
+            discord_presence: discord_presence_enabled,
+            discord_hide_names,
         } = settings;
         // Before anything renders: every size token is read through these,
         // so a scale or target floor applied after the first frame would
@@ -622,6 +634,10 @@ impl Shell {
         let initial_targets = Targets::read(&dom, &database, &Vec::from_iter(selected));
         let ui = ui_editor::UiEditor::new(window, cx);
         let recovery = recovery::Recovery::new(auto_recovery, recovery_minutes, &path);
+        let window_activated = cx.observe_window_activation(window, |shell, window, cx| {
+            shell.discord_window_activation(window.is_window_active(), cx);
+        });
+
         let mut shell = Shell {
             menu_bar,
             title: title.into(),
@@ -737,6 +753,11 @@ impl Shell {
             panel_windows: HashMap::new(),
             window_was_active: true,
             output_collapsed,
+            discord: None,
+            discord_hide_names,
+            discord_started: 0,
+            discord_idle: false,
+            discord_idle_check: None,
             drag: None,
             _subscriptions: [
                 tree_focused,
@@ -754,6 +775,7 @@ impl Shell {
                 canvas_drawn,
                 wally_query_changed,
                 searched,
+                window_activated,
             ],
         };
 
@@ -773,6 +795,10 @@ impl Shell {
         shell.sync_light_guides(cx);
         // And the screen it sits in, for the UI editor's canvas.
         shell.ui_follow_selection();
+
+        if discord_presence_enabled {
+            shell.start_discord();
+        }
 
         // `RBX_STUDIO_TOOL` (see `shell::toolbar`). Before the Command Bar
         // block below rather than after it: a script's reload rebuilds the
@@ -1573,6 +1599,8 @@ impl Shell {
             },
             argon_address: self.argon_saved_address.clone(),
             argon: self.argon_settings.clone(),
+            discord_presence: self.discord.is_some(),
+            discord_hide_names: self.discord_hide_names,
         };
         let _ = settings.save();
 
