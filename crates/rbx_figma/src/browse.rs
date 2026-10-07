@@ -1,7 +1,7 @@
 //! What the Figma browser shows with `file_content:read` alone, the only
 //! scope a public OAuth app gets: files the user opened before (kept
-//! locally, since no endpoint lists them), a file's pages and top-level
-//! frames, and small previews of both, cached on disk.
+//! locally, since no endpoint lists them), a file's node tree loaded one
+//! level at a time, and small previews, cached on disk.
 //!
 //! Folder listing (`GET /v2/teams/:id/folders`, `/v2/folders/:id/files`)
 //! needs `folders:read`, which Figma doesn't grant public OAuth apps, so it
@@ -78,19 +78,44 @@ impl Recent {
     }
 }
 
+/// One row of the node tree.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Frame {
+pub struct Item {
     pub id: String,
     pub name: String,
-    /// Figma's node type: `FRAME`, `COMPONENT`, `SECTION`…
+    /// Figma's node type: `CANVAS` (a page), `FRAME`, `TEXT`…
     pub kind: String,
+    /// Children already loaded; `None` until the row is first expanded.
+    pub children: Option<Vec<Item>>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Page {
-    pub id: String,
-    pub name: String,
-    pub frames: Vec<Frame>,
+impl Item {
+    /// Whether the type can hold children, so the row gets a disclosure
+    /// arrow before they are known.
+    pub fn expandable(&self) -> bool {
+        matches!(
+            self.kind.as_str(),
+            "CANVAS"
+                | "FRAME"
+                | "GROUP"
+                | "SECTION"
+                | "COMPONENT"
+                | "COMPONENT_SET"
+                | "INSTANCE"
+                | "BOOLEAN_OPERATION"
+        ) && self.children.as_ref().is_none_or(|c| !c.is_empty())
+    }
+
+    /// The row with `id` anywhere below (or at) this one.
+    pub fn find_mut(&mut self, id: &str) -> Option<&mut Item> {
+        if self.id == id {
+            return Some(self);
+        }
+        self.children
+            .iter_mut()
+            .flatten()
+            .find_map(|c| c.find_mut(id))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -98,7 +123,8 @@ pub struct Outline {
     pub key: String,
     pub name: String,
     pub thumbnail_url: Option<String>,
-    pub pages: Vec<Page>,
+    /// Pages, each with its top-level nodes loaded.
+    pub pages: Vec<Item>,
 }
 
 impl Outline {
@@ -112,39 +138,53 @@ impl Outline {
     }
 }
 
-/// A file's pages and their top-level frames (`GET /v1/files/:key?depth=2`).
+/// A file's pages and their top-level nodes (`GET /v1/files/:key?depth=2`).
 pub fn outline(session: &mut Session, key: &str) -> Result<Outline, String> {
     let file = session.get_json(&format!("/v1/files/{key}?depth=2"))?;
     Ok(outline_of(key, &file))
 }
 
+/// The direct children of node `id`, for expanding its row
+/// (`GET /v1/files/:key/nodes?ids=…&depth=1`).
+pub fn children(session: &mut Session, key: &str, id: &str) -> Result<Vec<Item>, String> {
+    let ids: String = url::form_urlencoded::byte_serialize(id.as_bytes()).collect();
+    let answer = session.get_json(&format!("/v1/files/{key}/nodes?ids={ids}&depth=1"))?;
+    let node = answer
+        .get("nodes")
+        .and_then(|n| n.get(id))
+        .and_then(|n| n.get("document"))
+        .ok_or_else(|| format!("That file has no node {id}"))?;
+    Ok(item_of(node, 1).children.unwrap_or_default())
+}
+
+fn str_of(v: &Value, k: &str) -> String {
+    v.get(k).and_then(Value::as_str).unwrap_or("").to_string()
+}
+
+/// `v` as a row, with `depth` levels of its children (hidden ones left out,
+/// since the import skips them too).
+fn item_of(v: &Value, depth: u32) -> Item {
+    Item {
+        id: str_of(v, "id"),
+        name: str_of(v, "name"),
+        kind: str_of(v, "type"),
+        children: (depth > 0).then(|| {
+            v.get("children")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter(|c| c.get("visible").and_then(Value::as_bool) != Some(false))
+                .map(|c| item_of(c, depth - 1))
+                .collect()
+        }),
+    }
+}
+
 fn outline_of(key: &str, file: &Value) -> Outline {
-    let str_of = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).unwrap_or("").to_string();
-    let children = |v: &Value| {
-        v.get("children")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default()
-    };
     let pages = file
         .get("document")
-        .map(children)
-        .unwrap_or_default()
-        .iter()
-        .map(|page| Page {
-            id: str_of(page, "id"),
-            name: str_of(page, "name"),
-            frames: children(page)
-                .iter()
-                .filter(|f| f.get("visible").and_then(Value::as_bool) != Some(false))
-                .map(|f| Frame {
-                    id: str_of(f, "id"),
-                    name: str_of(f, "name"),
-                    kind: str_of(f, "type"),
-                })
-                .collect(),
-        })
-        .collect();
+        .map(|d| item_of(d, 2).children.unwrap_or_default())
+        .unwrap_or_default();
     Outline {
         key: key.to_string(),
         name: str_of(file, "name"),
@@ -210,11 +250,6 @@ pub fn cached_image(
     }
 }
 
-/// Whether an API error is Figma refusing the scope rather than the file.
-pub fn missing_scope(err: &str) -> bool {
-    err.contains("(403)")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,9 +271,18 @@ mod tests {
         assert_eq!(outline.name, "Shop");
         assert_eq!(outline.thumbnail_url.as_deref(), Some("https://x/t.png"));
         assert_eq!(outline.pages.len(), 2);
-        assert_eq!(outline.pages[0].frames.len(), 1);
-        assert_eq!(outline.pages[0].frames[0].id, "1:2");
-        assert!(outline.pages[1].frames.is_empty());
+        let frames = outline.pages[0].children.as_ref().unwrap();
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].id, "1:2");
+        // Not loaded yet, so it may have some.
+        assert!(frames[0].children.is_none() && frames[0].expandable());
+        assert!(!outline.pages[1].expandable());
+        let mut page = outline.pages[0].clone();
+        page.find_mut("1:2").unwrap().children = Some(vec![item_of(
+            &serde_json::json!({ "id": "1:4", "name": "Title", "type": "TEXT" }),
+            0,
+        )]);
+        assert!(!page.find_mut("1:4").unwrap().expandable());
     }
 
     #[test]
