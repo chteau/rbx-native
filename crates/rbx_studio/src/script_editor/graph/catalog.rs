@@ -125,6 +125,10 @@ pub(crate) enum Code {
     Branch,
     ForEach,
     Repeat,
+    /// Luau kept as written: its `Code` input, line for line, re-indented
+    /// to where the run puts it. What an import cannot draw as nodes
+    /// becomes one of these, so no code is ever dropped.
+    Raw,
 }
 
 #[derive(Debug)]

@@ -12,14 +12,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::catalog::{self, Code, Kind, PinType, Prec};
+use super::import::{self, raw_lines};
 use super::{End, Graph, NodeId};
 
 mod idle;
 mod literal;
 
 pub(crate) use idle::idle;
-use literal::{indexable, lower_first, TAKEN};
-pub(crate) use literal::{is_identifier, literal, quote};
+pub(crate) use literal::{indexable, is_identifier, literal, quote};
+use literal::{lower_first, TAKEN};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Problem {
@@ -36,6 +37,14 @@ pub(crate) fn compile(graph: &Graph) -> Result<String, Vec<Problem>> {
         running: Vec::new(),
         resolving: Vec::new(),
     };
+    // Raw code may read any name it holds; a generated local must not
+    // shadow one of them.
+    for node in &graph.nodes {
+        if node.kind == "luau" {
+            let code = graph.value(&End::new(node.id, "Code")).unwrap_or_default();
+            compiler.names.extend(import::names(&code));
+        }
+    }
     for node in &graph.nodes {
         if catalog::kind(&node.kind).is_none() {
             compiler.problem(node.id, format!("Unknown node \"{}\"", node.kind));
@@ -172,6 +181,17 @@ impl<'g> Compiler<'g> {
                     }
                 }
                 self.emit(indent, "end".into());
+                self.run(&exec("Completed"), scope, indent);
+            }
+            Code::Raw => {
+                let code = self.graph.value(&exec("Code")).unwrap_or_default();
+                for (line, verbatim) in raw_lines(&code) {
+                    match verbatim || line.trim().is_empty() {
+                        true => self.lines.push(line.to_owned()),
+                        false => self.emit(indent, line.to_owned()),
+                    }
+                }
+                self.run(&exec(""), scope, indent);
             }
             Code::ForEach => {
                 let Some((list, _)) = self.input(node, "List", scope) else {

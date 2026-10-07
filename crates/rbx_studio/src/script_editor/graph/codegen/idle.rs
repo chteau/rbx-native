@@ -30,7 +30,7 @@ pub(crate) fn idle(graph: &Graph) -> Vec<NodeId> {
             catalog::kind(&node.kind).is_some_and(|kind| {
                 matches!(
                     kind.code,
-                    Code::Statement(_) | Code::Branch | Code::ForEach | Code::Repeat
+                    Code::Statement(_) | Code::Branch | Code::ForEach | Code::Repeat | Code::Raw
                 )
             })
         })

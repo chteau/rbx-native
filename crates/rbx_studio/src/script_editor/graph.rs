@@ -10,6 +10,7 @@
 
 pub(crate) mod catalog;
 pub(crate) mod codegen;
+pub(crate) mod import;
 pub(crate) mod layout;
 
 use std::collections::{BTreeMap, BTreeSet};

@@ -86,7 +86,7 @@ pub(super) const KINDS: &[Kind] = &[
         "Branch",
         Flow,
         pins![IN, wired("Condition", Bool)],
-        pins![exec("True"), exec("False")],
+        pins![exec("True"), exec("False"), exec("Completed")],
         Code::Branch,
     ),
     node(
@@ -117,5 +117,13 @@ pub(super) const KINDS: &[Kind] = &[
         pins![IN, literal("Seconds", Number, "1")],
         pins![THEN],
         Code::Statement("task.wait({Seconds})"),
+    ),
+    node(
+        "luau",
+        "Luau Code",
+        Flow,
+        pins![IN, literal("Code", String, "")],
+        pins![THEN],
+        Code::Raw,
     ),
 ];
