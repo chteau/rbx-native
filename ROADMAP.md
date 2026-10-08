@@ -2067,6 +2067,14 @@ Roblox's own engine.
   Each stroke or operation is one undo step. The Properties panel shows
   `MaterialColors` as one editable colour per material and keeps the raw
   voxel blobs out of view.
+- [x] **3D asset import and round-trip through Roblox.** Model › Import 3D
+  Model… (or a file dropped on the window) takes a `.fbx`/`.obj`/`.gltf`/
+  `.glb`, uploads it through Open Cloud, downloads the `Model` of
+  `MeshPart`s Roblox made of it and places it in `Workspace`; Import
+  Image… uploads a `.png`/`.jpg`/`.bmp` and puts it on the selected part as
+  a `Decal`. A mesh over the 20,000-triangle budget is refused before
+  anything is uploaded, naming the mesh (the new `rbx_import` crate); an FBX
+  whose triangles can't be counted is uploaded with a warning.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -2227,19 +2235,6 @@ against `Roblox/creator-docs` rather than assumed:
   [Explicitly impossible](#explicitly-impossible-without-robloxs-engine)).
 
 ### Editor
-- [ ] 📋 **3D asset import and round-trip through Roblox**, i.e. import a
-  local `.fbx`/`.obj`/`.gltf` (drag-and-drop or
-  `Insert > Model/Mesh/Image`), upload it to Roblox as a real asset via
-  Open Cloud (the same
-  client `rbx_cloud` already has for places), and display the result in
-  the workspace as an ordinary `MeshPart` — matches how Studio's own
-  Importer actually works (you can't reference a mesh in-game without it
-  being a real Roblox asset first). Budget check against
-  `Roblox/creator-docs`' `art/modeling/specifications.md`: **individual
-  meshes can't exceed 20,000 triangles** (avatar body parts have their own,
-  separate budgets — see rig support below); worth validating and warning
-  on import rather than letting an oversized mesh fail silently or only at
-  upload time.
 - [ ] 📋 **Rig / avatar insertion**, matching Studio's real **Rig
   Generator** tool (checked against `studio/rig-builder.md` and
   `avatar/character-bodies/specifications.md` rather than assumed — some

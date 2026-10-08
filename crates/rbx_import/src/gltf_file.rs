@@ -40,7 +40,10 @@ fn triangles(primitive: &gltf::Primitive) -> usize {
 pub(crate) fn inline_side_files(bytes: &[u8], dir: Option<&Path>) -> Result<Vec<u8>, String> {
     let mut root: Value =
         serde_json::from_slice(bytes).map_err(|err| format!("not a valid glTF: {err}"))?;
-    for (list, fallback) in [("buffers", "application/octet-stream"), ("images", "image/png")] {
+    for (list, fallback) in [
+        ("buffers", "application/octet-stream"),
+        ("images", "image/png"),
+    ] {
         let Some(entries) = root.get_mut(list).and_then(Value::as_array_mut) else {
             continue;
         };
@@ -55,7 +58,11 @@ pub(crate) fn inline_side_files(bytes: &[u8], dir: Option<&Path>) -> Result<Vec<
             let name = decode_uri(uri);
             let file = std::fs::read(dir.join(&name))
                 .map_err(|err| format!("{name} (named by the .gltf): {err}"))?;
-            let mime = if list == "images" { image_mime(&name) } else { fallback };
+            let mime = if list == "images" {
+                image_mime(&name)
+            } else {
+                fallback
+            };
             let data = base64::engine::general_purpose::STANDARD.encode(file);
             entry["uri"] = Value::String(format!("data:{mime};base64,{data}"));
         }

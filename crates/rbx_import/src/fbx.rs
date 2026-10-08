@@ -16,11 +16,17 @@ pub(crate) fn report(bytes: &[u8]) -> Report {
     for objects in tree.root().children_by_name("Objects") {
         for geometry in objects.children_by_name("Geometry") {
             if let Some(triangles) = triangles(geometry) {
-                meshes.push(MeshInfo { name: name_of(geometry), triangles });
+                meshes.push(MeshInfo {
+                    name: name_of(geometry),
+                    triangles,
+                });
             }
         }
     }
-    Report { meshes, unchecked: None }
+    Report {
+        meshes,
+        unchecked: None,
+    }
 }
 
 fn unchecked(what: &str) -> Report {

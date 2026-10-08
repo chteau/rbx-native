@@ -48,7 +48,14 @@ impl Shell {
             files: true,
             directories: false,
             multiple: true,
-            prompt: Some(if images { "Import Image" } else { "Import 3D Model" }.into()),
+            prompt: Some(
+                if images {
+                    "Import Image"
+                } else {
+                    "Import 3D Model"
+                }
+                .into(),
+            ),
         });
         cx.spawn(async move |shell, cx| {
             let Ok(Ok(Some(paths))) = prompt.await else {
@@ -68,7 +75,10 @@ impl Shell {
             } else if Format::of(&path).is_some() {
                 self.import_model(path, cx);
             } else {
-                self.import_report(Err(format!("{}: not a 3D or image file", path.display())), cx);
+                self.import_report(
+                    Err(format!("{}: not a 3D or image file", path.display())),
+                    cx,
+                );
             }
         }
     }
@@ -114,7 +124,9 @@ impl Shell {
         }
         let outcome = match root {
             Some(_) => Ok(format!("Imported {name} as asset {}", imported.asset_id)),
-            None => Err(format!("{name}: Roblox\u{2019}s import holds nothing to place")),
+            None => Err(format!(
+                "{name}: Roblox\u{2019}s import holds nothing to place"
+            )),
         };
         self.import_report(outcome, cx);
     }
@@ -125,7 +137,9 @@ impl Shell {
             .set_feedback(Feedback::Output(format!("Uploading {name}\u{2026}")));
         cx.notify();
         cx.spawn(async move |this, cx| {
-            let result = cx.background_spawn(async move { upload_image(&path) }).await;
+            let result = cx
+                .background_spawn(async move { upload_image(&path) })
+                .await;
             let _ = this.update(cx, |shell, cx| shell.finish_image(name, result, cx));
         })
         .detach();
@@ -163,7 +177,10 @@ impl Shell {
         self.reselect(vec![decal], cx);
         self.reflect_changes(&changes, cx);
         self.record_history_change(changes);
-        self.import_report(Ok(format!("Added {name} as a Decal (rbxassetid://{id})")), cx);
+        self.import_report(
+            Ok(format!("Added {name} as a Decal (rbxassetid://{id})")),
+            cx,
+        );
     }
 
     fn import_report(&mut self, result: Result<String, String>, cx: &mut Context<Self>) {
@@ -196,7 +213,11 @@ fn upload_model(path: &Path, name: &str) -> Result<Imported, String> {
     }
     if let Ok(mock) = std::env::var(MOCK_VARIABLE) {
         let bytes = std::fs::read(&mock).map_err(|err| format!("{mock}: {err}"))?;
-        return Ok(Imported { dom: read_model(&bytes)?, asset_id: 0, note: report.unchecked });
+        return Ok(Imported {
+            dom: read_model(&bytes)?,
+            asset_id: 0,
+            note: report.unchecked,
+        });
     }
     let (client, user) = authorize()?;
     let file = ModelFile {
@@ -209,7 +230,11 @@ fn upload_model(path: &Path, name: &str) -> Result<Imported, String> {
         .map_err(|err| describe(&err))?;
     let dom = read_model(&fetch_asset(&client, asset_id)?)
         .map_err(|err| format!("uploaded as model {asset_id}, but {err}"))?;
-    Ok(Imported { dom, asset_id, note: report.unchecked })
+    Ok(Imported {
+        dom,
+        asset_id,
+        note: report.unchecked,
+    })
 }
 
 fn upload_image(path: &Path) -> Result<u64, String> {
@@ -225,7 +250,10 @@ fn upload_image(path: &Path) -> Result<u64, String> {
 fn place_model(dom: &mut WeakDom, imported: &WeakDom, name: &str, parent: Ref) -> Option<Ref> {
     let roots = imported.root_refs();
     let single_model = match roots {
-        [only] => imported.get(*only).filter(|i| i.class() == "Model").map(|_| *only),
+        [only] => imported
+            .get(*only)
+            .filter(|i| i.class() == "Model")
+            .map(|_| *only),
         _ => None,
     };
     let root = match single_model {

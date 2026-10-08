@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-08
+
+- **Import 3D models and images as Roblox assets.** Model › Import 3D
+  Model… (or dropping a file on the window) uploads an `.fbx`, `.obj`,
+  `.gltf` or `.glb` through Open Cloud and places the resulting model of
+  `MeshPart`s in `Workspace`; Import Image… puts a `.png`/`.jpg`/`.bmp` on
+  the selected part as a `Decal`. A mesh over Roblox's 20,000-triangle limit
+  is refused up front with the offending mesh named. — @chteau
+
 ## 2026-10-07
 
 - **Import from Figma in the UI Editor.** The canvas's `+` menu has

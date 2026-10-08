@@ -15,7 +15,13 @@ fn the_format_comes_from_the_extension_in_any_case() {
 #[test]
 fn an_obj_cube_is_twelve_triangles_and_uploads_as_gltf() {
     let (report, upload) = prepare_bytes(Format::Obj, "cube", CUBE.into(), None).unwrap();
-    assert_eq!(report.meshes, [MeshInfo { name: "Cube".into(), triangles: 12 }]);
+    assert_eq!(
+        report.meshes,
+        [MeshInfo {
+            name: "Cube".into(),
+            triangles: 12
+        }]
+    );
     assert_eq!(upload.content_type, "model/gltf+json");
     assert_eq!(upload.file_name, "cube.gltf");
     // What went up reads back as the same mesh.
@@ -40,13 +46,22 @@ fn obj_uvs_are_flipped_into_gltf_space() {
 fn a_mesh_over_the_limit_is_named_in_the_refusal() {
     let report = Report {
         meshes: vec![
-            MeshInfo { name: "ok".into(), triangles: TRIANGLE_LIMIT },
-            MeshInfo { name: "big".into(), triangles: TRIANGLE_LIMIT + 1 },
+            MeshInfo {
+                name: "ok".into(),
+                triangles: TRIANGLE_LIMIT,
+            },
+            MeshInfo {
+                name: "big".into(),
+                triangles: TRIANGLE_LIMIT + 1,
+            },
         ],
         unchecked: None,
     };
     let refusal = report.refusal().unwrap();
-    assert!(refusal.contains("big (20001 triangles)") && !refusal.contains("ok ("), "{refusal}");
+    assert!(
+        refusal.contains("big (20001 triangles)") && !refusal.contains("ok ("),
+        "{refusal}"
+    );
     assert!(Report::default().refusal().is_none());
 }
 
@@ -71,8 +86,14 @@ fn a_gltf_counts_strips_and_unindexed_triangles() {
     assert_eq!(
         report.meshes,
         [
-            MeshInfo { name: "loose".into(), triangles: 2 },
-            MeshInfo { name: "Mesh 1".into(), triangles: 3 },
+            MeshInfo {
+                name: "loose".into(),
+                triangles: 2
+            },
+            MeshInfo {
+                name: "Mesh 1".into(),
+                triangles: 3
+            },
         ]
     );
 }
@@ -95,8 +116,13 @@ fn a_gltf_side_buffer_becomes_a_data_uri() {
 
 #[test]
 fn an_ascii_fbx_uploads_with_a_note_instead_of_a_count() {
-    let (report, upload) =
-        prepare_bytes(Format::Fbx, "a", b"; FBX 7.4.0 project file\n".to_vec(), None).unwrap();
+    let (report, upload) = prepare_bytes(
+        Format::Fbx,
+        "a",
+        b"; FBX 7.4.0 project file\n".to_vec(),
+        None,
+    )
+    .unwrap();
     assert!(report.meshes.is_empty() && report.unchecked.is_some());
     assert_eq!(upload.content_type, "model/fbx");
 }
@@ -117,12 +143,20 @@ fn a_binary_fbx_counts_polygons_as_triangles() {
     {
         let mut attrs = w.new_node("PolygonVertexIndex").unwrap();
         // A quad (2 triangles) then a triangle.
-        attrs.append_arr_i32_from_iter(None, [0, 1, 2, !3, 0, 2, !3]).unwrap();
+        attrs
+            .append_arr_i32_from_iter(None, [0, 1, 2, !3, 0, 2, !3])
+            .unwrap();
     }
     w.close_node().unwrap();
     w.close_node().unwrap();
     w.close_node().unwrap();
     w.finalize_and_flush(&FbxFooter::default()).unwrap();
     let (report, _) = prepare_bytes(Format::Fbx, "q", out, None).unwrap();
-    assert_eq!(report.meshes, [MeshInfo { name: "Quad".into(), triangles: 3 }]);
+    assert_eq!(
+        report.meshes,
+        [MeshInfo {
+            name: "Quad".into(),
+            triangles: 3
+        }]
+    );
 }

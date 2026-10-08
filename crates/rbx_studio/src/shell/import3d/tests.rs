@@ -26,7 +26,13 @@ fn names_under(dom: &WeakDom, parent: Ref) -> Vec<String> {
 fn a_single_model_lands_renamed_with_its_meshparts() {
     let mut dom = WeakDom::new();
     let workspace = dom.new_instance("Workspace", "Workspace", None);
-    let root = place_model(&mut dom, &imported(&[("Model", "Model")]), "chair", workspace).unwrap();
+    let root = place_model(
+        &mut dom,
+        &imported(&[("Model", "Model")]),
+        "chair",
+        workspace,
+    )
+    .unwrap();
     assert_eq!(dom.get(root).unwrap().name(), "chair");
     assert_eq!(dom.get(root).unwrap().class(), "Model");
     assert_eq!(names_under(&dom, root), ["Body"]);

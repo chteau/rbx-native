@@ -15,10 +15,13 @@ pub(crate) fn convert(bytes: &[u8]) -> Result<(Vec<MeshInfo>, Vec<u8>), String> 
         single_index: true,
         ..Default::default()
     };
-    let (models, _) = tobj::load_obj_buf(&mut Cursor::new(bytes), &options, |_| {
-        Ok(Default::default())
-    })
-    .map_err(|err| format!("not a valid .obj: {err}"))?;
+    let (models, _) =
+        tobj::load_obj_buf(
+            &mut Cursor::new(bytes),
+            &options,
+            |_| Ok(Default::default()),
+        )
+        .map_err(|err| format!("not a valid .obj: {err}"))?;
 
     let mut buffer = Vec::new();
     let (mut views, mut accessors, mut meshes, mut nodes) = (vec![], vec![], vec![], vec![]);
@@ -31,12 +34,30 @@ pub(crate) fn convert(bytes: &[u8]) -> Result<(Vec<MeshInfo>, Vec<u8>), String> 
         let (min, max) = bounds(&mesh.positions);
         attributes.insert(
             "POSITION".into(),
-            push(&mut buffer, &mut views, &mut accessors, floats(&mesh.positions), 5126, vertices, "VEC3", Some((min, max))),
+            push(
+                &mut buffer,
+                &mut views,
+                &mut accessors,
+                floats(&mesh.positions),
+                5126,
+                vertices,
+                "VEC3",
+                Some((min, max)),
+            ),
         );
         if mesh.normals.len() == mesh.positions.len() {
             attributes.insert(
                 "NORMAL".into(),
-                push(&mut buffer, &mut views, &mut accessors, floats(&mesh.normals), 5126, vertices, "VEC3", None),
+                push(
+                    &mut buffer,
+                    &mut views,
+                    &mut accessors,
+                    floats(&mesh.normals),
+                    5126,
+                    vertices,
+                    "VEC3",
+                    None,
+                ),
             );
         }
         if mesh.texcoords.len() / 2 == vertices {
@@ -48,7 +69,16 @@ pub(crate) fn convert(bytes: &[u8]) -> Result<(Vec<MeshInfo>, Vec<u8>), String> 
                 .collect();
             attributes.insert(
                 "TEXCOORD_0".into(),
-                push(&mut buffer, &mut views, &mut accessors, floats(&flipped), 5126, vertices, "VEC2", None),
+                push(
+                    &mut buffer,
+                    &mut views,
+                    &mut accessors,
+                    floats(&flipped),
+                    5126,
+                    vertices,
+                    "VEC2",
+                    None,
+                ),
             );
         }
         let indices = push(
@@ -88,7 +118,10 @@ pub(crate) fn convert(bytes: &[u8]) -> Result<(Vec<MeshInfo>, Vec<u8>), String> 
             "uri": format!("data:application/octet-stream;base64,{data}"),
         }],
     });
-    Ok((infos, serde_json::to_vec(&document).map_err(|e| e.to_string())?))
+    Ok((
+        infos,
+        serde_json::to_vec(&document).map_err(|e| e.to_string())?,
+    ))
 }
 
 fn floats(values: &[f32]) -> Vec<u8> {

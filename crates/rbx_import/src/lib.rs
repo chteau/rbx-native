@@ -114,7 +114,13 @@ pub fn prepare_bytes(
                 content_type: "model/gltf-binary",
                 bytes,
             };
-            Ok((Report { meshes, unchecked: None }, upload))
+            Ok((
+                Report {
+                    meshes,
+                    unchecked: None,
+                },
+                upload,
+            ))
         }
         Format::Gltf => {
             let bytes = gltf_file::inline_side_files(&bytes, dir)?;
@@ -124,7 +130,13 @@ pub fn prepare_bytes(
                 content_type: "model/gltf+json",
                 bytes,
             };
-            Ok((Report { meshes, unchecked: None }, upload))
+            Ok((
+                Report {
+                    meshes,
+                    unchecked: None,
+                },
+                upload,
+            ))
         }
         Format::Obj => {
             let (meshes, document) = obj::convert(&bytes)?;
@@ -133,7 +145,13 @@ pub fn prepare_bytes(
                 content_type: "model/gltf+json",
                 bytes: document,
             };
-            Ok((Report { meshes, unchecked: None }, upload))
+            Ok((
+                Report {
+                    meshes,
+                    unchecked: None,
+                },
+                upload,
+            ))
         }
     }
 }
