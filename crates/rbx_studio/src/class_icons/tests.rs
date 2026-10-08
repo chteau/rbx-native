@@ -43,6 +43,7 @@ fn a_class_outside_roblox_metadata_reuses_its_family_tile() {
         ("Vector3Curve", "Animation"),
         ("BinaryStringValue", "StringValue"),
         ("Motor", "Motor6D"),
+        ("AnimationConstraint", "Motor6D"),
         ("PartOperation", "UnionOperation"),
         ("VehicleController", "Humanoid"),
     ] {

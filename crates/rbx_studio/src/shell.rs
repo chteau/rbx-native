@@ -43,6 +43,7 @@ mod recovery;
 mod ref_pick;
 mod reparent;
 mod ribbon;
+mod rig;
 mod roblox_publish;
 mod roving;
 
