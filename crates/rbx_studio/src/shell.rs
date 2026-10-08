@@ -24,6 +24,7 @@ mod export;
 mod folder_color;
 mod freeze;
 mod group;
+mod import3d;
 mod guides;
 mod history;
 mod keys;
@@ -1700,6 +1701,9 @@ impl Render for Shell {
             .on_action(cx.listener(|shell, _: &roving::FocusPrev, window, cx| {
                 shell.step_focus(true, window, cx);
                 cx.notify();
+            }))
+            .on_drop(cx.listener(|shell, paths: &ExternalPaths, _, cx| {
+                shell.import_files(paths.paths().to_vec(), cx);
             }))
             .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
                 shell.handle_shell_key(&event.keystroke, window, cx);

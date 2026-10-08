@@ -6240,6 +6240,7 @@ dependencies = [
  "rbx_cloud",
  "rbx_dom",
  "rbx_figma",
+ "rbx_import",
  "rbx_lua",
  "rbx_mesh",
  "rbx_reflection",

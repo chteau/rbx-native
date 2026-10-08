@@ -145,6 +145,18 @@ pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
     });
     cx.on_action({
         let shell = shell.clone();
+        move |_: &MenuImportModel, cx| {
+            let _ = shell.update(cx, |shell, cx| shell.choose_import(false, cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
+        move |_: &MenuImportImage, cx| {
+            let _ = shell.update(cx, |shell, cx| shell.choose_import(true, cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
         move |_: &MenuInsertScript, cx| {
             let _ = shell.update(cx, |shell, cx| shell.insert_instance("Script", cx));
         }
