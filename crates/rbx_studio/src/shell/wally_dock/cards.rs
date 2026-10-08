@@ -25,30 +25,22 @@ impl Shell {
         if !self.wally.query.is_empty() {
             return self.search_page(layout, cx);
         }
-        let header = header("Discover", None);
+        let discover = header("Discover", None);
         let content = match &self.wally.featured {
             Remote::Ready(listings) => {
-                let cards: Vec<AnyElement> = listings
-                    .iter()
-                    .enumerate()
-                    .map(|(index, listing)| {
-                        let query = format!("{}/{}", listing.scope, listing.name);
-                        listing_card(index, listing)
-                            .cursor_pointer()
-                            .tab_index(self.tab_order.next())
-                            .hover(|this| {
-                                let this = tokens::hover_fx(this);
-                                this.border_color(tokens::border2())
-                                    .bg(tokens::secondary_hover())
-                            })
-                            .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
-                            .on_click(cx.listener(move |shell, _, window, cx| {
-                                shell.wally_search_for(query.clone(), window, cx);
-                            }))
-                            .into_any_element()
-                    })
-                    .collect();
-                grid(layout.columns, cards).into_any_element()
+                let listings = listings.clone();
+                let featured = self.listing_cards("wally-featured", &listings, cx);
+                let mut content = v_flex().gap(px(12.)).child(grid(layout.columns, featured));
+                if let Remote::Ready(listings) = &self.wally.recent {
+                    let listings = listings.clone();
+                    if !listings.is_empty() {
+                        let recent = self.listing_cards("wally-recent", &listings, cx);
+                        content = content
+                            .child(header("Recently published", None))
+                            .child(grid(layout.columns, recent));
+                    }
+                }
+                content.into_any_element()
             }
             Remote::Failed => self.error_state(cx).into_any_element(),
             Remote::Idle | Remote::Loading => grid(
@@ -57,7 +49,36 @@ impl Shell {
             )
             .into_any_element(),
         };
-        (header, content)
+        (discover, content)
+    }
+
+    /// Clickable cards for `listings`; a click searches for the package.
+    fn listing_cards(
+        &mut self,
+        id: &'static str,
+        listings: &[Listing],
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
+        listings
+            .iter()
+            .enumerate()
+            .map(|(index, listing)| {
+                let query = format!("{}/{}", listing.scope, listing.name);
+                listing_card(id, index, listing)
+                    .cursor_pointer()
+                    .tab_index(self.tab_order.next())
+                    .hover(|this| {
+                        let this = tokens::hover_fx(this);
+                        this.border_color(tokens::border2())
+                            .bg(tokens::secondary_hover())
+                    })
+                    .focus_visible(|this| this.shadow(tokens::focus_ring(tokens::dock())))
+                    .on_click(cx.listener(move |shell, _, window, cx| {
+                        shell.wally_search_for(query.clone(), window, cx);
+                    }))
+                    .into_any_element()
+            })
+            .collect()
     }
 
     /// Installed: "N packages" over the same grid, each card not
@@ -286,11 +307,11 @@ fn description_line(description: Option<String>) -> Div {
     }
 }
 
-/// A featured card: the title row, then up to two lines of description
+/// A featured or recently published card: the title row, then up to two lines of description
 /// in a 32px body. The caller makes it clickable.
-fn listing_card(index: usize, listing: &Listing) -> Stateful<Div> {
+fn listing_card(id: &'static str, index: usize, listing: &Listing) -> Stateful<Div> {
     card_frame()
-        .id(("wally-featured", index))
+        .id((id, index))
         .child(title_row(
             &listing.scope,
             &listing.name,

@@ -35,13 +35,31 @@ impl Shell {
         self.wally_query_changed(cx);
     }
 
-    /// The Home page's Featured cards, fetched once; a failure stays until
+    /// The Home page's Featured and Recently published cards, fetched once; a failure stays until
     /// "Try again" ([`Shell::wally_retry`]).
     pub(in crate::shell) fn wally_load_featured(&mut self, cx: &mut Context<Self>) {
         if !matches!(self.wally.featured, Remote::Idle) {
             return;
         }
         self.wally.featured = Remote::Loading;
+        self.wally.recent = Remote::Loading;
+        cx.spawn(async move |shell, cx| {
+            let fetched = cx
+                .background_executor()
+                .spawn(async { wally_client::recently_published() })
+                .await;
+            let _ = shell.update(cx, |shell, cx| {
+                shell.wally.recent = match fetched {
+                    Ok(listings) => Remote::Ready(listings),
+                    Err(message) => {
+                        shell.wally_unreachable(message);
+                        Remote::Failed
+                    }
+                };
+                cx.notify();
+            });
+        })
+        .detach();
         cx.spawn(async move |shell, cx| {
             let fetched = cx
                 .background_executor()
@@ -70,6 +88,7 @@ impl Shell {
             return;
         }
         self.wally.featured = Remote::Idle;
+        self.wally.recent = Remote::Idle;
         self.wally_load_featured(cx);
     }
 
