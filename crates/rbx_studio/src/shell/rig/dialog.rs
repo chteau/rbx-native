@@ -1,7 +1,8 @@
 //! The Rig Builder dialog: what to build, as four segmented pickers. The
 //! state and its rules are plain data so they are tested without a window.
 
-use gpui_kit::component::{h_flex, v_flex};
+use gpui_kit::component::input::Input;
+use gpui_kit::component::{h_flex, v_flex, Sizable as _};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
@@ -16,6 +17,19 @@ use super::{BodyScale, BodyShape, RigType};
 pub(crate) enum Character {
     Mannequin,
     MyAvatar,
+    /// Any player's public avatar, by UserId.
+    Player,
+}
+
+/// A UserId as typed: digits only, and not zero.
+pub(crate) fn parse_user_id(text: &str) -> Result<u64, String> {
+    let text = text.trim();
+    match text.parse::<u64>() {
+        Ok(id) if id > 0 && text.bytes().all(|b| b.is_ascii_digit()) => Ok(id),
+        _ => Err(format!(
+            "\u{201c}{text}\u{201d} is not a UserId: type the player\u{2019}s number, such as 156"
+        )),
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -44,9 +58,9 @@ impl RigDialog {
         self.rig_type == RigType::R6
     }
 
-    /// "My Avatar" brings its own type, shape and scale.
+    /// "My Avatar" and "Player" bring their own type, shape and scale.
     pub(crate) fn body_fixed(&self) -> bool {
-        self.character == Character::MyAvatar
+        self.character != Character::Mannequin
     }
 
     pub(crate) fn set_rig_type(&mut self, rig_type: RigType) {
@@ -67,7 +81,9 @@ impl RigDialog {
 
     /// Why some options are greyed out, if any are.
     pub(crate) fn explanation(&self) -> Option<&'static str> {
-        if self.body_fixed() {
+        if self.character == Character::Player {
+            Some("Type, shape and scale come from that player\u{2019}s public avatar. No API key needed.")
+        } else if self.body_fixed() {
             Some("Type, shape and scale come from your Roblox avatar.")
         } else if self.r6_only() {
             Some("R6 has one body: Feminine and Rthro need R15.")
@@ -124,7 +140,10 @@ impl Shell {
                         .hover(|this| this.bg(ui::wash()))
                         .on_click(cx.listener(move |shell, _, _, cx| {
                             if let Some(dialog) = shell.rig_dialog.as_mut() {
+                                let before = dialog.character;
                                 pick(dialog);
+                                shell.rig_user_focus = before != Character::Player
+                                    && dialog.character == Character::Player;
                             }
                             cx.notify();
                         }))
@@ -196,6 +215,9 @@ impl Shell {
             ("My Avatar", d.character == Character::MyAvatar, true, |d| {
                 d.character = Character::MyAvatar
             }),
+            ("Player", d.character == Character::Player, true, |d| {
+                d.character = Character::Player
+            }),
         ];
         let body = v_flex()
             .px(px(20.))
@@ -206,6 +228,12 @@ impl Shell {
             .child(self.rig_row("Body Shape", self.segmented("shape", shapes.into(), cx)))
             .child(self.rig_row("Body Scale", self.segmented("scale", scales.into(), cx)))
             .child(self.rig_row("Character", self.segmented("character", characters, cx)))
+            .when(d.character == Character::Player, |this| {
+                this.child(self.rig_row(
+                    "User Id",
+                    h_flex().child(Input::new(&self.rig_user).small().w(px(220.))),
+                ))
+            })
             .when_some(d.explanation(), |this, why| {
                 this.child(ui::text(11.5, 16.).text_color(tokens::text2()).child(why))
             })
@@ -289,6 +317,24 @@ mod tests {
         assert!(d.shape_enabled(BodyShape::Feminine));
         assert!(d.scale_enabled(BodyScale::RthroSlender));
         assert_eq!(d.explanation(), None);
+    }
+
+    #[test]
+    fn a_user_id_is_digits_and_not_zero() {
+        assert_eq!(parse_user_id(" 156 "), Ok(156));
+        for bad in ["", "0", "abc", "-5", "1.5", "+7", "12 3"] {
+            assert!(parse_user_id(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn player_fixes_the_body_like_my_avatar() {
+        let d = RigDialog {
+            character: Character::Player,
+            ..RigDialog::default()
+        };
+        assert!(!d.scale_enabled(BodyScale::Classic));
+        assert!(d.explanation().unwrap().contains("No API key"));
     }
 
     #[test]

@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 
+use super::bundle::Piece;
 use super::cframe::{Cf, V3};
 
 pub(super) struct PartSpec {
@@ -13,6 +14,8 @@ pub(super) struct PartSpec {
     /// In rig space: `HumanoidRootPart` at the origin.
     pub(super) cf: Cf,
     pub(super) attachments: Vec<(String, Cf)>,
+    /// The real mesh this part is drawn with (R15), as a `MeshPart`.
+    pub(super) mesh: Option<Piece>,
 }
 
 pub(super) struct JointSpec {
@@ -59,6 +62,7 @@ impl Layout {
                 size: sizes[name],
                 cf: placed[name.as_str()],
                 attachments: attachments(name),
+                mesh: None,
             })
             .collect();
         Layout {
@@ -82,7 +86,10 @@ impl Layout {
 
 /// `HatAttachment` & co. on a head of `size`.
 pub(super) fn head_attachments(size: V3) -> Vec<(String, Cf)> {
-    let top = [0., size[1] / 2., 0.];
+    // Roblox's rigs seat a hat a little under the head's top (0.6 on the
+    // classic 1-stud head, 0.60686 on an R15 head of 1.2): half the height
+    // plus a tenth of a stud, never more than 0.6.
+    let top = [0., (size[1] / 2. + 0.1).min(0.6), 0.];
     vec![
         ("HatAttachment".into(), Cf::at(top)),
         ("HairAttachment".into(), Cf::at(top)),

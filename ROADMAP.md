@@ -2279,17 +2279,34 @@ against `Roblox/creator-docs` rather than assumed:
     the same way any other asset import works.
   - **Shipped** as Avatar › Rig Builder, Model › Insert Rig… and the
     palette: R6/R15, Masculine/Feminine, Classic/Rthro Normal/Rthro
-    Slender (Rthro and Feminine need R15) and Mannequin/My Avatar, built
-    locally from `Part` blocks sized to the documented limits, with a
-    `Humanoid`, joints per the Avatar Joint Upgrade, a face `Decal`,
-    `BodyColors` and accessory/grip attachments. Roblox publishes no rig
-    meshes or Feminine/Rthro tables here, so **Feminine is this editor's
-    own preset** and the Rthro sizes are in-between estimates. **My
-    Avatar** needs no cookie: the public avatar endpoint is read with the
-    user id of the stored Open Cloud key; it applies body scales, colours,
-    hats/accessories (welded at the matching attachment), shirts and pants.
-    Body-part packages, dynamic heads and animations are named in the
-    output and not applied (blocks only; no animation playback exists).
+    Slender (Rthro and Feminine need R15) and Mannequin / My Avatar /
+    **Player** (any UserId). An R15 rig is made of `MeshPart`s with the
+    current Roblox body meshes, `InitialSize`/`OriginalSize`, the real
+    rig and accessory `Attachment`s and the `WrapTarget` cages, scaled per
+    body scale so every joint stays exact; an R6 rig is the classic block
+    rig. Every rig has a `Humanoid` with an `Animator`, joints per the
+    Avatar Joint Upgrade, a face `Decal`, `BodyColors` (Studio's yellow
+    head and arms, blue torso, green legs), `Shirt`, `Pants` and the
+    standard `Animate` LocalScript with its `StringValue`/`Animation`
+    children. No Rthro mesh ids are public, so **Rthro Normal/Slender and
+    Feminine are this editor's presets**: scaled Classic-compatible
+    meshes, not Roblox's Rthro packages.
+  - **Player / My Avatar** need no API key and no cookie: the public
+    `avatar.roblox.com/v1/users/{id}/avatar` endpoint and anonymous
+    `assetdelivery` are read (My Avatar only needs the key to learn its
+    user id). It applies body scales, colours, accessories welded at the
+    matching attachment (layered clothing keeps its `WrapLayer`), shirts,
+    pants and T-shirts, the player's animation choices into the `Animate`
+    states, R15 body-part packages (mesh, texture, attachments, cage; a
+    package missing a rig attachment is skipped) and R6 `CharacterMesh`es.
+    Roblox's stock dynamic-head mesh and texture are not downloadable
+    anonymously, so such a head falls back to the Classic head. A banned
+    id, an empty avatar (Roblox returns that for ids that don't exist
+    too), a rate limit (429) and no network each give a clear Output and command-bar message and insert
+    nothing. Not applied, and named in Output: face parts and moods, and
+    a dynamic head on R6. `RBX_STUDIO_RIG_AVATAR_MOCK` (a directory of
+    `<UserId>.json`, `me.json`, `<UserId>.status` and `<asset>.rbxm`) is the
+    test seam.
 - [x] **Wally "Recently published" list.** The Discover page lists the six
   newest publishes under the Featured cards. The registry backend has no
   route for it, but every publish is a `Publish scope/name@version` commit

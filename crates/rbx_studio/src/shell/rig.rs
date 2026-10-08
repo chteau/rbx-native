@@ -5,13 +5,17 @@
 //! setting: everything the dialog or "My Avatar" adds is laid over its
 //! result, so the builder is testable without a window or the network.
 //!
-//! Roblox publishes no mesh data for its rigs here, so the parts are blocks
-//! sized from the documented limits (see `proportions`); the *Feminine* body
-//! shape and the in-between Rthro sizes are this editor's presets, not
-//! Roblox's tables.
+//! An R15 rig is made of `MeshPart`s with Roblox's own body meshes and
+//! attachments (see `bundle`), plus `BodyColors`, `Shirt`, `Pants` and the
+//! stock `Animate` script. R6 is the classic block rig. The *Feminine* body
+//! shape, the in-between Rthro sizes and the Rthro Slender sizes (scaled
+//! Classic-compatible meshes, as no Rthro mesh ids are public) are this
+//! editor's presets, not Roblox's tables.
 
+mod animate;
 mod avatar;
 mod build;
+mod bundle;
 mod cframe;
 mod dialog;
 mod insert;
@@ -70,23 +74,18 @@ pub(crate) struct BodyColors {
     pub(crate) right_leg: [u8; 3],
 }
 
-impl BodyColors {
-    pub(crate) const fn uniform(color: [u8; 3]) -> BodyColors {
-        BodyColors {
-            head: color,
-            torso: color,
-            left_arm: color,
-            right_arm: color,
-            left_leg: color,
-            right_leg: color,
-        }
-    }
-}
-
 impl Default for BodyColors {
-    /// Medium stone grey, the colour of a new `Part`.
+    /// The classic Roblox starter look: yellow head and arms, blue torso,
+    /// green legs.
     fn default() -> Self {
-        BodyColors::uniform([163, 162, 165])
+        BodyColors {
+            head: [245, 205, 48],
+            torso: [13, 105, 172],
+            left_arm: [245, 205, 48],
+            right_arm: [245, 205, 48],
+            left_leg: [75, 151, 75],
+            right_leg: [75, 151, 75],
+        }
     }
 }
 
@@ -101,6 +100,8 @@ pub(crate) struct RigOptions {
     /// Replaces the preset of `shape` and `scale` (a user's own avatar).
     pub(crate) scales: Option<Scales>,
     pub(crate) colors: BodyColors,
+    /// The R15 body meshes; a player's own packages replace stock entries.
+    pieces: bundle::Pieces,
     /// Where the soles of the feet stand.
     pub(crate) feet: V3,
 }
@@ -120,6 +121,7 @@ impl RigOptions {
             joints,
             scales: None,
             colors: BodyColors::default(),
+            pieces: bundle::stock(),
             feet: [0.; 3],
         }
     }

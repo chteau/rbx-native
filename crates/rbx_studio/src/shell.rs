@@ -377,6 +377,10 @@ pub(crate) struct Shell {
     rig_dialog: Option<rig::RigDialog>,
     /// Held by the dialog like `close_focus`.
     rig_focus: FocusHandle,
+    /// The Rig Builder's "Player" UserId field, and whether it is due the
+    /// keyboard (set when Player is picked).
+    rig_user: Entity<InputState>,
+    rig_user_focus: bool,
     /// This editor's window, which Close Place removes from outside it.
     window_handle: AnyWindowHandle,
     /// This place's `Folder` colour tags; see `shell::folder_color`.
@@ -453,7 +457,7 @@ pub(crate) struct Shell {
     /// is raised with it once rather than fought over every frame.
     window_was_active: bool,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
-    _subscriptions: [Subscription; 16],
+    _subscriptions: [Subscription; 17],
 }
 
 impl Shell {
@@ -579,6 +583,13 @@ impl Shell {
         let wally_query_changed = cx.subscribe(&wally_query, |shell, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
                 shell.wally_query_changed(cx);
+            }
+        });
+
+        let rig_user = cx.new(|cx| InputState::new(window, cx).placeholder("UserId, e.g. 156"));
+        let rig_user_entered = cx.subscribe(&rig_user, |shell, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::PressEnter { .. }) {
+                shell.confirm_rig_dialog(cx);
             }
         });
 
@@ -739,6 +750,8 @@ impl Shell {
             close_focus: cx.focus_handle(),
             rig_dialog: None,
             rig_focus: cx.focus_handle(),
+            rig_user,
+            rig_user_focus: false,
             window_handle: window.window_handle(),
             argon_ui: argon_dock::ArgonDock::new(&argon_address_setting, window, cx),
             wally_ui: wally_dock::WallyDock::new(cx),
@@ -796,6 +809,7 @@ impl Shell {
                 canvas_drawn,
                 wally_query_changed,
                 searched,
+                rig_user_entered,
                 window_activated,
             ],
         };
@@ -1687,8 +1701,13 @@ impl Render for Shell {
         if self.close_prompt && !self.close_focus.is_focused(window) {
             self.close_focus.focus(window, cx);
         }
-        if self.rig_dialog.is_some() && !self.rig_focus.is_focused(window) {
-            self.rig_focus.focus(window, cx);
+        if self.rig_dialog.is_some() {
+            if std::mem::take(&mut self.rig_user_focus) {
+                self.rig_user
+                    .update(cx, |input, cx| input.focus(window, cx));
+            } else if !self.rig_focus.contains_focused(window, cx) {
+                self.rig_focus.focus(window, cx);
+            }
         }
         self.open_requested_palette(window, cx);
         // An increment set from Settings has to reach the popover's text.

@@ -4,13 +4,16 @@
 
 - **Insert a rig.** Avatar › Rig Builder (also Model › Insert Rig… and the
   command palette) opens a dialog to insert an R6 or R15 character
-  `Model` with a `Humanoid`, a face and `BodyColors`: Masculine or
-  Feminine, Classic, Rthro Normal or Rthro Slender, as a mannequin or as
-  your own Roblox avatar (body scales, colours, hats/accessories, shirt and
-  pants, read through the public avatar API with your Open Cloud key's user
-  id). R15 joints are `AnimationConstraint`s unless the place turns the
-  Avatar Joint Upgrade off. Feminine and the Rthro sizes are this editor's
-  own presets, not Roblox's tables. — @chteau
+  `Model` with a `Humanoid` and `Animator`, a face, `BodyColors`, `Shirt`,
+  `Pants` and the standard `Animate` script: Masculine or Feminine,
+  Classic, Rthro Normal or Rthro Slender, as a mannequin, as your own
+  Roblox avatar, or as any player by UserId (no API key needed; body
+  scales, colours, accessories including layered clothing, clothing, body
+  parts and animations). R15 rigs are `MeshPart`s with Roblox's current
+  body meshes and attachments; their joints are `AnimationConstraint`s
+  unless the place turns the Avatar Joint Upgrade off. Feminine and the
+  Rthro sizes are this editor's own presets (scaled Classic meshes), not
+  Roblox's. — @chteau
 
 ## 2026-10-08
 

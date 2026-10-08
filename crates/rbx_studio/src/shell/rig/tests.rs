@@ -109,7 +109,18 @@ fn every_rig_has_every_part_and_a_primary_part() {
         for name in &expected {
             assert!(child(&dom, rig, name).is_some(), "{name} missing");
         }
-        assert_eq!(children_of_class(&dom, rig, "Part").len(), expected.len());
+        let parts = children_of_class(&dom, rig, "Part").len()
+            + children_of_class(&dom, rig, "MeshPart").len();
+        assert_eq!(parts, expected.len());
+        let meshes = children_of_class(&dom, rig, "MeshPart").len();
+        assert_eq!(
+            meshes,
+            if options.rig_type == RigType::R15 {
+                15
+            } else {
+                0
+            }
+        );
         assert_eq!(
             reference(&dom, rig, "PrimaryPart"),
             child(&dom, rig, "HumanoidRootPart").unwrap()
@@ -259,7 +270,7 @@ fn the_rig_stands_with_its_feet_on_the_spawn_point() {
             .unwrap()
             .children()
             .iter()
-            .filter(|&&c| dom.get(c).unwrap().class() == "Part")
+            .filter(|&&c| matches!(dom.get(c).unwrap().class(), "Part" | "MeshPart"))
             .filter(|&&c| dom.get(c).unwrap().name() != "HumanoidRootPart")
             .map(|&p| cf(&dom, p).p[1] - size(&dom, p)[1] / 2.)
             .fold(f32::INFINITY, f32::min);
@@ -425,7 +436,7 @@ fn fingerprint(dom: &WeakDom, rig: Ref) -> Vec<String> {
     let mut lines = Vec::new();
     for part in dom.get(rig).unwrap().children().to_vec() {
         let instance = dom.get(part).unwrap();
-        if instance.class() == "Part" {
+        if matches!(instance.class(), "Part" | "MeshPart") {
             lines.push(format!(
                 "{} {:?} {:?}",
                 instance.name(),
@@ -473,4 +484,36 @@ fn an_inserted_rig_survives_both_save_formats() {
         assert_eq!(count_tree(&back, rig), count);
         assert_eq!(fingerprint(&back, rig), expected);
     }
+}
+
+#[test]
+fn a_mannequin_and_its_clothes_undo_in_one_step() {
+    use crate::history::History;
+    for options in every_combination() {
+        let (mut dom, workspace) = place();
+        let before = dom.clone();
+        dom.take_changes();
+        // What `Shell::place_rig` does: snapshot, build, dress, record.
+        let mut history = History::new(10);
+        history.push(dom.clone());
+        let rig = build_rig(&mut dom, &options, workspace);
+        assert!(dom.get(rig).is_some());
+        history.record_changes(dom.take_changes());
+        let (undone, changes) = history.undo(dom.clone()).expect("one step to undo");
+        assert!(!changes.is_empty());
+        assert!(undone
+            .get(workspace_of(&undone))
+            .unwrap()
+            .children()
+            .is_empty());
+        assert_eq!(undone.root_refs().len(), before.root_refs().len());
+        assert!(
+            history.undo(undone).is_none(),
+            "the rig took more than one step"
+        );
+    }
+}
+
+fn workspace_of(dom: &WeakDom) -> Ref {
+    dom.root_refs()[0]
 }

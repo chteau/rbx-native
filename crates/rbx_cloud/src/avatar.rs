@@ -1,6 +1,6 @@
 //! `GET avatar.roblox.com/v1/users/{id}/avatar`: what a user wears and how
 //! their body is scaled. Public and anonymous, so it needs no key and no
-//! cookie, only the user id (which the stored Open Cloud key supplies).
+//! cookie, only the user id.
 
 use serde::Deserialize;
 

@@ -7,10 +7,10 @@
 //! avatar's own in-between values blend smoothly. Height, width and depth
 //! then scale each axis, and head scale the head alone.
 //!
-//! The Rthro Normal body is the real R15 "Man" sample's part sizes. The
-//! Classic and Slender sizes are this editor's own bodies, sized to sit
-//! inside the avatar-rules ranges (Classic head width is the one place the
-//! blocky 2 x 1 x 1 head is wider than the quoted 1.5 maximum).
+//! The Rthro Normal body is the real R15 "Man" sample's part sizes, equal to
+//! the meshes' `InitialSize`. The Classic and Slender sizes are this editor's
+//! own bodies, sized to sit inside the avatar-rules ranges; the meshes are
+//! scaled to them.
 //!
 //! Feminine is a preset of this editor, not a Roblox table: Roblox has no
 //! body-shape setting on a rig, only sliders. It is the same body at
@@ -86,7 +86,7 @@ const BASE: [(&str, [V3; 3]); 10] = [
         "HumanoidRootPart",
         [[2., 2., 1.], [2., 2., 1.], [2., 2., 1.]],
     ),
-    ("Head", [[2., 1., 1.], [1.2, 1.2, 1.2], [1.1, 1.1, 1.1]]),
+    ("Head", [[1.2, 1.2, 1.2], [1.2, 1.2, 1.2], [1.1, 1.1, 1.1]]),
     (
         "UpperTorso",
         [[2., 1.6, 1.], [1.839, 1.901, 1.073], [1.55, 1.88, 0.98]],

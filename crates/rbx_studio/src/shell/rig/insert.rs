@@ -9,7 +9,7 @@ use crate::explorer;
 use crate::shell::Shell;
 
 use super::avatar::{self, Worn};
-use super::dialog::Character;
+use super::dialog::{parse_user_id, Character};
 use super::{build_rig, JointStyle, RigOptions, V3};
 
 const SOURCE: &str = "Rig";
@@ -23,29 +23,41 @@ impl Shell {
         match dialog.character {
             Character::Mannequin => {
                 let options = RigOptions::new(dialog.rig_type, dialog.shape, dialog.scale, joints);
-                self.place_rig(options, &[], &[], cx);
+                self.place_rig(options, &[], 0, &[], cx);
             }
-            Character::MyAvatar => self.insert_my_avatar(joints, cx),
+            Character::MyAvatar => self.insert_avatar(None, joints, cx),
+            Character::Player => match parse_user_id(&self.rig_user.read(cx).value()) {
+                Ok(id) => self.insert_avatar(Some(id), joints, cx),
+                // The dialog stays up so the id can be fixed.
+                Err(message) => {
+                    self.rig_dialog = Some(dialog);
+                    self.rig_user_focus = true;
+                    self.rig_report(Err(message), cx);
+                }
+            },
         }
         cx.notify();
     }
 
-    fn insert_my_avatar(&mut self, joints: JointStyle, cx: &mut Context<Self>) {
-        self.rig_report(Ok("Fetching your avatar\u{2026}".into()), cx);
+    /// `user` is `None` for the signed-in user ("My Avatar").
+    fn insert_avatar(&mut self, user: Option<u64>, joints: JointStyle, cx: &mut Context<Self>) {
+        let label = user.map_or_else(|| "My Avatar".to_string(), |id| format!("Player {id}"));
+        self.rig_report(Ok(format!("Fetching {label}\u{2026}")), cx);
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
-                .spawn(async move { avatar::fetch() })
+                .spawn(async move { avatar::fetch(user) })
                 .await;
             let _ = this.update(cx, |shell, cx| match result {
                 Ok(fetched) => {
-                    let options = avatar::options_for(&fetched.avatar, joints, [0.; 3]);
+                    let mut options = avatar::options_for(&fetched.avatar, joints, [0.; 3]);
+                    let packages = avatar::apply_packages(&mut options, &fetched.worn);
                     let notes = avatar::unapplied(&fetched.avatar, &fetched.worn);
-                    shell.place_rig(options, &fetched.worn, &notes, cx);
+                    shell.place_rig(options, &fetched.worn, packages, &notes, cx);
                 }
                 // Nothing is inserted: a default body here would pass for
-                // the user's own.
-                Err(err) => shell.rig_report(Err(format!("My Avatar: {err}")), cx),
+                // the player's own.
+                Err(err) => shell.rig_report(Err(format!("{label}: {err}")), cx),
             });
         })
         .detach();
@@ -56,6 +68,7 @@ impl Shell {
         &mut self,
         mut options: RigOptions,
         worn: &[Worn],
+        packages: usize,
         notes: &[String],
         cx: &mut Context<Self>,
     ) {
@@ -65,7 +78,7 @@ impl Shell {
         options.feet = spawn_top(&self.dom, workspace);
         self.push_history();
         let rig = build_rig(&mut self.dom, &options, workspace);
-        let dressed = avatar::dress(&mut self.dom, rig, worn);
+        let dressed = packages + avatar::dress(&mut self.dom, rig, worn);
         let changes = self.dom.take_changes();
         self.rebuild_explorer(cx);
         self.reselect(vec![rig], cx);
