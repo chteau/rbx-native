@@ -859,6 +859,13 @@ impl Shell {
         // the selected part.
         shell.apply_debug_resize(cx);
 
+        // `RBX_STUDIO_IMPORT=<file>` (see `shell::import3d`): the Import 3D
+        // Model path for a screenshot, since a drop or file picker can't be
+        // driven from outside.
+        if let Ok(path) = std::env::var("RBX_STUDIO_IMPORT") {
+            shell.import_files(vec![path.into()], cx);
+        }
+
         // `--run` / `RBX_STUDIO_RUN`: runs exactly the pipeline Enter would,
         // once, before the first frame — the way a scripted launch changes a
         // place without synthetic input (see `AGENTS.md`'s safety rules).
