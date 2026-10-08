@@ -9,6 +9,7 @@
 use gpui_kit::{App, Entity, WeakEntity};
 use rbx_cloud::PublishMode;
 
+use crate::shell::import3d::ImportKind;
 use crate::shell::{Export, Panel, Shell};
 
 use super::*;
@@ -146,13 +147,19 @@ pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuImportModel, cx| {
-            let _ = shell.update(cx, |shell, cx| shell.choose_import(false, cx));
+            let _ = shell.update(cx, |shell, cx| shell.choose_import(ImportKind::Model, cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
+        move |_: &MenuInsertMesh, cx| {
+            let _ = shell.update(cx, |shell, cx| shell.choose_import(ImportKind::Mesh, cx));
         }
     });
     cx.on_action({
         let shell = shell.clone();
         move |_: &MenuImportImage, cx| {
-            let _ = shell.update(cx, |shell, cx| shell.choose_import(true, cx));
+            let _ = shell.update(cx, |shell, cx| shell.choose_import(ImportKind::Image, cx));
         }
     });
     cx.on_action({

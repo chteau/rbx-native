@@ -160,3 +160,20 @@ fn a_binary_fbx_counts_polygons_as_triangles() {
         }]
     );
 }
+
+#[test]
+fn an_ascii_fbx_counts_polygons_as_triangles() {
+    let seven = "; FBX 7.4.0 project file\nFBXHeaderExtension:  {\n}\nObjects:  {\n\tGeometry: 1, \"Geometry::Cube\", \"Mesh\" {\n\t\tPolygonVertexIndex: *7 {\n\t\t\ta: 0,1,2,-4,4,5,-7\n\t\t}\n\t\tEdges: *1 {\n\t\t\ta: 0\n\t\t}\n\t}\n}\n";
+    let six = "; FBX 6.1.0 project file\nFBXHeaderExtension:  {\n}\nObjects:  {\n\tGeometry: \"Geometry::Quad\", \"Mesh\" {\n\t\tPolygonVertexIndex: 0,1,2,-4\n\t\tEdges: 0\n\t}\n}\n";
+    for (text, name, triangles) in [(seven, "Cube", 3), (six, "Quad", 2)] {
+        let (report, _) = prepare_bytes(Format::Fbx, "a", text.as_bytes().to_vec(), None).unwrap();
+        assert_eq!(report.unchecked, None);
+        assert_eq!(
+            report.meshes,
+            [MeshInfo {
+                name: name.into(),
+                triangles
+            }]
+        );
+    }
+}

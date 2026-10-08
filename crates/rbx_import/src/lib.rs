@@ -44,7 +44,7 @@ pub struct MeshInfo {
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Report {
     pub meshes: Vec<MeshInfo>,
-    /// Set when the triangle count could not be taken (an ASCII `.fbx`);
+    /// Set when the triangle count could not be taken (an unreadable `.fbx`);
     /// the upload then goes ahead on Roblox's own check.
     pub unchecked: Option<String>,
 }

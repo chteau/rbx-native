@@ -26,7 +26,7 @@ mod freeze;
 mod group;
 mod guides;
 mod history;
-mod import3d;
+pub(crate) mod import3d;
 mod keys;
 mod layout;
 mod light_guides;
@@ -863,7 +863,11 @@ impl Shell {
         // Model path for a screenshot, since a drop or file picker can't be
         // driven from outside.
         if let Ok(path) = std::env::var("RBX_STUDIO_IMPORT") {
-            shell.import_files(vec![path.into()], cx);
+            let kind = match std::env::var("RBX_STUDIO_IMPORT_KIND").as_deref() {
+                Ok("mesh") => import3d::ImportKind::Mesh,
+                _ => import3d::ImportKind::Model,
+            };
+            shell.import_as(vec![path.into()], kind, cx);
         }
 
         // `--run` / `RBX_STUDIO_RUN`: runs exactly the pipeline Enter would,
