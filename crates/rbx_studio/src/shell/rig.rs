@@ -10,8 +10,11 @@
 //! shape and the in-between Rthro sizes are this editor's presets, not
 //! Roblox's tables.
 
+mod avatar;
 mod build;
 mod cframe;
+mod dialog;
+mod insert;
 mod layout;
 mod proportions;
 mod r15;
@@ -21,6 +24,7 @@ use rbx_dom::{Variant, WeakDom};
 
 pub(crate) use build::build_rig;
 pub(crate) use cframe::V3;
+pub(crate) use dialog::RigDialog;
 pub(crate) use proportions::{BodyScale, BodyShape, RigType, Scales};
 
 /// `StarterPlayer.AvatarJointUpgrade`: whether R15 characters use

@@ -83,13 +83,6 @@ impl Cf {
     pub(crate) fn joined(&self, c0: &Cf, c1: &Cf) -> Cf {
         self.mul(c0).mul(&c1.inverse())
     }
-
-    pub(crate) fn translated(&self, by: V3) -> Cf {
-        Cf {
-            r: self.r,
-            p: add(self.p, by),
-        }
-    }
 }
 
 pub(crate) fn vec3(v: V3) -> Vector3Data {

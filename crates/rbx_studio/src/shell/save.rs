@@ -44,8 +44,14 @@ impl Shell {
         // No keyboard traps: Escape closes whichever menu is open, from
         // anywhere, and this handler sits on the window's own root so it
         // cannot be out of reach of one (WCAG 2.1.2).
-        if keystroke.key == "escape" && (self.close_roblox_dialog() | self.cancel_close_place()) {
+        if keystroke.key == "escape"
+            && (self.close_roblox_dialog() | self.cancel_close_place() | self.cancel_rig_dialog())
+        {
             cx.notify();
+        }
+        // The Rig Builder's default button, for the same reason.
+        if keystroke.key == "enter" && self.rig_dialog.is_some() {
+            self.confirm_rig_dialog(cx);
         }
         // The upload confirmation's default button; it holds the keyboard
         // while open, so Enter here is never meant for anything else.

@@ -83,11 +83,6 @@ fn set(dom: &mut WeakDom, target: Ref, property: &str, value: Variant) {
     let _ = dom.set_property(target, property, value);
 }
 
-fn color3(rgb: [u8; 3]) -> Variant {
-    let [r, g, b] = rgb.map(|c| f32::from(c) / 255.);
-    Variant::Color3(Color3Data { r, g, b })
-}
-
 /// Which `BodyColors` slot paints a part.
 pub(super) fn body_color(colors: &BodyColors, part: &str) -> [u8; 3] {
     let arm = part.ends_with("Arm") || part.ends_with("Hand");

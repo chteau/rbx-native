@@ -158,6 +158,12 @@ pub(super) fn install(shell: Entity<Shell>, cx: &mut App) {
     });
     cx.on_action({
         let shell = shell.clone();
+        move |_: &MenuInsertRig, cx| {
+            let _ = shell.update(cx, |shell, cx| shell.open_rig_dialog(cx));
+        }
+    });
+    cx.on_action({
+        let shell = shell.clone();
         move |_: &MenuImportImage, cx| {
             let _ = shell.update(cx, |shell, cx| shell.choose_import(ImportKind::Image, cx));
         }

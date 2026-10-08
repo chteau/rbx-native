@@ -2215,7 +2215,15 @@ against `Roblox/creator-docs` rather than assumed:
   it — don't assume it's as easy as the local-authoring case above just
   because they sound like the same feature.
 
-- [ ] 📋 **`AnimationConstraint` rigs, the Avatar Joint Upgrade.** Roblox
+- [x] **`AnimationConstraint` rigs, the Avatar Joint Upgrade: rig
+  insertion.** Insert Rig emits `AnimationConstraint` joints (with
+  `RigAttachment`s) for R15 when `StarterPlayer.AvatarJointUpgrade` is on
+  or Default, and `Motor6D`s when it is off; R6 is always `Motor6D`. The
+  Explorer shows `AnimationConstraint` with the same joint icon as
+  `Motor6D`. (Nothing else in the editor classifies joints, so there was no
+  other place to treat the two as one kind.)
+- [ ] 📋 **`AnimationConstraint` rigs, the Avatar Joint Upgrade:
+  playback.** Roblox
   no longer builds its R15 player characters from `Motor6D`s: with
   `StarterPlayer.AvatarJointUpgrade` on (the default for new experiences)
   a character spawns with `AnimationConstraint`s instead, which animate
@@ -2226,16 +2234,14 @@ against `Roblox/creator-docs` rather than assumed:
   reachable data, and it changes the animation items above. Playback and
   the Animation Editor must drive `AnimationConstraint.Transform` as well
   as `Motor6D.Transform`, and find a rig's joints by either class (an
-  upgraded rig has no `Motor6D` to find). Rig insertion should emit
-  `AnimationConstraint` joints for R15 when `AvatarJointUpgrade` is on,
-  and `Motor6D` when it is off. The Explorer, the joint gizmos and the
-  "joint" icon treatment should treat the two as the same kind of thing.
+  upgraded rig has no `Motor6D` to find). The joint gizmos should treat
+  the two as the same kind of thing.
   The simulation half (force-based limbs, ragdolls) is engine physics and
   stays out of reach, the same as any other physics (see
   [Explicitly impossible](#explicitly-impossible-without-robloxs-engine)).
 
 ### Editor
-- [ ] 📋 **Rig / avatar insertion**, matching Studio's real **Rig
+- [x] **Rig / avatar insertion**, matching Studio's real **Rig
   Generator** tool (checked against `studio/rig-builder.md` and
   `avatar/character-bodies/specifications.md` rather than assumed — some
   of the originally-requested names don't map onto real, current Roblox
@@ -2271,6 +2277,19 @@ against `Roblox/creator-docs` rather than assumed:
     proportions/meshes, or, if a specific official asset id is the more
     faithful source for a given rig, imported directly as a real `.rbxm`
     the same way any other asset import works.
+  - **Shipped** as Avatar › Rig Builder, Model › Insert Rig… and the
+    palette: R6/R15, Masculine/Feminine, Classic/Rthro Normal/Rthro
+    Slender (Rthro and Feminine need R15) and Mannequin/My Avatar, built
+    locally from `Part` blocks sized to the documented limits, with a
+    `Humanoid`, joints per the Avatar Joint Upgrade, a face `Decal`,
+    `BodyColors` and accessory/grip attachments. Roblox publishes no rig
+    meshes or Feminine/Rthro tables here, so **Feminine is this editor's
+    own preset** and the Rthro sizes are in-between estimates. **My
+    Avatar** needs no cookie: the public avatar endpoint is read with the
+    user id of the stored Open Cloud key; it applies body scales, colours,
+    hats/accessories (welded at the matching attachment), shirts and pants.
+    Body-part packages, dynamic heads and animations are named in the
+    output and not applied (blocks only; no animation playback exists).
 - [x] **Wally "Recently published" list.** The Discover page lists the six
   newest publishes under the Featured cards. The registry backend has no
   route for it, but every publish is a `Publish scope/name@version` commit

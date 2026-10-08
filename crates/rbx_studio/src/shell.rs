@@ -373,6 +373,10 @@ pub(crate) struct Shell {
     /// Held by the prompt while it is up, so Escape reaches the window's
     /// key handler rather than whatever panel had focus.
     close_focus: FocusHandle,
+    /// The Rig Builder dialog while it is up; see `shell::rig`.
+    rig_dialog: Option<rig::RigDialog>,
+    /// Held by the dialog like `close_focus`.
+    rig_focus: FocusHandle,
     /// This editor's window, which Close Place removes from outside it.
     window_handle: AnyWindowHandle,
     /// This place's `Folder` colour tags; see `shell::folder_color`.
@@ -733,6 +737,8 @@ impl Shell {
             roblox: roblox_publish::RobloxPublish::new(cx),
             close_prompt: false,
             close_focus: cx.focus_handle(),
+            rig_dialog: None,
+            rig_focus: cx.focus_handle(),
             window_handle: window.window_handle(),
             argon_ui: argon_dock::ArgonDock::new(&argon_address_setting, window, cx),
             wally_ui: wally_dock::WallyDock::new(cx),
@@ -1681,6 +1687,9 @@ impl Render for Shell {
         if self.close_prompt && !self.close_focus.is_focused(window) {
             self.close_focus.focus(window, cx);
         }
+        if self.rig_dialog.is_some() && !self.rig_focus.is_focused(window) {
+            self.rig_focus.focus(window, cx);
+        }
         self.open_requested_palette(window, cx);
         // An increment set from Settings has to reach the popover's text.
         self.snap_fields.sync(self.transform, window, cx);
@@ -1781,6 +1790,7 @@ impl Render for Shell {
             .children(self.explorer_popups(cx))
             .children(self.roblox_dialog(cx))
             .children(self.close_place_dialog(cx))
+            .children(self.rig_dialog_overlay(cx))
             .children(self.command_palette(cx))
             .children(self.theme_background(true))
     }
