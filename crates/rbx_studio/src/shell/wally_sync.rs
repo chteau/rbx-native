@@ -101,6 +101,9 @@ pub(super) struct Search {
     pub(super) page: Page,
     /// The Featured cards, fetched once the dock first shows Home.
     pub(super) featured: Remote<Vec<Listing>>,
+    /// The newest publishes, fetched with Featured; a failure just leaves
+    /// the section out.
+    pub(super) recent: Remote<Vec<Listing>>,
     /// The current search's results; `query` is the text they answer.
     pub(super) results: Remote<Vec<SearchResult>>,
     pub(super) query: String,
@@ -116,6 +119,7 @@ impl Default for Search {
         Search {
             page: Page::Home,
             featured: Remote::Idle,
+            recent: Remote::Idle,
             results: Remote::Idle,
             query: String::new(),
             picks: HashMap::new(),

@@ -28,6 +28,7 @@
 
 mod content;
 mod metadata;
+mod recent;
 mod resolve;
 mod search;
 mod tree;
@@ -36,6 +37,7 @@ use std::time::Duration;
 
 pub(crate) use content::Realm;
 pub(crate) use metadata::{fetch as metadata, Listing, FEATURED};
+pub(crate) use recent::fetch as recently_published;
 pub(crate) use resolve::{resolve, ResolvedGraph, ResolvedPackage};
 pub(crate) use search::{search, SearchResult};
 pub(crate) use tree::PackageNode;

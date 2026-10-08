@@ -2271,13 +2271,12 @@ against `Roblox/creator-docs` rather than assumed:
     proportions/meshes, or, if a specific official asset id is the more
     faithful source for a given rig, imported directly as a real `.rbxm`
     the same way any other asset import works.
-- [ ] 📋 **Wally "Recently published" list.** The Wally dock's Discover
-  page shows the registry's featured packages (the list wally.run's own
-  home page uses); a recently-published list would need a route the
-  registry backend doesn't have (`UpliftGames/wally@f578078:
-  wally-registry-backend/src/main.rs` exposes package-contents,
-  package-metadata, package-search and publish only), so it waits on
-  upstream.
+- [x] **Wally "Recently published" list.** The Discover page lists the six
+  newest publishes under the Featured cards. The registry backend has no
+  route for it, but every publish is a `Publish scope/name@version` commit
+  on the public `UpliftGames/wally-index` repo, so the newest commits
+  (GitHub API) give the packages and `package-metadata` fills each card.
+  A failure leaves the section out.
 - [ ] 📋 **Native Git integration** — a real panel in `rbxstudio` (diff view,
   stage/commit, branch switch), not relying on the user's own external git
   client. Not scoped in any detail yet.
