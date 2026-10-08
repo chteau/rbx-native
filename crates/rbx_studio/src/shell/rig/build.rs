@@ -1,6 +1,6 @@
 //! `build_rig`: a `Layout` made into instances.
 
-use rbx_dom::{Color3Data, Content, Ref, Variant, Vector3Data, WeakDom};
+use rbx_dom::{Content, Ref, Variant, Vector3Data, WeakDom};
 
 use crate::explorer::insert::incremented_name;
 
