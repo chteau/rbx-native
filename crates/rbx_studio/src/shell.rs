@@ -26,6 +26,7 @@ mod freeze;
 mod group;
 mod guides;
 mod history;
+pub(crate) mod import3d;
 mod keys;
 mod layout;
 mod light_guides;
@@ -857,6 +858,17 @@ impl Shell {
         // `RBX_STUDIO_RESIZE` (same module): the same, for a Scale drag of
         // the selected part.
         shell.apply_debug_resize(cx);
+
+        // `RBX_STUDIO_IMPORT=<file>` (see `shell::import3d`): the Import 3D
+        // Model path for a screenshot, since a drop or file picker can't be
+        // driven from outside.
+        if let Ok(path) = std::env::var("RBX_STUDIO_IMPORT") {
+            let kind = match std::env::var("RBX_STUDIO_IMPORT_KIND").as_deref() {
+                Ok("mesh") => import3d::ImportKind::Mesh,
+                _ => import3d::ImportKind::Model,
+            };
+            shell.import_as(vec![path.into()], kind, cx);
+        }
 
         // `--run` / `RBX_STUDIO_RUN`: runs exactly the pipeline Enter would,
         // once, before the first frame — the way a scripted launch changes a
@@ -1700,6 +1712,9 @@ impl Render for Shell {
             .on_action(cx.listener(|shell, _: &roving::FocusPrev, window, cx| {
                 shell.step_focus(true, window, cx);
                 cx.notify();
+            }))
+            .on_drop(cx.listener(|shell, paths: &ExternalPaths, _, cx| {
+                shell.import_files(paths.paths().to_vec(), cx);
             }))
             .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
                 shell.handle_shell_key(&event.keystroke, window, cx);

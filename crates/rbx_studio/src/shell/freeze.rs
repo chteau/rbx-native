@@ -161,13 +161,7 @@ fn upload(plan: &Plan, gltf: Vec<u8>) -> Result<(u64, Vec3), String> {
             err => Err(err.to_string()),
         };
     }
-    let key = ApiKey::from_env_or_config()
-        .ok_or("No Open Cloud API key is set up. Add one from Home \u{203a} Manage key.")?;
-    let client = Client::new(Some(key));
-    let user = client
-        .introspect()
-        .map_err(|err| describe(&err))?
-        .authorized_user_id;
+    let (client, user) = authorize()?;
     let file = ModelFile {
         name: "frozen.gltf",
         content_type: "model/gltf+json",
@@ -181,23 +175,48 @@ fn upload(plan: &Plan, gltf: Vec<u8>) -> Result<(u64, Vec3), String> {
             &file,
         )
         .map_err(|err| describe(&err))?;
-    let fetch = |id: u64| {
-        let mut attempt = 0;
-        loop {
-            match client.asset(id) {
-                Ok(content) => return Ok(content.bytes),
-                Err(_) if attempt + 1 < DOWNLOAD_ATTEMPTS => {
-                    // ponytail: fixed back-off, a fresh asset is usually
-                    // downloadable within seconds; poll smarter if not.
-                    attempt += 1;
-                    std::thread::sleep(Duration::from_secs(2 * u64::from(attempt)));
-                }
-                Err(err) => return Err(format!("asset {id}: {err}")),
-            }
-        }
-    };
+    let fetch = |id: u64| fetch_asset(&client, id);
     resolve(&fetch(model)?, fetch, plan.size)
         .map_err(|err| format!("uploaded as model {model}, but {err}"))
+}
+
+/// A client for the key the editor holds, and the user it belongs to.
+pub(super) fn authorize() -> Result<(Client, u64), String> {
+    let key = ApiKey::from_env_or_config()
+        .ok_or("No Open Cloud API key is set up. Add one from Home \u{203a} Manage key.")?;
+    let client = Client::new(Some(key));
+    let user = client
+        .introspect()
+        .map_err(|err| describe(&err))?
+        .authorized_user_id;
+    Ok((client, user))
+}
+
+/// A fresh asset is usually downloadable within seconds, not at once.
+pub(super) fn fetch_asset(client: &Client, id: u64) -> Result<Vec<u8>, String> {
+    let mut attempt = 0;
+    loop {
+        match client.asset(id) {
+            Ok(content) => return Ok(content.bytes),
+            Err(_) if attempt + 1 < DOWNLOAD_ATTEMPTS => {
+                // ponytail: fixed back-off, a fresh asset is usually
+                // downloadable within seconds; poll smarter if not.
+                attempt += 1;
+                std::thread::sleep(Duration::from_secs(2 * u64::from(attempt)));
+            }
+            Err(err) => return Err(format!("asset {id}: {err}")),
+        }
+    }
+}
+
+/// A downloaded `.rbxm`/`.rbxmx`.
+pub(super) fn read_model(model: &[u8]) -> Result<WeakDom, String> {
+    if rbx_xml::is_xml(model) {
+        let text = std::str::from_utf8(model).map_err(|err| err.to_string())?;
+        rbx_xml::deserialize(text).map_err(|err| err.to_string())
+    } else {
+        rbx_binary::deserialize(model).map_err(|err| err.to_string())
+    }
 }
 
 /// The mesh the uploaded model's `MeshPart` draws, checked against the
@@ -207,12 +226,7 @@ pub(super) fn resolve(
     fetch: impl Fn(u64) -> Result<Vec<u8>, String>,
     baked: Vec3,
 ) -> Result<(u64, Vec3), String> {
-    let dom = if rbx_xml::is_xml(model) {
-        let text = std::str::from_utf8(model).map_err(|err| err.to_string())?;
-        rbx_xml::deserialize(text).map_err(|err| err.to_string())?
-    } else {
-        rbx_binary::deserialize(model).map_err(|err| err.to_string())?
-    };
+    let dom = read_model(model)?;
     let mut stack = dom.root_refs().to_vec();
     let mesh_id = loop {
         let instance = stack

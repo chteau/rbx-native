@@ -119,6 +119,7 @@ offscreen frame are both too slow to use otherwise — don't be surprised that
 | `rbx_lua` | A sandboxed, synchronous Luau runtime over a DOM, like Studio's command bar: no scheduler, no events, no yielding. |
 | `rbx_assets` | Resolves, caches and decodes the assets a place references (`rbxassetid://`, `rbxasset://`, legacy URLs). The network fetch plugs in from `rbx_cloud`. |
 | `rbx_materials` | The table of texture packs (colour, normal, metalness, roughness) behind each `Enum.Material`. |
+| `rbx_import` | Reads `.fbx`/`.obj`/`.gltf`/`.glb`, counts triangles against Roblox's budget and prepares the file for upload. |
 | `rbx_cloud` | Open Cloud API client and the `rbxcloud` CLI. |
 | `rbx_viewer` | The wgpu renderer and the `rbxview` binary (desktop and WebGPU). |
 | `rbx_studio` | The desktop editor (`rbxstudio`), built on GPUI Kit. |

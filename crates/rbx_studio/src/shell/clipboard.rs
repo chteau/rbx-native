@@ -258,6 +258,14 @@ pub(super) fn clone_into(dom: &mut WeakDom, source: Ref, parent: Ref) -> Option<
     Some(materialize(dom, &node, Some(parent)))
 }
 
+/// `source`'s `root` subtree copied under `parent` of another DOM, as a
+/// model file's contents land in a place. A reference to anything outside
+/// the subtree is left as it was, as in [`clone_into`].
+pub(super) fn graft(dom: &mut WeakDom, source: &WeakDom, root: Ref, parent: Ref) -> Option<Ref> {
+    let node = snapshot(source, root)?;
+    Some(materialize(dom, &node, Some(parent)))
+}
+
 fn create(
     dom: &mut WeakDom,
     node: &Clipped,

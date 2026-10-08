@@ -35,6 +35,8 @@ rbx_binary = { path = "../rbx_binary" }
 # `rbx_viewer`'s asset fetches.
 rbx_cloud = { path = "../rbx_cloud" }
 rbx_dom = { path = "../rbx_dom" }
+# Import 3D Model…: the triangle budget check and the file that is uploaded.
+rbx_import = { path = "../rbx_import" }
 # The UI Editor's "Import from Figma…": sign-in, the API and the class
 # guesses. Its own dependencies are all already in the tree.
 rbx_figma = { path = "../rbx_figma" }
