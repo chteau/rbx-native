@@ -145,3 +145,26 @@ fn a_worn_layered_garment_asks_for_its_cages() {
     let wanted: Vec<_> = wrap.meshes().cloned().collect();
     assert_eq!(wanted, vec![id(21), id(11), id(10)]);
 }
+
+#[test]
+fn a_reference_standing_off_the_body_is_slid_onto_it_first() {
+    // Uneven rungs, so no other vertex is a nearer match across the gap.
+    let rungs: Vec<[f32; 3]> = (0..12)
+        .flat_map(|i| {
+            let y = (i * i) as f32 * 0.05;
+            [[-0.3, y, 0.0], [0.3, y, 0.1]]
+        })
+        .collect();
+    let lifted: Vec<[f32; 3]> = rungs.iter().map(|p| [p[0], p[1] + 0.8, p[2]]).collect();
+    let meshes = HashMap::from([
+        (id(1), mesh(&rungs)),
+        (id(2), mesh(&lifted)),
+        (id(3), mesh(&[])),
+    ]);
+    let garment = mesh(&[[0.0, 2.0, 0.05], [0.0, 3.0, 0.05]]);
+    let out = deform(&wrap(-1.0), Mat4::IDENTITY, &garment, &meshes).unwrap();
+    for (before, after) in garment.vertices.iter().zip(&out.vertices) {
+        let moved = Vec3::from(after.position) - Vec3::from(before.position);
+        assert!(moved.distance(Vec3::new(0.0, 0.8, 0.0)) < 0.02, "{moved}");
+    }
+}

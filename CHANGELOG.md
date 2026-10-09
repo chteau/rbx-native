@@ -2,6 +2,14 @@
 
 ## 2026-10-09
 
+- **Layered clothing no longer buried or torn on real garments.** The
+  Black Detective Trench Coat's reference cage stands 0.8 studs above the
+  rig body; the wrap now slides the reference onto the body (trimmed
+  translation ICP) before matching vertices, which removes the collar spikes,
+  ragged shoulders and holes. Avatar import also reads legacy string content
+  ids, so the Headless Head and body packages apply, and the Output line for
+  an approximately fitted garment says so.
+
 - **Layered clothing fits the body in the viewer.** A `MeshPart` with a
   `WrapLayer` is deformed from its reference cage onto the body's cages
   (nearest-vertex blend, `Order` push-out), so a jacket covers the torso

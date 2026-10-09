@@ -36,6 +36,10 @@ use super::{animate, r15};
 use super::{BodyColors, BodyScale, BodyShape, JointStyle, RigOptions, RigType, Scales};
 
 pub(crate) const MOCK_VARIABLE: &str = "RBX_STUDIO_RIG_AVATAR_MOCK";
+/// With a mock avatar, an asset that has no file beside the mock is downloaded
+/// for real, through the same anonymous-then-keyed route as a live import.
+/// That puts a real garment on a mock avatar that does not wear it.
+pub(crate) const MOCK_LIVE_VARIABLE: &str = "RBX_STUDIO_RIG_AVATAR_MOCK_LIVE";
 
 const TSHIRT: u32 = 2;
 const SHIRT: u32 = 11;
@@ -332,10 +336,24 @@ fn mock_fetch(mock: &str, user: Option<u64>) -> Result<Fetched, String> {
             };
             return Err(download_error(&failure, false, None));
         }
-        ["rbxm", "rbxmx"]
+        let local = ["rbxm", "rbxmx"]
             .iter()
-            .find_map(|ext| std::fs::read(dir.join(format!("{asset}.{ext}"))).ok())
-            .ok_or_else(|| format!("asset {asset}: no {asset}.rbxm beside {mock}"))
+            .find_map(|ext| std::fs::read(dir.join(format!("{asset}.{ext}"))).ok());
+        match local {
+            Some(bytes) => Ok(bytes),
+            None if std::env::var_os(MOCK_LIVE_VARIABLE).is_some() => {
+                let key = ApiKey::from_env_or_config();
+                let keyed = key.is_some();
+                download(
+                    &Client::new(key),
+                    asset,
+                    keyed,
+                    &std::cell::OnceCell::new(),
+                    &std::cell::RefCell::new(Vec::new()),
+                )
+            }
+            None => Err(format!("asset {asset}: no {asset}.rbxm beside {mock}")),
+        }
     })
 }
 
@@ -804,7 +822,7 @@ fn wear_character_meshes(dom: &mut WeakDom, rig: Ref, source: &WeakDom) -> Resul
 /// fitted by; every other accessory is rigid.
 const LAYERED: std::ops::RangeInclusive<u32> = 64..=72;
 
-const LAYERED_NOTE: &str = "layered clothing: Roblox fits it to the body by its cages; the viewer approximates that by moving the garment with the nearest cage vertices, so it follows the body but not as exactly as Roblox does";
+const LAYERED_NOTE: &str = "the garment is on the rig, but only approximately fitted (its exact cage deformation is not run): the viewer slides its reference cage onto the body and moves it with the nearest cage vertices, so it follows the body less exactly than Roblox does";
 
 fn wear_accessory(
     dom: &mut WeakDom,
