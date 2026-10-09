@@ -13,7 +13,12 @@
   body meshes and attachments; their joints are `AnimationConstraint`s
   (with ball-socket limits and no-collision pairs) unless the place turns
   the Avatar Joint Upgrade off. Rthro Slender and the Feminine Rthro shape
-  are this editor's own presets, not Roblox's. — @chteau
+  are this editor's own presets, not Roblox's. A player's rig type can be
+  overridden (R6 or R15) and the dialog shows the type it builds; every
+  worn asset that is not applied is named in Output; the rig's
+  `HumanoidDescription` records the avatar's asset ids and colours; the
+  Mannequin carries the reference's `Bone`s and socket friction; classic
+  heads carry the face `Decal`. — @chteau
 - **Chunked `.mesh` files (versions 6.00 and 7.00).** The current Rthro
   bodies and R15 heads are Draco-compressed (`COREMESH`); the mesh decoder
   now reads them, so they render as meshes instead of boxes. — @chteau

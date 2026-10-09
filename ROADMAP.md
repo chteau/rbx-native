@@ -2297,8 +2297,11 @@ against `Roblox/creator-docs` rather than assumed:
     `BodyColors` (Studio's yellow head and arms, blue torso, green legs)
     and the stock `Animate` LocalScript (one strict-Luau source for both
     rigs) complete it; `Shirt` and `Pants` are added when a player's
-    clothing is worn. Not reproduced: the Mannequin `Bone`s (skinned layered
-    clothing) and `MaxFrictionTorque`. Rthro Slender and Feminine on Rthro
+    clothing is worn. The Mannequin carries the reference's 37 hidden `Bone`s,
+    its `HumanoidDescription` package ids and its `BallSocketConstraint`
+    `MaxFrictionTorque`s; a classic head carries the face `Decal` (an R15
+    Mannequin or dynamic head has none, the face is in its texture or
+    `FaceControls`). Rthro Slender and Feminine on Rthro
     are this editor's presets (the Mannequin parts scaled), not Roblox's.
   - **Player / My Avatar** need no API key and no cookie: the public
     `avatar.roblox.com/v1/users/{id}/avatar` endpoint and anonymous
@@ -2312,8 +2315,18 @@ against `Roblox/creator-docs` rather than assumed:
     anonymously, so such a head falls back to the Classic head. A banned
     id, an empty avatar (Roblox returns that for ids that don't exist
     too), a rate limit (429) and no network each give a clear Output and command-bar message and insert
-    nothing. Not applied, and named in Output: face parts and moods, and
-    a dynamic head on R6. `RBX_STUDIO_RIG_AVATAR_MOCK` (a directory of
+    nothing. A download the anonymous route refuses (401) is retried
+    through the stored Open Cloud key; without one it is named. Every
+    worn asset that is not applied gets its own `Not applied:` Output line
+    (name, id, asset type, reason), e.g. moods (no `Animator` to run them)
+    or a dynamic head on R6. The Rig Type row of Player / My Avatar
+    defaults to the player's own type and can force R6 or R15 (the
+    dialog shows the type it will build). The `HumanoidDescription` records
+    the avatar's ids and colours (body parts, shirt, pants, T-shirt, face,
+    animations, one `AccessoryDescription` per accessory).
+    Roblox's stock classic R15 head mesh (123480233606534) is a 401
+    without a key, so a head whose mesh is missing renders as a ball.
+    `RBX_STUDIO_RIG_AVATAR_MOCK` (a directory of
     `<UserId>.json`, `me.json`, `<UserId>.status` and `<asset>.rbxm`) is the
     test seam.
 - [x] **Wally "Recently published" list.** The Discover page lists the six
