@@ -270,16 +270,22 @@ pub(crate) fn resolve(
             images.insert(image_key.clone(), image.clone());
             (mesh_key, texture, color) = (key.clone(), Some(image_key.clone()), [1.0; 3]);
         }
-        let appearance = entry.appearance.as_ref().map(|planned| {
-            let resolved = planned.resolved(&images);
-            match appearances.iter().position(|known| *known == resolved) {
-                Some(slot) => slot,
-                None => {
-                    appearances.push(resolved);
-                    appearances.len() - 1
+        // A dressed section is drawn from its composite, the appearance's
+        // colour map already under the clothes in it.
+        let appearance = entry
+            .appearance
+            .as_ref()
+            .filter(|_| !dressed.contains_key(&entry.referent))
+            .map(|planned| {
+                let resolved = planned.resolved(&images);
+                match appearances.iter().position(|known| *known == resolved) {
+                    Some(slot) => slot,
+                    None => {
+                        appearances.push(resolved);
+                        appearances.len() - 1
+                    }
                 }
-            }
-        });
+            });
         instances.push(ResolvedInstance {
             referent: entry.referent,
             mesh: mesh_key,
@@ -333,7 +339,6 @@ fn from_mesh_part(
     };
 
     let material = materials.slot_for(properties, database);
-    let texture_free = texture.is_none() && appearance.is_none();
 
     Some(Entry {
         referent,
@@ -346,11 +351,7 @@ fn from_mesh_part(
         alpha: super::alpha(properties, material.kind),
         reflectance: super::number(properties.get("Reflectance")).clamp(0.0, 1.0),
         casts_shadow: super::casts_shadow(properties),
-        dressing: if texture_free {
-            clothing::dressing(dom, referent).map(Box::new)
-        } else {
-            None
-        },
+        dressing: clothing::dressing(dom, referent).map(Box::new),
     })
 }
 

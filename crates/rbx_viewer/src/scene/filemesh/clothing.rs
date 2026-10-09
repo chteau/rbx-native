@@ -79,8 +79,14 @@ pub(super) fn image_key(entry: &Entry, images: &HashMap<AssetRef, Arc<Image>>) -
         .iter()
         .map(|(garment, layer, _)| format!("{garment:?}:{:?}:{:?}", layer.image, layer.tint))
         .collect();
+    // A body's own texture is laid out by its mesh, so what it makes is that
+    // section's alone.
+    let beneath = match base_of(entry, images) {
+        Some((reference, ..)) => format!("/under:{reference:?}@{:?}", entry.referent),
+        None => String::new(),
+    };
     Some(AssetRef::Thumb(format!(
-        "clothed/{:?}/{r:02x}{g:02x}{b:02x}/{}",
+        "clothed/{:?}/{r:02x}{g:02x}{b:02x}/{}{beneath}",
         dressing.limb,
         worn.join("/")
     )))
@@ -112,6 +118,25 @@ fn body_colour(linear: [f32; 3]) -> [u8; 3] {
             .round()
             .clamp(0.0, 255.0) as u8
     })
+}
+
+/// The image a section's own skin is painted from, once it has arrived: its
+/// `TextureID`, or the colour map of its `SurfaceAppearance` with that
+/// appearance's tint. The clothes are laid over it, as over the body colour a
+/// plain part has.
+fn base_of<'a>(
+    entry: &'a Entry,
+    images: &'a HashMap<AssetRef, Arc<Image>>,
+) -> Option<(&'a AssetRef, &'a Arc<Image>, [f32; 3])> {
+    let (reference, tint) = match (&entry.texture, &entry.appearance) {
+        (Some(texture), _) => (texture, [1.0; 3]),
+        (None, Some(appearance)) => (
+            appearance.maps[0].as_ref()?,
+            appearance.tint.map(scene::linear_to_srgb),
+        ),
+        (None, None) => return None,
+    };
+    Some((reference, images.get(reference)?, tint))
 }
 
 /// Dresses every limb of the plan whose meshes and garments have all arrived,
@@ -152,17 +177,27 @@ pub(super) fn derive(
             let Some(image_key) = image_key(entry, images) else {
                 continue;
             };
-            let (image, covered) = composites.entry(image_key.clone()).or_insert_with(|| {
-                let (image, covered) = composite(entry, images);
+            let model = entry.fit.transform(mesh);
+            let base = base_of(entry, images);
+            let covered = match composites.get(&image_key) {
+                Some((_, covered)) if base.is_none() => covered.clone(),
+                _ => coverage(entry, images),
+            };
+            let (remapped, sources) = frame.remap(&model, mesh, &covered);
+            let skin = base.map(|(_, image, tint)| Skin {
+                image,
+                tint,
+                sources: &sources,
+                targets: &remapped,
+            });
+            let (image, _) = composites.entry(image_key.clone()).or_insert_with(|| {
+                let (image, covered) = composite(entry, images, skin.as_ref());
                 (Arc::new(image), covered)
             });
             dressed.insert(
                 entry.referent,
                 Dressed {
-                    mesh: (
-                        mesh_key(entry.referent),
-                        Arc::new(frame.remap(&entry.fit.transform(mesh), mesh, covered)),
-                    ),
+                    mesh: (mesh_key(entry.referent), Arc::new(remapped)),
                     image: (image_key, image.clone()),
                 },
             );
@@ -212,9 +247,18 @@ impl Frame {
 
     /// `mesh`, drawn through `model`, with every triangle given its own
     /// vertices and UVs into the template.
-    fn remap(&self, model: &Mat4, mesh: &rbx_mesh::Mesh, covered: &[bool]) -> rbx_mesh::Mesh {
+    ///
+    /// Also answers where each new vertex was in the mesh's own UVs, which is
+    /// how a body's own texture is carried across.
+    fn remap(
+        &self,
+        model: &Mat4,
+        mesh: &rbx_mesh::Mesh,
+        covered: &[bool],
+    ) -> (rbx_mesh::Mesh, Vec<[f32; 2]>) {
         let normals = Mat3::from_mat4(*model).inverse().transpose();
         let mut vertices = Vec::with_capacity(mesh.indices.len());
+        let mut sources = Vec::with_capacity(mesh.indices.len());
         for triangle in mesh.indices.as_chunks::<3>().0 {
             let corners: Vec<&rbx_mesh::Vertex> = triangle
                 .iter()
@@ -251,6 +295,7 @@ impl Frame {
                 face = face_of(Vec3::new(normal.x, 0.0, normal.z));
             }
             for (vertex, point) in [(a, pa), (b, pb), (c, pc)] {
+                sources.push(vertex.uv);
                 vertices.push(rbx_mesh::Vertex {
                     uv: self.uv(face, point),
                     ..*vertex
@@ -258,14 +303,15 @@ impl Frame {
             }
         }
         let faces = (vertices.len() / 3) as u32;
-        rbx_mesh::Mesh {
+        let remapped = rbx_mesh::Mesh {
             version: mesh.version,
             indices: (0..vertices.len() as u32).collect(),
             vertices,
             #[allow(clippy::single_range_in_vec_init)]
             lods: vec![0..faces],
             bounds: mesh.bounds,
-        }
+        };
+        (remapped, sources)
     }
 
     /// Where `point` of the limb box lands in the template, taking it as lying
@@ -332,21 +378,17 @@ fn graphic_region(image: &Image) -> [f32; 4] {
     ]
 }
 
-/// The garments of `entry` laid over its body colour, at the template's size.
-fn composite(entry: &Entry, images: &HashMap<AssetRef, Arc<Image>>) -> (Image, Vec<bool>) {
-    let (width, height) = (TEMPLATE[0] as usize, TEMPLATE[1] as usize);
-    let [r, g, b] = body_colour(entry.color);
-    let mut pixels = [r, g, b, u8::MAX].repeat(width * height);
+/// Hands `each` every template pixel a garment of `entry` draws on, with the
+/// garment's own pixel there, bottom layer first.
+fn garment_pixels(
+    entry: &Entry,
+    images: &HashMap<AssetRef, Arc<Image>>,
+    mut each: impl FnMut(usize, &[u8], &clothing::Layer),
+) {
     let Some(dressing) = &entry.dressing else {
-        let image = Image {
-            width: width as u32,
-            height: height as u32,
-            pixels,
-        };
-        return (image, vec![false; width * height]);
+        return;
     };
-
-    let mut covered = vec![false; width * height];
+    let (width, height) = (TEMPLATE[0] as usize, TEMPLATE[1] as usize);
     for (garment, layer, image) in layers(dressing, images) {
         let region = match garment {
             Garment::Graphic => graphic_region(image),
@@ -358,18 +400,116 @@ fn composite(entry: &Entry, images: &HashMap<AssetRef, Arc<Image>>) -> (Image, V
                 let sx = ((x - rx) * image.width as usize / rw).min(image.width as usize - 1);
                 let sy = ((y - ry) * image.height as usize / rh).min(image.height as usize - 1);
                 let at = (sy * image.width as usize + sx) * 4;
-                let source = &image.pixels[at..at + 4];
-                let alpha = f32::from(source[3]) / 255.0;
-                covered[y * width + x] |= source[3] > 0;
-                let out = &mut pixels[(y * width + x) * 4..][..3];
-                for channel in 0..3 {
-                    let tinted = f32::from(source[channel]) * layer.tint[channel].clamp(0.0, 1.0);
-                    out[channel] =
-                        (tinted * alpha + f32::from(out[channel]) * (1.0 - alpha)).round() as u8;
+                each(y * width + x, &image.pixels[at..at + 4], layer);
+            }
+        }
+    }
+}
+
+/// Which template pixels a garment of `entry` draws on at all.
+fn coverage(entry: &Entry, images: &HashMap<AssetRef, Arc<Image>>) -> Vec<bool> {
+    let mut covered = vec![false; TEMPLATE[0] as usize * TEMPLATE[1] as usize];
+    garment_pixels(entry, images, |at, source, _| covered[at] |= source[3] > 0);
+    covered
+}
+
+/// A body's own texture, and where each of its triangles went in the template.
+struct Skin<'a> {
+    image: &'a Image,
+    tint: [f32; 3],
+    /// The UVs of every vertex of `targets` in the mesh before it was remapped.
+    sources: &'a [[f32; 2]],
+    targets: &'a rbx_mesh::Mesh,
+}
+
+impl Skin<'_> {
+    /// Paints the texture into the template wherever a triangle of the body
+    /// now lies, over what is there.
+    fn paint(&self, pixels: &mut [u8]) {
+        let (width, height) = (TEMPLATE[0] as usize, TEMPLATE[1] as usize);
+        let at = |uv: [f32; 2]| [uv[0] * TEMPLATE[0], uv[1] * TEMPLATE[1]];
+        for (corners, from) in self
+            .targets
+            .vertices
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .zip(self.sources.as_chunks::<3>().0)
+        {
+            let [a, b, c] = [0, 1, 2].map(|i| at(corners[i].uv));
+            let area = (b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1]);
+            if area.abs() < f32::EPSILON {
+                continue;
+            }
+            let xs = [a[0], b[0], c[0]];
+            let ys = [a[1], b[1], c[1]];
+            let (x0, x1) = (min3(xs).floor().max(0.0) as usize, max3(xs).ceil() as usize);
+            let (y0, y1) = (min3(ys).floor().max(0.0) as usize, max3(ys).ceil() as usize);
+            for y in y0..y1.min(height) {
+                for x in x0..x1.min(width) {
+                    let p = [x as f32 + 0.5, y as f32 + 0.5];
+                    let wa = ((b[0] - p[0]) * (c[1] - p[1]) - (c[0] - p[0]) * (b[1] - p[1])) / area;
+                    let wb = ((c[0] - p[0]) * (a[1] - p[1]) - (a[0] - p[0]) * (c[1] - p[1])) / area;
+                    let wc = 1.0 - wa - wb;
+                    // A little outside counts, so that seams between triangles
+                    // do not let the body colour through.
+                    if wa < -0.05 || wb < -0.05 || wc < -0.05 {
+                        continue;
+                    }
+                    let u = wa * from[0][0] + wb * from[1][0] + wc * from[2][0];
+                    let v = wa * from[0][1] + wb * from[1][1] + wc * from[2][1];
+                    let sx = (u.clamp(0.0, 1.0) * self.image.width as f32) as usize;
+                    let sy = (v.clamp(0.0, 1.0) * self.image.height as f32) as usize;
+                    let sx = sx.min(self.image.width as usize - 1);
+                    let sy = sy.min(self.image.height as usize - 1);
+                    let source =
+                        &self.image.pixels[(sy * self.image.width as usize + sx) * 4..][..4];
+                    let alpha = f32::from(source[3]) / 255.0;
+                    let out = &mut pixels[(y * width + x) * 4..][..3];
+                    for channel in 0..3 {
+                        let tinted =
+                            f32::from(source[channel]) * self.tint[channel].clamp(0.0, 1.0);
+                        out[channel] = (tinted * alpha + f32::from(out[channel]) * (1.0 - alpha))
+                            .round() as u8;
+                    }
                 }
             }
         }
     }
+}
+
+fn min3(values: [f32; 3]) -> f32 {
+    values[0].min(values[1]).min(values[2])
+}
+
+fn max3(values: [f32; 3]) -> f32 {
+    values[0].max(values[1]).max(values[2])
+}
+
+/// The garments of `entry` laid over its skin: the body's own texture where
+/// it has one, its body colour elsewhere. Clothes are drawn source-over, so a
+/// garment's transparent pixels let the skin through.
+fn composite(
+    entry: &Entry,
+    images: &HashMap<AssetRef, Arc<Image>>,
+    skin: Option<&Skin>,
+) -> (Image, Vec<bool>) {
+    let (width, height) = (TEMPLATE[0] as usize, TEMPLATE[1] as usize);
+    let [r, g, b] = body_colour(entry.color);
+    let mut pixels = [r, g, b, u8::MAX].repeat(width * height);
+    if let Some(skin) = skin {
+        skin.paint(&mut pixels);
+    }
+    let mut covered = vec![false; width * height];
+    garment_pixels(entry, images, |at, source, layer| {
+        let alpha = f32::from(source[3]) / 255.0;
+        covered[at] |= source[3] > 0;
+        let out = &mut pixels[at * 4..][..3];
+        for channel in 0..3 {
+            let tinted = f32::from(source[channel]) * layer.tint[channel].clamp(0.0, 1.0);
+            out[channel] = (tinted * alpha + f32::from(out[channel]) * (1.0 - alpha)).round() as u8;
+        }
+    });
     bleed(&mut pixels, &covered, width);
     let image = Image {
         width: width as u32,
@@ -556,6 +696,58 @@ mod tests {
         // The shirt covers that cell, the corner of the atlas stays body colour.
         let at = |x: usize, y: usize| &image.pixels[(y * 585 + x) * 4..][..3];
         assert_eq!(at(290, 130), [200, 0, 0]);
+    }
+
+    #[test]
+    fn a_body_with_its_own_texture_shows_it_wherever_the_shirt_is_clear() {
+        let mut dom = character("rbxassetid://5");
+        dom.get_mut(Ref::new(12)).unwrap().properties_mut().insert(
+            "TextureID".to_string(),
+            Variant::String("rbxassetid://6".to_string()),
+        );
+        let database = ReflectionDatabase::embedded();
+        let plan = super::super::plan(&dom, &database, &mut Catalog::new(&dom, &database));
+        let meshes =
+            HashMap::from([(AssetRef::parse("rbxassetid://1").unwrap(), Arc::new(cube()))]);
+        // A shirt drawn on the front alone, over a green skin.
+        let [fx, fy, fw, fh] = Limb::Torso.rect(NormalId::Front);
+        let mut shirt = vec![0; 585 * 559 * 4];
+        for y in fy as usize..(fy + fh) as usize {
+            for x in fx as usize..(fx + fw) as usize {
+                shirt[(y * 585 + x) * 4..][..4].copy_from_slice(&[200, 0, 0, 255]);
+            }
+        }
+        let images = HashMap::from([
+            (
+                AssetRef::parse("rbxassetid://5").unwrap(),
+                Arc::new(Image {
+                    width: 585,
+                    height: 559,
+                    pixels: shirt,
+                }),
+            ),
+            (
+                AssetRef::parse("rbxassetid://6").unwrap(),
+                Arc::new(Image {
+                    width: 4,
+                    height: 4,
+                    pixels: [0, 200, 0, 255].repeat(16),
+                }),
+            ),
+        ]);
+        let (resolved, _) = super::super::resolve(&plan, meshes, images);
+        let instance = &resolved.instances[0];
+        assert!(instance.appearance.is_none());
+        let image = &resolved.images[&instance.texture.clone().unwrap()];
+        let at = |rect: [f32; 4]| {
+            let (x, y) = (
+                (rect[0] + rect[2] / 2.0) as usize,
+                (rect[1] + rect[3] / 2.0) as usize,
+            );
+            image.pixels[(y * 585 + x) * 4..][..3].to_vec()
+        };
+        assert_eq!(at(Limb::Torso.rect(NormalId::Front)), [200, 0, 0]);
+        assert_eq!(at(Limb::Torso.rect(NormalId::Right)), [0, 200, 0]);
     }
 
     #[test]

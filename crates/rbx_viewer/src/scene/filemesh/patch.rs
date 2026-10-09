@@ -51,6 +51,7 @@ impl Entry {
             .clone()
             .filter(|reference| resolved.images.contains_key(reference));
         let (mut mesh_key, mut color) = (self.mesh.clone(), self.color);
+        let mut worn = false;
         // A dressed section reuses what its limb was dressed with, or asks for
         // the whole limb to be dressed again when an edit has outdated it.
         if let Some((key, image)) = super::clothing::keys(self, &resolved.images) {
@@ -58,8 +59,10 @@ impl Entry {
                 return None;
             }
             (mesh_key, texture, color) = (key, Some(image), [1.0; 3]);
+            worn = true;
         }
         let appearance = match &self.appearance {
+            Some(_) if worn => None,
             Some(planned) => {
                 let wanted = planned.resolved(&resolved.images);
                 Some(
