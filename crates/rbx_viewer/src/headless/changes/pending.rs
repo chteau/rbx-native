@@ -35,6 +35,9 @@ pub(super) struct Pending {
     /// after is what made dragging any model cost a full-place walk per
     /// mouse move.
     pub(super) attachments: bool,
+    /// A garment was worn, edited or taken off: what every limb is painted
+    /// with has to be joined to the images again.
+    pub(super) clothing: bool,
 }
 
 /// Which GUI trees a batch re-plans.
@@ -239,6 +242,14 @@ impl Patcher<'_> {
             self.offscreen.with_renderer(|renderer, device, queue| {
                 renderer.refresh_gui(device, queue, world)
             });
+        }
+        if self.pending.clothing {
+            // The decals and the composites are joined from the plan and the
+            // images already resident, and a template this session has not
+            // seen is asked for by `sync_part` and lands the way any asset
+            // does. Nothing is read from the file again.
+            let _ = self.loaded.resolve(self.resident);
+            self.offscreen.reload(self.loaded.world(), self.view);
         }
         Ok(moved)
     }

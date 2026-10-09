@@ -807,3 +807,173 @@ fn a_viewport_frame_drawn_alone_follows_its_camera() {
         .expect("the frame draws");
     assert_eq!(differing(&after, &theirs), 0);
 }
+
+/// A flat 585x559 template in `colour`, cached under `id` so no fetch is
+/// needed: the loader answers an asset id from the on-disk cache first.
+fn seed_template(cache: &std::path::Path, id: u32, colour: [u8; 4]) {
+    let dir = cache.join("rbx-native/assets/ids");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut bytes = Vec::new();
+    let mut encoder = png::Encoder::new(&mut bytes, 585, 559);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder
+        .write_header()
+        .unwrap()
+        .write_image_data(&colour.repeat(585 * 559))
+        .unwrap();
+    std::fs::write(dir.join(id.to_string()), bytes).unwrap();
+}
+
+/// Where the dressed dummy stands, and the eye that looks at its front.
+const DUMMY: [f32; 3] = [0.0, 80.0, 0.0];
+
+/// A place with nothing in it to fetch, so only the garments are in flight.
+fn bare_place(dir: &std::path::Path) -> PathBuf {
+    let path = dir.join("bare.rbxlx");
+    std::fs::write(
+        &path,
+        r#"<roblox version="4"><Item class="Workspace" referent="RBX0"><Properties><string name="Name">Workspace</string></Properties><Item class="Part" referent="RBX1"><Properties><string name="Name">Floor</string><Vector3 name="size"><X>200</X><Y>1</Y><Z>200</Z></Vector3><CoordinateFrame name="CFrame"><X>0</X><Y>0</Y><Z>0</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame></Properties></Item></Item></roblox>"#,
+    )
+    .unwrap();
+    path
+}
+
+/// Waits out the fetches an edit asked for and folds them in.
+fn settle(headless: &mut Headless) {
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while std::time::Instant::now() < until {
+        let swapped = headless.swap_assets();
+        if headless.assets_in_flight() == 0 && !swapped {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    panic!("the fetches did not finish");
+}
+
+/// The frame a rebuild of `dom` draws looking at the dummy.
+fn rebuilt_at_dummy(place: &std::path::Path, dom: &WeakDom) -> Vec<u8> {
+    let mut reference = Headless::load(place, true).expect("the fixture loads");
+    reference.open_at([0.0, 80.0, -6.0], DUMMY, 70.0);
+    reference.reload(dom).expect("the DOM rebuilds");
+    settle(&mut reference);
+    frame(&mut reference)
+}
+
+/// Patches `edit` of the dressed dummy in, forwards, undone and redone, and
+/// checks each frame against a rebuild — and that the edit showed at all.
+fn worn(what: &str, edit: impl Fn(&mut WeakDom)) {
+    let cache = tempfile::tempdir().unwrap();
+    seed_template(cache.path(), 9_100_001, [200, 30, 30, 255]);
+    seed_template(cache.path(), 9_100_002, [30, 30, 200, 255]);
+    std::env::set_var("XDG_CACHE_HOME", cache.path());
+
+    let path = bare_place(cache.path());
+    let mut dom = rbx_viewer::read_place(&path).expect("the place parses");
+    let mut patched = Headless::load(&path, true).expect("the place loads");
+    patched.open_at([0.0, 80.0, -6.0], DUMMY, 70.0);
+    let workspace = workspace(&dom);
+    let model = dom.new_instance("Model", "Dummy", Some(workspace));
+    let torso = dom.new_instance("Part", "Torso", Some(model));
+    dom.set_property(
+        torso,
+        "size",
+        Variant::Vector3(rbx_dom::Vector3Data {
+            x: 2.0,
+            y: 2.0,
+            z: 1.0,
+        }),
+    )
+    .unwrap();
+    dom.set_property(
+        torso,
+        "CFrame",
+        Variant::CFrame(rbx_dom::CFrameData {
+            position: rbx_dom::Vector3Data {
+                x: DUMMY[0],
+                y: DUMMY[1],
+                z: DUMMY[2],
+            },
+            rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        }),
+    )
+    .unwrap();
+    let shirt = dom.new_instance("Shirt", "Shirt", Some(model));
+    dom.set_property(
+        shirt,
+        "ShirtTemplate",
+        Variant::String("rbxassetid://9100001".into()),
+    )
+    .unwrap();
+    let staging = dom.take_changes();
+    patched
+        .apply_changes(&dom, &staging)
+        .expect("the dummy applies");
+    settle(&mut patched);
+    let dressed = frame(&mut patched);
+
+    let before = dom.clone();
+    edit(&mut dom);
+    let log = dom.take_changes();
+    assert!(!log.is_empty(), "{what} changed nothing");
+    let after = dom.clone();
+    for (state, what) in [
+        (&after, format!("{what} (forward)")),
+        (&before, format!("{what} (undo)")),
+        (&after, format!("{what} (redo)")),
+    ] {
+        let applied = patched
+            .apply_changes(state, &log)
+            .expect("the edit applies");
+        assert_eq!(applied, Applied::Patched, "{what} must be patched");
+        settle(&mut patched);
+        let ours = frame(&mut patched);
+        let ae = differing(&ours, &rebuilt_at_dummy(&path, state));
+        assert_eq!(ae, 0, "{what}: {ae} pixels differ from a rebuild");
+        if std::ptr::eq(state, &after) {
+            assert!(
+                differing(&ours, &dressed) > 100,
+                "{what}: the edit left the dummy as it was"
+            );
+        }
+    }
+}
+
+#[test]
+#[ignore = "needs a GPU"]
+fn a_shirts_colour_draws_as_a_rebuild_draws_it() {
+    worn("shirt Color3", |dom| {
+        let shirt = named(dom, "Shirt");
+        let colour = Color3Data {
+            r: 0.2,
+            g: 0.9,
+            b: 0.2,
+        };
+        dom.set_property(shirt, "Color3", Variant::Color3(colour))
+            .unwrap();
+    });
+}
+
+#[test]
+#[ignore = "needs a GPU"]
+fn a_shirts_template_draws_as_a_rebuild_draws_it() {
+    worn("shirt template", |dom| {
+        let shirt = named(dom, "Shirt");
+        dom.set_property(
+            shirt,
+            "ShirtTemplate",
+            Variant::String("rbxassetid://9100002".into()),
+        )
+        .unwrap();
+    });
+}
+
+#[test]
+#[ignore = "needs a GPU"]
+fn a_shirt_taken_off_draws_as_a_rebuild_draws_it() {
+    worn("shirt removed", |dom| {
+        let shirt = named(dom, "Shirt");
+        dom.remove(shirt);
+    });
+}
