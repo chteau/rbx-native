@@ -2309,12 +2309,21 @@ against `Roblox/creator-docs` rather than assumed:
     decals; R15 limbs (whose UVs are not the template's) are re-mapped
     per triangle onto the template cut for the whole limb and drawn with a
     CPU composite over the body colour. Templates are stored as
-    `rbxassetid://` and a T-shirt is the rig's own `ShirtGraphic`. Open:
-    the T-shirt graphic is stretched over the torso front, a later
-    `Shirt`/`Pants` edit repaints on the next reload rather than live, bodies
-    that carry their own texture or `SurfaceAppearance` (Rthro and bundle
-    bodies, e.g. user 36) are not dressed, and
-    most user-made clothing images need the keyed route (401 anonymously).
+    `rbxassetid://` and a T-shirt is the rig's own `ShirtGraphic`, drawn as a
+    centred square decal (R6 torso front, R15 UpperTorso front). A body with
+    its own `TextureID` or `SurfaceAppearance` colour map is dressed too: the
+    garment composites over that texture wherever it is opaque, and shows the
+    texture where the garment is clear (our reading of Roblox's behaviour, not
+    checked against Studio); the colour map is then dropped. Garment edges are
+    carried a few pixels into the bare template so joints show no skin wedge.
+    Editing a `Shirt`, `Pants` or `ShirtGraphic` (template or Color3) repaints
+    live through the viewer's change path (GPU parity tests). A clothing asset
+    that fails to load is named in Output (`Not applied: ...`); the mock seam
+    takes `<assetid>.status` to force one. Open: most user-made clothing
+    images need the keyed route (401 anonymously), whose fallback is
+    unit-tested with a mock transport but unverified live (no key), so user
+    36's own shirt and pants stay bare without one; a textured body was not
+    captured live.
   - **Player / My Avatar** need no API key and no cookie: the public
     `avatar.roblox.com/v1/users/{id}/avatar` endpoint and anonymous
     `assetdelivery` are read (My Avatar only needs the key to learn its

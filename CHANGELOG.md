@@ -25,7 +25,10 @@
   over their body colour. Imported players' templates are stored as
   `rbxassetid://` (legacy `asset/?id=` links are normalised) and a T-shirt
   becomes a `ShirtGraphic` of the rig. Clothing the anonymous asset service
-  refuses is named in Output, and the limb keeps its body colour. — @chteau
+  refuses is named in Output, and the limb keeps its body colour. A T-shirt
+  is a centred square on the torso front, clothing also covers bodies that
+  carry their own texture, and editing a Shirt, Pants or ShirtGraphic in
+  Properties repaints at once. — @chteau
 - **Chunked `.mesh` files (versions 6.00 and 7.00).** The current Rthro
   bodies and R15 heads are Draco-compressed (`COREMESH`); the mesh decoder
   now reads them, so they render as meshes instead of boxes. — @chteau
