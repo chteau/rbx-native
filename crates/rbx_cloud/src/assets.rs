@@ -32,12 +32,11 @@ impl Client {
     /// immediately rather than wasting a key-authenticated request on e.g. a
     /// plain 404.
     pub fn asset(&self, asset_id: u64) -> Result<AssetContent, CloudError> {
-        match self.asset_anonymous(asset_id) {
-            Err(CloudError::AuthRequired { .. }) if self.has_api_key() => {
-                self.asset_with_key(asset_id)
-            }
-            other => other,
-        }
+        anonymous_then_keyed(
+            self.has_api_key(),
+            || self.asset_anonymous(asset_id),
+            || self.asset_with_key(asset_id),
+        )
     }
 
     pub fn asset_anonymous(&self, asset_id: u64) -> Result<AssetContent, CloudError> {
@@ -103,6 +102,20 @@ impl Client {
         version: u64,
     ) -> Result<Vec<u8>, CloudError> {
         place_bytes(self.keyed_delivery(&versioned_url(place_id, version))?)
+    }
+}
+
+/// The route choice of [`Client::asset`], with both routes passed in so it can
+/// be tried without a network: the keyed one runs only when the anonymous
+/// one answered 401/403/409 and a key is stored.
+fn anonymous_then_keyed(
+    has_key: bool,
+    anonymous: impl FnOnce() -> Result<AssetContent, CloudError>,
+    keyed: impl FnOnce() -> Result<AssetContent, CloudError>,
+) -> Result<AssetContent, CloudError> {
+    match anonymous() {
+        Err(CloudError::AuthRequired { .. }) if has_key => keyed(),
+        other => other,
     }
 }
 
@@ -218,6 +231,59 @@ mod tests {
     use super::*;
 
     const SAMPLE_DELIVERY: &str = r#"{"location":"https://example.rbxcdn.com/signed?sig=abc","requestId":"req-1","isArchived":false,"assetTypeId":9,"assetMetadatas":[{"metadataType":1,"value":"282701"}],"isRecordable":true}"#;
+
+    fn content(bytes: &[u8]) -> Result<AssetContent, CloudError> {
+        Ok(AssetContent {
+            bytes: bytes.to_vec(),
+            asset_type_id: Some(11),
+        })
+    }
+
+    fn refused() -> Result<AssetContent, CloudError> {
+        Err(CloudError::AuthRequired { asset_id: 7 })
+    }
+
+    #[test]
+    fn a_refused_asset_is_fetched_through_the_key() {
+        let got = anonymous_then_keyed(true, refused, || content(b"private shirt")).unwrap();
+        assert_eq!(got.bytes, b"private shirt");
+    }
+
+    #[test]
+    fn a_refused_asset_stays_refused_without_a_key() {
+        let got = anonymous_then_keyed(false, refused, || panic!("no key to try"));
+        assert!(matches!(got, Err(CloudError::AuthRequired { asset_id: 7 })));
+    }
+
+    #[test]
+    fn a_public_asset_never_spends_the_key() {
+        let got = anonymous_then_keyed(true, || content(b"public"), || panic!("not needed"));
+        assert_eq!(got.unwrap().bytes, b"public");
+    }
+
+    #[test]
+    fn only_a_refusal_falls_back_to_the_key() {
+        let missing = || {
+            Err(CloudError::Http {
+                status: 404,
+                url: "x".into(),
+            })
+        };
+        let got = anonymous_then_keyed(true, missing, || panic!("a 404 will not change"));
+        assert!(matches!(got, Err(CloudError::Http { status: 404, .. })));
+    }
+
+    #[test]
+    fn a_keyed_refusal_is_the_final_answer() {
+        let denied = || {
+            Err(CloudError::Http {
+                status: 403,
+                url: "x".into(),
+            })
+        };
+        let got = anonymous_then_keyed(true, refused, denied);
+        assert!(matches!(got, Err(CloudError::Http { status: 403, .. })));
+    }
 
     #[test]
     fn parses_the_real_keyed_delivery_payload() {

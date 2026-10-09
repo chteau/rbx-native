@@ -232,6 +232,15 @@ fn mock_fetch(mock: &str, user: Option<u64>) -> Result<Fetched, String> {
     })?;
     let avatar = Avatar::from_json(&body).map_err(|err| user_error(&err, id))?;
     ready(avatar, id, |asset| {
+        // `<asset>.status` fails that one download as the client would.
+        if let Ok(status) = std::fs::read_to_string(dir.join(format!("{asset}.status"))) {
+            // The anonymous route's 401 is `AuthRequired`, not a plain `Http`.
+            let failure = match status.trim() {
+                "401" => CloudError::AuthRequired { asset_id: asset },
+                other => simulated(other),
+            };
+            return Err(download_error(&failure, false));
+        }
         ["rbxm", "rbxmx"]
             .iter()
             .find_map(|ext| std::fs::read(dir.join(format!("{asset}.{ext}"))).ok())

@@ -289,6 +289,24 @@ fn the_mock_simulates_each_failure() {
 }
 
 #[test]
+fn a_clothing_asset_the_mock_refuses_is_named_in_its_own_note() {
+    let dir = mock_dir("clothing-401", &avatar_json("R15", ""));
+    std::fs::write(dir.join("2.status"), "401").unwrap();
+    let fetched = mock_fetch(dir.to_str().unwrap(), Some(156)).unwrap();
+    let shirt = fetched.worn.iter().find(|w| w.asset.id == 2).unwrap();
+    assert!(shirt.dom.as_ref().err().unwrap().starts_with("HTTP 401"));
+    let fates = vec![Fate::Used; fetched.worn.len()];
+    let (used, notes) = settle(&fetched.avatar, &fetched.worn, &fates);
+    assert_eq!(used, 2);
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert!(
+        notes[0].starts_with("Shirt (id 2, Shirt): HTTP 401: not publicly downloadable"),
+        "{notes:?}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn an_avatar_that_wears_nothing_is_refused() {
     let dir = temp_dir("empty");
     let full = String::from_utf8(avatar_json("R15", "")).unwrap();
@@ -612,4 +630,15 @@ fn the_mock_serves_pants_and_a_tshirt_fixture() {
     assert_eq!(children_of(&dom, rig, "Pants").len(), 1);
     assert_eq!(children_of(&dom, rig, "ShirtGraphic").len(), 1);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_refused_download_says_whether_a_key_was_tried() {
+    let refused = CloudError::AuthRequired { asset_id: 2 };
+    assert!(download_error(&refused, false).contains("no Open Cloud key is stored"));
+    let denied = CloudError::Http {
+        status: 403,
+        url: "x".into(),
+    };
+    assert!(download_error(&denied, true).contains("stored Open Cloud key"));
 }
