@@ -26,7 +26,7 @@ impl Cf {
     /// A quarter turn about X, which is how a hand's grip attachment sits.
     pub(crate) const fn quarter_x(p: V3) -> Cf {
         Cf {
-            r: [1., 0., 0., 0., 0., -1., 0., 1., 0.],
+            r: [1., 0., 0., 0., 0., 1., 0., -1., 0.],
             p,
         }
     }

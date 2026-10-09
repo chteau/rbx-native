@@ -86,16 +86,14 @@ impl Layout {
 
 /// `HatAttachment` & co. on a head of `size`.
 pub(super) fn head_attachments(size: V3) -> Vec<(String, Cf)> {
-    // Roblox's rigs seat a hat a little under the head's top (0.6 on the
-    // classic 1-stud head, 0.60686 on an R15 head of 1.2): half the height
-    // plus a tenth of a stud, never more than 0.6.
-    let top = [0., (size[1] / 2. + 0.1).min(0.6), 0.];
+    // The R6 head seats a hat and a face a tenth of a stud off its box.
+    let top = [0., size[1] / 2. + 0.1, 0.];
     vec![
         ("HatAttachment".into(), Cf::at(top)),
         ("HairAttachment".into(), Cf::at(top)),
         (
             "FaceFrontAttachment".into(),
-            Cf::at([0., 0., -size[2] / 2.]),
+            Cf::at([0., 0., -size[2] / 2. - 0.1]),
         ),
         ("FaceCenterAttachment".into(), Cf::at([0.; 3])),
     ]
@@ -104,7 +102,7 @@ pub(super) fn head_attachments(size: V3) -> Vec<(String, Cf)> {
 /// The collar, front and back points of the upper body (the whole torso on
 /// R6).
 pub(super) fn chest_attachments(size: V3) -> Vec<(String, Cf)> {
-    let collar = size[0] * 0.3;
+    let collar = size[0] / 2.;
     let top = size[1] / 2.;
     vec![
         ("NeckAttachment".into(), Cf::at([0., top, 0.])),
@@ -119,20 +117,31 @@ pub(super) fn chest_attachments(size: V3) -> Vec<(String, Cf)> {
 }
 
 pub(super) fn waist_attachments(size: V3) -> Vec<(String, Cf)> {
+    let low = -size[1] / 2.;
     vec![
-        ("WaistCenterAttachment".into(), Cf::at([0.; 3])),
         (
             "WaistFrontAttachment".into(),
-            Cf::at([0., 0., -size[2] / 2.]),
+            Cf::at([0., low, -size[2] / 2.]),
         ),
-        ("WaistBackAttachment".into(), Cf::at([0., 0., size[2] / 2.])),
+        ("WaistCenterAttachment".into(), Cf::at([0., low, 0.])),
+        (
+            "WaistBackAttachment".into(),
+            Cf::at([0., low, size[2] / 2.]),
+        ),
     ]
 }
 
 pub(super) fn shoulder_attachment(side: &str, size: V3) -> (String, Cf) {
     (
         format!("{side}ShoulderAttachment"),
-        Cf::at([0., size[1] * 0.4, 0.]),
+        Cf::at([0., size[1] / 2., 0.]),
+    )
+}
+
+pub(super) fn grip_attachment(side: &str, size: V3) -> (String, Cf) {
+    (
+        format!("{side}GripAttachment"),
+        Cf::at([0., -size[1] / 2., 0.]),
     )
 }
 

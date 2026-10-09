@@ -7,7 +7,7 @@
 use super::bundle::{Piece, Pieces};
 use super::cframe::{Cf, V3};
 use super::layout::{JointSpec, Layout};
-use super::proportions::{BodyShape, Sizes, FEMININE_HIP_SPREAD};
+use super::proportions::Sizes;
 
 pub(super) const PARTS: [&str; 16] = [
     "HumanoidRootPart",
@@ -32,12 +32,8 @@ fn scale(piece: &Piece, size: V3, at: V3) -> V3 {
     [0, 1, 2].map(|i| at[i] * size[i] / piece.init[i])
 }
 
-pub(super) fn layout(sizes: &Sizes, shape: BodyShape, pieces: &Pieces) -> Layout {
-    let spread = if shape == BodyShape::Feminine {
-        FEMININE_HIP_SPREAD
-    } else {
-        1.
-    };
+pub(super) fn layout(sizes: &Sizes, hip_spread: f32, pieces: &Pieces) -> Layout {
+    let spread = hip_spread;
     // The joint's attachment on `part`, scaled to that part's size.
     let rig_attachment = |part: &str, joint: &str| -> V3 {
         let Some(piece) = pieces.get(part) else {
@@ -95,7 +91,7 @@ pub(super) fn layout(sizes: &Sizes, shape: BodyShape, pieces: &Pieces) -> Layout
     let order: Vec<String> = PARTS.iter().map(|name| name.to_string()).collect();
     let mut attachments = |name: &str| -> Vec<(String, Cf)> {
         let Some(piece) = pieces.get(name) else {
-            return vec![("RootAttachment".into(), Cf::at([0.; 3]))];
+            return Vec::new();
         };
         piece
             .extra
@@ -113,7 +109,10 @@ pub(super) fn layout(sizes: &Sizes, shape: BodyShape, pieces: &Pieces) -> Layout
     };
     let mut rig = Layout::solve(sizes, &order, joints, &mut attachments, true);
     for part in &mut rig.parts {
-        part.mesh = pieces.get(&part.name).cloned();
+        part.mesh = pieces
+            .get(&part.name)
+            .filter(|piece| piece.mesh != 0)
+            .cloned();
     }
     let root = rig.parts[0].size[1];
     rig.hip_height = -rig.ground() - root / 2.;

@@ -104,7 +104,7 @@ impl Shell {
             Ok(message) => Feedback::Output(message),
             Err(message) => Feedback::Error(message),
         };
-        self.output.push(SOURCE, feedback.clone());
+        self.output.push_once(SOURCE, feedback.clone());
         self.command_bar.set_feedback(feedback);
         cx.notify();
     }

@@ -1,5 +1,5 @@
-//! The standard `Animate` LocalScript of Studio's R6 and R15 rigs: the stock
-//! source, and one `StringValue` per animation state holding its `Animation`
+//! The `Animate` LocalScript of the R6 and R15 rigs: our own source
+//! (`animate.luau`), and one `StringValue` per animation state holding its `Animation`
 //! children with the default ids, so a new rig walks, jumps and idles when
 //! it is played. Ids and layout are those of a Studio rig.
 
@@ -7,8 +7,7 @@ use rbx_dom::{Content, Ref, Variant, WeakDom};
 
 use crate::shell::clipboard;
 
-const R15_SOURCE: &str = include_str!("animate_r15.lua");
-const R6_SOURCE: &str = include_str!("animate_r6.lua");
+const SOURCE: &str = include_str!("animate.luau");
 
 /// `(animation name, id, weight)`; a weight is set when a state has several.
 type Entry = (&'static str, u64, Option<f64>);
@@ -61,7 +60,7 @@ const R15: &[State] = &[
     ("swim", &[("Swim", 913384386, None)]),
     ("swimidle", &[("SwimIdle", 913389285, None)]),
     ("walk", &[("WalkAnim", 913402848, None)]),
-    ("mood", &[("Animation1", 7715096377, None)]),
+    ("mood", &[("Animation1", 14366558676, None)]),
 ];
 
 const R6: &[State] = &[
@@ -89,13 +88,9 @@ fn animation_url(id: u64) -> Variant {
 
 /// Adds `Animate` under `model`.
 pub(super) fn add(dom: &mut WeakDom, model: Ref, r15: bool) {
-    let (source, states, dampening) = if r15 {
-        (R15_SOURCE, R15, 0.4)
-    } else {
-        (R6_SOURCE, R6, 1.)
-    };
+    let states = if r15 { R15 } else { R6 };
     let script = dom.new_instance("LocalScript", "Animate", Some(model));
-    let _ = dom.set_property(script, "Source", Variant::String(source.into()));
+    let _ = dom.set_property(script, "Source", Variant::String(SOURCE.into()));
     for (state, entries) in states {
         let value = dom.new_instance("StringValue", state, Some(script));
         for (name, id, weight) in *entries {
@@ -109,7 +104,7 @@ pub(super) fn add(dom: &mut WeakDom, model: Ref, r15: bool) {
     }
     dom.new_instance("BindableFunction", "PlayEmote", Some(script));
     let number = dom.new_instance("NumberValue", "ScaleDampeningPercent", Some(script));
-    let _ = dom.set_property(number, "Value", Variant::Float64(dampening));
+    let _ = dom.set_property(number, "Value", Variant::Float64(1.));
 }
 
 /// Replaces the `Animation`s of every `Animate` state that the animation
@@ -155,4 +150,22 @@ fn child(dom: &WeakDom, parent: Ref, name: &str) -> Option<Ref> {
         .iter()
         .copied()
         .find(|&c| dom.get(c).is_some_and(|c| c.name() == name))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_script_parses_as_strict_luau() {
+        assert!(SOURCE.starts_with("--!strict"));
+        full_moon::parse(SOURCE).expect("animate.luau parses");
+    }
+
+    #[test]
+    fn every_state_folder_has_an_animation() {
+        for (state, entries) in R15.iter().chain(R6) {
+            assert!(!entries.is_empty(), "{state}");
+        }
+    }
 }

@@ -113,6 +113,7 @@ impl RigOptions {
         scale: BodyScale,
         joints: JointStyle,
     ) -> RigOptions {
+        let family = bundle::Family::of(Scales::preset(scale, shape).body_type);
         RigOptions {
             name: "Rig".into(),
             rig_type,
@@ -121,8 +122,33 @@ impl RigOptions {
             joints,
             scales: None,
             colors: BodyColors::default(),
-            pieces: bundle::stock(),
+            pieces: bundle::stock(family, shape),
             feet: [0.; 3],
+        }
+    }
+
+    /// The scales the rig is built at: its own, or the preset of its shape.
+    pub(crate) fn scales(&self) -> Scales {
+        self.scales
+            .unwrap_or_else(|| Scales::preset(self.scale, self.shape))
+    }
+
+    /// Sets the scales and swaps the stock parts for the family they call for.
+    pub(crate) fn set_scales(&mut self, scales: Scales) {
+        self.scales = Some(scales);
+        self.pieces = bundle::stock(self.family(), self.shape);
+    }
+
+    fn family(&self) -> bundle::Family {
+        bundle::Family::of(self.scales().body_type)
+    }
+
+    /// Only the Mannequin body has no female form of its own to widen.
+    fn hip_spread(&self) -> f32 {
+        if self.shape == BodyShape::Feminine && self.family() == bundle::Family::Mannequin {
+            proportions::FEMININE_HIP_SPREAD
+        } else {
+            1.
         }
     }
 }

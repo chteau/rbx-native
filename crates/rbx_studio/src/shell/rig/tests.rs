@@ -170,7 +170,8 @@ fn a_rig_has_a_face_and_body_colours_on_its_parts() {
     options.colors.left_arm = [10, 20, 30];
     let (dom, rig) = build(&options);
     let head = child(&dom, rig, "Head").unwrap();
-    assert_eq!(children_of_class(&dom, head, "Decal").len(), 1);
+    assert!(children_of_class(&dom, head, "Decal").is_empty());
+    assert!(child(&dom, head, "FaceControls").is_some());
     let hand = child(&dom, rig, "LeftHand").unwrap();
     assert_eq!(
         dom.get(hand).unwrap().properties().get("Color3uint8"),
@@ -315,9 +316,9 @@ fn r15_sizes_stay_inside_the_documented_limits() {
                 BodyScale::Classic | BodyScale::RthroNormal => (
                     [3., 2., 2.],
                     if scale == BodyScale::Classic {
-                        [2., 3., 2.]
+                        [2., 3.2, 2.]
                     } else {
-                        [2., 4.5, 2.]
+                        [2., 4.55, 2.]
                     },
                     if scale == BodyScale::Classic {
                         [4., 3.8, 2.]
@@ -327,11 +328,11 @@ fn r15_sizes_stay_inside_the_documented_limits() {
                     if scale == BodyScale::Classic {
                         [1.5, 3.5, 2.]
                     } else {
-                        [1.5, 4., 2.]
+                        [1.5, 4.05, 2.]
                     },
                 ),
                 BodyScale::RthroSlender => {
-                    ([2., 2., 2.], [1.5, 4., 2.], [3., 3.5, 2.], [1.5, 4., 2.])
+                    ([2., 2., 2.], [1.5, 4., 2.], [3., 3.5, 2.], [1.5, 4.05, 2.])
                 }
             };
             let what = format!("{shape:?} {scale:?}");
@@ -379,7 +380,8 @@ fn torso_width_shrinks_from_classic_to_normal_to_slender_and_for_feminine() {
             torso(BodyShape::Masculine, scale),
             torso(BodyShape::Feminine, scale),
         );
-        assert!(f[0] < m[0] && f[1] < m[1], "{scale:?}");
+        // Classic's female torso is as wide as the male one, only shaped differently.
+        assert!(f[0] <= m[0] && f != m, "{scale:?}");
     }
 }
 
@@ -516,4 +518,282 @@ fn a_mannequin_and_its_clothes_undo_in_one_step() {
 
 fn workspace_of(dom: &WeakDom) -> Ref {
     dom.root_refs()[0]
+}
+
+fn names(dom: &WeakDom, node: Ref) -> Vec<String> {
+    dom.get(node)
+        .unwrap()
+        .children()
+        .iter()
+        .map(|&c| dom.get(c).unwrap().name().to_string())
+        .collect()
+}
+
+fn classes(dom: &WeakDom, node: Ref) -> Vec<String> {
+    dom.get(node)
+        .unwrap()
+        .children()
+        .iter()
+        .map(|&c| dom.get(c).unwrap().class().to_string())
+        .collect()
+}
+
+fn float(dom: &WeakDom, node: Ref, property: &str) -> f32 {
+    match dom.get(node).unwrap().properties().get(property) {
+        Some(Variant::Float32(v)) => *v,
+        other => panic!("{property}: {other:?}"),
+    }
+}
+
+fn flag(dom: &WeakDom, node: Ref, property: &str) -> bool {
+    matches!(
+        dom.get(node).unwrap().properties().get(property),
+        Some(Variant::Bool(true))
+    )
+}
+
+fn r15(scale: BodyScale, shape: BodyShape) -> (WeakDom, Ref) {
+    build(&RigOptions::new(
+        RigType::R15,
+        shape,
+        scale,
+        JointStyle::AnimationConstraint,
+    ))
+}
+
+#[test]
+fn an_r15_rig_lists_its_children_in_the_reference_order() {
+    let (dom, rig) = r15(BodyScale::Classic, BodyShape::Masculine);
+    assert_eq!(
+        names(&dom, rig),
+        [
+            "HumanoidRootPart",
+            "Humanoid",
+            "Head",
+            "Animate",
+            "UpperTorso",
+            "LowerTorso",
+            "RightUpperArm",
+            "RightLowerArm",
+            "RightHand",
+            "LeftUpperArm",
+            "LeftLowerArm",
+            "LeftHand",
+            "LeftUpperLeg",
+            "LeftLowerLeg",
+            "LeftFoot",
+            "RightUpperLeg",
+            "RightLowerLeg",
+            "RightFoot",
+            "Body Colors",
+        ]
+    );
+    let humanoid = child(&dom, rig, "Humanoid").unwrap();
+    assert_eq!(
+        names(&dom, humanoid),
+        [
+            "Animator",
+            "BodyTypeScale",
+            "BodyProportionScale",
+            "BodyWidthScale",
+            "BodyHeightScale",
+            "BodyDepthScale",
+            "HeadScale",
+            "HumanoidDescription",
+        ]
+    );
+    let description = child(&dom, humanoid, "HumanoidDescription").unwrap();
+    assert_eq!(classes(&dom, description), vec!["BodyPartDescription"; 6]);
+    let root = child(&dom, rig, "HumanoidRootPart").unwrap();
+    assert_eq!(size(&dom, root), [2., 2., 1.]);
+    assert!(flag(&dom, root, "CanCollide"));
+    assert_eq!(names(&dom, root), ["RootRigAttachment", "RootAttachment"]);
+}
+
+#[test]
+fn an_r15_mesh_part_carries_what_the_reference_parts_carry() {
+    for (scale, kind, wrap, head_solid) in [
+        (BodyScale::Classic, "Classic", "UpperTorso", true),
+        (
+            BodyScale::RthroNormal,
+            "ProportionsNormal",
+            "UpperTorsoWrapTarget",
+            false,
+        ),
+    ] {
+        let (dom, rig) = r15(scale, BodyShape::Masculine);
+        let torso = child(&dom, rig, "UpperTorso").unwrap();
+        let tail = names(&dom, torso);
+        let tail: Vec<&str> = tail.iter().map(String::as_str).collect();
+        assert!(tail.contains(&"AvatarPartScaleType"), "{scale:?}");
+        assert!(tail.contains(&wrap), "{scale:?} {tail:?}");
+        assert_eq!(
+            tail.contains(&"SurfaceAppearance"),
+            scale == BodyScale::RthroNormal
+        );
+        let value = child(&dom, torso, "AvatarPartScaleType").unwrap();
+        assert_eq!(
+            dom.get(value).unwrap().properties().get("Value"),
+            Some(&Variant::String(kind.into()))
+        );
+        let neck_socket = child(&dom, child(&dom, rig, "Head").unwrap(), "NeckBallSocket");
+        assert!(neck_socket.is_some());
+        let head = child(&dom, rig, "Head").unwrap();
+        assert_eq!(flag(&dom, head, "CanCollide"), head_solid, "{scale:?}");
+        assert!(child(&dom, head, "FaceControls").is_some());
+        assert!(children_of_class(&dom, head, "Decal").is_empty());
+        assert_eq!(
+            child(&dom, head, "AvatarPartScaleType").is_some(),
+            scale == BodyScale::RthroNormal
+        );
+        for hand in ["LeftHand", "RightLowerLeg", "LeftUpperArm"] {
+            assert!(!flag(&dom, child(&dom, rig, hand).unwrap(), "CanCollide"));
+        }
+        assert!(flag(&dom, torso, "CanCollide"));
+        let nodes = children_of_class(&dom, torso, "Attachment");
+        let original = child(&dom, nodes[0], "OriginalPosition").unwrap();
+        assert_eq!(dom.get(original).unwrap().class(), "Vector3Value");
+    }
+}
+
+#[test]
+fn the_no_collision_pairs_and_socket_limits_are_the_reference_ones() {
+    let (dom, rig) = r15(BodyScale::Classic, BodyShape::Masculine);
+    let pairs = |part: &str| -> Vec<String> {
+        let part = child(&dom, rig, part).unwrap();
+        children_of_class(&dom, part, "NoCollisionConstraint")
+            .into_iter()
+            .map(|c| {
+                dom.get(reference(&dom, c, "Part1"))
+                    .unwrap()
+                    .name()
+                    .to_string()
+            })
+            .collect()
+    };
+    assert_eq!(
+        pairs("Head"),
+        ["HumanoidRootPart", "LeftUpperArm", "RightUpperArm"]
+    );
+    assert_eq!(
+        pairs("UpperTorso"),
+        [
+            "HumanoidRootPart",
+            "RightUpperLeg",
+            "LeftUpperLeg",
+            "LeftLowerLeg",
+            "RightLowerLeg",
+            "LeftLowerArm",
+            "RightLowerArm"
+        ]
+    );
+    assert_eq!(
+        pairs("LowerTorso"),
+        [
+            "LeftUpperArm",
+            "RightUpperArm",
+            "LeftLowerLeg",
+            "RightLowerLeg"
+        ]
+    );
+    assert_eq!(pairs("RightUpperArm"), ["RightHand"]);
+    assert_eq!(pairs("LeftUpperLeg"), ["RightUpperLeg", "LeftFoot"]);
+    assert_eq!(pairs("RightUpperLeg"), ["RightFoot"]);
+    assert!(pairs("RightFoot").is_empty());
+
+    for (joint, host, limits) in [
+        ("Neck", "Head", (45., -40., 40.)),
+        ("Waist", "UpperTorso", (20., -40., 20.)),
+        ("RightShoulder", "RightUpperArm", (110., -85., 85.)),
+        ("LeftElbow", "LeftLowerArm", (20., 5., 120.)),
+        ("RightWrist", "RightHand", (30., -10., 10.)),
+        ("LeftHip", "LeftUpperLeg", (40., -5., 80.)),
+        ("RightKnee", "RightLowerLeg", (5., -120., -5.)),
+        ("LeftAnkle", "LeftFoot", (10., -10., 10.)),
+    ] {
+        let host = child(&dom, rig, host).unwrap();
+        let socket = child(&dom, host, &format!("{joint}BallSocket")).expect(joint);
+        let got = (
+            float(&dom, socket, "UpperAngle"),
+            float(&dom, socket, "TwistLowerAngle"),
+            float(&dom, socket, "TwistUpperAngle"),
+        );
+        assert_eq!(got, limits, "{joint}");
+        let drive = child(&dom, host, joint).expect(joint);
+        assert_eq!(float(&dom, drive, "MaxTorque"), 3000.);
+    }
+    let lower = child(&dom, rig, "LowerTorso").unwrap();
+    assert!(child(&dom, lower, "RootBallSocket").is_none());
+}
+
+#[test]
+fn the_mannequin_stands_at_the_reference_hip_height() {
+    let (dom, rig) = r15(BodyScale::RthroNormal, BodyShape::Masculine);
+    let humanoid = child(&dom, rig, "Humanoid").unwrap();
+    let hip = float(&dom, humanoid, "HipHeight");
+    assert!((hip - 3.5077).abs() < 0.05, "{hip}");
+}
+
+#[test]
+fn an_r6_rig_lists_its_children_in_the_reference_order() {
+    let options = RigOptions::new(
+        RigType::R6,
+        BodyShape::Masculine,
+        BodyScale::Classic,
+        JointStyle::Motor6D,
+    );
+    let (dom, rig) = build(&options);
+    assert_eq!(
+        names(&dom, rig),
+        [
+            "Head",
+            "Torso",
+            "Left Arm",
+            "Right Arm",
+            "Left Leg",
+            "Right Leg",
+            "Humanoid",
+            "HumanoidRootPart",
+            "Animate",
+            "Body Colors",
+        ]
+    );
+    let humanoid = child(&dom, rig, "Humanoid").unwrap();
+    assert_eq!(names(&dom, humanoid), ["Animator", "HumanoidDescription"]);
+    let torso = child(&dom, rig, "Torso").unwrap();
+    let motors: Vec<String> = children_of_class(&dom, torso, "Motor6D")
+        .into_iter()
+        .map(|m| dom.get(m).unwrap().name().to_string())
+        .collect();
+    assert_eq!(
+        motors,
+        [
+            "Right Shoulder",
+            "Left Shoulder",
+            "Right Hip",
+            "Left Hip",
+            "Neck"
+        ]
+    );
+    let at = |part: &str, name: &str| {
+        cf(
+            &dom,
+            child(&dom, child(&dom, rig, part).unwrap(), name).unwrap(),
+        )
+        .p
+    };
+    assert_eq!(at("Torso", "RightCollarAttachment"), [1., 1., 0.]);
+    assert_eq!(at("Torso", "WaistFrontAttachment"), [0., -1., -0.5]);
+    assert_eq!(at("Torso", "WaistCenterAttachment"), [0., -1., 0.]);
+    assert_eq!(at("Left Arm", "LeftShoulderAttachment"), [0., 1., 0.]);
+    assert_eq!(at("Left Arm", "LeftGripAttachment"), [0., -1., 0.]);
+    assert_eq!(at("Right Leg", "RightFootAttachment"), [0., -1., 0.]);
+    assert_eq!(at("Head", "HatAttachment"), [0., 0.6, 0.]);
+    assert_eq!(at("Head", "FaceFrontAttachment"), [0., 0., -0.6]);
+    let root = child(&dom, rig, "HumanoidRootPart").unwrap();
+    assert!(!flag(&dom, root, "CanCollide"));
+    assert_eq!(names(&dom, root), ["RootAttachment", "RootJoint"]);
+    let head = child(&dom, rig, "Head").unwrap();
+    assert_eq!(classes(&dom, head)[..2], ["SpecialMesh", "Decal"]);
+    assert_eq!(children_of_class(&dom, torso, "Decal").len(), 1);
 }

@@ -30,7 +30,7 @@ use rbx_dom::{BrickColor, Content, Ref, Variant, WeakDom};
 use crate::shell::clipboard;
 use crate::shell::freeze::{authorize, describe, fetch_asset, read_model};
 
-use super::bundle::{self, Piece};
+use super::bundle::{self, Family, Piece};
 use super::cframe::{Cf, V3};
 use super::{animate, r15};
 use super::{BodyColors, BodyScale, BodyShape, JointStyle, RigOptions, RigType, Scales};
@@ -86,7 +86,7 @@ pub(crate) fn options_for(avatar: &Avatar, joints: JointStyle, feet: V3) -> RigO
     };
     let mut options = RigOptions::new(rig_type, BodyShape::Masculine, BodyScale::Classic, joints);
     let s = &avatar.scales;
-    options.scales = Some(Scales {
+    options.set_scales(Scales {
         height: s.height as f32,
         width: s.width as f32,
         depth: s.depth as f32,
@@ -286,7 +286,8 @@ fn pieces_in(dom: &WeakDom) -> BTreeMap<String, Piece> {
             let Some(piece) = piece_of(dom, node) else {
                 continue;
             };
-            let Some(stock) = bundle::piece(&piece.name) else {
+            let Some(stock) = bundle::piece(Family::Classic, BodyShape::Masculine, &piece.name)
+            else {
                 continue;
             };
             if !stock
@@ -343,6 +344,9 @@ fn piece_of(dom: &WeakDom, part: Ref) -> Option<Piece> {
         name: node.name().to_owned(),
         mesh: content_id(dom, part, "MeshId")?,
         texture: content_id(dom, part, "TextureID"),
+        surface: None,
+        original: init,
+        family: bundle::Family::Classic,
         init,
         cage,
         rig,
@@ -410,22 +414,11 @@ pub(crate) fn dress(dom: &mut WeakDom, rig: Ref, worn: &[Worn]) -> usize {
                 animate::replace(dom, rig, source) > 0
             } else if is_body_part(kind) && !r15 {
                 wear_character_meshes(dom, rig, source)
-            } else if kind == DYNAMIC_HEAD && r15 {
-                // The dynamic head's texture is its own face.
-                drop_default_face(dom, rig);
-                false
             } else {
                 false
             }
         })
         .count()
-}
-
-fn drop_default_face(dom: &mut WeakDom, rig: Ref) {
-    let face = child_named(dom, rig, "Head").and_then(|head| child_named(dom, head, "face"));
-    if let Some(face) = face {
-        dom.remove(face);
-    }
 }
 
 fn descendants(dom: &WeakDom, root: Ref) -> Vec<Ref> {
@@ -479,12 +472,11 @@ fn wear_clothing(rig_dom: &mut WeakDom, rig: Ref, source: &WeakDom) -> bool {
         "Pants" => "PantsTemplate",
         _ => return clipboard::graft(rig_dom, source, item, rig).is_some(),
     };
-    let (Some(own), Some(value)) = (
-        child_of_class(rig_dom, rig, instance.class()),
-        instance.properties().get(template),
-    ) else {
+    let Some(value) = instance.properties().get(template) else {
         return false;
     };
+    let own = child_of_class(rig_dom, rig, instance.class())
+        .unwrap_or_else(|| rig_dom.new_instance(instance.class(), instance.class(), Some(rig)));
     set(rig_dom, own, template, value.clone());
     true
 }

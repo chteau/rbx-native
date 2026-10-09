@@ -134,7 +134,7 @@ fn a_cap_is_welded_to_the_head_attachment_and_clothing_is_copied() {
     let hat_at = child_named(&dom, *part1, "HatAttachment").unwrap();
     let wanted = head.mul(&cframe_of(&dom, hat_at)).p[1] + 0.5;
     assert!((cframe_of(&dom, handle).p[1] - wanted).abs() < 1e-3);
-    // The rig's own Shirt took the template; no second Shirt was added.
+    // build_rig makes no Shirt, so the worn one is created.
     let shirts = children_of(&dom, rig, "Shirt");
     assert_eq!(shirts.len(), 1);
     assert_eq!(
@@ -307,9 +307,9 @@ fn a_fixed_copy_is_preferred_over_the_artist_copy() {
 }
 
 #[test]
-fn a_dynamic_head_swaps_the_head_mesh_and_texture_and_drops_the_face() {
+fn a_dynamic_head_swaps_the_head_mesh_and_texture() {
     let avatar = avatar_r15();
-    let (mut dom, rig, mut options) = rig_of(&avatar);
+    let (_, _, mut options) = rig_of(&avatar);
     let mut source = WeakDom::new();
     let mesh = source.new_instance("MeshPart", "Head", None);
     set(&mut source, mesh, "MeshId", uri("rbxassetid://888"));
@@ -318,10 +318,6 @@ fn a_dynamic_head_swaps_the_head_mesh_and_texture_and_drops_the_face() {
     assert_eq!(apply_packages(&mut options, &worn), 1);
     assert_eq!(options.pieces["Head"].mesh, 888);
     assert_eq!(options.pieces["Head"].texture, Some(999));
-    let head = child_named(&dom, rig, "Head").unwrap();
-    assert!(child_named(&dom, head, "face").is_some());
-    dress(&mut dom, rig, &worn);
-    assert!(child_named(&dom, head, "face").is_none());
 }
 
 #[test]

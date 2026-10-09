@@ -20,6 +20,7 @@
 
 use std::collections::BTreeMap;
 
+use super::bundle::{piece, Family};
 use super::cframe::V3;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,7 +53,7 @@ pub(crate) struct Scales {
     pub(crate) proportion: f32,
 }
 
-/// Feminine's hips sit this much wider apart.
+/// A feminine Rthro body's hips sit this much wider apart.
 pub(crate) const FEMININE_HIP_SPREAD: f32 = 1.1;
 
 impl Scales {
@@ -62,9 +63,13 @@ impl Scales {
             BodyScale::RthroNormal => (1., 0.),
             BodyScale::RthroSlender => (1., 1.),
         };
-        let (height, width, head) = match shape {
-            BodyShape::Masculine => (1., 1., 1.),
-            BodyShape::Feminine => (0.95, 0.85, 0.97),
+        // Classic has a female body of its own; the Rthro Mannequin has one
+        // body for both, so its feminine shape is this editor's slider preset.
+        let (height, width, head) = match (shape, scale) {
+            (BodyShape::Feminine, BodyScale::RthroNormal | BodyScale::RthroSlender) => {
+                (0.95, 0.85, 0.97)
+            }
+            _ => (1., 1., 1.),
         };
         Scales {
             height,
@@ -80,45 +85,19 @@ impl Scales {
 /// Part name -> size, for the 15 body parts and `HumanoidRootPart`.
 pub(crate) type Sizes = BTreeMap<String, V3>;
 
-/// `[Classic, Rthro Normal, Rthro Slender]` per part kind.
-const BASE: [(&str, [V3; 3]); 10] = [
-    (
-        "HumanoidRootPart",
-        [[2., 2., 1.], [2., 2., 1.], [2., 2., 1.]],
-    ),
-    ("Head", [[1.2, 1.2, 1.2], [1.2, 1.2, 1.2], [1.1, 1.1, 1.1]]),
-    (
-        "UpperTorso",
-        [[2., 1.6, 1.], [1.839, 1.901, 1.073], [1.55, 1.88, 0.98]],
-    ),
-    (
-        "LowerTorso",
-        [[2., 0.4, 1.], [1.672, 0.632, 1.037], [1.42, 0.62, 0.95]],
-    ),
-    (
-        "UpperArm",
-        [[1., 1.17, 1.], [0.942, 1.213, 0.759], [0.74, 1.213, 0.68]],
-    ),
-    (
-        "LowerArm",
-        [[1., 1.05, 1.], [0.812, 1.161, 0.902], [0.65, 1.161, 0.8]],
-    ),
-    (
-        "Hand",
-        [[1., 0.3, 1.], [0.753, 0.891, 0.773], [0.6, 0.891, 0.7]],
-    ),
-    (
-        "UpperLeg",
-        [[1., 1.22, 1.], [0.781, 1.742, 0.854], [0.65, 1.742, 0.78]],
-    ),
-    (
-        "LowerLeg",
-        [[1., 1.19, 1.], [0.721, 1.263, 0.854], [0.6, 1.263, 0.78]],
-    ),
-    (
-        "Foot",
-        [[1., 0.3, 1.], [0.721, 0.82, 1.243], [0.6, 0.82, 1.15]],
-    ),
+/// Rthro Slender's part sizes as a fraction of Rthro Normal's, per axis. The
+/// reference avatars have no slender body; this is the editor's own, the
+/// proportions of the Importer's "Rthro Narrow".
+const SLENDER: [(&str, V3); 9] = [
+    ("Head", [0.917, 0.917, 0.917]),
+    ("UpperTorso", [0.843, 0.989, 0.913]),
+    ("LowerTorso", [0.849, 0.981, 0.916]),
+    ("UpperArm", [0.786, 1., 0.896]),
+    ("LowerArm", [0.8, 1., 0.887]),
+    ("Hand", [0.797, 1., 0.906]),
+    ("UpperLeg", [0.832, 1., 0.913]),
+    ("LowerLeg", [0.832, 1., 0.913]),
+    ("Foot", [0.832, 1., 0.925]),
 ];
 
 fn lerp(a: V3, b: V3, t: f32) -> V3 {
@@ -130,25 +109,45 @@ const SIDED: [&str; 6] = [
     "UpperArm", "LowerArm", "Hand", "UpperLeg", "LowerLeg", "Foot",
 ];
 
-pub(crate) fn r15_sizes(scales: &Scales) -> Sizes {
+/// The part sizes of a body of `scales`: the reference Classic body of
+/// `shape` at `BodyTypeScale` 0, the Mannequin at 1 (slender at proportion 1),
+/// blended between, then stretched by height, width and depth, and the head
+/// by head scale.
+pub(super) fn r15_sizes(scales: &Scales, shape: BodyShape) -> Sizes {
+    let size_of =
+        |family, kind: &str| piece(family, shape, kind).map_or([1.; 3], |piece| piece.init);
     let mut sizes = Sizes::new();
-    for (kind, [classic, normal, slender]) in BASE {
+    for kind in ["HumanoidRootPart", "Head", "UpperTorso", "LowerTorso"]
+        .into_iter()
+        .chain(SIDED)
+    {
+        let sided = |side: &str| {
+            if SIDED.contains(&kind) {
+                format!("{side}{kind}")
+            } else {
+                kind.to_string()
+            }
+        };
+        let classic = size_of(Family::Classic, &sided("Left"));
+        let normal = size_of(Family::Mannequin, &sided("Left"));
+        let ratio = SLENDER
+            .iter()
+            .find(|(name, _)| *name == kind)
+            .map_or([1.; 3], |(_, ratio)| *ratio);
+        let slender = [0, 1, 2].map(|i| normal[i] * ratio[i]);
         let rthro = lerp(normal, slender, scales.proportion);
         let base = lerp(classic, rthro, scales.body_type);
-        let size = if kind == "Head" {
-            base.map(|v| v * scales.head)
-        } else {
-            [
+        let size = match kind {
+            "HumanoidRootPart" => base,
+            "Head" => base.map(|v| v * scales.head),
+            _ => [
                 base[0] * scales.width,
                 base[1] * scales.height,
                 base[2] * scales.depth,
-            ]
+            ],
         };
-        if SIDED.contains(&kind) {
-            sizes.insert(format!("Left{kind}"), size);
-            sizes.insert(format!("Right{kind}"), size);
-        } else {
-            sizes.insert(kind.to_string(), size);
+        for side in ["Left", "Right"] {
+            sizes.insert(sided(side), size);
         }
     }
     sizes

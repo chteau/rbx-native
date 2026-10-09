@@ -59,13 +59,6 @@ pub(super) fn layout() -> Layout {
             Cf::with([0.; 3], ROOT_ROT),
         ),
         motor(
-            "Neck",
-            "Torso",
-            "Head",
-            Cf::with([0., 1., 0.], ROOT_ROT),
-            Cf::with([0., -0.5, 0.], ROOT_ROT),
-        ),
-        motor(
             "Right Shoulder",
             "Torso",
             "Right Arm",
@@ -93,6 +86,13 @@ pub(super) fn layout() -> Layout {
             Cf::with([-1., -1., 0.], LEFT_ROT),
             Cf::with([-0.5, 1., 0.], LEFT_ROT),
         ),
+        motor(
+            "Neck",
+            "Torso",
+            "Head",
+            Cf::with([0., 1., 0.], ROOT_ROT),
+            Cf::with([0., -0.5, 0.], ROOT_ROT),
+        ),
     ];
     let mut attachments = |name: &str| -> Vec<(String, Cf)> {
         match name {
@@ -102,8 +102,15 @@ pub(super) fn layout() -> Layout {
                 all.extend(layout::waist_attachments(TORSO));
                 all
             }
-            "Left Arm" => vec![layout::shoulder_attachment("Left", LIMB)],
-            "Right Arm" => vec![layout::shoulder_attachment("Right", LIMB)],
+            "Left Arm" => vec![
+                layout::shoulder_attachment("Left", LIMB),
+                layout::grip_attachment("Left", LIMB),
+            ],
+            "Right Arm" => vec![
+                layout::shoulder_attachment("Right", LIMB),
+                layout::grip_attachment("Right", LIMB),
+            ],
+            "HumanoidRootPart" => vec![("RootAttachment".into(), Cf::at([0.; 3]))],
             "Left Leg" => vec![layout::foot_attachment("Left", LIMB)],
             "Right Leg" => vec![layout::foot_attachment("Right", LIMB)],
             _ => Vec::new(),
