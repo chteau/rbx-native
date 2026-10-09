@@ -7,6 +7,7 @@
 mod appearance;
 mod clothing;
 mod fit;
+mod makeup;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -48,6 +49,8 @@ pub(super) struct Entry {
     /// The classic clothing an R15 limb section wears, cut into a derived
     /// mesh and image once everything it needs has arrived.
     dressing: Option<Box<clothing::Dressing>>,
+    /// Face makeup, laid into the colour map in the head's own UVs.
+    makeup: Vec<makeup::Makeup>,
 }
 
 /// Every file-mesh instance in a DOM, extracted once and reused both to list
@@ -153,6 +156,7 @@ impl Entry {
                     .flat_map(|appearance| appearance.maps.iter().flatten()),
             )
             .chain(self.dressing.iter().flat_map(|dressing| dressing.images()))
+            .chain(makeup::images(&self.makeup))
             .cloned()
             .collect();
         (self.mesh.clone(), images)
@@ -270,12 +274,23 @@ pub(crate) fn resolve(
             images.insert(image_key.clone(), image.clone());
             (mesh_key, texture, color) = (key.clone(), Some(image_key.clone()), [1.0; 3]);
         }
+        // Makeup is laid into the colour map the head would draw.
+        let mut made_up = false;
+        if let Some(key) = makeup::key(entry, &images) {
+            if !images.contains_key(&key) {
+                images.insert(key.clone(), Arc::new(makeup::composite(entry, &images)));
+            }
+            if entry.texture.is_none() {
+                color = [1.0; 3];
+            }
+            (texture, made_up) = (Some(key), true);
+        }
         // A dressed section is drawn from its composite, the appearance's
         // colour map already under the clothes in it.
         let appearance = entry
             .appearance
             .as_ref()
-            .filter(|_| !dressed.contains_key(&entry.referent))
+            .filter(|_| !dressed.contains_key(&entry.referent) && !made_up)
             .map(|planned| {
                 let resolved = planned.resolved(&images);
                 match appearances.iter().position(|known| *known == resolved) {
@@ -352,6 +367,7 @@ fn from_mesh_part(
         reflectance: super::number(properties.get("Reflectance")).clamp(0.0, 1.0),
         casts_shadow: super::casts_shadow(properties),
         dressing: clothing::dressing(dom, referent).map(Box::new),
+        makeup: makeup::of(dom, instance),
     })
 }
 
@@ -399,6 +415,7 @@ fn from_special_mesh_child(
         reflectance: super::number(part.properties().get("Reflectance")).clamp(0.0, 1.0),
         casts_shadow: super::casts_shadow(part.properties()),
         dressing: None,
+        makeup: Vec::new(),
     })
 }
 

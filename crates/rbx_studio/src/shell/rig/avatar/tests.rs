@@ -185,7 +185,8 @@ fn a_layered_accessory_keeps_its_wrap_layer_and_sits_on_its_attachment() {
     attach(&mut jacket, handle, "BodyFrontAttachment", [0.; 3]);
     let layer = jacket.new_instance("WrapLayer", "WrapLayer", Some(handle));
     set(&mut jacket, layer, "ReferenceMeshId", uri("rbxassetid://9"));
-    assert_eq!(used(&dress(&mut dom, rig, &[worn_asset(9, 68, jacket)])), 1);
+    let fates = dress(&mut dom, rig, &[worn_asset(9, 68, jacket)]);
+    assert!(matches!(fates[..], [Fate::Approximated(_)]));
     let handle = descendants(&dom, rig)
         .into_iter()
         .find(|&r| dom.get(r).is_some_and(|i| i.name() == "Handle"))
@@ -698,4 +699,80 @@ fn a_rejected_key_is_not_a_missing_scope() {
         Some(&Grant::Everywhere),
     );
     assert!(said.contains("rejected the stored key"), "{said}");
+}
+
+fn layered_jacket(with_attachment: bool) -> WeakDom {
+    let mut dom = WeakDom::new();
+    let accessory = dom.new_instance("Accessory", "Jacket", None);
+    let handle = dom.new_instance("MeshPart", "Handle", Some(accessory));
+    if with_attachment {
+        attach(&mut dom, handle, "BodyFrontAttachment", [0.; 3]);
+    }
+    let layer = dom.new_instance("WrapLayer", "WrapLayer", Some(handle));
+    set(
+        &mut dom,
+        layer,
+        "ReferenceOrigin",
+        Variant::CFrame(Cf::at([0., 1., 0.]).data()),
+    );
+    dom
+}
+
+#[test]
+fn layered_clothing_without_an_attachment_is_seated_by_its_reference_origin() {
+    let avatar = avatar_r15();
+    let (mut dom, rig, _) = rig_of(&avatar);
+    let fates = dress(&mut dom, rig, &[worn_asset(9, 68, layered_jacket(false))]);
+    let [Fate::Approximated(note)] = &fates[..] else {
+        panic!("{fates:?}");
+    };
+    assert!(note.contains("undeformed"));
+    let handle = child_named(&dom, child_named(&dom, rig, "Jacket").unwrap(), "Handle").unwrap();
+    let weld = child_named(&dom, handle, "AccessoryWeld").unwrap();
+    let Some(Variant::CFrame(c0)) = dom.get(weld).unwrap().properties().get("C0") else {
+        panic!("no C0");
+    };
+    assert_eq!(c0.position.y, -1.0);
+}
+
+#[test]
+fn layered_clothing_is_refused_on_r6_and_approximations_are_noted() {
+    let avatar = Avatar::from_json(&avatar_json("R6", "")).unwrap();
+    let (mut dom, rig, _) = rig_of(&avatar);
+    let fates = dress(&mut dom, rig, &[worn_asset(9, 68, layered_jacket(false))]);
+    assert!(matches!(&fates[..], [Fate::Left(why)] if why.contains("R15")));
+
+    let extra = r#",{"id":9,"name":"Jacket","assetType":{"id":68,"name":"SweaterAccessory"}}"#;
+    let avatar = Avatar::from_json(&avatar_json("R15", extra)).unwrap();
+    let mut worn = worn_of(&avatar);
+    worn.push(worn_asset(3, 27, WeakDom::new()));
+    worn.push(worn_asset(9, 68, layered_jacket(false)));
+    let notes = notes_of(&avatar, &worn);
+    assert!(
+        notes
+            .iter()
+            .any(|n| n.contains("Jacket") && n.contains("undeformed")),
+        "{notes:?}"
+    );
+}
+
+#[test]
+fn makeup_is_grafted_onto_the_r15_head_and_refused_on_r6() {
+    let makeup = || {
+        let mut dom = WeakDom::new();
+        let decal = dom.new_instance("Decal", "Lipstick", None);
+        dom.new_instance("WrapTextureTransfer", "WrapTextureTransfer", Some(decal));
+        dom
+    };
+    let (mut dom, rig, _) = rig_of(&avatar_r15());
+    let fates = dress(&mut dom, rig, &[worn_asset(5, 89, makeup())]);
+    assert_eq!(fates, vec![Fate::Used]);
+    let head = child_named(&dom, rig, "Head").unwrap();
+    let decal = child_named(&dom, head, "Lipstick").unwrap();
+    assert_eq!(children_of(&dom, decal, "WrapTextureTransfer").len(), 1);
+
+    let r6 = Avatar::from_json(&avatar_json("R6", "")).unwrap();
+    let (mut dom, rig, _) = rig_of(&r6);
+    let fates = dress(&mut dom, rig, &[worn_asset(5, 89, makeup())]);
+    assert!(matches!(&fates[..], [Fate::Left(_)]));
 }

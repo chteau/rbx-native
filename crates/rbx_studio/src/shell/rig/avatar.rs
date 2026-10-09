@@ -63,6 +63,11 @@ fn is_clothing(kind: u32) -> bool {
     matches!(kind, TSHIRT | SHIRT | PANTS)
 }
 
+/// Face, lip and eye makeup: decals in the head's own UVs.
+fn is_makeup(kind: u32) -> bool {
+    (88..=90).contains(&kind)
+}
+
 fn is_body_part(kind: u32) -> bool {
     (27..=31).contains(&kind)
 }
@@ -76,6 +81,7 @@ fn is_used(kind: u32) -> bool {
         || is_clothing(kind)
         || is_body_part(kind)
         || is_animation(kind)
+        || is_makeup(kind)
         || matches!(kind, FACE | DYNAMIC_HEAD)
 }
 
@@ -83,6 +89,8 @@ fn is_used(kind: u32) -> bool {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Fate {
     Used,
+    /// Worn, but not as Roblox draws it: the line says how it differs.
+    Approximated(String),
     Left(String),
     /// Not this step's business: another one decides.
     Elsewhere,
@@ -386,6 +394,13 @@ pub(crate) fn settle(avatar: &Avatar, worn: &[Worn], fates: &[Fate]) -> (usize, 
                 (_, Fate::Left(why)) => Some(why.clone()),
                 (_, Fate::Elsewhere) => Some("no step of the import took it".into()),
                 (_, Fate::Used) => None,
+                (_, Fate::Approximated(how)) => {
+                    notes.push(format!(
+                        "{} (id {}, {}): {how}",
+                        asset.name, asset.id, asset.asset_type.name
+                    ));
+                    None
+                }
             }
         } else if kind == MOOD {
             Some("a face mood animation: it drives the dynamic head\u{2019}s FaceControls through an Animator, which the editor does not run, so the head keeps its default expression".into())
@@ -585,25 +600,31 @@ pub(crate) fn dress(dom: &mut WeakDom, rig: Ref, worn: &[Worn]) -> Vec<Fate> {
                 return Fate::Elsewhere;
             };
             let result = if is_accessory(kind) {
-                wear_accessory(dom, rig, source)
+                wear_accessory(dom, rig, source, kind, r15)
             } else if is_clothing(kind) {
-                wear_clothing(dom, rig, source)
+                wear_clothing(dom, rig, source).map(|()| None)
             } else if kind == FACE {
-                wear_face(dom, rig, source)
+                wear_face(dom, rig, source).map(|()| None)
+            } else if is_makeup(kind) {
+                wear_makeup(dom, rig, source, r15).map(|()| None)
             } else if is_animation(kind) {
                 if animate::replace(dom, rig, source) > 0 {
-                    Ok(())
+                    Ok(None)
                 } else {
                     Err("no animation in it matches a state of the Animate script".into())
                 }
             } else if is_body_part(kind) && !r15 {
-                wear_character_meshes(dom, rig, source)
+                wear_character_meshes(dom, rig, source).map(|()| None)
             } else if kind == DYNAMIC_HEAD && !r15 {
                 Err("a dynamic head is R15-only; the R6 rig keeps its block head".into())
             } else {
                 return Fate::Elsewhere;
             };
-            result.map_or_else(Fate::Left, |()| Fate::Used)
+            match result {
+                Ok(None) => Fate::Used,
+                Ok(Some(how)) => Fate::Approximated(how),
+                Err(why) => Fate::Left(why),
+            }
         })
         .collect()
 }
@@ -717,13 +738,104 @@ fn wear_character_meshes(dom: &mut WeakDom, rig: Ref, source: &WeakDom) -> Resul
     }
 }
 
-fn wear_accessory(dom: &mut WeakDom, rig: Ref, source: &WeakDom) -> Result<(), String> {
+/// Layered clothing (asset types 64 to 72) carries a `WrapLayer` its mesh is
+/// fitted by; every other accessory is rigid.
+const LAYERED: std::ops::RangeInclusive<u32> = 64..=72;
+
+const LAYERED_NOTE: &str = "layered clothing: Roblox deforms it to the body through its cage; here it is placed undeformed, which fits the default-proportioned rig and drifts on a scaled or custom body";
+
+fn wear_accessory(
+    dom: &mut WeakDom,
+    rig: Ref,
+    source: &WeakDom,
+    kind: u32,
+    r15: bool,
+) -> Result<Option<String>, String> {
+    let layered = LAYERED.contains(&kind);
+    if layered && !r15 {
+        return Err("layered clothing is fitted to the R15 body cage; the R6 rig has none".into());
+    }
     let (_, accessory) = find_of(source, source.root_refs(), &["Accessory", "Hat"])
         .ok_or("no Accessory or Hat in the model")?;
     let worn = clipboard::graft(dom, source, accessory, rig).ok_or("could not copy it in")?;
-    weld_accessory(dom, rig, worn).inspect_err(|_| {
-        dom.remove(worn);
-    })
+    let wrap = child_named(dom, worn, "Handle")
+        .and_then(|handle| child_of_class(dom, handle, "WrapLayer"));
+    let welded = match wrap {
+        Some(wrap) => weld_layered(dom, rig, worn, wrap, kind),
+        None => weld_accessory(dom, rig, worn),
+    };
+    welded
+        .inspect_err(|_| {
+            dom.remove(worn);
+        })
+        .map(|()| layered.then(|| LAYERED_NOTE.to_owned()))
+}
+
+/// The body part a layered garment is cut for.
+fn layered_part(kind: u32) -> &'static str {
+    match kind {
+        66 | 69 | 72 => "LowerTorso",
+        70 => "LeftFoot",
+        71 => "RightFoot",
+        _ => "UpperTorso",
+    }
+}
+
+/// Welds a layered garment the way Roblox seats it: its mesh is modelled in
+/// the cage's body space, `ReferenceOrigin` away from the body part it is cut
+/// for. A garment with an attachment of its own (shoes carry a foot one) goes
+/// by that, like any accessory.
+fn weld_layered(
+    dom: &mut WeakDom,
+    rig: Ref,
+    worn: Ref,
+    wrap: Ref,
+    kind: u32,
+) -> Result<(), String> {
+    let handle = child_named(dom, worn, "Handle").ok_or("it has no Handle")?;
+    if child_of_class(dom, handle, "Attachment").is_some() && weld_accessory(dom, rig, worn).is_ok()
+    {
+        return Ok(());
+    }
+    let name = layered_part(kind);
+    let part = child_named(dom, rig, name).ok_or_else(|| format!("the rig has no {name}"))?;
+    let reference = cframe_of_property(dom, wrap, "ReferenceOrigin");
+    let at = cframe_of(dom, part).mul(&reference);
+    set(dom, handle, "CFrame", Variant::CFrame(at.data()));
+    let weld = dom.new_instance("Weld", "AccessoryWeld", Some(handle));
+    set(dom, weld, "Part0", Variant::Ref(handle));
+    set(dom, weld, "Part1", Variant::Ref(part));
+    set(dom, weld, "C0", Variant::CFrame(reference.inverse().data()));
+    set(dom, weld, "C1", Variant::CFrame(Cf::at([0.; 3]).data()));
+    Ok(())
+}
+
+/// Lays makeup over the rig's head: the image is in the head's UVs, so the
+/// `Decal` keeps its `WrapTextureTransfer` child and the viewer paints it into
+/// the head's colour map rather than projecting it.
+fn wear_makeup(dom: &mut WeakDom, rig: Ref, source: &WeakDom, r15: bool) -> Result<(), String> {
+    if !r15 {
+        return Err(
+            "makeup is painted in the R15 head\u{2019}s UVs; the R6 head is a block".into(),
+        );
+    }
+    let decal = descendants(source, source.root_refs()[0])
+        .into_iter()
+        .chain(source.root_refs().iter().copied())
+        .find(|&r| {
+            source.get(r).is_some_and(|i| {
+                i.class() == "Decal"
+                    && i.children().iter().any(|&c| {
+                        source
+                            .get(c)
+                            .is_some_and(|c| c.class() == "WrapTextureTransfer")
+                    })
+            })
+        })
+        .ok_or("no Decal with a WrapTextureTransfer in the model")?;
+    let head = child_named(dom, rig, "Head").ok_or("the rig has no Head")?;
+    clipboard::graft(dom, source, decal, head).ok_or("could not copy it in")?;
+    Ok(())
 }
 
 /// Welds the grafted accessory to the rig attachment named like its own.

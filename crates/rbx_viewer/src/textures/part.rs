@@ -247,8 +247,19 @@ fn number(value: Option<&Variant>) -> Option<f32> {
 }
 
 fn is_face_instance(dom: &WeakDom, database: &ReflectionDatabase, referent: Ref) -> bool {
-    dom.get(referent)
-        .is_some_and(|instance| database.is_subclass_of(instance.class(), DECAL_ANCESTOR))
+    dom.get(referent).is_some_and(|instance| {
+        database.is_subclass_of(instance.class(), DECAL_ANCESTOR) && !is_makeup(dom, instance)
+    })
+}
+
+/// Whether `decal` is face makeup: a `WrapTextureTransfer` child says its
+/// image is laid in the head's own UVs, not projected onto a face of the part
+/// (`scene::filemesh` paints it into the head's colour map).
+pub(crate) fn is_makeup(dom: &WeakDom, decal: &rbx_dom::Instance) -> bool {
+    decal.children().iter().any(|&child| {
+        dom.get(child)
+            .is_some_and(|child| child.class() == "WrapTextureTransfer")
+    })
 }
 
 #[cfg(test)]

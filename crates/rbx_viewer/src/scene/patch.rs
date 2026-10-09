@@ -14,7 +14,7 @@ use super::{filemesh, union};
 /// a union may have a mesh, a set of recovered pieces or nothing but its own
 /// box, depending on what its asset carved to — see `Scene::resync_union`.
 pub(super) enum Replanned {
-    Mesh(filemesh::Entry),
+    Mesh(Box<filemesh::Entry>),
     Union(union::Entry),
 }
 
@@ -29,7 +29,7 @@ impl Replanned {
         materials: &mut Catalog,
     ) -> Option<Self> {
         filemesh::replan(dom, database, referent, materials)
-            .map(Replanned::Mesh)
+            .map(|entry| Replanned::Mesh(Box::new(entry)))
             .or_else(|| union::replan(dom, database, referent, materials).map(Replanned::Union))
     }
 
