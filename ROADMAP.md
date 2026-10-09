@@ -2328,12 +2328,12 @@ against `Roblox/creator-docs` rather than assumed:
     `avatar.roblox.com/v1/users/{id}/avatar` endpoint and anonymous
     `assetdelivery` are read (My Avatar only needs the key to learn its
     user id). It applies body scales, colours, accessories welded at the
-    matching attachment (layered clothing keeps its `WrapLayer`), shirts,
+    matching attachment (layered clothing keeps its `WrapLayer` and sits on its body part, undeformed; makeup is painted into the head's colour map), shirts,
     pants and T-shirts, the player's animation choices into the `Animate`
     states, R15 body-part packages (mesh, texture, attachments, cage; a
     package missing a rig attachment is skipped) and R6 `CharacterMesh`es.
     Roblox's stock dynamic-head mesh and texture are not downloadable
-    anonymously, so such a head falls back to the Classic head. A banned
+    anonymously (the keyed route may serve only what the key's account owns): a refused head keeps the stock head and face with a per-item Output line, and one that downloads keeps a neutral `FaceControls` and its mood id. A banned
     id, an empty avatar (Roblox returns that for ids that don't exist
     too), a rate limit (429) and no network each give a clear Output and command-bar message and insert
     nothing. A download the anonymous route refuses (401) is retried

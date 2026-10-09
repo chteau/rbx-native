@@ -7,7 +7,15 @@
   it is cut for, undeformed (no cage fitting), and makeup (face, lip, eye)
   is painted into the head's colour map; both say so in Output. A 401 on
   clothing now names the `legacy-asset:manage` scope to add to the key.
-  Not applied: cage deformation, mood animations, FaceControls poses.
+  Layered garments now sit on their body part (the sleeves of a sweater
+  line up with the arms), makeup shows on heads built from a `SpecialMesh`
+  as well as `MeshPart` ones, a dynamic head keeps a neutral `FaceControls`
+  and records its mood animation as `MoodAnimationId` on the Head's
+  `FaceControls`, and a refused dynamic head says it keeps the stock head
+  and face. Not applied: cage deformation, playing the mood, FaceControls
+  poses. Keys need `legacy-asset:manage` (all experiences) for clothing and
+  makeup the anonymous route refuses; assets the key's account does not
+  own may stay undownloadable. — @chteau
 
 - **Insert a rig.** Avatar › Rig Builder (also Model › Insert Rig… and the
   command palette) opens a dialog to insert an R6 or R15 character
