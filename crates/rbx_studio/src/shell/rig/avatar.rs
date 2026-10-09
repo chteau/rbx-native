@@ -390,6 +390,9 @@ pub(crate) fn settle(avatar: &Avatar, worn: &[Worn], fates: &[Fate]) -> (usize, 
         let why = if is_used(kind) {
             next += 1;
             match (&worn[next - 1].dom, &fates[next - 1]) {
+                (Err(err), _) if kind == DYNAMIC_HEAD => Some(format!(
+                    "{err}; the rig keeps its Classic head, with the stock face"
+                )),
                 (Err(err), _) => Some(err.clone()),
                 (_, Fate::Left(why)) => Some(why.clone()),
                 (_, Fate::Elsewhere) => Some("no step of the import took it".into()),
@@ -617,6 +620,8 @@ pub(crate) fn dress(dom: &mut WeakDom, rig: Ref, worn: &[Worn]) -> Vec<Fate> {
                 wear_character_meshes(dom, rig, source).map(|()| None)
             } else if kind == DYNAMIC_HEAD && !r15 {
                 Err("a dynamic head is R15-only; the R6 rig keeps its block head".into())
+            } else if kind == DYNAMIC_HEAD {
+                neutral_face(dom, rig).map(|()| None)
             } else {
                 return Fate::Elsewhere;
             };
@@ -716,6 +721,16 @@ fn wear_face(dom: &mut WeakDom, rig: Ref, source: &WeakDom) -> Result<(), String
     let own = child_of_class(dom, head, "Decal")
         .unwrap_or_else(|| dom.new_instance("Decal", "face", Some(head)));
     set(dom, own, "Texture", texture);
+    Ok(())
+}
+
+/// A dynamic head is posed by a `FaceControls` on the Head; every FACS
+/// property left unset is its neutral 0, which is the face the head ships with.
+fn neutral_face(dom: &mut WeakDom, rig: Ref) -> Result<(), String> {
+    let head = child_named(dom, rig, "Head").ok_or("the rig has no Head")?;
+    if child_of_class(dom, head, "FaceControls").is_none() {
+        dom.new_instance("FaceControls", "FaceControls", Some(head));
+    }
     Ok(())
 }
 
@@ -928,6 +943,18 @@ pub(crate) fn describe_avatar(dom: &mut WeakDom, rig: Ref, avatar: &Avatar) {
     ] {
         if let Some(id) = id_of(kind) {
             set(property, Variant::Int64(id));
+        }
+    }
+    if let Some(mood) = id_of(MOOD) {
+        let controls = child_named(dom, rig, "Head")
+            .and_then(|head| child_of_class(dom, head, "FaceControls"));
+        if let Some(controls) = controls {
+            let note = dom.new_instance("StringValue", "MoodAnimationId", Some(controls));
+            let _ = dom.set_property(
+                note,
+                "Value",
+                Variant::String(format!("rbxassetid://{mood}")),
+            );
         }
     }
     let c = &avatar.body_colors;

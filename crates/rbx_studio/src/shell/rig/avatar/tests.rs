@@ -776,3 +776,83 @@ fn makeup_is_grafted_onto_the_r15_head_and_refused_on_r6() {
     let fates = dress(&mut dom, rig, &[worn_asset(5, 89, makeup())]);
     assert!(matches!(&fates[..], [Fate::Left(_)]));
 }
+
+const DYNAMIC_EXTRA: &str = r#",{"id":12,"name":"Stevie - Head","assetType":{"id":79,"name":"DynamicHead"}},{"id":13,"name":"Mood","assetType":{"id":78,"name":"MoodAnimation"}},{"id":14,"name":"Glasses","assetType":{"id":42,"name":"FaceAccessory"}}"#;
+
+fn dynamic_head_source() -> WeakDom {
+    let mut dom = WeakDom::new();
+    let mesh = dom.new_instance("SpecialMesh", "Mesh", None);
+    set(&mut dom, mesh, "MeshId", uri("rbxassetid://888"));
+    set(&mut dom, mesh, "TextureId", uri("rbxassetid://999"));
+    dom
+}
+
+fn glasses() -> WeakDom {
+    let mut dom = WeakDom::new();
+    let acc = dom.new_instance("Accessory", "Glasses", None);
+    let handle = dom.new_instance("Part", "Handle", Some(acc));
+    attach(&mut dom, handle, "FaceFrontAttachment", [0.; 3]);
+    dom
+}
+
+#[test]
+fn a_dynamic_head_keeps_a_neutral_face_controls_takes_face_accessories_and_records_the_mood() {
+    let avatar = Avatar::from_json(&avatar_json("R15", DYNAMIC_EXTRA)).unwrap();
+    let worn = [
+        worn_asset(12, DYNAMIC_HEAD, dynamic_head_source()),
+        worn_asset(14, 42, glasses()),
+    ];
+    let mut options = options_for(&avatar, JointStyle::AnimationConstraint, [0.; 3], None);
+    let early = apply_packages(&mut options, &worn);
+    let mut dom = WeakDom::new();
+    let root = dom.new_instance("DataModel", "Game", None);
+    let rig = build_rig(&mut dom, &options, root);
+    let late = dress(&mut dom, rig, &worn);
+    assert!(merge(early, late).iter().all(|f| *f == Fate::Used));
+    describe_avatar(&mut dom, rig, &avatar);
+    let head = child_named(&dom, rig, "Head").unwrap();
+    assert_eq!(children_of(&dom, head, "FaceControls").len(), 1);
+    assert!(child_of_class(&dom, head, "Decal").is_none());
+    let controls = child_of_class(&dom, head, "FaceControls").unwrap();
+    let mood = child_named(&dom, controls, "MoodAnimationId").unwrap();
+    assert_eq!(
+        dom.get(mood).unwrap().properties().get("Value"),
+        Some(&Variant::String("rbxassetid://13".into()))
+    );
+    let handle = child_named(&dom, child_named(&dom, rig, "Glasses").unwrap(), "Handle").unwrap();
+    let weld = child_named(&dom, handle, "AccessoryWeld").unwrap();
+    assert_eq!(
+        dom.get(weld).unwrap().properties().get("Part1"),
+        Some(&Variant::Ref(head))
+    );
+}
+
+#[test]
+fn a_dynamic_head_the_mock_refuses_falls_back_to_the_classic_head_with_a_note() {
+    let dir = mock_dir("head-401", &avatar_json("R15", DYNAMIC_EXTRA));
+    std::fs::write(dir.join("12.status"), "401").unwrap();
+    let fetched = mock_fetch(dir.to_str().unwrap(), Some(156)).unwrap();
+    let mut options = options_for(
+        &fetched.avatar,
+        JointStyle::AnimationConstraint,
+        [0.; 3],
+        None,
+    );
+    let early = apply_packages(&mut options, &fetched.worn);
+    let mut dom = WeakDom::new();
+    let root = dom.new_instance("DataModel", "Game", None);
+    let rig = build_rig(&mut dom, &options, root);
+    let late = dress(&mut dom, rig, &fetched.worn);
+    let (_, notes) = settle(&fetched.avatar, &fetched.worn, &merge(early, late));
+    let note = notes
+        .iter()
+        .find(|n| n.starts_with("Stevie - Head"))
+        .unwrap();
+    assert!(
+        note.contains("HTTP 401") && note.contains("Classic head"),
+        "{note}"
+    );
+    let head = child_named(&dom, rig, "Head").unwrap();
+    assert!(child_of_class(&dom, head, "Decal").is_some());
+    let _ = std::fs::remove_dir_all(&dir);
+}
