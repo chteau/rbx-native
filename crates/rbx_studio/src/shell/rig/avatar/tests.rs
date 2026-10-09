@@ -719,7 +719,7 @@ fn layered_jacket(with_attachment: bool) -> WeakDom {
 }
 
 #[test]
-fn layered_clothing_without_an_attachment_is_seated_by_its_reference_origin() {
+fn layered_clothing_is_seated_on_its_body_part() {
     let avatar = avatar_r15();
     let (mut dom, rig, _) = rig_of(&avatar);
     let fates = dress(&mut dom, rig, &[worn_asset(9, 68, layered_jacket(false))]);
@@ -728,11 +728,14 @@ fn layered_clothing_without_an_attachment_is_seated_by_its_reference_origin() {
     };
     assert!(note.contains("undeformed"));
     let handle = child_named(&dom, child_named(&dom, rig, "Jacket").unwrap(), "Handle").unwrap();
-    let weld = child_named(&dom, handle, "AccessoryWeld").unwrap();
-    let Some(Variant::CFrame(c0)) = dom.get(weld).unwrap().properties().get("C0") else {
-        panic!("no C0");
+    let torso = child_named(&dom, rig, "UpperTorso").unwrap();
+    let position = |node| {
+        let Some(Variant::CFrame(c)) = dom.get(node).unwrap().properties().get("CFrame") else {
+            panic!("no CFrame");
+        };
+        (c.position.x, c.position.y, c.position.z)
     };
-    assert_eq!(c0.position.y, -1.0);
+    assert_eq!(position(handle), position(torso));
 }
 
 #[test]

@@ -415,7 +415,7 @@ fn from_special_mesh_child(
         reflectance: super::number(part.properties().get("Reflectance")).clamp(0.0, 1.0),
         casts_shadow: super::casts_shadow(part.properties()),
         dressing: None,
-        makeup: Vec::new(),
+        makeup: makeup::of(dom, part),
     })
 }
 

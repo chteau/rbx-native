@@ -776,7 +776,7 @@ fn wear_accessory(
     let wrap = child_named(dom, worn, "Handle")
         .and_then(|handle| child_of_class(dom, handle, "WrapLayer"));
     let welded = match wrap {
-        Some(wrap) => weld_layered(dom, rig, worn, wrap, kind),
+        Some(_) => weld_layered(dom, rig, worn, kind),
         None => weld_accessory(dom, rig, worn),
     };
     welded
@@ -797,30 +797,19 @@ fn layered_part(kind: u32) -> &'static str {
 }
 
 /// Welds a layered garment the way Roblox seats it: its mesh is modelled in
-/// the cage's body space, `ReferenceOrigin` away from the body part it is cut
-/// for. A garment with an attachment of its own (shoes carry a foot one) goes
-/// by that, like any accessory.
-fn weld_layered(
-    dom: &mut WeakDom,
-    rig: Ref,
-    worn: Ref,
-    wrap: Ref,
-    kind: u32,
-) -> Result<(), String> {
+/// the body part's own frame (the cage is the part's shape), so the handle
+/// sits on the part with no offset. Its attachments are for the rigid fallback
+/// and would seat it a torso-length off.
+fn weld_layered(dom: &mut WeakDom, rig: Ref, worn: Ref, kind: u32) -> Result<(), String> {
     let handle = child_named(dom, worn, "Handle").ok_or("it has no Handle")?;
-    if child_of_class(dom, handle, "Attachment").is_some() && weld_accessory(dom, rig, worn).is_ok()
-    {
-        return Ok(());
-    }
     let name = layered_part(kind);
     let part = child_named(dom, rig, name).ok_or_else(|| format!("the rig has no {name}"))?;
-    let reference = cframe_of_property(dom, wrap, "ReferenceOrigin");
-    let at = cframe_of(dom, part).mul(&reference);
+    let at = cframe_of(dom, part);
     set(dom, handle, "CFrame", Variant::CFrame(at.data()));
     let weld = dom.new_instance("Weld", "AccessoryWeld", Some(handle));
     set(dom, weld, "Part0", Variant::Ref(handle));
     set(dom, weld, "Part1", Variant::Ref(part));
-    set(dom, weld, "C0", Variant::CFrame(reference.inverse().data()));
+    set(dom, weld, "C0", Variant::CFrame(Cf::at([0.; 3]).data()));
     set(dom, weld, "C1", Variant::CFrame(Cf::at([0.; 3]).data()));
     Ok(())
 }
