@@ -2292,6 +2292,8 @@ against `Roblox/creator-docs` rather than assumed:
     `Humanoid` with the six `Body*Scale` values, `InternalBodyScale` and a
     `HumanoidDescription`. An R6 rig is the 2012 block rig with its real
     attachments, surfaces, `Motor6D` order and face and chest `Decal`s.
+    `rbx_mesh` also reads chunked `.mesh` v6.00/v7.00 (Draco `COREMESH`,
+    via the `draco-core` crate), which the current Rthro bodies need.
     `BodyColors` (Studio's yellow head and arms, blue torso, green legs)
     and the stock `Animate` LocalScript (one strict-Luau source for both
     rigs) complete it; `Shirt` and `Pants` are added when a player's

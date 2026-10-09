@@ -14,6 +14,9 @@
   (with ball-socket limits and no-collision pairs) unless the place turns
   the Avatar Joint Upgrade off. Rthro Slender and the Feminine Rthro shape
   are this editor's own presets, not Roblox's. — @chteau
+- **Chunked `.mesh` files (versions 6.00 and 7.00).** The current Rthro
+  bodies and R15 heads are Draco-compressed (`COREMESH`); the mesh decoder
+  now reads them, so they render as meshes instead of boxes. — @chteau
 
 ## 2026-10-08
 
