@@ -2280,17 +2280,24 @@ against `Roblox/creator-docs` rather than assumed:
   - **Shipped** as Avatar › Rig Builder, Model › Insert Rig… and the
     palette: R6/R15, Masculine/Feminine, Classic/Rthro Normal/Rthro
     Slender (Rthro and Feminine need R15) and Mannequin / My Avatar /
-    **Player** (any UserId). An R15 rig is made of `MeshPart`s with the
-    current Roblox body meshes, `InitialSize`/`OriginalSize`, the real
-    rig and accessory `Attachment`s and the `WrapTarget` cages, scaled per
-    body scale so every joint stays exact; an R6 rig is the classic block
-    rig. Every rig has a `Humanoid` with an `Animator`, joints per the
-    Avatar Joint Upgrade, a face `Decal`, `BodyColors` (Studio's yellow
-    head and arms, blue torso, green legs), `Shirt`, `Pants` and the
-    standard `Animate` LocalScript with its `StringValue`/`Animation`
-    children. No Rthro mesh ids are public, so **Rthro Normal/Slender and
-    Feminine are this editor's presets**: scaled Classic-compatible
-    meshes, not Roblox's Rthro packages.
+    **Player** (any UserId). The hierarchy is checked against Roblox's own
+    avatar models (`AvatarReferences.rbxm`, never committed): an R15 rig is
+    the reference's child order, `MeshPart`s with the current body meshes
+    (Classic male/female and the Mannequin Rthro body with its
+    `SurfaceAppearance`), `InitialSize`/`OriginalSize`, `AvatarPartScaleType`,
+    the rig and accessory `Attachment`s (each with its `OriginalPosition`),
+    `WrapTarget` cages, `FaceControls` on the head, the
+    `NoCollisionConstraint` pairs, an `AnimationConstraint` plus
+    `BallSocketConstraint` (the reference's limits) per joint, and a
+    `Humanoid` with the six `Body*Scale` values, `InternalBodyScale` and a
+    `HumanoidDescription`. An R6 rig is the 2012 block rig with its real
+    attachments, surfaces, `Motor6D` order and face and chest `Decal`s.
+    `BodyColors` (Studio's yellow head and arms, blue torso, green legs)
+    and the stock `Animate` LocalScript (one strict-Luau source for both
+    rigs) complete it; `Shirt` and `Pants` are added when a player's
+    clothing is worn. Not reproduced: the Mannequin `Bone`s (skinned layered
+    clothing) and `MaxFrictionTorque`. Rthro Slender and Feminine on Rthro
+    are this editor's presets (the Mannequin parts scaled), not Roblox's.
   - **Player / My Avatar** need no API key and no cookie: the public
     `avatar.roblox.com/v1/users/{id}/avatar` endpoint and anonymous
     `assetdelivery` are read (My Avatar only needs the key to learn its
