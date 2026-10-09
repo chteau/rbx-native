@@ -390,9 +390,9 @@ pub(crate) fn settle(avatar: &Avatar, worn: &[Worn], fates: &[Fate]) -> (usize, 
         let why = if is_used(kind) {
             next += 1;
             match (&worn[next - 1].dom, &fates[next - 1]) {
-                (Err(err), _) if kind == DYNAMIC_HEAD => Some(format!(
-                    "{err}; the rig keeps its Classic head, with the stock face"
-                )),
+                (Err(err), _) if kind == DYNAMIC_HEAD => {
+                    Some(format!("{err}; the rig keeps its stock head and face"))
+                }
                 (Err(err), _) => Some(err.clone()),
                 (_, Fate::Left(why)) => Some(why.clone()),
                 (_, Fate::Elsewhere) => Some("no step of the import took it".into()),

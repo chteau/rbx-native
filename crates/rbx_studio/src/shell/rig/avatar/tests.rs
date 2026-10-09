@@ -828,7 +828,7 @@ fn a_dynamic_head_keeps_a_neutral_face_controls_takes_face_accessories_and_recor
 }
 
 #[test]
-fn a_dynamic_head_the_mock_refuses_falls_back_to_the_classic_head_with_a_note() {
+fn a_dynamic_head_the_mock_refuses_falls_back_to_the_stock_head_with_a_note() {
     let dir = mock_dir("head-401", &avatar_json("R15", DYNAMIC_EXTRA));
     std::fs::write(dir.join("12.status"), "401").unwrap();
     let fetched = mock_fetch(dir.to_str().unwrap(), Some(156)).unwrap();
@@ -849,10 +849,11 @@ fn a_dynamic_head_the_mock_refuses_falls_back_to_the_classic_head_with_a_note() 
         .find(|n| n.starts_with("Stevie - Head"))
         .unwrap();
     assert!(
-        note.contains("HTTP 401") && note.contains("Classic head"),
+        note.contains("HTTP 401") && note.contains("stock head"),
         "{note}"
     );
+    assert!(!options.pieces.contains_key("Head"),);
     let head = child_named(&dom, rig, "Head").unwrap();
-    assert!(child_of_class(&dom, head, "Decal").is_some());
+    assert!(child_of_class(&dom, head, "FaceControls").is_some());
     let _ = std::fs::remove_dir_all(&dir);
 }
