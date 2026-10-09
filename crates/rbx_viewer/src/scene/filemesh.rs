@@ -5,7 +5,10 @@
 //! GPU side.
 
 mod appearance;
+mod clothing;
 mod fit;
+mod makeup;
+mod wrap;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -44,6 +47,13 @@ pub(super) struct Entry {
     alpha: f32,
     reflectance: f32,
     casts_shadow: bool,
+    /// The classic clothing an R15 limb section wears, cut into a derived
+    /// mesh and image once everything it needs has arrived.
+    dressing: Option<Box<clothing::Dressing>>,
+    /// Face makeup, laid into the colour map in the head's own UVs.
+    makeup: Vec<makeup::Makeup>,
+    /// A layered garment's cages, to fit it to the body it is worn on.
+    wrap: Option<wrap::Wrap>,
 }
 
 /// Every file-mesh instance in a DOM, extracted once and reused both to list
@@ -148,6 +158,8 @@ impl Entry {
                     .iter()
                     .flat_map(|appearance| appearance.maps.iter().flatten()),
             )
+            .chain(self.dressing.iter().flat_map(|dressing| dressing.images()))
+            .chain(makeup::images(&self.makeup))
             .cloned()
             .collect();
         (self.mesh.clone(), images)
@@ -157,7 +169,9 @@ impl Entry {
 impl Plan {
     /// Every distinct mesh asset this plan needs, in first-seen order.
     pub(crate) fn mesh_refs(&self) -> Vec<AssetRef> {
-        dedup(self.entries.iter().map(|entry| &entry.mesh))
+        dedup(self.entries.iter().flat_map(|entry| {
+            std::iter::once(&entry.mesh).chain(entry.wrap.iter().flat_map(wrap::Wrap::meshes))
+        }))
     }
 
     /// Swaps one part's entry for `entry`, in the place the old one held, or
@@ -189,14 +203,13 @@ impl Plan {
     /// meshes' own textures and the `SurfaceAppearance` maps alike, since both
     /// download through the same pool.
     pub(crate) fn texture_refs(&self) -> Vec<AssetRef> {
-        dedup(self.entries.iter().flat_map(|entry| {
-            entry.texture.iter().chain(
-                entry
-                    .appearance
-                    .iter()
-                    .flat_map(|appearance| appearance.maps.iter().flatten()),
-            )
-        }))
+        dedup(
+            self.entries
+                .iter()
+                .flat_map(|entry| entry.assets().1)
+                .collect::<Vec<_>>()
+                .iter(),
+        )
     }
 }
 
@@ -239,8 +252,13 @@ pub(crate) fn resolve(
     let mut appearances: Vec<Appearance> = Vec::new();
     let mut hidden = HashSet::new();
 
+    let mut meshes = meshes;
+    let mut images = images;
+    let dressed = clothing::derive(&plan.entries, &meshes, &images);
+    let wrapped = wrap::derive(&plan.entries, &meshes);
+
     for entry in &plan.entries {
-        let Some(mesh) = meshes.get(&entry.mesh) else {
+        let Some(mesh) = meshes.get(&entry.mesh).cloned() else {
             continue;
         };
         // Hidden either way: a fully transparent MeshPart draws nothing at
@@ -250,28 +268,57 @@ pub(crate) fn resolve(
             continue;
         }
 
-        let texture = entry
+        let mut texture = entry
             .texture
             .clone()
             .filter(|reference| images.contains_key(reference));
-        let appearance = entry.appearance.as_ref().map(|planned| {
-            let resolved = planned.resolved(&images);
-            match appearances.iter().position(|known| *known == resolved) {
-                Some(slot) => slot,
-                None => {
-                    appearances.push(resolved);
-                    appearances.len() - 1
-                }
+        let (mut mesh_key, mut color) = (entry.mesh.clone(), entry.color);
+        if let Some(dressed) = dressed.get(&entry.referent) {
+            let (key, derived) = &dressed.mesh;
+            let (image_key, image) = &dressed.image;
+            meshes.insert(key.clone(), derived.clone());
+            images.insert(image_key.clone(), image.clone());
+            (mesh_key, texture, color) = (key.clone(), Some(image_key.clone()), [1.0; 3]);
+        }
+        if let Some((key, derived)) = wrapped.get(&entry.referent) {
+            meshes.insert(key.clone(), derived.clone());
+            mesh_key = key.clone();
+        }
+        // Makeup is laid into the colour map the head would draw.
+        let mut made_up = false;
+        if let Some(key) = makeup::key(entry, &images) {
+            if !images.contains_key(&key) {
+                images.insert(key.clone(), Arc::new(makeup::composite(entry, &images)));
             }
-        });
+            if entry.texture.is_none() {
+                color = [1.0; 3];
+            }
+            (texture, made_up) = (Some(key), true);
+        }
+        // A dressed section is drawn from its composite, the appearance's
+        // colour map already under the clothes in it.
+        let appearance = entry
+            .appearance
+            .as_ref()
+            .filter(|_| !dressed.contains_key(&entry.referent) && !made_up)
+            .map(|planned| {
+                let resolved = planned.resolved(&images);
+                match appearances.iter().position(|known| *known == resolved) {
+                    Some(slot) => slot,
+                    None => {
+                        appearances.push(resolved);
+                        appearances.len() - 1
+                    }
+                }
+            });
         instances.push(ResolvedInstance {
             referent: entry.referent,
-            mesh: entry.mesh.clone(),
+            mesh: mesh_key,
             material: entry.material,
             texture,
             appearance,
-            model: entry.fit.transform(mesh),
-            color: entry.color,
+            model: entry.fit.transform(&mesh),
+            color,
             alpha: entry.alpha,
             reflectance: entry.reflectance,
             casts_shadow: entry.casts_shadow,
@@ -329,6 +376,9 @@ fn from_mesh_part(
         alpha: super::alpha(properties, material.kind),
         reflectance: super::number(properties.get("Reflectance")).clamp(0.0, 1.0),
         casts_shadow: super::casts_shadow(properties),
+        dressing: clothing::dressing(dom, referent).map(Box::new),
+        makeup: makeup::of(dom, instance),
+        wrap: wrap::of(dom, database, referent),
     })
 }
 
@@ -375,6 +425,9 @@ fn from_special_mesh_child(
         alpha: super::alpha(part.properties(), material.kind),
         reflectance: super::number(part.properties().get("Reflectance")).clamp(0.0, 1.0),
         casts_shadow: super::casts_shadow(part.properties()),
+        dressing: None,
+        makeup: makeup::of(dom, part),
+        wrap: None,
     })
 }
 

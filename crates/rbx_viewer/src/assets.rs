@@ -56,7 +56,12 @@ impl AssetFetcher for CloudFetcher {
     fn fetch_id(&self, id: u64) -> Result<Vec<u8>, FetchError> {
         self.0
             .asset(id)
-            .map(|content| content.bytes)
+            .map(|content| {
+                if content.keyed {
+                    eprintln!("rbxview: asset {id} served through the Open Cloud key");
+                }
+                content.bytes
+            })
             .map_err(|err| fetch_error(id, err))
     }
 }
@@ -150,7 +155,7 @@ pub(crate) fn load_images(references: &[AssetRef]) -> Keyed<Image> {
 }
 
 /// Resolves and parses every reference into a [`rbx_mesh::Mesh`]; a failure
-/// (a v6/v7 file, a network error, a corrupt download, ...) is a warning
+/// (an unknown mesh version, a network error, a corrupt download, ...) is a warning
 /// against its reference, not an error: `Scene::resolve_file_meshes` leaves
 /// the affected `MeshPart`/`SpecialMesh` drawing its fallback box.
 pub(crate) fn load_meshes(references: &[AssetRef]) -> Keyed<rbx_mesh::Mesh> {

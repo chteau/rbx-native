@@ -6,6 +6,7 @@
 
 mod api_key;
 mod assets;
+mod avatar;
 mod client;
 mod create_asset;
 mod error;
@@ -23,9 +24,10 @@ mod version_history;
 
 pub use api_key::ApiKey;
 pub use assets::AssetContent;
+pub use avatar::{AssetType, Avatar, AvatarAsset, AvatarBodyColors, AvatarScales};
 pub use client::Client;
 pub use create_asset::ModelFile;
-pub use error::CloudError;
+pub use error::{CloudError, KeyedRefusal};
 pub use experiences::{Experience, Experiences, Group};
 pub use games::{Creator, CreatorKind, GameSummary};
 pub use introspect::{KeyInfo, Scope};

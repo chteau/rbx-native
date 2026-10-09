@@ -195,6 +195,48 @@ fn a_special_mesh_child_reads_scale_and_offset_ignoring_the_parts_size() {
 }
 
 #[test]
+fn a_special_mesh_head_wears_its_makeup() {
+    let mut dom = WeakDom::new();
+    let workspace = Ref::new(9000);
+    dom.insert(Instance::new(workspace, "Workspace", "Workspace"));
+    dom.set_parent(workspace, None);
+    let part_ref = Ref::new(1);
+    let mut head = Instance::new(part_ref, "Part", "Head");
+    head.properties_mut()
+        .insert("size".to_string(), vector3_variant(1.0, 1.0, 1.0));
+    head.properties_mut()
+        .insert("CFrame".to_string(), cframe_at(0.0, 0.0, 0.0));
+    dom.insert(head);
+    dom.set_parent(part_ref, Some(workspace));
+    let mut mesh = Instance::new(Ref::new(2), "SpecialMesh", "Mesh");
+    mesh.properties_mut()
+        .insert("MeshType".to_string(), Variant::Enum(FILE_MESH));
+    mesh.properties_mut().insert(
+        "MeshId".to_string(),
+        Variant::String("rbxassetid://7".to_string()),
+    );
+    dom.insert(mesh);
+    dom.set_parent(Ref::new(2), Some(part_ref));
+    let mut decal = Instance::new(Ref::new(3), "Decal", "Smile");
+    decal.properties_mut().insert(
+        "Texture".to_string(),
+        Variant::String("rbxassetid://8".to_string()),
+    );
+    dom.insert(decal);
+    dom.set_parent(Ref::new(3), Some(part_ref));
+    dom.insert(Instance::new(
+        Ref::new(4),
+        "WrapTextureTransfer",
+        "WrapTextureTransfer",
+    ));
+    dom.set_parent(Ref::new(4), Some(Ref::new(3)));
+
+    let plan = planned(&dom);
+
+    assert_eq!(plan.entries[0].makeup.len(), 1);
+}
+
+#[test]
 fn a_special_mesh_with_another_mesh_type_is_left_to_shape_resolve() {
     let mut dom = WeakDom::new();
     let workspace = Ref::new(9000);
@@ -262,7 +304,7 @@ fn resolve_hides_only_referents_whose_mesh_actually_downloaded() {
     let plan = planned(&dom);
     let mut meshes = HashMap::new();
     meshes.insert(AssetRef::Id(1), Arc::new(fake_mesh([1.0, 1.0, 1.0])));
-    // Asset 2's mesh never downloaded (v6/v7, network failure, ...).
+    // Asset 2's mesh never downloaded (unknown mesh version, network failure, ...).
 
     let (resolved, hidden) = resolve(&plan, meshes, HashMap::new());
 

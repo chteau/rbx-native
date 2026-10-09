@@ -1,5 +1,67 @@
 # Changelog
 
+## 2026-10-09
+
+- **Layered clothing no longer buried or torn on real garments.** The
+  Black Detective Trench Coat's reference cage stands 0.8 studs above the
+  rig body; the wrap now slides the reference onto the body (trimmed
+  translation ICP) before matching vertices, which removes the collar spikes,
+  ragged shoulders and holes. Avatar import also reads legacy string content
+  ids, so the Headless Head and body packages apply, and the Output line for
+  an approximately fitted garment says so.
+
+- **Layered clothing fits the body in the viewer.** A `MeshPart` with a
+  `WrapLayer` is deformed from its reference cage onto the body's cages
+  (nearest-vertex blend, `Order` push-out), so a jacket covers the torso
+  instead of floating undeformed. Avatar import now logs per asset whether
+  it was served anonymously or through the stored key (and which key
+  source), and a CDN 401 on the anonymous route falls back to the key.
+- **Rig Builder: layered clothing and makeup.** Layered clothing
+  (jackets, sweaters, shorts, skirts, shoes) is welded to the R15 body part
+  it is cut for, and makeup (face, lip, eye)
+  is painted into the head's colour map; both say so in Output. A 401 on
+  clothing now names the `legacy-asset:manage` scope to add to the key.
+  Layered garments now sit on their body part (the sleeves of a sweater
+  line up with the arms), makeup shows on heads built from a `SpecialMesh`
+  as well as `MeshPart` ones, a dynamic head keeps a neutral `FaceControls`
+  and records its mood animation as `MoodAnimationId` on the Head's
+  `FaceControls`, and a refused dynamic head says it keeps the stock head
+  and face. Not applied: cage deformation, playing the mood, FaceControls
+  poses. Keys need `legacy-asset:manage` (all experiences) for clothing and
+  makeup the anonymous route refuses; assets the key's account does not
+  own may stay undownloadable. — @chteau
+
+- **Insert a rig.** Avatar › Rig Builder (also Model › Insert Rig… and the
+  command palette) opens a dialog to insert an R6 or R15 character
+  `Model` with a `Humanoid` and `Animator`, `BodyColors` and the standard
+  `Animate` script, built to match Roblox's own avatar models: Masculine or Feminine,
+  Classic, Rthro Normal or Rthro Slender, as a mannequin, as your own
+  Roblox avatar, or as any player by UserId (no API key needed; body
+  scales, colours, accessories including layered clothing, clothing, body
+  parts and animations). R15 rigs are `MeshPart`s with Roblox's current
+  body meshes and attachments; their joints are `AnimationConstraint`s
+  (with ball-socket limits and no-collision pairs) unless the place turns
+  the Avatar Joint Upgrade off. Rthro Slender and the Feminine Rthro shape
+  are this editor's own presets, not Roblox's. A player's rig type can be
+  overridden (R6 or R15) and the dialog shows the type it builds; every
+  worn asset that is not applied is named in Output; the rig's
+  `HumanoidDescription` records the avatar's asset ids and colours; the
+  Mannequin carries the reference's `Bone`s and socket friction; classic
+  heads carry the face `Decal`. — @chteau
+- **Classic clothing draws.** Shirts, pants and T-shirts on a rig (and in
+  any place) now show in the viewport: R6 limbs wear the template's cuts
+  as decals, R15 limbs are re-mapped onto the same template and composited
+  over their body colour. Imported players' templates are stored as
+  `rbxassetid://` (legacy `asset/?id=` links are normalised) and a T-shirt
+  becomes a `ShirtGraphic` of the rig. Clothing the anonymous asset service
+  refuses is named in Output, and the limb keeps its body colour. A T-shirt
+  is a centred square on the torso front, clothing also covers bodies that
+  carry their own texture, and editing a Shirt, Pants or ShirtGraphic in
+  Properties repaints at once. — @chteau
+- **Chunked `.mesh` files (versions 6.00 and 7.00).** The current Rthro
+  bodies and R15 heads are Draco-compressed (`COREMESH`); the mesh decoder
+  now reads them, so they render as meshes instead of boxes. — @chteau
+
 ## 2026-10-08
 
 - **Import 3D models and images as Roblox assets.** Model › Import 3D

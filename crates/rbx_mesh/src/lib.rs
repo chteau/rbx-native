@@ -1,9 +1,11 @@
-//! Parsing for the Roblox `.mesh` geometry format, `version 1.00` through `5.00`.
+//! Parsing for the Roblox `.mesh` geometry format, `version 1.00` through `7.00`.
 //!
 //! Entry point: [`parse`]. Dispatches on the ASCII version line to the ASCII
-//! (v1), early binary (v2/v3) or skinnable binary (v4/v5) layout and returns a
-//! single [`Mesh`] carrying LOD 0 geometry.
+//! (v1), early binary (v2/v3), skinnable binary (v4/v5) or chunked (v6/v7)
+//! layout and returns a single [`Mesh`] carrying LOD 0 geometry.
 
+mod chunked;
+mod draco;
 mod error;
 mod header;
 mod mesh;
@@ -18,13 +20,8 @@ pub use mesh::{Aabb, Mesh, Vertex};
 
 /// Parses a Roblox mesh file.
 ///
-/// Rejects `version 6.00` and `7.00`. Their framing *is* documented — both drop the
-/// fixed header for a flat stream of chunks read to EOF (`[u8; 8]` NUL-padded type,
-/// `u32` version, `u32` size, payload), carrying `COREMESH`, `LODS`, `SKINNING`,
-/// `FACS` and `HSRAVIS`, with the v4 record sizes unchanged — but neither is worth
-/// implementing blind here: no public v6 sample exists to verify against, and v7
-/// stores its geometry as a Draco bitstream, which needs a decoder this crate has no
-/// dependency budget for. Failing loudly beats returning plausible garbage.
+/// Any major version past 7 is rejected rather than guessed at: a new layout
+/// read as an old one yields plausible garbage instead of an error.
 pub fn parse(bytes: &[u8]) -> Result<Mesh, MeshError> {
     let (version, body) = header::parse_version(bytes)?;
 
@@ -32,8 +29,7 @@ pub fn parse(bytes: &[u8]) -> Result<Mesh, MeshError> {
         1 => v1::parse(version, body),
         2 | 3 => v2::parse(version, body),
         4 | 5 => v4::parse(version, body),
-        // TODO: v6 (chunked, uncompressed) is the tractable one once a sample
-        // exists; v7 additionally needs Draco.
+        6 | 7 => chunked::parse(version, body),
         _ => Err(MeshError::UnsupportedVersion {
             major: version.0,
             minor: version.1,
@@ -56,13 +52,15 @@ mod tests {
     }
 
     #[test]
-    fn rejects_versions_with_no_public_layout() {
-        for line in [b"version 6.00\n".as_slice(), b"version 7.00\n"] {
-            assert!(matches!(
-                parse(line),
-                Err(MeshError::UnsupportedVersion { major: 6 | 7, .. })
-            ));
-        }
+    fn rejects_versions_with_no_known_layout() {
+        assert!(matches!(
+            parse(b"version 8.00\n"),
+            Err(MeshError::UnsupportedVersion { major: 8, .. })
+        ));
+        assert!(matches!(
+            parse(b"version 7.00\n"),
+            Err(MeshError::MissingCoreMesh)
+        ));
     }
 
     #[test]

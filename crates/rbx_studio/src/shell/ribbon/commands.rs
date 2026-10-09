@@ -106,6 +106,8 @@ pub(in crate::shell) enum RibbonCommand {
     SunMode(Mode),
     /// Home › Terrain Editor: opens the editor on its last tool, or shuts it.
     TerrainEditor,
+    /// Avatar › Rig Builder: opens the dialog that inserts a rig.
+    RigBuilder,
 }
 
 impl RibbonCommand {
@@ -127,6 +129,7 @@ impl RibbonCommand {
                 let showing = shell.is_panel_showing(Panel::TerrainEditor);
                 shell.toggle_terrain_editor(!showing, cx);
             }
+            RibbonCommand::RigBuilder => shell.open_rig_dialog(cx),
         }
     }
 }
@@ -216,6 +219,12 @@ pub(in crate::shell) fn palette_entries(
         "Terrain Editor".to_owned(),
         None,
         RibbonCommand::TerrainEditor,
+    ));
+    entries.push((
+        "Avatar",
+        "Rig Builder".to_owned(),
+        None,
+        RibbonCommand::RigBuilder,
     ));
     entries
 }

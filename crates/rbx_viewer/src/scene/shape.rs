@@ -96,6 +96,10 @@ pub(crate) fn resolve(
 
     let kind = match instance.properties().get("shape") {
         Some(&Variant::Enum(raw)) => part_type(raw),
+        // A MeshPart head whose mesh is not at hand (Roblox's stock head mesh
+        // is not publicly downloadable): a ball reads as a head, a box does
+        // not.
+        _ if class == "MeshPart" && instance.name() == "Head" => ShapeKind::Ball,
         // UnionOperation, MeshPart and anything else with no `shape` property:
         // a plain box until CSG/mesh geometry lands (see rbx_mesh).
         _ => ShapeKind::Box,
@@ -224,7 +228,7 @@ fn mesh_child(dom: &WeakDom, instance: &Instance, size: Vec3) -> Option<Geometry
 
 /// `Enum.MeshType`, mapped onto the meshes this viewer can actually draw.
 ///
-/// TODO: Head and Torso are rough stand-ins (ellipsoid / box) rather than their
+/// TODO: Head and Torso are rough stand-ins (ball / box) rather than their
 /// true rounded shapes; Prism/ParallelRamp/RightAngleRamp reuse Wedge as a
 /// reasonable approximation; Pyramid has no dedicated mesh yet and falls back
 /// to a box. `VertexColor` is read nowhere yet — every shaped part keeps the
@@ -238,6 +242,14 @@ fn special_mesh(mesh: &Instance, size: Vec3, offset: Vec3) -> Option<Geometry> {
         });
     };
 
+    // The Head mesh is drawn at half the part's width: a classic 2 x 1 x 1
+    // head part shows a round head as wide as it is tall, not an ellipsoid
+    // twice as wide (Scale 1.25 gives the familiar 1.25 stud head).
+    let size = if mesh_type == 0 {
+        Vec3::new(size.x / 2., size.y, size.z)
+    } else {
+        size
+    };
     let kind = match mesh_type {
         0 | 3 => ShapeKind::Ball, // Head, Sphere
         // Along X like a Cylinder part, not Y like a `CylinderMesh`

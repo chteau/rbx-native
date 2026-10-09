@@ -5,6 +5,7 @@
 //! images themselves are fetched separately by [`crate::assets`], and the two
 //! halves are joined by [`Decor::assemble`].
 
+pub(crate) mod clothing;
 mod decor;
 mod face;
 mod part;
@@ -12,7 +13,7 @@ mod sky;
 
 pub(crate) use decor::{Celestial, Decor, Group, Panel};
 pub(crate) use face::{NormalId, Projection};
-pub(crate) use part::asset_uri;
+pub(crate) use part::{asset_uri, is_makeup};
 pub(crate) use sky::stars::Star;
 pub(crate) use sky::Body;
 

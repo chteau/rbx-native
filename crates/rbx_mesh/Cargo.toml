@@ -6,3 +6,8 @@ license.workspace = true
 
 [dependencies]
 thiserror = "2"
+# Decoder only: the encoder is a test-time dependency.
+draco-core = { version = "2.3.0", default-features = false, features = ["edgebreaker_valence_decode"] }
+
+[dev-dependencies]
+draco-core = { version = "2.3.0", default-features = false, features = ["encoder", "edgebreaker_valence_decode"] }

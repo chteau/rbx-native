@@ -2215,7 +2215,15 @@ against `Roblox/creator-docs` rather than assumed:
   it — don't assume it's as easy as the local-authoring case above just
   because they sound like the same feature.
 
-- [ ] 📋 **`AnimationConstraint` rigs, the Avatar Joint Upgrade.** Roblox
+- [x] **`AnimationConstraint` rigs, the Avatar Joint Upgrade: rig
+  insertion.** Insert Rig emits `AnimationConstraint` joints (with
+  `RigAttachment`s) for R15 when `StarterPlayer.AvatarJointUpgrade` is on
+  or Default, and `Motor6D`s when it is off; R6 is always `Motor6D`. The
+  Explorer shows `AnimationConstraint` with the same joint icon as
+  `Motor6D`. (Nothing else in the editor classifies joints, so there was no
+  other place to treat the two as one kind.)
+- [ ] 📋 **`AnimationConstraint` rigs, the Avatar Joint Upgrade:
+  playback.** Roblox
   no longer builds its R15 player characters from `Motor6D`s: with
   `StarterPlayer.AvatarJointUpgrade` on (the default for new experiences)
   a character spawns with `AnimationConstraint`s instead, which animate
@@ -2226,16 +2234,14 @@ against `Roblox/creator-docs` rather than assumed:
   reachable data, and it changes the animation items above. Playback and
   the Animation Editor must drive `AnimationConstraint.Transform` as well
   as `Motor6D.Transform`, and find a rig's joints by either class (an
-  upgraded rig has no `Motor6D` to find). Rig insertion should emit
-  `AnimationConstraint` joints for R15 when `AvatarJointUpgrade` is on,
-  and `Motor6D` when it is off. The Explorer, the joint gizmos and the
-  "joint" icon treatment should treat the two as the same kind of thing.
+  upgraded rig has no `Motor6D` to find). The joint gizmos should treat
+  the two as the same kind of thing.
   The simulation half (force-based limbs, ragdolls) is engine physics and
   stays out of reach, the same as any other physics (see
   [Explicitly impossible](#explicitly-impossible-without-robloxs-engine)).
 
 ### Editor
-- [ ] 📋 **Rig / avatar insertion**, matching Studio's real **Rig
+- [x] **Rig / avatar insertion**, matching Studio's real **Rig
   Generator** tool (checked against `studio/rig-builder.md` and
   `avatar/character-bodies/specifications.md` rather than assumed — some
   of the originally-requested names don't map onto real, current Roblox
@@ -2271,6 +2277,79 @@ against `Roblox/creator-docs` rather than assumed:
     proportions/meshes, or, if a specific official asset id is the more
     faithful source for a given rig, imported directly as a real `.rbxm`
     the same way any other asset import works.
+  - **Shipped** as Avatar › Rig Builder, Model › Insert Rig… and the
+    palette: R6/R15, Masculine/Feminine, Classic/Rthro Normal/Rthro
+    Slender (Rthro and Feminine need R15) and Mannequin / My Avatar /
+    **Player** (any UserId). The hierarchy is checked against Roblox's own
+    avatar models (`AvatarReferences.rbxm`, never committed): an R15 rig is
+    the reference's child order, `MeshPart`s with the current body meshes
+    (Classic male/female and the Mannequin Rthro body with its
+    `SurfaceAppearance`), `InitialSize`/`OriginalSize`, `AvatarPartScaleType`,
+    the rig and accessory `Attachment`s (each with its `OriginalPosition`),
+    `WrapTarget` cages, `FaceControls` on the head, the
+    `NoCollisionConstraint` pairs, an `AnimationConstraint` plus
+    `BallSocketConstraint` (the reference's limits) per joint, and a
+    `Humanoid` with the six `Body*Scale` values, `InternalBodyScale` and a
+    `HumanoidDescription`. An R6 rig is the 2012 block rig with its real
+    attachments, surfaces, `Motor6D` order and face and chest `Decal`s.
+    `rbx_mesh` also reads chunked `.mesh` v6.00/v7.00 (Draco `COREMESH`,
+    via the `draco-core` crate), which the current Rthro bodies need.
+    `BodyColors` (Studio's yellow head and arms, blue torso, green legs)
+    and the stock `Animate` LocalScript (one strict-Luau source for both
+    rigs) complete it; `Shirt` and `Pants` are added when a player's
+    clothing is worn. The Mannequin carries the reference's 37 hidden `Bone`s,
+    its `HumanoidDescription` package ids and its `BallSocketConstraint`
+    `MaxFrictionTorque`s; a classic head carries the face `Decal` (an R15
+    Mannequin or dynamic head has none, the face is in its texture or
+    `FaceControls`). Rthro Slender and Feminine on Rthro
+    are this editor's presets (the Mannequin parts scaled), not Roblox's.
+  - **Classic clothing renders.** The viewer used to ignore `Shirt`,
+    `Pants` and `ShirtGraphic` altogether, so worn clothes were set on the
+    rig but never drawn. R6 limbs now wear the 585x559 template's cuts as
+    decals; R15 limbs (whose UVs are not the template's) are re-mapped
+    per triangle onto the template cut for the whole limb and drawn with a
+    CPU composite over the body colour. Templates are stored as
+    `rbxassetid://` and a T-shirt is the rig's own `ShirtGraphic`, drawn as a
+    centred square decal (R6 torso front, R15 UpperTorso front). A body with
+    its own `TextureID` or `SurfaceAppearance` colour map is dressed too: the
+    garment composites over that texture wherever it is opaque, and shows the
+    texture where the garment is clear (our reading of Roblox's behaviour, not
+    checked against Studio); the colour map is then dropped. Garment edges are
+    carried a few pixels into the bare template so joints show no skin wedge.
+    Editing a `Shirt`, `Pants` or `ShirtGraphic` (template or Color3) repaints
+    live through the viewer's change path (GPU parity tests). A clothing asset
+    that fails to load is named in Output (`Not applied: ...`); the mock seam
+    takes `<assetid>.status` to force one. Open: most user-made clothing
+    images need the keyed route (401 anonymously), whose fallback is
+    unit-tested with a mock transport but unverified live (no key), so user
+    36's own shirt and pants stay bare without one; a textured body was not
+    captured live.
+  - **Player / My Avatar** need no API key and no cookie: the public
+    `avatar.roblox.com/v1/users/{id}/avatar` endpoint and anonymous
+    `assetdelivery` are read (My Avatar only needs the key to learn its
+    user id). It applies body scales, colours, accessories welded at the
+    matching attachment (layered clothing keeps its `WrapLayer` and sits on its body part, fitted to the body cages by nearest-vertex blend; makeup is painted into the head's colour map), shirts,
+    pants and T-shirts, the player's animation choices into the `Animate`
+    states, R15 body-part packages (mesh, texture, attachments, cage; a
+    package missing a rig attachment is skipped) and R6 `CharacterMesh`es.
+    Roblox's stock dynamic-head mesh and texture are not downloadable
+    anonymously (the keyed route may serve only what the key's account owns): a refused head keeps the stock head and face with a per-item Output line, and one that downloads keeps a neutral `FaceControls` and its mood id. A banned
+    id, an empty avatar (Roblox returns that for ids that don't exist
+    too), a rate limit (429) and no network each give a clear Output and command-bar message and insert
+    nothing. A download the anonymous route refuses (401) is retried
+    through the stored Open Cloud key; without one it is named. Every
+    worn asset that is not applied gets its own `Not applied:` Output line
+    (name, id, asset type, reason), e.g. moods (no `Animator` to run them)
+    or a dynamic head on R6. The Rig Type row of Player / My Avatar
+    defaults to the player's own type and can force R6 or R15 (the
+    dialog shows the type it will build). The `HumanoidDescription` records
+    the avatar's ids and colours (body parts, shirt, pants, T-shirt, face,
+    animations, one `AccessoryDescription` per accessory).
+    Roblox's stock classic R15 head mesh (123480233606534) is a 401
+    without a key, so a head whose mesh is missing renders as a ball.
+    `RBX_STUDIO_RIG_AVATAR_MOCK` (a directory of
+    `<UserId>.json`, `me.json`, `<UserId>.status` and `<asset>.rbxm`) is the
+    test seam.
 - [x] **Wally "Recently published" list.** The Discover page lists the six
   newest publishes under the Featured cards. The registry backend has no
   route for it, but every publish is a `Publish scope/name@version` commit

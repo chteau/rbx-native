@@ -1673,6 +1673,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 
 [[package]]
+name = "draco-core"
+version = "2.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5647664e26e2172ee96bcd7c394a690e2986a3d76541611d22905739c8906ba4"
+dependencies = [
+ "bytemuck",
+]
+
+[[package]]
 name = "dunce"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6197,6 +6206,7 @@ dependencies = [
 name = "rbx_mesh"
 version = "0.1.0"
 dependencies = [
+ "draco-core",
  "thiserror 2.0.20",
 ]
 

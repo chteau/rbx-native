@@ -5,7 +5,7 @@
 use serde::Deserialize;
 
 use crate::client::{Client, RawResponse};
-use crate::error::{self, CloudError};
+use crate::error::{self, CloudError, KeyedRefusal};
 
 const ANONYMOUS_URL: &str = "https://assetdelivery.roblox.com/v1/asset";
 const KEYED_URL: &str = "https://apis.roblox.com/asset-delivery-api/v1/assetId";
@@ -17,6 +17,8 @@ const EXCERPT_CHARS: usize = 200;
 pub struct AssetContent {
     pub bytes: Vec<u8>,
     pub asset_type_id: Option<u32>,
+    /// Served through the Open Cloud key rather than anonymously.
+    pub keyed: bool,
 }
 
 #[derive(Deserialize)]
@@ -32,16 +34,31 @@ impl Client {
     /// immediately rather than wasting a key-authenticated request on e.g. a
     /// plain 404.
     pub fn asset(&self, asset_id: u64) -> Result<AssetContent, CloudError> {
-        match self.asset_anonymous(asset_id) {
-            Err(CloudError::AuthRequired { .. }) if self.has_api_key() => {
-                self.asset_with_key(asset_id)
-            }
-            other => other,
+        anonymous_then_keyed(
+            self.has_api_key(),
+            || self.asset_anonymous(asset_id),
+            || self.asset_with_key(asset_id),
+        )
+    }
+
+    fn anonymous_root(&self) -> &str {
+        #[cfg(test)]
+        if let Some((anonymous, _)) = &self.asset_roots {
+            return anonymous;
         }
+        ANONYMOUS_URL
+    }
+
+    fn keyed_root(&self) -> &str {
+        #[cfg(test)]
+        if let Some((_, keyed)) = &self.asset_roots {
+            return keyed;
+        }
+        KEYED_URL
     }
 
     pub fn asset_anonymous(&self, asset_id: u64) -> Result<AssetContent, CloudError> {
-        let url = format!("{ANONYMOUS_URL}?id={asset_id}");
+        let url = format!("{}?id={asset_id}", self.anonymous_root());
         // Follow the 302 ourselves (rather than let ureq auto-follow) so we
         // can read the `Roblox-AssetTypeId` header off the redirect, which is
         // not guaranteed to survive onto the final CDN response.
@@ -60,6 +77,11 @@ impl Client {
                 })?
                 .to_string();
             let cdn = self.get_raw(&location, false, true)?;
+            // A CDN that refuses the redirect target is the same "sign in"
+            // answer as a 401 from the delivery service: let the key try.
+            if is_auth_required(cdn.status) {
+                return Err(CloudError::AuthRequired { asset_id });
+            }
             return finish(&location, cdn, asset_type_id);
         }
 
@@ -72,11 +94,20 @@ impl Client {
     }
 
     pub fn asset_with_key(&self, asset_id: u64) -> Result<AssetContent, CloudError> {
-        self.keyed_delivery(&format!("{KEYED_URL}/{asset_id}"))
+        let mut content =
+            self.keyed_delivery(&format!("{}/{asset_id}", self.keyed_root()), Some(asset_id))?;
+        content.keyed = true;
+        Ok(content)
     }
 
-    fn keyed_delivery(&self, url: &str) -> Result<AssetContent, CloudError> {
+    /// `asset_id` is `Some` for a plain asset, whose 401/403 is classified
+    /// ([`CloudError::KeyedAssetRefused`]); a place version keeps the plain
+    /// `Http` error its callers already describe.
+    fn keyed_delivery(&self, url: &str, asset_id: Option<u64>) -> Result<AssetContent, CloudError> {
         let response = self.get_raw(url, true, true)?;
+        if let (Some(asset_id), 401 | 403) = (asset_id, response.status) {
+            return Err(keyed_refusal(asset_id, response.status, &response.body));
+        }
         if !(200..300).contains(&response.status) {
             return Err(error::error_for_status(
                 url,
@@ -102,7 +133,54 @@ impl Client {
         place_id: u64,
         version: u64,
     ) -> Result<Vec<u8>, CloudError> {
-        place_bytes(self.keyed_delivery(&versioned_url(place_id, version))?)
+        place_bytes(self.keyed_delivery(&versioned_url(place_id, version), None)?)
+    }
+}
+
+/// The route choice of [`Client::asset`], with both routes passed in so it can
+/// be tried without a network: the keyed one runs only when the anonymous
+/// one answered 401/403/409 and a key is stored.
+fn anonymous_then_keyed(
+    has_key: bool,
+    anonymous: impl FnOnce() -> Result<AssetContent, CloudError>,
+    keyed: impl FnOnce() -> Result<AssetContent, CloudError>,
+) -> Result<AssetContent, CloudError> {
+    match anonymous() {
+        Err(CloudError::AuthRequired { .. }) if has_key => keyed(),
+        other => other,
+    }
+}
+
+/// Reads a keyed 401/403 off its body. Wording seen live: an unknown key is
+/// `401 {"errors":[{"message":"Invalid API Key"}]}`; the other cases follow
+/// Open Cloud's usual phrasing (`Insufficient scope`, `not authorized`),
+/// which no key was available to confirm.
+fn keyed_refusal(asset_id: u64, status: u16, body: &[u8]) -> CloudError {
+    let detail = serde_json::from_slice::<serde_json::Value>(body)
+        .ok()
+        .and_then(|value| complaint(&value))
+        .unwrap_or_else(|| excerpt(body));
+    let lower = detail.to_lowercase();
+    let why = if lower.contains("scope") {
+        KeyedRefusal::Scope
+    } else if lower.contains("invalid api key")
+        || lower.contains("expired")
+        || lower.contains("ip ")
+    {
+        KeyedRefusal::InvalidKey
+    } else if lower.contains("not authorized")
+        || lower.contains("permission")
+        || lower.contains("access")
+    {
+        KeyedRefusal::NoAccess
+    } else {
+        KeyedRefusal::Other
+    };
+    CloudError::KeyedAssetRefused {
+        asset_id,
+        status,
+        why,
+        detail,
     }
 }
 
@@ -135,6 +213,7 @@ fn finish(
     Ok(AssetContent {
         bytes: response.body,
         asset_type_id,
+        keyed: false,
     })
 }
 
@@ -219,6 +298,97 @@ mod tests {
 
     const SAMPLE_DELIVERY: &str = r#"{"location":"https://example.rbxcdn.com/signed?sig=abc","requestId":"req-1","isArchived":false,"assetTypeId":9,"assetMetadatas":[{"metadataType":1,"value":"282701"}],"isRecordable":true}"#;
 
+    fn content(bytes: &[u8]) -> Result<AssetContent, CloudError> {
+        Ok(AssetContent {
+            bytes: bytes.to_vec(),
+            asset_type_id: Some(11),
+            keyed: false,
+        })
+    }
+
+    fn refused() -> Result<AssetContent, CloudError> {
+        Err(CloudError::AuthRequired { asset_id: 7 })
+    }
+
+    #[test]
+    fn a_refused_asset_is_fetched_through_the_key() {
+        let got = anonymous_then_keyed(true, refused, || content(b"private shirt")).unwrap();
+        assert_eq!(got.bytes, b"private shirt");
+    }
+
+    #[test]
+    fn a_refused_asset_stays_refused_without_a_key() {
+        let got = anonymous_then_keyed(false, refused, || panic!("no key to try"));
+        assert!(matches!(got, Err(CloudError::AuthRequired { asset_id: 7 })));
+    }
+
+    #[test]
+    fn a_public_asset_never_spends_the_key() {
+        let got = anonymous_then_keyed(true, || content(b"public"), || panic!("not needed"));
+        assert_eq!(got.unwrap().bytes, b"public");
+    }
+
+    #[test]
+    fn only_a_refusal_falls_back_to_the_key() {
+        let missing = || {
+            Err(CloudError::Http {
+                status: 404,
+                url: "x".into(),
+            })
+        };
+        let got = anonymous_then_keyed(true, missing, || panic!("a 404 will not change"));
+        assert!(matches!(got, Err(CloudError::Http { status: 404, .. })));
+    }
+
+    #[test]
+    fn a_keyed_refusal_is_the_final_answer() {
+        let denied = || {
+            Err(CloudError::Http {
+                status: 403,
+                url: "x".into(),
+            })
+        };
+        let got = anonymous_then_keyed(true, refused, denied);
+        assert!(matches!(got, Err(CloudError::Http { status: 403, .. })));
+    }
+
+    fn refusal(status: u16, body: &str) -> (KeyedRefusal, String) {
+        match keyed_refusal(5, status, body.as_bytes()) {
+            CloudError::KeyedAssetRefused { why, detail, .. } => (why, detail),
+            other => panic!("expected KeyedAssetRefused, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_keyed_401_for_an_unknown_key_is_an_invalid_key() {
+        let (why, detail) = refusal(
+            401,
+            r#"{"errors":[{"code":0,"message":"Invalid API Key"}]}"#,
+        );
+        assert_eq!(why, KeyedRefusal::InvalidKey);
+        assert_eq!(detail, "Invalid API Key");
+    }
+
+    #[test]
+    fn a_keyed_refusal_naming_a_scope_is_a_missing_scope() {
+        let body =
+            r#"{"code":"INSUFFICIENT_SCOPE","message":"Insufficient scope for this request."}"#;
+        assert_eq!(refusal(403, body).0, KeyedRefusal::Scope);
+    }
+
+    #[test]
+    fn a_keyed_refusal_about_the_asset_is_no_access() {
+        let body = r#"{"errors":[{"code":0,"message":"User is not authorized to access Asset."}]}"#;
+        assert_eq!(refusal(403, body).0, KeyedRefusal::NoAccess);
+    }
+
+    #[test]
+    fn an_unrecognised_keyed_refusal_quotes_the_body() {
+        let (why, detail) = refusal(403, "<html>teapot</html>");
+        assert_eq!(why, KeyedRefusal::Other);
+        assert_eq!(detail, "<html>teapot</html>");
+    }
+
     #[test]
     fn parses_the_real_keyed_delivery_payload() {
         let raw: DeliveryResponseRaw = serde_json::from_str(SAMPLE_DELIVERY).unwrap();
@@ -295,6 +465,7 @@ mod tests {
         let content = |bytes: &[u8]| AssetContent {
             bytes: bytes.to_vec(),
             asset_type_id: Some(9),
+            keyed: false,
         };
         assert!(place_bytes(content(b"<roblox!rest")).is_ok());
         assert!(matches!(
@@ -345,5 +516,91 @@ mod tests {
     fn header_u32_is_none_when_missing() {
         let headers = ureq::http::HeaderMap::new();
         assert_eq!(header_u32(&headers, "roblox-assettypeid"), None);
+    }
+
+    /// A loopback server answering each request with `route(path, has_key)`
+    /// as (status, extra header, body).
+    fn serve(
+        route: impl Fn(&str, bool) -> (u16, Option<(&'static str, String)>, Vec<u8>) + Send + 'static,
+    ) -> String {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let root = format!("http://{}", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for mut stream in listener.incoming().flatten() {
+                let mut buf = [0u8; 4096];
+                let n = stream.read(&mut buf).unwrap_or(0);
+                let head = String::from_utf8_lossy(&buf[..n]).to_lowercase();
+                let path = head.split_whitespace().nth(1).unwrap_or("").to_string();
+                let (status, header, body) = route(&path, head.contains("x-api-key"));
+                // Redirect targets must be absolute: `@` stands for this server.
+                let root = format!("http://{}", listener.local_addr().unwrap());
+                let body: Vec<u8> = String::from_utf8_lossy(&body).replace('@', &root).into();
+                let extra = header.map_or(String::new(), |(k, v)| {
+                    format!("{k}: {}\r\n", v.replace('@', &root))
+                });
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 {status} X\r\n{extra}content-length: {}\r\nconnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(&body);
+            }
+        });
+        root
+    }
+
+    fn mock_client(root: &str, key: bool) -> Client {
+        let mut client = Client::new(key.then(|| crate::ApiKey::new("k")));
+        client.asset_roots = Some((format!("{root}/anon"), format!("{root}/keyed")));
+        client
+    }
+
+    #[test]
+    fn an_anonymous_download_is_not_marked_keyed() {
+        let root = serve(|path, _| match path {
+            p if p.starts_with("/anon") => (200, None, b"hat".to_vec()),
+            _ => (500, None, vec![]),
+        });
+        let got = mock_client(&root, true).asset(1).unwrap();
+        assert_eq!(got.bytes, b"hat");
+        assert!(!got.keyed);
+    }
+
+    #[test]
+    fn a_cdn_refusal_after_the_redirect_falls_back_to_the_key() {
+        for refusal in [401, 403, 409] {
+            let root = serve(move |path, key| {
+                if path.starts_with("/anon") {
+                    (302, Some(("location", "@/cdn/private".into())), vec![])
+                } else if path.starts_with("/cdn/private") {
+                    (refusal, None, vec![])
+                } else if path.starts_with("/keyed") && key {
+                    let json = br#"{"location":"@/cdn/signed","assetTypeId":11}"#;
+                    (200, None, json.to_vec())
+                } else if path.starts_with("/cdn/signed") {
+                    (200, None, b"private shirt".to_vec())
+                } else {
+                    (500, None, vec![])
+                }
+            });
+            let got = mock_client(&root, true).asset(1).unwrap();
+            assert_eq!(got.bytes, b"private shirt", "after a CDN {refusal}");
+            assert!(got.keyed);
+            assert_eq!(got.asset_type_id, Some(11));
+        }
+    }
+
+    #[test]
+    fn a_cdn_refusal_without_a_key_stays_refused() {
+        let root = serve(|path, _| {
+            if path.starts_with("/anon") {
+                (302, Some(("location", "@/cdn/private".into())), vec![])
+            } else {
+                (403, None, vec![])
+            }
+        });
+        let got = mock_client(&root, false).asset(1);
+        assert!(matches!(got, Err(CloudError::AuthRequired { asset_id: 1 })));
     }
 }

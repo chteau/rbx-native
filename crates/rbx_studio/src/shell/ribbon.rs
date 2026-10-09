@@ -94,15 +94,18 @@ impl Shell {
                 self.terrain_tiles(cx),
                 self.panel_tiles(cx),
             ],
-            Tab::Avatar => vec![placeholders(
-                "avatar",
-                &[
-                    (IconName::Users, "Rig Builder"),
-                    (IconName::Play, "Animation"),
-                    (IconName::Package, "Accessory"),
-                    (IconName::Settings, "Avatar Setup"),
-                ],
-            )],
+            Tab::Avatar => {
+                let mut tiles = self.rig_tiles(cx);
+                tiles.extend(placeholders(
+                    "avatar",
+                    &[
+                        (IconName::Play, "Animation"),
+                        (IconName::Package, "Accessory"),
+                        (IconName::Settings, "Avatar Setup"),
+                    ],
+                ));
+                vec![tiles]
+            }
             Tab::Ui => vec![
                 vec![self.insert_gui(cx).into_any_element()],
                 placeholders(

@@ -163,7 +163,7 @@ impl Scene {
                 // `MeshId` the place opened with (see
                 // `filemesh::Plan::install`).
                 self.file_mesh_plan
-                    .install(referent, Some(mesh_entry.clone()));
+                    .install(referent, Some((*mesh_entry).clone()));
                 if !self
                     .resolved_file_meshes
                     .meshes

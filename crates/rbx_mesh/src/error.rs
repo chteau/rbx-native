@@ -17,6 +17,18 @@ pub enum MeshError {
     #[error("mesh version {major}.{minor:02} is not supported")]
     UnsupportedVersion { major: u8, minor: u8 },
 
+    #[error("{chunk} chunk version {version} is not supported")]
+    UnsupportedChunkVersion { chunk: String, version: u32 },
+
+    #[error("no COREMESH chunk")]
+    MissingCoreMesh,
+
+    #[error("Draco geometry carries no position attribute")]
+    MissingPositions,
+
+    #[error("Draco geometry: {0}")]
+    Draco(String),
+
     #[error("header claims {actual} bytes, this version requires {expected}")]
     UnexpectedHeaderSize { expected: u16, actual: u16 },
 

@@ -46,11 +46,27 @@ impl Entry {
         if self.alpha <= 0.0 {
             return None;
         }
-        let texture = self
+        let mut texture = self
             .texture
             .clone()
             .filter(|reference| resolved.images.contains_key(reference));
+        let (mut mesh_key, mut color) = (self.mesh.clone(), self.color);
+        let mut worn = false;
+        let wrapped = super::wrap::key(self.referent);
+        if self.wrap.is_some() && resolved.meshes.contains_key(&wrapped) {
+            mesh_key = wrapped;
+        }
+        // A dressed section reuses what its limb was dressed with, or asks for
+        // the whole limb to be dressed again when an edit has outdated it.
+        if let Some((key, image)) = super::clothing::keys(self, &resolved.images) {
+            if !resolved.meshes.contains_key(&key) || !resolved.images.contains_key(&image) {
+                return None;
+            }
+            (mesh_key, texture, color) = (key, Some(image), [1.0; 3]);
+            worn = true;
+        }
         let appearance = match &self.appearance {
+            Some(_) if worn => None,
             Some(planned) => {
                 let wanted = planned.resolved(&resolved.images);
                 Some(
@@ -65,12 +81,12 @@ impl Entry {
 
         Some(ResolvedInstance {
             referent: self.referent,
-            mesh: self.mesh.clone(),
+            mesh: mesh_key,
             material: self.material,
             texture,
             appearance,
             model: self.fit.transform(mesh),
-            color: self.color,
+            color,
             alpha: self.alpha,
             reflectance: self.reflectance,
             casts_shadow: self.casts_shadow,

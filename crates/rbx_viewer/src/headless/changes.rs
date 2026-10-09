@@ -22,6 +22,7 @@ use crate::changes::{fold, holds_gui, Applied, Known, Rebuild, Role, Roles, Touc
 use crate::load::{Loaded, Resident, Toggles};
 use crate::scene::{descendants_of, Bounds, PartSync};
 use crate::textures;
+use crate::view::View;
 use pending::Pending;
 
 impl Headless {
@@ -52,6 +53,7 @@ impl Headless {
             resident: &mut self.resident,
             offscreen: &mut self.offscreen,
             toggles: self.toggles,
+            view: &self.view,
             known_layers,
             pending: Pending::default(),
         };
@@ -82,6 +84,7 @@ struct Patcher<'a> {
     resident: &'a mut Resident,
     offscreen: &'a mut Offscreen,
     toggles: Toggles,
+    view: &'a View,
     /// The material catalog's layer count as the renderer uploaded it, read
     /// once before the first part is touched: a part that lands on a layer
     /// past it needs maps only a reload uploads, and a refused part must
@@ -153,6 +156,7 @@ impl Patcher<'_> {
             .map(|instance| Role::of(self.database, instance.class()));
         match role {
             Some(Role::MeshChild | Role::Appearance) => self.sync_parent_part(old_parent),
+            Some(Role::Clothing) => self.sync_wearers(old_parent),
             // The face itself is taken off the GPU by `present` below, which
             // finds it under something that is not a part any more; the plan
             // the old part left behind still names it.
@@ -225,6 +229,10 @@ impl Patcher<'_> {
             }
             Role::MeshChild | Role::Appearance => match dom.parent(referent) {
                 Some(parent) => self.sync_parent_part(parent),
+                None => Ok(()),
+            },
+            Role::Clothing => match dom.parent(referent) {
+                Some(model) => self.sync_wearers(model),
                 None => Ok(()),
             },
             // A write to the instance itself is `with_children`'s call;
@@ -301,6 +309,10 @@ impl Patcher<'_> {
                 Some(parent) => self.sync_parent_part(parent),
                 None => Ok(()),
             },
+            Role::Clothing => match known.parent {
+                Some(model) => self.sync_wearers(model),
+                None => Ok(()),
+            },
             Role::Gui => {
                 self.gui_changed(known.parent, false);
                 Ok(())
@@ -365,6 +377,36 @@ impl Patcher<'_> {
         if is_part {
             self.sync_part(parent, true)?;
         }
+        Ok(())
+    }
+
+    /// Re-reads every part under `model`, the character a garment was worn
+    /// on or taken off: each limb's own faces (R6) and composite (R15) come
+    /// from the garments around it, so none of them is its own to patch.
+    /// Their paint is joined and uploaded once, at the batch's end.
+    fn sync_wearers(&mut self, model: Ref) -> Result<(), Rebuild> {
+        let dom = self.dom;
+        let wearers: Vec<Ref> = descendants_of(dom, model)
+            .filter(|&part| {
+                dom.get(part)
+                    .is_some_and(|part| Role::of(self.database, part.class()) == Role::Part)
+            })
+            .collect();
+        for part in wearers {
+            self.sync_part(part, false)?;
+        }
+        // The garments' images belong to no part's own plan, so no part's
+        // sync asks for them.
+        if let Some(wardrobe) = crate::textures::clothing::Wardrobe::of(dom, model) {
+            let images: Vec<_> = [wardrobe.pants, wardrobe.shirt, wardrobe.graphic]
+                .into_iter()
+                .flatten()
+                .map(|layer| layer.image)
+                .collect();
+            self.loaded.also_wants(&images);
+            self.resident.images(&images);
+        }
+        self.pending.clothing = true;
         Ok(())
     }
 

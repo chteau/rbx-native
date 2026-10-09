@@ -38,6 +38,9 @@ pub(crate) enum Role {
     /// A `SurfaceAppearance`: the map set its parent `MeshPart` is skinned
     /// with.
     Appearance,
+    /// A `Shirt`, `Pants` or `ShirtGraphic`: what the parts of the character
+    /// it hangs off wear, read off the garment's template and `Color3`.
+    Clothing,
     /// A `ScreenGui`/`BillboardGui`/`SurfaceGui` or anything inside one.
     Gui,
     /// A `MaterialVariant` or `MaterialService` — see [`Rebuild::Materials`].
@@ -90,6 +93,9 @@ impl Role {
         }
         if is("SurfaceAppearance") {
             return Role::Appearance;
+        }
+        if is("Clothing") || is("ShirtGraphic") {
+            return Role::Clothing;
         }
         // The styling family (`StyleBase` covers `StyleSheet`/`StyleRule`;
         // `StyleDerive`/`StyleLink` hang off `Instance` directly) never
@@ -233,6 +239,9 @@ mod tests {
             ("SpecialMesh", Role::MeshChild),
             ("BlockMesh", Role::MeshChild),
             ("SurfaceAppearance", Role::Appearance),
+            ("Shirt", Role::Clothing),
+            ("Pants", Role::Clothing),
+            ("ShirtGraphic", Role::Clothing),
             ("ScreenGui", Role::Gui),
             // Not drawn itself, but `ShowDevelopmentGui` hides every screen
             // and canvas beneath it.

@@ -31,6 +31,7 @@ pub(super) const CLASS_ICON_SLUGS: &[(&str, &str)] = &[
     ("AlignPosition", "align-position"),
     ("AngularVelocity", "angular-velocity"),
     ("Animation", "animation"),
+    ("AnimationConstraint", "motor6d"),
     ("AnimationController", "animation"),
     ("AnimationRigData", "animation"),
     ("AnimationTrack", "animation"),
