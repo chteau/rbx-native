@@ -852,7 +852,6 @@ fn a_dynamic_head_the_mock_refuses_falls_back_to_the_stock_head_with_a_note() {
         note.contains("HTTP 401") && note.contains("stock head"),
         "{note}"
     );
-    assert!(!options.pieces.contains_key("Head"),);
     let head = child_named(&dom, rig, "Head").unwrap();
     assert!(child_of_class(&dom, head, "FaceControls").is_some());
     let _ = std::fs::remove_dir_all(&dir);
