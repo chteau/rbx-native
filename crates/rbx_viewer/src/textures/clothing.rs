@@ -219,3 +219,60 @@ pub(crate) const FACES: [NormalId; 6] = [
     NormalId::Bottom,
     NormalId::Front,
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The Roblox 585x559 template: the torso block, with the arm or leg
+    /// blocks below it, each a cap over four 64x128 sides.
+    #[test]
+    fn rects_match_the_documented_template_regions() {
+        assert_eq!(
+            Limb::Torso.rect(NormalId::Front),
+            [231.0, 74.0, 128.0, 128.0]
+        );
+        assert_eq!(
+            Limb::Torso.rect(NormalId::Back),
+            [427.0, 74.0, 128.0, 128.0]
+        );
+        assert_eq!(
+            Limb::Torso.rect(NormalId::Right),
+            [165.0, 74.0, 64.0, 128.0]
+        );
+        assert_eq!(Limb::Torso.rect(NormalId::Left), [361.0, 74.0, 64.0, 128.0]);
+        assert_eq!(
+            Limb::RightArm.rect(NormalId::Front),
+            [217.0, 355.0, 64.0, 128.0]
+        );
+        assert_eq!(
+            Limb::LeftArm.rect(NormalId::Front),
+            [308.0, 355.0, 64.0, 128.0]
+        );
+        assert_eq!(
+            Limb::RightLeg.rect(NormalId::Top),
+            [217.0, 289.0, 64.0, 64.0]
+        );
+        assert_eq!(
+            Limb::LeftLeg.rect(NormalId::Bottom),
+            [308.0, 485.0, 64.0, 64.0]
+        );
+    }
+
+    #[test]
+    fn each_limbs_faces_sit_inside_the_template_and_apart() {
+        for limb in [Limb::Torso, Limb::RightArm, Limb::LeftArm] {
+            let rects: Vec<[f32; 4]> = FACES.iter().map(|&f| limb.rect(f)).collect();
+            for (i, a) in rects.iter().enumerate() {
+                assert!(a[0] + a[2] <= TEMPLATE[0] && a[1] + a[3] <= TEMPLATE[1]);
+                for b in &rects[i + 1..] {
+                    let apart = a[0] + a[2] <= b[0]
+                        || b[0] + b[2] <= a[0]
+                        || a[1] + a[3] <= b[1]
+                        || b[1] + b[3] <= a[1];
+                    assert!(apart, "{a:?} overlaps {b:?}");
+                }
+            }
+        }
+    }
+}
