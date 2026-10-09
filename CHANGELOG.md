@@ -2,6 +2,13 @@
 
 ## 2026-10-09
 
+- **Rig Builder: layered clothing and makeup.** Layered clothing
+  (jackets, sweaters, shorts, skirts, shoes) is welded to the R15 body part
+  it is cut for, undeformed (no cage fitting), and makeup (face, lip, eye)
+  is painted into the head's colour map; both say so in Output. A 401 on
+  clothing now names the `legacy-asset:manage` scope to add to the key.
+  Not applied: cage deformation, mood animations, FaceControls poses.
+
 - **Insert a rig.** Avatar › Rig Builder (also Model › Insert Rig… and the
   command palette) opens a dialog to insert an R6 or R15 character
   `Model` with a `Humanoid` and `Animator`, `BodyColors` and the standard
