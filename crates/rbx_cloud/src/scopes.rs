@@ -46,9 +46,15 @@ const fn optional(scope: &'static str, feature: &'static str) -> Permission {
 /// Everything the editor can use, required first.
 pub const PERMISSIONS: &[Permission] = &[
     required("universe-places:write", "Save and publish places"),
-    // The keyed asset-delivery endpoint `Client::download_place` falls back
-    // to for a private place.
-    required("legacy-asset:manage", "Open private places and assets"),
+    // The keyed asset-delivery endpoint (`apis.roblox.com/asset-delivery-api`)
+    // `Client::asset` falls back to for a private place, or for an avatar's
+    // clothing and heads that the anonymous route refuses. Roblox's public
+    // reference does not list that route; the scope name is the one the
+    // key dashboard offers for it.
+    required(
+        "legacy-asset:manage",
+        "Open private places; download avatar clothing and heads",
+    ),
     // The Inventory API's CREATED_PLACE listing: the one way an unrestricted
     // key reaches the owner's private experiences, so without it My Games
     // silently misses them. Required, unlike the optional scopes below,

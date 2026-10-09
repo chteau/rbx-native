@@ -300,7 +300,9 @@ fn a_clothing_asset_the_mock_refuses_is_named_in_its_own_note() {
     assert_eq!(used, 2);
     assert_eq!(notes.len(), 1, "{notes:?}");
     assert!(
-        notes[0].starts_with("Shirt (id 2, Shirt): HTTP 401: not publicly downloadable"),
+        notes[0].starts_with(
+            "Shirt (id 2, Shirt): HTTP 401: Roblox serves this only to a signed-in account"
+        ),
         "{notes:?}"
     );
     let _ = std::fs::remove_dir_all(&dir);
@@ -369,17 +371,18 @@ fn the_rig_type_override_converts_in_both_directions() {
 #[test]
 fn download_errors_are_specific() {
     let auth = CloudError::AuthRequired { asset_id: 1 };
-    assert!(download_error(&auth, false).contains("no Open Cloud key"));
+    assert!(download_error(&auth, false, None).contains("no Open Cloud key"));
+    assert!(download_error(&auth, false, None).contains("legacy-asset:manage"));
     let forbidden = CloudError::Http {
         status: 403,
         url: String::new(),
     };
-    assert!(download_error(&forbidden, true).contains("stored Open Cloud key"));
+    assert!(download_error(&forbidden, true, None).contains("stored Open Cloud key"));
     let gone = CloudError::Http {
         status: 404,
         url: String::new(),
     };
-    assert!(download_error(&gone, false).contains("deleted or moderated"));
+    assert!(download_error(&gone, false, None).contains("deleted or moderated"));
     assert!(is_transient(&CloudError::RateLimited { retry_after: None }));
     assert!(!is_transient(&gone));
 }
@@ -635,10 +638,64 @@ fn the_mock_serves_pants_and_a_tshirt_fixture() {
 #[test]
 fn a_refused_download_says_whether_a_key_was_tried() {
     let refused = CloudError::AuthRequired { asset_id: 2 };
-    assert!(download_error(&refused, false).contains("no Open Cloud key is stored"));
+    assert!(download_error(&refused, false, None).contains("no Open Cloud key is stored"));
     let denied = CloudError::Http {
         status: 403,
         url: "x".into(),
     };
-    assert!(download_error(&denied, true).contains("stored Open Cloud key"));
+    assert!(download_error(&denied, true, None).contains("stored Open Cloud key"));
+}
+
+fn keyed(why: KeyedRefusal) -> CloudError {
+    CloudError::KeyedAssetRefused {
+        asset_id: 3,
+        status: 403,
+        why,
+        detail: "detail".into(),
+    }
+}
+
+#[test]
+fn a_key_without_the_scope_is_told_which_one_and_where() {
+    let said = download_error(&keyed(KeyedRefusal::NoAccess), true, Some(&Grant::Missing));
+    assert!(
+        said.contains("lacks the legacy-asset:manage permission"),
+        "{said}"
+    );
+    assert!(
+        said.contains("Creator Hub \u{203a} Open Cloud \u{203a} API Keys"),
+        "{said}"
+    );
+    let by_body = download_error(&keyed(KeyedRefusal::Scope), true, None);
+    assert!(
+        by_body.contains("lacks the legacy-asset:manage"),
+        "{by_body}"
+    );
+}
+
+#[test]
+fn a_key_with_the_scope_is_not_blamed_for_an_asset_it_cannot_read() {
+    let said = download_error(
+        &keyed(KeyedRefusal::NoAccess),
+        true,
+        Some(&Grant::Everywhere),
+    );
+    assert!(said.contains("own or created"), "{said}");
+    assert!(!said.contains("lacks"), "{said}");
+    let limited = download_error(
+        &keyed(KeyedRefusal::NoAccess),
+        true,
+        Some(&Grant::Universes(vec![1])),
+    );
+    assert!(limited.contains("specific experiences"), "{limited}");
+}
+
+#[test]
+fn a_rejected_key_is_not_a_missing_scope() {
+    let said = download_error(
+        &keyed(KeyedRefusal::InvalidKey),
+        true,
+        Some(&Grant::Everywhere),
+    );
+    assert!(said.contains("rejected the stored key"), "{said}");
 }

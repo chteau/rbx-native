@@ -5,7 +5,7 @@
 use serde::Deserialize;
 
 use crate::client::{Client, RawResponse};
-use crate::error::{self, CloudError};
+use crate::error::{self, CloudError, KeyedRefusal};
 
 const ANONYMOUS_URL: &str = "https://assetdelivery.roblox.com/v1/asset";
 const KEYED_URL: &str = "https://apis.roblox.com/asset-delivery-api/v1/assetId";
@@ -71,11 +71,17 @@ impl Client {
     }
 
     pub fn asset_with_key(&self, asset_id: u64) -> Result<AssetContent, CloudError> {
-        self.keyed_delivery(&format!("{KEYED_URL}/{asset_id}"))
+        self.keyed_delivery(&format!("{KEYED_URL}/{asset_id}"), Some(asset_id))
     }
 
-    fn keyed_delivery(&self, url: &str) -> Result<AssetContent, CloudError> {
+    /// `asset_id` is `Some` for a plain asset, whose 401/403 is classified
+    /// ([`CloudError::KeyedAssetRefused`]); a place version keeps the plain
+    /// `Http` error its callers already describe.
+    fn keyed_delivery(&self, url: &str, asset_id: Option<u64>) -> Result<AssetContent, CloudError> {
         let response = self.get_raw(url, true, true)?;
+        if let (Some(asset_id), 401 | 403) = (asset_id, response.status) {
+            return Err(keyed_refusal(asset_id, response.status, &response.body));
+        }
         if !(200..300).contains(&response.status) {
             return Err(error::error_for_status(
                 url,
@@ -101,7 +107,7 @@ impl Client {
         place_id: u64,
         version: u64,
     ) -> Result<Vec<u8>, CloudError> {
-        place_bytes(self.keyed_delivery(&versioned_url(place_id, version))?)
+        place_bytes(self.keyed_delivery(&versioned_url(place_id, version), None)?)
     }
 }
 
@@ -116,6 +122,39 @@ fn anonymous_then_keyed(
     match anonymous() {
         Err(CloudError::AuthRequired { .. }) if has_key => keyed(),
         other => other,
+    }
+}
+
+/// Reads a keyed 401/403 off its body. Wording seen live: an unknown key is
+/// `401 {"errors":[{"message":"Invalid API Key"}]}`; the other cases follow
+/// Open Cloud's usual phrasing (`Insufficient scope`, `not authorized`),
+/// which no key was available to confirm.
+fn keyed_refusal(asset_id: u64, status: u16, body: &[u8]) -> CloudError {
+    let detail = serde_json::from_slice::<serde_json::Value>(body)
+        .ok()
+        .and_then(|value| complaint(&value))
+        .unwrap_or_else(|| excerpt(body));
+    let lower = detail.to_lowercase();
+    let why = if lower.contains("scope") {
+        KeyedRefusal::Scope
+    } else if lower.contains("invalid api key")
+        || lower.contains("expired")
+        || lower.contains("ip ")
+    {
+        KeyedRefusal::InvalidKey
+    } else if lower.contains("not authorized")
+        || lower.contains("permission")
+        || lower.contains("access")
+    {
+        KeyedRefusal::NoAccess
+    } else {
+        KeyedRefusal::Other
+    };
+    CloudError::KeyedAssetRefused {
+        asset_id,
+        status,
+        why,
+        detail,
     }
 }
 
@@ -283,6 +322,43 @@ mod tests {
         };
         let got = anonymous_then_keyed(true, refused, denied);
         assert!(matches!(got, Err(CloudError::Http { status: 403, .. })));
+    }
+
+    fn refusal(status: u16, body: &str) -> (KeyedRefusal, String) {
+        match keyed_refusal(5, status, body.as_bytes()) {
+            CloudError::KeyedAssetRefused { why, detail, .. } => (why, detail),
+            other => panic!("expected KeyedAssetRefused, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_keyed_401_for_an_unknown_key_is_an_invalid_key() {
+        let (why, detail) = refusal(
+            401,
+            r#"{"errors":[{"code":0,"message":"Invalid API Key"}]}"#,
+        );
+        assert_eq!(why, KeyedRefusal::InvalidKey);
+        assert_eq!(detail, "Invalid API Key");
+    }
+
+    #[test]
+    fn a_keyed_refusal_naming_a_scope_is_a_missing_scope() {
+        let body =
+            r#"{"code":"INSUFFICIENT_SCOPE","message":"Insufficient scope for this request."}"#;
+        assert_eq!(refusal(403, body).0, KeyedRefusal::Scope);
+    }
+
+    #[test]
+    fn a_keyed_refusal_about_the_asset_is_no_access() {
+        let body = r#"{"errors":[{"code":0,"message":"User is not authorized to access Asset."}]}"#;
+        assert_eq!(refusal(403, body).0, KeyedRefusal::NoAccess);
+    }
+
+    #[test]
+    fn an_unrecognised_keyed_refusal_quotes_the_body() {
+        let (why, detail) = refusal(403, "<html>teapot</html>");
+        assert_eq!(why, KeyedRefusal::Other);
+        assert_eq!(detail, "<html>teapot</html>");
     }
 
     #[test]

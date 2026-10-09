@@ -24,7 +24,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use rbx_cloud::{ApiKey, Avatar, AvatarAsset, Client, CloudError};
+use rbx_cloud::{ApiKey, Avatar, AvatarAsset, Client, CloudError, Grant, KeyedRefusal};
 use rbx_dom::{BrickColor, Content, Ref, Variant, WeakDom, DEFAULT_BRICK_COLOR};
 
 use crate::shell::clipboard;
@@ -166,14 +166,21 @@ pub(crate) fn fetch(user: Option<u64>) -> Result<Fetched, String> {
         }
     };
     let avatar = client.avatar(id).map_err(|err| user_error(&err, id))?;
-    ready(avatar, id, |asset| download(&client, asset, keyed))
+    // Asked once, and only after a keyed refusal: what the key grants.
+    let grant = std::cell::OnceCell::new();
+    ready(avatar, id, |asset| download(&client, asset, keyed, &grant))
 }
 
 const DOWNLOAD_ATTEMPTS: u32 = 3;
 
 /// One asset's bytes. Only a failure that may pass (network, rate limit,
 /// server error) is retried: a 401 or 404 will answer the same next time.
-fn download(client: &Client, id: u64, keyed: bool) -> Result<Vec<u8>, String> {
+fn download(
+    client: &Client,
+    id: u64,
+    keyed: bool,
+    grant: &std::cell::OnceCell<Option<Grant>>,
+) -> Result<Vec<u8>, String> {
     let mut attempt = 1;
     loop {
         match client.asset(id) {
@@ -182,7 +189,20 @@ fn download(client: &Client, id: u64, keyed: bool) -> Result<Vec<u8>, String> {
                 attempt += 1;
                 std::thread::sleep(std::time::Duration::from_secs(1));
             }
-            Err(err) => return Err(download_error(&err, keyed)),
+            Err(err) => {
+                let legacy = matches!(err, CloudError::KeyedAssetRefused { .. }).then(|| {
+                    grant.get_or_init(|| {
+                        let info = client.introspect().ok()?;
+                        let report = rbx_cloud::check_scopes(&info);
+                        report
+                            .checks
+                            .into_iter()
+                            .find(|c| c.permission.scope == LEGACY_ASSET)
+                            .map(|c| c.grant)
+                    })
+                });
+                return Err(download_error(&err, keyed, legacy.and_then(Option::as_ref)));
+            }
         }
     }
 }
@@ -196,9 +216,35 @@ fn is_transient(err: &CloudError) -> bool {
     )
 }
 
-fn download_error(err: &CloudError, keyed: bool) -> String {
+const LEGACY_ASSET: &str = "legacy-asset:manage";
+const KEY_PAGE: &str = "Creator Hub \u{203a} Open Cloud \u{203a} API Keys";
+
+/// Why `err` ended a download, in words that say what to change. `legacy` is
+/// what the stored key grants for [`LEGACY_ASSET`] when that is known.
+fn download_error(err: &CloudError, keyed: bool, legacy: Option<&Grant>) -> String {
     match err {
-        CloudError::AuthRequired { .. } => "HTTP 401: not publicly downloadable, and no Open Cloud key is stored to try (Home \u{203a} Manage key)".into(),
+        CloudError::AuthRequired { .. } => format!(
+            "HTTP 401: Roblox serves this only to a signed-in account, and no Open Cloud key is stored (Home \u{203a} Manage key; it needs {LEGACY_ASSET})"
+        ),
+        CloudError::KeyedAssetRefused {
+            status, why, detail, ..
+        } => {
+            let add = format!("add {LEGACY_ASSET} at {KEY_PAGE} (edit the key, add the legacy-asset system, operation Manage)");
+            match (legacy, why) {
+                (Some(Grant::Missing), _) | (None, KeyedRefusal::Scope) => {
+                    format!("HTTP {status}: the stored key lacks the {LEGACY_ASSET} permission: {add}")
+                }
+                (Some(Grant::Universes(_)), KeyedRefusal::Scope | KeyedRefusal::NoAccess) => format!(
+                    "HTTP {status}: the stored key grants {LEGACY_ASSET} only for specific experiences, which do not cover this asset: edit the key at {KEY_PAGE} to allow it for every experience"
+                ),
+                (_, KeyedRefusal::InvalidKey) => format!(
+                    "HTTP {status}: Roblox rejected the stored key ({detail}); it may be revoked, expired or limited to another IP address: check it at {KEY_PAGE}"
+                ),
+                _ => format!(
+                    "HTTP {status}: not publicly downloadable, and the stored key\u{2019}s account may not read it: Roblox releases clothing and items only to accounts that own or created them ({detail})"
+                ),
+            }
+        }
         CloudError::Http {
             status: status @ (401 | 403),
             ..
@@ -239,7 +285,7 @@ fn mock_fetch(mock: &str, user: Option<u64>) -> Result<Fetched, String> {
                 "401" => CloudError::AuthRequired { asset_id: asset },
                 other => simulated(other),
             };
-            return Err(download_error(&failure, false));
+            return Err(download_error(&failure, false, None));
         }
         ["rbxm", "rbxmx"]
             .iter()

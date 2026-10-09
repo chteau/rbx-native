@@ -11,6 +11,16 @@ pub enum CloudError {
     #[error("asset {asset_id} requires authentication and no API key is configured")]
     AuthRequired { asset_id: u64 },
 
+    /// The stored key was sent to the keyed asset-delivery route and
+    /// refused (HTTP 401 or 403). `why` is read off the response body.
+    #[error("asset {asset_id}: the stored API key was refused (HTTP {status}, {why:?}): {detail}")]
+    KeyedAssetRefused {
+        asset_id: u64,
+        status: u16,
+        why: KeyedRefusal,
+        detail: String,
+    },
+
     #[error("rate limited (retry_after={retry_after:?}s)")]
     RateLimited { retry_after: Option<u64> },
 
@@ -33,6 +43,18 @@ pub enum CloudError {
 
     #[error("unexpected API response shape: {0}")]
     UnexpectedShape(String),
+}
+
+/// Why the keyed asset-delivery route said no, as far as its body tells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyedRefusal {
+    /// The key lacks the scope the route needs (`legacy-asset:manage`).
+    Scope,
+    /// Wrong, revoked, expired or IP-restricted key.
+    InvalidKey,
+    /// The key is fine but its account may not read this asset.
+    NoAccess,
+    Other,
 }
 
 impl From<ureq::Error> for CloudError {
