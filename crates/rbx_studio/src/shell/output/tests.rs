@@ -240,3 +240,14 @@ fn the_search_narrows_within_the_level_filter_rather_than_replacing_it() {
     assert_eq!(log.filtered(OutputFilter::Output, "boom").count(), 1);
     assert_eq!(log.filtered(OutputFilter::Output, "nothing").count(), 0);
 }
+
+#[test]
+fn the_same_entry_pushed_twice_at_once_is_one_row() {
+    let mut log = OutputLog::default();
+    log.push_once("Rig", error("UserId must be a number"));
+    log.push_once("Rig", error("UserId must be a number"));
+    assert_eq!(log.len(), 1);
+    log.push_once("Rig", error("Another message"));
+    log.push_once("Other", error("Another message"));
+    assert_eq!(log.len(), 3);
+}

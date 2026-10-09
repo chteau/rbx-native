@@ -192,6 +192,23 @@ impl OutputLog {
         self.entries.push(OutputEntry::new(source, feedback));
     }
 
+    /// [`OutputLog::push`], unless the newest entry is already this very one
+    /// from the same source, pushed within the last half second: one key
+    /// press that two handlers both act on is still one row.
+    pub(crate) fn push_once(&mut self, source: &str, feedback: Feedback) {
+        let repeat = self.entries.last().is_some_and(|last| {
+            last.source == source
+                && last.feedback == feedback
+                && last
+                    .timestamp
+                    .elapsed()
+                    .is_ok_and(|age| age < std::time::Duration::from_millis(500))
+        });
+        if !repeat {
+            self.push(source, feedback);
+        }
+    }
+
     /// Appends one warning from somewhere other than a Command Bar run (an
     /// asset-fetch/decode failure, a texture that fell back to a default) —
     /// same drop-oldest-at-[`CAP`] shape as [`OutputLog::push`], which this
