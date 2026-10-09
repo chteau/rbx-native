@@ -134,7 +134,7 @@ pub(super) fn derive(
     }
 
     let mut dressed = HashMap::new();
-    let mut composites: HashMap<AssetRef, Arc<Image>> = HashMap::new();
+    let mut composites: HashMap<AssetRef, (Arc<Image>, Vec<bool>)> = HashMap::new();
     for ((_, limb), sections) in limbs {
         // A limb is only dressed whole: the box its template was cut for is
         // measured over all of its sections.
@@ -152,18 +152,18 @@ pub(super) fn derive(
             let Some(image_key) = image_key(entry, images) else {
                 continue;
             };
-            let image = composites
-                .entry(image_key.clone())
-                .or_insert_with(|| Arc::new(composite(entry, images)))
-                .clone();
+            let (image, covered) = composites.entry(image_key.clone()).or_insert_with(|| {
+                let (image, covered) = composite(entry, images);
+                (Arc::new(image), covered)
+            });
             dressed.insert(
                 entry.referent,
                 Dressed {
                     mesh: (
                         mesh_key(entry.referent),
-                        Arc::new(frame.remap(&entry.fit.transform(mesh), mesh)),
+                        Arc::new(frame.remap(&entry.fit.transform(mesh), mesh, covered)),
                     ),
-                    image: (image_key, image),
+                    image: (image_key, image.clone()),
                 },
             );
         }
@@ -212,7 +212,7 @@ impl Frame {
 
     /// `mesh`, drawn through `model`, with every triangle given its own
     /// vertices and UVs into the template.
-    fn remap(&self, model: &Mat4, mesh: &rbx_mesh::Mesh) -> rbx_mesh::Mesh {
+    fn remap(&self, model: &Mat4, mesh: &rbx_mesh::Mesh, covered: &[bool]) -> rbx_mesh::Mesh {
         let normals = Mat3::from_mat4(*model).inverse().transpose();
         let mut vertices = Vec::with_capacity(mesh.indices.len());
         for triangle in mesh.indices.as_chunks::<3>().0 {
@@ -235,7 +235,21 @@ impl Frame {
             if normal.dot(facing) < 0.0 {
                 normal = -normal;
             }
-            let face = face_of(normal);
+            let mut face = face_of(normal);
+            let bare = |face| {
+                [pa, pb, pc].iter().all(|&point| {
+                    let [u, v] = self.uv(face, point);
+                    let at = (v * TEMPLATE[1]) as usize * TEMPLATE[0] as usize
+                        + (u * TEMPLATE[0]) as usize;
+                    !covered.get(at).copied().unwrap_or(true)
+                })
+            };
+            // Joints (the armpits, the collar, the wrists) are cut through the
+            // box's caps, where a template has nothing drawn: they take the
+            // side they lean on next.
+            if matches!(face, NormalId::Top | NormalId::Bottom) && bare(face) {
+                face = face_of(Vec3::new(normal.x, 0.0, normal.z));
+            }
             for (vertex, point) in [(a, pa), (b, pb), (c, pc)] {
                 vertices.push(rbx_mesh::Vertex {
                     uv: self.uv(face, point),
@@ -293,22 +307,49 @@ fn face_of(normal: Vec3) -> NormalId {
     }
 }
 
+/// The share of a torso's front that is the UpperTorso, which is what a
+/// T-shirt's graphic is printed on: an R15 torso is 1.6 studs of UpperTorso
+/// over 0.4 of LowerTorso.
+const UPPER_TORSO: f32 = 0.8;
+
+/// Where a T-shirt's graphic lies in the template, as `[x, y, w, h]`: the
+/// largest square of the UpperTorso's front, centred across the chest and
+/// level with its top, holding the image at its own aspect.
+fn graphic_region(image: &Image) -> [f32; 4] {
+    let [x, y, w, h] = Limb::Torso.rect(NormalId::Front);
+    let side = (h * UPPER_TORSO).round().min(w);
+    let aspect = image.width.max(1) as f32 / image.height.max(1) as f32;
+    let (dw, dh) = if aspect >= 1.0 {
+        (side, (side / aspect).round().max(1.0))
+    } else {
+        ((side * aspect).round().max(1.0), side)
+    };
+    [
+        x + ((w - dw) / 2.0).floor(),
+        y + ((side - dh) / 2.0).floor(),
+        dw,
+        dh,
+    ]
+}
+
 /// The garments of `entry` laid over its body colour, at the template's size.
-fn composite(entry: &Entry, images: &HashMap<AssetRef, Arc<Image>>) -> Image {
+fn composite(entry: &Entry, images: &HashMap<AssetRef, Arc<Image>>) -> (Image, Vec<bool>) {
     let (width, height) = (TEMPLATE[0] as usize, TEMPLATE[1] as usize);
     let [r, g, b] = body_colour(entry.color);
     let mut pixels = [r, g, b, u8::MAX].repeat(width * height);
     let Some(dressing) = &entry.dressing else {
-        return Image {
+        let image = Image {
             width: width as u32,
             height: height as u32,
             pixels,
         };
+        return (image, vec![false; width * height]);
     };
 
+    let mut covered = vec![false; width * height];
     for (garment, layer, image) in layers(dressing, images) {
         let region = match garment {
-            Garment::Graphic => dressing.limb.rect(NormalId::Front),
+            Garment::Graphic => graphic_region(image),
             _ => [0.0, 0.0, TEMPLATE[0], TEMPLATE[1]],
         };
         let [rx, ry, rw, rh] = region.map(|value| value as usize);
@@ -319,6 +360,7 @@ fn composite(entry: &Entry, images: &HashMap<AssetRef, Arc<Image>>) -> Image {
                 let at = (sy * image.width as usize + sx) * 4;
                 let source = &image.pixels[at..at + 4];
                 let alpha = f32::from(source[3]) / 255.0;
+                covered[y * width + x] |= source[3] > 0;
                 let out = &mut pixels[(y * width + x) * 4..][..3];
                 for channel in 0..3 {
                     let tinted = f32::from(source[channel]) * layer.tint[channel].clamp(0.0, 1.0);
@@ -328,10 +370,56 @@ fn composite(entry: &Entry, images: &HashMap<AssetRef, Arc<Image>>) -> Image {
             }
         }
     }
-    Image {
+    bleed(&mut pixels, &covered, width);
+    let image = Image {
         width: width as u32,
         height: height as u32,
         pixels,
+    };
+    (image, covered)
+}
+
+/// How far, in template pixels, a garment's edge is carried into the bare
+/// pixels beside it.
+const BLEED: usize = 4;
+
+/// Carries the garments' edge pixels into the uncovered pixels within
+/// [`BLEED`] of them, inside each face of each limb. R15 meshes reach a little
+/// past the template's drawn area at the armpits, collar and wrists, and
+/// without this the body colour shows there as wedges.
+fn bleed(pixels: &mut [u8], covered: &[bool], width: usize) {
+    let height = covered.len() / width;
+    let limbs = [
+        Limb::Torso,
+        Limb::RightArm,
+        Limb::LeftArm,
+        Limb::RightLeg,
+        Limb::LeftLeg,
+    ];
+    let source = pixels.to_vec();
+    for limb in limbs {
+        for face in clothing::FACES {
+            let [rx, ry, rw, rh] = limb.rect(face).map(|value| value as usize);
+            let (x1, y1) = ((rx + rw).min(width), (ry + rh).min(height));
+            for y in ry..y1 {
+                for x in rx..x1 {
+                    if covered[y * width + x] {
+                        continue;
+                    }
+                    let nearest = (y.saturating_sub(BLEED).max(ry)..(y + BLEED + 1).min(y1))
+                        .flat_map(|ny| {
+                            (x.saturating_sub(BLEED).max(rx)..(x + BLEED + 1).min(x1))
+                                .map(move |nx| (nx, ny))
+                        })
+                        .filter(|&(nx, ny)| covered[ny * width + nx])
+                        .min_by_key(|&(nx, ny)| nx.abs_diff(x).pow(2) + ny.abs_diff(y).pow(2));
+                    if let Some((nx, ny)) = nearest {
+                        let from = (ny * width + nx) * 4;
+                        pixels[(y * width + x) * 4..][..3].copy_from_slice(&source[from..from + 3]);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -474,5 +562,40 @@ mod tests {
     fn a_shirt_whose_texture_has_not_arrived_leaves_the_part_plain() {
         let (resolved, _) = dressed("rbxassetid://404").unwrap();
         assert!(resolved.instances[0].texture.is_none());
+    }
+
+    #[test]
+    fn a_garments_edge_is_carried_a_few_pixels_into_the_bare_template() {
+        let [x, y, w, _] = Limb::Torso.rect(NormalId::Front);
+        let (x, y, w) = (x as usize, y as usize, w as usize);
+        let mut pixels = [9, 9, 9, 255].repeat(TEMPLATE[0] as usize * TEMPLATE[1] as usize);
+        let mut covered = vec![false; pixels.len() / 4];
+        let width = TEMPLATE[0] as usize;
+        for cx in x..x + w / 2 {
+            covered[y * width + cx] = true;
+            pixels[(y * width + cx) * 4..][..3].copy_from_slice(&[200, 0, 0]);
+        }
+        bleed(&mut pixels, &covered, width);
+        let at = |px: usize| pixels[(y * width + px) * 4];
+        assert_eq!(at(x + w / 2 + BLEED - 1), 200, "within reach");
+        assert_eq!(at(x + w / 2 + BLEED + 1), 9, "beyond reach");
+        assert_eq!(at(x.saturating_sub(1)), 9, "outside the face");
+    }
+
+    #[test]
+    fn a_graphic_is_a_centred_square_on_the_upper_torso_at_its_own_aspect() {
+        let [x, y, w, h] = Limb::Torso.rect(NormalId::Front);
+        let image = |width, height| Image {
+            width,
+            height,
+            pixels: Vec::new(),
+        };
+        let [gx, gy, gw, gh] = graphic_region(&image(420, 420));
+        assert_eq!(gw, gh);
+        assert!(gw <= h * UPPER_TORSO && gw <= w);
+        assert_eq!(gx - x, (x + w) - (gx + gw), "centred across the chest");
+        assert_eq!(gy, y, "level with the top");
+        let [_, _, gw, gh] = graphic_region(&image(400, 200));
+        assert_eq!(gw, gh * 2.0);
     }
 }
