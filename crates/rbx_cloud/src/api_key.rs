@@ -66,16 +66,40 @@ impl ApiKey {
     /// as a last resort, trimmed. Returns `None` rather than an error: callers
     /// treat "no key" as "use the anonymous API surface".
     pub fn from_env_or_config() -> Option<Self> {
+        Self::resolve_current().map(|(key, _)| key)
+    }
+
+    /// Where [`from_env_or_config`](Self::from_env_or_config) finds its key
+    /// right now, for a log line (never the key itself).
+    pub fn source() -> &'static str {
+        match Self::resolve_current() {
+            None => "none",
+            Some((_, source)) => source,
+        }
+    }
+
+    fn resolve_current() -> Option<(Self, &'static str)> {
         let installed = INSTALLED.read().unwrap_or_else(|e| e.into_inner()).clone();
         if let Some(key) = installed.filter(|_| non_empty_env("RBX_API_KEY").is_none()) {
-            return Some(key);
+            return Some((key, "the credential store"));
         }
+        let from_env = non_empty_env("RBX_API_KEY").is_some();
         resolve(
             non_empty_env("RBX_API_KEY"),
             non_empty_env("XDG_CONFIG_HOME"),
             non_empty_env("APPDATA"),
             non_empty_env("HOME"),
         )
+        .map(|key| {
+            (
+                key,
+                if from_env {
+                    "RBX_API_KEY"
+                } else {
+                    "the api_key file"
+                },
+            )
+        })
     }
 }
 

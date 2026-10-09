@@ -8,6 +8,7 @@ mod appearance;
 mod clothing;
 mod fit;
 mod makeup;
+mod wrap;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -51,6 +52,8 @@ pub(super) struct Entry {
     dressing: Option<Box<clothing::Dressing>>,
     /// Face makeup, laid into the colour map in the head's own UVs.
     makeup: Vec<makeup::Makeup>,
+    /// A layered garment's cages, to fit it to the body it is worn on.
+    wrap: Option<wrap::Wrap>,
 }
 
 /// Every file-mesh instance in a DOM, extracted once and reused both to list
@@ -166,7 +169,9 @@ impl Entry {
 impl Plan {
     /// Every distinct mesh asset this plan needs, in first-seen order.
     pub(crate) fn mesh_refs(&self) -> Vec<AssetRef> {
-        dedup(self.entries.iter().map(|entry| &entry.mesh))
+        dedup(self.entries.iter().flat_map(|entry| {
+            std::iter::once(&entry.mesh).chain(entry.wrap.iter().flat_map(wrap::Wrap::meshes))
+        }))
     }
 
     /// Swaps one part's entry for `entry`, in the place the old one held, or
@@ -250,6 +255,7 @@ pub(crate) fn resolve(
     let mut meshes = meshes;
     let mut images = images;
     let dressed = clothing::derive(&plan.entries, &meshes, &images);
+    let wrapped = wrap::derive(&plan.entries, &meshes);
 
     for entry in &plan.entries {
         let Some(mesh) = meshes.get(&entry.mesh).cloned() else {
@@ -273,6 +279,10 @@ pub(crate) fn resolve(
             meshes.insert(key.clone(), derived.clone());
             images.insert(image_key.clone(), image.clone());
             (mesh_key, texture, color) = (key.clone(), Some(image_key.clone()), [1.0; 3]);
+        }
+        if let Some((key, derived)) = wrapped.get(&entry.referent) {
+            meshes.insert(key.clone(), derived.clone());
+            mesh_key = key.clone();
         }
         // Makeup is laid into the colour map the head would draw.
         let mut made_up = false;
@@ -368,6 +378,7 @@ fn from_mesh_part(
         casts_shadow: super::casts_shadow(properties),
         dressing: clothing::dressing(dom, referent).map(Box::new),
         makeup: makeup::of(dom, instance),
+        wrap: wrap::of(dom, database, referent),
     })
 }
 
@@ -416,6 +427,7 @@ fn from_special_mesh_child(
         casts_shadow: super::casts_shadow(part.properties()),
         dressing: None,
         makeup: makeup::of(dom, part),
+        wrap: None,
     })
 }
 

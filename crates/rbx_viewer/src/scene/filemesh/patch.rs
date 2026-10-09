@@ -52,6 +52,10 @@ impl Entry {
             .filter(|reference| resolved.images.contains_key(reference));
         let (mut mesh_key, mut color) = (self.mesh.clone(), self.color);
         let mut worn = false;
+        let wrapped = super::wrap::key(self.referent);
+        if self.wrap.is_some() && resolved.meshes.contains_key(&wrapped) {
+            mesh_key = wrapped;
+        }
         // A dressed section reuses what its limb was dressed with, or asks for
         // the whole limb to be dressed again when an edit has outdated it.
         if let Some((key, image)) = super::clothing::keys(self, &resolved.images) {

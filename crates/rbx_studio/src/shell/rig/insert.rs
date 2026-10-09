@@ -62,6 +62,9 @@ impl Shell {
                 .await;
             let _ = this.update(cx, |shell, cx| match result {
                 Ok(fetched) => {
+                    for line in &fetched.log {
+                        shell.output.push(SOURCE, Feedback::Output(line.clone()));
+                    }
                     let mut options =
                         avatar::options_for(&fetched.avatar, joints, [0.; 3], rig_type);
                     let early = avatar::apply_packages(&mut options, &fetched.worn);

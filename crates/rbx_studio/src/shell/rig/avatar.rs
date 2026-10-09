@@ -53,6 +53,8 @@ pub(crate) struct Worn {
 pub(crate) struct Fetched {
     pub(crate) avatar: Avatar,
     pub(crate) worn: Vec<Worn>,
+    /// Which route served each download, for the Output panel.
+    pub(crate) log: Vec<String>,
 }
 
 fn is_accessory(kind: u32) -> bool {
@@ -176,7 +178,24 @@ pub(crate) fn fetch(user: Option<u64>) -> Result<Fetched, String> {
     let avatar = client.avatar(id).map_err(|err| user_error(&err, id))?;
     // Asked once, and only after a keyed refusal: what the key grants.
     let grant = std::cell::OnceCell::new();
-    ready(avatar, id, |asset| download(&client, asset, keyed, &grant))
+    let log = std::cell::RefCell::new(vec![format!(
+        "Asset downloads: anonymous first, then {}",
+        if keyed {
+            format!(
+                "the Open Cloud key from {} when Roblox refuses",
+                ApiKey::source()
+            )
+        } else {
+            "nothing (no Open Cloud key is stored)".to_string()
+        }
+    )]);
+    let fetched = ready(avatar, id, |asset| {
+        download(&client, asset, keyed, &grant, &log)
+    })?;
+    Ok(Fetched {
+        log: log.into_inner(),
+        ..fetched
+    })
 }
 
 const DOWNLOAD_ATTEMPTS: u32 = 3;
@@ -188,11 +207,20 @@ fn download(
     id: u64,
     keyed: bool,
     grant: &std::cell::OnceCell<Option<Grant>>,
+    log: &std::cell::RefCell<Vec<String>>,
 ) -> Result<Vec<u8>, String> {
     let mut attempt = 1;
     loop {
         match client.asset(id) {
-            Ok(content) => return Ok(content.bytes),
+            Ok(content) => {
+                let route = if content.keyed {
+                    "the stored key"
+                } else {
+                    "anonymously"
+                };
+                log.borrow_mut().push(format!("Asset {id}: served {route}"));
+                return Ok(content.bytes);
+            }
             Err(err) if attempt < DOWNLOAD_ATTEMPTS && is_transient(&err) => {
                 attempt += 1;
                 std::thread::sleep(std::time::Duration::from_secs(1));
@@ -209,7 +237,9 @@ fn download(
                             .map(|c| c.grant)
                     })
                 });
-                return Err(download_error(&err, keyed, legacy.and_then(Option::as_ref)));
+                let why = download_error(&err, keyed, legacy.and_then(Option::as_ref));
+                log.borrow_mut().push(format!("Asset {id}: {why}"));
+                return Err(why);
             }
         }
     }
@@ -348,7 +378,11 @@ fn gather(avatar: Avatar, download: impl Fn(u64) -> Result<Vec<u8>, String>) -> 
             }),
         })
         .collect();
-    Fetched { avatar, worn }
+    Fetched {
+        avatar,
+        worn,
+        log: Vec::new(),
+    }
 }
 
 /// The message for a failed avatar request.
@@ -757,7 +791,7 @@ fn wear_character_meshes(dom: &mut WeakDom, rig: Ref, source: &WeakDom) -> Resul
 /// fitted by; every other accessory is rigid.
 const LAYERED: std::ops::RangeInclusive<u32> = 64..=72;
 
-const LAYERED_NOTE: &str = "layered clothing: Roblox deforms it to the body through its cage; here it is placed undeformed, which fits the default-proportioned rig and drifts on a scaled or custom body";
+const LAYERED_NOTE: &str = "layered clothing: Roblox fits it to the body by its cages; the viewer approximates that by moving the garment with the nearest cage vertices, so it follows the body but not as exactly as Roblox does";
 
 fn wear_accessory(
     dom: &mut WeakDom,

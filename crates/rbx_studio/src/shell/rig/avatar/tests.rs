@@ -726,7 +726,7 @@ fn layered_clothing_is_seated_on_its_body_part() {
     let [Fate::Approximated(note)] = &fates[..] else {
         panic!("{fates:?}");
     };
-    assert!(note.contains("undeformed"));
+    assert!(note.contains("nearest cage vertices"));
     let handle = child_named(&dom, child_named(&dom, rig, "Jacket").unwrap(), "Handle").unwrap();
     let torso = child_named(&dom, rig, "UpperTorso").unwrap();
     let position = |node| {
@@ -754,7 +754,7 @@ fn layered_clothing_is_refused_on_r6_and_approximations_are_noted() {
     assert!(
         notes
             .iter()
-            .any(|n| n.contains("Jacket") && n.contains("undeformed")),
+            .any(|n| n.contains("Jacket") && n.contains("nearest cage vertices")),
         "{notes:?}"
     );
 }

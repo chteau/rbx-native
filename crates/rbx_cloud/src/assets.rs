@@ -17,6 +17,8 @@ const EXCERPT_CHARS: usize = 200;
 pub struct AssetContent {
     pub bytes: Vec<u8>,
     pub asset_type_id: Option<u32>,
+    /// Served through the Open Cloud key rather than anonymously.
+    pub keyed: bool,
 }
 
 #[derive(Deserialize)]
@@ -59,6 +61,11 @@ impl Client {
                 })?
                 .to_string();
             let cdn = self.get_raw(&location, false, true)?;
+            // A CDN that refuses the redirect target is the same "sign in"
+            // answer as a 401 from the delivery service: let the key try.
+            if is_auth_required(cdn.status) {
+                return Err(CloudError::AuthRequired { asset_id });
+            }
             return finish(&location, cdn, asset_type_id);
         }
 
@@ -71,7 +78,10 @@ impl Client {
     }
 
     pub fn asset_with_key(&self, asset_id: u64) -> Result<AssetContent, CloudError> {
-        self.keyed_delivery(&format!("{KEYED_URL}/{asset_id}"), Some(asset_id))
+        let mut content =
+            self.keyed_delivery(&format!("{KEYED_URL}/{asset_id}"), Some(asset_id))?;
+        content.keyed = true;
+        Ok(content)
     }
 
     /// `asset_id` is `Some` for a plain asset, whose 401/403 is classified
@@ -187,6 +197,7 @@ fn finish(
     Ok(AssetContent {
         bytes: response.body,
         asset_type_id,
+        keyed: false,
     })
 }
 
@@ -275,6 +286,7 @@ mod tests {
         Ok(AssetContent {
             bytes: bytes.to_vec(),
             asset_type_id: Some(11),
+            keyed: false,
         })
     }
 
@@ -437,6 +449,7 @@ mod tests {
         let content = |bytes: &[u8]| AssetContent {
             bytes: bytes.to_vec(),
             asset_type_id: Some(9),
+            keyed: false,
         };
         assert!(place_bytes(content(b"<roblox!rest")).is_ok());
         assert!(matches!(

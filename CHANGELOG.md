@@ -2,9 +2,15 @@
 
 ## 2026-10-09
 
+- **Layered clothing fits the body in the viewer.** A `MeshPart` with a
+  `WrapLayer` is deformed from its reference cage onto the body's cages
+  (nearest-vertex blend, `Order` push-out), so a jacket covers the torso
+  instead of floating undeformed. Avatar import now logs per asset whether
+  it was served anonymously or through the stored key (and which key
+  source), and a CDN 401 on the anonymous route falls back to the key.
 - **Rig Builder: layered clothing and makeup.** Layered clothing
   (jackets, sweaters, shorts, skirts, shoes) is welded to the R15 body part
-  it is cut for, undeformed (no cage fitting), and makeup (face, lip, eye)
+  it is cut for, and makeup (face, lip, eye)
   is painted into the head's colour map; both say so in Output. A 401 on
   clothing now names the `legacy-asset:manage` scope to add to the key.
   Layered garments now sit on their body part (the sleeves of a sweater

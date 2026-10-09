@@ -56,7 +56,12 @@ impl AssetFetcher for CloudFetcher {
     fn fetch_id(&self, id: u64) -> Result<Vec<u8>, FetchError> {
         self.0
             .asset(id)
-            .map(|content| content.bytes)
+            .map(|content| {
+                if content.keyed {
+                    eprintln!("rbxview: asset {id} served through the Open Cloud key");
+                }
+                content.bytes
+            })
             .map_err(|err| fetch_error(id, err))
     }
 }

@@ -2328,7 +2328,7 @@ against `Roblox/creator-docs` rather than assumed:
     `avatar.roblox.com/v1/users/{id}/avatar` endpoint and anonymous
     `assetdelivery` are read (My Avatar only needs the key to learn its
     user id). It applies body scales, colours, accessories welded at the
-    matching attachment (layered clothing keeps its `WrapLayer` and sits on its body part, undeformed; makeup is painted into the head's colour map), shirts,
+    matching attachment (layered clothing keeps its `WrapLayer` and sits on its body part, fitted to the body cages by nearest-vertex blend; makeup is painted into the head's colour map), shirts,
     pants and T-shirts, the player's animation choices into the `Animate`
     states, R15 body-part packages (mesh, texture, attachments, cage; a
     package missing a rig attachment is skipped) and R6 `CharacterMesh`es.
