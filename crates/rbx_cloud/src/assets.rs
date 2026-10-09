@@ -41,8 +41,24 @@ impl Client {
         )
     }
 
+    fn anonymous_root(&self) -> &str {
+        #[cfg(test)]
+        if let Some((anonymous, _)) = &self.asset_roots {
+            return anonymous;
+        }
+        ANONYMOUS_URL
+    }
+
+    fn keyed_root(&self) -> &str {
+        #[cfg(test)]
+        if let Some((_, keyed)) = &self.asset_roots {
+            return keyed;
+        }
+        KEYED_URL
+    }
+
     pub fn asset_anonymous(&self, asset_id: u64) -> Result<AssetContent, CloudError> {
-        let url = format!("{ANONYMOUS_URL}?id={asset_id}");
+        let url = format!("{}?id={asset_id}", self.anonymous_root());
         // Follow the 302 ourselves (rather than let ureq auto-follow) so we
         // can read the `Roblox-AssetTypeId` header off the redirect, which is
         // not guaranteed to survive onto the final CDN response.
@@ -79,7 +95,7 @@ impl Client {
 
     pub fn asset_with_key(&self, asset_id: u64) -> Result<AssetContent, CloudError> {
         let mut content =
-            self.keyed_delivery(&format!("{KEYED_URL}/{asset_id}"), Some(asset_id))?;
+            self.keyed_delivery(&format!("{}/{asset_id}", self.keyed_root()), Some(asset_id))?;
         content.keyed = true;
         Ok(content)
     }
@@ -500,5 +516,91 @@ mod tests {
     fn header_u32_is_none_when_missing() {
         let headers = ureq::http::HeaderMap::new();
         assert_eq!(header_u32(&headers, "roblox-assettypeid"), None);
+    }
+
+    /// A loopback server answering each request with `route(path, has_key)`
+    /// as (status, extra header, body).
+    fn serve(
+        route: impl Fn(&str, bool) -> (u16, Option<(&'static str, String)>, Vec<u8>) + Send + 'static,
+    ) -> String {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let root = format!("http://{}", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for mut stream in listener.incoming().flatten() {
+                let mut buf = [0u8; 4096];
+                let n = stream.read(&mut buf).unwrap_or(0);
+                let head = String::from_utf8_lossy(&buf[..n]).to_lowercase();
+                let path = head.split_whitespace().nth(1).unwrap_or("").to_string();
+                let (status, header, body) = route(&path, head.contains("x-api-key"));
+                // Redirect targets must be absolute: `@` stands for this server.
+                let root = format!("http://{}", listener.local_addr().unwrap());
+                let body: Vec<u8> = String::from_utf8_lossy(&body).replace('@', &root).into();
+                let extra = header.map_or(String::new(), |(k, v)| {
+                    format!("{k}: {}\r\n", v.replace('@', &root))
+                });
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 {status} X\r\n{extra}content-length: {}\r\nconnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(&body);
+            }
+        });
+        root
+    }
+
+    fn mock_client(root: &str, key: bool) -> Client {
+        let mut client = Client::new(key.then(|| crate::ApiKey::new("k")));
+        client.asset_roots = Some((format!("{root}/anon"), format!("{root}/keyed")));
+        client
+    }
+
+    #[test]
+    fn an_anonymous_download_is_not_marked_keyed() {
+        let root = serve(|path, _| match path {
+            p if p.starts_with("/anon") => (200, None, b"hat".to_vec()),
+            _ => (500, None, vec![]),
+        });
+        let got = mock_client(&root, true).asset(1).unwrap();
+        assert_eq!(got.bytes, b"hat");
+        assert!(!got.keyed);
+    }
+
+    #[test]
+    fn a_cdn_refusal_after_the_redirect_falls_back_to_the_key() {
+        for refusal in [401, 403, 409] {
+            let root = serve(move |path, key| {
+                if path.starts_with("/anon") {
+                    (302, Some(("location", "@/cdn/private".into())), vec![])
+                } else if path.starts_with("/cdn/private") {
+                    (refusal, None, vec![])
+                } else if path.starts_with("/keyed") && key {
+                    let json = br#"{"location":"@/cdn/signed","assetTypeId":11}"#;
+                    (200, None, json.to_vec())
+                } else if path.starts_with("/cdn/signed") {
+                    (200, None, b"private shirt".to_vec())
+                } else {
+                    (500, None, vec![])
+                }
+            });
+            let got = mock_client(&root, true).asset(1).unwrap();
+            assert_eq!(got.bytes, b"private shirt", "after a CDN {refusal}");
+            assert!(got.keyed);
+            assert_eq!(got.asset_type_id, Some(11));
+        }
+    }
+
+    #[test]
+    fn a_cdn_refusal_without_a_key_stays_refused() {
+        let root = serve(|path, _| {
+            if path.starts_with("/anon") {
+                (302, Some(("location", "@/cdn/private".into())), vec![])
+            } else {
+                (403, None, vec![])
+            }
+        });
+        let got = mock_client(&root, false).asset(1);
+        assert!(matches!(got, Err(CloudError::AuthRequired { asset_id: 1 })));
     }
 }

@@ -16,6 +16,10 @@ const USER_AGENT: &str = concat!("rbx-native/", env!("CARGO_PKG_VERSION"));
 pub struct Client {
     agent: ureq::Agent,
     api_key: Option<ApiKey>,
+    /// Asset-delivery roots (anonymous, keyed) a test points at a local
+    /// server.
+    #[cfg(test)]
+    pub(crate) asset_roots: Option<(String, String)>,
 }
 
 /// A response reduced to what every endpoint needs to make its own success/
@@ -40,6 +44,8 @@ impl Client {
         Client {
             agent: config.into(),
             api_key,
+            #[cfg(test)]
+            asset_roots: None,
         }
     }
 

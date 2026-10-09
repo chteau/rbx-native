@@ -178,17 +178,7 @@ pub(crate) fn fetch(user: Option<u64>) -> Result<Fetched, String> {
     let avatar = client.avatar(id).map_err(|err| user_error(&err, id))?;
     // Asked once, and only after a keyed refusal: what the key grants.
     let grant = std::cell::OnceCell::new();
-    let log = std::cell::RefCell::new(vec![format!(
-        "Asset downloads: anonymous first, then {}",
-        if keyed {
-            format!(
-                "the Open Cloud key from {} when Roblox refuses",
-                ApiKey::source()
-            )
-        } else {
-            "nothing (no Open Cloud key is stored)".to_string()
-        }
-    )]);
+    let log = std::cell::RefCell::new(vec![route_header(keyed, ApiKey::source())]);
     let fetched = ready(avatar, id, |asset| {
         download(&client, asset, keyed, &grant, &log)
     })?;
@@ -196,6 +186,28 @@ pub(crate) fn fetch(user: Option<u64>) -> Result<Fetched, String> {
         log: log.into_inner(),
         ..fetched
     })
+}
+
+/// The Output line that opens an import's download log.
+pub(crate) fn route_header(keyed: bool, source: impl std::fmt::Display) -> String {
+    format!(
+        "Asset downloads: anonymous first, then {}",
+        if keyed {
+            format!("the Open Cloud key from {source} when Roblox refuses")
+        } else {
+            "nothing (no Open Cloud key is stored)".to_string()
+        }
+    )
+}
+
+/// The Output line for one asset that downloaded.
+pub(crate) fn served_line(id: u64, keyed: bool) -> String {
+    let route = if keyed {
+        "the stored key"
+    } else {
+        "anonymously"
+    };
+    format!("Asset {id}: served {route}")
 }
 
 const DOWNLOAD_ATTEMPTS: u32 = 3;
@@ -213,12 +225,7 @@ fn download(
     loop {
         match client.asset(id) {
             Ok(content) => {
-                let route = if content.keyed {
-                    "the stored key"
-                } else {
-                    "anonymously"
-                };
-                log.borrow_mut().push(format!("Asset {id}: served {route}"));
+                log.borrow_mut().push(served_line(id, content.keyed));
                 return Ok(content.bytes);
             }
             Err(err) if attempt < DOWNLOAD_ATTEMPTS && is_transient(&err) => {

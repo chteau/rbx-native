@@ -859,3 +859,17 @@ fn a_dynamic_head_the_mock_refuses_falls_back_to_the_stock_head_with_a_note() {
     assert!(child_of_class(&dom, head, "FaceControls").is_some());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn the_output_log_says_which_route_served_each_asset() {
+    assert_eq!(
+        route_header(true, "the credential store"),
+        "Asset downloads: anonymous first, then the Open Cloud key from the credential store when Roblox refuses"
+    );
+    assert_eq!(
+        route_header(false, "none"),
+        "Asset downloads: anonymous first, then nothing (no Open Cloud key is stored)"
+    );
+    assert_eq!(served_line(42, false), "Asset 42: served anonymously");
+    assert_eq!(served_line(43, true), "Asset 43: served the stored key");
+}
