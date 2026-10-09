@@ -307,3 +307,22 @@ fn a_special_mesh_cylinder_lies_along_x() {
     assert_eq!(geometry.kind, ShapeKind::CylinderX);
     assert_eq!(geometry.size, Vec3::new(0.4, 4.0, 4.0));
 }
+
+#[test]
+fn an_unresolved_mesh_part_head_reads_as_a_ball_but_other_mesh_parts_stay_boxes() {
+    let mut dom = WeakDom::new();
+    let head = part(&mut dom, "MeshPart");
+    dom.get_mut(head).unwrap().set_name("Head");
+    let torso = part(&mut dom, "MeshPart");
+    let kind = |dom: &WeakDom, referent| {
+        resolve(
+            dom,
+            &database(),
+            dom.get(referent).unwrap(),
+            Vec3::new(2.0, 1.0, 1.0),
+        )
+        .kind
+    };
+    assert_eq!(kind(&dom, head), ShapeKind::Ball);
+    assert_eq!(kind(&dom, torso), ShapeKind::Box);
+}
