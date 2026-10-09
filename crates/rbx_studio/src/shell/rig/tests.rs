@@ -797,3 +797,27 @@ fn an_r6_rig_lists_its_children_in_the_reference_order() {
     assert_eq!(classes(&dom, head)[..2], ["SpecialMesh", "Decal"]);
     assert_eq!(children_of_class(&dom, torso, "Decal").len(), 1);
 }
+
+#[test]
+fn redo_after_undo_brings_the_whole_rig_back() {
+    use crate::history::History;
+    for options in every_combination() {
+        let (mut dom, workspace) = place();
+        dom.take_changes();
+        let mut history = History::new(10);
+        history.push(dom.clone());
+        let rig = build_rig(&mut dom, &options, workspace);
+        let (count, expected) = (count_tree(&dom, rig), fingerprint(&dom, rig));
+        history.record_changes(dom.take_changes());
+        let (undone, _) = history.undo(dom.clone()).expect("undo");
+        let (redone, changes) = history.redo(undone).expect("redo");
+        assert!(!changes.is_empty());
+        let back = child(&redone, workspace_of(&redone), "Rig").expect("the rig is back");
+        assert_eq!(count_tree(&redone, back), count);
+        assert_eq!(fingerprint(&redone, back), expected);
+        assert!(
+            history.redo(redone).is_none(),
+            "redo took more than one step"
+        );
+    }
+}
