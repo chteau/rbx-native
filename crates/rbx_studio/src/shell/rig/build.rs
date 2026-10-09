@@ -100,16 +100,28 @@ const NO_COLLISION: [(&str, &[&str]); 8] = [
 ];
 
 /// `BallSocketConstraint` limits per joint, without the side: the cone and
-/// the twist range, in degrees. `Root` is not limited.
-const SOCKET_LIMITS: [(&str, f32, f32, f32); 8] = [
-    ("Neck", 45., -40., 40.),
-    ("Waist", 20., -40., 20.),
-    ("Shoulder", 110., -85., 85.),
-    ("Elbow", 20., 5., 120.),
-    ("Wrist", 30., -10., 10.),
-    ("Hip", 40., -5., 80.),
-    ("Knee", 5., -120., -5.),
-    ("Ankle", 10., -10., 10.),
+/// the twist range in degrees, and the friction torque (the reference
+/// Mannequin's). `Root` is not limited.
+const SOCKET_LIMITS: [(&str, f32, f32, f32, f32); 8] = [
+    ("Neck", 45., -40., 40., 8.729),
+    ("Waist", 20., -40., 20., 15.25),
+    ("Shoulder", 110., -85., 85., 4.667),
+    ("Elbow", 20., 5., 120., 2.483),
+    ("Wrist", 30., -10., 10., 1.408),
+    ("Hip", 40., -5., 80., 8.005),
+    ("Knee", 5., -120., -5., 8.583),
+    ("Ankle", 10., -10., 10., 6.099),
+];
+
+/// The reference Mannequin's body part packages, in `BodyPart` order: head,
+/// torso, left arm, right arm, left leg, right leg.
+const MANNEQUIN_PACKAGES: [i64; 6] = [
+    136_141_567_062_770,
+    138_296_103_915_145,
+    91_168_125_093_790,
+    134_193_175_919_675,
+    126_605_236_989_641,
+    127_365_802_091_028,
 ];
 
 /// Body part slots of a `HumanoidDescription`, one `BodyPartDescription` each.
@@ -510,7 +522,9 @@ fn constraints(dom: &mut WeakDom, host: Ref, joint: &str, a0: Ref, a1: Ref) {
         set(dom, drive, property, Variant::Float32(1.));
     }
     let kind = joint.trim_start_matches("Left").trim_start_matches("Right");
-    let Some(&(_, cone, low, high)) = SOCKET_LIMITS.iter().find(|(name, ..)| *name == kind) else {
+    let Some(&(_, cone, low, high, friction)) =
+        SOCKET_LIMITS.iter().find(|(name, ..)| *name == kind)
+    else {
         return;
     };
     let socket = dom.new_instance(
@@ -525,6 +539,7 @@ fn constraints(dom: &mut WeakDom, host: Ref, joint: &str, a0: Ref, a1: Ref) {
     set(dom, socket, "UpperAngle", Variant::Float32(cone));
     set(dom, socket, "TwistLowerAngle", Variant::Float32(low));
     set(dom, socket, "TwistUpperAngle", Variant::Float32(high));
+    set(dom, socket, "MaxFrictionTorque", Variant::Float32(friction));
     set(dom, socket, "Radius", Variant::Float32(0.15));
     set(dom, socket, "Restitution", Variant::Float32(0.));
 }
@@ -592,6 +607,14 @@ fn description(dom: &mut WeakDom, humanoid: Ref, scales: &Scales) {
     for slot in 0..BODY_PARTS {
         let part = dom.new_instance("BodyPartDescription", "BodyPartDescription", Some(node));
         set(dom, part, "BodyPart", Variant::Enum(slot));
+        if Family::of(scales.body_type) == Family::Mannequin {
+            set(
+                dom,
+                part,
+                "AssetId",
+                Variant::Int64(MANNEQUIN_PACKAGES[slot as usize]),
+            );
+        }
         set(
             dom,
             part,

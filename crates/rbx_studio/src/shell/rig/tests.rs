@@ -827,3 +827,43 @@ fn redo_after_undo_brings_the_whole_rig_back() {
         );
     }
 }
+
+#[test]
+fn the_mannequin_description_and_sockets_carry_the_reference_values() {
+    let options = RigOptions::new(
+        RigType::R15,
+        BodyShape::Masculine,
+        BodyScale::RthroNormal,
+        JointStyle::AnimationConstraint,
+    );
+    let (dom, rig) = build(&options);
+    let humanoid = child(&dom, rig, "Humanoid").unwrap();
+    let description = child(&dom, humanoid, "HumanoidDescription").unwrap();
+    let ids: Vec<_> = dom
+        .get(description)
+        .unwrap()
+        .children()
+        .iter()
+        .map(|&p| dom.get(p).unwrap().properties().get("AssetId").cloned())
+        .collect();
+    assert_eq!(ids[0], Some(Variant::Int64(136_141_567_062_770)));
+    assert_eq!(ids[5], Some(Variant::Int64(127_365_802_091_028)));
+    let upper = child(&dom, rig, "UpperTorso").unwrap();
+    let waist = child(&dom, upper, "WaistBallSocket").unwrap();
+    assert_eq!(float(&dom, waist, "MaxFrictionTorque"), 15.25);
+    let (classic, classic_rig) = build(&RigOptions::new(
+        RigType::R15,
+        BodyShape::Masculine,
+        BodyScale::Classic,
+        JointStyle::AnimationConstraint,
+    ));
+    let humanoid = child(&classic, classic_rig, "Humanoid").unwrap();
+    let description = child(&classic, humanoid, "HumanoidDescription").unwrap();
+    let first = classic.get(description).unwrap().children()[0];
+    assert!(classic
+        .get(first)
+        .unwrap()
+        .properties()
+        .get("AssetId")
+        .is_none());
+}
