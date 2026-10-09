@@ -523,3 +523,93 @@ fn the_humanoid_description_records_the_avatars_ids() {
         );
     }
 }
+
+fn clothing(class: &str, key: &str, value: &str) -> WeakDom {
+    let mut dom = WeakDom::new();
+    let node = dom.new_instance(class, class, None);
+    set(&mut dom, node, key, uri(value));
+    dom
+}
+
+#[test]
+fn legacy_template_urls_become_asset_ids_and_a_tshirt_gets_its_own_graphic() {
+    let avatar = avatar_r15();
+    let (mut dom, rig, _) = rig_of(&avatar);
+    let worn = vec![
+        worn_asset(
+            2,
+            11,
+            clothing(
+                "Shirt",
+                "ShirtTemplate",
+                "http://www.roblox.com/asset/?id=77 ",
+            ),
+        ),
+        worn_asset(
+            3,
+            12,
+            clothing(
+                "Pants",
+                "PantsTemplate",
+                "https://assetdelivery.roblox.com/v1/asset/?id=88",
+            ),
+        ),
+        worn_asset(4, 2, clothing("ShirtGraphic", "Graphic", "rbxassetid://99")),
+    ];
+    assert_eq!(used(&dress(&mut dom, rig, &worn)), 3);
+    let value = |class: &str, key: &str| {
+        let found = children_of(&dom, rig, class);
+        assert_eq!(found.len(), 1, "{class}");
+        dom.get(found[0]).unwrap().properties().get(key).cloned()
+    };
+    assert_eq!(
+        value("Shirt", "ShirtTemplate"),
+        Some(uri("rbxassetid://77"))
+    );
+    assert_eq!(
+        value("Pants", "PantsTemplate"),
+        Some(uri("rbxassetid://88"))
+    );
+    assert_eq!(
+        value("ShirtGraphic", "Graphic"),
+        Some(uri("rbxassetid://99"))
+    );
+}
+
+#[test]
+fn clothing_with_no_texture_is_named_not_applied() {
+    let avatar = avatar_r15();
+    let (mut dom, rig, _) = rig_of(&avatar);
+    let worn = vec![worn_asset(2, 11, clothing("Shirt", "ShirtTemplate", ""))];
+    let fates = dress(&mut dom, rig, &worn);
+    assert!(
+        matches!(&fates[0], Fate::Left(why) if why.contains("empty texture")),
+        "{fates:?}"
+    );
+    assert!(children_of(&dom, rig, "Shirt").is_empty());
+}
+
+#[test]
+fn the_mock_serves_pants_and_a_tshirt_fixture() {
+    let extra = r#",{"id":4,"name":"Jeans","assetType":{"id":12,"name":"Pants"}},{"id":5,"name":"Logo","assetType":{"id":2,"name":"TShirt"}}"#;
+    let dir = mock_dir("clothes", &avatar_json("R15", extra));
+    for (id, dom) in [
+        (4, clothing("Pants", "PantsTemplate", "rbxassetid://88")),
+        (5, clothing("ShirtGraphic", "Graphic", "rbxassetid://99")),
+    ] {
+        std::fs::write(
+            dir.join(format!("{id}.rbxm")),
+            rbx_binary::serialize(&dom).unwrap(),
+        )
+        .unwrap();
+    }
+    let fetched = mock_fetch(dir.to_str().unwrap(), Some(156)).unwrap();
+    assert_eq!(fetched.worn.len(), 5);
+    assert!(fetched.worn.iter().all(|w| w.dom.is_ok()));
+    let (mut dom, rig, _) = rig_of(&fetched.avatar);
+    // The Torso fixture is an empty model, so it is the one left out.
+    assert_eq!(used(&dress(&mut dom, rig, &fetched.worn)), 4);
+    assert_eq!(children_of(&dom, rig, "Pants").len(), 1);
+    assert_eq!(children_of(&dom, rig, "ShirtGraphic").len(), 1);
+    let _ = std::fs::remove_dir_all(&dir);
+}

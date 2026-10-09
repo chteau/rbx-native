@@ -2303,6 +2303,18 @@ against `Roblox/creator-docs` rather than assumed:
     Mannequin or dynamic head has none, the face is in its texture or
     `FaceControls`). Rthro Slender and Feminine on Rthro
     are this editor's presets (the Mannequin parts scaled), not Roblox's.
+  - **Classic clothing renders.** The viewer used to ignore `Shirt`,
+    `Pants` and `ShirtGraphic` altogether, so worn clothes were set on the
+    rig but never drawn. R6 limbs now wear the 585x559 template's cuts as
+    decals; R15 limbs (whose UVs are not the template's) are re-mapped
+    per triangle onto the template cut for the whole limb and drawn with a
+    CPU composite over the body colour. Templates are stored as
+    `rbxassetid://` and a T-shirt is the rig's own `ShirtGraphic`. Open:
+    the T-shirt graphic is stretched over the torso front, a later
+    `Shirt`/`Pants` edit repaints on the next reload rather than live, bodies
+    that carry their own texture or `SurfaceAppearance` (Rthro and bundle
+    bodies, e.g. user 36) are not dressed, and
+    most user-made clothing images need the keyed route (401 anonymously).
   - **Player / My Avatar** need no API key and no cookie: the public
     `avatar.roblox.com/v1/users/{id}/avatar` endpoint and anonymous
     `assetdelivery` are read (My Avatar only needs the key to learn its

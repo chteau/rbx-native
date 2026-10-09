@@ -599,20 +599,32 @@ fn wear_clothing(rig_dom: &mut WeakDom, rig: Ref, source: &WeakDom) -> Result<()
     let template = match instance.class() {
         "Shirt" => "ShirtTemplate",
         "Pants" => "PantsTemplate",
-        _ => {
-            return clipboard::graft(rig_dom, source, item, rig)
-                .map(drop)
-                .ok_or_else(|| "could not copy the T-shirt in".into())
-        }
+        _ => "Graphic",
     };
     let value = instance
         .properties()
         .get(template)
         .ok_or("the clothing has no texture")?;
+    let value = normalised_template(value)?;
     let own = child_of_class(rig_dom, rig, instance.class())
         .unwrap_or_else(|| rig_dom.new_instance(instance.class(), instance.class(), Some(rig)));
-    set(rig_dom, own, template, value.clone());
+    set(rig_dom, own, template, value);
     Ok(())
+}
+
+/// Clothing carries the legacy `http://www.roblox.com/asset/?id=N ` form
+/// (sometimes with a trailing space); the rig stores `rbxassetid://N`.
+fn normalised_template(value: &Variant) -> Result<Variant, String> {
+    let Variant::Content(Content::Uri(text)) = value else {
+        return Ok(value.clone());
+    };
+    match rbx_assets::AssetRef::parse(text) {
+        Ok(rbx_assets::AssetRef::Id(id)) => {
+            Ok(Variant::Content(Content::Uri(format!("rbxassetid://{id}"))))
+        }
+        Ok(rbx_assets::AssetRef::Empty) => Err("the clothing has an empty texture".into()),
+        _ => Ok(value.clone()),
+    }
 }
 
 /// A classic face is a `Decal`; it replaces the texture of the Head's own.

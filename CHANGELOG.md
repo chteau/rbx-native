@@ -19,6 +19,13 @@
   `HumanoidDescription` records the avatar's asset ids and colours; the
   Mannequin carries the reference's `Bone`s and socket friction; classic
   heads carry the face `Decal`. — @chteau
+- **Classic clothing draws.** Shirts, pants and T-shirts on a rig (and in
+  any place) now show in the viewport: R6 limbs wear the template's cuts
+  as decals, R15 limbs are re-mapped onto the same template and composited
+  over their body colour. Imported players' templates are stored as
+  `rbxassetid://` (legacy `asset/?id=` links are normalised) and a T-shirt
+  becomes a `ShirtGraphic` of the rig. Clothing the anonymous asset service
+  refuses is named in Output, and the limb keeps its body colour. — @chteau
 - **Chunked `.mesh` files (versions 6.00 and 7.00).** The current Rthro
   bodies and R15 heads are Draco-compressed (`COREMESH`); the mesh decoder
   now reads them, so they render as meshes instead of boxes. — @chteau

@@ -6,6 +6,7 @@ use rbx_assets::AssetRef;
 use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
+use super::clothing::{self, Garment, Limb, Wardrobe};
 use super::face::{self, Mapping, NormalId};
 use super::FaceInstance;
 use crate::scene::{self, Placement};
@@ -35,7 +36,8 @@ pub(super) fn faces(
         return Vec::new();
     };
 
-    part.children()
+    let mut found: Vec<(AssetRef, FaceInstance)> = part
+        .children()
         .iter()
         .filter_map(|&child| {
             if is_face_instance(dom, database, child) {
@@ -46,7 +48,9 @@ pub(super) fn faces(
                 None
             }
         })
-        .collect()
+        .collect();
+    found.extend(worn(dom, referent, placement));
+    found
 }
 
 /// Asset references reach us either as a plain string or wrapped in a `Content`,
@@ -128,6 +132,52 @@ fn painted(
             alpha,
         },
     ))
+}
+
+/// The clothes of a classic R6 limb: its cut of each garment's template on
+/// each face of the box, pants first so the shirt lies over them.
+///
+/// Only a plain `Part` is dressed here. An R15 limb is a `MeshPart`, whose
+/// UVs are not the template's: `scene::filemesh` re-maps those.
+fn worn(dom: &WeakDom, referent: Ref, placement: &Placement) -> Vec<(AssetRef, FaceInstance)> {
+    let Some(part) = dom.get(referent).filter(|part| part.class() == "Part") else {
+        return Vec::new();
+    };
+    let Some(limb) = Limb::r6(part.name()) else {
+        return Vec::new();
+    };
+    let Some(wardrobe) = dom
+        .parent(referent)
+        .and_then(|model| Wardrobe::of(dom, model))
+    else {
+        return Vec::new();
+    };
+
+    let mut faces = Vec::new();
+    for (garment, layer) in wardrobe.for_limb(limb) {
+        let cuts: &[NormalId] = match garment {
+            Garment::Graphic => &[NormalId::Front],
+            _ => &clothing::FACES,
+        };
+        for &face in cuts {
+            let projection = match garment {
+                Garment::Graphic => clothing::whole(face),
+                _ => clothing::projection(limb, face),
+            };
+            faces.push((
+                layer.image.clone(),
+                FaceInstance {
+                    referent: layer.referent,
+                    kind: placement.kind,
+                    model: placement.model,
+                    projection,
+                    tint: layer.tint.map(scene::srgb_to_linear),
+                    alpha: 1.0,
+                },
+            ));
+        }
+    }
+    faces
 }
 
 /// An `AdGui`'s own fallback image, laid on the face it adorns.
@@ -215,6 +265,76 @@ mod tests {
 
         assert_eq!(asset_uri(&Variant::Float32(1.0)), None);
         assert_eq!(asset_uri(&Variant::Content(rbx_dom::Content::None)), None);
+    }
+
+    fn r6_character(pants: &str, shirt: &str, graphic: &str) -> (WeakDom, Ref) {
+        let mut dom = WeakDom::new();
+        let workspace = dom.new_instance("Workspace", "Workspace", None);
+        let model = dom.new_instance("Model", "Rig", Some(workspace));
+        for (class, key, value) in [
+            ("Pants", "PantsTemplate", pants),
+            ("Shirt", "ShirtTemplate", shirt),
+            ("ShirtGraphic", "Graphic", graphic),
+        ] {
+            let cloth = dom.new_instance(class, class, Some(model));
+            dom.set_property(
+                cloth,
+                key,
+                Variant::Content(rbx_dom::Content::Uri(value.to_string())),
+            )
+            .unwrap();
+        }
+        let torso = dom.new_instance("Part", "Torso", Some(model));
+        (dom, torso)
+    }
+
+    fn unit_placement() -> Placement {
+        Placement {
+            kind: crate::scene::ShapeKind::Box,
+            model: glam::Mat4::IDENTITY,
+            size: glam::Vec3::ONE,
+        }
+    }
+
+    /// Classic clothing is not a decal, but an R6 limb wears it as six of them.
+    #[test]
+    fn an_r6_torso_wears_pants_then_shirt_then_graphic() {
+        let (dom, torso) = r6_character(
+            "http://www.roblox.com/asset/?id=3 ",
+            "rbxassetid://2",
+            "rbxassetid://1",
+        );
+        let database = ReflectionDatabase::embedded();
+        let drawn = faces(&dom, &database, torso, &unit_placement());
+        let images: Vec<_> = drawn.iter().map(|(image, _)| image.clone()).collect();
+
+        assert_eq!(drawn.len(), 13);
+        assert_eq!(images[0], AssetRef::Id(3));
+        assert_eq!(images[6], AssetRef::Id(2));
+        assert_eq!(images[12], AssetRef::Id(1));
+        // The torso's front cell of the 585x559 template.
+        let front = &drawn[6..12]
+            .iter()
+            .find(|(_, face)| (face.projection.normal - glam::Vec3::NEG_Z).length() < 1e-5)
+            .unwrap()
+            .1
+            .projection;
+        assert!((front.uv_offset[0] - 231.0 / 585.0).abs() < 1e-5);
+        assert!((front.uv_scale[1] - 128.0 / 559.0).abs() < 1e-5);
+    }
+
+    /// Legs take pants only, and a part that is not a limb takes nothing.
+    #[test]
+    fn legs_are_not_shirted_and_other_parts_are_not_dressed() {
+        let (mut dom, torso) = r6_character("rbxassetid://3", "rbxassetid://2", "");
+        let model = dom.parent(torso).unwrap();
+        let leg = dom.new_instance("Part", "Left Leg", Some(model));
+        let hat = dom.new_instance("Part", "Handle", Some(model));
+        let database = ReflectionDatabase::embedded();
+        let legs = faces(&dom, &database, leg, &unit_placement());
+        assert_eq!(legs.len(), 6);
+        assert!(legs.iter().all(|(image, _)| *image == AssetRef::Id(3)));
+        assert!(faces(&dom, &database, hat, &unit_placement()).is_empty());
     }
 
     /// A place with an ad surface on it draws the creator's own fallback

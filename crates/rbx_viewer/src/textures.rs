@@ -5,6 +5,7 @@
 //! images themselves are fetched separately by [`crate::assets`], and the two
 //! halves are joined by [`Decor::assemble`].
 
+pub(crate) mod clothing;
 mod decor;
 mod face;
 mod part;
