@@ -150,7 +150,7 @@ pub(crate) fn load_images(references: &[AssetRef]) -> Keyed<Image> {
 }
 
 /// Resolves and parses every reference into a [`rbx_mesh::Mesh`]; a failure
-/// (a v6/v7 file, a network error, a corrupt download, ...) is a warning
+/// (an unknown mesh version, a network error, a corrupt download, ...) is a warning
 /// against its reference, not an error: `Scene::resolve_file_meshes` leaves
 /// the affected `MeshPart`/`SpecialMesh` drawing its fallback box.
 pub(crate) fn load_meshes(references: &[AssetRef]) -> Keyed<rbx_mesh::Mesh> {
