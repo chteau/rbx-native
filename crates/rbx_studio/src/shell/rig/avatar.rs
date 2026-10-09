@@ -230,7 +230,7 @@ fn mock_fetch(mock: &str, user: Option<u64>) -> Result<Fetched, String> {
             format!("{mock}: {err}")
         }
     })?;
-    let avatar = Avatar::from_json(&body).map_err(|err| user_error(&err.into(), id))?;
+    let avatar = Avatar::from_json(&body).map_err(|err| user_error(&err, id))?;
     ready(avatar, id, |asset| {
         ["rbxm", "rbxmx"]
             .iter()

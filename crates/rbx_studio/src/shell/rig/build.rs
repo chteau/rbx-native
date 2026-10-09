@@ -214,8 +214,8 @@ fn sizes_for(options: &RigOptions, scales: &Scales) -> Sizes {
         ) else {
             continue;
         };
-        for i in 0..3 {
-            size[i] *= piece.init[i] / stock.init[i];
+        for (i, axis) in size.iter_mut().enumerate() {
+            *axis *= piece.init[i] / stock.init[i];
         }
     }
     sizes
@@ -281,7 +281,7 @@ fn make_part(
         "Head" => spec
             .mesh
             .as_ref()
-            .map_or(true, |piece| piece.family == Family::Classic),
+            .is_none_or(|piece| piece.family == Family::Classic),
         _ => false,
     };
     for (property, value) in [

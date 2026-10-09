@@ -326,9 +326,11 @@ mod tests {
 
     #[test]
     fn r6_turns_off_rthro_and_feminine_and_resets_them() {
-        let mut d = RigDialog::default();
-        d.shape = BodyShape::Feminine;
-        d.scale = BodyScale::RthroSlender;
+        let mut d = RigDialog {
+            shape: BodyShape::Feminine,
+            scale: BodyScale::RthroSlender,
+            ..Default::default()
+        };
         d.set_rig_type(RigType::R6);
         assert_eq!(
             (d.shape, d.scale),
