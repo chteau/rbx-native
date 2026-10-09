@@ -867,3 +867,28 @@ fn the_mannequin_description_and_sockets_carry_the_reference_values() {
         .get("AssetId")
         .is_none());
 }
+
+#[test]
+fn the_mannequin_carries_the_reference_skeleton() {
+    let bones = |scale| {
+        let options = RigOptions::new(
+            RigType::R15,
+            BodyShape::Masculine,
+            scale,
+            JointStyle::AnimationConstraint,
+        );
+        let (dom, rig) = build(&options);
+        dom.get(rig).map_or(0, |_| {
+            let mut count = 0;
+            let mut queue = vec![rig];
+            while let Some(at) = queue.pop() {
+                let i = dom.get(at).unwrap();
+                count += usize::from(i.class() == "Bone");
+                queue.extend(i.children());
+            }
+            count
+        })
+    };
+    assert_eq!(bones(BodyScale::RthroNormal), 37);
+    assert_eq!(bones(BodyScale::Classic), 0);
+}

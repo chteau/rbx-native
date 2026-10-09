@@ -194,6 +194,9 @@ pub(crate) fn build_rig(dom: &mut WeakDom, options: &RigOptions, parent: Ref) ->
         set(dom, motor, "C1", Variant::CFrame(joint.c1.data()));
     }
 
+    if r15_rig && Family::of(scales.body_type) == Family::Mannequin {
+        super::bones::add(dom, model);
+    }
     if let Some(&primary) = parts.get("HumanoidRootPart") {
         set(dom, model, "PrimaryPart", Variant::Ref(primary));
     }

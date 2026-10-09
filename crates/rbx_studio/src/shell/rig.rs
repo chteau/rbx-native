@@ -14,6 +14,7 @@
 
 mod animate;
 mod avatar;
+mod bones;
 mod build;
 mod bundle;
 mod cframe;
