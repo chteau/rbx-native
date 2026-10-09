@@ -438,6 +438,11 @@ fn dress_mesh(dom: &mut WeakDom, part: Ref, name: &str, piece: &Piece) {
     }
     if name == "Head" {
         dom.new_instance("FaceControls", "FaceControls", Some(part));
+        if piece.face {
+            let face = dom.new_instance("Decal", "face", Some(part));
+            set(dom, face, "Texture", Variant::Content(Content::Uri(FACE.into())));
+            set(dom, face, "Face", Variant::Enum(FRONT));
+        }
     }
 }
 

@@ -464,6 +464,7 @@ fn piece_of(dom: &WeakDom, part: Ref) -> Option<Piece> {
         mesh: content_id(dom, part, "MeshId")?,
         texture: content_id(dom, part, "TextureID"),
         surface: None,
+        face: true,
         original: init,
         family: bundle::Family::Classic,
         init,
@@ -485,6 +486,7 @@ fn dynamic_head(options: &mut RigOptions, dom: &WeakDom) -> bool {
         return false;
     };
     head.mesh = id;
+    head.face = false;
     head.texture =
         content_id(dom, mesh, "TextureId").or_else(|| content_id(dom, mesh, "TextureID"));
     true

@@ -47,6 +47,9 @@ pub(super) struct Piece {
     pub(super) mesh: u64,
     pub(super) texture: Option<u64>,
     pub(super) surface: Option<Surface>,
+    /// The Head carries the stock face `Decal`: classic heads only, since a
+    /// mannequin or dynamic head has its face in its own texture.
+    pub(super) face: bool,
     pub(super) init: V3,
     /// What the part's `OriginalSize` value says (the size it was authored at).
     pub(super) original: V3,
@@ -102,6 +105,7 @@ fn owned(raw: &Raw, family: Family) -> Piece {
         mesh: raw.mesh,
         texture: raw.texture,
         surface: raw.surface,
+        face: family == Family::Classic,
         init: raw.init,
         original: raw.original,
         cage: raw.cage,

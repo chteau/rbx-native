@@ -416,6 +416,7 @@ fn a_dynamic_head_swaps_the_head_mesh_and_texture() {
     set(&mut source, mesh, "TextureID", uri("rbxassetid://999"));
     let worn = [worn_asset(12, DYNAMIC_HEAD, source)];
     assert_eq!(used(&apply_packages(&mut options, &worn)), 1);
+    assert!(!options.pieces["Head"].face, "a dynamic head has its own face");
     assert_eq!(options.pieces["Head"].mesh, 888);
     assert_eq!(options.pieces["Head"].texture, Some(999));
 }

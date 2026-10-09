@@ -170,7 +170,9 @@ fn a_rig_has_a_face_and_body_colours_on_its_parts() {
     options.colors.left_arm = [10, 20, 30];
     let (dom, rig) = build(&options);
     let head = child(&dom, rig, "Head").unwrap();
-    assert!(children_of_class(&dom, head, "Decal").is_empty());
+    let faces = children_of_class(&dom, head, "Decal");
+    assert_eq!(faces.len(), 1);
+    assert_eq!(dom.get(faces[0]).unwrap().name(), "face");
     assert!(child(&dom, head, "FaceControls").is_some());
     let hand = child(&dom, rig, "LeftHand").unwrap();
     assert_eq!(
@@ -641,7 +643,11 @@ fn an_r15_mesh_part_carries_what_the_reference_parts_carry() {
         let head = child(&dom, rig, "Head").unwrap();
         assert_eq!(flag(&dom, head, "CanCollide"), head_solid, "{scale:?}");
         assert!(child(&dom, head, "FaceControls").is_some());
-        assert!(children_of_class(&dom, head, "Decal").is_empty());
+        assert_eq!(
+            children_of_class(&dom, head, "Decal").len(),
+            usize::from(head_solid),
+            "{scale:?}: only a classic head carries the face decal"
+        );
         assert_eq!(
             child(&dom, head, "AvatarPartScaleType").is_some(),
             scale == BodyScale::RthroNormal
