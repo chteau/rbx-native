@@ -8,9 +8,14 @@ use crate::command_bar::Feedback;
 use crate::explorer;
 use crate::shell::Shell;
 
-use super::avatar::{self, Worn};
+use rbx_cloud::Avatar;
+
+use super::avatar::{self, Fate, Worn};
 use super::dialog::{parse_user_id, Character};
-use super::{build_rig, JointStyle, RigOptions, V3};
+use super::{build_rig, JointStyle, RigOptions, RigType, V3};
+
+/// A downloaded avatar and the fates [`avatar::apply_packages`] gave its items.
+type Import<'a> = (&'a Avatar, &'a [Worn], Vec<Fate>);
 
 const SOURCE: &str = "Rig";
 
@@ -23,11 +28,11 @@ impl Shell {
         match dialog.character {
             Character::Mannequin => {
                 let options = RigOptions::new(dialog.rig_type, dialog.shape, dialog.scale, joints);
-                self.place_rig(options, &[], 0, &[], cx);
+                self.place_rig(options, None, cx);
             }
-            Character::MyAvatar => self.insert_avatar(None, joints, cx),
+            Character::MyAvatar => self.insert_avatar(None, dialog.avatar_type, joints, cx),
             Character::Player => match parse_user_id(&self.rig_user.read(cx).value()) {
-                Ok(id) => self.insert_avatar(Some(id), joints, cx),
+                Ok(id) => self.insert_avatar(Some(id), dialog.avatar_type, joints, cx),
                 // The dialog stays up so the id can be fixed.
                 Err(message) => {
                     self.rig_dialog = Some(dialog);
@@ -40,7 +45,14 @@ impl Shell {
     }
 
     /// `user` is `None` for the signed-in user ("My Avatar").
-    fn insert_avatar(&mut self, user: Option<u64>, joints: JointStyle, cx: &mut Context<Self>) {
+    /// `rig_type` is `None` to keep the avatar's own type.
+    fn insert_avatar(
+        &mut self,
+        user: Option<u64>,
+        rig_type: Option<RigType>,
+        joints: JointStyle,
+        cx: &mut Context<Self>,
+    ) {
         let label = user.map_or_else(|| "My Avatar".to_string(), |id| format!("Player {id}"));
         self.rig_report(Ok(format!("Fetching {label}\u{2026}")), cx);
         cx.spawn(async move |this, cx| {
@@ -50,10 +62,18 @@ impl Shell {
                 .await;
             let _ = this.update(cx, |shell, cx| match result {
                 Ok(fetched) => {
-                    let mut options = avatar::options_for(&fetched.avatar, joints, [0.; 3]);
-                    let packages = avatar::apply_packages(&mut options, &fetched.worn);
-                    let notes = avatar::unapplied(&fetched.avatar, &fetched.worn);
-                    shell.place_rig(options, &fetched.worn, packages, &notes, cx);
+                    let mut options =
+                        avatar::options_for(&fetched.avatar, joints, [0.; 3], rig_type);
+                    let early = avatar::apply_packages(&mut options, &fetched.worn);
+                    let own = avatar::own_type(&fetched.avatar);
+                    if options.rig_type != own {
+                        let message = format!(
+                            "{label} is {own:?}; built onto the {:?} body, as picked",
+                            options.rig_type
+                        );
+                        shell.output.push(SOURCE, Feedback::Output(message));
+                    }
+                    shell.place_rig(options, Some((&fetched.avatar, &fetched.worn, early)), cx);
                 }
                 // Nothing is inserted: a default body here would pass for
                 // the player's own.
@@ -67,9 +87,7 @@ impl Shell {
     fn place_rig(
         &mut self,
         mut options: RigOptions,
-        worn: &[Worn],
-        packages: usize,
-        notes: &[String],
+        import: Option<Import>,
         cx: &mut Context<Self>,
     ) {
         let Some(workspace) = explorer::find_by_name(&self.dom, "Workspace") else {
@@ -78,23 +96,31 @@ impl Shell {
         options.feet = spawn_top(&self.dom, workspace);
         self.push_history();
         let rig = build_rig(&mut self.dom, &options, workspace);
-        let dressed = packages + avatar::dress(&mut self.dom, rig, worn);
+        let (dressed, total, notes) = match import {
+            Some((avatar, worn, early)) => {
+                let late = avatar::dress(&mut self.dom, rig, worn);
+                let (used, notes) = avatar::settle(avatar, worn, &avatar::merge(early, late));
+                (used, avatar.assets.len(), notes)
+            }
+            None => (0, 0, Vec::new()),
+        };
         let changes = self.dom.take_changes();
         self.rebuild_explorer(cx);
         self.reselect(vec![rig], cx);
         self.reflect_changes(&changes, cx);
         self.record_history_change(changes);
         for note in notes {
-            self.output.push(SOURCE, Feedback::Warning(note.clone()));
+            self.output
+                .push(SOURCE, Feedback::Warning(format!("Not applied: {note}")));
         }
         let name = self
             .dom
             .get(rig)
             .map_or_else(String::new, |i| i.name().to_owned());
-        let wearing = if worn.is_empty() {
+        let wearing = if total == 0 {
             String::new()
         } else {
-            format!(", wearing {dressed} of {} items", worn.len())
+            format!(", wearing {dressed} of {total} items")
         };
         self.rig_report(Ok(format!("Inserted {name}{wearing}")), cx);
     }

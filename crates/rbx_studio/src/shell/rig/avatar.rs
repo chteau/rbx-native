@@ -24,11 +24,11 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use rbx_cloud::{Avatar, AvatarAsset, Client, CloudError};
-use rbx_dom::{BrickColor, Content, Ref, Variant, WeakDom};
+use rbx_cloud::{ApiKey, Avatar, AvatarAsset, Client, CloudError};
+use rbx_dom::{BrickColor, Content, Ref, Variant, WeakDom, DEFAULT_BRICK_COLOR};
 
 use crate::shell::clipboard;
-use crate::shell::freeze::{authorize, describe, fetch_asset, read_model};
+use crate::shell::freeze::{authorize, describe, read_model};
 
 use super::bundle::{self, Family, Piece};
 use super::cframe::{Cf, V3};
@@ -40,7 +40,9 @@ pub(crate) const MOCK_VARIABLE: &str = "RBX_STUDIO_RIG_AVATAR_MOCK";
 const TSHIRT: u32 = 2;
 const SHIRT: u32 = 11;
 const PANTS: u32 = 12;
+const FACE: u32 = 18;
 const DYNAMIC_HEAD: u32 = 79;
+const MOOD: u32 = 78;
 
 /// One worn asset and the model downloaded for it.
 pub(crate) struct Worn {
@@ -54,7 +56,7 @@ pub(crate) struct Fetched {
 }
 
 fn is_accessory(kind: u32) -> bool {
-    kind == 8 || (41..=47).contains(&kind) || (64..=72).contains(&kind)
+    kind == 8 || (41..=47).contains(&kind) || (64..=72).contains(&kind) || matches!(kind, 76 | 77)
 }
 
 fn is_clothing(kind: u32) -> bool {
@@ -74,16 +76,38 @@ fn is_used(kind: u32) -> bool {
         || is_clothing(kind)
         || is_body_part(kind)
         || is_animation(kind)
-        || kind == DYNAMIC_HEAD
+        || matches!(kind, FACE | DYNAMIC_HEAD)
 }
 
-/// The rig this avatar's type, scales and colours call for.
-pub(crate) fn options_for(avatar: &Avatar, joints: JointStyle, feet: V3) -> RigOptions {
-    let rig_type = if avatar.avatar_type.eq_ignore_ascii_case("R6") {
-        RigType::R6
-    } else {
-        RigType::R15
-    };
+/// What became of one worn asset.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum Fate {
+    Used,
+    Left(String),
+    /// Not this step's business: another one decides.
+    Elsewhere,
+}
+
+impl Fate {
+    fn used(ok: bool, why: &str) -> Fate {
+        if ok {
+            Fate::Used
+        } else {
+            Fate::Left(why.into())
+        }
+    }
+}
+
+/// The rig this avatar's scales and colours call for, of its own type or of
+/// `rig_type` when the caller overrides it (its items are then built onto
+/// the other body).
+pub(crate) fn options_for(
+    avatar: &Avatar,
+    joints: JointStyle,
+    feet: V3,
+    rig_type: Option<RigType>,
+) -> RigOptions {
+    let rig_type = rig_type.unwrap_or_else(|| own_type(avatar));
     let mut options = RigOptions::new(rig_type, BodyShape::Masculine, BodyScale::Classic, joints);
     let s = &avatar.scales;
     options.set_scales(Scales {
@@ -95,7 +119,11 @@ pub(crate) fn options_for(avatar: &Avatar, joints: JointStyle, feet: V3) -> RigO
         proportion: s.proportion as f32,
     });
     let c = &avatar.body_colors;
-    let color = |id: u32| BrickColor::from_number(id).map_or([163, 162, 165], |b| b.rgb);
+    let color = |id: u32| {
+        BrickColor::from_number(id)
+            .or_else(|| BrickColor::from_number(DEFAULT_BRICK_COLOR))
+            .map_or([163, 162, 165], |b| b.rgb)
+    };
     options.colors = BodyColors {
         head: color(c.head),
         torso: color(c.torso),
@@ -108,19 +136,79 @@ pub(crate) fn options_for(avatar: &Avatar, joints: JointStyle, feet: V3) -> RigO
     options
 }
 
+/// The rig type the avatar itself uses.
+pub(crate) fn own_type(avatar: &Avatar) -> RigType {
+    if avatar.avatar_type.eq_ignore_ascii_case("R6") {
+        RigType::R6
+    } else {
+        RigType::R15
+    }
+}
+
 /// Blocking: the avatar of `user` (`None` is the signed-in user) and every
 /// asset it wears that [`dress`] and [`apply_packages`] can use.
 pub(crate) fn fetch(user: Option<u64>) -> Result<Fetched, String> {
     if let Ok(mock) = std::env::var(MOCK_VARIABLE) {
         return mock_fetch(&mock, user);
     }
-    let id = match user {
-        Some(id) => id,
-        None => authorize()?.1,
+    // The avatar and most assets are public, but an asset the anonymous
+    // route refuses (HTTP 401) is tried through the stored Open Cloud key
+    // ([`Client::asset`] falls back to it), for Player as for My Avatar.
+    let (client, id, keyed) = match user {
+        Some(id) => {
+            let key = ApiKey::from_env_or_config();
+            let keyed = key.is_some();
+            (Client::new(key), id, keyed)
+        }
+        None => {
+            let (client, id) = authorize()?;
+            (client, id, true)
+        }
     };
-    let client = Client::new(None);
     let avatar = client.avatar(id).map_err(|err| user_error(&err, id))?;
-    ready(avatar, id, |asset| fetch_asset(&client, asset))
+    ready(avatar, id, |asset| download(&client, asset, keyed))
+}
+
+const DOWNLOAD_ATTEMPTS: u32 = 3;
+
+/// One asset's bytes. Only a failure that may pass (network, rate limit,
+/// server error) is retried: a 401 or 404 will answer the same next time.
+fn download(client: &Client, id: u64, keyed: bool) -> Result<Vec<u8>, String> {
+    let mut attempt = 1;
+    loop {
+        match client.asset(id) {
+            Ok(content) => return Ok(content.bytes),
+            Err(err) if attempt < DOWNLOAD_ATTEMPTS && is_transient(&err) => {
+                attempt += 1;
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+            Err(err) => return Err(download_error(&err, keyed)),
+        }
+    }
+}
+
+fn is_transient(err: &CloudError) -> bool {
+    matches!(
+        err,
+        CloudError::Transport(_)
+            | CloudError::RateLimited { .. }
+            | CloudError::Http { status: 500.., .. }
+    )
+}
+
+fn download_error(err: &CloudError, keyed: bool) -> String {
+    match err {
+        CloudError::AuthRequired { .. } => "HTTP 401: not publicly downloadable, and no Open Cloud key is stored to try (Home \u{203a} Manage key)".into(),
+        CloudError::Http {
+            status: status @ (401 | 403),
+            ..
+        } if keyed => format!(
+            "HTTP {status}: not publicly downloadable, and the stored Open Cloud key\u{2019}s account may not read it either"
+        ),
+        CloudError::Http { status: 404, .. } => "HTTP 404: deleted or moderated".into(),
+        CloudError::RateLimited { .. } => "HTTP 429: Roblox is rate limiting downloads".into(),
+        other => other.to_string(),
+    }
 }
 
 fn mock_fetch(mock: &str, user: Option<u64>) -> Result<Fetched, String> {
@@ -192,7 +280,9 @@ fn gather(avatar: Avatar, download: impl Fn(u64) -> Result<Vec<u8>, String>) -> 
         .filter(|a| is_used(a.asset_type.id))
         .map(|asset| Worn {
             asset: asset.clone(),
-            dom: download(asset.id).and_then(|bytes| read_model(&bytes)),
+            dom: download(asset.id).and_then(|bytes| {
+                read_model(&bytes).map_err(|e| format!("not a readable model: {e}"))
+            }),
         })
         .collect();
     Fetched { avatar, worn }
@@ -227,54 +317,83 @@ fn user_error(err: &CloudError, user: u64) -> String {
     }
 }
 
-/// What could not be used, one line each: failed downloads, and assets
-/// (face parts, moods) no rig has a place for.
-pub(crate) fn unapplied(avatar: &Avatar, worn: &[Worn]) -> Vec<String> {
-    let mut notes: Vec<String> = worn
-        .iter()
-        .filter_map(|w| {
-            w.dom
-                .as_ref()
-                .err()
-                .map(|e| format!("{}: {e}", w.asset.name))
-        })
-        .collect();
-    let r6 = avatar.avatar_type.eq_ignore_ascii_case("R6");
-    let skipped: Vec<String> = avatar
-        .assets
-        .iter()
-        .filter(|a| !is_used(a.asset_type.id) || (r6 && a.asset_type.id == DYNAMIC_HEAD))
-        .map(|a| format!("{} ({})", a.name, a.asset_type.name))
-        .collect();
-    if !skipped.is_empty() {
-        notes.push(format!(
-            "Not applied, the rig has no place for them: {}",
-            skipped.join(", ")
-        ));
+/// How many worn items were used, and one line for every avatar asset that
+/// was not (name, id, type, reason), so nothing is dropped silently. `fates`
+/// is [`merge`]d from [`apply_packages`] and [`dress`], one per `worn` entry.
+pub(crate) fn settle(avatar: &Avatar, worn: &[Worn], fates: &[Fate]) -> (usize, Vec<String>) {
+    let (mut used, mut notes, mut next) = (0, Vec::new(), 0);
+    for asset in &avatar.assets {
+        let kind = asset.asset_type.id;
+        let why = if is_used(kind) {
+            next += 1;
+            match (&worn[next - 1].dom, &fates[next - 1]) {
+                (Err(err), _) => Some(err.clone()),
+                (_, Fate::Left(why)) => Some(why.clone()),
+                (_, Fate::Elsewhere) => Some("no step of the import took it".into()),
+                (_, Fate::Used) => None,
+            }
+        } else if kind == MOOD {
+            Some("a face mood animation: it drives the dynamic head\u{2019}s FaceControls through an Animator, which the editor does not run, so the head keeps its default expression".into())
+        } else {
+            Some(format!(
+                "the rig has no place for a {}",
+                asset.asset_type.name
+            ))
+        };
+        match why {
+            None => used += 1,
+            Some(why) => notes.push(format!(
+                "{} (id {}, {}): {why}",
+                asset.name, asset.id, asset.asset_type.name
+            )),
+        }
     }
-    notes
+    (used, notes)
+}
+
+/// The step that took each asset, from the two that may.
+pub(crate) fn merge(early: Vec<Fate>, late: Vec<Fate>) -> Vec<Fate> {
+    early
+        .into_iter()
+        .zip(late)
+        .map(|(a, b)| if a == Fate::Elsewhere { b } else { a })
+        .collect()
 }
 
 /// Swaps the stock R15 meshes for the avatar's own body-part packages and
-/// dynamic head; returns how many assets that used. An R6 rig has none.
-pub(crate) fn apply_packages(options: &mut RigOptions, worn: &[Worn]) -> usize {
-    if options.rig_type != RigType::R15 {
-        return 0;
-    }
-    let mut used = 0;
-    for w in worn {
-        let (kind, Ok(dom)) = (w.asset.asset_type.id, &w.dom) else {
-            continue;
-        };
-        if is_body_part(kind) {
-            let pieces = pieces_in(dom);
-            used += usize::from(!pieces.is_empty());
-            options.pieces.extend(pieces);
-        } else if kind == DYNAMIC_HEAD {
-            used += usize::from(dynamic_head(options, dom));
-        }
-    }
-    used
+/// dynamic head. An R6 rig has none, and leaves them to [`dress`].
+pub(crate) fn apply_packages(options: &mut RigOptions, worn: &[Worn]) -> Vec<Fate> {
+    worn.iter()
+        .map(|w| {
+            let (kind, Ok(dom)) = (w.asset.asset_type.id, &w.dom) else {
+                return Fate::Elsewhere;
+            };
+            if options.rig_type != RigType::R15 {
+                Fate::Elsewhere
+            } else if is_body_part(kind) {
+                let pieces = pieces_in(dom);
+                let why = if has_class(dom, "CharacterMesh") {
+                    "an R6 package (CharacterMeshes); the R15 rig takes R15 parts"
+                } else {
+                    "no R15 part in the package carries every rig attachment the stock part has"
+                };
+                let ok = !pieces.is_empty();
+                options.pieces.extend(pieces);
+                Fate::used(ok, why)
+            } else if kind == DYNAMIC_HEAD {
+                Fate::used(
+                    dynamic_head(options, dom),
+                    "no head mesh found in the model",
+                )
+            } else {
+                Fate::Elsewhere
+            }
+        })
+        .collect()
+}
+
+fn has_class(dom: &WeakDom, class: &str) -> bool {
+    find_of(dom, dom.root_refs(), &[class]).is_some()
 }
 
 /// Every R15 part a package supplies whole: its mesh and every rig attachment
@@ -398,27 +517,38 @@ fn ancestor_named(dom: &WeakDom, node: Ref, name: &str) -> bool {
     false
 }
 
-/// Puts every downloaded accessory, piece of clothing, R6 body part and
-/// animation on `rig`; returns how many were used. R15 packages and heads
-/// are [`apply_packages`]' business, done before the rig is built.
-pub(crate) fn dress(dom: &mut WeakDom, rig: Ref, worn: &[Worn]) -> usize {
+/// Puts every downloaded accessory, piece of clothing, face, R6 body part and
+/// animation on `rig`. R15 packages and heads are [`apply_packages`]'
+/// business, done before the rig is built.
+pub(crate) fn dress(dom: &mut WeakDom, rig: Ref, worn: &[Worn]) -> Vec<Fate> {
     let r15 = child_named(dom, rig, "UpperTorso").is_some();
     worn.iter()
-        .filter_map(|w| Some((w.asset.asset_type.id, w.dom.as_ref().ok()?)))
-        .filter(|&(kind, source)| {
-            if is_accessory(kind) {
+        .map(|w| {
+            let (kind, Ok(source)) = (w.asset.asset_type.id, &w.dom) else {
+                return Fate::Elsewhere;
+            };
+            let result = if is_accessory(kind) {
                 wear_accessory(dom, rig, source)
             } else if is_clothing(kind) {
                 wear_clothing(dom, rig, source)
+            } else if kind == FACE {
+                wear_face(dom, rig, source)
             } else if is_animation(kind) {
-                animate::replace(dom, rig, source) > 0
+                if animate::replace(dom, rig, source) > 0 {
+                    Ok(())
+                } else {
+                    Err("no animation in it matches a state of the Animate script".into())
+                }
             } else if is_body_part(kind) && !r15 {
                 wear_character_meshes(dom, rig, source)
+            } else if kind == DYNAMIC_HEAD && !r15 {
+                Err("a dynamic head is R15-only; the R6 rig keeps its block head".into())
             } else {
-                false
-            }
+                return Fate::Elsewhere;
+            };
+            result.map_or_else(Fate::Left, |()| Fate::Used)
         })
-        .count()
+        .collect()
 }
 
 fn descendants(dom: &WeakDom, root: Ref) -> Vec<Ref> {
@@ -456,33 +586,51 @@ fn cframe_of_property(dom: &WeakDom, node: Ref, key: &str) -> Cf {
 
 /// Shirts and pants go into the rig's own `Shirt` and `Pants`; a T-shirt is
 /// a `ShirtGraphic` the rig does not have, so it is copied in.
-fn wear_clothing(rig_dom: &mut WeakDom, rig: Ref, source: &WeakDom) -> bool {
-    let Some((_, item)) = find_of(
+fn wear_clothing(rig_dom: &mut WeakDom, rig: Ref, source: &WeakDom) -> Result<(), String> {
+    let (_, item) = find_of(
         source,
         source.root_refs(),
         &["Shirt", "Pants", "ShirtGraphic"],
-    ) else {
-        return false;
-    };
-    let Some(instance) = source.get(item) else {
-        return false;
-    };
+    )
+    .ok_or("no Shirt, Pants or ShirtGraphic in the model")?;
+    let instance = source.get(item).ok_or("unreadable model")?;
     let template = match instance.class() {
         "Shirt" => "ShirtTemplate",
         "Pants" => "PantsTemplate",
-        _ => return clipboard::graft(rig_dom, source, item, rig).is_some(),
+        _ => {
+            return clipboard::graft(rig_dom, source, item, rig)
+                .map(drop)
+                .ok_or_else(|| "could not copy the T-shirt in".into())
+        }
     };
-    let Some(value) = instance.properties().get(template) else {
-        return false;
-    };
+    let value = instance
+        .properties()
+        .get(template)
+        .ok_or("the clothing has no texture")?;
     let own = child_of_class(rig_dom, rig, instance.class())
         .unwrap_or_else(|| rig_dom.new_instance(instance.class(), instance.class(), Some(rig)));
     set(rig_dom, own, template, value.clone());
-    true
+    Ok(())
+}
+
+/// A classic face is a `Decal`; it replaces the texture of the Head's own.
+fn wear_face(dom: &mut WeakDom, rig: Ref, source: &WeakDom) -> Result<(), String> {
+    let (_, decal) =
+        find_of(source, source.root_refs(), &["Decal"]).ok_or("no Decal in the model")?;
+    let texture = source
+        .get(decal)
+        .and_then(|d| d.properties().get("Texture"))
+        .ok_or("the face has no texture")?
+        .clone();
+    let head = child_named(dom, rig, "Head").ok_or("the rig has no Head")?;
+    let own = child_of_class(dom, head, "Decal")
+        .unwrap_or_else(|| dom.new_instance("Decal", "face", Some(head)));
+    set(dom, own, "Texture", texture);
+    Ok(())
 }
 
 /// An R6 body-part package is a set of `CharacterMesh`es.
-fn wear_character_meshes(dom: &mut WeakDom, rig: Ref, source: &WeakDom) -> bool {
+fn wear_character_meshes(dom: &mut WeakDom, rig: Ref, source: &WeakDom) -> Result<(), String> {
     let meshes: Vec<Ref> = source
         .root_refs()
         .iter()
@@ -493,36 +641,41 @@ fn wear_character_meshes(dom: &mut WeakDom, rig: Ref, source: &WeakDom) -> bool 
         .iter()
         .filter(|&&mesh| clipboard::graft(dom, source, mesh, rig).is_some())
         .count();
-    worn > 0
+    if worn > 0 {
+        Ok(())
+    } else {
+        Err("an R15 package (parts, not CharacterMeshes); the R6 rig has block parts".into())
+    }
 }
 
-fn wear_accessory(dom: &mut WeakDom, rig: Ref, source: &WeakDom) -> bool {
-    let Some((_, accessory)) = find_of(source, source.root_refs(), &["Accessory", "Hat"]) else {
-        return false;
-    };
-    let Some(worn) = clipboard::graft(dom, source, accessory, rig) else {
-        return false;
-    };
-    let Some(handle) = child_named(dom, worn, "Handle") else {
-        return false;
-    };
+fn wear_accessory(dom: &mut WeakDom, rig: Ref, source: &WeakDom) -> Result<(), String> {
+    let (_, accessory) = find_of(source, source.root_refs(), &["Accessory", "Hat"])
+        .ok_or("no Accessory or Hat in the model")?;
+    let worn = clipboard::graft(dom, source, accessory, rig).ok_or("could not copy it in")?;
+    weld_accessory(dom, rig, worn).inspect_err(|_| {
+        dom.remove(worn);
+    })
+}
+
+/// Welds the grafted accessory to the rig attachment named like its own.
+fn weld_accessory(dom: &mut WeakDom, rig: Ref, worn: Ref) -> Result<(), String> {
+    let handle = child_named(dom, worn, "Handle").ok_or("it has no Handle")?;
     // A legacy hat has no attachment of its own and sits on the head.
     let own = child_of_class(dom, handle, "Attachment");
     let wanted = own
         .and_then(|a| dom.get(a).map(|i| i.name().to_owned()))
         .unwrap_or_else(|| "HatAttachment".into());
     let on_accessory = descendants(dom, worn);
-    let Some(body) = descendants(dom, rig).into_iter().find(|r| {
-        !on_accessory.contains(r)
-            && dom
-                .get(*r)
-                .is_some_and(|i| i.class() == "Attachment" && i.name() == wanted)
-    }) else {
-        return false;
-    };
-    let Some(part) = dom.parent(body) else {
-        return false;
-    };
+    let body = descendants(dom, rig)
+        .into_iter()
+        .find(|r| {
+            !on_accessory.contains(r)
+                && dom
+                    .get(*r)
+                    .is_some_and(|i| i.class() == "Attachment" && i.name() == wanted)
+        })
+        .ok_or_else(|| format!("the rig has no {wanted} to wear it on"))?;
+    let part = dom.parent(body).ok_or("the attachment has no part")?;
     let c0 = own.map_or(Cf::at([0.; 3]), |a| cframe_of(dom, a));
     let c1 = cframe_of(dom, body);
     let at = cframe_of(dom, part).joined(&c1, &c0);
@@ -532,7 +685,7 @@ fn wear_accessory(dom: &mut WeakDom, rig: Ref, source: &WeakDom) -> bool {
     set(dom, weld, "Part1", Variant::Ref(part));
     set(dom, weld, "C0", Variant::CFrame(c0.data()));
     set(dom, weld, "C1", Variant::CFrame(c1.data()));
-    true
+    Ok(())
 }
 
 fn set(dom: &mut WeakDom, node: Ref, key: &str, value: Variant) {

@@ -73,6 +73,35 @@ mod tests {
     }
 
     #[test]
+    fn every_id_resolves_to_its_own_entry() {
+        for color in TABLE {
+            assert_eq!(BrickColor::from_number(color.number), Some(color));
+        }
+        let mut numbers: Vec<u32> = TABLE.iter().map(|c| c.number).collect();
+        numbers.sort_unstable();
+        numbers.dedup();
+        assert_eq!(numbers.len(), TABLE.len(), "duplicate numbers");
+    }
+
+    #[test]
+    fn avatar_body_colour_ids_resolve_to_the_expected_rgb() {
+        for (id, name, rgb) in [
+            (1, "White", [242, 243, 243]),
+            (21, "Bright red", [196, 40, 28]),
+            (23, "Bright blue", [13, 105, 172]),
+            (24, "Bright yellow", [245, 205, 48]),
+            (26, "Black", [27, 42, 53]),
+            (102, "Medium blue", [110, 153, 202]),
+            (119, "Br. yellowish green", [164, 189, 71]),
+            (194, "Medium stone grey", [163, 162, 165]),
+            (1001, "Institutional white", [248, 248, 248]),
+        ] {
+            let color = BrickColor::from_number(id).unwrap_or_else(|| panic!("{id}"));
+            assert_eq!((color.name, color.rgb), (name, rgb), "{id}");
+        }
+    }
+
+    #[test]
     fn entries_match_the_docs() {
         let grey = BrickColor::from_number(DEFAULT_NUMBER).unwrap();
         assert_eq!(grey.name, "Medium stone grey");

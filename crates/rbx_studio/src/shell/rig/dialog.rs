@@ -38,6 +38,9 @@ pub(crate) struct RigDialog {
     pub(crate) shape: BodyShape,
     pub(crate) scale: BodyScale,
     pub(crate) character: Character,
+    /// For My Avatar and Player: the type to build instead of the
+    /// avatar's own. `None` keeps the avatar's type.
+    pub(crate) avatar_type: Option<RigType>,
 }
 
 impl Default for RigDialog {
@@ -47,6 +50,7 @@ impl Default for RigDialog {
             shape: BodyShape::Masculine,
             scale: BodyScale::Classic,
             character: Character::Mannequin,
+            avatar_type: None,
         }
     }
 }
@@ -81,7 +85,14 @@ impl RigDialog {
 
     /// Why some options are greyed out, if any are.
     pub(crate) fn explanation(&self) -> Option<&'static str> {
-        if self.character == Character::Player {
+        if let Some(rig_type) = self.avatar_type.filter(|_| self.body_fixed()) {
+            Some(match (rig_type, self.character) {
+                (RigType::R6, Character::Player) => "Built as R6: the player\u{2019}s R15 body parts and scales are converted; no API key needed.",
+                (RigType::R15, Character::Player) => "Built as R15: an R6 player gets the standard R15 body; no API key needed.",
+                (RigType::R6, _) => "Built as R6: your R15 body parts and scales are converted.",
+                (RigType::R15, _) => "Built as R15: an R6 avatar gets the standard R15 body.",
+            })
+        } else if self.character == Character::Player {
             Some("Type, shape and scale come from that player\u{2019}s public avatar. No API key needed.")
         } else if self.body_fixed() {
             Some("Type, shape and scale come from your Roblox avatar.")
@@ -170,17 +181,35 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let d = self.rig_dialog?;
-        let types = vec![
-            (
-                "R6",
-                d.rig_type == RigType::R6,
-                true,
-                (|d| d.set_rig_type(RigType::R6)) as Pick,
-            ),
-            ("R15", d.rig_type == RigType::R15, true, |d| {
-                d.set_rig_type(RigType::R15)
-            }),
-        ];
+
+        let types = if d.body_fixed() {
+            vec![
+                (
+                    "Avatar\u{2019}s type",
+                    d.avatar_type.is_none(),
+                    true,
+                    (|d| d.avatar_type = None) as Pick,
+                ),
+                ("R6", d.avatar_type == Some(RigType::R6), true, |d| {
+                    d.avatar_type = Some(RigType::R6)
+                }),
+                ("R15", d.avatar_type == Some(RigType::R15), true, |d| {
+                    d.avatar_type = Some(RigType::R15)
+                }),
+            ]
+        } else {
+            vec![
+                (
+                    "R6",
+                    d.rig_type == RigType::R6,
+                    true,
+                    (|d| d.set_rig_type(RigType::R6)) as Pick,
+                ),
+                ("R15", d.rig_type == RigType::R15, true, |d| {
+                    d.set_rig_type(RigType::R15)
+                }),
+            ]
+        };
         let shapes = [
             ("Masculine", BodyShape::Masculine),
             ("Feminine", BodyShape::Feminine),
@@ -335,6 +364,37 @@ mod tests {
         };
         assert!(!d.scale_enabled(BodyScale::Classic));
         assert!(d.explanation().unwrap().contains("No API key"));
+    }
+
+    #[test]
+    fn the_avatar_type_override_is_explained_in_both_directions() {
+        for (character, rig_type, word) in [
+            (Character::Player, RigType::R6, "Built as R6"),
+            (Character::Player, RigType::R15, "Built as R15"),
+            (Character::MyAvatar, RigType::R6, "Built as R6"),
+            (Character::MyAvatar, RigType::R15, "Built as R15"),
+        ] {
+            let d = RigDialog {
+                character,
+                avatar_type: Some(rig_type),
+                ..RigDialog::default()
+            };
+            assert!(d.explanation().unwrap().contains(word));
+        }
+        let own = RigDialog {
+            character: Character::Player,
+            ..RigDialog::default()
+        };
+        assert!(own.explanation().unwrap().contains("come from"));
+    }
+
+    #[test]
+    fn a_mannequin_ignores_the_avatar_override() {
+        let d = RigDialog {
+            avatar_type: Some(RigType::R6),
+            ..RigDialog::default()
+        };
+        assert_eq!(d.explanation(), None);
     }
 
     #[test]

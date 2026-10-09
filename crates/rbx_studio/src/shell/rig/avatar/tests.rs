@@ -68,10 +68,24 @@ fn worn_asset(id: u64, kind: u32, dom: WeakDom) -> Worn {
     }
 }
 
+fn used(fates: &[Fate]) -> usize {
+    fates.iter().filter(|f| **f == Fate::Used).count()
+}
+
+fn notes_of(avatar: &Avatar, worn: &[Worn]) -> Vec<String> {
+    let mut options = options_for(avatar, JointStyle::AnimationConstraint, [0.; 3], None);
+    let early = apply_packages(&mut options, worn);
+    let mut dom = WeakDom::new();
+    let root = dom.new_instance("DataModel", "Game", None);
+    let rig = build_rig(&mut dom, &options, root);
+    let late = dress(&mut dom, rig, worn);
+    settle(avatar, worn, &merge(early, late)).1
+}
+
 fn rig_of(avatar: &Avatar) -> (WeakDom, Ref, RigOptions) {
     let mut dom = WeakDom::new();
     let root = dom.new_instance("DataModel", "Game", None);
-    let options = options_for(avatar, JointStyle::AnimationConstraint, [0.; 3]);
+    let options = options_for(avatar, JointStyle::AnimationConstraint, [0.; 3], None);
     let rig = build_rig(&mut dom, &options, root);
     (dom, rig, options)
 }
@@ -104,7 +118,12 @@ fn package(parts: &[(&str, u64, &[&str])]) -> WeakDom {
 
 #[test]
 fn options_follow_the_avatar() {
-    let o = options_for(&avatar_r15(), JointStyle::AnimationConstraint, [1., 2., 3.]);
+    let o = options_for(
+        &avatar_r15(),
+        JointStyle::AnimationConstraint,
+        [1., 2., 3.],
+        None,
+    );
     assert_eq!(o.rig_type, RigType::R15);
     assert_eq!(o.scales.unwrap().width, 0.9);
     assert_eq!(o.colors.left_leg, BrickColor::from_number(119).unwrap().rgb);
@@ -115,7 +134,7 @@ fn options_follow_the_avatar() {
 fn a_cap_is_welded_to_the_head_attachment_and_clothing_is_copied() {
     let avatar = avatar_r15();
     let (mut dom, rig, _) = rig_of(&avatar);
-    assert_eq!(dress(&mut dom, rig, &worn_of(&avatar)), 2);
+    assert_eq!(used(&dress(&mut dom, rig, &worn_of(&avatar))), 2);
     let all = descendants(&dom, rig);
     let weld = all
         .iter()
@@ -166,7 +185,7 @@ fn a_layered_accessory_keeps_its_wrap_layer_and_sits_on_its_attachment() {
     attach(&mut jacket, handle, "BodyFrontAttachment", [0.; 3]);
     let layer = jacket.new_instance("WrapLayer", "WrapLayer", Some(handle));
     set(&mut jacket, layer, "ReferenceMeshId", uri("rbxassetid://9"));
-    assert_eq!(dress(&mut dom, rig, &[worn_asset(9, 68, jacket)]), 1);
+    assert_eq!(used(&dress(&mut dom, rig, &[worn_asset(9, 68, jacket)])), 1);
     let handle = descendants(&dom, rig)
         .into_iter()
         .find(|&r| dom.get(r).is_some_and(|i| i.name() == "Handle"))
@@ -183,17 +202,43 @@ fn a_layered_accessory_keeps_its_wrap_layer_and_sits_on_its_attachment() {
 fn what_is_not_applied_is_named() {
     let extra = r#",{"id":4,"name":"Smile","assetType":{"id":18,"name":"Face"}},{"id":5,"name":"Head","assetType":{"id":79,"name":"DynamicHead"}}"#;
     let r6 = Avatar::from_json(&avatar_json("R6", extra)).unwrap();
-    let notes = unapplied(&r6, &worn_of(&r6));
-    assert_eq!(notes.len(), 1, "{notes:?}");
-    assert!(notes[0].contains("Smile") && notes[0].contains("Head (DynamicHead)"));
-    // R15 wears the dynamic head, so only the face is left over.
+    // Every used asset has a download, as `gather` makes them.
+    let everything = |avatar: &Avatar| -> Vec<Worn> {
+        avatar
+            .assets
+            .iter()
+            .filter(|a| is_used(a.asset_type.id))
+            .map(|a| Worn {
+                asset: a.clone(),
+                dom: Ok(match a.id {
+                    1 => cap(),
+                    2 => shirt(),
+                    _ => WeakDom::new(),
+                }),
+            })
+            .collect()
+    };
+    let notes = notes_of(&r6, &everything(&r6));
+    for name in [
+        "Torso (id 3, ",
+        "Smile (id 4, ",
+        "Head (id 5, DynamicHead): ",
+    ] {
+        assert!(
+            notes.iter().any(|n| n.starts_with(name)),
+            "{name}: {notes:?}"
+        );
+    }
+    assert!(!notes
+        .iter()
+        .any(|n| n.starts_with("Cap") || n.starts_with("Shirt")));
+    // A failed download is reported by name, id and type.
     let r15 = Avatar::from_json(&avatar_json("R15", extra)).unwrap();
-    let notes = unapplied(&r15, &worn_of(&r15));
-    assert!(notes[0].contains("Smile") && !notes[0].contains("DynamicHead"));
-    // A failed download is reported by name.
-    let mut worn = worn_of(&r15);
+    let mut worn = everything(&r15);
     worn[0].dom = Err("HTTP 404".into());
-    assert!(unapplied(&r15, &worn)[0].starts_with("Cap: HTTP 404"));
+    let notes = notes_of(&r15, &worn);
+    assert!(notes[0].starts_with("Cap (id 1, "), "{notes:?}");
+    assert!(notes[0].ends_with("HTTP 404"), "{notes:?}");
 }
 
 fn mock_dir(name: &str, avatar: &[u8]) -> std::path::PathBuf {
@@ -267,6 +312,61 @@ fn a_single_file_mock_loads_assets_beside_it() {
 }
 
 #[test]
+fn an_unknown_colour_id_falls_back_to_medium_stone_grey() {
+    let mut avatar = avatar_r15();
+    avatar.body_colors.left_leg = 999_999;
+    let o = options_for(&avatar, JointStyle::AnimationConstraint, [0.; 3], None);
+    assert_eq!(o.colors.left_leg, [163, 162, 165]);
+}
+
+#[test]
+fn the_rig_type_override_converts_in_both_directions() {
+    let mut r15 = avatar_r15();
+    let joints = JointStyle::AnimationConstraint;
+    assert_eq!(own_type(&r15), RigType::R15);
+    assert_eq!(
+        options_for(&r15, joints, [0.; 3], None).rig_type,
+        RigType::R15
+    );
+    assert_eq!(
+        options_for(&r15, joints, [0.; 3], Some(RigType::R6)).rig_type,
+        RigType::R6
+    );
+    r15.avatar_type = "R6".into();
+    assert_eq!(own_type(&r15), RigType::R6);
+    assert_eq!(
+        options_for(&r15, joints, [0.; 3], Some(RigType::R15)).rig_type,
+        RigType::R15
+    );
+    // Both builds dress without panicking.
+    for forced in [RigType::R6, RigType::R15] {
+        let mut dom = WeakDom::new();
+        let root = dom.new_instance("DataModel", "Game", None);
+        let o = options_for(&r15, joints, [0.; 3], Some(forced));
+        let rig = build_rig(&mut dom, &o, root);
+        assert_eq!(used(&dress(&mut dom, rig, &worn_of(&r15))), 2, "{forced:?}");
+    }
+}
+
+#[test]
+fn download_errors_are_specific() {
+    let auth = CloudError::AuthRequired { asset_id: 1 };
+    assert!(download_error(&auth, false).contains("no Open Cloud key"));
+    let forbidden = CloudError::Http {
+        status: 403,
+        url: String::new(),
+    };
+    assert!(download_error(&forbidden, true).contains("stored Open Cloud key"));
+    let gone = CloudError::Http {
+        status: 404,
+        url: String::new(),
+    };
+    assert!(download_error(&gone, false).contains("deleted or moderated"));
+    assert!(is_transient(&CloudError::RateLimited { retry_after: None }));
+    assert!(!is_transient(&gone));
+}
+
+#[test]
 fn errors_name_what_went_wrong() {
     let rate = user_error(&CloudError::RateLimited { retry_after: None }, 1);
     assert!(rate.contains("429") && !rate.contains("retry in"), "{rate}");
@@ -284,7 +384,7 @@ fn a_whole_package_replaces_the_stock_part_and_a_partial_one_does_not() {
         // Missing the wrist attachment: its joint would not meet.
         worn_asset(11, 28, package(&[("LeftHand", 888, &[])])),
     ];
-    assert_eq!(apply_packages(&mut options, &worn), 1);
+    assert_eq!(used(&apply_packages(&mut options, &worn)), 1);
     assert_eq!(options.pieces["Head"].mesh, 777);
     assert_eq!(options.pieces["LeftHand"].mesh, stock_hand);
     // The swapped mesh reaches the built rig.
@@ -315,7 +415,7 @@ fn a_dynamic_head_swaps_the_head_mesh_and_texture() {
     set(&mut source, mesh, "MeshId", uri("rbxassetid://888"));
     set(&mut source, mesh, "TextureID", uri("rbxassetid://999"));
     let worn = [worn_asset(12, DYNAMIC_HEAD, source)];
-    assert_eq!(apply_packages(&mut options, &worn), 1);
+    assert_eq!(used(&apply_packages(&mut options, &worn)), 1);
     assert_eq!(options.pieces["Head"].mesh, 888);
     assert_eq!(options.pieces["Head"].texture, Some(999));
 }
@@ -323,13 +423,13 @@ fn a_dynamic_head_swaps_the_head_mesh_and_texture() {
 #[test]
 fn an_r6_rig_takes_no_packages() {
     let r6 = Avatar::from_json(&avatar_json("R6", "")).unwrap();
-    let mut options = options_for(&r6, JointStyle::Motor6D, [0.; 3]);
+    let mut options = options_for(&r6, JointStyle::Motor6D, [0.; 3], None);
     let worn = [worn_asset(
         10,
         27,
         package(&[("Head", 777, &["NeckRigAttachment"])]),
     )];
-    assert_eq!(apply_packages(&mut options, &worn), 0);
+    assert_eq!(used(&apply_packages(&mut options, &worn)), 0);
 }
 
 fn animations(id: u64) -> WeakDom {
@@ -354,7 +454,7 @@ fn an_animation_package_replaces_the_states_it_names() {
         let avatar = Avatar::from_json(&avatar_json(kind, "")).unwrap();
         let (mut dom, rig, _) = rig_of(&avatar);
         let worn = [worn_asset(20, 51, animations(id))];
-        assert_eq!(dress(&mut dom, rig, &worn), 1);
+        assert_eq!(used(&dress(&mut dom, rig, &worn)), 1);
         let animate = child_named(&dom, rig, "Animate").unwrap();
         let idle = child_named(&dom, animate, "idle").unwrap();
         let kids = dom.get(idle).unwrap().children().to_vec();

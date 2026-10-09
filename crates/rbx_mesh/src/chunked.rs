@@ -131,6 +131,16 @@ mod tests {
     }
 
     #[test]
+    fn a_version_6_file_decodes_through_the_public_header_entry() {
+        let mut file = b"version 6.00\n".to_vec();
+        file.extend(v6_body());
+        let mesh = crate::parse(&file).unwrap();
+        assert_eq!(mesh.vertices, quad().0);
+        assert_eq!(mesh.lods, vec![0..1, 1..2]);
+        assert_eq!(mesh.bounds.size(), [2.0, 0.5, 0.0]);
+    }
+
+    #[test]
     fn v7_decodes_its_draco_geometry_and_keeps_the_face_order() {
         let mesh = parse((7, 0), &v7_body()).unwrap();
         assert_eq!(mesh.vertices, quad().0);
