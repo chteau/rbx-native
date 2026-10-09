@@ -416,7 +416,10 @@ fn a_dynamic_head_swaps_the_head_mesh_and_texture() {
     set(&mut source, mesh, "TextureID", uri("rbxassetid://999"));
     let worn = [worn_asset(12, DYNAMIC_HEAD, source)];
     assert_eq!(used(&apply_packages(&mut options, &worn)), 1);
-    assert!(!options.pieces["Head"].face, "a dynamic head has its own face");
+    assert!(
+        !options.pieces["Head"].face,
+        "a dynamic head has its own face"
+    );
     assert_eq!(options.pieces["Head"].mesh, 888);
     assert_eq!(options.pieces["Head"].texture, Some(999));
 }
@@ -466,5 +469,57 @@ fn an_animation_package_replaces_the_states_it_names() {
         );
         // A state the script does not have is not invented.
         assert!(child_named(&dom, animate, "unknown").is_none());
+    }
+}
+
+#[test]
+fn the_humanoid_description_records_the_avatars_ids() {
+    let avatar = Avatar::from_json(&avatar_json(
+        "R15",
+        r#",{"id":77,"name":"Hair","assetType":{"id":41,"name":"HairAccessory"}},{"id":88,"name":"Leg","assetType":{"id":30,"name":"LeftLeg"}},{"id":99,"name":"Face","assetType":{"id":18,"name":"Face"}}"#,
+    ))
+    .unwrap();
+    for kind in [RigType::R6, RigType::R15] {
+        let mut dom = WeakDom::new();
+        let root = dom.new_instance("DataModel", "Game", None);
+        let o = options_for(
+            &avatar,
+            JointStyle::AnimationConstraint,
+            [0.; 3],
+            Some(kind),
+        );
+        let rig = build_rig(&mut dom, &o, root);
+        describe_avatar(&mut dom, rig, &avatar);
+        let humanoid = child_named(&dom, rig, "Humanoid").unwrap();
+        let d = child_named(&dom, humanoid, "HumanoidDescription").unwrap();
+        let props = dom.get(d).unwrap().properties();
+        assert_eq!(props.get("Shirt"), Some(&Variant::Int64(2)), "{kind:?}");
+        assert_eq!(props.get("Face"), Some(&Variant::Int64(99)));
+        let kids = dom.get(d).unwrap().children().to_vec();
+        let ids = |class: &str| -> Vec<(Option<Variant>, Option<Variant>)> {
+            kids.iter()
+                .filter_map(|&k| dom.get(k))
+                .filter(|i| i.class() == class)
+                .map(|i| {
+                    (
+                        i.properties().get("AssetId").cloned(),
+                        i.properties()
+                            .get("BodyPart")
+                            .or(i.properties().get("AccessoryType"))
+                            .cloned(),
+                    )
+                })
+                .collect()
+        };
+        let parts = ids("BodyPartDescription");
+        assert!(parts.contains(&(Some(Variant::Int64(3)), Some(Variant::Enum(1)))));
+        assert!(parts.contains(&(Some(Variant::Int64(88)), Some(Variant::Enum(4)))));
+        assert_eq!(
+            ids("AccessoryDescription"),
+            vec![
+                (Some(Variant::Int64(1)), Some(Variant::Enum(1))),
+                (Some(Variant::Int64(77)), Some(Variant::Enum(2)))
+            ]
+        );
     }
 }

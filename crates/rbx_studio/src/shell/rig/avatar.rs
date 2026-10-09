@@ -714,3 +714,145 @@ fn child_of_class(dom: &WeakDom, parent: Ref, class: &str) -> Option<Ref> {
 
 #[cfg(test)]
 mod tests;
+
+/// Fills the rig's `HumanoidDescription` with the ids and colours of the
+/// avatar's JSON, as Studio's own character import records them.
+pub(crate) fn describe_avatar(dom: &mut WeakDom, rig: Ref, avatar: &Avatar) {
+    let Some(description) = child_named(dom, rig, "Humanoid")
+        .and_then(|humanoid| child_named(dom, humanoid, "HumanoidDescription"))
+    else {
+        return;
+    };
+    let id_of = |kind: u32| {
+        avatar
+            .assets
+            .iter()
+            .find(|a| a.asset_type.id == kind)
+            .map(|a| a.id as i64)
+    };
+    let mut set = |property: &str, value: Variant| {
+        let _ = dom.set_property(description, property, value);
+    };
+    for (kind, property) in [
+        (FACE, "Face"),
+        (TSHIRT, "GraphicTShirt"),
+        (SHIRT, "Shirt"),
+        (PANTS, "Pants"),
+        (48, "ClimbAnimation"),
+        (50, "FallAnimation"),
+        (51, "IdleAnimation"),
+        (52, "JumpAnimation"),
+        (MOOD, "MoodAnimation"),
+        (53, "RunAnimation"),
+        (54, "SwimAnimation"),
+        (55, "WalkAnimation"),
+    ] {
+        if let Some(id) = id_of(kind) {
+            set(property, Variant::Int64(id));
+        }
+    }
+    let c = &avatar.body_colors;
+    let slots = [
+        (0, id_of(DYNAMIC_HEAD).or_else(|| id_of(17)), c.head),
+        (1, id_of(27), c.torso),
+        (2, id_of(29), c.left_arm),
+        (3, id_of(28), c.right_arm),
+        (4, id_of(30), c.left_leg),
+        (5, id_of(31), c.right_leg),
+    ];
+    let parts: Vec<Ref> = dom
+        .get(description)
+        .map(|d| d.children().to_vec())
+        .unwrap_or_default();
+    for part in parts {
+        let Some(slot) = dom
+            .get(part)
+            .and_then(|p| match p.properties().get("BodyPart") {
+                Some(&Variant::Enum(e)) => Some(e as usize),
+                _ => None,
+            })
+        else {
+            continue;
+        };
+        let Some(&(_, id, color)) = slots.get(slot) else {
+            continue;
+        };
+        let rgb = BrickColor::from_number(color)
+            .or_else(|| BrickColor::from_number(DEFAULT_BRICK_COLOR))
+            .map_or([163, 162, 165], |b| b.rgb);
+        let _ = dom.set_property(
+            part,
+            "Color",
+            Variant::Color3(rbx_dom::Color3Data {
+                r: f32::from(rgb[0]) / 255.,
+                g: f32::from(rgb[1]) / 255.,
+                b: f32::from(rgb[2]) / 255.,
+            }),
+        );
+        if let Some(id) = id {
+            let _ = dom.set_property(part, "AssetId", Variant::Int64(id));
+        }
+    }
+    let mut order: BTreeMap<u32, i32> = BTreeMap::new();
+    for asset in &avatar.assets {
+        let kind = asset.asset_type.id;
+        let Some(accessory) = accessory_type(kind) else {
+            continue;
+        };
+        let slot = order.entry(accessory).or_insert(0);
+        *slot += 1;
+        let node = dom.new_instance(
+            "AccessoryDescription",
+            "AccessoryDescription",
+            Some(description),
+        );
+        let zero = rbx_dom::Vector3Data {
+            x: 0.,
+            y: 0.,
+            z: 0.,
+        };
+        for (property, value) in [
+            ("AccessoryType", Variant::Enum(accessory)),
+            ("AssetId", Variant::Int64(asset.id as i64)),
+            ("IsLayered", Variant::Bool((64..=72).contains(&kind))),
+            ("Order", Variant::Int32(*slot)),
+            ("Position", Variant::Vector3(zero)),
+            ("Rotation", Variant::Vector3(zero)),
+            ("Puffiness", Variant::Float32(1.)),
+            (
+                "Scale",
+                Variant::Vector3(rbx_dom::Vector3Data {
+                    x: 1.,
+                    y: 1.,
+                    z: 1.,
+                }),
+            ),
+        ] {
+            let _ = dom.set_property(node, property, value);
+        }
+    }
+}
+
+/// `Enum.AccessoryType` of an accessory asset type.
+fn accessory_type(kind: u32) -> Option<u32> {
+    Some(match kind {
+        8 => 1,
+        41 => 2,
+        42 => 3,
+        43 => 4,
+        44 => 5,
+        45 => 6,
+        46 => 7,
+        47 => 8,
+        64 => 9,
+        65 => 10,
+        66 => 11,
+        67 => 12,
+        68 => 13,
+        69 => 14,
+        70 => 15,
+        71 => 16,
+        72 => 17,
+        _ => return None,
+    })
+}

@@ -99,6 +99,7 @@ impl Shell {
         let (dressed, total, notes) = match import {
             Some((avatar, worn, early)) => {
                 let late = avatar::dress(&mut self.dom, rig, worn);
+                avatar::describe_avatar(&mut self.dom, rig, avatar);
                 let (used, notes) = avatar::settle(avatar, worn, &avatar::merge(early, late));
                 (used, avatar.assets.len(), notes)
             }
