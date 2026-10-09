@@ -873,3 +873,38 @@ fn the_output_log_says_which_route_served_each_asset() {
     assert_eq!(served_line(42, false), "Asset 42: served anonymously");
     assert_eq!(served_line(43, true), "Asset 43: served the stored key");
 }
+
+#[test]
+fn the_real_headless_head_swaps_in_its_speck_of_a_mesh() {
+    // Roblox's own download of asset 15093053680: a SpecialMesh whose
+    // content properties are plain strings, as older clients saved them.
+    let dom = read_model(include_bytes!(
+        "../../../../../../assets/tests/avatar/15093053680.rbxm"
+    ))
+    .unwrap();
+    let (_, _, mut options) = rig_of(&avatar_r15());
+    let worn = [worn_asset(12, DYNAMIC_HEAD, dom)];
+    assert_eq!(used(&apply_packages(&mut options, &worn)), 1);
+    assert_eq!(options.pieces["Head"].mesh, 134_079_402);
+    assert_eq!(options.pieces["Head"].texture, Some(133_940_918));
+}
+
+#[test]
+fn the_real_body_packages_supply_their_r15_parts() {
+    // Roblox's own downloads of a torso package (94619376315261) and a
+    // right-arm package (84202891428327).
+    let torso = read_model(include_bytes!(
+        "../../../../../../assets/tests/avatar/94619376315261.rbxm"
+    ))
+    .unwrap();
+    let arm = read_model(include_bytes!(
+        "../../../../../../assets/tests/avatar/84202891428327.rbxm"
+    ))
+    .unwrap();
+    let (_, _, mut options) = rig_of(&avatar_r15());
+    let worn = [worn_asset(28, 28, torso), worn_asset(27, 27, arm)];
+    assert_eq!(used(&apply_packages(&mut options, &worn)), 2);
+    assert_eq!(options.pieces["UpperTorso"].mesh, 123_703_027_718_030);
+    assert_eq!(options.pieces["RightUpperArm"].mesh, 100_418_658_789_083);
+    assert_eq!(options.pieces["RightHand"].mesh, 106_255_216_464_982);
+}

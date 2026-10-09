@@ -616,8 +616,14 @@ fn asset_id(text: &str) -> Option<u64> {
 }
 
 fn content_id(dom: &WeakDom, node: Ref, key: &str) -> Option<u64> {
-    match dom.get(node)?.properties().get(key)? {
-        Variant::Content(Content::Uri(uri)) => asset_id(uri),
+    asset_id(uri_text(dom.get(node)?.properties().get(key)?)?)
+}
+
+/// A content property's text. Models saved by older clients (the Headless
+/// Head's mesh among them) store it as a plain string.
+fn uri_text(value: &Variant) -> Option<&str> {
+    match value {
+        Variant::Content(Content::Uri(uri)) | Variant::String(uri) => Some(uri),
         _ => None,
     }
 }
@@ -737,7 +743,7 @@ fn wear_clothing(rig_dom: &mut WeakDom, rig: Ref, source: &WeakDom) -> Result<()
 /// Clothing carries the legacy `http://www.roblox.com/asset/?id=N ` form
 /// (sometimes with a trailing space); the rig stores `rbxassetid://N`.
 fn normalised_template(value: &Variant) -> Result<Variant, String> {
-    let Variant::Content(Content::Uri(text)) = value else {
+    let Some(text) = uri_text(value) else {
         return Ok(value.clone());
     };
     match rbx_assets::AssetRef::parse(text) {
