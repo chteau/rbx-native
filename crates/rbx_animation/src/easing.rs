@@ -9,8 +9,21 @@
 //! `PoseEasingStyle` doc deprecates `Cubic` because its "direction is
 //! reversed between the editor and runtime". Read together, the legacy
 //! `Cubic` is the backwards one, and `CubicV2`, `Elastic` and `Bounce` follow
-//! TweenService. That is what this module does. It has not been checked
-//! against a running Roblox client.
+//! TweenService. That is what this module does.
+//!
+//! The editor half is now settled by the editor's own code. Studio
+//! 0.742.0.7421053's `AnimationClipEditor/Src/Util/CurveUtils` (Client
+//! Tracker commit 41ab074bc29d, disassembly only) converts pose easing into
+//! curve keys: `makeCubic` gives `Out` a first-key right slope of `3·Δv/Δt`
+//! and a last-key left slope of 0 (fast start, slow end) and `In` the mirror,
+//! the TweenService meaning; `Cubic` and `CubicV2` both go through it;
+//! `makeBounce` and `makeElastic` build the standard `Out` and reflect it for
+//! `In`; `InOut` is `In` up to a midpoint key, then `Out`. The editor
+//! therefore shows every style the TweenService way. The runtime half (that
+//! the engine plays legacy `Cubic` reversed) still rests only on the enum
+//! docs quoted above: no engine evaluator is public and it has not been
+//! checked against a running client. Neither source says how `Constant`
+//! reads its direction.
 //!
 //! Roblox does not publish the curves themselves. Cubic, Elastic and Bounce
 //! use the Penner shapes that TweenService's styles of the same names follow.
