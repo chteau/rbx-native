@@ -1,0 +1,204 @@
+# Passation : Animation Editor, Animation Graph et auto-rigger
+
+Point d'étape pour reprendre ce travail, en particulier pour tester
+**Publish** de l'auto-rigger sur de vrais meshes avec une clé Open Cloud.
+Le sandbox où tout a été développé bloque tous les hôtes Roblox. Rien de ce
+qui parle à Roblox n'a donc été exécuté pour de vrai.
+
+- **Branche :** `claude/busy-mccarthy-3cjctq`.
+- **PR :** [chteau/rbx-native#180](https://github.com/chteau/rbx-native/pull/180), base `dev`.
+- **Dernière vérification :** `./scripts/check.sh` vert (fmt, clippy
+  `-D warnings`, **4474 tests**), et le test e2e GUI vert pour les deux
+  classes de joints.
+- **Règle du dépôt** (`CLAUDE.md`) : aucune mention d'attribution
+  Claude/Anthropic dans les commits ou la PR.
+
+## 1. Ce qui est fait
+
+### `crates/rbx_animation` (nouveau, sans GUI)
+
+- **Rigs et clips**
+  - Joints `Motor6D` et `AnimationConstraint` (Avatar Joint Upgrade).
+  - `KeyframeSequence` en lecture et en écriture, avec easing, `Animator`
+    (priorités et poids) et FACS (`NumberPose` sous `Head › FaceControls`).
+- **Posing et courbes**
+  - IK : deux os analytique, plus FABRIK ; modes Body Part / Full Body, pins.
+  - Courbes : `FloatCurve`, tangentes Hermite, conversion clip ↔ courbes.
+- **Import**
+  - Texte de l'addon Blender *Rbx Animations*, ce qui couvre aussi RoMixamo.
+  - FBX et glTF retargetés : alias Mixamo, alignement T-pose → bras le long
+    du corps.
+  - `AnimationId`.
+- **Animation Graph** calqué sur le plugin Studio officiel : stockage,
+  valeurs par défaut, runtime. Les comportements non documentés par Roblox
+  sont marqués `UNVERIFIED` dans le code.
+
+### `crates/rbx_autorig` (nouveau, sans GUI) : l'auto-rigger
+
+API publique, depuis `src/lib.rs` :
+
+- **Lecture :** `read(path)` pour `.fbx` binaire, `.obj`, `.gltf` et `.glb`.
+- **Fit :** `fit` / `fit_with(mesh, &FitOptions)` renvoient un `Fit`, avec
+  l'orientation, l'échelle et les 15 joints en espace Roblox, en studs.
+  - L'axe haut, l'avant (−Z, gauche du perso sur −X) et l'échelle sont
+    détectés.
+  - Les joints viennent d'une voxelisation, des extrémités géodésiques, des
+    sections transverses et des proportions du Mannequin.
+- **Découpe :** `split` produit `Body`, les 15 `PartMesh` capés et étanches.
+  Chacun a son centre, sa taille et ses attachments `<Joint>RigAttachment`
+  relatifs au centre.
+- **Skin (option B) :** `weights(mesh, fit, body)` renvoie un `Skin`.
+  - Bone heat, 4 influences par sommet, somme = 255.
+  - Os limités à : propre partie, parent, enfants.
+- **Écriture**
+  - `mesh_v2` : mesh rigide.
+  - `mesh_v4(mesh, Some(&PartSkin))` : mesh skinné.
+  - `gltf(&Body)` : 15 nœuds `<Part>_Geo`.
+  - `gltf_skinned(&Body, &Skin)` : armature `Root → HumanoidRootNode →
+    LowerTorso → …`, skin unique, fichier décalé pour mettre le joint Root à
+    l'origine.
+- **Pour les tests d'autres crates :** feature `test-humanoid`, qui expose
+  `test_humanoid::humanoid(Pose::A|T|I)`, un humanoïde synthétique aux
+  joints connus.
+
+### `crates/rbx_viewer` et `crates/rbx_mesh`
+
+- **Isolation :** `Headless::set_isolation(Some(roots))` ne dessine que le rig,
+  sur fond gris #3A3A3A avec un éclairage neutre. Le reste n'est ni dessiné
+  ni pickable.
+- **Lecture du skinning :** `rbx_mesh::parse_skinned` lit v4/v5 et le
+  chunk `SKINNING` v6/v7.
+- **Déformation :**
+  - Le viewer déforme en direct un `MeshPart` skinné par les parts sœurs que
+    ses os nomment, sur le CPU.
+  - Ça marche aussi pour un rig inséré ou remplacé après le chargement.
+  - La pose de repos est déduite des joints.
+
+### `crates/rbx_studio` : le document Animation Editor
+
+- **Disposition :** onglet Animation Editor, dans l'esprit de Blender.
+- **Sous-onglets :** Dope Sheet, **Curve Editor** et **Animation Graph**.
+- **Vue 3D**
+  - Le rig seul sur une grille, avec les axes X rouge et Z bleu.
+  - **Vue squelette** : os style Blender, celui du joint sélectionné en bleu,
+    bouton dans la barre du haut.
+- **Panneau latéral :** Rigging, **Auto-rig**, Clip, Curve key, Keyframe,
+  IK, Events, Face, Import.
+- **Brouillons :** le travail non sauvegardé est gardé en brouillon local
+  dans `<config>/animation-drafts`.
+- **Auto-rigger :** Rigging › **Auto-rig a mesh…**
+  - Code : `src/shell/rig/autorig.rs`, panneau dans
+    `src/shell/animation/panel/autorig.rs`.
+  - Chaque partie découpée est écrite dans le cache d'assets local, sous
+    `rbxasset://rbx-native-local/autorig/<hash>/<Part>.mesh`. Le rig est
+    ensuite construit par le Rig Builder (`Piece.local`), ce qui permet un
+    aperçu sans upload.
+  - Réglages : **Turn 90°**, **Flip front**, **Smooth bends** / **Rigid
+    parts**, **Mirrored**, puis position X/Y/Z du joint choisi. Chaque
+    édition redécoupe et reconstruit le rig en place.
+  - **Publish** écrit le `.glb` (skinné si Smooth), l'envoie par
+    `import3d::upload_model` (Open Cloud), puis `swap_meshes` remplace le
+    `MeshId` de chaque partie par celui de l'upload.
+  - Sauvegarder une place qui contient encore des meshes locaux affiche un
+    avertissement.
+
+## 2. Ce qu'il faut tester avec la clé API
+
+1. **Préparer**
+   - Une clé configurée (Home › Manage key, ou variable d'environnement, voir
+     `rbx_cloud::ApiKey::from_env_or_config`).
+   - Ne **pas** définir `RBX_STUDIO_IMPORT_MOCK`.
+2. **Lancer et vérifier le fit**
+   - Ouvrir une place, onglet Animation Editor, puis **Auto-rig a mesh…** sur
+     un vrai personnage non riggé en A-pose ou T-pose (export Blender, mesh
+     Mixamo sans squelette…).
+   - Les joints tombent-ils juste ? Corriger avec les champs X/Y/Z au besoin.
+   - L'avant est-il bien détecté ? Sinon, Turn 90° / Flip front.
+   - Avec Smooth bends, coudes et genoux plient-ils proprement ? Pour
+     tester, tourner un membre avec l'outil Rotate.
+3. **Publish**, puis vérifier :
+   - **Unités.** Comparer le `InitialSize` renvoyé par l'upload à la taille
+     de la partie. Le fichier est écrit en studs. Si c'est environ 3,57 fois
+     trop petit ou trop grand, l'importeur le lit en mètres : corriger
+     l'échelle dans `crates/rbx_autorig/src/write.rs`.
+   - **Noms.** Le message doit dire « Published: every part now uses its
+     uploaded mesh ». S'il dit « only N of 15 parts », les `MeshPart` renvoyés
+     ne s'appellent ni `<Part>_Geo` ni `<Part>` : adapter `find_named` /
+     `swap_meshes` dans `crates/rbx_studio/src/shell/rig/autorig.rs`.
+   - **Armature.** En mode skinné, l'importeur détecte-t-il l'armature R15 ?
+     Crée-t-il ses propres joints, ou des `Bone` ? Nos joints et attachments
+     sont gardés : vérifier qu'il n'y a pas de doublons.
+   - **En jeu.** Le personnage publié marche-t-il avec un `Animator` et une
+     animation R15 standard ?
+4. **Mesh v4 skinné dans Studio (si possible).** Les valeurs d'en-tête
+   `num_high_quality_lods = 1` et `lod_type = 0` sont des suppositions
+   raisonnées (voir `write.rs`).
+
+Pour tester sans clé, `RBX_STUDIO_IMPORT_MOCK=<fichier .rbxm>` remplace
+l'upload par un modèle local.
+
+## 3. Lancer, vérifier, scripter
+
+- **Vérification complète :** `./scripts/check.sh`.
+  `RBX_LUAU_LSP_ZIP=<zip>` n'était nécessaire que derrière le proxy TLS du
+  sandbox.
+- **Test GUI e2e** (il faut un display) :
+  `RBX_STUDIO_E2E_DISPLAY=:0 cargo test -p rbx_studio --test animation_e2e -- --ignored`.
+- **Runs scriptés :** `RBX_STUDIO_ANIMATION="<étapes>" rbxstudio place.rbxl`
+  ouvre l'Animation Editor et joue les étapes. La liste complète est dans
+  `src/shell/animation/debug.rs`. Exemple d'auto-rig puis de pliage :
+  `RBX_STUDIO_ANIMATION="autorig=/chemin/perso.obj,skeleton=off,turn=LeftLowerArm:-70,turn=RightLowerLeg:60"`.
+  Les étapes après `autorig=` attendent que le rig soit placé.
+
+## 4. Conventions à respecter
+
+- **Repère Roblox :** +Y en haut, avant vers −Z, gauche du personnage sur −X.
+- **Bind des os** (auto-rigger et viewer appliquent exactement la même
+  règle) :
+  - L'os B est une pure translation vers `joint(B) − centre de la partie`,
+    dans l'espace du mesh.
+  - À l'exécution : `M_B = (part.CFrame⁻¹ · bonePart.CFrame · T(offset du
+    joint)) · bind_B⁻¹`, ce qui vaut l'identité au repos.
+- **Coutures :** les sommets des caps prennent les poids du mur qu'ils
+  touchent. Les forcer à 100 % sur leur propre partie ouvrirait une fente
+  à chaque pli.
+
+## 5. Ce qui reste ouvert ou non vérifié
+
+- **Auto-rigger**
+  - Marqueurs de joints déplacés depuis le panneau seulement, pas par
+    glisser-déposer dans la vue 3D.
+  - Pas d'attachments d'accessoires ni de cages.
+  - Non géré : mains en pièces séparées, bras levés au-dessus de la tête.
+  - Testé seulement sur des humanoïdes synthétiques.
+- **Skinning viewer**
+  - Déformation sur le CPU.
+  - Les masques de survol, de sélection et de surbrillance gardent la
+    silhouette au repos.
+  - Les vêtements en couches ne sont pas skinnés.
+  - 18 des tests GPU `patch_parity` (ignorés par défaut) n'ont pas été
+    lancés : trop lents sous lavapipe.
+- **Vue isolée**
+  - Particules et GUI attachés au rig masqués aussi.
+  - Le snapping de l'outil Move peut viser des parts cachées.
+  - Ombre ajustée à toute la place.
+- **Non vérifié contre un vrai client Roblox**
+  - Direction de l'easing des poses (voir `agents/animation-research.md` §8).
+  - Import par `AnimationId`.
+  - Comportements non documentés du Graph, marqués `UNVERIFIED`.
+- **`CurveAnimation`** n'est pas écrit (format non public) : les courbes
+  sont recuites en `KeyframeSequence`.
+
+## 6. Références
+
+- `agents/animation-research.md` : recherche Animation, Graph et import,
+  avec sources.
+- `agents/autorig-research.md` : spec de l'auto-rigger, avec sources.
+  - Découpe R15 et proportions.
+  - Règles de l'importeur skinné.
+  - Formats mesh v4–v7.
+  - Algorithmes.
+  - Comportement d'Avatar Auto Setup.
+  - Questions ouvertes (§7).
+- `ROADMAP.md`, section Animation : ce qui est coché et ce qui reste.
+- Captures : `docs/screenshots/animation/`.
