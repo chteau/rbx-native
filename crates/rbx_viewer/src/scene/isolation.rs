@@ -126,7 +126,9 @@ impl Scene {
             .chain(
                 self.beams
                     .iter()
-                    .filter(|beam| belongs(&[beam.referent, beam.attachments[0], beam.attachments[1]]))
+                    .filter(|beam| {
+                        belongs(&[beam.referent, beam.attachments[0], beam.attachments[1]])
+                    })
                     .map(|beam| beam.referent),
             )
             .chain(

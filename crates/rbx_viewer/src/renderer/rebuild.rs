@@ -184,8 +184,13 @@ impl Renderer {
             .rebuild(device, queue, &scene.drawn_beams(), images, &quality);
         self.trails
             .rebuild(device, queue, &scene.drawn_trails(), images, &quality);
-        self.particles
-            .rebuild(device, queue, &scene.drawn_particle_emitters(), images, &quality);
+        self.particles.rebuild(
+            device,
+            queue,
+            &scene.drawn_particle_emitters(),
+            images,
+            &quality,
+        );
         self.adornments
             .replace(device, queue, self.target, scene.adornments(), images);
         // After `shaped`/`filemesh` above only for readability — the mask's

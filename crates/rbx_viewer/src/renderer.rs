@@ -369,7 +369,14 @@ impl Renderer {
             bodies,
             shadows,
             beams: Beams::new(device, queue, target, &scene.drawn_beams(), images, quality),
-            trails: Trails::new(device, queue, target, &scene.drawn_trails(), images, quality),
+            trails: Trails::new(
+                device,
+                queue,
+                target,
+                &scene.drawn_trails(),
+                images,
+                quality,
+            ),
             particles: Particles::new(
                 device,
                 queue,
@@ -1000,7 +1007,12 @@ impl Renderer {
 
         (
             lamp,
-            shadow::fit(light, &frustum, self.shadow_bounds(), self.quality.shadow_map_size),
+            shadow::fit(
+                light,
+                &frustum,
+                self.shadow_bounds(),
+                self.quality.shadow_map_size,
+            ),
         )
     }
 }
