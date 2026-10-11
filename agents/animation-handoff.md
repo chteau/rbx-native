@@ -185,7 +185,7 @@ l'upload par un modèle local.
 - **Non vérifié contre un vrai client Roblox**
   - Direction de l'easing des poses : côté éditeur, réglé par le code de
     l'Animation Editor (`CurveUtils`, Client Tracker 41ab074bc29d, cité dans
-    `easing.rs`) : toutes les styles au sens TweenService. Le `Cubic`
+    `easing.rs`) : tous les styles au sens TweenService. Le `Cubic`
     inversé au runtime ne repose que sur la doc de l'enum ; la direction de
     `Constant` n'est dite nulle part.
   - Comportements non documentés du Graph, marqués `UNVERIFIED`. Réglé par
