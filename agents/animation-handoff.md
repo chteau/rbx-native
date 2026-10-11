@@ -180,8 +180,13 @@ l'upload par un modèle local.
 - **Runs scriptés :** `RBX_STUDIO_ANIMATION="<étapes>" rbxstudio place.rbxl`
   ouvre l'Animation Editor et joue les étapes. La liste complète est dans
   `src/shell/animation/debug.rs`. Exemple d'auto-rig puis de pliage :
-  `RBX_STUDIO_ANIMATION="autorig=/chemin/perso.obj,skeleton=off,turn=LeftLowerArm:-70,turn=RightLowerLeg:60"`.
-  Les étapes après `autorig=` attendent que le rig soit placé.
+  `RBX_STUDIO_ANIMATION="autorig=/chemin/perso.obj,skeleton=off,turn=LeftLowerArm:-70:z,turn=RightLowerLeg:60"`.
+  Les étapes après `autorig=` attendent que le rig soit placé. Un bras
+  auto-riggé en T-pose est couché le long de X : `turn` autour de X (le
+  défaut) ne fait que le vriller, il faut `:z` pour le plier. Le brouillon
+  d'animation (`<config>/animation-drafts`) est relu au lancement suivant et
+  ses clés s'additionnent d'un run à l'autre : lancer avec un
+  `XDG_CONFIG_HOME` vide pour partir de zéro.
 
 ## 4. Conventions à respecter
 

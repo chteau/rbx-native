@@ -18,9 +18,10 @@
 //! (select that channel and its key at the playhead), `keyframe` (select
 //! every key at the playhead), `save`, `graph-demo` (the example
 //! locomotion graph), `speed=<n>` (set the graph's `speed`), `play`,
-//! `node=<index>` (select a graph node), `save-graph`, `turn=<part>:<degrees>`
-//! (rotate a rig part about its own X axis the way a Rotate-tool drag writes
-//! it, then run one editor frame, which reads it back as a key),
+//! `node=<index>` (select a graph node), `save-graph`, `turn=<part>:<degrees>[:x|y|z]`
+//! (rotate a rig part about one of its own axes, X unless named, the way a
+//! Rotate-tool drag writes it, then run one editor frame, which reads it back
+//! as a key; an auto-rigged T-pose arm lies along X, so it bends about Z),
 //! `select=<part>` (select that part of the bound rig, as a click on it
 //! would), `write=<path>` (File › Save As to that path) and `quit`.
 
@@ -110,11 +111,17 @@ impl Shell {
     }
 
     fn debug_turn(&mut self, arg: &str, cx: &mut Context<Self>) {
-        let Some((part_name, degrees)) = arg.split_once(':') else {
+        let mut fields = arg.split(':');
+        let (Some(part_name), Some(Ok(degrees))) =
+            (fields.next(), fields.next().map(str::parse::<f32>))
+        else {
             return;
         };
-        let Ok(degrees) = degrees.parse::<f32>() else {
-            return;
+        let radians = degrees.to_radians();
+        let (x, y, z) = match fields.next() {
+            Some("y") => (0.0, radians, 0.0),
+            Some("z") => (0.0, 0.0, radians),
+            _ => (radians, 0.0, 0.0),
         };
         // A frame first, so the rig is posed and what follows is an edit.
         self.pose_rig(cx);
@@ -137,11 +144,8 @@ impl Shell {
         else {
             return;
         };
-        let turned = rbx_animation::Frame::from_data(&now).mul(&rbx_animation::Frame::angles(
-            degrees.to_radians(),
-            0.0,
-            0.0,
-        ));
+        let turned =
+            rbx_animation::Frame::from_data(&now).mul(&rbx_animation::Frame::angles(x, y, z));
         let _ = self
             .dom
             .set_property(part, "CFrame", rbx_dom::Variant::CFrame(turned.to_data()));
