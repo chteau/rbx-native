@@ -8,25 +8,23 @@ use crate::error::MeshError;
 use crate::mesh::Mesh;
 use crate::reader::Reader;
 use crate::records::{self, VERTEX_SIZE_COLORED};
+use crate::skin::{self, Skin};
 
 const V4_HEADER_SIZE: u16 = 24;
 const V5_HEADER_SIZE: u16 = 32;
 
-/// `u8` bone indices plus `u8` weights, per vertex, present only when the mesh
-/// declares bones.
-const SKIN_ENVELOPE_SIZE: usize = 8;
-
-// Both sizes agree across the community spec and three independent readers
+// The record sizes (8-byte envelope, 60-byte bone, 72-byte subset) live in
+// `skin`. They agree across the community spec and three independent readers
 // (rbx_mesh, Source2Roblox, Roblox-Mesh-Importer, the last byte-exact over a
-// 799-mesh corpus), but every sample file available here reports zero bones and
-// zero subsets, so nothing local exercises them. A file that disagrees surfaces as
-// TooShort or TrailingBytes rather than as silent corruption.
+// 799-mesh corpus), and with a real `version 5.00` dynamic head. A file that
+// disagrees surfaces as TooShort or TrailingBytes rather than as silent
+// corruption.
 //
 // The classic misread is 70 bytes for a subset, from taking its bone-index count
 // as u16: on little-endian the count still looks right, the zero high half is
 // eaten as the first bone index, and every later subset drifts two bytes.
-const BONE_SIZE: usize = 60;
-const SUBSET_SIZE: usize = 72;
+#[cfg(test)]
+use crate::skin::{BONE_SIZE, ENVELOPE_SIZE as SKIN_ENVELOPE_SIZE, SUBSET_SIZE};
 
 struct Header {
     num_verts: usize,
@@ -38,35 +36,33 @@ struct Header {
     facs_data_size: usize,
 }
 
-pub(crate) fn parse(version: (u8, u8), body: &[u8]) -> Result<Mesh, MeshError> {
+pub(crate) fn parse(version: (u8, u8), body: &[u8]) -> Result<(Mesh, Option<Skin>), MeshError> {
     let mut reader = Reader::new(body);
     let header = read_header(&mut reader, version.0)?;
 
     let vertices = records::read_vertices(&mut reader, header.num_verts, VERTEX_SIZE_COLORED)?;
 
-    // Skipped, not exposed. The block sits between the vertices and the faces, so
-    // its size has to be exact for the face offsets to land.
-    // TODO: expose bone indices and weights once something consumes them. Note for
-    // whoever does: the four index bytes are subset-local slots, not global bone
-    // ids, and resolve through `subsets[s].bone_indices[slot]`.
-    if header.num_bones > 0 {
-        reader.take_records(header.num_verts, SKIN_ENVELOPE_SIZE)?;
-    }
+    // The envelopes sit between the vertices and the faces, so their size has
+    // to be exact for the face offsets to land. Their four index bytes are
+    // subset-local slots, resolved through the subsets read further down.
+    let envelopes = if header.num_bones > 0 {
+        skin::read_envelopes(&mut reader, header.num_verts)?
+    } else {
+        Vec::new()
+    };
 
     let faces = records::read_faces(&mut reader, header.num_faces)?;
     let lod_table = reader.u32_array(header.num_lods)?;
 
-    // Everything past the LOD table is metadata this crate does not surface yet.
-    // It is still consumed so that a file whose trailing blocks are truncated is
-    // reported as an error instead of silently accepted.
-    // TODO: expose the bone hierarchy, the subset table and the FACS data.
-    reader.take_records(header.num_bones, BONE_SIZE)?;
-    reader.take(header.bone_names_size)?;
-    reader.take_records(header.num_subsets, SUBSET_SIZE)?;
+    let bones = skin::read_bones(&mut reader, header.num_bones)?;
+    let names = reader.take(header.bone_names_size)?;
+    let subsets = skin::read_subsets(&mut reader, header.num_subsets)?;
+    // FACS is consumed but not surfaced: nothing here drives face bones.
     reader.take(header.facs_data_size)?;
     reader.expect_eof()?;
 
-    Mesh::assemble(version, vertices, &faces, &lod_table)
+    let skin = (header.num_bones > 0).then(|| Skin::new(bones.named(names), subsets, envelopes));
+    Ok((Mesh::assemble(version, vertices, &faces, &lod_table)?, skin))
 }
 
 fn read_header(reader: &mut Reader<'_>, major: u8) -> Result<Header, MeshError> {
@@ -211,7 +207,7 @@ mod tests {
 
     #[test]
     fn v4_reads_geometry_and_the_lod_table() {
-        let mesh = parse((4, 1), &body(4, &Counts::plain(3, 2, 3))).unwrap();
+        let (mesh, _) = parse((4, 1), &body(4, &Counts::plain(3, 2, 3))).unwrap();
 
         assert_eq!(mesh.version, (4, 1));
         assert_eq!(mesh.vertices.len(), 3);
@@ -230,7 +226,7 @@ mod tests {
             ..Counts::plain(4, 2, 0)
         };
         let bytes = body(4, &counts);
-        let mesh = parse((4, 1), &bytes).unwrap();
+        let (mesh, _) = parse((4, 1), &bytes).unwrap();
 
         // Same geometry as the unskinned case: the 8-byte-per-vertex envelope, the
         // two 60-byte bones, the name buffer and the 72-byte subset were all
@@ -265,7 +261,7 @@ mod tests {
             ..Counts::plain(3, 1, 0)
         };
         let bytes = body(5, &counts);
-        let mesh = parse((5, 0), &bytes).unwrap();
+        let (mesh, _) = parse((5, 0), &bytes).unwrap();
 
         assert_eq!(mesh.indices, vec![0, 1, 2]);
         assert_eq!(bytes.len(), V5_HEADER_SIZE as usize + 3 * 40 + 12 + 40);
@@ -335,6 +331,77 @@ mod tests {
             for len in 0..bytes.len() {
                 let _ = parse((major, 0), &bytes[..len]);
             }
+        }
+    }
+
+    /// A real skinned body: `body`'s geometry with the envelope, bone, name and
+    /// subset blocks filled from `skin::tests::sample`.
+    fn skinned_body(major: u8) -> Vec<u8> {
+        use crate::skin::tests::{bone_bytes, envelope_bytes, sample, subset_bytes};
+        let (bones, subsets, envelopes) = sample();
+        let (bone_records, names) = bone_bytes(&bones);
+        let counts = Counts {
+            bones: 2,
+            bone_names: names.len() as u32,
+            subsets: 2,
+            facs: if major >= 5 { 4 } else { 0 },
+            ..Counts::plain(4, 2, 2)
+        };
+        let mut out = body(major, &counts);
+        let header = if major == 4 {
+            V4_HEADER_SIZE
+        } else {
+            V5_HEADER_SIZE
+        } as usize;
+        let envelope_at = header + 4 * 40;
+        out[envelope_at..envelope_at + 4 * SKIN_ENVELOPE_SIZE]
+            .copy_from_slice(&envelope_bytes(&envelopes));
+        let bones_at = envelope_at + 4 * SKIN_ENVELOPE_SIZE + 2 * 12 + 2 * 4;
+        let tail: Vec<u8> = bone_records
+            .into_iter()
+            .chain(names)
+            .chain(subset_bytes(&subsets))
+            .collect();
+        out[bones_at..bones_at + tail.len()].copy_from_slice(&tail);
+        assert_eq!(out.len(), bones_at + tail.len() + counts.facs as usize);
+        out
+    }
+
+    #[test]
+    fn v4_and_v5_expose_bones_subsets_and_resolved_weights() {
+        let (bones, subsets, envelopes) = crate::skin::tests::sample();
+        for major in [4u8, 5] {
+            let (mesh, skin) = parse((major, 0), &skinned_body(major)).unwrap();
+            // Geometry exactly as the unskinned reader saw it.
+            assert_eq!(mesh.vertices.len(), 4);
+            assert_eq!(mesh.vertices[3].position, [3.0, 2.0, 3.0]);
+            assert_eq!(mesh.indices, vec![0, 1, 2, 0, 1, 2]);
+
+            let skin = skin.expect("a mesh declaring bones carries a skin");
+            assert_eq!(skin.bones, bones);
+            assert_eq!(skin.bones[1].name, "LowerArm");
+            assert_eq!(skin.bones[1].parent, Some(0));
+            assert_eq!(skin.subsets, subsets);
+            assert_eq!(skin.envelopes, envelopes);
+            assert_eq!(skin.influences.len(), 4);
+            assert_eq!(
+                skin.influences[2].iter().collect::<Vec<_>>(),
+                [(1, 0.2), (0, 0.8)]
+            );
+        }
+    }
+
+    #[test]
+    fn an_unskinned_mesh_has_no_skin() {
+        let (_, skin) = parse((4, 1), &body(4, &Counts::plain(3, 2, 3))).unwrap();
+        assert!(skin.is_none());
+    }
+
+    #[test]
+    fn every_truncation_of_a_skinned_body_errors_without_panicking() {
+        let bytes = skinned_body(4);
+        for len in 0..bytes.len() {
+            assert!(parse((4, 0), &bytes[..len]).is_err());
         }
     }
 }

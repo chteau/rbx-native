@@ -432,7 +432,30 @@ fn group_by_mesh_and_skin(resolved: &Resolved) -> Vec<(GroupKey, Vec<&ResolvedIn
 /// A mesh drawn under two skins is converted twice; that is a handful of meshes
 /// per scene, against a per-batch cache that would have to outlive the loop.
 fn build(device: &wgpu::Device, mesh: &rbx_mesh::Mesh, skin: Skin) -> Geometry {
-    let vertices: Vec<u8> = match skin {
+    let vertices = vertex_bytes(mesh, skin);
+    let indices = mesh.lod0();
+
+    Geometry {
+        vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("rbxview filemesh vertices"),
+            contents: &vertices,
+            // Writable so a skinned mesh's pose can be re-uploaded in place
+            // (see `FileMeshes::refresh`).
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        }),
+        indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("rbxview filemesh indices"),
+            contents: bytemuck::cast_slice(indices),
+            usage: wgpu::BufferUsages::INDEX,
+        }),
+        index_count: indices.len() as u32,
+        skin,
+    }
+}
+
+/// `mesh`'s vertices in the format `skin`'s pipeline reads.
+fn vertex_bytes(mesh: &rbx_mesh::Mesh, skin: Skin) -> Vec<u8> {
+    match skin {
         Skin::Plain => bytemuck::cast_slice(
             &mesh
                 .vertices
@@ -443,21 +466,5 @@ fn build(device: &wgpu::Device, mesh: &rbx_mesh::Mesh, skin: Skin) -> Geometry {
         .to_vec(),
         Skin::Image(_) => bytemuck::cast_slice(&TexturedVertex::build(mesh)).to_vec(),
         Skin::Appearance(_) => bytemuck::cast_slice(&AppearanceVertex::build(mesh)).to_vec(),
-    };
-    let indices = mesh.lod0();
-
-    Geometry {
-        vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("rbxview filemesh vertices"),
-            contents: &vertices,
-            usage: wgpu::BufferUsages::VERTEX,
-        }),
-        indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("rbxview filemesh indices"),
-            contents: bytemuck::cast_slice(indices),
-            usage: wgpu::BufferUsages::INDEX,
-        }),
-        index_count: indices.len() as u32,
-        skin,
     }
 }

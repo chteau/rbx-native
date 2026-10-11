@@ -52,8 +52,8 @@ fn mesh_part(referent: u32, x: f32) -> Instance {
     instance
 }
 
-fn cube() -> rbx_mesh::Mesh {
-    rbx_mesh::Mesh {
+fn cube() -> rbx_mesh::SkinnedMesh {
+    rbx_mesh::SkinnedMesh::from(rbx_mesh::Mesh {
         version: (4, 1),
         vertices: Vec::new(),
         indices: Vec::new(),
@@ -62,10 +62,10 @@ fn cube() -> rbx_mesh::Mesh {
             min: [-0.5; 3],
             max: [0.5; 3],
         },
-    }
+    })
 }
 
-fn meshes() -> HashMap<AssetRef, Arc<rbx_mesh::Mesh>> {
+fn meshes() -> HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>> {
     HashMap::from([(AssetRef::Id(1), Arc::new(cube()))])
 }
 

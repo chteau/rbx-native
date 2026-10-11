@@ -41,6 +41,7 @@ pub(crate) use effects::EffectKind;
 #[cfg(test)]
 pub(crate) use beam::Curve;
 pub(crate) use bounds::{of_part, Bounds};
+pub(crate) use filemesh::skinned::key as skinned_mesh_key;
 pub(crate) use filemesh::{
     fit_of as file_mesh_fit, AlphaMode, Appearance, Resolved, ResolvedInstance,
 };
@@ -592,7 +593,7 @@ impl Scene {
     /// whose mesh resolved once never goes back to drawing its box on its own.
     pub(crate) fn resolve_file_meshes(
         &mut self,
-        meshes: HashMap<AssetRef, Arc<rbx_mesh::Mesh>>,
+        meshes: HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>>,
         images: HashMap<AssetRef, Arc<Image>>,
     ) {
         let (resolved, hidden) = filemesh::resolve(&self.file_mesh_plan, meshes, images);
@@ -603,6 +604,33 @@ impl Scene {
         }
         self.resolved_file_meshes = resolved;
         self.apply_resolved_unions();
+        // A landing mid-pose rebuilt every rig at rest; put each back where
+        // its parts stand now.
+        self.pose_all_skins();
+    }
+
+    /// Re-poses every skinned mesh whose parts moved since the last call
+    /// (see `filemesh::skinned`), answering with the derived meshes that
+    /// changed — what the renderer has to re-upload. Free when no part a
+    /// skinned mesh binds to has moved.
+    pub(crate) fn pose_skins(&mut self) -> Vec<AssetRef> {
+        if !self.file_mesh_plan.poses.take_dirty() {
+            return Vec::new();
+        }
+        self.pose_all_skins()
+    }
+
+    fn pose_all_skins(&mut self) -> Vec<AssetRef> {
+        let poses = &self.file_mesh_plan.poses;
+        let resolved = &mut self.resolved_file_meshes;
+        let mut changed = Vec::new();
+        for rig in resolved.rigs.values_mut() {
+            if let Some(mesh) = rig.pose(poses) {
+                resolved.meshes.insert(rig.key.clone(), mesh);
+                changed.push(rig.key.clone());
+            }
+        }
+        changed
     }
 
     /// Puts the unions' own meshes and instances back into the resolved set

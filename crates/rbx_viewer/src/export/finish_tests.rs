@@ -150,7 +150,7 @@ fn a_textured_mesh_with_a_pack_bakes_both() {
         uv,
         color: [255; 4],
     };
-    let mesh = rbx_mesh::Mesh {
+    let mesh = rbx_mesh::SkinnedMesh::from(rbx_mesh::Mesh {
         version: (4, 1),
         vertices: vec![
             vertex([-1.0, 0.0, -1.0], [0.0, 0.0]),
@@ -163,7 +163,7 @@ fn a_textured_mesh_with_a_pack_bakes_both() {
             min: [-1.0, 0.0, -1.0],
             max: [1.0, 0.0, 1.0],
         },
-    };
+    });
     let grey = Arc::new(Image {
         width: 2,
         height: 2,

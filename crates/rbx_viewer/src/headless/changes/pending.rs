@@ -147,6 +147,16 @@ impl Patcher<'_> {
         let dom = self.dom;
         let database = self.database;
         let mut moved = None;
+        if self.pending.parts {
+            // Once per batch, however many of a rig's parts moved in it.
+            let posed = self.loaded.scene_mut().pose_skins();
+            if !posed.is_empty() {
+                let resolved = self.loaded.scene().resolved_file_meshes();
+                self.offscreen.with_renderer(|renderer, _, queue| {
+                    renderer.refresh_meshes(queue, resolved, &posed)
+                });
+            }
+        }
         if self.pending.parts && self.loaded.scene_mut().refresh_bounds() {
             let bounds = *self.loaded.scene().bounds();
             self.offscreen

@@ -166,7 +166,7 @@ fn distance_to(
     ray: Ray,
 ) -> Option<f32> {
     if let Some((asset, fit)) = file_mesh_fit(dom, database, referent) {
-        if let Some(mesh) = meshes.get(&asset) {
+        if let Some(mesh) = meshes.drawn(referent, &asset) {
             return mesh::hit(mesh, fit.transform(mesh), ray);
         }
         // The mesh never downloaded: the part is drawn as its fallback box,

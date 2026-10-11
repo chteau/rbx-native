@@ -57,7 +57,7 @@ impl Dressing {
 
 /// The dressed geometry and image of one section.
 pub(super) struct Dressed {
-    pub(super) mesh: (AssetRef, Arc<rbx_mesh::Mesh>),
+    pub(super) mesh: (AssetRef, Arc<rbx_mesh::SkinnedMesh>),
     pub(super) image: (AssetRef, Arc<Image>),
 }
 
@@ -143,7 +143,7 @@ fn base_of<'a>(
 /// answering each section's dressed mesh and image by its referent.
 pub(super) fn derive(
     entries: &[Entry],
-    meshes: &HashMap<AssetRef, Arc<rbx_mesh::Mesh>>,
+    meshes: &HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>>,
     images: &HashMap<AssetRef, Arc<Image>>,
 ) -> HashMap<Ref, Dressed> {
     let mut limbs: Vec<((Ref, Limb), Vec<&Entry>)> = Vec::new();
@@ -197,7 +197,7 @@ pub(super) fn derive(
             dressed.insert(
                 entry.referent,
                 Dressed {
-                    mesh: (mesh_key(entry.referent), Arc::new(remapped)),
+                    mesh: (mesh_key(entry.referent), Arc::new(remapped.into())),
                     image: (image_key, image.clone()),
                 },
             );
@@ -216,7 +216,7 @@ struct Frame {
 }
 
 impl Frame {
-    fn of(limb: Limb, parts: &[(&Entry, &Arc<rbx_mesh::Mesh>)]) -> Option<Frame> {
+    fn of(limb: Limb, parts: &[(&Entry, &Arc<rbx_mesh::SkinnedMesh>)]) -> Option<Frame> {
         let (first, mesh) = parts.first()?;
         let rotation = Mat3::from_mat4(first.fit.transform(mesh));
         let axes = Mat3::from_cols(
@@ -570,7 +570,7 @@ mod tests {
     use rbx_dom::{CFrameData, Instance, Variant, Vector3Data};
     use rbx_reflection::ReflectionDatabase;
 
-    fn cube() -> rbx_mesh::Mesh {
+    fn cube() -> rbx_mesh::SkinnedMesh {
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
         for (normal, u, v) in [
@@ -594,7 +594,7 @@ mod tests {
             let _ = at;
             indices.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
         }
-        rbx_mesh::Mesh {
+        rbx_mesh::SkinnedMesh::from(rbx_mesh::Mesh {
             version: (4, 1),
             vertices,
             indices,
@@ -604,7 +604,7 @@ mod tests {
                 min: [-0.5; 3],
                 max: [0.5; 3],
             },
-        }
+        })
     }
 
     fn character(shirt: &str) -> WeakDom {

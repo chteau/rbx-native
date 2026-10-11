@@ -8,6 +8,7 @@ mod appearance;
 mod clothing;
 mod fit;
 mod makeup;
+pub(crate) mod skinned;
 mod wrap;
 
 use std::collections::{HashMap, HashSet};
@@ -54,6 +55,9 @@ pub(super) struct Entry {
     makeup: Vec<makeup::Makeup>,
     /// A layered garment's cages, to fit it to the body it is worn on.
     wrap: Option<wrap::Wrap>,
+    /// The `Model` a `MeshPart` sits in, where a skinned mesh finds the
+    /// parts its bones are named after (see [`skinned`]).
+    model: Option<Ref>,
 }
 
 /// Every file-mesh instance in a DOM, extracted once and reused both to list
@@ -61,6 +65,8 @@ pub(super) struct Entry {
 #[derive(Default)]
 pub(crate) struct Plan {
     entries: Vec<Entry>,
+    /// Rest and current frames of every part a skinned mesh could bind to.
+    pub(crate) poses: skinned::Poses,
 }
 
 /// One instance ready for the renderer: which downloaded mesh/texture it
@@ -116,7 +122,7 @@ pub(crate) struct Resolved {
     /// `crate::pick::Meshes`) reads the very vertices the renderer uploads
     /// rather than a copy of every mesh in the place — and so the decoded
     /// mesh kept across reloads (see `load::Resident`) is that same one.
-    pub(crate) meshes: HashMap<AssetRef, Arc<rbx_mesh::Mesh>>,
+    pub(crate) meshes: HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>>,
     /// Behind `Arc`s for the second of those reasons.
     pub(crate) images: HashMap<AssetRef, Arc<Image>>,
     /// Every distinct `SurfaceAppearance` the scene resolved, deduplicated:
@@ -129,6 +135,10 @@ pub(crate) struct Resolved {
     /// A referent with two entries (two `SpecialMesh` children on one part)
     /// answers with its first, the same one a scan would find.
     slot_of: HashMap<Ref, usize>,
+    /// Every skinned instance, by the part it draws, whose bones bind to
+    /// parts of its model (see [`skinned`]); it draws through
+    /// `skinned::key(referent)` in `meshes`.
+    pub(crate) rigs: HashMap<Ref, skinned::Rig>,
 }
 
 impl Resolved {
@@ -247,8 +257,9 @@ pub(crate) fn plan(dom: &WeakDom, database: &ReflectionDatabase, materials: &mut
             from_mesh_part(dom, database, referent, materials)
                 .or_else(|| from_special_mesh_child(dom, database, referent, materials))
         })
-        .collect();
-    Plan { entries }
+        .collect::<Vec<_>>();
+    let poses = skinned::Poses::plan(dom, database, &entries);
+    Plan { entries, poses }
 }
 
 /// Resolves a plan against downloaded assets.
@@ -257,12 +268,13 @@ pub(crate) fn plan(dom: &WeakDom, database: &ReflectionDatabase, materials: &mut
 /// got real geometry, so the fallback box of everything else can stay put.
 pub(crate) fn resolve(
     plan: &Plan,
-    meshes: HashMap<AssetRef, Arc<rbx_mesh::Mesh>>,
+    meshes: HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>>,
     images: HashMap<AssetRef, Arc<Image>>,
 ) -> (Resolved, HashSet<Ref>) {
     let mut instances = Vec::new();
     let mut appearances: Vec<Appearance> = Vec::new();
     let mut hidden = HashSet::new();
+    let mut rigs = HashMap::new();
 
     let mut meshes = meshes;
     let mut images = images;
@@ -295,6 +307,16 @@ pub(crate) fn resolve(
         if let Some((key, derived)) = wrapped.get(&entry.referent) {
             meshes.insert(key.clone(), derived.clone());
             mesh_key = key.clone();
+        }
+        // A skinned mesh drawn as itself (not dressed, not wrapped) draws
+        // through a copy of its own, posed later — the very same `Arc` at
+        // rest, so nothing is copied until a bone moves.
+        if mesh_key == entry.mesh {
+            if let Some(rig) = skinned::Rig::of(entry, &mesh, &plan.poses) {
+                meshes.insert(rig.key.clone(), mesh.clone());
+                mesh_key = rig.key.clone();
+                rigs.insert(entry.referent, rig);
+            }
         }
         // Makeup is laid into the colour map the head would draw.
         let mut made_up = false;
@@ -349,6 +371,7 @@ pub(crate) fn resolve(
             appearances,
             instances,
             slot_of,
+            rigs,
         },
         hidden,
     )
@@ -392,6 +415,7 @@ fn from_mesh_part(
         dressing: clothing::dressing(dom, referent).map(Box::new),
         makeup: makeup::of(dom, instance),
         wrap: wrap::of(dom, database, referent),
+        model: skinned::model_of(dom, database, referent),
     })
 }
 
@@ -441,6 +465,7 @@ fn from_special_mesh_child(
         dressing: None,
         makeup: makeup::of(dom, part),
         wrap: None,
+        model: None,
     })
 }
 

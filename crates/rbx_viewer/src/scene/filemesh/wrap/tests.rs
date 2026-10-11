@@ -1,7 +1,7 @@
 use super::*;
 
-fn mesh(points: &[[f32; 3]]) -> Arc<rbx_mesh::Mesh> {
-    Arc::new(rbx_mesh::Mesh {
+fn mesh(points: &[[f32; 3]]) -> Arc<rbx_mesh::SkinnedMesh> {
+    Arc::new(rbx_mesh::SkinnedMesh::from(rbx_mesh::Mesh {
         version: (4, 1),
         vertices: points
             .iter()
@@ -18,7 +18,7 @@ fn mesh(points: &[[f32; 3]]) -> Arc<rbx_mesh::Mesh> {
             min: [-1.0; 3],
             max: [1.0; 3],
         },
-    })
+    }))
 }
 
 fn id(n: u64) -> AssetRef {
@@ -43,7 +43,7 @@ fn wrap(order: f32) -> Wrap {
     }
 }
 
-fn meshes(body: &[[f32; 3]]) -> HashMap<AssetRef, Arc<rbx_mesh::Mesh>> {
+fn meshes(body: &[[f32; 3]]) -> HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>> {
     let reference = [[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 2.0, 0.0]];
     HashMap::from([
         (id(1), mesh(&reference)),

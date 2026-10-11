@@ -8,7 +8,6 @@ use std::sync::Arc;
 
 use glam::{Mat4, Vec3};
 use rbx_dom::{Ref, Variant, WeakDom};
-use rbx_mesh::Mesh;
 use rbx_reflection::ReflectionDatabase;
 
 use super::shape;
@@ -44,7 +43,7 @@ pub struct PartSurface {
 #[derive(Clone)]
 enum Drawn {
     Shape(ShapeKind, Mat4),
-    Mesh(Arc<Mesh>, Mat4),
+    Mesh(Arc<rbx_mesh::SkinnedMesh>, Mat4),
 }
 
 impl PartSurface {
@@ -84,7 +83,7 @@ impl PartSurface {
         };
         let drawn = file_mesh_fit(dom, database, referent)
             .and_then(|(asset, fit)| {
-                let mesh = meshes.get(&asset)?.clone();
+                let mesh = meshes.drawn(referent, &asset)?.clone();
                 let transform = fit.transform(&mesh);
                 Some(Drawn::Mesh(mesh, transform))
             })

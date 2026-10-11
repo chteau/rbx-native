@@ -119,6 +119,24 @@ impl Renderer {
         }
     }
 
+    /// Re-uploads the vertices of `meshes` — skinned meshes `Scene::pose_skins`
+    /// just re-posed — in the main mesh pass and the shadow casters. Nothing
+    /// is re-batched and every other mesh is untouched. The highlight and
+    /// cue masks keep the rest pose (their silhouettes are re-derived on
+    /// their own next rebuild).
+    pub(crate) fn refresh_meshes(
+        &mut self,
+        queue: &wgpu::Queue,
+        resolved: &Resolved,
+        meshes: &[AssetRef],
+    ) {
+        if meshes.is_empty() {
+            return;
+        }
+        self.filemesh.refresh(queue, resolved, meshes);
+        self.shadows.refresh_meshes(queue, resolved, meshes);
+    }
+
     /// One box — an instance's own or one piece of it — rewritten, moved,
     /// added or dropped across the three passes that draw boxes.
     fn sync_box(&mut self, device: &wgpu::Device, part: &Part) {

@@ -3,6 +3,8 @@
 //! Entry point: [`parse`]. Dispatches on the ASCII version line to the ASCII
 //! (v1), early binary (v2/v3), skinnable binary (v4/v5) or chunked (v6/v7)
 //! layout and returns a single [`Mesh`] carrying LOD 0 geometry.
+//! [`parse_skinned`] additionally returns the skinning data of a v4–v7 mesh
+//! that declares bones (see [`Skin`]).
 
 mod chunked;
 mod draco;
@@ -11,30 +13,44 @@ mod header;
 mod mesh;
 mod reader;
 mod records;
+mod skin;
 mod v1;
 mod v2;
 mod v4;
 
 pub use error::MeshError;
-pub use mesh::{Aabb, Mesh, Vertex};
+pub use mesh::{Aabb, Mesh, SkinnedMesh, Vertex};
+pub use skin::{Bone, Envelope, Influences, Skin, Subset, MAX_SUBSET_BONES};
 
-/// Parses a Roblox mesh file.
+/// Parses a Roblox mesh file's geometry; see [`parse_skinned`] for its
+/// skinning as well.
 ///
 /// Any major version past 7 is rejected rather than guessed at: a new layout
 /// read as an old one yields plausible garbage instead of an error.
 pub fn parse(bytes: &[u8]) -> Result<Mesh, MeshError> {
+    parse_skinned(bytes).map(|parsed| parsed.mesh)
+}
+
+/// Parses a Roblox mesh file with its skinning: [`SkinnedMesh::skin`] is
+/// `Some` for a `version 4.00`–`5.00` file that declares bones and for a
+/// v6/v7 file with a readable `SKINNING` chunk whose envelope count matches
+/// the vertex count. The geometry is exactly what [`parse`] returns.
+pub fn parse_skinned(bytes: &[u8]) -> Result<SkinnedMesh, MeshError> {
     let (version, body) = header::parse_version(bytes)?;
 
-    match version.0 {
-        1 => v1::parse(version, body),
-        2 | 3 => v2::parse(version, body),
-        4 | 5 => v4::parse(version, body),
-        6 | 7 => chunked::parse(version, body),
-        _ => Err(MeshError::UnsupportedVersion {
-            major: version.0,
-            minor: version.1,
-        }),
-    }
+    let (mesh, skin) = match version.0 {
+        1 => (v1::parse(version, body)?, None),
+        2 | 3 => (v2::parse(version, body)?, None),
+        4 | 5 => v4::parse(version, body)?,
+        6 | 7 => chunked::parse(version, body)?,
+        _ => {
+            return Err(MeshError::UnsupportedVersion {
+                major: version.0,
+                minor: version.1,
+            })
+        }
+    };
+    Ok(SkinnedMesh { mesh, skin })
 }
 
 #[cfg(test)]

@@ -47,7 +47,7 @@ fn a_force_field_meshs_pattern_is_kept_as_a_still() {
         uv,
         color: [255; 4],
     };
-    let mesh = rbx_mesh::Mesh {
+    let mesh = rbx_mesh::SkinnedMesh::from(rbx_mesh::Mesh {
         version: (4, 1),
         vertices: vec![
             vertex([-1.0, 0.0, -1.0], [0.0, 0.0]),
@@ -60,7 +60,7 @@ fn a_force_field_meshs_pattern_is_kept_as_a_still() {
             min: [-1.0, 0.0, -1.0],
             max: [1.0, 0.0, 1.0],
         },
-    };
+    });
     // Red 145 sits in the window's centre at the cycle's start (0.567);
     // red 0 is far outside it.
     let image = Arc::new(Image {

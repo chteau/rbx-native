@@ -51,6 +51,14 @@ impl Entry {
             .clone()
             .filter(|reference| resolved.images.contains_key(reference));
         let (mut mesh_key, mut color) = (self.mesh.clone(), self.color);
+        // The same precedence as `resolve`: a rig only ever exists for an
+        // instance drawn as its own mesh, and only for the mesh it was
+        // built from.
+        if let Some(rig) = resolved.rigs.get(&self.referent) {
+            if rig.asset == self.mesh && resolved.meshes.contains_key(&rig.key) {
+                mesh_key = rig.key.clone();
+            }
+        }
         let mut worn = false;
         let wrapped = super::wrap::key(self.referent);
         if self.wrap.is_some() && resolved.meshes.contains_key(&wrapped) {

@@ -3,6 +3,7 @@
 use std::ops::Range;
 
 use crate::error::MeshError;
+use crate::skin::Skin;
 
 /// A single mesh vertex.
 ///
@@ -72,6 +73,40 @@ pub struct Mesh {
     /// file carries no usable LOD table; `lods[0]` always matches [`Mesh::indices`].
     pub lods: Vec<Range<u32>>,
     pub bounds: Aabb,
+}
+
+/// A parsed mesh together with its skinning, if it has any — what
+/// [`crate::parse_skinned`] returns. Dereferences to the [`Mesh`].
+///
+/// Kept apart from [`Mesh`] rather than as a field of it so code that builds a
+/// `Mesh` literal (derived and test meshes) is unaffected.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SkinnedMesh {
+    pub mesh: Mesh,
+    /// `Some` only for a mesh that declares bones. Its per-vertex tables are
+    /// parallel to `mesh.vertices`.
+    pub skin: Option<Skin>,
+}
+
+impl From<Mesh> for SkinnedMesh {
+    /// An unskinned mesh.
+    fn from(mesh: Mesh) -> Self {
+        SkinnedMesh { mesh, skin: None }
+    }
+}
+
+impl std::ops::Deref for SkinnedMesh {
+    type Target = Mesh;
+
+    fn deref(&self) -> &Mesh {
+        &self.mesh
+    }
+}
+
+impl std::ops::DerefMut for SkinnedMesh {
+    fn deref_mut(&mut self) -> &mut Mesh {
+        &mut self.mesh
+    }
 }
 
 impl Mesh {

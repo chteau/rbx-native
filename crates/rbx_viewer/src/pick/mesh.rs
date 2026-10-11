@@ -37,7 +37,7 @@ pub use face::FlatFace;
 /// (see `crate::export`).
 #[derive(Clone, Default)]
 pub struct Meshes {
-    meshes: Arc<HashMap<AssetRef, Arc<Mesh>>>,
+    meshes: Arc<HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>>>,
     textures: Arc<HashMap<Ref, Arc<Image>>>,
     surfaces: Arc<HashMap<Ref, Surface>>,
     materials: Arc<HashMap<Ref, Arc<Pack>>>,
@@ -86,7 +86,7 @@ pub(crate) struct Surface {
 
 impl Meshes {
     pub(crate) fn new(
-        meshes: HashMap<AssetRef, Arc<Mesh>>,
+        meshes: HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>>,
         textures: HashMap<Ref, Arc<Image>>,
     ) -> Self {
         Meshes {
@@ -222,8 +222,22 @@ impl Meshes {
             .with_isolation(scene.isolation().map(|isolation| isolation.roots().clone()))
     }
 
-    pub fn get(&self, asset: &AssetRef) -> Option<&Arc<Mesh>> {
+    pub fn get(&self, asset: &AssetRef) -> Option<&Arc<rbx_mesh::SkinnedMesh>> {
         self.meshes.get(asset)
+    }
+
+    /// The geometry `referent` is drawn with when it draws `asset`: a
+    /// skinned mesh part's current pose (see `scene::filemesh::skinned`),
+    /// otherwise the asset itself. The pose keeps the asset's bounds, so the
+    /// fit worked out from either is the same.
+    pub(crate) fn drawn(
+        &self,
+        referent: Ref,
+        asset: &AssetRef,
+    ) -> Option<&Arc<rbx_mesh::SkinnedMesh>> {
+        self.meshes
+            .get(&crate::scene::skinned_mesh_key(referent))
+            .or_else(|| self.meshes.get(asset))
     }
 
     pub(crate) fn texture(&self, referent: Ref) -> Option<&Arc<Image>> {

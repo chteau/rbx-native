@@ -156,7 +156,9 @@ pub(in crate::renderer) fn geometry(
         vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("rbxview shadow vertices"),
             contents: bytemuck::cast_slice(&positions),
-            usage: wgpu::BufferUsages::VERTEX,
+            // Writable so a skinned mesh's pose can be re-uploaded in place
+            // (see [`refresh`]).
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         }),
         indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("rbxview shadow indices"),
@@ -165,6 +167,29 @@ pub(in crate::renderer) fn geometry(
         }),
         index_count: indices.len() as u32,
     })
+}
+
+/// Re-uploads the positions of every caster batch drawing one of `meshes`
+/// from what `resolved` now holds for it — a skinned mesh's new pose.
+pub(super) fn refresh(
+    queue: &wgpu::Queue,
+    batches: &MeshBatches,
+    resolved: &Resolved,
+    meshes: &[AssetRef],
+) {
+    for group in batches.groups() {
+        if !meshes.contains(&group.key) {
+            continue;
+        }
+        let Some(mesh) = resolved.meshes.get(&group.key) else {
+            continue;
+        };
+        let positions: Vec<[f32; 3]> = mesh.vertices.iter().map(|vertex| vertex.position).collect();
+        let bytes: &[u8] = bytemuck::cast_slice(&positions);
+        if bytes.len() as u64 == group.extra.vertices.size() {
+            queue.write_buffer(&group.extra.vertices, 0, bytes);
+        }
+    }
 }
 
 fn raw(model: Mat4) -> CasterRaw {

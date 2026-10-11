@@ -131,6 +131,9 @@ impl Scene {
         known_layers: usize,
         unions: &UnionEvaluations,
     ) -> Result<PartSync, Rebuild> {
+        // A part a skinned mesh binds to bends that mesh wherever it moves,
+        // drawn or not; `Scene::pose_skins` folds it in once per batch.
+        self.file_mesh_plan.poses.track(dom, referent);
         let present = dom.get(referent).is_some()
             && is_drawable(dom, database, referent)
             && in_workspace(dom, database, referent);

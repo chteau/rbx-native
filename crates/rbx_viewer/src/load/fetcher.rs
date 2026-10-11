@@ -55,7 +55,7 @@ pub(crate) enum Want {
 /// by the next load just the same.
 pub(crate) enum Landed {
     Image(AssetRef, Result<Arc<Image>, Failure>),
-    Mesh(AssetRef, Result<Arc<rbx_mesh::Mesh>, Failure>),
+    Mesh(AssetRef, Result<Arc<rbx_mesh::SkinnedMesh>, Failure>),
     Bytes(AssetRef, Result<Vec<u8>, Failure>),
 }
 
@@ -78,7 +78,7 @@ impl Landed {
 /// to know which of the two it has.
 pub(crate) trait Source: Send + Sync + 'static {
     fn image(&self, reference: &AssetRef) -> Result<Image, Failure>;
-    fn mesh(&self, reference: &AssetRef) -> Result<rbx_mesh::Mesh, Failure>;
+    fn mesh(&self, reference: &AssetRef) -> Result<rbx_mesh::SkinnedMesh, Failure>;
     fn bytes(&self, reference: &AssetRef) -> Result<Vec<u8>, Failure>;
 }
 
@@ -249,7 +249,7 @@ pub(crate) mod tests {
             })
         }
 
-        fn mesh(&self, _reference: &AssetRef) -> Result<rbx_mesh::Mesh, Failure> {
+        fn mesh(&self, _reference: &AssetRef) -> Result<rbx_mesh::SkinnedMesh, Failure> {
             Err(permanent("no meshes here"))
         }
 

@@ -167,6 +167,17 @@ impl Renderer {
         self.translucent = Translucent::new(device, scene.parts());
         self.filemesh
             .rebuild(device, queue, scene.resolved_file_meshes());
+        // A batch taken over from the previous scene holds the bytes it was
+        // last given; a skinned mesh's (keyed by its part, not its pose) may
+        // have been posed differently there, so its vertices are written
+        // again from this scene's.
+        let skinned: Vec<_> = scene
+            .resolved_file_meshes()
+            .rigs
+            .values()
+            .map(|rig| rig.key.clone())
+            .collect();
+        self.refresh_meshes(queue, scene.resolved_file_meshes(), &skinned);
         self.textured
             .rebuild(device, queue, &decor.groups, &quality);
         self.beams

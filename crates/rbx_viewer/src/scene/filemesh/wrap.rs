@@ -123,15 +123,18 @@ pub(super) fn key(referent: Ref) -> AssetRef {
 /// have all arrived.
 pub(super) fn derive(
     entries: &[Entry],
-    meshes: &HashMap<AssetRef, Arc<rbx_mesh::Mesh>>,
-) -> HashMap<Ref, (AssetRef, Arc<rbx_mesh::Mesh>)> {
+    meshes: &HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>>,
+) -> HashMap<Ref, (AssetRef, Arc<rbx_mesh::SkinnedMesh>)> {
     entries
         .iter()
         .filter_map(|entry| {
             let wrap = entry.wrap.as_ref()?;
             let garment = meshes.get(&entry.mesh)?;
             let deformed = deform(wrap, entry.fit.transform(garment), garment, meshes)?;
-            Some((entry.referent, (key(entry.referent), Arc::new(deformed))))
+            Some((
+                entry.referent,
+                (key(entry.referent), Arc::new(deformed.into())),
+            ))
         })
         .collect()
 }
@@ -140,7 +143,7 @@ fn deform(
     wrap: &Wrap,
     model: Mat4,
     garment: &rbx_mesh::Mesh,
-    meshes: &HashMap<AssetRef, Arc<rbx_mesh::Mesh>>,
+    meshes: &HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>>,
 ) -> Option<rbx_mesh::Mesh> {
     let reference = meshes.get(&wrap.reference)?;
     let mut body = Vec::new();

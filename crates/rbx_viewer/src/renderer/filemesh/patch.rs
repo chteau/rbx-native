@@ -4,7 +4,7 @@
 
 use rbx_dom::Ref;
 
-use super::{blends, build, center, raw, Blended, FileMeshes, GroupKey, Images};
+use super::{blends, build, center, raw, vertex_bytes, Blended, FileMeshes, GroupKey, Images};
 use super::{Binding, Geometry};
 use crate::scene::{Resolved, ResolvedInstance};
 
@@ -62,6 +62,39 @@ impl FileMeshes {
     /// regardless (see `FileMeshes::prepare`).
     pub(in crate::renderer) fn flush(&mut self, queue: &wgpu::Queue) {
         self.opaque.flush(queue);
+    }
+
+    /// Re-uploads the vertices of every batch drawing one of `meshes` from
+    /// what `resolved` now holds for it — a skinned mesh's new pose. Only the
+    /// vertex buffer is written: the same mesh with the same topology, in
+    /// the same batch, under the same skin.
+    pub(in crate::renderer) fn refresh(
+        &mut self,
+        queue: &wgpu::Queue,
+        resolved: &Resolved,
+        meshes: &[rbx_assets::AssetRef],
+    ) {
+        let opaque = self
+            .opaque
+            .groups()
+            .iter()
+            .map(|group| (&group.key, &group.extra));
+        let blended = self
+            .blended
+            .iter()
+            .map(|blended| (&blended.key, &blended.geometry));
+        for (key, geometry) in opaque.chain(blended) {
+            if !meshes.contains(&key.mesh) {
+                continue;
+            }
+            let Some(mesh) = resolved.meshes.get(&key.mesh) else {
+                continue;
+            };
+            let bytes = vertex_bytes(mesh, geometry.skin);
+            if bytes.len() as u64 == geometry.vertices.size() {
+                queue.write_buffer(&geometry.vertices, 0, &bytes);
+            }
+        }
     }
 
     fn remove_blended(&mut self, referent: Ref) {

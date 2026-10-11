@@ -42,8 +42,8 @@ fn vector3(x: f32, y: f32, z: f32) -> Variant {
     Variant::Vector3(Vector3Data { x, y, z })
 }
 
-fn fake_mesh() -> rbx_mesh::Mesh {
-    rbx_mesh::Mesh {
+fn fake_mesh() -> rbx_mesh::SkinnedMesh {
+    rbx_mesh::SkinnedMesh::from(rbx_mesh::Mesh {
         version: (4, 1),
         vertices: Vec::new(),
         indices: Vec::new(),
@@ -52,7 +52,7 @@ fn fake_mesh() -> rbx_mesh::Mesh {
             min: [-0.5; 3],
             max: [0.5; 3],
         },
-    }
+    })
 }
 
 fn sized(referent: u32, class: &str, x: f32) -> Instance {

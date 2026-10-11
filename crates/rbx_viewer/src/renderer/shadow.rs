@@ -264,6 +264,17 @@ impl Shadows {
         self.mesh_batches.remove(referent);
     }
 
+    /// Re-uploads the caster geometry of `meshes`, skinned meshes whose pose
+    /// changed — see `casters::refresh`.
+    pub(super) fn refresh_meshes(
+        &mut self,
+        queue: &wgpu::Queue,
+        resolved: &crate::scene::Resolved,
+        meshes: &[rbx_assets::AssetRef],
+    ) {
+        casters::refresh(queue, &self.mesh_batches, resolved, meshes);
+    }
+
     /// Drops a box caster whose box no longer draws; a no-op if it never
     /// cast.
     /// The terrain's casters changed: the cubes no longer hold what it casts.
