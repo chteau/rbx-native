@@ -90,6 +90,7 @@ impl Shell {
         self.flush_script_edits(cx);
         if let Some((previous, changes)) = self.history.undo(self.dom.clone()) {
             self.install(previous, &changes, cx);
+            self.autorig_follow_history(cx);
         }
     }
 
@@ -102,6 +103,7 @@ impl Shell {
         self.flush_script_edits(cx);
         if let Some((next, changes)) = self.history.redo(self.dom.clone()) {
             self.install(next, &changes, cx);
+            self.autorig_follow_history(cx);
         }
     }
 
