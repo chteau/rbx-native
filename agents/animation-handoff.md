@@ -112,6 +112,27 @@ API publique, depuis `src/lib.rs` :
   - **Publish** écrit le `.glb` (skinné si Smooth), l'envoie par
     `import3d::upload_model` (Open Cloud), puis `swap_meshes` remplace le
     `MeshId` de chaque partie par celui de l'upload.
+  - Chaque asset du corps est simplifié (QEM, `decimate.rs`) jusqu'à son
+    budget de triangles Marketplace (`split::fit_budgets`, `BUDGETS`). Les
+    coutures de découpe, les UV et les poids de skin sont gardés. Un asset
+    que ses coutures laissent au-dessus du budget est signalé par un
+    avertissement.
+  - Le `.glb` d'upload est écrit dans le cache au moment de la découpe
+    (`autorig/<hash>/upload.glb`). **Publish** part donc du modèle seul :
+    il apparaît dans la section Rigging après **Done**, pour le rig lié ou
+    sélectionné qui a encore des meshes locaux (`publishable_rig`). Un rig
+    découpé avant ce changement n'a pas d'`upload.glb` : il faut le
+    ré-auto-rigger.
+  - Supprimer le `Model` du rig (touche Suppr, Explorer) termine la session
+    d'auto-rig, le bind et l'isolation (`forget_deleted_rig`). Le viewer
+    oublie aussi l'entrée du plan de meshes (`remove_part`) ; sans cela, le
+    corps était redessiné au repos.
+  - La section Auto-rig passe avant Rigging, avec Done et Publish juste
+    sous le statut, pour être visibles sans défiler.
+  - Étapes scriptées ajoutées : `done`, `delete-rig` et
+    `document=viewport|animation|ui`. Entrer dans Animation depuis l'UI
+    Editor remet l'écran émulé à zéro (`set_screen(None)`), pour que la vue
+    3D occupe toute la place jusqu'au panneau.
   - Sauvegarder une place qui contient encore des meshes locaux affiche un
     avertissement.
 
