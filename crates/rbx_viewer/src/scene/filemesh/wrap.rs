@@ -50,6 +50,9 @@ pub(super) struct Wrap {
     origin: Mat4,
     order: f32,
     targets: Vec<Target>,
+    /// The character the garment is worn on: the handle's accessory's parent,
+    /// whose parts the wrapped garment is skinned to.
+    pub(super) character: Ref,
 }
 
 #[derive(Clone)]
@@ -59,6 +62,8 @@ struct Target {
     /// The body part's own mesh and fit: the cage shares its space.
     mesh: AssetRef,
     fit: Fit,
+    /// The body part's `Name`: the bone its cage's vertices lend the garment.
+    part: String,
 }
 
 /// The wrap of `handle`, when it carries a `WrapLayer` with a reference cage
@@ -84,6 +89,7 @@ pub(super) fn of(dom: &WeakDom, database: &ReflectionDatabase, handle: Ref) -> O
         .filter_map(|&part| {
             let part = dom.get(part)?;
             let (mesh, fit) = fit::mesh_part(database, part)?;
+            let name = part.name().to_owned();
             let target = part
                 .children()
                 .iter()
@@ -97,6 +103,7 @@ pub(super) fn of(dom: &WeakDom, database: &ReflectionDatabase, handle: Ref) -> O
                 },
                 mesh,
                 fit,
+                part: name,
             })
         })
         .collect();
@@ -105,6 +112,7 @@ pub(super) fn of(dom: &WeakDom, database: &ReflectionDatabase, handle: Ref) -> O
         origin,
         order,
         targets,
+        character: rig,
     })
 }
 
@@ -120,7 +128,9 @@ pub(super) fn key(referent: Ref) -> AssetRef {
 }
 
 /// Every wrapped garment's deformed mesh, by referent, for those whose cages
-/// have all arrived.
+/// have all arrived. Each is skinned to the character's parts: through the
+/// garment's own skin when its bones name the body parts it wraps, otherwise
+/// through one lent by the body (see [`lent_skin`]).
 pub(super) fn derive(
     entries: &[Entry],
     meshes: &HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>>,
@@ -130,10 +140,21 @@ pub(super) fn derive(
         .filter_map(|entry| {
             let wrap = entry.wrap.as_ref()?;
             let garment = meshes.get(&entry.mesh)?;
-            let deformed = deform(wrap, entry.fit.transform(garment), garment, meshes)?;
+            let model = entry.fit.transform(garment);
+            let deformed = deform(wrap, model, garment, meshes)?;
+            let skin = match &garment.skin {
+                Some(own) if names_the_body(wrap, own) => Some(own.clone()),
+                _ => lent_skin(wrap, model, &deformed, meshes),
+            };
             Some((
                 entry.referent,
-                (key(entry.referent), Arc::new(deformed.into())),
+                (
+                    key(entry.referent),
+                    Arc::new(rbx_mesh::SkinnedMesh {
+                        mesh: deformed,
+                        skin,
+                    }),
+                ),
             ))
         })
         .collect()
@@ -146,16 +167,7 @@ fn deform(
     meshes: &HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>>,
 ) -> Option<rbx_mesh::Mesh> {
     let reference = meshes.get(&wrap.reference)?;
-    let mut body = Vec::new();
-    for target in &wrap.targets {
-        let (cage, part) = (meshes.get(&target.cage)?, meshes.get(&target.mesh)?);
-        let to_world = target.fit.transform(part) * target.origin;
-        body.extend(
-            cage.vertices
-                .iter()
-                .map(|v| to_world.transform_point3(Vec3::from(v.position))),
-        );
-    }
+    let (body, _) = body(wrap, meshes)?;
     let to_world = model * wrap.origin;
     let reference_points: Vec<Vec3> = reference
         .vertices
@@ -186,6 +198,99 @@ fn deform(
         vertex.position = back.transform_point3(moved).to_array();
     }
     Some(out)
+}
+
+/// Every body cage vertex where the wrap lays it, with the target it is
+/// from; `None` until every cage and body mesh has arrived.
+fn body(
+    wrap: &Wrap,
+    meshes: &HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>>,
+) -> Option<(Vec<Vec3>, Vec<u16>)> {
+    let (mut points, mut owners) = (Vec::new(), Vec::new());
+    for (index, target) in wrap.targets.iter().enumerate() {
+        let (cage, part) = (meshes.get(&target.cage)?, meshes.get(&target.mesh)?);
+        let to_world = target.fit.transform(part) * target.origin;
+        points.extend(
+            cage.vertices
+                .iter()
+                .map(|v| to_world.transform_point3(Vec3::from(v.position))),
+        );
+        owners.resize(points.len(), index as u16);
+    }
+    Some((points, owners))
+}
+
+/// Whether a bone of `skin` is named after a body part the garment wraps.
+fn names_the_body(wrap: &Wrap, skin: &rbx_mesh::Skin) -> bool {
+    skin.bones
+        .iter()
+        .any(|bone| wrap.targets.iter().any(|target| target.part == bone.name))
+}
+
+/// A skin for a garment without one of its own: each wrapped vertex takes
+/// the parts of the [`BLEND`] body cage vertices nearest it, by inverse
+/// square distance, one bone per wrapped body part (bound at the identity,
+/// which the rig's binding cancels out anyway).
+fn lent_skin(
+    wrap: &Wrap,
+    model: Mat4,
+    wrapped: &rbx_mesh::Mesh,
+    meshes: &HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>>,
+) -> Option<rbx_mesh::Skin> {
+    let (body, owners) = body(wrap, meshes)?;
+    if body.is_empty() || wrap.targets.len() > usize::from(u16::MAX) {
+        return None;
+    }
+    let influences = wrapped
+        .vertices
+        .iter()
+        .map(|vertex| {
+            let at = model.transform_point3(Vec3::from(vertex.position));
+            let mut near = [(f32::INFINITY, 0u16); BLEND];
+            for (point, &owner) in body.iter().zip(&owners) {
+                let d = point.distance_squared(at);
+                if d < near[BLEND - 1].0 {
+                    near[BLEND - 1] = (d, owner);
+                    near.sort_by(|a, b| a.0.total_cmp(&b.0));
+                }
+            }
+            let mut merged: Vec<(u16, f32)> = Vec::with_capacity(BLEND);
+            for (d, owner) in near.iter().filter(|(d, _)| d.is_finite()) {
+                let w = 1.0 / (d + 1e-6);
+                match merged.iter_mut().find(|(bone, _)| bone == owner) {
+                    Some((_, weight)) => *weight += w,
+                    None => merged.push((*owner, w)),
+                }
+            }
+            let total: f32 = merged.iter().map(|(_, w)| w).sum();
+            let mut influence = rbx_mesh::Influences {
+                bones: [0; 4],
+                weights: [0.0; 4],
+            };
+            for (slot, (bone, weight)) in merged.into_iter().enumerate() {
+                influence.bones[slot] = bone;
+                influence.weights[slot] = weight / total;
+            }
+            influence
+        })
+        .collect();
+    Some(rbx_mesh::Skin {
+        bones: wrap
+            .targets
+            .iter()
+            .map(|target| rbx_mesh::Bone {
+                name: target.part.clone(),
+                parent: None,
+                lod_parent: None,
+                culling: 0.0,
+                rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+                position: [0.0; 3],
+            })
+            .collect(),
+        subsets: Vec::new(),
+        envelopes: Vec::new(),
+        influences,
+    })
 }
 
 /// The translation that lays the reference over the body: nearest-vertex

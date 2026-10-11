@@ -51,6 +51,29 @@ pub(super) struct Cues {
 }
 
 impl Cues {
+    /// See [`Highlights::skinning_targets`].
+    pub(super) fn skinning_targets(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &rbx_assets::AssetRef,
+            &wgpu::Buffer,
+            super::skinning::Layout,
+        ),
+    > {
+        self.pass.skinning_targets()
+    }
+
+    /// See [`Highlights::refresh_meshes`].
+    pub(super) fn refresh_meshes(
+        &self,
+        queue: &wgpu::Queue,
+        resolved: &Resolved,
+        meshes: &[rbx_assets::AssetRef],
+    ) {
+        self.pass.refresh_meshes(queue, resolved, meshes);
+    }
+
     pub(super) fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,

@@ -75,6 +75,9 @@ pub struct Headless {
     /// [`Headless::apply_changes`] can recompute the one piece of it an edit
     /// touched instead of the whole place.
     loaded: Loaded,
+    /// Whether skinned meshes may be posed on the GPU; see
+    /// [`Headless::set_skins_on_gpu`].
+    skinning_wanted: bool,
     /// What every instance of the DOM the scene was built from is to the
     /// picture, so a `Change::Removed` — a bare referent, its instance
     /// already gone — can still be taken out of the right pass; see
@@ -142,7 +145,7 @@ impl Headless {
         let bounds = *loaded.world().scene.bounds();
         let uploaded_material_layers = loaded.scene().materials().layers();
         let quality = QualityLevel::default();
-        Ok(Headless {
+        let mut headless = Headless {
             offscreen: Offscreen::new(loaded.world(), &quality.profile(), &View::default())?,
             quality,
             view: View::default(),
@@ -162,7 +165,44 @@ impl Headless {
             meshes_changed: false,
             uploaded_material_layers,
             warnings,
-        })
+            skinning_wanted: true,
+        };
+        headless.sync_skinning();
+        Ok(headless)
+    }
+
+    /// Hands skinning to the GPU when the renderer can do it there (not on
+    /// WebGL, which has no compute), then re-uploads every rig to match.
+    fn sync_skinning(&mut self) {
+        let on = self.skinning_wanted && self.skins_on_gpu_available();
+        let keys = self.loaded.scene_mut().set_skins_on_gpu(on);
+        if keys.is_empty() {
+            return;
+        }
+        let resolved = self.loaded.scene().resolved_file_meshes();
+        self.offscreen.with_renderer(|renderer, device, queue| {
+            renderer.refresh_meshes(device, queue, resolved, &keys)
+        });
+    }
+
+    fn skins_on_gpu_available(&mut self) -> bool {
+        self.offscreen
+            .with_renderer(|renderer, _, _| renderer.skins_on_gpu())
+    }
+
+    /// Whether skinned meshes are posed by a compute pass on the GPU (true
+    /// wherever the device has compute shaders) rather than deformed on the
+    /// CPU.
+    pub fn skins_on_gpu(&mut self) -> bool {
+        self.skinning_wanted && self.skins_on_gpu_available()
+    }
+
+    /// Poses skinned meshes on the CPU even where the GPU could (`false`),
+    /// or hands them back to the GPU (`true`, the default) — for comparing
+    /// the two paths. Lasts across reloads.
+    pub fn set_skins_on_gpu(&mut self, on: bool) {
+        self.skinning_wanted = on;
+        self.sync_skinning();
     }
 
     /// Rebuilds every render input from a DOM already in memory — a file on
@@ -215,6 +255,7 @@ impl Headless {
         self.uploaded_material_layers = loaded.scene().materials().layers();
         self.loaded = loaded;
         self.roles = Roles::of_dom(dom, &self.database);
+        self.sync_skinning();
         Ok(())
     }
 

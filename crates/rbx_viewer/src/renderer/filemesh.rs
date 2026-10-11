@@ -440,8 +440,11 @@ fn build(device: &wgpu::Device, mesh: &rbx_mesh::Mesh, skin: Skin) -> Geometry {
             label: Some("rbxview filemesh vertices"),
             contents: &vertices,
             // Writable so a skinned mesh's pose can be re-uploaded in place
-            // (see `FileMeshes::refresh`).
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            // (see `FileMeshes::refresh`) or written by the skinning pass
+            // (see `renderer::skinning`).
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | super::skinning::vertex_usage(device),
         }),
         indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("rbxview filemesh indices"),

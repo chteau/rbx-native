@@ -596,7 +596,8 @@ impl Scene {
         meshes: HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>>,
         images: HashMap<AssetRef, Arc<Image>>,
     ) {
-        let (resolved, hidden) = filemesh::resolve(&self.file_mesh_plan, meshes, images);
+        let (mut resolved, hidden) = filemesh::resolve(&self.file_mesh_plan, meshes, images);
+        resolved.skins_on_gpu = self.resolved_file_meshes.skins_on_gpu;
         for part in &mut self.parts {
             if hidden.contains(&part.referent()) {
                 part.suppressed = true;
@@ -644,12 +645,39 @@ impl Scene {
         let resolved = &mut self.resolved_file_meshes;
         let mut changed = Vec::new();
         for rig in resolved.rigs.values_mut() {
-            if let Some(mesh) = rig.pose(poses) {
-                resolved.meshes.insert(rig.key.clone(), mesh);
-                changed.push(rig.key.clone());
+            if !rig.repose(poses) {
+                continue;
             }
+            // On the GPU path only the matrices change; the renderer takes
+            // them from the rig.
+            if !resolved.skins_on_gpu {
+                resolved.meshes.insert(rig.key.clone(), rig.posed());
+            }
+            changed.push(rig.key.clone());
         }
         changed
+    }
+
+    /// Says whether the renderer deforms skinned meshes on the GPU (see
+    /// [`Resolved::skins_on_gpu`]), answering with every rig's key, whose
+    /// mesh under it changed between posed and rest.
+    pub(crate) fn set_skins_on_gpu(&mut self, on: bool) -> Vec<AssetRef> {
+        let resolved = &mut self.resolved_file_meshes;
+        if resolved.skins_on_gpu == on {
+            return Vec::new();
+        }
+        resolved.skins_on_gpu = on;
+        let mut keys = Vec::new();
+        for rig in resolved.rigs.values() {
+            let mesh = match on {
+                true => rig.source().clone(),
+                false => rig.posed(),
+            };
+            resolved.meshes.insert(rig.key.clone(), mesh);
+            keys.push(rig.key.clone());
+        }
+        keys.sort_by_key(|key| format!("{key:?}"));
+        keys
     }
 
     /// Puts the unions' own meshes and instances back into the resolved set

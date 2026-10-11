@@ -169,8 +169,8 @@ impl Patcher<'_> {
             let posed = self.loaded.scene_mut().pose_skins();
             if !posed.is_empty() {
                 let resolved = self.loaded.scene().resolved_file_meshes();
-                self.offscreen.with_renderer(|renderer, _, queue| {
-                    renderer.refresh_meshes(queue, resolved, &posed)
+                self.offscreen.with_renderer(|renderer, device, queue| {
+                    renderer.refresh_meshes(device, queue, resolved, &posed)
                 });
             }
         }

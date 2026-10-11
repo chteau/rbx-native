@@ -109,6 +109,24 @@ struct MaskTarget {
 }
 
 impl Highlights {
+    /// The masks' file-mesh vertex buffers, for `renderer::skinning`.
+    pub(super) fn skinning_targets(
+        &self,
+    ) -> impl Iterator<Item = (&AssetRef, &wgpu::Buffer, super::skinning::Layout)> {
+        casters::skinning_targets(&self.meshes)
+    }
+
+    /// Re-uploads the mask geometry of `meshes`, skinned meshes whose pose
+    /// changed — see `casters::refresh`.
+    pub(super) fn refresh_meshes(
+        &self,
+        queue: &wgpu::Queue,
+        resolved: &Resolved,
+        meshes: &[AssetRef],
+    ) {
+        casters::refresh(queue, &self.meshes, resolved, meshes);
+    }
+
     pub(super) fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,

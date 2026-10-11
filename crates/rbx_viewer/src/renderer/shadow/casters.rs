@@ -157,8 +157,11 @@ pub(in crate::renderer) fn geometry(
             label: Some("rbxview shadow vertices"),
             contents: bytemuck::cast_slice(&positions),
             // Writable so a skinned mesh's pose can be re-uploaded in place
-            // (see [`refresh`]).
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            // (see [`refresh`]) or written by the skinning pass (see
+            // `renderer::skinning`).
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | crate::renderer::skinning::vertex_usage(device),
         }),
         indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("rbxview shadow indices"),
@@ -170,10 +173,12 @@ pub(in crate::renderer) fn geometry(
 }
 
 /// Re-uploads the positions of every caster batch drawing one of `meshes`
-/// from what `resolved` now holds for it — a skinned mesh's new pose.
-pub(super) fn refresh(
+/// from what `resolved` now holds for it — a skinned mesh's new pose. The
+/// highlight and selection masks hold the same batches and go through here
+/// too.
+pub(in crate::renderer) fn refresh<T: Pod, S: Copy>(
     queue: &wgpu::Queue,
-    batches: &MeshBatches,
+    batches: &Keyed<AssetRef, MeshGeometry, T, S>,
     resolved: &Resolved,
     meshes: &[AssetRef],
 ) {
@@ -190,6 +195,20 @@ pub(super) fn refresh(
             queue.write_buffer(&group.extra.vertices, 0, bytes);
         }
     }
+}
+
+/// Every caster batch's positions buffer, for `renderer::skinning`. The
+/// masks' batches go through here too.
+pub(in crate::renderer) fn skinning_targets<T: Pod, S: Copy>(
+    batches: &Keyed<AssetRef, MeshGeometry, T, S>,
+) -> impl Iterator<Item = (&AssetRef, &wgpu::Buffer, crate::renderer::skinning::Layout)> {
+    batches.groups().iter().map(|group| {
+        (
+            &group.key,
+            &group.extra.vertices,
+            crate::renderer::skinning::Layout::POSITIONS,
+        )
+    })
 }
 
 fn raw(model: Mat4) -> CasterRaw {

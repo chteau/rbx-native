@@ -419,3 +419,92 @@ fn a_rig_inserted_after_load_and_then_replaced_bends_each_time() {
     turn(&mut headless, &mut dom, lower, true);
     assert_bent(&frame(&mut headless));
 }
+
+/// Pixels of `a` and `b` that differ at all, among those whose row and
+/// column pass `inside`.
+fn changed(a: &[u8], b: &[u8], inside: impl Fn(f32, f32) -> bool) -> usize {
+    let (width, height) = (SIZE.0 as usize, SIZE.1 as usize);
+    (0..height)
+        .flat_map(|row| (0..width).map(move |column| (row, column)))
+        .filter(|&(row, column)| {
+            let at = (row * width + column) * 4;
+            a[at..at + 4] != b[at..at + 4]
+                && inside(
+                    (row as f32 + 0.5) / height as f32,
+                    (column as f32 + 0.5) / width as f32,
+                )
+        })
+        .count()
+}
+
+/// The bent arm drawn with the pose deformed on the CPU and with it written
+/// by the GPU's skinning pass: the same picture, bar rounding.
+#[test]
+fn the_gpu_bends_the_mesh_as_the_cpu_does() {
+    let Some(mut headless) = headless() else {
+        return;
+    };
+    if !headless.skins_on_gpu() {
+        println!("skipped: this device skins on the CPU only");
+        return;
+    }
+    let mut dom = place();
+    headless.reload(&dom).expect("the DOM rebuilds");
+    settle(&mut headless);
+    headless.open_at([0.0, 0.0, -9.0], [0.0, 0.0, 0.0], 70.0);
+    turn(&mut headless, &mut dom, Ref::new(ARM + 2), true);
+
+    let gpu = frame(&mut headless);
+    assert_bent(&gpu);
+    headless.set_skins_on_gpu(false);
+    assert!(!headless.skins_on_gpu());
+    let cpu = frame(&mut headless);
+    assert_bent(&cpu);
+    let differing = changed(&gpu, &cpu, |_, _| true);
+    assert!(
+        differing <= 8,
+        "{differing} pixels differ between the GPU and the CPU pose"
+    );
+    // And a pose taken while on the CPU carries over to the GPU.
+    turn(&mut headless, &mut dom, Ref::new(ARM + 2), false);
+    headless.set_skins_on_gpu(true);
+    assert_at_rest(&frame(&mut headless));
+}
+
+/// A selected skinned mesh is outlined where it is drawn, bent, not where
+/// its rest pose would be: the selection mask is posed with it, on either
+/// path.
+#[test]
+fn a_selected_bent_mesh_is_cued_where_it_bends() {
+    let Some(mut headless) = headless() else {
+        return;
+    };
+    for on_gpu in [true, false] {
+        headless.set_skins_on_gpu(on_gpu);
+        let mut dom = place();
+        headless.reload(&dom).expect("the DOM rebuilds");
+        settle(&mut headless);
+        headless.open_at([0.0, 0.0, -9.0], [0.0, 0.0, 0.0], 70.0);
+        turn(&mut headless, &mut dom, Ref::new(ARM + 2), true);
+        let bare = frame(&mut headless);
+        headless.set_selection(&[rbx_viewer::pick::Selected::read(
+            &dom,
+            &rbx_reflection::ReflectionDatabase::embedded(),
+            Ref::new(ARM + 1),
+        )]);
+        let cued = frame(&mut headless);
+        headless.set_selection(&[]);
+
+        let path = if on_gpu { "GPU" } else { "CPU" };
+        let aside = changed(&bare, &cued, out_to_the_side);
+        assert!(
+            aside > 20,
+            "{path}: only {aside} pixels of cue around the bent lower half"
+        );
+        let below = changed(&bare, &cued, below_the_joint);
+        assert!(
+            below <= 4,
+            "{path}: {below} pixels of cue below the joint, where the rest pose hangs"
+        );
+    }
+}

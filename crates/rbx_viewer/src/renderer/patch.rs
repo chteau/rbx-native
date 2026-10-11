@@ -126,6 +126,7 @@ impl Renderer {
     /// their own next rebuild).
     pub(crate) fn refresh_meshes(
         &mut self,
+        device: &wgpu::Device,
         queue: &wgpu::Queue,
         resolved: &Resolved,
         meshes: &[AssetRef],
@@ -133,8 +134,47 @@ impl Renderer {
         if meshes.is_empty() {
             return;
         }
+        self.shadows.posed();
+        if let (true, Some(skinner)) = (resolved.skins_on_gpu, self.skinner.as_mut()) {
+            for key in meshes {
+                match resolved.rigs.values().find(|rig| rig.key == *key) {
+                    Some(rig) => skinner.update(device, queue, key, rig.source(), rig.applied()),
+                    None => skinner.remove(key),
+                }
+            }
+            return;
+        }
+        if let Some(skinner) = self.skinner.as_mut() {
+            for key in meshes {
+                skinner.remove(key);
+            }
+        }
         self.filemesh.refresh(queue, resolved, meshes);
         self.shadows.refresh_meshes(queue, resolved, meshes);
+        self.highlights.refresh_meshes(queue, resolved, meshes);
+        self.cues.refresh_meshes(queue, resolved, meshes);
+    }
+
+    /// Whether skinned meshes are posed on the GPU here — see
+    /// `renderer::skinning`. The scene is told so through
+    /// `Scene::set_skins_on_gpu`, and keeps their rest mesh when it is.
+    pub(crate) fn skins_on_gpu(&self) -> bool {
+        self.skinner.is_some()
+    }
+
+    /// Writes every skinned mesh's current pose into each buffer drawing it
+    /// that does not hold it yet, ahead of the frame.
+    pub(super) fn skin(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        let Some(skinner) = self.skinner.as_mut() else {
+            return;
+        };
+        let targets = self
+            .filemesh
+            .skinning_targets()
+            .chain(self.shadows.skinning_targets())
+            .chain(self.highlights.skinning_targets())
+            .chain(self.cues.skinning_targets());
+        skinner.run(device, queue, targets);
     }
 
     /// One box — an instance's own or one piece of it — rewritten, moved,

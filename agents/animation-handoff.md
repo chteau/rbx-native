@@ -70,7 +70,20 @@ API publique, depuis `src/lib.rs` :
   chunk `SKINNING` v6/v7.
 - **Déformation :**
   - Le viewer déforme en direct un `MeshPart` skinné par les parts sœurs que
-    ses os nomment, sur le CPU.
+    ses os nomment.
+  - Sur le GPU, par une passe compute (`renderer/skinning.rs` et
+    `skinning.wgsl`) : les buffers de repos restent fixes, seules les
+    matrices des os sont envoyées à chaque pose. Les masques de survol, de
+    sélection et de surbrillance et les ombres passent par la même passe,
+    donc suivent la forme déformée.
+  - WebGL n'a pas de compute : le viewer WASM, et la fenêtre `rbxview`
+    seule, gardent la déformation sur le CPU, masques compris.
+    `Headless::set_skins_on_gpu(false)` force aussi ce chemin.
+  - Le picking lit toujours une copie posée sur le CPU.
+  - Les vêtements en couches enveloppés (`wrap.rs`) sont skinnés aux parts
+    du personnage : par leur propre skin si ses os nomment ces parts, sinon
+    par un skin prêté par le corps (les parts des sommets de cage les plus
+    proches).
   - Ça marche aussi pour un rig inséré ou remplacé après le chargement.
   - La pose de repos est déduite des joints.
 
@@ -221,12 +234,14 @@ l'upload par un modèle local.
   l'importeur réécrit le mesh à sa façon. Cause non cherchée ; à comparer
   avec un vrai client Roblox.
 - **Skinning viewer**
-  - Déformation sur le CPU.
-  - Les masques de survol, de sélection et de surbrillance gardent la
-    silhouette au repos.
-  - Les vêtements en couches ne sont pas skinnés.
-  - 18 des tests GPU `patch_parity` (ignorés par défaut) n'ont pas été
-    lancés : trop lents sous lavapipe.
+  - WebGL/WASM et la fenêtre autonome `rbxview` déforment encore sur le
+    CPU (pas de compute shader en WebGL).
+  - Le skinning des vêtements en couches (peau propre ou prêtée par le
+    corps) n'est couvert que par des tests unitaires : pas comparé à un
+    vrai client ni à Studio.
+  - `patch_parity` complet (ignorés compris) : 23 réussis, 1 échec déjà
+    présent avant ce travail (`a_viewport_frame_drawn_alone_follows_its_camera`,
+    « no ViewportFrame … is laid out »).
 - **Vue isolée**
   - Particules et GUI attachés au rig masqués aussi.
   - Le snapping de l'outil Move peut viser des parts cachées.

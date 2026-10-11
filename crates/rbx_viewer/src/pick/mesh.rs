@@ -214,7 +214,15 @@ impl Meshes {
                     .or_insert_with(|| Arc::clone(pack));
             }
         }
-        Meshes::new(resolved.meshes.clone(), textures)
+        let mut meshes = resolved.meshes.clone();
+        // The GPU deforms what the renderer draws; picking and export need
+        // the same shape on the CPU.
+        if resolved.skins_on_gpu {
+            for rig in resolved.rigs.values() {
+                meshes.insert(rig.key.clone(), rig.posed());
+            }
+        }
+        Meshes::new(meshes, textures)
             .with_surfaces(surfaces)
             .with_materials(materials)
             .with_kinds(kinds)
