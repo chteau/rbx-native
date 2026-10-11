@@ -2,8 +2,8 @@
 
 Point d'étape pour reprendre ce travail, en particulier pour tester
 **Publish** de l'auto-rigger sur de vrais meshes avec une clé Open Cloud.
-Le sandbox où tout a été développé bloque tous les hôtes Roblox. Rien de ce
-qui parle à Roblox n'a donc été exécuté pour de vrai.
+Le sandbox où tout a été développé bloquait tous les hôtes Roblox. Le
+Publish de l'auto-rigger a depuis été vérifié en direct (§2).
 
 - **Branche :** `claude/busy-mccarthy-3cjctq`.
 - **PR :** [chteau/rbx-native#180](https://github.com/chteau/rbx-native/pull/180), base `dev`.
@@ -116,23 +116,43 @@ API publique, depuis `src/lib.rs` :
    - L'avant est-il bien détecté ? Sinon, Turn 90° / Flip front.
    - Avec Smooth bends, coudes et genoux plient-ils proprement ? Pour
      tester, tourner un membre avec l'outil Rotate.
-3. **Publish**, puis vérifier :
-   - **Unités.** Comparer le `InitialSize` renvoyé par l'upload à la taille
-     de la partie. Le fichier est écrit en studs. Si c'est environ 3,57 fois
-     trop petit ou trop grand, l'importeur le lit en mètres : corriger
-     l'échelle dans `crates/rbx_autorig/src/write.rs`.
-   - **Noms.** Le message doit dire « Published: every part now uses its
-     uploaded mesh ». S'il dit « only N of 15 parts », les `MeshPart` renvoyés
-     ne s'appellent ni `<Part>_Geo` ni `<Part>` : adapter `find_named` /
-     `swap_meshes` dans `crates/rbx_studio/src/shell/rig/autorig.rs`.
-   - **Armature.** En mode skinné, l'importeur détecte-t-il l'armature R15 ?
-     Crée-t-il ses propres joints, ou des `Bone` ? Nos joints et attachments
-     sont gardés : vérifier qu'il n'y a pas de doublons.
-   - **En jeu.** Le personnage publié marche-t-il avec un `Animator` et une
-     animation R15 standard ?
-4. **Mesh v4 skinné dans Studio (si possible).** Les valeurs d'en-tête
-   `num_high_quality_lods = 1` et `lod_type = 0` sont des suppositions
-   raisonnées (voir `write.rs`).
+3. **Publish** : vérifié en direct le 2026-10-11 (sans mock), deux uploads.
+   - **Uploads.** Rigide : TIBY (chibi CC0), modèle **95056738325785**.
+     Skinné (Smooth bends) : WomanBody13 (CC0), modèle **91357319063637**.
+     Lancés par `RBX_STUDIO_ANIMATION="autorig=<chemin>,rigid|smooth,publish"`
+     avec `RBX_STUDIO_IMPORT_KEEP=<dossier>`, qui garde le glb envoyé et le
+     `.rbxm` renvoyé sous `<asset id>.*`.
+   - **Unités : studs.** Pour les 15 parties des deux uploads, le
+     `InitialSize` renvoyé est égal aux bornes du glTF envoyé (rapport
+     1,000). Aucune correction d'échelle dans `write.rs`.
+   - **Noms.** En rigide, l'importeur renvoie des `MeshPart` `<Part>_Geo`
+     (sous des `Model` `<Part>_Geo_Node`). En skinné, il renvoie des `<Part>`
+     tout court. `find_named` cherchait déjà les deux : 15/15 trouvées.
+   - **Armature.** En skinné, l'importeur reconnaît le R15. Il crée ses
+     propres `Motor6D`, ses `*RigAttachment`, un `Humanoid`, un
+     `HumanoidRootPart` et un dossier `InitialPoses`, mais **aucun `Bone`**.
+     Les parties ont `HasSkinnedMesh = true` et un `JointOffset` (position
+     de l'os depuis le centre de la partie). `swap_meshes` ne prend que
+     `MeshId`, `InitialSize`, `HasSkinnedMesh`, `HasJointOffset` et
+     `JointOffset`. Nos joints restent les seuls : pas de doublons (test
+     `publishing_takes_each_parts_mesh_and_skinning_but_not_the_joints`).
+   - **Reste à faire à la main : en jeu.** Le personnage publié marche-t-il
+     avec un `Animator` et une animation R15 standard ? Non vérifié.
+4. **Mesh v4 skinné : en-tête.** On écrit `lod_type = 0` et
+   `num_high_quality_lods = 1`. Les vrais meshes Roblox : le corps R15 skinné
+   13674780763 (v5) a `lod_type = 3` (Zeux), 1 LOD haute qualité sur 4 ; des
+   accessoires v4.01 ont `lod_type = 4`, 1 sur 6. Le nombre de LOD haute
+   qualité (1) correspond. Avec un seul niveau, rien n'est simplifié :
+   0 (« none ») est la valeur honnête. Publish passe de toute façon par le
+   glTF, que Roblox retraite en ses propres meshes (voir `write.rs`).
+5. **Vrais personnages (fit).** Testés : TIBY (chibi FBX, avec un disque
+   au sol et un accessoire posé à côté), Rak (FBX), WomanBody13 (OBJ),
+   Superhero Quaternius (glTF). Les quatre passent le fit (exemple
+   `cargo run -p rbx_autorig --example fit_report`) ; TIBY, Rak et
+   WomanBody13 se riggent et plient aussi dans rbxstudio (captures Xephyr). Corrigé pour eux : props et disques au sol écartés (avec un
+   avertissement), cou des grosses têtes, entrejambe bas, plus de 5
+   extrémités, hanches qui croisaient l'axe, glTF exigeant
+   `KHR_materials_unlit`.
 
 Pour tester sans clé, `RBX_STUDIO_IMPORT_MOCK=<fichier .rbxm>` remplace
 l'upload par un modèle local.
@@ -170,7 +190,19 @@ l'upload par un modèle local.
     glisser-déposer dans la vue 3D.
   - Pas d'attachments d'accessoires ni de cages.
   - Non géré : mains en pièces séparées, bras levés au-dessus de la tête.
-  - Testé seulement sur des humanoïdes synthétiques.
+  - Personnages faits de boîtes qui se touchent (Kenney « blocky ») : pas
+    de cou ni d'entrejambe trouvés, la découpe échoue (« LowerTorso came
+    out empty »). Il faudrait rigger pièce par pièce : nouvelle
+    fonctionnalité.
+  - L'avant reste ambigu sur TIBY et les Kenney : l'avertissement le dit,
+    Turn 90° / Flip front corrige.
+  - Le genou de Rak est un peu haut (1,30 pour une hanche à 1,49 studs).
+- **Rig skinné après Publish** (modèle 116095331286071, TIBY) : nos 15
+  meshes publiés sont bien servis, mais plier le rig dans rbxstudio ne
+  donne pas le même résultat qu'avant Publish (avant-bras qui paraissent
+  raccourcis, genou moins plié). Le viewer ne lit pas `JointOffset`, et
+  l'importeur réécrit le mesh à sa façon. Cause non cherchée ; à comparer
+  avec un vrai client Roblox.
 - **Skinning viewer**
   - Déformation sur le CPU.
   - Les masques de survol, de sélection et de surbrillance gardent la
