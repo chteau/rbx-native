@@ -167,7 +167,9 @@ pub(crate) fn read_envelopes(
 ) -> Result<Vec<Envelope>, MeshError> {
     let block = reader.take_records(count, ENVELOPE_SIZE)?;
     Ok(block
-        .chunks_exact(ENVELOPE_SIZE)
+        .as_chunks::<ENVELOPE_SIZE>()
+        .0
+        .iter()
         .map(|record| Envelope {
             slots: record[..4].try_into().unwrap(),
             weights: record[4..].try_into().unwrap(),
@@ -183,7 +185,9 @@ pub(crate) fn read_bones(reader: &mut Reader<'_>, count: usize) -> Result<RawBon
     let block = reader.take_records(count, BONE_SIZE)?;
     Ok(RawBones(
         block
-            .chunks_exact(BONE_SIZE)
+            .as_chunks::<BONE_SIZE>()
+            .0
+            .iter()
             .map(|record| {
                 let parent = |offset| match u16_at(record, offset) {
                     NO_BONE => None,
@@ -226,7 +230,9 @@ pub(crate) fn read_subsets(
 ) -> Result<Vec<Subset>, MeshError> {
     let block = reader.take_records(count, SUBSET_SIZE)?;
     Ok(block
-        .chunks_exact(SUBSET_SIZE)
+        .as_chunks::<SUBSET_SIZE>()
+        .0
+        .iter()
         .map(|record| {
             let word = |i: usize| u32_at(record, i * 4);
             let range = |begin: u32, len: u32| begin..begin.saturating_add(len);
