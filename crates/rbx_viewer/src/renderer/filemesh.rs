@@ -407,7 +407,9 @@ fn group_by_mesh_and_skin(resolved: &Resolved) -> Vec<(GroupKey, Vec<&ResolvedIn
     let mut order: Vec<GroupKey> = Vec::new();
     let mut groups: HashMap<GroupKey, Vec<&ResolvedInstance>> = HashMap::new();
 
-    for instance in &resolved.instances {
+    // An instance an isolation hides is batched nowhere; `Scene::isolate`
+    // ends in a rebuild, which is what brings it back.
+    for instance in resolved.instances.iter().filter(|i| i.is_drawn()) {
         let key = GroupKey::of(instance);
         if !groups.contains_key(&key) {
             order.push(key.clone());

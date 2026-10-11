@@ -91,6 +91,18 @@ pub(crate) struct ResolvedInstance {
     /// `BasePart.CastShadow` of the part this mesh stands for — see
     /// [`super::Part::casts_shadow`].
     pub(crate) casts_shadow: bool,
+    /// The part's own [`super::Part::is_drawn`] isolation flag, carried
+    /// over because a mesh part draws through this instance and not its box
+    /// — see `scene::isolation`.
+    pub(crate) isolated_out: bool,
+}
+
+impl ResolvedInstance {
+    /// Whether any pass paints this instance: everything a scene resolved
+    /// does, except what an isolation hides.
+    pub(crate) fn is_drawn(&self) -> bool {
+        !self.isolated_out
+    }
 }
 
 /// A [`Plan`] joined to whatever meshes and images actually downloaded.
@@ -322,6 +334,7 @@ pub(crate) fn resolve(
             alpha: entry.alpha,
             reflectance: entry.reflectance,
             casts_shadow: entry.casts_shadow,
+            isolated_out: false,
         });
     }
 

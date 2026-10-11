@@ -96,6 +96,14 @@ const MOON_TINT: Vec3 = Vec3::new(0.55, 0.68, 1.0);
 /// over to the moon across. Without it dawn and dusk would pop in one frame.
 const TWILIGHT_BAND: f32 = 0.1;
 
+/// Where an isolated view's key light comes from (see [`Lighting::neutral`]),
+/// as the unit vector pointing *at* it: high, in front of and a little to the
+/// side of a rig facing Roblox's forward (−Z), so a face, a chest and the top
+/// of each limb all catch it and the shading still says which way is up.
+const NEUTRAL_KEY: Vec3 = Vec3::new(0.35, 0.8, -0.5);
+/// Far enough that no fog an isolated view uses ever reaches anything in it.
+const NO_FOG: f32 = 1.0e9;
+
 /// How the distance is faded out.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum Fog {
@@ -254,6 +262,41 @@ impl Lighting {
             effects::read(dom, database, referent),
             clouds,
         )
+    }
+
+    /// The light an isolated view is drawn under, whatever the place's own
+    /// `Lighting` says: one fixed white key from above-front, its usual dim
+    /// fill opposite, Studio's default ambient, no fog, no atmosphere, no
+    /// clouds, no post effects and an exposure of one. An animator judging a
+    /// pose wants to see the same rig the same way in a night-time horror
+    /// place as on a sunny baseplate — Blender's viewport lighting, not the
+    /// game's.
+    ///
+    /// Shadows stay on: a rig's own limbs shading its torso is part of
+    /// reading a pose. The sky's share of the ambient is the renderer's to
+    /// neutralise, since it is sampled from the probe rather than from here
+    /// (see `renderer::Renderer::draw`).
+    pub(crate) fn neutral() -> Self {
+        let defaults = Defaults {
+            global_shadows: true,
+            ..Defaults::default()
+        };
+        let mut lighting = Lighting::assemble(&defaults, None, Effects::default(), None);
+        let lamp = SUN_BASE * DEFAULT_BRIGHTNESS;
+        lighting.sun_direction = NEUTRAL_KEY.normalize();
+        // Untinted, unlike a real afternoon's cool bounce: neutral is the
+        // whole point.
+        lighting.sun_color = Vec3::splat(lamp);
+        lighting.fill_color = Vec3::splat(lamp * FILL_FRACTION);
+        lighting.exposure = 1.0;
+        lighting.fog = Fog::Linear {
+            color: Vec3::ZERO,
+            start: NO_FOG,
+            end: 2.0 * NO_FOG,
+        };
+        lighting.sky_tint = Vec3::ONE;
+        lighting.star_fade = 0.0;
+        lighting
     }
 
     fn from_clock(clock_override: Option<f32>, clouds: Option<Clouds>) -> Self {

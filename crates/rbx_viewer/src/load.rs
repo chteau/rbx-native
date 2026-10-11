@@ -277,11 +277,30 @@ impl Loaded {
         if !self.toggles.textures {
             return;
         }
-        let Some(placement) = self.scene.placement_of(part) else {
+        // `_any`: a part an isolation hides still gets its plan kept in
+        // step, or its decals would come back where it stood before the edit
+        // once the isolation ends. Assembly is what leaves them undrawn.
+        let Some(placement) = self.scene.placement_of_any(part) else {
             return;
         };
         let faces = textures::faces(dom, database, part, &placement);
         self.decor_plan.replace_faces(part, faces);
+    }
+
+    /// Limits the scene to `roots` (see `scene::isolation`), or lifts the
+    /// limit with `None`, and joins the decals again against what is drawn
+    /// now: a face is assembled only onto a part `Scene::placements` keeps,
+    /// so this is what takes the decals of a hidden part out of the picture
+    /// — and puts them back. Every image is already resident by then, so
+    /// nothing is fetched; the warnings are whatever the join reports.
+    pub(crate) fn isolate(
+        &mut self,
+        roots: Option<&[Ref]>,
+        parent_of: impl Fn(Ref) -> Option<Ref>,
+        resident: &mut Resident,
+    ) -> Vec<String> {
+        self.scene.isolate(roots, parent_of);
+        self.resolve_decor(resident)
     }
 
     /// Replaces the constant lighting terms wholesale — what

@@ -92,6 +92,15 @@ impl Renderer {
                 // drawing as a box.
                 self.selection.place(referent, *placement);
                 self.hover.place(device, referent, *placement);
+                // Hidden by an isolation: placed like any mesh part, so it
+                // can still be outlined and dragged, but painted nowhere.
+                if !instance.is_drawn() {
+                    self.filemesh.remove(referent);
+                    self.shadows.remove_mesh_caster(referent);
+                    self.highlights.remove_mesh(referent);
+                    self.cues.remove_mesh(referent);
+                    return true;
+                }
                 self.filemesh.sync(device, queue, resolved, instance)
                     && self.shadows.sync_mesh_caster(device, resolved, instance)
                     && self.highlights.sync_mesh(device, resolved, instance)

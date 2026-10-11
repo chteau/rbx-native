@@ -100,6 +100,7 @@ impl Offscreen {
             offscreen.set_lines(layer, segments);
         }
         offscreen.set_gizmo(view.gizmo);
+        offscreen.set_isolated(view.isolated());
         offscreen
     }
 
@@ -119,6 +120,13 @@ impl Offscreen {
             self.set_lines(layer, segments);
         }
         self.set_gizmo(view.gizmo);
+        self.set_isolated(view.isolated());
+    }
+
+    /// Draws an isolated view or the whole place — see
+    /// [`Renderer::set_isolated`].
+    pub(crate) fn set_isolated(&mut self, isolated: bool) {
+        self.renderer.set_isolated(isolated);
     }
 
     /// Moves the renderer to another graphics quality level, in place: see

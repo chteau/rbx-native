@@ -332,7 +332,7 @@ impl Shadows {
         &mut self,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        (meshes, terrain): (&Meshes, &TerrainGpu),
+        (meshes, terrain): (&Meshes, Option<&TerrainGpu>),
         selected: &[point::Selected],
     ) {
         debug_assert!(selected.len() <= self.point_cap());
@@ -371,7 +371,7 @@ impl Shadows {
         &self,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        (meshes, terrain): (&Meshes, &TerrainGpu),
+        (meshes, terrain): (&Meshes, Option<&TerrainGpu>),
         fit: &Fit,
     ) {
         queue.write_buffer(
@@ -395,7 +395,7 @@ impl Shadows {
         &self,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        (meshes, terrain): (&Meshes, &TerrainGpu),
+        (meshes, terrain): (&Meshes, Option<&TerrainGpu>),
         selected: &[local::Selected],
     ) {
         debug_assert!(selected.len() <= self.local_cap());
@@ -451,7 +451,7 @@ impl Shadows {
     fn draw_casters<'p>(
         &'p self,
         pass: &mut wgpu::RenderPass<'p>,
-        (meshes, terrain): (&Meshes, &TerrainGpu),
+        (meshes, terrain): (&Meshes, Option<&TerrainGpu>),
         bind_group: &'p wgpu::BindGroup,
         cull: Option<&Fit>,
     ) {
@@ -503,8 +503,11 @@ impl Shadows {
             pass.draw_indexed(0..geometry.index_count, 0, 0..batch.slots.count());
         }
         // Same pipeline: terrain is triangles in world space with an identity
-        // placement, which is all a file mesh caster is too.
-        terrain.draw_casters(pass);
+        // placement, which is all a file mesh caster is too. `None` from an
+        // isolated view, which draws no terrain to cast.
+        if let Some(terrain) = terrain {
+            terrain.draw_casters(pass);
+        }
     }
 }
 

@@ -143,6 +143,10 @@ impl Scene {
         if part.material.layer as usize >= known_layers {
             return Err(Rebuild::Asset);
         }
+        // Asked of the DOM on every resync rather than kept from the last
+        // one: the edit may be the very move that put this part under an
+        // isolated root, or took it out from under one.
+        part.isolated_out = self.isolates_out(dom, referent);
 
         // Where the referent's own box sits and how many pieces stand under
         // it, read before anything below moves either.
@@ -206,7 +210,10 @@ impl Scene {
                                 return Err(Rebuild::Asset);
                             }
                             Some(instance) => Drawn::Mesh {
-                                index: self.place_instance(instance),
+                                index: self.place_instance(super::ResolvedInstance {
+                                    isolated_out: part.isolated_out,
+                                    ..instance
+                                }),
                                 placement: part.placement(),
                             },
                         }
@@ -371,10 +378,28 @@ impl Scene {
     /// entry [`Scene::placements`] would hold for it, without building the
     /// whole map to look up one part. A union drawn as its recovered pieces
     /// keeps its own box's placement, for the same reason `placements` does.
+    ///
+    /// `None` too for a part an isolation hides, which `Scene::placements`
+    /// leaves out for the same reason.
     pub(crate) fn placement_of(&self, referent: Ref) -> Option<Placement> {
+        self.placement_of_any(referent).filter(|_| {
+            self.standing_part(referent)
+                .is_some_and(|part| !part.isolated_out)
+        })
+    }
+
+    /// [`Scene::placement_of`] as if nothing were isolated: where a decal
+    /// plan has to project the faces of a part an isolation hides, so the
+    /// plan is already right the moment the isolation ends.
+    pub(crate) fn placement_of_any(&self, referent: Ref) -> Option<Placement> {
         let standing = self.standing.get(&referent)?;
         let part = self.parts.get(standing.whole?)?;
         (!part.suppressed || standing.pieces > 0).then(|| part.placement())
+    }
+
+    /// `referent`'s own box, wherever it stands in `parts`.
+    fn standing_part(&self, referent: Ref) -> Option<&Part> {
+        self.parts.get(self.standing.get(&referent)?.whole?)
     }
 
     /// Keeps the extent in step with one part going from `old` to `new`

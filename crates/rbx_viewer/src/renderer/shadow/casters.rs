@@ -94,7 +94,7 @@ pub(super) fn mesh_batches(
 ) -> MeshBatches {
     let mut batches = Keyed::new("rbxview shadow casters");
     let mut order: Vec<AssetRef> = Vec::new();
-    for instance in resolved.instances.iter().filter(|i| i.casts_shadow) {
+    for instance in resolved.instances.iter().filter(|i| casts(i)) {
         if !order.contains(&instance.mesh) {
             order.push(instance.mesh.clone());
         }
@@ -109,12 +109,19 @@ pub(super) fn mesh_batches(
             resolved
                 .instances
                 .iter()
-                .filter(|i| i.casts_shadow && i.mesh == reference)
+                .filter(|i| casts(i) && i.mesh == reference)
                 .map(|i| (i.referent, raw(i.model), ())),
         );
         batches.add_group(device, reference, geometry, roster);
     }
     batches
+}
+
+/// Whether a resolved instance reaches the depth pass: the part's own
+/// `CastShadow`, and only while an isolation does not hide it — the same
+/// two questions [`Part::casts_shadow`] answers for a box.
+fn casts(instance: &ResolvedInstance) -> bool {
+    instance.casts_shadow && instance.is_drawn()
 }
 
 /// [`sync_shape`] for a resolved file mesh. `false` when the instance now
@@ -127,9 +134,7 @@ pub(super) fn sync_mesh(
     resolved: &Resolved,
     instance: &ResolvedInstance,
 ) -> bool {
-    let wanted = instance
-        .casts_shadow
-        .then(|| (instance.mesh.clone(), raw(instance.model), ()));
+    let wanted = casts(instance).then(|| (instance.mesh.clone(), raw(instance.model), ()));
     batches.sync(device, instance.referent, wanted, |mesh| {
         geometry(device, resolved, mesh)
     })

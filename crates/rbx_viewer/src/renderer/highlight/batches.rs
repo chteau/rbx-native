@@ -53,7 +53,9 @@ pub(super) fn mesh_batches(
 ) -> MeshBatches {
     let mut batches = Keyed::new("rbxview highlight meshes");
     let mut order: Vec<AssetRef> = Vec::new();
-    for instance in &resolved.instances {
+    // A mask covers only what is painted, so a mesh an isolation hides
+    // claims nothing: a `Highlight` on it would outline an empty space.
+    for instance in resolved.instances.iter().filter(|i| i.is_drawn()) {
         if claims.contains_key(&instance.referent) && !order.contains(&instance.mesh) {
             order.push(instance.mesh.clone());
         }
@@ -66,7 +68,7 @@ pub(super) fn mesh_batches(
             resolved
                 .instances
                 .iter()
-                .filter(|instance| instance.mesh == reference)
+                .filter(|instance| instance.mesh == reference && instance.is_drawn())
                 .filter_map(|instance| {
                     let &claim = claims.get(&instance.referent)?;
                     Some((

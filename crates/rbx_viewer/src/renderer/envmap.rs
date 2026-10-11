@@ -18,7 +18,7 @@ use crate::textures::Panel;
 
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 const CHANNELS: usize = 4;
-const FACES: usize = irradiance::FACES;
+pub(super) const FACES: usize = irradiance::FACES;
 /// Face size the diffuse integral is taken at. The irradiance of a sky is a
 /// very low frequency signal — sixteen texels a side already agree with the
 /// full-size integral to well under one sRGB step, at a 4096th of the cost.

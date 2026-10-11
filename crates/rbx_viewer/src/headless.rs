@@ -183,6 +183,17 @@ impl Headless {
     pub fn reload(&mut self, dom: &WeakDom) -> Result<(), String> {
         let mut loaded = Loaded::from_dom(dom, &self.database, self.toggles, &mut self.resident)?;
         self.warnings.extend(loaded.take_warnings());
+        // The scene is new and knows nothing of an isolation; the roots are
+        // `self.view`'s, and the DOM is right here to place every part
+        // against them before anything is uploaded.
+        if let Some(roots) = &self.view.isolation {
+            let warnings = loaded.isolate(
+                Some(roots.as_slice()),
+                |at| dom.parent(at),
+                &mut self.resident,
+            );
+            self.warnings.extend(warnings);
+        }
         let bounds = *loaded.world().scene.bounds();
 
         let start = match self.from {
@@ -266,6 +277,55 @@ impl Headless {
     /// The projection mode [`Headless::set_orthographic`] last set.
     pub fn orthographic(&self) -> bool {
         self.view.orthographic
+    }
+
+    /// Draws only the instances under `roots` (and the roots themselves) on a
+    /// plain backdrop, or everything again with `None` — the Animation
+    /// Editor's view of one rig, the way Blender's animation workspace shows
+    /// a lone armature rather than the whole scene.
+    ///
+    /// While isolated, only the parts, meshes, unions and the decals,
+    /// textures and `SurfaceAppearance`s on them that stand under a root are
+    /// drawn or cast a shadow; everything else in `Workspace` is neither
+    /// drawn nor hit by a [`crate::pick::parts_along`] test made through
+    /// [`Headless::pick_meshes`]. Terrain and its water, the sky, clouds,
+    /// atmosphere and fog, the place's lights and post effects, beams,
+    /// trails, particles, adornments and every GUI are left out whether
+    /// under a root or not, and the rig is lit by a fixed neutral key (see
+    /// `Lighting::neutral`) over [`crate::ISOLATION_BACKDROP`].
+    ///
+    /// Every instance keeps its `Ref`: selection, hover, the gizmo and
+    /// [`Headless::apply_changes`] work on the real place exactly as before,
+    /// and an edit under a root — a pose moving the rig's parts sixty times
+    /// a second, a part added or removed — is patched in place like any
+    /// other. The isolation survives [`Headless::reload`] and every asset
+    /// landing; `None` restores exactly the picture a never-isolated view
+    /// would draw.
+    ///
+    /// Setting it rebuilds the GPU batches once (the same rebuild an asset
+    /// landing costs). Setting the roots it already has costs nothing. The
+    /// host has to force a frame afterwards, and take
+    /// [`Headless::pick_meshes`] again: [`Headless::pick_meshes_changed`]
+    /// reports true.
+    pub fn set_isolation(&mut self, roots: Option<Vec<Ref>>) {
+        if roots == self.view.isolation {
+            return;
+        }
+        self.view.set_isolation(roots);
+        let roles = &self.roles;
+        let warnings = self.loaded.isolate(
+            self.view.isolation.as_deref(),
+            |at| roles.get(at).and_then(|known| known.parent),
+            &mut self.resident,
+        );
+        self.warnings.extend(warnings);
+        self.offscreen.reload(self.loaded.world(), &self.view);
+        self.meshes_changed = true;
+    }
+
+    /// Whether [`Headless::set_isolation`] last isolated some roots.
+    pub fn isolation(&self) -> bool {
+        self.view.isolated()
     }
 
     pub fn input(&mut self, event: CameraInput) {

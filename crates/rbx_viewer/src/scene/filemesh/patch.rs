@@ -90,6 +90,7 @@ impl Entry {
             alpha: self.alpha,
             reflectance: self.reflectance,
             casts_shadow: self.casts_shadow,
+            isolated_out: false,
         })
     }
 }

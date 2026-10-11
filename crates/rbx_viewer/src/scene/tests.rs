@@ -154,6 +154,7 @@ fn bounds_wrap_the_corners_of_a_rotated_box() {
         casts_shadow: true,
         id: PartId::whole(Ref::new(0)),
         suppressed: false,
+        isolated_out: false,
     };
 
     let bounds = bounds::of(&[part]).unwrap();
@@ -197,6 +198,7 @@ fn only_the_invisible_and_the_opted_out_stop_casting() {
         casts_shadow: flag,
         id: PartId::whole(Ref::new(0)),
         suppressed: false,
+        isolated_out: false,
     };
 
     assert!(caster(1.0, true).casts_shadow());
@@ -244,6 +246,7 @@ fn union_landing(referent: Ref, asset: &str) -> union::Resolution {
             alpha: 1.0,
             reflectance: 0.0,
             casts_shadow: true,
+            isolated_out: false,
         }],
     }
 }

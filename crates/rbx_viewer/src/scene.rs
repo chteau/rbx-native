@@ -8,6 +8,7 @@ mod filemesh;
 mod gui;
 mod highlight;
 mod identity;
+mod isolation;
 mod material;
 mod particles;
 mod patch;
@@ -61,6 +62,7 @@ pub(crate) use gui::{
 pub use gui::{shows_screen, ScrollTarget};
 pub(crate) use highlight::{DepthMode, Highlight, MAX_HIGHLIGHTS};
 pub(crate) use identity::PartId;
+pub(crate) use isolation::{within as isolation_within, Isolation};
 pub(crate) use material::{Catalog, Kind, Maps, Slot};
 pub(crate) use particles::sequence::{eval_color, eval_number};
 pub(crate) use particles::{Emitter, Simulation};
@@ -128,6 +130,10 @@ pub(crate) struct Part {
     /// drawing this part; left `false` forever if that resolution fails, which
     /// is exactly what keeps this box as the fallback.
     suppressed: bool,
+    /// Set while the scene is isolated to roots this part does not stand
+    /// under (see `scene::isolation`): kept, placed and selectable like any
+    /// other part, just not painted by any shaded pass or shadow map.
+    isolated_out: bool,
 }
 
 /// Where a face instance has to be projected: the unit mesh a part draws as,
@@ -156,8 +162,12 @@ impl Part {
     /// place says "invisible", and Roblox draws nothing for it — but a `Decal`
     /// pinned to such a part still shows, which is why the part keeps its
     /// placement (see [`Scene::placements`]) even when nothing draws it.
+    ///
+    /// Isolation folds in here too, so every pass that already asks this —
+    /// opaque, blended, shadow casters, highlight masks — leaves a part
+    /// outside the isolated roots alone without a test of its own.
     pub(crate) fn is_drawn(&self) -> bool {
-        !self.suppressed && self.alpha > 0.0
+        !self.suppressed && !self.isolated_out && self.alpha > 0.0
     }
 
     /// Whether the shadow map has to draw it. Roblox lets a part with a
@@ -230,6 +240,8 @@ pub(crate) struct Scene {
     adornments: Vec<Adornment>,
     /// Every enabled `ScreenGui`; see [`Scene::gui_screens`].
     gui: Vec<GuiScreen>,
+    /// The roots drawing is limited to, if any — see `scene::isolation`.
+    isolation: Option<Isolation>,
     /// Every placeable `BillboardGui`/`SurfaceGui`; see [`Scene::gui_spaces`].
     gui_spaces: Vec<SpaceGui>,
     union_plan: union::Plan,
@@ -295,6 +307,7 @@ impl Scene {
             highlights: Vec::new(),
             adornments: Vec::new(),
             gui,
+            isolation: None,
             gui_spaces: Vec::new(),
             union_plan,
             unions_resolved: union::Merged::default(),
@@ -515,6 +528,10 @@ impl Scene {
     /// projected on, and a decal floating in the air where that box used to
     /// be is worse than none. A union drawn as its pieces keeps its box's
     /// placement precisely because those pieces fill it.
+    ///
+    /// A part an isolation hides is left out for the same reason: its
+    /// decals, emitters and canvases must not be drawn where nothing else
+    /// of it is.
     pub(crate) fn placements(&self) -> HashMap<Ref, Placement> {
         let pieced: HashSet<Ref> = self
             .parts
@@ -525,7 +542,9 @@ impl Scene {
         self.parts
             .iter()
             .filter(|part| {
-                part.id.is_whole() && (!part.suppressed || pieced.contains(&part.referent()))
+                part.id.is_whole()
+                    && !part.isolated_out
+                    && (!part.suppressed || pieced.contains(&part.referent()))
             })
             .map(|part| (part.referent(), part.placement()))
             .collect()
@@ -625,6 +644,11 @@ impl Scene {
         resolved
             .instances
             .extend(self.unions_resolved.instances.iter().cloned());
+        // Both callers have just rebuilt or appended to the lists an
+        // isolation flags, with no DOM in hand to ask again.
+        if self.isolation.is_some() {
+            self.flag_isolated();
+        }
     }
 
     /// One `(referent, asset)` pair per legacy union/negate found, to download
@@ -793,6 +817,7 @@ pub(super) fn assemble_part(
         size: geometry.size,
         id,
         suppressed: false,
+        isolated_out: false,
     }
 }
 

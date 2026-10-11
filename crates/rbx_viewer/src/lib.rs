@@ -77,7 +77,7 @@ pub use lighting::sun;
 pub use lighting::Calibration;
 pub use load::read_place;
 pub use quality::{FrameRateManager, QualityLevel};
-pub use renderer::{GuiBox, Segment};
+pub use renderer::{GuiBox, Segment, ISOLATION_BACKDROP};
 pub use scene::{resolved_shape_label, shows_screen, ScrollTarget};
 #[cfg(not(target_arch = "wasm32"))]
 pub use serve::{serve, DEFAULT_PORT};

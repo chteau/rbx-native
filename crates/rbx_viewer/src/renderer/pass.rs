@@ -15,7 +15,7 @@
 use super::cull::MainCull;
 use super::pipeline;
 use super::post::Targets;
-use super::{Renderer, CLEAR_COLOR};
+use super::{isolation, Renderer, CLEAR_COLOR};
 
 impl Renderer {
     /// The opaque half: the sky and everything that writes depth.
@@ -36,7 +36,7 @@ impl Renderer {
                 depth_slice: None,
                 resolve_target: resolve,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(CLEAR_COLOR),
+                    load: wgpu::LoadOp::Clear(isolation::clear_color(self.isolated, CLEAR_COLOR)),
                     store: wgpu::StoreOp::Store,
                 },
             })],
@@ -58,19 +58,23 @@ impl Renderer {
 
         // Sky first (it writes no depth), then the stars and the sun and moon
         // on top of it, then the opaque surfaces, then everything
-        // translucent over the top.
-        if let Some(sky) = &self.sky {
-            sky.draw(&mut pass);
-        }
-        // Before the discs: a star behind the moon has no business showing
-        // through it, and the discs are the brighter of the two.
-        if let Some(stars) = &self.stars {
-            stars.draw(&mut pass);
-        }
-        // Before the geometry, not after: the discs sit on the far plane, so
-        // anything drawn later simply overwrites them where it stands.
-        if let Some(bodies) = &self.bodies {
-            bodies.draw(&mut pass);
+        // translucent over the top. None of the three over an isolated
+        // view, whose backdrop is the clear colour itself.
+        if self.surroundings().sky {
+            if let Some(sky) = &self.sky {
+                sky.draw(&mut pass);
+            }
+            // Before the discs: a star behind the moon has no business
+            // showing through it, and the discs are the brighter of the two.
+            if let Some(stars) = &self.stars {
+                stars.draw(&mut pass);
+            }
+            // Before the geometry, not after: the discs sit on the far
+            // plane, so anything drawn later simply overwrites them where it
+            // stands.
+            if let Some(bodies) = &self.bodies {
+                bodies.draw(&mut pass);
+            }
         }
 
         let decals = self.quality.decals && !self.textured.is_empty();
@@ -86,7 +90,7 @@ impl Renderer {
         // Real mesh geometry, opaque like everything above: its own
         // pipelines (untextured, textured), rebinding the frame itself.
         self.filemesh.draw_opaque(&mut pass, bindings);
-        if !self.terrain.is_empty() {
+        if self.surroundings().terrain && !self.terrain.is_empty() {
             self.terrain
                 .draw_opaque(&mut pass, bindings, |center, radius| {
                     cull.visible(center, radius)
@@ -152,7 +156,7 @@ impl Renderer {
                 .draw(&mut pass, &self.meshes, (&self.blended, &self.inside));
         }
         self.filemesh.draw_blended(&mut pass, bindings);
-        if self.terrain.has_water() {
+        if self.surroundings().terrain && self.terrain.has_water() {
             pass.set_pipeline(self.filemesh.plain_pipeline(true));
             pass.set_bind_group(0, bindings.frame, &[]);
             pass.set_bind_group(1, bindings.materials, &[]);
@@ -200,8 +204,11 @@ impl Renderer {
 
         // Place content, so before the editor's own cues below: an
         // adornment is something the file asks for, where a selection
-        // outline is something this editor draws about it.
-        self.adornments.draw(&mut pass, &self.frame.bind_group);
+        // outline is something this editor draws about it. Not over an
+        // isolated view, where its adornee may well be hidden.
+        if self.surroundings().adornments {
+            self.adornments.draw(&mut pass, &self.frame.bind_group);
+        }
 
         // Last, so the outlines never get drawn over by geometry they should
         // sit on top of. Hover after selection: `Shell` never sends a hover

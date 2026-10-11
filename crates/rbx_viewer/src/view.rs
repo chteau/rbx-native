@@ -57,6 +57,12 @@ pub(crate) struct View {
     /// `false` — the box shows through everything, which is what Studio
     /// draws — unless the embedder asks otherwise; `rbxview` never does.
     pub(crate) selection_occluded: bool,
+    /// The roots an isolated view draws (see `Headless::set_isolation`), or
+    /// `None` for the whole place. Carried here because the renderer's half
+    /// of it — the backdrop, the neutral light — is a switch a rebuild must
+    /// put back like every other one; the scene's half is re-applied from
+    /// the same roots by whoever builds the scene.
+    pub(crate) isolation: Option<Vec<rbx_dom::Ref>>,
 }
 
 impl View {
@@ -96,6 +102,14 @@ impl View {
 
     pub(crate) fn set_selection_occluded(&mut self, occluded: bool) {
         self.selection_occluded = occluded;
+    }
+
+    pub(crate) fn set_isolation(&mut self, roots: Option<Vec<rbx_dom::Ref>>) {
+        self.isolation = roots;
+    }
+
+    pub(crate) fn isolated(&self) -> bool {
+        self.isolation.is_some()
     }
 }
 
