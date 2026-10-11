@@ -408,15 +408,29 @@ impl Shell {
     /// group drag carries all of them together, so none should pull the
     /// others.
     ///
-    /// Only on a selection change or after an edit moved something other
-    /// than the selection (see `Shell::reflect_changes`), never per mouse
-    /// move — this walks the whole workspace, and during a drag nothing but
-    /// the dragged parts is moving anyway.
+    /// Only on a selection change, after an edit moved something other
+    /// than the selection (see `Shell::reflect_changes`), and when the
+    /// Animation Editor stages or unstages a rig — never per mouse move:
+    /// this walks the whole workspace, and during a drag nothing but the
+    /// dragged parts is moving anyway.
+    ///
+    /// While a rig is staged the rest of the place is hidden (see
+    /// `Shell::stage_rig`), and a hidden part is no more a snap target than
+    /// it is a click target (see `pick::parts_along`): only the rig's own
+    /// parts are offered then.
     pub(super) fn sync_snap_neighbours(&mut self, cx: &mut Context<Self>) {
+        let staged = self.anim.staged;
+        let on_stage = |referent: Ref| {
+            staged.is_none_or(|model| {
+                std::iter::successors(Some(referent), |&at| self.dom.parent(at))
+                    .any(|at| at == model)
+            })
+        };
         // Everything the selection carries is left out — a selected
         // `Model`'s own parts included, which `covered` holds and the
         // selection itself does not.
         let neighbours: Vec<Mat4> = pick::drawable_parts(&self.dom, &self.database)
+            .filter(|&referent| on_stage(referent))
             .filter(|referent| !self.covered.contains(referent))
             .filter_map(|referent| pick::model_of(&self.dom, referent))
             .collect();

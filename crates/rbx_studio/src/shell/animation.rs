@@ -137,7 +137,7 @@ pub(super) struct Animation {
     /// A scripted run's steps waiting for the auto-rigger (see `debug`).
     debug_rest: Option<Vec<String>>,
     /// The rig the 3D view is staged around, once the grid is sent.
-    staged: Option<Ref>,
+    pub(super) staged: Option<Ref>,
     /// Whether the rig's bones are drawn over it (Blender shows them in
     /// its animation workspace, so on by default), and what was last sent.
     pub(super) skeleton: bool,
@@ -215,6 +215,7 @@ impl Shell {
             viewport.set_isolation(Some(vec![model]));
         });
         self.anim.staged = Some(model);
+        self.sync_snap_neighbours(cx);
     }
 
     /// Sends the skeleton view for the rig as `world` lays it out (nothing
@@ -267,6 +268,7 @@ impl Shell {
                 viewport.set_skeleton(Vec::new());
                 viewport.set_isolation(None);
             });
+            self.sync_snap_neighbours(cx);
         }
     }
 
