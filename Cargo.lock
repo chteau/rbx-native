@@ -6118,6 +6118,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rbx_animation"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "rbx_dom",
+]
+
+[[package]]
 name = "rbx_assets"
 version = "0.1.0"
 dependencies = [
