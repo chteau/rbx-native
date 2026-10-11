@@ -682,3 +682,49 @@ fn a_layered_garment_follows_the_part_it_wraps() {
     assert!(bound.key.is_none(), "kept, not rebuilt");
     assert!(resolved.rigs.get(&HANDLE).is_some_and(Rig::wraps));
 }
+
+/// Half a turn about +Y, row-major.
+const HALF_Y: [f32; 9] = [-1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0];
+
+#[test]
+fn a_part_turned_with_its_joint_rests_where_it_now_stands() {
+    let database = ReflectionDatabase::embedded();
+    let mut dom = arm(1.0);
+    let elbow = Ref::new(5);
+    let mut motor = Instance::new(elbow, "Motor6D", "Elbow");
+    let properties = motor.properties_mut();
+    properties.insert("Part0".to_string(), Variant::Ref(UPPER));
+    properties.insert("Part1".to_string(), Variant::Ref(LOWER));
+    properties.insert(
+        "C0".to_string(),
+        cframe(Vec3::new(0.0, -0.5, 0.0), IDENTITY),
+    );
+    properties.insert("C1".to_string(), cframe(Vec3::ZERO, IDENTITY));
+    dom.insert(motor);
+    dom.set_parent(elbow, Some(LOWER));
+    let mut plan = planned(&dom);
+    let poses = &mut plan.poses;
+    assert!(
+        poses.rejoint(&dom, &database, elbow).is_none(),
+        "an untouched joint moves no rest"
+    );
+
+    // What the auto-rigger's publish does to a part whose served mesh came
+    // back turned half round: the part turns about its centre, and its
+    // joint's C1 with it, so the elbow stays put.
+    let centre = Vec3::new(0.0, 4.5, 0.0);
+    let lower = dom.get_mut(LOWER).unwrap().properties_mut();
+    lower.insert("CFrame".to_string(), cframe(centre, HALF_Y));
+    let motor = dom.get_mut(elbow).unwrap().properties_mut();
+    motor.insert("C1".to_string(), cframe(Vec3::ZERO, HALF_Y));
+    poses.track(&dom, LOWER);
+
+    assert_eq!(poses.rejoint(&dom, &database, elbow), Some(MODEL));
+    let now = poses.current(LOWER).unwrap();
+    assert!(poses.rest[&LOWER].abs_diff_eq(now, 1e-5), "{now}");
+    assert!(
+        poses.rest[&UPPER].abs_diff_eq(poses.current(UPPER).unwrap(), 1e-5),
+        "the part no joint drives keeps its rest"
+    );
+    assert!(poses.rejoint(&dom, &database, elbow).is_none());
+}

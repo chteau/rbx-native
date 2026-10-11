@@ -192,7 +192,7 @@ impl Poses {
         }
 
         let members: Vec<Ref> = parts.iter().map(|(part, ..)| *part).collect();
-        let rests = joint_rests(dom, database, model, &members, &self.rest);
+        let rests = joint_rests(dom, database, model, &members, &self.rest, Rests::All);
         let mut names = HashMap::new();
         for (part, name, cframe) in parts {
             names.entry(name.clone()).or_insert(part);
@@ -324,6 +324,67 @@ impl Poses {
     fn current(&self, referent: Ref) -> Option<Mat4> {
         self.current.get(&referent).copied()
     }
+
+    /// `joint` (a `Motor6D`, `Motor` or `AnimationConstraint`) was written:
+    /// re-reads the rests of the parts its model's joints drive, the parts
+    /// no joint drives keeping theirs. A rest is otherwise fixed once read,
+    /// and an edit that turns a part about its centre and its joints with it
+    /// (what the auto-rigger's publish does) moves its rest: left stale,
+    /// every neighbouring bone would warp the skin at rest. Answers with the
+    /// model when some rest moved — what makes its skinned meshes bind
+    /// again; a write that leaves every rest where it was (a `Transform`)
+    /// costs one walk of the model's joints.
+    pub(crate) fn rejoint(
+        &mut self,
+        dom: &WeakDom,
+        database: &ReflectionDatabase,
+        joint: Ref,
+    ) -> Option<Ref> {
+        let instance = dom.get(joint)?;
+        let (one, other) = match instance.class() {
+            "AnimationConstraint" => (
+                ref_of(dom, joint, "Attachment0").and_then(|a| dom.parent(a)),
+                ref_of(dom, joint, "Attachment1").and_then(|a| dom.parent(a)),
+            ),
+            class if database.is_subclass_of(class, "Motor") => {
+                (ref_of(dom, joint, "Part0"), ref_of(dom, joint, "Part1"))
+            }
+            _ => return None,
+        };
+        let model = [other, one]
+            .into_iter()
+            .flatten()
+            .find_map(|part| Some(self.members.get(&part)?.0))?;
+        let members: Vec<Ref> = self
+            .members
+            .iter()
+            .filter(|(_, (owner, _))| *owner == model)
+            .map(|(part, _)| *part)
+            .collect();
+        let known: HashMap<Ref, Mat4> = members
+            .iter()
+            .filter_map(|part| Some((*part, *self.rest.get(part)?)))
+            .collect();
+        let fresh = joint_rests(dom, database, model, &members, &known, Rests::Undriven);
+        let mut moved = false;
+        for (part, rest) in fresh {
+            let held = self.rest.insert(part, rest);
+            moved |= !held.is_some_and(|held| held.abs_diff_eq(rest, 1e-5));
+        }
+        if moved {
+            self.dirty = true;
+        }
+        moved.then_some(model)
+    }
+}
+
+/// Which rests [`joint_rests`] takes from what is already known.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Rests {
+    /// Every one it has: a part keeps its rest.
+    All,
+    /// Only those of the parts no joint drives; the rest are walked again.
+    Undriven,
 }
 
 /// Rest frames for `members` of `model` read off its animated joints: a
@@ -332,13 +393,15 @@ impl Poses {
 /// frames), whatever pose the place was saved in. Walked from every member
 /// no joint drives, which rests where it stands (or where `known` already
 /// has it); a member the walk never reaches is left out, to rest where it
-/// stands. A part keeps a rest it already has.
+/// stands. A part keeps a rest it already has, or with [`Rests::Undriven`]
+/// only a part no joint drives does.
 fn joint_rests(
     dom: &WeakDom,
     database: &ReflectionDatabase,
     model: Ref,
     members: &[Ref],
     known: &HashMap<Ref, Mat4>,
+    keep: Rests,
 ) -> HashMap<Ref, Mat4> {
     let member = |part: Ref| members.contains(&part);
     let mut joints: Vec<(Ref, Ref, Mat4)> = Vec::new();
@@ -384,7 +447,11 @@ fn joint_rests(
     let mut rests = HashMap::new();
     for &part in members {
         let driven = joints.iter().any(|&(_, part1, _)| part1 == part);
-        let rest = known.get(&part).copied().or_else(|| match driven {
+        let kept = match (keep, driven) {
+            (Rests::Undriven, true) => None,
+            _ => known.get(&part).copied(),
+        };
+        let rest = kept.or_else(|| match driven {
             true => None,
             false => cframe_of(dom, part),
         });
