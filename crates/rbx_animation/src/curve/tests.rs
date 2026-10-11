@@ -178,8 +178,12 @@ fn explicit(order: RotationOrder, a: Vec3) -> Quat {
     }
 }
 
+/// `q` and `-q` are the same rotation. Compared by chord rather than
+/// `angle_between`, whose `acos` turns one ulp of f32 rounding in the dot
+/// product into ~7e-4 rad (that failed on Windows' libm).
 fn same_rotation(a: Quat, b: Quat) -> bool {
-    a.angle_between(b) < 1e-4
+    let b = if a.dot(b) < 0.0 { -b } else { b };
+    (a - b).length() < 1e-4
 }
 
 #[test]
