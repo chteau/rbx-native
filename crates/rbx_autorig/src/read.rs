@@ -86,6 +86,7 @@ fn finish(mut mesh: Mesh) -> Result<Mesh, Error> {
     if mesh.normals.len() != mesh.positions.len() {
         mesh.normals.clear();
     }
+    crate::mesh::drop_debris(&mut mesh);
     Ok(mesh)
 }
 
@@ -183,8 +184,10 @@ fn gltf(bytes: &[u8], external: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<Mesh
                         .unwrap_or_default(),
                     positions,
                     triangles: indices
-                        .chunks_exact(3)
-                        .map(|c| [c[0], c[1], c[2]])
+                        .as_chunks::<3>()
+                        .0
+                        .iter()
+                        .copied()
                         .filter(|t| t.iter().all(|&i| i < n))
                         .collect(),
                     ..Mesh::default()
@@ -211,8 +214,10 @@ fn obj(bytes: &[u8]) -> Result<Mesh, Error> {
     for model in models {
         let m = model.mesh;
         let vec3s = |v: &[f32]| {
-            v.chunks_exact(3)
-                .map(|c| Vec3::new(c[0], c[1], c[2]))
+            v.as_chunks::<3>()
+                .0
+                .iter()
+                .map(|&c| Vec3::from_array(c))
                 .collect()
         };
         let positions: Vec<Vec3> = vec3s(&m.positions);
@@ -222,14 +227,18 @@ fn obj(bytes: &[u8]) -> Result<Mesh, Error> {
             // OBJ puts the UV origin bottom-left.
             uvs: m
                 .texcoords
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|c| Vec2::new(c[0], 1. - c[1]))
                 .collect(),
             positions,
             triangles: m
                 .indices
-                .chunks_exact(3)
-                .map(|c| [c[0], c[1], c[2]])
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .copied()
                 .filter(|t| t.iter().all(|&i| i < n))
                 .collect(),
             ..Mesh::default()
@@ -480,7 +489,9 @@ fn fbx(bytes: &[u8]) -> Result<Mesh, Error> {
             continue;
         };
         let control: Vec<Vec3> = vertices
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .map(|c| Vec3::new(c[0] as f32, c[1] as f32, c[2] as f32))
             .collect();
         let normals = Layer::read(geometry, "LayerElementNormal", "Normals", "NormalsIndex", 3);

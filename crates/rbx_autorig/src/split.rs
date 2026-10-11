@@ -794,6 +794,7 @@ impl Work {
                 triangles,
                 up_hint: None,
                 front_hint: None,
+                notes: Vec::new(),
             },
             attachments,
             cap_triangles: triangles_len - cut_faces,
