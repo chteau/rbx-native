@@ -40,6 +40,7 @@ mod gpu;
 #[cfg(not(target_arch = "wasm32"))]
 mod headless;
 mod input;
+mod joints;
 mod lighting;
 mod load;
 mod pacing;
@@ -70,6 +71,7 @@ pub use gpu::describe_adapter;
 #[cfg(not(target_arch = "wasm32"))]
 pub use headless::{GuiCanvas, Headless};
 pub use input::{CameraInput, CameraKey};
+pub use joints::JointSolver;
 pub use lighting::light_guides;
 // An editor placing the sun by pointing at the scene needs the inverse of the
 // sun model the renderer lights with.
