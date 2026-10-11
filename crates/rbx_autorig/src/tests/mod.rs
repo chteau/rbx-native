@@ -1,5 +1,7 @@
 use crate::test_humanoid as humanoid;
 
+mod skin;
+
 use glam::Vec3;
 
 use crate::{fit, mirror, split, Axis, Fit, Joint, Orientation, Part, Side};

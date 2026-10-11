@@ -218,7 +218,7 @@ fn majority(o: [u16; 3]) -> u16 {
 /// The bone segments each part owns. The torso parts own a little skeleton
 /// each (spine plus collarbones, spine plus pelvis) so the flesh of the
 /// shoulders and hips is measured against something torso-shaped.
-fn segments(fit: &Fit) -> Vec<(Part, Vec3, Vec3)> {
+pub(crate) fn segments(fit: &Fit) -> Vec<(Part, Vec3, Vec3)> {
     let j = |joint| fit.joint(joint);
     let e = &fit.extremities;
     let spine_at = |y: f32| {
@@ -269,7 +269,7 @@ fn segments(fit: &Fit) -> Vec<(Part, Vec3, Vec3)> {
 
 /// Owner part (as a [`Part::ALL`] index) of every welded vertex: the bone
 /// nearest through the volume.
-fn ownership(grid: &Grid, positions: &[Vec3], fit: &Fit) -> Vec<u16> {
+pub(crate) fn ownership(grid: &Grid, positions: &[Vec3], fit: &Fit) -> Vec<u16> {
     let segs = segments(fit);
     let mut seeds = Vec::new();
     let mut claimed = HashSet::new();
@@ -377,7 +377,7 @@ fn parent_joint(joint: Joint) -> Joint {
 /// thinnest of three probes: near the shoulder of an A-pose arm the section
 /// still runs into the torso's side, and a ball that wide would hand the
 /// whole flank to the arm.
-fn reach(grid: &Grid, fit: &Fit, joint: Joint, normal: Vec3, h: f32) -> f32 {
+pub(crate) fn reach(grid: &Grid, fit: &Fit, joint: Joint, normal: Vec3, h: f32) -> f32 {
     let p = fit.joint(joint);
     let measure = |probe: Vec3, along: Vec3| {
         let s = grid.section(probe, along, 0.25 * h);

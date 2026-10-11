@@ -12,8 +12,11 @@
 //!    makes the markers symmetric again after a drag.
 //! 3. [`split`] the mesh into the 15 parts with exact plane cuts at the
 //!    joints and caps on every opening.
-//! 4. Write the parts out: [`mesh_v2`] for a local preview through the
-//!    asset cache, [`gltf`] for Open Cloud's model import.
+//! 4. Optionally, [`weights`]: smooth skin weights for every part, to
+//!    part-named bones, so joints bend instead of hinging.
+//! 5. Write the parts out: [`mesh_v2`] (or the skinned [`mesh_v4`]) for a
+//!    local preview through the asset cache, [`gltf`] (or the skinned
+//!    [`gltf_skinned`]) for Open Cloud's model import.
 //!
 //! Roblox space throughout: +Y up, the character facing −Z, its left on −X,
 //! studs.
@@ -28,6 +31,7 @@ mod mesh;
 mod orient;
 mod read;
 mod rig;
+mod skin;
 mod split;
 mod voxel;
 mod write;
@@ -37,8 +41,9 @@ pub use mesh::Mesh;
 pub use orient::{Axis, Orientation};
 pub use read::{read, read_bytes, Format};
 pub use rig::{Joint, Part, Side};
+pub use skin::{bones_of, weights, PartSkin, Skin, MAX_INFLUENCES};
 pub use split::{split, split_with, Body, PartMesh, BUDGETS};
-pub use write::{gltf, mesh_v2};
+pub use write::{gltf, gltf_skinned, mesh_v2, mesh_v4};
 
 /// Why a mesh could not be read, fitted or split.
 #[derive(Debug, thiserror::Error)]
