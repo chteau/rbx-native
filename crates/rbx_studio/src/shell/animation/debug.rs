@@ -86,11 +86,13 @@ impl Shell {
         else {
             return;
         };
-        let Some(rbx_dom::Variant::CFrame(now)) = self
-            .dom
-            .get(part)
-            .and_then(|i| i.properties().get("CFrame"))
-            .cloned()
+        // Where the part is drawn, as a viewport drag would find it.
+        let Some(now) = self
+            .anim
+            .bound
+            .as_ref()
+            .and_then(|b| b.posed.get(&part))
+            .copied()
         else {
             return;
         };
@@ -102,7 +104,8 @@ impl Shell {
         let _ = self
             .dom
             .set_property(part, "CFrame", rbx_dom::Variant::CFrame(turned.to_data()));
-        let changes = self.dom.take_changes();
+        let mut changes = self.dom.take_changes();
+        changes.extend(self.settle_pose_edits(&changes));
         self.reflect_changes(&changes, cx);
         self.pose_rig(cx);
     }

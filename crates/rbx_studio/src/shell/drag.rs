@@ -99,6 +99,8 @@ impl Shell {
         let covered = self.covered.clone();
         let picking = self.edits.ref_pick.is_armed();
         let mut target = None;
+        // Against the rig as it is drawn, posed (see `Shell::pose_in`).
+        let posed = self.pose_in();
         let hovered: Vec<Selected> = ray
             .and_then(|ray| {
                 let hits = pick::parts_along(&self.dom, &self.database, &meshes, ray);
@@ -144,6 +146,7 @@ impl Shell {
                     .map(|entry| vec![entry])
             })
             .unwrap_or_default();
+        self.pose_out(posed);
 
         self.viewport
             .update(cx, |viewport, _| viewport.set_hover_target(target));
@@ -181,7 +184,9 @@ impl Shell {
         // (see `WorkspaceView::meshes`): what keeps a `MeshPart`'s pick on the
         // triangles actually drawn rather than the box around them.
         let meshes = self.viewport.read(cx).meshes().clone();
+        let posed = self.pose_in();
         let hits = pick::parts_along(&self.dom, &self.database, &meshes, ray);
+        self.pose_out(posed);
         // An armed `Ref` row takes the click as its value instead (see
         // `shell::ref_pick`). The sky picks nothing and keeps the pick armed:
         // a miss is not a selection change, and must not deselect the
@@ -193,6 +198,7 @@ impl Shell {
             return;
         }
         if held {
+            let posed = self.pose_in();
             let outlined = selection::outlined(&self.dom, &self.database, self.selected_all());
             let covered = selection::covers(&outlined, hits.first().copied());
             // The grab holds the part by the surface under this press, found
@@ -203,6 +209,7 @@ impl Shell {
                 .flatten()
                 .and_then(|&part| PartSurface::read(&self.dom, &self.database, &meshes, part))
                 .and_then(|part| target::under(&part, ray, grid));
+            self.pose_out(posed);
             self.viewport.update(cx, |viewport, cx| match covered {
                 true => viewport.confirm_grab(surface, cx),
                 false => viewport.refuse_grab(),
@@ -243,6 +250,7 @@ impl Shell {
         settle: Option<Settle>,
         cx: &mut Context<Self>,
     ) {
+        let posed = self.pose_in();
         let settled = settle.and_then(|settle| {
             // Same render-thread mesh handle `pick_in_viewport` reads — a
             // settle's own surface search needs to agree with what a click
@@ -272,6 +280,7 @@ impl Shell {
                 .map(|&(referent, position)| (referent, CFRAME_PROPERTY, vector(position)))
                 .collect(),
         };
+        self.pose_out(posed);
         self.write_drag(first, &writes, cx);
         if settle.is_some() {
             let settled = settled.map(|(settled, _)| settled);
@@ -374,6 +383,11 @@ impl Shell {
             // as the drag found it: every step's writes are measured from
             // there too, so the pivot is carried in one go each step rather
             // than nudged on from the last one, piling up rounding.
+        }
+        // A posed rig part is dragged from where it is drawn: its rotation,
+        // kept by a move, is the posed one (see `Shell::pose_in`).
+        let posed = self.pose_in();
+        if first {
             self.drag_followers =
                 rbx_lua::pivot::followers(&self.dom, &self.database, self.selection.all());
         }
@@ -389,11 +403,14 @@ impl Shell {
             &self.drag_followers,
             pivot,
         );
+        self.pose_out(posed);
         // Same reasoning as `move_parts`: overwrites the entry's log with
         // just this step's writes — one `CFrame` per part for a Rotate,
         // Size and CFrame per part for a Scale — one patch of each part
         // either way, here and on undo.
-        let changes = self.dom.take_changes();
+        let mut changes = self.dom.take_changes();
+        // A posed limb dragged is a key, and the part goes back to rest.
+        changes.extend(self.settle_pose_edits(&changes));
         self.reflect_changes(&changes, cx);
         self.record_history_change([opened, &changes].concat());
 

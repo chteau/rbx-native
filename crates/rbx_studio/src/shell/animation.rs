@@ -4,13 +4,16 @@
 //! sub-tab.
 //!
 //! The clip itself lives in `anim_editor::AnimEditor`, a working copy saved
-//! to a `KeyframeSequence` on request. The rig is posed by writing its
-//! parts' `CFrame`s straight to the DOM every frame. Those writes are kept
-//! out of the undo history, and the rest pose is put back before a save and
+//! to a `KeyframeSequence` on request. The rig is posed the way Roblox's
+//! Animator poses one: each joint's `Transform` is written every frame and
+//! the parts' `CFrame`s stay at rest, the view laying the parts out from
+//! their joints (`rbx_viewer::JointSolver`). Those writes are kept out of
+//! the undo history, and every `Transform` is put back before a save and
 //! whenever the document is left, so the place never keeps a pose by
 //! accident. Pose edits made in the viewport (a part rotated with the
 //! Rotate tool, say) are read back as a key on that part's joint at the
-//! playhead. That is how Roblox's editor turns a dragged limb into a pose.
+//! playhead, and the part goes back to rest. That is how Roblox's editor
+//! turns a dragged limb into a pose.
 
 mod curves;
 mod debug;
@@ -76,10 +79,17 @@ pub(super) struct Bound {
     pub(super) rig: Rig,
     /// Where the root part stands; joints are laid out from it.
     pub(super) root: Frame,
-    /// Each rig part's `CFrame` before the editor first posed it.
+    /// Each rig part's `CFrame` as the place holds it: the rest pose, which
+    /// a pose never overwrites (the view poses the parts from their joints'
+    /// `Transform`; see `rbx_viewer::JointSolver`).
     pub(super) rest: HashMap<Ref, CFrameData>,
-    /// What the editor last wrote, to tell its own writes from an edit.
+    /// Where each part is drawn in the current pose: what the viewport's
+    /// tools pick, outline and drag against (see `Shell::pose_in`).
     pub(super) posed: HashMap<Ref, CFrameData>,
+    /// Each joint whose `Transform` the editor wrote, and what it held
+    /// before (`None`: nothing), put back before a save so a pose never
+    /// reaches the file.
+    pub(super) transforms: HashMap<Ref, Option<rbx_dom::Variant>>,
     /// Each part whose `PivotOffset` the editor moved onto its joint, and
     /// what it was (`None`: it had none).
     pub(super) pivots: HashMap<Ref, Option<rbx_dom::Variant>>,
@@ -423,6 +433,7 @@ impl Shell {
             root,
             rest,
             posed: HashMap::new(),
+            transforms: HashMap::new(),
             pivots: HashMap::new(),
         });
         self.restore_draft(model);

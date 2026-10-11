@@ -1,12 +1,19 @@
 //! Puts the bound rig in the pose the clip (or the graph) has at the
 //! playhead, every frame, and back in its rest pose on the way out.
+//!
+//! As Roblox's Animator does, the pose is written to each joint's
+//! `Transform` (a `Motor6D`'s or an `AnimationConstraint`'s), never to the
+//! parts: their `CFrame`s stay at rest in the document, and the 3D view's
+//! joint solver (`rbx_viewer::JointSolver`) lays them out from the joints.
+//! What this side reads a part's place from (the selection's boxes and
+//! handles, picking) sees the pose through [`Shell::pose_in`].
 
 use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
 
 use gpui_kit::*;
-use rbx_animation::Frame;
-use rbx_dom::{CFrameData, Ref, Variant};
+use rbx_animation::{Frame, Rig};
+use rbx_dom::{CFrameData, Change, Ref, Variant, WeakDom};
 
 use super::{Mode, Shell};
 
@@ -26,12 +33,69 @@ fn same(a: &CFrameData, b: &CFrameData) -> bool {
             .all(|(x, y)| (x - y).abs() < SAME)
 }
 
-fn cframe_of(dom: &rbx_dom::WeakDom, part: Ref) -> Option<CFrameData> {
+fn cframe_of(dom: &WeakDom, part: Ref) -> Option<CFrameData> {
     match dom.get(part)?.properties().get("CFrame")? {
         Variant::CFrame(c) => Some(*c),
         _ => None,
     }
 }
+
+/// Writes each of `rig`'s joints' `Transform` from `transforms` (keyed by
+/// the name of the part the joint drives; identity when absent), first
+/// keeping in `originals` what each joint held before the editor touched it.
+/// Whether anything was written.
+pub(super) fn write_transforms(
+    dom: &mut WeakDom,
+    rig: &Rig,
+    transforms: &BTreeMap<String, Frame>,
+    originals: &mut HashMap<Ref, Option<Variant>>,
+) -> bool {
+    let mut wrote = false;
+    for joint in &rig.joints {
+        let frame = transforms
+            .get(rig.part_name(joint.part1))
+            .copied()
+            .unwrap_or_default();
+        let value = Variant::CFrame(frame.to_data());
+        let Some(instance) = dom.get(joint.instance) else {
+            continue;
+        };
+        let now = instance.properties().get("Transform");
+        if now == Some(&value) {
+            continue;
+        }
+        originals
+            .entry(joint.instance)
+            .or_insert_with(|| now.cloned());
+        wrote |= dom.set_property(joint.instance, "Transform", value).is_ok();
+    }
+    wrote
+}
+
+/// Puts back every `Transform` [`write_transforms`] changed as it found it
+/// (taken away again where there was none), so a document saved after
+/// playback holds exactly what it held before. Whether anything was written.
+pub(super) fn restore_transforms(
+    dom: &mut WeakDom,
+    originals: &mut HashMap<Ref, Option<Variant>>,
+) -> bool {
+    let mut wrote = false;
+    for (joint, original) in originals.drain() {
+        if dom.get(joint).is_none() {
+            continue;
+        }
+        wrote |= match original {
+            Some(v) => dom.set_property(joint, "Transform", v).is_ok(),
+            None => dom.remove_property(joint, "Transform").is_ok(),
+        };
+    }
+    wrote
+}
+
+/// What [`Shell::pose_in`] swapped into the document, for [`Shell::pose_out`]
+/// to put back.
+#[must_use]
+pub(in crate::shell) struct PoseShown(Vec<(Ref, Option<Variant>)>);
 
 impl Shell {
     /// Every joint's `Transform` as the document should show it now.
@@ -44,120 +108,223 @@ impl Shell {
         self.anim.editor.sample_at(self.anim.editor.time)
     }
 
-    /// Writes each rig part's `CFrame` for the current pose, and first reads
-    /// back any part moved by something else (a viewport drag) as a key.
+    /// Writes each joint's `Transform` for the current pose (the parts stay
+    /// at rest; the 3D view lays them out), and keeps where that puts each
+    /// part for the skeleton, IK and [`Shell::pose_in`].
     pub(in crate::shell::animation) fn pose_rig(&mut self, cx: &mut Context<Self>) {
-        self.read_back_edits();
-        let transforms = self.current_transforms();
-        let Some(bound) = &mut self.anim.bound else {
-            return;
+        self.adopt_rest();
+        let changes = self.write_pose();
+        let (selected, world) = match &self.anim.bound {
+            Some(bound) => (
+                self.selected_all()
+                    .iter()
+                    .any(|s| bound.posed.contains_key(s)),
+                bound.posed.clone(),
+            ),
+            None => return,
         };
-        let world = bound
-            .rig
-            .layout(bound.root, &|j| transforms.get(j).copied());
-        let mut wrote = false;
-        for (&part, frame) in &world {
-            let data = frame.to_data();
-            if cframe_of(&self.dom, part).is_some_and(|c| same(&c, &data)) {
-                bound.posed.insert(part, data);
-                continue;
-            }
-            if self
-                .dom
-                .set_property(part, "CFrame", Variant::CFrame(data))
-                .is_ok()
-            {
-                bound.posed.insert(part, data);
-                wrote = true;
-            }
-        }
-        if wrote {
-            let changes = self.dom.take_changes();
+        if !changes.is_empty() {
             self.reflect_changes(&changes, cx);
+            // A Transform names the joint, not the part it moves: a selected
+            // limb's box and handles are re-read here.
+            if selected {
+                self.reshow_selection(cx);
+            }
         }
+        let world = world
+            .into_iter()
+            .map(|(p, c)| (p, Frame::from_data(&c)))
+            .collect();
         self.sync_skeleton(&world, cx);
     }
 
-    /// A rig part whose `CFrame` is not what the editor last wrote was
-    /// moved by hand. Its joint gets a key at the playhead turning it that
-    /// way, about the joint (the drag's own shift is dropped, so a limb
-    /// rotated about its centre still pivots at the shoulder). A moved root
-    /// part moves the whole rig.
-    fn read_back_edits(&mut self) {
-        if self.anim.editor.playing || self.anim.mode == Mode::Graph {
-            return;
+    /// [`Shell::pose_rig`]'s writes, without reflecting them: the log.
+    fn write_pose(&mut self) -> Vec<Change> {
+        let transforms = self.current_transforms();
+        let Some(bound) = &mut self.anim.bound else {
+            return Vec::new();
+        };
+        if let Some(root) = bound.rig.root.and_then(|r| bound.rest.get(&r)) {
+            bound.root = Frame::from_data(root);
         }
-        let Some(bound) = &self.anim.bound else {
+        let world = bound
+            .rig
+            .layout(bound.root, &|j| transforms.get(j).copied());
+        bound.posed = world.iter().map(|(&p, f)| (p, f.to_data())).collect();
+        if write_transforms(
+            &mut self.dom,
+            &bound.rig,
+            &transforms,
+            &mut bound.transforms,
+        ) {
+            self.dom.take_changes()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// A rig part's `CFrame` that something other than a viewport drag
+    /// changed (an undo, the Properties panel, a script) is its new rest.
+    fn adopt_rest(&mut self) {
+        let Some(bound) = &mut self.anim.bound else {
             return;
         };
-        let mut root = None;
+        for (&part, rest) in bound.rest.iter_mut() {
+            if let Some(now) = cframe_of(&self.dom, part) {
+                if !same(&now, rest) {
+                    *rest = now;
+                }
+            }
+        }
+    }
+
+    /// Swaps each posed rig part's `CFrame` in the document for the one it
+    /// is drawn at, untracked, so a read of where things stand (a hit test,
+    /// the selection's boxes and handles) finds the pose the 3D view shows.
+    /// Always paired with [`Shell::pose_out`], with nothing between that
+    /// writes the document or snapshots it for the view.
+    pub(in crate::shell) fn pose_in(&mut self) -> PoseShown {
+        let mut swapped = Vec::new();
+        let Some(bound) = &self.anim.bound else {
+            return PoseShown(swapped);
+        };
+        for (&part, posed) in &bound.posed {
+            if bound.rest.get(&part).is_some_and(|r| same(r, posed)) {
+                continue;
+            }
+            if let Some(instance) = self.dom.get_mut(part) {
+                let old = instance
+                    .properties_mut()
+                    .insert("CFrame".to_owned(), Variant::CFrame(*posed));
+                swapped.push((part, old));
+            }
+        }
+        PoseShown(swapped)
+    }
+
+    /// Puts back what [`Shell::pose_in`] swapped.
+    pub(in crate::shell) fn pose_out(&mut self, shown: PoseShown) {
+        for (part, old) in shown.0 {
+            if let Some(instance) = self.dom.get_mut(part) {
+                match old {
+                    Some(v) => instance.properties_mut().insert("CFrame".to_owned(), v),
+                    None => instance.properties_mut().remove("CFrame"),
+                };
+            }
+        }
+    }
+
+    /// A viewport drag on a posed rig moves parts where they are drawn; this
+    /// turns that into a pose and puts the parts back at rest, before the
+    /// drag's log goes anywhere. A part turned (or, with IK on, moved) gets
+    /// a key on its joint at the playhead, turning it that way about the
+    /// joint (the drag's own shift is dropped, so a limb rotated about its
+    /// centre still pivots at the shoulder). A moved root part moves the
+    /// whole rig, rest and all. Returns the log of what it wrote, for the
+    /// caller to add to the drag's own.
+    pub(in crate::shell) fn settle_pose_edits(&mut self, changes: &[Change]) -> Vec<Change> {
+        let Some(bound) = &self.anim.bound else {
+            return Vec::new();
+        };
+        let touched = changes.iter().any(|c| {
+            matches!(c, Change::Property { referent, name }
+                if name == "CFrame" && bound.rest.contains_key(referent))
+        });
+        if !touched {
+            return Vec::new();
+        }
+        let editing = !self.anim.editor.playing && self.anim.mode != Mode::Graph;
+        let mut edited: Vec<(Ref, CFrameData)> = Vec::new();
+        for (&part, rest) in &bound.rest {
+            if let Some(now) = cframe_of(&self.dom, part) {
+                if !same(&now, rest) {
+                    edited.push((part, now));
+                }
+            }
+        }
+        let root = bound.rig.root;
+        let moved_root = edited.iter().find(|(p, _)| Some(*p) == root).copied();
+
         let mut keys = Vec::new();
         let mut dragged: Option<(Ref, glam::Vec3)> = None;
-        for (&part, posed) in &bound.posed {
-            let Some(now) = cframe_of(&self.dom, part) else {
-                continue;
+        if let Some((root, now)) = moved_root {
+            // The whole rig moved: its rest goes with it.
+            let rest = bound.rest[&root];
+            let delta = Frame::from_data(&now).mul(&Frame::from_data(&rest).inverse());
+            let Some(bound) = &mut self.anim.bound else {
+                return Vec::new();
             };
-            if same(&now, posed) {
-                continue;
+            for rest in bound.rest.values_mut() {
+                *rest = delta.mul(&Frame::from_data(rest)).to_data();
             }
-            if Some(part) == bound.rig.root {
-                root = Some(Frame::from_data(&now));
-                continue;
+        } else if editing {
+            for &(part, now) in &edited {
+                let Some(joint) = bound.rig.joint_driving(part) else {
+                    continue;
+                };
+                let Some(part0) = bound.posed.get(&joint.part0).map(Frame::from_data) else {
+                    continue;
+                };
+                let now = Frame::from_data(&now);
+                let posed = bound.posed.get(&part).map_or(now, Frame::from_data);
+                // With IK on, a part moved (not just turned) is an end
+                // effector dragged to a new place: its chain is solved to
+                // reach it.
+                let moved = now.position.distance(posed.position) > 1e-3;
+                if self.anim.ik.enabled && moved {
+                    dragged = Some((part, now.position));
+                    continue;
+                }
+                let solved = joint.solve(&part0, &now);
+                keys.push((bound.rig.part_name(part).to_owned(), solved));
             }
-            let Some(joint) = bound.rig.joint_driving(part) else {
-                continue;
-            };
-            let Some(part0) = bound.posed.get(&joint.part0).map(Frame::from_data) else {
-                continue;
-            };
-            let now = Frame::from_data(&now);
-            // With IK on, a part moved (not just turned) is an end effector
-            // dragged to a new place: its chain is solved to reach it.
-            let moved = now.position.distance(Frame::from_data(posed).position) > 1e-3;
-            if self.anim.ik.enabled && moved {
-                dragged = Some((part, now.position));
-                continue;
-            }
-            let solved = joint.solve(&part0, &now);
-            let name = bound.rig.part_name(part).to_owned();
-            keys.push((name, solved));
         }
         if let Some((part, target)) = dragged {
+            if let Some(bound) = &self.anim.bound {
+                let current = self.current_transforms();
+                let solved = rbx_animation::ik::solve(
+                    &bound.rig,
+                    bound.root,
+                    &current,
+                    part,
+                    glam::Vec3::ZERO,
+                    target,
+                    self.anim.ik.mode,
+                    &self.anim.ik.pinned,
+                );
+                let changed: Vec<(String, Frame)> = solved
+                    .into_iter()
+                    .filter(|(j, f)| current.get(j) != Some(f))
+                    .collect();
+                let name = bound.rig.part_name(part).to_owned();
+                if !changed.is_empty() {
+                    self.anim.editor.key_all(&changed);
+                }
+                self.anim.editor.joint = Some(name);
+            }
+        } else {
             let current = self.current_transforms();
-            let solved = rbx_animation::ik::solve(
-                &bound.rig,
-                bound.root,
-                &current,
-                part,
-                glam::Vec3::ZERO,
-                target,
-                self.anim.ik.mode,
-                &self.anim.ik.pinned,
-            );
-            let changed: Vec<(String, Frame)> = solved
-                .into_iter()
-                .filter(|(j, f)| current.get(j) != Some(f))
-                .collect();
-            let name = bound.rig.part_name(part).to_owned();
-            if !changed.is_empty() {
-                self.anim.editor.key_all(&changed);
-            }
-            self.anim.editor.joint = Some(name);
-            return;
-        }
-        if let Some(root) = root {
-            if let Some(b) = &mut self.anim.bound {
-                b.root = root;
+            for (name, solved) in keys {
+                let kept = current.get(&name).map_or(glam::Vec3::ZERO, |f| f.position);
+                self.anim
+                    .editor
+                    .key(&name, Frame::new(kept, solved.rotation));
+                self.anim.editor.joint = Some(name);
             }
         }
-        let current = self.current_transforms();
-        for (name, solved) in keys {
-            let kept = current.get(&name).map_or(glam::Vec3::ZERO, |f| f.position);
-            self.anim
-                .editor
-                .key(&name, Frame::new(kept, solved.rotation));
-            self.anim.editor.joint = Some(name);
+        // Every part back at rest; the pose is the joints' to carry.
+        let Some(bound) = &self.anim.bound else {
+            return Vec::new();
+        };
+        let rest: Vec<(Ref, CFrameData)> = bound.rest.iter().map(|(&p, &c)| (p, c)).collect();
+        for (part, rest) in rest {
+            if cframe_of(&self.dom, part).is_some_and(|now| now != rest) {
+                let _ = self.dom.set_property(part, "CFrame", Variant::CFrame(rest));
+            }
         }
+        let mut log = self.dom.take_changes();
+        log.extend(self.write_pose());
+        log
     }
 
     /// The joint gizmo: the selected rig part's `PivotOffset` is moved onto
@@ -203,54 +370,22 @@ impl Shell {
         }
     }
 
-    /// Puts every rig part back where it was before the editor posed it,
-    /// with its own pivot.
+    /// Puts every joint's `Transform` back as the editor found it, and
+    /// every part its own pivot: the document as it was before posing.
     pub(in crate::shell) fn unpose_rig(&mut self, cx: &mut Context<Self>) {
-        if let Some(bound) = &mut self.anim.bound {
-            let originals: Vec<(Ref, Option<Variant>)> = bound.pivots.drain().collect();
-            for (part, original) in originals {
-                let _ = match original {
-                    Some(v) => self.dom.set_property(part, "PivotOffset", v).map(|_| ()),
-                    None => self.dom.remove_property(part, "PivotOffset").map(|_| ()),
-                };
-            }
-        }
         let Some(bound) = &mut self.anim.bound else {
             return;
         };
-        if bound.posed.is_empty() {
-            let changes = self.dom.take_changes();
-            self.reflect_changes(&changes, cx);
-            return;
+        for (part, original) in bound.pivots.drain() {
+            let _ = match original {
+                Some(v) => self.dom.set_property(part, "PivotOffset", v).map(|_| ()),
+                None => self.dom.remove_property(part, "PivotOffset").map(|_| ()),
+            };
         }
-        // The root may have been moved on purpose: the rest pose follows it.
-        let rest: HashMap<Ref, CFrameData> = match bound.rig.root {
-            Some(root) => {
-                let at = bound.root;
-                bound
-                    .rig
-                    .layout(at, &|_| None)
-                    .into_iter()
-                    .map(|(p, f)| (p, f.to_data()))
-                    .chain(std::iter::once((root, at.to_data())))
-                    .collect()
-            }
-            None => bound.rest.clone(),
-        };
+        restore_transforms(&mut self.dom, &mut bound.transforms);
         bound.posed.clear();
-        let mut wrote = false;
-        for (part, data) in rest {
-            if cframe_of(&self.dom, part).is_some_and(|c| !same(&c, &data)) {
-                wrote |= self
-                    .dom
-                    .set_property(part, "CFrame", Variant::CFrame(data))
-                    .is_ok();
-            }
-        }
-        if wrote {
-            let changes = self.dom.take_changes();
-            self.reflect_changes(&changes, cx);
-        }
+        let changes = self.dom.take_changes();
+        self.reflect_changes(&changes, cx);
     }
 
     /// One frame of the document: advances playback, poses the rig, and
