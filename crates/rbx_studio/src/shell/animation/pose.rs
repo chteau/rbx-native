@@ -388,6 +388,26 @@ impl Shell {
         self.reflect_changes(&changes, cx);
     }
 
+    /// Takes the editor's own writes (each joint's `Transform`, the joint
+    /// pivots) out of `copy`, a clone of the document, as
+    /// [`Shell::unpose_rig`] does to the document itself: what the recovery
+    /// copy holds is the place as it would save.
+    pub(in crate::shell) fn unpose_copy(&self, copy: &mut WeakDom) {
+        let Some(bound) = &self.anim.bound else {
+            return;
+        };
+        for (&part, original) in &bound.pivots {
+            let _ = match original {
+                Some(v) => copy
+                    .set_property(part, "PivotOffset", v.clone())
+                    .map(|_| ()),
+                None => copy.remove_property(part, "PivotOffset").map(|_| ()),
+            };
+        }
+        restore_transforms(copy, &mut bound.transforms.clone());
+        copy.take_changes();
+    }
+
     /// One frame of the document: advances playback, poses the rig, and
     /// asks for the next frame while anything is moving.
     pub(super) fn animation_frame(&mut self, window: &mut Window, cx: &mut Context<Self>) {
