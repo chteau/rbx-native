@@ -60,7 +60,7 @@ impl Shell {
             rows: rows
                 .iter()
                 .map(|r| {
-                    let keys: Vec<f32> = e.clip.track(&r.name).map(|(t, _)| t).collect();
+                    let keys: Vec<f32> = crate::anim_editor::keys::times(&e.clip, &r.name);
                     let sel = keys.iter().map(|t| e.is_selected(&r.name, *t)).collect();
                     (keys, sel)
                 })
@@ -100,6 +100,7 @@ impl Shell {
         let names = rows.iter().enumerate().map(|(i, row)| {
             let selected = lines.selected_row == Some(i);
             let name = row.name.clone();
+            let face = crate::anim_editor::keys::face_channel(&row.name).map(str::to_owned);
             div()
                 .id(("anim-channel", i))
                 .h(px(ROW))
@@ -119,11 +120,19 @@ impl Shell {
                 .cursor_pointer()
                 .hover(|this| this.bg(tokens::hover_subtle()))
                 .child(
-                    component::Icon::new(IconName::Bone)
-                        .size(px(12.))
-                        .text_color(tokens::text_muted()),
+                    component::Icon::new(if face.is_some() {
+                        IconName::ScanFace
+                    } else {
+                        IconName::Bone
+                    })
+                    .size(px(12.))
+                    .text_color(tokens::text_muted()),
                 )
-                .child(div().truncate().child(row.name.clone()))
+                .child(
+                    div()
+                        .truncate()
+                        .child(face.map_or(row.name.clone(), |c| format!("Face · {c}"))),
+                )
                 .when(!row.in_rig, |this| {
                     this.tooltip(|window, cx| {
                         super::super::tooltip::text(

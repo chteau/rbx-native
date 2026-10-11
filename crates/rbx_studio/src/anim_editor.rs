@@ -11,6 +11,7 @@
 pub(crate) mod demo;
 pub(crate) mod draft;
 pub(crate) mod graph_canvas;
+pub(crate) mod keys;
 pub(crate) mod place;
 mod playback;
 mod rows;
@@ -50,7 +51,9 @@ pub(crate) struct AnimEditor {
     undo: Vec<Clip>,
     redo: Vec<Clip>,
     drag: Option<Drag>,
-    clipboard: Vec<(String, f32, PoseKey)>,
+    clipboard: Vec<(String, f32, keys::AnyKey)>,
+    /// The clip before a face slider's drag began, so the drag is one undo.
+    face_drag: Option<Clip>,
 }
 
 impl Default for AnimEditor {
@@ -68,6 +71,7 @@ impl Default for AnimEditor {
             redo: Vec::new(),
             drag: None,
             clipboard: Vec::new(),
+            face_drag: None,
         }
     }
 }
@@ -134,7 +138,8 @@ impl AnimEditor {
 
     fn prune_selection(&mut self) {
         let clip = &self.clip;
-        self.selected.retain(|(j, t)| clip.pose(*t, j).is_some());
+        self.selected
+            .retain(|(j, t)| keys::get(clip, j, *t).is_some());
     }
 
     /// `time` on the editor's frame grid, never before 0.
@@ -204,9 +209,8 @@ impl AnimEditor {
         if !extend {
             self.selected.clear();
         }
-        if let Some(k) = self.clip.keyframes.iter().find(|k| same_time(k.time, time)) {
-            self.selected
-                .extend(k.poses.keys().map(|j| (j.clone(), k.time)));
+        if let Some(i) = self.clip.keyframe_index(time) {
+            self.selected.extend(keys::on_keyframe(&self.clip, i));
         }
     }
 
@@ -220,10 +224,10 @@ impl AnimEditor {
         if self.selected.is_empty() {
             return false;
         }
-        let keys = std::mem::take(&mut self.selected);
+        let picked = std::mem::take(&mut self.selected);
         self.edit(|clip| {
-            for (joint, time) in &keys {
-                clip.remove_pose(*time, joint);
+            for (name, time) in &picked {
+                keys::take(clip, name, *time);
             }
         });
         true
@@ -247,16 +251,16 @@ impl AnimEditor {
         let earliest = drag.keys.iter().map(|k| k.1).fold(f32::INFINITY, f32::min);
         let shift = shift.max(-earliest);
         let mut clip = drag.origin.clone();
-        let moved: Vec<(String, f32, PoseKey)> = drag
+        let moved: Vec<(String, f32, keys::AnyKey)> = drag
             .keys
             .iter()
-            .filter_map(|(j, t)| clip.remove_pose(*t, j).map(|k| (j.clone(), *t + shift, k)))
+            .filter_map(|(n, t)| keys::take(&mut clip, n, *t).map(|k| (n.clone(), *t + shift, k)))
             .collect();
-        for (joint, time, key) in &moved {
-            clip.set_pose(*time, joint, *key);
+        for (name, time, key) in &moved {
+            keys::put(&mut clip, name, *time, *key);
         }
         self.clip = clip;
-        self.selected = moved.into_iter().map(|(j, t, _)| (j, t)).collect();
+        self.selected = moved.into_iter().map(|(n, t, _)| (n, t)).collect();
     }
 
     pub(crate) fn end_drag(&mut self) {
@@ -272,17 +276,10 @@ impl AnimEditor {
     /// Sets the easing of every selected key (either half left as it is
     /// when `None`).
     pub(crate) fn set_easing(&mut self, style: Option<Style>, direction: Option<Direction>) {
-        let keys = self.selected.clone();
+        let picked = self.selected.clone();
         self.edit(|clip| {
-            for (joint, time) in &keys {
-                if let Some(key) = clip.pose_mut(*time, joint) {
-                    if let Some(s) = style {
-                        key.style = s;
-                    }
-                    if let Some(d) = direction {
-                        key.direction = d;
-                    }
-                }
+            for (name, time) in &picked {
+                keys::set_easing(clip, name, *time, style, direction);
             }
         });
     }
@@ -292,8 +289,8 @@ impl AnimEditor {
         let mut found = self
             .selected
             .iter()
-            .filter_map(|(j, t)| self.clip.pose(*t, j))
-            .map(|k| (k.style, k.direction));
+            .filter_map(|(n, t)| keys::get(&self.clip, n, *t))
+            .map(|k| k.easing());
         let first = found.next()?;
         found.all(|e| e == first).then_some(first)
     }
@@ -307,7 +304,7 @@ impl AnimEditor {
         self.clipboard = self
             .selected
             .iter()
-            .filter_map(|(j, t)| self.clip.pose(*t, j).map(|k| (j.clone(), t - earliest, *k)))
+            .filter_map(|(n, t)| keys::get(&self.clip, n, *t).map(|k| (n.clone(), t - earliest, k)))
             .collect();
         self.clipboard.len()
     }
@@ -318,14 +315,48 @@ impl AnimEditor {
             return false;
         }
         let at = self.snap(self.time);
-        let keys = self.clipboard.clone();
+        let copied = self.clipboard.clone();
         self.edit(|clip| {
-            for (joint, offset, key) in &keys {
-                clip.set_pose(at + offset, joint, *key);
+            for (name, offset, key) in &copied {
+                keys::put(clip, name, at + offset, *key);
             }
         });
-        self.selected = keys.iter().map(|(j, o, _)| (j.clone(), at + o)).collect();
+        self.selected = copied.iter().map(|(n, o, _)| (n.clone(), at + o)).collect();
         true
+    }
+
+    /// Keys a face channel at the playhead. During a slider drag (`live`)
+    /// every step rewrites the same key and the whole drag is one undo.
+    pub(crate) fn key_face(&mut self, channel: &str, value: f32, live: bool) {
+        let time = self.snap(self.time);
+        let write = |clip: &mut Clip| {
+            let mut key = clip
+                .keyframe_index(time)
+                .and_then(|i| clip.keyframes[i].faces.get(channel).copied())
+                .unwrap_or(rbx_animation::facs::FaceKey::new(value));
+            key.value = value.clamp(0.0, 1.0);
+            clip.set_face(time, channel, key);
+        };
+        if live {
+            if self.face_drag.is_none() {
+                self.face_drag = Some(self.clip.clone());
+            }
+            write(&mut self.clip);
+            self.dirty = true;
+        } else {
+            self.edit(write);
+        }
+        self.selected = vec![(keys::face_row(channel), time)];
+    }
+
+    /// Ends a face slider's drag, recording it as one undo step.
+    pub(crate) fn end_face_drag(&mut self) {
+        if let Some(origin) = self.face_drag.take() {
+            if origin != self.clip {
+                self.undo.push(origin);
+                self.redo.clear();
+            }
+        }
     }
 
     /// Adds an animation event at the playhead.

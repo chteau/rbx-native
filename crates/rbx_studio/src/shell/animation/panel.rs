@@ -16,6 +16,7 @@ use crate::shell::menu::{self, MenuId};
 use crate::shell::ribbon::RibbonCommand;
 use crate::tokens;
 
+mod face;
 mod sections;
 
 pub(super) const WIDTH: f32 = 276.0;
@@ -35,6 +36,11 @@ pub(in crate::shell) struct Fields {
     position: [Entity<InputState>; 3],
     marker: Entity<InputState>,
     animation_id: Entity<InputState>,
+    /// The Face section's region (an index into `facs::REGIONS`) and one
+    /// slider per channel, made the first time the channel shows.
+    face_region: usize,
+    face_sliders:
+        std::collections::HashMap<String, Entity<gpui_kit::component::slider::SliderState>>,
     /// Set once an event is added from the field: it is emptied on the next
     /// render, which has the `Window` that takes.
     clear_marker: bool,
@@ -91,6 +97,8 @@ impl Shell {
             position,
             marker,
             animation_id,
+            face_region: 0,
+            face_sliders: std::collections::HashMap::new(),
             clear_marker: false,
             _subscriptions: subscriptions,
         });
@@ -192,6 +200,7 @@ impl Shell {
         let key = self.anim_key_section(joint, &rotation, &position, cx);
         let events = self.anim_events_section(&marker, cx);
         let import = self.anim_import_section(cx);
+        let face = self.anim_face_section(window, cx);
         v_flex()
             .id("anim-panel")
             .flex_none()
@@ -208,6 +217,7 @@ impl Shell {
             .child(clip)
             .child(key)
             .child(events)
+            .child(face)
             .child(import)
             .when_some(self.anim.status.clone(), |this, status| {
                 this.child(

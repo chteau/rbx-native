@@ -74,6 +74,9 @@ pub(super) struct Bound {
     pub(super) rest: HashMap<Ref, CFrameData>,
     /// What the editor last wrote, to tell its own writes from an edit.
     pub(super) posed: HashMap<Ref, CFrameData>,
+    /// Each part whose `PivotOffset` the editor moved onto its joint, and
+    /// what it was (`None`: it had none).
+    pub(super) pivots: HashMap<Ref, Option<rbx_dom::Variant>>,
 }
 
 /// A pointer gesture on the dope sheet.
@@ -281,6 +284,7 @@ impl Shell {
             root,
             rest,
             posed: HashMap::new(),
+            pivots: HashMap::new(),
         });
         self.restore_draft(model);
         if self.anim.editor.clip.keyframes.is_empty() && self.anim.editor.source.is_none() {

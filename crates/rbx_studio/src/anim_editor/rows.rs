@@ -45,6 +45,13 @@ pub(crate) fn rows(rig: Option<&Rig>, clip: &Clip) -> Vec<Row> {
             });
         }
     }
+    for channel in clip.face_channels() {
+        out.push(Row {
+            name: super::keys::face_row(&channel),
+            depth: 0,
+            in_rig: true,
+        });
+    }
     for joint in clip.joints() {
         if !out.iter().any(|r| r.name == joint) {
             out.push(Row {

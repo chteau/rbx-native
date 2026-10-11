@@ -58,13 +58,7 @@ impl Shell {
                 return;
             }
         } else if let Some(r) = rows.get((row - 1).max(0) as usize).filter(|_| row >= 1) {
-            let times: Vec<f32> = self
-                .anim
-                .editor
-                .clip
-                .track(&r.name)
-                .map(|(t, _)| t)
-                .collect();
+            let times: Vec<f32> = crate::anim_editor::keys::times(&self.anim.editor.clip, &r.name);
             if let Some(i) = tl.hit(&times, x) {
                 let key = (r.name.clone(), times[i]);
                 if !self.anim.editor.is_selected(&key.0, key.1) || shift {
@@ -79,7 +73,18 @@ impl Shell {
             if clicks >= 2 {
                 let name = r.name.clone();
                 self.anim.editor.set_time(tl.time_at(x));
-                self.key_joints(Some(&name), cx);
+                match crate::anim_editor::keys::face_channel(&name) {
+                    Some(channel) => {
+                        let e = &mut self.anim.editor;
+                        let at = rbx_animation::sample::wrap(&e.clip, e.time);
+                        let value =
+                            rbx_animation::sample::sample_face(&e.clip, channel, at).unwrap_or(0.0);
+                        let channel = channel.to_owned();
+                        e.key_face(&channel, value, false);
+                        cx.notify();
+                    }
+                    None => self.key_joints(Some(&name), cx),
+                }
                 return;
             }
             self.anim.editor.joint = Some(r.name.clone());

@@ -131,12 +131,67 @@ impl Shell {
         }
     }
 
-    /// Puts every rig part back where it was before the editor posed it.
+    /// The joint gizmo: the selected rig part's `PivotOffset` is moved onto
+    /// its joint (its `C1`), so the Rotate tool's rings stand on the
+    /// shoulder or hip and turn the limb about it. The same holds for a
+    /// `Motor6D` or an `AnimationConstraint`, since both are a `Joint` here.
+    /// Every other part the editor moved gets its own pivot back.
+    fn sync_joint_pivot(&mut self, cx: &mut Context<Self>) {
+        let selected = self.selected_all().first().copied();
+        let Some(bound) = &mut self.anim.bound else {
+            return;
+        };
+        let wanted = selected.and_then(|s| bound.rig.joint_driving(s).map(|j| (s, j.c1)));
+        let mut wrote = false;
+        let stale: Vec<Ref> = bound
+            .pivots
+            .keys()
+            .copied()
+            .filter(|p| Some(*p) != wanted.map(|w| w.0))
+            .collect();
+        for part in stale {
+            if let Some(original) = bound.pivots.remove(&part) {
+                wrote |= match original {
+                    Some(v) => self.dom.set_property(part, "PivotOffset", v).is_ok(),
+                    None => self.dom.remove_property(part, "PivotOffset").is_ok(),
+                };
+            }
+        }
+        if let Some((part, c1)) = wanted {
+            let pivot = Variant::CFrame(c1.to_data());
+            let now = self
+                .dom
+                .get(part)
+                .and_then(|i| i.properties().get("PivotOffset").cloned());
+            if now.as_ref() != Some(&pivot) {
+                bound.pivots.entry(part).or_insert(now);
+                wrote |= self.dom.set_property(part, "PivotOffset", pivot).is_ok();
+            }
+        }
+        if wrote {
+            let changes = self.dom.take_changes();
+            self.reflect_changes(&changes, cx);
+        }
+    }
+
+    /// Puts every rig part back where it was before the editor posed it,
+    /// with its own pivot.
     pub(in crate::shell) fn unpose_rig(&mut self, cx: &mut Context<Self>) {
+        if let Some(bound) = &mut self.anim.bound {
+            let originals: Vec<(Ref, Option<Variant>)> = bound.pivots.drain().collect();
+            for (part, original) in originals {
+                let _ = match original {
+                    Some(v) => self.dom.set_property(part, "PivotOffset", v).map(|_| ()),
+                    None => self.dom.remove_property(part, "PivotOffset").map(|_| ()),
+                };
+            }
+        }
         let Some(bound) = &mut self.anim.bound else {
             return;
         };
         if bound.posed.is_empty() {
+            let changes = self.dom.take_changes();
+            self.reflect_changes(&changes, cx);
             return;
         }
         // The root may have been moved on purpose: the rest pose follows it.
@@ -194,6 +249,7 @@ impl Shell {
             self.anim_step_graph(dt);
         }
         self.pose_rig(cx);
+        self.sync_joint_pivot(cx);
         self.keep_draft(false);
         if moving {
             cx.on_next_frame(window, |_, _, cx| cx.notify());

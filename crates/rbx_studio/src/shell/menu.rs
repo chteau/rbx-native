@@ -70,6 +70,7 @@ pub(crate) enum MenuId {
     AnimEasingDirection,
     AnimGraphLoad,
     AnimGraphAdd,
+    AnimFaceRegion,
     /// A state machine's n-th transition's From and To pickers.
     AnimTransitionFrom(usize),
     AnimTransitionTo(usize),
@@ -107,6 +108,7 @@ impl MenuId {
             MenuId::AnimEasingDirection => "menu-anim-easing-direction",
             MenuId::AnimGraphLoad => "menu-anim-graph-load",
             MenuId::AnimGraphAdd => "menu-anim-graph-add",
+            MenuId::AnimFaceRegion => "menu-anim-face-region",
             MenuId::AnimTransitionFrom(_) => "menu-anim-transition-from",
             MenuId::AnimTransitionTo(_) => "menu-anim-transition-to",
         }

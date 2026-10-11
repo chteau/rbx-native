@@ -5,6 +5,7 @@
 use rbx_dom::Color3Data;
 
 use super::{Kind, Stop};
+use crate::timeline::Timeline;
 
 /// The plot area the panel laid out, in window pixels.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -16,13 +17,24 @@ pub(crate) struct Rect {
 }
 
 impl Rect {
+    /// The time axis as the shared timeline: a sequence's whole `[0, 1]`
+    /// spans the plot's width, the way a clip's length spans the dope
+    /// sheet's.
+    pub(crate) fn timeline(&self) -> Timeline {
+        Timeline {
+            start: 0.0,
+            scale: self.width.max(f32::EPSILON),
+            fps: 1,
+        }
+    }
+
     /// The `(time, value)` a pointer at this window position is over.
     /// Deliberately unclamped in time so a drag that leaves the plot still
     /// reads as "past the end" rather than freezing — [`super::Editor::drag_to`]
     /// clamps against the neighbours, which is the rule that actually matters.
     pub(crate) fn at(&self, x: f32, y: f32, ceiling: f32) -> (f32, f32) {
         let time = if self.width > 0.0 {
-            (x - self.x) / self.width
+            self.timeline().time_at(x - self.x)
         } else {
             0.0
         };
@@ -38,7 +50,7 @@ impl Rect {
     pub(crate) fn of(&self, time: f32, value: f32, ceiling: f32) -> (f32, f32) {
         let fraction = if ceiling > 0.0 { value / ceiling } else { 0.0 };
         (
-            self.x + time.clamp(0.0, 1.0) * self.width,
+            self.x + self.timeline().x_of(time.clamp(0.0, 1.0)),
             self.y + (1.0 - fraction.clamp(0.0, 1.0)) * self.height,
         )
     }

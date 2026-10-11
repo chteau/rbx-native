@@ -152,3 +152,45 @@ fn rows_follow_the_rig_and_flag_strangers() {
     );
     assert!(rows(None, &clip)[0].in_rig);
 }
+
+#[test]
+fn face_keys_select_drag_ease_copy_and_delete_like_joint_keys() {
+    let mut e = editor();
+    e.set_time(0.5);
+    e.key_face("JawDrop", 0.8, false);
+    assert_eq!(e.selected, [("face:JawDrop".to_owned(), 0.5)]);
+    e.set_easing(Some(Style::CubicV2), None);
+    let key = e.clip.keyframes[1].faces["JawDrop"];
+    assert_eq!((key.value, key.style), (0.8, Style::CubicV2));
+    e.begin_drag();
+    e.drag_by(0.5);
+    e.end_drag();
+    assert_eq!(keys::times(&e.clip, "face:JawDrop"), [1.0]);
+    assert_eq!(e.copy(), 1);
+    e.set_time(2.0);
+    assert!(e.paste());
+    assert_eq!(keys::times(&e.clip, "face:JawDrop"), [1.0, 2.0]);
+    assert!(e.delete_selected());
+    assert_eq!(keys::times(&e.clip, "face:JawDrop"), [1.0]);
+}
+
+#[test]
+fn a_face_slider_drag_is_one_undo_step() {
+    let mut e = editor();
+    e.set_time(0.0);
+    for v in [0.1, 0.4, 0.9] {
+        e.key_face("LeftEyeClosed", v, true);
+    }
+    e.end_face_drag();
+    assert_eq!(e.clip.keyframes[0].faces["LeftEyeClosed"].value, 0.9);
+    assert!(e.undo());
+    assert!(e.clip.keyframes[0].faces.is_empty());
+}
+
+#[test]
+fn face_rows_follow_the_joints() {
+    let mut clip = Clip::default();
+    clip.set_face(0., "JawDrop", rbx_animation::facs::FaceKey::new(1.));
+    let list = rows(None, &clip);
+    assert_eq!(list[0].name, "face:JawDrop");
+}
