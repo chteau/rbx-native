@@ -9,3 +9,16 @@ rbx_dom = { path = "../rbx_dom" }
 # Already the CFrame maths of the viewer and the editor; quaternion slerp is
 # what keyframe interpolation needs.
 glam = "0.33"
+# The Blender addon's clipboard export is zlib-compressed JSON in base64.
+base64 = "0.22"
+flate2 = "1"
+serde_json = "1"
+# Blender's built-in glTF exporter is the cleanest route for a skeletal
+# animation; `utils` is what reads animation channels.
+gltf = { version = "1", default-features = false, features = ["names", "utils"] }
+# The FBX route, for files made for Roblox's own importer.
+fbxcel = { version = "0.9", features = ["tree"] }
+thiserror = "2"
+
+[dev-dependencies]
+fbxcel = { version = "0.9", features = ["writer"] }

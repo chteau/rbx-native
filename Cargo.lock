@@ -6121,8 +6121,14 @@ dependencies = [
 name = "rbx_animation"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
+ "fbxcel",
+ "flate2",
  "glam",
+ "gltf",
  "rbx_dom",
+ "serde_json",
+ "thiserror 2.0.20",
 ]
 
 [[package]]

@@ -8,6 +8,7 @@ pub mod animator;
 pub mod clip;
 pub mod easing;
 pub mod frame;
+pub mod import;
 pub mod rig;
 pub mod sample;
 pub mod sequence;
