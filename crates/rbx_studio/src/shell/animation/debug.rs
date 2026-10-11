@@ -7,7 +7,8 @@
 //! `curves` (the Curve Editor, the clip converted, the current joint's
 //! second Rotation X key selected), `rig=<name>` (bind the first
 //! `Model` of that name; otherwise the selection's rig), `demo` (the example
-//! walk cycle), `import=<path>` (an FBX/glTF), `autorig=<path>` (auto-rig an
+//! walk cycle), `import=<path>` (an FBX/glTF), `import-id=<id>` (download a
+//! published animation by AnimationId, asynchronously), `autorig=<path>` (auto-rig an
 //! unrigged mesh, in the background), `paste=<path>` (a file holding
 //! the Blender addon's clipboard text), `time=<seconds>`, `joint=<name>`
 //! (select that channel and its key at the playhead), `keyframe` (select
@@ -165,6 +166,7 @@ impl Shell {
                     self.anim.fitted = false;
                 }
                 "import" => self.import_animation_file(std::path::Path::new(arg), cx),
+                "import-id" => self.import_animation_id(arg, cx),
                 "autorig" => {
                     self.anim.debug_rest = Some(steps[i + 1..].to_vec());
                     self.start_autorig(std::path::PathBuf::from(arg), cx);
