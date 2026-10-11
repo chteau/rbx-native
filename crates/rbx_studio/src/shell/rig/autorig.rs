@@ -18,6 +18,7 @@ use rbx_dom::{Ref, Variant, WeakDom};
 use crate::command_bar::Feedback;
 use crate::explorer;
 use crate::shell::Shell;
+use crate::workspace_view::JointPhase;
 
 use super::bundle::{Family, Piece, Pieces};
 use super::insert::spawn_top;
@@ -49,12 +50,21 @@ pub(crate) struct AutoRig {
     /// across the joint (Roblox's skinned bodies); otherwise each part
     /// stays rigid.
     pub(crate) smooth: bool,
+    /// The fit moved while a cut was running: cut again when it lands.
+    stale: bool,
+    /// Where the joint a marker drag holds stood when it was grabbed.
+    grabbed: Option<Vec3>,
+    /// Where the fit's origin stands in the place: the built rig's root
+    /// joint less the fit's (the Rig Builder stands the rig on the place).
+    origin: Vec3,
 }
 
-/// One cut's output: the parts and the cache paths their meshes went to.
+/// One cut's output: the parts, the cache paths their meshes went to, and
+/// where the fit it was cut along put the root joint.
 struct Cut {
     body: Body,
     uris: Vec<String>,
+    root: Vec3,
 }
 
 /// The `rbxasset://` path a part's mesh is cached under.
@@ -90,7 +100,11 @@ fn cut(mesh: &Mesh, fit: &Fit, smooth: bool) -> Result<Cut, String> {
             .map_err(|e| format!("caching {}: {e}", part.part.name()))?;
         uris.push(uri);
     }
-    Ok(Cut { body, uris })
+    Ok(Cut {
+        body,
+        uris,
+        root: fit.joint(Joint::Root),
+    })
 }
 
 fn v3(v: Vec3) -> [f32; 3] {
@@ -119,7 +133,11 @@ fn pieces(cut: &Cut, mut stock: Pieces) -> Pieces {
                     .iter()
                     .map(|(name, at)| (name.clone(), v3(*at)))
                     .collect(),
-                extra: Vec::new(),
+                extra: part
+                    .accessories
+                    .iter()
+                    .map(|(name, at)| (name.clone(), v3(*at)))
+                    .collect(),
             },
         );
     }
@@ -179,6 +197,9 @@ impl Shell {
                         warnings,
                         busy: false,
                         smooth: true,
+                        stale: false,
+                        grabbed: None,
+                        origin: Vec3::ZERO,
                     }));
                     shell.place_autorig(cut, cx);
                 }
@@ -190,17 +211,48 @@ impl Shell {
 
     /// Moves one joint (and its mirror, when symmetric), then re-cuts.
     pub(crate) fn autorig_move_joint(&mut self, joint: Joint, to: Vec3, cx: &mut Context<Self>) {
+        if let Some(rig) = self.anim_autorig_mut() {
+            rig.set_joint(joint, to);
+        }
+        self.recut_autorig(cx);
+    }
+
+    /// A drag on a joint marker in the 3D view (see
+    /// `workspace_view::joints`): the press selects the joint, each step
+    /// moves it (and its mirror) with the markers following, and the release
+    /// cuts again, as a panel edit does — one rebuild, one undo step.
+    pub(crate) fn autorig_drag_joint(
+        &mut self,
+        index: usize,
+        to: Vec3,
+        phase: JointPhase,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(&joint) = Joint::ALL.get(index) else {
+            return;
+        };
         let Some(rig) = self.anim_autorig_mut() else {
             return;
         };
-        rig.fit.set_joint(joint, to);
-        if rig.symmetric {
-            match joint.side() {
-                Some(side) => rbx_autorig::mirror(&mut rig.fit, side),
-                None => rbx_autorig::mirror(&mut rig.fit, Side::Left),
+        let at = to - rig.origin;
+        match phase {
+            JointPhase::Press => {
+                rig.grabbed = Some(rig.fit.joint(joint));
+                rig.joint = joint;
+                self.anim_select_joint(joint.part().name());
+            }
+            JointPhase::Drag => rig.set_joint(joint, at),
+            JointPhase::Release => {
+                rig.set_joint(joint, at);
+                // A click on a marker only selects its joint.
+                let from = rig.grabbed.take();
+                if from.is_none_or(|from| from.distance(at) > 1e-4) {
+                    self.recut_autorig(cx);
+                }
             }
         }
-        self.recut_autorig(cx);
+        self.sync_autorig_markers(cx);
+        cx.notify();
     }
 
     /// Turns the mesh's front a quarter (or, with `2`, a half) turn and
@@ -233,21 +285,28 @@ impl Shell {
             return;
         };
         if rig.busy {
+            rig.stale = true;
             return;
         }
         rig.busy = true;
+        rig.stale = false;
         let (mesh, fit, smooth) = (rig.mesh.clone(), rig.fit.clone(), rig.smooth);
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_spawn(async move { cut(&mesh, &fit, smooth) })
                 .await;
             let _ = this.update(cx, |shell, cx| {
-                if let Some(rig) = shell.anim_autorig_mut() {
+                let stale = shell.anim_autorig_mut().is_some_and(|rig| {
                     rig.busy = false;
-                }
+                    rig.stale
+                });
                 match result {
                     Ok(cut) => shell.place_autorig(cut, cx),
                     Err(err) => shell.autorig_report(Err(err), cx),
+                }
+                // An edit made while this cut ran gets a cut of its own.
+                if stale {
+                    shell.recut_autorig(cx);
                 }
             });
         })
@@ -280,6 +339,7 @@ impl Shell {
             self.dom.remove(old);
         }
         let model = build_rig(&mut self.dom, &options, workspace);
+        let origin = root_pivot(&self.dom, model).map(|at| at - cut.root);
         let changes = self.dom.take_changes();
         self.rebuild_explorer(cx);
         self.reselect(vec![model], cx);
@@ -288,6 +348,7 @@ impl Shell {
         let mut notes = cut.body.warnings.clone();
         if let Some(rig) = self.anim_autorig_mut() {
             rig.model = Some(model);
+            rig.origin = origin.unwrap_or(rig.origin);
             notes.extend(rig.warnings.iter().cloned());
         }
         for note in notes {
@@ -364,6 +425,7 @@ impl Shell {
     /// Leaves the auto-rigger, keeping the rig it made.
     pub(crate) fn finish_autorig(&mut self, cx: &mut Context<Self>) {
         self.anim_set_autorig(None);
+        self.sync_autorig_markers(cx);
         cx.notify();
     }
 
@@ -376,6 +438,45 @@ impl Shell {
         self.command_bar.set_feedback(feedback);
         cx.notify();
     }
+}
+
+impl AutoRig {
+    /// Puts `joint` on `to` (fit space), and its mirror too when symmetric.
+    fn set_joint(&mut self, joint: Joint, to: Vec3) {
+        self.fit.set_joint(joint, to);
+        if self.symmetric {
+            match joint.side() {
+                Some(side) => rbx_autorig::mirror(&mut self.fit, side),
+                None => rbx_autorig::mirror(&mut self.fit, Side::Left),
+            }
+        }
+    }
+
+    /// Where the 3D view draws the joint markers: every joint of the fit,
+    /// in `Joint::ALL` order, where it stands in the place, and which one
+    /// the panel edits. None before the first rig is built.
+    pub(crate) fn markers(&self) -> (Vec<Vec3>, Option<usize>) {
+        if self.model.is_none() {
+            return (Vec::new(), None);
+        }
+        let at = Joint::ALL
+            .iter()
+            .map(|&j| self.fit.joint(j) + self.origin)
+            .collect();
+        (at, Joint::ALL.iter().position(|&j| j == self.joint))
+    }
+}
+
+/// Where the built rig's root joint (`LowerTorso`'s) stands in the place.
+fn root_pivot(dom: &WeakDom, model: Ref) -> Option<Vec3> {
+    let rig = rbx_animation::Rig::read(dom, model);
+    let root = match dom.get(rig.root?)?.properties().get("CFrame")? {
+        Variant::CFrame(c) => rbx_animation::Frame::from_data(c),
+        _ => return None,
+    };
+    let world = rig.layout(root, &|_| None);
+    let joint = rig.joint_for("LowerTorso")?;
+    Some(joint.pivot(world.get(&joint.part0)?).position)
 }
 
 /// Points each body part of `model` at the mesh the upload made of it: the
@@ -471,6 +572,7 @@ mod tests {
         let cut = Cut {
             body: rbx_autorig::split(&body.mesh, &fit).unwrap(),
             uris: Part::ALL.iter().map(|&p| local_uri("test", p)).collect(),
+            root: fit.joint(Joint::Root),
         };
         let (dom, model) = rig_of(&cut);
         let rig = rbx_animation::Rig::read(&dom, model);

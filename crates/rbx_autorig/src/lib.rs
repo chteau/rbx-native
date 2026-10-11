@@ -26,6 +26,7 @@
 //! well under a second and fails visibly (an error naming what was not
 //! found) rather than silently, so a person can fix the markers.
 
+mod accessory;
 mod fit;
 mod mesh;
 mod orient;

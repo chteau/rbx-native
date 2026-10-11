@@ -190,6 +190,116 @@ impl Grid {
         f.into_iter().map(|d| (d as f32).sqrt()).collect()
     }
 
+    /// Labels of the 26-connected solid pieces (`u32::MAX` outside) and
+    /// each piece's voxel count.
+    fn pieces(&self) -> (Vec<u32>, Vec<usize>) {
+        let offsets = neighbours(self.dims);
+        let mut label = vec![u32::MAX; self.solid.len()];
+        let mut sizes = Vec::new();
+        let mut stack = Vec::new();
+        for seed in 0..self.solid.len() {
+            if !self.solid[seed] || label[seed] != u32::MAX {
+                continue;
+            }
+            let id = sizes.len() as u32;
+            let mut size = 0;
+            label[seed] = id;
+            stack.push(seed);
+            while let Some(v) = stack.pop() {
+                size += 1;
+                for &(off, _) in &offsets {
+                    let w = (v as isize + off) as usize;
+                    if self.solid[w] && label[w] == u32::MAX {
+                        label[w] = id;
+                        stack.push(w);
+                    }
+                }
+            }
+            sizes.push(size);
+        }
+        (label, sizes)
+    }
+
+    /// Joins pieces of the solid that float apart from the body (a hand
+    /// modelled separately from its forearm, a gap at the wrist) to it with
+    /// a one-voxel-thick bridge along the shortest way across, so geodesics
+    /// reach them and the bridge reads as the narrowest section there: the
+    /// joint. Only pieces of at least `min_fraction` of the body's volume and
+    /// at most `max_gap` (world units) away are joined; specks stay apart.
+    /// Returns how many pieces were joined.
+    pub fn bridge(&mut self, max_gap: f32, min_fraction: f32) -> usize {
+        let (mut label, sizes) = self.pieces();
+        let Some(body) = (0..sizes.len()).max_by_key(|&i| sizes[i]) else {
+            return 0;
+        };
+        let body = body as u32;
+        let least = min_fraction * sizes[body as usize] as f32;
+        let wanted = |id: u32| id != body && sizes[id as usize] as f32 >= least;
+        let limit = max_gap / self.cell;
+        let offsets = neighbours(self.dims);
+        let n = self.solid.len();
+        let mut joined = 0;
+        loop {
+            // Dijkstra out of the body through empty voxels to the nearest
+            // piece worth joining.
+            let mut dist = vec![f32::INFINITY; n];
+            let mut prev = vec![u32::MAX; n];
+            let mut heap = BinaryHeap::new();
+            for v in 0..n {
+                if label[v] == body {
+                    dist[v] = 0.;
+                    heap.push(Reverse((0u32, v as u32)));
+                }
+            }
+            let mut reached = None;
+            while let Some(Reverse((bits, v))) = heap.pop() {
+                let v = v as usize;
+                let d = f32::from_bits(bits);
+                if d > dist[v] {
+                    continue;
+                }
+                if self.solid[v] && label[v] != body {
+                    reached = Some(v);
+                    break;
+                }
+                // Offsets from the grid's outer layer would wrap round to
+                // the far side: the path stops there (it is padding anyway).
+                let [x, y, z] = self.coords(v);
+                if [x, y, z].contains(&0)
+                    || x + 1 == self.dims[0]
+                    || y + 1 == self.dims[1]
+                    || z + 1 == self.dims[2]
+                {
+                    continue;
+                }
+                for &(off, len) in &offsets {
+                    let w = (v as isize + off) as usize;
+                    let nd = d + len;
+                    let open = !self.solid[w] || wanted(label[w]);
+                    if open && nd <= limit && nd < dist[w] {
+                        dist[w] = nd;
+                        prev[w] = v as u32;
+                        heap.push(Reverse((nd.to_bits(), w as u32)));
+                    }
+                }
+            }
+            let Some(hit) = reached else {
+                return joined;
+            };
+            let piece = label[hit];
+            let mut v = prev[hit] as usize;
+            while label[v] != body {
+                self.solid[v] = true;
+                label[v] = body;
+                v = prev[v] as usize;
+            }
+            for l in label.iter_mut().filter(|l| **l == piece) {
+                *l = body;
+            }
+            joined += 1;
+        }
+    }
+
     /// Multi-source Dijkstra through solid voxels (26-connected, edge
     /// lengths 1, √2, √3 voxels). Returns each voxel's distance in voxels
     /// (infinite when unreached), the label of its nearest source and its

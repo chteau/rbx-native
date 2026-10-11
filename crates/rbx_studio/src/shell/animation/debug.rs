@@ -9,7 +9,10 @@
 //! `Model` of that name; otherwise the selection's rig), `demo` (the example
 //! walk cycle), `import=<path>` (an FBX/glTF), `import-id=<id>` (download a
 //! published animation by AnimationId, asynchronously), `autorig=<path>` (auto-rig an
-//! unrigged mesh, in the background), `paste=<path>` (a file holding
+//! unrigged mesh, in the background), `autorig-drag=<joint>:<dx>/<dy>/<dz>`
+//! (drag that joint's marker by that many studs, through the same press,
+//! move and release a 3D-view drag sends, then wait for the new cut),
+//! `paste=<path>` (a file holding
 //! the Blender addon's clipboard text), `time=<seconds>`, `joint=<name>`
 //! (select that channel and its key at the playhead), `keyframe` (select
 //! every key at the playhead), `save`, `graph-demo` (the example
@@ -46,6 +49,41 @@ impl Shell {
         if let Some(rest) = self.anim.debug_rest.take() {
             self.run_debug_steps(rest, cx);
         }
+    }
+
+    /// `autorig-drag=<joint>:<dx>/<dy>/<dz>`: reports whether a cut started,
+    /// which the remaining steps then wait for.
+    fn debug_autorig_drag(&mut self, arg: &str, cx: &mut Context<Self>) -> bool {
+        use crate::workspace_view::JointPhase;
+        let parsed = arg.split_once(':').and_then(|(name, by)| {
+            let index = rbx_autorig::Joint::ALL
+                .iter()
+                .position(|j| j.name().eq_ignore_ascii_case(name))?;
+            let by: Vec<f32> = by
+                .split('/')
+                .filter_map(|n| n.trim().parse().ok())
+                .collect();
+            let by = glam::Vec3::from_slice(by.get(..3)?);
+            Some((index, by))
+        });
+        let Some((index, by)) = parsed else {
+            self.anim.status = Some(format!("{VARIABLE}: bad autorig-drag={arg}").into());
+            return false;
+        };
+        let Some(from) = self
+            .anim_autorig()
+            .and_then(|rig| rig.markers().0.get(index).copied())
+        else {
+            self.anim.status = Some(format!("{VARIABLE}: autorig-drag needs a rig").into());
+            return false;
+        };
+        self.autorig_drag_joint(index, from, JointPhase::Press, cx);
+        for step in 1..=4 {
+            let to = from + by * (step as f32 / 4.0);
+            self.autorig_drag_joint(index, to, JointPhase::Drag, cx);
+        }
+        self.autorig_drag_joint(index, from + by, JointPhase::Release, cx);
+        self.anim_autorig().is_some_and(|rig| rig.busy)
     }
 
     fn debug_select_curve_key(&mut self) {
@@ -171,6 +209,12 @@ impl Shell {
                     self.anim.debug_rest = Some(steps[i + 1..].to_vec());
                     self.start_autorig(std::path::PathBuf::from(arg), cx);
                     return;
+                }
+                "autorig-drag" => {
+                    if self.debug_autorig_drag(arg, cx) {
+                        self.anim.debug_rest = Some(steps[i + 1..].to_vec());
+                        return;
+                    }
                 }
                 "paste" => match std::fs::read_to_string(arg) {
                     Ok(text) => {

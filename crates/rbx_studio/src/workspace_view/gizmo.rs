@@ -142,6 +142,15 @@ pub(super) enum Drag {
     /// The Terrain Editor's gesture: `Shell` gets every step as a ray (see
     /// `ViewportAction::Terrain`).
     Terrain,
+    /// One of the auto-rigger's joint markers is held (see `super::joints`):
+    /// which, where it was grabbed, the camera's forward axis (the plane it
+    /// slides in faces it) and where it was last carried to.
+    Joint {
+        index: usize,
+        origin: Vec3,
+        normal: Vec3,
+        to: Vec3,
+    },
 }
 
 /// What one step of a drag does to the part.
@@ -313,6 +322,18 @@ impl WorkspaceView {
                 extend: false,
                 held: false,
             });
+            return;
+        }
+        // An auto-rig joint marker takes the press before any tool does.
+        if let Some(drag) = self.grab_joint(position, scale) {
+            if let Drag::Joint { index, origin, .. } = drag {
+                self.begin(drag, cx);
+                cx.emit(ViewportAction::Joint {
+                    index,
+                    to: origin,
+                    phase: super::JointPhase::Press,
+                });
+            }
             return;
         }
         // The Sun tool aims at the scene rather than selecting out of it.
@@ -595,6 +616,10 @@ impl WorkspaceView {
         scale: f32,
         cx: &mut gpui_kit::Context<Self>,
     ) {
+        if matches!(self.drag, Some(Drag::Joint { .. })) {
+            self.joint_step(position, scale, cx);
+            return;
+        }
         // Aims at the scene, not at the selection there may not even be.
         if self.drag == Some(Drag::Sun) {
             self.sun_step(position, scale, false, cx);
@@ -834,6 +859,13 @@ impl WorkspaceView {
         if self.drag == Some(Drag::Terrain) {
             self.terrain_release(cx);
         }
+        if let Some(Drag::Joint { index, to, .. }) = self.drag {
+            cx.emit(ViewportAction::Joint {
+                index,
+                to,
+                phase: super::JointPhase::Release,
+            });
+        }
         if let Some(drag) = self.drop_drag() {
             self.snapped = None;
             // Every handle back on, wherever the handles now stand.
@@ -1010,7 +1042,7 @@ pub(super) fn advance(drag: Drag, ray: Ray, landing: Landing) -> Option<(Drag, C
             ))
         }
         // Moves no part: `Shell` answers each of its steps instead.
-        Drag::Sun | Drag::Terrain => None,
+        Drag::Sun | Drag::Terrain | Drag::Joint { .. } => None,
     }
 }
 

@@ -17,6 +17,20 @@ fn expected(body: &Humanoid) -> [Vec3; 15] {
     body.joints.map(|p| Vec3::new(p.x, p.y, p.z - zc) * HEIGHT)
 }
 
+const ARM_JOINTS: [Joint; 6] = [
+    Joint::LeftShoulder,
+    Joint::LeftElbow,
+    Joint::LeftWrist,
+    Joint::RightShoulder,
+    Joint::RightElbow,
+    Joint::RightWrist,
+];
+
+/// One joint's distance from where it should be, as a fraction of the height.
+fn joint_error(fit: &Fit, body: &Humanoid, joint: Joint) -> f32 {
+    (fit.joint(joint) - expected(body)[joint as usize]).length() / HEIGHT
+}
+
 /// Fails with every joint's error listed if any is past `tolerance`·height.
 fn assert_joints(fit: &Fit, body: &Humanoid, tolerance: f32) {
     let want = expected(body);
@@ -41,12 +55,27 @@ fn assert_joints(fit: &Fit, body: &Humanoid, tolerance: f32) {
 }
 
 fn check_fit(pose: Pose, orientation: Orientation, units: f32) -> (Humanoid, crate::Mesh, Fit) {
-    let body = humanoid(pose);
+    check_fit_of(humanoid(pose), orientation, units, 0.05)
+}
+
+fn check_fit_of(
+    body: Humanoid,
+    orientation: Orientation,
+    units: f32,
+    tolerance: f32,
+) -> (Humanoid, crate::Mesh, Fit) {
     let file = to_file(&body.mesh, orientation, units);
     let fit = fit(&file, HEIGHT).unwrap();
-    assert_eq!(fit.orientation, orientation, "{pose:?}");
-    assert!((fit.scale - HEIGHT / units).abs() < 1e-3 * HEIGHT / units);
-    assert_joints(&fit, &body, 0.05);
+    assert_eq!(fit.orientation, orientation);
+    // Measured to the head's top voxel when the hands are higher.
+    let slack = if fit.warnings.iter().any(|w| w.contains("above the head")) {
+        0.01
+    } else {
+        1e-3
+    };
+    let ratio = fit.scale * units / HEIGHT;
+    assert!((ratio - 1.).abs() < slack, "scale off by {ratio}");
+    assert_joints(&fit, &body, tolerance);
     // Left is −X in Roblox space.
     assert!(fit.joint(Joint::LeftWrist).x < 0. && fit.joint(Joint::RightWrist).x > 0.);
     assert!(fit.extremities.left_foot.x < 0. && fit.extremities.right_hand.x > 0.);
@@ -119,14 +148,29 @@ fn assert_watertight(mesh: &crate::Mesh, what: &str) {
 /// The pose's body, fit and split, checked once and shared between tests.
 fn check_split(pose: Pose) -> &'static (Humanoid, Fit, crate::Body) {
     use std::sync::OnceLock;
-    static SPLITS: [OnceLock<(Humanoid, Fit, crate::Body)>; 3] =
-        [OnceLock::new(), OnceLock::new(), OnceLock::new()];
-    SPLITS[pose as usize].get_or_init(|| checked_split(pose))
+    static SPLITS: [OnceLock<(Humanoid, Fit, crate::Body)>; 5] = [const { OnceLock::new() }; 5];
+    SPLITS[pose as usize].get_or_init(|| {
+        let body = humanoid(pose);
+        if pose == Pose::Pressed {
+            // The fit traces an arm lying along the flank into the torso
+            // (shoulders at the hips): this pose tests what follows the fit,
+            // on the true joints.
+            let mut fit = fit(&body.mesh, HEIGHT).unwrap();
+            for joint in Joint::ALL {
+                fit.set_joint(joint, expected(&body)[joint as usize]);
+            }
+            return checked_split_with(body, fit);
+        }
+        checked_split(body)
+    })
 }
 
-fn checked_split(pose: Pose) -> (Humanoid, Fit, crate::Body) {
-    let body = humanoid(pose);
+fn checked_split(body: Humanoid) -> (Humanoid, Fit, crate::Body) {
     let fit = fit(&body.mesh, HEIGHT).unwrap();
+    checked_split_with(body, fit)
+}
+
+fn checked_split_with(body: Humanoid, fit: Fit) -> (Humanoid, Fit, crate::Body) {
     let parts = split(&body.mesh, &fit).unwrap();
     assert_eq!(parts.parts.len(), 15);
     for shell in &body.shells {
@@ -209,6 +253,72 @@ fn checked_split(pose: Pose) -> (Humanoid, Fit, crate::Body) {
         );
     }
     (body, fit, parts)
+}
+
+#[test]
+fn arms_raised_above_the_head_fit() {
+    let (_, _, fit) = check_fit_of(
+        humanoid(Pose::Raised),
+        Orientation::new(Axis::PosZ, Axis::NegY).unwrap(),
+        1.,
+        0.035,
+    );
+    let body = humanoid(Pose::Raised);
+    for joint in ARM_JOINTS {
+        let error = joint_error(&fit, &body, joint);
+        // The shoulders hang off the neck's height, which the raised arms
+        // blur (both ~0.03·H high); elbows and wrists are on the arm itself.
+        let bar = if joint.to_string().contains("Shoulder") {
+            0.035
+        } else {
+            0.02
+        };
+        assert!(error <= bar, "{joint}: {error:.3}·H");
+    }
+    // The hands are above the head, but the height is still the head's.
+    assert!(fit.extremities.left_hand.y > fit.extremities.head.y);
+}
+
+#[test]
+fn arms_raised_above_the_head_split_into_fifteen_closed_parts() {
+    let (_, fit, body) = check_split(Pose::Raised);
+    // The upper arm's cut must not take the head along.
+    let head = body.part(Part::Head);
+    assert!(head.centre.y > fit.joint(Joint::Neck).y);
+    assert!(head.size.y > 0.1 * HEIGHT, "head {:?}", head.size);
+}
+
+#[test]
+fn hands_apart_from_their_forearms_fit() {
+    for (pose, gap) in [(Pose::A, 0.02), (Pose::T, 0.04), (Pose::I, 0.02)] {
+        let body = humanoid::detached_hands(pose, gap);
+        // Before the gaps were bridged the fit hung the hands from the
+        // forearms' ends: wrists 0.032·H off in the A-pose.
+        let check = humanoid::detached_hands(pose, gap);
+        let (_, _, fit) = check_fit_of(body, Orientation::ROBLOX, 1., 0.035);
+        for joint in [Joint::LeftWrist, Joint::RightWrist] {
+            let error = joint_error(&fit, &check, joint);
+            assert!(error <= 0.015, "{pose:?} {joint}: {error:.3}·H");
+        }
+    }
+}
+
+#[test]
+fn hands_apart_from_their_forearms_split_into_fifteen_closed_parts() {
+    let (body, fit, parts) = checked_split(humanoid::detached_hands(Pose::A, 0.02));
+    // Each hand is the whole detached piece, 0.09·H long.
+    for side in [Side::Left, Side::Right] {
+        let hand = parts.part(match side {
+            Side::Left => Part::LeftHand,
+            Side::Right => Part::RightHand,
+        });
+        assert!(
+            hand.size.max_element() > 0.085 * HEIGHT,
+            "{side:?} {:?}",
+            hand.size
+        );
+    }
+    let _ = (body, fit);
 }
 
 #[test]
@@ -417,6 +527,7 @@ fn a_multi_mesh_gltf_with_node_transforms_fits() {
                 size: Vec3::ONE,
                 mesh,
                 attachments: Vec::new(),
+                accessories: Vec::new(),
                 cap_triangles: 0,
             }
         })
@@ -597,5 +708,98 @@ fn twenty_thousand_triangles_fit_and_split_in_under_a_second() {
     assert_joints(&fit, &body, 0.05);
     if !cfg!(debug_assertions) {
         assert!(total.as_secs_f32() < 1., "{total:?}");
+    }
+}
+
+#[test]
+fn every_part_carries_the_mannequins_accessory_attachments() {
+    // The Mannequin's set, part by part (the Rig Builder's R15 tables).
+    let want: [(Part, &[&str]); 15] = [
+        (Part::Head, &["Hat", "Hair", "FaceFront", "FaceCenter"]),
+        (
+            Part::UpperTorso,
+            &["Neck", "LeftCollar", "RightCollar", "BodyFront", "BodyBack"],
+        ),
+        (
+            Part::LowerTorso,
+            &["WaistCenter", "WaistFront", "WaistBack"],
+        ),
+        (Part::LeftUpperArm, &["LeftShoulder"]),
+        (Part::LeftLowerArm, &[]),
+        (Part::LeftHand, &["LeftGrip"]),
+        (Part::RightUpperArm, &["RightShoulder"]),
+        (Part::RightLowerArm, &[]),
+        (Part::RightHand, &["RightGrip"]),
+        (Part::LeftUpperLeg, &[]),
+        (Part::LeftLowerLeg, &[]),
+        (Part::LeftFoot, &["LeftFoot"]),
+        (Part::RightUpperLeg, &[]),
+        (Part::RightLowerLeg, &[]),
+        (Part::RightFoot, &["RightFoot"]),
+    ];
+    for pose in [Pose::A, Pose::T] {
+        let (_, fit, body) = check_split(pose);
+        let world = |part: Part, name: &str| {
+            let piece = body.part(part);
+            let (_, at) = piece
+                .accessories
+                .iter()
+                .find(|(n, _)| n == &format!("{name}Attachment"))
+                .unwrap_or_else(|| panic!("{part} has no {name}Attachment"));
+            piece.centre + *at
+        };
+        for (part, names) in want {
+            let mut got: Vec<&str> = body
+                .part(part)
+                .accessories
+                .iter()
+                .map(|(n, _)| n.strip_suffix("Attachment").unwrap())
+                .collect();
+            got.sort();
+            let mut names = names.to_vec();
+            names.sort();
+            assert_eq!(got, names, "{pose:?} {part}");
+            // Each sits on or in its part's bounds.
+            let piece = body.part(part);
+            for (name, at) in &piece.accessories {
+                let slack = Vec3::splat(1e-4);
+                assert!(
+                    at.abs().cmple(piece.size / 2. + slack).all(),
+                    "{pose:?} {name} at {at:?} outside {:?}",
+                    piece.size
+                );
+            }
+        }
+        // Where they matter: the hat on the crown, the grips in the hands,
+        // the feet on the ground, the front of the body in front (−Z).
+        let hat = world(Part::Head, "Hat");
+        assert!(
+            hat.y > fit.extremities.head.y - 0.02 * HEIGHT,
+            "{pose:?} hat {hat:?}"
+        );
+        for (part, side, name) in [
+            (Part::LeftHand, Side::Left, "LeftGrip"),
+            (Part::RightHand, Side::Right, "RightGrip"),
+        ] {
+            let grip = world(part, name);
+            let wrist = fit.joint(part.joint());
+            let tip = fit.extremities.hand(side);
+            assert!(
+                (grip - wrist.lerp(tip, 0.5)).length() < 1e-4,
+                "{pose:?} {name}"
+            );
+        }
+        for (part, name) in [(Part::LeftFoot, "LeftFoot"), (Part::RightFoot, "RightFoot")] {
+            assert!(world(part, name).y < 0.01 * HEIGHT, "{pose:?} {name}");
+        }
+        assert!(world(Part::UpperTorso, "BodyFront").z < world(Part::UpperTorso, "BodyBack").z);
+        assert!(world(Part::LowerTorso, "WaistFront").z < world(Part::LowerTorso, "WaistBack").z);
+        let neck = world(Part::UpperTorso, "Neck");
+        assert!((neck - fit.joint(Joint::Neck)).length() < 1e-4);
+        let (l, r) = (
+            world(Part::UpperTorso, "LeftCollar"),
+            world(Part::UpperTorso, "RightCollar"),
+        );
+        assert!(l.x < neck.x && neck.x < r.x && l.y < neck.y);
     }
 }

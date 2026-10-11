@@ -18,6 +18,12 @@ pub enum Pose {
     T,
     /// Arms 18° from vertical, close to the body.
     I,
+    /// Arms raised 30° off vertical, the hands above the head (a "Y").
+    /// The height is still the head's: the hands stick out above it.
+    Raised,
+    /// Arms 10° from vertical: the upper arm pressed into the torso's flank
+    /// down to the elbow.
+    Pressed,
 }
 
 pub struct Humanoid {
@@ -190,10 +196,22 @@ pub fn humanoid(pose: Pose) -> Humanoid {
 
 /// The humanoid with its surfaces divided about every `step` (of the height).
 pub fn humanoid_with(pose: Pose, step: f32) -> Humanoid {
+    build(pose, step, 0.)
+}
+
+/// The humanoid with each hand a separate piece, `gap` (of the height) from
+/// the end of its forearm, centred on the wrist joint.
+pub fn detached_hands(pose: Pose, gap: f32) -> Humanoid {
+    build(pose, 0.025, gap)
+}
+
+fn build(pose: Pose, step: f32, hand_gap: f32) -> Humanoid {
     let (arm_angle, leg_angle) = match pose {
         Pose::A => (40f32, 4f32),
         Pose::T => (90., 0.),
         Pose::I => (18., 0.),
+        Pose::Raised => (150., 4.),
+        Pose::Pressed => (10., 0.),
     };
     let mut joints = [Vec3::ZERO; 15];
     let mut set = |j: Joint, p: Vec3| joints[j as usize] = p;
@@ -246,11 +264,18 @@ pub fn humanoid_with(pose: Pose, step: f32) -> Humanoid {
         shells.push(capsule(shoulder, elbow, 0.03, 0.026, step));
         // Not quite the upper arm's radius: identical rings would weld the two
         // shells into one non-manifold surface.
-        shells.push(capsule(elbow, wrist, 0.0255, 0.018, step));
+        // Detached, the forearm's rounded end stops `hand_gap / 2` short
+        // of the wrist and the hand starts as far past it.
+        let forearm_end = if hand_gap > 0. {
+            wrist - dir * (hand_gap / 2. + 0.018)
+        } else {
+            wrist
+        };
+        shells.push(capsule(elbow, forearm_end, 0.0255, 0.018, step));
         shells.push(oriented_box(
-            wrist + dir * 0.05,
+            wrist + dir * (0.05 + hand_gap / 4.),
             [dir, Vec3::Z.cross(dir).normalize(), Vec3::Z],
-            Vec3::new(0.05, 0.015, 0.0275),
+            Vec3::new(0.05 - hand_gap / 4., 0.015, 0.0275),
             step,
         ));
 

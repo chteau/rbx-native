@@ -166,11 +166,27 @@ l'upload par un modèle local.
 ## 5. Ce qui reste ouvert ou non vérifié
 
 - **Auto-rigger**
-  - Marqueurs de joints déplacés depuis le panneau seulement, pas par
-    glisser-déposer dans la vue 3D.
-  - Pas d'attachments d'accessoires ni de cages.
-  - Non géré : mains en pièces séparées, bras levés au-dessus de la tête.
-  - Testé seulement sur des humanoïdes synthétiques.
+  - Les marqueurs de joints se glissent dans la vue 3D (calque de lignes 5,
+    plan face caméra à la profondeur du joint). Le relâcher recoupe le corps
+    comme une édition du panneau : une étape d'annulation sur le DOM, mais
+    l'annulation ne ramène pas le fit lui-même (comme pour le panneau).
+    Pas de prévisualisation du maillage pendant le glisser, seulement au
+    relâcher. Étape scriptée : `autorig-drag=<Joint>:dx/dy/dz`.
+    Vu sous Xephyr : après Ctrl+Z le maillage revient mais les marqueurs
+    restent où on les a lâchés (le fit n'est pas annulé). Un très grand
+    glisser (genou monté jusqu'au cou) donne une découpe aberrante : jambe
+    détachée. Pas de garde-fou sur la position d'un joint.
+  - Attachments d'accessoires écrits (même jeu que le Mannequin, placés
+    depuis le fit), non comparés à l'œil dans le vrai Studio.
+  - Pas de cages de corps : une `_OuterCage` doit garder la topologie
+    (sommets et UV) de la cage gabarit de Roblox pour s'apparier aux
+    cages internes des vêtements en couches. Une enveloppe inventée ne
+    s'apparierait pas, et la vérifier demande des envois en ligne et
+    Studio. Il faudrait déformer la cage du Mannequin vers le fit.
+  - Mains détachées et bras levés gérés. Un bras collé le long du flanc
+    (pressé contre le torse) n'est toujours pas séparé par le fit.
+  - Testé sur des humanoïdes synthétiques et quatre maillages de
+    `rbx-native-fixtures/autorig`.
 - **Skinning viewer**
   - Déformation sur le CPU.
   - Les masques de survol, de sélection et de surbrillance gardent la

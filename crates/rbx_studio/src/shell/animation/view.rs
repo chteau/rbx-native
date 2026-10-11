@@ -28,6 +28,7 @@ impl Shell {
             self.bind_selected_rig(cx);
         }
         self.stage_rig(cx);
+        self.sync_autorig_markers(cx);
         self.sync_joint_from_selection();
         if !self.anim.fitted && self.anim.sheet.get().is_some() {
             self.fit_timeline();

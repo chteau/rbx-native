@@ -142,6 +142,8 @@ pub(super) struct Animation {
     /// its animation workspace, so on by default), and what was last sent.
     pub(super) skeleton: bool,
     skeleton_sent: Vec<rbx_viewer::Segment>,
+    /// The auto-rigger's joint markers as last sent to the 3D view.
+    markers_sent: (Vec<glam::Vec3>, Option<usize>),
     /// What the local draft last held, and when it was written.
     drafted: Option<(rbx_animation::Clip, rbx_animation::graph::Graph)>,
     drafted_at: Option<Instant>,
@@ -169,6 +171,7 @@ impl Animation {
             staged: None,
             skeleton: true,
             skeleton_sent: Vec::new(),
+            markers_sent: (Vec::new(), None),
             drafted: None,
             drafted_at: None,
         }
@@ -244,6 +247,30 @@ impl Shell {
         self.anim.autorig.as_mut()
     }
 
+    /// Sends the auto-rigger's joint markers to the 3D view (none when no
+    /// mesh is being rigged), only when they changed since the last send.
+    pub(in crate::shell) fn sync_autorig_markers(&mut self, cx: &mut Context<Self>) {
+        let markers = self
+            .anim
+            .autorig
+            .as_ref()
+            .map(|rig| rig.markers())
+            .unwrap_or_default();
+        if markers == self.anim.markers_sent {
+            return;
+        }
+        self.anim.markers_sent = markers.clone();
+        self.viewport.update(cx, |viewport, _| {
+            viewport.set_joint_markers(markers.0, markers.1)
+        });
+    }
+
+    /// Makes `part`'s joint the editor's current one, as the auto-rig
+    /// panel's joint picker does.
+    pub(in crate::shell) fn anim_select_joint(&mut self, part: &str) {
+        self.anim.editor.joint = Some(part.to_owned());
+    }
+
     pub(in crate::shell) fn anim_set_autorig(&mut self, rig: Option<crate::shell::rig::AutoRig>) {
         self.anim.autorig = rig;
     }
@@ -262,9 +289,11 @@ impl Shell {
     pub(super) fn unstage(&mut self, cx: &mut Context<Self>) {
         if self.anim.staged.take().is_some() {
             self.anim.skeleton_sent.clear();
+            self.anim.markers_sent = (Vec::new(), None);
             self.viewport.update(cx, |viewport, _| {
                 viewport.set_stage_grid(Vec::new());
                 viewport.set_skeleton(Vec::new());
+                viewport.set_joint_markers(Vec::new(), None);
                 viewport.set_isolation(None);
             });
         }
