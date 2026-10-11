@@ -225,6 +225,10 @@ pub(crate) struct Renderer {
     /// [`Renderer::set_isolated`]): no environment, neutral light, a flat
     /// backdrop. Which *parts* are drawn is the scene's to say, not this.
     isolated: bool,
+    /// What the sun's shadow map is fitted to instead of `bounds` while
+    /// isolated: the drawn rig and the stage floor around it — see
+    /// `Scene::stage_bounds`.
+    stage: Option<Bounds>,
 }
 
 impl Renderer {
@@ -428,13 +432,16 @@ impl Renderer {
             target,
             refracting: scene.has_glass(),
             isolated: false,
+            stage: None,
         }
     }
 
     /// Draws every following frame as an isolated view, or as the place
     /// again: skips the sky, the stars, the sun and moon, terrain and its
-    /// water and grass, beams, trails, particles, the place's adornments and
-    /// both kinds of GUI; lights the scene with [`Lighting::neutral`] and a
+    /// water and grass, the place's adornments, the `ScreenGui` overlay and
+    /// every effect that does not belong to the isolated roots (the scene
+    /// hands over only the rig's own); fits the sun shadow to the stage
+    /// (see [`Renderer::set_stage`]); lights the scene with [`Lighting::neutral`] and a
     /// flat grey sky instead of the place's own `Lighting`, local lights and
     /// probe; and clears to [`ISOLATION_BACKDROP`] — see
     /// `renderer::isolation`.
@@ -447,6 +454,12 @@ impl Renderer {
     /// job (see `scene::isolation`), which a rebuild then reads.
     pub(crate) fn set_isolated(&mut self, isolated: bool) {
         self.isolated = isolated;
+    }
+
+    /// The box an isolated frame fits its sun shadow to — see
+    /// `Scene::stage_bounds`. Ignored while not isolated.
+    pub(crate) fn set_stage(&mut self, stage: Option<Bounds>) {
+        self.stage = stage;
     }
 
     /// Which of the place's surroundings this frame draws — see
@@ -962,6 +975,15 @@ impl Renderer {
     ///
     /// `lighting` is the frame's own — the place's, or an isolated view's
     /// neutral key (see `isolation::lit`).
+    /// The extent the sun's shadow map is fitted to: the stage while
+    /// isolated (see [`Renderer::set_stage`]), the whole scene otherwise.
+    fn shadow_bounds(&self) -> &Bounds {
+        match (&self.stage, self.isolated) {
+            (Some(stage), true) => stage,
+            _ => &self.bounds,
+        }
+    }
+
     fn sun_shadow(&self, lighting: &Lighting, from: Viewpoint, aspect: f32) -> (Lamp, Fit) {
         if !lighting.global_shadows || !self.quality.shadows {
             return (Lamp::None, Fit::unfitted());
@@ -978,7 +1000,7 @@ impl Renderer {
 
         (
             lamp,
-            shadow::fit(light, &frustum, &self.bounds, self.quality.shadow_map_size),
+            shadow::fit(light, &frustum, self.shadow_bounds(), self.quality.shadow_map_size),
         )
     }
 }

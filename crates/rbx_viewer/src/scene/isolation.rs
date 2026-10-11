@@ -14,9 +14,16 @@
 use std::borrow::Cow;
 use std::collections::HashSet;
 
+use glam::Vec3;
 use rbx_dom::{Ref, WeakDom};
 
-use super::{Beam, Emitter, Part, Scene, SpaceGui, Trail};
+use super::{bounds, Beam, Bounds, Emitter, Part, Scene, SpaceGui, Trail};
+
+/// How far, in studs, the floor an isolated rig stands on reaches from the
+/// rig's centre in x and z: the half-width of the Animation Editor's stage
+/// grid, and of the patch of ground [`Scene::stage_bounds`] fits the sun's
+/// shadow map to so the rig's shadow lands on the whole grid.
+pub const STAGE_REACH: f32 = 20.0;
 
 /// Which roots a scene is isolated to, and which of its referents were last
 /// found under one of them.
@@ -137,6 +144,31 @@ impl Scene {
                     .map(|gui| gui.referent),
             )
             .collect();
+    }
+
+    /// What an isolated view's sun shadow is fitted to: the parts still
+    /// drawn, joined with a [`STAGE_REACH`] square of floor around their
+    /// centre at their lowest point — the stage grid the rig stands on.
+    /// `None` while nothing is isolated, or when no part is left drawn; the
+    /// renderer then fits to the whole place as usual.
+    ///
+    /// Without it the shadow map stays spread over the whole place while
+    /// only the rig is drawn, and a rig in a large place gets a handful of
+    /// texels for its whole shadow.
+    pub(crate) fn stage_bounds(&self) -> Option<Bounds> {
+        self.isolation.as_ref()?;
+        let rig = bounds::of(
+            self.parts
+                .iter()
+                .filter(|part| part.id.is_whole() && !part.isolated_out),
+        )?;
+        let centre = rig.center();
+        let reach = Vec3::new(STAGE_REACH, 0.0, STAGE_REACH);
+        let floor = Vec3::new(centre.x, rig.min.y, centre.z);
+        Some(rig.union(Bounds {
+            min: floor - reach,
+            max: floor + reach,
+        }))
     }
 
     /// Whether the effect read from `referent` draws: always while nothing

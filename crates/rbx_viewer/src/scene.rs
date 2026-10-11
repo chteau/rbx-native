@@ -64,6 +64,7 @@ pub use gui::{shows_screen, ScrollTarget};
 pub(crate) use highlight::{DepthMode, Highlight, MAX_HIGHLIGHTS};
 pub(crate) use identity::PartId;
 pub(crate) use isolation::{within as isolation_within, Isolation};
+pub use isolation::STAGE_REACH;
 pub(crate) use material::{Catalog, Kind, Maps, Slot};
 pub(crate) use particles::sequence::{eval_color, eval_number};
 pub(crate) use particles::{Emitter, Simulation};
