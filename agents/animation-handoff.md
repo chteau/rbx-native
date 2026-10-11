@@ -183,11 +183,28 @@ l'upload par un modèle local.
   - Le snapping de l'outil Move peut viser des parts cachées.
   - Ombre ajustée à toute la place.
 - **Non vérifié contre un vrai client Roblox**
-  - Direction de l'easing des poses (voir `agents/animation-research.md` §8).
-  - Import par `AnimationId`.
-  - Comportements non documentés du Graph, marqués `UNVERIFIED`.
-- **`CurveAnimation`** n'est pas écrit (format non public) : les courbes
-  sont recuites en `KeyframeSequence`.
+  - Direction de l'easing des poses : côté éditeur, réglé par le code de
+    l'Animation Editor (`CurveUtils`, Client Tracker 41ab074bc29d, cité dans
+    `easing.rs`) : toutes les styles au sens TweenService. Le `Cubic`
+    inversé au runtime ne repose que sur la doc de l'enum ; la direction de
+    `Constant` n'est dite nulle part.
+  - Comportements non documentés du Graph, marqués `UNVERIFIED`. Réglé par
+    la doc (`AnimationNodeType.yaml`) : formules scalaires Over/Add/Subtract
+    et sens du Seed (-1 = aléatoire). Restent non vérifiés : poids Blend2D,
+    façon de combiner les rotations, générateur et amorçage RNG, encodage
+    binaire de l'attribut `Instance` `EntryState` (l'éditeur l'écrit bien
+    comme `Instance`, pas comme nom ; aucun fichier réel trouvé).
+- **Import par `AnimationId`** testé sur de vrais assets : walk/run/idle R15
+  par défaut et trois emotes `CurveAnimation` du catalogue, en fixtures
+  sous `crates/rbx_animation/tests/fixtures` (`tests/real_assets.rs`).
+- **`CurveAnimation`** est lu (`curve/file.rs`), puis recuit en clip.
+  `ValuesAndTimes` est décodé dans `curve/values.rs` (layout dans la doc du
+  module) : 36 051 blobs de 414 emotes relus et réécrits à l'octet près. On
+  sauve toujours en `KeyframeSequence` : le modèle jette les pentes auto
+  stockées pour les tangentes non fixées, donc une `CurveAnimation`
+  reconstruite ne serait pas identique. Pas vu de `RotationCurve`
+  (quaternion) dans ces 414 emotes : refusé avec un message. Les courbes
+  FACS sont lues en `faces`.
 
 ## 6. Références
 

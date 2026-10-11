@@ -15,8 +15,13 @@ marks the ones no primary source settles.
   the standard meaning. `PoseEasingStyle` deprecates `Cubic` because its
   direction "is reversed between the editor and runtime". `rbx_animation`
   therefore plays `CubicV2`, `Elastic` and `Bounce` with the standard meaning
-  and the legacy `Cubic` reversed. This still needs checking against a
-  running client.
+  and the legacy `Cubic` reversed. The editor half is settled by its own
+  code: Studio 0.742's `AnimationClipEditor/Src/Util/CurveUtils` (Client
+  Tracker 41ab074bc29d, disassembly) builds `Out` as fast-start/slow-end for
+  `Cubic`, `CubicV2`, `Bounce` and `Elastic` alike, `In` as its mirror and
+  `InOut` as `In` then `Out` around a midpoint. The runtime reversal of
+  legacy `Cubic` rests only on the enum docs and still needs checking
+  against a running client.
 - **Constant.** `Out` holds the earlier pose, `In` jumps to the next one
   (the exporter's reading), and `InOut` swaps at the midpoint.
 - **Missing poses.** Each joint interpolates across only its own keys. A
