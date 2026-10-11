@@ -1,8 +1,8 @@
 use rbx_animation::{JointKind, Rig};
 use rbx_dom::{Variant, WeakDom};
 
-use super::panel::{primary_button, wide_button};
 use super::rig_summary;
+use super::widgets::{primary_button, wide_button};
 
 /// WCAG 2.5.5: Save, the panels' primary action, is 44 tall in both modes.
 #[gpui_kit::test]

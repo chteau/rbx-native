@@ -19,6 +19,7 @@ mod panel;
 mod pose;
 mod sheet;
 mod view;
+mod widgets;
 
 #[cfg(test)]
 mod tests;
