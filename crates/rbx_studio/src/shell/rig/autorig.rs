@@ -119,7 +119,11 @@ fn pieces(cut: &Cut, mut stock: Pieces) -> Pieces {
                     .iter()
                     .map(|(name, at)| (name.clone(), v3(*at)))
                     .collect(),
-                extra: Vec::new(),
+                extra: part
+                    .accessories
+                    .iter()
+                    .map(|(name, at)| (name.clone(), v3(*at)))
+                    .collect(),
             },
         );
     }

@@ -37,6 +37,10 @@ pub struct PartMesh {
     /// requires them unrotated, so a position is all they carry. The part's
     /// own joint comes first, then its children's.
     pub attachments: Vec<(String, Vec3)>,
+    /// The R15 accessory attachments (`HatAttachment`, `LeftGripAttachment`
+    /// and the rest) the Mannequin has on this part, relative to `centre`
+    /// and unrotated.
+    pub accessories: Vec<(String, Vec3)>,
     /// How many of `mesh.triangles`, at the end, are caps closing the cuts
     /// (or holes the source already had).
     pub cap_triangles: usize,
@@ -796,6 +800,7 @@ impl Work {
                 front_hint: None,
             },
             attachments,
+            accessories: crate::accessory::accessories(part, fit, lo, hi),
             cap_triangles: triangles_len - cut_faces,
         }
     }

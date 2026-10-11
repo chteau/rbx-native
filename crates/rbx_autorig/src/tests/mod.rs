@@ -527,6 +527,7 @@ fn a_multi_mesh_gltf_with_node_transforms_fits() {
                 size: Vec3::ONE,
                 mesh,
                 attachments: Vec::new(),
+                accessories: Vec::new(),
                 cap_triangles: 0,
             }
         })
@@ -707,5 +708,98 @@ fn twenty_thousand_triangles_fit_and_split_in_under_a_second() {
     assert_joints(&fit, &body, 0.05);
     if !cfg!(debug_assertions) {
         assert!(total.as_secs_f32() < 1., "{total:?}");
+    }
+}
+
+#[test]
+fn every_part_carries_the_mannequins_accessory_attachments() {
+    // The Mannequin's set, part by part (the Rig Builder's R15 tables).
+    let want: [(Part, &[&str]); 15] = [
+        (Part::Head, &["Hat", "Hair", "FaceFront", "FaceCenter"]),
+        (
+            Part::UpperTorso,
+            &["Neck", "LeftCollar", "RightCollar", "BodyFront", "BodyBack"],
+        ),
+        (
+            Part::LowerTorso,
+            &["WaistCenter", "WaistFront", "WaistBack"],
+        ),
+        (Part::LeftUpperArm, &["LeftShoulder"]),
+        (Part::LeftLowerArm, &[]),
+        (Part::LeftHand, &["LeftGrip"]),
+        (Part::RightUpperArm, &["RightShoulder"]),
+        (Part::RightLowerArm, &[]),
+        (Part::RightHand, &["RightGrip"]),
+        (Part::LeftUpperLeg, &[]),
+        (Part::LeftLowerLeg, &[]),
+        (Part::LeftFoot, &["LeftFoot"]),
+        (Part::RightUpperLeg, &[]),
+        (Part::RightLowerLeg, &[]),
+        (Part::RightFoot, &["RightFoot"]),
+    ];
+    for pose in [Pose::A, Pose::T] {
+        let (_, fit, body) = check_split(pose);
+        let world = |part: Part, name: &str| {
+            let piece = body.part(part);
+            let (_, at) = piece
+                .accessories
+                .iter()
+                .find(|(n, _)| n == &format!("{name}Attachment"))
+                .unwrap_or_else(|| panic!("{part} has no {name}Attachment"));
+            piece.centre + *at
+        };
+        for (part, names) in want {
+            let mut got: Vec<&str> = body
+                .part(part)
+                .accessories
+                .iter()
+                .map(|(n, _)| n.strip_suffix("Attachment").unwrap())
+                .collect();
+            got.sort();
+            let mut names = names.to_vec();
+            names.sort();
+            assert_eq!(got, names, "{pose:?} {part}");
+            // Each sits on or in its part's bounds.
+            let piece = body.part(part);
+            for (name, at) in &piece.accessories {
+                let slack = Vec3::splat(1e-4);
+                assert!(
+                    at.abs().cmple(piece.size / 2. + slack).all(),
+                    "{pose:?} {name} at {at:?} outside {:?}",
+                    piece.size
+                );
+            }
+        }
+        // Where they matter: the hat on the crown, the grips in the hands,
+        // the feet on the ground, the front of the body in front (−Z).
+        let hat = world(Part::Head, "Hat");
+        assert!(
+            hat.y > fit.extremities.head.y - 0.02 * HEIGHT,
+            "{pose:?} hat {hat:?}"
+        );
+        for (part, side, name) in [
+            (Part::LeftHand, Side::Left, "LeftGrip"),
+            (Part::RightHand, Side::Right, "RightGrip"),
+        ] {
+            let grip = world(part, name);
+            let wrist = fit.joint(part.joint());
+            let tip = fit.extremities.hand(side);
+            assert!(
+                (grip - wrist.lerp(tip, 0.5)).length() < 1e-4,
+                "{pose:?} {name}"
+            );
+        }
+        for (part, name) in [(Part::LeftFoot, "LeftFoot"), (Part::RightFoot, "RightFoot")] {
+            assert!(world(part, name).y < 0.01 * HEIGHT, "{pose:?} {name}");
+        }
+        assert!(world(Part::UpperTorso, "BodyFront").z < world(Part::UpperTorso, "BodyBack").z);
+        assert!(world(Part::LowerTorso, "WaistFront").z < world(Part::LowerTorso, "WaistBack").z);
+        let neck = world(Part::UpperTorso, "Neck");
+        assert!((neck - fit.joint(Joint::Neck)).length() < 1e-4);
+        let (l, r) = (
+            world(Part::UpperTorso, "LeftCollar"),
+            world(Part::UpperTorso, "RightCollar"),
+        );
+        assert!(l.x < neck.x && neck.x < r.x && l.y < neck.y);
     }
 }
