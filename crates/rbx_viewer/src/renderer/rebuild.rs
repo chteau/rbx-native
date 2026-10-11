@@ -177,7 +177,10 @@ impl Renderer {
             .values()
             .map(|rig| rig.key.clone())
             .collect();
-        self.refresh_meshes(queue, scene.resolved_file_meshes(), &skinned);
+        if let Some(skinner) = self.skinner.as_mut() {
+            skinner.retain(|key| skinned.contains(key));
+        }
+        self.refresh_meshes(device, queue, scene.resolved_file_meshes(), &skinned);
         self.textured
             .rebuild(device, queue, &decor.groups, &quality);
         self.beams

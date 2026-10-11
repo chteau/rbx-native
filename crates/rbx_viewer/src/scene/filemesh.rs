@@ -144,6 +144,10 @@ pub(crate) struct Resolved {
     /// parts of its model (see [`skinned`]); it draws through
     /// `skinned::key(referent, mesh)` in `meshes`.
     pub(crate) rigs: HashMap<Ref, skinned::Rig>,
+    /// Whether the renderer deforms the rigs on the GPU: `meshes` then holds
+    /// each rig's rest mesh under its key, and [`skinned::Rig::posed`]
+    /// answers for the pose on the CPU. Off, `meshes` holds the posed copy.
+    pub(crate) skins_on_gpu: bool,
 }
 
 impl Resolved {
@@ -401,6 +405,7 @@ pub(crate) fn resolve(
             instances,
             slot_of,
             rigs,
+            skins_on_gpu: false,
         },
         hidden,
     )

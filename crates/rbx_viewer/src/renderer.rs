@@ -32,6 +32,7 @@ mod scene_depth;
 mod selection;
 mod shadow;
 mod shaped;
+mod skinning;
 mod skybox;
 mod slots;
 mod stars;
@@ -182,6 +183,10 @@ pub(crate) struct Renderer {
     /// drawn as silhouettes through the same pass a `Highlight` uses — see
     /// `renderer::cue`.
     cues: Cues,
+    /// The compute pass that poses skinned meshes into every buffer above
+    /// that draws one — see `renderer::skinning`. `None` where the device
+    /// has no compute shaders (WebGL2): the scene deforms them on the CPU.
+    skinner: Option<skinning::Skinner>,
     /// The "about to click" cue drawn around whatever `BasePart` the cursor is
     /// over, distinctly from `selection` above — see `renderer::hover`. Reads
     /// the same shared bind group, for the same reason.
@@ -398,6 +403,7 @@ impl Renderer {
                     resolved: scene.resolved_file_meshes(),
                 },
             ),
+            skinner: skinning::supported(device).then(|| skinning::Skinner::new(device)),
             hover,
             preview: Preview::new(device, target, &layout),
             lines: Lines::default(),
@@ -694,6 +700,7 @@ impl Renderer {
         // frame left its instance records owed to the batch buffers (see
         // `Renderer::flush_writes`).
         self.flush_writes(queue);
+        self.skin(device, queue);
 
         // Bounded so a place with many `Decal`/`Texture` images spreads their
         // GPU upload across the frames after load instead of stalling this

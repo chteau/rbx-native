@@ -23,6 +23,7 @@ pub(super) mod point;
 use super::cull;
 use super::geometry::Meshes;
 use super::mesh::Vertex;
+use super::skinning;
 use super::slots::keyed::Keyed;
 use super::terrain::TerrainGpu;
 use crate::quality::QualityProfile;
@@ -273,6 +274,20 @@ impl Shadows {
         meshes: &[rbx_assets::AssetRef],
     ) {
         casters::refresh(queue, &self.mesh_batches, resolved, meshes);
+        self.posed();
+    }
+
+    /// A skinned mesh took another pose: the point lights' cubes no longer
+    /// hold what it casts.
+    pub(super) fn posed(&mut self) {
+        self.point_state = None;
+    }
+
+    /// The casters' file-mesh vertex buffers, for `renderer::skinning`.
+    pub(super) fn skinning_targets(
+        &self,
+    ) -> impl Iterator<Item = (&rbx_assets::AssetRef, &wgpu::Buffer, skinning::Layout)> {
+        casters::skinning_targets(&self.mesh_batches)
     }
 
     /// Drops a box caster whose box no longer draws; a no-op if it never

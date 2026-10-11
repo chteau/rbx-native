@@ -487,27 +487,49 @@ impl Rig {
             .collect()
     }
 
-    /// The deformed mesh for the pose in `poses`, or `None` when it is the
-    /// one last applied.
-    pub(crate) fn pose(&mut self, poses: &Poses) -> Option<Arc<rbx_mesh::SkinnedMesh>> {
+    /// Takes up the pose in `poses`: whether any bone moved since the pose
+    /// last applied. Only the matrices are computed; [`Rig::posed`] deforms.
+    pub(crate) fn repose(&mut self, poses: &Poses) -> bool {
         let palette = self.palette(poses);
         let same = palette
             .iter()
             .zip(&self.applied)
             .all(|(a, b)| a.abs_diff_eq(*b, EPSILON));
         if same {
-            return None;
+            return false;
         }
-        // Back at rest is the source itself, bit for bit.
-        let at_rest = palette
+        self.applied = palette;
+        true
+    }
+
+    /// The deformed mesh for the pose last applied, deformed on the CPU —
+    /// the source itself, bit for bit, at rest.
+    pub(crate) fn posed(&self) -> Arc<rbx_mesh::SkinnedMesh> {
+        let at_rest = self
+            .applied
             .iter()
             .all(|matrix| matrix.abs_diff_eq(Mat4::IDENTITY, EPSILON));
-        let posed = match at_rest {
+        match at_rest {
             true => self.source.clone(),
-            false => Arc::new(deform(&self.source, &palette).into()),
-        };
-        self.applied = palette;
-        Some(posed)
+            false => Arc::new(deform(&self.source, &self.applied).into()),
+        }
+    }
+
+    /// The deformed mesh for the pose in `poses`, or `None` when it is the
+    /// one last applied.
+    pub(crate) fn pose(&mut self, poses: &Poses) -> Option<Arc<rbx_mesh::SkinnedMesh>> {
+        self.repose(poses).then(|| self.posed())
+    }
+
+    /// The rest geometry and skin the GPU deforms from.
+    pub(crate) fn source(&self) -> &Arc<rbx_mesh::SkinnedMesh> {
+        &self.source
+    }
+
+    /// The native-space matrix of every global bone for the pose last
+    /// applied, what [`deform`] takes.
+    pub(crate) fn applied(&self) -> &[Mat4] {
+        &self.applied
     }
 }
 
@@ -553,7 +575,15 @@ pub(in crate::scene) fn bind(
     let Some(mut rig) = Rig::of(entry, &mesh, poses) else {
         return bound;
     };
-    let posed = rig.pose(poses).unwrap_or(mesh);
+    // On the GPU path the rest mesh stays under the key and the renderer
+    // deforms it from the rig's matrices.
+    let posed = match resolved.skins_on_gpu {
+        true => {
+            rig.repose(poses);
+            mesh
+        }
+        false => rig.pose(poses).unwrap_or(mesh),
+    };
     resolved.meshes.insert(rig.key.clone(), posed);
     bound.key = Some(rig.key.clone());
     resolved.rigs.insert(referent, rig);

@@ -4,6 +4,9 @@
 
 use rbx_dom::Ref;
 
+use super::super::skinning::Layout;
+use super::pipelines::Skin;
+use super::vertex::{AppearanceVertex, TexturedVertex};
 use super::{blends, build, center, raw, vertex_bytes, Blended, FileMeshes, GroupKey, Images};
 use super::{Binding, Geometry};
 use crate::scene::{Resolved, ResolvedInstance};
@@ -97,6 +100,26 @@ impl FileMeshes {
         }
     }
 
+    /// Every vertex buffer drawing one of the meshes, with where its
+    /// position, normal and tangent sit — what `renderer::skinning` writes a
+    /// pose into.
+    pub(in crate::renderer) fn skinning_targets(
+        &self,
+    ) -> impl Iterator<Item = (&rbx_assets::AssetRef, &wgpu::Buffer, Layout)> {
+        let opaque = self
+            .opaque
+            .groups()
+            .iter()
+            .map(|group| (&group.key.mesh, &group.extra));
+        let blended = self
+            .blended
+            .iter()
+            .map(|blended| (&blended.key.mesh, &blended.geometry));
+        opaque
+            .chain(blended)
+            .map(|(key, geometry)| (key, &geometry.vertices, layout(geometry.skin)))
+    }
+
     fn remove_blended(&mut self, referent: Ref) {
         let Some(batch) = self.blended_index.remove(&referent) else {
             return;
@@ -176,5 +199,28 @@ impl FileMeshes {
         };
         let skin = Images::slot(&mut self.images, device, queue, binding, resolved, key)?;
         Some(build(device, mesh, skin))
+    }
+}
+
+/// Where each skin's vertex format keeps what skinning writes.
+fn layout(skin: Skin) -> Layout {
+    const FLOAT: usize = std::mem::size_of::<f32>();
+    let floats = |size: usize| (size / FLOAT) as u32;
+    match skin {
+        Skin::Plain => Layout {
+            stride: floats(std::mem::size_of::<super::BoxVertex>()),
+            normal: Some(3),
+            tangent: None,
+        },
+        Skin::Image(_) => Layout {
+            stride: floats(std::mem::size_of::<TexturedVertex>()),
+            normal: Some(3),
+            tangent: None,
+        },
+        Skin::Appearance(_) => Layout {
+            stride: floats(std::mem::size_of::<AppearanceVertex>()),
+            normal: Some(3),
+            tangent: Some(8),
+        },
     }
 }
