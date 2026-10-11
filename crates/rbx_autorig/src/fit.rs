@@ -143,15 +143,48 @@ pub fn fit_with(mesh: &Mesh, options: &FitOptions) -> Result<Fit, Error> {
         Some(o) => o,
         None => orient::detect(mesh, &mut warnings),
     };
-    let (scale, translation) = normalise(mesh, &triangles, orientation, options.height_studs)?;
+    let h = options.height_studs;
+    let (mut scale, mut translation) = normalise(mesh, &triangles, orientation, h)?;
     let rotation = orientation.rotation();
-    let points: Vec<Vec3> = mesh
-        .positions
-        .iter()
-        .map(|&p| rotation * p * scale + translation)
-        .collect();
-    let grid = Grid::build(&points, &triangles, options.resolution);
-    let mut fit = landmarks(&grid, options.height_studs, &mut warnings)?;
+    let attempt = |scale: f32, translation: Vec3, warnings: &mut Vec<String>| {
+        let points: Vec<Vec3> = mesh
+            .positions
+            .iter()
+            .map(|&p| rotation * p * scale + translation)
+            .collect();
+        let mut grid = Grid::build(&points, &triangles, options.resolution);
+        // A hand is about 1.5% of a body's volume; 0.3% keeps specks (a
+        // floating eye, a button) apart.
+        if grid.bridge(0.08 * h, 0.003) > 0 && !warnings.iter().any(|w| w.contains("separate")) {
+            warnings.push(
+                "Separate pieces (hands not joined to the arms?) were attached to the nearest body part across the gap. Check the wrist markers."
+                    .into(),
+            );
+        }
+        let fit = landmarks(&grid, h, warnings)?;
+        Ok::<_, Error>((grid, fit))
+    };
+    let (mut grid, mut fit) = attempt(scale, translation, &mut warnings)?;
+    // Arms raised above the head stretch the bounds: measure the height to
+    // the top of the head instead, and fit again at that scale.
+    let hands_y = fit
+        .extremities
+        .left_hand
+        .y
+        .max(fit.extremities.right_hand.y);
+    if hands_y > fit.extremities.head.y {
+        let top = head_top(&grid, fit.extremities.head);
+        if top > 0.5 * h && top < 0.98 * h {
+            let factor = h / top;
+            scale *= factor;
+            translation *= factor;
+            warnings.push(format!(
+                "The hands are above the head: the height of {h} studs was measured to the top of the head."
+            ));
+            (grid, fit) = attempt(scale, translation, &mut warnings)?;
+        }
+    }
+    let _ = grid;
     fit.orientation = orientation;
     fit.scale = scale;
     fit.translation = translation;
@@ -205,6 +238,15 @@ fn normalise(
         -(lo.z + hi.z) / 2. * scale,
     );
     Ok((scale, translation))
+}
+
+/// The top of the solid column through the head's tip.
+fn head_top(grid: &Grid, head: Vec3) -> f32 {
+    let mut p = head;
+    while grid.solid_at(p + Vec3::Y * grid.cell) {
+        p += Vec3::Y * grid.cell;
+    }
+    grid.voxel(p).map_or(p.y, |v| grid.centre(v).y) + 0.5 * grid.cell
 }
 
 /// The mean x of the left/right pairs: the character's plane of symmetry.
@@ -520,12 +562,6 @@ fn landmarks(grid: &Grid, h: f32, warnings: &mut Vec<String>) -> Result<Fit, Err
     feet.sort_by(by_x);
     // Left is −X in Roblox space.
     let (left_hand, right_hand, left_foot, right_foot) = (hands[0], hands[1], feet[0], feet[1]);
-    if grid.centre(head).y < grid.centre(left_hand).y.max(grid.centre(right_hand).y) {
-        warnings.push(
-            "A hand is above the head; arms-up poses are not supported, so check the head and hand markers."
-                .into(),
-        );
-    }
     let cx = (feet_x + (grid.centre(left_hand).x + grid.centre(right_hand).x) / 2.) / 2.;
 
     let mut joints = [Vec3::ZERO; 15];
@@ -707,7 +743,22 @@ fn arm(
                 .unwrap_or(0)
         });
     let wrist = limb.points[wrist_i];
-    let merge = limb.merge(wrist_i + 1).max(wrist_i + 1).min(n - 1);
+    // A bridged gap (a hand modelled apart from its arm) is far thinner
+    // than the forearm beyond it: look for the torso from where the limb
+    // thickens again, not from the bridge, whose sections would make the
+    // forearm itself look like the torso.
+    let wrist_area = limb.area(wrist_i);
+    // Past the forearm's rounded end too (0.03·h), whose small sections
+    // would set the scale for the merge.
+    let start = (wrist_i + 1..n)
+        .take_while(|&i| limb.s[i] - limb.s[wrist_i] < 0.06 * h)
+        .find(|&i| limb.area(i).is_finite() && limb.area(i) >= 2. * wrist_area)
+        .map_or(wrist_i + 1, |j| {
+            (j..n)
+                .find(|&i| limb.s[i] - limb.s[j] >= 0.03 * h)
+                .unwrap_or(j)
+        });
+    let merge = limb.merge(start).max(wrist_i + 1).min(n - 1);
 
     // The arm's axis, from the samples between the wrist and the torso.
     let from = wrist_i + (merge - wrist_i) * 2 / 5;

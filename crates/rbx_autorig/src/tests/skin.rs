@@ -17,7 +17,7 @@ fn skinned(
     &'static Body,
     &'static Skin,
 ) {
-    static SKINS: [OnceLock<Skin>; 3] = [OnceLock::new(), OnceLock::new(), OnceLock::new()];
+    static SKINS: [OnceLock<Skin>; 4] = [const { OnceLock::new() }; 4];
     let (human, fit, body) = check_split(pose);
     let skin = SKINS[pose as usize].get_or_init(|| crate::weights(&human.mesh, fit, body));
     (human, fit, body, skin)

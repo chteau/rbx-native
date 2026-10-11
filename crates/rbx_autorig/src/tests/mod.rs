@@ -17,6 +17,20 @@ fn expected(body: &Humanoid) -> [Vec3; 15] {
     body.joints.map(|p| Vec3::new(p.x, p.y, p.z - zc) * HEIGHT)
 }
 
+const ARM_JOINTS: [Joint; 6] = [
+    Joint::LeftShoulder,
+    Joint::LeftElbow,
+    Joint::LeftWrist,
+    Joint::RightShoulder,
+    Joint::RightElbow,
+    Joint::RightWrist,
+];
+
+/// One joint's distance from where it should be, as a fraction of the height.
+fn joint_error(fit: &Fit, body: &Humanoid, joint: Joint) -> f32 {
+    (fit.joint(joint) - expected(body)[joint as usize]).length() / HEIGHT
+}
+
 /// Fails with every joint's error listed if any is past `tolerance`·height.
 fn assert_joints(fit: &Fit, body: &Humanoid, tolerance: f32) {
     let want = expected(body);
@@ -41,12 +55,27 @@ fn assert_joints(fit: &Fit, body: &Humanoid, tolerance: f32) {
 }
 
 fn check_fit(pose: Pose, orientation: Orientation, units: f32) -> (Humanoid, crate::Mesh, Fit) {
-    let body = humanoid(pose);
+    check_fit_of(humanoid(pose), orientation, units, 0.05)
+}
+
+fn check_fit_of(
+    body: Humanoid,
+    orientation: Orientation,
+    units: f32,
+    tolerance: f32,
+) -> (Humanoid, crate::Mesh, Fit) {
     let file = to_file(&body.mesh, orientation, units);
     let fit = fit(&file, HEIGHT).unwrap();
-    assert_eq!(fit.orientation, orientation, "{pose:?}");
-    assert!((fit.scale - HEIGHT / units).abs() < 1e-3 * HEIGHT / units);
-    assert_joints(&fit, &body, 0.05);
+    assert_eq!(fit.orientation, orientation);
+    // Measured to the head's top voxel when the hands are higher.
+    let slack = if fit.warnings.iter().any(|w| w.contains("above the head")) {
+        0.01
+    } else {
+        1e-3
+    };
+    let ratio = fit.scale * units / HEIGHT;
+    assert!((ratio - 1.).abs() < slack, "scale off by {ratio}");
+    assert_joints(&fit, &body, tolerance);
     // Left is −X in Roblox space.
     assert!(fit.joint(Joint::LeftWrist).x < 0. && fit.joint(Joint::RightWrist).x > 0.);
     assert!(fit.extremities.left_foot.x < 0. && fit.extremities.right_hand.x > 0.);
@@ -119,13 +148,11 @@ fn assert_watertight(mesh: &crate::Mesh, what: &str) {
 /// The pose's body, fit and split, checked once and shared between tests.
 fn check_split(pose: Pose) -> &'static (Humanoid, Fit, crate::Body) {
     use std::sync::OnceLock;
-    static SPLITS: [OnceLock<(Humanoid, Fit, crate::Body)>; 3] =
-        [OnceLock::new(), OnceLock::new(), OnceLock::new()];
-    SPLITS[pose as usize].get_or_init(|| checked_split(pose))
+    static SPLITS: [OnceLock<(Humanoid, Fit, crate::Body)>; 4] = [const { OnceLock::new() }; 4];
+    SPLITS[pose as usize].get_or_init(|| checked_split(humanoid(pose)))
 }
 
-fn checked_split(pose: Pose) -> (Humanoid, Fit, crate::Body) {
-    let body = humanoid(pose);
+fn checked_split(body: Humanoid) -> (Humanoid, Fit, crate::Body) {
     let fit = fit(&body.mesh, HEIGHT).unwrap();
     let parts = split(&body.mesh, &fit).unwrap();
     assert_eq!(parts.parts.len(), 15);
@@ -209,6 +236,72 @@ fn checked_split(pose: Pose) -> (Humanoid, Fit, crate::Body) {
         );
     }
     (body, fit, parts)
+}
+
+#[test]
+fn arms_raised_above_the_head_fit() {
+    let (_, _, fit) = check_fit_of(
+        humanoid(Pose::Raised),
+        Orientation::new(Axis::PosZ, Axis::NegY).unwrap(),
+        1.,
+        0.035,
+    );
+    let body = humanoid(Pose::Raised);
+    for joint in ARM_JOINTS {
+        let error = joint_error(&fit, &body, joint);
+        // The shoulders hang off the neck's height, which the raised arms
+        // blur (both ~0.03·H high); elbows and wrists are on the arm itself.
+        let bar = if joint.to_string().contains("Shoulder") {
+            0.035
+        } else {
+            0.02
+        };
+        assert!(error <= bar, "{joint}: {error:.3}·H");
+    }
+    // The hands are above the head, but the height is still the head's.
+    assert!(fit.extremities.left_hand.y > fit.extremities.head.y);
+}
+
+#[test]
+fn arms_raised_above_the_head_split_into_fifteen_closed_parts() {
+    let (_, fit, body) = check_split(Pose::Raised);
+    // The upper arm's cut must not take the head along.
+    let head = body.part(Part::Head);
+    assert!(head.centre.y > fit.joint(Joint::Neck).y);
+    assert!(head.size.y > 0.1 * HEIGHT, "head {:?}", head.size);
+}
+
+#[test]
+fn hands_apart_from_their_forearms_fit() {
+    for (pose, gap) in [(Pose::A, 0.02), (Pose::T, 0.04), (Pose::I, 0.02)] {
+        let body = humanoid::detached_hands(pose, gap);
+        // Before the gaps were bridged the fit hung the hands from the
+        // forearms' ends: wrists 0.032·H off in the A-pose.
+        let check = humanoid::detached_hands(pose, gap);
+        let (_, _, fit) = check_fit_of(body, Orientation::ROBLOX, 1., 0.035);
+        for joint in [Joint::LeftWrist, Joint::RightWrist] {
+            let error = joint_error(&fit, &check, joint);
+            assert!(error <= 0.015, "{pose:?} {joint}: {error:.3}·H");
+        }
+    }
+}
+
+#[test]
+fn hands_apart_from_their_forearms_split_into_fifteen_closed_parts() {
+    let (body, fit, parts) = checked_split(humanoid::detached_hands(Pose::A, 0.02));
+    // Each hand is the whole detached piece, 0.09·H long.
+    for side in [Side::Left, Side::Right] {
+        let hand = parts.part(match side {
+            Side::Left => Part::LeftHand,
+            Side::Right => Part::RightHand,
+        });
+        assert!(
+            hand.size.max_element() > 0.085 * HEIGHT,
+            "{side:?} {:?}",
+            hand.size
+        );
+    }
+    let _ = (body, fit);
 }
 
 #[test]
