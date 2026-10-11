@@ -2372,6 +2372,40 @@ against `Roblox/creator-docs` rather than assumed:
     its X and Z axes, on a plain backdrop under neutral light, as
     Blender's animation workspace shows it. This uses the viewer's new
     isolation mode.
+- [x] **An auto-rigger and a skeleton view** (`crates/rbx_autorig`).
+  - **Auto-rig a mesh…** takes an unrigged humanoid (FBX, OBJ or glTF).
+    - It finds the up axis, the front (−Z, left on −X) and the height.
+    - It places the 15 R15 joints from the mesh's own shape:
+      voxelised, with geodesic extremities, cross-section profiles and
+      the Mannequin's proportions. A-pose and T-pose both work.
+    - It cuts the mesh into the 15 capped, watertight body parts.
+  - **Smooth bends** adds bone-heat skin weights: four influences per
+    vertex, summing to 255, from each part's own, parent and child
+    bones. This is the layout of Roblox's own skinned bodies.
+  - **The rig in the place**: it is built through the Rig Builder, with
+    each part shown from the local asset cache before upload.
+  - **Adjusting the fit**: joints are moved from the panel (mirrored by
+    default), and the front can be turned or flipped. Each edit re-cuts
+    and rebuilds the rig in place.
+  - **Publish** uploads one `.glb` through Open Cloud: the 15
+    `<Part>_Geo` meshes, plus an R15 armature and skin when smooth. It
+    then points every part at its uploaded mesh. Saving before
+    publishing warns that the meshes are only local.
+  - **The viewer renders skinned meshes**:
+    - It reads skinning from mesh v4/v5/v6/v7.
+    - A MeshPart is deformed live by the parts its bones name,
+      including rigs inserted or replaced after load.
+    - Rest poses are taken from the rig's joints.
+  - **The skeleton view** draws every joint as a Blender-style bone over
+    the rig, with the selected one highlighted.
+- [ ] 📋 **What the auto-rigger still does not do**:
+  - dragging joint markers directly in the 3D view (they are moved
+    from the panel);
+  - accessory attachments and cages;
+  - meshes whose hands are separate, unconnected pieces;
+  - arms raised above the head;
+  - checking against a real upload whether Roblox's importer reads the
+    `.glb` in studs and detects the R15 armature itself.
 - [ ] 📋 **What the Animation Editor still does not do**: write a
   `CurveAnimation` itself (its byte layout is undocumented), and fit the
   stage's shadow map to the rig rather than to the whole place.

@@ -2,6 +2,15 @@
 
 ## 2026-10-11
 
+- **Auto-rigger and skeleton view.** Animation Editor › Rigging ›
+  **Auto-rig a mesh…** turns an unrigged character (FBX, OBJ or glTF)
+  into an R15 rig. It fits the skeleton and cuts the mesh into the 15
+  body parts. With **Smooth bends** each part is skinned to its
+  neighbours, so elbows and knees bend without cracks. The rig is
+  previewed before upload, its joints can be adjusted, and Publish
+  uploads it through Open Cloud. The viewer now draws skinned meshes,
+  and a new skeleton view shows the rig's bones the way Blender does.
+  — @chteau
 - **Animation Editor.** A fourth document tab (Avatar › Animation), laid
   out like Blender's Animation workspace: the 3D view with a side panel,
   a dope sheet of the rig's joints under it, and a playback bar. Key
