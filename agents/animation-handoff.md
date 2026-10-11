@@ -178,10 +178,26 @@ l'upload par un modèle local.
   - Les vêtements en couches ne sont pas skinnés.
   - 18 des tests GPU `patch_parity` (ignorés par défaut) n'ont pas été
     lancés : trop lents sous lavapipe.
-- **Vue isolée**
-  - Particules et GUI attachés au rig masqués aussi.
-  - Le snapping de l'outil Move peut viser des parts cachées.
-  - Ombre ajustée à toute la place.
+- **Vue isolée** (branche `pr180/stage-playback`)
+  - Fait : les particules, beams, trails, BillboardGui et SurfaceGui du rig
+    isolé restent dessinés (`scene/isolation.rs`, ensemble `effects`).
+  - Fait : le snapping de Move ne vise que les parts du rig mis en scène
+    (`shell/drag.rs`, `sync_snap_neighbours`) ; picking et survol passaient
+    déjà par la scène, qui ignore les parts cachées.
+  - Fait : la shadow map est ajustée aux bornes du rig plus le sol de la
+    scène (`STAGE_REACH`, `Renderer::set_stage`).
+  - Fait : la lecture écrit le `Transform` des `Motor6D` et des
+    `AnimationConstraint`, jamais le `CFrame` des parts. Les parts restent
+    au repos dans le document ; `rbx_viewer::JointSolver` les pose dans le
+    miroir du thread de rendu. Les `Transform` d'origine sont remis en
+    sortie de document : une sauvegarde après lecture est identique octet
+    pour octet (test `a_save_after_playback_matches_the_save_before`).
+    Sélection, poignées et picking lisent la pose via
+    `Shell::pose_in`/`pose_out` (échange non suivi, de courte durée).
+    Le skinning n'a pas été touché : il lit les `CFrame` posés du miroir.
+  - Ouvert : l'outil Align ne lit pas la pose ; le panneau Properties
+    montre le `CFrame` de repos ; l'autosave de récupération peut capturer
+    des `Transform` en cours de lecture (non vérifié).
 - **Non vérifié contre un vrai client Roblox**
   - Direction de l'easing des poses (voir `agents/animation-research.md` §8).
   - Import par `AnimationId`.
