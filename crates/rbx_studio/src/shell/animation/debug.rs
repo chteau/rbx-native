@@ -3,6 +3,7 @@
 //! screenshots and the end-to-end run (see `main.rs`). Steps, in order:
 //! `build=r15|r6|r15-motor6d|r15-constraint` (insert the Rig Builder's stock
 //! rig, with that joint class), `graph` (the Animation Graph sub-tab),
+//! `skeleton=on|off` (the skeleton view),
 //! `curves` (the Curve Editor, the clip converted, the current joint's
 //! second Rotation X key selected), `rig=<name>` (bind the first
 //! `Model` of that name; otherwise the selection's rig), `demo` (the example
@@ -39,6 +40,13 @@ fn find_model(dom: &rbx_dom::WeakDom, name: &str) -> Option<rbx_dom::Ref> {
 }
 
 impl Shell {
+    /// Picks the scripted run back up once the auto-rigger's rig is placed.
+    pub(in crate::shell) fn resume_debug_steps(&mut self, cx: &mut Context<Self>) {
+        if let Some(rest) = self.anim.debug_rest.take() {
+            self.run_debug_steps(rest, cx);
+        }
+    }
+
     fn debug_select_curve_key(&mut self) {
         use rbx_animation::curve::Channel;
         let e = &mut self.anim.editor;
@@ -104,10 +112,24 @@ impl Shell {
             return;
         };
         self.set_document(Document::Animation, cx);
-        for step in spec.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-            let (verb, arg) = step.split_once('=').unwrap_or((step, ""));
+        let steps = spec
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+            .collect();
+        self.run_debug_steps(steps, cx);
+    }
+
+    /// Runs `steps` in order. `autorig=` works in the background, so the
+    /// steps after it wait until its rig is in the place (see
+    /// [`Shell::resume_debug_steps`]).
+    fn run_debug_steps(&mut self, steps: Vec<String>, cx: &mut Context<Self>) {
+        for (i, step) in steps.iter().enumerate() {
+            let (verb, arg) = step.split_once('=').unwrap_or((step.as_str(), ""));
             match verb {
                 "graph" => self.anim.mode = Mode::Graph,
+                "skeleton" => self.anim.skeleton = arg != "off",
                 // The Curve Editor on the clip converted to curves, with the
                 // current joint's second Rotation X key selected.
                 "curves" => {
@@ -143,7 +165,11 @@ impl Shell {
                     self.anim.fitted = false;
                 }
                 "import" => self.import_animation_file(std::path::Path::new(arg), cx),
-                "autorig" => self.start_autorig(std::path::PathBuf::from(arg), cx),
+                "autorig" => {
+                    self.anim.debug_rest = Some(steps[i + 1..].to_vec());
+                    self.start_autorig(std::path::PathBuf::from(arg), cx);
+                    return;
+                }
                 "paste" => match std::fs::read_to_string(arg) {
                     Ok(text) => {
                         cx.write_to_clipboard(ClipboardItem::new_string(text));

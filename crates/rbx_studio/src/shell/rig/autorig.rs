@@ -294,6 +294,7 @@ impl Shell {
             self.output.push(SOURCE, Feedback::Warning(note));
         }
         self.bind_rig_framed(model, !replacing, cx);
+        self.resume_debug_steps(cx);
         let triangles = cut.body.triangle_count();
         self.autorig_report(
             Ok(format!(

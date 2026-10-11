@@ -134,6 +134,8 @@ pub(super) struct Animation {
     pub(super) curve: curves::CurveView,
     /// A mesh being auto-rigged, while the auto-rigger is open.
     pub(super) autorig: Option<crate::shell::rig::AutoRig>,
+    /// A scripted run's steps waiting for the auto-rigger (see `debug`).
+    debug_rest: Option<Vec<String>>,
     /// The rig the 3D view is staged around, once the grid is sent.
     staged: Option<Ref>,
     /// Whether the rig's bones are drawn over it (Blender shows them in
@@ -163,6 +165,7 @@ impl Animation {
             ik: IkSettings::default(),
             curve: curves::CurveView::default(),
             autorig: None,
+            debug_rest: None,
             staged: None,
             skeleton: true,
             skeleton_sent: Vec::new(),
