@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-10-11
+
+- **Animation Editor.** A fourth document tab (Avatar › Animation), laid
+  out like Blender's Animation workspace: the 3D view with a side panel,
+  a dope sheet of the rig's joints under it, and a playback bar. Key
+  joints at the playhead, select, drag, copy and delete keys, pick their
+  easing, add animation events, and turn a limb with the Rotate tool to
+  key it. Clips save as `KeyframeSequence`s in
+  `ServerStorage.RBX_ANIMSAVES`, as Roblox's editor does. Playback poses
+  the rig without touching the undo history, and the rig is saved at
+  rest. `Motor6D` rigs and Avatar Joint Upgrade `AnimationConstraint`
+  rigs are edited alike, through the new `rbx_animation` crate (pose
+  easing, per-joint sampling, and an `Animator` blending tracks by
+  priority and weight as Roblox documents it). Animations come in from
+  Blender as FBX, glTF or the Rbx Animations addon's export text (also
+  RoMixamo's clips), and by `AnimationId`. A second tab authors and
+  previews Animation Graphs natively: state machines, blends, layers,
+  masks, one-shots and Luau-subset expressions over live parameters.
+  — @chteau
+
 ## 2026-10-09
 
 - **Layered clothing no longer buried or torn on real garments.** The

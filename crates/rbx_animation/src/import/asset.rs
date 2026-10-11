@@ -83,8 +83,10 @@ mod tests {
 
     #[test]
     fn reads_the_sequence_out_of_binary_and_xml_models() {
-        let mut clip = Clip::default();
-        clip.name = "Wave".into();
+        let mut clip = Clip {
+            name: "Wave".into(),
+            ..Clip::default()
+        };
         clip.set_pose(
             0.5,
             "RightUpperArm",
