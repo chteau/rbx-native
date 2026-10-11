@@ -256,6 +256,12 @@ impl Shell {
         if self.document == Document::Animation && document != Document::Animation {
             self.leave_animation(cx);
         }
+        if document == Document::Animation && self.document != Document::Animation {
+            // The stage fills the room the Animation panel leaves it: a
+            // phone screen the UI Editor left emulated would letterbox it.
+            self.viewport
+                .update(cx, |view, cx| view.set_screen(None, cx));
+        }
         self.document = document;
         self.update_discord();
         self.sync_explorer_filter(cx);
