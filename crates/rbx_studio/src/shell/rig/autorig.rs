@@ -639,6 +639,7 @@ mod tests {
         let cut = Cut {
             body: rbx_autorig::split(&body.mesh, &fit).unwrap(),
             uris: Part::ALL.iter().map(|&p| local_uri("test", p)).collect(),
+            root: fit.joint(Joint::Root),
         };
         // A rigid upload names its parts `<Part>_Geo`, a skinned one `<Part>`.
         for (suffix, skinned) in [("_Geo", false), ("", true)] {
