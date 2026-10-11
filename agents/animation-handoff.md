@@ -227,12 +227,43 @@ l'upload par un modèle local.
   - L'avant reste ambigu sur TIBY et les Kenney : l'avertissement le dit,
     Turn 90° / Flip front corrige.
   - Le genou de Rak est un peu haut (1,30 pour une hanche à 1,49 studs).
-- **Rig skinné après Publish** (modèle 116095331286071, TIBY) : nos 15
-  meshes publiés sont bien servis, mais plier le rig dans rbxstudio ne
-  donne pas le même résultat qu'avant Publish (avant-bras qui paraissent
-  raccourcis, genou moins plié). Le viewer ne lit pas `JointOffset`, et
-  l'importeur réécrit le mesh à sa façon. Cause non cherchée ; à comparer
-  avec un vrai client Roblox.
+- **Rig skinné après Publish** (TIBY 116095331286071, Woman
+  91357319063637) : **cause trouvée, corrigée dans `pr180/followups`.**
+  - L'importeur Open Cloud renvoie le modèle tourné d'un demi-tour autour
+    de Y (bras droit vers −X), en rigide comme en skinné. Le mesh servi
+    130732292096244 (avant-bras droit de Woman) est notre découpe avec x
+    et z négés : mêmes 168 sommets (pas dans le même ordre), mêmes poids.
+  - `JointOffset` = position de l'os de la partie (son propre joint, donc
+    sa `*RigAttachment`) depuis le centre de la partie. Les `Motor6D` de
+    l'importeur ont des rotations identité.
+  - Le skinning du viewer est un mélange rigide des mouvements des
+    parties : un mesh retourné dans une partie non tournée plie à
+    l'envers (avant-bras « raccourcis », genou moins plié).
+  - Correction : `swap_meshes` compare le sens du rig importé au nôtre
+    (`served_turn`) et tourne la partie d'un demi-tour sur son centre
+    (`turn_part`) : `CFrame`, `PivotOffset`, attachments/bones enfants et
+    `C0`/`C1` des joints qui la touchent. Les pivots des joints ne bougent
+    pas. Tests `a_served_mesh_turned_half_round_turns_its_part_but_no_joint`
+    et `the_served_forearm_is_the_cut_turned_half_round` (fixtures réelles
+    `tests/fixtures/autorig/woman-right-lower-arm-{cut,served}.mesh`, CC0).
+  - Côté viewer, les repos des parties étaient figés à la première
+    lecture : `Poses::rejoint` les relit quand un `Motor6D`/`Motor`
+    change (C0/C1), et ne rebinde que si un repos a bougé. Test
+    `a_part_turned_with_its_joint_rests_where_it_now_stands`.
+  - **Reste à faire** : les places déjà publiées avant ce correctif restent
+    retournées jusqu'à un nouveau Publish. Pas de nouvel upload live fait
+    pour vérifier de bout en bout. Option future : écrire le glTF face à
+    +Z pour que l'importeur ne retourne rien (non essayé).
+- **Garde des joints et undo** (`pr180/followups`)
+  - `rbx_autorig::guard` : un joint glissé reste entre son parent et son
+    enfant (10 % de marge, écart latéral ≤ moitié du segment), dans la
+    boîte du mesh ; épaule/hanche de leur côté ; racine sous la taille et
+    au-dessus des genoux. Avertissement dans Output quand il bloque. Une
+    découpe qui échoue quand même remet le fit du dernier rig qui a coupé.
+  - Undo/redo d'un glissé ou d'une saisie X/Y/Z : `autorig_follow_history`
+    suit le modèle que l'historique remet et restaure son fit (joints,
+    marqueurs, panneau).
+  - Étape de débogage `select=<Part>` dans `RBX_STUDIO_ANIMATION`.
 - **Skinning viewer**
   - WebGL/WASM et la fenêtre autonome `rbxview` déforment encore sur le
     CPU (pas de compute shader en WebGL).
