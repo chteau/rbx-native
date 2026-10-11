@@ -70,6 +70,40 @@ pub fn sample_joint(clip: &Clip, joint: &str, time: f32) -> Option<Sampled> {
     })
 }
 
+/// One face channel's value at `time` (already wrapped), clamped to 0..1,
+/// with the same per-channel interpolation and easing as a joint.
+pub fn sample_face(clip: &Clip, channel: &str, time: f32) -> Option<f32> {
+    let mut previous: Option<(f32, &crate::facs::FaceKey)> = None;
+    for (t, key) in clip.face_track(channel) {
+        if t > time {
+            let value = match previous {
+                Some((t0, from)) => {
+                    let span = t - t0;
+                    let alpha = ease(
+                        from.style,
+                        from.direction,
+                        if span > 0. { (time - t0) / span } else { 1. },
+                    );
+                    from.value + (key.value - from.value) * alpha
+                }
+                None => key.value,
+            };
+            return Some(value.clamp(0., 1.));
+        }
+        previous = Some((t, key));
+    }
+    previous.map(|(_, k)| k.value.clamp(0., 1.))
+}
+
+/// Every face channel the clip keys, at `time` (wrapped or clamped here).
+pub fn sample_faces(clip: &Clip, time: f32) -> BTreeMap<String, f32> {
+    let time = wrap(clip, time);
+    clip.face_channels()
+        .into_iter()
+        .filter_map(|c| sample_face(clip, &c, time).map(|v| (c, v)))
+        .collect()
+}
+
 /// Every joint the clip poses, at `time` (wrapped or clamped here).
 pub fn sample(clip: &Clip, time: f32) -> BTreeMap<String, Sampled> {
     let time = wrap(clip, time);

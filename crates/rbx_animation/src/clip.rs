@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 
 use crate::easing::{Direction, Style};
+use crate::facs::FaceKey;
 use crate::frame::Frame;
 
 /// `Enum.AnimationPriority`. Values are the enum's own integers.
@@ -104,6 +105,8 @@ pub struct Keyframe {
     /// Keyed by the joint's `Part1` name, which is how a `Pose` addresses it.
     pub poses: BTreeMap<String, PoseKey>,
     pub markers: Vec<Marker>,
+    /// FACS channels keyed here, by `FaceControls` property name.
+    pub faces: BTreeMap<String, FaceKey>,
 }
 
 impl Keyframe {
@@ -113,6 +116,7 @@ impl Keyframe {
             name: "Keyframe".into(),
             poses: BTreeMap::new(),
             markers: Vec::new(),
+            faces: BTreeMap::new(),
         }
     }
 }
@@ -147,6 +151,47 @@ impl Clip {
     /// its own.
     pub fn length(&self) -> f32 {
         self.keyframes.last().map_or(0., |k| k.time)
+    }
+
+    /// Whether nothing is keyed or marked here, so the keyframe can go.
+    fn empty(k: &Keyframe) -> bool {
+        k.poses.is_empty() && k.markers.is_empty() && k.faces.is_empty()
+    }
+
+    /// Every face channel the clip keys at least once, in name order.
+    pub fn face_channels(&self) -> Vec<String> {
+        let mut names: Vec<String> = self
+            .keyframes
+            .iter()
+            .flat_map(|k| k.faces.keys().cloned())
+            .collect();
+        names.sort();
+        names.dedup();
+        names
+    }
+
+    pub fn face_track<'a>(
+        &'a self,
+        channel: &'a str,
+    ) -> impl Iterator<Item = (f32, &'a FaceKey)> + 'a {
+        self.keyframes
+            .iter()
+            .filter_map(move |k| k.faces.get(channel).map(|f| (k.time, f)))
+    }
+
+    pub fn set_face(&mut self, time: f32, channel: &str, key: FaceKey) {
+        self.keyframe_mut(time)
+            .faces
+            .insert(channel.to_owned(), key);
+    }
+
+    pub fn remove_face(&mut self, time: f32, channel: &str) -> Option<FaceKey> {
+        let i = self.keyframe_index(time)?;
+        let removed = self.keyframes[i].faces.remove(channel);
+        if Clip::empty(&self.keyframes[i]) {
+            self.keyframes.remove(i);
+        }
+        removed
     }
 
     /// Every joint the clip poses at least once, in name order.
@@ -209,7 +254,7 @@ impl Clip {
     pub fn remove_pose(&mut self, time: f32, joint: &str) -> Option<PoseKey> {
         let i = self.keyframe_index(time)?;
         let removed = self.keyframes[i].poses.remove(joint);
-        if self.keyframes[i].poses.is_empty() && self.keyframes[i].markers.is_empty() {
+        if Clip::empty(&self.keyframes[i]) {
             self.keyframes.remove(i);
         }
         removed
@@ -241,6 +286,7 @@ impl Clip {
         let target = self.keyframe_mut(to);
         target.poses.append(&mut moved.poses);
         target.markers.append(&mut moved.markers);
+        target.faces.append(&mut moved.faces);
         if target.name == "Keyframe" {
             target.name = moved.name;
         }

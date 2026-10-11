@@ -6,9 +6,10 @@
 
 pub mod animator;
 pub mod clip;
-pub mod easing;
-pub mod frame;
 pub mod curve;
+pub mod easing;
+pub mod facs;
+pub mod frame;
 pub mod graph;
 pub mod ik;
 pub mod import;

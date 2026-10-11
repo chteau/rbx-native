@@ -112,3 +112,26 @@ fn duplicate_times_and_foreign_classes() {
     let folder = dom.new_instance("Folder", "F", None);
     assert!(read(&dom, folder).keyframes.is_empty());
 }
+
+#[test]
+fn face_channels_round_trip_under_the_head() {
+    use crate::facs::FaceKey;
+    let mut clip = clip();
+    clip.set_face(0.5, "JawDrop", FaceKey::new(0.75));
+    clip.set_face(0., "LeftEyeClosed", FaceKey::new(1.));
+    let mut dom = WeakDom::new();
+    let seq = write(&mut dom, None, &clip, None);
+    let back = read(&dom, seq);
+    assert_eq!(back.face_channels(), ["JawDrop", "LeftEyeClosed"]);
+    assert_eq!(back.face_track("JawDrop").next().unwrap().1.value, 0.75);
+    // The head was not keyed: its pose is only there to hold the face.
+    assert!(back.pose(0.5, "Head").is_none());
+    let first = dom.get(seq).unwrap().children()[0];
+    let head = child_named(&dom, first, "Head").unwrap();
+    assert!(child_named(&dom, head, "FaceControls").is_some());
+    let jaw = crate::sample::sample_faces(&back, 0.25);
+    assert!(
+        (jaw["JawDrop"] - 0.75).abs() < 1e-6,
+        "held before its only key"
+    );
+}

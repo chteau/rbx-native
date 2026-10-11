@@ -13,6 +13,7 @@ use rbx_dom::{Ref, Variant, WeakDom};
 
 use crate::clip::{Clip, Keyframe, Marker, PoseKey, Priority};
 use crate::easing::{Direction, Style};
+use crate::facs::{self, FaceKey};
 use crate::frame::Frame;
 use crate::rig::{cframe, Rig};
 
@@ -47,10 +48,33 @@ fn children_of<'a>(dom: &'a WeakDom, of: Ref, class: &'a str) -> impl Iterator<I
         .filter(move |&c| dom.get(c).is_some_and(|i| i.class() == class))
 }
 
+fn face_folder(dom: &WeakDom, pose: Ref) -> Option<Ref> {
+    children_of(dom, pose, "Folder").find(|&f| dom.get(f).is_some_and(|i| i.name() == facs::FOLDER))
+}
+
+fn read_faces(dom: &WeakDom, folder: Ref, into: &mut Keyframe) {
+    for number in children_of(dom, folder, "NumberPose") {
+        let name = dom
+            .get(number)
+            .map(|i| i.name().to_owned())
+            .unwrap_or_default();
+        let mut key = FaceKey::new(float(dom, number, "Value").unwrap_or(0.));
+        key.style = Style::from_value(enumeration(dom, number, "EasingStyle").unwrap_or(0));
+        key.direction =
+            Direction::from_value(enumeration(dom, number, "EasingDirection").unwrap_or(0));
+        into.faces.insert(name, key);
+    }
+}
+
 fn read_poses(dom: &WeakDom, of: Ref, into: &mut Keyframe) {
     for pose in children_of(dom, of, "Pose") {
         let weight = float(dom, pose, "Weight").unwrap_or(1.);
-        let structural = weight <= 0. && children_of(dom, pose, "Pose").next().is_some();
+        let faces = face_folder(dom, pose);
+        if let Some(folder) = faces {
+            read_faces(dom, folder, into);
+        }
+        let holds = children_of(dom, pose, "Pose").next().is_some() || faces.is_some();
+        let structural = weight <= 0. && holds;
         if !structural {
             let name = dom
                 .get(pose)
@@ -99,6 +123,7 @@ pub fn read(dom: &WeakDom, sequence: Ref) -> Clip {
         let target = clip.keyframe_mut(keyframe.time);
         target.poses.append(&mut keyframe.poses);
         target.markers.append(&mut keyframe.markers);
+        target.faces.append(&mut keyframe.faces);
         target.name = keyframe.name;
     }
     clip
@@ -175,6 +200,36 @@ pub fn write(dom: &mut WeakDom, parent: Option<Ref>, clip: &Clip, rig: Option<&R
                 let own = own.or_else(|| keyframe.poses.get(name));
                 under = write_pose(dom, under, name, own);
                 made.push((name.clone(), under));
+            }
+        }
+        if !keyframe.faces.is_empty() {
+            // The face lives under the Head pose, made weightless if the
+            // head itself has no key here.
+            let path = match rig {
+                Some(rig) if rig.joint_for("Head").is_some() => chain(rig, "Head"),
+                _ => vec!["Head".to_owned()],
+            };
+            let mut under = k;
+            for name in &path {
+                if let Some((_, existing)) = made.iter().find(|(n, _)| n == name) {
+                    under = *existing;
+                    continue;
+                }
+                under = write_pose(dom, under, name, keyframe.poses.get(name));
+                made.push((name.clone(), under));
+            }
+            let folder = dom.new_instance("Folder", facs::FOLDER, Some(under));
+            for (channel, key) in &keyframe.faces {
+                let n = dom.new_instance("NumberPose", channel, Some(folder));
+                set(dom, n, "Value", Variant::Float64(f64::from(key.value)));
+                set(dom, n, "EasingStyle", Variant::Enum(key.style.value()));
+                set(
+                    dom,
+                    n,
+                    "EasingDirection",
+                    Variant::Enum(key.direction.value()),
+                );
+                set(dom, n, "Weight", Variant::Float32(1.));
             }
         }
         for marker in &keyframe.markers {
