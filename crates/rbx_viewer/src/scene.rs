@@ -444,14 +444,6 @@ impl Scene {
         &self.gui
     }
 
-    /// Every `BillboardGui`/`SurfaceGui` this scene could place, each already
-    /// carrying the pixel size of the canvas its tree is painted into. The
-    /// renderer owns that canvas — a `Scene` has no GPU handle — and finishes
-    /// a billboard's quad, which only exists once an eye does.
-    pub(crate) fn gui_spaces(&self) -> &[SpaceGui] {
-        &self.gui_spaces
-    }
-
     /// Every image the GUI trees sample, in first-seen paint order and
     /// without repeats across the three container kinds — one download for
     /// an `ImageLabel` image that a screen and a surface both show.

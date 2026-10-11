@@ -11,11 +11,12 @@
 //! passes read the flag; the selection outline, the gizmo and the hover cue
 //! stand on [`Scene::all_placements`], which ignores it.
 
+use std::borrow::Cow;
 use std::collections::HashSet;
 
 use rbx_dom::{Ref, WeakDom};
 
-use super::{Part, Scene};
+use super::{Beam, Emitter, Part, Scene, SpaceGui, Trail};
 
 /// Which roots a scene is isolated to, and which of its referents were last
 /// found under one of them.
@@ -27,6 +28,9 @@ pub(crate) struct Isolation {
     /// with no DOM in hand to walk, and the sweep after it still has to know
     /// which of the fresh instances stand under a root.
     inside: HashSet<Ref>,
+    /// The particle emitters, beams, trails and in-world GUIs that belong to
+    /// the isolated roots and so still draw — see [`Scene::sweep_effects`].
+    effects: HashSet<Ref>,
 }
 
 impl Isolation {
@@ -81,9 +85,103 @@ impl Scene {
                 )
                 .filter(|&referent| within(&roots, referent, &parent_of))
                 .collect();
-            Isolation { roots, inside }
+            Isolation {
+                roots,
+                inside,
+                effects: HashSet::new(),
+            }
         });
         self.flag_isolated();
+        self.sweep_effects(&parent_of);
+    }
+
+    /// Re-decides which effects belong to the isolated roots: an effect
+    /// draws when it sits under a root itself, when either attachment a
+    /// beam or trail spans does, or when the part a `BillboardGui`/
+    /// `SurfaceGui` hangs off does. A sword's trail is parented to the
+    /// sword but stretched between attachments on it; a nametag lives in
+    /// `PlayerGui` but adorns the head — both belong to the rig.
+    ///
+    /// Run after [`Scene::isolate`] and after every replan of an effect list
+    /// (see `Scene::replan_effect`), which is the only time those lists
+    /// change.
+    pub(crate) fn sweep_effects(&mut self, parent_of: &impl Fn(Ref) -> Option<Ref>) {
+        let Some(isolation) = &mut self.isolation else {
+            return;
+        };
+        let roots = &isolation.roots;
+        let belongs = |refs: &[Ref]| refs.iter().any(|&at| within(roots, at, parent_of));
+        isolation.effects = self
+            .emitters
+            .iter()
+            .map(|emitter| emitter.referent)
+            .filter(|&referent| belongs(&[referent]))
+            .chain(
+                self.beams
+                    .iter()
+                    .filter(|beam| belongs(&[beam.referent, beam.attachments[0], beam.attachments[1]]))
+                    .map(|beam| beam.referent),
+            )
+            .chain(
+                self.trails
+                    .iter()
+                    .filter(|trail| {
+                        belongs(&[trail.referent, trail.attachments[0], trail.attachments[1]])
+                    })
+                    .map(|trail| trail.referent),
+            )
+            .chain(
+                self.gui_spaces
+                    .iter()
+                    .filter(|gui| belongs(&[gui.referent, gui.adornee]))
+                    .map(|gui| gui.referent),
+            )
+            .collect();
+    }
+
+    /// Whether the effect read from `referent` draws: always while nothing
+    /// is isolated, and only for the isolated roots' own effects otherwise.
+    fn effect_drawn(&self, referent: Ref) -> bool {
+        self.isolation
+            .as_ref()
+            .is_none_or(|isolation| isolation.effects.contains(&referent))
+    }
+
+    /// [`Scene::particle_emitters`] less the ones an isolation hides — what
+    /// the renderer builds from. The full list stays for asset collection.
+    pub(crate) fn drawn_particle_emitters(&self) -> Cow<'_, [Emitter]> {
+        self.drawn(&self.emitters, |emitter| emitter.referent)
+    }
+
+    /// [`Scene::beams`] less the ones an isolation hides.
+    pub(crate) fn drawn_beams(&self) -> Cow<'_, [Beam]> {
+        self.drawn(&self.beams, |beam| beam.referent)
+    }
+
+    /// [`Scene::trails`] less the ones an isolation hides.
+    pub(crate) fn drawn_trails(&self) -> Cow<'_, [Trail]> {
+        self.drawn(&self.trails, |trail| trail.referent)
+    }
+
+    /// Every `BillboardGui`/`SurfaceGui` this scene could place, each already
+    /// carrying the pixel size of the canvas its tree is painted into, less
+    /// the ones an isolation hides. The renderer owns that canvas — a `Scene`
+    /// has no GPU handle — and finishes a billboard's quad, which only exists
+    /// once an eye does.
+    pub(crate) fn drawn_gui_spaces(&self) -> Cow<'_, [SpaceGui]> {
+        self.drawn(&self.gui_spaces, |gui| gui.referent)
+    }
+
+    fn drawn<'a, T: Clone>(&self, all: &'a [T], referent: impl Fn(&T) -> Ref) -> Cow<'a, [T]> {
+        if self.isolation.is_none() {
+            return Cow::Borrowed(all);
+        }
+        Cow::Owned(
+            all.iter()
+                .filter(|item| self.effect_drawn(referent(item)))
+                .cloned()
+                .collect(),
+        )
     }
 
     /// The roots [`Scene::isolate`] last set, or `None` while the whole

@@ -529,6 +529,7 @@ impl Scene {
     pub(crate) fn replan_gui_spaces(&mut self, dom: &WeakDom, database: &ReflectionDatabase) {
         let placements = self.placements();
         self.gui_spaces = super::gui::plan_space(dom, database, &placements, &mut self.materials);
+        self.sweep_effects(&|at| dom.parent(at));
     }
 
     /// Whether any `BillboardGui`/`SurfaceGui` canvas this scene placed hangs

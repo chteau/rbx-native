@@ -60,6 +60,8 @@ fn straight_beam(segments: u32, width0: f32, width1: f32) -> Beam {
         secondary_axis1: Vec3::Y,
         segments,
         z_offset: 0.0,
+        referent: rbx_dom::Ref::new(0),
+        attachments: [rbx_dom::Ref::new(0); 2],
     }
 }
 

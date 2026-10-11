@@ -35,13 +35,13 @@ fn gloomy() -> Lighting {
 }
 
 #[test]
-fn an_isolated_frame_draws_none_of_the_places_surroundings() {
+fn an_isolated_frame_draws_none_of_the_places_surroundings_but_keeps_the_effects_pass() {
     assert_eq!(
         Surroundings::of(true),
         Surroundings {
             sky: false,
             terrain: false,
-            effects: false,
+            effects: true,
             adornments: false,
             screen_gui: false,
             local_lights: false,

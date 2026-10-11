@@ -181,11 +181,11 @@ impl Renderer {
         self.textured
             .rebuild(device, queue, &decor.groups, &quality);
         self.beams
-            .rebuild(device, queue, scene.beams(), images, &quality);
+            .rebuild(device, queue, &scene.drawn_beams(), images, &quality);
         self.trails
-            .rebuild(device, queue, scene.trails(), images, &quality);
+            .rebuild(device, queue, &scene.drawn_trails(), images, &quality);
         self.particles
-            .rebuild(device, queue, scene.particle_emitters(), images, &quality);
+            .rebuild(device, queue, &scene.drawn_particle_emitters(), images, &quality);
         self.adornments
             .replace(device, queue, self.target, scene.adornments(), images);
         // After `shaped`/`filemesh` above only for readability — the mask's
@@ -203,7 +203,7 @@ impl Renderer {
         self.gui.rebuild(
             device,
             queue,
-            (scene.gui_screens(), scene.gui_spaces()),
+            (scene.gui_screens(), &scene.drawn_gui_spaces()),
             &self.materials.bind_group,
             images,
             fonts,

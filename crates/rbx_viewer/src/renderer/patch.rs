@@ -241,9 +241,9 @@ impl Renderer {
         images: &Answered,
     ) {
         match kind {
-            EffectKind::Particles => self.particles.replace(scene.particle_emitters()),
-            EffectKind::Beams => self.beams.replace(scene.beams()),
-            EffectKind::Trails => self.trails.replace(scene.trails()),
+            EffectKind::Particles => self.particles.replace(&scene.drawn_particle_emitters()),
+            EffectKind::Beams => self.beams.replace(&scene.drawn_beams()),
+            EffectKind::Trails => self.trails.replace(&scene.drawn_trails()),
             // The only one that needs the GPU: a highlight is drawn from the
             // geometry it covers, so a re-plan is new instance buffers rather
             // than a new list of definitions.
@@ -281,7 +281,7 @@ impl Renderer {
         self.gui.rebuild(
             device,
             queue,
-            (world.scene.gui_screens(), world.scene.gui_spaces()),
+            (world.scene.gui_screens(), &world.scene.drawn_gui_spaces()),
             &self.materials.bind_group,
             world.images,
             world.fonts,

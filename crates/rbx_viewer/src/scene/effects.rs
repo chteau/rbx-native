@@ -83,6 +83,7 @@ impl Scene {
                 self.adornments = adornment::plan(dom, database, &placements);
             }
         }
+        self.sweep_effects(&|at| dom.parent(at));
     }
 }
 
@@ -275,6 +276,41 @@ mod tests {
             10.0,
             "a beam re-plan must not re-read emitters"
         );
+    }
+
+    fn drawn(scene: &Scene) -> [usize; 3] {
+        [
+            scene.drawn_particle_emitters().len(),
+            scene.drawn_beams().len(),
+            scene.drawn_trails().len(),
+        ]
+    }
+
+    // An isolated rig keeps its own effects: one parented under it, and a
+    // beam or trail stretched to one of its attachments even when the effect
+    // itself is parented elsewhere. Everything else's effects are hidden, and
+    // the full lists stay whole for asset collection.
+    #[test]
+    fn an_isolation_draws_only_the_effects_that_belong_to_its_roots() {
+        let database = ReflectionDatabase::embedded();
+        let dom = effects_place();
+        let mut scene = Scene::from_dom(&dom, &database).unwrap();
+        assert_eq!(drawn(&scene), [1, 1, 1]);
+
+        // The beam and trail hang off part 3 but end on part 5's attachment.
+        scene.isolate(Some(&[Ref::new(5)]), |at| dom.parent(at));
+        assert_eq!(drawn(&scene), [0, 1, 1]);
+        assert_eq!(scene.particle_emitters().len(), 1, "the full list is kept");
+
+        scene.isolate(Some(&[Ref::new(BASE)]), |at| dom.parent(at));
+        assert_eq!(drawn(&scene), [1, 0, 0]);
+        // A replan keeps the answer.
+        scene.replan_effect(&dom, &database, EffectKind::Particles);
+        scene.replan_effect(&dom, &database, EffectKind::Beams);
+        assert_eq!(drawn(&scene), [1, 0, 0]);
+
+        scene.isolate(None, |at| dom.parent(at));
+        assert_eq!(drawn(&scene), [1, 1, 1]);
     }
 
     // A disabled trail is still listed (its history keeps drawing — see
