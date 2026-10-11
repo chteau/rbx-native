@@ -68,6 +68,12 @@ impl WorkspaceView {
         self.pump.lines(STAGE_GRID, segments);
     }
 
+    /// Draws only `roots` (the Animation Editor's rig) on a plain backdrop,
+    /// or the whole place again with `None`.
+    pub(crate) fn set_isolation(&mut self, roots: Option<Vec<rbx_dom::Ref>>) {
+        self.pump.isolation(roots);
+    }
+
     /// Reflects one edit's `Change` log in the render thread's scene, every
     /// instance it names patched in place there, between two frames (see
     /// `rbx_viewer::Headless::apply_changes`) — the render thread owns the

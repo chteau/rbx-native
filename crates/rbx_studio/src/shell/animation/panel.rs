@@ -217,7 +217,8 @@ impl Shell {
         let key = self.anim_key_section(joint, &rotation, &position, cx);
         let events = self.anim_events_section(&marker, cx);
         let import = self.anim_import_section(cx);
-        let curve = (self.anim.mode == super::Mode::Curves).then(|| self.anim_curve_section(window, cx));
+        let curve =
+            (self.anim.mode == super::Mode::Curves).then(|| self.anim_curve_section(window, cx));
         let face = self.anim_face_section(window, cx);
         let ik = self.anim_ik_section(cx);
         v_flex()

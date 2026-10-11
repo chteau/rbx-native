@@ -85,6 +85,16 @@ impl Shell {
                     .and_then(|p| p.active(i))
             })
             .collect();
+        // Each node's live share of the output while the graph plays, as
+        // Roblox's editor shows it: "NN%" in the header, idle nodes faded.
+        let weights: Vec<Option<f32>> = (0..graph.nodes.len())
+            .map(|i| {
+                doc.player
+                    .as_ref()
+                    .filter(|_| doc.playing)
+                    .map(|p| p.weight(i))
+            })
+            .collect();
         let report = doc.bounds.clone();
         let painted = graph.clone();
 
@@ -107,6 +117,9 @@ impl Shell {
                     tokens::border2()
                 })
                 .overflow_hidden()
+                .when(weights[i].is_some_and(|w| w <= 0.0), |this| {
+                    this.opacity(0.55)
+                })
                 .child(
                     h_flex()
                         .h(px(HEADER * z))
@@ -131,6 +144,14 @@ impl Shell {
                                     .text_size(px(10. * z))
                                     .text_color(tokens::text_muted())
                                     .child(node.kind.label()),
+                            )
+                        })
+                        .when_some(weights[i], |this, w| {
+                            this.child(
+                                div()
+                                    .text_size(px(10. * z))
+                                    .text_color(tokens::text_label())
+                                    .child(format!("{:.0}%", w * 100.0)),
                             )
                         }),
                 )

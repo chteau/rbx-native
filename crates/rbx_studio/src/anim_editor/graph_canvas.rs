@@ -159,10 +159,27 @@ pub(crate) fn parse_prop(text: &str) -> Prop {
     match trimmed {
         "true" => Prop::Value(Value::Bool(true)),
         "false" => Prop::Value(Value::Bool(false)),
-        _ => match trimmed.parse::<f64>() {
+        // "0 (Infinity)" and "-1 (Random)" read as the number they show.
+        _ => match trimmed
+            .split_once(" (")
+            .map_or(trimmed, |(n, _)| n)
+            .parse::<f64>()
+        {
             Ok(n) => Prop::Value(Value::Number(n)),
             Err(_) => Prop::Value(Value::Text(text.to_owned())),
         },
+    }
+}
+
+/// [`format_prop`] for property `name`, with the editor's readings of its
+/// special values: a LoopCount of 0 shows as "0 (Infinity)", a Seed of -1
+/// as "-1 (Random)".
+pub(crate) fn format_named_prop(name: &str, prop: &Prop) -> String {
+    match prop {
+        Prop::Value(Value::Number(n)) => {
+            NodeKind::number_label(name, *n).map_or_else(|| format_prop(prop), str::to_owned)
+        }
+        _ => format_prop(prop),
     }
 }
 
@@ -228,6 +245,10 @@ mod tests {
     fn property_text_round_trips() {
         for text in ["$speed", "=speed * 2", "1.5", "true", "Loop"] {
             assert_eq!(format_prop(&parse_prop(text)), text);
+        }
+        for (name, text) in [("LoopCount", "0 (Infinity)"), ("Seed", "-1 (Random)")] {
+            let prop = parse_prop(text);
+            assert_eq!(format_named_prop(name, &prop), text);
         }
         assert_eq!(parse_prop("$"), Prop::Value(Value::Text("$".into())));
     }

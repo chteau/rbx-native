@@ -18,6 +18,10 @@ pub(super) const HANDLE: f32 = 36.0;
 /// How near the pointer must come to a key or handle to pick it.
 pub(super) const HIT: f32 = 6.0;
 
+/// Where a key's tangent handles end on screen, `(left, right)`; `None`
+/// where that side has no handle.
+pub(super) type Handles = (Option<(f32, f32)>, Option<(f32, f32)>);
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Plot {
     pub(super) timeline: Timeline,
@@ -105,7 +109,7 @@ impl Plot {
         channel: Channel,
         key: &FloatKey,
         incoming_cubic: bool,
-    ) -> (Option<(f32, f32)>, Option<(f32, f32)>) {
+    ) -> Handles {
         let (left, right) = key.tangents();
         let (x, y) = self.point(channel, key.time, key.value);
         let towards = |slope: f32, sign: f32| {

@@ -8,12 +8,12 @@
 //! half-made animation should not land in the place by accident. Its own
 //! undo stack covers the edits made in between.
 
+mod curves;
 pub(crate) mod demo;
 pub(crate) mod draft;
 pub(crate) mod graph_canvas;
 pub(crate) mod keys;
 pub(crate) mod place;
-mod curves;
 mod playback;
 mod rows;
 

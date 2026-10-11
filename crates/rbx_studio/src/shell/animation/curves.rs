@@ -299,7 +299,7 @@ impl Shell {
             .child(div().w(px(180.)).flex().child(
                 primary_button("anim-to-curves", "Convert to Curves").on_click(cx.listener(
                     |shell, _, _, cx| {
-                        shell.anim.editor.to_curves();
+                        shell.anim.editor.convert_to_curves();
                         cx.notify();
                     },
                 )),

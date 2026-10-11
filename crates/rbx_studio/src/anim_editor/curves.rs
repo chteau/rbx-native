@@ -94,7 +94,7 @@ impl AnimEditor {
     }
 
     /// Converts the clip to curves (the editor's "Convert to Curves").
-    pub(crate) fn to_curves(&mut self) -> bool {
+    pub(crate) fn convert_to_curves(&mut self) -> bool {
         if self.curves.is_some() {
             return false;
         }
@@ -105,7 +105,7 @@ impl AnimEditor {
     }
 
     /// Goes back to keyframes: the clip stays as last baked.
-    pub(crate) fn to_keyframes(&mut self) -> bool {
+    pub(crate) fn back_to_keyframes(&mut self) -> bool {
         if self.curves.is_none() {
             return false;
         }

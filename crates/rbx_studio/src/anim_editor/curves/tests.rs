@@ -34,8 +34,8 @@ fn head_x(e: &AnimEditor, time: f32) -> f32 {
 #[test]
 fn converting_to_curves_keeps_the_motion_and_undoes() {
     let mut e = editor();
-    assert!(e.to_curves());
-    assert!(!e.to_curves(), "already curves");
+    assert!(e.convert_to_curves());
+    assert!(!e.convert_to_curves(), "already curves");
     let curves = e.curves.as_ref().unwrap();
     assert_eq!(
         curves.joints["Head"].curve(Channel::PositionX).keys.len(),
@@ -46,7 +46,7 @@ fn converting_to_curves_keeps_the_motion_and_undoes() {
     assert!(e.curves.is_none());
     assert!(e.redo());
     assert!(e.curves.is_some());
-    assert!(e.to_keyframes());
+    assert!(e.back_to_keyframes());
     assert!(e.curves.is_none());
     assert!((head_x(&e, 0.5) - 0.5).abs() < 1e-4);
 }
@@ -54,7 +54,7 @@ fn converting_to_curves_keeps_the_motion_and_undoes() {
 #[test]
 fn editing_a_key_rebakes_the_clip() {
     let mut e = editor();
-    e.to_curves();
+    e.convert_to_curves();
     e.select_curve_key(id(1.0), false);
     assert!(e.is_curve_selected(&id(1.0)));
     e.set_curve_value(3.0);
@@ -69,7 +69,7 @@ fn editing_a_key_rebakes_the_clip() {
 #[test]
 fn cubic_keys_bake_into_frames_and_tangents_shape_them() {
     let mut e = editor();
-    e.to_curves();
+    e.convert_to_curves();
     e.select_curve_key(id(0.0), false);
     e.set_curve_interpolation(Interpolation::Cubic);
     assert_eq!(e.curve_interpolation(), Some(Interpolation::Cubic));
@@ -88,7 +88,7 @@ fn cubic_keys_bake_into_frames_and_tangents_shape_them() {
 #[test]
 fn inserting_and_deleting_keys() {
     let mut e = editor();
-    e.to_curves();
+    e.convert_to_curves();
     e.set_time(0.5);
     e.insert_curve_key("Head", Channel::PositionX);
     let key = e.curve_key(&id(0.5)).unwrap();
@@ -105,7 +105,7 @@ fn inserting_and_deleting_keys() {
 #[test]
 fn dragging_moves_time_and_value_as_one_undo() {
     let mut e = editor();
-    e.to_curves();
+    e.convert_to_curves();
     e.select_curve_key(id(1.0), false);
     e.begin_curve_drag();
     e.curve_drag_by(0.2, 0.5, 0.0);
@@ -125,7 +125,7 @@ fn dragging_moves_time_and_value_as_one_undo() {
 #[test]
 fn generate_curve_bakes_a_bounce_between_the_selected_keys() {
     let mut e = editor();
-    e.to_curves();
+    e.convert_to_curves();
     e.select_curve_key(id(0.0), false);
     assert!(e.generate_curve(Style::Bounce, Direction::Out));
     let keys = &e.curves.as_ref().unwrap().joints["Head"]
@@ -138,7 +138,7 @@ fn generate_curve_bakes_a_bounce_between_the_selected_keys() {
 #[test]
 fn keying_from_the_viewport_writes_curve_keys() {
     let mut e = editor();
-    e.to_curves();
+    e.convert_to_curves();
     e.set_time(0.5);
     e.key(
         "Head",
@@ -154,7 +154,7 @@ fn keying_from_the_viewport_writes_curve_keys() {
 #[test]
 fn settings_and_face_keys_survive_with_curves() {
     let mut e = editor();
-    e.to_curves();
+    e.convert_to_curves();
     e.edit(|c| c.looped = true);
     assert!(e.curves.as_ref().unwrap().looped);
     e.set_time(0.5);
@@ -168,7 +168,7 @@ fn settings_and_face_keys_survive_with_curves() {
 #[test]
 fn a_tangent_drag_and_a_retime_are_each_one_undo() {
     let mut e = editor();
-    e.to_curves();
+    e.convert_to_curves();
     e.select_curve_key(id(0.0), false);
     e.set_curve_interpolation(Interpolation::Cubic);
     e.begin_curve_drag();

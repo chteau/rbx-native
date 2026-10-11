@@ -16,7 +16,7 @@ use super::super::widgets::{
     field_row_owned, keyed_button, label, picker, primary_button, section, wide_button,
 };
 use super::Shell;
-use crate::anim_editor::graph_canvas::format_prop;
+use crate::anim_editor::graph_canvas::format_named_prop;
 use crate::anim_editor::place;
 use crate::shell::menu::{self, MenuId};
 use crate::tokens;
@@ -136,8 +136,12 @@ impl Shell {
         let node = self.anim.graph.graph.nodes[n].clone();
         let mut out = section("Node").child(label(format!("{} · {}", node.kind.label(), node.id)));
         for (prop, value) in &node.props {
-            let input =
-                self.anim_graph_input(&format!("prop:{n}:{prop}"), &format_prop(value), window, cx);
+            let input = self.anim_graph_input(
+                &format!("prop:{n}:{prop}"),
+                &format_named_prop(prop, value),
+                window,
+                cx,
+            );
             out = out.child(field_row_owned(prop, &input));
         }
         for (k, pin) in node.inputs.iter().enumerate() {
@@ -148,7 +152,7 @@ impl Shell {
             for (prop, value) in &pin.props {
                 let input = self.anim_graph_input(
                     &format!("pin:{n}:{k}:{prop}"),
-                    &format_prop(value),
+                    &format_named_prop(prop, value),
                     window,
                     cx,
                 );

@@ -2,7 +2,9 @@
 //! startup and runs each step as the matching click would, for scripted
 //! screenshots and the end-to-end run (see `main.rs`). Steps, in order:
 //! `build=r15|r6|r15-motor6d|r15-constraint` (insert the Rig Builder's stock
-//! rig, with that joint class), `graph` (the Animation Graph sub-tab), `rig=<name>` (bind the first
+//! rig, with that joint class), `graph` (the Animation Graph sub-tab),
+//! `curves` (the Curve Editor, the clip converted, the current joint's
+//! second Rotation X key selected), `rig=<name>` (bind the first
 //! `Model` of that name; otherwise the selection's rig), `demo` (the example
 //! walk cycle), `import=<path>` (an FBX/glTF), `paste=<path>` (a file holding
 //! the Blender addon's clipboard text), `time=<seconds>`, `joint=<name>`
@@ -36,6 +38,27 @@ fn find_model(dom: &rbx_dom::WeakDom, name: &str) -> Option<rbx_dom::Ref> {
 }
 
 impl Shell {
+    fn debug_select_curve_key(&mut self) {
+        use rbx_animation::curve::Channel;
+        let e = &mut self.anim.editor;
+        let Some(joint) = e.joint.clone() else { return };
+        let first = e
+            .curves
+            .as_ref()
+            .and_then(|c| c.joints.get(&joint))
+            .and_then(|j| j.curve(Channel::RotationX).keys.get(1).map(|k| k.time));
+        if let Some(time) = first {
+            e.select_curve_key(
+                crate::anim_editor::CurveKeyId {
+                    joint,
+                    channel: Channel::RotationX,
+                    time,
+                },
+                false,
+            );
+        }
+    }
+
     fn debug_turn(&mut self, arg: &str, cx: &mut Context<Self>) {
         let Some((part_name, degrees)) = arg.split_once(':') else {
             return;
@@ -84,6 +107,13 @@ impl Shell {
             let (verb, arg) = step.split_once('=').unwrap_or((step, ""));
             match verb {
                 "graph" => self.anim.mode = Mode::Graph,
+                // The Curve Editor on the clip converted to curves, with the
+                // current joint's second Rotation X key selected.
+                "curves" => {
+                    self.anim.mode = Mode::Curves;
+                    self.anim.editor.convert_to_curves();
+                    self.debug_select_curve_key();
+                }
                 "build" => {
                     use crate::shell::rig::{JointStyle, RigType};
                     let (rig_type, joints) = match arg {

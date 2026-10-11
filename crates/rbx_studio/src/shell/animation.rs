@@ -88,12 +88,20 @@ pub(super) struct Bound {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Gesture {
     Scrub,
-    MoveKeys { from_x: f32 },
-    Pan { last_x: f32 },
+    MoveKeys {
+        from_x: f32,
+    },
+    Pan {
+        last_x: f32,
+    },
     /// Curve keys dragged in time and value from where the press landed.
-    CurveKeys { from: (f32, f32) },
+    CurveKeys {
+        from: (f32, f32),
+    },
     /// The selected curve key's left or right tangent handle.
-    Tangent { left: bool },
+    Tangent {
+        left: bool,
+    },
 }
 
 /// Manage IK: whether a limb dragged with the Move tool is solved as a
@@ -191,6 +199,7 @@ impl Shell {
         let model = bound.model;
         self.viewport.update(cx, |viewport, _| {
             viewport.set_stage_grid(grid);
+            viewport.set_isolation(Some(vec![model]));
         });
         self.anim.staged = Some(model);
     }
@@ -200,6 +209,7 @@ impl Shell {
         if self.anim.staged.take().is_some() {
             self.viewport.update(cx, |viewport, _| {
                 viewport.set_stage_grid(Vec::new());
+                viewport.set_isolation(None);
             });
         }
     }

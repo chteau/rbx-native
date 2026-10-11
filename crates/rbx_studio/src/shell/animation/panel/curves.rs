@@ -99,7 +99,7 @@ impl Shell {
                 .child(h_flex().child(
                     primary_button("anim-convert-curves", "Convert to Curves").on_click(
                         cx.listener(|shell, _, _, cx| {
-                            shell.anim.editor.to_curves();
+                            shell.anim.editor.convert_to_curves();
                             cx.notify();
                         }),
                     ),
@@ -240,7 +240,7 @@ impl Shell {
             .child(h_flex().gap(px(6.)).child(
                 wide_button("anim-to-keyframes", "Back to keyframes", true).on_click(cx.listener(
                     |shell, _, _, cx| {
-                        shell.anim.editor.to_keyframes();
+                        shell.anim.editor.back_to_keyframes();
                         cx.notify();
                     },
                 )),

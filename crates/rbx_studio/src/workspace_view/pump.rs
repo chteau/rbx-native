@@ -76,6 +76,9 @@ enum Command {
     },
     /// The renderer's tuned constants — see `Headless::set_calibration`.
     Calibration(Calibration),
+    /// Draws only these instances on a plain backdrop, or everything again
+    /// — see `Headless::set_isolation`.
+    Isolation(Option<Vec<rbx_dom::Ref>>),
     /// Whether a part in front of the selection hides its outline box — see
     /// `Headless::set_selection_occluded`.
     SelectionOccluded(bool),
@@ -237,6 +240,10 @@ impl Pump {
 
     pub(super) fn look_at(&self, eye: [f32; 3], target: [f32; 3]) {
         let _ = self.commands.send(Command::LookAt { eye, target });
+    }
+
+    pub(super) fn isolation(&self, roots: Option<Vec<rbx_dom::Ref>>) {
+        let _ = self.commands.send(Command::Isolation(roots));
     }
 
     pub(super) fn calibration(&self, calibration: Calibration) {
@@ -735,6 +742,7 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::CameraFeel(feel) => rendering.viewer.set_camera_feel(feel),
         // Studio's own default field of view.
         Command::LookAt { eye, target } => rendering.viewer.open_at(eye, target, 70.0),
+        Command::Isolation(roots) => rendering.viewer.set_isolation(roots),
         Command::Calibration(calibration) => rendering.viewer.set_calibration(calibration),
         Command::SelectionOccluded(occluded) => rendering.viewer.set_selection_occluded(occluded),
         Command::Selection(selected) => rendering.viewer.set_selection(&selected),
