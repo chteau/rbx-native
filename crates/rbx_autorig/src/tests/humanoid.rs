@@ -21,6 +21,9 @@ pub enum Pose {
     /// Arms raised 30° off vertical, the hands above the head (a "Y").
     /// The height is still the head's: the hands stick out above it.
     Raised,
+    /// Arms 10° from vertical: the upper arm pressed into the torso's flank
+    /// down to the elbow.
+    Pressed,
 }
 
 pub struct Humanoid {
@@ -208,6 +211,7 @@ fn build(pose: Pose, step: f32, hand_gap: f32) -> Humanoid {
         Pose::T => (90., 0.),
         Pose::I => (18., 0.),
         Pose::Raised => (150., 4.),
+        Pose::Pressed => (10., 0.),
     };
     let mut joints = [Vec3::ZERO; 15];
     let mut set = |j: Joint, p: Vec3| joints[j as usize] = p;

@@ -148,12 +148,29 @@ fn assert_watertight(mesh: &crate::Mesh, what: &str) {
 /// The pose's body, fit and split, checked once and shared between tests.
 fn check_split(pose: Pose) -> &'static (Humanoid, Fit, crate::Body) {
     use std::sync::OnceLock;
-    static SPLITS: [OnceLock<(Humanoid, Fit, crate::Body)>; 4] = [const { OnceLock::new() }; 4];
-    SPLITS[pose as usize].get_or_init(|| checked_split(humanoid(pose)))
+    static SPLITS: [OnceLock<(Humanoid, Fit, crate::Body)>; 5] = [const { OnceLock::new() }; 5];
+    SPLITS[pose as usize].get_or_init(|| {
+        let body = humanoid(pose);
+        if pose == Pose::Pressed {
+            // The fit traces an arm lying along the flank into the torso
+            // (shoulders at the hips): this pose tests what follows the fit,
+            // on the true joints.
+            let mut fit = fit(&body.mesh, HEIGHT).unwrap();
+            for joint in Joint::ALL {
+                fit.set_joint(joint, expected(&body)[joint as usize]);
+            }
+            return checked_split_with(body, fit);
+        }
+        checked_split(body)
+    })
 }
 
 fn checked_split(body: Humanoid) -> (Humanoid, Fit, crate::Body) {
     let fit = fit(&body.mesh, HEIGHT).unwrap();
+    checked_split_with(body, fit)
+}
+
+fn checked_split_with(body: Humanoid, fit: Fit) -> (Humanoid, Fit, crate::Body) {
     let parts = split(&body.mesh, &fit).unwrap();
     assert_eq!(parts.parts.len(), 15);
     for shell in &body.shells {

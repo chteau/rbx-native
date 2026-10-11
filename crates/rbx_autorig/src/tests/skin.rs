@@ -17,7 +17,7 @@ fn skinned(
     &'static Body,
     &'static Skin,
 ) {
-    static SKINS: [OnceLock<Skin>; 4] = [const { OnceLock::new() }; 4];
+    static SKINS: [OnceLock<Skin>; 5] = [const { OnceLock::new() }; 5];
     let (human, fit, body) = check_split(pose);
     let skin = SKINS[pose as usize].get_or_init(|| crate::weights(&human.mesh, fit, body));
     (human, fit, body, skin)
@@ -151,6 +151,72 @@ fn vertices_deep_inside_a_part_follow_its_own_bone() {
         }
         eprint!("{report}");
     }
+}
+
+/// How many of `limb`'s wall vertices lie between 0.35 and 0.8 of the way
+/// down its bone (and 0.06·H clear of both joints), and the most weight any
+/// of them gives `other`.
+fn bleed(pose: Pose, limb: Part, other: Part) -> (usize, u8) {
+    let (_, fit, body, skin) = skinned(pose);
+    let piece = body.part(limb);
+    let ps = skin.part(limb);
+    let start = fit.joint(limb.joint());
+    let end = fit.joint(
+        Joint::ALL
+            .into_iter()
+            .find(|c| c.parent_part() == Some(limb))
+            .unwrap(),
+    );
+    let (mut count, mut most) = (0, 0);
+    for (i, v) in piece
+        .mesh
+        .positions
+        .iter()
+        .enumerate()
+        .take(first_cap_vertex(piece))
+    {
+        let q = piece.centre + *v;
+        let t = along(q, start, end);
+        let clear = (q - start).length() > 0.06 * HEIGHT && (q - end).length() > 0.06 * HEIGHT;
+        // Flesh of the limb, not torso flank the cut handed to it.
+        let segs = crate::split::segments(fit);
+        let nearest = |own: bool| {
+            segs.iter()
+                .filter(|s| (s.0 == limb) == own)
+                .map(|s| crate::fit::segment_distance(q, s.1, s.2))
+                .fold(f32::INFINITY, f32::min)
+        };
+        if (0.35..=0.8).contains(&t) && clear && nearest(true) <= 0.6 * nearest(false) {
+            count += 1;
+            most = most.max(ps.weight(i, other));
+        }
+    }
+    (count, most)
+}
+
+#[test]
+fn a_limb_pressed_against_the_body_keeps_none_of_its_weight() {
+    // Before the parent's reach was capped along the child bone, an I-pose
+    // upper arm kept up to 22/255 of UpperTorso 0.43 of the way to the
+    // elbow, an A-pose one 13/255, the (touching) thighs up to 16/255 of
+    // LowerTorso, and the pressed arm 3/255.
+    let mut report = String::new();
+    let mut worst = 0;
+    for pose in [Pose::Pressed, Pose::I, Pose::A, Pose::T] {
+        for (limb, other) in [
+            (Part::LeftUpperArm, Part::UpperTorso),
+            (Part::RightUpperArm, Part::UpperTorso),
+            (Part::LeftUpperLeg, Part::LowerTorso),
+            (Part::RightUpperLeg, Part::LowerTorso),
+        ] {
+            let (count, most) = bleed(pose, limb, other);
+            report += &format!("{pose:?} {limb}: {count} vertices, {other} up to {most}/255\n");
+            assert!(count > 0, "{report}");
+            worst = worst.max(most);
+        }
+    }
+    eprint!("{report}");
+    assert!(worst <= 2, "{report}");
 }
 
 #[test]

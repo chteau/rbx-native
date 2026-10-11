@@ -159,6 +159,9 @@ struct Heat {
 const TOLERANCE: f64 = 1e-6;
 const MAX_ITERATIONS: usize = 3000;
 
+/// How far down a child bone (of its length) its parent's weight may reach.
+const CHILD_BLEND: f32 = 0.3;
+
 impl Heat {
     fn solve(mesh: &Mesh, fit: &Fit) -> Heat {
         let triangles: Vec<[u32; 3]> = mesh.valid_triangles().collect();
@@ -191,15 +194,25 @@ impl Heat {
         // the one the cut itself may reach, which just holds the limb, and
         // never past the middle of the joint's child bone, so a blend stops
         // half way down a limb even where the limb lies against the body.
+        //
+        // On the child's side the parent is also seen only within
+        // `CHILD_BLEND` of the child bone's length, measured along that bone:
+        // a limb pressed against the body lies inside the ball far down its
+        // length (the cut reaches far along it), and the parent's heat would
+        // otherwise carry that far down the limb.
         let mut ball = [0f32; 15];
+        let mut axis = [(Vec3::ZERO, f32::INFINITY); 15];
         for joint in Joint::ALL {
             if joint != Joint::Root {
                 let (_, normal) = plane(fit, joint);
-                let bone = segs
-                    .iter()
-                    .find(|s| s.0 == joint.part())
-                    .map_or(f32::INFINITY, |s| (s.2 - s.1).length());
+                let child = segs.iter().find(|s| s.0 == joint.part());
+                let bone = child.map_or(f32::INFINITY, |s| (s.2 - s.1).length());
                 ball[joint.index()] = reach(&grid, fit, joint, normal, h).min(0.5 * bone);
+                if let Some(&(_, a, b)) = child {
+                    if let Some(d) = (b - a).try_normalize() {
+                        axis[joint.index()] = (d, CHILD_BLEND * bone);
+                    }
+                }
             }
         }
 
@@ -236,6 +249,13 @@ impl Heat {
                 };
                 if let Some(j) = joint {
                     if (p - fit.joint(j)).length() > ball[j.index()] {
+                        continue;
+                    }
+                    let (d, reach) = axis[j.index()];
+                    if part != owner
+                        && owner.parent() == Some(part)
+                        && (p - fit.joint(j)).dot(d) > reach
+                    {
                         continue;
                     }
                 }
