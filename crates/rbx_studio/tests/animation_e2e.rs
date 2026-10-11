@@ -1,5 +1,6 @@
 //! The Animation Editor end to end, through the real `rbxstudio` window: a
-//! stock rig inserted, a walk keyed, saved as a `KeyframeSequence`, a
+//! stock rig inserted, a walk keyed, an arm turned in the 3D view and read
+//! back as a key, saved as a `KeyframeSequence`, a
 //! locomotion graph saved beside it, the place written with Save As, and the
 //! editor quit. Every step is driven by `RBX_STUDIO_ANIMATION` (see
 //! `shell::animation::debug`), through the same calls the clicks make. The
@@ -119,6 +120,18 @@ fn check(dom: &WeakDom, kind: JointKind) {
         walk.joints().iter().all(|j| rig.joint_for(j).is_some()),
         "keys only real joints"
     );
+    // The arm turned in the 3D view became its key at the playhead: the
+    // walk holds it straight there, so the key is the turn itself.
+    let turned = walk
+        .pose(0.3, "LeftUpperArm")
+        .expect("a key at the playhead")
+        .cframe;
+    let degrees = turned.rotation.to_axis_angle().1.to_degrees();
+    assert!((degrees - 40.0).abs() < 0.5, "the key turns {degrees}°");
+    assert!(
+        turned.position.length() < 1e-3,
+        "about the shoulder, not shifted"
+    );
     let markers: usize = walk.keyframes.iter().map(|k| k.markers.len()).sum();
     assert_eq!(markers, 2, "the two footstep events");
 
@@ -150,7 +163,8 @@ fn keys_saves_and_writes_a_walk_for_either_joint_class() {
         let dir: PathBuf =
             std::env::temp_dir().join(format!("rbx_anim_e2e_{build}_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let steps = format!("build={build},demo,time=0.3,save,graph-demo,save-graph");
+        let steps =
+            format!("build={build},demo,time=0.3,turn=LeftUpperArm:40,save,graph-demo,save-graph");
         let dom = session(&display, &dir, &steps);
         check(&dom, kind);
         let _ = std::fs::remove_dir_all(&dir);

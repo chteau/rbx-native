@@ -50,7 +50,7 @@ impl Shell {
 
     /// Writes each rig part's `CFrame` for the current pose, and first reads
     /// back any part moved by something else (a viewport drag) as a key.
-    pub(super) fn pose_rig(&mut self, cx: &mut Context<Self>) {
+    pub(in crate::shell::animation) fn pose_rig(&mut self, cx: &mut Context<Self>) {
         self.read_back_edits();
         let transforms = self.current_transforms();
         let Some(bound) = &mut self.anim.bound else {

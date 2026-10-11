@@ -9,8 +9,10 @@
 //! (select that channel and its key at the playhead), `keyframe` (select
 //! every key at the playhead), `save`, `graph-demo` (the example
 //! locomotion graph), `speed=<n>` (set the graph's `speed`), `play`,
-//! `node=<index>` (select a graph node), `save-graph`, `write=<path>` (File ›
-//! Save As to that path) and `quit`.
+//! `node=<index>` (select a graph node), `save-graph`, `turn=<part>:<degrees>`
+//! (rotate a rig part about its own X axis the way a Rotate-tool drag writes
+//! it, then run one editor frame, which reads it back as a key),
+//! `write=<path>` (File › Save As to that path) and `quit`.
 
 use gpui_kit::*;
 use rbx_animation::graph::Value;
@@ -34,6 +36,45 @@ fn find_model(dom: &rbx_dom::WeakDom, name: &str) -> Option<rbx_dom::Ref> {
 }
 
 impl Shell {
+    fn debug_turn(&mut self, arg: &str, cx: &mut Context<Self>) {
+        let Some((part_name, degrees)) = arg.split_once(':') else {
+            return;
+        };
+        let Ok(degrees) = degrees.parse::<f32>() else {
+            return;
+        };
+        // A frame first, so the rig is posed and what follows is an edit.
+        self.pose_rig(cx);
+        let Some(part) = self
+            .anim
+            .bound
+            .as_ref()
+            .and_then(|b| b.rig.joint_for(part_name))
+            .map(|j| j.part1)
+        else {
+            return;
+        };
+        let Some(rbx_dom::Variant::CFrame(now)) = self
+            .dom
+            .get(part)
+            .and_then(|i| i.properties().get("CFrame"))
+            .cloned()
+        else {
+            return;
+        };
+        let turned = rbx_animation::Frame::from_data(&now).mul(&rbx_animation::Frame::angles(
+            degrees.to_radians(),
+            0.0,
+            0.0,
+        ));
+        let _ = self
+            .dom
+            .set_property(part, "CFrame", rbx_dom::Variant::CFrame(turned.to_data()));
+        let changes = self.dom.take_changes();
+        self.reflect_changes(&changes, cx);
+        self.pose_rig(cx);
+    }
+
     pub(in crate::shell) fn apply_debug_animation(&mut self, cx: &mut Context<Self>) {
         let Ok(spec) = std::env::var(VARIABLE) else {
             return;
@@ -117,6 +158,7 @@ impl Shell {
                 "play" => self.toggle_animation_playback(cx),
                 "node" => self.anim.graph.selected = arg.parse().ok(),
                 "save-graph" => self.anim_save_graph(cx),
+                "turn" => self.debug_turn(arg, cx),
                 "write" => self.save_as(std::path::Path::new(arg), cx),
                 "quit" => cx.quit(),
                 _ => self.anim.status = Some(format!("{VARIABLE}: unknown step {verb}").into()),
