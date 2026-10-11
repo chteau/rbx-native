@@ -346,17 +346,21 @@ impl Shell {
                     let changes = shell.dom.take_changes();
                     shell.reflect_changes(&changes, cx);
                     shell.record_history_change(changes);
+                    let id = imported.asset_id;
                     let report = if swapped == 15 {
-                        Ok("Published: every part now uses its uploaded mesh".to_owned())
+                        Ok(format!(
+                            "Published as model {id}: every part now uses its uploaded mesh"
+                        ))
                     } else {
                         Err(format!(
-                            "Published, but only {swapped} of 15 parts were found in the upload"
+                            "Published as model {id}, but only {swapped} of 15 parts were found in the upload"
                         ))
                     };
                     shell.autorig_report(report, cx);
                 }
                 Err(err) => shell.autorig_report(Err(err), cx),
             });
+            let _ = this.update(cx, |shell, cx| shell.resume_debug_steps(cx));
         })
         .detach();
     }
@@ -381,6 +385,15 @@ impl Shell {
 /// Points each body part of `model` at the mesh the upload made of it: the
 /// imported `MeshPart` named `<Part>_Geo` (or plain `<Part>`). Returns how
 /// many parts were found.
+///
+/// A rigid upload comes back as `<Part>_Geo` parts with no joints; a skinned
+/// one is recognised as R15 and comes back as `<Part>` parts with the
+/// importer's own Motor6Ds, rig attachments, Humanoid and
+/// `HumanoidRootPart` (models 95056738325785 and 91357319063637). Only the
+/// mesh and the skinning flags are taken, so the rig keeps its own joints
+/// and nothing is doubled. `JointOffset` is the bone's position from the
+/// part's centre; the importer's centre is the cut part's, as its
+/// `InitialSize` matches the cut's size exactly.
 fn swap_meshes(dom: &mut WeakDom, model: Ref, imported: &WeakDom) -> usize {
     let mut found = 0;
     for part in Part::ALL {
@@ -404,8 +417,15 @@ fn swap_meshes(dom: &mut WeakDom, model: Ref, imported: &WeakDom) -> usize {
             continue;
         };
         let _ = dom.set_property(target, "MeshId", mesh);
-        if let Some(size) = source.properties().get("InitialSize").cloned() {
-            let _ = dom.set_property(target, "InitialSize", size);
+        for property in [
+            "InitialSize",
+            "HasSkinnedMesh",
+            "HasJointOffset",
+            "JointOffset",
+        ] {
+            if let Some(value) = source.properties().get(property).cloned() {
+                let _ = dom.set_property(target, property, value);
+            }
         }
         found += 1;
     }
@@ -508,6 +528,69 @@ mod tests {
             ))))
         );
         assert!(has_local_meshes(&dom, model));
+    }
+
+    #[test]
+    fn publishing_takes_each_parts_mesh_and_skinning_but_not_the_joints() {
+        let body = humanoid(Pose::A);
+        let fit = rbx_autorig::fit(&body.mesh, HEIGHT).unwrap();
+        let cut = Cut {
+            body: rbx_autorig::split(&body.mesh, &fit).unwrap(),
+            uris: Part::ALL.iter().map(|&p| local_uri("test", p)).collect(),
+        };
+        // A rigid upload names its parts `<Part>_Geo`, a skinned one `<Part>`.
+        for (suffix, skinned) in [("_Geo", false), ("", true)] {
+            let (mut dom, model) = rig_of(&cut);
+            let joints = |dom: &WeakDom| {
+                let (mut pending, mut count) = (vec![model], 0);
+                while let Some(next) = pending.pop() {
+                    let instance = dom.get(next).unwrap();
+                    count += usize::from(instance.class() == "Motor6D");
+                    pending.extend(instance.children());
+                }
+                count
+            };
+            let before = joints(&dom);
+            let mut imported = WeakDom::new();
+            let root = imported.new_instance("Model", "Upload", None);
+            for (i, part) in Part::ALL.iter().enumerate() {
+                let name = format!("{}{suffix}", part.name());
+                let p = imported.new_instance("MeshPart", &name, Some(root));
+                let uri = format!("rbxassetid://{}", 100 + i);
+                let props = [
+                    ("MeshId", Variant::Content(rbx_dom::Content::Uri(uri))),
+                    ("HasSkinnedMesh", Variant::Bool(skinned)),
+                    ("HasJointOffset", Variant::Bool(skinned)),
+                    (
+                        "JointOffset",
+                        Variant::Vector3(rbx_dom::Vector3Data {
+                            x: 0.,
+                            y: -0.3,
+                            z: 0.,
+                        }),
+                    ),
+                ];
+                for (property, value) in props {
+                    imported.set_property(p, property, value).unwrap();
+                }
+                // The importer's own joint, which must not come across.
+                imported.new_instance("Motor6D", part.name(), Some(p));
+            }
+            assert_eq!(swap_meshes(&mut dom, model, &imported), 15);
+            assert!(!has_local_meshes(&dom, model));
+            assert_eq!(joints(&dom), before);
+            let rig = rbx_animation::Rig::read(&dom, model);
+            let head = rig.joint_for("Head").unwrap().part1;
+            let props = dom.get(head).unwrap().properties();
+            assert_eq!(props.get("HasSkinnedMesh"), Some(&Variant::Bool(skinned)));
+            assert_eq!(
+                props.get("MeshId"),
+                Some(&Variant::Content(rbx_dom::Content::Uri(format!(
+                    "rbxassetid://{}",
+                    100 + Part::ALL.iter().position(|&p| p == Part::Head).unwrap()
+                ))))
+            );
+        }
     }
 
     #[test]

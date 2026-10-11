@@ -8,7 +8,8 @@
 //! second Rotation X key selected), `rig=<name>` (bind the first
 //! `Model` of that name; otherwise the selection's rig), `demo` (the example
 //! walk cycle), `import=<path>` (an FBX/glTF), `autorig=<path>` (auto-rig an
-//! unrigged mesh, in the background), `paste=<path>` (a file holding
+//! unrigged mesh, in the background; then `rigid`/`smooth`, `front=1|2` and
+//! `publish` drive its panel, each waited for), `paste=<path>` (a file holding
 //! the Blender addon's clipboard text), `time=<seconds>`, `joint=<name>`
 //! (select that channel and its key at the playhead), `keyframe` (select
 //! every key at the playhead), `save`, `graph-demo` (the example
@@ -169,6 +170,33 @@ impl Shell {
                     self.anim.debug_rest = Some(steps[i + 1..].to_vec());
                     self.start_autorig(std::path::PathBuf::from(arg), cx);
                     return;
+                }
+                // The auto-rigger's Rigid parts / Smooth bends toggle, then a
+                // re-cut the following steps wait for.
+                "rigid" | "smooth" => {
+                    let smooth = verb == "smooth";
+                    if let Some(rig) = self.anim_autorig_mut() {
+                        rig.smooth = smooth;
+                        self.anim.debug_rest = Some(steps[i + 1..].to_vec());
+                        self.recut_autorig(cx);
+                        return;
+                    }
+                }
+                // Turn 90° (`front=1`) or Flip front (`front=2`).
+                "front" => {
+                    if self.anim_autorig().is_some() {
+                        self.anim.debug_rest = Some(steps[i + 1..].to_vec());
+                        self.autorig_turn(arg.parse().unwrap_or(1), cx);
+                        return;
+                    }
+                }
+                // The auto-rigger's Publish; the following steps wait for it.
+                "publish" => {
+                    if self.anim_autorig().is_some() {
+                        self.anim.debug_rest = Some(steps[i + 1..].to_vec());
+                        self.publish_autorig(cx);
+                        return;
+                    }
                 }
                 "paste" => match std::fs::read_to_string(arg) {
                     Ok(text) => {
