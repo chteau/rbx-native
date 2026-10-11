@@ -134,6 +134,10 @@ impl Scene {
         // A part a skinned mesh binds to bends that mesh wherever it moves,
         // drawn or not; `Scene::pose_skins` folds it in once per batch.
         self.file_mesh_plan.poses.track(dom, referent);
+        // It may have just joined, left or been renamed in a rig's model,
+        // which has every skinned mesh there bind again.
+        let models = self.file_mesh_plan.poses.note(dom, database, referent);
+        self.file_mesh_plan.rebind_models(&models);
         let present = dom.get(referent).is_some()
             && is_drawable(dom, database, referent)
             && in_workspace(dom, database, referent);
@@ -157,6 +161,7 @@ impl Scene {
         let drawn = match Replanned::of(dom, database, referent, &mut self.materials) {
             None => {
                 self.file_mesh_plan.install(referent, None);
+                self.resolved_file_meshes.drop_rig(referent);
                 self.resolved_file_meshes.remove(referent);
                 Drawn::Box(part)
             }
@@ -171,6 +176,7 @@ impl Scene {
                 // `filemesh::Plan::install`).
                 self.file_mesh_plan
                     .install(referent, Some((*mesh_entry).clone()));
+                self.bind_skin(dom, database, &mesh_entry);
                 if !self
                     .resolved_file_meshes
                     .meshes
@@ -250,6 +256,31 @@ impl Scene {
         })
     }
 
+    /// Brings the rig of a just re-planned mesh part in step (see
+    /// `filemesh::skinned::bind`), before its instance is patched against
+    /// the resolved set.
+    fn bind_skin(
+        &mut self,
+        dom: &WeakDom,
+        database: &ReflectionDatabase,
+        entry: &super::filemesh::Entry,
+    ) {
+        let plan = &mut self.file_mesh_plan;
+        let stale = plan.rebinds.remove(&entry.referent());
+        let bound = super::filemesh::skinned::bind(
+            dom,
+            database,
+            &mut plan.poses,
+            &mut self.resolved_file_meshes,
+            entry,
+            stale,
+        );
+        plan.rebind_models(&bound.models);
+        // Itself included in a model it just started watching; bound now.
+        plan.rebinds.remove(&entry.referent());
+        plan.rebound.extend(bound.key);
+    }
+
     /// The mesh, union and image assets a fresh re-plan of `referent` would
     /// need, whether or not this session already has them — what
     /// `Headless::apply_changes` asks the background loader for right after
@@ -279,7 +310,12 @@ impl Scene {
     /// the scene — all of them, so a deleted union goes with its pieces —
     /// and names the piece slots the renderer must now let go of too.
     pub(crate) fn remove_part(&mut self, referent: Ref) -> Range<u32> {
+        self.resolved_file_meshes.drop_rig(referent);
         self.resolved_file_meshes.remove(referent);
+        self.file_mesh_plan.rebinds.remove(&referent);
+        if let Some(model) = self.file_mesh_plan.poses.forget_part(referent) {
+            self.file_mesh_plan.rebind_models(&[model]);
+        }
         let Some(standing) = self.standing.remove(&referent) else {
             return 0..0;
         };

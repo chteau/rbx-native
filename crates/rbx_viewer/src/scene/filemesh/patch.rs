@@ -24,6 +24,11 @@ pub(crate) fn replan(
 }
 
 impl Entry {
+    /// The part this entry draws.
+    pub(crate) fn referent(&self) -> Ref {
+        self.referent
+    }
+
     /// The mesh this entry draws through — what has to have downloaded.
     pub(crate) fn asset(&self) -> &AssetRef {
         &self.mesh

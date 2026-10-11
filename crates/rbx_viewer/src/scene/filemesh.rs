@@ -67,6 +67,11 @@ pub(crate) struct Plan {
     entries: Vec<Entry>,
     /// Rest and current frames of every part a skinned mesh could bind to.
     pub(crate) poses: skinned::Poses,
+    /// Mesh parts whose model's parts changed since their rig was bound:
+    /// re-patched at the end of the batch (see `Scene::take_skin_rebinds`).
+    pub(crate) rebinds: HashSet<Ref>,
+    /// Derived meshes rebuilt by a patch, whose GPU copy is stale.
+    pub(crate) rebound: Vec<AssetRef>,
 }
 
 /// One instance ready for the renderer: which downloaded mesh/texture it
@@ -137,7 +142,7 @@ pub(crate) struct Resolved {
     slot_of: HashMap<Ref, usize>,
     /// Every skinned instance, by the part it draws, whose bones bind to
     /// parts of its model (see [`skinned`]); it draws through
-    /// `skinned::key(referent)` in `meshes`.
+    /// `skinned::key(referent, mesh)` in `meshes`.
     pub(crate) rigs: HashMap<Ref, skinned::Rig>,
 }
 
@@ -157,6 +162,13 @@ impl Resolved {
     /// Takes `referent`'s instance out. Order only ever mattered to a full
     /// build's batch construction — the renderer finds instances by referent
     /// from there on — so the last one fills the hole.
+    /// Takes `referent`'s rig, and the derived mesh it drew, out.
+    pub(crate) fn drop_rig(&mut self, referent: Ref) {
+        if let Some(rig) = self.rigs.remove(&referent) {
+            self.meshes.remove(&rig.key);
+        }
+    }
+
     pub(crate) fn remove(&mut self, referent: Ref) {
         let Some(index) = self.slot_of.remove(&referent) else {
             return;
@@ -189,6 +201,19 @@ impl Entry {
 }
 
 impl Plan {
+    /// Marks every mesh part in `models` for re-binding.
+    pub(crate) fn rebind_models(&mut self, models: &[Ref]) {
+        if models.is_empty() {
+            return;
+        }
+        let parts = self
+            .entries
+            .iter()
+            .filter(|entry| entry.model.is_some_and(|model| models.contains(&model)))
+            .map(|entry| entry.referent);
+        self.rebinds.extend(parts);
+    }
+
     /// Every distinct mesh asset this plan needs, in first-seen order.
     pub(crate) fn mesh_refs(&self) -> Vec<AssetRef> {
         dedup(self.entries.iter().flat_map(|entry| {
@@ -259,7 +284,11 @@ pub(crate) fn plan(dom: &WeakDom, database: &ReflectionDatabase, materials: &mut
         })
         .collect::<Vec<_>>();
     let poses = skinned::Poses::plan(dom, database, &entries);
-    Plan { entries, poses }
+    Plan {
+        entries,
+        poses,
+        ..Plan::default()
+    }
 }
 
 /// Resolves a plan against downloaded assets.

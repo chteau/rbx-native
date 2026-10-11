@@ -6,7 +6,8 @@
 //!
 //! The mesh is written here as `version 4.00` bytes and served from the local
 //! asset cache as `rbxasset://rbx-native-local/...` native content, the way
-//! the auto-rigger previews its meshes.
+//! the auto-rigger previews its meshes — including a rig inserted after the
+//! place opened and swapped for a new one, the way the auto-rigger edits.
 //!
 //! Needs a GPU. Without one the test says so and passes, rather than being
 //! `#[ignore]`d: a software rasteriser (Mesa's lavapipe,
@@ -23,12 +24,15 @@ const DRAIN: usize = 8;
 const IDENTITY: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
 /// 90° about +Z, row-major: +X goes to +Y.
 const QUARTER_Z: [f32; 9] = [0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0];
+/// `Enum.Material.SmoothPlastic`: no maps to fetch, so nothing waits on the
+/// network, and the one material layer every part here shares — a part
+/// inserted on a layer the place never loaded is a reload, not a patch.
+const SMOOTH_PLASTIC: u32 = 272;
 const NATIVE_PATH: &str = "rbx-native-local/tests/rbx_viewer-skinned-arm.mesh";
 
 const WORKSPACE: u32 = 1;
+/// The opened place's arm: the model, then the upper and lower arm.
 const ARM: u32 = 2;
-const UPPER: u32 = 3;
-const LOWER: u32 = 4;
 
 /// Rows of the ribbon, top to bottom; the joint is the middle one.
 const ROWS: [f32; 5] = [3.0, 1.5, 0.0, -1.5, -3.0];
@@ -161,14 +165,14 @@ fn vector3([x, y, z]: [f32; 3]) -> Variant {
     Variant::Vector3(Vector3Data { x, y, z })
 }
 
-/// `Workspace > Arm (Model) > {UpperArm (green MeshPart), LowerArm
-/// (invisible Part)}`.
-fn place() -> WeakDom {
-    let mut dom = WeakDom::new();
-    dom.insert(Instance::new(Ref::new(WORKSPACE), "Workspace", "Workspace"));
-    dom.insert(Instance::new(Ref::new(ARM), "Model", "Arm"));
+/// Inserts `Arm (Model) > {UpperArm (green MeshPart), LowerArm (invisible
+/// Part)}` under `Workspace` at referents from `base`, at rest, answering
+/// with the model and the lower arm.
+fn insert_arm(dom: &mut WeakDom, base: u32) -> (Ref, Ref) {
+    let (model, upper_ref, lower_ref) = (Ref::new(base), Ref::new(base + 1), Ref::new(base + 2));
+    dom.insert(Instance::new(model, "Model", "Arm"));
 
-    let mut upper = Instance::new(Ref::new(UPPER), "MeshPart", "UpperArm");
+    let mut upper = Instance::new(upper_ref, "MeshPart", "UpperArm");
     let properties = upper.properties_mut();
     properties.insert(
         "MeshId".to_string(),
@@ -177,25 +181,102 @@ fn place() -> WeakDom {
     properties.insert("size".to_string(), vector3([1.0, 6.0, 0.2]));
     properties.insert("InitialSize".to_string(), vector3([1.0, 6.0, 0.2]));
     properties.insert("CFrame".to_string(), cframe([0.0; 3], IDENTITY));
+    properties.insert("Material".to_string(), Variant::Enum(SMOOTH_PLASTIC));
     properties.insert(
         "Color3uint8".to_string(),
         Variant::Color3uint8 { r: 0, g: 255, b: 0 },
     );
     dom.insert(upper);
 
-    let mut lower = Instance::new(Ref::new(LOWER), "Part", "LowerArm");
+    let mut lower = Instance::new(lower_ref, "Part", "LowerArm");
     let properties = lower.properties_mut();
     properties.insert("size".to_string(), vector3([1.0, 3.0, 0.2]));
     properties.insert("CFrame".to_string(), cframe([0.0, -1.5, 0.0], IDENTITY));
     properties.insert("Transparency".to_string(), Variant::Float32(1.0));
+    properties.insert("Material".to_string(), Variant::Enum(SMOOTH_PLASTIC));
     dom.insert(lower);
 
+    dom.set_parent(model, Some(Ref::new(WORKSPACE)));
+    dom.set_parent(upper_ref, Some(model));
+    dom.set_parent(lower_ref, Some(model));
+    (model, lower_ref)
+}
+
+fn workspace() -> WeakDom {
+    let mut dom = WeakDom::new();
+    dom.insert(Instance::new(Ref::new(WORKSPACE), "Workspace", "Workspace"));
     dom.set_parent(Ref::new(WORKSPACE), None);
-    dom.set_parent(Ref::new(ARM), Some(Ref::new(WORKSPACE)));
-    dom.set_parent(Ref::new(UPPER), Some(Ref::new(ARM)));
-    dom.set_parent(Ref::new(LOWER), Some(Ref::new(ARM)));
+    dom
+}
+
+/// The arm in a place of its own, as opened.
+fn place() -> WeakDom {
+    let mut dom = workspace();
+    insert_arm(&mut dom, ARM);
     dom.take_changes();
     dom
+}
+
+/// Writes `lower`'s `CFrame` and patches it in — a quarter turn about +Z
+/// around the joint at the origin when `bent` (its centre swings from
+/// (0, −1.5) to (1.5, 0)), hanging at rest otherwise.
+fn turn(headless: &mut Headless, dom: &mut WeakDom, lower: Ref, bent: bool) {
+    let cframe = match bent {
+        true => cframe([1.5, 0.0, 0.0], QUARTER_Z),
+        false => cframe([0.0, -1.5, 0.0], IDENTITY),
+    };
+    dom.set_property(lower, "CFrame", cframe)
+        .expect("a part takes a CFrame");
+    let changes = dom.take_changes();
+    assert_eq!(
+        headless.apply_changes(dom, &changes).expect("applies"),
+        Applied::Patched,
+        "a pose is a patch, not a reload"
+    );
+}
+
+fn assert_at_rest(pixels: &[u8]) {
+    assert!(count(pixels, |_, _| true) > 200, "the ribbon is drawn");
+    assert!(
+        count(pixels, below_the_joint) > 20,
+        "at rest the lower half hangs below the joint"
+    );
+    assert_eq!(count(pixels, out_to_the_side), 0, "and nothing sticks out");
+}
+
+fn assert_bent(pixels: &[u8]) {
+    assert_eq!(
+        count(pixels, below_the_joint),
+        0,
+        "the lower half no longer hangs below the joint"
+    );
+    assert!(
+        count(pixels, out_to_the_side) > 20,
+        "it sticks out to the side instead"
+    );
+    assert!(
+        count(pixels, |row, _| row < 0.45) > 20,
+        "the upper half is still drawn above the joint"
+    );
+}
+
+fn headless() -> Option<Headless> {
+    // Once per run: the tests run side by side, and two writes of the same
+    // cache entry at once trip over each other's temporary file.
+    static CACHED: std::sync::Once = std::sync::Once::new();
+    CACHED.call_once(|| {
+        let cache = rbx_assets::AssetCache::new(None).expect("the asset cache opens");
+        cache
+            .put_native(NATIVE_PATH, &ribbon())
+            .expect("the mesh is cached");
+    });
+    match Headless::load(&fixture(), false) {
+        Ok(headless) => Some(headless),
+        Err(why) => {
+            println!("skipped: no GPU to render with ({why})");
+            None
+        }
+    }
 }
 
 fn settle(headless: &mut Headless) {
@@ -259,17 +340,8 @@ fn out_to_the_side(_row: f32, column: f32) -> bool {
 
 #[test]
 fn turning_the_lower_arm_bends_the_skinned_mesh_as_a_patch() {
-    let cache = rbx_assets::AssetCache::new(None).expect("the asset cache opens");
-    cache
-        .put_native(NATIVE_PATH, &ribbon())
-        .expect("the mesh is cached");
-
-    let mut headless = match Headless::load(&fixture(), false) {
-        Ok(headless) => headless,
-        Err(why) => {
-            println!("skipped: no GPU to render with ({why})");
-            return;
-        }
+    let Some(mut headless) = headless() else {
+        return;
     };
     let mut dom = place();
     headless.reload(&dom).expect("the DOM rebuilds");
@@ -277,53 +349,73 @@ fn turning_the_lower_arm_bends_the_skinned_mesh_as_a_patch() {
     headless.open_at([0.0, 0.0, -9.0], [0.0, 0.0, 0.0], 70.0);
 
     let rest = frame(&mut headless);
-    assert!(count(&rest, |_, _| true) > 200, "the ribbon is drawn");
-    assert!(
-        count(&rest, below_the_joint) > 20,
-        "at rest the lower half hangs below the joint"
-    );
-    assert_eq!(count(&rest, out_to_the_side), 0, "and nothing sticks out");
+    assert_at_rest(&rest);
+    let lower = Ref::new(ARM + 2);
+    turn(&mut headless, &mut dom, lower, true);
+    assert_bent(&frame(&mut headless));
+    // And back: the rest frame exactly.
+    turn(&mut headless, &mut dom, lower, false);
+    assert_eq!(frame(&mut headless), rest, "the rest pose draws as before");
+}
 
-    // A quarter turn about +Z around the joint at the origin: the lower
-    // arm's centre swings from (0, −1.5) to (1.5, 0).
-    dom.set_property(
-        Ref::new(LOWER),
-        "CFrame",
-        cframe([1.5, 0.0, 0.0], QUARTER_Z),
-    )
-    .expect("a part takes a CFrame");
+/// What the auto-rigger does: the rig arrives after the place is open, as
+/// one batch of inserts, and every edit swaps the whole `Model` for a new
+/// one — each of which has to bend.
+#[test]
+fn a_rig_inserted_after_load_and_then_replaced_bends_each_time() {
+    let Some(mut headless) = headless() else {
+        return;
+    };
+    let mut dom = workspace();
+    // Something to open: a place with no part at all does not load. Behind
+    // the camera, out of every frame compared.
+    let mut anchor = Instance::new(Ref::new(5), "Part", "Anchor");
+    let properties = anchor.properties_mut();
+    properties.insert("size".to_string(), vector3([1.0; 3]));
+    properties.insert("CFrame".to_string(), cframe([0.0, 0.0, -100.0], IDENTITY));
+    properties.insert("Material".to_string(), Variant::Enum(SMOOTH_PLASTIC));
+    dom.insert(anchor);
+    dom.set_parent(Ref::new(5), Some(Ref::new(WORKSPACE)));
+    dom.take_changes();
+    headless.reload(&dom).expect("the DOM rebuilds");
+    headless.open_at([0.0, 0.0, -9.0], [0.0, 0.0, 0.0], 70.0);
+    assert_eq!(count(&frame(&mut headless), |_, _| true), 0, "nothing yet");
+
+    // Inserted: its mesh is not resident yet, so it streams in.
+    let (model, lower) = insert_arm(&mut dom, 10);
     let changes = dom.take_changes();
     assert_eq!(
         headless.apply_changes(&dom, &changes).expect("applies"),
         Applied::Patched,
-        "a pose is a patch, not a reload"
+        "an inserted rig is a patch"
     );
-    let bent = frame(&mut headless);
-    assert_eq!(
-        count(&bent, below_the_joint),
-        0,
-        "the lower half no longer hangs below the joint"
-    );
-    assert!(
-        count(&bent, out_to_the_side) > 20,
-        "it sticks out to the side instead"
-    );
-    assert!(
-        count(&bent, |row, _| row < 0.45) > 20,
-        "the upper half is still drawn above the joint"
-    );
+    settle(&mut headless);
+    assert_at_rest(&frame(&mut headless));
+    turn(&mut headless, &mut dom, lower, true);
+    assert_bent(&frame(&mut headless));
 
-    // And back: the rest frame exactly.
-    dom.set_property(
-        Ref::new(LOWER),
-        "CFrame",
-        cframe([0.0, -1.5, 0.0], IDENTITY),
-    )
-    .expect("a part takes a CFrame");
+    // Replaced, in one batch: the mesh is resident now, so the new rig
+    // binds as it is patched in.
+    dom.remove(model);
+    let (model, lower) = insert_arm(&mut dom, 20);
     let changes = dom.take_changes();
     assert_eq!(
         headless.apply_changes(&dom, &changes).expect("applies"),
-        Applied::Patched
+        Applied::Patched,
+        "a replaced rig is a patch"
     );
-    assert_eq!(frame(&mut headless), rest, "the rest pose draws as before");
+    settle(&mut headless);
+    assert_at_rest(&frame(&mut headless));
+    turn(&mut headless, &mut dom, lower, true);
+    assert_bent(&frame(&mut headless));
+
+    // And once more, this time replaced while its predecessor is bent.
+    dom.remove(model);
+    let (_, lower) = insert_arm(&mut dom, 30);
+    let changes = dom.take_changes();
+    headless.apply_changes(&dom, &changes).expect("applies");
+    settle(&mut headless);
+    assert_at_rest(&frame(&mut headless));
+    turn(&mut headless, &mut dom, lower, true);
+    assert_bent(&frame(&mut headless));
 }

@@ -236,7 +236,7 @@ impl Meshes {
         asset: &AssetRef,
     ) -> Option<&Arc<rbx_mesh::SkinnedMesh>> {
         self.meshes
-            .get(&crate::scene::skinned_mesh_key(referent))
+            .get(&crate::scene::skinned_mesh_key(referent, asset))
             .or_else(|| self.meshes.get(asset))
     }
 

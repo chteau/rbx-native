@@ -614,10 +614,29 @@ impl Scene {
     /// changed — what the renderer has to re-upload. Free when no part a
     /// skinned mesh binds to has moved.
     pub(crate) fn pose_skins(&mut self) -> Vec<AssetRef> {
-        if !self.file_mesh_plan.poses.take_dirty() {
-            return Vec::new();
+        // Rigs a patch (re)built since: their derived mesh was replaced
+        // under a key the GPU may already hold.
+        let mut changed = std::mem::take(&mut self.file_mesh_plan.rebound);
+        if self.file_mesh_plan.poses.take_dirty() {
+            changed.extend(self.pose_all_skins());
         }
-        self.pose_all_skins()
+        changed.sort_by_key(|key| format!("{key:?}"));
+        changed.dedup();
+        changed
+    }
+
+    /// Mesh parts still owed a re-bind because their model's parts changed
+    /// (see [`filemesh::Plan::rebind_models`]) — each re-patched by the
+    /// caller, which takes it off the list.
+    pub(crate) fn skin_rebinds(&self) -> Vec<Ref> {
+        let mut parts: Vec<Ref> = self.file_mesh_plan.rebinds.iter().copied().collect();
+        parts.sort();
+        parts
+    }
+
+    /// `referent` needs no re-bind any more (it was re-patched, or is gone).
+    pub(crate) fn rebound_skin(&mut self, referent: Ref) {
+        self.file_mesh_plan.rebinds.remove(&referent);
     }
 
     fn pose_all_skins(&mut self) -> Vec<AssetRef> {
