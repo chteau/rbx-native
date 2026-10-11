@@ -62,6 +62,9 @@ pub(crate) struct Trail {
     /// The `Trail` instance this was read from — see `scene::particles::Emitter`'s
     /// identical field.
     pub(crate) referent: Ref,
+    /// The two attachments the trail is drawn between — see `Beam`'s
+    /// identical field.
+    pub(crate) attachments: [Ref; 2],
 }
 
 /// Every placeable `Trail` in the DOM: both `Attachment0`/`Attachment1`
@@ -114,6 +117,7 @@ fn build(
         texture_length: float_or(properties, "TextureLength", DEFAULT_TEXTURE_LENGTH).max(1e-3),
         light_emission: float_or(properties, "LightEmission", 0.0).clamp(0.0, 1.0),
         referent,
+        attachments: [attachment0, attachment1],
     })
 }
 

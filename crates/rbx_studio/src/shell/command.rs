@@ -306,6 +306,9 @@ impl Shell {
         // change every mouse move, and copying the whole place per move
         // would cost what the patch itself was made to save.
         let snapshots = self.dom.snapshot(changes);
+        // Read where a posed rig is drawn, after the snapshot: the view is
+        // only ever sent its rest (see `Shell::pose_in`).
+        let posed = self.pose_in();
         let targets = refresh
             .targets
             .then(|| Targets::read(&self.dom, &self.database, self.selected_all()));
@@ -319,6 +322,7 @@ impl Shell {
         let outline = refresh
             .targets
             .then(|| selection::outlined(&self.dom, &self.database, self.selected_all()));
+        self.pose_out(posed);
         self.viewport.update(cx, |viewport, _| {
             viewport.apply_changes(snapshots, changes.to_vec());
             if let Some(targets) = targets {

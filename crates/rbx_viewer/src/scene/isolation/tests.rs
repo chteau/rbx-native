@@ -290,3 +290,20 @@ fn lifting_the_isolation_restores_everything() {
     assert!(instance_drawn(&scene, HEAD) && instance_drawn(&scene, STATUE));
     assert!(Meshes::of(&scene).shows(&dom, Ref::new(WALL)));
 }
+
+#[test]
+fn the_stage_is_the_drawn_rig_and_the_floor_around_it() {
+    let (dom, mut scene) = place();
+    assert!(scene.stage_bounds().is_none(), "nothing is isolated");
+
+    isolate_rig(&mut scene, &dom);
+    let stage = scene.stage_bounds().expect("the rig is drawn");
+    // The rig's two 2-stud parts sit at the origin; the wall at x = 10 and
+    // the statue at x = -10 are hidden and do not count, and the floor
+    // square reaches STAGE_REACH from the rig's centre at its feet.
+    assert_eq!(stage.min, Vec3::new(-STAGE_REACH, -1.0, -STAGE_REACH));
+    assert_eq!(stage.max, Vec3::new(STAGE_REACH, 1.0, STAGE_REACH));
+
+    scene.isolate(None, |at| dom.parent(at));
+    assert!(scene.stage_bounds().is_none());
+}

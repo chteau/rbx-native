@@ -38,7 +38,10 @@ pub(super) struct Surroundings {
     /// Terrain, its water and grass, and the shadows it casts.
     pub(super) terrain: bool,
     /// Beams, trails, particles and the `BillboardGui`/`SurfaceGui`
-    /// canvases.
+    /// canvases. On in an isolated frame too: the scene hands the renderer
+    /// only the isolated rig's own effects then (see
+    /// `Scene::drawn_particle_emitters`), so a sword's trail or a torch's
+    /// fire still plays on the stage while the rest of the place's do not.
     pub(super) effects: bool,
     /// The place's own `SelectionBox`/`*HandleAdornment` family, whose
     /// adornee an isolation may well have hidden.
@@ -51,14 +54,15 @@ pub(super) struct Surroundings {
 }
 
 impl Surroundings {
-    /// Everything for a normal frame; nothing at all for an isolated one,
-    /// which shows the rig on its backdrop and only that.
+    /// Everything for a normal frame; for an isolated one, only the rig's
+    /// own effects (which the scene has already narrowed to) on its
+    /// backdrop.
     pub(super) fn of(isolated: bool) -> Self {
         let drawn = !isolated;
         Surroundings {
             sky: drawn,
             terrain: drawn,
-            effects: drawn,
+            effects: true,
             adornments: drawn,
             screen_gui: drawn,
             local_lights: drawn,

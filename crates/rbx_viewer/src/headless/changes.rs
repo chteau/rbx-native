@@ -64,6 +64,10 @@ impl Headless {
                     // nothing about the camera is started over for them.
                     self.bounds = bounds;
                 }
+                // A pose moves the rig about the stage; the shadow follows.
+                if self.view.isolated() {
+                    self.offscreen.set_stage(self.loaded.scene().stage_bounds());
+                }
                 Ok(Applied::Patched)
             }
             Err(why) => {

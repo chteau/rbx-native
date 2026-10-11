@@ -70,6 +70,11 @@ pub(crate) struct Beam {
     pub(crate) secondary_axis1: Vec3,
     pub(crate) segments: u32,
     pub(crate) z_offset: f32,
+    /// The `Beam` instance this was read from, and the two attachments it
+    /// spans — what an isolated scene asks to decide whether the beam belongs
+    /// to the isolated rig (see `Scene::drawn_beams`).
+    pub(crate) referent: Ref,
+    pub(crate) attachments: [Ref; 2],
 }
 
 /// Every enabled, placeable `Beam` in the DOM.
@@ -85,13 +90,14 @@ pub(crate) fn plan(dom: &WeakDom, database: &ReflectionDatabase) -> Vec<Beam> {
             dom.get(referent)
                 .is_some_and(|instance| database.is_subclass_of(instance.class(), CLASS))
         })
-        .filter_map(|referent| build(dom, &parents, dom.get(referent)?.properties()))
+        .filter_map(|referent| build(dom, &parents, referent, dom.get(referent)?.properties()))
         .collect()
 }
 
 fn build(
     dom: &WeakDom,
     parents: &ParentMap<'_>,
+    referent: Ref,
     properties: &BTreeMap<String, Variant>,
 ) -> Option<Beam> {
     if !bool_or(properties, "Enabled", true) {
@@ -131,6 +137,8 @@ fn build(
         secondary_axis1: end.y_axis.truncate().normalize_or_zero(),
         segments: int_or(properties, "Segments", DEFAULT_SEGMENTS).max(1),
         z_offset: float_or(properties, "ZOffset", 0.0),
+        referent,
+        attachments: [attachment0, attachment1],
     })
 }
 

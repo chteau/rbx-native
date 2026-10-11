@@ -7,9 +7,12 @@
 use glam::Vec3;
 use rbx_viewer::Segment;
 
-/// How far the grid reaches from its centre, in studs, and its spacing.
-const REACH: i32 = 20;
+/// How far the grid reaches from its centre, in lines, and its spacing in
+/// studs. The reach is the viewer's own: an isolated view fits its shadow
+/// map to the rig and a floor this wide, so the grid is exactly the ground
+/// the rig's shadow can land on.
 const STEP: f32 = 1.0;
+const REACH: i32 = (rbx_viewer::STAGE_REACH / STEP) as i32;
 /// Every this many lines is drawn a little brighter, as Blender's are.
 const MAJOR: i32 = 5;
 

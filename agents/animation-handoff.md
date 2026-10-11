@@ -243,9 +243,30 @@ l'upload par un modèle local.
     présent avant ce travail (`a_viewport_frame_drawn_alone_follows_its_camera`,
     « no ViewportFrame … is laid out »).
 - **Vue isolée**
-  - Particules et GUI attachés au rig masqués aussi.
-  - Le snapping de l'outil Move peut viser des parts cachées.
-  - Ombre ajustée à toute la place.
+  - Fait : les particules, beams, trails, BillboardGui et SurfaceGui du rig
+    isolé restent dessinés (`scene/isolation.rs`, ensemble `effects`).
+    Un émetteur posé sur une `MeshPart` survit aussi à la pose : il est
+    planifié depuis `Scene::emitter_placements`, qui garde les parts dont
+    le mesh a remplacé la boîte (avant, chaque frame de pose le perdait).
+  - Fait : le snapping de Move ne vise que les parts du rig mis en scène
+    (`shell/drag.rs`, `sync_snap_neighbours`) ; picking et survol passaient
+    déjà par la scène, qui ignore les parts cachées.
+  - Fait : la shadow map est ajustée aux bornes du rig plus le sol de la
+    scène (`STAGE_REACH`, `Renderer::set_stage`). Mesuré sous Xephyr : bord
+    d'ombre de 1 à 2 px (net, léger crénelage) contre 11 à 22 px avant.
+  - Fait : la lecture écrit le `Transform` des `Motor6D` et des
+    `AnimationConstraint`, jamais le `CFrame` des parts. Les parts restent
+    au repos dans le document ; `rbx_viewer::JointSolver` les pose dans le
+    miroir du thread de rendu. Les `Transform` d'origine sont remis en
+    sortie de document : une sauvegarde après lecture est identique octet
+    pour octet (test `a_save_after_playback_matches_the_save_before`).
+    Sélection, poignées et picking lisent la pose via
+    `Shell::pose_in`/`pose_out` (échange non suivi, de courte durée).
+    Le skinning n'a pas été touché : il lit les `CFrame` posés du miroir.
+    La copie de récupération automatique est dé-posée avant écriture
+    (`Shell::unpose_copy`).
+  - Ouvert : l'outil Align ne lit pas la pose ; le panneau Properties
+    montre le `CFrame` de repos.
 - **Non vérifié contre un vrai client Roblox**
   - Direction de l'easing des poses : côté éditeur, réglé par le code de
     l'Animation Editor (`CurveUtils`, Client Tracker 41ab074bc29d, cité dans

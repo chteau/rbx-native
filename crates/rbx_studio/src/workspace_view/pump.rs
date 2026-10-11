@@ -22,7 +22,8 @@ use std::time::{Duration, Instant};
 use rbx_dom::{Change, Snapshot, WeakDom};
 use rbx_viewer::pick::{Meshes, Selected};
 use rbx_viewer::{
-    Applied, Calibration, CameraFeel, CameraInput, Gizmo, Headless, Pose, QualityLevel, Segment,
+    Applied, Calibration, CameraFeel, CameraInput, Gizmo, Headless, JointSolver, Pose,
+    QualityLevel, Segment,
 };
 
 pub(crate) mod canvas;
@@ -393,6 +394,7 @@ fn run(
     let mut rebuilt = true;
     let mut scrolls = Vec::new();
     let mut canvas = canvas::Canvas::default();
+    let mut joints = JointSolver::new();
 
     loop {
         let wait = idle.then_some(if visible { interval } else { IDLE_WAIT });
@@ -401,6 +403,7 @@ fn run(
             Rendering {
                 viewer: &mut viewer,
                 mirror: &mut mirror,
+                joints: &mut joints,
                 quality: &mut quality,
                 size: &mut size,
                 visible: &mut visible,
@@ -607,6 +610,9 @@ struct Rendering<'a> {
     viewer: &'a mut Headless,
     /// The editor's DOM as this thread last saw it — see [`Command::Changes`].
     mirror: &'a mut WeakDom,
+    /// Poses the mirror's parts from their joints' `Transform`, which is all
+    /// the animation editor writes — see [`JointSolver`].
+    joints: &'a mut JointSolver,
     quality: &'a mut Quality,
     size: &'a mut (u32, u32),
     visible: &'a mut bool,
@@ -755,6 +761,11 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::Changes(snapshots, changes) => {
             rendering.canvas.touch();
             rendering.mirror.mirror(snapshots);
+            // The editor's parts arrive at rest; a pose is put on here, as
+            // Roblox's Animator puts one on from `Motor6D.Transform`.
+            let mut changes = changes;
+            let posed = rendering.joints.solve(rendering.mirror, &changes);
+            changes.extend(posed);
             match rendering.viewer.apply_changes(rendering.mirror, &changes) {
                 Ok(Applied::Patched) => {}
                 Ok(Applied::Rebuilt(why)) => {

@@ -63,6 +63,7 @@ pub(crate) use gui::{
 pub use gui::{shows_screen, ScrollTarget};
 pub(crate) use highlight::{DepthMode, Highlight, MAX_HIGHLIGHTS};
 pub(crate) use identity::PartId;
+pub use isolation::STAGE_REACH;
 pub(crate) use isolation::{within as isolation_within, Isolation};
 pub(crate) use material::{Catalog, Kind, Maps, Slot};
 pub(crate) use particles::sequence::{eval_color, eval_number};
@@ -319,7 +320,7 @@ impl Scene {
         // an emitter's spawn volume is its parent's own placement, and a
         // `SurfaceGui`'s canvas covers one face of the part as drawn.
         let placements = scene.placements();
-        scene.emitters = particles::plan(dom, database, &placements);
+        scene.emitters = particles::plan(dom, database, &scene.emitter_placements());
         scene.gui_spaces = gui::plan_space(dom, database, &placements, &mut scene.materials);
         // A beam resolves its own attachment chain straight off the DOM
         // instead (see `scene::beam::attachment`), so it needs no placement.
@@ -444,14 +445,6 @@ impl Scene {
         &self.gui
     }
 
-    /// Every `BillboardGui`/`SurfaceGui` this scene could place, each already
-    /// carrying the pixel size of the canvas its tree is painted into. The
-    /// renderer owns that canvas — a `Scene` has no GPU handle — and finishes
-    /// a billboard's quad, which only exists once an eye does.
-    pub(crate) fn gui_spaces(&self) -> &[SpaceGui] {
-        &self.gui_spaces
-    }
-
     /// Every image the GUI trees sample, in first-seen paint order and
     /// without repeats across the three container kinds — one download for
     /// an `ImageLabel` image that a screen and a surface both show.
@@ -547,6 +540,20 @@ impl Scene {
                     && !part.isolated_out
                     && (!part.suppressed || pieced.contains(&part.referent()))
             })
+            .map(|part| (part.referent(), part.placement()))
+            .collect()
+    }
+
+    /// Where each emitter's parent part stands: [`Scene::placements`] with
+    /// suppressed parts kept. An emitter spawns from its part's box whatever
+    /// draws that box — a `MeshPart` whose mesh landed is suppressed, yet its
+    /// sparks still fly from its `Size` and `CFrame`. Planning off
+    /// [`Scene::placements`] instead lost every such emitter on the first
+    /// re-plan after the mesh arrived, which a pose triggers on every frame.
+    pub(crate) fn emitter_placements(&self) -> HashMap<Ref, Placement> {
+        self.parts
+            .iter()
+            .filter(|part| part.id.is_whole() && !part.isolated_out)
             .map(|part| (part.referent(), part.placement()))
             .collect()
     }

@@ -69,3 +69,68 @@ fn the_rig_line_names_its_joint_classes() {
         "2 joints (1 Motor6D, 1 AnimationConstraint)"
     );
 }
+
+/// Playback writes each joint's `Transform` and nothing else; leaving puts
+/// every one back as found (an authored one kept, a new one taken away), so
+/// a place saved after playback is byte for byte the one saved before.
+#[test]
+fn a_save_after_playback_matches_the_save_before() {
+    use std::collections::{BTreeMap, HashMap};
+
+    use rbx_animation::Frame;
+
+    use super::pose::{restore_transforms, write_transforms};
+
+    let mut dom = WeakDom::new();
+    let model = dom.new_instance("Model", "R", None);
+    let root = dom.new_instance("Part", "HumanoidRootPart", Some(model));
+    let arm = dom.new_instance("Part", "Arm", Some(model));
+    let hand = dom.new_instance("Part", "Hand", Some(model));
+    let shoulder = dom.new_instance("Motor6D", "Shoulder", Some(arm));
+    dom.set_property(shoulder, "Part0", Variant::Ref(root))
+        .unwrap();
+    dom.set_property(shoulder, "Part1", Variant::Ref(arm))
+        .unwrap();
+    // An authored `Transform` the editor must hand back untouched.
+    let authored = Variant::CFrame(Frame::angles(0.1, 0.0, 0.0).to_data());
+    dom.set_property(shoulder, "Transform", authored.clone())
+        .unwrap();
+    let a0 = dom.new_instance("Attachment", "A0", Some(arm));
+    let a1 = dom.new_instance("Attachment", "A1", Some(hand));
+    let wrist = dom.new_instance("AnimationConstraint", "Wrist", Some(hand));
+    dom.set_property(wrist, "Attachment0", Variant::Ref(a0))
+        .unwrap();
+    dom.set_property(wrist, "Attachment1", Variant::Ref(a1))
+        .unwrap();
+    let rig = Rig::read(&dom, model);
+    assert_eq!(rig.joints.len(), 2);
+    let before = rbx_binary::serialize(&dom).expect("serialize");
+
+    let mut originals = HashMap::new();
+    for t in [0.2_f32, 0.6, 1.0] {
+        let pose = BTreeMap::from([
+            ("Arm".to_owned(), Frame::angles(t, 0.0, 0.0)),
+            ("Hand".to_owned(), Frame::angles(0.0, t, 0.0)),
+        ]);
+        assert!(write_transforms(&mut dom, &rig, &pose, &mut originals));
+    }
+    assert_ne!(rbx_binary::serialize(&dom).expect("serialize"), before);
+    assert!(dom
+        .get(wrist)
+        .unwrap()
+        .properties()
+        .contains_key("Transform"));
+
+    assert!(restore_transforms(&mut dom, &mut originals));
+    assert!(originals.is_empty());
+    assert_eq!(
+        dom.get(shoulder).unwrap().properties().get("Transform"),
+        Some(&authored)
+    );
+    assert!(!dom
+        .get(wrist)
+        .unwrap()
+        .properties()
+        .contains_key("Transform"));
+    assert_eq!(rbx_binary::serialize(&dom).expect("serialize"), before);
+}
