@@ -129,10 +129,17 @@ pub(crate) struct Poses {
 impl Poses {
     pub(super) fn plan(dom: &WeakDom, database: &ReflectionDatabase, entries: &[Entry]) -> Self {
         let mut poses = Poses::default();
-        for model in entries.iter().filter_map(|entry| entry.model) {
+        let models = entries.iter().filter_map(|entry| entry.model);
+        let characters = entries
+            .iter()
+            .filter_map(|entry| Some(entry.wrap.as_ref()?.character));
+        for model in models.chain(characters) {
             if !poses.watches(model) {
                 poses.watch(dom, database, model);
             }
+        }
+        for entry in entries.iter().filter(|entry| entry.wrap.is_some()) {
+            poses.follow(dom, entry.referent);
         }
         poses.dirty = false;
         poses
@@ -267,6 +274,32 @@ impl Poses {
         self.rest.remove(&part);
         self.current.remove(&part);
         self.members.remove(&part)
+    }
+
+    /// Starts tracking a layered garment's handle, which is no member of the
+    /// character its garment binds in. It rests where its weld to a member
+    /// puts it with that member at rest — so a place saved mid-pose still
+    /// rests the garment on the body at rest — else where it stands.
+    pub(crate) fn follow(&mut self, dom: &WeakDom, handle: Ref) {
+        if self.current.contains_key(&handle) {
+            return;
+        }
+        let Some(cframe) = cframe_of(dom, handle) else {
+            return;
+        };
+        let partner = dom
+            .get(handle)
+            .map(|instance| instance.children())
+            .unwrap_or_default()
+            .iter()
+            .flat_map(|&weld| [ref_of(dom, weld, "Part0"), ref_of(dom, weld, "Part1")])
+            .flatten()
+            .find(|part| *part != handle && self.members.contains_key(part));
+        let rest = partner
+            .and_then(|part| Some(*self.rest.get(&part)? * self.current(part)?.inverse() * cframe))
+            .unwrap_or(cframe);
+        self.current.insert(handle, cframe);
+        self.rest.insert(handle, rest);
     }
 
     /// Notes where `referent` stands now if a skinned mesh could bind to it;
@@ -404,6 +437,9 @@ pub(crate) struct Rig {
     scale: Vec3,
     /// The native-space matrices last applied; identity at rest.
     applied: Vec<Mat4>,
+    /// Whether this is a layered garment's rig, skinning its wrapped mesh to
+    /// the character it is worn on.
+    wrapped: bool,
 }
 
 impl Rig {
@@ -415,14 +451,48 @@ impl Rig {
         mesh: &Arc<rbx_mesh::SkinnedMesh>,
         poses: &Poses,
     ) -> Option<Rig> {
+        let model = entry.model?;
+        let key = key(entry.referent, &entry.mesh);
+        Rig::build(entry, model, key, mesh, fit_scale(&entry.fit, mesh), poses)
+    }
+
+    /// The rig of a layered garment `entry` whose mesh `garment` wrapped as
+    /// `wrapped` (skinned by [`super::wrap::derive`]): its bones bind to the
+    /// parts of the character it is worn on, relative to the handle.
+    pub(super) fn garment(
+        entry: &Entry,
+        garment: &rbx_mesh::Mesh,
+        wrapped: &Arc<rbx_mesh::SkinnedMesh>,
+        poses: &Poses,
+    ) -> Option<Rig> {
+        let model = entry.wrap.as_ref()?.character;
+        let key = key(entry.referent, &super::wrap::key(entry.referent));
+        let mut rig = Rig::build(
+            entry,
+            model,
+            key,
+            wrapped,
+            fit_scale(&entry.fit, garment),
+            poses,
+        )?;
+        rig.wrapped = true;
+        Some(rig)
+    }
+
+    fn build(
+        entry: &Entry,
+        model: Ref,
+        key: AssetRef,
+        mesh: &Arc<rbx_mesh::SkinnedMesh>,
+        scale: Vec3,
+        poses: &Poses,
+    ) -> Option<Rig> {
         let skin = mesh.skin.as_ref()?;
         let Fit::Part { .. } = entry.fit else {
             return None;
         };
-        let model = entry.model?;
         let names = poses.models.get(&model)?;
         let mesh_rest = *poses.rest.get(&entry.referent)?;
-        let scale = fit_scale(&entry.fit, mesh);
         let to_part = Mat4::from_scale(scale);
 
         let bones: Vec<Option<Bound>> = skin
@@ -445,23 +515,40 @@ impl Rig {
         }
         Some(Rig {
             asset: entry.mesh.clone(),
-            key: key(entry.referent, &entry.mesh),
+            key,
             referent: entry.referent,
             model,
             source: mesh.clone(),
             applied: vec![Mat4::IDENTITY; bones.len()],
             bones,
             scale,
+            wrapped: false,
         })
     }
 
-    /// Whether this rig is still the one `entry` drawing `mesh` would get:
-    /// the same mesh, in the same model, at the same fit scale.
-    fn fits(&self, entry: &Entry, mesh: &Arc<rbx_mesh::SkinnedMesh>) -> bool {
-        Arc::ptr_eq(&self.source, mesh)
+    /// Whether this rig is still the one `entry` would get skinning `source`
+    /// (its mesh, or its wrapped mesh), fitted as its own mesh `own`: the
+    /// same mesh, in the same model, at the same fit scale.
+    fn fits(
+        &self,
+        entry: &Entry,
+        source: &Arc<rbx_mesh::SkinnedMesh>,
+        own: &rbx_mesh::Mesh,
+    ) -> bool {
+        let model = match &entry.wrap {
+            Some(wrap) => Some(wrap.character),
+            None => entry.model,
+        };
+        Arc::ptr_eq(&self.source, source)
             && self.asset == entry.mesh
-            && Some(self.model) == entry.model
-            && self.scale.abs_diff_eq(fit_scale(&entry.fit, mesh), 1e-6)
+            && self.wrapped == entry.wrap.is_some()
+            && Some(self.model) == model
+            && self.scale.abs_diff_eq(fit_scale(&entry.fit, own), 1e-6)
+    }
+
+    /// Whether this is a layered garment's rig (see [`Rig::garment`]).
+    pub(crate) fn wraps(&self) -> bool {
+        self.wrapped
     }
 
     /// The native-space skinning matrix of every bone for the pose in
@@ -557,22 +644,41 @@ pub(in crate::scene) fn bind(
     stale: bool,
 ) -> Binding {
     let mut bound = Binding::default();
-    if let Some(model) = entry.model {
+    let character = entry.wrap.as_ref().map(|wrap| wrap.character);
+    if let Some(model) = entry.model.or(character) {
         if !poses.watches(model) && poses.watch(dom, database, model) {
             bound.models.push(model);
         }
     }
     let referent = entry.referent;
-    let Some(mesh) = resolved.meshes.get(&entry.mesh).cloned() else {
+    if character.is_some() {
+        poses.follow(dom, referent);
+    }
+    let Some(own) = resolved.meshes.get(&entry.mesh).cloned() else {
         resolved.drop_rig(referent);
         return bound;
     };
+    // A garment skins the mesh its wrap made, once that has been made.
+    let mesh = match character {
+        Some(_) => match resolved.meshes.get(&super::wrap::key(referent)) {
+            Some(wrapped) => wrapped.clone(),
+            None => {
+                resolved.drop_rig(referent);
+                return bound;
+            }
+        },
+        None => own.clone(),
+    };
     let current = resolved.rigs.get(&referent);
-    if !stale && current.is_some_and(|rig| rig.fits(entry, &mesh)) {
+    if !stale && current.is_some_and(|rig| rig.fits(entry, &mesh, &own)) {
         return bound;
     }
     resolved.drop_rig(referent);
-    let Some(mut rig) = Rig::of(entry, &mesh, poses) else {
+    let rig = match character {
+        Some(_) => Rig::garment(entry, &own, &mesh, poses),
+        None => Rig::of(entry, &mesh, poses),
+    };
+    let Some(mut rig) = rig else {
         return bound;
     };
     // On the GPU path the rest mesh stays under the key and the renderer

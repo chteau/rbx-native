@@ -213,7 +213,13 @@ impl Plan {
         let parts = self
             .entries
             .iter()
-            .filter(|entry| entry.model.is_some_and(|model| models.contains(&model)))
+            .filter(|entry| {
+                let character = entry.wrap.as_ref().map(|wrap| wrap.character);
+                entry
+                    .model
+                    .or(character)
+                    .is_some_and(|model| models.contains(&model))
+            })
             .map(|entry| entry.referent);
         self.rebinds.extend(parts);
     }
@@ -340,6 +346,13 @@ pub(crate) fn resolve(
         if let Some((key, derived)) = wrapped.get(&entry.referent) {
             meshes.insert(key.clone(), derived.clone());
             mesh_key = key.clone();
+            // The wrapped garment follows the character's pose through a
+            // skin of its own or one the body lent it.
+            if let Some(rig) = skinned::Rig::garment(entry, &mesh, derived, &plan.poses) {
+                meshes.insert(rig.key.clone(), derived.clone());
+                mesh_key = rig.key.clone();
+                rigs.insert(entry.referent, rig);
+            }
         }
         // A skinned mesh drawn as itself (not dressed, not wrapped) draws
         // through a copy of its own, posed later — the very same `Arc` at

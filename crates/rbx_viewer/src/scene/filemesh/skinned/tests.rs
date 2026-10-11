@@ -525,3 +525,160 @@ fn a_place_saved_mid_pose_rests_where_its_joints_say() {
         assert_near(*now, Vec3::new(-rest.y, rest.x, 0.0));
     }
 }
+
+/// Points as an unskinned mesh, every normal facing +Z.
+fn points(points: &[[f32; 3]]) -> Arc<rbx_mesh::SkinnedMesh> {
+    Arc::new(rbx_mesh::SkinnedMesh::from(rbx_mesh::Mesh {
+        version: (4, 1),
+        vertices: points
+            .iter()
+            .map(|&position| rbx_mesh::Vertex {
+                position,
+                normal: [0.0, 0.0, 1.0],
+                uv: [0.0; 2],
+                color: [255; 4],
+            })
+            .collect(),
+        indices: Vec::new(),
+        lods: Vec::new(),
+        bounds: rbx_mesh::Aabb {
+            min: [-1.0; 3],
+            max: [1.0; 3],
+        },
+    }))
+}
+
+const HANDLE: Ref = Ref::new(6);
+
+/// `Model > {MeshPart UpperArm (y 5..7), MeshPart LowerArm (y 3..5),
+/// Accessory > MeshPart Handle}`: each arm part carries a `WrapTarget` cage
+/// along its axis, the handle a `WrapLayer` whose reference is that body,
+/// and a garment strip from y 3 to 7, welded to the upper arm.
+fn dressed_arm() -> WeakDom {
+    let mut dom = WeakDom::new();
+    let workspace = Ref::new(1);
+    dom.insert(Instance::new(workspace, "Workspace", "Workspace"));
+    dom.set_parent(workspace, None);
+    dom.insert(Instance::new(MODEL, "Model", "Character"));
+    dom.set_parent(MODEL, Some(workspace));
+    let mut add =
+        |referent: Ref, class: &str, name: &str, parent: Ref, props: Vec<(&str, Variant)>| {
+            let mut instance = Instance::new(referent, class, name);
+            for (key, value) in props {
+                instance.properties_mut().insert(key.to_string(), value);
+            }
+            dom.insert(instance);
+            dom.set_parent(referent, Some(parent));
+        };
+    let asset = |id: u32| Variant::String(format!("rbxassetid://{id}"));
+    let part = |mesh: u32, height: f32, y: f32| {
+        vec![
+            ("MeshId", asset(mesh)),
+            ("size", vector3(Vec3::new(1.0, height, 1.0))),
+            ("InitialSize", vector3(Vec3::new(1.0, height, 1.0))),
+            ("CFrame", cframe(Vec3::new(0.0, y, 0.0), IDENTITY)),
+        ]
+    };
+    add(UPPER, "MeshPart", "UpperArm", MODEL, part(30, 2.0, 6.0));
+    add(LOWER, "MeshPart", "LowerArm", MODEL, part(30, 2.0, 4.0));
+    add(
+        Ref::new(10),
+        "WrapTarget",
+        "WrapTarget",
+        UPPER,
+        vec![("CageMeshId", asset(31))],
+    );
+    add(
+        Ref::new(11),
+        "WrapTarget",
+        "WrapTarget",
+        LOWER,
+        vec![("CageMeshId", asset(31))],
+    );
+    add(Ref::new(5), "Accessory", "Shirt", MODEL, Vec::new());
+    add(
+        HANDLE,
+        "MeshPart",
+        "Handle",
+        Ref::new(5),
+        part(32, 4.0, 5.0),
+    );
+    add(
+        Ref::new(7),
+        "WrapLayer",
+        "WrapLayer",
+        HANDLE,
+        vec![("ReferenceMeshId", asset(33))],
+    );
+    add(
+        Ref::new(8),
+        "Weld",
+        "AccessoryWeld",
+        HANDLE,
+        vec![
+            ("Part0", Variant::Ref(UPPER)),
+            ("Part1", Variant::Ref(HANDLE)),
+        ],
+    );
+    dom
+}
+
+fn column(x: f32, from: f32, to: f32, step: f32) -> Vec<[f32; 3]> {
+    let count = ((to - from) / step).round() as usize;
+    (0..=count)
+        .map(|i| [x, from + i as f32 * step, 0.0])
+        .collect()
+}
+
+#[test]
+fn a_layered_garment_follows_the_part_it_wraps() {
+    let mut dom = dressed_arm();
+    let mut plan = planned(&dom);
+    let meshes = HashMap::from([
+        (AssetRef::Id(30), points(&[[0.0; 3]])),
+        (AssetRef::Id(31), points(&column(0.0, -1.0, 1.0, 0.25))),
+        (AssetRef::Id(32), points(&column(0.5, -2.0, 2.0, 0.5))),
+        (AssetRef::Id(33), points(&column(0.0, -2.0, 2.0, 0.25))),
+    ]);
+    let mut resolved = resolve(&plan, meshes, HashMap::new()).0;
+    let rig = resolved
+        .rigs
+        .get_mut(&HANDLE)
+        .expect("the garment is rigged");
+    assert!(rig.wraps());
+    let skin = rig.source().skin.as_ref().expect("the body lent its skin");
+    let names: Vec<&str> = skin.bones.iter().map(|bone| bone.name.as_str()).collect();
+    assert_eq!(names, ["UpperArm", "LowerArm"]);
+    let rest = positions(rig.source());
+
+    // Turn the lower arm a quarter about +Z around the elbow at (0, 5, 0).
+    dom.get_mut(LOWER).unwrap().properties_mut().insert(
+        "CFrame".to_string(),
+        cframe(Vec3::new(1.0, 5.0, 0.0), QUARTER_Z),
+    );
+    plan.poses.track(&dom, LOWER);
+    let posed = positions(&rig.pose(&plan.poses).expect("the lower arm moved"));
+    // Handle-local (0.5, -2) hangs at the wrist: (x, y) → (−y, x) about the
+    // elbow, the handle at the elbow. The shoulder end stays.
+    let (wrist, shoulder) = (0, rest.len() - 1);
+    let turned = Vec3::new(-rest[wrist].y, rest[wrist].x, rest[wrist].z);
+    assert!(
+        posed[wrist].abs_diff_eq(turned, 1e-3),
+        "{} is not {turned}",
+        posed[wrist]
+    );
+    assert!(posed[shoulder].abs_diff_eq(rest[shoulder], 1e-5));
+
+    // A patch that changes nothing keeps the rig; the instance draws it.
+    let entry = replanned(&dom, &mut plan, HANDLE);
+    let bound = bind(
+        &dom,
+        &ReflectionDatabase::embedded(),
+        &mut plan.poses,
+        &mut resolved,
+        &entry,
+        false,
+    );
+    assert!(bound.key.is_none(), "kept, not rebuilt");
+    assert!(resolved.rigs.get(&HANDLE).is_some_and(Rig::wraps));
+}
