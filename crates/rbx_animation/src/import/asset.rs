@@ -2,12 +2,14 @@
 //! `KeyframeSequence` animation as an ordinary model file (what
 //! `game:GetObjects("rbxassetid://…")` reads), so it is read like any other
 //! model. The download itself is the caller's: the editor uses the same
-//! anonymous-then-keyed route as every other asset. A `CurveAnimation` is
-//! reported rather than guessed at, since this crate does not read curves.
+//! anonymous-then-keyed route as every other asset. A `CurveAnimation` (what
+//! catalog emotes are) is read through [`crate::curve::file`] and baked to a
+//! clip.
 
 use rbx_dom::{Ref, WeakDom};
 
 use crate::clip::Clip;
+use crate::curve::file;
 use crate::import::ImportError;
 use crate::sequence;
 
@@ -35,7 +37,11 @@ fn find(dom: &WeakDom, class: &str) -> Option<Ref> {
     None
 }
 
-/// Reads the first `KeyframeSequence` in a downloaded model file.
+/// Frames per second a `CurveAnimation`'s cubic segments are baked at.
+const CURVE_BAKE_FPS: f32 = 30.;
+
+/// Reads the first `KeyframeSequence` in a downloaded model file, or failing
+/// that its first `CurveAnimation`.
 pub fn clip_from_model(bytes: &[u8], name: &str) -> Result<Clip, ImportError> {
     let dom = if rbx_xml::is_xml(bytes) {
         let text =
@@ -51,13 +57,16 @@ pub fn clip_from_model(bytes: &[u8], name: &str) -> Result<Clip, ImportError> {
         }
         return Ok(clip);
     }
-    if find(&dom, "CurveAnimation").is_some() {
-        return Err(ImportError::Format(
-            "this animation is a CurveAnimation, which the editor cannot read yet".into(),
-        ));
+    if let Some(r) = find(&dom, "CurveAnimation") {
+        let curves = file::read(&dom, r).map_err(ImportError::Format)?;
+        let mut clip = file::bake(&curves, CURVE_BAKE_FPS);
+        if clip.name.is_empty() || clip.name == "CurveAnimation" {
+            clip.name = name.to_owned();
+        }
+        return Ok(clip);
     }
     Err(ImportError::Format(
-        "the asset holds no KeyframeSequence".into(),
+        "the asset holds no KeyframeSequence or CurveAnimation".into(),
     ))
 }
 
@@ -106,7 +115,7 @@ mod tests {
     #[test]
     fn says_what_it_cannot_read() {
         let mut dom = WeakDom::new();
-        dom.new_instance("CurveAnimation", "Emote", None);
+        dom.new_instance("Folder", "Empty", None);
         let err = clip_from_model(&rbx_binary::serialize(&dom).unwrap(), "x").unwrap_err();
         assert!(err.to_string().contains("CurveAnimation"));
         assert!(clip_from_model(b"junk", "x").is_err());

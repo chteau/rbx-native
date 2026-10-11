@@ -3,16 +3,21 @@
 //! conversion to and from a [`Clip`](crate::clip::Clip). [`CurveClip`] is the
 //! entry point; [`from_clip`] and [`to_clip`] move between the two forms.
 //!
-//! The `ValuesAndTimes` byte layout a saved `CurveAnimation` uses is not
-//! public, so curves live only in memory and are saved by baking back to a
-//! `KeyframeSequence`.
+//! A saved `CurveAnimation` is read through [`file`], whose key bytes
+//! [`values`] decodes (a layout read off real catalog emotes, as Roblox does
+//! not publish it). [`values`] also writes those bytes back identically, but
+//! the editor still saves curves by baking them to a `KeyframeSequence`:
+//! the model drops the auto slopes Roblox stores for unset tangents, so a
+//! `CurveAnimation` rebuilt from it would not match the file it came from.
 
 use crate::clip::TIME_EPSILON;
 use crate::easing::{ease, Direction, Style};
 
 mod convert;
 mod euler;
+pub mod file;
 mod joint;
+pub mod values;
 
 pub use convert::{from_clip, from_clip_in_order, to_clip};
 pub use euler::RotationOrder;
