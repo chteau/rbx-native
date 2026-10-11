@@ -138,7 +138,7 @@ pub fn fit_with(mesh: &Mesh, options: &FitOptions) -> Result<Fit, Error> {
     if triangles.is_empty() {
         return Err(Error::Empty);
     }
-    let mut warnings = Vec::new();
+    let mut warnings = mesh.notes.clone();
     let orientation = match options.orientation {
         Some(o) => o,
         None => orient::detect(mesh, &mut warnings),
@@ -321,6 +321,11 @@ fn smooth(points: &mut [Vec3], radius: usize) {
 
 impl Limb {
     fn trace(grid: &Grid, geo: &Geodesic, tip: usize, h: f32) -> Limb {
+        Self::trace_within(grid, geo, tip, 0.12 * h)
+    }
+
+    /// As `trace`, measuring sections out to `limit` from the path.
+    fn trace_within(grid: &Grid, geo: &Geodesic, tip: usize, limit: f32) -> Limb {
         let mut raw = Vec::new();
         let mut v = tip;
         loop {
@@ -336,7 +341,6 @@ impl Limb {
         }
         let mut points = resample(&raw, 1.5 * grid.cell);
         smooth(&mut points, 2);
-        let limit = 0.12 * h;
         let mut limb = Limb {
             points,
             tangents: Vec::new(),
@@ -490,31 +494,46 @@ fn landmarks(grid: &Grid, h: f32, warnings: &mut Vec<String>) -> Result<Fit, Err
         })
         .expect("non-empty");
     let geo = grid.geodesic(&[(core, 0)]);
-
     let tips = extremities(grid, &geo, core, h);
-    if tips.len() < 5 {
-        return Err(Error::Extremities { found: tips.len() });
-    }
+    let roles = roles(grid, &geo, &tips, h)?;
+
+    // A big-headed character's thickest voxel is in the head, and from
+    // there its hair tips can outreach its hands and feet. Re-centre the
+    // core on the torso: the voxel no farther from any hand or foot than it
+    // must be, then find the tips again from there.
+    let ends = [roles.hands[0], roles.hands[1], roles.feet[0], roles.feet[1]];
+    let from_ends: Vec<Geodesic> = ends.iter().map(|&e| grid.geodesic(&[(e, 0)])).collect();
+    let centre = solid
+        .iter()
+        .copied()
+        .filter(|&v| from_ends.iter().all(|g| g.dist[v].is_finite()))
+        .min_by(|&a, &b| {
+            let reach = |v: usize| from_ends.iter().map(|g| g.dist[v]).fold(0., f32::max);
+            reach(a).total_cmp(&reach(b))
+        });
+    let (geo, tips, roles) = match centre.filter(|&c| c != core) {
+        Some(centre) => {
+            let again = grid.geodesic(&[(centre, 0)]);
+            let more = extremities(grid, &again, centre, h);
+            match self::roles(grid, &again, &more, h) {
+                Ok(found) => (again, more, found),
+                Err(_) => (geo, tips, roles),
+            }
+        }
+        None => (geo, tips, roles),
+    };
     if tips.len() > 5 {
         warnings.push(format!(
-            "Found {} extremities (a tail, wings or long hair?); kept the five farthest. Check the head, hand and foot markers.",
+            "Found {} extremities (a tail, wings, heels or long hair?); took the lowest on each side for the feet, the outermost for the hands and the highest for the head. Check those markers.",
             tips.len()
         ));
     }
-    let mut tips: Vec<usize> = tips.into_iter().take(5).collect();
-    tips.sort_by(|&a, &b| grid.centre(a).y.total_cmp(&grid.centre(b).y));
-    let (feet, upper) = tips.split_at(2);
+    let Roles {
+        head,
+        mut hands,
+        mut feet,
+    } = roles;
     let feet_x = (grid.centre(feet[0]).x + grid.centre(feet[1]).x) / 2.;
-    let head = *upper
-        .iter()
-        .min_by(|&&a, &&b| {
-            (grid.centre(a).x - feet_x)
-                .abs()
-                .total_cmp(&(grid.centre(b).x - feet_x).abs())
-        })
-        .expect("three tips");
-    let mut hands: Vec<usize> = upper.iter().copied().filter(|&t| t != head).collect();
-    let mut feet = feet.to_vec();
     let by_x = |a: &usize, b: &usize| grid.centre(*a).x.total_cmp(&grid.centre(*b).x);
     hands.sort_by(by_x);
     feet.sort_by(by_x);
@@ -533,12 +552,14 @@ fn landmarks(grid: &Grid, h: f32, warnings: &mut Vec<String>) -> Result<Fit, Err
 
     // Neck: the narrow run below the head, its lower end where the section
     // starts widening into the shoulders (the Mannequin's head keeps its neck).
-    let head_limb = Limb::trace(grid, &geo, head, h);
+    // Sections out to 0.25·h, so a big cartoon head still measures whole.
+    let head_limb = Limb::trace_within(grid, &geo, head, 0.25 * h);
     let neck = neck(&head_limb, h, cx, warnings);
     set(Joint::Neck, neck);
 
     let crotch = match crotch(grid, grid.centre(left_foot), grid.centre(right_foot), h) {
-        Some(y) if y > 0.3 * h => y,
+        // A chibi's crotch can sit at a quarter of its height.
+        Some(y) if y > 0.15 * h => y,
         _ => {
             warnings.push(
                 "Couldn\u{2019}t find the crotch (legs touching all the way down?); placed the hips by proportion."
@@ -561,7 +582,7 @@ fn landmarks(grid: &Grid, h: f32, warnings: &mut Vec<String>) -> Result<Fit, Err
     }
     for (side, foot) in [(Side::Left, left_foot), (Side::Right, right_foot)] {
         let limb = Limb::trace(grid, &geo, foot, h);
-        let (hip, knee, ankle) = leg(&limb, h, crotch);
+        let (hip, knee, ankle) = leg(&limb, h, crotch, cx);
         let (a, b, c) = match side {
             Side::Left => (Joint::LeftHip, Joint::LeftKnee, Joint::LeftAnkle),
             Side::Right => (Joint::RightHip, Joint::RightKnee, Joint::RightAnkle),
@@ -592,6 +613,60 @@ fn landmarks(grid: &Grid, h: f32, warnings: &mut Vec<String>) -> Result<Fit, Err
     })
 }
 
+/// Which tips are the head, the hands and the feet.
+struct Roles {
+    head: usize,
+    hands: [usize; 2],
+    feet: [usize; 2],
+}
+
+/// Picks the head, hands and feet among `tips` by where they are, not by
+/// how far they reach: a heel, a nose or a hair spike can reach farther
+/// than the head. Feet: on each side of the core, the farthest-reaching tip
+/// in the lowest quarter (else the two lowest tips). Hands: the outermost
+/// of the rest on each side. Head: the highest of what is left.
+fn roles(grid: &Grid, geo: &Geodesic, tips: &[usize], h: f32) -> Result<Roles, Error> {
+    if tips.len() < 5 {
+        return Err(Error::Extremities { found: tips.len() });
+    }
+    let at = |t: usize| grid.centre(t);
+    let reach = |a: &usize, b: &usize| geo.dist[*a].total_cmp(&geo.dist[*b]);
+    let mut by_y = tips.to_vec();
+    by_y.sort_by(|&a, &b| at(a).y.total_cmp(&at(b).y));
+    // The middle of the two lowest tips splits left from right.
+    let mid = (at(by_y[0]).x + at(by_y[1]).x) / 2.;
+    let low: Vec<usize> = tips
+        .iter()
+        .copied()
+        .filter(|&t| at(t).y < 0.25 * h)
+        .collect();
+    let side = |left: bool| {
+        low.iter()
+            .copied()
+            .filter(|&t| (at(t).x < mid) == left)
+            .max_by(reach)
+    };
+    let feet = match (side(true), side(false)) {
+        (Some(l), Some(r)) => [l, r],
+        _ => [by_y[0], by_y[1]],
+    };
+    let rest: Vec<usize> = tips.iter().copied().filter(|t| !feet.contains(t)).collect();
+    let by_x = |a: &usize, b: &usize| at(*a).x.total_cmp(&at(*b).x);
+    let left = rest.iter().copied().min_by(by_x).expect("three tips");
+    let right = rest.iter().copied().max_by(by_x).expect("three tips");
+    let head = rest
+        .iter()
+        .copied()
+        .filter(|&t| t != left && t != right)
+        .max_by(|&a, &b| at(a).y.total_cmp(&at(b).y))
+        .expect("three tips");
+    Ok(Roles {
+        head,
+        hands: [left, right],
+        feet,
+    })
+}
+
 /// Tips of the geodesic field that end a real branch, farthest first.
 ///
 /// Local maxima of the geodesic distance from the core sit at every bump:
@@ -618,7 +693,7 @@ fn extremities(grid: &Grid, geo: &Geodesic, core: usize, h: f32) -> Vec<usize> {
             continue;
         }
         tips.push(c);
-        if tips.len() == 8 {
+        if tips.len() == 12 {
             break;
         }
         let mut path = Vec::new();
@@ -642,18 +717,33 @@ fn extremities(grid: &Grid, geo: &Geodesic, core: usize, h: f32) -> Vec<usize> {
 fn neck(limb: &Limb, h: f32, cx: f32, warnings: &mut Vec<String>) -> Vec3 {
     let n = limb.points.len();
     let start = (0..n).find(|&i| limb.s[i] >= 0.03 * h).unwrap_or(0);
+    // The shoulders begin where the section, having narrowed below the
+    // widest part of the head, widens again or runs out of the body. Before
+    // it has narrowed, a section running out is hair or a hat brim.
     let mut least = f32::INFINITY;
+    let mut widest = 0f32;
+    let mut widest_i = start;
     let mut entry = None;
     for i in start..n {
-        if limb.s[i] > 0.4 * h {
+        // A cartoon head can be 0.45·h tall.
+        if limb.s[i] > 0.6 * h {
             break;
         }
         let s = &limb.sections[i];
-        if limb.s[i] >= 0.05 * h && (!s.found || s.truncated || s.area > 2.2 * least) {
+        let narrowed = least < 0.6 * widest;
+        if limb.s[i] >= 0.05 * h && narrowed && (!s.found || s.truncated || s.area > 2.2 * least) {
             entry = Some(i);
             break;
         }
-        least = least.min(limb.area(i));
+        if s.found && !s.truncated {
+            let area = limb.area(i);
+            if area > widest && !narrowed {
+                widest = area;
+                widest_i = i;
+                least = f32::INFINITY;
+            }
+            least = least.min(area);
+        }
     }
     let fallback = |warnings: &mut Vec<String>| {
         warnings.push(
@@ -665,7 +755,7 @@ fn neck(limb: &Limb, h: f32, cx: f32, warnings: &mut Vec<String>) -> Vec3 {
     let Some(entry) = entry.filter(|&e| e > start + 1) else {
         return fallback(warnings);
     };
-    let run: Vec<usize> = (start..entry).collect();
+    let run: Vec<usize> = (widest_i..entry).collect();
     let Some(min) = run
         .iter()
         .copied()
@@ -679,7 +769,7 @@ fn neck(limb: &Limb, h: f32, cx: f32, warnings: &mut Vec<String>) -> Vec3 {
         lower += 1;
     }
     let p = limb.points[lower];
-    if limb.area(min) > 0.8 * widest || !(0.7 * h..=0.93 * h).contains(&p.y) {
+    if limb.area(min) > 0.8 * widest || !(0.5 * h..=0.93 * h).contains(&p.y) {
         return fallback(warnings);
     }
     p
@@ -746,6 +836,16 @@ fn arm(
         (None, None) => limb.points[merge],
     };
     shoulder.y = shoulder.y.min(neck_y - 0.01 * h);
+    // A hunched or stocky torso can merge the arm low, near the armpit;
+    // the shoulder is never more than 0.1·h under the neck (the Mannequin
+    // has 0.055·h).
+    if shoulder.y < neck_y - 0.1 * h {
+        shoulder = on_axis_y(neck_y - 0.1 * h).unwrap_or(Vec3::new(
+            shoulder.x,
+            neck_y - 0.1 * h,
+            shoulder.z,
+        ));
+    }
     if d.y.abs() > 0.94 {
         warnings.push(format!(
             "The {} arm hangs close to the body (I-pose); an A- or T-pose fits better. Check the shoulder and elbow markers.",
@@ -769,7 +869,7 @@ fn bend(limb: &Limb, range: std::ops::Range<usize>, a: Vec3, b: Vec3, ratio: f32
 }
 
 /// Hip, knee and ankle from a foot's limb.
-fn leg(limb: &Limb, h: f32, crotch: f32) -> (Vec3, Vec3, Vec3) {
+fn leg(limb: &Limb, h: f32, crotch: f32, cx: f32) -> (Vec3, Vec3, Vec3) {
     let n = limb.points.len();
     let window = limb.indices_where(|i| {
         (0.02 * h..=0.16 * h).contains(&limb.points[i].y) && limb.tangents[i].y.abs() > 0.6
@@ -800,11 +900,23 @@ fn leg(limb: &Limb, h: f32, crotch: f32) -> (Vec3, Vec3, Vec3) {
     let (c, d) = line_fit(&samples);
     // Mannequin: hip joint 0.04·h above the crotch.
     let hip_y = crotch + 0.04 * h;
-    let hip = if d.y.abs() > 0.3 {
+    let mut hip = if d.y.abs() > 0.3 {
         c + d * ((hip_y - c.y) / d.y)
     } else {
         Vec3::new(c.x, hip_y, c.z)
     };
+    // When the legs never part (a robe, or a crotch placed by proportion),
+    // the path runs on into the torso and the fitted line can carry the hip
+    // across the centre line or out of the body. Keep it on its own side,
+    // over its own leg.
+    let side = (ankle.x - cx).signum();
+    if (hip.x - cx) * side < 0.03 * h {
+        hip.x = cx + side * (0.5 * (ankle.x - cx).abs()).max(0.03 * h);
+    }
+    let knee_z = limb.points[ankle_i + (top - ankle_i) / 2].z;
+    if (hip.z - knee_z).abs() > 0.1 * h {
+        hip.z = knee_z;
+    }
     // Mannequin: the knee 0.486 of the way from hip to ankle.
     let knee = bend(limb, ankle_i..top, hip, ankle, 0.486, h);
     (hip, knee, ankle)
