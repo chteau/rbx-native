@@ -19,6 +19,7 @@ mod import;
 mod panel;
 mod pose;
 mod sheet;
+mod stage;
 mod view;
 mod widgets;
 
@@ -122,6 +123,8 @@ pub(super) struct Animation {
     pub(super) fitted: bool,
     pub(super) ik: IkSettings,
     pub(super) curve: curves::CurveView,
+    /// The rig the 3D view is staged around, once the grid is sent.
+    staged: Option<Ref>,
     /// What the local draft last held, and when it was written.
     drafted: Option<(rbx_animation::Clip, rbx_animation::graph::Graph)>,
     drafted_at: Option<Instant>,
@@ -144,6 +147,7 @@ impl Animation {
             fitted: false,
             ik: IkSettings::default(),
             curve: curves::CurveView::default(),
+            staged: None,
             drafted: None,
             drafted_at: None,
         }
@@ -161,6 +165,43 @@ impl Shell {
         self.anim.graph.playing = false;
         self.keep_draft(true);
         self.unpose_rig(cx);
+        self.unstage(cx);
+    }
+
+    /// Stages the bound rig in the 3D view: alone, on a floor grid at its
+    /// feet. Sent once per rig, as the document shows.
+    pub(super) fn stage_rig(&mut self, cx: &mut Context<Self>) {
+        let Some(bound) = &self.anim.bound else {
+            self.unstage(cx);
+            return;
+        };
+        if self.anim.staged == Some(bound.model) {
+            return;
+        }
+        let size_of = |part: Ref| match self.dom.get(part)?.properties().get("Size")? {
+            rbx_dom::Variant::Vector3(v) => Some(glam::Vec3::new(v.x, v.y, v.z)),
+            _ => None,
+        };
+        let boxes = bound.rest.iter().filter_map(|(&part, c)| {
+            let p = glam::Vec3::new(c.position.x, c.position.y, c.position.z);
+            Some((p, size_of(part)?))
+        });
+        let floor = stage::floor_of(boxes).unwrap_or(bound.root.position.y - 3.0);
+        let grid = stage::grid(bound.root.position, floor);
+        let model = bound.model;
+        self.viewport.update(cx, |viewport, _| {
+            viewport.set_stage_grid(grid);
+        });
+        self.anim.staged = Some(model);
+    }
+
+    /// Gives the 3D view back to the whole place.
+    pub(super) fn unstage(&mut self, cx: &mut Context<Self>) {
+        if self.anim.staged.take().is_some() {
+            self.viewport.update(cx, |viewport, _| {
+                viewport.set_stage_grid(Vec::new());
+            });
+        }
     }
 
     fn draft_file(&self) -> Option<std::path::PathBuf> {

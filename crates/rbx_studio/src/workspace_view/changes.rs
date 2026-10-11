@@ -11,6 +11,8 @@ use super::WorkspaceView;
 /// The line layer the light guides are drawn on; the dragger guides have
 /// theirs (see `guides::DRAGGER_GUIDES`).
 const LIGHT_GUIDES: usize = 0;
+/// The Animation Editor's floor grid (see `shell::animation::stage`).
+const STAGE_GRID: usize = 3;
 
 impl WorkspaceView {
     /// Forwards the Explorer's selection, forcing one frame even at rest.
@@ -58,6 +60,12 @@ impl WorkspaceView {
     /// the dragger guides' (see `guides`). An empty list clears them.
     pub(crate) fn set_lines(&mut self, segments: Vec<Segment>) {
         self.pump.lines(LIGHT_GUIDES, segments);
+    }
+
+    /// The Animation Editor's stage: its floor grid on a line layer of its
+    /// own. An empty list clears it.
+    pub(crate) fn set_stage_grid(&mut self, segments: Vec<Segment>) {
+        self.pump.lines(STAGE_GRID, segments);
     }
 
     /// Reflects one edit's `Change` log in the render thread's scene, every
