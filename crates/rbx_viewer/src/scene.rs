@@ -320,7 +320,7 @@ impl Scene {
         // an emitter's spawn volume is its parent's own placement, and a
         // `SurfaceGui`'s canvas covers one face of the part as drawn.
         let placements = scene.placements();
-        scene.emitters = particles::plan(dom, database, &placements);
+        scene.emitters = particles::plan(dom, database, &scene.emitter_placements());
         scene.gui_spaces = gui::plan_space(dom, database, &placements, &mut scene.materials);
         // A beam resolves its own attachment chain straight off the DOM
         // instead (see `scene::beam::attachment`), so it needs no placement.
@@ -540,6 +540,20 @@ impl Scene {
                     && !part.isolated_out
                     && (!part.suppressed || pieced.contains(&part.referent()))
             })
+            .map(|part| (part.referent(), part.placement()))
+            .collect()
+    }
+
+    /// Where each emitter's parent part stands: [`Scene::placements`] with
+    /// suppressed parts kept. An emitter spawns from its part's box whatever
+    /// draws that box — a `MeshPart` whose mesh landed is suppressed, yet its
+    /// sparks still fly from its `Size` and `CFrame`. Planning off
+    /// [`Scene::placements`] instead lost every such emitter on the first
+    /// re-plan after the mesh arrived, which a pose triggers on every frame.
+    pub(crate) fn emitter_placements(&self) -> HashMap<Ref, Placement> {
+        self.parts
+            .iter()
+            .filter(|part| part.id.is_whole() && !part.isolated_out)
             .map(|part| (part.referent(), part.placement()))
             .collect()
     }

@@ -72,7 +72,7 @@ impl Scene {
     ) {
         match kind {
             EffectKind::Particles => {
-                let placements = self.placements();
+                let placements = self.emitter_placements();
                 self.emitters = particles::plan(dom, database, &placements);
             }
             EffectKind::Beams => self.beams = beam::plan(dom, database),
@@ -255,6 +255,27 @@ mod tests {
             .unwrap();
         scene.replan_effect(&dom, &database, EffectKind::Particles);
         assert_eq!(scene.particle_emitters().len(), 1);
+    }
+
+    // A `MeshPart` whose mesh landed has its box suppressed, but its emitter
+    // still spawns from that box. A pose re-plans particles on every frame,
+    // so planning off the drawn-box placements lost the emitter of every
+    // posed rig whose torso is a mesh.
+    #[test]
+    fn replanning_keeps_the_emitter_of_a_part_whose_mesh_replaced_its_box() {
+        let dom = effects_place();
+        let database = ReflectionDatabase::embedded();
+        let mut scene = Scene::from_dom(&dom, &database).unwrap();
+        for part in &mut scene.parts {
+            if part.referent() == Ref::new(BASE) {
+                part.suppressed = true;
+            }
+        }
+
+        scene.replan_effect(&dom, &database, EffectKind::Particles);
+
+        assert_eq!(scene.particle_emitters().len(), 1);
+        assert_eq!(scene.drawn_particle_emitters().len(), 1);
     }
 
     #[test]
