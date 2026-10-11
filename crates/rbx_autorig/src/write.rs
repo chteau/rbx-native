@@ -88,10 +88,20 @@ fn floats<const N: usize>(items: impl Iterator<Item = [f32; N]>) -> Vec<u8> {
     items.flatten().flat_map(f32::to_le_bytes).collect()
 }
 
+/// A point or direction of Roblox space as an uploaded glTF holds it: turned
+/// half round about Y, so the character faces +Z, glTF's front. Roblox's
+/// importer turns what it reads half round to face −Z: written facing −Z,
+/// models 95056738325785 and 91357319063637 came back facing +Z, and the
+/// skinned one then stood back to front in game however its parts were
+/// turned afterwards. A turn, not a mirror, so faces keep their winding.
+pub(crate) fn file_space(v: Vec3) -> Vec3 {
+    Vec3::new(-v.x, v.y, -v.z)
+}
+
 /// All 15 parts as one binary glTF: a node per part named `<Part>_Geo` (the
 /// importer's naming for body parts) at the part's centre, holding a mesh of
-/// the same name. Coordinates are Roblox space as they are: +Y up, the
-/// character facing −Z, in studs. Roblox's importer reads glTF units as
+/// the same name. Coordinates are Roblox space in studs, +Y up, turned to
+/// face +Z ([`file_space`]). Roblox's importer reads glTF units as
 /// studs: on live uploads (rigid model 95056738325785, skinned
 /// 91357319063637) every part's `InitialSize` equalled its glTF bounds.
 pub fn gltf(body: &Body) -> Vec<u8> {
@@ -104,7 +114,7 @@ pub fn gltf(body: &Body) -> Vec<u8> {
         nodes.push(json!({
             "name": name,
             "mesh": meshes.len() - 1,
-            "translation": piece.centre.to_array(),
+            "translation": file_space(piece.centre).to_array(),
         }));
     }
     let document = json!({
@@ -150,11 +160,15 @@ impl Buffer {
         )
     }
 
-    /// `mesh` moved by `offset` as a triangle-list primitive: positions,
-    /// normals and UVs when present, and indices.
+    /// `mesh` moved by `offset` as a triangle-list primitive in
+    /// [`file_space`]: positions, normals and UVs when present, and indices.
     fn primitive(&mut self, mesh: &Mesh, offset: Vec3) -> Value {
         let n = mesh.positions.len();
-        let positions: Vec<Vec3> = mesh.positions.iter().map(|&p| p + offset).collect();
+        let positions: Vec<Vec3> = mesh
+            .positions
+            .iter()
+            .map(|&p| file_space(p + offset))
+            .collect();
         let bounds = crate::mesh::bounds(positions.iter().copied());
         let mut attributes = serde_json::Map::new();
         attributes.insert(
@@ -172,7 +186,7 @@ impl Buffer {
             attributes.insert(
                 "NORMAL".into(),
                 json!(self.accessor(
-                    &floats(mesh.normals.iter().map(|p| p.to_array())),
+                    &floats(mesh.normals.iter().map(|&p| file_space(p).to_array())),
                     5126,
                     n,
                     "VEC3",
@@ -365,11 +379,11 @@ pub fn mesh_v4(mesh: &Mesh, skin: Option<&PartSkin>) -> Vec<u8> {
 ///   [`Part::ALL`] order, parented as R15 parts are (`Root →
 ///   HumanoidRootNode → LowerTorso → …`). Each sits at its bone's joint
 ///   (the joint whose `Part1` it is), with identity rotation and scale.
-/// - Coordinates are Roblox space (+Y up, facing −Z, studs) moved so the
-///   Root joint is at the origin, as the importer requires ("the
+/// - Coordinates are Roblox space (+Y up, studs) moved so the Root joint is
+///   at the origin and turned to face +Z ([`file_space`]), as the importer requires ("the
 ///   LowerTorso and Root bone position must be 0, 0, 0"): `Root`,
 ///   `HumanoidRootNode` and `LowerTorso` all sit at 0, 0, 0, and a point of
-///   the file is at `world − skin.joints[Root]`.
+///   the file is at `file_space(world − skin.joints[Root])`.
 /// - Then 15 nodes named `<Part>_Geo`, each holding the part's mesh of the
 ///   same name (vertices in that shifted space) and skinned to the one skin,
 ///   whose joints are the 17 bone nodes and whose inverse bind matrices are
@@ -389,7 +403,7 @@ pub fn gltf_skinned(body: &Body, skin: &Skin) -> Vec<u8> {
         let parent = part.parent().map_or(Vec3::ZERO, bone_world);
         let mut node = json!({
             "name": part.name(),
-            "translation": (bone_world(part) - parent).to_array(),
+            "translation": file_space(bone_world(part) - parent).to_array(),
         });
         let children: Vec<usize> = Part::ALL
             .into_iter()
@@ -406,7 +420,7 @@ pub fn gltf_skinned(body: &Body, skin: &Skin) -> Vec<u8> {
         let at = if j < 2 {
             Vec3::ZERO
         } else {
-            bone_world(Part::ALL[j - 2])
+            file_space(bone_world(Part::ALL[j - 2]))
         };
         let mut m = [0f32; 16];
         (m[0], m[5], m[10], m[15]) = (1., 1., 1., 1.);

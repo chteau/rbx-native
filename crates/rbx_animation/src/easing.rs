@@ -175,7 +175,10 @@ pub fn ease(style: Style, direction: Direction, t: f32) -> f32 {
             _ => 0.,
         };
     }
-    // The deprecated Cubic plays with its direction reversed.
+    // The deprecated Cubic plays with its direction reversed. Measured in
+    // Roblox Studio, a 0→90° pose played by an Animator at 0.25 s / 0.75 s:
+    // Cubic In 52.0°/88.6°, Cubic Out 1.4°/38.0°, and Constant In 90/90,
+    // Out 0/0, InOut 0/90, as this function gives.
     let direction = match (style, direction) {
         (Style::Cubic, Direction::In) => Direction::Out,
         (Style::Cubic, Direction::Out) => Direction::In,

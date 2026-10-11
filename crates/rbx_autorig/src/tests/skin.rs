@@ -501,6 +501,7 @@ fn mesh_v4_round_trips_geometry_and_skin() {
 #[test]
 fn the_skinned_glb_has_one_skin_over_the_r15_armature() {
     let (_, _, body, skin) = skinned(Pose::A);
+    use crate::write::file_space;
     let bytes = crate::gltf_skinned(body, skin);
     let file = gltf::Gltf::from_slice(&bytes).unwrap();
     let blob = file.blob.as_deref().unwrap();
@@ -539,10 +540,10 @@ fn the_skinned_glb_has_one_skin_over_the_r15_armature() {
         assert_eq!(parent.name(), Some(want));
         let (_, rotation, _) = node.transform().decomposed();
         assert_eq!(rotation, [0., 0., 0., 1.]);
-        // At its joint, measured from the Root joint.
+        // At its joint, measured from the Root joint, turned to face +Z.
         let at = world[node.index()].w_axis.truncate();
         assert!(
-            (at - (skin.bone_position(part) - root)).length() < 1e-4,
+            (at - file_space(skin.bone_position(part) - root)).length() < 1e-4,
             "{part}"
         );
     }
@@ -582,7 +583,8 @@ fn the_skinned_glb_has_one_skin_over_the_r15_armature() {
         let weights: Vec<[f32; 4]> = reader.read_weights(0).unwrap().into_f32().collect();
         assert_eq!(positions.len(), piece.mesh.positions.len());
         for i in 0..positions.len() {
-            assert!((positions[i] + root - piece.centre - piece.mesh.positions[i]).length() < 1e-4);
+            let roblox = file_space(positions[i]) + root;
+            assert!((roblox - piece.centre - piece.mesh.positions[i]).length() < 1e-4);
             assert!((weights[i].iter().sum::<f32>() - 1.).abs() < 1e-5);
             let mut skinned = Vec3::ZERO;
             for k in 0..4 {

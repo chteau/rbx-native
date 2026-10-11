@@ -687,15 +687,17 @@ fn facing(dom: &WeakDom, right: Ref, left: Ref) -> Option<f32> {
 /// `source` to stand in it as it stood in the cut, or None when it already
 /// does.
 ///
-/// The importer turns the whole upload half round about Y: the glTF is
-/// written facing −Z (Roblox's front) and comes back facing +Z, the right
-/// arm on −X, every part unrotated (models 95056738325785 and
-/// 91357319063637). A served mesh is in its imported part's frame, so in a
-/// part of ours facing −Z it would stand back to front: a forearm with the
-/// hand's skin at the elbow, which bends wrong (the "shorter forearms, less
-/// bent knee" after Publish). The served bones say the same: the Woman's
-/// `RightLowerArm` bone sits at the part's `JointOffset`, the cut's elbow
-/// turned half round (test `the_served_forearm_is_the_cut_turned_half_round`).
+/// The importer turns the whole upload half round about Y. A glTF written
+/// facing −Z (Roblox's front) came back facing +Z, the right arm on −X,
+/// every part unrotated (models 95056738325785 and 91357319063637), so the
+/// writer now faces the file +Z (`rbx_autorig::write::file_space`) and the
+/// answer should face as our rig does, with nothing to turn here. Should it
+/// not, a served mesh is in its imported part's frame, so in a part of ours
+/// facing −Z it would stand back to front: a forearm with the hand's skin at
+/// the elbow (test `the_served_forearm_is_the_cut_turned_half_round`).
+/// Turning the part on its centre fixes how a rigid part looks, but a
+/// skinned body still stood back to front in game (89657914261022), which
+/// is why the file itself is turned.
 fn served_turn(
     dom: &WeakDom,
     model: Ref,

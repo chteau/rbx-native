@@ -255,10 +255,19 @@ l'upload par un modèle local.
     lecture : `Poses::rejoint` les relit quand un `Motor6D`/`Motor`
     change (C0/C1), et ne rebinde que si un repos a bougé. Test
     `a_part_turned_with_its_joint_rests_where_it_now_stands`.
-  - **Reste à faire** : les places déjà publiées avant ce correctif restent
-    retournées jusqu'à un nouveau Publish. Pas de nouvel upload live fait
-    pour vérifier de bout en bout. Option future : écrire le glTF face à
-    +Z pour que l'importeur ne retourne rien (non essayé).
+  - **Insuffisant en jeu (Studio, 2026-10-11)** : le re-publish
+    89657914261022 (avec ce correctif), mis en `StarterCharacter`, marche
+    à reculons, et un accessoire de dos (`BodyBackAttachment`) se pose sur
+    le devant du mesh. Le corps skinné reste à l'envers malgré la partie
+    tournée.
+  - **Nouveau correctif** : le glTF est écrit face à +Z (convention glTF,
+    `write::file_space` : x et z négés sur positions, normales,
+    translations des nœuds et inverse binds), donc le demi-tour de
+    l'importeur le remet face à −Z, comme notre rig. `served_turn` ne
+    devrait plus rien tourner (gardé en filet). **À vérifier** : un
+    nouveau Publish de WomanBody13 en skinné, puis `StarterCharacter`
+    dans Studio (marche en avant, accessoire de dos dans le dos). Les
+    uploads précédents restent à l'envers.
 - **Garde des joints et undo** (`pr180/followups`)
   - `rbx_autorig::guard` : un joint glissé reste entre son parent et son
     enfant (10 % de marge, écart latéral ≤ moitié du segment), dans la
@@ -303,12 +312,13 @@ l'upload par un modèle local.
     (`Shell::unpose_copy`).
   - Ouvert : l'outil Align ne lit pas la pose ; le panneau Properties
     montre le `CFrame` de repos.
+- **Easing des poses, vérifié dans Roblox Studio (2026-10-11)** : côté
+  éditeur, tous les styles au sens TweenService (`CurveUtils`, cité dans
+  `easing.rs`). Au runtime, un `KeyframeSequence` 0→90° joué par un
+  `Animator` (Run, `KeyframeSequenceProvider`) donne à 0,25 s / 0,75 s :
+  Cubic In 52,0/88,6, Cubic Out 1,4/38,0, Constant In 90/90, Constant Out
+  0/0, Constant InOut 0/90, exactement ce que donne `ease` (Cubic inversé).
 - **Non vérifié contre un vrai client Roblox**
-  - Direction de l'easing des poses : côté éditeur, réglé par le code de
-    l'Animation Editor (`CurveUtils`, Client Tracker 41ab074bc29d, cité dans
-    `easing.rs`) : tous les styles au sens TweenService. Le `Cubic`
-    inversé au runtime ne repose que sur la doc de l'enum ; la direction de
-    `Constant` n'est dite nulle part.
   - Comportements non documentés du Graph, marqués `UNVERIFIED`. Réglé par
     la doc (`AnimationNodeType.yaml`) : formules scalaires Over/Add/Subtract
     et sens du Seed (-1 = aléatoire). Restent non vérifiés : poids Blend2D,

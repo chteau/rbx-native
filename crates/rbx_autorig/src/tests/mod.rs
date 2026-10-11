@@ -490,6 +490,7 @@ fn the_glb_holds_fifteen_named_parts_and_reads_back() {
         .parts
         .iter()
         .flat_map(|p| p.mesh.positions.iter().map(move |q| p.centre + *q))
+        .map(crate::write::file_space)
         .collect();
     let (lo, hi) = crate::mesh::bounds(world.iter().copied());
     let (blo, bhi) = crate::mesh::bounds(back.positions.iter().copied());
@@ -540,7 +541,11 @@ fn a_multi_mesh_gltf_with_node_transforms_fits() {
     let mesh = crate::read_bytes(&bytes, crate::Format::Gltf).unwrap();
     assert_eq!(mesh.triangles.len(), body.mesh.triangles.len());
     let fit = fit(&mesh, HEIGHT).unwrap();
-    assert_eq!(fit.orientation, Orientation::ROBLOX);
+    // Written facing +Z, glTF's front, and read back the same way.
+    assert_eq!(
+        fit.orientation,
+        Orientation::new(Axis::PosY, Axis::PosZ).unwrap()
+    );
     assert_joints(&fit, &body, 0.05);
 }
 
