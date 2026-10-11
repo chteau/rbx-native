@@ -1,4 +1,5 @@
-//! `Enum.AnimationNodeType` and what each kind starts with.
+//! `Enum.AnimationNodeType` and what each kind starts with, as the shipping
+//! Graph Editor creates it.
 
 use super::Value;
 
@@ -22,23 +23,28 @@ pub enum NodeKind {
     StateMachine,
 }
 
+/// The editor's own transition length, used wherever a node's transition
+/// attribute is unset.
+pub const DEFAULT_TRANSITION_DURATION: f64 = 0.1;
+
 impl NodeKind {
-    /// Every kind a builder can insert (the output node always exists).
+    /// Every kind a builder can insert, in the Insert Node menu's order
+    /// (grouped as [`NodeKind::group`] says). The output node always exists.
     pub const INSERTABLE: [NodeKind; 14] = [
         NodeKind::Clip,
+        NodeKind::PrioritySelect,
+        NodeKind::Select,
         NodeKind::StateMachine,
+        NodeKind::RandomSequence,
+        NodeKind::Sequence,
+        NodeKind::Add,
         NodeKind::Blend1D,
         NodeKind::Blend2D,
-        NodeKind::Select,
-        NodeKind::PrioritySelect,
-        NodeKind::Sequence,
-        NodeKind::RandomSequence,
-        NodeKind::OneShot,
         NodeKind::Over,
-        NodeKind::Add,
         NodeKind::Subtract,
-        NodeKind::Mask,
+        NodeKind::OneShot,
         NodeKind::Speed,
+        NodeKind::Mask,
     ];
 
     pub fn value(self) -> u32 {
@@ -68,14 +74,38 @@ impl NodeKind {
             .find(|k| k.value() == value)
     }
 
+    /// The `AnimationNodeType` item name, which is also the stem of a new
+    /// node's instance name (`ClipNode`, `ClipNode1`, …).
+    pub fn type_name(self) -> &'static str {
+        match self {
+            NodeKind::Add => "AddNode",
+            NodeKind::Over => "OverNode",
+            NodeKind::Blend1D => "Blend1DNode",
+            NodeKind::Blend2D => "Blend2DNode",
+            NodeKind::Clip => "ClipNode",
+            NodeKind::GraphOutput => "GraphOutput",
+            NodeKind::Mask => "MaskNode",
+            NodeKind::PrioritySelect => "PrioritySelectNode",
+            NodeKind::RandomSequence => "RandomSequenceNode",
+            NodeKind::Select => "SelectNode",
+            NodeKind::Sequence => "SequenceNode",
+            NodeKind::Speed => "SpeedNode",
+            NodeKind::Subtract => "SubtractNode",
+            NodeKind::OneShot => "OneShotNode",
+            NodeKind::StateMachine => "StateMachineNode",
+        }
+    }
+
+    /// The header text: the type name without "Node", spaced before each
+    /// capital that follows a lowercase letter (so "Blend1D" stays whole).
     pub fn label(self) -> &'static str {
         match self {
             NodeKind::Add => "Add",
             NodeKind::Over => "Over",
-            NodeKind::Blend1D => "Blend 1D",
-            NodeKind::Blend2D => "Blend 2D",
+            NodeKind::Blend1D => "Blend1D",
+            NodeKind::Blend2D => "Blend2D",
             NodeKind::Clip => "Clip",
-            NodeKind::GraphOutput => "Output",
+            NodeKind::GraphOutput => "Graph Output",
             NodeKind::Mask => "Mask",
             NodeKind::PrioritySelect => "Priority Select",
             NodeKind::RandomSequence => "Random Sequence",
@@ -88,23 +118,42 @@ impl NodeKind {
         }
     }
 
-    /// The pins a new node starts with. The kinds that take a list of inputs
-    /// start with two and can be given more.
+    /// The Insert Node menu group. Expression (a value node, not a kind
+    /// here) sits in "Misc" after Mask.
+    pub fn group(self) -> &'static str {
+        match self {
+            NodeKind::Clip => "Content",
+            NodeKind::PrioritySelect | NodeKind::Select | NodeKind::StateMachine => "State",
+            NodeKind::RandomSequence | NodeKind::Sequence => "Sequence",
+            NodeKind::Add
+            | NodeKind::Blend1D
+            | NodeKind::Blend2D
+            | NodeKind::Over
+            | NodeKind::Subtract
+            | NodeKind::OneShot => "Blend",
+            NodeKind::Speed | NodeKind::Mask => "Misc",
+            NodeKind::GraphOutput => "Output",
+        }
+    }
+
+    /// The pins a new node starts with. Fixed pins have the engine's names;
+    /// the kinds that take a list of inputs start empty, except Blend1D,
+    /// which the editor seeds with A and B.
     pub fn default_pins(self) -> &'static [&'static str] {
         match self {
-            NodeKind::Clip => &[],
             NodeKind::GraphOutput | NodeKind::Speed | NodeKind::Mask => &["Pose"],
             NodeKind::Over => &["Base", "Over"],
             NodeKind::Add => &["Base", "Additive"],
             NodeKind::Subtract => &["A", "B"],
             NodeKind::OneShot => &["Base", "OneShot"],
-            NodeKind::StateMachine => &["State1", "State2"],
-            NodeKind::Blend1D
+            NodeKind::Blend1D => &["A", "B"],
+            NodeKind::Clip
+            | NodeKind::StateMachine
             | NodeKind::Blend2D
             | NodeKind::Select
             | NodeKind::PrioritySelect
             | NodeKind::Sequence
-            | NodeKind::RandomSequence => &["Input1", "Input2"],
+            | NodeKind::RandomSequence => &[],
         }
     }
 
@@ -121,48 +170,96 @@ impl NodeKind {
         )
     }
 
-    /// The node's own properties and their defaults, from the
-    /// `AnimationNodeType` reference.
+    /// The node's own properties and their defaults, by the attribute names
+    /// the editor writes. Enum values are item names.
     pub fn default_props(self) -> Vec<(&'static str, Value)> {
         use Value::{Bool, Number, Text};
-        let fade = || ("DefaultTransitionDuration", Number(0.15));
+        let text = |s: &str| Text(s.to_owned());
+        let duration = || {
+            (
+                "DefaultTransitionDuration",
+                Number(DEFAULT_TRANSITION_DURATION),
+            )
+        };
+        let curve = || ("DefaultTransitionCurve", text("Linear"));
+        let when = || ("DefaultTransitionWhen", text("Finished"));
         match self {
             NodeKind::Clip => vec![
-                ("AnimationId", Text(String::new())),
-                ("PlayMode", Text("Loop".into())),
-                ("Speed", Number(1.)),
+                ("AnimationId", text("")),
+                ("PlayMode", text("Loop")),
                 ("Reverse", Bool(false)),
+                ("Speed", Number(1.)),
+                ("Trim", Bool(false)),
+                ("TrimStart", Number(0.)),
+                ("TrimEnd", Number(0.)),
             ],
             NodeKind::Speed => vec![("Speed", Number(1.))],
             NodeKind::Over | NodeKind::Add | NodeKind::Subtract => vec![("Weight", Number(1.))],
-            NodeKind::Mask => vec![("Invert", Bool(false))],
-            NodeKind::Blend1D => vec![("Position", Number(0.))],
-            NodeKind::Blend2D => vec![("X", Number(0.)), ("Y", Number(0.))],
-            NodeKind::Select => vec![("Selection", Text("Input1".into())), fade()],
-            NodeKind::PrioritySelect => vec![fade()],
-            NodeKind::Sequence => vec![("LoopCount", Number(0.)), fade()],
-            NodeKind::RandomSequence => {
-                vec![("Seed", Number(-1.)), ("PlayCount", Number(0.)), fade()]
+            // `Mask` names one of the graph's shared masks; storage keeps it
+            // as an ObjectValue rather than an attribute.
+            NodeKind::Mask => vec![("Mask", text("")), ("Invert", Bool(false))],
+            NodeKind::Blend1D => vec![("PhaseSync", text("Synced")), ("Position", Number(0.))],
+            NodeKind::Blend2D => vec![
+                ("PhaseSync", text("Synced")),
+                ("InputMode", text("Cartesian")),
+                ("X", Number(0.)),
+                ("Y", Number(0.)),
+            ],
+            NodeKind::Select => vec![("Selection", text("")), duration(), curve()],
+            NodeKind::PrioritySelect => {
+                vec![
+                    ("DefaultInterruptible", text("Always")),
+                    duration(),
+                    curve(),
+                ]
             }
+            NodeKind::Sequence => vec![
+                ("LoopCount", Number(0.)),
+                ("DefaultWaitFor", text("Finished")),
+                duration(),
+                curve(),
+                when(),
+            ],
+            NodeKind::RandomSequence => vec![
+                ("PlayCount", Number(0.)),
+                ("Seed", Number(-1.)),
+                duration(),
+                curve(),
+                when(),
+            ],
             NodeKind::OneShot => vec![
                 ("Trigger", Bool(false)),
                 ("Cancel", Bool(false)),
-                ("BlendMode", Text("Over".into())),
+                ("Interruptible", Bool(true)),
+                ("BlendMode", text("Over")),
                 ("TransitionInDuration", Number(0.15)),
+                ("TransitionInCurve", text("Linear")),
                 ("TransitionOutDuration", Number(0.15)),
+                ("TransitionOutCurve", text("Linear")),
+                ("TransitionOutWhen", text("Finished")),
             ],
-            NodeKind::StateMachine => vec![("EntryState", Text("State1".into()))],
+            // The entry state's pin name; empty plays the first state.
+            NodeKind::StateMachine => vec![("EntryState", text(""))],
             NodeKind::GraphOutput => vec![],
         }
     }
 
-    /// Settings each input pin of this kind carries.
+    /// Settings each input pin of this kind carries. The
+    /// `TransitionOverride*` settings are absent until set, which is what
+    /// makes the node's default transition apply.
     pub fn default_input_props(self) -> Vec<(&'static str, Value)> {
+        use Value::{Bool, Number};
         match self {
-            NodeKind::Blend1D => vec![("Position", Value::Number(0.))],
-            NodeKind::Blend2D => vec![("X", Value::Number(0.)), ("Y", Value::Number(0.))],
-            NodeKind::PrioritySelect => vec![("Trigger", Value::Bool(false))],
-            NodeKind::RandomSequence => vec![("Weight", Value::Number(1.))],
+            NodeKind::Blend1D => vec![("Position", Number(0.))],
+            NodeKind::Blend2D => vec![("X", Number(0.)), ("Y", Number(0.))],
+            NodeKind::PrioritySelect => {
+                vec![
+                    ("Trigger", Bool(false)),
+                    ("InterruptibleTrigger", Bool(false)),
+                ]
+            }
+            NodeKind::Sequence => vec![("WaitForTrigger", Bool(false))],
+            NodeKind::RandomSequence => vec![("Weight", Number(1.))],
             _ => vec![],
         }
     }

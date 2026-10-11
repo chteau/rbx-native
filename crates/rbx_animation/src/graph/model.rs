@@ -1,13 +1,23 @@
 //! The authored half of an Animation Graph: nodes, the pins wiring them,
-//! their properties, state-machine transitions, and the graph's parameters.
+//! their properties, state-machine transitions, the graph's parameters, and
+//! the masks and expression nodes it shares between nodes.
 
 use std::collections::BTreeMap;
 
-use crate::easing::Style;
-
+pub mod enums;
 mod kind;
+mod node;
+mod param;
+mod shared;
+mod transition;
 
-pub use kind::NodeKind;
+pub use kind::{NodeKind, DEFAULT_TRANSITION_DURATION};
+pub use node::{Input, Node};
+pub(crate) use param::unique;
+pub use param::{sanitize_name, Param, ParamKind, ParamRef};
+pub use shared::{Expression, Mask, MaskJoint};
+pub(crate) use transition::ENGINE_TRANSITION_DURATION;
+pub use transition::{Transition, WaitFor, When};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
@@ -40,8 +50,8 @@ impl Value {
     }
 }
 
-/// A node property: a fixed value, driven by a graph parameter, or computed
-/// by an expression over the parameters.
+/// A node property: a fixed value, bound to a graph parameter, or wired to
+/// an expression node with this source.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Prop {
     Value(Value),
@@ -49,152 +59,32 @@ pub enum Prop {
     Expr(String),
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum ParamKind {
-    #[default]
-    Number,
-    Bool,
-    Text,
-    /// A bool that resets itself one step after it is set.
-    Trigger,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Param {
-    pub name: String,
-    pub kind: ParamKind,
-    pub default: Value,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Input {
-    pub pin: String,
-    /// Index into [`Graph::nodes`].
-    pub node: Option<usize>,
-    pub props: BTreeMap<String, Prop>,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum WaitFor {
-    /// The transition's expression (or trigger) decides.
-    #[default]
-    Trigger,
-    /// The state's animation finishing decides.
-    Finished,
-}
-
-/// A state machine's transition between two of its states (inputs).
-#[derive(Clone, Debug, PartialEq)]
-pub struct Transition {
-    /// The input index left; `None` is the "(Any)" state.
-    pub from: Option<usize>,
-    pub to: usize,
-    pub wait_for: WaitFor,
-    pub expression: String,
-    /// Higher wins when several are ready at once.
-    pub priority: u32,
-    pub duration: f32,
-    pub curve: Style,
-}
-
-impl Transition {
-    pub fn new(from: Option<usize>, to: usize) -> Transition {
-        Transition {
-            from,
-            to,
-            wait_for: WaitFor::Trigger,
-            expression: "false".into(),
-            priority: 0,
-            duration: 0.15,
-            curve: Style::Linear,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Node {
-    /// `NodeId`: stable across edits, unique within the graph.
-    pub id: String,
-    pub name: String,
-    pub kind: NodeKind,
-    pub props: BTreeMap<String, Prop>,
-    pub inputs: Vec<Input>,
-    pub transitions: Vec<Transition>,
-    /// Where the node editor draws it.
-    pub position: (f32, f32),
-}
-
-impl Node {
-    pub fn new(kind: NodeKind, id: &str) -> Node {
-        Node {
-            id: id.to_owned(),
-            name: kind.label().to_owned(),
-            kind,
-            props: kind
-                .default_props()
-                .into_iter()
-                .map(|(k, v)| (k.to_owned(), Prop::Value(v)))
-                .collect(),
-            inputs: kind
-                .default_pins()
-                .iter()
-                .map(|pin| Input {
-                    pin: (*pin).to_owned(),
-                    node: None,
-                    props: kind
-                        .default_input_props()
-                        .into_iter()
-                        .map(|(k, v)| (k.to_owned(), Prop::Value(v)))
-                        .collect(),
-                })
-                .collect(),
-            transitions: Vec::new(),
-            position: (0., 0.),
-        }
-    }
-
-    pub fn input(&self, pin: &str) -> Option<usize> {
-        self.inputs.iter().find(|i| i.pin == pin)?.node
-    }
-
-    /// Adds the next numbered pin (`Input3`, `State3`, …).
-    pub fn add_pin(&mut self) -> Option<&str> {
-        if !self.kind.grows_pins() {
-            return None;
-        }
-        let stem = if self.kind == NodeKind::StateMachine {
-            "State"
-        } else {
-            "Input"
-        };
-        let n = (1..).find(|n| !self.inputs.iter().any(|i| i.pin == format!("{stem}{n}")))?;
-        self.inputs.push(Input {
-            pin: format!("{stem}{n}"),
-            node: None,
-            props: self
-                .kind
-                .default_input_props()
-                .into_iter()
-                .map(|(k, v)| (k.to_owned(), Prop::Value(v)))
-                .collect(),
-        });
-        self.inputs.last().map(|i| i.pin.as_str())
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct Graph {
     pub name: String,
     pub nodes: Vec<Node>,
     pub params: Vec<Param>,
+    /// The parameter pills drawn on the canvas. Storage needs at least one
+    /// per parameter (it is where the type lives) and adds it when missing.
+    pub param_refs: Vec<ParamRef>,
+    pub expressions: Vec<Expression>,
+    pub masks: Vec<Mask>,
+    /// The definition's `RBX_` attributes (`RBX_SourceAssetId`,
+    /// `RBX_GraphDirty`, `RBX_GraphVersion`), which are editor bookkeeping
+    /// and never parameters. Kept as read.
+    pub rbx_attributes: BTreeMap<String, Value>,
 }
 
 impl Default for Graph {
     fn default() -> Self {
         Graph {
             name: "AnimationGraph".into(),
-            nodes: vec![Node::new(NodeKind::GraphOutput, "Output")],
+            nodes: vec![Node::new(NodeKind::GraphOutput, "GraphOutput")],
             params: Vec::new(),
+            param_refs: Vec::new(),
+            expressions: Vec::new(),
+            masks: Vec::new(),
+            rbx_attributes: BTreeMap::new(),
         }
     }
 }
@@ -206,32 +96,42 @@ impl Graph {
             .position(|n| n.kind == NodeKind::GraphOutput)
     }
 
-    /// Adds a node with a fresh id and returns its index.
+    /// Adds a node named as the editor names it (`ClipNode`, `ClipNode1`, …)
+    /// and returns its index.
     pub fn add(&mut self, kind: NodeKind) -> usize {
-        let n = (1..)
-            .find(|n| {
-                !self
-                    .nodes
-                    .iter()
-                    .any(|node| node.id == format!("{}{n}", kind.label().replace(' ', "")))
-            })
-            .unwrap_or(0);
-        let id = format!("{}{n}", kind.label().replace(' ', ""));
+        let id = unique(kind.type_name(), |id| self.nodes.iter().any(|n| n.id == id));
         self.nodes.push(Node::new(kind, &id));
         self.nodes.len() - 1
     }
 
-    /// Wires `from`'s output into `to`'s `pin`. Refused when it would make a
-    /// cycle, which no node could evaluate.
+    /// Wires `from`'s output into `to`'s `pin`. On a node with a list of
+    /// inputs a pin that does not exist yet is made. Refused when it would
+    /// make a cycle, which no node could evaluate.
     pub fn connect(&mut self, from: usize, to: usize, pin: &str) -> bool {
         if from >= self.nodes.len() || to >= self.nodes.len() || self.reaches(from, to) {
             return false;
         }
-        let Some(input) = self.nodes[to].inputs.iter_mut().find(|i| i.pin == pin) else {
-            return false;
-        };
-        input.node = Some(from);
+        let node = &mut self.nodes[to];
+        if !node.inputs.iter().any(|i| i.pin == pin) {
+            if !node.kind.grows_pins() || pin.is_empty() {
+                return false;
+            }
+            node.push_pin(pin);
+        }
+        if let Some(input) = node.inputs.iter_mut().find(|i| i.pin == pin) {
+            input.node = Some(from);
+        }
         true
+    }
+
+    /// Wires `from` into a new pin of `to`, named after `from` as the editor
+    /// does when a wire is dropped on the placeholder row ("Clip", "Clip1",
+    /// …). Returns the pin's name.
+    pub fn connect_new(&mut self, from: usize, to: usize) -> Option<String> {
+        let source = self.nodes.get(from)?;
+        let target = self.nodes.get(to).filter(|n| n.kind.grows_pins())?;
+        let pin = target.unique_pin(&source.pin_stem());
+        self.connect(from, to, &pin).then_some(pin)
     }
 
     pub fn disconnect(&mut self, to: usize, pin: &str) {
@@ -285,6 +185,24 @@ impl Graph {
 
     pub fn param(&self, name: &str) -> Option<&Param> {
         self.params.iter().find(|p| p.name == name)
+    }
+
+    /// Adds a parameter named as the editor names a new one
+    /// (`NumberParameter`, `NumberParameter1`, …) with its type's default,
+    /// and returns its name.
+    pub fn add_param(&mut self, kind: ParamKind) -> String {
+        let base = format!("{}Parameter", kind.type_name());
+        let name = unique(&base, |n| self.param(n).is_some());
+        self.params.push(Param {
+            name: name.clone(),
+            kind,
+            default: kind.default_value(),
+        });
+        name
+    }
+
+    pub fn mask(&self, name: &str) -> Option<&Mask> {
+        self.masks.iter().find(|m| m.name == name)
     }
 }
 

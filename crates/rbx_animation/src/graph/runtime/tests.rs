@@ -2,17 +2,24 @@ use glam::Vec3;
 
 use super::*;
 use crate::clip::PoseKey;
-use crate::graph::model::{Param, Transition, WaitFor};
+use crate::graph::model::{Mask, MaskJoint, Param, Transition, WaitFor};
+
+mod semantics;
 
 /// A one-second clip holding `joint` at x = `x` (and at `x + 1` at its end,
 /// so its time can be read off the pose).
 fn ramp(joint: &str, x: f32) -> Clip {
+    stretch(joint, x, 1.)
+}
+
+/// `ramp` over `length` seconds, x still rising by one per second.
+fn stretch(joint: &str, x: f32, length: f32) -> Clip {
     let mut clip = Clip::default();
     clip.set_pose(0., joint, PoseKey::new(Frame::at(Vec3::new(x, 0., 0.))));
     clip.set_pose(
-        1.,
+        length,
         joint,
-        PoseKey::new(Frame::at(Vec3::new(x + 1., 0., 0.))),
+        PoseKey::new(Frame::at(Vec3::new(x + length, 0., 0.))),
     );
     clip
 }
@@ -22,6 +29,8 @@ fn resolve(id: &str) -> Option<Clip> {
         "idle" => Some(ramp("Torso", 0.)),
         "run" => Some(ramp("Torso", 10.)),
         "wave" => Some(ramp("Arm", 20.)),
+        "jog" => Some(ramp("Torso", 50.)),
+        "long" => Some(stretch("Leg", 30., 2.)),
         _ => None,
     }
 }
@@ -158,8 +167,8 @@ fn blend1d_interpolates_and_extrapolates() {
     let idle = clip_node(&mut g, "idle", "Loop");
     let run = clip_node(&mut g, "run", "Loop");
     let b = g.add(NodeKind::Blend1D);
-    g.connect(idle, b, "Input1");
-    g.connect(run, b, "Input2");
+    g.connect(idle, b, "A");
+    g.connect(run, b, "B");
     g.nodes[b].inputs[1]
         .props
         .insert("Position".into(), Prop::Value(Value::Number(10.)));
@@ -220,19 +229,27 @@ fn sequence_plays_inputs_in_order_and_mask_hides_joints() {
         "DefaultTransitionDuration".into(),
         Prop::Value(Value::Number(0.)),
     );
-    g.connect(idle, seq, "Input1");
-    g.connect(wave, seq, "Input2");
+    g.connect_new(idle, seq);
+    g.connect_new(wave, seq);
+    g.masks.push(Mask {
+        joints: vec![MaskJoint {
+            name: "Torso".into(),
+            weight: 0.,
+            children: Vec::new(),
+        }],
+        ..Mask::new("NoTorso")
+    });
     let mask = g.add(NodeKind::Mask);
     g.nodes[mask]
         .props
-        .insert("Mask:Arm".into(), Prop::Value(Value::Number(1.)));
+        .insert("Mask".into(), Prop::Value(Value::Text("NoTorso".into())));
     g.connect(seq, mask, "Pose");
     g.connect(mask, g.output().unwrap(), "Pose");
     let mut p = Player::new(g, &resolve);
     assert!(p.step(0.5).is_empty(), "the torso is masked off");
     p.step(0.6);
     assert_eq!(p.active(seq), Some(1));
-    assert!(p.step(0.1).contains_key("Arm"));
+    assert!(p.step(0.1).contains_key("Arm"), "an unlisted joint passes");
 }
 
 #[test]
@@ -245,8 +262,8 @@ fn random_sequence_is_reproducible_with_a_seed() {
         g.nodes[r]
             .props
             .insert("Seed".into(), Prop::Value(Value::Number(7.)));
-        g.connect(a, r, "Input1");
-        g.connect(b, r, "Input2");
+        g.connect_new(a, r);
+        g.connect_new(b, r);
         g.connect(r, g.output().unwrap(), "Pose");
         (Player::new(g, &resolve), r)
     };

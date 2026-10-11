@@ -3,15 +3,20 @@
 //!
 //! A node only advances while something above it is using it: an unselected
 //! input or an inactive state is paused. Becoming active again restarts it,
-//! along with everything under it. Transitions crossfade over their duration
-//! along their curve (Linear, or CubicV2 eased in and out). Two documented
-//! behaviours are approximated here. Blend nodes run their inputs unsynced
-//! (no phase matching), and Blend2D weighs its inputs by inverse distance
-//! rather than by Roblox's undocumented triangulation. Ties between ready
-//! state-machine transitions go to the first one listed, where Roblox picks
-//! at random.
+//! along with everything under it. Transitions blend over their length along
+//! their curve; only Linear and CubicV2 (eased in and out, the editor's
+//! "In/Out") are honoured, anything else runs Linear.
+//!
+//! The semantics follow Roblox's documentation. Where it is silent the
+//! choice made is marked UNVERIFIED on the code that makes it; the larger
+//! ones are Blend2D's weighting (a gradient-band stand-in), the random
+//! number generator (PCG32, as Luau's `Random` is, but not seeded as Roblox
+//! seeds it), and interrupting a blend mid-way (which blends on from a
+//! frozen snapshot of the pose at that moment). Clip markers and the events
+//! they raise are not modelled.
 
 use std::collections::BTreeMap;
+use std::hash::{BuildHasher, RandomState};
 
 use crate::clip::Clip;
 use crate::easing::{ease, Direction, Style};
@@ -20,11 +25,20 @@ use crate::graph::expr;
 use crate::graph::model::{Graph, NodeKind, ParamKind, Prop, Value};
 use crate::graph::pose::{self, Pose};
 
+mod blend;
+mod machine;
 mod nodes;
+mod rng;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+use rng::Pcg32;
+
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Fade {
     pub from: usize,
+    /// The pose to blend from instead of `from`'s, when this blend
+    /// interrupted another. UNVERIFIED: Roblox does not say how it handles
+    /// an interrupted blend; a frozen snapshot has no pop and is cheap.
+    pub snapshot: Option<Pose>,
     pub elapsed: f32,
     pub duration: f32,
     pub curve: Style,
@@ -35,15 +49,22 @@ impl Fade {
         if self.duration <= 0. {
             return 1.;
         }
-        let t = (self.elapsed / self.duration).clamp(0., 1.);
-        match self.curve {
-            Style::CubicV2 | Style::Cubic => ease(Style::CubicV2, Direction::InOut, t),
-            _ => t,
-        }
+        curve_at(self.curve, self.elapsed / self.duration)
     }
 
     pub fn done(&self) -> bool {
         self.elapsed >= self.duration
+    }
+}
+
+/// A transition curve at `t` (clamped to 0..1). UNVERIFIED: that CubicV2
+/// here is PoseEasingStyle's CubicV2 eased in and out; the editor's "In/Out"
+/// label is the evidence.
+pub(crate) fn curve_at(curve: Style, t: f32) -> f32 {
+    let t = t.clamp(0., 1.);
+    match curve {
+        Style::CubicV2 => ease(Style::CubicV2, Direction::InOut, t),
+        _ => t,
     }
 }
 
@@ -54,15 +75,22 @@ pub(crate) struct State {
     /// The input (or state) in play, for the kinds that pick one.
     pub active: usize,
     pub fade: Option<Fade>,
+    /// The blended pose while a fade runs, in case another interrupts it.
+    pub last: Option<Pose>,
     /// Loops or plays completed, for Sequence and RandomSequence.
     pub count: u32,
     pub started: bool,
+    /// A play-once clip has ended; PrioritySelect: the active input finished
+    /// on the last step.
+    pub done: bool,
     /// OneShot: the trigger's last value, to see its rising edge.
     pub armed: bool,
     /// OneShot: 0 idle, else the shot's own blend weight.
     pub shot: f32,
+    /// OneShot: the weight the blend-out started from.
+    pub shot_from: f32,
     pub fading_out: bool,
-    pub rng: u64,
+    pub rng: Option<Pcg32>,
     /// PingPong clips: true while playing backwards.
     pub backwards: bool,
 }
@@ -83,6 +111,9 @@ pub struct Player {
     params: BTreeMap<String, Value>,
     /// Trigger parameters set since the last step, reset after it.
     fired: Vec<String>,
+    /// Draws ties between state-machine transitions and seeds Random
+    /// Sequences whose `Seed` is -1.
+    rng: Pcg32,
 }
 
 impl Player {
@@ -107,14 +138,21 @@ impl Player {
             clips,
             params,
             fired: Vec::new(),
+            rng: Pcg32::new(RandomState::new().hash_one(0u8)),
         }
+    }
+
+    /// Makes every random choice from here on reproducible.
+    pub fn set_seed(&mut self, seed: u64) {
+        self.rng = Pcg32::new(seed);
     }
 
     pub fn graph(&self) -> &Graph {
         &self.graph
     }
 
-    /// `AnimationTrack:SetParameter`.
+    /// `AnimationTrack:SetParameter`. A NaN or infinite number becomes 0, as
+    /// Roblox's does.
     pub fn set(&mut self, name: &str, value: Value) {
         if self
             .graph
@@ -126,6 +164,10 @@ impl Player {
             }
             return;
         }
+        let value = match value {
+            Value::Number(n) if !n.is_finite() => Value::Number(0.),
+            other => other,
+        };
         self.params.insert(name.to_owned(), value);
     }
 
@@ -133,7 +175,8 @@ impl Player {
         self.params.get(name)
     }
 
-    /// Sets a trigger parameter for exactly one step.
+    /// Sets a trigger parameter for exactly the next evaluation. UNVERIFIED:
+    /// Roblox says "one frame"; one step of this player is taken to be that.
     pub fn fire(&mut self, name: &str) {
         self.params.insert(name.to_owned(), Value::Bool(true));
         self.fired.push(name.to_owned());
@@ -143,7 +186,8 @@ impl Player {
     /// machine node is currently playing, for the editor to highlight.
     pub fn active(&self, node: usize) -> Option<usize> {
         let n = self.graph.nodes.get(node)?;
-        n.kind.grows_pins().then(|| self.states[node].active)
+        (n.kind.grows_pins() && n.kind != NodeKind::Blend1D && n.kind != NodeKind::Blend2D)
+            .then(|| self.states[node].active)
     }
 
     /// Restarts everything, as `ResetGraph` does.
@@ -184,12 +228,25 @@ impl Player {
         self.read(self.graph.nodes[node].props.get(name))
     }
 
+    pub(crate) fn text(&self, node: usize, name: &str) -> String {
+        self.prop(node, name).map(|v| v.text()).unwrap_or_default()
+    }
+
+    pub(crate) fn flag(&self, node: usize, name: &str) -> bool {
+        self.prop(node, name).is_some_and(|v| v.truthy())
+    }
+
     pub(crate) fn number(&self, node: usize, name: &str, default: f64) -> f32 {
         self.prop(node, name).map_or(default, |v| v.number()) as f32
     }
 
     pub(crate) fn input_prop(&self, node: usize, input: usize, name: &str) -> Option<Value> {
         self.read(self.graph.nodes[node].inputs.get(input)?.props.get(name))
+    }
+
+    pub(crate) fn input_number(&self, node: usize, input: usize, name: &str, default: f64) -> f32 {
+        self.input_prop(node, input, name)
+            .map_or(default, |v| v.number()) as f32
     }
 
     pub(crate) fn condition(&self, source: &str) -> bool {
@@ -209,16 +266,27 @@ impl Player {
         }
     }
 
+    pub(crate) fn source(&self, node: usize, input: usize) -> Option<usize> {
+        self.graph.nodes[node].inputs.get(input)?.node
+    }
+
     /// Evaluates whatever is wired into `node`'s `input`-th pin.
     pub(crate) fn child(&mut self, node: usize, input: usize, dt: f32) -> (Pose, Status) {
-        match self.graph.nodes[node]
-            .inputs
-            .get(input)
-            .and_then(|i| i.node)
-        {
+        match self.source(node, input) {
             Some(child) => self.eval(child, dt),
             None => (Pose::new(), Status::default()),
         }
+    }
+
+    /// The indices of the pins something is wired into.
+    pub(crate) fn connected(&self, n: usize) -> Vec<usize> {
+        self.graph.nodes[n]
+            .inputs
+            .iter()
+            .enumerate()
+            .filter(|(_, i)| i.node.is_some())
+            .map(|(k, _)| k)
+            .collect()
     }
 
     pub(crate) fn pin_index(&self, node: usize, pin: &str) -> Option<usize> {
@@ -234,13 +302,14 @@ impl Player {
             NodeKind::Clip => self.clip(node, dt),
             NodeKind::Speed => {
                 let speed = self.number(node, "Speed", 1.);
-                self.child(node, 0, dt * speed)
+                let (pose, status) = self.child(node, 0, dt * speed);
+                (pose, scaled(status, speed))
             }
             NodeKind::Over | NodeKind::Add | NodeKind::Subtract => self.layer(node, dt),
             NodeKind::Mask => self.mask(node, dt),
-            NodeKind::Blend1D => self.blend1d(node, dt),
-            NodeKind::Blend2D => self.blend2d(node, dt),
-            NodeKind::Select | NodeKind::PrioritySelect => self.select(node, dt),
+            NodeKind::Blend1D | NodeKind::Blend2D => self.blend(node, dt),
+            NodeKind::Select => self.select(node, dt),
+            NodeKind::PrioritySelect => self.priority_select(node, dt),
             NodeKind::Sequence | NodeKind::RandomSequence => self.sequence(node, dt),
             NodeKind::OneShot => self.one_shot(node, dt),
             NodeKind::StateMachine => self.state_machine(node, dt),
@@ -257,6 +326,22 @@ impl Player {
 
     pub(crate) fn kind(&self, node: usize) -> NodeKind {
         self.graph.nodes[node].kind
+    }
+
+    pub(crate) fn rng(&mut self) -> &mut Pcg32 {
+        &mut self.rng
+    }
+}
+
+/// A child's status as seen through a speed multiplier.
+fn scaled(status: Status, speed: f32) -> Status {
+    Status {
+        remaining: if speed.abs() > 1e-6 {
+            status.remaining / speed.abs()
+        } else {
+            f32::INFINITY
+        },
+        ..status
     }
 }
 

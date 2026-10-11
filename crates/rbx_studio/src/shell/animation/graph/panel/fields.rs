@@ -99,7 +99,8 @@ impl Shell {
                     let value = match kind {
                         ParamKind::Number => Value::Number(text.trim().parse().unwrap_or(0.0)),
                         ParamKind::Bool | ParamKind::Trigger => Value::Bool(text.trim() == "true"),
-                        ParamKind::Text => Value::Text(text.to_owned()),
+                        // A mask or enum parameter's value is its name.
+                        _ => Value::Text(text.to_owned()),
                     };
                     // While playing, a parameter is a live input to the
                     // running graph rather than an edit of its default.

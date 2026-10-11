@@ -1,11 +1,14 @@
-//! What each node kind does in a step.
+//! What the single-input and layering node kinds do in a step: Clip,
+//! Over/Add/Subtract, Mask and OneShot.
+
+use std::collections::BTreeMap;
 
 use crate::easing::Style;
-use crate::graph::model::{NodeKind, Value};
+use crate::graph::model::Value;
 use crate::graph::pose::{self, Pose, Posed};
 use crate::sample::sample_joint;
 
-use super::{Player, Status};
+use super::{curve_at, Player, Status};
 
 mod pick;
 
@@ -17,83 +20,104 @@ pub(super) fn curve_named(value: Option<Value>) -> Style {
     }
 }
 
-/// xorshift64*: a reproducible stream from a seed, so a fixed `Seed` plays
-/// the same order every time.
-pub(super) fn next_random(state: &mut u64) -> f32 {
-    if *state == 0 {
-        *state = 0x9E37_79B9_7F4A_7C15;
-    }
-    *state ^= *state >> 12;
-    *state ^= *state << 25;
-    *state ^= *state >> 27;
-    (state.wrapping_mul(0x2545_F491_4F6C_DD1D) >> 40) as f32 / (1u64 << 24) as f32
-}
-
 impl Player {
-    pub(super) fn clip(&mut self, n: usize, dt: f32) -> (Pose, Status) {
-        let reverse = self.prop(n, "Reverse").is_some_and(|v| v.truthy());
-        let speed = self.number(n, "Speed", 1.) * if reverse { -1. } else { 1. };
-        let mode = self
-            .prop(n, "PlayMode")
-            .map(|v| v.text())
-            .unwrap_or_default();
+    /// The part of the clip that plays: [TrimStart, TrimEnd] in absolute
+    /// seconds while Trim is on. UNVERIFIED: a TrimEnd at or before TrimStart
+    /// (as a node gets before a clip is imported) plays on to the clip's end.
+    pub(super) fn clip_span(&self, n: usize) -> (f32, f32) {
         let length = self.clip_of(n).map_or(0., |c| c.length());
+        if !self.flag(n, "Trim") {
+            return (0., length);
+        }
+        let start = self.number(n, "TrimStart", 0.).clamp(0., length);
+        let end = self.number(n, "TrimEnd", 0.).min(length);
+        (start, if end > start { end } else { length })
+    }
+
+    /// The clip's rate: Speed, negative when Reverse is on.
+    pub(super) fn clip_rate(&self, n: usize) -> f32 {
+        let reverse = self.flag(n, "Reverse");
+        self.number(n, "Speed", 1.) * if reverse { -1. } else { 1. }
+    }
+
+    pub(super) fn clip(&mut self, n: usize, dt: f32) -> (Pose, Status) {
+        let rate = self.clip_rate(n);
+        let mode = self.text(n, "PlayMode");
+        let (start, end) = self.clip_span(n);
+        let span = end - start;
+        let once = mode == "OnceAndHold" || mode == "OnceAndReset";
         let state = self.state(n);
+        // `time` runs over 0..span from where playback begins, which is the
+        // span's end for a reversed clip.
         if !state.started {
             state.started = true;
-            state.time = if speed < 0. { length } else { 0. };
+            state.time = if rate < 0. { span } else { 0. };
         }
         let direction = if state.backwards { -1. } else { 1. };
-        let mut t = state.time + dt * speed * direction;
-        let mut finished = false;
-        let mut silent = false;
-        if length > 0. {
+        let mut t = if state.done {
+            state.time
+        } else {
+            state.time + dt * rate * direction
+        };
+        let mut finished = state.done;
+        if span > 0. && !state.done {
             match mode.as_str() {
                 "PingPong" => {
-                    if t > length {
-                        t = 2. * length - t;
+                    if t > span {
+                        t = 2. * span - t;
                         state.backwards = !state.backwards;
+                        finished = rate < 0.;
                     } else if t < 0. {
                         t = -t;
                         state.backwards = !state.backwards;
-                        finished = true;
+                        finished = rate > 0.;
                     }
-                    t = t.clamp(0., length);
+                    t = t.clamp(0., span);
                 }
-                "OnceAndHold" | "OnceAndReset" => {
-                    finished = if speed < 0. { t <= 0. } else { t >= length };
-                    t = t.clamp(0., length);
-                    silent = finished && mode == "OnceAndReset";
+                _ if once => {
+                    finished = if rate < 0. { t <= 0. } else { t >= span };
+                    t = t.clamp(0., span);
+                    if finished {
+                        state.done = true;
+                        // OnceAndReset snaps back to where playback began.
+                        if mode == "OnceAndReset" {
+                            t = if rate < 0. { span } else { 0. };
+                        }
+                    }
                 }
                 _ => {
-                    if !(0. ..length).contains(&t) {
+                    if !(0. ..span).contains(&t) {
                         finished = true;
-                        t = t.rem_euclid(length);
+                        t = t.rem_euclid(span);
                     }
                 }
             }
         }
         state.time = t;
-        let remaining = if speed * direction >= 0. {
-            length - t
+        let heading = rate * direction;
+        let left = if heading >= 0. { span - t } else { t };
+        let remaining = if state.done {
+            0.
+        } else if mode == "PingPong" {
+            // A ping-pong finishes once back where it began, so the way out
+            // still has the way back to come.
+            left + if state.backwards { 0. } else { span }
         } else {
-            t
+            left
         };
         let status = Status {
             finished,
-            remaining: remaining / speed.abs().max(1e-6),
+            remaining: remaining / rate.abs().max(1e-6),
         };
         let Some(clip) = self.clip_of(n) else {
             return (Pose::new(), status);
         };
-        if silent {
-            return (Pose::new(), status);
-        }
+        let at = start + t;
         let pose = clip
             .joints()
             .into_iter()
             .filter_map(|j| {
-                sample_joint(clip, &j, t).map(|s| {
+                sample_joint(clip, &j, at).map(|s| {
                     (
                         j,
                         Posed {
@@ -111,132 +135,59 @@ impl Player {
         let weight = self.number(n, "Weight", 1.);
         let (base, status) = self.child(n, 0, dt);
         let (top, _) = self.child(n, 1, dt);
-        let pose = match self.kind(n) {
-            NodeKind::Add => pose::add(&base, &top, weight),
-            NodeKind::Subtract => pose::subtract(&base, &top, weight),
-            _ => pose::over(&base, &top, weight),
-        };
-        (pose, status)
+        (
+            layered(self.kind(n).type_name(), &base, &top, weight),
+            status,
+        )
     }
 
+    /// Weights each joint by the shared mask the node names (`1 − w` when
+    /// inverted). UNVERIFIED: a joint the mask does not list passes at full
+    /// weight; the editor seeds every joint at 100 %, so that is the likely
+    /// reading of a missing one.
     pub(super) fn mask(&mut self, n: usize, dt: f32) -> (Pose, Status) {
-        let invert = self.prop(n, "Invert").is_some_and(|v| v.truthy());
+        let invert = self.flag(n, "Invert");
+        let name = self.text(n, "Mask");
+        let weights: BTreeMap<String, f32> = self
+            .graph
+            .mask(&name)
+            .map(|m| {
+                m.flatten()
+                    .into_iter()
+                    .map(|(j, w)| (j.to_owned(), w))
+                    .collect()
+            })
+            .unwrap_or_default();
         let (mut pose, status) = self.child(n, 0, dt);
-        let listed = self.graph.nodes[n]
-            .props
-            .keys()
-            .any(|k| k.starts_with("Mask:"));
         for (joint, posed) in pose.iter_mut() {
-            let w = match self.prop(n, &format!("Mask:{joint}")) {
-                Some(v) => v.number() as f32,
-                None if listed => 0.,
-                None => 1.,
-            };
-            let w = w.clamp(0., 1.);
+            let w = weights.get(joint).copied().unwrap_or(1.).clamp(0., 1.);
             posed.weight *= if invert { 1. - w } else { w };
         }
         (pose, status)
     }
 
-    fn connected(&self, n: usize) -> Vec<usize> {
-        self.graph.nodes[n]
-            .inputs
-            .iter()
-            .enumerate()
-            .filter(|(_, i)| i.node.is_some())
-            .map(|(k, _)| k)
-            .collect()
-    }
-
-    pub(super) fn blend1d(&mut self, n: usize, dt: f32) -> (Pose, Status) {
-        let at = self.number(n, "Position", 0.);
-        let mut points: Vec<(usize, f32)> = self
-            .connected(n)
-            .into_iter()
-            .map(|i| {
-                (
-                    i,
-                    self.input_prop(n, i, "Position")
-                        .map_or(0., |v| v.number() as f32),
-                )
-            })
-            .collect();
-        points.sort_by(|a, b| a.1.total_cmp(&b.1));
-        match points.len() {
-            0 => (Pose::new(), Status::default()),
-            1 => self.child(n, points[0].0, dt),
-            len => {
-                // The segment around `at`, or the end one it extrapolates.
-                let seg = points
-                    .windows(2)
-                    .position(|w| at <= w[1].1)
-                    .unwrap_or(len - 2);
-                let ((a, pa), (b, pb)) = (points[seg], points[seg + 1]);
-                let t = if (pb - pa).abs() > f32::EPSILON {
-                    (at - pa) / (pb - pa)
-                } else {
-                    0.
-                };
-                let (low, s0) = self.child(n, a, dt);
-                let (high, s1) = self.child(n, b, dt);
-                (pose::mix(&low, &high, t), if t < 0.5 { s0 } else { s1 })
-            }
-        }
-    }
-
-    pub(super) fn blend2d(&mut self, n: usize, dt: f32) -> (Pose, Status) {
-        let (x, y) = (self.number(n, "X", 0.), self.number(n, "Y", 0.));
-        let polar = self
-            .prop(n, "InputMode")
-            .is_some_and(|v| v.text() == "Polar");
-        let place = |a: f32, b: f32| {
-            if polar {
-                (b * a.cos(), b * a.sin())
-            } else {
-                (a, b)
-            }
-        };
-        let target = place(x, y);
-        let mut parts = Vec::new();
-        let mut best = (f32::INFINITY, Status::default());
-        for i in self.connected(n) {
-            let px = self.input_prop(n, i, "X").map_or(0., |v| v.number() as f32);
-            let py = self.input_prop(n, i, "Y").map_or(0., |v| v.number() as f32);
-            let p = place(px, py);
-            let d2 = (p.0 - target.0).powi(2) + (p.1 - target.1).powi(2);
-            let (pose, status) = self.child(n, i, dt);
-            if d2 < best.0 {
-                best = (d2, status);
-            }
-            parts.push((pose, d2));
-        }
-        if let Some(exact) = parts.iter().position(|(_, d2)| *d2 < 1e-8) {
-            return (parts.swap_remove(exact).0, best.1);
-        }
-        let weighted: Vec<(Pose, f32)> = parts.into_iter().map(|(p, d2)| (p, 1. / d2)).collect();
-        (pose::blend(&weighted), best.1)
-    }
-
+    /// A rising edge on Trigger starts a shot: the OneShot input, restarted,
+    /// blends in over the in-transition, plays, and blends out over the
+    /// out-transition when it finishes (or one out-length before, with
+    /// BeforeFinished), or as soon as Cancel is on. While a shot plays a new
+    /// edge restarts it only if Interruptible.
     pub(super) fn one_shot(&mut self, n: usize, dt: f32) -> (Pose, Status) {
-        let trigger = self.prop(n, "Trigger").is_some_and(|v| v.truthy());
-        let cancel = self.prop(n, "Cancel").is_some_and(|v| v.truthy());
+        let trigger = self.flag(n, "Trigger");
+        let cancel = self.flag(n, "Cancel");
         let interruptible = self.prop(n, "Interruptible").is_none_or(|v| v.truthy());
         let fade_in = self.number(n, "TransitionInDuration", 0.15).max(0.);
         let fade_out = self.number(n, "TransitionOutDuration", 0.15).max(0.);
-        let mode = self
-            .prop(n, "BlendMode")
-            .map(|v| v.text())
-            .unwrap_or_default();
-        let before = self
-            .prop(n, "TransitionOutWhen")
-            .is_some_and(|v| v.text() == "BeforeFinished");
+        let curve_in = curve_named(self.prop(n, "TransitionInCurve"));
+        let curve_out = curve_named(self.prop(n, "TransitionOutCurve"));
+        let mode = self.text(n, "BlendMode");
+        let before = self.text(n, "TransitionOutWhen") == "BeforeFinished";
 
         let (base, status) = self.child(n, 0, dt);
         let state = &self.states[n];
         let rising = trigger && !state.armed;
-        let idle = state.shot <= 0. && !state.started;
-        if rising && (idle || interruptible) {
-            if let Some(child) = self.graph.nodes[n].inputs.get(1).and_then(|i| i.node) {
+        if rising && (!state.started || interruptible) {
+            // UNVERIFIED: that a shot restarts its subtree from time 0.
+            if let Some(child) = self.source(n, 1) {
                 self.restart(child);
             }
             let s = self.state(n);
@@ -254,16 +205,14 @@ impl Player {
         let ending = shot_status.finished || (before && shot_status.remaining <= fade_out);
         if !s.fading_out && (cancel || ending) {
             s.fading_out = true;
+            s.shot_from = s.shot;
             s.time = 0.;
         }
         s.shot = if s.fading_out {
-            if fade_out > 0. {
-                1. - s.time / fade_out
-            } else {
-                0.
-            }
+            let t = if fade_out > 0. { s.time / fade_out } else { 1. };
+            s.shot_from * (1. - curve_at(curve_out, t))
         } else if fade_in > 0. {
-            (s.time / fade_in).min(1.)
+            curve_at(curve_in, s.time / fade_in)
         } else {
             1.
         };
@@ -273,11 +222,15 @@ impl Player {
             return (base, status);
         }
         let w = s.shot.clamp(0., 1.);
-        let pose = match mode.as_str() {
-            "Add" => pose::add(&base, &shot, w),
-            "Subtract" => pose::subtract(&base, &shot, w),
-            _ => pose::over(&base, &shot, w),
-        };
-        (pose, status)
+        (layered(&mode, &base, &shot, w), status)
+    }
+}
+
+/// Over, Add or Subtract, by the node type or `BlendMode` item naming it.
+fn layered(mode: &str, base: &Pose, top: &Pose, weight: f32) -> Pose {
+    match mode {
+        "Add" | "AddNode" => pose::add(base, top, weight),
+        "Subtract" | "SubtractNode" => pose::subtract(base, top, weight),
+        _ => pose::over(base, top, weight),
     }
 }

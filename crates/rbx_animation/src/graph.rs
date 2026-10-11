@@ -10,5 +10,8 @@ pub mod model;
 pub mod pose;
 pub mod runtime;
 
-pub use model::{Graph, Input, Node, NodeKind, Param, ParamKind, Prop, Transition, Value, WaitFor};
+pub use model::{
+    Expression, Graph, Input, Mask, MaskJoint, Node, NodeKind, Param, ParamKind, ParamRef, Prop,
+    Transition, Value, WaitFor, When,
+};
 pub use runtime::Player;
