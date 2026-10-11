@@ -804,3 +804,69 @@ fn every_part_carries_the_mannequins_accessory_attachments() {
         assert!(l.x < neck.x && neck.x < r.x && l.y < neck.y);
     }
 }
+
+#[test]
+fn the_joint_guard_leaves_a_fitted_skeleton_alone() {
+    for pose in [Pose::A, Pose::T, Pose::I, Pose::Raised, Pose::Pressed] {
+        let (_, fit, _) = check_split(pose);
+        let body = humanoid(pose);
+        let bounds = crate::mesh_bounds(&body.mesh, fit);
+        for joint in Joint::ALL {
+            let at = fit.joint(joint);
+            let kept = crate::guard(fit, joint, at, bounds);
+            assert!(
+                kept.distance(at) < 1e-4,
+                "{pose:?} {joint}: {at} moved to {kept}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_knee_dragged_to_the_neck_stays_on_its_leg_and_cuts_cleanly() {
+    let body = humanoid(Pose::A);
+    let mut fit = fit(&body.mesh, HEIGHT).unwrap();
+    let bounds = crate::mesh_bounds(&body.mesh, &fit);
+    let (hip, ankle) = (fit.joint(Joint::LeftHip), fit.joint(Joint::LeftAnkle));
+    let kept = crate::guard(&fit, Joint::LeftKnee, fit.joint(Joint::Neck), bounds);
+    // Between the hip and the ankle, a tenth of the leg below the hip.
+    assert!(kept.y < hip.y && kept.y > ankle.y, "{kept}");
+    assert!((kept - hip).dot(ankle - hip) > 0.05 * (ankle - hip).length_squared());
+    fit.set_joint(Joint::LeftKnee, kept);
+    mirror(&mut fit, Side::Left);
+    checked_split_with(body, fit);
+}
+
+#[test]
+fn guarded_joints_keep_their_chain_order_and_the_mesh() {
+    let body = humanoid(Pose::T);
+    let fit = fit(&body.mesh, HEIGHT).unwrap();
+    let (lo, hi) = crate::mesh_bounds(&body.mesh, &fit);
+    let far = Vec3::new(40., -30., 25.);
+    for joint in Joint::ALL {
+        let kept = crate::guard(&fit, joint, far, (lo, hi));
+        assert!(
+            kept.cmpge(lo - 1e-5).all() && kept.cmple(hi + 1e-5).all(),
+            "{joint}: {kept}"
+        );
+    }
+    // An elbow dragged past the hand stops short of the wrist.
+    let (elbow, wrist) = (fit.joint(Joint::RightElbow), fit.joint(Joint::RightWrist));
+    let kept = crate::guard(
+        &fit,
+        Joint::RightElbow,
+        fit.extremities.right_hand,
+        (lo, hi),
+    );
+    assert!((kept - elbow).dot(wrist - elbow) < (wrist - elbow).length_squared());
+    // A shoulder dragged out past its elbow stops short of it.
+    let shoulder = fit.joint(Joint::RightShoulder);
+    let kept = crate::guard(&fit, Joint::RightShoulder, wrist, (lo, hi));
+    assert!(
+        (kept - elbow).dot(wrist - elbow) < 0.,
+        "{shoulder} -> {kept}"
+    );
+    // A hip dragged across the body stays on its own side.
+    let kept = crate::guard(&fit, Joint::LeftHip, fit.joint(Joint::RightHip), (lo, hi));
+    assert!(kept.x <= 0., "{kept}");
+}
