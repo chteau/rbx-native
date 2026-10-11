@@ -594,6 +594,7 @@ fn piece_of(dom: &WeakDom, part: Ref) -> Option<Piece> {
     Some(Piece {
         name: node.name().to_owned(),
         mesh: content_id(dom, part, "MeshId")?,
+        local: None,
         texture: content_id(dom, part, "TextureID"),
         surface: None,
         face: true,

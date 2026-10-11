@@ -396,7 +396,11 @@ fn attachment(dom: &mut WeakDom, part: Ref, name: &str, cf: &Cf, remember: bool)
 /// size, surface maps, and the scale type and cage layered clothing wraps to.
 fn dress_mesh(dom: &mut WeakDom, part: Ref, name: &str, piece: &Piece) {
     let mannequin = piece.family == Family::Mannequin;
-    set(dom, part, "MeshId", asset(piece.mesh));
+    let mesh = match &piece.local {
+        Some(uri) => Variant::Content(Content::Uri(uri.clone())),
+        None => asset(piece.mesh),
+    };
+    set(dom, part, "MeshId", mesh);
     set(dom, part, "InitialSize", Variant::Vector3(vec3(piece.init)));
     set(
         dom,
