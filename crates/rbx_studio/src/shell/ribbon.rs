@@ -96,10 +96,10 @@ impl Shell {
             ],
             Tab::Avatar => {
                 let mut tiles = self.rig_tiles(cx);
+                tiles.push(self.animation_tile(cx));
                 tiles.extend(placeholders(
                     "avatar",
                     &[
-                        (IconName::Play, "Animation"),
                         (IconName::Package, "Accessory"),
                         (IconName::Settings, "Avatar Setup"),
                     ],

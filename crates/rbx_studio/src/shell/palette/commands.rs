@@ -97,10 +97,11 @@ impl Command {
 
 /// The documents' palette names. The first document's tab reads the
 /// place's file name, which says nothing about what focusing it does.
-const DOCUMENTS: [(Document, &str); 3] = [
+const DOCUMENTS: [(Document, &str); 4] = [
     (Document::Viewport, "3D View"),
     (Document::Scripts, "Script Editor"),
     (Document::UiEditor, "UI Editor"),
+    (Document::Animation, "Animation Editor"),
 ];
 
 /// Every command, in menu-bar order, then the tools, the ribbon, the docks

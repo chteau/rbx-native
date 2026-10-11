@@ -1,0 +1,292 @@
+//! The Animation Editor document: a rig in the 3D view, a dope sheet of its
+//! joints' keys under it and a side panel beside it (the layout of Blender's
+//! Animation workspace), plus an Animation Graph canvas on its second
+//! sub-tab.
+//!
+//! The clip itself lives in `anim_editor::AnimEditor`, a working copy saved
+//! to a `KeyframeSequence` on request. The rig is posed by writing its
+//! parts' `CFrame`s straight to the DOM every frame. Those writes are kept
+//! out of the undo history, and the rest pose is put back before a save and
+//! whenever the document is left, so the place never keeps a pose by
+//! accident. Pose edits made in the viewport (a part rotated with the
+//! Rotate tool, say) are read back as a key on that part's joint at the
+//! playhead. That is how Roblox's editor turns a dragged limb into a pose.
+
+mod debug;
+mod graph;
+mod import;
+mod panel;
+mod pose;
+mod sheet;
+mod view;
+
+use std::cell::Cell;
+use std::collections::HashMap;
+use std::rc::Rc;
+use std::time::Instant;
+
+use gpui_kit::*;
+use rbx_animation::{sequence, Frame, Rig};
+use rbx_dom::{CFrameData, Ref};
+
+use super::Shell;
+use crate::anim_editor::{place, AnimEditor};
+use crate::timeline::Timeline;
+
+pub(super) use graph::GraphDoc;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum Mode {
+    #[default]
+    DopeSheet,
+    Graph,
+}
+
+impl Mode {
+    pub(super) const ALL: [Mode; 2] = [Mode::DopeSheet, Mode::Graph];
+
+    fn key(self) -> &'static str {
+        match self {
+            Mode::DopeSheet => "anim-dope-sheet",
+            Mode::Graph => "anim-graph",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Mode::DopeSheet => "Dope Sheet",
+            Mode::Graph => "Animation Graph",
+        }
+    }
+}
+
+/// The rig the editor is posing, and what it needs to put it back.
+pub(super) struct Bound {
+    pub(super) model: Ref,
+    pub(super) rig: Rig,
+    /// Where the root part stands; joints are laid out from it.
+    pub(super) root: Frame,
+    /// Each rig part's `CFrame` before the editor first posed it.
+    pub(super) rest: HashMap<Ref, CFrameData>,
+    /// What the editor last wrote, to tell its own writes from an edit.
+    pub(super) posed: HashMap<Ref, CFrameData>,
+}
+
+/// A pointer gesture on the dope sheet.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum Gesture {
+    Scrub,
+    MoveKeys { from_x: f32 },
+    Pan { last_x: f32 },
+}
+
+pub(super) struct Animation {
+    pub(super) editor: AnimEditor,
+    pub(super) timeline: Timeline,
+    pub(super) mode: Mode,
+    pub(super) bound: Option<Bound>,
+    pub(super) focus: FocusHandle,
+    /// The dope sheet's key area as last laid out.
+    pub(super) sheet: Rc<Cell<Option<Bounds<Pixels>>>>,
+    pub(super) gesture: Option<Gesture>,
+    pub(super) last_frame: Option<Instant>,
+    pub(super) fields: Option<panel::Fields>,
+    /// The last import, save or error, shown under the panel's buttons.
+    pub(super) status: Option<SharedString>,
+    pub(super) graph: GraphDoc,
+    /// Whether the timeline has been fitted to the clip since it loaded.
+    pub(super) fitted: bool,
+}
+
+impl Animation {
+    pub(super) fn new(cx: &mut App) -> Animation {
+        Animation {
+            editor: AnimEditor::default(),
+            timeline: Timeline::default(),
+            mode: Mode::default(),
+            bound: None,
+            focus: cx.focus_handle(),
+            sheet: Rc::new(Cell::new(None)),
+            gesture: None,
+            last_frame: None,
+            fields: None,
+            status: None,
+            graph: GraphDoc::default(),
+            fitted: false,
+        }
+    }
+}
+
+impl Shell {
+    /// Leaves the Animation document: the rig goes back to its rest pose and
+    /// playback stops.
+    pub(super) fn leave_animation(&mut self, cx: &mut Context<Self>) {
+        self.anim.editor.playing = false;
+        self.anim.graph.playing = false;
+        self.unpose_rig(cx);
+    }
+
+    /// Binds the rig the selection is in, if it is a different one.
+    pub(super) fn bind_selected_rig(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(model) = self
+            .selected_all()
+            .first()
+            .and_then(|&r| place::rig_of(&self.dom, r))
+        else {
+            return false;
+        };
+        if self.anim.bound.as_ref().is_some_and(|b| b.model == model) {
+            return true;
+        }
+        self.bind_rig(model, cx);
+        true
+    }
+
+    pub(super) fn bind_rig(&mut self, model: Ref, cx: &mut Context<Self>) {
+        self.unpose_rig(cx);
+        let rig = Rig::read(&self.dom, model);
+        let parts = rig
+            .root
+            .into_iter()
+            .chain(rig.joints.iter().map(|j| j.part1));
+        let rest: HashMap<Ref, CFrameData> = parts
+            .filter_map(|p| match self.dom.get(p)?.properties().get("CFrame")? {
+                rbx_dom::Variant::CFrame(c) => Some((p, *c)),
+                _ => None,
+            })
+            .collect();
+        let root = rig
+            .root
+            .and_then(|r| rest.get(&r))
+            .map(Frame::from_data)
+            .unwrap_or_default();
+        let name = self
+            .dom
+            .get(model)
+            .map(|i| i.name().to_owned())
+            .unwrap_or_default();
+        let kinds = rig_summary(&rig);
+        self.anim.status = Some(format!("Rig {name}: {kinds}").into());
+        self.frame_rig(&rig, root, cx);
+        self.anim.bound = Some(Bound {
+            model,
+            rig,
+            root,
+            rest,
+            posed: HashMap::new(),
+        });
+        if self.anim.editor.clip.keyframes.is_empty() && self.anim.editor.source.is_none() {
+            if let Some((seq, _)) = place::all_of_class(&self.dom, "KeyframeSequence", Some(model))
+                .into_iter()
+                .next()
+            {
+                self.load_animation(seq);
+            }
+        }
+        cx.notify();
+    }
+
+    pub(super) fn load_animation(&mut self, sequence_ref: Ref) {
+        let clip = sequence::read(&self.dom, sequence_ref);
+        self.anim.editor.load(clip, Some(sequence_ref));
+        self.anim.fitted = false;
+    }
+
+    pub(super) fn new_animation(&mut self, cx: &mut Context<Self>) {
+        self.anim.editor.load(rbx_animation::Clip::default(), None);
+        self.anim.fitted = false;
+        self.anim.status = Some("New animation".into());
+        cx.notify();
+    }
+
+    /// Writes the clip to its `KeyframeSequence` (made in the rig's save
+    /// folder the first time) as one undoable edit of the place.
+    pub(super) fn save_animation(&mut self, cx: &mut Context<Self>) {
+        self.unpose_rig(cx);
+        self.push_history();
+        let rig = self.anim.bound.as_ref().map(|b| (b.model, b.rig.clone()));
+        let clip = self.anim.editor.clip.clone();
+        let existing = self.anim.editor.source.filter(|&s| {
+            self.dom
+                .get(s)
+                .is_some_and(|i| i.class() == "KeyframeSequence")
+        });
+        let target = match existing {
+            Some(s) => {
+                sequence::overwrite(&mut self.dom, s, &clip, rig.as_ref().map(|r| &r.1));
+                s
+            }
+            None => {
+                let folder = rig
+                    .as_ref()
+                    .map(|(m, _)| place::save_folder(&mut self.dom, *m));
+                sequence::write(&mut self.dom, folder, &clip, rig.as_ref().map(|r| &r.1))
+            }
+        };
+        self.anim.editor.source = Some(target);
+        self.anim.editor.dirty = false;
+        let changes = self.dom.take_changes();
+        self.reflect_changes(&changes, cx);
+        self.record_history_change(changes);
+        self.rebuild_explorer(cx);
+        self.anim.status = Some(format!("Saved {} as a KeyframeSequence", clip.name).into());
+        cx.notify();
+    }
+
+    /// Ctrl+Z while the editor is up undoes the editor's own last edit
+    /// first; a clip edit never reached the place's history.
+    pub(super) fn undo_animation(&mut self, cx: &mut Context<Self>) -> bool {
+        let up = self.document == super::chrome::Document::Animation;
+        let done = up && self.anim.mode == Mode::DopeSheet && self.anim.editor.undo();
+        if done {
+            cx.notify();
+        }
+        done
+    }
+
+    pub(super) fn redo_animation(&mut self, cx: &mut Context<Self>) -> bool {
+        let up = self.document == super::chrome::Document::Animation;
+        let done = up && self.anim.mode == Mode::DopeSheet && self.anim.editor.redo();
+        if done {
+            cx.notify();
+        }
+        done
+    }
+}
+
+impl Shell {
+    /// Points the camera at the rig from its front-left, far enough back to
+    /// show it whole: what Roblox's editor does when a rig is picked.
+    fn frame_rig(&self, rig: &Rig, root: Frame, cx: &mut Context<Self>) {
+        let parts = rig.layout(root, &|_| None);
+        let (mut low, mut high) = (root.position, root.position);
+        for frame in parts.values() {
+            low = low.min(frame.position);
+            high = high.max(frame.position);
+        }
+        let centre = (low + high) * 0.5;
+        let reach = ((high - low).length() * 0.5).max(2.5);
+        let front = root.rotation * glam::Vec3::new(-0.55, 0.25, -1.0).normalize();
+        let eye = centre + front * reach * 3.2;
+        self.viewport
+            .read(cx)
+            .look_at(eye.to_array(), centre.to_array());
+    }
+}
+
+/// "15 joints (AnimationConstraint)" or "12 joints (Motor6D)", or both
+/// counts for a rig that mixes them.
+pub(super) fn rig_summary(rig: &Rig) -> String {
+    use rbx_animation::JointKind;
+    let count = |k: JointKind| rig.joints.iter().filter(|j| j.kind == k).count();
+    let (motors, constraints) = (
+        count(JointKind::Motor6D),
+        count(JointKind::AnimationConstraint),
+    );
+    let total = motors + constraints;
+    match (motors, constraints) {
+        (_, 0) => format!("{total} joints (Motor6D)"),
+        (0, _) => format!("{total} joints (AnimationConstraint)"),
+        _ => format!("{total} joints ({motors} Motor6D, {constraints} AnimationConstraint)"),
+    }
+}

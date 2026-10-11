@@ -12,7 +12,7 @@ use rbx_cloud::Avatar;
 
 use super::avatar::{self, Fate, Worn};
 use super::dialog::{parse_user_id, Character};
-use super::{build_rig, JointStyle, RigOptions, RigType, V3};
+use super::{build_rig, BodyScale, BodyShape, JointStyle, RigOptions, RigType, V3};
 
 /// A downloaded avatar and the fates [`avatar::apply_packages`] gave its items.
 type Import<'a> = (&'a Avatar, &'a [Worn], Vec<Fate>);
@@ -42,6 +42,20 @@ impl Shell {
             },
         }
         cx.notify();
+    }
+
+    /// The Rig Builder's stock character of `rig_type` (classic masculine
+    /// proportions), with `joints` in place of the place's own setting when
+    /// given: what the Animation Editor's scripted runs pose.
+    pub(in crate::shell) fn insert_stock_rig(
+        &mut self,
+        rig_type: RigType,
+        joints: Option<JointStyle>,
+        cx: &mut Context<Self>,
+    ) {
+        let joints = joints.unwrap_or_else(|| JointStyle::of_place(&self.dom));
+        let options = RigOptions::new(rig_type, BodyShape::Masculine, BodyScale::Classic, joints);
+        self.place_rig(options, None, cx);
     }
 
     /// `user` is `None` for the signed-in user ("My Avatar").

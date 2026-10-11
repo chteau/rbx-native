@@ -836,6 +836,12 @@ impl WorkspaceView {
         self.pump.camera_feel(feel);
     }
 
+    /// Moves the free camera to `eye`, looking at `target`: the Animation
+    /// Editor framing the rig it binds.
+    pub(crate) fn look_at(&self, eye: [f32; 3], target: [f32; 3]) {
+        self.pump.look_at(eye, target);
+    }
+
     /// The renderer's tuned constants, taken between two frames like the
     /// camera feel.
     pub(crate) fn set_calibration(&self, calibration: rbx_viewer::Calibration) {

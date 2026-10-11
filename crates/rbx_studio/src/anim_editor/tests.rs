@@ -69,7 +69,6 @@ fn dragging_moves_keys_as_one_undo_step_and_clamps_at_zero() {
     e.drag_by(-5.0);
     assert!(e.clip.pose(0.0, "Torso").is_some(), "clamped to the start");
     e.end_drag();
-    assert!(!e.dragging());
     assert!(e.undo());
     assert!(e.clip.pose(1.0, "Torso").is_some());
 }
@@ -151,5 +150,5 @@ fn rows_follow_the_rig_and_flag_strangers() {
             ("Tail", 0, false)
         ]
     );
-    assert_eq!(rows(None, &clip)[0].in_rig, true);
+    assert!(rows(None, &clip)[0].in_rig);
 }

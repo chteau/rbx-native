@@ -28,9 +28,6 @@ pub(crate) enum Kind {
     Building,
     Scripting,
     UiDesigning,
-    /// No editor drives this yet; the asset is uploaded for when an
-    /// animation editor lands.
-    #[allow(dead_code)]
     Animating,
     Idling,
 }

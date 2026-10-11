@@ -59,15 +59,6 @@ impl Timeline {
         self.fps.max(1) as f32
     }
 
-    /// `time` on the nearest frame.
-    pub(crate) fn snap(&self, time: f32) -> f32 {
-        (time * self.fps()).round() / self.fps()
-    }
-
-    pub(crate) fn frame_of(&self, time: f32) -> i64 {
-        (time * self.fps()).round() as i64
-    }
-
     pub(crate) fn time_of_frame(&self, frame: i64) -> f32 {
         frame as f32 / self.fps()
     }
@@ -161,8 +152,7 @@ mod tests {
         };
         assert_eq!(t.x_of(0.0), 50.0);
         assert_eq!(t.time_at(150.0), 1.0);
-        assert_eq!(t.frame_of(1.0), 30);
-        assert!((t.snap(0.51) - 0.5).abs() < 1e-6);
+        assert_eq!(t.time_of_frame(15), 0.5);
     }
 
     #[test]

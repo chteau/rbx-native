@@ -11,6 +11,12 @@
 //! give times in frames (`export_info.time_unit`), and may add fields this
 //! reader ignores (face controls, deform-bone markers).
 //!
+//! The RoMixamo plugin's bundled Mixamo clips use the same format with two
+//! differences, both read here. Numbers (times included) are JSON strings,
+//! and parts go by short names (`HRP`, `LT`, `LUA`, …), see [`SHORT_NAMES`].
+//! The root part's pose is left out wherever it appears, since an animation
+//! plays in place and the root has no joint to drive.
+//!
 //! A full bake leaves a bone out of a frame when its value is the identity.
 //! The original addon does that, so a bone the clip poses elsewhere but
 //! leaves out of a frame is read as the identity there, not as "no key".
@@ -26,6 +32,40 @@ use crate::frame::Frame;
 use crate::import::ImportError;
 use rbx_dom::{CFrameData, Vector3Data};
 
+/// RoMixamo's short part names and the R15 parts they stand for.
+pub const SHORT_NAMES: [(&str, &str); 16] = [
+    ("HRP", "HumanoidRootPart"),
+    ("LT", "LowerTorso"),
+    ("UT", "UpperTorso"),
+    ("H", "Head"),
+    ("LUA", "LeftUpperArm"),
+    ("LLA", "LeftLowerArm"),
+    ("LH", "LeftHand"),
+    ("RUA", "RightUpperArm"),
+    ("RLA", "RightLowerArm"),
+    ("RH", "RightHand"),
+    ("LUL", "LeftUpperLeg"),
+    ("LLL", "LeftLowerLeg"),
+    ("LF", "LeftFoot"),
+    ("RUL", "RightUpperLeg"),
+    ("RLL", "RightLowerLeg"),
+    ("RF", "RightFoot"),
+];
+
+fn part_name(key: &str) -> &str {
+    SHORT_NAMES
+        .iter()
+        .find(|(short, _)| *short == key)
+        .map_or(key, |(_, full)| full)
+}
+
+/// A number, whether JSON wrote it as one or as a string.
+fn number(value: &Value) -> Option<f64> {
+    value
+        .as_f64()
+        .or_else(|| value.as_str()?.trim().parse().ok())
+}
+
 fn components(value: &Value) -> Option<[f32; 12]> {
     let list = value.as_array()?;
     if list.len() != 12 {
@@ -33,7 +73,7 @@ fn components(value: &Value) -> Option<[f32; 12]> {
     }
     let mut out = [0.; 12];
     for (slot, v) in out.iter_mut().zip(list) {
-        *slot = v.as_f64()? as f32;
+        *slot = number(v)? as f32;
     }
     Some(out)
 }
@@ -115,7 +155,7 @@ fn from_json(root: &Value, name: &str) -> Result<Clip, ImportError> {
         == Some("frames");
     let fps = info
         .and_then(|i| i.get("fps"))
-        .and_then(Value::as_f64)
+        .and_then(number)
         .filter(|f| *f > 0.)
         .unwrap_or(30.) as f32;
     let seconds = |t: f32| if in_frames { t / fps } else { t };
@@ -126,12 +166,14 @@ fn from_json(root: &Value, name: &str) -> Result<Clip, ImportError> {
     };
     let mut bones: Vec<String> = Vec::new();
     for frame in frames {
-        let time = seconds(frame.get("t").and_then(Value::as_f64).unwrap_or(0.) as f32);
+        let time = seconds(frame.get("t").and_then(number).unwrap_or(0.) as f32);
         let poses = frame.get("kf").and_then(Value::as_object);
         for (bone, value) in poses.into_iter().flatten() {
-            if bone.ends_with("_deform") {
+            let bone = part_name(bone);
+            if bone.ends_with("_deform") || bone == "HumanoidRootPart" {
                 continue;
             }
+            let bone = &bone.to_owned();
             let key =
                 pose(value).ok_or_else(|| ImportError::Format(format!("bad pose for {bone}")))?;
             clip.set_pose(time, bone, key);
@@ -150,7 +192,7 @@ fn from_json(root: &Value, name: &str) -> Result<Clip, ImportError> {
             }
         }
     }
-    if let Some(length) = root.get("t").and_then(Value::as_f64) {
+    if let Some(length) = root.get("t").and_then(number) {
         let length = seconds(length as f32);
         if length > clip.length() + crate::clip::TIME_EPSILON {
             clip.keyframe_mut(length);
@@ -252,6 +294,26 @@ mod tests {
         );
         assert_eq!(clip.joints(), ["Head"]);
         assert!((clip.length() - 1.).abs() < 1e-5);
+    }
+
+    #[test]
+    fn reads_romixamo_strings_and_short_names() {
+        let c = ["0", "0.5", "0", "1", "0", "0", "0", "1", "0", "0", "0", "1"];
+        let text = pack(&json!({
+            "t": "1.2",
+            "kfs": [
+                {"t": "0", "kf": {"HRP": c, "LUA": c, "LT": c}},
+                {"t": "1.2", "kf": {"HRP": c, "LUA": c}},
+            ]
+        }));
+        let clip = decode(&text, "Mixamo").unwrap();
+        assert_eq!(clip.joints(), ["LeftUpperArm", "LowerTorso"]);
+        assert!((clip.length() - 1.2).abs() < 1e-6);
+        let arm = clip.pose(0., "LeftUpperArm").unwrap();
+        assert!(arm
+            .cframe
+            .position
+            .abs_diff_eq(Vec3::new(0., 0.5, 0.), 1e-6));
     }
 
     #[test]

@@ -1,5 +1,6 @@
 //! Bringing animations made elsewhere (Blender, mostly) into a clip.
 
+pub mod asset;
 pub mod fbx;
 pub mod gltf;
 pub mod rbxanims;

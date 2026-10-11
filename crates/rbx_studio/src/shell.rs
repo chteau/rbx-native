@@ -4,6 +4,7 @@
 //! dragged to another edge or stacked as tabs.
 
 mod align;
+mod animation;
 mod argon_diff_window;
 mod argon_sync;
 mod attributes_panel;
@@ -300,6 +301,8 @@ pub(crate) struct Shell {
     /// canvas, the pan and zoom, the gesture in flight. See
     /// `shell::ui_editor`.
     ui: ui_editor::UiEditor,
+    /// The Animation Editor document's own state; see `shell::animation`.
+    anim: animation::Animation,
     quality: Entity<SelectState<QualityOptions>>,
     /// The canonical, mutable tree a Command Bar script runs against; see
     /// `Place::dom`.
@@ -731,6 +734,7 @@ impl Shell {
             style_edits: style_panel::StyleEdits::default(),
             style_scroll: ScrollHandle::new(),
             ui,
+            anim: animation::Animation::new(cx),
             quality: selector,
             dom,
             history: History::new(DEFAULT_CAP),
@@ -963,6 +967,9 @@ impl Shell {
         // `RBX_STUDIO_FRAME_SHEET` (see `shell::ui_editor::frame_sheet`):
         // after the canvas is up, on the `ViewportFrame` selected above.
         shell.apply_debug_frame_sheet(window, cx);
+        // `RBX_STUDIO_ANIMATION` (see `shell::animation::debug`): after the
+        // selection blocks, so the rig they selected is the one it binds.
+        shell.apply_debug_animation(cx);
 
         // `RBX_STUDIO_ARGON_CONNECT` (see `shell::argon_sync`): Connect is a
         // click, and nothing else can send one to the window on the

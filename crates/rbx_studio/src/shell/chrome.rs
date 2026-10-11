@@ -68,17 +68,24 @@ pub(crate) enum Document {
     Scripts,
     /// The 2D canvas and the style sheets — see `shell::ui_editor`.
     UiEditor,
+    /// The dope sheet and the Animation Graph — see `shell::animation`.
+    Animation,
 }
 
 impl Document {
-    pub(super) const ALL: [Document; 3] =
-        [Document::Viewport, Document::Scripts, Document::UiEditor];
+    pub(super) const ALL: [Document; 4] = [
+        Document::Viewport,
+        Document::Scripts,
+        Document::UiEditor,
+        Document::Animation,
+    ];
 
     fn label(self, place: &SharedString) -> SharedString {
         match self {
             Document::Viewport => place.clone(),
             Document::Scripts => "Script Editor".into(),
             Document::UiEditor => "UI Editor".into(),
+            Document::Animation => "Animation Editor".into(),
         }
     }
 
@@ -87,6 +94,7 @@ impl Document {
             Document::Viewport => IconName::Globe,
             Document::Scripts => IconName::Code,
             Document::UiEditor => IconName::LayoutDashboard,
+            Document::Animation => IconName::Film,
         }
     }
 }

@@ -317,6 +317,28 @@ impl Shell {
         }))
         .into_any_element()]
     }
+
+    /// Avatar's Animation tile: the Animation Editor document.
+    pub(in crate::shell) fn animation_tile(&self, cx: &mut Context<Self>) -> AnyElement {
+        crate::shell::ribbon::tile(
+            &self.ribbon_nav,
+            "ribbon-animation",
+            gpui_kit::assets::IconName::Film,
+            "Animation",
+            cx,
+        )
+        .tooltip(|window, cx| {
+            crate::shell::tooltip::text(
+                "Animation Editor \u{2014} key a rig, import from Blender, build animation graphs",
+                window,
+                cx,
+            )
+        })
+        .on_click(cx.listener(|shell, _, _, cx| {
+            crate::shell::ribbon::RibbonCommand::AnimationEditor.run(shell, cx);
+        }))
+        .into_any_element()
+    }
 }
 
 #[cfg(test)]

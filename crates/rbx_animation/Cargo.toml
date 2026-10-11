@@ -19,8 +19,10 @@ gltf = { version = "1", default-features = false, features = ["names", "utils"] 
 # The FBX route, for files made for Roblox's own importer.
 fbxcel = { version = "0.9", features = ["tree"] }
 thiserror = "2"
+# A published animation (by AnimationId) arrives as a model file holding its
+# KeyframeSequence, in either format.
+rbx_binary = { path = "../rbx_binary" }
+rbx_xml = { path = "../rbx_xml" }
 
 [dev-dependencies]
 fbxcel = { version = "0.9", features = ["writer"] }
-# The end-to-end test round-trips a clip and a graph through a real file.
-rbx_binary = { path = "../rbx_binary" }

@@ -6128,6 +6128,7 @@ dependencies = [
  "gltf",
  "rbx_binary",
  "rbx_dom",
+ "rbx_xml",
  "serde_json",
  "thiserror 2.0.20",
 ]

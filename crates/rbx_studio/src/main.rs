@@ -75,6 +75,11 @@
 //! `RBX_STUDIO_TERRAIN=<tool>[,apply]` opens the Terrain Editor on that tool
 //! (`draw`, `sealevel`, `generate`, …) and with `apply` presses its main
 //! button — the same aid, for the Terrain Editor (see `shell::terrain`).
+//! `RBX_STUDIO_ANIMATION=<step>[,<step>...]` opens the Animation Editor and
+//! runs each step (`rig=<name>`, `demo`, `import=<path>`, `time=<seconds>`,
+//! `joint=<name>`, `save`, `graph`, `graph-demo`, `play`, …) as the matching
+//! click would — the same aid, for the Animation Editor (see
+//! `shell::animation::debug` for every step).
 
 mod accent;
 mod align;

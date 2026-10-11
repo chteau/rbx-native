@@ -105,6 +105,7 @@ impl Shell {
             Document::Viewport => Kind::Building,
             Document::UiEditor => Kind::UiDesigning,
             Document::Scripts => Kind::Scripting,
+            Document::Animation => Kind::Animating,
         }
     }
 
@@ -113,6 +114,7 @@ impl Shell {
         match self.document {
             Document::Viewport => "Viewport".into(),
             Document::UiEditor => "UI Editor".into(),
+            Document::Animation => format!("Animation Editor: {}", self.anim.editor.clip.name),
             Document::Scripts => {
                 let active = self.scripts.tabs.active();
                 match active.and_then(|r| self.dom.get(r)) {

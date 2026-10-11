@@ -8,7 +8,9 @@
 //! half-made animation should not land in the place by accident. Its own
 //! undo stack covers the edits made in between.
 
+pub(crate) mod demo;
 pub(crate) mod graph_canvas;
+pub(crate) mod place;
 mod rows;
 
 use rbx_animation::{Clip, Direction, Frame, Marker, PoseKey, Style};
@@ -314,10 +316,6 @@ impl AnimEditor {
                 self.dirty = true;
             }
         }
-    }
-
-    pub(crate) fn dragging(&self) -> bool {
-        self.drag.is_some()
     }
 
     /// Sets the easing of every selected key (either half left as it is

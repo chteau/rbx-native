@@ -69,6 +69,11 @@ enum Command {
     Orthographic(bool),
     /// How the free camera responds — see `Headless::set_camera_feel`.
     CameraFeel(CameraFeel),
+    /// Puts the camera at `eye` looking at `target` — see `Headless::open_at`.
+    LookAt {
+        eye: [f32; 3],
+        target: [f32; 3],
+    },
     /// The renderer's tuned constants — see `Headless::set_calibration`.
     Calibration(Calibration),
     /// Whether a part in front of the selection hides its outline box — see
@@ -228,6 +233,10 @@ impl Pump {
 
     pub(super) fn camera_feel(&self, feel: CameraFeel) {
         let _ = self.commands.send(Command::CameraFeel(feel));
+    }
+
+    pub(super) fn look_at(&self, eye: [f32; 3], target: [f32; 3]) {
+        let _ = self.commands.send(Command::LookAt { eye, target });
     }
 
     pub(super) fn calibration(&self, calibration: Calibration) {
@@ -724,6 +733,8 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::Quality(mode) => rendering.quality.set(mode, rendering.viewer),
         Command::Orthographic(orthographic) => rendering.viewer.set_orthographic(orthographic),
         Command::CameraFeel(feel) => rendering.viewer.set_camera_feel(feel),
+        // Studio's own default field of view.
+        Command::LookAt { eye, target } => rendering.viewer.open_at(eye, target, 70.0),
         Command::Calibration(calibration) => rendering.viewer.set_calibration(calibration),
         Command::SelectionOccluded(occluded) => rendering.viewer.set_selection_occluded(occluded),
         Command::Selection(selected) => rendering.viewer.set_selection(&selected),

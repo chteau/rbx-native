@@ -28,7 +28,7 @@ pub(crate) fn input_pin(node: &Node, index: usize) -> [f32; 2] {
 /// Every node but the output has one output pin, beside its title.
 pub(crate) fn output_pin(node: &Node) -> Option<[f32; 2]> {
     (node.kind != NodeKind::GraphOutput)
-        .then(|| [node.position.0 + NODE_WIDTH, node.position.1 + HEADER * 0.5])
+        .then_some([node.position.0 + NODE_WIDTH, node.position.1 + HEADER * 0.5])
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

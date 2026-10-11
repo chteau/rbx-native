@@ -155,6 +155,9 @@ impl Shell {
         // `shell::scripts`); saving must write what is on screen, not what
         // the DOM happened to hold when typing last paused.
         self.flush_script_edits(cx);
+        // A rig the Animation Editor is posing is saved at rest; the next
+        // frame poses it again.
+        self.unpose_rig(cx);
         let result = save::save(&self.dom, self.format, path);
         let saved = result.is_ok();
         let feedback = record_outcome(&mut self.output, result, path);

@@ -63,6 +63,16 @@ pub(crate) enum MenuId {
     UiInsert,
     UiConstraint,
     ViewportScreen,
+    AnimPriority,
+    AnimFps,
+    AnimLoad,
+    AnimEasingStyle,
+    AnimEasingDirection,
+    AnimGraphLoad,
+    AnimGraphAdd,
+    /// A state machine's n-th transition's From and To pickers.
+    AnimTransitionFrom(usize),
+    AnimTransitionTo(usize),
 }
 
 impl MenuId {
@@ -90,13 +100,24 @@ impl MenuId {
             MenuId::UiInsert => "menu-ui-insert",
             MenuId::UiConstraint => "menu-ui-constraint",
             MenuId::ViewportScreen => "menu-viewport-screen",
+            MenuId::AnimPriority => "menu-anim-priority",
+            MenuId::AnimFps => "menu-anim-fps",
+            MenuId::AnimLoad => "menu-anim-load",
+            MenuId::AnimEasingStyle => "menu-anim-easing-style",
+            MenuId::AnimEasingDirection => "menu-anim-easing-direction",
+            MenuId::AnimGraphLoad => "menu-anim-graph-load",
+            MenuId::AnimGraphAdd => "menu-anim-graph-add",
+            MenuId::AnimTransitionFrom(_) => "menu-anim-transition-from",
+            MenuId::AnimTransitionTo(_) => "menu-anim-transition-to",
         }
     }
 
     /// One popover id per menu; an indexed menu carries its index.
     fn element_id(self) -> ElementId {
         match self {
-            MenuId::WallyVersion(index) => ElementId::from((self.id(), index)),
+            MenuId::WallyVersion(index)
+            | MenuId::AnimTransitionFrom(index)
+            | MenuId::AnimTransitionTo(index) => ElementId::from((self.id(), index)),
             _ => ElementId::from(self.id()),
         }
     }
