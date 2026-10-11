@@ -132,6 +132,8 @@ pub(super) struct Animation {
     pub(super) fitted: bool,
     pub(super) ik: IkSettings,
     pub(super) curve: curves::CurveView,
+    /// A mesh being auto-rigged, while the auto-rigger is open.
+    pub(super) autorig: Option<crate::shell::rig::AutoRig>,
     /// The rig the 3D view is staged around, once the grid is sent.
     staged: Option<Ref>,
     /// Whether the rig's bones are drawn over it (Blender shows them in
@@ -160,6 +162,7 @@ impl Animation {
             fitted: false,
             ik: IkSettings::default(),
             curve: curves::CurveView::default(),
+            autorig: None,
             staged: None,
             skeleton: true,
             skeleton_sent: Vec::new(),
@@ -228,6 +231,28 @@ impl Shell {
         self.anim.skeleton_sent = segments.clone();
         self.viewport
             .update(cx, |viewport, _| viewport.set_skeleton(segments));
+    }
+
+    pub(in crate::shell) fn anim_autorig(&self) -> Option<&crate::shell::rig::AutoRig> {
+        self.anim.autorig.as_ref()
+    }
+
+    pub(in crate::shell) fn anim_autorig_mut(&mut self) -> Option<&mut crate::shell::rig::AutoRig> {
+        self.anim.autorig.as_mut()
+    }
+
+    pub(in crate::shell) fn anim_set_autorig(&mut self, rig: Option<crate::shell::rig::AutoRig>) {
+        self.anim.autorig = rig;
+    }
+
+    /// Lets go of `model` before it is replaced: put back at rest, no
+    /// longer bound or staged.
+    pub(in crate::shell) fn unbind_rig_for_replace(&mut self, model: Ref, cx: &mut Context<Self>) {
+        if self.anim.bound.as_ref().is_some_and(|b| b.model == model) {
+            self.unpose_rig(cx);
+            self.anim.bound = None;
+        }
+        self.unstage(cx);
     }
 
     /// Gives the 3D view back to the whole place.
@@ -353,6 +378,12 @@ impl Shell {
     }
 
     pub(super) fn bind_rig(&mut self, model: Ref, cx: &mut Context<Self>) {
+        self.bind_rig_framed(model, true, cx);
+    }
+
+    /// [`Shell::bind_rig`], leaving the camera where it is when `frame` is
+    /// false: the auto-rigger rebuilding the rig it shows after an edit.
+    pub(super) fn bind_rig_framed(&mut self, model: Ref, frame: bool, cx: &mut Context<Self>) {
         self.unpose_rig(cx);
         let rig = Rig::read(&self.dom, model);
         let parts = rig
@@ -377,7 +408,9 @@ impl Shell {
             .unwrap_or_default();
         let kinds = rig_summary(&rig);
         self.anim.status = Some(format!("Rig {name}: {kinds}").into());
-        self.frame_rig(&rig, root, cx);
+        if frame {
+            self.frame_rig(&rig, root, cx);
+        }
         self.anim.ik.pinned.clear();
         self.anim.bound = Some(Bound {
             model,

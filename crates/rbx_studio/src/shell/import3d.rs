@@ -47,8 +47,8 @@ pub(crate) enum ImportKind {
 }
 
 /// What a finished model upload brings back.
-struct Imported {
-    dom: WeakDom,
+pub(crate) struct Imported {
+    pub(crate) dom: WeakDom,
     asset_id: u64,
     /// A caveat to show beside the success (a triangle count that could not
     /// be taken).
@@ -246,7 +246,7 @@ fn is_base_part(dom: &WeakDom, database: &ReflectionDatabase, target: Ref) -> bo
 
 /// Blocking: reads and checks the file, uploads it, and downloads the model
 /// Roblox made of it.
-fn upload_model(path: &Path, name: &str) -> Result<Imported, String> {
+pub(crate) fn upload_model(path: &Path, name: &str) -> Result<Imported, String> {
     let (report, upload) = rbx_import::prepare(path)?;
     if let Some(refusal) = report.refusal() {
         return Err(refusal);

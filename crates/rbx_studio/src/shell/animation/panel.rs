@@ -16,6 +16,7 @@ use crate::shell::menu::{self, MenuId};
 use crate::shell::ribbon::RibbonCommand;
 use crate::tokens;
 
+mod autorig;
 mod curves;
 mod face;
 mod ik;
@@ -32,6 +33,7 @@ enum Field {
     AnimationId,
     CurveValue,
     CurveTime,
+    AutorigAxis(usize),
     Tangent { left: bool },
 }
 
@@ -43,6 +45,8 @@ pub(in crate::shell) struct Fields {
     animation_id: Entity<InputState>,
     /// The Curve section's value, time, and left and right tangents.
     curve: [Entity<InputState>; 4],
+    /// The Auto-rig section's joint position.
+    autorig: [Entity<InputState>; 3],
     /// The Face section's region (an index into `facs::REGIONS`) and one
     /// slider per channel, made the first time the channel shows.
     face_region: usize,
@@ -104,6 +108,7 @@ impl Shell {
             make(Field::Tangent { left: true }, "Auto", window, cx),
             make(Field::Tangent { left: false }, "Auto", window, cx),
         ];
+        let autorig = [0, 1, 2].map(|i| make(Field::AutorigAxis(i), "0", window, cx));
         self.anim.fields = Some(Fields {
             name,
             rotation,
@@ -111,6 +116,7 @@ impl Shell {
             marker,
             animation_id,
             curve,
+            autorig,
             face_region: 0,
             face_sliders: std::collections::HashMap::new(),
             clear_marker: false,
@@ -140,6 +146,7 @@ impl Shell {
                     self.import_animation_id(text, cx);
                 }
             }
+            Field::AutorigAxis(axis) => self.commit_autorig_axis(axis, text, cx),
             Field::CurveValue | Field::CurveTime | Field::Tangent { .. } => {
                 self.commit_curve_field(field, text);
             }
@@ -213,6 +220,9 @@ impl Shell {
         }
 
         let rig = self.anim_rig_section(cx);
+        let autorig_inputs = self.anim.fields.as_ref().map(|f| f.autorig.clone());
+        let autorig =
+            autorig_inputs.and_then(|inputs| self.anim_autorig_section(&inputs, window, cx));
         let clip = self.anim_clip_section(&name, cx);
         let key = self.anim_key_section(joint, &rotation, &position, cx);
         let events = self.anim_events_section(&marker, cx);
@@ -234,6 +244,7 @@ impl Shell {
             .border_color(tokens::border())
             .child(title("Animation"))
             .child(rig)
+            .children(autorig)
             .child(clip)
             .children(curve)
             .child(key)
@@ -312,6 +323,19 @@ impl Shell {
                             cx.listener(|shell, _, _, cx| RibbonCommand::RigBuilder.run(shell, cx)),
                         ),
                     ),
+            )
+            .child(
+                h_flex().gap(px(6.)).child(
+                    wide_button("anim-autorig", "Auto-rig a mesh…", true)
+                        .tooltip(|window, cx| {
+                            crate::shell::tooltip::text(
+                                "Fit an R15 skeleton to an unrigged character (FBX, OBJ or glTF) and cut it into its 15 body parts",
+                                window,
+                                cx,
+                            )
+                        })
+                        .on_click(cx.listener(|shell, _, _, cx| shell.choose_autorig(cx))),
+                ),
             )
     }
 

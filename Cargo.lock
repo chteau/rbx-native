@@ -6277,6 +6277,7 @@ dependencies = [
  "raw-window-handle",
  "rbx_animation",
  "rbx_assets",
+ "rbx_autorig",
  "rbx_binary",
  "rbx_cloud",
  "rbx_dom",

@@ -161,6 +161,21 @@ impl Shell {
         let result = save::save(&self.dom, self.format, path);
         let saved = result.is_ok();
         let feedback = record_outcome(&mut self.output, result, path);
+        // An auto-rigged body not published yet points at meshes only this
+        // machine's cache holds; Roblox would show it without them.
+        let local = self
+            .dom
+            .root_refs()
+            .iter()
+            .any(|&r| crate::shell::rig::has_local_meshes(&self.dom, r));
+        if saved && local {
+            self.output.push(
+                SOURCE,
+                Feedback::Warning(
+                    "An auto-rigged body is not published yet: its meshes exist only on this machine until you press Publish".into(),
+                ),
+            );
+        }
         self.command_bar.set_feedback(feedback);
         cx.notify();
         saved

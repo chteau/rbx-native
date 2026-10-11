@@ -13,6 +13,7 @@
 //! editor's presets, not Roblox's tables.
 
 mod animate;
+mod autorig;
 mod avatar;
 mod bones;
 mod build;
@@ -27,6 +28,7 @@ mod r6;
 
 use rbx_dom::{Variant, WeakDom};
 
+pub(crate) use autorig::{has_local_meshes, AutoRig};
 pub(crate) use build::build_rig;
 pub(crate) use cframe::V3;
 pub(crate) use dialog::RigDialog;

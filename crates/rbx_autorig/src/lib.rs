@@ -67,3 +67,9 @@ pub enum Error {
 
 #[cfg(test)]
 mod tests;
+
+/// The synthetic humanoid with known joints the tests rig, also for other
+/// crates' tests (feature `test-humanoid`).
+#[cfg(any(test, feature = "test-humanoid"))]
+#[path = "tests/humanoid.rs"]
+pub mod test_humanoid;

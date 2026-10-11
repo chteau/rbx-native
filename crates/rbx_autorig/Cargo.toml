@@ -22,6 +22,10 @@ serde_json = "1"
 # Buffers a `.gltf` embeds as base64 data URIs.
 base64 = "0.22"
 
+[features]
+# The synthetic humanoid the tests rig, for other crates' tests.
+test-humanoid = []
+
 [dev-dependencies]
 # The `version 2.00` writer is checked against the repository's own parser.
 rbx_mesh = { path = "../rbx_mesh" }

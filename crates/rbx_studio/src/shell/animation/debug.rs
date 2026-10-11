@@ -6,7 +6,8 @@
 //! `curves` (the Curve Editor, the clip converted, the current joint's
 //! second Rotation X key selected), `rig=<name>` (bind the first
 //! `Model` of that name; otherwise the selection's rig), `demo` (the example
-//! walk cycle), `import=<path>` (an FBX/glTF), `paste=<path>` (a file holding
+//! walk cycle), `import=<path>` (an FBX/glTF), `autorig=<path>` (auto-rig an
+//! unrigged mesh, in the background), `paste=<path>` (a file holding
 //! the Blender addon's clipboard text), `time=<seconds>`, `joint=<name>`
 //! (select that channel and its key at the playhead), `keyframe` (select
 //! every key at the playhead), `save`, `graph-demo` (the example
@@ -142,6 +143,7 @@ impl Shell {
                     self.anim.fitted = false;
                 }
                 "import" => self.import_animation_file(std::path::Path::new(arg), cx),
+                "autorig" => self.start_autorig(std::path::PathBuf::from(arg), cx),
                 "paste" => match std::fs::read_to_string(arg) {
                     Ok(text) => {
                         cx.write_to_clipboard(ClipboardItem::new_string(text));

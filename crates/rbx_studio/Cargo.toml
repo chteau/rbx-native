@@ -35,6 +35,7 @@ rbx_binary = { path = "../rbx_binary" }
 # `rbx_viewer`'s asset fetches.
 rbx_cloud = { path = "../rbx_cloud" }
 rbx_animation = { path = "../rbx_animation" }
+rbx_autorig = { path = "../rbx_autorig" }
 rbx_dom = { path = "../rbx_dom" }
 # Import 3D Model…: the triangle budget check and the file that is uploaded.
 rbx_import = { path = "../rbx_import" }
@@ -129,6 +130,7 @@ ureq = "3"
 sha2 = "0.10"
 
 [dev-dependencies]
+rbx_autorig = { path = "../rbx_autorig", features = ["test-humanoid"] }
 # GPUI's headless test window/entity harness (`#[gpui_kit::test]`,
 # `TestAppContext`), for the dock registration regression test in
 # `shell/dock/tests.rs`. Test-only: `dev-dependencies` features never reach

@@ -1,4 +1,4 @@
-mod humanoid;
+use crate::test_humanoid as humanoid;
 
 use glam::Vec3;
 

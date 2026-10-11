@@ -73,6 +73,7 @@ pub(crate) enum MenuId {
     AnimFaceRegion,
     AnimCurveStyle,
     AnimCurveDirection,
+    AnimAutorigJoint,
     /// A state machine's n-th transition's From and To pickers.
     AnimTransitionFrom(usize),
     AnimTransitionTo(usize),
@@ -113,6 +114,7 @@ impl MenuId {
             MenuId::AnimFaceRegion => "menu-anim-face-region",
             MenuId::AnimCurveStyle => "menu-anim-curve-style",
             MenuId::AnimCurveDirection => "menu-anim-curve-direction",
+            MenuId::AnimAutorigJoint => "menu-anim-autorig-joint",
             MenuId::AnimTransitionFrom(_) => "menu-anim-transition-from",
             MenuId::AnimTransitionTo(_) => "menu-anim-transition-to",
         }
