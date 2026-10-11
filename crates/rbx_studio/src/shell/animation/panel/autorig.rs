@@ -42,7 +42,7 @@ impl Shell {
         let rig = self.anim_autorig()?;
         let joint = rig.joint;
         let at = rig.fit.joint(joint);
-        let (symmetric, busy) = (rig.symmetric, rig.busy);
+        let (symmetric, busy, smooth) = (rig.symmetric, rig.busy, rig.smooth);
         let file = rig
             .source
             .file_name()
@@ -83,6 +83,26 @@ impl Shell {
                         .child(
                             wide_button("autorig-flip", "Flip front", true)
                                 .on_click(cx.listener(|shell, _, _, cx| shell.autorig_turn(2, cx))),
+                        )
+                        .child(
+                            keyed_button(
+                                "autorig-smooth".into(),
+                                if smooth { "Smooth bends" } else { "Rigid parts" },
+                                true,
+                            )
+                            .tooltip(|window, cx| {
+                                crate::shell::tooltip::text(
+                                    "Smooth: each part is skinned to its neighbours' joints, as Roblox's own bodies are. Rigid: each part moves on its own.",
+                                    window,
+                                    cx,
+                                )
+                            })
+                            .on_click(cx.listener(|shell, _, _, cx| {
+                                if let Some(rig) = shell.anim_autorig_mut() {
+                                    rig.smooth = !rig.smooth;
+                                }
+                                shell.recut_autorig(cx);
+                            })),
                         )
                         .child(
                             keyed_button(

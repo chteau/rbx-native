@@ -45,6 +45,10 @@ pub(crate) struct AutoRig {
     pub(crate) warnings: Vec<String>,
     /// A cut is running in the background.
     pub(crate) busy: bool,
+    /// Skin each part to its neighbours' bones too, so a bend is smooth
+    /// across the joint (Roblox's skinned bodies); otherwise each part
+    /// stays rigid.
+    pub(crate) smooth: bool,
 }
 
 /// One cut's output: the parts and the cache paths their meshes went to.
@@ -59,15 +63,21 @@ fn local_uri(folder: &str, part: Part) -> String {
 }
 
 /// Cuts `mesh` along `fit` and writes each part into the local asset cache.
-fn cut(mesh: &Mesh, fit: &Fit) -> Result<Cut, String> {
+fn cut(mesh: &Mesh, fit: &Fit, smooth: bool) -> Result<Cut, String> {
     let body = rbx_autorig::split(mesh, fit).map_err(|e| e.to_string())?;
+    // A skinned part is a `version 4.00` mesh carrying its bones and
+    // weights; a rigid one the plain `version 2.00`.
+    let skin = smooth.then(|| rbx_autorig::weights(mesh, fit, &body));
     let meshes: Vec<Vec<u8>> = body
         .parts
         .iter()
-        .map(|p| rbx_autorig::mesh_v2(&p.mesh))
+        .map(|p| match &skin {
+            Some(skin) => rbx_autorig::mesh_v4(&p.mesh, Some(skin.part(p.part))),
+            None => rbx_autorig::mesh_v2(&p.mesh),
+        })
         .collect();
     let hash = meshes.iter().fold(0u64, |h, bytes| {
-        h ^ crate::recovery::fnv1a(bytes).rotate_left(7)
+        h.rotate_left(7) ^ crate::recovery::fnv1a(bytes)
     });
     let folder = format!("{hash:016x}");
     let cache = rbx_assets::AssetCache::new(None).map_err(|e| e.to_string())?;
@@ -152,7 +162,7 @@ impl Shell {
                 .background_spawn(async move {
                     let mesh = rbx_autorig::read(&path).map_err(|e| e.to_string())?;
                     let fit = rbx_autorig::fit(&mesh, HEIGHT).map_err(|e| e.to_string())?;
-                    let cut = cut(&mesh, &fit)?;
+                    let cut = cut(&mesh, &fit, true)?;
                     Ok::<_, String>((mesh, fit, cut))
                 })
                 .await;
@@ -168,6 +178,7 @@ impl Shell {
                         model: None,
                         warnings,
                         busy: false,
+                        smooth: true,
                     }));
                     shell.place_autorig(cut, cx);
                 }
@@ -225,9 +236,11 @@ impl Shell {
             return;
         }
         rig.busy = true;
-        let (mesh, fit) = (rig.mesh.clone(), rig.fit.clone());
+        let (mesh, fit, smooth) = (rig.mesh.clone(), rig.fit.clone(), rig.smooth);
         cx.spawn(async move |this, cx| {
-            let result = cx.background_spawn(async move { cut(&mesh, &fit) }).await;
+            let result = cx
+                .background_spawn(async move { cut(&mesh, &fit, smooth) })
+                .await;
             let _ = this.update(cx, |shell, cx| {
                 if let Some(rig) = shell.anim_autorig_mut() {
                     rig.busy = false;
@@ -300,15 +313,27 @@ impl Shell {
         let Some(model) = rig.model else {
             return;
         };
-        let (mesh, fit, name) = (rig.mesh.clone(), rig.fit.clone(), name_of(&rig.source));
+        let (mesh, fit, name, smooth) = (
+            rig.mesh.clone(),
+            rig.fit.clone(),
+            name_of(&rig.source),
+            rig.smooth,
+        );
         self.autorig_report(Ok(format!("Publishing {name}\u{2026}")), cx);
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_spawn(async move {
                     let body = rbx_autorig::split(&mesh, &fit).map_err(|e| e.to_string())?;
                     let file = std::env::temp_dir().join(format!("{name}.glb"));
-                    std::fs::write(&file, rbx_autorig::gltf(&body))
-                        .map_err(|e| format!("{}: {e}", file.display()))?;
+                    // Skinned, the upload carries the R15 armature and every
+                    // part's weights; rigid, just the 15 meshes.
+                    let bytes = if smooth {
+                        let skin = rbx_autorig::weights(&mesh, &fit, &body);
+                        rbx_autorig::gltf_skinned(&body, &skin)
+                    } else {
+                        rbx_autorig::gltf(&body)
+                    };
+                    std::fs::write(&file, bytes).map_err(|e| format!("{}: {e}", file.display()))?;
                     let imported = crate::shell::import3d::upload_model(&file, &name);
                     let _ = std::fs::remove_file(&file);
                     imported
