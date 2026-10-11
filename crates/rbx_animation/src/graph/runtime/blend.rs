@@ -54,7 +54,11 @@ impl Player {
     /// every other input, of how far the target still is from passing that
     /// other one, then normalised. Cartesian mode works on (X, Y); Polar
     /// mode on (angle X in radians, magnitude Y), comparing angles and
-    /// relative magnitudes. UNVERIFIED: Roblox documents no algorithm for
+    /// relative magnitudes. Roblox documents only that Polar weights direction
+    /// more and that events come from "the highest-weight active input"
+    /// (`AnimationNodeType.yaml`); the editor's code in Client Tracker
+    /// (`AnimationEditor` `Blend2DMap`) only draws the pins.
+    /// UNVERIFIED: Roblox documents no algorithm for
     /// Blend2D; this is the scheme Unity's freeform blend trees use, chosen
     /// because Roblox's editor draws no triangulation.
     fn weights_2d(&self, n: usize, inputs: &[usize]) -> Vec<(usize, f32)> {

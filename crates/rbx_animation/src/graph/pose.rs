@@ -67,7 +67,10 @@ pub fn blend(parts: &[(Pose, f32)]) -> Pose {
 /// (`slerp(base, over, weight · w)` with `w` the joint's own weight, so a
 /// joint `over` leaves out or masks off shows `base`). Roblox leaves Weight
 /// unclamped, so past 1 (or below 0) the rotation and position extrapolate.
-/// UNVERIFIED: the exact formula; this is the spec's recommended reading.
+/// The weight's meaning is documented (creator-docs `AnimationNodeType.yaml`, OverNode: Weight
+/// is "the blend weight used to attenuate the Over pose. Defaults to 1.0
+/// (full override) and is unclamped"). UNVERIFIED: how a rotation is carried
+/// part way, slerp here; Roblox gives only the scalar reading.
 pub fn over(base: &Pose, over: &Pose, weight: f32) -> Pose {
     let mut out = base.clone();
     for (joint, top) in over {
@@ -89,7 +92,9 @@ pub fn over(base: &Pose, over: &Pose, weight: f32) -> Pose {
     out
 }
 
-/// `Add`: `additive` applied on top of `base`, scaled by `weight`.
+/// `Add`: `additive` applied on top of `base`, scaled by `weight`, as creator-docs `AnimationNodeType.yaml`
+/// documents AddNode ("adds the Additive pose to the Base pose, attenuated
+/// by a specific Weight (unclamped)").
 pub fn add(base: &Pose, additive: &Pose, weight: f32) -> Pose {
     let mut out = base.clone();
     for (joint, delta) in additive {
@@ -109,7 +114,8 @@ pub fn add(base: &Pose, additive: &Pose, weight: f32) -> Pose {
     out
 }
 
-/// `Subtract`: `a − weight·b`, which turns a clip into an additive one.
+/// `Subtract`: `a − weight·b`, which turns a clip into an additive one. The
+/// formula is creator-docs `AnimationNodeType.yaml`'s own for SubtractNode (`A - Weight * B`).
 pub fn subtract(a: &Pose, b: &Pose, weight: f32) -> Pose {
     let mut out = a.clone();
     for (joint, minus) in b {

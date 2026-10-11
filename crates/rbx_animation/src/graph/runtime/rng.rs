@@ -1,6 +1,11 @@
 //! PCG32 (O'Neill's `pcg32_random_r`), the generator behind Luau's `Random`.
-//! UNVERIFIED: how Roblox seeds it for a Random Sequence or a state machine;
-//! here a seed simply starts the stream, so equal seeds replay equal picks.
+//! Documented (creator-docs `AnimationNodeType.yaml`, RandomSequenceNode):
+//! Seed "ensur[es] the sequence remains consistent across clients" and
+//! "defaults to `-1`, which uses a random seed"; `graph-editor.md` lists RNG
+//! seeds among the replicated state. UNVERIFIED: the generator and how a seed
+//! starts it, which live in the engine (the Studio editor's code in Client
+//! Tracker has no runtime); here a seed simply starts the stream, so equal
+//! seeds replay equal picks.
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Pcg32 {
