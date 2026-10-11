@@ -34,6 +34,7 @@ rbx_binary = { path = "../rbx_binary" }
 # opening a place straight from Roblox. Already in the tree through
 # `rbx_viewer`'s asset fetches.
 rbx_cloud = { path = "../rbx_cloud" }
+rbx_animation = { path = "../rbx_animation" }
 rbx_dom = { path = "../rbx_dom" }
 # Import 3D Model…: the triangle budget check and the file that is uploaded.
 rbx_import = { path = "../rbx_import" }

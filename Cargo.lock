@@ -6260,6 +6260,7 @@ dependencies = [
  "image",
  "lsp-types",
  "raw-window-handle",
+ "rbx_animation",
  "rbx_assets",
  "rbx_binary",
  "rbx_cloud",

@@ -78,6 +78,7 @@
 
 mod accent;
 mod align;
+mod anim_editor;
 mod argon_client;
 mod camera;
 mod change_class;
@@ -119,6 +120,7 @@ mod style_editor;
 mod sun;
 mod terrain;
 mod theme;
+mod timeline;
 mod tokens;
 mod transform;
 mod ui_canvas;
