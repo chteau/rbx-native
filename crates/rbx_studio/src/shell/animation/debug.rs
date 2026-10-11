@@ -8,8 +8,9 @@
 //! the Blender addon's clipboard text), `time=<seconds>`, `joint=<name>`
 //! (select that channel and its key at the playhead), `keyframe` (select
 //! every key at the playhead), `save`, `graph-demo` (the example
-//! locomotion graph), `speed=<n>` (set the graph's `speed`), `play`, and
-//! `node=<index>` (select a graph node).
+//! locomotion graph), `speed=<n>` (set the graph's `speed`), `play`,
+//! `node=<index>` (select a graph node), `save-graph`, `write=<path>` (File ›
+//! Save As to that path) and `quit`.
 
 use gpui_kit::*;
 use rbx_animation::graph::Value;
@@ -115,6 +116,9 @@ impl Shell {
                 }
                 "play" => self.toggle_animation_playback(cx),
                 "node" => self.anim.graph.selected = arg.parse().ok(),
+                "save-graph" => self.anim_save_graph(cx),
+                "write" => self.save_as(std::path::Path::new(arg), cx),
+                "quit" => cx.quit(),
                 _ => self.anim.status = Some(format!("{VARIABLE}: unknown step {verb}").into()),
             }
         }

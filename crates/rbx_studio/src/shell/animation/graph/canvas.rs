@@ -132,6 +132,26 @@ impl Shell {
                             )
                         }),
                 )
+                .when(node.inputs.is_empty(), |this| {
+                    // A clip has no inputs: its row says what it plays.
+                    let plays = match node.props.get("AnimationId") {
+                        Some(rbx_animation::graph::Prop::Value(
+                            rbx_animation::graph::Value::Text(t),
+                        )) if !t.is_empty() => t.clone(),
+                        _ => "no AnimationId".to_owned(),
+                    };
+                    this.child(
+                        div()
+                            .h(px(PIN_ROW * z))
+                            .px(px(12. * z))
+                            .flex()
+                            .items_center()
+                            .truncate()
+                            .text_size(px(11. * z))
+                            .text_color(tokens::text_label())
+                            .child(plays),
+                    )
+                })
                 .child(
                     v_flex().children(node.inputs.iter().enumerate().map(|(k, input)| {
                         let source = input.node.map(|n| graph.nodes[n].name.clone());

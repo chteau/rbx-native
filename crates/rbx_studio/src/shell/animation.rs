@@ -20,6 +20,9 @@ mod pose;
 mod sheet;
 mod view;
 
+#[cfg(test)]
+mod tests;
+
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::rc::Rc;
