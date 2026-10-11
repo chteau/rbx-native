@@ -324,7 +324,11 @@ impl Node {
         if !self.kind.grows_pins() {
             return None;
         }
-        let stem = if self.kind == NodeKind::StateMachine { "State" } else { "Input" };
+        let stem = if self.kind == NodeKind::StateMachine {
+            "State"
+        } else {
+            "Input"
+        };
         let n = (1..).find(|n| !self.inputs.iter().any(|i| i.pin == format!("{stem}{n}")))?;
         self.inputs.push(Input {
             pin: format!("{stem}{n}"),
@@ -359,13 +363,20 @@ impl Default for Graph {
 
 impl Graph {
     pub fn output(&self) -> Option<usize> {
-        self.nodes.iter().position(|n| n.kind == NodeKind::GraphOutput)
+        self.nodes
+            .iter()
+            .position(|n| n.kind == NodeKind::GraphOutput)
     }
 
     /// Adds a node with a fresh id and returns its index.
     pub fn add(&mut self, kind: NodeKind) -> usize {
         let n = (1..)
-            .find(|n| !self.nodes.iter().any(|node| node.id == format!("{}{n}", kind.label().replace(' ', ""))))
+            .find(|n| {
+                !self
+                    .nodes
+                    .iter()
+                    .any(|node| node.id == format!("{}{n}", kind.label().replace(' ', "")))
+            })
             .unwrap_or(0);
         let id = format!("{}{n}", kind.label().replace(' ', ""));
         self.nodes.push(Node::new(kind, &id));
@@ -386,7 +397,11 @@ impl Graph {
     }
 
     pub fn disconnect(&mut self, to: usize, pin: &str) {
-        if let Some(input) = self.nodes.get_mut(to).and_then(|n| n.inputs.iter_mut().find(|i| i.pin == pin)) {
+        if let Some(input) = self
+            .nodes
+            .get_mut(to)
+            .and_then(|n| n.inputs.iter_mut().find(|i| i.pin == pin))
+        {
             input.node = None;
         }
     }
@@ -410,7 +425,11 @@ impl Graph {
     /// Removes a node, unwiring everything that pointed at it. The output
     /// node stays.
     pub fn remove(&mut self, index: usize) -> bool {
-        if self.nodes.get(index).is_none_or(|n| n.kind == NodeKind::GraphOutput) {
+        if self
+            .nodes
+            .get(index)
+            .is_none_or(|n| n.kind == NodeKind::GraphOutput)
+        {
             return false;
         }
         self.nodes.remove(index);

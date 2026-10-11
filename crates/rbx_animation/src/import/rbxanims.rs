@@ -132,8 +132,8 @@ fn from_json(root: &Value, name: &str) -> Result<Clip, ImportError> {
             if bone.ends_with("_deform") {
                 continue;
             }
-            let key = pose(value)
-                .ok_or_else(|| ImportError::Format(format!("bad pose for {bone}")))?;
+            let key =
+                pose(value).ok_or_else(|| ImportError::Format(format!("bad pose for {bone}")))?;
             clip.set_pose(time, bone, key);
             if !bones.contains(bone) {
                 bones.push(bone.clone());
@@ -156,7 +156,8 @@ fn from_json(root: &Value, name: &str) -> Result<Clip, ImportError> {
             clip.keyframe_mut(length);
         }
     }
-    clip.keyframes.retain(|k| !k.poses.is_empty() || !k.markers.is_empty() || k.time > 0.);
+    clip.keyframes
+        .retain(|k| !k.poses.is_empty() || !k.markers.is_empty() || k.time > 0.);
     Ok(clip)
 }
 
@@ -215,7 +216,12 @@ mod tests {
         let clip = decode(&format!("{}\n", text), "Wave").unwrap();
         assert_eq!(clip.name, "Wave");
         assert_eq!(clip.keyframes.len(), 3);
-        assert!(clip.pose(0., "Head").unwrap().cframe.position.abs_diff_eq(Vec3::Y, 1e-6));
+        assert!(clip
+            .pose(0., "Head")
+            .unwrap()
+            .cframe
+            .position
+            .abs_diff_eq(Vec3::Y, 1e-6));
         // Left out of frame 0.5: identity, not a gap.
         assert_eq!(clip.pose(0.5, "Head").unwrap().cframe, Frame::IDENTITY);
         assert_eq!(clip.pose(0., "LeftHand").unwrap().cframe, Frame::IDENTITY);
@@ -235,9 +241,15 @@ mod tests {
         }));
         let clip = decode(&text, "x").unwrap();
         let first = clip.pose(0., "Head").unwrap();
-        assert_eq!((first.style, first.direction), (Style::CubicV2, Direction::InOut));
+        assert_eq!(
+            (first.style, first.direction),
+            (Style::CubicV2, Direction::InOut)
+        );
         let second = clip.pose(0.5, "Head").unwrap();
-        assert_eq!((second.style, second.direction), (Style::Bounce, Direction::Out));
+        assert_eq!(
+            (second.style, second.direction),
+            (Style::Bounce, Direction::Out)
+        );
         assert_eq!(clip.joints(), ["Head"]);
         assert!((clip.length() - 1.).abs() < 1e-5);
     }
@@ -245,7 +257,10 @@ mod tests {
     #[test]
     fn encode_round_trips() {
         let mut clip = Clip::default();
-        let mut key = PoseKey::new(Frame::new(Vec3::new(1., 2., 3.), glam::Quat::from_rotation_x(0.4)));
+        let mut key = PoseKey::new(Frame::new(
+            Vec3::new(1., 2., 3.),
+            glam::Quat::from_rotation_x(0.4),
+        ));
         key.style = Style::Elastic;
         key.direction = Direction::Out;
         clip.set_pose(0.25, "RightUpperArm", key);
@@ -258,7 +273,11 @@ mod tests {
     #[test]
     fn rejects_garbage() {
         assert!(decode("not base64 !!", "x").is_err());
-        assert!(decode(&base64::engine::general_purpose::STANDARD.encode(b"plain"), "x").is_err());
+        assert!(decode(
+            &base64::engine::general_purpose::STANDARD.encode(b"plain"),
+            "x"
+        )
+        .is_err());
         assert!(decode(&pack(&json!({"nope": 1})), "x").is_err());
     }
 }

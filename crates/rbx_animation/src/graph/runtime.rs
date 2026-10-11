@@ -116,7 +116,11 @@ impl Player {
 
     /// `AnimationTrack:SetParameter`.
     pub fn set(&mut self, name: &str, value: Value) {
-        if self.graph.param(name).is_some_and(|p| p.kind == ParamKind::Trigger) {
+        if self
+            .graph
+            .param(name)
+            .is_some_and(|p| p.kind == ParamKind::Trigger)
+        {
             if value.truthy() {
                 self.fire(name);
             }
@@ -207,14 +211,21 @@ impl Player {
 
     /// Evaluates whatever is wired into `node`'s `input`-th pin.
     pub(crate) fn child(&mut self, node: usize, input: usize, dt: f32) -> (Pose, Status) {
-        match self.graph.nodes[node].inputs.get(input).and_then(|i| i.node) {
+        match self.graph.nodes[node]
+            .inputs
+            .get(input)
+            .and_then(|i| i.node)
+        {
             Some(child) => self.eval(child, dt),
             None => (Pose::new(), Status::default()),
         }
     }
 
     pub(crate) fn pin_index(&self, node: usize, pin: &str) -> Option<usize> {
-        self.graph.nodes[node].inputs.iter().position(|i| i.pin == pin)
+        self.graph.nodes[node]
+            .inputs
+            .iter()
+            .position(|i| i.pin == pin)
     }
 
     fn eval(&mut self, node: usize, dt: f32) -> (Pose, Status) {

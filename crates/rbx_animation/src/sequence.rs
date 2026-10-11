@@ -52,7 +52,10 @@ fn read_poses(dom: &WeakDom, of: Ref, into: &mut Keyframe) {
         let weight = float(dom, pose, "Weight").unwrap_or(1.);
         let structural = weight <= 0. && children_of(dom, pose, "Pose").next().is_some();
         if !structural {
-            let name = dom.get(pose).map(|i| i.name().to_owned()).unwrap_or_default();
+            let name = dom
+                .get(pose)
+                .map(|i| i.name().to_owned())
+                .unwrap_or_default();
             into.poses.insert(
                 name,
                 PoseKey {
@@ -115,7 +118,12 @@ fn write_pose(dom: &mut WeakDom, parent: Ref, name: &str, key: Option<&PoseKey>)
     });
     set(dom, pose, "CFrame", Variant::CFrame(key.cframe.to_data()));
     set(dom, pose, "EasingStyle", Variant::Enum(key.style.value()));
-    set(dom, pose, "EasingDirection", Variant::Enum(key.direction.value()));
+    set(
+        dom,
+        pose,
+        "EasingDirection",
+        Variant::Enum(key.direction.value()),
+    );
     set(dom, pose, "Weight", Variant::Float32(key.weight));
     pose
 }
@@ -142,7 +150,12 @@ fn chain(rig: &Rig, joint: &str) -> Vec<String> {
 pub fn write(dom: &mut WeakDom, parent: Option<Ref>, clip: &Clip, rig: Option<&Rig>) -> Ref {
     let sequence = dom.new_instance("KeyframeSequence", &clip.name, parent);
     set(dom, sequence, "Loop", Variant::Bool(clip.looped));
-    set(dom, sequence, "Priority", Variant::Enum(clip.priority.value()));
+    set(
+        dom,
+        sequence,
+        "Priority",
+        Variant::Enum(clip.priority.value()),
+    );
     for keyframe in &clip.keyframes {
         let k = dom.new_instance("Keyframe", &keyframe.name, Some(sequence));
         set(dom, k, "Time", Variant::Float32(keyframe.time));
@@ -186,13 +199,21 @@ pub fn overwrite(dom: &mut WeakDom, sequence: Ref, clip: &Clip, rig: Option<&Rig
         }
     }
     let fresh = write(dom, None, clip, rig);
-    let keyframes = dom.get(fresh).map(|i| i.children().to_vec()).unwrap_or_default();
+    let keyframes = dom
+        .get(fresh)
+        .map(|i| i.children().to_vec())
+        .unwrap_or_default();
     for k in keyframes {
         dom.set_parent(k, Some(sequence));
     }
     dom.remove(fresh);
     set(dom, sequence, "Loop", Variant::Bool(clip.looped));
-    set(dom, sequence, "Priority", Variant::Enum(clip.priority.value()));
+    set(
+        dom,
+        sequence,
+        "Priority",
+        Variant::Enum(clip.priority.value()),
+    );
     if dom.get(sequence).is_some_and(|i| i.name() != clip.name) {
         let _ = dom.set_name(sequence, &clip.name);
     }

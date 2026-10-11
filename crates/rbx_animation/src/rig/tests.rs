@@ -6,7 +6,10 @@ use super::*;
 use crate::fixture::Fixture;
 
 fn both() -> [Fixture; 2] {
-    [Fixture::new(JointKind::Motor6D), Fixture::new(JointKind::AnimationConstraint)]
+    [
+        Fixture::new(JointKind::Motor6D),
+        Fixture::new(JointKind::AnimationConstraint),
+    ]
 }
 
 #[test]
@@ -28,8 +31,14 @@ fn constraint_rig_reads_offsets_from_attachments() {
     let rig = Rig::read(&f.dom, f.model);
     let shoulder = rig.joint_for("Right Arm").unwrap();
     assert_eq!(shoulder.kind, JointKind::AnimationConstraint);
-    assert!(shoulder.c0.position.abs_diff_eq(Vec3::new(1., 0.5, 0.), 1e-6));
-    assert!(shoulder.c1.position.abs_diff_eq(Vec3::new(-0.5, 0.5, 0.), 1e-6));
+    assert!(shoulder
+        .c0
+        .position
+        .abs_diff_eq(Vec3::new(1., 0.5, 0.), 1e-6));
+    assert!(shoulder
+        .c1
+        .position
+        .abs_diff_eq(Vec3::new(-0.5, 0.5, 0.), 1e-6));
 }
 
 #[test]
@@ -37,7 +46,9 @@ fn rest_layout_matches_the_parts() {
     for f in both() {
         let rig = Rig::read(&f.dom, f.model);
         let world = rig.layout(Frame::at(Vec3::new(0., 3., 0.)), &|_| None);
-        assert!(world[&f.arm].position.abs_diff_eq(Vec3::new(1.5, 3., 0.), 1e-5));
+        assert!(world[&f.arm]
+            .position
+            .abs_diff_eq(Vec3::new(1.5, 3., 0.), 1e-5));
     }
 }
 
@@ -52,9 +63,14 @@ fn transform_turns_about_the_joint_and_solve_inverts_it() {
     // The shoulder pivot is torso + (1, 0.5, 0); C1 hangs the arm 0.5 below
     // it, so a quarter turn about Z swings the arm's centre out sideways.
     let arm = world[&f.arm];
-    assert!(arm.position.abs_diff_eq(Vec3::new(1.5, 4., 0.), 1e-5), "{arm:?}");
+    assert!(
+        arm.position.abs_diff_eq(Vec3::new(1.5, 4., 0.), 1e-5),
+        "{arm:?}"
+    );
     let shoulder = rig.joint_for("Right Arm").unwrap();
-    assert!(shoulder.solve(&world[&f.torso], &arm).approx_eq(&raise, 1e-5));
+    assert!(shoulder
+        .solve(&world[&f.torso], &arm)
+        .approx_eq(&raise, 1e-5));
 }
 
 #[test]

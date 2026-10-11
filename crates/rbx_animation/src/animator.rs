@@ -22,7 +22,10 @@ pub struct TrackId(u32);
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
     /// `AnimationTrack.KeyframeReached`, for a keyframe with its own name.
-    KeyframeReached { track: TrackId, name: String },
+    KeyframeReached {
+        track: TrackId,
+        name: String,
+    },
     /// `GetMarkerReachedSignal(name)` firing with the marker's value.
     MarkerReached {
         track: TrackId,
@@ -190,7 +193,13 @@ impl Animator {
             let mut ended = false;
             if length > 0. && (to > length || to < 0.) {
                 if track.looped {
-                    crossed(track, id, from, if to > length { length } else { 0. }, &mut events);
+                    crossed(
+                        track,
+                        id,
+                        from,
+                        if to > length { length } else { 0. },
+                        &mut events,
+                    );
                     events.push(Event::DidLoop(id));
                     to = to.rem_euclid(length);
                     let start = if track.speed >= 0. { 0. } else { length };
@@ -280,7 +289,12 @@ fn crossed(track: &Track, id: TrackId, from: f32, to: f32, events: &mut Vec<Even
             time < from && time >= to
         }
     };
-    let mut reached: Vec<_> = track.clip.keyframes.iter().filter(|k| hit(k.time)).collect();
+    let mut reached: Vec<_> = track
+        .clip
+        .keyframes
+        .iter()
+        .filter(|k| hit(k.time))
+        .collect();
     if to < from {
         reached.reverse();
     }

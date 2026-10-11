@@ -46,21 +46,14 @@ pub struct Joint {
 impl Joint {
     /// Where `Part1` sits for a given `Transform`, with `Part0` at `part0`.
     pub fn place(&self, part0: &Frame, transform: &Frame) -> Frame {
-        part0
-            .mul(&self.c0)
-            .mul(transform)
-            .mul(&self.c1.inverse())
+        part0.mul(&self.c0).mul(transform).mul(&self.c1.inverse())
     }
 
     /// The `Transform` that puts `Part1` at `part1`: [`Joint::place`] solved
     /// for its middle term, which is how a limb dragged in the viewport
     /// becomes a pose.
     pub fn solve(&self, part0: &Frame, part1: &Frame) -> Frame {
-        part0
-            .mul(&self.c0)
-            .inverse()
-            .mul(part1)
-            .mul(&self.c1)
+        part0.mul(&self.c0).inverse().mul(part1).mul(&self.c1)
     }
 
     /// The joint's pivot in world space: the frame `Transform` turns about.

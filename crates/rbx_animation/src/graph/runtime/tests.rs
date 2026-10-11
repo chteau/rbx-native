@@ -9,7 +9,11 @@ use crate::graph::model::{Param, Transition, WaitFor};
 fn ramp(joint: &str, x: f32) -> Clip {
     let mut clip = Clip::default();
     clip.set_pose(0., joint, PoseKey::new(Frame::at(Vec3::new(x, 0., 0.))));
-    clip.set_pose(1., joint, PoseKey::new(Frame::at(Vec3::new(x + 1., 0., 0.))));
+    clip.set_pose(
+        1.,
+        joint,
+        PoseKey::new(Frame::at(Vec3::new(x + 1., 0., 0.))),
+    );
     clip
 }
 
@@ -24,8 +28,12 @@ fn resolve(id: &str) -> Option<Clip> {
 
 fn clip_node(g: &mut Graph, id: &str, mode: &str) -> usize {
     let n = g.add(NodeKind::Clip);
-    g.nodes[n].props.insert("AnimationId".into(), Prop::Value(Value::Text(id.into())));
-    g.nodes[n].props.insert("PlayMode".into(), Prop::Value(Value::Text(mode.into())));
+    g.nodes[n]
+        .props
+        .insert("AnimationId".into(), Prop::Value(Value::Text(id.into())));
+    g.nodes[n]
+        .props
+        .insert("PlayMode".into(), Prop::Value(Value::Text(mode.into())));
     n
 }
 
@@ -38,7 +46,9 @@ fn a_clip_loops_and_speed_scales_time() {
     let mut g = Graph::default();
     let clip = clip_node(&mut g, "idle", "Loop");
     let speed = g.add(NodeKind::Speed);
-    g.nodes[speed].props.insert("Speed".into(), Prop::Value(Value::Number(2.)));
+    g.nodes[speed]
+        .props
+        .insert("Speed".into(), Prop::Value(Value::Number(2.)));
     g.connect(clip, speed, "Pose");
     g.connect(speed, g.output().unwrap(), "Pose");
     let mut p = Player::new(g, &resolve);
@@ -49,7 +59,11 @@ fn a_clip_loops_and_speed_scales_time() {
 #[test]
 fn state_machine_crossfades_on_an_expression() {
     let mut g = Graph::default();
-    g.params.push(Param { name: "speed".into(), kind: ParamKind::Number, default: Value::Number(0.) });
+    g.params.push(Param {
+        name: "speed".into(),
+        kind: ParamKind::Number,
+        default: Value::Number(0.),
+    });
     let idle = clip_node(&mut g, "idle", "Loop");
     let run = clip_node(&mut g, "run", "Loop");
     let sm = g.add(NodeKind::StateMachine);
@@ -76,7 +90,11 @@ fn state_machine_crossfades_on_an_expression() {
 #[test]
 fn any_state_transitions_and_finished_transitions() {
     let mut g = Graph::default();
-    g.params.push(Param { name: "jump".into(), kind: ParamKind::Trigger, default: Value::Bool(false) });
+    g.params.push(Param {
+        name: "jump".into(),
+        kind: ParamKind::Trigger,
+        default: Value::Bool(false),
+    });
     let idle = clip_node(&mut g, "idle", "Loop");
     let wave = clip_node(&mut g, "wave", "OnceAndHold");
     let sm = g.add(NodeKind::StateMachine);
@@ -96,7 +114,11 @@ fn any_state_transitions_and_finished_transitions() {
     p.fire("jump");
     p.step(0.);
     assert_eq!(p.active(sm), Some(1));
-    assert_eq!(p.get("jump"), Some(&Value::Bool(false)), "triggers reset after a step");
+    assert_eq!(
+        p.get("jump"),
+        Some(&Value::Bool(false)),
+        "triggers reset after a step"
+    );
     p.step(0.5);
     assert_eq!(p.active(sm), Some(1));
     p.step(0.6);
@@ -106,12 +128,21 @@ fn any_state_transitions_and_finished_transitions() {
 #[test]
 fn select_follows_a_parameter() {
     let mut g = Graph::default();
-    g.params.push(Param { name: "pick".into(), kind: ParamKind::Text, default: Value::Text("Input1".into()) });
+    g.params.push(Param {
+        name: "pick".into(),
+        kind: ParamKind::Text,
+        default: Value::Text("Input1".into()),
+    });
     let idle = clip_node(&mut g, "idle", "Loop");
     let run = clip_node(&mut g, "run", "Loop");
     let sel = g.add(NodeKind::Select);
-    g.nodes[sel].props.insert("Selection".into(), Prop::Param("pick".into()));
-    g.nodes[sel].props.insert("DefaultTransitionDuration".into(), Prop::Value(Value::Number(0.)));
+    g.nodes[sel]
+        .props
+        .insert("Selection".into(), Prop::Param("pick".into()));
+    g.nodes[sel].props.insert(
+        "DefaultTransitionDuration".into(),
+        Prop::Value(Value::Number(0.)),
+    );
     g.connect(idle, sel, "Input1");
     g.connect(run, sel, "Input2");
     g.connect(sel, g.output().unwrap(), "Pose");
@@ -129,12 +160,18 @@ fn blend1d_interpolates_and_extrapolates() {
     let b = g.add(NodeKind::Blend1D);
     g.connect(idle, b, "Input1");
     g.connect(run, b, "Input2");
-    g.nodes[b].inputs[1].props.insert("Position".into(), Prop::Value(Value::Number(10.)));
-    g.nodes[b].props.insert("Position".into(), Prop::Expr("2 + 0.5".into()));
+    g.nodes[b].inputs[1]
+        .props
+        .insert("Position".into(), Prop::Value(Value::Number(10.)));
+    g.nodes[b]
+        .props
+        .insert("Position".into(), Prop::Expr("2 + 0.5".into()));
     g.connect(b, g.output().unwrap(), "Pose");
     let mut p = Player::new(g.clone(), &resolve);
     assert!((x(&p.step(0.), "Torso") - 2.5).abs() < 1e-4);
-    g.nodes[b].props.insert("Position".into(), Prop::Value(Value::Number(15.)));
+    g.nodes[b]
+        .props
+        .insert("Position".into(), Prop::Value(Value::Number(15.)));
     let mut p = Player::new(g, &resolve);
     assert!((x(&p.step(0.), "Torso") - 15.).abs() < 1e-4);
 }
@@ -142,12 +179,21 @@ fn blend1d_interpolates_and_extrapolates() {
 #[test]
 fn one_shot_overlays_then_fades_out() {
     let mut g = Graph::default();
-    g.params.push(Param { name: "wave".into(), kind: ParamKind::Trigger, default: Value::Bool(false) });
+    g.params.push(Param {
+        name: "wave".into(),
+        kind: ParamKind::Trigger,
+        default: Value::Bool(false),
+    });
     let idle = clip_node(&mut g, "idle", "Loop");
     let wave = clip_node(&mut g, "wave", "OnceAndHold");
     let shot = g.add(NodeKind::OneShot);
-    g.nodes[shot].props.insert("Trigger".into(), Prop::Param("wave".into()));
-    g.nodes[shot].props.insert("TransitionInDuration".into(), Prop::Value(Value::Number(0.)));
+    g.nodes[shot]
+        .props
+        .insert("Trigger".into(), Prop::Param("wave".into()));
+    g.nodes[shot].props.insert(
+        "TransitionInDuration".into(),
+        Prop::Value(Value::Number(0.)),
+    );
     g.connect(idle, shot, "Base");
     g.connect(wave, shot, "OneShot");
     g.connect(shot, g.output().unwrap(), "Pose");
@@ -158,7 +204,10 @@ fn one_shot_overlays_then_fades_out() {
     assert!(during.contains_key("Arm") && during.contains_key("Torso"));
     p.step(1.0);
     p.step(0.1);
-    assert!(!p.step(0.1).contains_key("Arm"), "faded out after the shot ended");
+    assert!(
+        !p.step(0.1).contains_key("Arm"),
+        "faded out after the shot ended"
+    );
 }
 
 #[test]
@@ -167,11 +216,16 @@ fn sequence_plays_inputs_in_order_and_mask_hides_joints() {
     let idle = clip_node(&mut g, "idle", "OnceAndHold");
     let wave = clip_node(&mut g, "wave", "OnceAndHold");
     let seq = g.add(NodeKind::Sequence);
-    g.nodes[seq].props.insert("DefaultTransitionDuration".into(), Prop::Value(Value::Number(0.)));
+    g.nodes[seq].props.insert(
+        "DefaultTransitionDuration".into(),
+        Prop::Value(Value::Number(0.)),
+    );
     g.connect(idle, seq, "Input1");
     g.connect(wave, seq, "Input2");
     let mask = g.add(NodeKind::Mask);
-    g.nodes[mask].props.insert("Mask:Arm".into(), Prop::Value(Value::Number(1.)));
+    g.nodes[mask]
+        .props
+        .insert("Mask:Arm".into(), Prop::Value(Value::Number(1.)));
     g.connect(seq, mask, "Pose");
     g.connect(mask, g.output().unwrap(), "Pose");
     let mut p = Player::new(g, &resolve);
@@ -188,14 +242,21 @@ fn random_sequence_is_reproducible_with_a_seed() {
         let a = clip_node(&mut g, "idle", "OnceAndHold");
         let b = clip_node(&mut g, "run", "OnceAndHold");
         let r = g.add(NodeKind::RandomSequence);
-        g.nodes[r].props.insert("Seed".into(), Prop::Value(Value::Number(7.)));
+        g.nodes[r]
+            .props
+            .insert("Seed".into(), Prop::Value(Value::Number(7.)));
         g.connect(a, r, "Input1");
         g.connect(b, r, "Input2");
         g.connect(r, g.output().unwrap(), "Pose");
         (Player::new(g, &resolve), r)
     };
     let picks = |(mut p, r): (Player, usize)| -> Vec<usize> {
-        (0..6).map(|_| { p.step(1.01); p.active(r).unwrap() }).collect()
+        (0..6)
+            .map(|_| {
+                p.step(1.01);
+                p.active(r).unwrap()
+            })
+            .collect()
     };
     assert_eq!(picks(build()), picks(build()));
 }

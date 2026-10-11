@@ -64,10 +64,15 @@ fn reads_the_hierarchy_and_keys() {
     assert_eq!(names, ["HumanoidRootPart", "Torso", "Right Arm"]);
     assert_eq!(s.bones[2].parent, Some(1));
     assert_eq!(s.bones[1].scale, 2.);
-    assert!(s.bones[0].rest.position.abs_diff_eq(Vec3::new(0., 3., 0.), 1e-6));
+    assert!(s.bones[0]
+        .rest
+        .position
+        .abs_diff_eq(Vec3::new(0., 3., 0.), 1e-6));
     assert_eq!(s.bones[2].keys.len(), 2);
     let half = s.local(2, 0.5);
-    assert!((half.rotation.angle_between(Quat::IDENTITY) - std::f32::consts::FRAC_PI_4).abs() < 1e-4);
+    assert!(
+        (half.rotation.angle_between(Quat::IDENTITY) - std::f32::consts::FRAC_PI_4).abs() < 1e-4
+    );
     // An unanimated translation keeps the rest value.
     assert!(half.position.abs_diff_eq(Vec3::new(1., 0.5, 0.), 1e-6));
 }
@@ -76,7 +81,9 @@ fn reads_the_hierarchy_and_keys() {
 fn cubic_splines_keep_their_values() {
     let s = read(&file(true), 0, &|_| None).unwrap();
     let end = s.local(2, 1.);
-    assert!((end.rotation.angle_between(Quat::IDENTITY) - std::f32::consts::FRAC_PI_2).abs() < 1e-4);
+    assert!(
+        (end.rotation.angle_between(Quat::IDENTITY) - std::f32::consts::FRAC_PI_2).abs() < 1e-4
+    );
 }
 
 #[test]

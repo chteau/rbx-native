@@ -36,7 +36,11 @@ pub fn wrap(clip: &Clip, time: f32) -> f32 {
 
 fn between(from: (f32, &PoseKey), to: (f32, &PoseKey), time: f32) -> Sampled {
     let span = to.0 - from.0;
-    let t = if span > 0. { (time - from.0) / span } else { 1. };
+    let t = if span > 0. {
+        (time - from.0) / span
+    } else {
+        1.
+    };
     let alpha = ease(from.1.style, from.1.direction, t);
     Sampled {
         transform: from.1.cframe.lerp(&to.1.cframe, alpha),

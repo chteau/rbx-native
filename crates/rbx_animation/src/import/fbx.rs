@@ -120,7 +120,11 @@ fn sample(curve: &Curve, time: f32) -> Option<f32> {
     for i in 1..n {
         if time <= times[i] {
             let span = times[i] - times[i - 1];
-            let a = if span > 0. { (time - times[i - 1]) / span } else { 1. };
+            let a = if span > 0. {
+                (time - times[i - 1]) / span
+            } else {
+                1.
+            };
             return Some(values[i - 1] + (values[i] - values[i - 1]) * a);
         }
     }
@@ -157,7 +161,10 @@ pub fn read(bytes: &[u8]) -> Result<Skeleton, ImportError> {
                             rotation: vec3(p.get("Lcl Rotation")).unwrap_or_default(),
                             pre: euler(vec3(p.get("PreRotation")).unwrap_or_default(), 0),
                             post: euler(vec3(p.get("PostRotation")).unwrap_or_default(), 0),
-                            order: p.get("RotationOrder").and_then(|v| v.first()).map_or(0, |v| *v as i32),
+                            order: p
+                                .get("RotationOrder")
+                                .and_then(|v| v.first())
+                                .map_or(0, |v| *v as i32),
                             scale: (s.x + s.y + s.z) / 3.,
                         },
                     );
@@ -173,13 +180,18 @@ pub fn read(bytes: &[u8]) -> Result<Skeleton, ImportError> {
                     let values = child("KeyValueFloat")
                         .and_then(|n| match n.attributes().first()? {
                             AttributeValue::ArrF32(v) => Some(v.clone()),
-                            AttributeValue::ArrF64(v) => Some(v.iter().map(|x| *x as f32).collect()),
+                            AttributeValue::ArrF64(v) => {
+                                Some(v.iter().map(|x| *x as f32).collect())
+                            }
                             _ => None,
                         })
                         .unwrap_or_default();
                     curves.insert(
                         id,
-                        (times.iter().map(|t| (*t as f64 / TICKS) as f32).collect(), values),
+                        (
+                            times.iter().map(|t| (*t as f64 / TICKS) as f32).collect(),
+                            values,
+                        ),
                     );
                 }
                 _ => {}
@@ -238,7 +250,11 @@ pub fn read(bytes: &[u8]) -> Result<Skeleton, ImportError> {
     }
 
     // Parents first: a breadth-first walk from the models with no parent.
-    let mut ids: Vec<i64> = models.keys().copied().filter(|m| !parent.contains_key(m)).collect();
+    let mut ids: Vec<i64> = models
+        .keys()
+        .copied()
+        .filter(|m| !parent.contains_key(m))
+        .collect();
     ids.sort();
     let mut i = 0;
     while i < ids.len() {

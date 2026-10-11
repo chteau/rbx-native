@@ -6126,6 +6126,7 @@ dependencies = [
  "flate2",
  "glam",
  "gltf",
+ "rbx_binary",
  "rbx_dom",
  "serde_json",
  "thiserror 2.0.20",

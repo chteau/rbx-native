@@ -75,7 +75,11 @@ fn lerp_at<T: Copy>(keys: &[(f32, T)], time: f32, mix: impl Fn(T, T, f32) -> T) 
     for pair in keys.windows(2) {
         if time <= pair[1].0 {
             let span = pair[1].0 - pair[0].0;
-            let alpha = if span > 0. { (time - pair[0].0) / span } else { 1. };
+            let alpha = if span > 0. {
+                (time - pair[0].0) / span
+            } else {
+                1.
+            };
             return Some(mix(pair[0].1, pair[1].1, alpha));
         }
     }
@@ -134,7 +138,10 @@ pub fn read(
         let pick = |i: usize| if cubic { i % 3 == 1 } else { true };
         match (channel.target().property(), reader.read_outputs()) {
             (Property::Translation, Some(ReadOutputs::Translations(values))) => {
-                let values = values.enumerate().filter(|(i, _)| pick(*i)).map(|(_, v)| Vec3::from(v));
+                let values = values
+                    .enumerate()
+                    .filter(|(i, _)| pick(*i))
+                    .map(|(_, v)| Vec3::from(v));
                 translations[node] = times.iter().copied().zip(values).collect();
             }
             (Property::Rotation, Some(ReadOutputs::Rotations(values))) => {

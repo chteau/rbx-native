@@ -19,16 +19,15 @@ fn property(w: &mut W<'_>, name: &str, values: [f64; 3]) {
     for v in values {
         a.append_f64(v).unwrap();
     }
-    drop(a);
     w.close_node().unwrap();
 }
 
 fn model(w: &mut W<'_>, id: i64, name: &str, translation: [f64; 3], pre: [f64; 3]) {
     let mut a = w.new_node("Model").unwrap();
     a.append_i64(id).unwrap();
-    a.append_string_direct(&format!("{name}\0\u{1}Model")).unwrap();
+    a.append_string_direct(&format!("{name}\0\u{1}Model"))
+        .unwrap();
     a.append_string_direct("LimbNode").unwrap();
-    drop(a);
     w.new_node("Properties70").unwrap();
     property(w, "Lcl Translation", translation);
     property(w, "PreRotation", pre);
@@ -44,7 +43,6 @@ fn connect(w: &mut W<'_>, kind: &str, child: i64, parent: i64, prop: Option<&str
     if let Some(p) = prop {
         a.append_string_direct(p).unwrap();
     }
-    drop(a);
     w.close_node().unwrap();
 }
 
@@ -97,13 +95,18 @@ fn reads_models_hierarchy_and_curves() {
     let names: Vec<&str> = s.bones.iter().map(|b| b.name.as_str()).collect();
     assert_eq!(names, ["HumanoidRootPart", "Torso", "Right Arm"]);
     assert_eq!(s.bones[2].parent, Some(1));
-    assert!(s.bones[0].rest.position.abs_diff_eq(Vec3::new(0., 300., 0.), 1e-4));
+    assert!(s.bones[0]
+        .rest
+        .position
+        .abs_diff_eq(Vec3::new(0., 300., 0.), 1e-4));
     let pre = Quat::from_rotation_x(std::f32::consts::FRAC_PI_2);
     assert!(same(s.bones[2].rest.rotation, pre));
     let end = s.local(2, 1.);
     let expected = pre * Quat::from_rotation_z(std::f32::consts::FRAC_PI_2);
     assert!(same(end.rotation, expected), "{end:?}");
-    assert!((s.local(2, 0.5).rotation.angle_between(pre) - std::f32::consts::FRAC_PI_4).abs() < 1e-4);
+    assert!(
+        (s.local(2, 0.5).rotation.angle_between(pre) - std::f32::consts::FRAC_PI_4).abs() < 1e-4
+    );
 }
 
 #[test]

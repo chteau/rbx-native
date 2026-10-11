@@ -23,24 +23,38 @@ fn part(dom: &mut WeakDom, name: &str, parent: Ref, at: Vec3) -> Ref {
     part
 }
 
-fn join(dom: &mut WeakDom, kind: JointKind, name: &str, p0: Ref, p1: Ref, c0: Frame, c1: Frame) -> Ref {
+fn join(
+    dom: &mut WeakDom,
+    kind: JointKind,
+    name: &str,
+    p0: Ref,
+    p1: Ref,
+    c0: Frame,
+    c1: Frame,
+) -> Ref {
     match kind {
         JointKind::Motor6D => {
             let m = dom.new_instance("Motor6D", name, Some(p1));
             dom.set_property(m, "Part0", Variant::Ref(p0)).unwrap();
             dom.set_property(m, "Part1", Variant::Ref(p1)).unwrap();
-            dom.set_property(m, "C0", Variant::CFrame(c0.to_data())).unwrap();
-            dom.set_property(m, "C1", Variant::CFrame(c1.to_data())).unwrap();
+            dom.set_property(m, "C0", Variant::CFrame(c0.to_data()))
+                .unwrap();
+            dom.set_property(m, "C1", Variant::CFrame(c1.to_data()))
+                .unwrap();
             m
         }
         JointKind::AnimationConstraint => {
             let a0 = dom.new_instance("Attachment", &format!("{name}RigAttachment"), Some(p0));
-            dom.set_property(a0, "CFrame", Variant::CFrame(c0.to_data())).unwrap();
+            dom.set_property(a0, "CFrame", Variant::CFrame(c0.to_data()))
+                .unwrap();
             let a1 = dom.new_instance("Attachment", &format!("{name}RigAttachment"), Some(p1));
-            dom.set_property(a1, "CFrame", Variant::CFrame(c1.to_data())).unwrap();
+            dom.set_property(a1, "CFrame", Variant::CFrame(c1.to_data()))
+                .unwrap();
             let c = dom.new_instance("AnimationConstraint", name, Some(p1));
-            dom.set_property(c, "Attachment0", Variant::Ref(a0)).unwrap();
-            dom.set_property(c, "Attachment1", Variant::Ref(a1)).unwrap();
+            dom.set_property(c, "Attachment0", Variant::Ref(a0))
+                .unwrap();
+            dom.set_property(c, "Attachment1", Variant::Ref(a1))
+                .unwrap();
             c
         }
     }
@@ -54,7 +68,15 @@ impl Fixture {
         let torso = part(&mut dom, "Torso", model, Vec3::new(0., 3., 0.));
         let arm = part(&mut dom, "Right Arm", model, Vec3::new(1.5, 3., 0.));
         dom.new_instance("Humanoid", "Humanoid", Some(model));
-        let waist = join(&mut dom, kind, "RootJoint", root, torso, Frame::IDENTITY, Frame::IDENTITY);
+        let waist = join(
+            &mut dom,
+            kind,
+            "RootJoint",
+            root,
+            torso,
+            Frame::IDENTITY,
+            Frame::IDENTITY,
+        );
         let shoulder = join(
             &mut dom,
             kind,
@@ -64,6 +86,13 @@ impl Fixture {
             Frame::at(Vec3::new(1., 0.5, 0.)),
             Frame::at(Vec3::new(-0.5, 0.5, 0.)),
         );
-        Fixture { dom, model, root, torso, arm, joints: [waist, shoulder] }
+        Fixture {
+            dom,
+            model,
+            root,
+            torso,
+            arm,
+            joints: [waist, shoulder],
+        }
     }
 }

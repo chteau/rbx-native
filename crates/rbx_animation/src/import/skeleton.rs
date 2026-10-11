@@ -103,10 +103,7 @@ pub fn fit(from: &[Vec3], to: &[Vec3]) -> Option<Fit> {
         return None;
     }
     let n = from.len() as f32;
-    let (ca, cb) = (
-        from.iter().sum::<Vec3>() / n,
-        to.iter().sum::<Vec3>() / n,
-    );
+    let (ca, cb) = (from.iter().sum::<Vec3>() / n, to.iter().sum::<Vec3>() / n);
     let mut s = [[0f32; 3]; 3];
     let (mut spread_a, mut spread_b) = (0., 0.);
     for (a, b) in from.iter().zip(to) {
@@ -185,10 +182,9 @@ pub fn retarget(skeleton: &Skeleton, rig: &Rig, root: Frame, name: &str) -> Clip
         to.push(pivot.position);
         matched.push((joint, bone, pivot));
     }
-    if let (Some(root_ref), Some(&bone)) = (
-        rig.root,
-        rig.root.and_then(|r| index.get(rig.part_name(r))),
-    ) {
+    if let (Some(root_ref), Some(&bone)) =
+        (rig.root, rig.root.and_then(|r| index.get(rig.part_name(r))))
+    {
         if let Some(part) = parts.get(&root_ref) {
             from.push(rest[bone].0.position);
             to.push(part.position);
@@ -211,7 +207,9 @@ pub fn retarget(skeleton: &Skeleton, rig: &Rig, root: Frame, name: &str) -> Clip
             };
             let posed = skeleton.local(*bone, time);
             // The bone's motion in the file's world, about its rest head.
-            let turn = parent.rotation * posed.rotation * b.rest.rotation.conjugate()
+            let turn = parent.rotation
+                * posed.rotation
+                * b.rest.rotation.conjugate()
                 * parent.rotation.conjugate();
             let shift = parent.rotation * ((posed.position - b.rest.position) * parent_scale);
             // Into the rig's world, then into the joint's frame.

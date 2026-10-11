@@ -44,7 +44,10 @@ fn higher_priority_overrides_and_core_is_lowest() {
     // 0.25 of Idle, then Core fills the remaining 0.75 (its 1 is normalised
     // against the 1.25 total).
     let blended = x(&a, "Head");
-    assert!((blended - (0.25 * 2. + 1. * 1.) / 1.25).abs() < 1e-4, "{blended}");
+    assert!(
+        (blended - (0.25 * 2. + 1. * 1.) / 1.25).abs() < 1e-4,
+        "{blended}"
+    );
 }
 
 #[test]
@@ -85,7 +88,9 @@ fn markers_fire_once_and_loops_report() {
     a.play(t, 0., 1., 1.);
     let first = a.step(0.6);
     assert_eq!(first.len(), 2);
-    assert!(matches!(&first[1], Event::MarkerReached { name, value, .. } if name == "Step" && value == "L"));
+    assert!(
+        matches!(&first[1], Event::MarkerReached { name, value, .. } if name == "Step" && value == "L")
+    );
     let wrapped = a.step(1.0);
     assert!(wrapped.contains(&Event::DidLoop(t)));
     assert!((a.track(t).unwrap().time - 0.6).abs() < 1e-5);

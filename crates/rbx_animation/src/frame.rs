@@ -57,10 +57,7 @@ impl Frame {
             Vec3::new(r[2], r[5], r[8]),
         );
         let p = data.position;
-        Frame::new(
-            Vec3::new(p.x, p.y, p.z),
-            Quat::from_mat3(&m).normalize(),
-        )
+        Frame::new(Vec3::new(p.x, p.y, p.z), Quat::from_mat3(&m).normalize())
     }
 
     pub fn to_data(&self) -> CFrameData {
@@ -143,7 +140,9 @@ mod tests {
     #[test]
     fn inverse_cancels() {
         let frame = Frame::new(Vec3::new(4., -1., 2.), Quat::from_rotation_z(1.2));
-        assert!(frame.mul(&frame.inverse()).approx_eq(&Frame::IDENTITY, 1e-5));
+        assert!(frame
+            .mul(&frame.inverse())
+            .approx_eq(&Frame::IDENTITY, 1e-5));
     }
 
     #[test]
@@ -168,6 +167,8 @@ mod tests {
     #[test]
     fn angles_round_trip() {
         let frame = Frame::angles(0.3, -0.4, 0.5);
-        assert!(frame.to_angles().abs_diff_eq(Vec3::new(0.3, -0.4, 0.5), 1e-5));
+        assert!(frame
+            .to_angles()
+            .abs_diff_eq(Vec3::new(0.3, -0.4, 0.5), 1e-5));
     }
 }

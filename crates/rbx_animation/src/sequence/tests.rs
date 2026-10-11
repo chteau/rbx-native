@@ -63,8 +63,14 @@ fn poses_nest_along_the_rig() {
     let root = child_named(&dom, first, "HumanoidRootPart").expect("root pose");
     let torso = child_named(&dom, root, "Torso").expect("torso under root");
     let arm = child_named(&dom, torso, "Right Arm").expect("arm under torso");
-    assert_eq!(dom.get(root).unwrap().properties()["Weight"], Variant::Float32(0.));
-    assert_eq!(dom.get(arm).unwrap().properties()["Weight"], Variant::Float32(1.));
+    assert_eq!(
+        dom.get(root).unwrap().properties()["Weight"],
+        Variant::Float32(0.)
+    );
+    assert_eq!(
+        dom.get(arm).unwrap().properties()["Weight"],
+        Variant::Float32(1.)
+    );
 }
 
 #[test]

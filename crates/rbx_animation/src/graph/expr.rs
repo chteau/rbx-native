@@ -30,7 +30,10 @@ impl Val {
     fn number(&self) -> Result<f64, String> {
         match self {
             Val::Number(n) => Ok(*n),
-            Val::Text(t) => t.trim().parse().map_err(|_| format!("cannot do arithmetic on \"{t}\"")),
+            Val::Text(t) => t
+                .trim()
+                .parse()
+                .map_err(|_| format!("cannot do arithmetic on \"{t}\"")),
             other => Err(format!("cannot do arithmetic on {}", other.type_name())),
         }
     }
@@ -73,8 +76,8 @@ enum Tok {
 }
 
 const SYMBOLS: [&str; 22] = [
-    "//", "..", "==", "~=", "<=", ">=", "+", "-", "*", "/", "%", "^", "<", ">", "(", ")", ",",
-    "=", ".", ";", "#", "!",
+    "//", "..", "==", "~=", "<=", ">=", "+", "-", "*", "/", "%", "^", "<", ">", "(", ")", ",", "=",
+    ".", ";", "#", "!",
 ];
 
 fn lex(src: &str) -> Result<Vec<Tok>, String> {
@@ -89,9 +92,13 @@ fn lex(src: &str) -> Result<Vec<Tok>, String> {
             while i < chars.len() && chars[i] != '\n' {
                 i += 1;
             }
-        } else if c.is_ascii_digit() || (c == '.' && chars.get(i + 1).is_some_and(char::is_ascii_digit)) {
+        } else if c.is_ascii_digit()
+            || (c == '.' && chars.get(i + 1).is_some_and(char::is_ascii_digit))
+        {
             let start = i;
-            while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '.' || chars[i] == '_') {
+            while i < chars.len()
+                && (chars[i].is_ascii_alphanumeric() || chars[i] == '.' || chars[i] == '_')
+            {
                 // An exponent's sign belongs to the number.
                 if matches!(chars[i], 'e' | 'E') && matches!(chars.get(i + 1), Some('+' | '-')) {
                     i += 1;
@@ -104,7 +111,9 @@ fn lex(src: &str) -> Result<Vec<Tok>, String> {
             } else {
                 text.parse().ok()
             };
-            out.push(Tok::Num(n.ok_or_else(|| format!("malformed number {text}"))?));
+            out.push(Tok::Num(
+                n.ok_or_else(|| format!("malformed number {text}"))?,
+            ));
         } else if c.is_alphabetic() || c == '_' {
             let start = i;
             while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_') {
@@ -314,7 +323,11 @@ impl Parser<'_> {
     fn if_expr(&mut self) -> Result<Val, String> {
         let cond = self.expr(0)?.truthy();
         self.expect("then")?;
-        let yes = if cond { self.expr(0)? } else { self.skipped(0)? };
+        let yes = if cond {
+            self.expr(0)?
+        } else {
+            self.skipped(0)?
+        };
         let no = if self.is("elseif") {
             self.at += 1;
             if cond {
@@ -327,7 +340,11 @@ impl Parser<'_> {
             }
         } else {
             self.expect("else")?;
-            if cond { self.skipped(0)? } else { self.expr(0)? }
+            if cond {
+                self.skipped(0)?
+            } else {
+                self.expr(0)?
+            }
         };
         Ok(if cond { yes } else { no })
     }
@@ -363,7 +380,11 @@ impl Parser<'_> {
 }
 
 fn math(f: &str, a: &[f64]) -> Result<f64, String> {
-    let arg = |i: usize| a.get(i).copied().ok_or_else(|| format!("math.{f} needs more arguments"));
+    let arg = |i: usize| {
+        a.get(i)
+            .copied()
+            .ok_or_else(|| format!("math.{f} needs more arguments"))
+    };
     Ok(match f {
         "abs" => arg(0)?.abs(),
         "acos" => arg(0)?.acos(),
@@ -393,11 +414,25 @@ fn math(f: &str, a: &[f64]) -> Result<f64, String> {
         "round" => arg(0)?.round(),
         "sign" => {
             let x = arg(0)?;
-            if x > 0. { 1. } else if x < 0. { -1. } else { 0. }
+            if x > 0. {
+                1.
+            } else if x < 0. {
+                -1.
+            } else {
+                0.
+            }
         }
         "clamp" => arg(0)?.clamp(arg(1)?, arg(2)?.max(arg(1)?)),
-        "min" => a.iter().copied().reduce(f64::min).ok_or("math.min needs arguments")?,
-        "max" => a.iter().copied().reduce(f64::max).ok_or("math.max needs arguments")?,
+        "min" => a
+            .iter()
+            .copied()
+            .reduce(f64::min)
+            .ok_or("math.min needs arguments")?,
+        "max" => a
+            .iter()
+            .copied()
+            .reduce(f64::max)
+            .ok_or("math.max needs arguments")?,
         "lerp" => arg(0)? + (arg(1)? - arg(0)?) * arg(2)?,
         "map" => {
             let (x, i0, i1, o0, o1) = (arg(0)?, arg(1)?, arg(2)?, arg(3)?, arg(4)?);

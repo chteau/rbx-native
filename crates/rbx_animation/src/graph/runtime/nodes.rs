@@ -31,7 +31,10 @@ impl Player {
     pub(super) fn clip(&mut self, n: usize, dt: f32) -> (Pose, Status) {
         let reverse = self.prop(n, "Reverse").is_some_and(|v| v.truthy());
         let speed = self.number(n, "Speed", 1.) * if reverse { -1. } else { 1. };
-        let mode = self.prop(n, "PlayMode").map(|v| v.text()).unwrap_or_default();
+        let mode = self
+            .prop(n, "PlayMode")
+            .map(|v| v.text())
+            .unwrap_or_default();
         let length = self.clip_of(n).map_or(0., |c| c.length());
         let state = self.state(n);
         if !state.started {
@@ -69,7 +72,11 @@ impl Player {
             }
         }
         state.time = t;
-        let remaining = if speed * direction >= 0. { length - t } else { t };
+        let remaining = if speed * direction >= 0. {
+            length - t
+        } else {
+            t
+        };
         let status = Status {
             finished,
             remaining: remaining / speed.abs().max(1e-6),
@@ -144,7 +151,13 @@ impl Player {
         let mut points: Vec<(usize, f32)> = self
             .connected(n)
             .into_iter()
-            .map(|i| (i, self.input_prop(n, i, "Position").map_or(0., |v| v.number() as f32)))
+            .map(|i| {
+                (
+                    i,
+                    self.input_prop(n, i, "Position")
+                        .map_or(0., |v| v.number() as f32),
+                )
+            })
             .collect();
         points.sort_by(|a, b| a.1.total_cmp(&b.1));
         match points.len() {
@@ -157,7 +170,11 @@ impl Player {
                     .position(|w| at <= w[1].1)
                     .unwrap_or(len - 2);
                 let ((a, pa), (b, pb)) = (points[seg], points[seg + 1]);
-                let t = if (pb - pa).abs() > f32::EPSILON { (at - pa) / (pb - pa) } else { 0. };
+                let t = if (pb - pa).abs() > f32::EPSILON {
+                    (at - pa) / (pb - pa)
+                } else {
+                    0.
+                };
                 let (low, s0) = self.child(n, a, dt);
                 let (high, s1) = self.child(n, b, dt);
                 (pose::mix(&low, &high, t), if t < 0.5 { s0 } else { s1 })
@@ -167,8 +184,16 @@ impl Player {
 
     pub(super) fn blend2d(&mut self, n: usize, dt: f32) -> (Pose, Status) {
         let (x, y) = (self.number(n, "X", 0.), self.number(n, "Y", 0.));
-        let polar = self.prop(n, "InputMode").is_some_and(|v| v.text() == "Polar");
-        let place = |a: f32, b: f32| if polar { (b * a.cos(), b * a.sin()) } else { (a, b) };
+        let polar = self
+            .prop(n, "InputMode")
+            .is_some_and(|v| v.text() == "Polar");
+        let place = |a: f32, b: f32| {
+            if polar {
+                (b * a.cos(), b * a.sin())
+            } else {
+                (a, b)
+            }
+        };
         let target = place(x, y);
         let mut parts = Vec::new();
         let mut best = (f32::INFINITY, Status::default());
@@ -194,7 +219,10 @@ impl Player {
     fn switch(&mut self, n: usize, to: usize, duration: Option<f32>, curve: Option<Style>) {
         let default = self.number(n, "DefaultTransitionDuration", 0.15);
         let duration = duration
-            .or_else(|| self.input_prop(n, to, "TransitionOverrideDuration").map(|v| v.number() as f32))
+            .or_else(|| {
+                self.input_prop(n, to, "TransitionOverrideDuration")
+                    .map(|v| v.number() as f32)
+            })
             .unwrap_or(default)
             .max(0.);
         let curve = curve.unwrap_or_else(|| {
@@ -245,14 +273,19 @@ impl Player {
 
     pub(super) fn select(&mut self, n: usize, dt: f32) -> (Pose, Status) {
         let wanted = if self.kind(n) == NodeKind::Select {
-            let selection = self.prop(n, "Selection").map(|v| v.text()).unwrap_or_default();
+            let selection = self
+                .prop(n, "Selection")
+                .map(|v| v.text())
+                .unwrap_or_default();
             self.pin_index(n, &selection)
         } else {
             self.connected(n)
                 .into_iter()
                 .find(|&i| self.input_prop(n, i, "Trigger").is_some_and(|v| v.truthy()))
         };
-        let first = wanted.or_else(|| self.connected(n).first().copied()).unwrap_or(0);
+        let first = wanted
+            .or_else(|| self.connected(n).first().copied())
+            .unwrap_or(0);
         self.begin(n, first);
         if let Some(to) = wanted.filter(|&to| to != self.states[n].active) {
             self.switch(n, to, None, None);
@@ -268,21 +301,36 @@ impl Player {
         let random = self.kind(n) == NodeKind::RandomSequence;
         if !self.states[n].started {
             let seed = self.number(n, "Seed", -1.);
-            self.state(n).rng = if seed < 0. { n as u64 + 1 } else { seed as u64 + 1 };
+            self.state(n).rng = if seed < 0. {
+                n as u64 + 1
+            } else {
+                seed as u64 + 1
+            };
             let start = if random { self.pick(n, &order) } else { first };
             self.begin(n, start);
         }
         let (pose, status) = self.current(n, dt);
         let active = self.states[n].active;
-        let by_trigger = self.prop(n, "DefaultWaitFor").is_some_and(|v| v.text() == "Trigger")
-            || self.input_prop(n, active, "TransitionOverrideWaitFor").is_some_and(|v| v.text() == "Trigger");
+        let by_trigger = self
+            .prop(n, "DefaultWaitFor")
+            .is_some_and(|v| v.text() == "Trigger")
+            || self
+                .input_prop(n, active, "TransitionOverrideWaitFor")
+                .is_some_and(|v| v.text() == "Trigger");
         let advance = if by_trigger {
-            self.input_prop(n, active, "WaitForTrigger").is_some_and(|v| v.truthy())
+            self.input_prop(n, active, "WaitForTrigger")
+                .is_some_and(|v| v.truthy())
         } else {
             status.finished
         };
         if !advance {
-            return (pose, Status { finished: false, ..status });
+            return (
+                pose,
+                Status {
+                    finished: false,
+                    ..status
+                },
+            );
         }
         let limit = self.number(n, if random { "PlayCount" } else { "LoopCount" }, 0.) as u32;
         let at = order.iter().position(|&i| i == active).unwrap_or(0);
@@ -299,13 +347,23 @@ impl Player {
         if !done {
             self.switch(n, next, None, None);
         }
-        (pose, Status { finished: wrapped, ..status })
+        (
+            pose,
+            Status {
+                finished: wrapped,
+                ..status
+            },
+        )
     }
 
     fn pick(&mut self, n: usize, order: &[usize]) -> usize {
         let weights: Vec<f32> = order
             .iter()
-            .map(|&i| self.input_prop(n, i, "Weight").map_or(1., |v| v.number() as f32).max(0.))
+            .map(|&i| {
+                self.input_prop(n, i, "Weight")
+                    .map_or(1., |v| v.number() as f32)
+                    .max(0.)
+            })
             .collect();
         let total: f32 = weights.iter().sum();
         let mut roll = next_random(&mut self.states[n].rng) * total;
@@ -324,8 +382,13 @@ impl Player {
         let interruptible = self.prop(n, "Interruptible").is_none_or(|v| v.truthy());
         let fade_in = self.number(n, "TransitionInDuration", 0.15).max(0.);
         let fade_out = self.number(n, "TransitionOutDuration", 0.15).max(0.);
-        let mode = self.prop(n, "BlendMode").map(|v| v.text()).unwrap_or_default();
-        let before = self.prop(n, "TransitionOutWhen").is_some_and(|v| v.text() == "BeforeFinished");
+        let mode = self
+            .prop(n, "BlendMode")
+            .map(|v| v.text())
+            .unwrap_or_default();
+        let before = self
+            .prop(n, "TransitionOutWhen")
+            .is_some_and(|v| v.text() == "BeforeFinished");
 
         let (base, status) = self.child(n, 0, dt);
         let state = &self.states[n];
@@ -353,7 +416,11 @@ impl Player {
             s.time = 0.;
         }
         s.shot = if s.fading_out {
-            if fade_out > 0. { 1. - s.time / fade_out } else { 0. }
+            if fade_out > 0. {
+                1. - s.time / fade_out
+            } else {
+                0.
+            }
         } else if fade_in > 0. {
             (s.time / fade_in).min(1.)
         } else {
@@ -374,7 +441,10 @@ impl Player {
     }
 
     pub(super) fn state_machine(&mut self, n: usize, dt: f32) -> (Pose, Status) {
-        let entry = self.prop(n, "EntryState").map(|v| v.text()).unwrap_or_default();
+        let entry = self
+            .prop(n, "EntryState")
+            .map(|v| v.text())
+            .unwrap_or_default();
         let first = self.pin_index(n, &entry).unwrap_or(0);
         self.begin(n, first);
         let (pose, status) = self.current(n, dt);
@@ -388,10 +458,13 @@ impl Player {
                 WaitFor::Finished => status.finished,
                 WaitFor::Trigger => self.condition(&t.expression),
             })
-            .fold(None, |best: Option<&crate::graph::model::Transition>, t| match best {
-                Some(b) if b.priority >= t.priority => Some(b),
-                _ => Some(t),
-            });
+            .fold(
+                None,
+                |best: Option<&crate::graph::model::Transition>, t| match best {
+                    Some(b) if b.priority >= t.priority => Some(b),
+                    _ => Some(t),
+                },
+            );
         if let Some(t) = chosen {
             self.switch(n, t.to, Some(t.duration), Some(t.curve));
         }

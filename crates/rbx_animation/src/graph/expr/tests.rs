@@ -34,7 +34,10 @@ fn parameters_comparisons_and_logic() {
 
 #[test]
 fn if_expressions_and_bodies() {
-    assert_eq!(run("if speed > 20 then 2 elseif speed > 10 then 1 else 0"), Val::Number(1.));
+    assert_eq!(
+        run("if speed > 20 then 2 elseif speed > 10 then 1 else 0"),
+        Val::Number(1.)
+    );
     assert_eq!(run("if false then missing + 1 else 3"), Val::Number(3.));
     assert_eq!(
         run("local fast = speed > 8\nlocal half = speed / 2\nreturn if fast then half else 0"),
@@ -56,7 +59,15 @@ fn math_library() {
 #[test]
 fn errors_are_reported() {
     let none = |_: &str| None;
-    for bad in ["1 +", "true + 1", "math.noise(1)", "\"open", "1 2", "local = 3", "if true then 1"] {
+    for bad in [
+        "1 +",
+        "true + 1",
+        "math.noise(1)",
+        "\"open",
+        "1 2",
+        "local = 3",
+        "if true then 1",
+    ] {
         assert!(eval(bad, &none).is_err(), "{bad}");
     }
     assert_eq!(eval("", &none), Ok(Val::Nil));
