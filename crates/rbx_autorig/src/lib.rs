@@ -11,7 +11,8 @@
 //!    The [`Fit`] is plain data meant to be corrected by hand; [`mirror`]
 //!    makes the markers symmetric again after a drag.
 //! 3. [`split`] the mesh into the 15 parts with exact plane cuts at the
-//!    joints and caps on every opening.
+//!    joints and caps on every opening, simplifying each body asset that
+//!    is over its Marketplace triangle budget down to it.
 //! 4. Optionally, [`weights`]: smooth skin weights for every part, to
 //!    part-named bones, so joints bend instead of hinging.
 //! 5. Write the parts out: [`mesh_v2`] (or the skinned [`mesh_v4`]) for a
@@ -27,6 +28,7 @@
 //! found) rather than silently, so a person can fix the markers.
 
 mod accessory;
+mod decimate;
 mod fit;
 mod guard;
 mod mesh;

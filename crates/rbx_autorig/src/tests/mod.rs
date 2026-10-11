@@ -1,5 +1,6 @@
 use crate::test_humanoid as humanoid;
 
+mod budget;
 mod real;
 mod skin;
 

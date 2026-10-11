@@ -16,6 +16,7 @@ use std::collections::{HashMap, HashSet};
 
 use glam::{Vec2, Vec3};
 
+use crate::decimate;
 use crate::fit::Fit;
 use crate::mesh::{bounds, smooth_normals, weld, Mesh};
 use crate::rig::{Joint, Part, Side};
@@ -50,7 +51,8 @@ pub struct PartMesh {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Body {
     pub parts: Vec<PartMesh>,
-    /// Triangle budgets exceeded and other things worth a look.
+    /// Triangle budgets still exceeded after simplifying, and other things
+    /// worth a look.
     pub warnings: Vec<String>,
 }
 
@@ -103,6 +105,13 @@ pub fn split(mesh: &Mesh, fit: &Fit) -> Result<Body, Error> {
 /// [`split`] with the ownership voxel grid at `resolution` cells along the
 /// longest side.
 pub fn split_with(mesh: &Mesh, fit: &Fit, resolution: usize) -> Result<Body, Error> {
+    let mut parts = cut(mesh, fit, resolution)?;
+    let warnings = fit_budgets(&mut parts, &BUDGETS);
+    Ok(Body { parts, warnings })
+}
+
+/// The 15 parts as cut, before any is simplified to its budget.
+pub(crate) fn cut(mesh: &Mesh, fit: &Fit, resolution: usize) -> Result<Vec<PartMesh>, Error> {
     let triangles: Vec<[u32; 3]> = mesh.valid_triangles().collect();
     if triangles.is_empty() {
         return Err(Error::Empty);
@@ -196,19 +205,57 @@ pub fn split_with(mesh: &Mesh, fit: &Fit, resolution: usize) -> Result<Body, Err
         }
         parts.push(piece);
     }
+    Ok(parts)
+}
+
+/// Simplifies every body asset over its `budgets` entry ([`BUDGETS`]) down to it,
+/// sharing the cut between the asset's parts by their surface triangles,
+/// and names the assets that still could not get there.
+pub(crate) fn fit_budgets(
+    parts: &mut [PartMesh],
+    budgets: &[(&str, &[Part], usize)],
+) -> Vec<String> {
     let mut warnings = Vec::new();
-    for (asset, members, budget) in BUDGETS {
-        let count: usize = members
-            .iter()
-            .map(|p| parts[p.index()].mesh.triangles.len())
-            .sum();
-        if count > budget {
+    for &(asset, members, budget) in budgets {
+        let count = |parts: &[PartMesh]| -> usize {
+            members
+                .iter()
+                .map(|p| parts[p.index()].mesh.triangles.len())
+                .sum()
+        };
+        let mut now = count(parts);
+        // A part that cannot give its whole share leaves the rest to its
+        // siblings on the next round.
+        for _ in 0..6 {
+            if now <= budget {
+                break;
+            }
+            let over = now - budget;
+            let surfaces: Vec<usize> = members
+                .iter()
+                .map(|p| decimate::surface_triangles(&parts[p.index()]))
+                .collect();
+            let total: usize = surfaces.iter().sum();
+            if total == 0 {
+                break;
+            }
+            for (p, &surface) in members.iter().zip(&surfaces) {
+                let share = (over * surface).div_ceil(total);
+                decimate::simplify(&mut parts[p.index()], surface.saturating_sub(share));
+            }
+            let before = now;
+            now = count(parts);
+            if now == before {
+                break;
+            }
+        }
+        if now > budget {
             warnings.push(format!(
-                "{asset} has {count} triangles, over Roblox\u{2019}s budget of {budget} for Marketplace bodies; decimate the mesh to publish it there."
+                "{asset} still has {now} triangles after simplifying, over Roblox\u{2019}s budget of {budget} for Marketplace bodies: its cut seams and texture seams leave too little to remove."
             ));
         }
     }
-    Ok(Body { parts, warnings })
+    warnings
 }
 
 fn majority(o: [u16; 3]) -> u16 {
