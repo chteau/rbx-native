@@ -1,6 +1,7 @@
 //! Instances back into a [`Graph`]: the layout the module doc describes,
 //! and this crate's earlier one.
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 use rbx_dom::{Ref, Variant, WeakDom};
@@ -9,8 +10,8 @@ use super::codec::{named_value, point, prop_of, read_layout, value_of};
 use super::{attrs, children, name, reference, LEGACY_TRIGGER_TAG, MASKS, PARAM_FOLDER};
 use crate::easing::Style;
 use crate::graph::model::{
-    Expression, Graph, Input, Mask, MaskJoint, Node, NodeKind, Param, ParamKind, ParamRef, Prop,
-    Transition, Value, WaitFor, When, ENGINE_TRANSITION_DURATION,
+    unique, Expression, Graph, Input, Mask, MaskJoint, Node, NodeKind, Param, ParamKind, ParamRef,
+    Prop, Transition, Value, WaitFor, When, ENGINE_TRANSITION_DURATION,
 };
 
 struct Reader<'a> {
@@ -19,6 +20,8 @@ struct Reader<'a> {
     /// An expression's output (or the value node itself) → its source.
     sources: BTreeMap<Ref, String>,
     masks: BTreeMap<Ref, String>,
+    /// Masks found outside `SharedMasks` while reading nodes.
+    loose: RefCell<Vec<Mask>>,
 }
 
 pub(super) fn graph(dom: &WeakDom, definition: Ref) -> Graph {
@@ -35,11 +38,13 @@ pub(super) fn graph(dom: &WeakDom, definition: Ref) -> Graph {
         nodes: children(dom, definition, "AnimationNodeDefinition"),
         sources: BTreeMap::new(),
         masks: BTreeMap::new(),
+        loose: RefCell::new(Vec::new()),
     };
     params(dom, definition, &mut graph);
     r.expressions(definition, &mut graph);
     r.masks(definition, &mut graph);
     graph.nodes = r.nodes.iter().map(|&n| r.node(n)).collect();
+    graph.masks.append(&mut r.loose.borrow_mut());
     if graph.output().is_none() {
         graph
             .nodes
@@ -161,17 +166,7 @@ impl Reader<'_> {
             // Without the NumberValue tree the mirrored attributes are the
             // mask, flat.
             if joints.is_empty() {
-                joints = a
-                    .iter()
-                    .filter(|(k, _)| !k.starts_with("RBX_"))
-                    .filter_map(|(k, v)| {
-                        Some(MaskJoint {
-                            name: k.clone(),
-                            weight: value_of(v)?.number() as f32,
-                            children: Vec::new(),
-                        })
-                    })
-                    .collect();
+                joints = flat_joints(&a);
             }
             let mask = Mask {
                 name: name(self.dom, m),
@@ -236,9 +231,11 @@ impl Reader<'_> {
                 continue;
             }
             if kind == NodeKind::Mask && pin_name == "Mask" {
-                let mask = target.and_then(|t| self.masks.get(&t)).cloned();
-                node.props
-                    .insert(pin_name, Prop::Value(Value::Text(mask.unwrap_or_default())));
+                let mask = match target.and_then(|t| self.masks.get(&t)) {
+                    Some(shared) => shared.clone(),
+                    None => self.loose_mask(pin, target),
+                };
+                node.props.insert(pin_name, Prop::Value(Value::Text(mask)));
                 continue;
             }
             if kind == NodeKind::StateMachine && pin_name == "EntryState" {
@@ -280,17 +277,55 @@ impl Reader<'_> {
             node.pin_data = Some((names, raw));
         }
         if kind == NodeKind::StateMachine {
-            if let Some(state) = entry.and_then(|e| self.state(&node, &pins, e)) {
+            let defs = children(dom, r, "StateMachineTransitionDefinition");
+            // A transition out of "(Entry)" is the entry in all but name;
+            // the editor keeps that one as `EntryState` instead.
+            let from_entry = defs.iter().find_map(|&t| {
+                let from = endpoint(dom, t, "From")?;
+                attrs(dom, from)
+                    .contains_key("RBX_IsStart")
+                    .then(|| endpoint(dom, t, "To"))?
+            });
+            if let Some(state) = entry
+                .or(from_entry)
+                .and_then(|e| self.state(&node, &pins, e))
+            {
                 let pin = node.inputs[state].pin.clone();
                 node.props
                     .insert("EntryState".into(), Prop::Value(Value::Text(pin)));
             }
-            node.transitions = children(dom, r, "StateMachineTransitionDefinition")
+            node.transitions = defs
                 .into_iter()
                 .filter_map(|t| self.transition(&node, &pins, t))
                 .collect();
         }
         node
+    }
+
+    /// A Mask node's mask kept outside `SharedMasks`, which Roblox also
+    /// reads: weights as attributes on the `Mask` ObjectValue itself, or on
+    /// whatever instance it points at. The model only names shared masks,
+    /// so it becomes one (and is saved back as one).
+    fn loose_mask(&self, pin: Ref, target: Option<Ref>) -> String {
+        let holder = target.unwrap_or(pin);
+        let joints = flat_joints(&attrs(self.dom, holder));
+        if joints.is_empty() {
+            return String::new();
+        }
+        let mut loose = self.loose.borrow_mut();
+        if let Some(found) = loose.iter().find(|m| m.joints == joints) {
+            return found.name.clone();
+        }
+        let taken =
+            |n: &str| self.masks.values().any(|m| m == n) || loose.iter().any(|m| m.name == n);
+        let name = unique(&name(self.dom, holder), taken);
+        loose.push(Mask {
+            name: name.clone(),
+            rig_type: "Custom".into(),
+            rig_name: String::new(),
+            joints,
+        });
+        name
     }
 
     /// The input a state reference names: one of the state ObjectValues, or
@@ -305,8 +340,9 @@ impl Reader<'_> {
 
     fn transition(&self, node: &Node, pins: &[Ref], t: Ref) -> Option<Transition> {
         let dom = self.dom;
-        let to = self.state(node, pins, reference(dom, t, "To")?)?;
-        let from = match reference(dom, t, "From") {
+        let to = self.state(node, pins, endpoint(dom, t, "To")?)?;
+        let from = match endpoint(dom, t, "From") {
+            Some(f) if attrs(dom, f).contains_key("RBX_IsStart") => return None,
             Some(f) if attrs(dom, f).contains_key("RBX_IsAny") => None,
             Some(f) => Some(self.state(node, pins, f)?),
             None => None,
@@ -331,10 +367,16 @@ impl Reader<'_> {
                 .and_then(value_of)
                 .map_or(0, |v| v.number().clamp(0., 65535.) as u32),
             duration: get("Duration").map_or(ENGINE_TRANSITION_DURATION, |v| v.number() as f32),
+            // The editor's `coerceCurve` takes an EnumItem, its number or its
+            // name.
             curve: match a.get("Curve") {
                 Some(Variant::Enum(n)) => Style::from_value(*n),
                 Some(Variant::String(s)) if s == "CubicV2" => Style::CubicV2,
-                _ => Style::Linear,
+                Some(v) => match value_of(v) {
+                    Some(Value::Number(n)) => Style::from_value(n as u32),
+                    _ => Style::Linear,
+                },
+                None => Style::Linear,
             },
             when: match get("When") {
                 Some(v) if v.text() == "BeforeFinished" => When::BeforeFinished,
@@ -342,6 +384,31 @@ impl Reader<'_> {
             },
         })
     }
+}
+
+/// A transition's `From` or `To`: the property the editor sets, or (as
+/// Roblox's docs describe it) an ObjectValue child of that name.
+fn endpoint(dom: &WeakDom, t: Ref, end: &str) -> Option<Ref> {
+    reference(dom, t, end).or_else(|| {
+        children(dom, t, "ObjectValue")
+            .into_iter()
+            .find(|c| name(dom, *c) == end)
+            .and_then(|c| reference(dom, c, "Value"))
+    })
+}
+
+/// `{joint = weight}` attributes as a flat list of joints.
+fn flat_joints(a: &BTreeMap<String, Variant>) -> Vec<MaskJoint> {
+    a.iter()
+        .filter(|(k, _)| !k.starts_with("RBX_"))
+        .filter_map(|(k, v)| {
+            Some(MaskJoint {
+                name: k.clone(),
+                weight: value_of(v)?.number() as f32,
+                children: Vec::new(),
+            })
+        })
+        .collect()
 }
 
 /// A mask's NumberValue tree, siblings in their `Order`.

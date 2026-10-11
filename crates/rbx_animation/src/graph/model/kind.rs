@@ -244,6 +244,16 @@ impl NodeKind {
         }
     }
 
+    /// How the editor shows a number property's special value: LoopCount
+    /// and PlayCount 0 as "0 (Infinity)", Seed −1 as "-1 (Random)".
+    pub fn number_label(prop: &str, value: f64) -> Option<&'static str> {
+        match prop {
+            "LoopCount" | "PlayCount" if value == 0. => Some("0 (Infinity)"),
+            "Seed" if value == -1. => Some("-1 (Random)"),
+            _ => None,
+        }
+    }
+
     /// Settings each input pin of this kind carries. The
     /// `TransitionOverride*` settings are absent until set, which is what
     /// makes the node's default transition apply.

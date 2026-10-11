@@ -1,14 +1,15 @@
-//! What the single-input and layering node kinds do in a step: Clip,
-//! Over/Add/Subtract, Mask and OneShot.
+//! What the single-input and layering node kinds do in a step: Clip (and
+//! the markers it passes), Over/Add/Subtract, Mask and OneShot.
 
 use std::collections::BTreeMap;
 
+use crate::clip::{Clip, Keyframe, TIME_EPSILON};
 use crate::easing::Style;
 use crate::graph::model::Value;
 use crate::graph::pose::{self, Pose, Posed};
 use crate::sample::sample_joint;
 
-use super::{curve_at, Player, Status};
+use super::{curve_at, Event, Player, Status};
 
 mod pick;
 
@@ -49,25 +50,32 @@ impl Player {
         let state = self.state(n);
         // `time` runs over 0..span from where playback begins, which is the
         // span's end for a reversed clip.
-        if !state.started {
+        let fresh = !state.started;
+        if fresh {
             state.started = true;
             state.time = if rate < 0. { span } else { 0. };
         }
         let direction = if state.backwards { -1. } else { 1. };
+        let t0 = state.time;
         let mut t = if state.done {
-            state.time
+            t0
         } else {
-            state.time + dt * rate * direction
+            t0 + dt * rate * direction
         };
+        // The stretches of the span played this step, for its markers: from
+        // (exclusive, unless playback starts or wraps there) to (inclusive).
+        let mut played = vec![(t0, t.clamp(0., span.max(0.)), fresh)];
         let mut finished = state.done;
         if span > 0. && !state.done {
             match mode.as_str() {
                 "PingPong" => {
                     if t > span {
+                        played = vec![(t0, span, fresh), (span, 2. * span - t, false)];
                         t = 2. * span - t;
                         state.backwards = !state.backwards;
                         finished = rate < 0.;
                     } else if t < 0. {
+                        played = vec![(t0, 0., fresh), (0., -t, false)];
                         t = -t;
                         state.backwards = !state.backwards;
                         finished = rate > 0.;
@@ -88,7 +96,13 @@ impl Player {
                 _ => {
                     if !(0. ..span).contains(&t) {
                         finished = true;
-                        t = t.rem_euclid(span);
+                        let wrapped = t.rem_euclid(span);
+                        played = if t >= span {
+                            vec![(t0, span, fresh), (0., wrapped, true)]
+                        } else {
+                            vec![(t0, 0., fresh), (span, wrapped, true)]
+                        };
+                        t = wrapped;
                     }
                 }
             }
@@ -112,6 +126,7 @@ impl Player {
         let Some(clip) = self.clip_of(n) else {
             return (Pose::new(), status);
         };
+        let events = markers(clip, n, start, end, &played);
         let at = start + t;
         let pose = clip
             .joints()
@@ -128,17 +143,25 @@ impl Player {
                 })
             })
             .collect();
+        for e in events {
+            self.emit(e);
+        }
         (pose, status)
     }
 
+    /// Over lays its second input on the first at Weight, which scales the
+    /// Over input's events too; Add and Subtract pass both inputs' events
+    /// unchanged.
     pub(super) fn layer(&mut self, n: usize, dt: f32) -> (Pose, Status) {
         let weight = self.number(n, "Weight", 1.);
         let (base, status) = self.child(n, 0, dt);
+        let from = self.mark();
         let (top, _) = self.child(n, 1, dt);
-        (
-            layered(self.kind(n).type_name(), &base, &top, weight),
-            status,
-        )
+        let to = self.mark();
+        let kind = self.kind(n).type_name();
+        let events = if kind == "OverNode" { weight } else { 1. };
+        self.weigh(from, to, events, weight);
+        (layered(kind, &base, &top, weight), status)
     }
 
     /// Weights each joint by the shared mask the node names (`1 − w` when
@@ -199,7 +222,9 @@ impl Player {
         if !self.states[n].started {
             return (base, status);
         }
+        let from = self.mark();
         let (shot, shot_status) = self.child(n, 1, dt);
+        let to = self.mark();
         let s = self.state(n);
         s.time += dt;
         let ending = shot_status.finished || (before && shot_status.remaining <= fade_out);
@@ -219,11 +244,50 @@ impl Player {
         if s.fading_out && s.shot <= 0. {
             s.shot = 0.;
             s.started = false;
+            self.weigh(from, to, 0., 0.);
             return (base, status);
         }
+        // The shot's events count by its blend weight, as its pose does.
         let w = s.shot.clamp(0., 1.);
+        self.weigh(from, to, w, w);
         (layered(&mode, &base, &shot, w), status)
     }
+}
+
+/// The markers on `clip` within [start, end] (inclusive, as Roblox trims
+/// them) that the `played` stretches of the span passed, in playing order.
+fn markers(clip: &Clip, n: usize, start: f32, end: f32, played: &[(f32, f32, bool)]) -> Vec<Event> {
+    let inside = |k: &&Keyframe| (start - TIME_EPSILON..=end + TIME_EPSILON).contains(&k.time);
+    let mut out = Vec::new();
+    for &(a, b, from_inclusive) in played {
+        let crossed = |k: &&Keyframe| {
+            let m = k.time - start;
+            let opened = from_inclusive && (m - a).abs() <= TIME_EPSILON;
+            if a <= b {
+                (m > a || opened) && m <= b
+            } else {
+                (m < a || opened) && m >= b
+            }
+        };
+        let mut hit: Vec<&Keyframe> = clip
+            .keyframes
+            .iter()
+            .filter(inside)
+            .filter(crossed)
+            .collect();
+        if a > b {
+            hit.reverse();
+        }
+        out.extend(hit.into_iter().flat_map(|k| {
+            k.markers.iter().map(|m| Event {
+                name: m.name.clone(),
+                value: m.value.clone(),
+                weight: 1.,
+                node: n,
+            })
+        }));
+    }
+    out
 }
 
 /// Over, Add or Subtract, by the node type or `BlendMode` item naming it.

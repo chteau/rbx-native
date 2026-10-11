@@ -19,13 +19,15 @@
 //!   `AnimGraph_BindingName`, a `Configuration` for its place) holding
 //!   `connectionHint_<property>` ObjectValues that only draw the wire.
 //! - An expression is an `AnimationValueNodeDefinition` (`NodeType`
-//!   Expression) with an `Expression` attribute and an
-//!   `AnimationValueOutputDefinition` child. A property wired to it has no
-//!   attribute; an ObjectValue named after the property points at that
-//!   output instead.
+//!   Expression) named `Expression`, `Expression1`, … with an `Expression`
+//!   attribute. A property wired to it has no attribute; an ObjectValue
+//!   named after the property points at an `AnimationValueOutputDefinition`
+//!   under the expression instead, one per wire, as the editor makes them.
 //! - A state machine's states are its pins, each with a `Configuration` for
-//!   its place; the "(Entry)" and "(Any)" pseudo-states are ObjectValues
-//!   marked `RBX_IsStart` / `RBX_IsAny`. Transitions are
+//!   its place; the "(Entry)" and "(Any)" pseudo-states are ObjectValues of
+//!   those names marked `RBX_IsStart` / `RBX_IsAny` and kept out of the pin
+//!   order. The entry is the `EntryState` attribute, not a transition.
+//!   Transitions are
 //!   `StateMachineTransitionDefinition` children named `<From>_to_<To>`,
 //!   with a GUID `TransitionId`, `From`/`To` pointing at the state
 //!   ObjectValues (`From` nil is "(Any)"), `Priority`, and `Duration`,
@@ -35,18 +37,22 @@
 //!   (which is what the engine reads). A Mask node's `Mask` is an
 //!   ObjectValue child pointing at one.
 //!
-//! Three things differ from the editor because they cannot be matched
-//! here. `EntryState` is an `Instance` attribute in Roblox; the attribute
-//! codec has no such type, so it is written as the entry state's name (the
-//! reader takes either that or an ObjectValue/Ref to the state or its node).
-//! The names of the pseudo-state ObjectValues ("Entry", "Any") and of the
-//! expression output ("Output") are unverified. `InputPinData`'s layout is
-//! undocumented, so a blob read from a file is written back only while that
-//! node's pins are unchanged; otherwise the pins' child order stands alone.
+//! Two things differ from the editor because they cannot be matched here.
+//! `EntryState` is an `Instance` attribute in Roblox; the attribute format's
+//! encoding of one is undocumented and the codec has no such type, so it is
+//! written as the entry state's name. `InputPinData`'s layout is
+//! undocumented too, so a blob read from a file is written back only while
+//! that node's pins are unchanged; otherwise the pins' child order stands
+//! alone. A Mask parameter's default (an instance) is likewise not written.
 //!
-//! Graphs written by this crate's earlier layout (`EditorPosition`,
-//! `$name`/`=source` strings, `Trigger:<name>` tags, transitions pointing at
-//! nodes) still read.
+//! Reading is more lenient than writing, taking what Roblox's docs describe
+//! beside what the editor writes: `EntryState` as a name, a Ref or an
+//! ObjectValue pointing at the state or the node feeding it, an entry
+//! transition out of "(Entry)", `From`/`To` as ObjectValue children, and a
+//! mask's weights directly on the Mask ObjectValue or on any instance it
+//! points at. Graphs written by this crate's earlier layout
+//! (`EditorPosition`, `$name`/`=source` strings, `Trigger:<name>` tags,
+//! transitions pointing at nodes) still read.
 
 use std::collections::BTreeMap;
 

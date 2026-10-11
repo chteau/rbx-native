@@ -123,3 +123,80 @@ fn values_coerce_like_luau() {
     assert_eq!(Value::Text(" 2.5".into()).number(), 2.5);
     assert_eq!(Value::Bool(true).number(), 1.);
 }
+
+#[test]
+fn editor_conveniences_match_the_plugin() {
+    let mut g = Graph::default();
+    let blend = g.add(NodeKind::Blend1D);
+    assert_eq!(g.nodes[blend].placeholder().as_deref(), Some("Input2"));
+    let b2 = g.add(NodeKind::Blend2D);
+    assert_eq!(g.nodes[b2].placeholder().as_deref(), Some("Input0"));
+    let seq = g.add(NodeKind::Sequence);
+    assert_eq!(g.nodes[seq].placeholder().as_deref(), Some("New Input"));
+    assert_eq!(g.nodes[0].placeholder(), None);
+    assert_eq!(
+        NodeKind::number_label("LoopCount", 0.),
+        Some("0 (Infinity)")
+    );
+    assert_eq!(NodeKind::number_label("Seed", -1.), Some("-1 (Random)"));
+    assert_eq!(NodeKind::number_label("Seed", 3.), None);
+    let clip = g.add(NodeKind::Clip);
+    g.nodes[clip].assign_clip("rbxassetid://1", 1.5, true);
+    assert_eq!(
+        g.nodes[clip].props["TrimEnd"],
+        Prop::Value(Value::Number(1.5))
+    );
+}
+
+#[test]
+fn new_nodes_take_the_documented_defaults() {
+    let prop = |kind: NodeKind, name: &str| {
+        kind.default_props()
+            .into_iter()
+            .find(|(k, _)| *k == name)
+            .map(|(_, v)| v)
+    };
+    let text = |s: &str| Some(Value::Text(s.into()));
+    assert_eq!(prop(NodeKind::Clip, "PlayMode"), text("Loop"));
+    assert_eq!(prop(NodeKind::Clip, "Speed"), Some(Value::Number(1.)));
+    assert_eq!(prop(NodeKind::Over, "Weight"), Some(Value::Number(1.)));
+    assert_eq!(prop(NodeKind::Blend1D, "PhaseSync"), text("Synced"));
+    assert_eq!(prop(NodeKind::Blend2D, "InputMode"), text("Cartesian"));
+    assert_eq!(
+        prop(NodeKind::PrioritySelect, "DefaultInterruptible"),
+        text("Always")
+    );
+    assert_eq!(prop(NodeKind::Sequence, "DefaultWaitFor"), text("Finished"));
+    assert_eq!(
+        prop(NodeKind::Sequence, "LoopCount"),
+        Some(Value::Number(0.))
+    );
+    assert_eq!(
+        prop(NodeKind::RandomSequence, "Seed"),
+        Some(Value::Number(-1.))
+    );
+    assert_eq!(
+        prop(NodeKind::Select, "DefaultTransitionDuration"),
+        Some(Value::Number(DEFAULT_TRANSITION_DURATION))
+    );
+    assert_eq!(DEFAULT_TRANSITION_DURATION, 0.1);
+    assert_eq!(
+        prop(NodeKind::OneShot, "Interruptible"),
+        Some(Value::Bool(true))
+    );
+    assert_eq!(
+        prop(NodeKind::OneShot, "TransitionOutDuration"),
+        Some(Value::Number(0.15))
+    );
+    assert_eq!(
+        prop(NodeKind::OneShot, "TransitionOutWhen"),
+        text("Finished")
+    );
+    let weight = NodeKind::RandomSequence.default_input_props();
+    assert_eq!(weight, [("Weight", Value::Number(1.))]);
+    assert_eq!(
+        ParamKind::PhaseSync.default_value(),
+        Value::Text("Synced".into())
+    );
+    assert_eq!(ParamKind::Trigger.default_value(), Value::Bool(false));
+}

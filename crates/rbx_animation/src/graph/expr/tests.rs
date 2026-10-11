@@ -72,3 +72,68 @@ fn errors_are_reported() {
     }
     assert_eq!(eval("", &none), Ok(Val::Nil));
 }
+
+fn close(src: &str, want: f64) {
+    match run(src) {
+        Val::Number(n) => assert!((n - want).abs() < 1e-9, "{src}: {n}"),
+        other => panic!("{src}: {other:?}"),
+    }
+}
+
+#[test]
+fn vectors_are_built_combined_and_read() {
+    close("Vector2.new(3, 4).Magnitude", 5.);
+    close("Vector3.new(1, 2, 3).Z + 1", 4.);
+    close("(Vector3.new(1, 0, 0) * 2 + Vector3.one).X", 3.);
+    close("Vector3.zero.Magnitude", 0.);
+    close("Vector2.new(0, 2).Unit.Y", 1.);
+    close("Vector3.xAxis:Dot(Vector3.new(5, 1, 1))", 5.);
+    close("Vector3.xAxis:Cross(Vector3.yAxis).Z", 1.);
+    close("(-Vector2.new(1, 2)).Y", -2.);
+    close(
+        "math.atan2(Vector2.new(1, 1).Y, Vector2.new(1, 1).X)",
+        std::f64::consts::FRAC_PI_4,
+    );
+    assert_eq!(
+        run("Vector2.new(1, 2) == Vector2.new(1, 2)"),
+        Val::Bool(true)
+    );
+}
+
+#[test]
+fn colours_and_cframes_are_built_and_read() {
+    close("Color3.fromRGB(255, 128, 0).G", 128. / 255.);
+    close("Color3.new(0.5, 0, 1).B", 1.);
+    close("Color3.fromHSV(0, 1, 1).R", 1.);
+    close("CFrame.new(1, 2, 3).Y", 2.);
+    close("CFrame.identity.LookVector.Z", -1.);
+    close(
+        "(CFrame.new(1, 0, 0) * CFrame.new(0, 2, 0)).Position.Magnitude",
+        5f64.sqrt(),
+    );
+    close("CFrame.Angles(0, math.pi / 2, 0).LookVector.X", -1.);
+    close(
+        "CFrame.new(Vector3.zero, Vector3.new(0, 0, 5)).LookVector.Z",
+        1.,
+    );
+    close("(CFrame.new(0, 1, 0) + Vector3.new(0, 1, 0)).Y", 2.);
+    close("(CFrame.new(0, 0, 4):Inverse() * Vector3.zero).Z", -4.);
+    assert_eq!(
+        run("Vector2.new(1, 2)").into_value(),
+        Value::Text("1, 2".into())
+    );
+}
+
+#[test]
+fn bodies_may_branch_with_if_statements() {
+    let src = "local s = speed / 4\nif s > 5 then\n  return \"fast\"\nelseif s > 2 then\n  return \"run\"\nend\nreturn \"walk\"";
+    assert_eq!(run(src), Val::Text("run".into()));
+    let src = "if speed < 0 then return 1 else 2 end";
+    assert_eq!(run(src), Val::Number(2.));
+    let src = "if not grounded then return 0 end\nspeed * 2";
+    assert_eq!(run(src), Val::Number(24.));
+    let none = |_: &str| None;
+    for bad in ["if true then return 1", "if true then 1 end 2 3", "x.Nope"] {
+        assert!(eval(bad, &none).is_err(), "{bad}");
+    }
+}

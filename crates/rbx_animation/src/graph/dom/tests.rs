@@ -7,6 +7,7 @@ use crate::graph::model::{
 };
 
 mod legacy;
+mod plugin;
 
 fn sample() -> Graph {
     let mut g = Graph {
@@ -254,11 +255,11 @@ fn state_machines_point_at_state_object_values() {
         Some(Variant::Vector2(Vector2Data { x: 40., y: 60. }))
     );
     assert_eq!(
-        attr(&dom, kid(&dom, sm, "Entry"), "RBX_IsStart"),
+        attr(&dom, kid(&dom, sm, "(Entry)"), "RBX_IsStart"),
         Some(Variant::Bool(true))
     );
     assert_eq!(
-        attr(&dom, kid(&dom, sm, "Any"), "RBX_IsAny"),
+        attr(&dom, kid(&dom, sm, "(Any)"), "RBX_IsAny"),
         Some(Variant::Bool(true))
     );
     assert_eq!(attr(&dom, sm, "EntryState"), text("Clip"));

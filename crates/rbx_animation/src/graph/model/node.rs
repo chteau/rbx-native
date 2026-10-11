@@ -93,6 +93,34 @@ impl Node {
         self.name != self.kind.label()
     }
 
+    /// The text of the placeholder row a wire is dropped on to add a pin:
+    /// "New Input" on Sequence, Select and State Machine nodes, else the
+    /// next `Input<n>` ("Input0" on an empty Blend2D, "Input2" on a Blend1D
+    /// holding A and B). `None` on a node whose pins are fixed.
+    pub fn placeholder(&self) -> Option<String> {
+        match self.kind {
+            NodeKind::Sequence | NodeKind::Select | NodeKind::StateMachine => {
+                Some("New Input".into())
+            }
+            kind if kind.grows_pins() => Some(format!("Input{}", self.inputs.len())),
+            _ => None,
+        }
+    }
+
+    /// Points a Clip node at an animation as the editor's picker does: the
+    /// trim covers the whole clip, and a looping clip plays on Loop.
+    pub fn assign_clip(&mut self, id: &str, length: f32, looped: bool) {
+        let mut put = |k: &str, v: Value| {
+            self.props.insert(k.to_owned(), Prop::Value(v));
+        };
+        put("AnimationId", Value::Text(id.to_owned()));
+        put("TrimStart", Value::Number(0.));
+        put("TrimEnd", Value::Number(f64::from(length)));
+        if looped {
+            put("PlayMode", Value::Text("Loop".into()));
+        }
+    }
+
     /// Adds an unwired pin and returns its name: "New State" (then "New
     /// State1", …) on a state machine, else `Input<n>` counting from the
     /// pins there are, as the editor's placeholder row is numbered.

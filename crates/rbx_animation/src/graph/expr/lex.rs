@@ -8,9 +8,9 @@ pub(super) enum Tok {
     Sym(&'static str),
 }
 
-const SYMBOLS: [&str; 22] = [
+const SYMBOLS: [&str; 23] = [
     "//", "..", "==", "~=", "<=", ">=", "+", "-", "*", "/", "%", "^", "<", ">", "(", ")", ",", "=",
-    ".", ";", "#", "!",
+    ".", ":", ";", "#", "!",
 ];
 
 pub(super) fn lex(src: &str) -> Result<Vec<Tok>, String> {

@@ -12,8 +12,17 @@
 //! ones are Blend2D's weighting (a gradient-band stand-in), the random
 //! number generator (PCG32, as Luau's `Random` is, but not seeded as Roblox
 //! seeds it), and interrupting a blend mid-way (which blends on from a
-//! frozen snapshot of the pose at that moment). Clip markers and the events
-//! they raise are not modelled.
+//! frozen snapshot of the pose at that moment). Transitions are always
+//! crossfades: `AnimationNodeTransitionType`'s InertialBlend and DeadBlend
+//! exist in the API but nothing sets them. Root motion (`Animator.RootMotion`,
+//! hidden and undocumented) is not extracted.
+//!
+//! Clip markers become [`Event`]s, which climb the graph as Roblox's
+//! "global event rules" have them: each carries its source's influence,
+//! nodes that pick an input pass only the active one's (both sides, scaled
+//! by the blend, while a transition runs), a blend passes only its heaviest
+//! input's, and a weight of zero silences an event. The same bookkeeping
+//! gives each node the live weight the editor shows (`GetDebugData`).
 
 use std::collections::BTreeMap;
 use std::hash::{BuildHasher, RandomState};
@@ -26,10 +35,12 @@ use crate::graph::model::{Graph, NodeKind, ParamKind, Prop, Value};
 use crate::graph::pose::{self, Pose};
 
 mod blend;
+mod events;
 mod machine;
 mod nodes;
 mod rng;
 
+pub use events::Event;
 use rng::Pcg32;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -108,12 +119,19 @@ pub struct Player {
     graph: Graph,
     clips: Vec<Option<Clip>>,
     states: Vec<State>,
+    /// Values `set` since the graph loaded; the rest read their defaults.
     params: BTreeMap<String, Value>,
     /// Trigger parameters set since the last step, reset after it.
     fired: Vec<String>,
     /// Draws ties between state-machine transitions and seeds Random
     /// Sequences whose `Seed` is -1.
     rng: Pcg32,
+    /// This step's events and node evaluations, each with the weight the
+    /// nodes above have scaled it by so far.
+    emitted: Vec<Event>,
+    visits: Vec<(usize, f32)>,
+    events: Vec<Event>,
+    weights: Vec<f32>,
 }
 
 impl Player {
@@ -127,18 +145,17 @@ impl Player {
                 _ => None,
             })
             .collect();
-        let params = graph
-            .params
-            .iter()
-            .map(|p| (p.name.clone(), p.default.clone()))
-            .collect();
         Player {
             states: vec![State::default(); graph.nodes.len()],
+            weights: vec![0.; graph.nodes.len()],
             graph,
             clips,
-            params,
+            params: BTreeMap::new(),
             fired: Vec::new(),
             rng: Pcg32::new(RandomState::new().hash_one(0u8)),
+            emitted: Vec::new(),
+            visits: Vec::new(),
+            events: Vec::new(),
         }
     }
 
@@ -171,8 +188,19 @@ impl Player {
         self.params.insert(name.to_owned(), value);
     }
 
+    /// `AnimationTrack:GetParameter`: nil until the parameter is set.
     pub fn get(&self, name: &str) -> Option<&Value> {
         self.params.get(name)
+    }
+
+    /// `GetParameterDefaults`: every parameter's default, as the graph's
+    /// attributes hold them.
+    pub fn defaults(&self) -> BTreeMap<String, Value> {
+        self.graph
+            .params
+            .iter()
+            .map(|p| (p.name.clone(), p.default.clone()))
+            .collect()
     }
 
     /// Sets a trigger parameter for exactly the next evaluation. UNVERIFIED:
@@ -197,6 +225,8 @@ impl Player {
 
     /// Advances the graph by `dt` and returns each joint's `Transform`.
     pub fn step(&mut self, dt: f32) -> BTreeMap<String, Frame> {
+        self.emitted.clear();
+        self.visits.clear();
         let pose = match self.graph.output() {
             Some(out) => self.eval(out, dt).0,
             None => Pose::new(),
@@ -204,6 +234,7 @@ impl Player {
         for name in std::mem::take(&mut self.fired) {
             self.params.insert(name, Value::Bool(false));
         }
+        self.settle();
         pose::resolve(&pose)
     }
 
@@ -297,6 +328,7 @@ impl Player {
     }
 
     fn eval(&mut self, node: usize, dt: f32) -> (Pose, Status) {
+        self.visits.push((node, 1.));
         match self.graph.nodes[node].kind {
             NodeKind::GraphOutput => self.child(node, 0, dt),
             NodeKind::Clip => self.clip(node, dt),

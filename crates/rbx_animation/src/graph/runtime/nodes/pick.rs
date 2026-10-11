@@ -62,18 +62,28 @@ impl Player {
     }
 
     /// The active input, blended from the previous one while a fade runs.
+    /// Only the inputs in play pass events on; during a fade both do, each
+    /// scaled by its share of the blend. UNVERIFIED: that this is what
+    /// Roblox's "global event rules" mean for a transition. A frozen
+    /// snapshot plays nothing, so it raises nothing.
     pub(in crate::graph::runtime) fn current(&mut self, n: usize, dt: f32) -> (Pose, Status) {
         let active = self.states[n].active;
+        let start = self.mark();
         let (to, status) = self.child(n, active, dt);
         let Some(mut fade) = self.states[n].fade.take() else {
             return (to, status);
         };
+        let middle = self.mark();
         let from = match fade.snapshot.clone() {
             Some(frozen) => frozen,
             None => self.child(n, fade.from, dt).0,
         };
+        let end = self.mark();
         fade.elapsed += dt;
-        let pose = pose::mix(&from, &to, fade.progress());
+        let progress = fade.progress();
+        self.weigh(start, middle, progress, progress);
+        self.weigh(middle, end, 1. - progress, 1. - progress);
+        let pose = pose::mix(&from, &to, progress);
         let state = self.state(n);
         if fade.done() {
             state.last = None;

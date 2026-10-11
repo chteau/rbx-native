@@ -1,13 +1,15 @@
 //! Animation Graph expressions: the Luau subset Roblox's expression nodes and
 //! transition conditions accept, evaluated over the graph's parameters.
 //!
-//! Covered: number, boolean, string and `nil` literals; parameters by name;
-//! `+ - * / // % ^`, unary `-`; `..`; comparisons; `and`/`or`/`not` with
-//! Luau's truthiness and short-circuiting; `if … then … elseif … else …`
-//! expressions; the `math` library's scalar functions and constants; and a
-//! body of `local name = expr` lines ending in `return expr`. Vector and
-//! CFrame construction (also in Roblox's subset) is not, since nothing in a
-//! pose graph's own properties takes one.
+//! Covered, as Roblox's expression docs list them: number, boolean, string
+//! and `nil` literals; parameters by name; `+ - * / // % ^`, unary `-`;
+//! `..`; comparisons; `and`/`or`/`not` with Luau's truthiness and
+//! short-circuiting; `if … then … elseif … else …` expressions; the `math`
+//! library but `frexp`, `noise` and `randomseed` (and `modf` giving only
+//! the integer part, as Roblox's does); `Vector2`, `Vector3`, `Color3` and
+//! `CFrame` construction, members and arithmetic; and a multi-line body of
+//! `local` lines, single-level `if` statements whose branches hold only a
+//! `return` or an expression, and a final `return` or expression.
 
 use std::collections::BTreeMap;
 
@@ -15,6 +17,7 @@ use crate::graph::model::Value;
 
 mod lex;
 mod ops;
+mod types;
 
 use lex::{lex, Tok};
 use ops::{binary, math};
@@ -26,6 +29,10 @@ pub enum Val {
     Number(f64),
     Bool(bool),
     Text(String),
+    Vector2(glam::DVec2),
+    Vector3(glam::DVec3),
+    Color3([f64; 3]),
+    CFrame(types::CFrame),
 }
 
 impl Val {
@@ -50,6 +57,10 @@ impl Val {
             Val::Number(_) => "number",
             Val::Bool(_) => "boolean",
             Val::Text(_) => "string",
+            Val::Vector2(_) => "Vector2",
+            Val::Vector3(_) => "Vector3",
+            Val::Color3(_) => "Color3",
+            Val::CFrame(_) => "CFrame",
         }
     }
 
@@ -59,6 +70,9 @@ impl Val {
             Val::Number(n) => Value::Number(n),
             Val::Bool(b) => Value::Bool(b),
             Val::Text(t) => Value::Text(t),
+            // No property takes a datatype; one left over reads as Luau's
+            // `tostring` of it.
+            other => Value::Text(types::text(&other).unwrap_or_default()),
         }
     }
 }
@@ -139,9 +153,24 @@ impl Parser<'_> {
         }
     }
 
-    /// A body: `local` lines then a `return`, or a bare expression.
+    /// A body: `local` lines and `if` statements, then a `return` or a
+    /// bare expression. A statement that returns ends the body's
+    /// evaluation; what follows is still parsed, without being run.
     fn body(&mut self) -> Result<Val, String> {
+        let mut result: Option<Val> = None;
+        let mut settle = |p: &mut Self, value: Option<Val>| {
+            if result.is_none() {
+                if let Some(v) = value {
+                    result = Some(v);
+                    p.dry += 1;
+                }
+            }
+        };
         loop {
+            if self.is(";") {
+                self.at += 1;
+                continue;
+            }
             if self.is("local") {
                 self.at += 1;
                 let Some(Tok::Name(name)) = self.next() else {
@@ -150,23 +179,88 @@ impl Parser<'_> {
                 self.expect("=")?;
                 let value = self.expr(0)?;
                 self.locals.insert(name, value);
-                if self.is(";") {
-                    self.at += 1;
-                }
                 continue;
+            }
+            if self.is("if") && self.statement_if() {
+                self.at += 1;
+                let value = self.if_statement()?;
+                settle(self, value);
+                continue;
+            }
+            if self.peek().is_none() {
+                break;
             }
             if self.is("return") {
                 self.at += 1;
             }
             let value = self.expr(0)?;
+            settle(self, Some(value));
             if self.is(";") {
                 self.at += 1;
             }
-            return match self.peek() {
-                None => Ok(value),
-                Some(t) => Err(format!("unexpected {t:?} after the expression")),
-            };
+            if let Some(t) = self.peek() {
+                return Err(format!("unexpected {t:?} after the expression"));
+            }
+            break;
         }
+        Ok(result.unwrap_or(Val::Nil))
+    }
+
+    /// Whether the `if` here opens a statement rather than an expression:
+    /// only a statement closes with `end`, and statements do not nest.
+    fn statement_if(&self) -> bool {
+        self.toks[self.at..]
+            .iter()
+            .any(|t| matches!(t, Tok::Name(n) if n == "end"))
+    }
+
+    /// `if c then … elseif c then … else … end`, the `if` already read. The
+    /// value is the taken branch's, if it has one.
+    fn if_statement(&mut self) -> Result<Option<Val>, String> {
+        let mut taken: Option<Option<Val>> = None;
+        loop {
+            let cond = if taken.is_some() {
+                self.skipped(0)?.truthy()
+            } else {
+                self.expr(0)?.truthy()
+            };
+            self.expect("then")?;
+            let run = taken.is_none() && cond;
+            let value = self.branch(run)?;
+            if run {
+                taken = Some(value);
+            }
+            if self.is("elseif") {
+                self.at += 1;
+                continue;
+            }
+            if self.is("else") {
+                self.at += 1;
+                let run = taken.is_none();
+                let value = self.branch(run)?;
+                if run {
+                    taken = Some(value);
+                }
+            }
+            self.expect("end")?;
+            return Ok(taken.flatten());
+        }
+    }
+
+    /// One branch of an `if` statement: nothing, or a `return` or an
+    /// expression. Run only when `run`.
+    fn branch(&mut self, run: bool) -> Result<Option<Val>, String> {
+        if self.is("elseif") || self.is("else") || self.is("end") {
+            return Ok(None);
+        }
+        if self.is("return") {
+            self.at += 1;
+        }
+        let value = if run { self.expr(0)? } else { self.skipped(0)? };
+        if self.is(";") {
+            self.at += 1;
+        }
+        Ok(Some(value))
     }
 
     fn expr(&mut self, min: u8) -> Result<Val, String> {
@@ -208,13 +302,72 @@ impl Parser<'_> {
         Ok(left)
     }
 
+    /// A primary expression and the member reads and method calls after it
+    /// (`v.Magnitude`, `cf:Inverse()`).
     fn prefix(&mut self) -> Result<Val, String> {
+        let mut value = self.primary()?;
+        loop {
+            let method = if self.is(".") {
+                false
+            } else if self.is(":") {
+                true
+            } else {
+                return Ok(value);
+            };
+            self.at += 1;
+            let Some(Tok::Name(name)) = self.next() else {
+                return Err("expected a member name".into());
+            };
+            value = if method {
+                let args = self.args()?;
+                self.soft(types::method(&value, &name, &args))?
+            } else {
+                self.soft(types::member(&value, &name))?
+            };
+        }
+    }
+
+    /// `( a, b, … )`.
+    fn args(&mut self) -> Result<Vec<Val>, String> {
+        self.expect("(")?;
+        let mut args = Vec::new();
+        if !self.is(")") {
+            loop {
+                args.push(self.expr(0)?);
+                if !self.is(",") {
+                    break;
+                }
+                self.at += 1;
+            }
+        }
+        self.expect(")")?;
+        Ok(args)
+    }
+
+    /// `Vector3.new(…)`, `CFrame.identity` and the like.
+    fn library(&mut self, lib: &str) -> Result<Val, String> {
+        self.expect(".")?;
+        let Some(Tok::Name(member)) = self.next() else {
+            return Err(format!("expected a member of {lib}"));
+        };
+        let args = if self.is("(") {
+            Some(self.args()?)
+        } else {
+            None
+        };
+        self.soft(types::library(lib, &member, args.as_deref()))
+    }
+
+    fn primary(&mut self) -> Result<Val, String> {
         match self.next() {
             Some(Tok::Num(n)) => Ok(Val::Number(n)),
             Some(Tok::Str(s)) => Ok(Val::Text(s)),
             Some(Tok::Sym("-")) => {
                 let operand = self.expr(UNARY)?;
-                self.soft(operand.number().map(|n| Val::Number(-n)))
+                match types::negate(&operand) {
+                    Some(negated) => Ok(negated),
+                    None => self.soft(operand.number().map(|n| Val::Number(-n))),
+                }
             }
             Some(Tok::Sym("(")) => {
                 let v = self.expr(0)?;
@@ -228,6 +381,7 @@ impl Parser<'_> {
                 "not" => Ok(Val::Bool(!self.expr(UNARY)?.truthy())),
                 "if" => self.if_expr(),
                 "math" => self.math(),
+                "Vector2" | "Vector3" | "Color3" | "CFrame" if self.is(".") => self.library(&n),
                 _ => Ok(self
                     .locals
                     .get(&n)

@@ -1,6 +1,6 @@
 //! Operators and the `math` library.
 
-use super::Val;
+use super::{types, Val};
 
 pub(super) fn math(f: &str, a: &[f64]) -> Result<f64, String> {
     let arg = |i: usize| {
@@ -93,6 +93,9 @@ pub(super) fn binary(op: &str, l: Val, r: Val) -> Result<Val, String> {
             })
         }
         _ => {
+            if let Some(result) = types::arith(op, &l, &r) {
+                return result;
+            }
             let (a, b) = (l.number()?, r.number()?);
             Val::Number(match op {
                 "+" => a + b,

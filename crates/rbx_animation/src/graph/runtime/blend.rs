@@ -156,6 +156,7 @@ impl Player {
             .sum();
         let mut parts = Vec::new();
         let mut lead = (f32::NEG_INFINITY, Status::default());
+        let mut logged = Vec::new();
         for (&(i, w), &d) in weights.iter().zip(&cycles) {
             if !synced && w == 0. {
                 continue;
@@ -165,7 +166,9 @@ impl Player {
             } else {
                 dt
             };
+            let from = self.mark();
             let (pose, status) = self.child(n, i, step);
+            logged.push((from, self.mark(), w));
             // The heaviest input speaks for the node, as its events do.
             if w > lead.0 {
                 lead = (w, status);
@@ -173,6 +176,16 @@ impl Player {
             if w != 0. {
                 parts.push((pose, w));
             }
+        }
+        // Only the heaviest input's events go on, scaled by its weight.
+        let heaviest = logged
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1 .2.total_cmp(&b.1 .2))
+            .map(|(k, _)| k);
+        for (k, &(from, to, w)) in logged.iter().enumerate() {
+            let events = if Some(k) == heaviest { w.min(1.) } else { 0. };
+            self.weigh(from, to, events, w);
         }
         let pose = match parts.len() {
             0 => Pose::new(),

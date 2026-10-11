@@ -12,17 +12,21 @@ use crate::graph::model::{
     WaitFor, When,
 };
 
-/// Where the editor draws the state-machine pseudo-states.
+/// The state-machine pseudo-states, named and placed as the editor seeds
+/// them (`StateMachineData.ENTRY_STATE_NAME` / `ANY_STATE_NAME`).
+const ENTRY_NAME: &str = "(Entry)";
+const ANY_NAME: &str = "(Any)";
 const ENTRY_AT: (f32, f32) = (-300., -10.);
 const ANY_AT: (f32, f32) = (-300., -110.);
+const OUTPUT_CLASS: &str = "AnimationValueOutputDefinition";
 
 struct Writer<'a> {
     dom: &'a mut WeakDom,
     graph: &'a Graph,
     nodes: Vec<Ref>,
     masks: BTreeMap<String, Ref>,
-    /// Expression source → its `AnimationValueOutputDefinition`.
-    outputs: BTreeMap<String, Ref>,
+    /// Expression source → the `AnimationValueNodeDefinition` holding it.
+    expressions: BTreeMap<String, Ref>,
     /// Parameter → (property, the node or pin ObjectValue bound to it).
     hints: BTreeMap<String, Vec<(String, Ref)>>,
 }
@@ -47,7 +51,7 @@ pub(super) fn graph(dom: &mut WeakDom, parent: Option<Ref>, graph: &Graph) -> Re
         graph,
         nodes: Vec::new(),
         masks: BTreeMap::new(),
-        outputs: BTreeMap::new(),
+        expressions: BTreeMap::new(),
         hints: BTreeMap::new(),
     };
     w.nodes = graph
@@ -112,10 +116,7 @@ impl Writer<'_> {
                     ..Layout::default()
                 },
             );
-            let out = self
-                .dom
-                .new_instance("AnimationValueOutputDefinition", "Output", Some(node));
-            self.outputs.entry(e.source).or_insert(out);
+            self.expressions.entry(e.source).or_insert(node);
         }
     }
 
@@ -165,8 +166,13 @@ impl Writer<'_> {
                         .push((k.clone(), of));
                 }
                 Prop::Expr(source) => {
+                    // The editor gives every wire its own output endpoint,
+                    // left with the class's default name.
                     let wire = self.dom.new_instance("ObjectValue", k, Some(of));
-                    if let Some(&out) = self.outputs.get(source) {
+                    if let Some(&node) = self.expressions.get(source) {
+                        let out = self
+                            .dom
+                            .new_instance(OUTPUT_CLASS, OUTPUT_CLASS, Some(node));
                         set(self.dom, wire, "Value", Variant::Ref(out));
                     }
                 }
@@ -231,8 +237,8 @@ impl Writer<'_> {
 
     fn state_machine(&mut self, node: &Node, r: Ref, pins: &[Option<Ref>]) {
         for (name, flag, at) in [
-            ("Entry", "RBX_IsStart", ENTRY_AT),
-            ("Any", "RBX_IsAny", ANY_AT),
+            (ENTRY_NAME, "RBX_IsStart", ENTRY_AT),
+            (ANY_NAME, "RBX_IsAny", ANY_AT),
         ] {
             let pseudo = self.dom.new_instance("ObjectValue", name, Some(r));
             let mut a = Attrs::default();

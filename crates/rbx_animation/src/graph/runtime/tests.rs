@@ -4,6 +4,7 @@ use super::*;
 use crate::clip::PoseKey;
 use crate::graph::model::{Mask, MaskJoint, Param, Transition, WaitFor};
 
+mod events;
 mod semantics;
 
 /// A one-second clip holding `joint` at x = `x` (and at `x + 1` at its end,

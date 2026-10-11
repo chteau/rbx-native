@@ -63,13 +63,16 @@ pub fn blend(parts: &[(Pose, f32)]) -> Pose {
     out.unwrap_or_default()
 }
 
-/// `Over`: `over` laid on `base` at `weight`, joint by joint, so a joint
-/// `over` leaves out (or masks off) shows `base`.
+/// `Over`: `over` laid on `base` at `weight`, joint by joint
+/// (`slerp(base, over, weight · w)` with `w` the joint's own weight, so a
+/// joint `over` leaves out or masks off shows `base`). Roblox leaves Weight
+/// unclamped, so past 1 (or below 0) the rotation and position extrapolate.
+/// UNVERIFIED: the exact formula; this is the spec's recommended reading.
 pub fn over(base: &Pose, over: &Pose, weight: f32) -> Pose {
     let mut out = base.clone();
     for (joint, top) in over {
         let under = base.get(joint).copied().unwrap_or(REST);
-        let t = (top.weight * weight).clamp(0., 1.);
+        let t = top.weight * weight;
         let frame = if base.contains_key(joint) {
             under.frame.lerp(&top.frame, t)
         } else {
@@ -79,7 +82,7 @@ pub fn over(base: &Pose, over: &Pose, weight: f32) -> Pose {
             joint.clone(),
             Posed {
                 frame,
-                weight: under.weight + (1. - under.weight) * t,
+                weight: under.weight + (1. - under.weight) * t.clamp(0., 1.),
             },
         );
     }
@@ -175,6 +178,8 @@ mod tests {
     fn over_add_subtract() {
         let o = over(&at("Head", 0.), &at("Head", 4.), 0.5);
         assert!((x(&o, "Head") - 2.).abs() < 1e-5);
+        let past = over(&at("Head", 0.), &at("Head", 4.), 1.5);
+        assert!((x(&past, "Head") - 6.).abs() < 1e-5, "unclamped");
         let a = add(&at("Head", 1.), &at("Head", 2.), 0.5);
         assert!((x(&a, "Head") - 2.).abs() < 1e-5);
         let s = subtract(&at("Head", 3.), &at("Head", 2.), 1.);

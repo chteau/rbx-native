@@ -14,4 +14,4 @@ pub use model::{
     Expression, Graph, Input, Mask, MaskJoint, Node, NodeKind, Param, ParamKind, ParamRef, Prop,
     Transition, Value, WaitFor, When,
 };
-pub use runtime::Player;
+pub use runtime::{Event, Player};
