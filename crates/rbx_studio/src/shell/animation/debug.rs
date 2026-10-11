@@ -9,10 +9,11 @@
 //! `Model` of that name; otherwise the selection's rig), `demo` (the example
 //! walk cycle), `import=<path>` (an FBX/glTF), `import-id=<id>` (download a
 //! published animation by AnimationId, asynchronously), `autorig=<path>` (auto-rig an
-//! unrigged mesh, in the background), `autorig-drag=<joint>:<dx>/<dy>/<dz>`
-//! (drag that joint's marker by that many studs, through the same press,
-//! move and release a 3D-view drag sends, then wait for the new cut),
-//! `paste=<path>` (a file holding
+//! unrigged mesh, in the background; then `rigid`/`smooth`, `front=1|2` and
+//! `publish` drive its panel, each waited for),
+//! `autorig-drag=<joint>:<dx>/<dy>/<dz>` (drag that joint's marker by that
+//! many studs, through the same press, move and release a 3D-view drag
+//! sends, then wait for the new cut), `paste=<path>` (a file holding
 //! the Blender addon's clipboard text), `time=<seconds>`, `joint=<name>`
 //! (select that channel and its key at the playhead), `keyframe` (select
 //! every key at the playhead), `save`, `graph-demo` (the example
@@ -213,6 +214,33 @@ impl Shell {
                 "autorig-drag" => {
                     if self.debug_autorig_drag(arg, cx) {
                         self.anim.debug_rest = Some(steps[i + 1..].to_vec());
+                        return;
+                    }
+                }
+                // The auto-rigger's Rigid parts / Smooth bends toggle, then a
+                // re-cut the following steps wait for.
+                "rigid" | "smooth" => {
+                    let smooth = verb == "smooth";
+                    if let Some(rig) = self.anim_autorig_mut() {
+                        rig.smooth = smooth;
+                        self.anim.debug_rest = Some(steps[i + 1..].to_vec());
+                        self.recut_autorig(cx);
+                        return;
+                    }
+                }
+                // Turn 90° (`front=1`) or Flip front (`front=2`).
+                "front" => {
+                    if self.anim_autorig().is_some() {
+                        self.anim.debug_rest = Some(steps[i + 1..].to_vec());
+                        self.autorig_turn(arg.parse().unwrap_or(1), cx);
+                        return;
+                    }
+                }
+                // The auto-rigger's Publish; the following steps wait for it.
+                "publish" => {
+                    if self.anim_autorig().is_some() {
+                        self.anim.debug_rest = Some(steps[i + 1..].to_vec());
+                        self.publish_autorig(cx);
                         return;
                     }
                 }

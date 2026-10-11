@@ -1,5 +1,6 @@
 use crate::test_humanoid as humanoid;
 
+mod real;
 mod skin;
 
 use glam::Vec3;

@@ -798,6 +798,7 @@ impl Work {
                 triangles,
                 up_hint: None,
                 front_hint: None,
+                notes: Vec::new(),
             },
             attachments,
             accessories: crate::accessory::accessories(part, fit, lo, hi),

@@ -91,9 +91,9 @@ fn floats<const N: usize>(items: impl Iterator<Item = [f32; N]>) -> Vec<u8> {
 /// All 15 parts as one binary glTF: a node per part named `<Part>_Geo` (the
 /// importer's naming for body parts) at the part's centre, holding a mesh of
 /// the same name. Coordinates are Roblox space as they are: +Y up, the
-/// character facing −Z, in studs. Whether Roblox's importer reads glTF
-/// units as studs or metres is unverified: read the uploaded parts'
-/// `InitialSize` back and compare it with [`crate::PartMesh::size`].
+/// character facing −Z, in studs. Roblox's importer reads glTF units as
+/// studs: on live uploads (rigid model 95056738325785, skinned
+/// 91357319063637) every part's `InitialSize` equalled its glTF bounds.
 pub fn gltf(body: &Body) -> Vec<u8> {
     let mut buffer = Buffer::default();
     let (mut meshes, mut nodes) = (Vec::new(), Vec::new());
@@ -248,7 +248,13 @@ const SUBSET_BONES: usize = 26;
 ///   LOD offset count, 2 (one level: `[0, faces]`); `u16` bone count; `u32`
 ///   size of the bone name table; `u16` subset count (1 when skinned, else
 ///   0); `u8` high-quality LOD count, 1 (the one level is full quality);
-///   `u8` unused, 0.
+///   `u8` unused, 0. Roblox's own skinned meshes carry several LOD levels
+///   and say how they were made: the R15 body mesh 13674780763 (v5) has
+///   LOD type 3 (Zeux) with 4 levels, accessory v4.01 meshes type 4 with 6;
+///   both count 1 high-quality level, as ours does. With a single level
+///   nothing was simplified, so type 0 is the truthful value; Roblox
+///   re-processes uploads into its own mesh assets anyway (the glTF route
+///   in [`gltf`]/[`gltf_skinned`] is what Publish uses).
 /// - Vertices, 40 bytes each: `f32` position ×3, normal ×3 (missing: +Y),
 ///   UV ×2 (missing: 0); `i8` tangent ×4, all 0 (none computed); `u8`
 ///   RGBA, opaque white.
