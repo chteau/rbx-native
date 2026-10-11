@@ -21,7 +21,8 @@
 //! `node=<index>` (select a graph node), `save-graph`, `turn=<part>:<degrees>`
 //! (rotate a rig part about its own X axis the way a Rotate-tool drag writes
 //! it, then run one editor frame, which reads it back as a key),
-//! `write=<path>` (File › Save As to that path) and `quit`.
+//! `select=<part>` (select that part of the bound rig, as a click on it
+//! would), `write=<path>` (File › Save As to that path) and `quit`.
 
 use gpui_kit::*;
 use rbx_animation::graph::Value;
@@ -294,6 +295,18 @@ impl Shell {
                 "node" => self.anim.graph.selected = arg.parse().ok(),
                 "save-graph" => self.anim_save_graph(cx),
                 "turn" => self.debug_turn(arg, cx),
+                "select" => {
+                    let part = self
+                        .anim
+                        .bound
+                        .as_ref()
+                        .and_then(|b| b.rig.joint_for(arg))
+                        .map(|j| j.part1);
+                    match part {
+                        Some(part) => self.reselect(vec![part], cx),
+                        None => self.anim.status = Some(format!("No rig part named {arg}").into()),
+                    }
+                }
                 "write" => self.save_as(std::path::Path::new(arg), cx),
                 "quit" => cx.quit(),
                 _ => self.anim.status = Some(format!("{VARIABLE}: unknown step {verb}").into()),

@@ -10,8 +10,9 @@
 
 use std::path::{Path, PathBuf};
 
-use glam::Vec3;
+use glam::{Quat, Vec3};
 use gpui_kit::{AppContext as _, Context, PathPromptOptions};
+use rbx_animation::Frame;
 use rbx_autorig::{Body, Fit, FitOptions, Joint, Mesh, Orientation, Part, Side};
 use rbx_dom::{Ref, Variant, WeakDom};
 
@@ -57,7 +58,25 @@ pub(crate) struct AutoRig {
     /// Where the fit's origin stands in the place: the built rig's root
     /// joint less the fit's (the Rig Builder stands the rig on the place).
     origin: Vec3,
+    /// The mesh's bounds under the fit, which a moved joint stays inside
+    /// (see [`rbx_autorig::guard`]).
+    bounds: (Vec3, Vec3),
+    /// Each rig built so far, newest last, with the fit it was cut along:
+    /// an undo or redo that brings one back brings its fit back with it.
+    placed: Vec<Placed>,
 }
+
+/// A rig the auto-rigger built, and the fit and origin it stood on.
+#[derive(Clone)]
+struct Placed {
+    model: Ref,
+    fit: Fit,
+    origin: Vec3,
+}
+
+/// How many built rigs [`AutoRig::placed`] remembers: more than the undo
+/// history keeps.
+const PLACED: usize = 256;
 
 /// One cut's output: the parts, the cache paths their meshes went to, and
 /// where the fit it was cut along put the root joint.
@@ -65,6 +84,8 @@ struct Cut {
     body: Body,
     uris: Vec<String>,
     root: Vec3,
+    /// The fit it was cut along.
+    fit: Fit,
 }
 
 /// The `rbxasset://` path a part's mesh is cached under.
@@ -104,6 +125,7 @@ fn cut(mesh: &Mesh, fit: &Fit, smooth: bool) -> Result<Cut, String> {
         body,
         uris,
         root: fit.joint(Joint::Root),
+        fit: fit.clone(),
     })
 }
 
@@ -189,8 +211,6 @@ impl Shell {
                     let warnings = fit.warnings.clone();
                     shell.anim_set_autorig(Some(AutoRig {
                         source,
-                        mesh,
-                        fit,
                         symmetric: true,
                         joint: Joint::Neck,
                         model: None,
@@ -200,6 +220,10 @@ impl Shell {
                         stale: false,
                         grabbed: None,
                         origin: Vec3::ZERO,
+                        bounds: rbx_autorig::mesh_bounds(&mesh, &fit),
+                        placed: Vec::new(),
+                        mesh,
+                        fit,
                     }));
                     shell.place_autorig(cut, cx);
                 }
@@ -211,8 +235,11 @@ impl Shell {
 
     /// Moves one joint (and its mirror, when symmetric), then re-cuts.
     pub(crate) fn autorig_move_joint(&mut self, joint: Joint, to: Vec3, cx: &mut Context<Self>) {
-        if let Some(rig) = self.anim_autorig_mut() {
-            rig.set_joint(joint, to);
+        let guarded = self
+            .anim_autorig_mut()
+            .is_some_and(|rig| rig.set_joint(joint, to));
+        if guarded {
+            self.autorig_guarded(joint, cx);
         }
         self.recut_autorig(cx);
     }
@@ -241,12 +268,17 @@ impl Shell {
                 rig.joint = joint;
                 self.anim_select_joint(joint.part().name());
             }
-            JointPhase::Drag => rig.set_joint(joint, at),
-            JointPhase::Release => {
+            JointPhase::Drag => {
                 rig.set_joint(joint, at);
+            }
+            JointPhase::Release => {
+                let guarded = rig.set_joint(joint, at);
                 // A click on a marker only selects its joint.
                 let from = rig.grabbed.take();
                 if from.is_none_or(|from| from.distance(at) > 1e-4) {
+                    if guarded {
+                        self.autorig_guarded(joint, cx);
+                    }
                     self.recut_autorig(cx);
                 }
             }
@@ -271,6 +303,7 @@ impl Shell {
         match rbx_autorig::fit_with(&rig.mesh, &options) {
             Ok(fit) => {
                 rig.warnings = fit.warnings.clone();
+                rig.bounds = rbx_autorig::mesh_bounds(&rig.mesh, &fit);
                 rig.fit = fit;
                 self.recut_autorig(cx);
             }
@@ -302,7 +335,17 @@ impl Shell {
                 });
                 match result {
                     Ok(cut) => shell.place_autorig(cut, cx),
-                    Err(err) => shell.autorig_report(Err(err), cx),
+                    Err(err) => {
+                        // Back to the fit the standing rig was cut along.
+                        let restored = shell.anim_autorig_mut().is_some_and(AutoRig::restore);
+                        let err = if restored {
+                            format!("{err}. The joints went back to the last rig that cut.")
+                        } else {
+                            err
+                        };
+                        shell.autorig_report(Err(err), cx);
+                        shell.sync_autorig_markers(cx);
+                    }
                 }
                 // An edit made while this cut ran gets a cut of its own.
                 if stale {
@@ -349,6 +392,7 @@ impl Shell {
         if let Some(rig) = self.anim_autorig_mut() {
             rig.model = Some(model);
             rig.origin = origin.unwrap_or(rig.origin);
+            rig.remember(model, cut.fit.clone());
             notes.extend(rig.warnings.iter().cloned());
         }
         for note in notes {
@@ -433,6 +477,38 @@ impl Shell {
         cx.notify();
     }
 
+    /// Says a joint stopped short of where it was asked to go.
+    fn autorig_guarded(&mut self, joint: Joint, cx: &mut Context<Self>) {
+        let note = format!(
+            "{} stops where its limb ends: a joint stays between its neighbours and inside the mesh.",
+            joint.name()
+        );
+        self.output.push_once(SOURCE, Feedback::Warning(note));
+        cx.notify();
+    }
+
+    /// After an undo or redo replaced the place: the auto-rigger takes up
+    /// the fit of whichever of its rigs is back (joints, markers and the
+    /// panel's fields all read it) and the Animation Editor binds to that
+    /// rig. Called by [`Shell::undo`] and [`Shell::redo`].
+    pub(crate) fn autorig_follow_history(&mut self, cx: &mut Context<Self>) {
+        let dom = &self.dom;
+        let Some(rig) = self.anim.autorig.as_mut() else {
+            return;
+        };
+        let Some((old, new)) = rig.follow(|r| dom.get(r).is_some()) else {
+            return;
+        };
+        if let Some(old) = old {
+            self.unbind_rig_for_replace(old, cx);
+        }
+        if let Some(new) = new {
+            self.bind_rig_framed(new, false, cx);
+        }
+        self.sync_autorig_markers(cx);
+        cx.notify();
+    }
+
     fn autorig_report(&mut self, result: Result<String, String>, cx: &mut Context<Self>) {
         let feedback = match result {
             Ok(message) => Feedback::Output(message),
@@ -445,15 +521,71 @@ impl Shell {
 }
 
 impl AutoRig {
-    /// Puts `joint` on `to` (fit space), and its mirror too when symmetric.
-    fn set_joint(&mut self, joint: Joint, to: Vec3) {
-        self.fit.set_joint(joint, to);
+    /// Puts `joint` on `to` (fit space), or as near as the joint guard lets
+    /// it (see [`rbx_autorig::guard`]), and its mirror too when symmetric.
+    /// Whether the guard moved it off `to`.
+    fn set_joint(&mut self, joint: Joint, to: Vec3) -> bool {
+        let at = rbx_autorig::guard(&self.fit, joint, to, self.bounds);
+        self.fit.set_joint(joint, at);
         if self.symmetric {
             match joint.side() {
                 Some(side) => rbx_autorig::mirror(&mut self.fit, side),
                 None => rbx_autorig::mirror(&mut self.fit, Side::Left),
             }
         }
+        at.distance(to) > 1e-4
+    }
+
+    /// Notes that `model` was just built from `fit`, standing on the
+    /// current origin.
+    fn remember(&mut self, model: Ref, fit: Fit) {
+        if self.placed.len() >= PLACED {
+            self.placed.remove(0);
+        }
+        self.placed.push(Placed {
+            model,
+            fit,
+            origin: self.origin,
+        });
+    }
+
+    /// Puts the fit back to the one the standing rig was cut along, after a
+    /// cut failed. Whether there was one.
+    fn restore(&mut self) -> bool {
+        let Some(placed) = self
+            .placed
+            .iter()
+            .rev()
+            .find(|p| Some(p.model) == self.model)
+            .cloned()
+        else {
+            return false;
+        };
+        self.fit = placed.fit;
+        self.origin = placed.origin;
+        true
+    }
+
+    /// After an undo or redo replaced the place: when the rig the fit
+    /// belongs to is gone, takes up the fit of the built rig that is back
+    /// (the newest one `exists`), or none. Answers the rig left and the rig
+    /// taken up when they differ.
+    fn follow(&mut self, exists: impl Fn(Ref) -> bool) -> Option<(Option<Ref>, Option<Ref>)> {
+        if self.model.is_some_and(&exists) {
+            return None;
+        }
+        let back = self.placed.iter().rev().find(|p| exists(p.model)).cloned();
+        let old = self.model;
+        self.grabbed = None;
+        match back {
+            Some(placed) => {
+                self.model = Some(placed.model);
+                self.fit = placed.fit;
+                self.origin = placed.origin;
+            }
+            None => self.model = None,
+        }
+        (old != self.model).then_some((old, self.model))
     }
 
     /// Where the 3D view draws the joint markers: every joint of the fit,
@@ -511,13 +643,16 @@ fn swap_meshes(dom: &mut WeakDom, model: Ref, imported: &WeakDom) -> usize {
             imported,
             &[format!("{}_Geo", part.name()), part.name().into()],
         );
-        let Some(source) = source.and_then(|s| imported.get(s)) else {
+        let Some((source_ref, source)) = source.and_then(|s| Some((s, imported.get(s)?))) else {
             continue;
         };
         let Some(mesh) = source.properties().get("MeshId").cloned() else {
             continue;
         };
         let _ = dom.set_property(target, "MeshId", mesh);
+        if let Some(turn) = served_turn(dom, model, imported, source_ref, target) {
+            turn_part(dom, model, target, turn);
+        }
         for property in [
             "InitialSize",
             "HasSkinnedMesh",
@@ -531,6 +666,111 @@ fn swap_meshes(dom: &mut WeakDom, model: Ref, imported: &WeakDom) -> usize {
         found += 1;
     }
     found
+}
+
+/// A part's `CFrame`-typed `property`.
+fn frame_of(dom: &WeakDom, referent: Ref, property: &str) -> Option<Frame> {
+    match dom.get(referent)?.properties().get(property)? {
+        Variant::CFrame(c) => Some(Frame::from_data(c)),
+        _ => None,
+    }
+}
+
+/// Which way a body faces, from its upper arms: +1 for −Z (Roblox's front,
+/// the right arm on +X), −1 for +Z.
+fn facing(dom: &WeakDom, right: Ref, left: Ref) -> Option<f32> {
+    let x = |r| frame_of(dom, r, "CFrame").map(|f| f.position.x);
+    Some((x(right)? - x(left)?).signum())
+}
+
+/// How `target` must turn, in its own frame, for the mesh served for
+/// `source` to stand in it as it stood in the cut, or None when it already
+/// does.
+///
+/// The importer turns the whole upload half round about Y: the glTF is
+/// written facing −Z (Roblox's front) and comes back facing +Z, the right
+/// arm on −X, every part unrotated (models 95056738325785 and
+/// 91357319063637). A served mesh is in its imported part's frame, so in a
+/// part of ours facing −Z it would stand back to front: a forearm with the
+/// hand's skin at the elbow, which bends wrong (the "shorter forearms, less
+/// bent knee" after Publish). The served bones say the same: the Woman's
+/// `RightLowerArm` bone sits at the part's `JointOffset`, the cut's elbow
+/// turned half round (test `the_served_forearm_is_the_cut_turned_half_round`).
+fn served_turn(
+    dom: &WeakDom,
+    model: Ref,
+    imported: &WeakDom,
+    source: Ref,
+    target: Ref,
+) -> Option<Quat> {
+    let ours = |name: &str| {
+        let m = dom.get(model)?;
+        m.children()
+            .iter()
+            .copied()
+            .find(|&c| dom.get(c).is_some_and(|i| i.name() == name))
+    };
+    let theirs = |name: &str| find_named(imported, &[format!("{name}_Geo"), name.to_string()]);
+    let ours_facing = facing(dom, ours("RightUpperArm")?, ours("LeftUpperArm")?)?;
+    let theirs_facing = facing(imported, theirs("RightUpperArm")?, theirs("LeftUpperArm")?)?;
+    // The imported part's rotation, brought into our world.
+    let mut served = frame_of(imported, source, "CFrame").map_or(Quat::IDENTITY, |f| f.rotation);
+    if ours_facing != theirs_facing {
+        served = Quat::from_rotation_y(std::f32::consts::PI) * served;
+    }
+    let current = frame_of(dom, target, "CFrame")?.rotation;
+    let turn = (current.inverse() * served).normalize();
+    (turn.angle_between(Quat::IDENTITY) > 1e-3).then_some(turn)
+}
+
+/// Turns `part` by `turn` about its centre, in its own frame, and moves
+/// everything held in that frame (its attachments, its pivot, and the
+/// `C0`/`C1` of every joint in `model` it is a side of) the other way, so
+/// that only the part's own geometry turns: every joint and attachment stays
+/// where it stood in the place.
+fn turn_part(dom: &mut WeakDom, model: Ref, part: Ref, turn: Quat) {
+    let back = Frame::new(Vec3::ZERO, turn.inverse());
+    let set = |dom: &mut WeakDom, r: Ref, property: &str, f: Frame| {
+        let _ = dom.set_property(r, property, Variant::CFrame(f.to_data()));
+    };
+    if let Some(frame) = frame_of(dom, part, "CFrame") {
+        set(
+            dom,
+            part,
+            "CFrame",
+            frame.mul(&Frame::new(Vec3::ZERO, turn)),
+        );
+    }
+    if let Some(pivot) = frame_of(dom, part, "PivotOffset") {
+        set(dom, part, "PivotOffset", back.mul(&pivot));
+    }
+    let held: Vec<Ref> = dom.get(part).map_or(Vec::new(), |p| p.children().to_vec());
+    for child in held {
+        let class = dom.get(child).map(|c| c.class().to_string());
+        if matches!(class.as_deref(), Some("Attachment" | "Bone")) {
+            if let Some(frame) = frame_of(dom, child, "CFrame") {
+                set(dom, child, "CFrame", back.mul(&frame));
+            }
+        }
+    }
+    let mut pending = vec![model];
+    while let Some(next) = pending.pop() {
+        let Some(instance) = dom.get(next) else {
+            continue;
+        };
+        pending.extend(instance.children());
+        for (side, offset) in [("Part0", "C0"), ("Part1", "C1")] {
+            let holds = matches!(
+                dom.get(next).and_then(|i| i.properties().get(side)),
+                Some(Variant::Ref(r)) if *r == part
+            );
+            if holds {
+                if let Some(frame) = frame_of(dom, next, offset) {
+                    set(dom, next, offset, back.mul(&frame));
+                }
+            }
+        }
+    }
 }
 
 fn find_named(dom: &WeakDom, names: &[String]) -> Option<Ref> {
@@ -593,6 +833,7 @@ mod tests {
             body: rbx_autorig::split(&body.mesh, &fit).unwrap(),
             uris: Part::ALL.iter().map(|&p| local_uri("test", p)).collect(),
             root: fit.joint(Joint::Root),
+            fit: fit.clone(),
         };
         let (dom, model) = rig_of(&cut);
         let rig = rbx_animation::Rig::read(&dom, model);
@@ -640,6 +881,7 @@ mod tests {
             body: rbx_autorig::split(&body.mesh, &fit).unwrap(),
             uris: Part::ALL.iter().map(|&p| local_uri("test", p)).collect(),
             root: fit.joint(Joint::Root),
+            fit: fit.clone(),
         };
         // A rigid upload names its parts `<Part>_Geo`, a skinned one `<Part>`.
         for (suffix, skinned) in [("_Geo", false), ("", true)] {
@@ -694,6 +936,248 @@ mod tests {
                 ))))
             );
         }
+    }
+
+    /// Every joint's pivot in the place, by the name of its `Part1`.
+    fn pivots(dom: &WeakDom, model: Ref) -> Vec<(String, Frame)> {
+        let rig = rbx_animation::Rig::read(dom, model);
+        let root = frame_of(dom, rig.root.unwrap(), "CFrame").unwrap();
+        let world = rig.layout(root, &|_| None);
+        Part::ALL
+            .iter()
+            .map(|part| {
+                let joint = rig.joint_for(part.name()).unwrap();
+                (part.name().to_string(), joint.pivot(&world[&joint.part0]))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_served_mesh_turned_half_round_turns_its_part_but_no_joint() {
+        let body = humanoid(Pose::A);
+        let fit = rbx_autorig::fit(&body.mesh, HEIGHT).unwrap();
+        let cut = Cut {
+            body: rbx_autorig::split(&body.mesh, &fit).unwrap(),
+            uris: Part::ALL.iter().map(|&p| local_uri("test", p)).collect(),
+            root: fit.joint(Joint::Root),
+            fit: fit.clone(),
+        };
+        let (mut dom, model) = rig_of(&cut);
+        let half = Quat::from_rotation_y(std::f32::consts::PI);
+        // The importer's answer: the same body facing +Z, parts unrotated.
+        let mut imported = WeakDom::new();
+        let root = imported.new_instance("Model", "Upload", None);
+        let mut before = Vec::new();
+        for (i, part) in Part::ALL.iter().enumerate() {
+            let ours = dom
+                .get(model)
+                .unwrap()
+                .children()
+                .iter()
+                .copied()
+                .find(|&c| dom.get(c).unwrap().name() == part.name())
+                .unwrap();
+            let frame = frame_of(&dom, ours, "CFrame").unwrap();
+            before.push((ours, frame));
+            let p = imported.new_instance("MeshPart", part.name(), Some(root));
+            let at = Frame::at(half * frame.position);
+            let uri = format!("rbxassetid://{}", 100 + i);
+            for (property, value) in [
+                ("MeshId", Variant::Content(rbx_dom::Content::Uri(uri))),
+                ("CFrame", Variant::CFrame(at.to_data())),
+            ] {
+                imported.set_property(p, property, value).unwrap();
+            }
+        }
+        let joints = pivots(&dom, model);
+        assert_eq!(swap_meshes(&mut dom, model, &imported), 15);
+        for (name, pivot) in pivots(&dom, model).iter().zip(&joints).map(|(a, b)| {
+            assert_eq!(a.0, b.0);
+            (&a.0, (a.1, b.1))
+        }) {
+            assert!(
+                pivot.0.approx_eq(&pivot.1, 1e-4),
+                "{name}: the joint moved from {:?} to {:?}",
+                pivot.1,
+                pivot.0
+            );
+        }
+        for (part, was) in before {
+            let now = frame_of(&dom, part, "CFrame").unwrap();
+            // Turned half round about its own centre.
+            assert!(now.position.distance(was.position) < 1e-5);
+            assert!(now.rotation.angle_between(was.rotation * half) < 1e-4);
+            // A served point (a cut point turned half round) lands where
+            // the cut point stood.
+            let cut_point = Vec3::new(0.3, -0.2, 0.1);
+            let served = half * cut_point;
+            assert!(
+                now.transform_point(served)
+                    .distance(was.transform_point(cut_point))
+                    < 1e-4
+            );
+        }
+        // A second swap from the same upload changes nothing more.
+        let again: Vec<Frame> = Part::ALL
+            .iter()
+            .map(|p| {
+                let r = dom
+                    .get(model)
+                    .unwrap()
+                    .children()
+                    .iter()
+                    .copied()
+                    .find(|&c| dom.get(c).unwrap().name() == p.name())
+                    .unwrap();
+                frame_of(&dom, r, "CFrame").unwrap()
+            })
+            .collect();
+        swap_meshes(&mut dom, model, &imported);
+        for (p, was) in Part::ALL.iter().zip(again) {
+            let r = dom
+                .get(model)
+                .unwrap()
+                .children()
+                .iter()
+                .copied()
+                .find(|&c| dom.get(c).unwrap().name() == p.name())
+                .unwrap();
+            assert!(frame_of(&dom, r, "CFrame").unwrap().approx_eq(&was, 1e-5));
+        }
+    }
+
+    /// The Woman body's right forearm (CC0, quevedo-woman-body) as the
+    /// auto-rigger cut it and as Roblox served it back from the skinned
+    /// upload 91357319063637 (mesh 130732292096244).
+    #[test]
+    fn the_served_forearm_is_the_cut_turned_half_round() {
+        let cut = rbx_mesh::parse_skinned(include_bytes!(
+            "../../../tests/fixtures/autorig/woman-right-lower-arm-cut.mesh"
+        ))
+        .unwrap();
+        let served = rbx_mesh::parse_skinned(include_bytes!(
+            "../../../tests/fixtures/autorig/woman-right-lower-arm-served.mesh"
+        ))
+        .unwrap();
+        let half = Quat::from_rotation_y(std::f32::consts::PI);
+        let bone = |mesh: &rbx_mesh::SkinnedMesh, name: &str| {
+            let skin = mesh.skin.as_ref().unwrap();
+            Vec3::from(skin.bones.iter().find(|b| b.name == name).unwrap().position)
+        };
+        // The served elbow bone is the part's `JointOffset` on the published
+        // model, and the cut's elbow turned half round.
+        let joint_offset = Vec3::new(0.33292568, 0.022104025, 0.07772821);
+        let elbow = bone(&served, "RightLowerArm");
+        assert!(elbow.distance(joint_offset) < 1e-4, "{elbow}");
+        assert!((half * bone(&cut, "RightLowerArm")).distance(elbow) < 1e-3);
+        // So is every vertex: the importer turned the geometry, not just the
+        // bones (in its own vertex order).
+        assert_eq!(cut.mesh.vertices.len(), served.mesh.vertices.len());
+        let turned: Vec<Vec3> = cut
+            .mesh
+            .vertices
+            .iter()
+            .map(|v| half * Vec3::from(v.position))
+            .collect();
+        for b in &served.mesh.vertices {
+            let b = Vec3::from(b.position);
+            let nearest = turned
+                .iter()
+                .map(|t| t.distance(b))
+                .fold(f32::MAX, f32::min);
+            assert!(nearest < 1e-3, "{b} is {nearest} from the turned cut");
+        }
+    }
+
+    fn auto_rig(mesh: Mesh, fit: Fit) -> AutoRig {
+        AutoRig {
+            source: PathBuf::from("body.obj"),
+            bounds: rbx_autorig::mesh_bounds(&mesh, &fit),
+            mesh,
+            fit,
+            symmetric: true,
+            joint: Joint::Neck,
+            model: None,
+            warnings: Vec::new(),
+            busy: false,
+            smooth: true,
+            stale: false,
+            grabbed: None,
+            origin: Vec3::ZERO,
+            placed: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn undo_and_redo_bring_back_the_fit_of_the_rig_they_bring_back() {
+        let body = humanoid(Pose::A);
+        let fit = rbx_autorig::fit(&body.mesh, HEIGHT).unwrap();
+        let mut rig = auto_rig(body.mesh.clone(), fit.clone());
+        let mut dom = WeakDom::new();
+        let first = dom.new_instance("Model", "First", None);
+        rig.model = Some(first);
+        rig.origin = Vec3::new(0., 3., 0.);
+        rig.remember(first, fit.clone());
+        // A panel edit moves the elbow and the re-cut replaces the rig.
+        let elbow = fit.joint(Joint::LeftElbow);
+        let moved = elbow + Vec3::new(0., 0.1, 0.05);
+        assert!(!rig.set_joint(Joint::LeftElbow, moved));
+        dom.remove(first);
+        let second = dom.new_instance("Model", "Second", None);
+        rig.model = Some(second);
+        rig.remember(second, rig.fit.clone());
+        assert_eq!(rig.follow(|r| dom.get(r).is_some()), None);
+
+        // Undo: the snapshot brings the first rig back under its own
+        // referent, and its elbow with it.
+        assert_eq!(
+            rig.follow(|r| r == first),
+            Some((Some(second), Some(first)))
+        );
+        assert_eq!(rig.fit.joint(Joint::LeftElbow), elbow);
+        assert_eq!(
+            rig.markers().0[Joint::ALL
+                .iter()
+                .position(|&j| j == Joint::LeftElbow)
+                .unwrap()],
+            elbow + rig.origin
+        );
+        // Redo: the second rig and the moved elbow.
+        assert_eq!(
+            rig.follow(|r| r == second),
+            Some((Some(first), Some(second)))
+        );
+        assert!(rig.fit.joint(Joint::LeftElbow).distance(moved) < 1e-6);
+        // Undo past the first rig: nothing to show markers for.
+        assert_eq!(rig.follow(|_| false), Some((Some(second), None)));
+        assert!(rig.markers().0.is_empty());
+    }
+
+    #[test]
+    fn a_failed_cut_goes_back_to_the_standing_rigs_fit() {
+        let body = humanoid(Pose::A);
+        let fit = rbx_autorig::fit(&body.mesh, HEIGHT).unwrap();
+        let mut rig = auto_rig(body.mesh.clone(), fit.clone());
+        let mut dom = WeakDom::new();
+        let model = dom.new_instance("Model", "Rig", None);
+        rig.model = Some(model);
+        rig.remember(model, fit.clone());
+        rig.set_joint(Joint::Neck, fit.joint(Joint::Neck) + Vec3::Y * 0.05);
+        assert!(rig.restore());
+        assert_eq!(rig.fit.joint(Joint::Neck), fit.joint(Joint::Neck));
+    }
+
+    #[test]
+    fn a_knee_dragged_onto_the_neck_is_held_on_its_leg() {
+        let body = humanoid(Pose::A);
+        let fit = rbx_autorig::fit(&body.mesh, HEIGHT).unwrap();
+        let mut rig = auto_rig(body.mesh.clone(), fit.clone());
+        assert!(rig.set_joint(Joint::LeftKnee, fit.joint(Joint::Neck)));
+        let knee = rig.fit.joint(Joint::LeftKnee);
+        assert!(knee.y < fit.joint(Joint::LeftHip).y, "{knee}");
+        // Its mirror followed.
+        let right = rig.fit.joint(Joint::RightKnee);
+        assert!((right.x + knee.x).abs() < 1e-4 && (right.y - knee.y).abs() < 1e-4);
     }
 
     #[test]

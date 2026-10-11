@@ -306,6 +306,22 @@ impl Scene {
         wanted
     }
 
+    /// `referent`, a rig joint, was written: when that moved a rest frame
+    /// its parts' skinned meshes bind again (see `Poses::rejoint`).
+    /// Answers whether one did.
+    pub(crate) fn resync_joint(
+        &mut self,
+        dom: &WeakDom,
+        database: &ReflectionDatabase,
+        referent: Ref,
+    ) -> bool {
+        let Some(model) = self.file_mesh_plan.poses.rejoint(dom, database, referent) else {
+            return false;
+        };
+        self.file_mesh_plan.rebind_models(&[model]);
+        true
+    }
+
     /// Takes every box and resolved instance standing for `referent` out of
     /// the scene — all of them, so a deleted union goes with its pieces —
     /// and names the piece slots the renderer must now let go of too.

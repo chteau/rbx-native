@@ -28,6 +28,7 @@
 
 mod accessory;
 mod fit;
+mod guard;
 mod mesh;
 mod orient;
 mod read;
@@ -38,6 +39,7 @@ mod voxel;
 mod write;
 
 pub use fit::{fit, fit_with, mirror, Extremities, Fit, FitOptions};
+pub use guard::{guard, mesh_bounds};
 pub use mesh::Mesh;
 pub use orient::{Axis, Orientation};
 pub use read::{read, read_bytes, Format};
