@@ -12,6 +12,7 @@
 //! Rotate tool, say) are read back as a key on that part's joint at the
 //! playhead. That is how Roblox's editor turns a dragged limb into a pose.
 
+mod curves;
 mod debug;
 mod graph;
 mod import;
@@ -43,15 +44,17 @@ pub(super) use graph::GraphDoc;
 pub(super) enum Mode {
     #[default]
     DopeSheet,
+    Curves,
     Graph,
 }
 
 impl Mode {
-    pub(super) const ALL: [Mode; 2] = [Mode::DopeSheet, Mode::Graph];
+    pub(super) const ALL: [Mode; 3] = [Mode::DopeSheet, Mode::Curves, Mode::Graph];
 
     fn key(self) -> &'static str {
         match self {
             Mode::DopeSheet => "anim-dope-sheet",
+            Mode::Curves => "anim-curves",
             Mode::Graph => "anim-graph",
         }
     }
@@ -59,6 +62,7 @@ impl Mode {
     fn label(self) -> &'static str {
         match self {
             Mode::DopeSheet => "Dope Sheet",
+            Mode::Curves => "Curve Editor",
             Mode::Graph => "Animation Graph",
         }
     }
@@ -85,6 +89,19 @@ pub(super) enum Gesture {
     Scrub,
     MoveKeys { from_x: f32 },
     Pan { last_x: f32 },
+    /// Curve keys dragged in time and value from where the press landed.
+    CurveKeys { from: (f32, f32) },
+    /// The selected curve key's left or right tangent handle.
+    Tangent { left: bool },
+}
+
+/// Manage IK: whether a limb dragged with the Move tool is solved as a
+/// chain, how much of the body the chain takes, and the parts held still.
+#[derive(Default)]
+pub(super) struct IkSettings {
+    pub(super) enabled: bool,
+    pub(super) mode: rbx_animation::ik::Mode,
+    pub(super) pinned: std::collections::HashSet<Ref>,
 }
 
 pub(super) struct Animation {
@@ -103,6 +120,8 @@ pub(super) struct Animation {
     pub(super) graph: GraphDoc,
     /// Whether the timeline has been fitted to the clip since it loaded.
     pub(super) fitted: bool,
+    pub(super) ik: IkSettings,
+    pub(super) curve: curves::CurveView,
     /// What the local draft last held, and when it was written.
     drafted: Option<(rbx_animation::Clip, rbx_animation::graph::Graph)>,
     drafted_at: Option<Instant>,
@@ -123,6 +142,8 @@ impl Animation {
             status: None,
             graph: GraphDoc::default(),
             fitted: false,
+            ik: IkSettings::default(),
+            curve: curves::CurveView::default(),
             drafted: None,
             drafted_at: None,
         }
@@ -278,6 +299,7 @@ impl Shell {
         let kinds = rig_summary(&rig);
         self.anim.status = Some(format!("Rig {name}: {kinds}").into());
         self.frame_rig(&rig, root, cx);
+        self.anim.ik.pinned.clear();
         self.anim.bound = Some(Bound {
             model,
             rig,
@@ -350,7 +372,7 @@ impl Shell {
     /// first; a clip edit never reached the place's history.
     pub(super) fn undo_animation(&mut self, cx: &mut Context<Self>) -> bool {
         let up = self.document == super::chrome::Document::Animation;
-        let done = up && self.anim.mode == Mode::DopeSheet && self.anim.editor.undo();
+        let done = up && self.anim.mode != Mode::Graph && self.anim.editor.undo();
         if done {
             cx.notify();
         }
@@ -359,7 +381,7 @@ impl Shell {
 
     pub(super) fn redo_animation(&mut self, cx: &mut Context<Self>) -> bool {
         let up = self.document == super::chrome::Document::Animation;
-        let done = up && self.anim.mode == Mode::DopeSheet && self.anim.editor.redo();
+        let done = up && self.anim.mode != Mode::Graph && self.anim.editor.redo();
         if done {
             cx.notify();
         }

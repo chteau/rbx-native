@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
 
 use gpui_kit::*;
-use rbx_animation::{sample, Frame};
+use rbx_animation::Frame;
 use rbx_dom::{CFrameData, Ref, Variant};
 
 use super::{Mode, Shell};
@@ -41,11 +41,7 @@ impl Shell {
                 return pose.clone();
             }
         }
-        let clip = &self.anim.editor.clip;
-        sample::sample(clip, self.anim.editor.time)
-            .into_iter()
-            .map(|(j, s)| (j, Frame::IDENTITY.lerp(&s.transform, s.weight.min(1.0))))
-            .collect()
+        self.anim.editor.sample_at(self.anim.editor.time)
     }
 
     /// Writes each rig part's `CFrame` for the current pose, and first reads
@@ -95,6 +91,7 @@ impl Shell {
         };
         let mut root = None;
         let mut keys = Vec::new();
+        let mut dragged: Option<(Ref, glam::Vec3)> = None;
         for (&part, posed) in &bound.posed {
             let Some(now) = cframe_of(&self.dom, part) else {
                 continue;
@@ -112,9 +109,40 @@ impl Shell {
             let Some(part0) = bound.posed.get(&joint.part0).map(Frame::from_data) else {
                 continue;
             };
-            let solved = joint.solve(&part0, &Frame::from_data(&now));
+            let now = Frame::from_data(&now);
+            // With IK on, a part moved (not just turned) is an end effector
+            // dragged to a new place: its chain is solved to reach it.
+            let moved = now.position.distance(Frame::from_data(posed).position) > 1e-3;
+            if self.anim.ik.enabled && moved {
+                dragged = Some((part, now.position));
+                continue;
+            }
+            let solved = joint.solve(&part0, &now);
             let name = bound.rig.part_name(part).to_owned();
             keys.push((name, solved));
+        }
+        if let Some((part, target)) = dragged {
+            let current = self.current_transforms();
+            let solved = rbx_animation::ik::solve(
+                &bound.rig,
+                bound.root,
+                &current,
+                part,
+                glam::Vec3::ZERO,
+                target,
+                self.anim.ik.mode,
+                &self.anim.ik.pinned,
+            );
+            let changed: Vec<(String, Frame)> = solved
+                .into_iter()
+                .filter(|(j, f)| current.get(j) != Some(f))
+                .collect();
+            let name = bound.rig.part_name(part).to_owned();
+            if !changed.is_empty() {
+                self.anim.editor.key_all(&changed);
+            }
+            self.anim.editor.joint = Some(name);
+            return;
         }
         if let Some(root) = root {
             if let Some(b) = &mut self.anim.bound {

@@ -123,6 +123,10 @@ impl Shell {
                 self.anim.timeline.pan(now - last_x);
                 self.anim.gesture = Some(Gesture::Pan { last_x: now });
             }
+            Gesture::CurveKeys { .. } | Gesture::Tangent { .. } => {
+                let y = f32::from(at.y - b.origin.y);
+                self.curve_drag(gesture, x, y);
+            }
         }
         cx.notify();
     }
@@ -130,6 +134,7 @@ impl Shell {
     pub(in crate::shell::animation) fn sheet_release(&mut self, cx: &mut Context<Self>) {
         if self.anim.gesture.take().is_some() {
             self.anim.editor.end_drag();
+            self.anim.editor.end_curve_drag();
             cx.notify();
         }
     }
@@ -169,6 +174,14 @@ impl Shell {
     ) -> bool {
         let m = &key.modifiers;
         let ctrl = m.control || m.platform;
+        if self.anim.mode == super::super::Mode::Curves
+            && self.anim.editor.curves.is_some()
+            && !ctrl
+            && self.curve_key_press(key.key.as_str(), m.alt)
+        {
+            cx.notify();
+            return true;
+        }
         let e = &mut self.anim.editor;
         match key.key.as_str() {
             "space" => e.toggle_play(),

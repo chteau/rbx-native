@@ -61,6 +61,10 @@
     "tool_sun": "#FFE88F",
     "tool_pivot": "#C6F28F",
 
+    "axis_x": "#FF8F8F",
+    "axis_y": "#93E08F",
+    "axis_z": "#8FB8FF",
+
     "shadow": "#00000066"
   },
   "sizes": {

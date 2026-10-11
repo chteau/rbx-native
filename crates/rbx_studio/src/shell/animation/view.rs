@@ -1,6 +1,6 @@
 //! The document's layout, Blender's Animation workspace: the sub-tab strip
 //! on top, the 3D view with the side panel to its right, the dope sheet (or
-//! the graph canvas) under them, and the playback bar along the bottom.
+//! the Curve Editor, or the graph canvas) under them, and the playback bar along the bottom.
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{h_flex, v_flex};
@@ -35,11 +35,12 @@ impl Shell {
 
         let strip = self.animation_strip(cx);
         let side = match self.anim.mode {
-            Mode::DopeSheet => self.animation_panel(window, cx),
+            Mode::DopeSheet | Mode::Curves => self.animation_panel(window, cx),
             Mode::Graph => self.anim_graph_panel(window, cx),
         };
         let bottom = match self.anim.mode {
             Mode::DopeSheet => self.dope_sheet(cx),
+            Mode::Curves => self.curve_editor(cx),
             Mode::Graph => self.anim_graph_canvas(cx),
         };
         let transport = self.transport(cx);

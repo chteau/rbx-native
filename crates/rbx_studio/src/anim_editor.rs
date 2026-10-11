@@ -13,12 +13,15 @@ pub(crate) mod draft;
 pub(crate) mod graph_canvas;
 pub(crate) mod keys;
 pub(crate) mod place;
+mod curves;
 mod playback;
 mod rows;
 
+use rbx_animation::curve::{self, CurveClip};
 use rbx_animation::{Clip, Direction, Frame, Marker, PoseKey, Style};
 use rbx_dom::Ref;
 
+pub(crate) use curves::CurveKeyId;
 pub(crate) use rows::{rows, Row};
 
 /// The deepest the editor's own undo goes.
@@ -27,11 +30,19 @@ const UNDO_DEPTH: usize = 100;
 /// One selected key: a joint and the time of its keyframe.
 pub(crate) type KeyId = (String, f32);
 
+/// What one undo step restores: the clip, and its curves while the Curve
+/// Editor has converted it.
+#[derive(Clone, Debug, PartialEq)]
+struct Snapshot {
+    clip: Clip,
+    curves: Option<CurveClip>,
+}
+
 /// Keys being dragged along the timeline: the clip as it was when the drag
 /// began, so every move re-applies from there and the gesture is one undo.
 #[derive(Clone, Debug)]
 struct Drag {
-    origin: Clip,
+    origin: Snapshot,
     keys: Vec<KeyId>,
 }
 
@@ -48,12 +59,19 @@ pub(crate) struct AnimEditor {
     pub(crate) joint: Option<String>,
     /// Edits since the clip was last loaded or saved.
     pub(crate) dirty: bool,
-    undo: Vec<Clip>,
-    redo: Vec<Clip>,
+    /// The clip as curves, once the Curve Editor has converted it. While
+    /// set, these are what the editor plays and edits; `clip` is kept baked
+    /// from them so the dope sheet and Save see the same motion.
+    pub(crate) curves: Option<CurveClip>,
+    /// Curve keys selected in the Curve Editor.
+    pub(crate) curve_selected: Vec<CurveKeyId>,
+    undo: Vec<Snapshot>,
+    redo: Vec<Snapshot>,
     drag: Option<Drag>,
+    curve_drag: Option<curves::CurveDrag>,
     clipboard: Vec<(String, f32, keys::AnyKey)>,
     /// The clip before a face slider's drag began, so the drag is one undo.
-    face_drag: Option<Clip>,
+    face_drag: Option<Snapshot>,
 }
 
 impl Default for AnimEditor {
@@ -67,9 +85,12 @@ impl Default for AnimEditor {
             selected: Vec::new(),
             joint: None,
             dirty: false,
+            curves: None,
+            curve_selected: Vec::new(),
             undo: Vec::new(),
             redo: Vec::new(),
             drag: None,
+            curve_drag: None,
             clipboard: Vec::new(),
             face_drag: None,
         }
@@ -88,17 +109,32 @@ impl AnimEditor {
         self.time = 0.0;
         self.playing = false;
         self.selected.clear();
+        self.curves = None;
+        self.curve_selected.clear();
         self.undo.clear();
         self.redo.clear();
         self.drag = None;
+        self.curve_drag = None;
         self.dirty = false;
     }
 
-    /// Applies one undoable edit.
-    pub(crate) fn edit(&mut self, change: impl FnOnce(&mut Clip)) {
-        let before = self.clip.clone();
-        change(&mut self.clip);
-        if self.clip != before {
+    fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            clip: self.clip.clone(),
+            curves: self.curves.clone(),
+        }
+    }
+
+    fn restore(&mut self, snapshot: Snapshot) -> Snapshot {
+        let now = self.snapshot();
+        self.clip = snapshot.clip;
+        self.curves = snapshot.curves;
+        now
+    }
+
+    /// Records `before` as one undo step if anything changed since.
+    fn commit(&mut self, before: Snapshot) {
+        if before != self.snapshot() {
             self.undo.push(before);
             if self.undo.len() > UNDO_DEPTH {
                 self.undo.remove(0);
@@ -106,6 +142,25 @@ impl AnimEditor {
             self.redo.clear();
             self.dirty = true;
         }
+    }
+
+    /// Applies one undoable edit to the clip. With curves present, a change
+    /// to the clip's settings, markers or face keys is copied onto them, and
+    /// any change to its poses converts the clip to curves afresh.
+    pub(crate) fn edit(&mut self, change: impl FnOnce(&mut Clip)) {
+        let before = self.snapshot();
+        change(&mut self.clip);
+        if self.clip != before.clip {
+            let fps = self.fps.max(1) as f32;
+            if let Some(curves) = &mut self.curves {
+                if curves::same_poses(&self.clip, &before.clip) {
+                    curves::copy_settings(&self.clip, curves);
+                } else {
+                    *curves = curve::from_clip(&self.clip, fps);
+                }
+            }
+        }
+        self.commit(before);
     }
 
     pub(crate) fn can_undo(&self) -> bool {
@@ -120,7 +175,8 @@ impl AnimEditor {
         let Some(previous) = self.undo.pop() else {
             return false;
         };
-        self.redo.push(std::mem::replace(&mut self.clip, previous));
+        let now = self.restore(previous);
+        self.redo.push(now);
         self.dirty = true;
         self.prune_selection();
         true
@@ -130,7 +186,8 @@ impl AnimEditor {
         let Some(next) = self.redo.pop() else {
             return false;
         };
-        self.undo.push(std::mem::replace(&mut self.clip, next));
+        let now = self.restore(next);
+        self.undo.push(now);
         self.dirty = true;
         self.prune_selection();
         true
@@ -140,6 +197,7 @@ impl AnimEditor {
         let clip = &self.clip;
         self.selected
             .retain(|(j, t)| keys::get(clip, j, *t).is_some());
+        self.prune_curve_selection();
     }
 
     /// `time` on the editor's frame grid, never before 0.
@@ -160,6 +218,11 @@ impl AnimEditor {
     /// existing key there already had.
     pub(crate) fn key(&mut self, joint: &str, transform: Frame) {
         let time = self.snap(self.time);
+        if self.curves.is_some() {
+            self.key_curves(&[(joint.to_owned(), transform)]);
+            self.selected = vec![(joint.to_owned(), time)];
+            return;
+        }
         self.edit(|clip| {
             let mut key = clip
                 .pose(time, joint)
@@ -174,6 +237,11 @@ impl AnimEditor {
     /// Keys every joint given at the playhead, as one undo step.
     pub(crate) fn key_all(&mut self, poses: &[(String, Frame)]) {
         let time = self.snap(self.time);
+        if self.curves.is_some() {
+            self.key_curves(poses);
+            self.selected = poses.iter().map(|(j, _)| (j.clone(), time)).collect();
+            return;
+        }
         self.edit(|clip| {
             for (joint, transform) in poses {
                 let mut key = clip
@@ -236,7 +304,7 @@ impl AnimEditor {
     pub(crate) fn begin_drag(&mut self) {
         if !self.selected.is_empty() {
             self.drag = Some(Drag {
-                origin: self.clip.clone(),
+                origin: self.snapshot(),
                 keys: self.selected.clone(),
             });
         }
@@ -250,7 +318,7 @@ impl AnimEditor {
         let shift = (delta * fps).round() / fps;
         let earliest = drag.keys.iter().map(|k| k.1).fold(f32::INFINITY, f32::min);
         let shift = shift.max(-earliest);
-        let mut clip = drag.origin.clone();
+        let mut clip = drag.origin.clip.clone();
         let moved: Vec<(String, f32, keys::AnyKey)> = drag
             .keys
             .iter()
@@ -265,11 +333,10 @@ impl AnimEditor {
 
     pub(crate) fn end_drag(&mut self) {
         if let Some(drag) = self.drag.take() {
-            if drag.origin != self.clip {
-                self.undo.push(drag.origin);
-                self.redo.clear();
-                self.dirty = true;
+            if self.curves.is_some() && drag.origin.clip != self.clip {
+                self.curves = Some(curve::from_clip(&self.clip, self.fps.max(1) as f32));
             }
+            self.commit(drag.origin);
         }
     }
 
@@ -339,7 +406,7 @@ impl AnimEditor {
         };
         if live {
             if self.face_drag.is_none() {
-                self.face_drag = Some(self.clip.clone());
+                self.face_drag = Some(self.snapshot());
             }
             write(&mut self.clip);
             self.dirty = true;
@@ -352,10 +419,7 @@ impl AnimEditor {
     /// Ends a face slider's drag, recording it as one undo step.
     pub(crate) fn end_face_drag(&mut self) {
         if let Some(origin) = self.face_drag.take() {
-            if origin != self.clip {
-                self.undo.push(origin);
-                self.redo.clear();
-            }
+            self.commit(origin);
         }
     }
 

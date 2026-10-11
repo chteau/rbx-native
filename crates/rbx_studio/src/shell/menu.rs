@@ -71,6 +71,8 @@ pub(crate) enum MenuId {
     AnimGraphLoad,
     AnimGraphAdd,
     AnimFaceRegion,
+    AnimCurveStyle,
+    AnimCurveDirection,
     /// A state machine's n-th transition's From and To pickers.
     AnimTransitionFrom(usize),
     AnimTransitionTo(usize),
@@ -109,6 +111,8 @@ impl MenuId {
             MenuId::AnimGraphLoad => "menu-anim-graph-load",
             MenuId::AnimGraphAdd => "menu-anim-graph-add",
             MenuId::AnimFaceRegion => "menu-anim-face-region",
+            MenuId::AnimCurveStyle => "menu-anim-curve-style",
+            MenuId::AnimCurveDirection => "menu-anim-curve-direction",
             MenuId::AnimTransitionFrom(_) => "menu-anim-transition-from",
             MenuId::AnimTransitionTo(_) => "menu-anim-transition-to",
         }

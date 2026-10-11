@@ -16,7 +16,9 @@ use crate::shell::menu::{self, MenuId};
 use crate::shell::ribbon::RibbonCommand;
 use crate::tokens;
 
+mod curves;
 mod face;
+mod ik;
 mod sections;
 
 pub(super) const WIDTH: f32 = 276.0;
@@ -28,6 +30,9 @@ enum Field {
     Position(usize),
     Marker,
     AnimationId,
+    CurveValue,
+    CurveTime,
+    Tangent { left: bool },
 }
 
 pub(in crate::shell) struct Fields {
@@ -36,6 +41,8 @@ pub(in crate::shell) struct Fields {
     position: [Entity<InputState>; 3],
     marker: Entity<InputState>,
     animation_id: Entity<InputState>,
+    /// The Curve section's value, time, and left and right tangents.
+    curve: [Entity<InputState>; 4],
     /// The Face section's region (an index into `facs::REGIONS`) and one
     /// slider per channel, made the first time the channel shows.
     face_region: usize,
@@ -91,12 +98,19 @@ impl Shell {
         let position = [0, 1, 2].map(|i| make(Field::Position(i), "0", window, cx));
         let marker = make(Field::Marker, "Event name", window, cx);
         let animation_id = make(Field::AnimationId, "rbxassetid://…", window, cx);
+        let curve = [
+            make(Field::CurveValue, "Value", window, cx),
+            make(Field::CurveTime, "Frame", window, cx),
+            make(Field::Tangent { left: true }, "Auto", window, cx),
+            make(Field::Tangent { left: false }, "Auto", window, cx),
+        ];
         self.anim.fields = Some(Fields {
             name,
             rotation,
             position,
             marker,
             animation_id,
+            curve,
             face_region: 0,
             face_sliders: std::collections::HashMap::new(),
             clear_marker: false,
@@ -125,6 +139,9 @@ impl Shell {
                 if !text.trim().is_empty() {
                     self.import_animation_id(text, cx);
                 }
+            }
+            Field::CurveValue | Field::CurveTime | Field::Tangent { .. } => {
+                self.commit_curve_field(field, text);
             }
             Field::Rotation(axis) | Field::Position(axis) => {
                 let Ok(value) = text.trim().parse::<f32>() else {
@@ -200,7 +217,9 @@ impl Shell {
         let key = self.anim_key_section(joint, &rotation, &position, cx);
         let events = self.anim_events_section(&marker, cx);
         let import = self.anim_import_section(cx);
+        let curve = (self.anim.mode == super::Mode::Curves).then(|| self.anim_curve_section(window, cx));
         let face = self.anim_face_section(window, cx);
+        let ik = self.anim_ik_section(cx);
         v_flex()
             .id("anim-panel")
             .flex_none()
@@ -215,7 +234,9 @@ impl Shell {
             .child(title("Animation"))
             .child(rig)
             .child(clip)
+            .children(curve)
             .child(key)
+            .child(ik)
             .child(events)
             .child(face)
             .child(import)

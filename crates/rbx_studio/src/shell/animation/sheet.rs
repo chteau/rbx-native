@@ -79,23 +79,8 @@ impl Shell {
         let lines = self.sheet_lines(&rows);
         let timeline = self.anim.timeline;
         let time = self.anim.editor.time;
-        let ruler_bounds: Rc<Cell<Option<Bounds<Pixels>>>> = Rc::new(Cell::new(None));
-        let width = self
-            .anim
-            .sheet
-            .get()
-            .map_or(800.0, |b| f32::from(b.size.width));
-        let ticks = timeline.ticks(width);
         let fps = self.anim.editor.fps;
-        let markers: Vec<f32> = self
-            .anim
-            .editor
-            .clip
-            .keyframes
-            .iter()
-            .filter(|k| !k.markers.is_empty())
-            .map(|k| k.time)
-            .collect();
+        let ruler = self.anim_ruler(cx);
 
         let names = rows.iter().enumerate().map(|(i, row)| {
             let selected = lines.selected_row == Some(i);
@@ -151,85 +136,6 @@ impl Shell {
         let sheet_report = self.anim.sheet.clone();
         let body_lines = lines.clone();
         let body_height = (rows.len() + 1) as f32 * ROW;
-        let report_ruler = ruler_bounds.clone();
-
-        let ruler = div()
-            .id("anim-ruler")
-            .relative()
-            .h(px(RULER))
-            .flex_1()
-            .bg(tokens::chrome())
-            .border_b(px(1.))
-            .border_color(tokens::border())
-            .overflow_hidden()
-            .child(
-                canvas(
-                    move |b, _, _| report_ruler.set(Some(b)),
-                    move |b, _, window, _| {
-                        let origin = b.origin;
-                        let (ox, oy) = (f32::from(origin.x), f32::from(origin.y));
-                        paint::ticks(window, origin, &ticks, RULER, 0.0);
-                        for m in &markers {
-                            let x = ox + timeline.x_of(*m);
-                            paint::diamond(
-                                window,
-                                x,
-                                oy + 6.0,
-                                3.0,
-                                tokens::warning(),
-                                tokens::black(),
-                            );
-                        }
-                        paint::playhead(window, origin, &timeline, time, RULER);
-                    },
-                )
-                .absolute()
-                .size_full(),
-            )
-            .children(
-                timeline
-                    .ticks(width)
-                    .into_iter()
-                    .filter(|t| t.major)
-                    .map(|t| {
-                        div()
-                            .absolute()
-                            .top(px(3.))
-                            .left(px(t.x + 3.))
-                            .text_size(tokens::text_xs())
-                            .text_color(tokens::text_muted())
-                            .child(timeline::label(t.frame, fps, false))
-                    }),
-            )
-            .child(
-                div()
-                    .absolute()
-                    .top(px(3.))
-                    .left(px(timeline.x_of(time) - 14.))
-                    .w(px(28.))
-                    .h(px(18.))
-                    .rounded(px(4.))
-                    .bg(tokens::check_on())
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .text_size(tokens::text_xs())
-                    .text_color(tokens::avatar_on_accent())
-                    .child(self.anim.editor.frame().to_string()),
-            )
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |shell, e: &MouseDownEvent, window, cx| {
-                    window.focus(&shell.anim.focus, cx);
-                    if let Some(b) = ruler_bounds.get() {
-                        let x = f32::from(e.position.x - b.origin.x);
-                        shell.anim.gesture = Some(Gesture::Scrub);
-                        shell.anim.editor.playing = false;
-                        shell.anim.editor.set_time(shell.anim.timeline.time_at(x));
-                        cx.notify();
-                    }
-                }),
-            );
 
         let keys = div()
             .id("anim-keys")
@@ -348,5 +254,109 @@ impl Shell {
                     ),
             )
             .into_any_element()
+    }
+
+    /// The ruler of frames over the dope sheet and the Curve Editor alike:
+    /// ticks, event markers, the playhead and its frame. Click or drag on it
+    /// to scrub.
+    pub(super) fn anim_ruler(&mut self, cx: &mut Context<Self>) -> Stateful<Div> {
+        let timeline = self.anim.timeline;
+        let time = self.anim.editor.time;
+        let ruler_bounds: Rc<Cell<Option<Bounds<Pixels>>>> = Rc::new(Cell::new(None));
+        let width = self
+            .anim
+            .sheet
+            .get()
+            .map_or(800.0, |b| f32::from(b.size.width));
+        let ticks = timeline.ticks(width);
+        let fps = self.anim.editor.fps;
+        let markers: Vec<f32> = self
+            .anim
+            .editor
+            .clip
+            .keyframes
+            .iter()
+            .filter(|k| !k.markers.is_empty())
+            .map(|k| k.time)
+            .collect();
+
+        let report_ruler = ruler_bounds.clone();
+        div()
+            .id("anim-ruler")
+            .relative()
+            .h(px(RULER))
+            .flex_1()
+            .bg(tokens::chrome())
+            .border_b(px(1.))
+            .border_color(tokens::border())
+            .overflow_hidden()
+            .child(
+                canvas(
+                    move |b, _, _| report_ruler.set(Some(b)),
+                    move |b, _, window, _| {
+                        let origin = b.origin;
+                        let (ox, oy) = (f32::from(origin.x), f32::from(origin.y));
+                        paint::ticks(window, origin, &ticks, RULER, 0.0);
+                        for m in &markers {
+                            let x = ox + timeline.x_of(*m);
+                            paint::diamond(
+                                window,
+                                x,
+                                oy + 6.0,
+                                3.0,
+                                tokens::warning(),
+                                tokens::black(),
+                            );
+                        }
+                        paint::playhead(window, origin, &timeline, time, RULER);
+                    },
+                )
+                .absolute()
+                .size_full(),
+            )
+            .children(
+                timeline
+                    .ticks(width)
+                    .into_iter()
+                    .filter(|t| t.major)
+                    .map(|t| {
+                        div()
+                            .absolute()
+                            .top(px(3.))
+                            .left(px(t.x + 3.))
+                            .text_size(tokens::text_xs())
+                            .text_color(tokens::text_muted())
+                            .child(timeline::label(t.frame, fps, false))
+                    }),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .top(px(3.))
+                    .left(px(timeline.x_of(time) - 14.))
+                    .w(px(28.))
+                    .h(px(18.))
+                    .rounded(px(4.))
+                    .bg(tokens::check_on())
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_size(tokens::text_xs())
+                    .text_color(tokens::avatar_on_accent())
+                    .child(self.anim.editor.frame().to_string()),
+            )
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |shell, e: &MouseDownEvent, window, cx| {
+                    window.focus(&shell.anim.focus, cx);
+                    if let Some(b) = ruler_bounds.get() {
+                        let x = f32::from(e.position.x - b.origin.x);
+                        shell.anim.gesture = Some(Gesture::Scrub);
+                        shell.anim.editor.playing = false;
+                        shell.anim.editor.set_time(shell.anim.timeline.time_at(x));
+                        cx.notify();
+                    }
+                }),
+            )
     }
 }

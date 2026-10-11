@@ -518,6 +518,9 @@ fn the_built_in_themes_keep_three_to_one_for_controls() {
             ("tool_local", "tile"),
             ("tool_sun", "tile"),
             ("tool_pivot", "tile"),
+            ("axis_x", "dock"),
+            ("axis_y", "dock"),
+            ("axis_z", "dock"),
         ] {
             let ratio = contrast(color(name), color(on));
             assert!(ratio >= 3., "{id}: {name} on {on} is {ratio:.2}:1");
