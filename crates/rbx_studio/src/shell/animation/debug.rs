@@ -24,8 +24,8 @@
 //! as a key; an auto-rigged T-pose arm lies along X, so it bends about Z),
 //! `select=<part>` (select that part of the bound rig, as a click on it
 //! would), `document=viewport|animation|ui` (switch the central document),
-//! `delete-rig` (delete the auto-rigged or bound rig's `Model`, as the
-//! Delete key does on its Explorer row),
+//! `done` (the auto-rigger's Done), `delete-rig` (delete the auto-rigged or
+//! bound rig's `Model`, as the Delete key does on its Explorer row),
 //! `write=<path>` (File › Save As to that path) and `quit`.
 
 use gpui_kit::*;
@@ -247,9 +247,10 @@ impl Shell {
                         return;
                     }
                 }
-                // The auto-rigger's Publish; the following steps wait for it.
+                // Publish, from the auto-rigger or the Rigging section; the
+                // following steps wait for it.
                 "publish" => {
-                    if self.anim_autorig().is_some() {
+                    if self.publishable_rig().is_some() {
                         self.anim.debug_rest = Some(steps[i + 1..].to_vec());
                         self.publish_autorig(cx);
                         return;
@@ -322,6 +323,8 @@ impl Shell {
                     };
                     self.set_document(document, cx);
                 }
+                // The auto-rigger's Done: the rig stays, the session ends.
+                "done" => self.finish_autorig(cx),
                 "delete-rig" => {
                     let model = self
                         .anim_autorig()

@@ -243,8 +243,11 @@ impl Shell {
             .border_l(px(1.))
             .border_color(tokens::border())
             .child(title("Animation"))
-            .child(rig)
+            // A mesh being rigged comes first: the stage leaves the panel
+            // little height, and the auto-rigger's controls are what the
+            // panel is open for.
             .children(autorig)
+            .child(rig)
             .child(clip)
             .children(curve)
             .child(key)
@@ -277,6 +280,8 @@ impl Shell {
             }
             None => "No rig: select a character in the Explorer or the 3D view".into(),
         };
+        // The Auto-rig section carries its own Publish while it is open.
+        let publishable = self.anim_autorig().is_none() && self.publishable_rig().is_some();
         let joints = crate::shell::rig::JointStyle::of_place(&self.dom);
         let r15_label = match joints {
             crate::shell::rig::JointStyle::AnimationConstraint => "R15 · AnimationConstraint",
@@ -325,17 +330,34 @@ impl Shell {
                     ),
             )
             .child(
-                h_flex().gap(px(6.)).child(
-                    wide_button("anim-autorig", "Auto-rig a mesh…", true)
-                        .tooltip(|window, cx| {
-                            crate::shell::tooltip::text(
-                                "Fit an R15 skeleton to an unrigged character (FBX, OBJ or glTF) and cut it into its 15 body parts",
-                                window,
-                                cx,
-                            )
-                        })
-                        .on_click(cx.listener(|shell, _, _, cx| shell.choose_autorig(cx))),
-                ),
+                h_flex()
+                    .gap(px(6.))
+                    .child(
+                        wide_button("anim-autorig", "Auto-rig a mesh…", true)
+                            .tooltip(|window, cx| {
+                                crate::shell::tooltip::text(
+                                    "Fit an R15 skeleton to an unrigged character (FBX, OBJ or glTF) and cut it into its 15 body parts",
+                                    window,
+                                    cx,
+                                )
+                            })
+                            .on_click(cx.listener(|shell, _, _, cx| shell.choose_autorig(cx))),
+                    )
+                    // An auto-rigged body still on local meshes publishes
+                    // from here once the auto-rigger is done with it.
+                    .when(publishable, |row| {
+                        row.child(
+                            primary_button("anim-publish-rig", "Publish")
+                                .tooltip(|window, cx| {
+                                    crate::shell::tooltip::text(
+                                        "Upload this rig's body parts to Roblox and point the rig at them",
+                                        window,
+                                        cx,
+                                    )
+                                })
+                                .on_click(cx.listener(|shell, _, _, cx| shell.publish_autorig(cx))),
+                        )
+                    }),
             )
     }
 

@@ -1,6 +1,7 @@
 //! The panel's Auto-rig section, shown while a mesh is being rigged: the
 //! front's turn and flip (Avatar Setup's "Manually Align Front"), mirrored
-//! joint edits, each joint's position, Publish and Done. Every edit cuts the
+//! joint edits, each joint's position, Publish and Done (first, so they
+//! show without scrolling). Every edit cuts the
 //! body parts again and rebuilds the rig in place; the skeleton view shows
 //! the joint being edited.
 
@@ -73,8 +74,23 @@ impl Shell {
         Some(
             section("Auto-rig")
                 .child(label(status))
+                // Done and Publish first: the panel is often no taller than
+                // the stage, and these are what the section is for.
                 .child(
                     h_flex()
+                        .gap(px(6.))
+                        .child(
+                            wide_button("autorig-done", "Done", true)
+                                .on_click(cx.listener(|shell, _, _, cx| shell.finish_autorig(cx))),
+                        )
+                        .child(
+                            primary_button("autorig-publish", "Publish")
+                                .on_click(cx.listener(|shell, _, _, cx| shell.publish_autorig(cx))),
+                        ),
+                )
+                .child(
+                    h_flex()
+                        .flex_wrap()
                         .gap(px(6.))
                         .child(
                             wide_button("autorig-turn", "Turn 90°", true)
@@ -133,18 +149,6 @@ impl Shell {
                     cx,
                 )))
                 .child(xyz_row("Joint position (studs)", inputs))
-                .child(
-                    h_flex()
-                        .gap(px(6.))
-                        .child(
-                            wide_button("autorig-done", "Done", true)
-                                .on_click(cx.listener(|shell, _, _, cx| shell.finish_autorig(cx))),
-                        )
-                        .child(
-                            primary_button("autorig-publish", "Publish")
-                                .on_click(cx.listener(|shell, _, _, cx| shell.publish_autorig(cx))),
-                        ),
-                )
                 .into_any_element(),
         )
     }

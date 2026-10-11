@@ -93,12 +93,49 @@ fn local_uri(folder: &str, part: Part) -> String {
     format!("rbxasset://{CACHE_FOLDER}/{folder}/{}.mesh", part.name())
 }
 
+/// What Publish uploads, cached beside the parts' meshes under each cut's
+/// folder: so a rig still pointing at those meshes can be published from
+/// the model alone, after the auto-rigger was left or the place reopened.
+const UPLOAD_FILE: &str = "upload.glb";
+
+/// The cache path (relative to the native cache) of the upload cut with the
+/// local meshes under `root`, if any part still points at them.
+fn local_upload(dom: &WeakDom, root: Ref) -> Option<String> {
+    let mut pending = vec![root];
+    while let Some(next) = pending.pop() {
+        let Some(instance) = dom.get(next) else {
+            continue;
+        };
+        if let Some(Variant::Content(rbx_dom::Content::Uri(uri))) =
+            instance.properties().get("MeshId")
+        {
+            if let Some(relative) = uri.strip_prefix("rbxasset://") {
+                if let Some((folder, _)) = relative
+                    .strip_prefix(CACHE_FOLDER)
+                    .and_then(|rest| rest.strip_prefix('/'))
+                    .and_then(|rest| rest.split_once('/'))
+                {
+                    return Some(format!("{CACHE_FOLDER}/{folder}/{UPLOAD_FILE}"));
+                }
+            }
+        }
+        pending.extend(instance.children());
+    }
+    None
+}
+
 /// Cuts `mesh` along `fit` and writes each part into the local asset cache.
 fn cut(mesh: &Mesh, fit: &Fit, smooth: bool) -> Result<Cut, String> {
     let body = rbx_autorig::split(mesh, fit).map_err(|e| e.to_string())?;
     // A skinned part is a `version 4.00` mesh carrying its bones and
     // weights; a rigid one the plain `version 2.00`.
     let skin = smooth.then(|| rbx_autorig::weights(mesh, fit, &body));
+    // Skinned, the upload carries the R15 armature and every part's
+    // weights; rigid, just the 15 meshes.
+    let upload = match &skin {
+        Some(skin) => rbx_autorig::gltf_skinned(&body, skin),
+        None => rbx_autorig::gltf(&body),
+    };
     let meshes: Vec<Vec<u8>> = body
         .parts
         .iter()
@@ -121,6 +158,9 @@ fn cut(mesh: &Mesh, fit: &Fit, smooth: bool) -> Result<Cut, String> {
             .map_err(|e| format!("caching {}: {e}", part.part.name()))?;
         uris.push(uri);
     }
+    cache
+        .put_native(&format!("{CACHE_FOLDER}/{folder}/{UPLOAD_FILE}"), &upload)
+        .map_err(|e| format!("caching the upload: {e}"))?;
     Ok(Cut {
         body,
         uris,
@@ -410,35 +450,51 @@ impl Shell {
         );
     }
 
-    /// Uploads the 15 parts as one model and points each part of the rig at
-    /// its uploaded mesh, keeping the rig's own joints and attachments.
+    /// The rig Publish would upload: the one being auto-rigged, else the
+    /// bound one, else the selected one, so long as its parts still point
+    /// at the auto-rigger's local meshes.
+    pub(crate) fn publishable_rig(&self) -> Option<Ref> {
+        let candidates = [
+            self.anim_autorig().and_then(|rig| rig.model),
+            self.anim_bound_model(),
+            self.selected_all()
+                .first()
+                .and_then(|&r| crate::anim_editor::place::rig_of(&self.dom, r)),
+        ];
+        candidates
+            .into_iter()
+            .flatten()
+            .find(|&model| has_local_meshes(&self.dom, model))
+    }
+
+    /// Uploads the 15 parts of [`Shell::publishable_rig`] as one model and
+    /// points each part at its uploaded mesh, keeping the rig's own joints
+    /// and attachments. Needs only the model: the upload was cached beside
+    /// its local meshes when it was cut.
     pub(crate) fn publish_autorig(&mut self, cx: &mut Context<Self>) {
-        let Some(rig) = self.anim_autorig() else {
+        let Some(model) = self.publishable_rig() else {
+            return self.autorig_report(
+                Err("No rig to publish: its parts already use uploaded meshes".into()),
+                cx,
+            );
+        };
+        let name = self
+            .dom
+            .get(model)
+            .map(|m| m.name().to_owned())
+            .unwrap_or_default();
+        let Some(upload) = local_upload(&self.dom, model) else {
             return;
         };
-        let Some(model) = rig.model else {
-            return;
-        };
-        let (mesh, fit, name, smooth) = (
-            rig.mesh.clone(),
-            rig.fit.clone(),
-            name_of(&rig.source),
-            rig.smooth,
-        );
         self.autorig_report(Ok(format!("Publishing {name}\u{2026}")), cx);
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_spawn(async move {
-                    let body = rbx_autorig::split(&mesh, &fit).map_err(|e| e.to_string())?;
+                    let cache = rbx_assets::AssetCache::new(None).map_err(|e| e.to_string())?;
+                    let bytes = cache.get_native(&upload).ok_or_else(|| {
+                        format!("{name}'s cut is no longer in the local cache: auto-rig the mesh again")
+                    })?;
                     let file = std::env::temp_dir().join(format!("{name}.glb"));
-                    // Skinned, the upload carries the R15 armature and every
-                    // part's weights; rigid, just the 15 meshes.
-                    let bytes = if smooth {
-                        let skin = rbx_autorig::weights(&mesh, &fit, &body);
-                        rbx_autorig::gltf_skinned(&body, &skin)
-                    } else {
-                        rbx_autorig::gltf(&body)
-                    };
                     std::fs::write(&file, bytes).map_err(|e| format!("{}: {e}", file.display()))?;
                     let imported = crate::shell::import3d::upload_model(&file, &name);
                     let _ = std::fs::remove_file(&file);
