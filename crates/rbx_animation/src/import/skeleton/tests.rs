@@ -5,6 +5,7 @@ use glam::{Quat, Vec3};
 use super::*;
 use crate::fixture::Fixture;
 use crate::rig::JointKind;
+use crate::rig::Rig;
 
 /// The fixture rig as a Blender export would hold it: Z-up, at half scale,
 /// every bone turned its own way.

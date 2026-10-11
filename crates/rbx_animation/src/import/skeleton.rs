@@ -11,13 +11,12 @@
 //! frame. This is exact whenever a bone's head sits on its joint's pivot,
 //! which is what a rig made for Roblox has.
 
-use std::collections::HashMap;
-
 use glam::{Mat4, Quat, Vec3, Vec4};
 
 use crate::clip::{Clip, PoseKey};
+
+pub use super::retarget::retarget;
 use crate::frame::Frame;
-use crate::rig::Rig;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Bone {
@@ -59,7 +58,7 @@ impl Skeleton {
 
     /// World rest frames (scale folded into positions) and each bone's world
     /// scale.
-    fn rest_world(&self) -> Vec<(Frame, f32)> {
+    pub(crate) fn rest_world(&self) -> Vec<(Frame, f32)> {
         let mut out: Vec<(Frame, f32)> = Vec::with_capacity(self.bones.len());
         for (i, b) in self.bones.iter().enumerate() {
             let (parent, scale) = match b.parent {
@@ -73,6 +72,25 @@ impl Skeleton {
             out.push((world, scale * b.scale));
         }
         out
+    }
+
+    /// World frames (scale folded into positions) at `time`, every bone at
+    /// its keyed local transform.
+    pub(crate) fn world_at(&self, time: f32) -> Vec<Frame> {
+        let mut out: Vec<(Frame, f32)> = Vec::with_capacity(self.bones.len());
+        for (i, b) in self.bones.iter().enumerate() {
+            let (parent, scale) = match b.parent {
+                Some(p) if p < i => out[p],
+                _ => (Frame::IDENTITY, 1.),
+            };
+            let local = self.local(i, time);
+            let world = Frame::new(
+                parent.position + parent.rotation * (local.position * scale),
+                (parent.rotation * local.rotation).normalize(),
+            );
+            out.push((world, scale * b.scale));
+        }
+        out.into_iter().map(|(f, _)| f).collect()
     }
 
     pub fn times(&self) -> Vec<f32> {
@@ -127,103 +145,30 @@ pub fn fit(from: &[Vec3], to: &[Vec3]) -> Option<Fit> {
         Vec4::new(szx - sxz, sxy + syx, -sxx + syy - szz, syz + szy),
         Vec4::new(sxy - syx, szx + sxz, syz + szy, -sxx - syy + szz),
     );
-    // The best rotation is N's eigenvector of largest eigenvalue. Shift N to
-    // positive definite so power iteration converges on that one.
+    // The best rotation is N's eigenvector of largest eigenvalue. Shifted to
+    // positive definite, repeated squaring makes that eigenvector dominate
+    // every column (plain power iteration converges too slowly when the top
+    // eigenvalues are close, as they are after the shift).
     let shift = n.to_cols_array().iter().map(|v| v.abs()).sum::<f32>();
-    let m = n + Mat4::from_diagonal(Vec4::splat(shift));
-    let mut q = Vec4::new(1., 0.1, 0.1, 0.1).normalize();
-    for _ in 0..200 {
-        let next = (m * q).normalize();
-        if next.abs_diff_eq(q, 1e-7) {
-            q = next;
-            break;
+    let mut m = n + Mat4::from_diagonal(Vec4::splat(shift));
+    for _ in 0..40 {
+        m = m * m;
+        let biggest = m.to_cols_array().iter().fold(0f32, |a, v| a.max(v.abs()));
+        if biggest <= 0. || !biggest.is_finite() {
+            return None;
         }
-        q = next;
+        m *= 1. / biggest;
     }
+    let q = [m.x_axis, m.y_axis, m.z_axis, m.w_axis]
+        .into_iter()
+        .max_by(|a, b| a.length_squared().total_cmp(&b.length_squared()))?
+        .normalize();
     // Horn's quaternion is (w, x, y, z).
     let rotation = Quat::from_xyzw(q.y, q.z, q.w, q.x).normalize();
     Some(Fit {
         rotation,
         scale: (spread_b / spread_a).sqrt(),
     })
-}
-
-/// Turns the file's animation into a clip on `rig`, with the rig's root at
-/// `root`. Bones are matched to joints by the joint's `Part1` name. Bones
-/// with no matching joint, and the root bone, are left out: an animation
-/// plays in place.
-pub fn retarget(skeleton: &Skeleton, rig: &Rig, root: Frame, name: &str) -> Clip {
-    let mut clip = Clip {
-        name: name.to_owned(),
-        ..Clip::default()
-    };
-    let rest = skeleton.rest_world();
-    let parts = rig.layout(root, &|_| None);
-    let index: HashMap<&str, usize> = skeleton
-        .bones
-        .iter()
-        .enumerate()
-        .map(|(i, b)| (b.name.as_str(), i))
-        .collect();
-
-    // Bone heads against the joints' pivots (and the root bone against the
-    // root part) give the world fit.
-    let mut matched = Vec::new();
-    let (mut from, mut to) = (Vec::new(), Vec::new());
-    for joint in &rig.joints {
-        let Some(&bone) = index.get(rig.part_name(joint.part1)) else {
-            continue;
-        };
-        let Some(part0) = parts.get(&joint.part0) else {
-            continue;
-        };
-        let pivot = joint.pivot(part0);
-        from.push(rest[bone].0.position);
-        to.push(pivot.position);
-        matched.push((joint, bone, pivot));
-    }
-    if let (Some(root_ref), Some(&bone)) =
-        (rig.root, rig.root.and_then(|r| index.get(rig.part_name(r))))
-    {
-        if let Some(part) = parts.get(&root_ref) {
-            from.push(rest[bone].0.position);
-            to.push(part.position);
-        }
-    }
-    let world = fit(&from, &to).unwrap_or(Fit {
-        rotation: Quat::IDENTITY,
-        scale: 1.,
-    });
-
-    for time in skeleton.times() {
-        for (joint, bone, pivot) in &matched {
-            let b = &skeleton.bones[*bone];
-            if b.keys.is_empty() {
-                continue;
-            }
-            let (parent, parent_scale) = match b.parent {
-                Some(p) => rest[p],
-                None => (Frame::IDENTITY, 1.),
-            };
-            let posed = skeleton.local(*bone, time);
-            // The bone's motion in the file's world, about its rest head.
-            let turn = parent.rotation
-                * posed.rotation
-                * b.rest.rotation.conjugate()
-                * parent.rotation.conjugate();
-            let shift = parent.rotation * ((posed.position - b.rest.position) * parent_scale);
-            // Into the rig's world, then into the joint's frame.
-            let turn = world.rotation * turn * world.rotation.conjugate();
-            let shift = world.rotation * shift * world.scale;
-            let inverse = pivot.rotation.conjugate();
-            let transform = Frame::new(
-                inverse * shift,
-                (inverse * turn * pivot.rotation).normalize(),
-            );
-            clip.set_pose(time, rig.part_name(joint.part1), PoseKey::new(transform));
-        }
-    }
-    clip
 }
 
 /// Drops keys that lie on the straight interpolation of their neighbours,

@@ -4,6 +4,7 @@ pub mod asset;
 pub mod fbx;
 pub mod gltf;
 pub mod rbxanims;
+pub mod retarget;
 pub mod skeleton;
 
 use crate::clip::Clip;
