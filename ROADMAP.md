@@ -2356,11 +2356,25 @@ Roblox's own engine.
 Two genuinely different feasibility tiers here, easy to conflate — verified
 against `Roblox/creator-docs` rather than assumed:
 
-- [ ] 📋 **What the Animation Editor does not do yet**: IK posing (Roblox's
-  Manage IK), a curve-editor view of the keys (a `CurveAnimation`, which
-  is also not read or played yet), `NumberPose` facial (FACS) channels,
-  and the sequence editor's plot moved onto the shared `timeline` model
-  (it shares the strokes so far, not the time mapping).
+- [x] **The rest of the Animation Editor**:
+  - **IK posing** (Roblox's Manage IK): Body Part or Full Body chains
+    and pinned parts. It uses an analytic two-bone solve for limbs and
+    FABRIK for longer chains.
+  - **A Curve Editor**: the clip converted to per-channel
+    `FloatCurve`s, with Constant / Linear / Cubic keys, draggable
+    tangent handles, studs and degrees on twin rulers, and Generate
+    Curve. Curves bake back to a `KeyframeSequence` on save, because
+    `CurveAnimation`'s `ValuesAndTimes` layout is not public.
+  - **Facial (FACS) channels**: the 50 `FaceControls` properties as
+    `NumberPose`s under the head, keyed from sliders.
+  - **The sequence editor's plot** on the shared `timeline` model.
+  - **The 3D view as a stage**: the rig alone, on a floor grid with
+    its X and Z axes, on a plain backdrop under neutral light, as
+    Blender's animation workspace shows it. This uses the viewer's new
+    isolation mode.
+- [ ] 📋 **What the Animation Editor still does not do**: write a
+  `CurveAnimation` itself (its byte layout is undocumented), and fit the
+  stage's shadow map to the rig rather than to the whole place.
 - [ ] ⚠️ **Playing back an already-published `Animation.AnimationId`** (one
   fetched from Roblox's catalog by asset id, the common case for any rig
   using a stock/marketplace animation) — genuinely uncertain, likely in
@@ -2794,12 +2808,29 @@ clear they were considered and not missed.
   Animation Editor's Animation Graph tab edits one on a node canvas
   (sharing the UI Editor canvas's pan and zoom) and previews it on the rig
   with live parameters.
-- [ ] 📋 **What the Animation Graph still lacks**: motion matching (Early
-  2027) and root motion (Mid 2027); phase-synced blending (blends run
-  unsynced); Roblox's own Blend2D weighting (inverse distance stands in);
-  `Vector3`/`CFrame` values in expressions; and checking, against a graph
-  saved by Studio, where node properties are really stored (they are
-  attributes here, an undocumented guess).
+- [x] **The Animation Graph matched to Roblox's own**, from its docs,
+  DevForum posts and the shipping Studio plugin (sources in
+  `agents/animation-research.md`):
+  - **Storage**: the plugin's own layout. That covers a `Configuration`
+    of `AnimGraph_*` layout attributes, `Parameter_<Name>` folders and
+    `param::` bindings, `SharedMasks`, transitions named `X_to_Y`, and
+    `(Entry)`/`(Any)` pseudo-states.
+  - **Defaults**: the editor's own (0.1 s transitions; a new transition
+    at Length 0.2, Priority 1).
+  - **Runtime**:
+    - ready transitions of equal priority are picked at random from a
+      seeded generator;
+    - blends are phase-synced, and Blend2D uses gradient-band weighting;
+    - animation events fire, and each node reports its live weight,
+      shown as "NN%" on the canvas;
+    - expressions take `Vector2`/`Vector3`/`Color3`/`CFrame` values.
+- [ ] 📋 **What the Animation Graph still lacks**:
+  - motion matching (Early 2027) and root motion (Mid 2027);
+  - behaviour Roblox does not document, implemented as the likeliest
+    reading and marked UNVERIFIED in the code: Blend2D's exact weights,
+    the Over/Add/Subtract maths, and how random picks are seeded;
+  - the binary encoding of an Instance-typed `EntryState` attribute
+    (the state is written by name for now).
 - [ ] 📋 **Avatar Schema changes**: procedural bones (Early 2027), higher
   mesh resolution (Mid 2027), more FACS controls including individual eyes
   (Mid 2027), and silhouette-preserving fit for clothing and accessories

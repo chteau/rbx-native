@@ -19,6 +19,20 @@
   previews Animation Graphs natively: state machines, blends, layers,
   masks, one-shots and Luau-subset expressions over live parameters.
   — @chteau
+- **Animation Editor: IK, curves, faces, and the rig on its own stage.**
+  - **IK**: posing with IK (Body Part or Full Body, with pinned parts).
+  - **Curve Editor**: per-channel curves with tangent handles and
+    Generate Curve.
+  - **Faces**: FACS face channels keyed from sliders.
+  - **The 3D view**: shows only the rig, on a Blender-style floor grid.
+  - **Rigs**: come from the Rig Builder's stock R15/R6 rigs.
+  - **Drafts**: unsaved work is kept as a local draft and offered back
+    when the rig is reopened.
+  - **Animation Graphs**: match the Studio plugin's own file layout and
+    defaults. Tied transitions are picked at random as Roblox does,
+    blends phase-sync, and each node shows its live weight while
+    previewing.
+  — @chteau
 
 ## 2026-10-09
 
