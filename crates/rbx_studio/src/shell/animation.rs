@@ -100,6 +100,9 @@ pub(super) struct Animation {
     pub(super) graph: GraphDoc,
     /// Whether the timeline has been fitted to the clip since it loaded.
     pub(super) fitted: bool,
+    /// What the local draft last held, and when it was written.
+    drafted: Option<(rbx_animation::Clip, rbx_animation::graph::Graph)>,
+    drafted_at: Option<Instant>,
 }
 
 impl Animation {
@@ -117,9 +120,14 @@ impl Animation {
             status: None,
             graph: GraphDoc::default(),
             fitted: false,
+            drafted: None,
+            drafted_at: None,
         }
     }
 }
+
+/// Unsaved work is written to its draft at most this often while it changes.
+const DRAFT_EVERY: std::time::Duration = std::time::Duration::from_secs(2);
 
 impl Shell {
     /// Leaves the Animation document: the rig goes back to its rest pose and
@@ -127,7 +135,102 @@ impl Shell {
     pub(super) fn leave_animation(&mut self, cx: &mut Context<Self>) {
         self.anim.editor.playing = false;
         self.anim.graph.playing = false;
+        self.keep_draft(true);
         self.unpose_rig(cx);
+    }
+
+    fn draft_file(&self) -> Option<std::path::PathBuf> {
+        crate::anim_editor::draft::folder().map(|f| crate::anim_editor::draft::path(&f, &self.path))
+    }
+
+    /// Writes unsaved work to the local draft (now, or once the last write is
+    /// old enough), and deletes the draft once nothing is left unsaved.
+    pub(super) fn keep_draft(&mut self, now: bool) {
+        use crate::anim_editor::draft;
+        let Some(file) = self.draft_file() else {
+            return;
+        };
+        let (clip_dirty, graph_dirty) = (self.anim.editor.dirty, self.anim.graph.dirty);
+        if !clip_dirty && !graph_dirty {
+            if self.anim.drafted.take().is_some() {
+                draft::clear(&file);
+            }
+            return;
+        }
+        let content = (self.anim.editor.clip.clone(), self.anim.graph.graph.clone());
+        if self.anim.drafted.as_ref() == Some(&content) {
+            return;
+        }
+        if !now
+            && self
+                .anim
+                .drafted_at
+                .is_some_and(|t| t.elapsed() < DRAFT_EVERY)
+        {
+            return;
+        }
+        let rig = self
+            .anim
+            .bound
+            .as_ref()
+            .and_then(|b| self.dom.get(b.model))
+            .map(|i| i.name().to_owned())
+            .unwrap_or_default();
+        let saved = draft::write(
+            &file,
+            &draft::Draft {
+                rig,
+                clip: clip_dirty.then(|| content.0.clone()),
+                graph: graph_dirty.then(|| content.1.clone()),
+            },
+        );
+        if saved.is_ok() {
+            self.anim.drafted = Some(content);
+            self.anim.drafted_at = Some(Instant::now());
+        }
+    }
+
+    /// Brings back the draft left by an earlier session on this rig.
+    fn restore_draft(&mut self, model: Ref) {
+        use crate::anim_editor::draft;
+        if self.anim.editor.dirty || self.anim.graph.dirty {
+            return;
+        }
+        let Some(file) = self.draft_file() else {
+            return;
+        };
+        let Some(found) = draft::read(&file) else {
+            return;
+        };
+        let name = self
+            .dom
+            .get(model)
+            .map(|i| i.name().to_owned())
+            .unwrap_or_default();
+        if found.rig != name {
+            return;
+        }
+        let mut restored = Vec::new();
+        if let Some(clip) = found.clip {
+            restored.push(clip.name.clone());
+            self.anim.editor.load(clip, None);
+            self.anim.editor.dirty = true;
+            self.anim.fitted = false;
+        }
+        if let Some(graph) = found.graph {
+            restored.push(graph.name.clone());
+            self.anim.graph.load(graph, None);
+            self.anim.graph.dirty = true;
+        }
+        if !restored.is_empty() {
+            self.anim.status = Some(
+                format!(
+                    "Restored unsaved {} from the last session",
+                    restored.join(" and ")
+                )
+                .into(),
+            );
+        }
     }
 
     /// Binds the rig the selection is in, if it is a different one.
@@ -179,6 +282,7 @@ impl Shell {
             rest,
             posed: HashMap::new(),
         });
+        self.restore_draft(model);
         if self.anim.editor.clip.keyframes.is_empty() && self.anim.editor.source.is_none() {
             if let Some((seq, _)) = place::all_of_class(&self.dom, "KeyframeSequence", Some(model))
                 .into_iter()
@@ -233,6 +337,7 @@ impl Shell {
         self.reflect_changes(&changes, cx);
         self.record_history_change(changes);
         self.rebuild_explorer(cx);
+        self.keep_draft(true);
         self.anim.status = Some(format!("Saved {} as a KeyframeSequence", clip.name).into());
         cx.notify();
     }

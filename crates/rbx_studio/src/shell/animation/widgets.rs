@@ -129,11 +129,11 @@ pub(super) fn keyed_button(
         .when(!enabled, |this| this.opacity(0.4).cursor_not_allowed())
 }
 
-/// The panel's primary action, at the 44px a primary control takes.
+/// The panel's primary action: accented, but the size of its neighbours, so
+/// a row of buttons reads as one row.
 pub(super) fn primary_button(id: &'static str, text: &'static str) -> Stateful<Div> {
     chrome::button(id, text, true)
         .flex_1()
-        .h(tokens::primary_target())
         .debug_selector(move || id.into())
 }
 

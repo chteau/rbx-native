@@ -194,6 +194,7 @@ impl Shell {
             self.anim_step_graph(dt);
         }
         self.pose_rig(cx);
+        self.keep_draft(false);
         if moving {
             cx.on_next_frame(window, |_, _, cx| cx.notify());
         }

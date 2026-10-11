@@ -182,6 +182,7 @@ impl Shell {
         self.reflect_changes(&changes, cx);
         self.record_history_change(changes);
         self.rebuild_explorer(cx);
+        self.keep_draft(true);
         self.anim.status =
             Some(format!("Saved {} as an AnimationGraphDefinition", graph.name).into());
         cx.notify();

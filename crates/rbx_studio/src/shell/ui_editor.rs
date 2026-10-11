@@ -315,9 +315,11 @@ impl Shell {
             false => Vec::new(),
         };
         // The dope sheet takes the place Output would have under the 3D
-        // view; asking for Output by name brings it back, as on the canvas.
+        // view, and the editor's own panel the place Properties would (a
+        // posed part's raw CFrame is no help while animating); asking for
+        // either by name brings it back, as on the canvas.
         if self.document == Document::Animation {
-            hidden.push(Panel::Output);
+            hidden.extend([Panel::Output, Panel::Properties]);
         }
         hidden.extend(self.document_hides());
         hidden

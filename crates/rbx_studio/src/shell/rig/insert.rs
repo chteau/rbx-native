@@ -141,6 +141,11 @@ impl Shell {
             format!(", wearing {dressed} of {total} items")
         };
         self.rig_report(Ok(format!("Inserted {name}{wearing}")), cx);
+        // Built for the Animation Editor (its own buttons, or the dialog
+        // opened from it): the new rig is the one it animates.
+        if self.document == crate::shell::chrome::Document::Animation {
+            self.bind_rig(rig, cx);
+        }
     }
 
     fn rig_report(&mut self, result: Result<String, String>, cx: &mut Context<Self>) {

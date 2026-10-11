@@ -9,6 +9,7 @@
 //! undo stack covers the edits made in between.
 
 pub(crate) mod demo;
+pub(crate) mod draft;
 pub(crate) mod graph_canvas;
 pub(crate) mod place;
 mod playback;

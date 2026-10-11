@@ -234,26 +234,53 @@ impl Shell {
             }
             None => "No rig: select a character in the Explorer or the 3D view".into(),
         };
-        section("Rigging").child(label(summary)).child(
-            h_flex()
-                .gap(px(6.))
-                .child(
-                    wide_button("anim-use-rig", "Use selected rig", true).on_click(cx.listener(
-                        |shell, _, _, cx| {
-                            if !shell.bind_selected_rig(cx) {
-                                shell.anim.status =
-                                    Some("The selection is not inside a rig".into());
-                            }
-                            cx.notify();
-                        },
-                    )),
-                )
-                .child(
-                    wide_button("anim-rig-builder", "Rig Builder", true).on_click(
-                        cx.listener(|shell, _, _, cx| RibbonCommand::RigBuilder.run(shell, cx)),
+        let joints = crate::shell::rig::JointStyle::of_place(&self.dom);
+        let r15_label = match joints {
+            crate::shell::rig::JointStyle::AnimationConstraint => "R15 · AnimationConstraint",
+            crate::shell::rig::JointStyle::Motor6D => "R15 · Motor6D",
+        };
+        section("Rigging")
+            .child(label(summary))
+            .child(
+                h_flex()
+                    .gap(px(6.))
+                    .child(
+                        wide_button("anim-insert-r15", "Insert R15", true)
+                            .tooltip(move |window, cx| {
+                                crate::shell::tooltip::text(r15_label, window, cx)
+                            })
+                            .on_click(cx.listener(|shell, _, _, cx| {
+                                shell.insert_stock_rig(crate::shell::rig::RigType::R15, None, cx);
+                            })),
+                    )
+                    .child(
+                        wide_button("anim-insert-r6", "Insert R6", true).on_click(cx.listener(
+                            |shell, _, _, cx| {
+                                shell.insert_stock_rig(crate::shell::rig::RigType::R6, None, cx);
+                            },
+                        )),
                     ),
-                ),
-        )
+            )
+            .child(
+                h_flex()
+                    .gap(px(6.))
+                    .child(
+                        wide_button("anim-use-rig", "Use selected rig", true).on_click(
+                            cx.listener(|shell, _, _, cx| {
+                                if !shell.bind_selected_rig(cx) {
+                                    shell.anim.status =
+                                        Some("The selection is not inside a rig".into());
+                                }
+                                cx.notify();
+                            }),
+                        ),
+                    )
+                    .child(
+                        wide_button("anim-rig-builder", "Rig Builder…", true).on_click(
+                            cx.listener(|shell, _, _, cx| RibbonCommand::RigBuilder.run(shell, cx)),
+                        ),
+                    ),
+            )
     }
 
     fn anim_clip_section(
