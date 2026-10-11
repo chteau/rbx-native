@@ -13,6 +13,8 @@ use super::WorkspaceView;
 const LIGHT_GUIDES: usize = 0;
 /// The Animation Editor's floor grid (see `shell::animation::stage`).
 const STAGE_GRID: usize = 3;
+/// The Animation Editor's skeleton view (see `shell::animation::skeleton`).
+const SKELETON: usize = 4;
 
 impl WorkspaceView {
     /// Forwards the Explorer's selection, forcing one frame even at rest.
@@ -66,6 +68,12 @@ impl WorkspaceView {
     /// own. An empty list clears it.
     pub(crate) fn set_stage_grid(&mut self, segments: Vec<Segment>) {
         self.pump.lines(STAGE_GRID, segments);
+    }
+
+    /// The Animation Editor's skeleton view: the rig's bones, drawn over
+    /// it. An empty list clears them.
+    pub(crate) fn set_skeleton(&mut self, segments: Vec<Segment>) {
+        self.pump.lines(SKELETON, segments);
     }
 
     /// Draws only `roots` (the Animation Editor's rig) on a plain backdrop,

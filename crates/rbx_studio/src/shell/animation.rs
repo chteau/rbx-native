@@ -19,6 +19,7 @@ mod import;
 mod panel;
 mod pose;
 mod sheet;
+mod skeleton;
 mod stage;
 mod view;
 mod widgets;
@@ -133,6 +134,10 @@ pub(super) struct Animation {
     pub(super) curve: curves::CurveView,
     /// The rig the 3D view is staged around, once the grid is sent.
     staged: Option<Ref>,
+    /// Whether the rig's bones are drawn over it (Blender shows them in
+    /// its animation workspace, so on by default), and what was last sent.
+    pub(super) skeleton: bool,
+    skeleton_sent: Vec<rbx_viewer::Segment>,
     /// What the local draft last held, and when it was written.
     drafted: Option<(rbx_animation::Clip, rbx_animation::graph::Graph)>,
     drafted_at: Option<Instant>,
@@ -156,6 +161,8 @@ impl Animation {
             ik: IkSettings::default(),
             curve: curves::CurveView::default(),
             staged: None,
+            skeleton: true,
+            skeleton_sent: Vec::new(),
             drafted: None,
             drafted_at: None,
         }
@@ -204,11 +211,32 @@ impl Shell {
         self.anim.staged = Some(model);
     }
 
+    /// Sends the skeleton view for the rig as `world` lays it out (nothing
+    /// when it is hidden), only when it changed since the last send.
+    pub(super) fn sync_skeleton(&mut self, world: &HashMap<Ref, Frame>, cx: &mut Context<Self>) {
+        let segments = match (&self.anim.bound, self.anim.skeleton) {
+            (Some(bound), true) => skeleton::segments(&skeleton::bones(
+                &bound.rig,
+                world,
+                self.anim.editor.joint.as_deref(),
+            )),
+            _ => Vec::new(),
+        };
+        if segments == self.anim.skeleton_sent {
+            return;
+        }
+        self.anim.skeleton_sent = segments.clone();
+        self.viewport
+            .update(cx, |viewport, _| viewport.set_skeleton(segments));
+    }
+
     /// Gives the 3D view back to the whole place.
     pub(super) fn unstage(&mut self, cx: &mut Context<Self>) {
         if self.anim.staged.take().is_some() {
+            self.anim.skeleton_sent.clear();
             self.viewport.update(cx, |viewport, _| {
                 viewport.set_stage_grid(Vec::new());
+                viewport.set_skeleton(Vec::new());
                 viewport.set_isolation(None);
             });
         }

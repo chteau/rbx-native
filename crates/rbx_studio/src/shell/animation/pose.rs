@@ -56,7 +56,7 @@ impl Shell {
             .rig
             .layout(bound.root, &|j| transforms.get(j).copied());
         let mut wrote = false;
-        for (part, frame) in world {
+        for (&part, frame) in &world {
             let data = frame.to_data();
             if cframe_of(&self.dom, part).is_some_and(|c| same(&c, &data)) {
                 bound.posed.insert(part, data);
@@ -75,6 +75,7 @@ impl Shell {
             let changes = self.dom.take_changes();
             self.reflect_changes(&changes, cx);
         }
+        self.sync_skeleton(&world, cx);
     }
 
     /// A rig part whose `CFrame` is not what the editor last wrote was

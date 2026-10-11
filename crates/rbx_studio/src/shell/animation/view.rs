@@ -150,6 +150,23 @@ impl Shell {
             )
             .child(
                 tool(
+                    "anim-skeleton",
+                    IconName::Bone,
+                    if self.anim.skeleton {
+                        "Hide the skeleton"
+                    } else {
+                        "Show the skeleton"
+                    },
+                    true,
+                )
+                .when(self.anim.skeleton, |this| this.bg(tokens::accent_soft()))
+                .on_click(cx.listener(|shell, _, _, cx| {
+                    shell.anim.skeleton = !shell.anim.skeleton;
+                    cx.notify();
+                })),
+            )
+            .child(
+                tool(
                     "anim-fit",
                     IconName::Maximize2,
                     "Fit the clip to the timeline (F)",
