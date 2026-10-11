@@ -4,6 +4,7 @@
 //! blending tracks the way an `Animator` does, and evaluating animation
 //! graphs.
 
+pub mod animator;
 pub mod clip;
 pub mod easing;
 pub mod frame;
