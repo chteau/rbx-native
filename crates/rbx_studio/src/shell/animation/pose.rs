@@ -184,7 +184,7 @@ impl Shell {
         let dt = self
             .anim
             .last_frame
-            .map_or(0.0, |t| now.duration_since(t).as_secs_f32().min(0.1));
+            .map_or(0.0, |t| now.duration_since(t).as_secs_f32().min(0.25));
         let moving = self.anim.editor.playing || self.anim.graph.playing;
         self.anim.last_frame = moving.then_some(now);
         if self.anim.editor.playing {
