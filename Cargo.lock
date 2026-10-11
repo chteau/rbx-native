@@ -6144,6 +6144,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rbx_autorig"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "fbxcel",
+ "glam",
+ "gltf",
+ "rbx_mesh",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tobj",
+]
+
+[[package]]
 name = "rbx_binary"
 version = "0.1.0"
 dependencies = [
