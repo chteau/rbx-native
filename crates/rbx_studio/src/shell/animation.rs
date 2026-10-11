@@ -286,6 +286,33 @@ impl Shell {
         self.anim.autorig = rig;
     }
 
+    /// The rig the Animation Editor is bound to, if any.
+    pub(in crate::shell) fn anim_bound_model(&self) -> Option<Ref> {
+        self.anim.bound.as_ref().map(|b| b.model)
+    }
+
+    /// After `removed` were deleted: a rig among them is no longer bound,
+    /// staged or being auto-rigged, so the 3D view gives the place back and
+    /// stops drawing its skeleton, markers and stage grid.
+    pub(in crate::shell) fn forget_deleted_rig(&mut self, removed: &[Ref], cx: &mut Context<Self>) {
+        let gone = |model: Option<Ref>| {
+            model.is_some_and(|m| removed.contains(&m) || self.dom.get(m).is_none())
+        };
+        let autorig = gone(self.anim.autorig.as_ref().and_then(|rig| rig.model));
+        let bound = gone(self.anim_bound_model());
+        let staged = gone(self.anim.staged);
+        if autorig {
+            self.anim.autorig = None;
+            self.sync_autorig_markers(cx);
+        }
+        if bound {
+            self.anim.bound = None;
+        }
+        if staged {
+            self.unstage(cx);
+        }
+    }
+
     /// Lets go of `model` before it is replaced: put back at rest, no
     /// longer bound or staged.
     pub(in crate::shell) fn unbind_rig_for_replace(&mut self, model: Ref, cx: &mut Context<Self>) {

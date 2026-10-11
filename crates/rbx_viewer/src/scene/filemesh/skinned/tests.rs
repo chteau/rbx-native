@@ -495,6 +495,32 @@ fn a_model_deleted_whole_is_let_go_of() {
 }
 
 #[test]
+fn a_deleted_rig_is_not_rebuilt_when_the_next_asset_lands() {
+    // `Scene::remove_part` drops the parts' plan entries along with their
+    // rigs: a later resolve (the next asset landing, a streaming tick) must
+    // not draw the deleted body again from what the plan still held.
+    let mut dom = arm(1.0);
+    let mut plan = planned(&dom);
+    let (mut resolved, _) = resolve(&plan, landed(), HashMap::new());
+    assert!(!resolved.rigs.is_empty());
+    dom.remove(MODEL);
+    for part in [UPPER, LOWER] {
+        resolved.drop_rig(part);
+        resolved.remove(part);
+        plan.rebinds.remove(&part);
+        plan.poses.forget_part(part);
+        plan.install(part, None);
+    }
+    let (again, _) = resolve(&plan, landed(), HashMap::new());
+    assert!(again.rigs.is_empty(), "the deleted rig came back");
+    // Nor drawn again at rest, unskinned.
+    assert!(
+        again.instances.is_empty(),
+        "the deleted body is drawn again"
+    );
+}
+
+#[test]
 fn a_place_saved_mid_pose_rests_where_its_joints_say() {
     // Saved bent, with a `Motor6D` from the upper to the lower arm whose
     // C0/C1 hang the lower arm 0.5 below the joint at the upper arm's

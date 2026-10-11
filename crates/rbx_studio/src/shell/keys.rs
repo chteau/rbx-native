@@ -200,6 +200,9 @@ impl Shell {
         // told to refresh depends on what is selected now.
         self.reflect_changes(&changes, cx);
         self.record_history_change(changes);
+        // A deleted rig takes the auto-rigger and the Animation Editor's
+        // binding with it, or the 3D view keeps it staged on its own.
+        self.forget_deleted_rig(&removed, cx);
         cx.notify();
     }
 

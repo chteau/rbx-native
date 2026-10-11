@@ -329,6 +329,10 @@ impl Scene {
         self.resolved_file_meshes.drop_rig(referent);
         self.resolved_file_meshes.remove(referent);
         self.file_mesh_plan.rebinds.remove(&referent);
+        // Without this the plan keeps the part's entry, and the next resolve
+        // (an asset landing, a streaming tick) builds a deleted skinned body
+        // back into the view.
+        self.file_mesh_plan.install(referent, None);
         if let Some(model) = self.file_mesh_plan.poses.forget_part(referent) {
             self.file_mesh_plan.rebind_models(&[model]);
         }

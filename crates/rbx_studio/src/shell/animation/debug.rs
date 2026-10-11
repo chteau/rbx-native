@@ -23,7 +23,10 @@
 //! Rotate-tool drag writes it, then run one editor frame, which reads it back
 //! as a key; an auto-rigged T-pose arm lies along X, so it bends about Z),
 //! `select=<part>` (select that part of the bound rig, as a click on it
-//! would), `write=<path>` (File › Save As to that path) and `quit`.
+//! would), `document=viewport|animation|ui` (switch the central document),
+//! `delete-rig` (delete the auto-rigged or bound rig's `Model`, as the
+//! Delete key does on its Explorer row),
+//! `write=<path>` (File › Save As to that path) and `quit`.
 
 use gpui_kit::*;
 use rbx_animation::graph::Value;
@@ -309,6 +312,27 @@ impl Shell {
                     match part {
                         Some(part) => self.reselect(vec![part], cx),
                         None => self.anim.status = Some(format!("No rig part named {arg}").into()),
+                    }
+                }
+                "document" => {
+                    let document = match arg {
+                        "animation" => Document::Animation,
+                        "ui" => Document::UiEditor,
+                        _ => Document::Viewport,
+                    };
+                    self.set_document(document, cx);
+                }
+                "delete-rig" => {
+                    let model = self
+                        .anim_autorig()
+                        .and_then(|rig| rig.model)
+                        .or(self.anim_bound_model());
+                    match model {
+                        Some(model) => {
+                            self.select(model, cx);
+                            self.delete_selected(cx);
+                        }
+                        None => self.anim.status = Some("delete-rig: no rig".into()),
                     }
                 }
                 "write" => self.save_as(std::path::Path::new(arg), cx),
