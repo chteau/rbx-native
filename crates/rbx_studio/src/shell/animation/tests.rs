@@ -174,17 +174,14 @@ fn a_click_on_a_rig_part_picks_that_part() {
     use rbx_dom::Ref;
     let (arm, torso, wall, root) = (Ref::new(1), Ref::new(2), Ref::new(3), Ref::new(4));
     let rigged = |part: &Ref| [arm, torso, root].contains(part);
-    let root = Some(root);
-    assert_eq!(joint_part(&[arm, torso], root, rigged), Some(arm));
-    assert_eq!(joint_part(&[torso, arm], root, rigged), Some(torso));
-    assert_eq!(joint_part(&[wall, arm], root, rigged), None);
-    assert_eq!(joint_part(&[], root, rigged), None);
+    let some_root = Some(root);
+    assert_eq!(joint_part(&[arm, torso], some_root, rigged), Some(arm));
+    assert_eq!(joint_part(&[torso, arm], some_root, rigged), Some(torso));
+    assert_eq!(joint_part(&[wall, arm], some_root, rigged), None);
+    assert_eq!(joint_part(&[], some_root, rigged), None);
     // The invisible root round the torso lets the click through to it...
-    assert_eq!(
-        joint_part(&[root.unwrap(), torso], root, rigged),
-        Some(torso)
-    );
+    assert_eq!(joint_part(&[root, torso], some_root, rigged), Some(torso));
     // ...but is still taken when nothing of the rig stands behind it.
-    assert_eq!(joint_part(&[root.unwrap()], root, rigged), root);
-    assert_eq!(joint_part(&[root.unwrap(), wall], root, rigged), root);
+    assert_eq!(joint_part(&[root], some_root, rigged), some_root);
+    assert_eq!(joint_part(&[root, wall], some_root, rigged), some_root);
 }
