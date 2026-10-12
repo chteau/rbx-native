@@ -60,11 +60,12 @@ impl Shell {
     /// the `KeyframeSequence` it holds.
     pub(super) fn import_animation_id(&mut self, text: &str, cx: &mut Context<Self>) {
         let Some(id) = rbx_animation::import::asset::parse_id(text) else {
-            self.anim.status = Some("Paste an AnimationId: rbxassetid://… or its number".into());
+            self.anim
+                .warn("Paste an AnimationId: rbxassetid://… or its number");
             cx.notify();
             return;
         };
-        self.anim.status = Some(format!("Downloading animation {id}…").into());
+        self.anim.say(format!("Downloading animation {id}…"));
         cx.notify();
         cx.spawn(async move |shell, cx| {
             let result = cx
@@ -85,7 +86,7 @@ impl Shell {
 
     pub(super) fn paste_blender_animation(&mut self, cx: &mut Context<Self>) {
         let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
-            self.anim.status = Some("The clipboard holds no text".into());
+            self.anim.warn("The clipboard holds no text");
             cx.notify();
             return;
         };
@@ -96,7 +97,7 @@ impl Shell {
     pub(super) fn copy_blender_animation(&mut self, cx: &mut Context<Self>) {
         let text = rbxanims::encode(&self.anim.editor.clip);
         cx.write_to_clipboard(ClipboardItem::new_string(text));
-        self.anim.status = Some("Copied in the Rbx Animations format".into());
+        self.anim.say("Copied in the Rbx Animations format");
         cx.notify();
     }
 
@@ -105,13 +106,10 @@ impl Shell {
             Ok(clip) => {
                 let joints = clip.joints().len();
                 let keys: usize = clip.keyframes.iter().map(|k| k.poses.len()).sum();
-                self.anim.status = Some(
-                    format!(
-                        "Imported {}: {keys} keys on {joints} joints (unsaved)",
-                        clip.name
-                    )
-                    .into(),
-                );
+                self.anim.say(format!(
+                    "Imported {}: {keys} keys on {joints} joints (unsaved)",
+                    clip.name
+                ));
                 // Undoably, so an import over unsaved work can be taken back.
                 self.anim.editor.edit(|c| *c = clip);
                 self.anim.editor.source = None;
@@ -119,7 +117,7 @@ impl Shell {
                 self.anim.editor.selected.clear();
                 self.anim.fitted = false;
             }
-            Err(e) => self.anim.status = Some(e.into()),
+            Err(e) => self.anim.fail(e),
         }
         cx.notify();
     }

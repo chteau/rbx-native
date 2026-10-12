@@ -91,7 +91,7 @@ impl Shell {
                 let mut ok = false;
                 doc.edit(|g| ok = g.connect(from, n, &pin));
                 if !ok {
-                    self.anim.status = Some("That wire would make a loop".into());
+                    self.anim.warn("That wire would make a loop");
                 }
             }
         }

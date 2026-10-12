@@ -158,7 +158,7 @@ impl Shell {
                     return;
                 };
                 let Some(joint) = self.anim.editor.joint.clone() else {
-                    self.anim.status = Some("Pick a joint in the channel list first".into());
+                    self.anim.warn("Pick a joint in the channel list first");
                     cx.notify();
                     return;
                 };
@@ -257,16 +257,6 @@ impl Shell {
             .child(events)
             .child(face)
             .child(import)
-            .when_some(self.anim.status.clone(), |this, status| {
-                this.child(
-                    div()
-                        .id("anim-status")
-                        .debug_selector(|| "anim-status".into())
-                        .text_size(tokens::text_xs())
-                        .text_color(tokens::text_muted())
-                        .child(status),
-                )
-            })
             .into_any_element()
     }
 
@@ -318,8 +308,7 @@ impl Shell {
                         wide_button("anim-use-rig", "Use selected rig", true).on_click(
                             cx.listener(|shell, _, _, cx| {
                                 if !shell.bind_selected_rig(cx) {
-                                    shell.anim.status =
-                                        Some("The selection is not inside a rig".into());
+                                    shell.anim.warn("The selection is not inside a rig");
                                 }
                                 cx.notify();
                             }),

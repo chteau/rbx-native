@@ -24,6 +24,7 @@ mod pose;
 mod sheet;
 mod skeleton;
 mod stage;
+mod toast;
 mod view;
 mod widgets;
 
@@ -135,8 +136,8 @@ pub(super) struct Animation {
     pub(super) gesture: Option<Gesture>,
     pub(super) last_frame: Option<Instant>,
     pub(super) fields: Option<panel::Fields>,
-    /// The last import, save or error, shown under the panel's buttons.
-    pub(super) status: Option<SharedString>,
+    /// The last import, save or error, shown over the top of the 3D view.
+    pub(super) toast: Option<toast::Toast>,
     pub(super) graph: GraphDoc,
     /// Whether the timeline has been fitted to the clip since it loaded.
     pub(super) fitted: bool,
@@ -175,7 +176,7 @@ impl Animation {
             gesture: None,
             last_frame: None,
             fields: None,
-            status: None,
+            toast: None,
             graph: GraphDoc::default(),
             fitted: false,
             ik: IkSettings::default(),
@@ -428,13 +429,10 @@ impl Shell {
             self.anim.graph.dirty = true;
         }
         if !restored.is_empty() {
-            self.anim.status = Some(
-                format!(
-                    "Restored unsaved {} from the last session",
-                    restored.join(" and ")
-                )
-                .into(),
-            );
+            self.anim.say(format!(
+                "Restored unsaved {} from the last session",
+                restored.join(" and ")
+            ));
         }
     }
 
@@ -484,7 +482,7 @@ impl Shell {
             .map(|i| i.name().to_owned())
             .unwrap_or_default();
         let kinds = rig_summary(&rig);
-        self.anim.status = Some(format!("Rig {name}: {kinds}").into());
+        self.anim.say(format!("Rig {name}: {kinds}"));
         if frame {
             self.frame_rig(&rig, root, cx);
         }
@@ -519,7 +517,7 @@ impl Shell {
     pub(super) fn new_animation(&mut self, cx: &mut Context<Self>) {
         self.anim.editor.load(rbx_animation::Clip::default(), None);
         self.anim.fitted = false;
-        self.anim.status = Some("New animation".into());
+        self.anim.say("New animation");
         cx.notify();
     }
 
@@ -554,7 +552,8 @@ impl Shell {
         self.record_history_change(changes);
         self.rebuild_explorer(cx);
         self.keep_draft(true);
-        self.anim.status = Some(format!("Saved {} as a KeyframeSequence", clip.name).into());
+        self.anim
+            .say(format!("Saved {} as a KeyframeSequence", clip.name));
         cx.notify();
     }
 

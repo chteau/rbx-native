@@ -46,6 +46,7 @@ impl Shell {
             Mode::Graph => self.anim_graph_canvas(cx),
         };
         let transport = self.transport(cx);
+        let toast = self.animation_toast(cx);
         v_flex()
             .id("animation-editor")
             .size_full()
@@ -58,10 +59,12 @@ impl Shell {
                     .overflow_hidden()
                     .child(
                         div()
+                            .relative()
                             .flex_1()
                             .h_full()
                             .overflow_hidden()
-                            .child(self.viewport()),
+                            .child(self.viewport())
+                            .children(toast),
                     )
                     .child(side),
             )

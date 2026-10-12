@@ -229,8 +229,9 @@ impl Shell {
                             |shell, _, _, cx| {
                                 let (s, d) = (shell.anim.curve.style, shell.anim.curve.direction);
                                 if !shell.anim.editor.generate_curve(s, d) {
-                                    shell.anim.status =
-                                        Some("Select a key with one after it to generate".into());
+                                    shell
+                                        .anim
+                                        .warn("Select a key with one after it to generate");
                                 }
                                 cx.notify();
                             },

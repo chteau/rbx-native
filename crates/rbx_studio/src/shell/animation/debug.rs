@@ -73,14 +73,16 @@ impl Shell {
             Some((index, by))
         });
         let Some((index, by)) = parsed else {
-            self.anim.status = Some(format!("{VARIABLE}: bad autorig-drag={arg}").into());
+            self.anim
+                .fail(format!("{VARIABLE}: bad autorig-drag={arg}"));
             return false;
         };
         let Some(from) = self
             .anim_autorig()
             .and_then(|rig| rig.markers().0.get(index).copied())
         else {
-            self.anim.status = Some(format!("{VARIABLE}: autorig-drag needs a rig").into());
+            self.anim
+                .fail(format!("{VARIABLE}: autorig-drag needs a rig"));
             return false;
         };
         self.autorig_drag_joint(index, from, JointPhase::Press, cx);
@@ -204,7 +206,7 @@ impl Shell {
                         self.select(model, cx);
                         self.bind_rig(model, cx);
                     }
-                    None => self.anim.status = Some(format!("No Model named {arg}").into()),
+                    None => self.anim.fail(format!("No Model named {arg}")),
                 },
                 "demo" => {
                     if self.anim.bound.is_none() {
@@ -261,7 +263,7 @@ impl Shell {
                         cx.write_to_clipboard(ClipboardItem::new_string(text));
                         self.paste_blender_animation(cx);
                     }
-                    Err(e) => self.anim.status = Some(format!("Couldn't read {arg}: {e}").into()),
+                    Err(e) => self.anim.fail(format!("Couldn't read {arg}: {e}")),
                 },
                 "time" => {
                     if let Ok(t) = arg.parse::<f32>() {
@@ -312,7 +314,7 @@ impl Shell {
                         .map(|j| j.part1);
                     match part {
                         Some(part) => self.reselect(vec![part], cx),
-                        None => self.anim.status = Some(format!("No rig part named {arg}").into()),
+                        None => self.anim.fail(format!("No rig part named {arg}")),
                     }
                 }
                 "document" => {
@@ -335,12 +337,12 @@ impl Shell {
                             self.select(model, cx);
                             self.delete_selected(cx);
                         }
-                        None => self.anim.status = Some("delete-rig: no rig".into()),
+                        None => self.anim.fail("delete-rig: no rig"),
                     }
                 }
                 "write" => self.save_as(std::path::Path::new(arg), cx),
                 "quit" => cx.quit(),
-                _ => self.anim.status = Some(format!("{VARIABLE}: unknown step {verb}").into()),
+                _ => self.anim.fail(format!("{VARIABLE}: unknown step {verb}")),
             }
         }
         cx.notify();

@@ -111,14 +111,6 @@ impl Shell {
             .child(header)
             .child(node)
             .child(params)
-            .when_some(self.anim.status.clone(), |this, s| {
-                this.child(
-                    div()
-                        .text_size(tokens::text_xs())
-                        .text_color(tokens::text_muted())
-                        .child(s),
-                )
-            })
             .into_any_element()
     }
 
