@@ -37,19 +37,12 @@
 //!   (which is what the engine reads). A Mask node's `Mask` is an
 //!   ObjectValue child pointing at one.
 //!
-//! Two things differ from the editor because they cannot be matched here.
-//! `EntryState` is an `Instance` attribute in Roblox: the editor calls
-//! `SetAttribute("EntryState", <Instance>)` and reads it back with
-//! `typeof(v) == "Instance"` (Client Tracker, `CompiledPackages/
-//! AnimationEditor/b5bdac12`, `StateMachineMaterializer` and
-//! `TypedInstanceSignals`, disassembly), although the creator docs still
-//! call it an ObjectValue. No saved file holding one has been found, the
-//! binary encoding of an Instance attribute is undocumented, and the codec
-//! has no such type, so it is written as the entry state's name. UNVERIFIED:
-//! whether the engine accepts the name. `InputPinData`'s layout is
-//! undocumented too, so a blob read from a file is written back only while
-//! that node's pins are unchanged; otherwise the pins' child order stands
-//! alone. A Mask parameter's default (an instance) is likewise not written.
+//! `EntryState` is an `Instance` attribute (type `0x25`, a `u32` referent;
+//! see `rbx_dom::attributes`) naming the state's ObjectValue, and
+//! `InputPinData` is `u32` 1, the pin count, then each pin name behind a
+//! `u32` length; both are checked against a state machine Studio saved
+//! (`tests/fixtures/studio_state_machine.rbxm`). A Mask parameter's default
+//! (an instance) is not written.
 //!
 //! Reading is more lenient than writing, taking what Roblox's docs describe
 //! beside what the editor writes: `EntryState` as a name, a Ref or an

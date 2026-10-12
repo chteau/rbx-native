@@ -212,6 +212,12 @@ impl Reader<'_> {
         }
         let mut entry: Option<Ref> = reference(dom, r, "EntryState");
         for (k, v) in attrs(dom, r) {
+            if let (true, "EntryState", Variant::Ref(state)) =
+                (kind == NodeKind::StateMachine, k.as_str(), &v)
+            {
+                entry = entry.or(dom.get(*state).map(|_| *state));
+                continue;
+            }
             if legacy && k == "EditorPosition" {
                 node.position = point(Some(&v)).unwrap_or_default();
             } else if let Some(prop) = prop_of(&k, &v, legacy) {
@@ -267,14 +273,6 @@ impl Reader<'_> {
                 _ => node.inputs.push(input),
             }
             pins.push(pin);
-        }
-        if let Some(raw) = match dom.get(r).and_then(|i| i.properties().get("InputPinData")) {
-            Some(Variant::Unknown { raw, .. }) => Some(raw.clone()),
-            Some(Variant::String(s)) => Some(s.as_bytes().to_vec()),
-            _ => None,
-        } {
-            let names = node.inputs.iter().map(|i| i.pin.clone()).collect();
-            node.pin_data = Some((names, raw));
         }
         if kind == NodeKind::StateMachine {
             let defs = children(dom, r, "StateMachineTransitionDefinition");

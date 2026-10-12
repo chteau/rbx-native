@@ -51,10 +51,6 @@ pub struct Node {
     pub size: Option<(f32, f32)>,
     pub collapsed: bool,
     pub z_index: f64,
-    /// The `InputPinData` blob read from a file, with the pin names it was
-    /// read beside. Its layout is undocumented, so it is written back only
-    /// while those pins are unchanged.
-    pub(crate) pin_data: Option<(Vec<String>, Vec<u8>)>,
 }
 
 impl Node {
@@ -80,7 +76,6 @@ impl Node {
             size: None,
             collapsed: false,
             z_index: 0.,
-            pin_data: None,
         }
     }
 

@@ -262,7 +262,10 @@ fn state_machines_point_at_state_object_values() {
         attr(&dom, kid(&dom, sm, "(Any)"), "RBX_IsAny"),
         Some(Variant::Bool(true))
     );
-    assert_eq!(attr(&dom, sm, "EntryState"), text("Clip"));
+    assert_eq!(
+        attr(&dom, sm, "EntryState"),
+        Some(Variant::Ref(kid(&dom, sm, "Clip")))
+    );
 
     let go = kid(&dom, sm, "Clip_to_Run");
     assert_eq!(
@@ -336,20 +339,11 @@ fn overwrite_keeps_the_definition() {
 }
 
 #[test]
-fn an_unparsed_pin_list_survives_only_while_the_pins_do() {
+fn the_pin_list_names_every_pin_in_order() {
     let mut dom = WeakDom::new();
     let def = write(&mut dom, None, &sample());
     let sm = kid(&dom, def, "StateMachineNode");
-    let blob = vec![1, 2, 0, 0xFF];
-    let raw = Variant::Unknown {
-        type_id: 0x01,
-        raw: blob.clone(),
-    };
-    dom.set_property(sm, "InputPinData", raw.clone()).unwrap();
     let mut g = read(&dom, def);
-    overwrite(&mut dom, def, &g);
-    let sm = kid(&dom, def, "StateMachineNode");
-    assert_eq!(prop(&dom, sm, "InputPinData"), Some(raw));
     let at = g
         .nodes
         .iter()
@@ -357,8 +351,19 @@ fn an_unparsed_pin_list_survives_only_while_the_pins_do() {
         .unwrap();
     g.nodes[at].add_pin();
     overwrite(&mut dom, def, &g);
-    let sm = kid(&dom, def, "StateMachineNode");
-    assert_eq!(prop(&dom, sm, "InputPinData"), None);
+    let sm2 = kid(&dom, def, "StateMachineNode");
+    let _ = sm;
+    let Some(Variant::Unknown { raw, .. }) = prop(&dom, sm2, "InputPinData") else {
+        panic!("no pin data");
+    };
+    let names: Vec<&str> = g.nodes[at].inputs.iter().map(|i| i.pin.as_str()).collect();
+    let mut want = 1u32.to_le_bytes().to_vec();
+    want.extend((names.len() as u32).to_le_bytes());
+    for n in &names {
+        want.extend((n.len() as u32).to_le_bytes());
+        want.extend(n.as_bytes());
+    }
+    assert_eq!(raw, want);
 }
 
 #[test]

@@ -142,7 +142,7 @@ impl Writer<'_> {
 
     /// `props` as attributes on `of`, with parameter bindings, expression
     /// wires and (for a Mask node) the mask reference beside them.
-    fn props(&mut self, of: Ref, props: &BTreeMap<String, Prop>, kind: Option<NodeKind>) {
+    fn props(&mut self, of: Ref, props: &BTreeMap<String, Prop>, kind: Option<NodeKind>) -> Attrs {
         let mut a = Attrs::default();
         for (k, prop) in props {
             match prop {
@@ -152,11 +152,9 @@ impl Writer<'_> {
                         set(self.dom, pin, "Value", Variant::Ref(mask));
                     }
                 }
-                Prop::Value(v) if kind == Some(NodeKind::StateMachine) && k == "EntryState" => {
-                    if !v.text().is_empty() {
-                        a.value(k, v, None);
-                    }
-                }
+                // An `Instance` attribute names a state that does not exist
+                // yet; `node` adds it once the state ObjectValues are made.
+                Prop::Value(_) if kind == Some(NodeKind::StateMachine) && k == "EntryState" => {}
                 Prop::Value(v) => a.value(k, v, enums::of_prop(k)),
                 Prop::Param(name) => {
                     a.insert(k, Variant::String(format!("{PARAM_PREFIX}{name}")));
@@ -178,7 +176,7 @@ impl Writer<'_> {
                 }
             }
         }
-        a.write(self.dom, of);
+        a
     }
 
     fn node(&mut self, node: &Node, r: Ref) {
@@ -193,7 +191,7 @@ impl Writer<'_> {
                 z_index: Some(node.z_index),
             },
         );
-        self.props(r, &node.props, Some(node.kind));
+        let mut attributes = self.props(r, &node.props, Some(node.kind));
         let dynamic = node.kind.grows_pins();
         let mut pins = Vec::new();
         for input in &node.inputs {
@@ -205,7 +203,7 @@ impl Writer<'_> {
             if let Some(&target) = input.node.and_then(|i| self.nodes.get(i)) {
                 set(self.dom, pin, "Value", Variant::Ref(target));
             }
-            self.props(pin, &input.props, None);
+            self.props(pin, &input.props, None).write(self.dom, pin);
             if let Some(at) = input.position {
                 write_layout(
                     self.dom,
@@ -218,18 +216,24 @@ impl Writer<'_> {
             }
             pins.push(Some(pin));
         }
-        if let Some((names, blob)) = &node.pin_data {
-            let now: Vec<&str> = node.inputs.iter().map(|i| i.pin.as_str()).collect();
-            if names.iter().map(String::as_str).eq(now) {
-                let raw = blob.clone();
-                set(
-                    self.dom,
-                    r,
-                    "InputPinData",
-                    Variant::Unknown { type_id: 0x01, raw },
-                );
+        if !node.inputs.is_empty() {
+            let names: Vec<&str> = node.inputs.iter().map(|i| i.pin.as_str()).collect();
+            set(self.dom, r, "InputPinData", input_pin_data(&names));
+        }
+        if node.kind == NodeKind::StateMachine {
+            let entry = node.props.get("EntryState").map(|p| match p {
+                Prop::Value(v) => v.text(),
+                _ => String::new(),
+            });
+            let state = entry
+                .filter(|e| !e.is_empty())
+                .and_then(|e| node.inputs.iter().position(|i| i.pin == e))
+                .and_then(|at| pins.get(at).copied().flatten());
+            if let Some(state) = state {
+                attributes.insert("EntryState", Variant::Ref(state));
             }
         }
+        attributes.write(self.dom, r);
         if node.kind == NodeKind::StateMachine {
             self.state_machine(node, r, &pins);
         }
@@ -369,4 +373,18 @@ fn transition_attrs(t: &Transition) -> Attrs {
     };
     a.enum_item("When", &WHEN, when);
     a
+}
+
+/// The `InputPinData` property as Studio saves it: a `u32` 1 (a version),
+/// the pin count, then each pin's name behind a `u32` length. The property is
+/// a `String` whose bytes these are, so the 1 and the counts are control
+/// characters inside it.
+fn input_pin_data(names: &[&str]) -> Variant {
+    let mut raw = 1u32.to_le_bytes().to_vec();
+    raw.extend((names.len() as u32).to_le_bytes());
+    for name in names {
+        raw.extend((name.len() as u32).to_le_bytes());
+        raw.extend(name.as_bytes());
+    }
+    Variant::Unknown { type_id: 0x01, raw }
 }
