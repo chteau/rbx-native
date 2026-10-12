@@ -7,15 +7,10 @@ use gpui_kit::component::{self, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::{Mode, Shell};
+use super::{split, Gesture, Mode, Shell};
 use crate::shell::chrome;
 use crate::shell::menu::{self, MenuId};
 use crate::tokens;
-
-/// The bottom panel's share of the document's height, and its bounds: room
-/// for an R15 rig's fifteen joints when there is room at all.
-const SHEET_SHARE: f32 = 0.46;
-const SHEET_RANGE: (f32, f32) = (170.0, 380.0);
 
 impl Shell {
     /// The Animation document. Each render also advances playback and poses
@@ -48,6 +43,35 @@ impl Shell {
         };
         let transport = self.transport(cx);
         let toast = self.animation_toast(cx);
+
+        // The room the seam divides is what the 3D view and the panel took
+        // last frame; before the first layout the panel takes its default
+        // share of a guess.
+        let room = self.anim_split_room().unwrap_or(600.0);
+        let height = match self.anim.sheet_height {
+            Some(h) => split::sheet_height(h, room),
+            None => split::default_sheet_height(room),
+        };
+        let report_view = self.anim.view_bounds.clone();
+        let report_bottom = self.anim.bottom_bounds.clone();
+        let seam = chrome::seam_handle(
+            "anim-split",
+            false,
+            Some(tokens::dock()),
+            cx.listener(|this, e: &MouseDownEvent, _, cx| {
+                let height = this
+                    .anim
+                    .bottom_bounds
+                    .get()
+                    .map_or(0.0, |b| f32::from(b.size.height));
+                this.anim.gesture = Some(Gesture::Split {
+                    origin_y: f32::from(e.position.y),
+                    height,
+                });
+                cx.stop_propagation();
+                cx.notify();
+            }),
+        );
         v_flex()
             .id("animation-editor")
             .size_full()
@@ -55,9 +79,15 @@ impl Shell {
             .child(strip)
             .child(
                 h_flex()
+                    .relative()
                     .flex_1()
-                    .min_h(px(120.))
+                    .min_h(px(40.))
                     .overflow_hidden()
+                    .child(
+                        canvas(move |b, _, _| report_view.set(Some(b)), |_, _, _, _| {})
+                            .absolute()
+                            .size_full(),
+                    )
                     .child(
                         div()
                             .relative()
@@ -69,19 +99,31 @@ impl Shell {
                     )
                     .child(side),
             )
+            .child(seam)
             .child(
                 div()
-                    .h(relative(SHEET_SHARE))
-                    .min_h(px(SHEET_RANGE.0))
-                    .max_h(px(SHEET_RANGE.1))
+                    .relative()
+                    .h(px(height))
                     .flex_none()
                     .border_t(px(1.))
                     .border_color(tokens::border())
                     .overflow_hidden()
+                    .child(
+                        canvas(move |b, _, _| report_bottom.set(Some(b)), |_, _, _, _| {})
+                            .absolute()
+                            .size_full(),
+                    )
                     .child(bottom),
             )
             .child(transport)
             .into_any_element()
+    }
+
+    /// The height the 3D view and the bottom panel share, as last laid out.
+    pub(super) fn anim_split_room(&self) -> Option<f32> {
+        let view = self.anim.view_bounds.get()?;
+        let bottom = self.anim.bottom_bounds.get()?;
+        Some(f32::from(view.size.height) + f32::from(bottom.size.height))
     }
 
     /// The channel the selection points at: a rig part picked in the 3D view

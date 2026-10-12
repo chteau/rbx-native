@@ -118,7 +118,7 @@ pub(crate) struct Drag {
 /// all between a dock and what it sits beside, so this one is invisible
 /// until pointed at — but it is still four pixels wide, because an edge you
 /// have to hit to the pixel is an edge you miss.
-const HANDLE_HIT: Pixels = px(4.);
+pub(super) const HANDLE_HIT: Pixels = px(4.);
 /// The window buttons, and the logo block mirroring them on the other side
 /// so that what sits between the two is centred on the *window* rather than
 /// on whatever is left over.
@@ -867,17 +867,32 @@ pub(super) fn resize_handle(
     edge: Edge,
     on_down: impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
-    let vertical_edge = edge.is_vertical();
+    let id = match edge {
+        Edge::Left => "handle-left",
+        Edge::Right => "handle-right",
+        Edge::Bottom => "handle-bottom",
+    };
+    // The handle carries the dock's own surface rather than letting the
+    // window's black ground show through. A 4px black slot between a dock
+    // and the viewport reads as a crack, not as an edge — the hairline the
+    // dock already draws is the edge.
+    seam_handle(id, edge.is_vertical(), Some(tokens::dock()), on_down)
+}
 
+/// The resize handle's look for any seam: [`HANDLE_HIT`] across, a hairline
+/// on hover. `vertical` is a seam running top to bottom (dragged sideways).
+/// `bg: None` leaves it transparent, for a handle laid over content.
+pub(super) fn seam_handle(
+    id: impl Into<ElementId>,
+    vertical: bool,
+    bg: Option<Rgba>,
+    on_down: impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
+) -> Stateful<Div> {
     div()
-        .id(match edge {
-            Edge::Left => "handle-left",
-            Edge::Right => "handle-right",
-            Edge::Bottom => "handle-bottom",
-        })
+        .id(id)
         .flex_none()
         .map(|this| {
-            if vertical_edge {
+            if vertical {
                 this.w(HANDLE_HIT).h_full().cursor_col_resize()
             } else {
                 this.h(HANDLE_HIT).w_full().cursor_row_resize()
@@ -886,17 +901,13 @@ pub(super) fn resize_handle(
         .flex()
         .items_center()
         .justify_center()
-        // The handle carries the dock's own surface rather than letting the
-        // window's black ground show through. A 4px black slot between a
-        // dock and the viewport reads as a crack, not as an edge — the
-        // hairline the dock already draws is the edge.
-        .bg(tokens::dock())
+        .when_some(bg, |this, bg| this.bg(bg))
         .group("resize-handle")
         .on_mouse_down(MouseButton::Left, on_down)
         .child(
             div()
                 .map(|this| {
-                    if vertical_edge {
+                    if vertical {
                         this.w(px(1.)).h_full()
                     } else {
                         this.h(px(1.)).w_full()

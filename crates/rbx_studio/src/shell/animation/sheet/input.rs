@@ -121,18 +121,25 @@ impl Shell {
             Gesture::Pan { last_x } => {
                 let now = f32::from(at.x);
                 self.anim.timeline.pan(now - last_x);
+                self.clamp_timeline();
                 self.anim.gesture = Some(Gesture::Pan { last_x: now });
             }
             Gesture::CurveKeys { .. } | Gesture::Tangent { .. } => {
                 let y = f32::from(at.y - b.origin.y);
                 self.curve_drag(gesture, x, y);
             }
+            // Driven from the window root, which sees the pointer off the
+            // sheet too (see `seams`).
+            Gesture::Split { .. } | Gesture::Names { .. } | Gesture::Thumb { .. } => return,
         }
         cx.notify();
     }
 
     pub(in crate::shell::animation) fn sheet_release(&mut self, cx: &mut Context<Self>) {
-        if self.anim.gesture.take().is_some() {
+        if let Some(gesture) = self.anim.gesture.take() {
+            if matches!(gesture, Gesture::Split { .. } | Gesture::Names { .. }) {
+                self.save_settings();
+            }
             self.anim.editor.end_drag();
             self.anim.editor.end_curve_drag();
             cx.notify();
@@ -158,6 +165,7 @@ impl Shell {
         } else {
             return;
         }
+        self.clamp_timeline();
         cx.stop_propagation();
         cx.notify();
     }

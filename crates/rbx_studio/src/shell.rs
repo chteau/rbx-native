@@ -504,6 +504,8 @@ impl Shell {
             argon: argon_settings,
             discord_presence: discord_presence_enabled,
             discord_hide_names,
+            anim_sheet_height,
+            anim_names_width,
         } = settings;
         // Before anything renders: every size token is read through these,
         // so a scale or target floor applied after the first frame would
@@ -734,7 +736,7 @@ impl Shell {
             style_edits: style_panel::StyleEdits::default(),
             style_scroll: ScrollHandle::new(),
             ui,
-            anim: animation::Animation::new(cx),
+            anim: animation::Animation::new(cx).with_seams(anim_sheet_height, anim_names_width),
             quality: selector,
             dom,
             history: History::new(DEFAULT_CAP),
@@ -1656,6 +1658,8 @@ impl Shell {
             argon: self.argon_settings.clone(),
             discord_presence: self.discord.is_some(),
             discord_hide_names: self.discord_hide_names,
+            anim_sheet_height: self.anim.sheet_height,
+            anim_names_width: Some(self.anim.names_width),
         };
         let _ = settings.save();
 
@@ -1777,6 +1781,7 @@ impl Render for Shell {
                 shell.drag_resize(event.position, cx);
                 shell.drag_scrub(event.position.x, event.modifiers, window, cx);
                 shell.drag_inspector(event.position.x, event.modifiers, cx);
+                shell.anim_seam_drag(event.position, cx);
             }))
             .on_mouse_up(
                 MouseButton::Left,
@@ -1785,6 +1790,7 @@ impl Render for Shell {
                     shell.scrub = None;
                     shell.end_inspector_drag();
                     shell.end_panel_drag(event.position, window.viewport_size(), cx);
+                    shell.anim_seam_release(cx);
                 }),
             )
             // The one that matters for tearing a dock out: a pointer
@@ -1798,6 +1804,7 @@ impl Render for Shell {
                     shell.scrub = None;
                     shell.end_inspector_drag();
                     shell.end_panel_drag(event.position, window.viewport_size(), cx);
+                    shell.anim_seam_release(cx);
                 }),
             )
             .children(self.theme_background(false))

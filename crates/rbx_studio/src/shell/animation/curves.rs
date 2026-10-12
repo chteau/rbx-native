@@ -15,7 +15,6 @@ use gpui_kit::*;
 use rbx_animation::curve::{Channel, FloatCurve, Interpolation, JointCurves, Ranges};
 use rbx_animation::{Direction, Style};
 
-use super::sheet::NAMES_WIDTH;
 use super::widgets::primary_button;
 use super::{Gesture, Shell};
 use crate::anim_editor::{rows, CurveKeyId};
@@ -207,8 +206,12 @@ impl Shell {
             (Some(j), None) => j.clone(),
             (None, _) => "Pick a joint".into(),
         };
+        let names_w = self.names_w();
+        let hscroll = self.anim_hscroll(cx);
+        let seam = self.anim_names_seam(cx);
         div()
             .id("anim-curves")
+            .relative()
             .size_full()
             .flex()
             .flex_col()
@@ -243,7 +246,7 @@ impl Shell {
                     .flex_none()
                     .child(
                         div()
-                            .w(px(NAMES_WIDTH))
+                            .w(px(names_w))
                             .h(px(RULER))
                             .flex_none()
                             .px(px(8.))
@@ -267,7 +270,7 @@ impl Shell {
                     .child(
                         div()
                             .id("anim-curve-channels")
-                            .w(px(NAMES_WIDTH))
+                            .w(px(names_w))
                             .flex_none()
                             .h_full()
                             .overflow_y_scroll()
@@ -277,6 +280,8 @@ impl Shell {
                     )
                     .child(body),
             )
+            .child(hscroll)
+            .child(seam)
             .into_any_element()
     }
 

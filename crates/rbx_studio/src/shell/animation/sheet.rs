@@ -17,11 +17,11 @@ mod draw;
 mod input;
 
 use crate::anim_editor::{rows, Row};
+use crate::shell::chrome::ScrollbarY as _;
 use crate::timeline::{self, paint};
 use crate::tokens;
 use draw::paint_rows;
 
-pub(super) const NAMES_WIDTH: f32 = 196.0;
 const RULER: f32 = 26.0;
 const ROW: f32 = 20.0;
 const KEY: f32 = 4.5;
@@ -81,6 +81,9 @@ impl Shell {
         let time = self.anim.editor.time;
         let fps = self.anim.editor.fps;
         let ruler = self.anim_ruler(cx);
+        let names_w = self.names_w();
+        let hscroll = self.anim_hscroll(cx);
+        let seam = self.anim_names_seam(cx);
 
         let names = rows.iter().enumerate().map(|(i, row)| {
             let selected = lines.selected_row == Some(i);
@@ -169,6 +172,7 @@ impl Shell {
         let summary_label = format!("Summary · {}", self.anim.editor.clip.name);
         div()
             .id("anim-sheet")
+            .relative()
             .size_full()
             .flex()
             .flex_col()
@@ -203,7 +207,7 @@ impl Shell {
                     .flex_none()
                     .child(
                         div()
-                            .w(px(NAMES_WIDTH))
+                            .w(px(names_w))
                             .h(px(RULER))
                             .flex_none()
                             .px(px(8.))
@@ -222,14 +226,16 @@ impl Shell {
             .child(
                 div()
                     .id("anim-sheet-body")
+                    .relative()
                     .flex_1()
                     .overflow_y_scroll()
+                    .track_scroll(&self.anim.rows_scroll)
                     .child(
                         div()
                             .flex()
                             .child(
                                 div()
-                                    .w(px(NAMES_WIDTH))
+                                    .w(px(names_w))
                                     .flex_none()
                                     .border_r(px(1.))
                                     .border_color(tokens::border())
@@ -251,8 +257,11 @@ impl Shell {
                                     .children(names),
                             )
                             .child(keys),
-                    ),
+                    )
+                    .scrollbar_y(&self.anim.rows_scroll),
             )
+            .child(hscroll)
+            .child(seam)
             .into_any_element()
     }
 

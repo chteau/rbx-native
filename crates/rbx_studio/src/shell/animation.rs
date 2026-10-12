@@ -22,8 +22,10 @@ mod import;
 mod panel;
 mod pose;
 mod publish;
+mod seams;
 mod sheet;
 mod skeleton;
+mod split;
 mod stage;
 mod toast;
 mod view;
@@ -122,6 +124,24 @@ pub(super) enum Gesture {
     Tangent {
         left: bool,
     },
+    /// The seam between the 3D view and the bottom panel, dragged from
+    /// `origin_y` when the panel was `height` tall.
+    Split {
+        origin_y: f32,
+        height: f32,
+    },
+    /// The seam between the channel names and the keys.
+    Names {
+        origin_x: f32,
+        width: f32,
+    },
+    /// The horizontal scrollbar's thumb, grabbed `grab` pixels from its
+    /// left edge. The range is held for the drag, so a view dragged toward
+    /// the end does not stretch the range it is measured against.
+    Thumb {
+        grab: f32,
+        span: crate::timeline::scroll::Span,
+    },
 }
 
 /// Manage IK: whether a limb dragged with the Move tool is solved as a
@@ -166,6 +186,17 @@ pub(super) struct Animation {
     /// A dialog asked for from somewhere without a `Window` (a menu row, a
     /// scripted step); the next render opens it, since its fields need one.
     pub(super) dialog_requested: Option<AnimDialog>,
+    /// The bottom panel's height, once its seam with the 3D view has been
+    /// dragged (`None`: the default share). Kept in the settings.
+    pub(super) sheet_height: Option<f32>,
+    /// The channel-name column's width. Kept in the settings.
+    pub(super) names_width: f32,
+    /// The 3D view and the bottom panel as last laid out: the room the
+    /// seam between them divides.
+    pub(super) view_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
+    pub(super) bottom_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
+    /// The dope sheet's channel list, scrolled under its scrollbar.
+    pub(super) rows_scroll: ScrollHandle,
     /// The rig the 3D view is staged around, once the grid is sent.
     pub(super) staged: Option<Ref>,
     /// Whether the rig's bones are drawn over it (Blender shows them in
@@ -203,6 +234,11 @@ impl Animation {
             publish_form: None,
             id_prompt: None,
             dialog_requested: None,
+            sheet_height: None,
+            names_width: split::NAMES_DEFAULT,
+            view_bounds: Rc::new(Cell::new(None)),
+            bottom_bounds: Rc::new(Cell::new(None)),
+            rows_scroll: ScrollHandle::new(),
             staged: None,
             skeleton: true,
             skeleton_sent: Vec::new(),
@@ -210,6 +246,15 @@ impl Animation {
             drafted: None,
             drafted_at: None,
         }
+    }
+
+    /// The two seams as the settings last saved them.
+    pub(super) fn with_seams(mut self, sheet_height: Option<f32>, names: Option<f32>) -> Self {
+        self.sheet_height = sheet_height;
+        if let Some(w) = names {
+            self.names_width = w;
+        }
+        self
     }
 }
 
