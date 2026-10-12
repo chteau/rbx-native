@@ -1817,6 +1817,7 @@ impl Render for Shell {
             .children(self.roblox_dialog(cx))
             .children(self.close_place_dialog(cx))
             .children(self.rig_dialog_overlay(cx))
+            .children(self.publish_result_overlay(cx))
             .children(self.command_palette(cx))
             .children(self.theme_background(true))
     }

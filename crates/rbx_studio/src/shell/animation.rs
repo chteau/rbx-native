@@ -146,6 +146,10 @@ pub(super) struct Animation {
     pub(super) autorig: Option<crate::shell::rig::AutoRig>,
     /// A scripted run's steps waiting for the auto-rigger (see `debug`).
     debug_rest: Option<Vec<String>>,
+    /// The auto-rigger's Publish is uploading; a second one would double it.
+    pub(super) publishing: bool,
+    /// What the last Publish ended with, shown in a dialog until closed.
+    pub(super) publish_result: Option<crate::shell::rig::PublishResult>,
     /// The rig the 3D view is staged around, once the grid is sent.
     pub(super) staged: Option<Ref>,
     /// Whether the rig's bones are drawn over it (Blender shows them in
@@ -178,6 +182,8 @@ impl Animation {
             curve: curves::CurveView::default(),
             autorig: None,
             debug_rest: None,
+            publishing: false,
+            publish_result: None,
             staged: None,
             skeleton: true,
             skeleton_sent: Vec::new(),

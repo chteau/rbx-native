@@ -472,6 +472,9 @@ impl Shell {
     /// and attachments. Needs only the model: the upload was cached beside
     /// its local meshes when it was cut.
     pub(crate) fn publish_autorig(&mut self, cx: &mut Context<Self>) {
+        if self.anim.publishing {
+            return;
+        }
         let Some(model) = self.publishable_rig() else {
             return self.autorig_report(
                 Err("No rig to publish: its parts already use uploaded meshes".into()),
@@ -487,6 +490,8 @@ impl Shell {
             return;
         };
         self.autorig_report(Ok(format!("Publishing {name}\u{2026}")), cx);
+        self.anim.publishing = true;
+        let model_name = name.clone();
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_spawn(async move {
@@ -517,9 +522,21 @@ impl Shell {
                             "Published as model {id}, but only {swapped} of 15 parts were found in the upload"
                         ))
                     };
+                    shell.anim.publishing = false;
+                    shell.anim.publish_result = Some(super::PublishResult {
+                        name: model_name,
+                        outcome: super::PublishOutcome::Published { id, swapped },
+                    });
                     shell.autorig_report(report, cx);
                 }
-                Err(err) => shell.autorig_report(Err(err), cx),
+                Err(err) => {
+                    shell.anim.publishing = false;
+                    shell.anim.publish_result = Some(super::PublishResult {
+                        name: model_name,
+                        outcome: super::PublishOutcome::Failed(err.clone()),
+                    });
+                    shell.autorig_report(Err(err), cx);
+                }
             });
             let _ = this.update(cx, |shell, cx| shell.resume_debug_steps(cx));
         })

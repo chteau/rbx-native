@@ -9,7 +9,9 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_animation::{Frame, Priority};
 
-use super::widgets::{field_row, label, picker, primary_button, section, title, wide_button};
+use super::widgets::{
+    field_row, label, picker, primary_button, publish_button, section, title, wide_button,
+};
 use super::Shell;
 use crate::shell::chrome;
 use crate::shell::menu::{self, MenuId};
@@ -347,7 +349,7 @@ impl Shell {
                     // from here once the auto-rigger is done with it.
                     .when(publishable, |row| {
                         row.child(
-                            primary_button("anim-publish-rig", "Publish")
+                            publish_button("anim-publish-rig", self.anim.publishing)
                                 .tooltip(|window, cx| {
                                     crate::shell::tooltip::text(
                                         "Upload this rig's body parts to Roblox and point the rig at them",

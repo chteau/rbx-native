@@ -45,7 +45,10 @@ impl Shell {
         // anywhere, and this handler sits on the window's own root so it
         // cannot be out of reach of one (WCAG 2.1.2).
         if keystroke.key == "escape"
-            && (self.close_roblox_dialog() | self.cancel_close_place() | self.cancel_rig_dialog())
+            && (self.close_roblox_dialog()
+                | self.cancel_close_place()
+                | self.cancel_rig_dialog()
+                | self.close_publish_result())
         {
             cx.notify();
         }

@@ -137,6 +137,21 @@ pub(super) fn primary_button(id: &'static str, text: &'static str) -> Stateful<D
         .debug_selector(move || id.into())
 }
 
+/// The Publish button of the Auto-rig and Rigging sections: dimmed and
+/// reading "Publishing\u{2026}" while an upload runs, so a second click
+/// cannot start another (`publish_autorig` ignores it as well).
+pub(super) fn publish_button(id: &'static str, busy: bool) -> Stateful<Div> {
+    primary_button(
+        id,
+        if busy {
+            "Publishing\u{2026}"
+        } else {
+            "Publish"
+        },
+    )
+    .when(busy, |this| this.opacity(0.5).cursor_not_allowed())
+}
+
 pub(super) fn picker(
     shell: &Shell,
     menu_id: MenuId,

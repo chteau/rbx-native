@@ -11,7 +11,7 @@ use gpui_kit::*;
 use rbx_autorig::Joint;
 
 use super::super::widgets::{
-    keyed_button, label, picker, primary_button, section, wide_button, xyz_row,
+    keyed_button, label, picker, publish_button, section, wide_button, xyz_row,
 };
 use super::{number, resync, Shell};
 use crate::shell::menu::{self, MenuId};
@@ -84,7 +84,7 @@ impl Shell {
                                 .on_click(cx.listener(|shell, _, _, cx| shell.finish_autorig(cx))),
                         )
                         .child(
-                            primary_button("autorig-publish", "Publish")
+                            publish_button("autorig-publish", self.anim.publishing)
                                 .on_click(cx.listener(|shell, _, _, cx| shell.publish_autorig(cx))),
                         ),
                 )

@@ -33,6 +33,10 @@ use super::{clipboard, Shell};
 
 const SOURCE: &str = "Import";
 const MOCK_VARIABLE: &str = "RBX_STUDIO_IMPORT_MOCK";
+/// With the mock, the asset id the "upload" answers with.
+const MOCK_ID_VARIABLE: &str = "RBX_STUDIO_IMPORT_MOCK_ID";
+/// Fails the upload with this message, for a scripted capture of the error.
+const MOCK_ERROR_VARIABLE: &str = "RBX_STUDIO_IMPORT_MOCK_ERROR";
 const KEEP_VARIABLE: &str = "RBX_STUDIO_IMPORT_KEEP";
 const IMAGE_EXTENSIONS: [&str; 4] = ["png", "jpg", "jpeg", "bmp"];
 
@@ -255,11 +259,17 @@ pub(crate) fn upload_model(path: &Path, name: &str) -> Result<Imported, String> 
     if let Some(refusal) = report.refusal() {
         return Err(refusal);
     }
+    if let Ok(message) = std::env::var(MOCK_ERROR_VARIABLE) {
+        return Err(message);
+    }
     if let Ok(mock) = std::env::var(MOCK_VARIABLE) {
         let bytes = std::fs::read(&mock).map_err(|err| format!("{mock}: {err}"))?;
         return Ok(Imported {
             dom: read_model(&bytes)?,
-            asset_id: 0,
+            asset_id: std::env::var(MOCK_ID_VARIABLE)
+                .ok()
+                .and_then(|id| id.parse().ok())
+                .unwrap_or(0),
             note: report.unchecked,
         });
     }

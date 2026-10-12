@@ -23,6 +23,7 @@ mod dialog;
 mod insert;
 mod layout;
 mod proportions;
+mod publish_result;
 mod r15;
 mod r6;
 
@@ -33,6 +34,7 @@ pub(crate) use build::build_rig;
 pub(crate) use cframe::V3;
 pub(crate) use dialog::RigDialog;
 pub(crate) use proportions::{BodyScale, BodyShape, RigType, Scales};
+pub(crate) use publish_result::{PublishOutcome, PublishResult};
 
 /// `StarterPlayer.AvatarJointUpgrade`: whether R15 characters use
 /// `AnimationConstraint`s or the older `Motor6D`s.
