@@ -99,6 +99,11 @@ fn local_uri(folder: &str, part: Part) -> String {
 /// the model alone, after the auto-rigger was left or the place reopened.
 const UPLOAD_FILE: &str = "upload.glb";
 
+/// The same upload without the body cages, cached beside it when it has
+/// them: Publish falls back to it should Roblox refuse the caged one, so a
+/// cage the importer dislikes never costs the rig its meshes.
+const PLAIN_FILE: &str = "upload-plain.glb";
+
 /// The cache path (relative to the native cache) of the upload cut with the
 /// local meshes under `root`, if any part still points at them.
 fn local_upload(dom: &WeakDom, root: Ref) -> Option<String> {
@@ -147,7 +152,7 @@ fn cut(
     }
     if let Some(reason) = reason {
         body.warnings.push(format!(
-            "Published without body cages (layered clothing will not fit): {reason}"
+            "This rig has no body cages, so layered clothing will not fit it: {reason}"
         ));
     }
     // A skinned part is a `version 4.00` mesh carrying its bones and
@@ -155,10 +160,12 @@ fn cut(
     let skin = smooth.then(|| rbx_autorig::weights(mesh, fit, &body));
     // Skinned, the upload carries the R15 armature and every part's
     // weights; rigid, just the 15 meshes.
-    let upload = match &skin {
-        Some(skin) => rbx_autorig::gltf_skinned(&body, skin, &cages),
-        None => rbx_autorig::gltf(&body, &cages),
+    let write = |cages: &[Mesh]| match &skin {
+        Some(skin) => rbx_autorig::gltf_skinned(&body, skin, cages),
+        None => rbx_autorig::gltf(&body, cages),
     };
+    let upload = write(&cages);
+    let plain = (!cages.is_empty()).then(|| write(&[]));
     let meshes: Vec<Vec<u8>> = body
         .parts
         .iter()
@@ -184,6 +191,11 @@ fn cut(
     cache
         .put_native(&format!("{CACHE_FOLDER}/{folder}/{UPLOAD_FILE}"), &upload)
         .map_err(|e| format!("caching the upload: {e}"))?;
+    if let Some(plain) = plain {
+        cache
+            .put_native(&format!("{CACHE_FOLDER}/{folder}/{PLAIN_FILE}"), &plain)
+            .map_err(|e| format!("caching the upload: {e}"))?;
+    }
     Ok(Cut {
         body,
         uris,
@@ -530,16 +542,38 @@ impl Shell {
                     let bytes = cache.get_native(&upload).ok_or_else(|| {
                         format!("{name}'s cut is no longer in the local cache: auto-rig the mesh again")
                     })?;
-                    let file = std::env::temp_dir().join(format!("{name}.glb"));
-                    std::fs::write(&file, bytes).map_err(|e| format!("{}: {e}", file.display()))?;
-                    let imported = crate::shell::import3d::upload_model(&file, &name);
-                    let _ = std::fs::remove_file(&file);
-                    imported
+                    let send = |bytes: Vec<u8>| {
+                        let file = std::env::temp_dir().join(format!("{name}.glb"));
+                        std::fs::write(&file, bytes)
+                            .map_err(|e| format!("{}: {e}", file.display()))?;
+                        let imported = crate::shell::import3d::upload_model(&file, &name);
+                        let _ = std::fs::remove_file(&file);
+                        imported
+                    };
+                    let plain = upload.replace(UPLOAD_FILE, PLAIN_FILE);
+                    match (send(bytes), cache.get_native(&plain)) {
+                        (Ok(imported), plain) => Ok((imported, None, plain.is_some())),
+                        (Err(err), Some(plain)) => send(plain).map(|imported| {
+                            let note = format!(
+                                "Roblox refused the upload with body cages ({err}), so it went without them: layered clothing will not fit this rig"
+                            );
+                            (imported, Some(note), false)
+                        }).map_err(|_| err),
+                        (Err(err), None) => Err(err),
+                    }
                 })
                 .await;
             let _ = this.update(cx, |shell, cx| match result {
-                Ok(imported) => {
+                Ok((imported, note, caged)) => {
                     let swapped = swap_meshes(&mut shell.dom, model, &imported.dom);
+                    let note = note.or_else(|| {
+                        (caged && wrap_targets(&shell.dom, model) == 0).then(|| {
+                            "The upload carried body cages, but Roblox's import made no WrapTarget of them: layered clothing will not fit this rig".to_string()
+                        })
+                    });
+                    if let Some(note) = note {
+                        shell.output.push(SOURCE, Feedback::Warning(note));
+                    }
                     let changes = shell.dom.take_changes();
                     shell.reflect_changes(&changes, cx);
                     shell.record_history_change(changes);
@@ -901,6 +935,17 @@ fn turn_part(dom: &mut WeakDom, model: Ref, part: Ref, turn: Quat) {
     }
 }
 
+/// How many `WrapTarget`s the body parts of `model` carry.
+fn wrap_targets(dom: &WeakDom, model: Ref) -> usize {
+    let parts = dom.get(model).map_or(&[][..], |m| m.children());
+    parts
+        .iter()
+        .filter_map(|&p| dom.get(p))
+        .flat_map(|p| p.children())
+        .filter(|&&c| dom.get(c).is_some_and(|i| i.class() == "WrapTarget"))
+        .count()
+}
+
 fn find_named(dom: &WeakDom, names: &[String]) -> Option<Ref> {
     let mut pending: Vec<Ref> = dom.root_refs().to_vec();
     while let Some(next) = pending.pop() {
@@ -1101,6 +1146,7 @@ mod tests {
                     ))))
                 );
             }
+            assert_eq!(wrap_targets(&dom, model), 15);
             let rig = rbx_animation::Rig::read(&dom, model);
             let head = rig.joint_for("Head").unwrap().part1;
             let props = dom.get(head).unwrap().properties();
