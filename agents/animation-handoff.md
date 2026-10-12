@@ -136,7 +136,43 @@ API publique, depuis `src/lib.rs` :
   - Sauvegarder une place qui contient encore des meshes locaux affiche un
     avertissement.
 
+- **Publier une animation** (`src/shell/animation/publish.rs`, branche
+  `pr180/anim-publish`) :
+  - Barre du haut du document, à droite du squelette : **Import ▾** (depuis
+    un ID d'asset, depuis un fichier FBX/glTF/.rbxm, ou une animation déjà
+    sauvée sur le rig), **Export ▾** (fichier `.rbxm`, Save to rig) et
+    **Publish** en bouton principal. Chaque entrée a une infobulle. Le
+    panneau ne garde que New, et Copy/Paste Blender dans la section Import.
+  - Publish ouvre un formulaire : nom, description, créateur (le compte ou
+    un groupe du cache Home, `launcher::cached_groups`). L'upload passe par
+    `rbx_cloud::Client::create_animation_asset` (assetType `Animation`, un
+    `.rbxm` contenant un seul `KeyframeSequence`). Un second Publish est
+    refusé tant que le premier tourne ; le formulaire affiche
+    « Publishing… ».
+  - Résultat dans le dialogue de `rig/publish_result.rs` (variantes
+    `AnimationPublished` / `AnimationFailed`) : `rbxassetid://<id>`, Copy
+    ID, Open on Roblox, et le rappel « AnimationId puis
+    Animator:LoadAnimation ». Avertissement partiel si des joints du clip
+    ne sont pas sur le rig lié (écrits à plat, ils ne joueront pas).
+  - Mocks : `RBX_STUDIO_ANIM_PUBLISH_MOCK_ID=<id>` et
+    `RBX_STUDIO_ANIM_PUBLISH_MOCK_ERROR=<message>` (3 s d'attente, ni réseau
+    ni clé). Étapes scriptées : `menu=import|export`, `import-id-dialog`,
+    `publish-form`, `publish-group[=<id>]`, `publish-go`,
+    `export-rbxm=<chemin>`.
+- **Confirmations en toast** (`src/shell/animation/toast.rs`) : la ligne de
+  statut en bas du panneau est remplacée par un bandeau en haut de la vue
+  3D, style lecture de vitesse. Info 4 s, avertissement 7 s, erreur
+  jusqu'à fermeture (croix).
+
 ## 2. Ce qu'il faut tester avec la clé API
+
+0. **Publish d'une animation : NON VÉRIFIÉ en direct.** La doc Open Cloud
+   accepte `Animation` en `.rbxm` (`model/x-rbxm`) mais prévient qu'un
+   fichier écrit hors Studio « peut ne pas s'uploader ou fonctionner ».
+   À faire : lier un rig R15, `demo`, Publish (compte puis groupe), puis
+   dans Studio mettre l'ID dans `Animation.AnimationId` et jouer
+   l'animation via `Animator:LoadAnimation`. Si l'upload est refusé, le
+   message brut est dans le dialogue d'échec et dans Output.
 
 1. **Préparer**
    - Une clé configurée (Home › Manage key, ou variable d'environnement, voir
