@@ -484,7 +484,15 @@ fn body_colors(dom: &mut WeakDom, model: Ref, colors: &BodyColors) {
         ("LeftLegColor3", colors.left_leg),
         ("RightLegColor3", colors.right_leg),
     ] {
-        set(dom, node, property, Variant::Color3uint8 { r, g, b });
+        // Studio reads these as `Color3`; a `Color3uint8` makes the place
+        // fail to open ("Unexpected format 26 (expected 12)").
+        let channel = |v: u8| f32::from(v) / 255.0;
+        let color = Color3Data {
+            r: channel(r),
+            g: channel(g),
+            b: channel(b),
+        };
+        set(dom, node, property, Variant::Color3(color));
     }
 }
 
