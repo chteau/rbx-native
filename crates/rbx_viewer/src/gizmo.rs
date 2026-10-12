@@ -156,6 +156,10 @@ pub struct Gizmo {
     /// The hotspot a pivot drag has snapped onto, drawn larger than the
     /// rest.
     pub snapped: Option<Vec3>,
+    /// The axis whose handle the cursor rests on, drawn brighter so the
+    /// user can see what a press would grab before pressing — Studio lights
+    /// a hovered arrow or ring the same way.
+    pub hover: Option<Axis>,
 }
 
 /// One Move arrow or Scale ball: the axis it stands on, and which end of it
@@ -220,7 +224,10 @@ impl Handles {
     /// Both directions of each axis count: Studio's Move gizmo puts an arrow
     /// on each end, and grabbing either drags along the same line.
     pub fn grab_arm(&self, ray: Ray) -> Option<(Axis, f32)> {
-        let reach = PICK_RADIUS * self.arm;
+        self.arm_within(ray, PICK_RADIUS * self.arm)
+    }
+
+    fn arm_within(&self, ray: Ray, reach: f32) -> Option<(Axis, f32)> {
         Axis::ALL
             .into_iter()
             .filter_map(|axis| {
@@ -268,7 +275,22 @@ impl Handles {
     /// Which rotation ring `ray` is pointing at, if any — the nearest, so the
     /// ring in front of the part never loses to the one crossing behind it.
     pub fn grab_ring(&self, ray: Ray) -> Option<Axis> {
-        let reach = RING_PICK * self.arm;
+        self.ring_within(ray, RING_PICK * self.arm)
+    }
+
+    /// Whether `ray` passes within `slack` times the grab band of any arm or
+    /// ring: a press there missed a handle by a hair rather than aiming at
+    /// the scene behind it, so a view that cares (the Animation Editor's
+    /// posing) can swallow it instead of letting it clear the selection.
+    pub fn near(&self, ray: Ray, slack: f32) -> bool {
+        self.arm_within(ray, slack * PICK_RADIUS * self.arm)
+            .is_some()
+            || self
+                .ring_within(ray, slack * RING_PICK * self.arm)
+                .is_some()
+    }
+
+    fn ring_within(&self, ray: Ray, reach: f32) -> Option<Axis> {
         let radius = RING_RADIUS * self.arm;
         Axis::ALL
             .into_iter()
@@ -380,6 +402,32 @@ pub fn arm_length(origin: Vec3, pose: Pose, orthographic: bool) -> f32 {
     }
     let distance = (origin - pose.position).length().max(MIN_DISTANCE);
     distance * (pose.fov_degrees * 0.5).to_radians().tan() * SCREEN_FRACTION
+}
+
+/// The shortest a Move arrow or a Rotate ring's radius may be on screen, in
+/// pixels of the viewport's height. [`arm_length`] keeps the handles a fifth
+/// of the half-height, which in a small 3D view — the Animation editor's,
+/// above its timeline — left a ring's whole grab band
+/// ([`RING_PICK`] of an arm) under 4 pixels. At this floor that band is 7
+/// pixels either side of the circle and an arrow's ([`PICK_RADIUS`]) 12; a
+/// view taller than 800 pixels never reaches it, so the ordinary Workspace
+/// view is drawn exactly as before.
+pub const MIN_ARM_PIXELS: f32 = 80.0;
+
+/// [`arm_length`] in a viewport `height` pixels tall, never shorter on
+/// screen than [`MIN_ARM_PIXELS`]. The renderer draws Move's and Rotate's
+/// handles at this length and the 3D view grabs them at it, so both must
+/// call it with the same height (the render target's own).
+pub fn handle_length(origin: Vec3, pose: Pose, orthographic: bool, height: f32) -> f32 {
+    let arm = arm_length(origin, pose, orthographic);
+    // `arm_length` is `SCREEN_FRACTION` of the half-height, whatever the
+    // projection.
+    let pixels = SCREEN_FRACTION * height * 0.5;
+    if pixels > 0.0 && pixels < MIN_ARM_PIXELS {
+        arm * MIN_ARM_PIXELS / pixels
+    } else {
+        arm
+    }
 }
 
 /// A quarter turn about `axis`, the rotation `T` and `R` apply to a part

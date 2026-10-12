@@ -48,7 +48,9 @@ use glam::Mat3;
 
 use crate::camera::{Camera, Frustum, Viewpoint};
 use crate::fonts::Library;
-use crate::gizmo::{arm_length, basis, handle_axes, Faces, Gizmo, Handles, Hotspots, Kind, Shape};
+use crate::gizmo::{
+    basis, handle_axes, handle_length, Faces, Gizmo, Handles, Hotspots, Kind, Shape,
+};
 use crate::lighting::{Lighting, LocalLight};
 use crate::load::Answered;
 use crate::pick::Selected;
@@ -572,7 +574,9 @@ impl Renderer {
     /// on its automatic orbit — which only happens in a file with no saved
     /// camera of its own, before the first input, where there is nothing to
     /// drag with yet either.
-    fn handles(&self, from: Viewpoint) -> Option<Shape> {
+    /// `height` is the render target's, in pixels (see
+    /// [`handle_length`]).
+    fn handles(&self, from: Viewpoint, height: f32) -> Option<Shape> {
         let gizmo = self.gizmo?;
         let Viewpoint::Free(pose) = from else {
             return None;
@@ -617,7 +621,8 @@ impl Renderer {
             return None;
         }
         let axes = handle_axes(editing, gizmo.local, gizmo.pivot, rotation);
-        let handles = Handles::new(origin, basis(axes), arm_length(origin, pose, orthographic));
+        let arm = handle_length(origin, pose, orthographic, height);
+        let handles = Handles::new(origin, basis(axes), arm);
         Some(match gizmo.kind {
             Kind::Rotate => Shape::Rotate(handles),
             Kind::Pivot => {
@@ -751,7 +756,9 @@ impl Renderer {
         // this — see `Fit::visible` — so a caster it culls can still land a
         // shadow inside the frame.
         let held = self.gizmo.and_then(|gizmo| gizmo.held);
-        self.draggers.update(queue, self.handles(from), held, eye);
+        let hover = self.gizmo.and_then(|gizmo| gizmo.hover);
+        self.draggers
+            .update(queue, self.handles(from, size.1 as f32), held, hover, eye);
         let frustum = Frustum::new(&self.camera, from, aspect);
         let cull = MainCull::new(&frustum, eye, self.quality.render_distance);
         let drawn = self.surroundings();

@@ -128,6 +128,20 @@ pub(super) fn mesh(shape: &Shape, held: Option<End>, eye: Vec3) -> Vec<Vertex> {
     }
 }
 
+/// How far a hovered handle's colour moves towards white.
+const LIT: f32 = 0.55;
+
+/// Brightens every vertex painted in `axis`'s colour: the hovered arrow or
+/// ring (and, under Transform, the rest of that axis's handles, which share
+/// its colour). Handles are flat-coloured, so the colour alone names them.
+pub(super) fn light(vertices: &mut [Vertex], axis: Axis) {
+    let color = axis.color();
+    let lit = color.map(|channel| channel + (1.0 - channel) * LIT);
+    for vertex in vertices.iter_mut().filter(|vertex| vertex.color == color) {
+        vertex.color = lit;
+    }
+}
+
 /// Edit Pivot's hotspots, painted last: dots far smaller than any handle,
 /// which only ever sit on the selection's boxes, so being drawn over the
 /// arms and rings costs nothing and keeps every one of them visible.

@@ -6,7 +6,7 @@
 
 use glam::Vec3;
 
-use crate::gizmo::{End, Shape};
+use crate::gizmo::{Axis, End, Shape};
 
 use super::pipeline::{self, Surface, Target};
 use mesh::{Vertex, CAPACITY};
@@ -73,6 +73,7 @@ impl Draggers {
         queue: &wgpu::Queue,
         shape: Option<Shape>,
         held: Option<End>,
+        hover: Option<Axis>,
         eye: Vec3,
     ) {
         let Some(shape) = shape else {
@@ -80,7 +81,10 @@ impl Draggers {
             return;
         };
 
-        let vertices = mesh::mesh(&shape, held, eye);
+        let mut vertices = mesh::mesh(&shape, held, eye);
+        if let Some(axis) = hover {
+            mesh::light(&mut vertices, axis);
+        }
         self.count = vertices.len() as u32;
         queue.write_buffer(&self.vertices, 0, bytemuck::cast_slice(&vertices));
     }

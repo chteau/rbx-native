@@ -542,3 +542,39 @@ fn a_many_part_model_draws_its_parts_hotspots_up_to_the_cap() {
         "the pivot gizmo's own budget"
     );
 }
+
+#[test]
+fn a_hovered_ring_is_drawn_brighter_and_alone() {
+    let mut vertices = rings(&handles(), Vec3::splat(40.0));
+    light(&mut vertices, Axis::Y);
+    let lit = vertices
+        .iter()
+        .filter(|vertex| vertex.color != Axis::Y.color());
+    let lit: Vec<_> = lit
+        .filter(|vertex| vertex.color != Axis::X.color() && vertex.color != Axis::Z.color())
+        .collect();
+    assert!(!lit.is_empty(), "the Y ring kept its colour");
+    for vertex in &lit {
+        assert!(
+            vertex
+                .color
+                .iter()
+                .zip(Axis::Y.color())
+                .all(|(lit, plain)| *lit > plain),
+            "{:?} is not brighter than the plain ring",
+            vertex.color
+        );
+    }
+    assert!(
+        vertices
+            .iter()
+            .any(|vertex| vertex.color == Axis::X.color()),
+        "the X ring lit up too"
+    );
+    assert!(
+        !vertices
+            .iter()
+            .any(|vertex| vertex.color == Axis::Y.color()),
+        "part of the Y ring stayed unlit"
+    );
+}
