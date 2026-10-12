@@ -140,7 +140,7 @@ impl Shell {
 
     pub(super) fn anim_new_graph(&mut self, cx: &mut Context<Self>) {
         self.anim.graph.load(Graph::default(), None);
-        self.anim.status = Some("New animation graph".into());
+        self.anim.say("New animation graph");
         cx.notify();
     }
 
@@ -183,8 +183,10 @@ impl Shell {
         self.record_history_change(changes);
         self.rebuild_explorer(cx);
         self.keep_draft(true);
-        self.anim.status =
-            Some(format!("Saved {} as an AnimationGraphDefinition", graph.name).into());
+        self.anim.say(format!(
+            "Saved {} as an AnimationGraphDefinition",
+            graph.name
+        ));
         cx.notify();
     }
 
@@ -210,11 +212,11 @@ impl Shell {
         if let Some(node) = doc.selected.take() {
             let mut removed = false;
             doc.edit(|g| removed = g.remove(node));
-            if !removed {
-                self.anim.status = Some("The output node stays".into());
-            }
             doc.inputs.clear();
             doc.subscriptions.clear();
+            if !removed {
+                self.anim.warn("The output node stays");
+            }
         }
         cx.notify();
     }

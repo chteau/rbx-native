@@ -133,7 +133,7 @@ impl Shell {
             .unwrap_or_default();
         let doc = &mut self.anim.graph;
         if name.is_empty() || name.contains(':') || doc.graph.param(&name).is_some() {
-            self.anim.status = Some("Name the parameter (unique, no ':') first".into());
+            self.anim.warn("Name the parameter (unique, no ':') first");
         } else {
             let default = match kind {
                 ParamKind::Number => Value::Number(0.0),

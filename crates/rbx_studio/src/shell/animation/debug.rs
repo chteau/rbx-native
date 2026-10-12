@@ -26,7 +26,13 @@
 //! would), `document=viewport|animation|ui` (switch the central document),
 //! `done` (the auto-rigger's Done), `delete-rig` (delete the auto-rigged or
 //! bound rig's `Model`, as the Delete key does on its Explorer row),
-//! `write=<path>` (File › Save As to that path) and `quit`.
+//! `write=<path>` (File › Save As to that path), `menu=import|export` (open
+//! the top bar's Import ▾ or Export ▾), `import-id-dialog` (Import › From
+//! asset ID…), `publish-form` (the Publish form, waited for),
+//! `publish-group[=<id>]` (pick that group, or the first cached one, as the
+//! creator), `publish-go` (the form's Publish; the rest waits for the
+//! upload, mocked by `RBX_STUDIO_ANIM_PUBLISH_MOCK_ID`/`_ERROR`),
+//! `export-rbxm=<path>` (Export › .rbxm file, to that path) and `quit`.
 
 use gpui_kit::*;
 use rbx_animation::graph::Value;
@@ -73,14 +79,16 @@ impl Shell {
             Some((index, by))
         });
         let Some((index, by)) = parsed else {
-            self.anim.status = Some(format!("{VARIABLE}: bad autorig-drag={arg}").into());
+            self.anim
+                .fail(format!("{VARIABLE}: bad autorig-drag={arg}"));
             return false;
         };
         let Some(from) = self
             .anim_autorig()
             .and_then(|rig| rig.markers().0.get(index).copied())
         else {
-            self.anim.status = Some(format!("{VARIABLE}: autorig-drag needs a rig").into());
+            self.anim
+                .fail(format!("{VARIABLE}: autorig-drag needs a rig"));
             return false;
         };
         self.autorig_drag_joint(index, from, JointPhase::Press, cx);
@@ -204,7 +212,7 @@ impl Shell {
                         self.select(model, cx);
                         self.bind_rig(model, cx);
                     }
-                    None => self.anim.status = Some(format!("No Model named {arg}").into()),
+                    None => self.anim.fail(format!("No Model named {arg}")),
                 },
                 "demo" => {
                     if self.anim.bound.is_none() {
@@ -261,7 +269,7 @@ impl Shell {
                         cx.write_to_clipboard(ClipboardItem::new_string(text));
                         self.paste_blender_animation(cx);
                     }
-                    Err(e) => self.anim.status = Some(format!("Couldn't read {arg}: {e}").into()),
+                    Err(e) => self.anim.fail(format!("Couldn't read {arg}: {e}")),
                 },
                 "time" => {
                     if let Ok(t) = arg.parse::<f32>() {
@@ -312,7 +320,7 @@ impl Shell {
                         .map(|j| j.part1);
                     match part {
                         Some(part) => self.reselect(vec![part], cx),
-                        None => self.anim.status = Some(format!("No rig part named {arg}").into()),
+                        None => self.anim.fail(format!("No rig part named {arg}")),
                     }
                 }
                 "document" => {
@@ -335,12 +343,47 @@ impl Shell {
                             self.select(model, cx);
                             self.delete_selected(cx);
                         }
-                        None => self.anim.status = Some("delete-rig: no rig".into()),
+                        None => self.anim.fail("delete-rig: no rig"),
                     }
                 }
                 "write" => self.save_as(std::path::Path::new(arg), cx),
+                // The top bar's Import ▾ / Export ▾ menus, opened.
+                "menu" => {
+                    self.open_menu = match arg {
+                        "import" => Some(crate::shell::menu::MenuId::AnimImport),
+                        "export" => Some(crate::shell::menu::MenuId::AnimExport),
+                        _ => None,
+                    }
+                }
+                // A dialog opens on the next render (its fields need the
+                // window), so the remaining steps wait for it.
+                "import-id-dialog" | "publish-form" => {
+                    if verb == "import-id-dialog" {
+                        self.request_animation_id_prompt(cx);
+                    } else {
+                        self.request_animation_publish(cx);
+                    }
+                    self.anim.debug_rest = Some(steps[i + 1..].to_vec());
+                    cx.notify();
+                    return;
+                }
+                "publish-group" => {
+                    let group = arg.parse().ok().or_else(|| self.first_publish_group());
+                    self.set_publish_group(group);
+                }
+                "publish-go" => {
+                    if self.anim.publish_form.is_some() && !self.anim.publishing {
+                        self.anim.debug_rest = Some(steps[i + 1..].to_vec());
+                        self.publish_animation(cx);
+                        if self.anim.publishing {
+                            return;
+                        }
+                        self.anim.debug_rest = None;
+                    }
+                }
+                "export-rbxm" => self.write_animation_rbxm(std::path::Path::new(arg), cx),
                 "quit" => cx.quit(),
-                _ => self.anim.status = Some(format!("{VARIABLE}: unknown step {verb}").into()),
+                _ => self.anim.fail(format!("{VARIABLE}: unknown step {verb}")),
             }
         }
         cx.notify();

@@ -67,6 +67,16 @@ fn options(
 }
 
 /// First launch: the setup wizard (1040×720, fixed).
+/// The groups the last signed-in account belongs to, as Home last listed
+/// them; empty until Home has loaded once. Used to offer a group as the
+/// creator of an upload without a network call.
+pub(crate) fn cached_groups() -> Vec<rbx_cloud::Group> {
+    cache::GamesCache::last_user()
+        .and_then(cache::GamesCache::load)
+        .map(|c| c.listing.groups)
+        .unwrap_or_default()
+}
+
 pub(crate) fn open_wizard(boot: Boot, cx: &mut App) {
     let options = options("Set up publishing", (1040., 720.), None, cx);
     let _ = cx.open_window(options, move |window, cx| {

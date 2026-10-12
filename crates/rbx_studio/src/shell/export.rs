@@ -29,7 +29,7 @@ use crate::save::{write_atomic, Format};
 
 use super::{clipboard, Shell};
 
-const EXPORT_DIR_VARIABLE: &str = "RBX_STUDIO_EXPORT_DIR";
+pub(in crate::shell) const EXPORT_DIR_VARIABLE: &str = "RBX_STUDIO_EXPORT_DIR";
 /// The `source` an export's row carries in the Output dock.
 const SOURCE: &str = "Export";
 

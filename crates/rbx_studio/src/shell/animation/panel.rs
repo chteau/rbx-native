@@ -9,9 +9,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use rbx_animation::{Frame, Priority};
 
-use super::widgets::{
-    field_row, label, picker, primary_button, publish_button, section, title, wide_button,
-};
+use super::widgets::{field_row, label, picker, publish_button, section, title, wide_button};
 use super::Shell;
 use crate::shell::chrome;
 use crate::shell::menu::{self, MenuId};
@@ -32,7 +30,6 @@ enum Field {
     Rotation(usize),
     Position(usize),
     Marker,
-    AnimationId,
     CurveValue,
     CurveTime,
     AutorigAxis(usize),
@@ -44,7 +41,6 @@ pub(in crate::shell) struct Fields {
     rotation: [Entity<InputState>; 3],
     position: [Entity<InputState>; 3],
     marker: Entity<InputState>,
-    animation_id: Entity<InputState>,
     /// The Curve section's value, time, and left and right tangents.
     curve: [Entity<InputState>; 4],
     /// The Auto-rig section's joint position.
@@ -103,7 +99,6 @@ impl Shell {
         let rotation = [0, 1, 2].map(|i| make(Field::Rotation(i), "0", window, cx));
         let position = [0, 1, 2].map(|i| make(Field::Position(i), "0", window, cx));
         let marker = make(Field::Marker, "Event name", window, cx);
-        let animation_id = make(Field::AnimationId, "rbxassetid://…", window, cx);
         let curve = [
             make(Field::CurveValue, "Value", window, cx),
             make(Field::CurveTime, "Frame", window, cx),
@@ -116,7 +111,6 @@ impl Shell {
             rotation,
             position,
             marker,
-            animation_id,
             curve,
             autorig,
             face_region: 0,
@@ -143,11 +137,6 @@ impl Shell {
                     }
                 }
             }
-            Field::AnimationId => {
-                if !text.trim().is_empty() {
-                    self.import_animation_id(text, cx);
-                }
-            }
             Field::AutorigAxis(axis) => self.commit_autorig_axis(axis, text, cx),
             Field::CurveValue | Field::CurveTime | Field::Tangent { .. } => {
                 self.commit_curve_field(field, text);
@@ -158,7 +147,7 @@ impl Shell {
                     return;
                 };
                 let Some(joint) = self.anim.editor.joint.clone() else {
-                    self.anim.status = Some("Pick a joint in the channel list first".into());
+                    self.anim.warn("Pick a joint in the channel list first");
                     cx.notify();
                     return;
                 };
@@ -257,16 +246,6 @@ impl Shell {
             .child(events)
             .child(face)
             .child(import)
-            .when_some(self.anim.status.clone(), |this, status| {
-                this.child(
-                    div()
-                        .id("anim-status")
-                        .debug_selector(|| "anim-status".into())
-                        .text_size(tokens::text_xs())
-                        .text_color(tokens::text_muted())
-                        .child(status),
-                )
-            })
             .into_any_element()
     }
 
@@ -318,8 +297,7 @@ impl Shell {
                         wide_button("anim-use-rig", "Use selected rig", true).on_click(
                             cx.listener(|shell, _, _, cx| {
                                 if !shell.bind_selected_rig(cx) {
-                                    shell.anim.status =
-                                        Some("The selection is not inside a rig".into());
+                                    shell.anim.warn("The selection is not inside a rig");
                                 }
                                 cx.notify();
                             }),
@@ -399,24 +377,6 @@ impl Shell {
                     })
             })
             .collect();
-        let saved = crate::anim_editor::place::all_of_class(
-            &self.dom,
-            "KeyframeSequence",
-            self.anim.bound.as_ref().map(|b| b.model),
-        );
-        let loads: Vec<menu::Item> = if saved.is_empty() {
-            vec![menu::item("No KeyframeSequence in this place").disabled()]
-        } else {
-            saved
-                .into_iter()
-                .map(|(r, n)| {
-                    menu::item(n).on_click(move |shell, cx| {
-                        shell.load_animation(r);
-                        cx.notify();
-                    })
-                })
-                .collect()
-        };
         section("Clip")
             .child(field_row("Name", name))
             .child(
@@ -454,21 +414,12 @@ impl Shell {
             .child(
                 h_flex()
                     .gap(px(6.))
+                    // Opening, saving and publishing live in the top bar
+                    // (Import ▾ / Export ▾ / Publish); only a fresh clip
+                    // stays here, beside the clip's own settings.
                     .child(
-                        wide_button("anim-new", "New", true)
+                        wide_button("anim-new", "New clip", true)
                             .on_click(cx.listener(|shell, _, _, cx| shell.new_animation(cx))),
-                    )
-                    .child(picker(
-                        self,
-                        MenuId::AnimLoad,
-                        "anim-load",
-                        "Load",
-                        loads,
-                        cx,
-                    ))
-                    .child(
-                        primary_button("anim-save", "Save")
-                            .on_click(cx.listener(|shell, _, _, cx| shell.save_animation(cx))),
                     ),
             )
     }
