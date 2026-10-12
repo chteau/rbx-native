@@ -208,3 +208,112 @@ fn ctrl_wheel_zooms_and_a_plain_wheel_scrolls_the_list() {
         Some(Wheel::Pan(30.0))
     );
 }
+
+/// A Rotate drag on a posed limb turns it about its Motor6D's origin: the
+/// joint's C0 on Part0 and C1 on Part1 sit at the same world point before
+/// the drag and after the drag is keyed, and the key carries exactly the
+/// turn the drag made. Run the way the editor runs it: the selected part's
+/// `PivotOffset` is C1 (`sync_joint_pivot`), the Rotate gizmo turns about
+/// that pivot (`Targets::rotate_about`), and the part's new `CFrame` is
+/// solved back into a `Transform` and keyed (`settle_pose_edits`, `drag_key`).
+#[test]
+fn a_rotate_drag_turns_the_limb_about_its_joint() {
+    use glam::{Mat3, Quat, Vec3};
+    use rbx_animation::Frame;
+    use rbx_reflection::ReflectionDatabase;
+
+    use crate::transform::Targets;
+
+    let mut dom = WeakDom::new();
+    let model = dom.new_instance("Model", "R", None);
+    let torso = dom.new_instance("Part", "UpperTorso", Some(model));
+    let arm = dom.new_instance("Part", "RightUpperArm", Some(model));
+    let shoulder = dom.new_instance("Motor6D", "RightShoulder", Some(arm));
+    dom.set_property(shoulder, "Part0", Variant::Ref(torso))
+        .unwrap();
+    dom.set_property(shoulder, "Part1", Variant::Ref(arm))
+        .unwrap();
+    // An R15-like shoulder, with C1 turned too so neither side is identity.
+    let c0 = Frame::new(Vec3::new(1.0, 0.56, 0.0), Quat::from_rotation_y(0.2));
+    let c1 = Frame::new(Vec3::new(-0.5, 0.39, 0.1), Quat::from_rotation_x(-0.3));
+    dom.set_property(shoulder, "C0", Variant::CFrame(c0.to_data()))
+        .unwrap();
+    dom.set_property(shoulder, "C1", Variant::CFrame(c1.to_data()))
+        .unwrap();
+    let rig = Rig::read(&dom, model);
+    let joint = rig.joint_driving(arm).expect("the shoulder drives the arm");
+
+    let torso_at = Frame::new(Vec3::new(3.0, 4.0, -2.0), Quat::from_rotation_y(0.7));
+    // A pose already keyed: turned, not moved, as a Rotate key is.
+    let before = Frame::new(
+        Vec3::ZERO,
+        Quat::from_euler(glam::EulerRot::XYZ, 0.4, -0.2, 0.9),
+    );
+    let arm_at = joint.place(&torso_at, &before);
+    let c0_world = |p0: &Frame| p0.mul(&joint.c0).position;
+    let c1_world = |p1: &Frame| p1.mul(&joint.c1).position;
+    assert!(c0_world(&torso_at).distance(c1_world(&arm_at)) < 1e-4);
+
+    // What `pose_in` and `sync_joint_pivot` leave in the document.
+    dom.set_property(torso, "CFrame", Variant::CFrame(torso_at.to_data()))
+        .unwrap();
+    dom.set_property(arm, "CFrame", Variant::CFrame(arm_at.to_data()))
+        .unwrap();
+    dom.set_property(arm, "PivotOffset", Variant::CFrame(joint.c1.to_data()))
+        .unwrap();
+    dom.set_property(
+        arm,
+        "size",
+        Variant::Vector3(rbx_dom::Vector3Data {
+            x: 1.0,
+            y: 2.0,
+            z: 1.0,
+        }),
+    )
+    .unwrap();
+
+    let database = ReflectionDatabase::embedded();
+    let held = Targets::read(&dom, &database, &[arm]);
+    let origin = held
+        .pivot()
+        .expect("a lone part has a pivot")
+        .w_axis
+        .truncate();
+    assert!(
+        origin.distance(c0_world(&torso_at)) < 1e-4,
+        "the Rotate rings stand at {origin}, the shoulder is at {}",
+        c0_world(&torso_at)
+    );
+
+    // A drag about a world axis that is none of the joint's own.
+    let drag = Quat::from_axis_angle(Vec3::new(0.3, -1.0, 0.5).normalize(), 0.8);
+    let mut targets = Targets::read(&dom, &database, &[arm]);
+    let moved = targets.rotate_about(&held, origin, Mat3::from_quat(drag));
+    let [(part, orientation, position)] = moved.as_slice() else {
+        panic!("{moved:?}");
+    };
+    assert_eq!(*part, arm);
+    let dropped = Frame::new(*position, Quat::from_mat3(orientation));
+
+    let solved = joint.solve(&torso_at, &dropped);
+    let key = super::pose::drag_key(before, solved);
+    assert!(
+        key.position.length() < 1e-4,
+        "the key moved the arm: {key:?}"
+    );
+    let after = joint.place(&torso_at, &key);
+    assert!(
+        c0_world(&torso_at).distance(c1_world(&after)) < 1e-4,
+        "C1 on the arm left the shoulder: {} vs {}",
+        c1_world(&after),
+        c0_world(&torso_at)
+    );
+    // The keyed pose is the dropped one, and the arm turned by the drag.
+    assert!(after.position.distance(dropped.position) < 1e-4);
+    assert!(after.rotation.dot(dropped.rotation).abs() > 1.0 - 1e-5);
+    let turned = after.rotation * arm_at.rotation.inverse();
+    assert!(
+        turned.dot(drag).abs() > 1.0 - 1e-5,
+        "{turned:?} vs {drag:?}"
+    );
+}
