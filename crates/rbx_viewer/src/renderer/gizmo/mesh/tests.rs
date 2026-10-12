@@ -578,3 +578,30 @@ fn a_hovered_ring_is_drawn_brighter_and_alone() {
         "part of the Y ring stayed unlit"
     );
 }
+
+/// A hovered handle stays its own colour, only brighter: the lit Z arrow is
+/// still blue, not the washed-out lavender a 55% mix towards white made of
+/// it (which, seen end on beside a posed arm, read as a stray shape).
+#[test]
+fn a_lit_handle_keeps_its_hue() {
+    for axis in [Axis::X, Axis::Y, Axis::Z] {
+        let plain = axis.color();
+        let lit = lit(plain);
+        let main = (0..3)
+            .max_by(|&a, &b| plain[a].total_cmp(&plain[b]))
+            .unwrap();
+        assert_eq!(lit[main], 1.0, "{axis:?} is at full strength when lit");
+        for channel in (0..3).filter(|&c| c != main) {
+            assert!(lit[channel] > plain[channel], "{axis:?} got brighter");
+            assert!(
+                lit[channel] < 0.3,
+                "{axis:?} lit is {lit:?}: washed towards white"
+            );
+        }
+    }
+    // The colour sampled off the reported shape, in linear light: the old
+    // wash of the Z arrow. The new one is nowhere near it.
+    let old = [0.565, 0.598, 0.95];
+    let new = lit(Axis::Z.color());
+    assert!(new[0] < old[0] - 0.3 && new[1] < old[1] - 0.3, "{new:?}");
+}
