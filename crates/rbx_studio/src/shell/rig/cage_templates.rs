@@ -110,4 +110,39 @@ mod tests {
         assert_eq!(t.mesh.triangles, vec![[0, 1, 2]]);
         assert_eq!(t.size, Vec3::from(stock.init));
     }
+
+    /// The real Mannequin cages (downloaded anonymously) on the real
+    /// characters of the fixtures repository (`RBX_FIXTURES`, its
+    /// `autorig/` folder): every part gets a cage with its template's
+    /// vertex count, and few triangles fold.
+    #[test]
+    #[ignore = "downloads the Mannequin cages; needs RBX_FIXTURES"]
+    fn real_cages_fit_real_characters() {
+        let root = std::path::PathBuf::from(
+            std::env::var("RBX_FIXTURES").expect("RBX_FIXTURES names the fixtures repository"),
+        )
+        .join("autorig");
+        let templates = mannequin().unwrap();
+        assert_eq!(templates.len(), 15);
+        for file in [
+            "quevedo-woman-body/WomanBody13.obj",
+            "quaternius-ubc-superhero-male/Superhero_Male_FullBody.gltf",
+            "rak-old-man/Rak.FBX",
+            "tiby/Tiby_Character_Female/TIBYF.fbx",
+        ] {
+            let mesh = rbx_autorig::read(&root.join(file)).unwrap();
+            let fit = rbx_autorig::fit(&mesh, 5.2).unwrap();
+            let body = rbx_autorig::split(&mesh, &fit).unwrap();
+            let (cages, folded) = rbx_autorig::fit_cages_report(&body, &templates).unwrap();
+            let mut triangles = 0;
+            for (cage, part) in cages.iter().zip(Part::ALL) {
+                let template = templates.iter().find(|t| t.part == part).unwrap();
+                assert_eq!(cage.positions.len(), template.mesh.positions.len());
+                assert_eq!(cage.uvs, template.mesh.uvs, "{file}: {part}");
+                triangles += cage.triangles.len();
+            }
+            let folded: usize = folded.iter().sum();
+            assert!(folded * 50 <= triangles, "{file}: {folded} of {triangles} folded");
+        }
+    }
 }

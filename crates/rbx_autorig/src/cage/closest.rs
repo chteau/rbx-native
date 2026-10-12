@@ -10,8 +10,8 @@ struct Tri {
     normal: Vec3,
 }
 
-/// A part's triangles behind its bounding box, so whole parts that cannot
-/// beat the current best distance are skipped.
+/// One part's triangles behind their bounding box, so whole parts that
+/// cannot beat the current best distance are skipped.
 struct Group {
     lo: Vec3,
     hi: Vec3,
@@ -23,10 +23,10 @@ pub(super) struct Surface {
 }
 
 impl Surface {
-    /// `parts` holds each part's world-space triangles; degenerate ones are
-    /// dropped since they have no normal to push along.
-    pub(super) fn new(parts: Vec<Vec<[Vec3; 3]>>) -> Self {
-        let groups = parts
+    /// `groups` holds each part's world-space triangles; degenerate ones
+    /// are dropped since the region test divides by their area.
+    pub(super) fn new(groups: Vec<Vec<[Vec3; 3]>>) -> Self {
+        let groups = groups
             .into_iter()
             .filter_map(|tris| {
                 let tris: Vec<Tri> = tris
@@ -50,8 +50,10 @@ impl Surface {
         Self { groups }
     }
 
-    /// The closest surface point to `p` and the face normal there.
-    pub(super) fn closest(&self, p: Vec3) -> Option<(Vec3, Vec3)> {
+    /// Unsigned distance from `p` to the surface, the closest point on it
+    /// and the unit normal of the triangle it lies on; `None` for an empty
+    /// surface.
+    pub(super) fn closest(&self, p: Vec3) -> Option<(f32, Vec3, Vec3)> {
         let mut best: Option<(f32, Vec3, Vec3)> = None;
         for g in &self.groups {
             let outside = (g.lo - p).max(p - g.hi).max(Vec3::ZERO);
@@ -59,14 +61,14 @@ impl Surface {
                 continue;
             }
             for t in &g.tris {
-                let s = on_triangle(p, t.a, t.ab, t.ac);
-                let d = p.distance_squared(s);
+                let q = on_triangle(p, t.a, t.ab, t.ac);
+                let d = p.distance_squared(q);
                 if best.is_none_or(|(bd, _, _)| d < bd) {
-                    best = Some((d, s, t.normal));
+                    best = Some((d, q, t.normal));
                 }
             }
         }
-        best.map(|(_, s, n)| (s, n))
+        best.map(|(d, q, n)| (d.sqrt(), q, n))
     }
 }
 

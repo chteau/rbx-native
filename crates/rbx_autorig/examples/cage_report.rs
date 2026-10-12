@@ -6,7 +6,7 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use glam::{Vec2, Vec3};
-use rbx_autorig::{fit, fit_cages, read, split, CageTemplate, Mesh, Part};
+use rbx_autorig::{fit, fit_cages_report, read, split, CageTemplate, Mesh, Part};
 use serde_json::Value;
 
 const PX_PER_STUD: f32 = 120.0;
@@ -99,11 +99,14 @@ fn run() -> Result<(), String> {
     let templates = load_templates(templates_path)?;
     let skeleton = fit(&mesh, 5.2).map_err(|e| e.to_string())?;
     let body = split(&mesh, &skeleton).map_err(|e| e.to_string())?;
-    let cages = fit_cages(&body, &templates).map_err(|e| e.to_string())?;
+    let (cages, folded) = fit_cages_report(&body, &templates).map_err(|e| e.to_string())?;
+    let (mut all_vertices, mut all_folded) = (0, 0);
 
     let mut body_tris: Vec<[Vec3; 3]> = Vec::new();
     let mut cage_tris: Vec<[Vec3; 3]> = Vec::new();
-    for (part, cage) in body.parts.iter().zip(&cages) {
+    for ((part, cage), &folds) in body.parts.iter().zip(&cages).zip(&folded) {
+        all_vertices += cage.positions.len();
+        all_folded += folds;
         let world = |m: &Mesh, t: &[u32; 3]| t.map(|i| part.centre + m.positions[i as usize]);
         body_tris.extend(part.mesh.triangles.iter().map(|t| world(&part.mesh, t)));
         cage_tris.extend(cage.triangles.iter().map(|t| world(cage, t)));
@@ -122,12 +125,30 @@ fn run() -> Result<(), String> {
         let min = distances.iter().copied().fold(f32::INFINITY, f32::min);
         let mean = distances.iter().sum::<f32>() / distances.len().max(1) as f32;
         println!(
-            "{:<14} vertices {:>6}  min {:.4}  mean {:.4}",
+            "{:<14} vertices {:>6}  min {:.4}  mean {:.4}  folded {}",
             part.part.name(),
             distances.len(),
             min,
-            mean
+            mean,
+            folds
         );
+    }
+    println!("TOTAL vertices {all_vertices} folded {all_folded}");
+    // `CAGE_OBJ=<path>` also writes the cages, and the body, in world space.
+    if let Ok(path) = std::env::var("CAGE_OBJ") {
+        let mut obj = String::new();
+        let mut base = 1;
+        for (name, tris) in [("cage", &cage_tris), ("body", &body_tris)] {
+            obj.push_str(&format!("o {name}\n"));
+            for t in tris.iter() {
+                for v in t {
+                    obj.push_str(&format!("v {} {} {}\n", v.x, v.y, v.z));
+                }
+                obj.push_str(&format!("f {} {} {}\n", base, base + 1, base + 2));
+                base += 3;
+            }
+        }
+        std::fs::write(&path, obj).map_err(|e| format!("{path}: {e}"))?;
     }
 
     let mut lo = Vec3::splat(f32::INFINITY);

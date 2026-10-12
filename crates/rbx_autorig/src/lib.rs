@@ -41,7 +41,7 @@ mod split;
 mod voxel;
 mod write;
 
-pub use cage::{fit_cages, CageError, CageTemplate};
+pub use cage::{fit_cages, fit_cages_report, CageError, CageTemplate};
 pub use fit::{fit, fit_with, mirror, Extremities, Fit, FitOptions};
 pub use guard::{guard, mesh_bounds};
 pub use mesh::Mesh;
