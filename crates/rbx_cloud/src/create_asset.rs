@@ -19,6 +19,7 @@ use serde_json::{json, Value};
 
 use crate::client::Client;
 use crate::error::{self, CloudError};
+use crate::universes::Owner;
 
 const CREATE_URL: &str = "https://apis.roblox.com/assets/v1/assets";
 
@@ -44,7 +45,13 @@ impl Client {
         user_id: u64,
         file: &ModelFile,
     ) -> Result<u64, CloudError> {
-        self.create_asset("Model", display_name, description, user_id, file)
+        self.create_asset(
+            "Model",
+            display_name,
+            description,
+            Owner::User(user_id),
+            file,
+        )
     }
 
     /// Uploads a PNG, JPEG or BMP (told apart by their first bytes, since a
@@ -67,7 +74,35 @@ impl Client {
             content_type,
             bytes: image,
         };
-        self.create_asset("Decal", display_name, description, user_id, &file)
+        self.create_asset(
+            "Decal",
+            display_name,
+            description,
+            Owner::User(user_id),
+            &file,
+        )
+    }
+
+    /// Uploads a binary `.rbxm` holding one `KeyframeSequence` as a new
+    /// `Animation` asset owned by `creator` (a user, or a group the key may
+    /// upload to) and waits for Roblox to process it. Returns the new asset's
+    /// id, used as `rbxassetid://<id>` in `Animation.AnimationId`. The creator
+    /// docs' asset table lists Animation with `.rbxm`/`.rbxmx` and
+    /// `model/x-rbxm`, and warns that files written outside Studio "might not
+    /// upload or function"; whether ours do is UNVERIFIED until a live upload.
+    pub fn create_animation_asset(
+        &self,
+        display_name: &str,
+        description: &str,
+        creator: Owner,
+        rbxm: &[u8],
+    ) -> Result<u64, CloudError> {
+        let file = ModelFile {
+            name: "animation.rbxm",
+            content_type: "model/x-rbxm",
+            bytes: rbxm,
+        };
+        self.create_asset("Animation", display_name, description, creator, &file)
     }
 
     /// Unknown bytes go up as PNG and Roblox's own check names the problem.
@@ -84,7 +119,7 @@ impl Client {
         asset_type: &str,
         display_name: &str,
         description: &str,
-        user_id: u64,
+        creator: Owner,
         file: &ModelFile,
     ) -> Result<u64, CloudError> {
         let boundary = boundary(file.bytes);
@@ -92,7 +127,7 @@ impl Client {
             asset_type,
             display_name,
             description,
-            user_id,
+            creator,
             file,
             &boundary,
         );
@@ -204,15 +239,19 @@ fn multipart(
     asset_type: &str,
     display_name: &str,
     description: &str,
-    user_id: u64,
+    creator: Owner,
     file: &ModelFile,
     boundary: &str,
 ) -> Vec<u8> {
+    let creator = match creator {
+        Owner::User(id) => json!({ "userId": id.to_string() }),
+        Owner::Group(id) => json!({ "groupId": id.to_string() }),
+    };
     let request = json!({
         "assetType": asset_type,
         "displayName": display_name,
         "description": description,
-        "creationContext": { "creator": { "userId": user_id.to_string() } },
+        "creationContext": { "creator": creator },
     });
     // A header value cannot hold a quote or a line break.
     let name: String = file
@@ -259,7 +298,7 @@ mod tests {
             content_type: "model/gltf+json",
             bytes: b"{}",
         };
-        let body = multipart("Model", "Name", "Desc", 42, &file, "B");
+        let body = multipart("Model", "Name", "Desc", Owner::User(42), &file, "B");
         let text = String::from_utf8(body).unwrap();
         assert!(text.starts_with("--B\r\nContent-Disposition: form-data; name=\"request\""));
         assert!(text.contains("\"assetType\":\"Model\""));
@@ -267,6 +306,21 @@ mod tests {
         assert!(text.contains(
             "filename=\"freeze.gltf\"\r\nContent-Type: model/gltf+json\r\n\r\n{}\r\n--B--\r\n"
         ));
+    }
+
+    #[test]
+    fn an_animation_goes_up_as_rbxm_for_a_group() {
+        let file = ModelFile {
+            name: "animation.rbxm",
+            content_type: "model/x-rbxm",
+            bytes: b"<roblox!",
+        };
+        let body = multipart("Animation", "Walk", "", Owner::Group(7), &file, "B");
+        let text = String::from_utf8(body).unwrap();
+        assert!(text.contains("\"assetType\":\"Animation\""));
+        assert!(text.contains("\"creator\":{\"groupId\":\"7\"}"));
+        assert!(!text.contains("userId"));
+        assert!(text.contains("Content-Type: model/x-rbxm\r\n\r\n<roblox!"));
     }
 
     #[test]
@@ -283,7 +337,7 @@ mod tests {
             content_type: "image/png",
             bytes: b"png",
         };
-        let body = multipart("Decal", "Icon", "", 7, &file, "B");
+        let body = multipart("Decal", "Icon", "", Owner::User(7), &file, "B");
         let text = String::from_utf8(body).unwrap();
         assert!(text.contains("\"assetType\":\"Decal\""));
         assert!(text.contains("filename=\"image.png\"\r\nContent-Type: image/png\r\n\r\npng\r\n"));
