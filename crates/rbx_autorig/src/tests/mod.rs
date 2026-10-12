@@ -537,10 +537,13 @@ fn a_multi_mesh_gltf_with_node_transforms_fits() {
             }
         })
         .collect();
-    let bytes = crate::gltf(&crate::Body {
-        parts,
-        warnings: Vec::new(),
-    }, &[]);
+    let bytes = crate::gltf(
+        &crate::Body {
+            parts,
+            warnings: Vec::new(),
+        },
+        &[],
+    );
     let mesh = crate::read_bytes(&bytes, crate::Format::Gltf).unwrap();
     assert_eq!(mesh.triangles.len(), body.mesh.triangles.len());
     let fit = fit(&mesh, HEIGHT).unwrap();

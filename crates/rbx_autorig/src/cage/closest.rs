@@ -41,9 +41,8 @@ impl Surface {
                 if tris.is_empty() {
                     return None;
                 }
-                let (lo, hi) = crate::mesh::bounds(
-                    tris.iter().flat_map(|t| [t.a, t.a + t.ab, t.a + t.ac]),
-                );
+                let (lo, hi) =
+                    crate::mesh::bounds(tris.iter().flat_map(|t| [t.a, t.a + t.ab, t.a + t.ac]));
                 Some(Group { lo, hi, tris })
             })
             .collect();

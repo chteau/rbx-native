@@ -21,8 +21,8 @@ use crate::explorer;
 use crate::shell::Shell;
 use crate::workspace_view::JointPhase;
 
-use super::cage_templates;
 use super::bundle::{Family, Piece, Pieces};
+use super::cage_templates;
 use super::insert::spawn_top;
 use super::{build_rig, BodyScale, BodyShape, JointStyle, RigOptions, RigType};
 

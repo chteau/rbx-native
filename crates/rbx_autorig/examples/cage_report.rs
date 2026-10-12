@@ -43,9 +43,7 @@ fn load_templates(path: &str) -> Result<Vec<CageTemplate>, String> {
     let base = Path::new(path).parent().unwrap_or(Path::new(""));
     let mut templates = Vec::new();
     for entry in entries {
-        let name = entry["name"]
-            .as_str()
-            .ok_or("a template has no \"name\"")?;
+        let name = entry["name"].as_str().ok_or("a template has no \"name\"")?;
         let part = Part::ALL
             .into_iter()
             .find(|p| p.name() == name)
@@ -68,11 +66,7 @@ fn load_templates(path: &str) -> Result<Vec<CageTemplate>, String> {
             mesh.positions.push(Vec3::from(v.position) + origin);
             mesh.uvs.push(Vec2::from(v.uv));
         }
-        mesh.triangles = parsed
-            .indices
-            .as_chunks::<3>()
-            .0
-            .to_vec();
+        mesh.triangles = parsed.indices.as_chunks::<3>().0.to_vec();
         let rig = entry["rig"]
             .as_object()
             .ok_or_else(|| format!("{name}: no \"rig\" object"))?;
@@ -176,10 +170,7 @@ fn run() -> Result<(), String> {
     )
     .map_err(fmt)?;
     type Panel = (f32, fn(Vec3) -> f32, f32);
-    let panels: [Panel; 2] = [
-        (0.0, |p| p.x, lo.x),
-        (front_width, |p| p.z, lo.z),
-    ];
+    let panels: [Panel; 2] = [(0.0, |p| p.x, lo.x), (front_width, |p| p.z, lo.z)];
     for (offset, horizontal, h_min) in panels {
         let point = |p: Vec3| {
             (

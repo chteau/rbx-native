@@ -40,8 +40,8 @@ pub(super) fn mannequin() -> Result<Arc<Vec<CageTemplate>>, String> {
                 bytes
             }
         };
-        let mesh = rbx_mesh::parse(&bytes)
-            .map_err(|e| format!("reading the {} cage: {e}", piece.name))?;
+        let mesh =
+            rbx_mesh::parse(&bytes).map_err(|e| format!("reading the {} cage: {e}", piece.name))?;
         templates.push(template(part, piece, &mesh));
     }
     let done = Arc::new(templates);
@@ -63,11 +63,7 @@ fn template(part: Part, piece: &Piece, mesh: &rbx_mesh::Mesh) -> CageTemplate {
                 .collect(),
             normals: mesh.vertices.iter().map(|v| Vec3::from(v.normal)).collect(),
             uvs: mesh.vertices.iter().map(|v| Vec2::from(v.uv)).collect(),
-            triangles: mesh
-                .indices
-                .as_chunks::<3>()
-                .0
-                .to_vec(),
+            triangles: mesh.indices.as_chunks::<3>().0.to_vec(),
             ..Mesh::default()
         },
         size: Vec3::from(piece.init),
@@ -142,7 +138,10 @@ mod tests {
                 triangles += cage.triangles.len();
             }
             let folded: usize = folded.iter().sum();
-            assert!(folded * 50 <= triangles, "{file}: {folded} of {triangles} folded");
+            assert!(
+                folded * 50 <= triangles,
+                "{file}: {folded} of {triangles} folded"
+            );
         }
     }
 }

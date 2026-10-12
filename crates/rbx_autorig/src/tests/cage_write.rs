@@ -43,7 +43,11 @@ fn count_cages(doc: &Value) -> usize {
         .as_array()
         .unwrap()
         .iter()
-        .filter(|n| n["name"].as_str().is_some_and(|s| s.ends_with("_OuterCage")))
+        .filter(|n| {
+            n["name"]
+                .as_str()
+                .is_some_and(|s| s.ends_with("_OuterCage"))
+        })
         .count()
 }
 

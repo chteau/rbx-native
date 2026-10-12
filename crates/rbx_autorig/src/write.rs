@@ -497,9 +497,7 @@ pub fn gltf_skinned(body: &Body, skin: &Skin, cages: &[Mesh]) -> Vec<u8> {
                         .positions
                         .iter()
                         .enumerate()
-                        .min_by(|a, b| {
-                            a.1.distance_squared(p).total_cmp(&b.1.distance_squared(p))
-                        })
+                        .min_by(|a, b| a.1.distance_squared(p).total_cmp(&b.1.distance_squared(p)))
                         .map_or(0, |(i, _)| i);
                     part_skin.influences[nearest]
                 })

@@ -290,11 +290,17 @@ fn fitting_onto_own_body_barely_moves() {
             moves.push(p.distance(*q));
         }
     }
-    assert!(checked * 10 >= total * 7, "only {checked} of {total} start outside");
+    assert!(
+        checked * 10 >= total * 7,
+        "only {checked} of {total} start outside"
+    );
     moves.sort_by(f32::total_cmp);
     let p95 = moves[moves.len() * 95 / 100];
     let max = moves[moves.len() - 1];
-    assert!(p95 < 0.05 && max < 0.25, "95% moved under {p95}, the most {max}");
+    assert!(
+        p95 < 0.05 && max < 0.25,
+        "95% moved under {p95}, the most {max}"
+    );
 }
 
 #[test]
@@ -314,6 +320,8 @@ fn folded_triangles_are_rare() {
 
     let (_, folded) = fit_cages_report(&body_of(Pose::T), &templates).unwrap();
     let t_folded: usize = folded.iter().sum();
-    assert!(t_folded * 100 <= total * 4, "A onto T: {t_folded} of {total}");
+    assert!(
+        t_folded * 100 <= total * 4,
+        "A onto T: {t_folded} of {total}"
+    );
 }
-
