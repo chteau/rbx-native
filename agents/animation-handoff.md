@@ -422,11 +422,16 @@ l'upload par un modèle local.
     est dessinée plus claire (`Gizmo::hover`). Pendant la pose, un clic
     jusqu'à deux bandes hors d'une poignée est avalé (`Handles::near`) :
     il ne désélectionne plus.
-  - Reste ouvert :
-    - Vu sous Xephyr, une forme plate lavande apparaît près du bras après
-      plusieurs glisser. Cause inconnue.
-    - Le pivot de rotation sur l'épaule n'est jugé qu'à l'œil, sur un
-      petit rig.
+  - La forme plate lavande vue près du bras après des glisser était la
+    flèche Z survolée : l'ancien éclaircissement mélangeait 55 % de blanc
+    et le bleu virait au lavande. `lit()` (`gizmo/mesh.rs`) garde
+    maintenant la teinte (canal max à 1, peu de blanc). Test
+    `a_lit_handle_keeps_its_hue`.
+  - Le pivot de rotation est testé en chiffres :
+    `a_rotate_drag_turns_the_limb_about_its_joint` (C0 et C1 non triviaux,
+    clé déjà tournée) vérifie que le pivot est l'origine de C0 en monde,
+    que C0 et C1 coïncident après le glisser et que la clé ne prend pas de
+    translation. Aucun changement de code nécessaire.
 - **Non vérifié contre un vrai client Roblox**
   - Comportements non documentés du Graph, marqués `UNVERIFIED`. Réglé par
     la doc (`AnimationNodeType.yaml`) : formules scalaires Over/Add/Subtract
@@ -447,12 +452,13 @@ l'upload par un modèle local.
   FACS sont lues en `faces`.
 - **Séparation et barres de défilement de la timeline** : vérifiées sous
   Xephyr (glisser la séparation, la colonne des joints, le pouce au-delà
-  de End, pagination, réglages relus au redémarrage). Restent ouverts :
-  - la liste des canaux du Curve Editor n'a pas encore de barre
-    verticale ;
-  - Ctrl+molette (zoom) fait aussi défiler la liste des joints quand elle
-    déborde, car le défilement du corps passe avant le handler de la
-    feuille. C'était déjà le cas avant.
+  de End, pagination, réglages relus au redémarrage). La liste des canaux
+  du Curve Editor a sa barre verticale (`chrome::ScrollbarY`, handle
+  `channels_scroll`). La molette est lue en phase Capture
+  (`sheet/input.rs::wheel_layer`) : Ctrl+molette zoome et Maj+molette
+  fait défiler le temps sans toucher la liste ; une molette simple fait
+  défiler la liste (`wheel_intent`, test
+  `ctrl_wheel_zooms_and_a_plain_wheel_scrolls_the_list`).
 
 ## 6. Références
 
