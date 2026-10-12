@@ -185,3 +185,26 @@ fn a_click_on_a_rig_part_picks_that_part() {
     assert_eq!(joint_part(&[root], some_root, rigged), some_root);
     assert_eq!(joint_part(&[root, wall], some_root, rigged), some_root);
 }
+
+/// Ctrl+wheel over the Dope Sheet or the Curve Editor zooms the timeline
+/// and nothing else; a plain wheel leaves the timeline alone so the joint
+/// list scrolls; Shift or a sideways wheel pans.
+#[test]
+fn ctrl_wheel_zooms_and_a_plain_wheel_scrolls_the_list() {
+    use super::sheet::input::{wheel_intent, Wheel};
+    assert_eq!(wheel_intent(false, false, 0.0, 40.0), None);
+    assert_eq!(wheel_intent(false, false, 0.0, -40.0), None);
+    match wheel_intent(false, true, 0.0, 40.0) {
+        Some(Wheel::Zoom(f)) => assert!(f > 1.0, "{f}"),
+        other => panic!("{other:?}"),
+    }
+    match wheel_intent(false, true, 0.0, -40.0) {
+        Some(Wheel::Zoom(f)) => assert!(f < 1.0, "{f}"),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(wheel_intent(true, false, 0.0, 40.0), Some(Wheel::Pan(40.0)));
+    assert_eq!(
+        wheel_intent(false, false, 30.0, 5.0),
+        Some(Wheel::Pan(30.0))
+    );
+}

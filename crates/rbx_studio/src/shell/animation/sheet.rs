@@ -14,7 +14,9 @@ use gpui_kit::*;
 use super::{Gesture, Shell};
 
 mod draw;
-mod input;
+pub(super) mod input;
+
+pub(super) use input::wheel_layer;
 
 use crate::anim_editor::{rows, Row};
 use crate::shell::chrome::ScrollbarY as _;
@@ -85,56 +87,60 @@ impl Shell {
         let hscroll = self.anim_hscroll(cx);
         let seam = self.anim_names_seam(cx);
 
-        let names = rows.iter().enumerate().map(|(i, row)| {
-            let selected = lines.selected_row == Some(i);
-            let name = row.name.clone();
-            let face = crate::anim_editor::keys::face_channel(&row.name).map(str::to_owned);
-            div()
-                .id(("anim-channel", i))
-                .h(px(ROW))
-                .flex_none()
-                .flex()
-                .items_center()
-                .pl(px(10.0 + row.depth as f32 * 12.0))
-                .pr(px(6.0))
-                .gap(px(6.0))
-                .text_size(tokens::text_sm())
-                .text_color(if row.in_rig {
-                    tokens::text_strong()
-                } else {
-                    tokens::warning()
-                })
-                .when(selected, |this| this.bg(tokens::accent_soft()))
-                .cursor_pointer()
-                .hover(|this| this.bg(tokens::hover_subtle()))
-                .child(
-                    component::Icon::new(if face.is_some() {
-                        IconName::ScanFace
+        let names = rows
+            .iter()
+            .enumerate()
+            .map(|(i, row)| {
+                let selected = lines.selected_row == Some(i);
+                let name = row.name.clone();
+                let face = crate::anim_editor::keys::face_channel(&row.name).map(str::to_owned);
+                div()
+                    .id(("anim-channel", i))
+                    .h(px(ROW))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .pl(px(10.0 + row.depth as f32 * 12.0))
+                    .pr(px(6.0))
+                    .gap(px(6.0))
+                    .text_size(tokens::text_sm())
+                    .text_color(if row.in_rig {
+                        tokens::text_strong()
                     } else {
-                        IconName::Bone
+                        tokens::warning()
                     })
-                    .size(px(12.))
-                    .text_color(tokens::text_muted()),
-                )
-                .child(
-                    div()
-                        .truncate()
-                        .child(face.map_or(row.name.clone(), |c| format!("Face · {c}"))),
-                )
-                .when(!row.in_rig, |this| {
-                    this.tooltip(|window, cx| {
-                        super::super::tooltip::text(
-                            "Not a joint of this rig: it will not play",
-                            window,
-                            cx,
-                        )
+                    .when(selected, |this| this.bg(tokens::accent_soft()))
+                    .cursor_pointer()
+                    .hover(|this| this.bg(tokens::hover_subtle()))
+                    .child(
+                        component::Icon::new(if face.is_some() {
+                            IconName::ScanFace
+                        } else {
+                            IconName::Bone
+                        })
+                        .size(px(12.))
+                        .text_color(tokens::text_muted()),
+                    )
+                    .child(
+                        div()
+                            .truncate()
+                            .child(face.map_or(row.name.clone(), |c| format!("Face · {c}"))),
+                    )
+                    .when(!row.in_rig, |this| {
+                        this.tooltip(|window, cx| {
+                            super::super::tooltip::text(
+                                "Not a joint of this rig: it will not play",
+                                window,
+                                cx,
+                            )
+                        })
                     })
-                })
-                .on_click(cx.listener(move |shell, _, window, cx| {
-                    shell.focus_channel(&name, cx);
-                    window.focus(&shell.anim.focus, cx);
-                }))
-        });
+                    .on_click(cx.listener(move |shell, _, window, cx| {
+                        shell.focus_channel(&name, cx);
+                        window.focus(&shell.anim.focus, cx);
+                    }))
+            })
+            .collect::<Vec<_>>();
 
         let sheet_report = self.anim.sheet.clone();
         let body_lines = lines.clone();
@@ -198,9 +204,7 @@ impl Shell {
                 MouseButton::Middle,
                 cx.listener(|shell, _, _, cx| shell.sheet_release(cx)),
             )
-            .on_scroll_wheel(cx.listener(|shell, e: &ScrollWheelEvent, window, cx| {
-                shell.sheet_wheel(e, window, cx);
-            }))
+            .child(input::wheel_layer(cx))
             .child(
                 div()
                     .flex()

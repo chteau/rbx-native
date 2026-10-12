@@ -146,6 +146,11 @@ impl Shell {
         }
     }
 
+    /// The wheel over the Dope Sheet or the Curve Editor, in the capture
+    /// phase: Ctrl zooms the timeline and Shift (or a sideways wheel) pans
+    /// it, and either one stops the event there, so the joint or channel
+    /// list underneath never scrolls with it. A plain wheel is left alone
+    /// and scrolls the list.
     pub(in crate::shell::animation) fn sheet_wheel(
         &mut self,
         e: &ScrollWheelEvent,
@@ -157,13 +162,14 @@ impl Shell {
         };
         let delta = e.delta.pixel_delta(window.line_height());
         let (dx, dy) = (f32::from(delta.x), f32::from(delta.y));
-        if e.modifiers.shift || dx.abs() > dy.abs() {
-            self.anim.timeline.pan(if dx != 0.0 { dx } else { dy });
-        } else if e.modifiers.control || e.modifiers.platform {
-            let x = f32::from(e.position.x - b.origin.x);
-            self.anim.timeline.zoom_about(x, (dy * 0.01).exp());
-        } else {
-            return;
+        let ctrl = e.modifiers.control || e.modifiers.platform;
+        match wheel_intent(e.modifiers.shift, ctrl, dx, dy) {
+            Some(Wheel::Pan(by)) => self.anim.timeline.pan(by),
+            Some(Wheel::Zoom(factor)) => {
+                let x = f32::from(e.position.x - b.origin.x);
+                self.anim.timeline.zoom_about(x, factor);
+            }
+            None => return,
         }
         self.clamp_timeline();
         cx.stop_propagation();
@@ -276,4 +282,53 @@ impl Shell {
         self.anim.editor.key_all(&poses);
         cx.notify();
     }
+}
+
+/// What a wheel turn over the timeline does.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(in crate::shell::animation) enum Wheel {
+    /// Slide the timeline sideways by this many pixels.
+    Pan(f32),
+    /// Scale the timeline by this factor about the pointer.
+    Zoom(f32),
+}
+
+/// `None` is a plain vertical wheel: the timeline is left alone and the
+/// list under the pointer scrolls instead.
+pub(in crate::shell::animation) fn wheel_intent(
+    shift: bool,
+    ctrl: bool,
+    dx: f32,
+    dy: f32,
+) -> Option<Wheel> {
+    if shift || dx.abs() > dy.abs() {
+        Some(Wheel::Pan(if dx != 0.0 { dx } else { dy }))
+    } else if ctrl {
+        Some(Wheel::Zoom((dy * 0.01).exp()))
+    } else {
+        None
+    }
+}
+
+/// An empty layer under the whole panel that takes the wheel in the
+/// capture phase, before the scrolling list inside gets it in the bubble
+/// phase (GPUI scrolls a list there whatever the modifiers, so an ordinary
+/// `on_scroll_wheel` on the panel ran too late to keep Ctrl+wheel from
+/// scrolling the joints while it zoomed). It goes first among the panel's
+/// children, so anything drawn over the panel still hides it.
+pub(in crate::shell::animation) fn wheel_layer(cx: &mut Context<Shell>) -> impl IntoElement {
+    let shell = cx.entity().downgrade();
+    canvas(
+        |b, window, _| window.insert_hitbox(b, HitboxBehavior::Normal),
+        move |_, hitbox, window, _| {
+            let shell = shell.clone();
+            window.on_mouse_event(move |e: &ScrollWheelEvent, phase, window, cx| {
+                if phase.capture() && hitbox.is_hovered(window) {
+                    let _ = shell.update(cx, |shell, cx| shell.sheet_wheel(e, window, cx));
+                }
+            });
+        },
+    )
+    .absolute()
+    .size_full()
 }

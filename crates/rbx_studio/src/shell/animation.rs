@@ -197,6 +197,8 @@ pub(super) struct Animation {
     pub(super) bottom_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
     /// The dope sheet's channel list, scrolled under its scrollbar.
     pub(super) rows_scroll: ScrollHandle,
+    /// The Curve Editor's channel list, likewise.
+    pub(super) channels_scroll: ScrollHandle,
     /// The rig the 3D view is staged around, once the grid is sent.
     pub(super) staged: Option<Ref>,
     /// Whether the rig's bones are drawn over it (Blender shows them in
@@ -239,6 +241,7 @@ impl Animation {
             view_bounds: Rc::new(Cell::new(None)),
             bottom_bounds: Rc::new(Cell::new(None)),
             rows_scroll: ScrollHandle::new(),
+            channels_scroll: ScrollHandle::new(),
             staged: None,
             skeleton: true,
             skeleton_sent: Vec::new(),

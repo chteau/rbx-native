@@ -18,6 +18,7 @@ use rbx_animation::{Direction, Style};
 use super::widgets::primary_button;
 use super::{Gesture, Shell};
 use crate::anim_editor::{rows, CurveKeyId};
+use crate::shell::chrome::ScrollbarY as _;
 use crate::timeline::paint;
 use crate::tokens;
 
@@ -237,9 +238,7 @@ impl Shell {
                 MouseButton::Middle,
                 cx.listener(|shell, _, _, cx| shell.sheet_release(cx)),
             )
-            .on_scroll_wheel(cx.listener(|shell, e: &ScrollWheelEvent, window, cx| {
-                shell.sheet_wheel(e, window, cx);
-            }))
+            .child(super::sheet::wheel_layer(cx))
             .child(
                 div()
                     .flex()
@@ -270,13 +269,16 @@ impl Shell {
                     .child(
                         div()
                             .id("anim-curve-channels")
+                            .relative()
                             .w(px(names_w))
                             .flex_none()
                             .h_full()
                             .overflow_y_scroll()
+                            .track_scroll(&self.anim.channels_scroll)
                             .border_r(px(1.))
                             .border_color(tokens::border())
-                            .children(names),
+                            .children(names)
+                            .scrollbar_y(&self.anim.channels_scroll),
                     )
                     .child(body),
             )
