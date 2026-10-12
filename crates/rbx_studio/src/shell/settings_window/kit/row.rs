@@ -37,9 +37,6 @@ pub(in crate::shell::settings_window) struct Row {
     pub(in crate::shell::settings_window) pill: bool,
     /// A constant's name, set in mono.
     pub(in crate::shell::settings_window) mono: bool,
-    /// The control draws its own fade (a still toggle or slider), so the
-    /// row doesn't fade it again.
-    pub(in crate::shell::settings_window) self_faded: bool,
     pub(in crate::shell::settings_window) reset: Option<Reset>,
     pub(in crate::shell::settings_window) control: AnyElement,
     /// A block under the label and control, inside the same row: a grid of
@@ -62,7 +59,6 @@ impl Row {
             chip: None,
             pill: false,
             mono: false,
-            self_faded: false,
             reset: None,
             control: control.into_any_element(),
             below: None,
@@ -110,12 +106,6 @@ impl Row {
     pub(in crate::shell::settings_window) fn below(mut self, below: impl IntoElement) -> Self {
         self.below = Some(below.into_any_element());
         self
-    }
-
-    /// [`Row::soon`] for a control that fades itself.
-    pub(in crate::shell::settings_window) fn soon_faded(mut self) -> Self {
-        self.self_faded = true;
-        self.soon()
     }
 
     pub(in crate::shell::settings_window) fn mono(mut self) -> Self {
@@ -254,7 +244,7 @@ fn render_row(
         .flex_none()
         .items_center()
         .gap(px(8.))
-        .when(row.soon && !row.self_faded, |this| this.opacity(0.4))
+        .when(row.soon, |this| this.opacity(0.4))
         .child(row.control);
     div()
         .id(("row", id.0 * 100 + id.1))

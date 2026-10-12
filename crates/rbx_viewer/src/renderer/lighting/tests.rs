@@ -373,6 +373,7 @@ fn the_calibration_row_carries_the_tuned_constants_and_scales_both_lamps() {
         sun_base: 0.9,
         atmosphere_density_scale: 0.002,
         plastic_spec_strength: 0.5,
+        ..Calibration::default()
     };
     let raw = LightingRaw::new(
         &lighting,

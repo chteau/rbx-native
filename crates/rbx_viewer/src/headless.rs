@@ -48,6 +48,8 @@ pub struct GuiCanvas {
 pub struct Headless {
     offscreen: Offscreen,
     quality: QualityLevel,
+    /// What [`Headless::set_calibration`] last set, kept for its band ends.
+    calibration: crate::lighting::Calibration,
     /// What the embedder asked the renderer to show that the place itself does
     /// not say: the projection mode, the outlined selection and the transform
     /// gizmo. Kept here, not only inside the renderer, as the one copy every
@@ -148,6 +150,7 @@ impl Headless {
         let mut headless = Headless {
             offscreen: Offscreen::new(loaded.world(), &quality.profile(), &View::default())?,
             quality,
+            calibration: crate::lighting::Calibration::default(),
             view: View::default(),
             bounds,
             controller: Controller::new(Start::Orbit, &bounds, None, DEFAULT_SENSITIVITY),
@@ -284,13 +287,27 @@ impl Headless {
             return;
         }
         self.quality = level;
-        self.offscreen.set_quality(&level.profile());
+        self.offscreen.set_quality(&self.profile());
+    }
+
+    /// The current level's profile under the calibrated band ends.
+    fn profile(&self) -> crate::quality::QualityProfile {
+        self.quality.profile_in(&self.calibration.quality_bands)
     }
 
     /// Recalibrates the renderer's tuned constants (see
-    /// [`crate::Calibration`]); the next frame draws with them.
-    pub fn set_calibration(&mut self, calibration: crate::lighting::Calibration) {
+    /// [`crate::Calibration`]); the next frame draws with them. Band ends that
+    /// are not [`crate::valid_band_ends`] fall back to the tuned ones.
+    pub fn set_calibration(&mut self, mut calibration: crate::lighting::Calibration) {
+        if !crate::quality::valid_band_ends(&calibration.quality_bands) {
+            calibration.quality_bands = crate::quality::TUNED_BAND_ENDS;
+        }
+        let bands_changed = calibration.quality_bands != self.calibration.quality_bands;
+        self.calibration = calibration;
         self.offscreen.set_calibration(calibration);
+        if bands_changed {
+            self.offscreen.set_quality(&self.profile());
+        }
     }
 
     /// The level [`Headless::set_quality`] last set.

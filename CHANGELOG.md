@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-12
+
+- **Quality bands are a setting.** Studio Settings › Viewport › Advanced
+  now lets you move where each quality band ends — the seven numbers
+  beside `SUN_BASE` and friends, tuned at `2 4 6 7 8 9 15` — instead of
+  showing a faded `SOON` row. A field takes only a level between its
+  neighbours, the reset arrow brings back the tuned ends, and the choice
+  is kept in `settings.json`. The defaults render exactly as before.
+  — @chteau
+
 ## 2026-10-11
 
 - **Auto-rigger and skeleton view.** Animation Editor › Rigging ›
