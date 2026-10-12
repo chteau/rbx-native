@@ -81,7 +81,7 @@ pub(super) struct Summon {
     shift: Vec3,
     /// The gizmo last asked of the renderer, before the summon point is
     /// filled in.
-    shown: Option<Gizmo>,
+    pub(super) shown: Option<Gizmo>,
 }
 
 impl WorkspaceView {

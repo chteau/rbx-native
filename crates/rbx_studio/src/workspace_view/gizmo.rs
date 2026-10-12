@@ -18,7 +18,7 @@ use std::time::Instant;
 
 use glam::{Mat3, Mat4, Vec2, Vec3};
 use gpui_kit::{Modifiers, Pixels, Point};
-use rbx_viewer::gizmo::{self, End, Faces, Gizmo, Handles};
+use rbx_viewer::gizmo::{self, Axis, End, Faces, Gizmo, Handles};
 use rbx_viewer::pick::{self, Ray};
 use rbx_viewer::snap;
 
@@ -38,6 +38,10 @@ mod scale;
 /// height, width) can be as low as `0.001` and as high as `2048`"
 /// (`creator-docs`, `reference/engine/classes/BasePart.yaml`). A drag that ran
 /// past either end would write a value the engine rejects.
+/// How many grab bands out from a handle a posing press still counts as
+/// aimed at it (see `Handles::near`): two, so a ring's 7-pixel band at the
+/// smallest arm becomes a 14-pixel no-deselect zone.
+const NEAR_MISS: f32 = 2.0;
 const MIN_SIZE: f32 = 0.001;
 const MAX_SIZE: f32 = 2048.0;
 
@@ -229,10 +233,38 @@ impl WorkspaceView {
             return;
         }
         self.note_hover(ray, modifiers);
+        let over = ray.and_then(|ray| self.hovered_axis(ray));
+        self.light_handle(over);
+        // A handle under the cursor is what a press there grabs, so the
+        // part behind it gets no hover box claiming the click.
         cx.emit(ViewportAction::Hover {
-            ray,
+            ray: ray.filter(|_| over.is_none()),
             alt: modifiers.alt,
         });
+    }
+
+    /// The axis whose arrow or ring `ray` rests on, tried in the order
+    /// [`WorkspaceView::grab_handle`] tries them — what a press here grabs.
+    pub(super) fn hovered_axis(&self, ray: Ray) -> Option<Axis> {
+        let handles = self.handles()?;
+        match self.transform.tool {
+            Tool::Move => handles.grab(ray),
+            Tool::Rotate => handles.grab_ring(ray),
+            Tool::Transform | Tool::Pivot => handles.grab(ray).or_else(|| handles.grab_ring(ray)),
+            Tool::Select | Tool::Scale | Tool::Sun | Tool::Terrain => None,
+        }
+    }
+
+    /// Re-sends the gizmo with `axis` lit, when that changes what is drawn.
+    fn light_handle(&mut self, axis: Option<Axis>) {
+        let Some(shown) = self.summon.shown.filter(|shown| shown.hover != axis) else {
+            return;
+        };
+        self.summon.shown = Some(Gizmo {
+            hover: axis,
+            ..shown
+        });
+        self.refresh_gizmo();
     }
 
     /// Where the Move and Rotate arms stand this frame, anchored on the same
@@ -272,7 +304,9 @@ impl WorkspaceView {
         Some(Handles::new(
             origin,
             gizmo::basis(axes),
-            gizmo::arm_length(origin, pose, self.orthographic),
+            // The render target's height, which the renderer floors the
+            // same arm by.
+            gizmo::handle_length(origin, pose, self.orthographic, self.sized.1 as f32),
         ))
     }
 
@@ -382,6 +416,17 @@ impl WorkspaceView {
             // into this drag (see [`WorkspaceView::confirm_grab`]) — and
             // never with `Alt` or an extend modifier, which ask to change
             // the selection, not to move it.
+            // Posing a rig, a press that misses a handle by a hair was
+            // aimed at it, not at the scene: it must not drop the joint.
+            if self.transform.posing
+                && !cycling
+                && !extend
+                && self
+                    .handles()
+                    .is_some_and(|handles| handles.near(ray, NEAR_MISS))
+            {
+                return;
+            }
             if !cycling && !extend {
                 // The free-drag ball is a body grab too, so it yields to
                 // the same modifiers — and to any handle: an arrow pointing

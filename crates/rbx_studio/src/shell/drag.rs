@@ -119,13 +119,16 @@ impl Shell {
                 // for the hover exactly as for the click.
                 let referent = match picking {
                     true => self.ref_pick_candidate(&hits, alt)?,
-                    false => selection::from_click(
-                        &self.dom,
-                        &self.database,
-                        &hits,
-                        self.selected(),
-                        alt,
-                    )?,
+                    false => match self.joint_pick(&hits, alt) {
+                        Some(part) => part,
+                        None => selection::from_click(
+                            &self.dom,
+                            &self.database,
+                            &hits,
+                            self.selected(),
+                            alt,
+                        )?,
+                    },
                 };
                 // Studio's hover ruler measures the face of whatever the
                 // cursor is over — selected or not — once there is something
@@ -221,8 +224,9 @@ impl Shell {
                 return;
             }
         }
-        let picked =
-            selection::from_click(&self.dom, &self.database, &hits, self.selected(), cycling);
+        let picked = self.joint_pick(&hits, cycling).or_else(|| {
+            selection::from_click(&self.dom, &self.database, &hits, self.selected(), cycling)
+        });
 
         match (picked, extend) {
             (Some(referent), true) => self.extend_selection(referent, cx),
