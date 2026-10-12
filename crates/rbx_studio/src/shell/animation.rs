@@ -32,6 +32,8 @@ mod view;
 mod widgets;
 
 #[cfg(test)]
+mod graph_probe;
+#[cfg(test)]
 mod tests;
 
 use std::cell::Cell;
