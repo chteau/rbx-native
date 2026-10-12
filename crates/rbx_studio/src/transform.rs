@@ -204,6 +204,12 @@ pub(crate) struct Transform {
     /// selection's corners, edges and centres (see
     /// `rbx_viewer::gizmo::Faces::hotspots`).
     pub(crate) pivot_snap: bool,
+    /// Whether the viewport is posing a bound rig in the Animation view,
+    /// where a drag becomes a key on a joint rather than an edit to a part.
+    /// A joint's key holds a position and a turn and nothing else, so the
+    /// tools that change a part's size or its pivot draw nothing and drag
+    /// nothing while this is on (see [`Transform::keyable`]).
+    pub(crate) posing: bool,
 }
 
 impl Default for Transform {
@@ -221,6 +227,7 @@ impl Default for Transform {
             },
             // The docs give no default; on, like the increments beside it.
             pivot_snap: true,
+            posing: false,
         }
     }
 }
@@ -228,7 +235,7 @@ impl Default for Transform {
 impl Transform {
     /// What the renderer should draw over the selection, if anything.
     pub(crate) fn gizmo(self) -> Option<Gizmo> {
-        self.tool.kind().map(|kind| Gizmo {
+        self.effective().kind().map(|kind| Gizmo {
             kind,
             local: self.local,
             hotspots: self.tool == Tool::Pivot && self.pivot_snap,
@@ -238,7 +245,50 @@ impl Transform {
 
     /// Whether dragging in the viewport transforms the selected part at all.
     pub(crate) fn drags(self) -> bool {
-        self.tool.kind().is_some()
+        self.effective().kind().is_some()
+    }
+
+    /// Why `tool` can't be used right now, or `None` when it can. While
+    /// posing, a drag is keyed onto a joint's `Transform`, which has no size
+    /// and turns about the joint's own pivot (`C0`/`C1`).
+    pub(crate) fn refusal(self, tool: Tool) -> Option<&'static str> {
+        if !self.posing {
+            return None;
+        }
+        match tool {
+            Tool::Scale => Some("Scale can't be keyed on joints"),
+            Tool::Transform => {
+                Some("Its Scale handles can't be keyed on joints; use Move or Rotate")
+            }
+            Tool::Pivot => Some("A joint turns about its own pivot (C0/C1)"),
+            _ => None,
+        }
+    }
+
+    /// Whether `tool` can be used right now (see [`Transform::refusal`]).
+    pub(crate) fn keyable(self, tool: Tool) -> bool {
+        self.refusal(tool).is_none()
+    }
+
+    /// What the 3D view is handed: this, with the tool it acts with in place
+    /// of the chosen one, so nothing in the view can grab a handle of a tool
+    /// that can't be used right now.
+    pub(crate) fn for_view(self) -> Transform {
+        Transform {
+            tool: self.effective(),
+            ..self
+        }
+    }
+
+    /// The tool the viewport acts with: the chosen one, or Select while it
+    /// can't be used (so it draws and drags nothing rather than silently
+    /// resizing a rig part).
+    pub(crate) fn effective(self) -> Tool {
+        if self.keyable(self.tool) {
+            self.tool
+        } else {
+            Tool::Select
+        }
     }
 }
 

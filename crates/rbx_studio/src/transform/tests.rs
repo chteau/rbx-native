@@ -823,3 +823,45 @@ fn a_models_hotspot_box_turns_with_its_pivot() {
     let several = Targets::read(&dom, &database(), dom.get(model).unwrap().children());
     assert_eq!(several.pivot_box(), None);
 }
+
+#[test]
+fn posing_refuses_scale_and_never_hands_it_to_the_view() {
+    let posing = |tool| Transform {
+        tool,
+        posing: true,
+        ..Transform::default()
+    };
+    for tool in [Tool::Scale, Tool::Transform, Tool::Pivot] {
+        let transform = posing(tool);
+        assert!(
+            !transform.keyable(tool),
+            "{} is usable on a joint",
+            tool.label()
+        );
+        assert_eq!(transform.effective(), Tool::Select);
+        assert_eq!(transform.for_view().tool, Tool::Select);
+        assert_eq!(
+            transform.gizmo(),
+            None,
+            "{} still draws handles",
+            tool.label()
+        );
+        assert!(!transform.drags());
+    }
+    assert_eq!(
+        posing(Tool::Scale).refusal(Tool::Scale),
+        Some("Scale can't be keyed on joints")
+    );
+    for tool in [Tool::Move, Tool::Rotate, Tool::Select] {
+        let transform = posing(tool);
+        assert!(transform.keyable(tool));
+        assert_eq!(transform.for_view().tool, tool);
+    }
+    // Outside the Animation Editor nothing is refused.
+    let workspace = Transform {
+        tool: Tool::Scale,
+        ..Transform::default()
+    };
+    assert_eq!(workspace.refusal(Tool::Scale), None);
+    assert_eq!(workspace.for_view().tool, Tool::Scale);
+}

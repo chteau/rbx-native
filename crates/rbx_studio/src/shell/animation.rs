@@ -206,6 +206,7 @@ impl Shell {
         self.keep_draft(true);
         self.unpose_rig(cx);
         self.unstage(cx);
+        self.set_posing(false, cx);
     }
 
     /// Stages the bound rig in the 3D view: alone, on a floor grid at its

@@ -204,9 +204,10 @@ impl Shell {
     /// The snap readouts stay their own thing beside it: they are values,
     /// not tools.
     fn transform_tools(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let active = self.transform.tool;
+        let active = self.transform.effective();
         let cluster: Vec<AnyElement> = Tool::TRANSFORM
             .map(|tool| {
+                let refusal = self.transform.refusal(tool);
                 cluster_icon(
                     &self.ribbon_nav,
                     ("tool", tool as usize),
@@ -214,10 +215,12 @@ impl Shell {
                     cx,
                 )
                 .when(active == tool, |this| selected(this, tool_accent(tool)))
+                .when(refusal.is_some(), refused)
                 .tooltip(move |window, cx| {
-                    let text = match tool.shortcut() {
-                        Some(key) => format!("{} ({key})", tool.label()),
-                        None => tool.label().to_owned(),
+                    let text = match (refusal, tool.shortcut()) {
+                        (Some(reason), _) => format!("{} — {reason}", tool.label()),
+                        (None, Some(key)) => format!("{} ({key})", tool.label()),
+                        (None, None) => tool.label().to_owned(),
                     };
                     super::tooltip::text(text, window, cx)
                 })
@@ -630,6 +633,19 @@ pub(super) fn selected(tile: Stateful<Div>, accent: Rgba) -> Stateful<Div> {
 /// own at rest, so the icons read as members of one shared card rather than
 /// six tiles glued together — the border and the wash [`selected`] paints
 /// are what a hover or an active tool adds on top of this.
+/// Greys a cluster icon whose tool can't be used right now: its tooltip
+/// says why, and a click on it does nothing (`Shell::transform_action`
+/// refuses the tool too).
+pub(super) fn refused(this: Stateful<Div>) -> Stateful<Div> {
+    this.cursor_not_allowed()
+        .text_color(tokens::text_disabled())
+        .hover(|this| {
+            this.bg(transparent_black())
+                .text_color(tokens::text_disabled())
+        })
+        .active(|this| this.bg(transparent_black()))
+}
+
 pub(super) fn cluster_icon(
     nav: &Roving,
     id: impl Into<ElementId>,
