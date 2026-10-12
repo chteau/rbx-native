@@ -339,6 +339,30 @@ l'upload par un modèle local.
   `Animator` (Run, `KeyframeSequenceProvider`) donne à 0,25 s / 0,75 s :
   Cubic In 52,0/88,6, Cubic Out 1,4/38,0, Constant In 90/90, Constant Out
   0/0, Constant InOut 0/90, exactement ce que donne `ease` (Cubic inversé).
+- **Gizmos de la vue Animation** (branche `pr180/anim-gizmos`)
+  - Move pose une clé sur la translation du joint (le décalage du
+    `Transform`, `pose::drag_key`). Rotate garde la translation et tourne
+    autour du pivot du joint (`C1`, via `sync_joint_pivot`).
+  - Scale, Transform et Edit Pivot sont refusés pendant la pose
+    (`Transform::refusal`) : bouton grisé, curseur interdit, infobulle
+    « Scale can't be keyed on joints ». La vue reçoit Select à la place
+    (`for_view`), donc aucune poignée ne peut redimensionner une pièce.
+    Rien ne change dans Workspace (vérifié sous Xephyr).
+  - Un clic simple sur le rig sélectionne la pièce sous le curseur
+    (`joint_part`), pas le `Model`. Le `HumanoidRootPart` est sauté.
+  - `pose_out` ne remet plus le `CFrame` d'avant si le glisser l'a
+    changé. Avant, un glisser sur un membre déjà posé était perdu : le
+    gizmo bougeait, le bras non.
+  - Les bras de gizmo font au moins 80 px (`gizmo::handle_length`), donc
+    la bande de prise d'un anneau fait au moins 7 px. La poignée survolée
+    est dessinée plus claire (`Gizmo::hover`). Pendant la pose, un clic
+    jusqu'à deux bandes hors d'une poignée est avalé (`Handles::near`) :
+    il ne désélectionne plus.
+  - Reste ouvert :
+    - Vu sous Xephyr, une forme plate lavande apparaît près du bras après
+      plusieurs glisser. Cause inconnue.
+    - Le pivot de rotation sur l'épaule n'est jugé qu'à l'œil, sur un
+      petit rig.
 - **Non vérifié contre un vrai client Roblox**
   - Comportements non documentés du Graph, marqués `UNVERIFIED`. Réglé par
     la doc (`AnimationNodeType.yaml`) : formules scalaires Over/Add/Subtract
