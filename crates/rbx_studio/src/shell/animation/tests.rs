@@ -134,3 +134,57 @@ fn a_save_after_playback_matches_the_save_before() {
         .contains_key("Transform"));
     assert_eq!(rbx_binary::serialize(&dom).expect("serialize"), before);
 }
+
+/// A Move drag keys the joint's offset in joint space and keeps its turn.
+#[test]
+fn a_move_drag_keys_the_translation() {
+    use glam::{Quat, Vec3};
+    use rbx_animation::Frame;
+    let turn = Quat::from_rotation_y(0.4);
+    let now = Frame::new(Vec3::new(0.1, 0.0, 0.0), turn);
+    // What `Joint::solve` hands back for a pure shift: the same turn, give
+    // or take rounding.
+    let solved = Frame::new(
+        Vec3::new(0.1, 0.5, -0.25),
+        turn * Quat::from_rotation_x(1e-5),
+    );
+    let key = super::pose::drag_key(now, solved);
+    assert_eq!(key.position, Vec3::new(0.1, 0.5, -0.25));
+    assert_eq!(key.rotation, turn);
+}
+
+/// A Rotate drag keys the new turn and leaves the translation as it was.
+#[test]
+fn a_rotate_drag_keeps_the_translation() {
+    use glam::{Quat, Vec3};
+    use rbx_animation::Frame;
+    let now = Frame::new(Vec3::new(0.0, 0.2, 0.0), Quat::IDENTITY);
+    let turned = Quat::from_rotation_z(0.5);
+    let solved = Frame::new(Vec3::new(0.3, 0.2, 0.0), turned);
+    let key = super::pose::drag_key(now, solved);
+    assert_eq!(key.position, Vec3::new(0.0, 0.2, 0.0));
+    assert_eq!(key.rotation, turned);
+}
+
+/// A plain click while posing takes the rig part under it, not its Model,
+/// and only when the part in front is the rig's own.
+#[test]
+fn a_click_on_a_rig_part_picks_that_part() {
+    use super::pose::joint_part;
+    use rbx_dom::Ref;
+    let (arm, torso, wall, root) = (Ref::new(1), Ref::new(2), Ref::new(3), Ref::new(4));
+    let rigged = |part: &Ref| [arm, torso, root].contains(part);
+    let root = Some(root);
+    assert_eq!(joint_part(&[arm, torso], root, rigged), Some(arm));
+    assert_eq!(joint_part(&[torso, arm], root, rigged), Some(torso));
+    assert_eq!(joint_part(&[wall, arm], root, rigged), None);
+    assert_eq!(joint_part(&[], root, rigged), None);
+    // The invisible root round the torso lets the click through to it...
+    assert_eq!(
+        joint_part(&[root.unwrap(), torso], root, rigged),
+        Some(torso)
+    );
+    // ...but is still taken when nothing of the rig stands behind it.
+    assert_eq!(joint_part(&[root.unwrap()], root, rigged), root);
+    assert_eq!(joint_part(&[root.unwrap(), wall], root, rigged), root);
+}

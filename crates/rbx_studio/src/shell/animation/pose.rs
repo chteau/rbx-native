@@ -92,10 +92,56 @@ pub(super) fn restore_transforms(
     wrote
 }
 
+/// Two rotations closer than this (`1 - |dot|` of their quaternions, about
+/// 0.1° apart) are the same: a Move drag's solve only adds rounding.
+const SAME_TURN: f32 = 1e-6;
+
+/// The front-most part under a click, when it is one of the rig's posable
+/// parts (`rigged`): what a plain click selects while posing, so the drag
+/// that follows lands on that part's joint. Anything else in front — a
+/// wall, another model — leaves the ordinary resolution to run.
+///
+/// The rig's `root` (an R15's `HumanoidRootPart`, invisible and wrapped
+/// round the torso) is passed over when a limb of the rig stands behind it,
+/// as Studio's Animation Editor lets a click on the torso reach the torso;
+/// a click that finds nothing but the root still takes it.
+pub(super) fn joint_part(
+    hits: &[Ref],
+    root: Option<Ref>,
+    rigged: impl Fn(&Ref) -> bool,
+) -> Option<Ref> {
+    let (&first, rest) = hits.split_first()?;
+    if Some(first) == root {
+        if let Some(&behind) = rest.first().filter(|part| rigged(part)) {
+            return Some(behind);
+        }
+    }
+    rigged(&first).then_some(first)
+}
+
+/// The key a viewport drag leaves on a joint whose `Transform` was `now`,
+/// given `solved`, the `Transform` that puts the part where the drag left it
+/// (see `rbx_animation::Joint::solve`).
+///
+/// A drag that turned nothing is a Move: its offset in joint space is the
+/// key's translation, as Studio's Animation Editor keys a moved joint (a
+/// pose's `CFrame` carries both halves). A drag that turned the part keeps
+/// the translation the joint had: the Rotate tool turns a limb about its
+/// joint's pivot, and a rotation about any other point (a part's centre)
+/// still pivots at the shoulder rather than sliding the limb off it.
+pub(super) fn drag_key(now: Frame, solved: Frame) -> Frame {
+    let turned = 1.0 - now.rotation.dot(solved.rotation).abs() > SAME_TURN;
+    if turned {
+        Frame::new(now.position, solved.rotation)
+    } else {
+        Frame::new(solved.position, now.rotation)
+    }
+}
+
 /// What [`Shell::pose_in`] swapped into the document, for [`Shell::pose_out`]
 /// to put back.
 #[must_use]
-pub(in crate::shell) struct PoseShown(Vec<(Ref, Option<Variant>)>);
+pub(in crate::shell) struct PoseShown(Vec<(Ref, Option<Variant>, CFrameData)>);
 
 impl Shell {
     /// Every joint's `Transform` as the document should show it now.
@@ -196,16 +242,26 @@ impl Shell {
                 let old = instance
                     .properties_mut()
                     .insert("CFrame".to_owned(), Variant::CFrame(*posed));
-                swapped.push((part, old));
+                swapped.push((part, old, *posed));
             }
         }
         PoseShown(swapped)
     }
 
-    /// Puts back what [`Shell::pose_in`] swapped.
+    /// Puts back what [`Shell::pose_in`] swapped — except a `CFrame` written
+    /// in between (a drag step on an already posed limb), which is left for
+    /// [`Shell::settle_pose_edits`] to key. Restoring it too would throw away
+    /// every drag step after the first on a limb that is no longer at rest.
     pub(in crate::shell) fn pose_out(&mut self, shown: PoseShown) {
-        for (part, old) in shown.0 {
+        for (part, old, posed) in shown.0 {
             if let Some(instance) = self.dom.get_mut(part) {
+                let written = !matches!(
+                    instance.properties().get("CFrame"),
+                    Some(Variant::CFrame(now)) if same(now, &posed)
+                );
+                if written {
+                    continue;
+                }
                 match old {
                     Some(v) => instance.properties_mut().insert("CFrame".to_owned(), v),
                     None => instance.properties_mut().remove("CFrame"),
@@ -216,10 +272,9 @@ impl Shell {
 
     /// A viewport drag on a posed rig moves parts where they are drawn; this
     /// turns that into a pose and puts the parts back at rest, before the
-    /// drag's log goes anywhere. A part turned (or, with IK on, moved) gets
-    /// a key on its joint at the playhead, turning it that way about the
-    /// joint (the drag's own shift is dropped, so a limb rotated about its
-    /// centre still pivots at the shoulder). A moved root part moves the
+    /// drag's log goes anywhere. A part moved or turned gets a key on its
+    /// joint at the playhead (see [`drag_key`]); with IK on, a moved part
+    /// drags its chain instead. A moved root part moves the
     /// whole rig, rest and all. Returns the log of what it wrote, for the
     /// caller to add to the drag's own.
     pub(in crate::shell) fn settle_pose_edits(&mut self, changes: &[Change]) -> Vec<Change> {
@@ -305,10 +360,8 @@ impl Shell {
         } else {
             let current = self.current_transforms();
             for (name, solved) in keys {
-                let kept = current.get(&name).map_or(glam::Vec3::ZERO, |f| f.position);
-                self.anim
-                    .editor
-                    .key(&name, Frame::new(kept, solved.rotation));
+                let now = current.get(&name).copied().unwrap_or_default();
+                self.anim.editor.key(&name, drag_key(now, solved));
                 self.anim.editor.joint = Some(name);
             }
         }
@@ -410,6 +463,19 @@ impl Shell {
 
     /// One frame of the document: advances playback, poses the rig, and
     /// asks for the next frame while anything is moving.
+    /// What a click on the posed rig takes while posing: the rig part
+    /// nearest under the cursor — the part whose joint a drag keys — rather
+    /// than the whole rig `Model` a click elsewhere would take. `Alt` keeps
+    /// its cycling (`None` here, so the ordinary resolution runs), and so
+    /// does anything that isn't one of the rig's parts.
+    pub(in crate::shell) fn joint_pick(&self, hits: &[Ref], cycling: bool) -> Option<Ref> {
+        if !self.transform.posing || cycling {
+            return None;
+        }
+        let bound = self.anim.bound.as_ref()?;
+        joint_part(hits, bound.rig.root, |part| bound.rest.contains_key(part))
+    }
+
     pub(super) fn animation_frame(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self
             .anim
@@ -432,6 +498,8 @@ impl Shell {
         if self.anim.graph.playing {
             self.anim_step_graph(dt);
         }
+        let posing = self.anim.bound.is_some();
+        self.set_posing(posing, cx);
         self.pose_rig(cx);
         self.sync_joint_pivot(cx);
         self.keep_draft(false);
