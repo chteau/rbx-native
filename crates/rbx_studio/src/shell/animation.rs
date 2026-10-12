@@ -21,6 +21,7 @@ mod graph;
 mod import;
 mod panel;
 mod pose;
+mod publish;
 mod sheet;
 mod skeleton;
 mod stage;
@@ -72,6 +73,13 @@ impl Mode {
             Mode::Graph => "Animation Graph",
         }
     }
+}
+
+/// The Animation Editor's own dialogs, opened on the next render.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum AnimDialog {
+    Publish,
+    ImportId,
 }
 
 /// The rig the editor is posing, and what it needs to put it back.
@@ -151,6 +159,13 @@ pub(super) struct Animation {
     pub(super) publishing: bool,
     /// What the last Publish ended with, shown in a dialog until closed.
     pub(super) publish_result: Option<crate::shell::rig::PublishResult>,
+    /// The Animation Editor's Publish form, while it is open.
+    pub(super) publish_form: Option<publish::PublishForm>,
+    /// The top bar's "Import from asset ID" prompt, while it is open.
+    pub(super) id_prompt: Option<Entity<gpui_kit::component::input::InputState>>,
+    /// A dialog asked for from somewhere without a `Window` (a menu row, a
+    /// scripted step); the next render opens it, since its fields need one.
+    pub(super) dialog_requested: Option<AnimDialog>,
     /// The rig the 3D view is staged around, once the grid is sent.
     pub(super) staged: Option<Ref>,
     /// Whether the rig's bones are drawn over it (Blender shows them in
@@ -185,6 +200,9 @@ impl Animation {
             debug_rest: None,
             publishing: false,
             publish_result: None,
+            publish_form: None,
+            id_prompt: None,
+            dialog_requested: None,
             staged: None,
             skeleton: true,
             skeleton_sent: Vec::new(),

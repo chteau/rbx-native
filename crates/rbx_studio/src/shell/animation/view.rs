@@ -3,12 +3,13 @@
 //! the Curve Editor, or the graph canvas) under them, and the playback bar along the bottom.
 
 use gpui_kit::assets::IconName;
-use gpui_kit::component::{h_flex, v_flex};
+use gpui_kit::component::{self, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::{Mode, Shell};
 use crate::shell::chrome;
+use crate::shell::menu::{self, MenuId};
 use crate::tokens;
 
 /// The bottom panel's share of the document's height, and its bounds: room
@@ -115,6 +116,7 @@ impl Shell {
                     .into_any_element()
             })
             .collect();
+        let file = self.anim_file_group(cx);
         let e = &self.anim.editor;
         let title = format!("{}{}", e.clip.name, if e.dirty { " •" } else { "" });
         let (can_undo, can_redo) = (e.can_undo(), e.can_redo());
@@ -181,6 +183,7 @@ impl Shell {
                     cx.notify();
                 })),
             )
+            .child(file)
             .into_any_element();
         div()
             .w_full()
@@ -309,6 +312,122 @@ impl Shell {
         }
         self.anim.last_frame = None;
         cx.notify();
+    }
+}
+
+impl Shell {
+    /// Import ▾, Export ▾ and Publish: where a clip comes from and goes, in
+    /// the editor's own top bar beside the view toggles, so none of it hides
+    /// at the bottom of the side panel. Publish is the one filled button.
+    fn anim_file_group(&self, cx: &mut Context<Self>) -> AnyElement {
+        let saved = crate::anim_editor::place::all_of_class(
+            &self.dom,
+            "KeyframeSequence",
+            self.anim.bound.as_ref().map(|b| b.model),
+        );
+        let mut imports = vec![
+            menu::item("From asset ID\u{2026}")
+                .icon(IconName::Download)
+                .hint("Download a published animation by its AnimationId and open it here, unsaved")
+                .on_click(|shell, cx| shell.request_animation_id_prompt(cx)),
+            menu::item("From file\u{2026}")
+                .icon(IconName::FileUp)
+                .hint("Open an FBX, glTF or .rbxm animation; FBX and glTF are fitted onto the selected rig")
+                .on_click(|shell, cx| shell.choose_animation_file(cx)),
+            menu::separator(),
+        ];
+        if saved.is_empty() {
+            imports.push(
+                menu::item("No saved animations for this rig")
+                    .disabled()
+                    .hint("Export \u{203a} Save to rig stores the clip in the place; it is listed here after"),
+            );
+        } else {
+            imports.extend(saved.into_iter().map(|(r, n)| {
+                menu::item(n)
+                    .hint("Open this KeyframeSequence saved in the place")
+                    .on_click(move |shell, cx| {
+                        shell.load_animation(r);
+                        cx.notify();
+                    })
+            }));
+        }
+        let exports = vec![
+            menu::item(".rbxm file\u{2026}")
+                .icon(IconName::FileDown)
+                .hint("Write the clip as a KeyframeSequence model file, like Studio's Save to File")
+                .on_click(|shell, cx| shell.export_animation_rbxm(cx)),
+            menu::item("Save to rig")
+                .hint("Store the clip as a KeyframeSequence in the place, beside the rig's other saves (undoable)")
+                .on_click(|shell, cx| shell.save_animation(cx)),
+        ];
+        let trigger = |id: &'static str, text: &'static str, tip: &'static str| {
+            chrome::Trigger::new(
+                chrome::button(id, text, false)
+                    .debug_selector(move || id.into())
+                    .gap(px(4.))
+                    .child(component::Icon::new(IconName::ChevronDown).size(px(10.))),
+            )
+            .tooltip(tip)
+        };
+        let busy = self.anim.publishing;
+        h_flex()
+            .gap(px(4.))
+            .ml(px(6.))
+            .pl(px(8.))
+            .border_l_1()
+            .border_color(tokens::border())
+            .items_center()
+            .child(menu::dropdown(
+                self,
+                MenuId::AnimImport,
+                trigger(
+                    "anim-import",
+                    "Import",
+                    "Bring a clip in: by asset ID, from a file, or one saved in the place",
+                ),
+                imports,
+                cx,
+            ))
+            .child(menu::dropdown(
+                self,
+                MenuId::AnimExport,
+                trigger(
+                    "anim-export",
+                    "Export",
+                    "Write the clip out: to an .rbxm file, or into the place",
+                ),
+                exports,
+                cx,
+            ))
+            .child(
+                chrome::button(
+                    "anim-publish",
+                    if busy {
+                        "Publishing\u{2026}"
+                    } else {
+                        "Publish"
+                    },
+                    true,
+                )
+                .debug_selector(|| "anim-publish".into())
+                .tooltip(|window, cx| {
+                    crate::shell::tooltip::text(
+                        "Upload the clip to Roblox as an Animation asset and get its AnimationId",
+                        window,
+                        cx,
+                    )
+                })
+                .when(busy, |this| this.opacity(0.5).cursor_not_allowed())
+                .when(!busy, |this| {
+                    this.on_click(
+                        cx.listener(|shell, _, window, cx| {
+                            shell.open_animation_publish(window, cx)
+                        }),
+                    )
+                }),
+            )
+            .into_any_element()
     }
 }
 

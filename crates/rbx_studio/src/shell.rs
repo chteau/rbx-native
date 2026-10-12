@@ -1690,6 +1690,7 @@ impl Render for Shell {
     /// the pointer is still over the handle would drop the drag. This
     /// container spans the window, so it can't be outrun.
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.realize_animation_dialogs(window, cx);
         // Deliberately no seeded focus. Seeding it *programmatically* is
         // what left a cold start with focus somewhere and no ring anywhere:
         // `focus_visible` only paints for keyboard-driven focus, so a
@@ -1817,6 +1818,8 @@ impl Render for Shell {
             .children(self.roblox_dialog(cx))
             .children(self.close_place_dialog(cx))
             .children(self.rig_dialog_overlay(cx))
+            .children(self.animation_publish_overlay(cx))
+            .children(self.animation_id_prompt_overlay(cx))
             .children(self.publish_result_overlay(cx))
             .children(self.command_palette(cx))
             .children(self.theme_background(true))

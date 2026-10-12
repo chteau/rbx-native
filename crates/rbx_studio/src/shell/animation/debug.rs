@@ -26,7 +26,13 @@
 //! would), `document=viewport|animation|ui` (switch the central document),
 //! `done` (the auto-rigger's Done), `delete-rig` (delete the auto-rigged or
 //! bound rig's `Model`, as the Delete key does on its Explorer row),
-//! `write=<path>` (File › Save As to that path) and `quit`.
+//! `write=<path>` (File › Save As to that path), `menu=import|export` (open
+//! the top bar's Import ▾ or Export ▾), `import-id-dialog` (Import › From
+//! asset ID…), `publish-form` (the Publish form, waited for),
+//! `publish-group[=<id>]` (pick that group, or the first cached one, as the
+//! creator), `publish-go` (the form's Publish; the rest waits for the
+//! upload, mocked by `RBX_STUDIO_ANIM_PUBLISH_MOCK_ID`/`_ERROR`),
+//! `export-rbxm=<path>` (Export › .rbxm file, to that path) and `quit`.
 
 use gpui_kit::*;
 use rbx_animation::graph::Value;
@@ -341,6 +347,44 @@ impl Shell {
                     }
                 }
                 "write" => self.save_as(std::path::Path::new(arg), cx),
+                // The top bar's Import ▾ / Export ▾ menus, opened.
+                "menu" => {
+                    self.open_menu = match arg {
+                        "import" => Some(crate::shell::menu::MenuId::AnimImport),
+                        "export" => Some(crate::shell::menu::MenuId::AnimExport),
+                        _ => None,
+                    }
+                }
+                // A dialog opens on the next render (its fields need the
+                // window), so the remaining steps wait for it.
+                "import-id-dialog" | "publish-form" => {
+                    if verb == "import-id-dialog" {
+                        self.request_animation_id_prompt(cx);
+                    } else {
+                        self.request_animation_publish(cx);
+                    }
+                    self.anim.debug_rest = Some(steps[i + 1..].to_vec());
+                    cx.spawn(async move |this, cx| {
+                        let _ = this.update(cx, |shell, cx| shell.resume_debug_steps(cx));
+                    })
+                    .detach();
+                    return;
+                }
+                "publish-group" => {
+                    let group = arg.parse().ok().or_else(|| self.first_publish_group());
+                    self.set_publish_group(group);
+                }
+                "publish-go" => {
+                    if self.anim.publish_form.is_some() && !self.anim.publishing {
+                        self.anim.debug_rest = Some(steps[i + 1..].to_vec());
+                        self.publish_animation(cx);
+                        if self.anim.publishing {
+                            return;
+                        }
+                        self.anim.debug_rest = None;
+                    }
+                }
+                "export-rbxm" => self.write_animation_rbxm(std::path::Path::new(arg), cx),
                 "quit" => cx.quit(),
                 _ => self.anim.fail(format!("{VARIABLE}: unknown step {verb}")),
             }

@@ -48,7 +48,9 @@ impl Shell {
             && (self.close_roblox_dialog()
                 | self.cancel_close_place()
                 | self.cancel_rig_dialog()
-                | self.close_publish_result())
+                | self.close_publish_result()
+                | self.close_animation_publish()
+                | self.close_animation_id_prompt())
         {
             cx.notify();
         }

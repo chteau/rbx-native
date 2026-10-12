@@ -146,39 +146,19 @@ impl Shell {
         &mut self,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let id = self.anim.fields.as_ref().map(|f| f.animation_id.clone());
-        section("Animation import")
-            .children(id.map(|id| {
-                h_flex()
-                    .gap(px(6.))
-                    .items_center()
-                    .child(div().flex_1().child(field_row("Id", &id)))
-                    .child(
-                        wide_button("anim-import-id", "Fetch", true)
-                            .flex_none()
-                            .on_click(cx.listener(move |shell, _, _, cx| {
-                                let text = id.read(cx).value().to_string();
-                                shell.import_animation_id(&text, cx);
-                            })),
-                    )
-            }))
-            .child(
-                wide_button("anim-import-file", "Import FBX / glTF…", true)
-                    .on_click(cx.listener(|shell, _, _, cx| shell.choose_animation_file(cx))),
-            )
-            .child(
-                h_flex()
-                    .gap(px(6.))
-                    .child(
-                        wide_button("anim-paste-blender", "Paste from Blender", true).on_click(
-                            cx.listener(|shell, _, _, cx| shell.paste_blender_animation(cx)),
-                        ),
-                    )
-                    .child(
-                        wide_button("anim-copy-blender", "Copy for Blender", true).on_click(
-                            cx.listener(|shell, _, _, cx| shell.copy_blender_animation(cx)),
-                        ),
-                    ),
-            )
+        // Asset ID, file and saved-clip imports are in the top bar's
+        // Import ▾; the Blender addon's clipboard round trip stays here.
+        section("Blender").child(
+            h_flex()
+                .gap(px(6.))
+                .child(
+                    wide_button("anim-paste-blender", "Paste from Blender", true)
+                        .on_click(cx.listener(|shell, _, _, cx| shell.paste_blender_animation(cx))),
+                )
+                .child(
+                    wide_button("anim-copy-blender", "Copy for Blender", true)
+                        .on_click(cx.listener(|shell, _, _, cx| shell.copy_blender_animation(cx))),
+                ),
+        )
     }
 }

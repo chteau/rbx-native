@@ -65,7 +65,8 @@ pub(crate) enum MenuId {
     ViewportScreen,
     AnimPriority,
     AnimFps,
-    AnimLoad,
+    AnimImport,
+    AnimExport,
     AnimEasingStyle,
     AnimEasingDirection,
     AnimGraphLoad,
@@ -106,7 +107,8 @@ impl MenuId {
             MenuId::ViewportScreen => "menu-viewport-screen",
             MenuId::AnimPriority => "menu-anim-priority",
             MenuId::AnimFps => "menu-anim-fps",
-            MenuId::AnimLoad => "menu-anim-load",
+            MenuId::AnimImport => "menu-anim-import",
+            MenuId::AnimExport => "menu-anim-export",
             MenuId::AnimEasingStyle => "menu-anim-easing-style",
             MenuId::AnimEasingDirection => "menu-anim-easing-direction",
             MenuId::AnimGraphLoad => "menu-anim-graph-load",
@@ -158,6 +160,8 @@ pub(super) struct Item {
     checked: bool,
     action: Option<Action>,
     separator: bool,
+    /// What the row does, in a sentence, shown as its tooltip.
+    hint: Option<SharedString>,
 }
 
 pub(super) fn item(label: impl Into<SharedString>) -> Item {
@@ -168,6 +172,7 @@ pub(super) fn item(label: impl Into<SharedString>) -> Item {
         checked: false,
         action: None,
         separator: false,
+        hint: None,
     }
 }
 
@@ -194,6 +199,12 @@ impl Item {
     /// (the same rule `menu_bar`'s disabled items follow).
     pub(super) fn disabled(mut self) -> Self {
         self.enabled = false;
+        self
+    }
+
+    /// A tooltip saying what the row does, where the label alone is terse.
+    pub(super) fn hint(mut self, hint: impl Into<SharedString>) -> Self {
+        self.hint = Some(hint.into());
         self
     }
 
@@ -363,6 +374,9 @@ fn row(shell: Entity<Shell>, index: usize, item: &Item, highlighted: bool) -> im
     // The keyboard's highlight wears the hover's surface, and the pointer
     // moves it: one row is "the one Enter runs", however it got there.
     .when(highlighted, |this| this.bg(tokens::hover()))
+    .when_some(item.hint.clone(), |this, hint| {
+        this.tooltip(move |window, cx| super::tooltip::text(hint.clone(), window, cx))
+    })
     .on_hover({
         let shell = shell.clone();
         move |hovered, _, cx| {
