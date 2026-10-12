@@ -163,6 +163,34 @@ API publique, depuis `src/lib.rs` :
   statut en bas du panneau est remplacée par un bandeau en haut de la vue
   3D, style lecture de vitesse. Info 4 s, avertissement 7 s, erreur
   jusqu'à fermeture (croix).
+- **Séparation redimensionnable et barres de défilement**
+  (`src/shell/animation/split.rs`, `seams.rs`, `src/timeline/scroll.rs`).
+  - Une poignée sur la jointure entre la vue 3D et le panneau du bas
+    (Dope Sheet / Curve Editor) redimensionne le panneau, avec le même
+    `chrome::seam_handle` que les docks. Minimums : 120 px pour la vue,
+    110 px pour le panneau. La hauteur par défaut est l'ancienne part (46 %,
+    bornée à 170–380 px).
+  - Une poignée sur le bord droit de la colonne des joints la
+    redimensionne (120–480 px, en laissant au moins 160 px aux clés).
+  - Les deux tailles sont gardées pour la session et écrites dans les
+    réglages au relâcher : `anim_sheet_height` (absente = la part par
+    défaut) et `anim_names_width`. Les valeurs absurdes sont refusées.
+  - Une barre horizontale sous les rangées de clés : le pouce montre la
+    plage visible sur la plage défilable. Le glisser déplace la vue ; un
+    clic sur la piste pagine de 90 % de la vue. La règle, les rangées et la
+    tête de lecture restent alignées.
+  - Plage choisie : d'un peu avant 0 (la marge de `fit`) jusqu'à End plus
+    la moitié du clip, au moins 2 s après End. Le pan et la molette sont
+    bornés à cette plage, et le dézoom s'arrête quand elle tient en
+    entier.
+  - La barre horizontale est dessinée à la main dans le style du kit : le
+    `Scrollbar` du kit saute au clic sur la piste au lieu de paginer, et
+    veut un handle en pixels.
+  - La liste des joints a une barre verticale (`chrome::ScrollbarY`) quand
+    elle déborde.
+  - Les gestes (poignées, pouce) passent par les handlers racine de
+    `shell.rs`, car le `on_mouse_move` d'un div ne part que sous le
+    pointeur.
 
 ## 2. Ce qu'il faut tester avec la clé API
 
@@ -417,6 +445,14 @@ l'upload par un modèle local.
   reconstruite ne serait pas identique. Pas vu de `RotationCurve`
   (quaternion) dans ces 414 emotes : refusé avec un message. Les courbes
   FACS sont lues en `faces`.
+- **Séparation et barres de défilement de la timeline** : vérifiées sous
+  Xephyr (glisser la séparation, la colonne des joints, le pouce au-delà
+  de End, pagination, réglages relus au redémarrage). Restent ouverts :
+  - la liste des canaux du Curve Editor n'a pas encore de barre
+    verticale ;
+  - Ctrl+molette (zoom) fait aussi défiler la liste des joints quand elle
+    déborde, car le défilement du corps passe avant le handler de la
+    feuille. C'était déjà le cas avant.
 
 ## 6. Références
 
