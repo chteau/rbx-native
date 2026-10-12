@@ -104,8 +104,9 @@ pub(crate) fn file_space(v: Vec3) -> Vec3 {
 /// face +Z ([`file_space`]). Roblox's importer reads glTF units as
 /// studs: on live uploads (rigid model 95056738325785, skinned
 /// 91357319063637) every part's `InitialSize` equalled its glTF bounds.
+/// Non-empty `cages` (one per part, relative to the part centre) are written
+/// as `<Part>_OuterCage` nodes at the same place as the part.
 pub fn gltf(body: &Body, cages: &[Mesh]) -> Vec<u8> {
-    let _ = cages;
     let mut buffer = Buffer::default();
     let (mut meshes, mut nodes) = (Vec::new(), Vec::new());
     for piece in &body.parts {
@@ -117,6 +118,18 @@ pub fn gltf(body: &Body, cages: &[Mesh]) -> Vec<u8> {
             "mesh": meshes.len() - 1,
             "translation": file_space(piece.centre).to_array(),
         }));
+    }
+    if !cages.is_empty() {
+        for (piece, cage) in body.parts.iter().zip(cages) {
+            let name = format!("{}_OuterCage", piece.part.name());
+            let primitive = buffer.primitive(cage, Vec3::ZERO);
+            meshes.push(json!({ "name": name, "primitives": [primitive] }));
+            nodes.push(json!({
+                "name": name,
+                "mesh": meshes.len() - 1,
+                "translation": file_space(piece.centre).to_array(),
+            }));
+        }
     }
     let document = json!({
         "asset": { "version": "2.0", "generator": "rbx-native autorig" },
@@ -159,6 +172,30 @@ impl Buffer {
             target,
             bounds,
         )
+    }
+
+    /// Adds `JOINTS_0` and `WEIGHTS_0` for `influences`, one per vertex of
+    /// `primitive`, with slots resolved through `part_skin`'s bones.
+    fn skin_attributes(
+        &mut self,
+        primitive: &mut Value,
+        part_skin: &PartSkin,
+        influences: &[[(u8, u8); 4]],
+    ) {
+        let n = influences.len();
+        let joint_bytes: Vec<u8> = influences
+            .iter()
+            .flat_map(|inf| inf.map(|(slot, _)| 2 + part_skin.bones[slot as usize] as u8))
+            .collect();
+        let weights = floats(
+            influences
+                .iter()
+                .map(|inf| inf.map(|(_, w)| f32::from(w) / 255.)),
+        );
+        primitive["attributes"]["JOINTS_0"] =
+            json!(self.accessor(&joint_bytes, 5121, n, "VEC4", Some(34962), None));
+        primitive["attributes"]["WEIGHTS_0"] =
+            json!(self.accessor(&weights, 5126, n, "VEC4", Some(34962), None));
     }
 
     /// `mesh` moved by `offset` as a triangle-list primitive in
@@ -392,8 +429,10 @@ pub fn mesh_v4(mesh: &Mesh, skin: Option<&PartSkin>) -> Vec<u8> {
 /// - `JOINTS_0` is unsigned bytes (indices into the skin's joints, never
 ///   `Root` or `HumanoidRootNode` with a non-zero weight), `WEIGHTS_0`
 ///   floats, each [`PartSkin`] byte weight / 255, so every vertex sums to 1.
+/// - Non-empty `cages` (one per part, relative to the part centre) add
+///   15 `<Part>_OuterCage` nodes after the geometry, skinned like their part
+///   with each vertex taking the influences of the part's nearest vertex.
 pub fn gltf_skinned(body: &Body, skin: &Skin, cages: &[Mesh]) -> Vec<u8> {
-    let _ = cages;
     let root = skin.joints[Joint::Root as usize];
     let bone_world = |part: Part| skin.bone_position(part) - root;
     let mut buffer = Buffer::default();
@@ -441,23 +480,34 @@ pub fn gltf_skinned(body: &Body, skin: &Skin, cages: &[Mesh]) -> Vec<u8> {
             n,
             "the skin belongs to another body"
         );
-        let joint_bytes: Vec<u8> = part_skin
-            .influences
-            .iter()
-            .flat_map(|inf| inf.map(|(slot, _)| 2 + part_skin.bones[slot as usize] as u8))
-            .collect();
-        let weights = floats(
-            part_skin
-                .influences
-                .iter()
-                .map(|inf| inf.map(|(_, w)| f32::from(w) / 255.)),
-        );
-        primitive["attributes"]["JOINTS_0"] =
-            json!(buffer.accessor(&joint_bytes, 5121, n, "VEC4", Some(34962), None));
-        primitive["attributes"]["WEIGHTS_0"] =
-            json!(buffer.accessor(&weights, 5126, n, "VEC4", Some(34962), None));
+        buffer.skin_attributes(&mut primitive, part_skin, &part_skin.influences);
         meshes.push(json!({ "name": name, "primitives": [primitive] }));
         nodes.push(json!({ "name": name, "mesh": meshes.len() - 1, "skin": 0 }));
+    }
+    if !cages.is_empty() {
+        for ((piece, part_skin), cage) in body.parts.iter().zip(&skin.parts).zip(cages) {
+            let name = format!("{}_OuterCage", piece.part.name());
+            let mut primitive = buffer.primitive(cage, piece.centre - root);
+            let influences: Vec<[(u8, u8); 4]> = cage
+                .positions
+                .iter()
+                .map(|&p| {
+                    let nearest = piece
+                        .mesh
+                        .positions
+                        .iter()
+                        .enumerate()
+                        .min_by(|a, b| {
+                            a.1.distance_squared(p).total_cmp(&b.1.distance_squared(p))
+                        })
+                        .map_or(0, |(i, _)| i);
+                    part_skin.influences[nearest]
+                })
+                .collect();
+            buffer.skin_attributes(&mut primitive, part_skin, &influences);
+            meshes.push(json!({ "name": name, "primitives": [primitive] }));
+            nodes.push(json!({ "name": name, "mesh": meshes.len() - 1, "skin": 0 }));
+        }
     }
     let mut scene = vec![0];
     scene.extend(joints..nodes.len());

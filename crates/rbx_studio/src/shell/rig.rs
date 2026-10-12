@@ -18,6 +18,7 @@ mod avatar;
 mod bones;
 mod build;
 mod bundle;
+mod cage_templates;
 mod cframe;
 mod dialog;
 mod insert;
