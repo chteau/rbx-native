@@ -545,7 +545,27 @@ fn read_calibration(value: &serde_json::Value) -> rbx_viewer::Calibration {
         sun_base: read("sun_base", tuned.sun_base),
         atmosphere_density_scale: read("atmosphere_density_scale", tuned.atmosphere_density_scale),
         plastic_spec_strength: read("plastic_spec_strength", tuned.plastic_spec_strength),
+        quality_bands: read_quality_bands(value),
     }
+}
+
+/// The seven settable band ends, or the tuned ones when missing, not seven
+/// integers, or not [`rbx_viewer::valid_band_ends`].
+fn read_quality_bands(value: &serde_json::Value) -> [u8; 7] {
+    value
+        .get("calibration")
+        .and_then(|calibration| calibration.get("quality_bands"))
+        .and_then(serde_json::Value::as_array)
+        .filter(|ends| ends.len() == 7)
+        .and_then(|ends| {
+            let mut out = [0u8; 7];
+            for (slot, end) in out.iter_mut().zip(ends) {
+                *slot = u8::try_from(end.as_u64()?).ok()?;
+            }
+            Some(out)
+        })
+        .filter(rbx_viewer::valid_band_ends)
+        .unwrap_or(rbx_viewer::TUNED_BAND_ENDS)
 }
 
 /// What a calibration value may be: above zero, and within ten times its
@@ -628,6 +648,7 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
             "sun_base": settings.calibration.sun_base,
             "atmosphere_density_scale": settings.calibration.atmosphere_density_scale,
             "plastic_spec_strength": settings.calibration.plastic_spec_strength,
+            "quality_bands": settings.calibration.quality_bands,
         },
         "auto_recovery": settings.auto_recovery,
         "recovery_minutes": settings.recovery_minutes,
@@ -994,6 +1015,7 @@ mod tests {
             sun_base: 0.6,
             atmosphere_density_scale: 0.002,
             plastic_spec_strength: 0.2,
+            quality_bands: [1, 3, 5, 8, 12, 16, 20],
         };
         let settings = Settings {
             calibration,
@@ -1015,6 +1037,28 @@ mod tests {
             tuned.atmosphere_density_scale
         );
         assert_eq!(loaded.plastic_spec_strength, 0.3);
+    }
+
+    #[test]
+    fn invalid_quality_bands_load_as_tuned_and_keep_the_floats() {
+        let path = temp_settings_path();
+        std::fs::create_dir_all(path.parent().expect("settings path has a parent"))
+            .expect("create temp dir");
+        for bands in [
+            "[2,4,3,7,8,9,15]",
+            "[2,4,6,7,8,9]",
+            "[0,4,6,7,8,9,15]",
+            "[2,4,6,7,8,9,21]",
+            "[2,4,6,7,8,9,\"x\"]",
+        ] {
+            let json = format!(
+                r#"{{"calibration": {{"plastic_spec_strength": 0.3, "quality_bands": {bands}}}}}"#
+            );
+            std::fs::write(&path, json).expect("write settings");
+            let loaded = load_from(&path).calibration;
+            assert_eq!(loaded.quality_bands, rbx_viewer::TUNED_BAND_ENDS, "{bands}");
+            assert_eq!(loaded.plastic_spec_strength, 0.3);
+        }
     }
 
     #[test]

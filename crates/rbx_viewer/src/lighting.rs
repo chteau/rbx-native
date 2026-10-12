@@ -61,6 +61,10 @@ pub struct Calibration {
     /// Plastic's highlight strength at full `EnvironmentSpecularScale`, which
     /// every textured material is scaled from (`renderer/lighting.wgsl`).
     pub plastic_spec_strength: f32,
+    /// The highest quality level each of the first seven bands covers (the
+    /// eighth runs to the top); see [`crate::valid_band_ends`]. Read by the
+    /// host that picks the quality profile, not by the shaders.
+    pub quality_bands: [u8; 7],
 }
 
 impl Default for Calibration {
@@ -69,6 +73,7 @@ impl Default for Calibration {
             sun_base: SUN_BASE,
             atmosphere_density_scale: 0.0013,
             plastic_spec_strength: 0.28,
+            quality_bands: crate::quality::TUNED_BAND_ENDS,
         }
     }
 }

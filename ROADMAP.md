@@ -1916,6 +1916,17 @@ Roblox's own engine.
   the sun and fill lamps by its ratio to the tuned base. The default renders
   pixel-identical to before; `ViewportFrame`s keep the tuned set, since
   they are lit by their own properties.
+- [x] **Quality bands** in Studio Settings › Viewport › Advanced, beside
+  the three calibration constants: the highest level each of the first
+  seven of the eight quality bands covers (tuned `2 4 6 7 8 9 15`; the
+  eighth always runs to 21) is a setting, `Calibration::quality_bands`,
+  kept in `settings.json` and checked with `rbx_viewer::valid_band_ends`
+  (strictly ascending, 1–20; anything else loads as the tuned ends). What
+  each band turns on stays in `quality/table.rs`. With it, the old
+  "user settings file" bullet is done: service visibility, the default
+  quality level, the camera's movement easing (Smoothing) and the renderer
+  calibration all persist and have a row; only Play's test-copy name waits,
+  on Play.
 - [x] Script debugging in the Edit context, over Luau's own debug hooks,
   reached through `mlua`'s FFI in `rbx_lua::debugger`. Breakpoints are
   Luau's native `LOP_BREAK` patches, the per-instruction `debugstep`
@@ -2435,25 +2446,11 @@ against `Roblox/creator-docs` rather than assumed:
 - [ ] 📋 **Native Git integration** — a real panel in `rbxstudio` (diff view,
   stage/commit, branch switch), not relying on the user's own external git
   client. Not scoped in any detail yet.
-- [ ] 📋 User settings file (service visibility defaults,
-  default quality, sandbox naming for Play) beyond what's already
-  persisted — and, worth folding into the same effort rather than treating
-  separately, **exposing the renderer's calibration constants as real
-  settings** instead of hardcoded Rust values (the movement-easing time
-  constant and the quality-level bands; `SUN_BASE`,
-  `ATMOSPHERE_DENSITY_SCALE` and `PLASTIC_SPEC_STRENGTH` shipped as
-  **Renderer calibration**) — every one of these was tuned
-  empirically tonight against specific real captures, and a place with
-  different lighting conditions may want to nudge them without a rebuild.
-  Everything this bullet and the next few settings-shaped items describe
-  needs an actual screen to live in — see **Studio Settings screen**
-  below, which is that screen.
 - [ ] 📋 **What Studio Settings still shows as `SOON`.** The screen itself
   shipped (see "What's been implemented" → Editor); these rows are drawn
   there, faded and inert, until what they stand for exists:
-  the **quality bands** under renderer calibration (the three tuned
-  constants beside them are settings now),
-  Play's **test-copy name**,
+  Play's **test-copy name** (Play itself is still the open sandbox design
+  under Play / Test),
   **several accounts**, the
   eyedropper in the colour popover (GPUI has no way to sample the
   screen), and

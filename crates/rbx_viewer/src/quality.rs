@@ -16,6 +16,7 @@ use std::str::FromStr;
 pub use auto::FrameRateManager;
 pub(crate) use paced::Automatic;
 pub(crate) use table::MAX_TEXTURE_SIZE;
+pub use table::TUNED_BAND_ENDS;
 
 /// A graphics quality setting: Roblox's own `Automatic`, or one of its 21
 /// discrete levels.
@@ -49,8 +50,23 @@ impl QualityLevel {
     }
 
     pub(crate) fn profile(self) -> QualityProfile {
-        table::profile(self.resolved())
+        self.profile_in(&TUNED_BAND_ENDS)
     }
+
+    /// [`QualityLevel::profile`] with the first seven bands ending at `ends`
+    /// instead of where they were tuned to.
+    pub(crate) fn profile_in(self, ends: &[u8; 7]) -> QualityProfile {
+        table::profile(self.resolved(), ends)
+    }
+}
+
+/// Whether `ends` can bound the first seven bands: strictly ascending, each
+/// inside `QualityLevel::MIN..QualityLevel::MAX` so the eighth band is never
+/// empty and none starts below level 1.
+pub fn valid_band_ends(ends: &[u8; 7]) -> bool {
+    ends.iter()
+        .all(|end| (QualityLevel::MIN..QualityLevel::MAX).contains(end))
+        && ends.windows(2).all(|pair| pair[0] < pair[1])
 }
 
 impl Default for QualityLevel {

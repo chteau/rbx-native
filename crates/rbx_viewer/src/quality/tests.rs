@@ -8,6 +8,33 @@ fn profiles() -> Vec<QualityProfile> {
 }
 
 #[test]
+fn tuned_ends_give_the_same_profile_at_every_level() {
+    for level in QualityLevel::MIN..=QualityLevel::MAX {
+        let level = QualityLevel::Level(level);
+        assert_eq!(level.profile_in(&TUNED_BAND_ENDS), level.profile());
+    }
+}
+
+#[test]
+fn moving_an_end_moves_which_band_a_level_gets() {
+    let moved = [3, 4, 6, 7, 8, 9, 15];
+    let level = QualityLevel::Level(3);
+    assert_eq!(level.profile_in(&moved), QualityLevel::Level(1).profile());
+    assert_eq!(level.profile(), QualityLevel::Level(4).profile());
+    assert_ne!(level.profile_in(&moved), level.profile());
+}
+
+#[test]
+fn band_ends_must_ascend_strictly_within_the_levels() {
+    assert!(valid_band_ends(&TUNED_BAND_ENDS));
+    assert!(valid_band_ends(&[1, 2, 3, 4, 5, 6, 20]));
+    assert!(!valid_band_ends(&[4, 2, 6, 7, 8, 9, 15]));
+    assert!(!valid_band_ends(&[2, 4, 4, 7, 8, 9, 15]));
+    assert!(!valid_band_ends(&[0, 4, 6, 7, 8, 9, 15]));
+    assert!(!valid_band_ends(&[2, 4, 6, 7, 8, 9, 21]));
+}
+
+#[test]
 fn every_level_in_range_resolves_to_itself() {
     for level in QualityLevel::MIN..=QualityLevel::MAX {
         assert_eq!(QualityLevel::Level(level).resolved(), level);
