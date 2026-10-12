@@ -150,12 +150,18 @@ impl SettingsWindow {
         .ok()
     }
 
-    /// The seven number fields with their settings' values.
-    fn numbers(&self, cx: &App) -> [(&NumberField, f32); 7] {
+    /// The number fields with their settings' values.
+    fn numbers(&self, cx: &App) -> Vec<(&NumberField, f32)> {
         use crate::transform::SnapKind;
         let shell = self.shell.read(cx);
         let calibration = shell.calibration();
-        [
+        let bands = self
+            .calibration
+            .bands
+            .iter()
+            .zip(calibration.quality_bands)
+            .map(|(field, end)| (field, f32::from(end)));
+        let mut fields = vec![
             (&self.appearance.script_font, shell.script_font_size()),
             (
                 &self.appearance.viewport_font,
@@ -175,7 +181,9 @@ impl SettingsWindow {
                 &self.increments.rotate,
                 shell.snap_increment(SnapKind::Rotate),
             ),
-        ]
+        ];
+        fields.extend(bands);
+        fields
     }
 
     /// Commits what a number field holds typed but not yet committed:

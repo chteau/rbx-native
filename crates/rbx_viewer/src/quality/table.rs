@@ -299,14 +299,25 @@ pub(super) const MID_SHADOWS_STUDS: f32 = 300.0;
 /// alongside this distance for exactly that reason — see its own comment.
 pub(super) const FAR_SHADOWS_STUDS: f32 = 600.0;
 
-/// The band `level` falls in. Levels above the last band get it too, which is
-/// what makes the table total without a catch-all row.
-pub(super) fn profile(level: u8) -> QualityProfile {
-    // The last row covers `QualityLevel::MAX` and callers clamp to it, so the
-    // fallback exists only to keep this function total.
-    let (_, top) = BANDS[BANDS.len() - 1];
-    BANDS
-        .iter()
-        .find(|(upto, _)| level <= *upto)
-        .map_or(top, |(_, profile)| *profile)
+/// Where the first seven bands end as tuned; the eighth always runs to
+/// `QualityLevel::MAX`, so only these are a setting.
+pub const TUNED_BAND_ENDS: [u8; 7] = [2, 4, 6, 7, 8, 9, 15];
+
+/// The band `level` falls in when the first seven bands end at `ends`. Levels
+/// past the last of them get the top band, which is what makes the table total
+/// without a catch-all row.
+pub(super) fn profile(level: u8, ends: &[u8; 7]) -> QualityProfile {
+    let band = ends.iter().position(|end| level <= *end).unwrap_or(7);
+    BANDS[band].1
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tuned_band_ends_are_the_first_seven_table_ends() {
+        let table: Vec<u8> = BANDS[..7].iter().map(|(upto, _)| *upto).collect();
+        assert_eq!(table, TUNED_BAND_ENDS);
+    }
 }

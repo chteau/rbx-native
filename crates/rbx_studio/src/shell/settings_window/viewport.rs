@@ -15,7 +15,7 @@ use crate::tokens;
 use super::super::toolbar::snap::NumberField;
 use super::super::Shell;
 use super::dragger::{committed, number};
-use super::kit::{self, mono, readout, segmented, slider, text, toggle, Row, Section};
+use super::kit::{self, readout, segmented, slider, text, toggle, Row, Section};
 use super::SettingsWindow;
 
 /// Where Manual starts when the mode was Automatic.
@@ -399,9 +399,23 @@ impl SettingsWindow {
                         shell.set_calibration(calibration, cx);
                     },
                 ),
-                Row::new("Quality bands", field("8 bands"))
-                    .mono()
-                    .soon_faded(),
+                Row::new(
+                    "Quality bands",
+                    h_flex().gap(px(4.)).children(fields.bands.iter().map(|band| {
+                        band_number(&band.input, focused(&band.input, cx))
+                    })),
+                )
+                .describe(
+                    "The highest level each of the first seven bands covers; the eighth runs to 21.",
+                )
+                .changed(
+                    calibration.quality_bands != tuned.quality_bands,
+                    move |shell, cx| {
+                        let mut calibration = shell.calibration();
+                        calibration.quality_bands = tuned.quality_bands;
+                        shell.set_calibration(calibration, cx);
+                    },
+                ),
             ]
         } else {
             Vec::new()
@@ -423,6 +437,7 @@ pub(super) struct CalibrationFields {
     pub(super) sun_base: NumberField,
     pub(super) atmosphere: NumberField,
     pub(super) plastic: NumberField,
+    pub(super) bands: [NumberField; 7],
 }
 
 impl CalibrationFields {
@@ -451,27 +466,66 @@ impl CalibrationFields {
             subscriptions.push(typed);
             field
         };
+        let sun_base = field(|c| &mut c.sun_base, cx);
+        let atmosphere = field(|c| &mut c.atmosphere_density_scale, cx);
+        let plastic = field(|c| &mut c.plastic_spec_strength, cx);
+        let bands = std::array::from_fn(|index| {
+            let (field, typed) = NumberField::new(
+                f32::from(current.quality_bands[index]),
+                window,
+                cx,
+                move |this, text, cx| {
+                    let bands = this.shell.read(cx).calibration().quality_bands;
+                    let below = if index == 0 { 0 } else { bands[index - 1] };
+                    let above = if index == 6 { 21 } else { bands[index + 1] };
+                    let range = (f32::from(below) + 1., f32::from(above) - 1.);
+                    if let Some(typed) = committed(text, range, false).filter(|v| v.fract() == 0.) {
+                        this.shell.update(cx, |shell, cx| {
+                            let mut calibration = shell.calibration();
+                            calibration.quality_bands[index] = typed as u8;
+                            shell.set_calibration(calibration, cx);
+                        });
+                    }
+                    f32::from(this.shell.read(cx).calibration().quality_bands[index])
+                },
+            );
+            subscriptions.push(typed);
+            field
+        });
         let fields = CalibrationFields {
-            sun_base: field(|c| &mut c.sun_base, cx),
-            atmosphere: field(|c| &mut c.atmosphere_density_scale, cx),
-            plastic: field(|c| &mut c.plastic_spec_strength, cx),
+            sun_base,
+            atmosphere,
+            plastic,
+            bands,
         };
         (fields, subscriptions)
     }
 }
 
-/// A 110×30 mono number field, showing a value nobody can type into yet.
-fn field(value: &'static str) -> Div {
+/// A 40×30 mono integer field, one of the quality band ends.
+fn band_number(input: &Entity<InputState>, focused: bool) -> impl IntoElement {
     h_flex()
-        .w(px(110.))
+        .w(px(40.))
         .h(px(30.))
-        .px(px(10.))
+        .px(px(6.))
         .items_center()
-        .justify_end()
         .border_1()
-        .border_color(tokens::border2())
+        .border_color(if focused {
+            tokens::accent_line()
+        } else {
+            tokens::border2()
+        })
         .rounded(px(6.))
         .bg(tokens::dock())
-        .opacity(0.4)
-        .child(mono(11.5, 16.).text_color(tokens::text()).child(value))
+        .font_family(tokens::FONT_FAMILY_MONO)
+        .child(
+            component::input::Input::new(input)
+                .appearance(false)
+                .w_full()
+                .px_0()
+                .text_right()
+                .text_size(px(11.5))
+                .line_height(px(16.))
+                .text_color(tokens::text()),
+        )
 }
