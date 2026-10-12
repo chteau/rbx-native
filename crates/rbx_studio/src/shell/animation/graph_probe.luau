@@ -225,7 +225,12 @@ local function which()
 	return string.format("other(x=%.1f,z=%.1f)", x, z)
 end
 
-out("start", "AuthorityMode", tostring(workspace.AuthorityMode), "server", RunService:IsServer())
+-- AuthorityMode needs RobloxScript, so a script cannot read it; say so
+-- rather than stopping the run.
+local okAuthority, authority = pcall(function()
+	return tostring(workspace.AuthorityMode)
+end)
+out("start", "AuthorityMode", okAuthority and authority or "unreadable", "server", RunService:IsServer())
 
 -- Baseline: a KeyframeSequence on its own, to show registering and reading
 -- the Transform work at all. Expect eulerXYZ x=90.

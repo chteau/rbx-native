@@ -367,6 +367,18 @@ fn the_pin_list_names_every_pin_in_order() {
 }
 
 #[test]
+fn a_node_without_pins_still_carries_studios_empty_pin_list() {
+    let mut dom = WeakDom::new();
+    let def = write(&mut dom, None, &sample());
+    let clip = kid(&dom, def, "ClipNode1");
+    let Some(Variant::Unknown { raw, .. }) = prop(&dom, clip, "InputPinData") else {
+        panic!("a Clip node has no InputPinData");
+    };
+    // Version 1, no pins: what Studio saves for its own Clip node.
+    assert_eq!(raw, [1, 0, 0, 0, 0, 0, 0, 0]);
+}
+
+#[test]
 fn an_empty_definition_still_has_an_output() {
     let mut dom = WeakDom::new();
     let def = dom.new_instance("AnimationGraphDefinition", "G", None);

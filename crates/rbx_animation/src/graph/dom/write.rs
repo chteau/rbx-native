@@ -216,10 +216,10 @@ impl Writer<'_> {
             }
             pins.push(Some(pin));
         }
-        if !node.inputs.is_empty() {
-            let names: Vec<&str> = node.inputs.iter().map(|i| i.pin.as_str()).collect();
-            set(self.dom, r, "InputPinData", input_pin_data(&names));
-        }
+        // Studio writes it for every node, a pin-less Clip's as version 1 and
+        // a zero count; a node without the property is not read as a node.
+        let names: Vec<&str> = node.inputs.iter().map(|i| i.pin.as_str()).collect();
+        set(self.dom, r, "InputPinData", input_pin_data(&names));
         if node.kind == NodeKind::StateMachine {
             let entry = node.props.get("EntryState").map(|p| match p {
                 Prop::Value(v) => v.text(),
