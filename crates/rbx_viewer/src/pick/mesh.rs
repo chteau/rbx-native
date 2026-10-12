@@ -2,12 +2,12 @@
 //! that lets a hit test read the geometry the render thread already parsed
 //! to draw it.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use glam::{Mat4, Vec3};
 use rbx_assets::AssetRef;
-use rbx_dom::Ref;
+use rbx_dom::{Ref, WeakDom};
 use rbx_mesh::Mesh;
 
 use crate::assets::Image;
@@ -37,7 +37,7 @@ pub use face::FlatFace;
 /// (see `crate::export`).
 #[derive(Clone, Default)]
 pub struct Meshes {
-    meshes: Arc<HashMap<AssetRef, Arc<Mesh>>>,
+    meshes: Arc<HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>>>,
     textures: Arc<HashMap<Ref, Arc<Image>>>,
     surfaces: Arc<HashMap<Ref, Surface>>,
     materials: Arc<HashMap<Ref, Arc<Pack>>>,
@@ -47,6 +47,11 @@ pub struct Meshes {
     /// The additive pieces each union whose boolean could not be run is
     /// drawn as instead (see `scene::union`).
     pieces: Arc<HashMap<Ref, Vec<Piece>>>,
+    /// The roots an isolated view draws (see `Headless::set_isolation`), or
+    /// `None` while the whole place does. Carried with the meshes because a
+    /// click has to reach exactly what is on screen, and this handle is the
+    /// one thing the host's hit test already takes from the renderer.
+    isolation: Option<Arc<HashSet<Ref>>>,
 }
 
 /// One recovered piece of a union, as the scene draws it.
@@ -81,7 +86,7 @@ pub(crate) struct Surface {
 
 impl Meshes {
     pub(crate) fn new(
-        meshes: HashMap<AssetRef, Arc<Mesh>>,
+        meshes: HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>>,
         textures: HashMap<Ref, Arc<Image>>,
     ) -> Self {
         Meshes {
@@ -91,7 +96,24 @@ impl Meshes {
             materials: Arc::default(),
             kinds: Arc::default(),
             pieces: Arc::default(),
+            isolation: None,
         }
+    }
+
+    pub(crate) fn with_isolation(mut self, roots: Option<HashSet<Ref>>) -> Self {
+        self.isolation = roots.map(Arc::new);
+        self
+    }
+
+    /// Whether `referent` is drawn as far as an isolation goes: always while
+    /// nothing is isolated, and otherwise only when it is one of the roots
+    /// or sits beneath one in `dom`. Asked of the host's own DOM rather than
+    /// of the scene the renderer built, so a part the host has just moved
+    /// under a root is reachable on the very next click.
+    pub fn shows(&self, dom: &WeakDom, referent: Ref) -> bool {
+        self.isolation.as_ref().is_none_or(|roots| {
+            crate::scene::isolation_within(roots, referent, |at| dom.parent(at))
+        })
     }
 
     pub(crate) fn with_materials(mut self, materials: HashMap<Ref, Arc<Pack>>) -> Self {
@@ -192,15 +214,38 @@ impl Meshes {
                     .or_insert_with(|| Arc::clone(pack));
             }
         }
-        Meshes::new(resolved.meshes.clone(), textures)
+        let mut meshes = resolved.meshes.clone();
+        // The GPU deforms what the renderer draws; picking and export need
+        // the same shape on the CPU.
+        if resolved.skins_on_gpu {
+            for rig in resolved.rigs.values() {
+                meshes.insert(rig.key.clone(), rig.posed());
+            }
+        }
+        Meshes::new(meshes, textures)
             .with_surfaces(surfaces)
             .with_materials(materials)
             .with_kinds(kinds)
             .with_pieces(pieces)
+            .with_isolation(scene.isolation().map(|isolation| isolation.roots().clone()))
     }
 
-    pub fn get(&self, asset: &AssetRef) -> Option<&Arc<Mesh>> {
+    pub fn get(&self, asset: &AssetRef) -> Option<&Arc<rbx_mesh::SkinnedMesh>> {
         self.meshes.get(asset)
+    }
+
+    /// The geometry `referent` is drawn with when it draws `asset`: a
+    /// skinned mesh part's current pose (see `scene::filemesh::skinned`),
+    /// otherwise the asset itself. The pose keeps the asset's bounds, so the
+    /// fit worked out from either is the same.
+    pub(crate) fn drawn(
+        &self,
+        referent: Ref,
+        asset: &AssetRef,
+    ) -> Option<&Arc<rbx_mesh::SkinnedMesh>> {
+        self.meshes
+            .get(&crate::scene::skinned_mesh_key(referent, asset))
+            .or_else(|| self.meshes.get(asset))
     }
 
     pub(crate) fn texture(&self, referent: Ref) -> Option<&Arc<Image>> {

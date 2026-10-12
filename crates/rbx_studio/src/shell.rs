@@ -4,6 +4,7 @@
 //! dragged to another edge or stacked as tabs.
 
 mod align;
+mod animation;
 mod argon_diff_window;
 mod argon_sync;
 mod attributes_panel;
@@ -300,6 +301,8 @@ pub(crate) struct Shell {
     /// canvas, the pan and zoom, the gesture in flight. See
     /// `shell::ui_editor`.
     ui: ui_editor::UiEditor,
+    /// The Animation Editor document's own state; see `shell::animation`.
+    anim: animation::Animation,
     quality: Entity<SelectState<QualityOptions>>,
     /// The canonical, mutable tree a Command Bar script runs against; see
     /// `Place::dom`.
@@ -501,6 +504,8 @@ impl Shell {
             argon: argon_settings,
             discord_presence: discord_presence_enabled,
             discord_hide_names,
+            anim_sheet_height,
+            anim_names_width,
         } = settings;
         // Before anything renders: every size token is read through these,
         // so a scale or target floor applied after the first frame would
@@ -731,6 +736,7 @@ impl Shell {
             style_edits: style_panel::StyleEdits::default(),
             style_scroll: ScrollHandle::new(),
             ui,
+            anim: animation::Animation::new(cx).with_seams(anim_sheet_height, anim_names_width),
             quality: selector,
             dom,
             history: History::new(DEFAULT_CAP),
@@ -963,6 +969,9 @@ impl Shell {
         // `RBX_STUDIO_FRAME_SHEET` (see `shell::ui_editor::frame_sheet`):
         // after the canvas is up, on the `ViewportFrame` selected above.
         shell.apply_debug_frame_sheet(window, cx);
+        // `RBX_STUDIO_ANIMATION` (see `shell::animation::debug`): after the
+        // selection blocks, so the rig they selected is the one it binds.
+        shell.apply_debug_animation(cx);
 
         // `RBX_STUDIO_ARGON_CONNECT` (see `shell::argon_sync`): Connect is a
         // click, and nothing else can send one to the window on the
@@ -1649,6 +1658,8 @@ impl Shell {
             argon: self.argon_settings.clone(),
             discord_presence: self.discord.is_some(),
             discord_hide_names: self.discord_hide_names,
+            anim_sheet_height: self.anim.sheet_height,
+            anim_names_width: Some(self.anim.names_width),
         };
         let _ = settings.save();
 
@@ -1683,6 +1694,7 @@ impl Render for Shell {
     /// the pointer is still over the handle would drop the drag. This
     /// container spans the window, so it can't be outrun.
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.realize_animation_dialogs(window, cx);
         // Deliberately no seeded focus. Seeding it *programmatically* is
         // what left a cold start with focus somewhere and no ring anywhere:
         // `focus_visible` only paints for keyboard-driven focus, so a
@@ -1769,6 +1781,7 @@ impl Render for Shell {
                 shell.drag_resize(event.position, cx);
                 shell.drag_scrub(event.position.x, event.modifiers, window, cx);
                 shell.drag_inspector(event.position.x, event.modifiers, cx);
+                shell.anim_seam_drag(event.position, cx);
             }))
             .on_mouse_up(
                 MouseButton::Left,
@@ -1777,6 +1790,7 @@ impl Render for Shell {
                     shell.scrub = None;
                     shell.end_inspector_drag();
                     shell.end_panel_drag(event.position, window.viewport_size(), cx);
+                    shell.anim_seam_release(cx);
                 }),
             )
             // The one that matters for tearing a dock out: a pointer
@@ -1790,6 +1804,7 @@ impl Render for Shell {
                     shell.scrub = None;
                     shell.end_inspector_drag();
                     shell.end_panel_drag(event.position, window.viewport_size(), cx);
+                    shell.anim_seam_release(cx);
                 }),
             )
             .children(self.theme_background(false))
@@ -1810,6 +1825,9 @@ impl Render for Shell {
             .children(self.roblox_dialog(cx))
             .children(self.close_place_dialog(cx))
             .children(self.rig_dialog_overlay(cx))
+            .children(self.animation_publish_overlay(cx))
+            .children(self.animation_id_prompt_overlay(cx))
+            .children(self.publish_result_overlay(cx))
             .children(self.command_palette(cx))
             .children(self.theme_background(true))
     }

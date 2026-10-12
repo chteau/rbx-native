@@ -121,6 +121,11 @@ pub(crate) struct Settings {
     pub(crate) discord_presence: bool,
     /// Defaults on: names are hidden unless the user opts in.
     pub(crate) discord_hide_names: bool,
+    /// The Animation Editor's bottom panel height, once its seam has been
+    /// dragged; `None` keeps the default share of the room.
+    pub(crate) anim_sheet_height: Option<f32>,
+    /// The Animation Editor's channel-name column width, once dragged.
+    pub(crate) anim_names_width: Option<f32>,
 }
 
 /// A dock layout saved under a name.
@@ -208,6 +213,8 @@ impl Default for Settings {
             controls: Controls::default(),
             discord_presence: false,
             discord_hide_names: true,
+            anim_sheet_height: None,
+            anim_names_width: None,
         }
     }
 }
@@ -417,7 +424,16 @@ fn load_from(path: &Path) -> Settings {
             .get("discord_hide_names")
             .and_then(|v| v.as_bool())
             .unwrap_or(true),
+        anim_sheet_height: read_extent(&value, "anim_sheet_height"),
+        anim_names_width: read_extent(&value, "anim_names_width"),
     }
+}
+
+/// A saved pixel extent: a finite, positive number, or nothing. The editor
+/// clamps it to the room it finds, so only nonsense is refused here.
+fn read_extent(value: &serde_json::Value, key: &str) -> Option<f32> {
+    let v = value.get(key)?.as_f64()? as f32;
+    (v.is_finite() && v > 0.0).then_some(v)
 }
 
 /// The saved dock layout, or nothing at all when the file predates it or
@@ -640,6 +656,8 @@ fn save_to(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
         "argon": settings.argon.json(),
         "discord_presence": settings.discord_presence,
         "discord_hide_names": settings.discord_hide_names,
+        "anim_sheet_height": settings.anim_sheet_height,
+        "anim_names_width": settings.anim_names_width,
     });
     // A fixed-shape object always serializes; nothing here can fail.
     let bytes = serde_json::to_vec_pretty(&value).expect("settings JSON always serializes");
@@ -1245,5 +1263,30 @@ mod tests {
         let read = load_from(&path);
         assert!(!read.discord_presence);
         assert!(read.discord_hide_names);
+    }
+
+    #[test]
+    fn animation_seams_round_trip_and_refuse_nonsense() {
+        let path = temp_settings_path();
+        let settings = Settings {
+            anim_sheet_height: Some(260.0),
+            anim_names_width: Some(240.0),
+            ..Settings::default()
+        };
+        save_to(&settings, &path).unwrap();
+        let read = load_from(&path);
+        assert_eq!(read.anim_sheet_height, Some(260.0));
+        assert_eq!(read.anim_names_width, Some(240.0));
+
+        let path = temp_settings_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            br#"{"anim_sheet_height": -4, "anim_names_width": "wide"}"#,
+        )
+        .unwrap();
+        let read = load_from(&path);
+        assert_eq!(read.anim_sheet_height, None);
+        assert_eq!(read.anim_names_width, None);
     }
 }

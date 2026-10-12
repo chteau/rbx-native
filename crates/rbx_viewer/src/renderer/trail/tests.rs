@@ -26,6 +26,7 @@ fn trail() -> Trail {
         texture_length: 1.0,
         light_emission: 0.0,
         referent: Ref::new(1),
+        attachments: [Ref::new(0); 2],
     }
 }
 

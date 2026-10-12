@@ -14,7 +14,7 @@ use crate::gpu;
 use crate::pick::Selected;
 use crate::quality::QualityProfile;
 use crate::renderer::{Renderer, Segment, World};
-use crate::scene::Scene;
+use crate::scene::{Bounds, Scene};
 use crate::view::View;
 use readback::{Pending, Target, FORMAT};
 
@@ -100,6 +100,8 @@ impl Offscreen {
             offscreen.set_lines(layer, segments);
         }
         offscreen.set_gizmo(view.gizmo);
+        offscreen.set_isolated(view.isolated());
+        offscreen.set_stage(world.scene.stage_bounds());
         offscreen
     }
 
@@ -119,6 +121,19 @@ impl Offscreen {
             self.set_lines(layer, segments);
         }
         self.set_gizmo(view.gizmo);
+        self.set_isolated(view.isolated());
+        self.set_stage(world.scene.stage_bounds());
+    }
+
+    /// See [`Renderer::set_stage`].
+    pub(crate) fn set_stage(&mut self, stage: Option<Bounds>) {
+        self.renderer.set_stage(stage);
+    }
+
+    /// Draws an isolated view or the whole place — see
+    /// [`Renderer::set_isolated`].
+    pub(crate) fn set_isolated(&mut self, isolated: bool) {
+        self.renderer.set_isolated(isolated);
     }
 
     /// Moves the renderer to another graphics quality level, in place: see

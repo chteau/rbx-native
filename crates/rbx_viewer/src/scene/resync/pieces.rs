@@ -57,7 +57,12 @@ impl Scene {
         // — the pieces stand inside it, and a computed mesh replaces it.
         part.suppressed = true;
         if !evaluated.is_carved() {
-            let pieces = entry.pieces(evaluated, &self.database, &mut self.materials);
+            let mut pieces = entry.pieces(evaluated, &self.database, &mut self.materials);
+            // The union's own answer, which `resync_part` has just asked the
+            // DOM for: a piece is the union drawn, not an instance of its own.
+            for piece in &mut pieces {
+                piece.isolated_out = part.isolated_out;
+            }
             // A leaf's own `Material` can be one the catalog only learned
             // while this union was resolved; a layer past what the renderer
             // uploaded maps to nothing it can shade.
@@ -94,7 +99,10 @@ impl Scene {
                 Err(Rebuild::Asset)
             }
             Some(instance) => Ok(Drawn::Mesh {
-                index: self.place_instance(instance),
+                index: self.place_instance(crate::scene::ResolvedInstance {
+                    isolated_out: part.isolated_out,
+                    ..instance
+                }),
                 placement: part.placement(),
             }),
         }

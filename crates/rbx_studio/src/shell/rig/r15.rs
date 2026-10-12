@@ -111,7 +111,7 @@ pub(super) fn layout(sizes: &Sizes, hip_spread: f32, pieces: &Pieces) -> Layout 
     for part in &mut rig.parts {
         part.mesh = pieces
             .get(&part.name)
-            .filter(|piece| piece.mesh != 0)
+            .filter(|piece| piece.mesh != 0 || piece.local.is_some())
             .cloned();
     }
     let root = rig.parts[0].size[1];

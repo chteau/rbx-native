@@ -56,7 +56,7 @@ pub(super) fn export_part(
     let alpha = alpha(properties.get("Transparency"), kind);
 
     let file_mesh = file_mesh_fit(dom, database, referent).and_then(|(asset, fit)| {
-        let mesh = meshes.get(&asset)?;
+        let mesh = meshes.drawn(referent, &asset)?;
         Some((mesh, fit.transform(mesh)))
     });
     let union = || {

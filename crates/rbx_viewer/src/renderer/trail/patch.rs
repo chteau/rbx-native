@@ -89,6 +89,7 @@ mod tests {
             texture_length: 1.0,
             light_emission: 0.0,
             referent: Ref::new(referent),
+            attachments: [Ref::new(0); 2],
         }
     }
 

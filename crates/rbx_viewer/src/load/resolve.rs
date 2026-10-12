@@ -136,7 +136,7 @@ impl Loaded {
     /// Nothing here can fail the run: with `--no-textures`, with no network,
     /// or with an asset that refuses to decode, the viewer falls back to the
     /// plain boxes it has always drawn.
-    fn resolve_decor(&mut self, resident: &mut Resident) -> Vec<String> {
+    pub(super) fn resolve_decor(&mut self, resident: &mut Resident) -> Vec<String> {
         let references = self.decor_plan.references();
         if references.is_empty() {
             return Vec::new();

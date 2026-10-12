@@ -13,6 +13,7 @@ use std::rc::Rc;
 use gpui_kit::*;
 
 use crate::sequence_editor::{Kind, Rect, Stop};
+use crate::timeline::paint::{dot, line, polyline};
 use crate::tokens;
 
 /// Steps across a ramp or a curve. 128 is under half a pixel per step at
@@ -223,39 +224,6 @@ fn marker(window: &mut Window, x: f32, bottom: f32, selected: bool) {
             },
         );
     }
-}
-
-fn dot(window: &mut Window, x: f32, y: f32, radius: f32, colour: Rgba) {
-    window.paint_quad(fill(
-        Bounds {
-            origin: point(px(x - radius), px(y - radius)),
-            size: size(px(radius * 2.0), px(radius * 2.0)),
-        },
-        colour,
-    ));
-}
-
-/// A stroked run of points, open at both ends. `PathBuilder::stroke` rather
-/// than a rotated quad: a curve is a run of short segments at every angle,
-/// and a quad cannot carry the ones that are not axis-aligned.
-fn polyline(window: &mut Window, points: &[Point<Pixels>], colour: Rgba, width: f32) {
-    if points.len() < 2 {
-        return;
-    }
-    let mut builder = PathBuilder::stroke(px(width));
-    builder.add_polygon(points, false);
-    if let Ok(path) = builder.build() {
-        window.paint_path(path, colour);
-    }
-}
-
-fn line(window: &mut Window, from: (f32, f32), to: (f32, f32), colour: Rgba, width: f32) {
-    polyline(
-        window,
-        &[point(px(from.0), px(from.1)), point(px(to.0), px(to.1))],
-        colour,
-        width,
-    );
 }
 
 fn accent(alpha: u32) -> Rgba {

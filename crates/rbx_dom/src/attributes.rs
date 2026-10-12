@@ -11,9 +11,30 @@
 //! The type ids are the attribute format's own and do not line up with the
 //! binary format's property type ids — `0x0F` is a `Color3` here and a `Ref`
 //! there.
+//!
+//! An `Instance` attribute (`0x25`) is a `u32` little-endian referent: the
+//! same number the file's `INST`/`PRNT` chunks and `Ref` properties use for
+//! the target, plain rather than interleaved or zigzagged. Evidence: an
+//! `AnimationGraphDefinition` saved by Roblox Studio
+//! (`rbx_animation/tests/fixtures/studio_state_machine.rbxm`), whose
+//! `EntryState` holds `0x25 0b 00 00 00` for the `ObjectValue` at referent
+//! 11. It decodes to a [`Variant::Ref`] whose id *is* that referent:
+//! `rbx_binary` gives every instance it reads its file referent as its DOM
+//! `Ref` and writes each `Ref` back as its referent, so for a binary file
+//! the referent map is the identity and the blob needs no rewriting on load
+//! or save. Code that renumbers instances (a paste, Save to File) carries
+//! these through [`remap_refs`] as it does `Ref` properties. A nil
+//! `Instance` attribute cannot exist — `SetAttribute(name, nil)` removes the
+//! attribute — so no null referent is written.
+//!
+//! The XML formats have no settled form for it: `rbx_xml` keeps the blob as
+//! `BinaryString` bytes, but XML referents are strings (`RBX…`) that a `u32`
+//! cannot name, and no Studio-saved `.rbxmx` holding one has been seen. So
+//! an `Instance` attribute is only meaningful in a binary file.
 
 use std::collections::BTreeMap;
 
+use crate::reference::Ref;
 use crate::rotation::{self, RAW_ROTATION_ID};
 use crate::variant::{
     CFrameData, Color3Data, ColorSequence, ColorSequenceKeypoint, Font, FontStyle, NumberRange,
@@ -47,6 +68,9 @@ fn read_all(cursor: &mut Cursor<'_>) -> Option<BTreeMap<String, Variant>> {
     }
     Some(attributes)
 }
+
+/// The attribute type id of an `Instance` value; see the module doc.
+pub const INSTANCE_TYPE_ID: u8 = 0x25;
 
 struct Cursor<'a>(&'a [u8]);
 
@@ -195,6 +219,7 @@ impl Cursor<'_> {
                 min: self.vector2()?,
                 max: self.vector2()?,
             }),
+            INSTANCE_TYPE_ID => Variant::Ref(Ref::new(self.u32()?)),
             0x21 => {
                 let weight = self.u16()?;
                 let style = self.u8()?;
@@ -363,9 +388,73 @@ fn write(out: &mut Vec<u8>, value: &Variant, enum_type: impl Fn() -> Option<Stri
             string(out, &font.family);
             string(out, font.cached_face_id.as_deref().unwrap_or(""));
         }
+        Variant::Ref(target) => {
+            out.push(INSTANCE_TYPE_ID);
+            out.extend(target.value().to_le_bytes());
+        }
         _ => return None,
     }
     Some(())
+}
+
+/// `value` (an attribute blob) with every `Instance` attribute's target
+/// passed through `map`, for code that gives instances new `Ref`s: a target
+/// `map` answers `None` for is dropped along with its attribute. `None` when
+/// the blob holds no `Instance` attribute or cannot be read whole, in which
+/// case the caller keeps `value` as it is.
+///
+/// Every other entry is copied byte for byte, so an enum's type name (which
+/// [`decode`] does not keep) survives.
+pub fn remap_refs(value: &Variant, map: impl Fn(Ref) -> Option<Ref>) -> Option<Variant> {
+    let bytes = match value {
+        Variant::String(text) => text.as_bytes(),
+        Variant::Unknown { raw, .. } => raw.as_slice(),
+        _ => return None,
+    };
+    let mut cursor = Cursor(bytes);
+    let count = cursor.u32()?;
+    let mut kept = 0u32;
+    let mut body = Vec::with_capacity(bytes.len());
+    let mut changed = false;
+    for _ in 0..count {
+        let start = bytes.len() - cursor.0.len();
+        cursor.string()?;
+        let value_at = bytes.len() - cursor.0.len();
+        let value = cursor.value()?;
+        let end = bytes.len() - cursor.0.len();
+        match value {
+            Variant::Ref(target) => {
+                changed = true;
+                if let Some(target) = map(target) {
+                    body.extend(&bytes[start..=value_at]);
+                    body.extend(target.value().to_le_bytes());
+                    kept += 1;
+                }
+            }
+            _ => {
+                body.extend(&bytes[start..end]);
+                kept += 1;
+            }
+        }
+    }
+    if !changed || !cursor.0.is_empty() {
+        return None;
+    }
+    let mut out = kept.to_le_bytes().to_vec();
+    out.extend(body);
+    // A blob that is no longer valid UTF-8 cannot stay a `String`; the
+    // binary writer sends both the same way.
+    Some(match String::from_utf8(out) {
+        Ok(text) if matches!(value, Variant::String(_)) => Variant::String(text),
+        Ok(text) => Variant::Unknown {
+            type_id: 0x01,
+            raw: text.into_bytes(),
+        },
+        Err(err) => Variant::Unknown {
+            type_id: 0x01,
+            raw: err.into_bytes(),
+        },
+    })
 }
 
 /// The `CollectionService` tags of an instance: the `Tags` property is the tag
@@ -742,7 +831,7 @@ mod tests {
     /// id) has no id to write either.
     #[test]
     fn a_type_the_decoder_cannot_read_cannot_be_encoded() {
-        let attributes = BTreeMap::from([("Where".to_owned(), Variant::Ref(crate::Ref::new(1)))]);
+        let attributes = BTreeMap::from([("Where".to_owned(), Variant::Int64(1))]);
 
         assert_eq!(encode(&attributes, |_| Some("Font".to_owned())), None);
     }
@@ -767,5 +856,85 @@ mod tests {
             ["Alone"]
         );
         assert_eq!(encode_tags(&[]), "");
+    }
+
+    /// `EntryState` as Roblox Studio saved it on a `StateMachineNode`
+    /// (`rbx_animation/tests/fixtures/studio_state_machine.rbxm`): the
+    /// `ObjectValue` "State" it names is at file referent 11.
+    const STUDIO_ENTRY_STATE: &[u8] = &[
+        0x01, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00, b'E', b'n', b't', b'r', b'y', b'S', b't',
+        b'a', b't', b'e', 0x25, 0x0b, 0x00, 0x00, 0x00,
+    ];
+
+    #[test]
+    fn an_instance_attribute_reads_as_the_referent_it_holds() {
+        let read = decode(Some(&blob(STUDIO_ENTRY_STATE)));
+
+        assert_eq!(read.len(), 1);
+        assert_eq!(read["EntryState"], Variant::Ref(Ref::new(11)));
+    }
+
+    #[test]
+    fn an_instance_attribute_writes_back_the_bytes_studio_saved() {
+        let attributes = BTreeMap::from([("EntryState".to_owned(), Variant::Ref(Ref::new(11)))]);
+
+        assert_eq!(
+            encode(&attributes, |_| None).as_deref(),
+            Some(STUDIO_ENTRY_STATE)
+        );
+    }
+
+    #[test]
+    fn an_instance_attribute_is_plain_little_endian() {
+        let bytes = one("Target", &[0x25, 0x04, 0x03, 0x02, 0x01]);
+
+        assert_eq!(
+            decode(Some(&blob(&bytes)))["Target"],
+            Variant::Ref(Ref::new(0x0102_0304))
+        );
+    }
+
+    #[test]
+    fn the_attributes_after_an_instance_attribute_still_read() {
+        let mut bytes = vec![2, 0, 0, 0];
+        bytes.extend(&STUDIO_ENTRY_STATE[4..]);
+        bytes.extend(&one("Flag", &[0x03, 0x01])[4..]);
+
+        let read = decode(Some(&blob(&bytes)));
+
+        assert_eq!(read["EntryState"], Variant::Ref(Ref::new(11)));
+        assert_eq!(read["Flag"], Variant::Bool(true));
+    }
+
+    #[test]
+    fn remapping_moves_an_instance_attribute_and_keeps_the_rest_verbatim() {
+        // An enum's type name is not in `decode`'s output, so only a
+        // byte-level rewrite keeps it.
+        let mut bytes = vec![2, 0, 0, 0];
+        bytes.extend(&one("Curve", &[0x15, 1, 0, 0, 0, b'X', 3, 0, 0, 0])[4..]);
+        bytes.extend(&STUDIO_ENTRY_STATE[4..]);
+
+        let moved = remap_refs(&blob(&bytes), |r| Some(Ref::new(r.value() + 100))).unwrap();
+
+        let mut expected = bytes.clone();
+        let at = expected.len() - 4;
+        expected[at..].copy_from_slice(&111u32.to_le_bytes());
+        assert_eq!(moved, blob(&expected));
+    }
+
+    #[test]
+    fn remapping_drops_an_instance_attribute_whose_target_is_gone() {
+        let mut bytes = vec![2, 0, 0, 0];
+        bytes.extend(&STUDIO_ENTRY_STATE[4..]);
+        bytes.extend(&one("Flag", &[0x03, 0x01])[4..]);
+
+        let dropped = remap_refs(&blob(&bytes), |_| None).unwrap();
+
+        assert_eq!(dropped, blob(&one("Flag", &[0x03, 0x01])));
+    }
+
+    #[test]
+    fn remapping_a_blob_without_instance_attributes_changes_nothing() {
+        assert_eq!(remap_refs(&blob(REAL_STYLE_RULE), Some), None);
     }
 }

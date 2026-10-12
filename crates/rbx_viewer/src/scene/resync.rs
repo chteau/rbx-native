@@ -131,6 +131,13 @@ impl Scene {
         known_layers: usize,
         unions: &UnionEvaluations,
     ) -> Result<PartSync, Rebuild> {
+        // A part a skinned mesh binds to bends that mesh wherever it moves,
+        // drawn or not; `Scene::pose_skins` folds it in once per batch.
+        self.file_mesh_plan.poses.track(dom, referent);
+        // It may have just joined, left or been renamed in a rig's model,
+        // which has every skinned mesh there bind again.
+        let models = self.file_mesh_plan.poses.note(dom, database, referent);
+        self.file_mesh_plan.rebind_models(&models);
         let present = dom.get(referent).is_some()
             && is_drawable(dom, database, referent)
             && in_workspace(dom, database, referent);
@@ -143,6 +150,10 @@ impl Scene {
         if part.material.layer as usize >= known_layers {
             return Err(Rebuild::Asset);
         }
+        // Asked of the DOM on every resync rather than kept from the last
+        // one: the edit may be the very move that put this part under an
+        // isolated root, or took it out from under one.
+        part.isolated_out = self.isolates_out(dom, referent);
 
         // Where the referent's own box sits and how many pieces stand under
         // it, read before anything below moves either.
@@ -150,6 +161,7 @@ impl Scene {
         let drawn = match Replanned::of(dom, database, referent, &mut self.materials) {
             None => {
                 self.file_mesh_plan.install(referent, None);
+                self.resolved_file_meshes.drop_rig(referent);
                 self.resolved_file_meshes.remove(referent);
                 Drawn::Box(part)
             }
@@ -164,6 +176,7 @@ impl Scene {
                 // `filemesh::Plan::install`).
                 self.file_mesh_plan
                     .install(referent, Some((*mesh_entry).clone()));
+                self.bind_skin(dom, database, &mesh_entry);
                 if !self
                     .resolved_file_meshes
                     .meshes
@@ -206,7 +219,10 @@ impl Scene {
                                 return Err(Rebuild::Asset);
                             }
                             Some(instance) => Drawn::Mesh {
-                                index: self.place_instance(instance),
+                                index: self.place_instance(super::ResolvedInstance {
+                                    isolated_out: part.isolated_out,
+                                    ..instance
+                                }),
                                 placement: part.placement(),
                             },
                         }
@@ -240,6 +256,31 @@ impl Scene {
         })
     }
 
+    /// Brings the rig of a just re-planned mesh part in step (see
+    /// `filemesh::skinned::bind`), before its instance is patched against
+    /// the resolved set.
+    fn bind_skin(
+        &mut self,
+        dom: &WeakDom,
+        database: &ReflectionDatabase,
+        entry: &super::filemesh::Entry,
+    ) {
+        let plan = &mut self.file_mesh_plan;
+        let stale = plan.rebinds.remove(&entry.referent());
+        let bound = super::filemesh::skinned::bind(
+            dom,
+            database,
+            &mut plan.poses,
+            &mut self.resolved_file_meshes,
+            entry,
+            stale,
+        );
+        plan.rebind_models(&bound.models);
+        // Itself included in a model it just started watching; bound now.
+        plan.rebinds.remove(&entry.referent());
+        plan.rebound.extend(bound.key);
+    }
+
     /// The mesh, union and image assets a fresh re-plan of `referent` would
     /// need, whether or not this session already has them — what
     /// `Headless::apply_changes` asks the background loader for right after
@@ -265,11 +306,36 @@ impl Scene {
         wanted
     }
 
+    /// `referent`, a rig joint, was written: when that moved a rest frame
+    /// its parts' skinned meshes bind again (see `Poses::rejoint`).
+    /// Answers whether one did.
+    pub(crate) fn resync_joint(
+        &mut self,
+        dom: &WeakDom,
+        database: &ReflectionDatabase,
+        referent: Ref,
+    ) -> bool {
+        let Some(model) = self.file_mesh_plan.poses.rejoint(dom, database, referent) else {
+            return false;
+        };
+        self.file_mesh_plan.rebind_models(&[model]);
+        true
+    }
+
     /// Takes every box and resolved instance standing for `referent` out of
     /// the scene — all of them, so a deleted union goes with its pieces —
     /// and names the piece slots the renderer must now let go of too.
     pub(crate) fn remove_part(&mut self, referent: Ref) -> Range<u32> {
+        self.resolved_file_meshes.drop_rig(referent);
         self.resolved_file_meshes.remove(referent);
+        self.file_mesh_plan.rebinds.remove(&referent);
+        // Without this the plan keeps the part's entry, and the next resolve
+        // (an asset landing, a streaming tick) builds a deleted skinned body
+        // back into the view.
+        self.file_mesh_plan.install(referent, None);
+        if let Some(model) = self.file_mesh_plan.poses.forget_part(referent) {
+            self.file_mesh_plan.rebind_models(&[model]);
+        }
         let Some(standing) = self.standing.remove(&referent) else {
             return 0..0;
         };
@@ -371,10 +437,28 @@ impl Scene {
     /// entry [`Scene::placements`] would hold for it, without building the
     /// whole map to look up one part. A union drawn as its recovered pieces
     /// keeps its own box's placement, for the same reason `placements` does.
+    ///
+    /// `None` too for a part an isolation hides, which `Scene::placements`
+    /// leaves out for the same reason.
     pub(crate) fn placement_of(&self, referent: Ref) -> Option<Placement> {
+        self.placement_of_any(referent).filter(|_| {
+            self.standing_part(referent)
+                .is_some_and(|part| !part.isolated_out)
+        })
+    }
+
+    /// [`Scene::placement_of`] as if nothing were isolated: where a decal
+    /// plan has to project the faces of a part an isolation hides, so the
+    /// plan is already right the moment the isolation ends.
+    pub(crate) fn placement_of_any(&self, referent: Ref) -> Option<Placement> {
         let standing = self.standing.get(&referent)?;
         let part = self.parts.get(standing.whole?)?;
         (!part.suppressed || standing.pieces > 0).then(|| part.placement())
+    }
+
+    /// `referent`'s own box, wherever it stands in `parts`.
+    fn standing_part(&self, referent: Ref) -> Option<&Part> {
+        self.parts.get(self.standing.get(&referent)?.whole?)
     }
 
     /// Keeps the extent in step with one part going from `old` to `new`
@@ -465,6 +549,7 @@ impl Scene {
     pub(crate) fn replan_gui_spaces(&mut self, dom: &WeakDom, database: &ReflectionDatabase) {
         let placements = self.placements();
         self.gui_spaces = super::gui::plan_space(dom, database, &placements, &mut self.materials);
+        self.sweep_effects(&|at| dom.parent(at));
     }
 
     /// Whether any `BillboardGui`/`SurfaceGui` canvas this scene placed hangs

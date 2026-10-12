@@ -8,6 +8,7 @@ mod appearance;
 mod clothing;
 mod fit;
 mod makeup;
+pub(crate) mod skinned;
 mod wrap;
 
 use std::collections::{HashMap, HashSet};
@@ -54,6 +55,9 @@ pub(super) struct Entry {
     makeup: Vec<makeup::Makeup>,
     /// A layered garment's cages, to fit it to the body it is worn on.
     wrap: Option<wrap::Wrap>,
+    /// The `Model` a `MeshPart` sits in, where a skinned mesh finds the
+    /// parts its bones are named after (see [`skinned`]).
+    model: Option<Ref>,
 }
 
 /// Every file-mesh instance in a DOM, extracted once and reused both to list
@@ -61,6 +65,13 @@ pub(super) struct Entry {
 #[derive(Default)]
 pub(crate) struct Plan {
     entries: Vec<Entry>,
+    /// Rest and current frames of every part a skinned mesh could bind to.
+    pub(crate) poses: skinned::Poses,
+    /// Mesh parts whose model's parts changed since their rig was bound:
+    /// re-patched at the end of the batch (see `Scene::take_skin_rebinds`).
+    pub(crate) rebinds: HashSet<Ref>,
+    /// Derived meshes rebuilt by a patch, whose GPU copy is stale.
+    pub(crate) rebound: Vec<AssetRef>,
 }
 
 /// One instance ready for the renderer: which downloaded mesh/texture it
@@ -91,6 +102,18 @@ pub(crate) struct ResolvedInstance {
     /// `BasePart.CastShadow` of the part this mesh stands for — see
     /// [`super::Part::casts_shadow`].
     pub(crate) casts_shadow: bool,
+    /// The part's own [`super::Part::is_drawn`] isolation flag, carried
+    /// over because a mesh part draws through this instance and not its box
+    /// — see `scene::isolation`.
+    pub(crate) isolated_out: bool,
+}
+
+impl ResolvedInstance {
+    /// Whether any pass paints this instance: everything a scene resolved
+    /// does, except what an isolation hides.
+    pub(crate) fn is_drawn(&self) -> bool {
+        !self.isolated_out
+    }
 }
 
 /// A [`Plan`] joined to whatever meshes and images actually downloaded.
@@ -104,7 +127,7 @@ pub(crate) struct Resolved {
     /// `crate::pick::Meshes`) reads the very vertices the renderer uploads
     /// rather than a copy of every mesh in the place — and so the decoded
     /// mesh kept across reloads (see `load::Resident`) is that same one.
-    pub(crate) meshes: HashMap<AssetRef, Arc<rbx_mesh::Mesh>>,
+    pub(crate) meshes: HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>>,
     /// Behind `Arc`s for the second of those reasons.
     pub(crate) images: HashMap<AssetRef, Arc<Image>>,
     /// Every distinct `SurfaceAppearance` the scene resolved, deduplicated:
@@ -117,6 +140,14 @@ pub(crate) struct Resolved {
     /// A referent with two entries (two `SpecialMesh` children on one part)
     /// answers with its first, the same one a scan would find.
     slot_of: HashMap<Ref, usize>,
+    /// Every skinned instance, by the part it draws, whose bones bind to
+    /// parts of its model (see [`skinned`]); it draws through
+    /// `skinned::key(referent, mesh)` in `meshes`.
+    pub(crate) rigs: HashMap<Ref, skinned::Rig>,
+    /// Whether the renderer deforms the rigs on the GPU: `meshes` then holds
+    /// each rig's rest mesh under its key, and [`skinned::Rig::posed`]
+    /// answers for the pose on the CPU. Off, `meshes` holds the posed copy.
+    pub(crate) skins_on_gpu: bool,
 }
 
 impl Resolved {
@@ -135,6 +166,13 @@ impl Resolved {
     /// Takes `referent`'s instance out. Order only ever mattered to a full
     /// build's batch construction — the renderer finds instances by referent
     /// from there on — so the last one fills the hole.
+    /// Takes `referent`'s rig, and the derived mesh it drew, out.
+    pub(crate) fn drop_rig(&mut self, referent: Ref) {
+        if let Some(rig) = self.rigs.remove(&referent) {
+            self.meshes.remove(&rig.key);
+        }
+    }
+
     pub(crate) fn remove(&mut self, referent: Ref) {
         let Some(index) = self.slot_of.remove(&referent) else {
             return;
@@ -167,6 +205,25 @@ impl Entry {
 }
 
 impl Plan {
+    /// Marks every mesh part in `models` for re-binding.
+    pub(crate) fn rebind_models(&mut self, models: &[Ref]) {
+        if models.is_empty() {
+            return;
+        }
+        let parts = self
+            .entries
+            .iter()
+            .filter(|entry| {
+                let character = entry.wrap.as_ref().map(|wrap| wrap.character);
+                entry
+                    .model
+                    .or(character)
+                    .is_some_and(|model| models.contains(&model))
+            })
+            .map(|entry| entry.referent);
+        self.rebinds.extend(parts);
+    }
+
     /// Every distinct mesh asset this plan needs, in first-seen order.
     pub(crate) fn mesh_refs(&self) -> Vec<AssetRef> {
         dedup(self.entries.iter().flat_map(|entry| {
@@ -235,8 +292,13 @@ pub(crate) fn plan(dom: &WeakDom, database: &ReflectionDatabase, materials: &mut
             from_mesh_part(dom, database, referent, materials)
                 .or_else(|| from_special_mesh_child(dom, database, referent, materials))
         })
-        .collect();
-    Plan { entries }
+        .collect::<Vec<_>>();
+    let poses = skinned::Poses::plan(dom, database, &entries);
+    Plan {
+        entries,
+        poses,
+        ..Plan::default()
+    }
 }
 
 /// Resolves a plan against downloaded assets.
@@ -245,12 +307,13 @@ pub(crate) fn plan(dom: &WeakDom, database: &ReflectionDatabase, materials: &mut
 /// got real geometry, so the fallback box of everything else can stay put.
 pub(crate) fn resolve(
     plan: &Plan,
-    meshes: HashMap<AssetRef, Arc<rbx_mesh::Mesh>>,
+    meshes: HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>>,
     images: HashMap<AssetRef, Arc<Image>>,
 ) -> (Resolved, HashSet<Ref>) {
     let mut instances = Vec::new();
     let mut appearances: Vec<Appearance> = Vec::new();
     let mut hidden = HashSet::new();
+    let mut rigs = HashMap::new();
 
     let mut meshes = meshes;
     let mut images = images;
@@ -283,6 +346,23 @@ pub(crate) fn resolve(
         if let Some((key, derived)) = wrapped.get(&entry.referent) {
             meshes.insert(key.clone(), derived.clone());
             mesh_key = key.clone();
+            // The wrapped garment follows the character's pose through a
+            // skin of its own or one the body lent it.
+            if let Some(rig) = skinned::Rig::garment(entry, &mesh, derived, &plan.poses) {
+                meshes.insert(rig.key.clone(), derived.clone());
+                mesh_key = rig.key.clone();
+                rigs.insert(entry.referent, rig);
+            }
+        }
+        // A skinned mesh drawn as itself (not dressed, not wrapped) draws
+        // through a copy of its own, posed later — the very same `Arc` at
+        // rest, so nothing is copied until a bone moves.
+        if mesh_key == entry.mesh {
+            if let Some(rig) = skinned::Rig::of(entry, &mesh, &plan.poses) {
+                meshes.insert(rig.key.clone(), mesh.clone());
+                mesh_key = rig.key.clone();
+                rigs.insert(entry.referent, rig);
+            }
         }
         // Makeup is laid into the colour map the head would draw.
         let mut made_up = false;
@@ -322,6 +402,7 @@ pub(crate) fn resolve(
             alpha: entry.alpha,
             reflectance: entry.reflectance,
             casts_shadow: entry.casts_shadow,
+            isolated_out: false,
         });
     }
 
@@ -336,6 +417,8 @@ pub(crate) fn resolve(
             appearances,
             instances,
             slot_of,
+            rigs,
+            skins_on_gpu: false,
         },
         hidden,
     )
@@ -379,6 +462,7 @@ fn from_mesh_part(
         dressing: clothing::dressing(dom, referent).map(Box::new),
         makeup: makeup::of(dom, instance),
         wrap: wrap::of(dom, database, referent),
+        model: skinned::model_of(dom, database, referent),
     })
 }
 
@@ -428,6 +512,7 @@ fn from_special_mesh_child(
         dressing: None,
         makeup: makeup::of(dom, part),
         wrap: None,
+        model: None,
     })
 }
 

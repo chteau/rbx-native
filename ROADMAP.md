@@ -576,6 +576,22 @@ Roblox's own engine.
   level decides ripples (7+), reflections (10+) and how far and dense the
   grass reaches. Terrain casts shadows, frames the camera, and an edit
   re-meshes only the chunks it changed.
+- [x] **Authoring and playing back a `KeyframeSequence` built locally**
+  (`crates/rbx_animation`). A rig's joints are found as either class, a
+  `Motor6D` or an `AnimationConstraint` (whose offsets are its
+  attachments' `CFrame`s), and laid out through
+  `Part1 = Part0 · C0 · Transform · C1⁻¹`. A clip is sampled per joint
+  across that joint's own keys, eased by the earlier pose's
+  `PoseEasingStyle`/`PoseEasingDirection` (`CubicV2` and the rest in the
+  editor's sense, the deprecated `Cubic` reversed, `Constant` held or
+  snapped). An `Animator` mixes tracks the way `AnimationPriority`
+  documents it (per joint, highest priority down until the weights reach
+  1, equal priorities weighted, `Core` lowest), with `Play`/`Stop`/
+  `AdjustWeight` fades, speed, looping, `KeyframeReached` and marker
+  events. Clips read from and write to `KeyframeSequence` /
+  `Keyframe` / `Pose` / `KeyframeMarker` trees (structural poses at
+  `Weight` 0), round-tripped through real `.rbxm` files. The research
+  behind it, with each fact's source, is `agents/animation-research.md`.
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: this project's own flat, from-scratch class icon kit
@@ -2209,6 +2225,30 @@ Roblox's own engine.
     `RBX_STUDIO_RIG_AVATAR_MOCK` (a directory of
     `<UserId>.json`, `me.json`, `<UserId>.status` and `<asset>.rbxm`) is the
     test seam.
+- [x] **The Animation Editor**, a fourth document tab (and Avatar ›
+  Animation) laid out like Blender's Animation workspace. The 3D view
+  sits with a side panel beside it and a dope sheet below it: a frame
+  ruler with the playhead and event markers, a summary row, and one
+  channel per joint in the rig's hierarchy. Keys can be clicked,
+  Shift-added, dragged along the timeline, inserted (`I`, a double-click,
+  Key joint/Key all), deleted, copied and pasted. Pose fields (rotation,
+  position) key the selected joint at the playhead. The easing style and
+  direction pickers set the selected keys. The panel also has loop,
+  priority, frame rate, animation events, and New / Load / Save (to
+  `ServerStorage.RBX_ANIMSAVES.<rig>`, with an `AnimSaves` pointer on the
+  rig, as Roblox's editor does). Playback runs the clip on the rig in the
+  3D view, kept out of the undo history, and the rig is put back at rest
+  before every save. A limb turned with the Rotate tool becomes a key on
+  its joint. The editor has its own undo inside Ctrl+Z.
+  `AnimationConstraint` rigs (the Avatar Joint Upgrade) and `Motor6D`
+  rigs are edited and played alike. Animations come in from Blender
+  three ways: a retargeted FBX or glTF file, whose world and unit scale
+  are fitted onto the rig so a Z-up, metre-scale export lands right; the
+  Rbx Animations addon's *Export animation* text (also RoMixamo's bundled
+  Mixamo clips); and, the other way, Copy for Blender. A published
+  `AnimationId` can be typed in to fetch its `KeyframeSequence`. The
+  timeline is the shared `timeline` component, and the sequence
+  editor's plot now draws with its strokes.
 
 ### Platform
 - [x] Linux (X11) — the daily-driven target.
@@ -2316,25 +2356,59 @@ Roblox's own engine.
 Two genuinely different feasibility tiers here, easy to conflate — verified
 against `Roblox/creator-docs` rather than assumed:
 
-- [ ] 📋 **Authoring and playing back a `KeyframeSequence` built locally in
-  this editor** — reachable, not blocked by any proprietary format.
-  `KeyframeSequence`/`Keyframe`/`Pose` are ordinary Instances (`Pose.CFrame`
-  drives the matching `Motor6D.Transform`, `Motor6D`'s `Part0`/`Part1`/
-  `C0`/`C1` come from the plain `JointInstance` base class) — exactly the
-  kind of object-reference-and-CFrame data `rbx_binary`/`rbx_xml` already
-  parse for everything else. An `Animator` playing a locally-built
-  `KeyframeSequence` against a rig's `Motor6D` joints is real, scoped work
-  (interpolation, easing styles/directions, weight-blending), not a
-  reverse-engineering project.
-- [ ] 📋 **An actual Animation Editor UI**, distinct from the playback
-  engine above: a rig-aware timeline, a keyframe list per animated joint,
-  pose editing directly in the viewport (move/rotate a limb, insert a
-  keyframe from its current pose), and easing-style/direction pickers —
-  the tool a builder would actually use to produce the `KeyframeSequence`
-  the engine work above plays back. Shares real UI groundwork with the
-  `NumberSequence`/`ColorSequence` curve editor above (both are
-  "keypoints along a timeline" widgets); worth scoping the shared
-  timeline/keyframe-list component once, not building two.
+- [x] **The rest of the Animation Editor**:
+  - **IK posing** (Roblox's Manage IK): Body Part or Full Body chains
+    and pinned parts. It uses an analytic two-bone solve for limbs and
+    FABRIK for longer chains.
+  - **A Curve Editor**: the clip converted to per-channel
+    `FloatCurve`s, with Constant / Linear / Cubic keys, draggable
+    tangent handles, studs and degrees on twin rulers, and Generate
+    Curve. Curves bake back to a `KeyframeSequence` on save, because
+    `CurveAnimation`'s `ValuesAndTimes` layout is not public.
+  - **Facial (FACS) channels**: the 50 `FaceControls` properties as
+    `NumberPose`s under the head, keyed from sliders.
+  - **The sequence editor's plot** on the shared `timeline` model.
+  - **The 3D view as a stage**: the rig alone, on a floor grid with
+    its X and Z axes, on a plain backdrop under neutral light, as
+    Blender's animation workspace shows it. This uses the viewer's new
+    isolation mode.
+- [x] **An auto-rigger and a skeleton view** (`crates/rbx_autorig`).
+  - **Auto-rig a mesh…** takes an unrigged humanoid (FBX, OBJ or glTF).
+    - It finds the up axis, the front (−Z, left on −X) and the height.
+    - It places the 15 R15 joints from the mesh's own shape:
+      voxelised, with geodesic extremities, cross-section profiles and
+      the Mannequin's proportions. A-pose and T-pose both work.
+    - It cuts the mesh into the 15 capped, watertight body parts.
+  - **Smooth bends** adds bone-heat skin weights: four influences per
+    vertex, summing to 255, from each part's own, parent and child
+    bones. This is the layout of Roblox's own skinned bodies.
+  - **The rig in the place**: it is built through the Rig Builder, with
+    each part shown from the local asset cache before upload.
+  - **Adjusting the fit**: joints are moved from the panel (mirrored by
+    default), and the front can be turned or flipped. Each edit re-cuts
+    and rebuilds the rig in place.
+  - **Publish** uploads one `.glb` through Open Cloud: the 15
+    `<Part>_Geo` meshes, plus an R15 armature and skin when smooth. It
+    then points every part at its uploaded mesh. Saving before
+    publishing warns that the meshes are only local.
+  - **The viewer renders skinned meshes**:
+    - It reads skinning from mesh v4/v5/v6/v7.
+    - A MeshPart is deformed live by the parts its bones name,
+      including rigs inserted or replaced after load.
+    - Rest poses are taken from the rig's joints.
+  - **The skeleton view** draws every joint as a Blender-style bone over
+    the rig, with the selected one highlighted.
+- [ ] 📋 **What the auto-rigger still does not do**:
+  - dragging joint markers directly in the 3D view (they are moved
+    from the panel);
+  - accessory attachments and cages;
+  - meshes whose hands are separate, unconnected pieces;
+  - arms raised above the head;
+  - checking against a real upload whether Roblox's importer reads the
+    `.glb` in studs and detects the R15 armature itself.
+- [ ] 📋 **What the Animation Editor still does not do**: write a
+  `CurveAnimation` itself (its byte layout is undocumented), and fit the
+  stage's shadow map to the rig rather than to the whole place.
 - [ ] ⚠️ **Playing back an already-published `Animation.AnimationId`** (one
   fetched from Roblox's catalog by asset id, the common case for any rig
   using a stock/marketplace animation) — genuinely uncertain, likely in
@@ -2349,22 +2423,12 @@ against `Roblox/creator-docs` rather than assumed:
   it — don't assume it's as easy as the local-authoring case above just
   because they sound like the same feature.
 
-- [ ] 📋 **`AnimationConstraint` rigs, the Avatar Joint Upgrade:
-  playback.** Roblox
-  no longer builds its R15 player characters from `Motor6D`s: with
-  `StarterPlayer.AvatarJointUpgrade` on (the default for new experiences)
-  a character spawns with `AnimationConstraint`s instead, which animate
-  kinematically *and* take part in physical simulation (ragdolls, limb
-  strength). `Motor6D` stays in the engine, but is frozen: new joint
-  features land on `AnimationConstraint` only. Both classes are already in
-  the embedded dump (`AnimationConstraint.Transform` included), so this is
-  reachable data, and it changes the animation items above. Playback and
-  the Animation Editor must drive `AnimationConstraint.Transform` as well
-  as `Motor6D.Transform`, and find a rig's joints by either class (an
-  upgraded rig has no `Motor6D` to find). The joint gizmos should treat
-  the two as the same kind of thing.
-  The simulation half (force-based limbs, ragdolls) is engine physics and
-  stays out of reach, the same as any other physics (see
+- [ ] 📋 **A joint gizmo** that turns a limb about its joint's pivot,
+  treating `Motor6D` and `AnimationConstraint` joints as the same kind of
+  thing. Posing works today through the part's own Rotate tool, read back
+  as a rotation about the joint. The simulation half of an
+  `AnimationConstraint` (force-based limbs, ragdolls) stays out of reach,
+  the same as any other physics (see
   [Explicitly impossible](#explicitly-impossible-without-robloxs-engine)).
 
 ### Editor
@@ -2767,14 +2831,40 @@ clear they were considered and not missed.
   end, an ordinary instance tree written through the DOM.
 
 #### Animation
-- [ ] 📋 **Animation Graphs**: state-machine nodes and Luau expressions
-  (Mid 2027), motion matching (Early 2027) and root motion (Mid 2027). None
-  of the Animation Graph classes are in the embedded dump yet. The graph
-  itself is authored data, so a node editor for it is reachable, and it
-  could share its widget with Graph mode in the Script Editor. Running
-  the graph is a different matter. Motion matching in particular is runtime
-  behaviour that the local `KeyframeSequence` playback item could only ever
-  approximate.
+- [x] **Animation Graphs, authored and run natively**: an
+  `AnimationGraphDefinition` of `AnimationNodeDefinition`s (every
+  `AnimationNodeType`: Clip, Blend1D/2D, Over, Add, Subtract, Mask, Speed,
+  Select, Priority Select, Sequence, Random Sequence, One Shot and State
+  Machine, with `StateMachineTransitionDefinition`s) read, written and run.
+  Nodes are wired by pin `ObjectValue`s. Properties are fixed values,
+  bound to graph parameters (`$speed`) or Luau-subset expressions, and
+  transitions crossfade on a condition or when the state finishes. The
+  Animation Editor's Animation Graph tab edits one on a node canvas
+  (sharing the UI Editor canvas's pan and zoom) and previews it on the rig
+  with live parameters.
+- [x] **The Animation Graph matched to Roblox's own**, from its docs,
+  DevForum posts and the shipping Studio plugin (sources in
+  `agents/animation-research.md`):
+  - **Storage**: the plugin's own layout. That covers a `Configuration`
+    of `AnimGraph_*` layout attributes, `Parameter_<Name>` folders and
+    `param::` bindings, `SharedMasks`, transitions named `X_to_Y`, and
+    `(Entry)`/`(Any)` pseudo-states.
+  - **Defaults**: the editor's own (0.1 s transitions; a new transition
+    at Length 0.2, Priority 1).
+  - **Runtime**:
+    - ready transitions of equal priority are picked at random from a
+      seeded generator;
+    - blends are phase-synced, and Blend2D uses gradient-band weighting;
+    - animation events fire, and each node reports its live weight,
+      shown as "NN%" on the canvas;
+    - expressions take `Vector2`/`Vector3`/`Color3`/`CFrame` values.
+- [ ] 📋 **What the Animation Graph still lacks**:
+  - motion matching (Early 2027) and root motion (Mid 2027);
+  - behaviour Roblox does not document, implemented as the likeliest
+    reading and marked UNVERIFIED in the code: Blend2D's exact weights,
+    the Over/Add/Subtract maths, and how random picks are seeded;
+  - the binary encoding of an Instance-typed `EntryState` attribute
+    (the state is written by name for now).
 - [ ] 📋 **Avatar Schema changes**: procedural bones (Early 2027), higher
   mesh resolution (Mid 2027), more FACS controls including individual eyes
   (Mid 2027), and silhouette-preserving fit for clothing and accessories

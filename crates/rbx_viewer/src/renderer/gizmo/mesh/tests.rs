@@ -542,3 +542,66 @@ fn a_many_part_model_draws_its_parts_hotspots_up_to_the_cap() {
         "the pivot gizmo's own budget"
     );
 }
+
+#[test]
+fn a_hovered_ring_is_drawn_brighter_and_alone() {
+    let mut vertices = rings(&handles(), Vec3::splat(40.0));
+    light(&mut vertices, Axis::Y);
+    let lit = vertices
+        .iter()
+        .filter(|vertex| vertex.color != Axis::Y.color());
+    let lit: Vec<_> = lit
+        .filter(|vertex| vertex.color != Axis::X.color() && vertex.color != Axis::Z.color())
+        .collect();
+    assert!(!lit.is_empty(), "the Y ring kept its colour");
+    for vertex in &lit {
+        assert!(
+            vertex
+                .color
+                .iter()
+                .zip(Axis::Y.color())
+                .all(|(lit, plain)| *lit > plain),
+            "{:?} is not brighter than the plain ring",
+            vertex.color
+        );
+    }
+    assert!(
+        vertices
+            .iter()
+            .any(|vertex| vertex.color == Axis::X.color()),
+        "the X ring lit up too"
+    );
+    assert!(
+        !vertices
+            .iter()
+            .any(|vertex| vertex.color == Axis::Y.color()),
+        "part of the Y ring stayed unlit"
+    );
+}
+
+/// A hovered handle stays its own colour, only brighter: the lit Z arrow is
+/// still blue, not the washed-out lavender a 55% mix towards white made of
+/// it (which, seen end on beside a posed arm, read as a stray shape).
+#[test]
+fn a_lit_handle_keeps_its_hue() {
+    for axis in [Axis::X, Axis::Y, Axis::Z] {
+        let plain = axis.color();
+        let lit = lit(plain);
+        let main = (0..3)
+            .max_by(|&a, &b| plain[a].total_cmp(&plain[b]))
+            .unwrap();
+        assert_eq!(lit[main], 1.0, "{axis:?} is at full strength when lit");
+        for channel in (0..3).filter(|&c| c != main) {
+            assert!(lit[channel] > plain[channel], "{axis:?} got brighter");
+            assert!(
+                lit[channel] < 0.3,
+                "{axis:?} lit is {lit:?}: washed towards white"
+            );
+        }
+    }
+    // The colour sampled off the reported shape, in linear light: the old
+    // wash of the Z arrow. The new one is nowhere near it.
+    let old = [0.565, 0.598, 0.95];
+    let new = lit(Axis::Z.color());
+    assert!(new[0] < old[0] - 0.3 && new[1] < old[1] - 0.3, "{new:?}");
+}

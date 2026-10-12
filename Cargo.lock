@@ -6118,6 +6118,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "rbx_animation"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "fbxcel",
+ "flate2",
+ "glam",
+ "gltf",
+ "rbx_binary",
+ "rbx_dom",
+ "rbx_xml",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "rbx_assets"
 version = "0.1.0"
 dependencies = [
@@ -6125,6 +6141,20 @@ dependencies = [
  "thiserror 2.0.20",
  "ureq",
  "zip",
+]
+
+[[package]]
+name = "rbx_autorig"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "fbxcel",
+ "glam",
+ "gltf",
+ "rbx_mesh",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tobj",
 ]
 
 [[package]]
@@ -6245,7 +6275,9 @@ dependencies = [
  "image",
  "lsp-types",
  "raw-window-handle",
+ "rbx_animation",
  "rbx_assets",
+ "rbx_autorig",
  "rbx_binary",
  "rbx_cloud",
  "rbx_dom",

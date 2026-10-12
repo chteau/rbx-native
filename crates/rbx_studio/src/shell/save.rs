@@ -45,7 +45,12 @@ impl Shell {
         // anywhere, and this handler sits on the window's own root so it
         // cannot be out of reach of one (WCAG 2.1.2).
         if keystroke.key == "escape"
-            && (self.close_roblox_dialog() | self.cancel_close_place() | self.cancel_rig_dialog())
+            && (self.close_roblox_dialog()
+                | self.cancel_close_place()
+                | self.cancel_rig_dialog()
+                | self.close_publish_result()
+                | self.close_animation_publish()
+                | self.close_animation_id_prompt())
         {
             cx.notify();
         }
@@ -155,9 +160,27 @@ impl Shell {
         // `shell::scripts`); saving must write what is on screen, not what
         // the DOM happened to hold when typing last paused.
         self.flush_script_edits(cx);
+        // A rig the Animation Editor is posing is saved at rest; the next
+        // frame poses it again.
+        self.unpose_rig(cx);
         let result = save::save(&self.dom, self.format, path);
         let saved = result.is_ok();
         let feedback = record_outcome(&mut self.output, result, path);
+        // An auto-rigged body not published yet points at meshes only this
+        // machine's cache holds; Roblox would show it without them.
+        let local = self
+            .dom
+            .root_refs()
+            .iter()
+            .any(|&r| crate::shell::rig::has_local_meshes(&self.dom, r));
+        if saved && local {
+            self.output.push(
+                SOURCE,
+                Feedback::Warning(
+                    "An auto-rigged body is not published yet: its meshes exist only on this machine until you press Publish".into(),
+                ),
+            );
+        }
         self.command_bar.set_feedback(feedback);
         cx.notify();
         saved

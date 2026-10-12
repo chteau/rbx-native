@@ -48,6 +48,7 @@ fn trail(lifetime: f32) -> Trail {
         texture_length: 1.0,
         light_emission: 0.0,
         referent: rbx_dom::Ref::new(1),
+        attachments: [rbx_dom::Ref::new(0); 2],
     }
 }
 

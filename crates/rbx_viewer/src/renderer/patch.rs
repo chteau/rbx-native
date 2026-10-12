@@ -92,6 +92,15 @@ impl Renderer {
                 // drawing as a box.
                 self.selection.place(referent, *placement);
                 self.hover.place(device, referent, *placement);
+                // Hidden by an isolation: placed like any mesh part, so it
+                // can still be outlined and dragged, but painted nowhere.
+                if !instance.is_drawn() {
+                    self.filemesh.remove(referent);
+                    self.shadows.remove_mesh_caster(referent);
+                    self.highlights.remove_mesh(referent);
+                    self.cues.remove_mesh(referent);
+                    return true;
+                }
                 self.filemesh.sync(device, queue, resolved, instance)
                     && self.shadows.sync_mesh_caster(device, resolved, instance)
                     && self.highlights.sync_mesh(device, resolved, instance)
@@ -108,6 +117,64 @@ impl Renderer {
                 true
             }
         }
+    }
+
+    /// Re-uploads the vertices of `meshes` — skinned meshes `Scene::pose_skins`
+    /// just re-posed — in the main mesh pass and the shadow casters. Nothing
+    /// is re-batched and every other mesh is untouched. The highlight and
+    /// cue masks keep the rest pose (their silhouettes are re-derived on
+    /// their own next rebuild).
+    pub(crate) fn refresh_meshes(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        resolved: &Resolved,
+        meshes: &[AssetRef],
+    ) {
+        if meshes.is_empty() {
+            return;
+        }
+        self.shadows.posed();
+        if let (true, Some(skinner)) = (resolved.skins_on_gpu, self.skinner.as_mut()) {
+            for key in meshes {
+                match resolved.rigs.values().find(|rig| rig.key == *key) {
+                    Some(rig) => skinner.update(device, queue, key, rig.source(), rig.applied()),
+                    None => skinner.remove(key),
+                }
+            }
+            return;
+        }
+        if let Some(skinner) = self.skinner.as_mut() {
+            for key in meshes {
+                skinner.remove(key);
+            }
+        }
+        self.filemesh.refresh(queue, resolved, meshes);
+        self.shadows.refresh_meshes(queue, resolved, meshes);
+        self.highlights.refresh_meshes(queue, resolved, meshes);
+        self.cues.refresh_meshes(queue, resolved, meshes);
+    }
+
+    /// Whether skinned meshes are posed on the GPU here — see
+    /// `renderer::skinning`. The scene is told so through
+    /// `Scene::set_skins_on_gpu`, and keeps their rest mesh when it is.
+    pub(crate) fn skins_on_gpu(&self) -> bool {
+        self.skinner.is_some()
+    }
+
+    /// Writes every skinned mesh's current pose into each buffer drawing it
+    /// that does not hold it yet, ahead of the frame.
+    pub(super) fn skin(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        let Some(skinner) = self.skinner.as_mut() else {
+            return;
+        };
+        let targets = self
+            .filemesh
+            .skinning_targets()
+            .chain(self.shadows.skinning_targets())
+            .chain(self.highlights.skinning_targets())
+            .chain(self.cues.skinning_targets());
+        skinner.run(device, queue, targets);
     }
 
     /// One box — an instance's own or one piece of it — rewritten, moved,
@@ -214,9 +281,9 @@ impl Renderer {
         images: &Answered,
     ) {
         match kind {
-            EffectKind::Particles => self.particles.replace(scene.particle_emitters()),
-            EffectKind::Beams => self.beams.replace(scene.beams()),
-            EffectKind::Trails => self.trails.replace(scene.trails()),
+            EffectKind::Particles => self.particles.replace(&scene.drawn_particle_emitters()),
+            EffectKind::Beams => self.beams.replace(&scene.drawn_beams()),
+            EffectKind::Trails => self.trails.replace(&scene.drawn_trails()),
             // The only one that needs the GPU: a highlight is drawn from the
             // geometry it covers, so a re-plan is new instance buffers rather
             // than a new list of definitions.
@@ -254,7 +321,7 @@ impl Renderer {
         self.gui.rebuild(
             device,
             queue,
-            (world.scene.gui_screens(), world.scene.gui_spaces()),
+            (world.scene.gui_screens(), &world.scene.drawn_gui_spaces()),
             &self.materials.bind_group,
             world.images,
             world.fonts,

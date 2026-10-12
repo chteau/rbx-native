@@ -376,6 +376,17 @@ pub(crate) fn tool_pivot() -> Rgba {
     theme::color("tool_pivot")
 }
 
+/// The Curve Editor's X, Y and Z channels: red, green and blue as every 3D
+/// tool draws its axes. Colour is never the only cue, since each curve's
+/// row names its axis and the curve under the pointer is labelled.
+pub(crate) fn axis(index: usize) -> Rgba {
+    match index % 3 {
+        0 => theme::color("axis_x"),
+        1 => theme::color("axis_y"),
+        _ => theme::color("axis_z"),
+    }
+}
+
 /// The same pastel as the fill behind an active tool's icon: the frame's
 /// own wash weight, low enough that the icon stays the brightest thing in
 /// the button.

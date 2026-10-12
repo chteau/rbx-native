@@ -16,6 +16,7 @@ mod gizmo;
 mod guides;
 mod hover;
 pub(crate) mod input;
+pub(crate) mod joints;
 mod label;
 mod measure;
 mod orientation;
@@ -51,6 +52,7 @@ pub(crate) use canvas::{Canvas, CanvasUpdated};
 use frame::{device_pixels, render_image, Viewport};
 use gizmo::Drag;
 use input::{camera_key, chorded, tool_key, Layout};
+pub(crate) use joints::JointPhase;
 pub(crate) use pump::canvas::{FrameRequest, Request as CanvasRequest};
 use pump::Pump;
 pub(crate) use pump::TerrainChunks;
@@ -186,6 +188,15 @@ pub(crate) enum ViewportAction {
     /// `workspace_view::terrain`). `Shell` answers with
     /// [`WorkspaceView::show_terrain`].
     Terrain(TerrainInput),
+    /// A drag on one of the auto-rigger's joint markers (see `joints`):
+    /// `index` into `rbx_autorig::Joint::ALL`, the world point the joint is
+    /// dragged to, and whether the marker was just grabbed, moved or let go.
+    /// `Shell` cuts the body again only on the release.
+    Joint {
+        index: usize,
+        to: glam::Vec3,
+        phase: JointPhase,
+    },
 }
 
 impl EventEmitter<ViewportAction> for WorkspaceView {}
@@ -341,6 +352,9 @@ pub(crate) struct WorkspaceView {
     /// A Properties `Ref` row is waiting for its target (see
     /// `shell::ref_pick`): a press only picks, and the cursor says so.
     ref_picking: bool,
+    /// The auto-rigger's joint markers and the one being edited (see
+    /// `joints`): empty while no mesh is being rigged.
+    joint_markers: (Vec<glam::Vec3>, Option<usize>),
     /// Studio's editable measurement box, up after a Move-arrow drag (see
     /// `measure`).
     measure: Option<measure::Measure>,
@@ -496,6 +510,7 @@ impl WorkspaceView {
             terrain_modifiers: Modifiers::default(),
             pending_grab: None,
             ref_picking: false,
+            joint_markers: (Vec::new(), None),
             measure: None,
             held: Targets::default(),
             dragged: false,
@@ -834,6 +849,12 @@ impl WorkspaceView {
     /// the viewer, so it takes the change between two frames.
     pub(crate) fn set_camera_feel(&self, feel: rbx_viewer::CameraFeel) {
         self.pump.camera_feel(feel);
+    }
+
+    /// Moves the free camera to `eye`, looking at `target`: the Animation
+    /// Editor framing the rig it binds.
+    pub(crate) fn look_at(&self, eye: [f32; 3], target: [f32; 3]) {
+        self.pump.look_at(eye, target);
     }
 
     /// The renderer's tuned constants, taken between two frames like the

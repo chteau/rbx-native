@@ -360,7 +360,7 @@ impl Source for Arc<Flaky> {
         )
     }
 
-    fn mesh(&self, _reference: &AssetRef) -> Result<rbx_mesh::Mesh, Failure> {
+    fn mesh(&self, _reference: &AssetRef) -> Result<rbx_mesh::SkinnedMesh, Failure> {
         unreachable!("these tests only ask for images")
     }
 

@@ -80,7 +80,7 @@ impl Shell {
     pub(crate) fn undo(&mut self, cx: &mut Context<Self>) {
         // In the Graph side a move or Optimize graph is undone first; it
         // never reached the DOM.
-        if self.undo_graph_layout(cx) {
+        if self.undo_graph_layout(cx) || self.undo_animation(cx) {
             return;
         }
         // A script editor's text reaches the DOM on a debounce (see
@@ -90,15 +90,20 @@ impl Shell {
         self.flush_script_edits(cx);
         if let Some((previous, changes)) = self.history.undo(self.dom.clone()) {
             self.install(previous, &changes, cx);
+            self.autorig_follow_history(cx);
         }
     }
 
     /// Ctrl+Y / Ctrl+Shift+Z: symmetric to [`Shell::undo`]. A no-op with
     /// nothing to redo. `pub(crate)` for the same reason as `undo` above.
     pub(crate) fn redo(&mut self, cx: &mut Context<Self>) {
+        if self.redo_animation(cx) {
+            return;
+        }
         self.flush_script_edits(cx);
         if let Some((next, changes)) = self.history.redo(self.dom.clone()) {
             self.install(next, &changes, cx);
+            self.autorig_follow_history(cx);
         }
     }
 

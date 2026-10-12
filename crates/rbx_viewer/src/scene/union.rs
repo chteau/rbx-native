@@ -93,6 +93,7 @@ impl Entry {
             alpha: self.alpha,
             reflectance: self.reflectance,
             casts_shadow: self.casts_shadow,
+            isolated_out: false,
         }
     }
 }
@@ -313,7 +314,7 @@ pub(crate) struct Resolution {
     /// Every union that resolved either way, whose fallback box must hide.
     pub(crate) hidden: HashSet<Ref>,
     /// One computed mesh per asset, shared by every instance of it.
-    pub(crate) meshes: HashMap<AssetRef, Arc<rbx_mesh::Mesh>>,
+    pub(crate) meshes: HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>>,
     pub(crate) instances: Vec<ResolvedInstance>,
 }
 
@@ -329,7 +330,7 @@ pub(crate) struct Resolution {
 #[derive(Default)]
 pub(crate) struct Merged {
     pub(crate) hidden: HashSet<Ref>,
-    pub(crate) meshes: HashMap<AssetRef, Arc<rbx_mesh::Mesh>>,
+    pub(crate) meshes: HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>>,
     pub(crate) instances: Vec<ResolvedInstance>,
     /// The parts of the latest [`Merged::absorb`] alone, for the caller to
     /// take. Empty at every other moment.
@@ -378,7 +379,7 @@ impl Merged {
 /// computed once however many instances share the asset.
 pub(super) struct Evaluated {
     tree: tree::Node,
-    mesh: Option<Arc<rbx_mesh::Mesh>>,
+    mesh: Option<Arc<rbx_mesh::SkinnedMesh>>,
     /// The colour a mesh decoded from `MeshData` was mostly baked in; `None`
     /// for one carved from its tree, whose leaves say instead.
     baked_color: Option<[u8; 3]>,
@@ -489,7 +490,7 @@ fn evaluate(
                 negate: false,
                 children: Vec::new(),
             },
-            mesh: Some(Arc::new(baked.mesh)),
+            mesh: Some(Arc::new(baked.mesh.into())),
             baked_color: baked.color,
         }));
     };
@@ -500,7 +501,7 @@ fn evaluate(
     if let Ok(solid) = csg::evaluate(&tree, bake) {
         return Some(Some(Evaluated {
             tree,
-            mesh: Some(Arc::new(solid.to_mesh())),
+            mesh: Some(Arc::new(solid.to_mesh().into())),
             baked_color: None,
         }));
     }
@@ -508,7 +509,7 @@ fn evaluate(
     Some(Some(Evaluated {
         tree,
         baked_color: baked.as_ref().and_then(|baked| baked.color),
-        mesh: baked.map(|baked| Arc::new(baked.mesh)),
+        mesh: baked.map(|baked| Arc::new(baked.mesh.into())),
     }))
 }
 

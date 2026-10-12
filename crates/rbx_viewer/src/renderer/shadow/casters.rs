@@ -94,7 +94,7 @@ pub(super) fn mesh_batches(
 ) -> MeshBatches {
     let mut batches = Keyed::new("rbxview shadow casters");
     let mut order: Vec<AssetRef> = Vec::new();
-    for instance in resolved.instances.iter().filter(|i| i.casts_shadow) {
+    for instance in resolved.instances.iter().filter(|i| casts(i)) {
         if !order.contains(&instance.mesh) {
             order.push(instance.mesh.clone());
         }
@@ -109,12 +109,19 @@ pub(super) fn mesh_batches(
             resolved
                 .instances
                 .iter()
-                .filter(|i| i.casts_shadow && i.mesh == reference)
+                .filter(|i| casts(i) && i.mesh == reference)
                 .map(|i| (i.referent, raw(i.model), ())),
         );
         batches.add_group(device, reference, geometry, roster);
     }
     batches
+}
+
+/// Whether a resolved instance reaches the depth pass: the part's own
+/// `CastShadow`, and only while an isolation does not hide it — the same
+/// two questions [`Part::casts_shadow`] answers for a box.
+fn casts(instance: &ResolvedInstance) -> bool {
+    instance.casts_shadow && instance.is_drawn()
 }
 
 /// [`sync_shape`] for a resolved file mesh. `false` when the instance now
@@ -127,9 +134,7 @@ pub(super) fn sync_mesh(
     resolved: &Resolved,
     instance: &ResolvedInstance,
 ) -> bool {
-    let wanted = instance
-        .casts_shadow
-        .then(|| (instance.mesh.clone(), raw(instance.model), ()));
+    let wanted = casts(instance).then(|| (instance.mesh.clone(), raw(instance.model), ()));
     batches.sync(device, instance.referent, wanted, |mesh| {
         geometry(device, resolved, mesh)
     })
@@ -151,7 +156,12 @@ pub(in crate::renderer) fn geometry(
         vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("rbxview shadow vertices"),
             contents: bytemuck::cast_slice(&positions),
-            usage: wgpu::BufferUsages::VERTEX,
+            // Writable so a skinned mesh's pose can be re-uploaded in place
+            // (see [`refresh`]) or written by the skinning pass (see
+            // `renderer::skinning`).
+            usage: wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST
+                | crate::renderer::skinning::vertex_usage(device),
         }),
         indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("rbxview shadow indices"),
@@ -159,6 +169,45 @@ pub(in crate::renderer) fn geometry(
             usage: wgpu::BufferUsages::INDEX,
         }),
         index_count: indices.len() as u32,
+    })
+}
+
+/// Re-uploads the positions of every caster batch drawing one of `meshes`
+/// from what `resolved` now holds for it — a skinned mesh's new pose. The
+/// highlight and selection masks hold the same batches and go through here
+/// too.
+pub(in crate::renderer) fn refresh<T: Pod, S: Copy>(
+    queue: &wgpu::Queue,
+    batches: &Keyed<AssetRef, MeshGeometry, T, S>,
+    resolved: &Resolved,
+    meshes: &[AssetRef],
+) {
+    for group in batches.groups() {
+        if !meshes.contains(&group.key) {
+            continue;
+        }
+        let Some(mesh) = resolved.meshes.get(&group.key) else {
+            continue;
+        };
+        let positions: Vec<[f32; 3]> = mesh.vertices.iter().map(|vertex| vertex.position).collect();
+        let bytes: &[u8] = bytemuck::cast_slice(&positions);
+        if bytes.len() as u64 == group.extra.vertices.size() {
+            queue.write_buffer(&group.extra.vertices, 0, bytes);
+        }
+    }
+}
+
+/// Every caster batch's positions buffer, for `renderer::skinning`. The
+/// masks' batches go through here too.
+pub(in crate::renderer) fn skinning_targets<T: Pod, S: Copy>(
+    batches: &Keyed<AssetRef, MeshGeometry, T, S>,
+) -> impl Iterator<Item = (&AssetRef, &wgpu::Buffer, crate::renderer::skinning::Layout)> {
+    batches.groups().iter().map(|group| {
+        (
+            &group.key,
+            &group.extra.vertices,
+            crate::renderer::skinning::Layout::POSITIONS,
+        )
     })
 }
 

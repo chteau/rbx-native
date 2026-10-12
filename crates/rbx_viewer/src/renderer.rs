@@ -15,6 +15,7 @@ mod gui;
 mod highlight;
 mod hover;
 mod instance;
+mod isolation;
 mod lighting;
 mod lines;
 mod material;
@@ -31,6 +32,7 @@ mod scene_depth;
 mod selection;
 mod shadow;
 mod shaped;
+mod skinning;
 mod skybox;
 mod slots;
 mod stars;
@@ -46,7 +48,9 @@ use glam::Mat3;
 
 use crate::camera::{Camera, Frustum, Viewpoint};
 use crate::fonts::Library;
-use crate::gizmo::{arm_length, basis, handle_axes, Faces, Gizmo, Handles, Hotspots, Kind, Shape};
+use crate::gizmo::{
+    basis, handle_axes, handle_length, Faces, Gizmo, Handles, Hotspots, Kind, Shape,
+};
 use crate::lighting::{Lighting, LocalLight};
 use crate::load::Answered;
 use crate::pick::Selected;
@@ -78,6 +82,8 @@ use trail::Trails;
 use translucent::Translucent;
 
 pub use gui::GuiBox;
+use isolation::Surroundings;
+pub use isolation::ISOLATION_BACKDROP;
 pub use lines::Segment;
 
 /// Only ever seen where a scene has no `Sky`, or where one of its six panels
@@ -179,6 +185,10 @@ pub(crate) struct Renderer {
     /// drawn as silhouettes through the same pass a `Highlight` uses — see
     /// `renderer::cue`.
     cues: Cues,
+    /// The compute pass that poses skinned meshes into every buffer above
+    /// that draws one — see `renderer::skinning`. `None` where the device
+    /// has no compute shaders (WebGL2): the scene deforms them on the CPU.
+    skinner: Option<skinning::Skinner>,
     /// The "about to click" cue drawn around whatever `BasePart` the cursor is
     /// over, distinctly from `selection` above — see `renderer::hover`. Reads
     /// the same shared bind group, for the same reason.
@@ -218,6 +228,14 @@ pub(crate) struct Renderer {
     /// pays for the copy a refracting surface reads — see
     /// `post::Targets::capture_refraction`.
     refracting: bool,
+    /// Whether the frame is drawn as an isolated view (see
+    /// [`Renderer::set_isolated`]): no environment, neutral light, a flat
+    /// backdrop. Which *parts* are drawn is the scene's to say, not this.
+    isolated: bool,
+    /// What the sun's shadow map is fitted to instead of `bounds` while
+    /// isolated: the drawn rig and the stage floor around it — see
+    /// `Scene::stage_bounds`.
+    stage: Option<Bounds>,
 }
 
 impl Renderer {
@@ -357,13 +375,20 @@ impl Renderer {
             stars,
             bodies,
             shadows,
-            beams: Beams::new(device, queue, target, scene.beams(), images, quality),
-            trails: Trails::new(device, queue, target, scene.trails(), images, quality),
+            beams: Beams::new(device, queue, target, &scene.drawn_beams(), images, quality),
+            trails: Trails::new(
+                device,
+                queue,
+                target,
+                &scene.drawn_trails(),
+                images,
+                quality,
+            ),
             particles: Particles::new(
                 device,
                 queue,
                 target,
-                scene.particle_emitters(),
+                &scene.drawn_particle_emitters(),
                 images,
                 quality,
             ),
@@ -391,6 +416,7 @@ impl Renderer {
                     resolved: scene.resolved_file_meshes(),
                 },
             ),
+            skinner: skinning::supported(device).then(|| skinning::Skinner::new(device)),
             hover,
             preview: Preview::new(device, target, &layout),
             lines: Lines::default(),
@@ -401,7 +427,7 @@ impl Renderer {
                 queue,
                 format,
                 target,
-                (scene.gui_screens(), scene.gui_spaces()),
+                (scene.gui_screens(), &scene.drawn_gui_spaces()),
                 (&material_layout, &materials.bind_group),
                 images,
                 fonts,
@@ -420,7 +446,41 @@ impl Renderer {
             calibration: Default::default(),
             target,
             refracting: scene.has_glass(),
+            isolated: false,
+            stage: None,
         }
+    }
+
+    /// Draws every following frame as an isolated view, or as the place
+    /// again: skips the sky, the stars, the sun and moon, terrain and its
+    /// water and grass, the place's adornments, the `ScreenGui` overlay and
+    /// every effect that does not belong to the isolated roots (the scene
+    /// hands over only the rig's own); fits the sun shadow to the stage
+    /// (see [`Renderer::set_stage`]); lights the scene with [`Lighting::neutral`] and a
+    /// flat grey sky instead of the place's own `Lighting`, local lights and
+    /// probe; and clears to [`ISOLATION_BACKDROP`] — see
+    /// `renderer::isolation`.
+    ///
+    /// A switch on the draw alone. Every one of those passes is still kept
+    /// in step with the place by edits while it is skipped — a `Lighting`
+    /// write, a terrain brush, a re-planned emitter all land as usual — so
+    /// switching back draws exactly what a renderer that was never isolated
+    /// would. Hiding the parts outside the isolated roots is the scene's
+    /// job (see `scene::isolation`), which a rebuild then reads.
+    pub(crate) fn set_isolated(&mut self, isolated: bool) {
+        self.isolated = isolated;
+    }
+
+    /// The box an isolated frame fits its sun shadow to — see
+    /// `Scene::stage_bounds`. Ignored while not isolated.
+    pub(crate) fn set_stage(&mut self, stage: Option<Bounds>) {
+        self.stage = stage;
+    }
+
+    /// Which of the place's surroundings this frame draws — see
+    /// [`Surroundings`].
+    fn surroundings(&self) -> Surroundings {
+        Surroundings::of(self.isolated)
     }
 
     /// The constants the lighting uniform carries in place of shader literals.
@@ -514,7 +574,9 @@ impl Renderer {
     /// on its automatic orbit — which only happens in a file with no saved
     /// camera of its own, before the first input, where there is nothing to
     /// drag with yet either.
-    fn handles(&self, from: Viewpoint) -> Option<Shape> {
+    /// `height` is the render target's, in pixels (see
+    /// [`handle_length`]).
+    fn handles(&self, from: Viewpoint, height: f32) -> Option<Shape> {
         let gizmo = self.gizmo?;
         let Viewpoint::Free(pose) = from else {
             return None;
@@ -559,7 +621,8 @@ impl Renderer {
             return None;
         }
         let axes = handle_axes(editing, gizmo.local, gizmo.pivot, rotation);
-        let handles = Handles::new(origin, basis(axes), arm_length(origin, pose, orthographic));
+        let arm = handle_length(origin, pose, orthographic, height);
+        let handles = Handles::new(origin, basis(axes), arm);
         Some(match gizmo.kind {
             Kind::Rotate => Shape::Rotate(handles),
             Kind::Pivot => {
@@ -604,12 +667,13 @@ impl Renderer {
     /// a particle), or textures are still being uploaded a few per frame. A
     /// host that only draws on change keeps drawing while this holds.
     pub(crate) fn animating(&self) -> bool {
+        // A skipped pass is not on screen to move, however live it is.
+        let drawn = self.surroundings();
         self.translucent.has_force_field()
-            || (self.terrain.has_water() && self.quality.water_waves)
-            || self.terrain.grass.is_drawn()
-            || self.beams.is_live()
-            || self.trails.is_live()
-            || self.particles.is_live()
+            || (drawn.terrain && self.terrain.has_water() && self.quality.water_waves)
+            || (drawn.terrain && self.terrain.grass.is_drawn())
+            || (drawn.effects && (self.beams.is_live() || self.trails.is_live()))
+            || (drawn.effects && self.particles.is_live())
             || self.textured.has_pending()
     }
 
@@ -661,6 +725,7 @@ impl Renderer {
         // frame left its instance records owed to the batch buffers (see
         // `Renderer::flush_writes`).
         self.flush_writes(queue);
+        self.skin(device, queue);
 
         // Bounded so a place with many `Decal`/`Texture` images spreads their
         // GPU upload across the frames after load instead of stalling this
@@ -691,22 +756,30 @@ impl Renderer {
         // this — see `Fit::visible` — so a caster it culls can still land a
         // shadow inside the frame.
         let held = self.gizmo.and_then(|gizmo| gizmo.held);
-        self.draggers.update(queue, self.handles(from), held, eye);
+        let hover = self.gizmo.and_then(|gizmo| gizmo.hover);
+        self.draggers
+            .update(queue, self.handles(from, size.1 as f32), held, hover, eye);
         let frustum = Frustum::new(&self.camera, from, aspect);
         let cull = MainCull::new(&frustum, eye, self.quality.render_distance);
-        let (lamp, fit) = self.sun_shadow(from, aspect);
+        let drawn = self.surroundings();
+        let (lighting, probe, lit_quality) =
+            isolation::lit(self.isolated, &self.lighting, self.env.probe, self.quality);
+        // An isolated view is lit by its key alone: none of the place's
+        // lights is counted, selected for a map or looped over.
+        let lights = if drawn.local_lights { self.lights } else { 0 };
+        let (lamp, fit) = self.sun_shadow(&lighting, from, aspect);
         // Specular, reflections and fog all need the eye, so the lighting
         // uniform changes every frame even though the place's `Lighting` does not.
         queue.write_buffer(
             &self.lighting_buffer,
             0,
             bytemuck::bytes_of(&LightingRaw::new(
-                &self.lighting,
+                &lighting,
                 eye,
-                &self.env.probe,
+                &probe,
                 (lamp, &fit),
-                self.lights,
-                &self.quality,
+                lights,
+                &lit_quality,
                 &self.calibration,
             )),
         );
@@ -715,18 +788,12 @@ impl Renderer {
         // it is the lights nearest *it* that earn a map (see
         // `shadow::local::select`). Written whether or not any light was
         // selected, so a level whose cap just dropped clears out last frame's.
-        let selected = shadow::local::select(
-            &self.all_lights[..self.lights],
-            eye,
-            self.shadows.local_cap(),
-        );
+        let selected =
+            shadow::local::select(&self.all_lights[..lights], eye, self.shadows.local_cap());
         // A `PointLight` has no axis to point one map down, so it takes six
         // — see `renderer::shadow::point`.
-        let points = shadow::point::select(
-            &self.all_lights[..self.lights],
-            eye,
-            self.shadows.point_cap(),
-        );
+        let points =
+            shadow::point::select(&self.all_lights[..lights], eye, self.shadows.point_cap());
         queue.write_buffer(
             &self.light_shadows_buffer,
             0,
@@ -749,22 +816,27 @@ impl Renderer {
         }
         // The same matrix the sun disc itself is drawn with, so the god-rays
         // in the resolve can never point anywhere the disc is not.
-        let sun_screen = sun::sun_screen_position(self.lighting.sun_direction, &rotation_only);
+        let sun_screen = sun::sun_screen_position(lighting.sun_direction, &rotation_only);
 
         // Both re-sort and re-upload their instances; neither may run inside the
         // render pass that reads those buffers.
         self.translucent.prepare(queue, eye, &cull);
         self.filemesh.prepare(queue, eye);
-        self.terrain
-            .grass
-            .prepare(device, queue, eye, |center, radius| {
-                cull.visible(center, radius)
-            });
+        if drawn.terrain {
+            self.terrain
+                .grass
+                .prepare(device, queue, eye, |center, radius| {
+                    cull.visible(center, radius)
+                });
+        }
         // A `SelectionSphere`'s outline faces the eye, so its vertices are
         // the camera's to decide — and a buffer written here cannot be
         // written inside the pass that reads it.
         self.adornments.prepare(device, eye);
 
+        // Every frame rather than when the switch flips: a `Lighting` edit
+        // writes the place's effects into the chain while isolated too.
+        self.post.set_effects(lighting.effects);
         let orthographic = self.camera.orthographic_range(from);
         if self
             .post
@@ -776,7 +848,7 @@ impl Renderer {
         // After `prepare`, which is what allocates (or resizes) the targets
         // the copy lives beside; a bind group holding the old view has to be
         // rebuilt before anything samples it.
-        let refracting = self.refracting || self.terrain.has_water();
+        let refracting = self.refracting || (drawn.terrain && self.terrain.has_water());
         if self.post.want_refraction(device, refracting) {
             self.rebind_frames(device);
         }
@@ -787,25 +859,24 @@ impl Renderer {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("rbxview frame"),
         });
+        // Terrain is not drawn in an isolated view, so it casts nothing
+        // onto the rig either.
+        let terrain = drawn.terrain.then_some(&self.terrain);
         // Before the colour pass, never inside it: the same texture cannot be a
         // depth attachment and a bound resource in one pass.
         if lamp != Lamp::None {
             self.shadows
-                .render(queue, &mut encoder, (&self.meshes, &self.terrain), &fit);
+                .render(queue, &mut encoder, (&self.meshes, terrain), &fit);
         }
         if !selected.is_empty() {
-            self.shadows.render_local(
-                queue,
-                &mut encoder,
-                (&self.meshes, &self.terrain),
-                &selected,
-            );
+            self.shadows
+                .render_local(queue, &mut encoder, (&self.meshes, terrain), &selected);
         }
         // Redrawn only when the cubes would hold something different — six
         // faces a light is the one shadow pass worth not repeating for a
         // still camera over a still scene.
         self.shadows
-            .render_points(queue, &mut encoder, (&self.meshes, &self.terrain), &points);
+            .render_points(queue, &mut encoder, (&self.meshes, terrain), &points);
         self.scene_pass(&mut encoder, targets, &cull);
         // Between the two halves, never inside either: the copy's source is
         // a colour attachment of both. A no-op in a place with no glass,
@@ -813,45 +884,49 @@ impl Renderer {
         targets.capture_refraction(&mut encoder);
         self.translucent_pass(&mut encoder, targets, eye);
         self.overlay_pass(&mut encoder, targets);
+        // Everything from here to the highlights is the place's ribbons,
+        // particles and in-world canvases, none of which an isolated view
+        // draws (see `Renderer::set_isolated`).
+        if drawn.effects {
+            // Before particles: sorting the two passes against each other is out
+            // of scope for v1 (see `renderer::beam`'s docs), so beams simply go
+            // first, both depth-tested against the opaque pass above.
+            // What a `LightInfluence`-1 beam is tinted by: a normal-less ribbon
+            // has no face to catch the sun, so the flat, average-orientation
+            // illumination — the ambient hemisphere plus half of each directional
+            // lamp — stands in for "the light in the scene", dimming a beam at
+            // night and leaving it near full brightness in daylight. Roblox
+            // publishes no beam-lighting formula, so this is a documented
+            // approximation rather than a match.
+            let l = self.lighting;
+            let env_light =
+                l.ambient + 0.5 * (l.sun_color + l.fill_color) * self.calibration.lamp_scale();
+            self.beams.draw(
+                queue,
+                device,
+                &mut encoder,
+                targets,
+                eye,
+                view_projection,
+                env_light,
+            );
+            // Right after beams, same reasoning: sorting the two ribbon passes
+            // against each other is out of scope for v1 — see `renderer::trail`'s
+            // docs.
+            self.trails
+                .draw(queue, device, &mut encoder, targets, eye, view_projection);
+            // After opaque geometry, depth-tested against it and re-sorted every
+            // frame — see `renderer::particles`.
+            self.particles
+                .draw(queue, device, &mut encoder, targets, eye, view_projection);
 
-        // Before particles: sorting the two passes against each other is out
-        // of scope for v1 (see `renderer::beam`'s docs), so beams simply go
-        // first, both depth-tested against the opaque pass above.
-        // What a `LightInfluence`-1 beam is tinted by: a normal-less ribbon
-        // has no face to catch the sun, so the flat, average-orientation
-        // illumination — the ambient hemisphere plus half of each directional
-        // lamp — stands in for "the light in the scene", dimming a beam at
-        // night and leaving it near full brightness in daylight. Roblox
-        // publishes no beam-lighting formula, so this is a documented
-        // approximation rather than a match.
-        let l = self.lighting;
-        let env_light =
-            l.ambient + 0.5 * (l.sun_color + l.fill_color) * self.calibration.lamp_scale();
-        self.beams.draw(
-            queue,
-            device,
-            &mut encoder,
-            targets,
-            eye,
-            view_projection,
-            env_light,
-        );
-        // Right after beams, same reasoning: sorting the two ribbon passes
-        // against each other is out of scope for v1 — see `renderer::trail`'s
-        // docs.
-        self.trails
-            .draw(queue, device, &mut encoder, targets, eye, view_projection);
-        // After opaque geometry, depth-tested against it and re-sorted every
-        // frame — see `renderer::particles`.
-        self.particles
-            .draw(queue, device, &mut encoder, targets, eye, view_projection);
-
-        // Last of the scene passes, so a canvas blends over the ribbons and
-        // particles as well as over opaque geometry — unlike a `ScreenGui`, a
-        // `BillboardGui`/`SurfaceGui` *is* scene content and is tone mapped
-        // with the rest of it.
-        self.gui
-            .draw_space(device, queue, &mut encoder, targets, eye, view_projection);
+            // Last of the scene passes, so a canvas blends over the ribbons and
+            // particles as well as over opaque geometry — unlike a `ScreenGui`, a
+            // `BillboardGui`/`SurfaceGui` *is* scene content and is tone mapped
+            // with the rest of it.
+            self.gui
+                .draw_space(device, queue, &mut encoder, targets, eye, view_projection);
+        }
 
         // After every pass that draws scene content, so the silhouette is
         // never cut into by a ribbon or a canvas drawn later, and before the
@@ -897,14 +972,17 @@ impl Renderer {
         // bloom, depth of field and the tone map must leave it alone. It takes
         // the texture rather than a view because it composites through a
         // non-sRGB one of its own (see `renderer::gui::pipeline::encoded`).
-        self.gui.draw(
-            device,
-            queue,
-            &mut encoder,
-            target,
-            size,
-            &self.materials.bind_group,
-        );
+        // Not over an isolated view, which shows the rig and nothing else.
+        if drawn.screen_gui {
+            self.gui.draw(
+                device,
+                queue,
+                &mut encoder,
+                target,
+                size,
+                &self.materials.bind_group,
+            );
+        }
 
         queue.submit(std::iter::once(encoder.finish()));
     }
@@ -915,15 +993,27 @@ impl Renderer {
     /// puts the moon opposite it (see [`crate::lighting`]), so the lamp that is
     /// actually above the horizon is the sun by day and the fill term after
     /// dusk — and it is that one, not always the sun, whose shadows are drawn.
-    fn sun_shadow(&self, from: Viewpoint, aspect: f32) -> (Lamp, Fit) {
-        if !self.lighting.global_shadows || !self.quality.shadows {
+    ///
+    /// `lighting` is the frame's own — the place's, or an isolated view's
+    /// neutral key (see `isolation::lit`).
+    /// The extent the sun's shadow map is fitted to: the stage while
+    /// isolated (see [`Renderer::set_stage`]), the whole scene otherwise.
+    fn shadow_bounds(&self) -> &Bounds {
+        match (&self.stage, self.isolated) {
+            (Some(stage), true) => stage,
+            _ => &self.bounds,
+        }
+    }
+
+    fn sun_shadow(&self, lighting: &Lighting, from: Viewpoint, aspect: f32) -> (Lamp, Fit) {
+        if !lighting.global_shadows || !self.quality.shadows {
             return (Lamp::None, Fit::unfitted());
         }
 
-        let (light, lamp) = if self.lighting.sun_direction.y >= 0.0 {
-            (self.lighting.sun_direction, Lamp::Sun)
+        let (light, lamp) = if lighting.sun_direction.y >= 0.0 {
+            (lighting.sun_direction, Lamp::Sun)
         } else {
-            (-self.lighting.sun_direction, Lamp::Fill)
+            (-lighting.sun_direction, Lamp::Fill)
         };
         let frustum = self
             .camera
@@ -931,7 +1021,12 @@ impl Renderer {
 
         (
             lamp,
-            shadow::fit(light, &frustum, &self.bounds, self.quality.shadow_map_size),
+            shadow::fit(
+                light,
+                &frustum,
+                self.shadow_bounds(),
+                self.quality.shadow_map_size,
+            ),
         )
     }
 }

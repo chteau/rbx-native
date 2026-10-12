@@ -1,7 +1,7 @@
 //! `version 6.00` and `7.00`: a flat stream of tagged chunks read to EOF.
 //!
 //! Each chunk is an 8-byte NUL-padded type, a `u32` chunk version, a `u32`
-//! payload size and the payload. Only `COREMESH` and `LODS` are read; `SKINNING`,
+//! payload size and the payload. `COREMESH`, `LODS` and `SKINNING` are read;
 //! `FACS`, `HSRAVIS` and any unknown type are skipped by size. The two file
 //! versions differ in the `COREMESH` chunk version alone: 1 holds the v4 vertex
 //! and face records verbatim, 2 a Draco bitstream. Dispatching on the chunk
@@ -12,11 +12,13 @@ use crate::error::MeshError;
 use crate::mesh::{Mesh, Vertex};
 use crate::reader::Reader;
 use crate::records::{self, VERTEX_SIZE_COLORED};
+use crate::skin::{self, Skin};
 
-pub(crate) fn parse(version: (u8, u8), body: &[u8]) -> Result<Mesh, MeshError> {
+pub(crate) fn parse(version: (u8, u8), body: &[u8]) -> Result<(Mesh, Option<Skin>), MeshError> {
     let mut reader = Reader::new(body);
     let mut core = None;
     let mut lod_table = Vec::new();
+    let mut skin = None;
 
     while reader.remaining() > 0 {
         let tag = reader.take(8)?;
@@ -31,6 +33,15 @@ pub(crate) fn parse(version: (u8, u8), body: &[u8]) -> Result<Mesh, MeshError> {
                 core = Some(draco::decode(payload.take(len)?)?);
             }
             (b"LODS\0\0\0\0", 1) => lod_table = read_lods(&mut payload)?,
+            // Lenient where geometry is strict: a skinning chunk this reader
+            // cannot balance leaves the mesh drawable, merely unskinned, as it
+            // was before this chunk was read at all.
+            (b"SKINNING", 1) => {
+                skin = read_skinning(&mut payload)
+                    .ok()
+                    .filter(|_| payload.expect_eof().is_ok());
+                continue;
+            }
             (b"COREMESH" | b"LODS\0\0\0\0", _) => {
                 return Err(MeshError::UnsupportedChunkVersion {
                     chunk: String::from_utf8_lossy(tag)
@@ -47,7 +58,23 @@ pub(crate) fn parse(version: (u8, u8), body: &[u8]) -> Result<Mesh, MeshError> {
     }
 
     let (vertices, faces) = core.ok_or(MeshError::MissingCoreMesh)?;
-    Mesh::assemble(version, vertices, &faces, &lod_table)
+    // One envelope per vertex or none at all: a count that disagrees cannot be
+    // matched to the geometry.
+    let skin = skin.filter(|skin: &Skin| skin.influences.len() == vertices.len());
+    Ok((Mesh::assemble(version, vertices, &faces, &lod_table)?, skin))
+}
+
+/// The v4 skinning blocks with `u32` counts in front of each.
+fn read_skinning(payload: &mut Reader<'_>) -> Result<Skin, MeshError> {
+    let num_envelopes = payload.u32()? as usize;
+    let envelopes = skin::read_envelopes(payload, num_envelopes)?;
+    let num_bones = payload.u32()? as usize;
+    let bones = skin::read_bones(payload, num_bones)?;
+    let names_size = payload.u32()? as usize;
+    let names = payload.take(names_size)?;
+    let num_subsets = payload.u32()? as usize;
+    let subsets = skin::read_subsets(payload, num_subsets)?;
+    Ok(Skin::new(bones.named(names), subsets, envelopes))
 }
 
 fn read_records(payload: &mut Reader<'_>) -> Result<(Vec<Vertex>, Vec<[u32; 3]>), MeshError> {
@@ -111,6 +138,62 @@ mod tests {
         body
     }
 
+    /// `quad()` (four vertices) skinned with `skin::tests::sample`.
+    fn skinning_payload() -> Vec<u8> {
+        use crate::skin::tests::{bone_bytes, envelope_bytes, sample, subset_bytes};
+        let (bones, subsets, envelopes) = sample();
+        let (bone_records, names) = bone_bytes(&bones);
+        let mut out = (envelopes.len() as u32).to_le_bytes().to_vec();
+        out.extend(envelope_bytes(&envelopes));
+        out.extend((bones.len() as u32).to_le_bytes());
+        out.extend(bone_records);
+        out.extend((names.len() as u32).to_le_bytes());
+        out.extend(names);
+        out.extend((subsets.len() as u32).to_le_bytes());
+        out.extend(subset_bytes(&subsets));
+        out
+    }
+
+    fn v6_skinned_body() -> Vec<u8> {
+        let (vertices, faces) = quad();
+        let mut body = chunk(b"COREMESH", 1, &records_payload(&vertices, &faces));
+        body.extend(lods(&[0, 1, 2]));
+        body.extend(chunk(b"SKINNING", 1, &skinning_payload()));
+        body
+    }
+
+    #[test]
+    fn v6_reads_its_skinning_chunk() {
+        let (bones, subsets, envelopes) = crate::skin::tests::sample();
+        let (mesh, skin) = parse((6, 0), &v6_skinned_body()).unwrap();
+        assert_eq!(mesh.vertices, quad().0);
+        assert_eq!(mesh.indices, vec![0, 1, 2]);
+        let skin = skin.unwrap();
+        assert_eq!(skin.bones, bones);
+        assert_eq!(skin.subsets, subsets);
+        assert_eq!(skin.envelopes, envelopes);
+        assert_eq!(
+            skin.influences[1].iter().collect::<Vec<_>>(),
+            [(0, 128.0 / 255.0), (1, 127.0 / 255.0)]
+        );
+    }
+
+    #[test]
+    fn a_skinning_chunk_that_does_not_balance_drops_only_the_skin() {
+        let (vertices, faces) = quad();
+        let mut payload = skinning_payload();
+        payload.push(0);
+        let mut body = chunk(b"COREMESH", 1, &records_payload(&vertices, &faces));
+        body.extend(chunk(b"SKINNING", 1, &payload));
+        let (mesh, skin) = parse((6, 0), &body).unwrap();
+        assert_eq!(mesh.vertices, vertices);
+        assert!(skin.is_none());
+
+        // An all-zero chunk (no envelopes for four vertices) the same way.
+        let (_, skin) = parse((6, 0), &v6_body()).unwrap();
+        assert!(skin.is_none());
+    }
+
     fn v7_body() -> Vec<u8> {
         let (vertices, faces) = quad();
         let blob = encode(&vertices, &faces, true);
@@ -124,7 +207,7 @@ mod tests {
 
     #[test]
     fn v6_reads_its_uncompressed_records_and_the_lod_table() {
-        let mesh = parse((6, 0), &v6_body()).unwrap();
+        let (mesh, _) = parse((6, 0), &v6_body()).unwrap();
         assert_eq!(mesh.vertices, quad().0);
         assert_eq!(mesh.indices, vec![0, 1, 2]);
         assert_eq!(mesh.lods, vec![0..1, 1..2]);
@@ -142,7 +225,7 @@ mod tests {
 
     #[test]
     fn v7_decodes_its_draco_geometry_and_keeps_the_face_order() {
-        let mesh = parse((7, 0), &v7_body()).unwrap();
+        let (mesh, _) = parse((7, 0), &v7_body()).unwrap();
         assert_eq!(mesh.vertices, quad().0);
         assert_eq!(mesh.indices, vec![0, 1, 2]);
         assert_eq!(mesh.lods, vec![0..1, 1..2]);
@@ -155,7 +238,7 @@ mod tests {
         let mut body = chunk(b"COREMESH", 1, &records_payload(&vertices, &faces));
         // What real v7 files carry: two zero offsets.
         body.extend(lods(&[0, 0]));
-        assert_eq!(parse((6, 0), &body).unwrap().triangle_count(), 2);
+        assert_eq!(parse((6, 0), &body).unwrap().0.triangle_count(), 2);
     }
 
     #[test]
@@ -186,7 +269,7 @@ mod tests {
 
     #[test]
     fn every_truncation_and_mutation_errors_without_panicking() {
-        for body in [v6_body(), v7_body()] {
+        for body in [v6_body(), v7_body(), v6_skinned_body()] {
             for len in 0..body.len() {
                 let _ = parse((7, 0), &body[..len]);
             }

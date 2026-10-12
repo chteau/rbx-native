@@ -253,6 +253,15 @@ impl Shell {
             // ordinary Viewport's default look.
             self.follow_ui_screen(cx);
         }
+        if self.document == Document::Animation && document != Document::Animation {
+            self.leave_animation(cx);
+        }
+        if document == Document::Animation && self.document != Document::Animation {
+            // The stage fills the room the Animation panel leaves it: a
+            // phone screen the UI Editor left emulated would letterbox it.
+            self.viewport
+                .update(cx, |view, cx| view.set_screen(None, cx));
+        }
         self.document = document;
         self.update_discord();
         self.sync_explorer_filter(cx);
@@ -311,6 +320,13 @@ impl Shell {
             true => CANVAS_HIDES.to_vec(),
             false => Vec::new(),
         };
+        // The dope sheet takes the place Output would have under the 3D
+        // view, and the editor's own panel the place Properties would (a
+        // posed part's raw CFrame is no help while animating); asking for
+        // either by name brings it back, as on the canvas.
+        if self.document == Document::Animation {
+            hidden.extend([Panel::Output, Panel::Properties]);
+        }
         hidden.extend(self.document_hides());
         hidden
             .into_iter()
@@ -326,9 +342,11 @@ impl Shell {
     /// The docks the current document leaves out whatever is asked —
     /// unlike the canvas's set-asides, which asking for one by name undoes.
     pub(super) fn document_hides(&self) -> Vec<Panel> {
-        match self.document == Document::Scripts {
-            true => vec![Panel::Viewport],
-            false => SCRIPT_TOOLS.to_vec(),
+        match self.document {
+            Document::Scripts => vec![Panel::Viewport],
+            // The 3D view is part of this document's own layout.
+            Document::Animation => [Panel::Viewport].into_iter().chain(SCRIPT_TOOLS).collect(),
+            _ => SCRIPT_TOOLS.to_vec(),
         }
     }
 

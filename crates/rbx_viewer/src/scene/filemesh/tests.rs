@@ -27,9 +27,9 @@ fn vector3_variant(x: f32, y: f32, z: f32) -> Variant {
     Variant::Vector3(Vector3Data { x, y, z })
 }
 
-fn fake_mesh(bounds_size: [f32; 3]) -> rbx_mesh::Mesh {
+fn fake_mesh(bounds_size: [f32; 3]) -> rbx_mesh::SkinnedMesh {
     let half: Vec3 = Vec3::from(bounds_size) / 2.0;
-    rbx_mesh::Mesh {
+    rbx_mesh::SkinnedMesh::from(rbx_mesh::Mesh {
         version: (4, 1),
         vertices: Vec::new(),
         indices: Vec::new(),
@@ -38,7 +38,7 @@ fn fake_mesh(bounds_size: [f32; 3]) -> rbx_mesh::Mesh {
             min: (-half).to_array(),
             max: half.to_array(),
         },
-    }
+    })
 }
 
 #[test]

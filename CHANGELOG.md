@@ -1,5 +1,48 @@
 # Changelog
 
+## 2026-10-11
+
+- **Auto-rigger and skeleton view.** Animation Editor › Rigging ›
+  **Auto-rig a mesh…** turns an unrigged character (FBX, OBJ or glTF)
+  into an R15 rig. It fits the skeleton and cuts the mesh into the 15
+  body parts. With **Smooth bends** each part is skinned to its
+  neighbours, so elbows and knees bend without cracks. The rig is
+  previewed before upload, its joints can be adjusted, and Publish
+  uploads it through Open Cloud. The viewer now draws skinned meshes,
+  and a new skeleton view shows the rig's bones the way Blender does.
+  — @chteau
+- **Animation Editor.** A fourth document tab (Avatar › Animation), laid
+  out like Blender's Animation workspace: the 3D view with a side panel,
+  a dope sheet of the rig's joints under it, and a playback bar. Key
+  joints at the playhead, select, drag, copy and delete keys, pick their
+  easing, add animation events, and turn a limb with the Rotate tool to
+  key it. Clips save as `KeyframeSequence`s in
+  `ServerStorage.RBX_ANIMSAVES`, as Roblox's editor does. Playback poses
+  the rig without touching the undo history, and the rig is saved at
+  rest. `Motor6D` rigs and Avatar Joint Upgrade `AnimationConstraint`
+  rigs are edited alike, through the new `rbx_animation` crate (pose
+  easing, per-joint sampling, and an `Animator` blending tracks by
+  priority and weight as Roblox documents it). Animations come in from
+  Blender as FBX, glTF or the Rbx Animations addon's export text (also
+  RoMixamo's clips), and by `AnimationId`. A second tab authors and
+  previews Animation Graphs natively: state machines, blends, layers,
+  masks, one-shots and Luau-subset expressions over live parameters.
+  — @chteau
+- **Animation Editor: IK, curves, faces, and the rig on its own stage.**
+  - **IK**: posing with IK (Body Part or Full Body, with pinned parts).
+  - **Curve Editor**: per-channel curves with tangent handles and
+    Generate Curve.
+  - **Faces**: FACS face channels keyed from sliders.
+  - **The 3D view**: shows only the rig, on a Blender-style floor grid.
+  - **Rigs**: come from the Rig Builder's stock R15/R6 rigs.
+  - **Drafts**: unsaved work is kept as a local draft and offered back
+    when the rig is reopened.
+  - **Animation Graphs**: match the Studio plugin's own file layout and
+    defaults. Tied transitions are picked at random as Roblox does,
+    blends phase-sync, and each node shows its live weight while
+    previewing.
+  — @chteau
+
 ## 2026-10-09
 
 - **Layered clothing no longer buried or torn on real garments.** The

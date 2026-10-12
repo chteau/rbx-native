@@ -81,7 +81,7 @@ pub(super) struct Summon {
     shift: Vec3,
     /// The gizmo last asked of the renderer, before the summon point is
     /// filled in.
-    shown: Option<Gizmo>,
+    pub(super) shown: Option<Gizmo>,
 }
 
 impl WorkspaceView {
@@ -300,7 +300,11 @@ impl WorkspaceView {
                 .faces()
                 .and_then(|faces| Some(-faces.slide(faces.grab(ray)?.0)))
                 .unwrap_or(Vec3::ZERO),
-            Drag::Plane { .. } | Drag::Ring { .. } | Drag::Sun | Drag::Terrain => Vec3::ZERO,
+            Drag::Plane { .. }
+            | Drag::Ring { .. }
+            | Drag::Sun
+            | Drag::Terrain
+            | Drag::Joint { .. } => Vec3::ZERO,
         };
         let ray = self.measured(ray);
         if let Drag::Axis {

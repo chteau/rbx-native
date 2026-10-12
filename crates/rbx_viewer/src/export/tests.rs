@@ -42,14 +42,14 @@ fn export(dom: &WeakDom, meshes: &Meshes, roots: &[Ref]) -> Export {
 }
 
 /// One triangle two units across, its UVs spanning the image.
-fn triangle() -> rbx_mesh::Mesh {
+fn triangle() -> rbx_mesh::SkinnedMesh {
     let vertex = |position: [f32; 3], uv: [f32; 2]| rbx_mesh::Vertex {
         position,
         normal: [0.0, 0.0, 1.0],
         uv,
         color: [255; 4],
     };
-    rbx_mesh::Mesh {
+    rbx_mesh::SkinnedMesh::from(rbx_mesh::Mesh {
         version: (4, 1),
         vertices: vec![
             vertex([-1.0, -1.0, 0.0], [0.0, 1.0]),
@@ -62,7 +62,7 @@ fn triangle() -> rbx_mesh::Mesh {
             min: [-1.0, -1.0, 0.0],
             max: [1.0, 1.0, 0.0],
         },
-    }
+    })
 }
 
 fn count(text: &str, prefix: &str) -> usize {

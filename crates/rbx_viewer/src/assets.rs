@@ -158,7 +158,7 @@ pub(crate) fn load_images(references: &[AssetRef]) -> Keyed<Image> {
 /// (an unknown mesh version, a network error, a corrupt download, ...) is a warning
 /// against its reference, not an error: `Scene::resolve_file_meshes` leaves
 /// the affected `MeshPart`/`SpecialMesh` drawing its fallback box.
-pub(crate) fn load_meshes(references: &[AssetRef]) -> Keyed<rbx_mesh::Mesh> {
+pub(crate) fn load_meshes(references: &[AssetRef]) -> Keyed<rbx_mesh::SkinnedMesh> {
     load_with("meshes", references, fetch_mesh)
 }
 
@@ -178,7 +178,7 @@ impl Source for Resolved {
         fetch_image(&self.0, reference)
     }
 
-    fn mesh(&self, reference: &AssetRef) -> Result<rbx_mesh::Mesh, Failure> {
+    fn mesh(&self, reference: &AssetRef) -> Result<rbx_mesh::SkinnedMesh, Failure> {
         fetch_mesh(&self.0, reference)
     }
 
@@ -208,7 +208,7 @@ impl Source for Unavailable {
         Err(self.failure())
     }
 
-    fn mesh(&self, _reference: &AssetRef) -> Result<rbx_mesh::Mesh, Failure> {
+    fn mesh(&self, _reference: &AssetRef) -> Result<rbx_mesh::SkinnedMesh, Failure> {
         Err(self.failure())
     }
 
@@ -376,16 +376,19 @@ pub(crate) fn wrapped_image(asset: &rbx_assets::Asset) -> Option<AssetRef> {
     inner.filter(|inner| *inner != AssetRef::Empty)
 }
 
-fn fetch_mesh(resolver: &AssetResolver, reference: &AssetRef) -> Result<rbx_mesh::Mesh, Failure> {
+fn fetch_mesh(
+    resolver: &AssetResolver,
+    reference: &AssetRef,
+) -> Result<rbx_mesh::SkinnedMesh, Failure> {
     let asset = resolver
         .resolve(reference)
         .map_err(|err| Failure::resolving(reference, &err))?;
     mesh(reference, &asset.bytes)
 }
 
-pub(crate) fn mesh(reference: &AssetRef, bytes: &[u8]) -> Result<rbx_mesh::Mesh, Failure> {
+pub(crate) fn mesh(reference: &AssetRef, bytes: &[u8]) -> Result<rbx_mesh::SkinnedMesh, Failure> {
     // The bytes are on disk by now, so a parse that fails would fail again.
-    rbx_mesh::parse(bytes).map_err(|err| Failure {
+    rbx_mesh::parse_skinned(bytes).map_err(|err| Failure {
         warning: format!("{}: {err}", describe(reference)),
         transient: false,
     })

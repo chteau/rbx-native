@@ -65,6 +65,7 @@ impl Shell {
     /// is handled where one is (see `Shell::focus_snap_increment`).
     pub(crate) fn transform_action(&mut self, action: Action, cx: &mut Context<Self>) {
         match action {
+            Action::Use(tool) if !self.transform.keyable(tool) => return,
             Action::Use(tool) => self.transform.tool = tool,
             Action::ToggleLocal => self.transform.local = !self.transform.local,
             Action::ToggleSnap(kind) => {
@@ -76,7 +77,7 @@ impl Shell {
             Action::TogglePivotSnap => self.transform.pivot_snap = !self.transform.pivot_snap,
         }
 
-        let transform = self.transform;
+        let transform = self.transform.for_view();
         self.viewport
             .update(cx, |viewport, _| viewport.set_transform(transform));
         // Takes the brush or region off screen when another tool takes over.
@@ -84,6 +85,19 @@ impl Shell {
         if matches!(action, Action::SetIncrement(..) | Action::TogglePivotSnap) {
             self.save_settings();
         }
+        cx.notify();
+    }
+
+    /// Turns posing a bound rig on or off (see `Transform::posing`): from
+    /// every Animation frame, and on leaving the document.
+    pub(crate) fn set_posing(&mut self, posing: bool, cx: &mut Context<Self>) {
+        if self.transform.posing == posing {
+            return;
+        }
+        self.transform.posing = posing;
+        let transform = self.transform.for_view();
+        self.viewport
+            .update(cx, |viewport, _| viewport.set_transform(transform));
         cx.notify();
     }
 

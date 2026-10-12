@@ -23,6 +23,7 @@ pub(super) mod point;
 use super::cull;
 use super::geometry::Meshes;
 use super::mesh::Vertex;
+use super::skinning;
 use super::slots::keyed::Keyed;
 use super::terrain::TerrainGpu;
 use crate::quality::QualityProfile;
@@ -264,6 +265,31 @@ impl Shadows {
         self.mesh_batches.remove(referent);
     }
 
+    /// Re-uploads the caster geometry of `meshes`, skinned meshes whose pose
+    /// changed — see `casters::refresh`.
+    pub(super) fn refresh_meshes(
+        &mut self,
+        queue: &wgpu::Queue,
+        resolved: &crate::scene::Resolved,
+        meshes: &[rbx_assets::AssetRef],
+    ) {
+        casters::refresh(queue, &self.mesh_batches, resolved, meshes);
+        self.posed();
+    }
+
+    /// A skinned mesh took another pose: the point lights' cubes no longer
+    /// hold what it casts.
+    pub(super) fn posed(&mut self) {
+        self.point_state = None;
+    }
+
+    /// The casters' file-mesh vertex buffers, for `renderer::skinning`.
+    pub(super) fn skinning_targets(
+        &self,
+    ) -> impl Iterator<Item = (&rbx_assets::AssetRef, &wgpu::Buffer, skinning::Layout)> {
+        casters::skinning_targets(&self.mesh_batches)
+    }
+
     /// Drops a box caster whose box no longer draws; a no-op if it never
     /// cast.
     /// The terrain's casters changed: the cubes no longer hold what it casts.
@@ -332,7 +358,7 @@ impl Shadows {
         &mut self,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        (meshes, terrain): (&Meshes, &TerrainGpu),
+        (meshes, terrain): (&Meshes, Option<&TerrainGpu>),
         selected: &[point::Selected],
     ) {
         debug_assert!(selected.len() <= self.point_cap());
@@ -371,7 +397,7 @@ impl Shadows {
         &self,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        (meshes, terrain): (&Meshes, &TerrainGpu),
+        (meshes, terrain): (&Meshes, Option<&TerrainGpu>),
         fit: &Fit,
     ) {
         queue.write_buffer(
@@ -395,7 +421,7 @@ impl Shadows {
         &self,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        (meshes, terrain): (&Meshes, &TerrainGpu),
+        (meshes, terrain): (&Meshes, Option<&TerrainGpu>),
         selected: &[local::Selected],
     ) {
         debug_assert!(selected.len() <= self.local_cap());
@@ -451,7 +477,7 @@ impl Shadows {
     fn draw_casters<'p>(
         &'p self,
         pass: &mut wgpu::RenderPass<'p>,
-        (meshes, terrain): (&Meshes, &TerrainGpu),
+        (meshes, terrain): (&Meshes, Option<&TerrainGpu>),
         bind_group: &'p wgpu::BindGroup,
         cull: Option<&Fit>,
     ) {
@@ -503,8 +529,11 @@ impl Shadows {
             pass.draw_indexed(0..geometry.index_count, 0, 0..batch.slots.count());
         }
         // Same pipeline: terrain is triangles in world space with an identity
-        // placement, which is all a file mesh caster is too.
-        terrain.draw_casters(pass);
+        // placement, which is all a file mesh caster is too. `None` from an
+        // isolated view, which draws no terrain to cast.
+        if let Some(terrain) = terrain {
+            terrain.draw_casters(pass);
+        }
     }
 }
 

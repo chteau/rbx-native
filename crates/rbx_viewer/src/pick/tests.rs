@@ -278,14 +278,14 @@ fn names(dom: &WeakDom, hits: &[Ref]) -> Vec<String> {
 /// The tetrahedron the plane `x + y + z = -0.5` cuts off the unit cube's
 /// (-, -, -) corner: a mesh whose bounding box is almost entirely empty, so
 /// a box test and a triangle test disagree nearly everywhere.
-pub(super) fn corner_tetrahedron() -> rbx_mesh::Mesh {
+pub(super) fn corner_tetrahedron() -> rbx_mesh::SkinnedMesh {
     let vertex = |x: f32, y: f32, z: f32| rbx_mesh::Vertex {
         position: [x, y, z],
         normal: [0.0; 3],
         uv: [0.0; 2],
         color: [255; 4],
     };
-    rbx_mesh::Mesh {
+    rbx_mesh::SkinnedMesh::from(rbx_mesh::Mesh {
         version: (4, 1),
         vertices: vec![
             vertex(-0.5, -0.5, -0.5),
@@ -301,7 +301,7 @@ pub(super) fn corner_tetrahedron() -> rbx_mesh::Mesh {
             min: [-0.5; 3],
             max: [0.5; 3],
         },
-    }
+    })
 }
 
 fn tetrahedron_meshes(asset: AssetRef) -> Meshes {

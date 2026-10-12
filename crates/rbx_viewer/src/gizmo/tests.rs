@@ -552,3 +552,43 @@ fn local_handles_take_the_pivots_axes_over_the_anchor_parts() {
     // Edit Pivot's are the pivot's whatever the toggle says.
     assert!(handle_axes(true, false, Some(pivot), anchor).is_some());
 }
+
+#[test]
+fn a_short_view_keeps_the_rings_grab_band_at_seven_pixels() {
+    let eye = pose(Vec3::new(0.0, 0.0, 20.0));
+    let plain = arm_length(Vec3::ZERO, eye, false);
+    // Tall views are left exactly as they were.
+    assert_eq!(handle_length(Vec3::ZERO, eye, false, 1000.0), plain);
+    assert_eq!(handle_length(Vec3::ZERO, eye, false, 800.0), plain);
+    // A short one grows the arm until it spans `MIN_ARM_PIXELS`.
+    for height in [200.0, 400.0, 640.0] {
+        let arm = handle_length(Vec3::ZERO, eye, false, height);
+        let pixels = SCREEN_FRACTION * height * 0.5 * arm / plain;
+        assert!(
+            (pixels - MIN_ARM_PIXELS).abs() < 1e-3,
+            "{pixels} px at {height}"
+        );
+        assert!(
+            RING_PICK * pixels >= 7.0,
+            "ring band {} px",
+            RING_PICK * pixels
+        );
+    }
+}
+
+#[test]
+fn a_press_just_off_a_ring_is_near_it_but_grabs_nothing() {
+    let handles = handles();
+    // Half a band past the grab band, at 45 degrees round the Z ring: well
+    // clear of either arm.
+    let out = RING_RADIUS + 1.5 * RING_PICK;
+    let at = Vec3::new(out, out, 0.0) * std::f32::consts::FRAC_1_SQRT_2;
+    let ray = Ray::new(at + Vec3::Z * 10.0, Vec3::NEG_Z);
+    assert_eq!(handles.grab_ring(ray), None);
+    assert_eq!(handles.grab_arm(ray), None);
+    assert!(!handles.near(ray, 1.0));
+    assert!(handles.near(ray, 2.0));
+    // Far out in the scene is near nothing.
+    let away = Ray::new(Vec3::new(3.0, 3.0, 10.0), Vec3::NEG_Z);
+    assert!(!handles.near(away, 2.0));
+}

@@ -325,7 +325,7 @@ impl Source for FontShelf {
         Err(not_here(reference))
     }
 
-    fn mesh(&self, reference: &AssetRef) -> Result<rbx_mesh::Mesh, crate::assets::Failure> {
+    fn mesh(&self, reference: &AssetRef) -> Result<rbx_mesh::SkinnedMesh, crate::assets::Failure> {
         Err(not_here(reference))
     }
 

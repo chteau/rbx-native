@@ -156,6 +156,7 @@ impl Shell {
             Document::Viewport => self.viewport().into_any_element(),
             Document::Scripts => self.script_editor(window, cx).into_any_element(),
             Document::UiEditor => self.ui_editor(window, cx),
+            Document::Animation => self.animation_editor(window, cx),
         }
     }
 

@@ -75,6 +75,9 @@ pub struct Headless {
     /// [`Headless::apply_changes`] can recompute the one piece of it an edit
     /// touched instead of the whole place.
     loaded: Loaded,
+    /// Whether skinned meshes may be posed on the GPU; see
+    /// [`Headless::set_skins_on_gpu`].
+    skinning_wanted: bool,
     /// What every instance of the DOM the scene was built from is to the
     /// picture, so a `Change::Removed` — a bare referent, its instance
     /// already gone — can still be taken out of the right pass; see
@@ -142,7 +145,7 @@ impl Headless {
         let bounds = *loaded.world().scene.bounds();
         let uploaded_material_layers = loaded.scene().materials().layers();
         let quality = QualityLevel::default();
-        Ok(Headless {
+        let mut headless = Headless {
             offscreen: Offscreen::new(loaded.world(), &quality.profile(), &View::default())?,
             quality,
             view: View::default(),
@@ -162,7 +165,44 @@ impl Headless {
             meshes_changed: false,
             uploaded_material_layers,
             warnings,
-        })
+            skinning_wanted: true,
+        };
+        headless.sync_skinning();
+        Ok(headless)
+    }
+
+    /// Hands skinning to the GPU when the renderer can do it there (not on
+    /// WebGL, which has no compute), then re-uploads every rig to match.
+    fn sync_skinning(&mut self) {
+        let on = self.skinning_wanted && self.skins_on_gpu_available();
+        let keys = self.loaded.scene_mut().set_skins_on_gpu(on);
+        if keys.is_empty() {
+            return;
+        }
+        let resolved = self.loaded.scene().resolved_file_meshes();
+        self.offscreen.with_renderer(|renderer, device, queue| {
+            renderer.refresh_meshes(device, queue, resolved, &keys)
+        });
+    }
+
+    fn skins_on_gpu_available(&mut self) -> bool {
+        self.offscreen
+            .with_renderer(|renderer, _, _| renderer.skins_on_gpu())
+    }
+
+    /// Whether skinned meshes are posed by a compute pass on the GPU (true
+    /// wherever the device has compute shaders) rather than deformed on the
+    /// CPU.
+    pub fn skins_on_gpu(&mut self) -> bool {
+        self.skinning_wanted && self.skins_on_gpu_available()
+    }
+
+    /// Poses skinned meshes on the CPU even where the GPU could (`false`),
+    /// or hands them back to the GPU (`true`, the default) — for comparing
+    /// the two paths. Lasts across reloads.
+    pub fn set_skins_on_gpu(&mut self, on: bool) {
+        self.skinning_wanted = on;
+        self.sync_skinning();
     }
 
     /// Rebuilds every render input from a DOM already in memory — a file on
@@ -183,6 +223,17 @@ impl Headless {
     pub fn reload(&mut self, dom: &WeakDom) -> Result<(), String> {
         let mut loaded = Loaded::from_dom(dom, &self.database, self.toggles, &mut self.resident)?;
         self.warnings.extend(loaded.take_warnings());
+        // The scene is new and knows nothing of an isolation; the roots are
+        // `self.view`'s, and the DOM is right here to place every part
+        // against them before anything is uploaded.
+        if let Some(roots) = &self.view.isolation {
+            let warnings = loaded.isolate(
+                Some(roots.as_slice()),
+                |at| dom.parent(at),
+                &mut self.resident,
+            );
+            self.warnings.extend(warnings);
+        }
         let bounds = *loaded.world().scene.bounds();
 
         let start = match self.from {
@@ -204,6 +255,7 @@ impl Headless {
         self.uploaded_material_layers = loaded.scene().materials().layers();
         self.loaded = loaded;
         self.roles = Roles::of_dom(dom, &self.database);
+        self.sync_skinning();
         Ok(())
     }
 
@@ -266,6 +318,55 @@ impl Headless {
     /// The projection mode [`Headless::set_orthographic`] last set.
     pub fn orthographic(&self) -> bool {
         self.view.orthographic
+    }
+
+    /// Draws only the instances under `roots` (and the roots themselves) on a
+    /// plain backdrop, or everything again with `None` — the Animation
+    /// Editor's view of one rig, the way Blender's animation workspace shows
+    /// a lone armature rather than the whole scene.
+    ///
+    /// While isolated, only the parts, meshes, unions and the decals,
+    /// textures and `SurfaceAppearance`s on them that stand under a root are
+    /// drawn or cast a shadow; everything else in `Workspace` is neither
+    /// drawn nor hit by a [`crate::pick::parts_along`] test made through
+    /// [`Headless::pick_meshes`]. Terrain and its water, the sky, clouds,
+    /// atmosphere and fog, the place's lights and post effects, beams,
+    /// trails, particles, adornments and every GUI are left out whether
+    /// under a root or not, and the rig is lit by a fixed neutral key (see
+    /// `Lighting::neutral`) over [`crate::ISOLATION_BACKDROP`].
+    ///
+    /// Every instance keeps its `Ref`: selection, hover, the gizmo and
+    /// [`Headless::apply_changes`] work on the real place exactly as before,
+    /// and an edit under a root — a pose moving the rig's parts sixty times
+    /// a second, a part added or removed — is patched in place like any
+    /// other. The isolation survives [`Headless::reload`] and every asset
+    /// landing; `None` restores exactly the picture a never-isolated view
+    /// would draw.
+    ///
+    /// Setting it rebuilds the GPU batches once (the same rebuild an asset
+    /// landing costs). Setting the roots it already has costs nothing. The
+    /// host has to force a frame afterwards, and take
+    /// [`Headless::pick_meshes`] again: [`Headless::pick_meshes_changed`]
+    /// reports true.
+    pub fn set_isolation(&mut self, roots: Option<Vec<Ref>>) {
+        if roots == self.view.isolation {
+            return;
+        }
+        self.view.set_isolation(roots);
+        let roles = &self.roles;
+        let warnings = self.loaded.isolate(
+            self.view.isolation.as_deref(),
+            |at| roles.get(at).and_then(|known| known.parent),
+            &mut self.resident,
+        );
+        self.warnings.extend(warnings);
+        self.offscreen.reload(self.loaded.world(), &self.view);
+        self.meshes_changed = true;
+    }
+
+    /// Whether [`Headless::set_isolation`] last isolated some roots.
+    pub fn isolation(&self) -> bool {
+        self.view.isolated()
     }
 
     pub fn input(&mut self, event: CameraInput) {

@@ -64,6 +64,10 @@ impl Headless {
                     // nothing about the camera is started over for them.
                     self.bounds = bounds;
                 }
+                // A pose moves the rig about the stage; the shadow follows.
+                if self.view.isolated() {
+                    self.offscreen.set_stage(self.loaded.scene().stage_bounds());
+                }
                 Ok(Applied::Patched)
             }
             Err(why) => {
@@ -246,7 +250,15 @@ impl Patcher<'_> {
             // `Workspace.GlobalWind` sways the terrain's grass. Re-reading
             // the terrain with its voxels unchanged costs one byte compare.
             Role::Inert if instance.class() == "Workspace" => self.sync_terrain(),
-            Role::Inert => Ok(()),
+            // A rig joint whose `C0`/`C1` moved moves the rest its skinned
+            // meshes bind against.
+            Role::Inert => {
+                let scene = self.loaded.scene_mut();
+                if scene.resync_joint(self.dom, self.database, referent) {
+                    self.pending.parts = true;
+                }
+                Ok(())
+            }
         }
     }
 

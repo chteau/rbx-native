@@ -128,6 +128,36 @@ pub(super) fn mesh(shape: &Shape, held: Option<End>, eye: Vec3) -> Vec<Vertex> {
     }
 }
 
+/// How far a hovered handle's colour moves towards white, once it is at
+/// full strength. Kept small: a wash of 0.55 (what this was) turned the
+/// blue Z arrow lavender, and seen nearly end on that arrow is a flat
+/// trapezoid, so after a drag left the pointer over it, it read as a stray
+/// lavender shape by the posed arm rather than as the hovered Z handle.
+const LIT: f32 = 0.15;
+
+/// Brightens every vertex painted in `axis`'s colour: the hovered arrow or
+/// ring (and, under Transform, the rest of that axis's handles, which share
+/// its colour). Handles are flat-coloured, so the colour alone names them.
+/// The colour is first scaled up to full strength, which keeps its hue,
+/// and only then moved a little towards white, so a lit handle is still
+/// plainly red, green or blue.
+pub(super) fn light(vertices: &mut [Vertex], axis: Axis) {
+    let color = axis.color();
+    let lit = lit(color);
+    for vertex in vertices.iter_mut().filter(|vertex| vertex.color == color) {
+        vertex.color = lit;
+    }
+}
+
+/// `color` as a hovered handle shows it (see [`light`]).
+pub(super) fn lit(color: [f32; 3]) -> [f32; 3] {
+    let strongest = color.iter().copied().fold(f32::EPSILON, f32::max);
+    color.map(|channel| {
+        let full = (channel / strongest).min(1.0);
+        full + (1.0 - full) * LIT
+    })
+}
+
 /// Edit Pivot's hotspots, painted last: dots far smaller than any handle,
 /// which only ever sit on the selection's boxes, so being drawn over the
 /// arms and rings costs nothing and keeps every one of them visible.

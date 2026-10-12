@@ -45,6 +45,11 @@ pub(super) struct Piece {
     pub(super) family: Family,
     /// Zero for `HumanoidRootPart`, which is a block.
     pub(super) mesh: u64,
+    /// A mesh not uploaded yet, in place of `mesh`: an `rbxasset://` path
+    /// into the local asset cache, where the auto-rigger writes the body
+    /// parts it cuts so the 3D view can show them before they are
+    /// published. Roblox itself cannot load one, so publishing replaces it.
+    pub(super) local: Option<String>,
     pub(super) texture: Option<u64>,
     pub(super) surface: Option<Surface>,
     /// The Head carries the stock face `Decal`: classic heads only, since a
@@ -103,6 +108,7 @@ fn owned(raw: &Raw, family: Family) -> Piece {
         name: raw.name.into(),
         family,
         mesh: raw.mesh,
+        local: None,
         texture: raw.texture,
         surface: raw.surface,
         face: family == Family::Classic,

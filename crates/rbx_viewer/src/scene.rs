@@ -8,6 +8,7 @@ mod filemesh;
 mod gui;
 mod highlight;
 mod identity;
+mod isolation;
 mod material;
 mod particles;
 mod patch;
@@ -40,6 +41,7 @@ pub(crate) use effects::EffectKind;
 #[cfg(test)]
 pub(crate) use beam::Curve;
 pub(crate) use bounds::{of_part, Bounds};
+pub(crate) use filemesh::skinned::key as skinned_mesh_key;
 pub(crate) use filemesh::{
     fit_of as file_mesh_fit, AlphaMode, Appearance, Resolved, ResolvedInstance,
 };
@@ -61,6 +63,8 @@ pub(crate) use gui::{
 pub use gui::{shows_screen, ScrollTarget};
 pub(crate) use highlight::{DepthMode, Highlight, MAX_HIGHLIGHTS};
 pub(crate) use identity::PartId;
+pub use isolation::STAGE_REACH;
+pub(crate) use isolation::{within as isolation_within, Isolation};
 pub(crate) use material::{Catalog, Kind, Maps, Slot};
 pub(crate) use particles::sequence::{eval_color, eval_number};
 pub(crate) use particles::{Emitter, Simulation};
@@ -128,6 +132,10 @@ pub(crate) struct Part {
     /// drawing this part; left `false` forever if that resolution fails, which
     /// is exactly what keeps this box as the fallback.
     suppressed: bool,
+    /// Set while the scene is isolated to roots this part does not stand
+    /// under (see `scene::isolation`): kept, placed and selectable like any
+    /// other part, just not painted by any shaded pass or shadow map.
+    isolated_out: bool,
 }
 
 /// Where a face instance has to be projected: the unit mesh a part draws as,
@@ -156,8 +164,12 @@ impl Part {
     /// place says "invisible", and Roblox draws nothing for it — but a `Decal`
     /// pinned to such a part still shows, which is why the part keeps its
     /// placement (see [`Scene::placements`]) even when nothing draws it.
+    ///
+    /// Isolation folds in here too, so every pass that already asks this —
+    /// opaque, blended, shadow casters, highlight masks — leaves a part
+    /// outside the isolated roots alone without a test of its own.
     pub(crate) fn is_drawn(&self) -> bool {
-        !self.suppressed && self.alpha > 0.0
+        !self.suppressed && !self.isolated_out && self.alpha > 0.0
     }
 
     /// Whether the shadow map has to draw it. Roblox lets a part with a
@@ -230,6 +242,8 @@ pub(crate) struct Scene {
     adornments: Vec<Adornment>,
     /// Every enabled `ScreenGui`; see [`Scene::gui_screens`].
     gui: Vec<GuiScreen>,
+    /// The roots drawing is limited to, if any — see `scene::isolation`.
+    isolation: Option<Isolation>,
     /// Every placeable `BillboardGui`/`SurfaceGui`; see [`Scene::gui_spaces`].
     gui_spaces: Vec<SpaceGui>,
     union_plan: union::Plan,
@@ -295,6 +309,7 @@ impl Scene {
             highlights: Vec::new(),
             adornments: Vec::new(),
             gui,
+            isolation: None,
             gui_spaces: Vec::new(),
             union_plan,
             unions_resolved: union::Merged::default(),
@@ -305,7 +320,7 @@ impl Scene {
         // an emitter's spawn volume is its parent's own placement, and a
         // `SurfaceGui`'s canvas covers one face of the part as drawn.
         let placements = scene.placements();
-        scene.emitters = particles::plan(dom, database, &placements);
+        scene.emitters = particles::plan(dom, database, &scene.emitter_placements());
         scene.gui_spaces = gui::plan_space(dom, database, &placements, &mut scene.materials);
         // A beam resolves its own attachment chain straight off the DOM
         // instead (see `scene::beam::attachment`), so it needs no placement.
@@ -430,14 +445,6 @@ impl Scene {
         &self.gui
     }
 
-    /// Every `BillboardGui`/`SurfaceGui` this scene could place, each already
-    /// carrying the pixel size of the canvas its tree is painted into. The
-    /// renderer owns that canvas — a `Scene` has no GPU handle — and finishes
-    /// a billboard's quad, which only exists once an eye does.
-    pub(crate) fn gui_spaces(&self) -> &[SpaceGui] {
-        &self.gui_spaces
-    }
-
     /// Every image the GUI trees sample, in first-seen paint order and
     /// without repeats across the three container kinds — one download for
     /// an `ImageLabel` image that a screen and a surface both show.
@@ -515,6 +522,10 @@ impl Scene {
     /// projected on, and a decal floating in the air where that box used to
     /// be is worse than none. A union drawn as its pieces keeps its box's
     /// placement precisely because those pieces fill it.
+    ///
+    /// A part an isolation hides is left out for the same reason: its
+    /// decals, emitters and canvases must not be drawn where nothing else
+    /// of it is.
     pub(crate) fn placements(&self) -> HashMap<Ref, Placement> {
         let pieced: HashSet<Ref> = self
             .parts
@@ -525,8 +536,24 @@ impl Scene {
         self.parts
             .iter()
             .filter(|part| {
-                part.id.is_whole() && (!part.suppressed || pieced.contains(&part.referent()))
+                part.id.is_whole()
+                    && !part.isolated_out
+                    && (!part.suppressed || pieced.contains(&part.referent()))
             })
+            .map(|part| (part.referent(), part.placement()))
+            .collect()
+    }
+
+    /// Where each emitter's parent part stands: [`Scene::placements`] with
+    /// suppressed parts kept. An emitter spawns from its part's box whatever
+    /// draws that box — a `MeshPart` whose mesh landed is suppressed, yet its
+    /// sparks still fly from its `Size` and `CFrame`. Planning off
+    /// [`Scene::placements`] instead lost every such emitter on the first
+    /// re-plan after the mesh arrived, which a pose triggers on every frame.
+    pub(crate) fn emitter_placements(&self) -> HashMap<Ref, Placement> {
+        self.parts
+            .iter()
+            .filter(|part| part.id.is_whole() && !part.isolated_out)
             .map(|part| (part.referent(), part.placement()))
             .collect()
     }
@@ -573,10 +600,11 @@ impl Scene {
     /// whose mesh resolved once never goes back to drawing its box on its own.
     pub(crate) fn resolve_file_meshes(
         &mut self,
-        meshes: HashMap<AssetRef, Arc<rbx_mesh::Mesh>>,
+        meshes: HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>>,
         images: HashMap<AssetRef, Arc<Image>>,
     ) {
-        let (resolved, hidden) = filemesh::resolve(&self.file_mesh_plan, meshes, images);
+        let (mut resolved, hidden) = filemesh::resolve(&self.file_mesh_plan, meshes, images);
+        resolved.skins_on_gpu = self.resolved_file_meshes.skins_on_gpu;
         for part in &mut self.parts {
             if hidden.contains(&part.referent()) {
                 part.suppressed = true;
@@ -584,6 +612,79 @@ impl Scene {
         }
         self.resolved_file_meshes = resolved;
         self.apply_resolved_unions();
+        // A landing mid-pose rebuilt every rig at rest; put each back where
+        // its parts stand now.
+        self.pose_all_skins();
+    }
+
+    /// Re-poses every skinned mesh whose parts moved since the last call
+    /// (see `filemesh::skinned`), answering with the derived meshes that
+    /// changed — what the renderer has to re-upload. Free when no part a
+    /// skinned mesh binds to has moved.
+    pub(crate) fn pose_skins(&mut self) -> Vec<AssetRef> {
+        // Rigs a patch (re)built since: their derived mesh was replaced
+        // under a key the GPU may already hold.
+        let mut changed = std::mem::take(&mut self.file_mesh_plan.rebound);
+        if self.file_mesh_plan.poses.take_dirty() {
+            changed.extend(self.pose_all_skins());
+        }
+        changed.sort_by_key(|key| format!("{key:?}"));
+        changed.dedup();
+        changed
+    }
+
+    /// Mesh parts still owed a re-bind because their model's parts changed
+    /// (see [`filemesh::Plan::rebind_models`]) — each re-patched by the
+    /// caller, which takes it off the list.
+    pub(crate) fn skin_rebinds(&self) -> Vec<Ref> {
+        let mut parts: Vec<Ref> = self.file_mesh_plan.rebinds.iter().copied().collect();
+        parts.sort();
+        parts
+    }
+
+    /// `referent` needs no re-bind any more (it was re-patched, or is gone).
+    pub(crate) fn rebound_skin(&mut self, referent: Ref) {
+        self.file_mesh_plan.rebinds.remove(&referent);
+    }
+
+    fn pose_all_skins(&mut self) -> Vec<AssetRef> {
+        let poses = &self.file_mesh_plan.poses;
+        let resolved = &mut self.resolved_file_meshes;
+        let mut changed = Vec::new();
+        for rig in resolved.rigs.values_mut() {
+            if !rig.repose(poses) {
+                continue;
+            }
+            // On the GPU path only the matrices change; the renderer takes
+            // them from the rig.
+            if !resolved.skins_on_gpu {
+                resolved.meshes.insert(rig.key.clone(), rig.posed());
+            }
+            changed.push(rig.key.clone());
+        }
+        changed
+    }
+
+    /// Says whether the renderer deforms skinned meshes on the GPU (see
+    /// [`Resolved::skins_on_gpu`]), answering with every rig's key, whose
+    /// mesh under it changed between posed and rest.
+    pub(crate) fn set_skins_on_gpu(&mut self, on: bool) -> Vec<AssetRef> {
+        let resolved = &mut self.resolved_file_meshes;
+        if resolved.skins_on_gpu == on {
+            return Vec::new();
+        }
+        resolved.skins_on_gpu = on;
+        let mut keys = Vec::new();
+        for rig in resolved.rigs.values() {
+            let mesh = match on {
+                true => rig.source().clone(),
+                false => rig.posed(),
+            };
+            resolved.meshes.insert(rig.key.clone(), mesh);
+            keys.push(rig.key.clone());
+        }
+        keys.sort_by_key(|key| format!("{key:?}"));
+        keys
     }
 
     /// Puts the unions' own meshes and instances back into the resolved set
@@ -625,6 +726,11 @@ impl Scene {
         resolved
             .instances
             .extend(self.unions_resolved.instances.iter().cloned());
+        // Both callers have just rebuilt or appended to the lists an
+        // isolation flags, with no DOM in hand to ask again.
+        if self.isolation.is_some() {
+            self.flag_isolated();
+        }
     }
 
     /// One `(referent, asset)` pair per legacy union/negate found, to download
@@ -793,6 +899,7 @@ pub(super) fn assemble_part(
         size: geometry.size,
         id,
         suppressed: false,
+        isolated_out: false,
     }
 }
 

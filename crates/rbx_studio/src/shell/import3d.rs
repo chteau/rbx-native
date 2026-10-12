@@ -9,6 +9,9 @@
 //! local `.rbxm`/`.rbxmx`, for screenshots and tests without a key (an image
 //! upload then just reports asset 0). `RBX_STUDIO_IMPORT_KIND=mesh` makes the
 //! launch import behave as Insert Mesh….
+//! `RBX_STUDIO_IMPORT_KEEP=<directory>` keeps a copy of each real upload
+//! (`<asset id>.<ext>`) and of the model Roblox made of it
+//! (`<asset id>.rbxm`) there, to check what the importer did.
 //!
 //! Open Cloud refuses a new `Mesh` upload, so Model › Insert Mesh… uploads
 //! the file as a model like the rest and then places only the `MeshPart`s
@@ -30,6 +33,11 @@ use super::{clipboard, Shell};
 
 const SOURCE: &str = "Import";
 const MOCK_VARIABLE: &str = "RBX_STUDIO_IMPORT_MOCK";
+/// With the mock, the asset id the "upload" answers with.
+const MOCK_ID_VARIABLE: &str = "RBX_STUDIO_IMPORT_MOCK_ID";
+/// Fails the upload with this message, for a scripted capture of the error.
+const MOCK_ERROR_VARIABLE: &str = "RBX_STUDIO_IMPORT_MOCK_ERROR";
+const KEEP_VARIABLE: &str = "RBX_STUDIO_IMPORT_KEEP";
 const IMAGE_EXTENSIONS: [&str; 4] = ["png", "jpg", "jpeg", "bmp"];
 
 fn is_image(path: &Path) -> bool {
@@ -47,9 +55,9 @@ pub(crate) enum ImportKind {
 }
 
 /// What a finished model upload brings back.
-struct Imported {
-    dom: WeakDom,
-    asset_id: u64,
+pub(crate) struct Imported {
+    pub(crate) dom: WeakDom,
+    pub(crate) asset_id: u64,
     /// A caveat to show beside the success (a triangle count that could not
     /// be taken).
     note: Option<String>,
@@ -246,16 +254,22 @@ fn is_base_part(dom: &WeakDom, database: &ReflectionDatabase, target: Ref) -> bo
 
 /// Blocking: reads and checks the file, uploads it, and downloads the model
 /// Roblox made of it.
-fn upload_model(path: &Path, name: &str) -> Result<Imported, String> {
+pub(crate) fn upload_model(path: &Path, name: &str) -> Result<Imported, String> {
     let (report, upload) = rbx_import::prepare(path)?;
     if let Some(refusal) = report.refusal() {
         return Err(refusal);
+    }
+    if let Ok(message) = std::env::var(MOCK_ERROR_VARIABLE) {
+        return Err(message);
     }
     if let Ok(mock) = std::env::var(MOCK_VARIABLE) {
         let bytes = std::fs::read(&mock).map_err(|err| format!("{mock}: {err}"))?;
         return Ok(Imported {
             dom: read_model(&bytes)?,
-            asset_id: 0,
+            asset_id: std::env::var(MOCK_ID_VARIABLE)
+                .ok()
+                .and_then(|id| id.parse().ok())
+                .unwrap_or(0),
             note: report.unchecked,
         });
     }
@@ -268,8 +282,15 @@ fn upload_model(path: &Path, name: &str) -> Result<Imported, String> {
     let asset_id = client
         .create_model_asset(name, "Imported by rbx-native.", user, &file)
         .map_err(|err| describe(&err))?;
-    let dom = read_model(&fetch_asset(&client, asset_id)?)
-        .map_err(|err| format!("uploaded as model {asset_id}, but {err}"))?;
+    let model = fetch_asset(&client, asset_id)?;
+    if let Some(dir) = std::env::var_os(KEEP_VARIABLE).map(PathBuf::from) {
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("bin");
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::write(dir.join(format!("{asset_id}.{ext}")), &upload.bytes);
+        let _ = std::fs::write(dir.join(format!("{asset_id}.rbxm")), &model);
+    }
+    let dom =
+        read_model(&model).map_err(|err| format!("uploaded as model {asset_id}, but {err}"))?;
     Ok(Imported {
         dom,
         asset_id,

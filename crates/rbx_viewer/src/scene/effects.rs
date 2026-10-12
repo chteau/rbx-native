@@ -72,7 +72,7 @@ impl Scene {
     ) {
         match kind {
             EffectKind::Particles => {
-                let placements = self.placements();
+                let placements = self.emitter_placements();
                 self.emitters = particles::plan(dom, database, &placements);
             }
             EffectKind::Beams => self.beams = beam::plan(dom, database),
@@ -83,6 +83,7 @@ impl Scene {
                 self.adornments = adornment::plan(dom, database, &placements);
             }
         }
+        self.sweep_effects(&|at| dom.parent(at));
     }
 }
 
@@ -256,6 +257,27 @@ mod tests {
         assert_eq!(scene.particle_emitters().len(), 1);
     }
 
+    // A `MeshPart` whose mesh landed has its box suppressed, but its emitter
+    // still spawns from that box. A pose re-plans particles on every frame,
+    // so planning off the drawn-box placements lost the emitter of every
+    // posed rig whose torso is a mesh.
+    #[test]
+    fn replanning_keeps_the_emitter_of_a_part_whose_mesh_replaced_its_box() {
+        let dom = effects_place();
+        let database = ReflectionDatabase::embedded();
+        let mut scene = Scene::from_dom(&dom, &database).unwrap();
+        for part in &mut scene.parts {
+            if part.referent() == Ref::new(BASE) {
+                part.suppressed = true;
+            }
+        }
+
+        scene.replan_effect(&dom, &database, EffectKind::Particles);
+
+        assert_eq!(scene.particle_emitters().len(), 1);
+        assert_eq!(scene.drawn_particle_emitters().len(), 1);
+    }
+
     #[test]
     fn replanning_one_kind_picks_up_its_edit_and_leaves_the_others_alone() {
         let mut dom = effects_place();
@@ -275,6 +297,41 @@ mod tests {
             10.0,
             "a beam re-plan must not re-read emitters"
         );
+    }
+
+    fn drawn(scene: &Scene) -> [usize; 3] {
+        [
+            scene.drawn_particle_emitters().len(),
+            scene.drawn_beams().len(),
+            scene.drawn_trails().len(),
+        ]
+    }
+
+    // An isolated rig keeps its own effects: one parented under it, and a
+    // beam or trail stretched to one of its attachments even when the effect
+    // itself is parented elsewhere. Everything else's effects are hidden, and
+    // the full lists stay whole for asset collection.
+    #[test]
+    fn an_isolation_draws_only_the_effects_that_belong_to_its_roots() {
+        let database = ReflectionDatabase::embedded();
+        let dom = effects_place();
+        let mut scene = Scene::from_dom(&dom, &database).unwrap();
+        assert_eq!(drawn(&scene), [1, 1, 1]);
+
+        // The beam and trail hang off part 3 but end on part 5's attachment.
+        scene.isolate(Some(&[Ref::new(5)]), |at| dom.parent(at));
+        assert_eq!(drawn(&scene), [0, 1, 1]);
+        assert_eq!(scene.particle_emitters().len(), 1, "the full list is kept");
+
+        scene.isolate(Some(&[Ref::new(BASE)]), |at| dom.parent(at));
+        assert_eq!(drawn(&scene), [1, 0, 0]);
+        // A replan keeps the answer.
+        scene.replan_effect(&dom, &database, EffectKind::Particles);
+        scene.replan_effect(&dom, &database, EffectKind::Beams);
+        assert_eq!(drawn(&scene), [1, 0, 0]);
+
+        scene.isolate(None, |at| dom.parent(at));
+        assert_eq!(drawn(&scene), [1, 1, 1]);
     }
 
     // A disabled trail is still listed (its history keeps drawing — see

@@ -89,6 +89,7 @@ impl Shell {
                 }
             }
             Document::UiEditor => self.focus_ui_canvas(window, cx),
+            Document::Animation => window.focus(&self.anim.focus, cx),
         }
     }
 }

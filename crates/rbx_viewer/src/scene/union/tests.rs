@@ -382,7 +382,8 @@ fn carving(children: Vec<tree::Node>, carved: bool) -> Evaluated {
         Arc::new(
             csg::evaluate(&tree, None)
                 .expect("the boolean must run")
-                .to_mesh(),
+                .to_mesh()
+                .into(),
         )
     });
     Evaluated {
@@ -628,7 +629,7 @@ fn parallel_csg_evaluation_matches_evaluating_each_asset_alone() {
     // exercise at all.
     let (plan, assets) = synthetic_plan(12, 6, &materials);
 
-    let expected: HashMap<AssetRef, Arc<rbx_mesh::Mesh>> = assets
+    let expected: HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>> = assets
         .iter()
         .map(|(asset, bytes)| {
             let evaluated = evaluate(bytes, &database, &tree::Assets::new(), None, None)

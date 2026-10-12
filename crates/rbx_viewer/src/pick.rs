@@ -133,6 +133,9 @@ pub fn ray_hits_box(ray: Ray, model: Mat4) -> Option<f32> {
 /// silhouette and the corner of its bounding box hits whatever stands behind
 /// it, as it does in Studio. Everything else, a `MeshPart` whose download
 /// failed included, picks as the box it is drawn as.
+///
+/// While the view is isolated (see `Headless::set_isolation`, whose roots
+/// `meshes` carries), only parts under the isolated roots are tested.
 pub fn parts_along(
     dom: &WeakDom,
     database: &ReflectionDatabase,
@@ -140,6 +143,9 @@ pub fn parts_along(
     ray: Ray,
 ) -> Vec<Ref> {
     let mut hits: Vec<(f32, Ref)> = drawable_parts(dom, database)
+        // A part an isolated view hides is empty space to the cursor: a click
+        // beside the rig must select nothing, not the wall behind it.
+        .filter(|&referent| meshes.shows(dom, referent))
         .filter_map(|referent| Some((distance_to(dom, database, meshes, referent, ray)?, referent)))
         .collect();
     hits.sort_by(|(a, _), (b, _)| a.total_cmp(b));
@@ -160,7 +166,7 @@ fn distance_to(
     ray: Ray,
 ) -> Option<f32> {
     if let Some((asset, fit)) = file_mesh_fit(dom, database, referent) {
-        if let Some(mesh) = meshes.get(&asset) {
+        if let Some(mesh) = meshes.drawn(referent, &asset) {
             return mesh::hit(mesh, fit.transform(mesh), ray);
         }
         // The mesh never downloaded: the part is drawn as its fallback box,

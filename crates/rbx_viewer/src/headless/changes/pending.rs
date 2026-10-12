@@ -147,6 +147,33 @@ impl Patcher<'_> {
         let dom = self.dom;
         let database = self.database;
         let mut moved = None;
+        // A rig's model gained, lost or renamed a part in this batch: every
+        // skinned mesh part there that the batch did not itself re-patch
+        // binds again. A few rounds at most — a re-patch can only start
+        // watching a model, which never owes a part already planned there
+        // more than one more pass.
+        for _ in 0..4 {
+            let owed = self.loaded.scene().skin_rebinds();
+            if owed.is_empty() {
+                break;
+            }
+            for referent in owed {
+                if dom.get(referent).is_some() {
+                    self.sync_part(referent, false)?;
+                }
+                self.loaded.scene_mut().rebound_skin(referent);
+            }
+        }
+        if self.pending.parts {
+            // Once per batch, however many of a rig's parts moved in it.
+            let posed = self.loaded.scene_mut().pose_skins();
+            if !posed.is_empty() {
+                let resolved = self.loaded.scene().resolved_file_meshes();
+                self.offscreen.with_renderer(|renderer, device, queue| {
+                    renderer.refresh_meshes(device, queue, resolved, &posed)
+                });
+            }
+        }
         if self.pending.parts && self.loaded.scene_mut().refresh_bounds() {
             let bounds = *self.loaded.scene().bounds();
             self.offscreen

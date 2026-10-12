@@ -67,6 +67,9 @@ impl Shell {
             ViewportAction::Sun { ray, first } => self.sun_step(*ray, *first, cx),
             ViewportAction::Terrain(input) => self.terrain_step(*input, cx),
             ViewportAction::Pivot { to, first } => self.pivot_step(*to, *first, cx),
+            ViewportAction::Joint { index, to, phase } => {
+                self.autorig_drag_joint(*index, *to, *phase, cx)
+            }
             // The one toolbar action that moves the caret instead of changing
             // state, which is why this path carries a `Window` at all.
             ViewportAction::Tool(transform::Action::FocusIncrement(kind)) => {
@@ -99,6 +102,8 @@ impl Shell {
         let covered = self.covered.clone();
         let picking = self.edits.ref_pick.is_armed();
         let mut target = None;
+        // Against the rig as it is drawn, posed (see `Shell::pose_in`).
+        let posed = self.pose_in();
         let hovered: Vec<Selected> = ray
             .and_then(|ray| {
                 let hits = pick::parts_along(&self.dom, &self.database, &meshes, ray);
@@ -114,13 +119,16 @@ impl Shell {
                 // for the hover exactly as for the click.
                 let referent = match picking {
                     true => self.ref_pick_candidate(&hits, alt)?,
-                    false => selection::from_click(
-                        &self.dom,
-                        &self.database,
-                        &hits,
-                        self.selected(),
-                        alt,
-                    )?,
+                    false => match self.joint_pick(&hits, alt) {
+                        Some(part) => part,
+                        None => selection::from_click(
+                            &self.dom,
+                            &self.database,
+                            &hits,
+                            self.selected(),
+                            alt,
+                        )?,
+                    },
                 };
                 // Studio's hover ruler measures the face of whatever the
                 // cursor is over — selected or not — once there is something
@@ -144,6 +152,7 @@ impl Shell {
                     .map(|entry| vec![entry])
             })
             .unwrap_or_default();
+        self.pose_out(posed);
 
         self.viewport
             .update(cx, |viewport, _| viewport.set_hover_target(target));
@@ -181,7 +190,9 @@ impl Shell {
         // (see `WorkspaceView::meshes`): what keeps a `MeshPart`'s pick on the
         // triangles actually drawn rather than the box around them.
         let meshes = self.viewport.read(cx).meshes().clone();
+        let posed = self.pose_in();
         let hits = pick::parts_along(&self.dom, &self.database, &meshes, ray);
+        self.pose_out(posed);
         // An armed `Ref` row takes the click as its value instead (see
         // `shell::ref_pick`). The sky picks nothing and keeps the pick armed:
         // a miss is not a selection change, and must not deselect the
@@ -193,6 +204,7 @@ impl Shell {
             return;
         }
         if held {
+            let posed = self.pose_in();
             let outlined = selection::outlined(&self.dom, &self.database, self.selected_all());
             let covered = selection::covers(&outlined, hits.first().copied());
             // The grab holds the part by the surface under this press, found
@@ -203,6 +215,7 @@ impl Shell {
                 .flatten()
                 .and_then(|&part| PartSurface::read(&self.dom, &self.database, &meshes, part))
                 .and_then(|part| target::under(&part, ray, grid));
+            self.pose_out(posed);
             self.viewport.update(cx, |viewport, cx| match covered {
                 true => viewport.confirm_grab(surface, cx),
                 false => viewport.refuse_grab(),
@@ -211,8 +224,9 @@ impl Shell {
                 return;
             }
         }
-        let picked =
-            selection::from_click(&self.dom, &self.database, &hits, self.selected(), cycling);
+        let picked = self.joint_pick(&hits, cycling).or_else(|| {
+            selection::from_click(&self.dom, &self.database, &hits, self.selected(), cycling)
+        });
 
         match (picked, extend) {
             (Some(referent), true) => self.extend_selection(referent, cx),
@@ -243,6 +257,7 @@ impl Shell {
         settle: Option<Settle>,
         cx: &mut Context<Self>,
     ) {
+        let posed = self.pose_in();
         let settled = settle.and_then(|settle| {
             // Same render-thread mesh handle `pick_in_viewport` reads — a
             // settle's own surface search needs to agree with what a click
@@ -272,6 +287,7 @@ impl Shell {
                 .map(|&(referent, position)| (referent, CFRAME_PROPERTY, vector(position)))
                 .collect(),
         };
+        self.pose_out(posed);
         self.write_drag(first, &writes, cx);
         if settle.is_some() {
             let settled = settled.map(|(settled, _)| settled);
@@ -374,6 +390,11 @@ impl Shell {
             // as the drag found it: every step's writes are measured from
             // there too, so the pivot is carried in one go each step rather
             // than nudged on from the last one, piling up rounding.
+        }
+        // A posed rig part is dragged from where it is drawn: its rotation,
+        // kept by a move, is the posed one (see `Shell::pose_in`).
+        let posed = self.pose_in();
+        if first {
             self.drag_followers =
                 rbx_lua::pivot::followers(&self.dom, &self.database, self.selection.all());
         }
@@ -389,11 +410,14 @@ impl Shell {
             &self.drag_followers,
             pivot,
         );
+        self.pose_out(posed);
         // Same reasoning as `move_parts`: overwrites the entry's log with
         // just this step's writes — one `CFrame` per part for a Rotate,
         // Size and CFrame per part for a Scale — one patch of each part
         // either way, here and on undo.
-        let changes = self.dom.take_changes();
+        let mut changes = self.dom.take_changes();
+        // A posed limb dragged is a key, and the part goes back to rest.
+        changes.extend(self.settle_pose_edits(&changes));
         self.reflect_changes(&changes, cx);
         self.record_history_change([opened, &changes].concat());
 
@@ -408,15 +432,29 @@ impl Shell {
     /// group drag carries all of them together, so none should pull the
     /// others.
     ///
-    /// Only on a selection change or after an edit moved something other
-    /// than the selection (see `Shell::reflect_changes`), never per mouse
-    /// move — this walks the whole workspace, and during a drag nothing but
-    /// the dragged parts is moving anyway.
+    /// Only on a selection change, after an edit moved something other
+    /// than the selection (see `Shell::reflect_changes`), and when the
+    /// Animation Editor stages or unstages a rig — never per mouse move:
+    /// this walks the whole workspace, and during a drag nothing but the
+    /// dragged parts is moving anyway.
+    ///
+    /// While a rig is staged the rest of the place is hidden (see
+    /// `Shell::stage_rig`), and a hidden part is no more a snap target than
+    /// it is a click target (see `pick::parts_along`): only the rig's own
+    /// parts are offered then.
     pub(super) fn sync_snap_neighbours(&mut self, cx: &mut Context<Self>) {
+        let staged = self.anim.staged;
+        let on_stage = |referent: Ref| {
+            staged.is_none_or(|model| {
+                std::iter::successors(Some(referent), |&at| self.dom.parent(at))
+                    .any(|at| at == model)
+            })
+        };
         // Everything the selection carries is left out — a selected
         // `Model`'s own parts included, which `covered` holds and the
         // selection itself does not.
         let neighbours: Vec<Mat4> = pick::drawable_parts(&self.dom, &self.database)
+            .filter(|&referent| on_stage(referent))
             .filter(|referent| !self.covered.contains(referent))
             .filter_map(|referent| pick::model_of(&self.dom, referent))
             .collect();

@@ -18,7 +18,7 @@ use std::time::Instant;
 
 use glam::{Mat3, Mat4, Vec2, Vec3};
 use gpui_kit::{Modifiers, Pixels, Point};
-use rbx_viewer::gizmo::{self, End, Faces, Gizmo, Handles};
+use rbx_viewer::gizmo::{self, Axis, End, Faces, Gizmo, Handles};
 use rbx_viewer::pick::{self, Ray};
 use rbx_viewer::snap;
 
@@ -38,6 +38,10 @@ mod scale;
 /// height, width) can be as low as `0.001` and as high as `2048`"
 /// (`creator-docs`, `reference/engine/classes/BasePart.yaml`). A drag that ran
 /// past either end would write a value the engine rejects.
+/// How many grab bands out from a handle a posing press still counts as
+/// aimed at it (see `Handles::near`): two, so a ring's 7-pixel band at the
+/// smallest arm becomes a 14-pixel no-deselect zone.
+const NEAR_MISS: f32 = 2.0;
 const MIN_SIZE: f32 = 0.001;
 const MAX_SIZE: f32 = 2048.0;
 
@@ -142,6 +146,15 @@ pub(super) enum Drag {
     /// The Terrain Editor's gesture: `Shell` gets every step as a ray (see
     /// `ViewportAction::Terrain`).
     Terrain,
+    /// One of the auto-rigger's joint markers is held (see `super::joints`):
+    /// which, where it was grabbed, the camera's forward axis (the plane it
+    /// slides in faces it) and where it was last carried to.
+    Joint {
+        index: usize,
+        origin: Vec3,
+        normal: Vec3,
+        to: Vec3,
+    },
 }
 
 /// What one step of a drag does to the part.
@@ -220,10 +233,38 @@ impl WorkspaceView {
             return;
         }
         self.note_hover(ray, modifiers);
+        let over = ray.and_then(|ray| self.hovered_axis(ray));
+        self.light_handle(over);
+        // A handle under the cursor is what a press there grabs, so the
+        // part behind it gets no hover box claiming the click.
         cx.emit(ViewportAction::Hover {
-            ray,
+            ray: ray.filter(|_| over.is_none()),
             alt: modifiers.alt,
         });
+    }
+
+    /// The axis whose arrow or ring `ray` rests on, tried in the order
+    /// [`WorkspaceView::grab_handle`] tries them — what a press here grabs.
+    pub(super) fn hovered_axis(&self, ray: Ray) -> Option<Axis> {
+        let handles = self.handles()?;
+        match self.transform.tool {
+            Tool::Move => handles.grab(ray),
+            Tool::Rotate => handles.grab_ring(ray),
+            Tool::Transform | Tool::Pivot => handles.grab(ray).or_else(|| handles.grab_ring(ray)),
+            Tool::Select | Tool::Scale | Tool::Sun | Tool::Terrain => None,
+        }
+    }
+
+    /// Re-sends the gizmo with `axis` lit, when that changes what is drawn.
+    fn light_handle(&mut self, axis: Option<Axis>) {
+        let Some(shown) = self.summon.shown.filter(|shown| shown.hover != axis) else {
+            return;
+        };
+        self.summon.shown = Some(Gizmo {
+            hover: axis,
+            ..shown
+        });
+        self.refresh_gizmo();
     }
 
     /// Where the Move and Rotate arms stand this frame, anchored on the same
@@ -263,7 +304,9 @@ impl WorkspaceView {
         Some(Handles::new(
             origin,
             gizmo::basis(axes),
-            gizmo::arm_length(origin, pose, self.orthographic),
+            // The render target's height, which the renderer floors the
+            // same arm by.
+            gizmo::handle_length(origin, pose, self.orthographic, self.sized.1 as f32),
         ))
     }
 
@@ -315,6 +358,18 @@ impl WorkspaceView {
             });
             return;
         }
+        // An auto-rig joint marker takes the press before any tool does.
+        if let Some(drag) = self.grab_joint(position, scale) {
+            if let Drag::Joint { index, origin, .. } = drag {
+                self.begin(drag, cx);
+                cx.emit(ViewportAction::Joint {
+                    index,
+                    to: origin,
+                    phase: super::JointPhase::Press,
+                });
+            }
+            return;
+        }
         // The Sun tool aims at the scene rather than selecting out of it.
         if self.transform.tool == Tool::Sun {
             self.begin(Drag::Sun, cx);
@@ -361,6 +416,17 @@ impl WorkspaceView {
             // into this drag (see [`WorkspaceView::confirm_grab`]) — and
             // never with `Alt` or an extend modifier, which ask to change
             // the selection, not to move it.
+            // Posing a rig, a press that misses a handle by a hair was
+            // aimed at it, not at the scene: it must not drop the joint.
+            if self.transform.posing
+                && !cycling
+                && !extend
+                && self
+                    .handles()
+                    .is_some_and(|handles| handles.near(ray, NEAR_MISS))
+            {
+                return;
+            }
             if !cycling && !extend {
                 // The free-drag ball is a body grab too, so it yields to
                 // the same modifiers — and to any handle: an arrow pointing
@@ -595,6 +661,10 @@ impl WorkspaceView {
         scale: f32,
         cx: &mut gpui_kit::Context<Self>,
     ) {
+        if matches!(self.drag, Some(Drag::Joint { .. })) {
+            self.joint_step(position, scale, cx);
+            return;
+        }
         // Aims at the scene, not at the selection there may not even be.
         if self.drag == Some(Drag::Sun) {
             self.sun_step(position, scale, false, cx);
@@ -834,6 +904,13 @@ impl WorkspaceView {
         if self.drag == Some(Drag::Terrain) {
             self.terrain_release(cx);
         }
+        if let Some(Drag::Joint { index, to, .. }) = self.drag {
+            cx.emit(ViewportAction::Joint {
+                index,
+                to,
+                phase: super::JointPhase::Release,
+            });
+        }
         if let Some(drag) = self.drop_drag() {
             self.snapped = None;
             // Every handle back on, wherever the handles now stand.
@@ -1010,7 +1087,7 @@ pub(super) fn advance(drag: Drag, ray: Ray, landing: Landing) -> Option<(Drag, C
             ))
         }
         // Moves no part: `Shell` answers each of its steps instead.
-        Drag::Sun | Drag::Terrain => None,
+        Drag::Sun | Drag::Terrain | Drag::Joint { .. } => None,
     }
 }
 

@@ -85,7 +85,9 @@ impl Shell {
     /// can change, and the user has no way to ask for the box again short of
     /// reselecting.
     pub(super) fn sync_viewport_selection(&mut self, cx: &mut Context<Self>) {
+        let posed = self.pose_in();
         let (outline, targets) = shown(&self.dom, &self.database, self.selection.all());
+        self.pose_out(posed);
         self.covered = targets.iter().map(|target| target.referent).collect();
         self.viewport.update(cx, |viewport, _| {
             viewport.set_selection(&outline);
@@ -95,6 +97,20 @@ impl Shell {
         // open popover's preview follows the selection.
         self.refresh_align_preview(cx);
         self.sync_light_guides(cx);
+    }
+
+    /// The selection's boxes and handles read again where its parts are
+    /// drawn, for a pose that moved them without writing them (see
+    /// `Shell::pose_in`).
+    pub(super) fn reshow_selection(&mut self, cx: &mut Context<Self>) {
+        let posed = self.pose_in();
+        let (outline, targets) = shown(&self.dom, &self.database, self.selection.all());
+        self.pose_out(posed);
+        self.covered = targets.iter().map(|target| target.referent).collect();
+        self.viewport.update(cx, |viewport, _| {
+            viewport.reoutline(outline);
+            viewport.set_targets(targets);
+        });
     }
 }
 

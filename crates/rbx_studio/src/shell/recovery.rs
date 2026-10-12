@@ -209,6 +209,7 @@ impl Shell {
             return;
         }
         let mut dom = self.dom.clone();
+        self.unpose_copy(&mut dom);
         // Typing still on its debounce goes into the copy, but not through
         // `flush_script_edits`, which would cut an undo step mid-word.
         for (reference, open) in &self.scripts.open {

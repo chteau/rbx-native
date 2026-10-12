@@ -80,19 +80,27 @@ impl Shell {
     /// ribbon's own way of showing a setting (see `ribbon`'s snap stack).
     pub(super) fn pivot_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let nav = &self.ribbon_nav;
-        let active = self.transform.tool == Tool::Pivot;
-        let edit = ribbon::tile(nav, "ribbon-pivot", IconName::LocateFixed, "Edit Pivot", cx)
-            .when(active, |this| ribbon::selected(this, tokens::tool_pivot()))
-            .tooltip(|window, cx| {
-                super::tooltip::text(
-                    "Edit Pivot — move or turn the pivot, not the part",
-                    window,
-                    cx,
-                )
-            })
-            .on_click(cx.listener(|shell, _, _, cx| {
-                ribbon::RibbonCommand::EditPivot.run(shell, cx);
-            }));
+        let active = self.transform.effective() == Tool::Pivot;
+        let edit = match self.transform.refusal(Tool::Pivot) {
+            Some(reason) => ribbon::unavailable_tile(
+                "ribbon-pivot",
+                IconName::LocateFixed,
+                "Edit Pivot",
+                reason,
+            ),
+            None => ribbon::tile(nav, "ribbon-pivot", IconName::LocateFixed, "Edit Pivot", cx)
+                .when(active, |this| ribbon::selected(this, tokens::tool_pivot()))
+                .tooltip(|window, cx| {
+                    super::tooltip::text(
+                        "Edit Pivot — move or turn the pivot, not the part",
+                        window,
+                        cx,
+                    )
+                })
+                .on_click(cx.listener(|shell, _, _, cx| {
+                    ribbon::RibbonCommand::EditPivot.run(shell, cx);
+                })),
+        };
 
         let snap_on = self.transform.pivot_snap;
         let snap = ribbon::live_stack_row(nav, "ribbon-pivot-snap", IconName::Magnet, "Snap", cx)

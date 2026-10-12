@@ -78,7 +78,7 @@ const RETRY_DELAY: Duration = Duration::from_secs(5);
 #[derive(Default)]
 pub(crate) struct Resident {
     images: Table<Arc<Image>>,
-    meshes: Table<Arc<rbx_mesh::Mesh>>,
+    meshes: Table<Arc<rbx_mesh::SkinnedMesh>>,
     bytes: Table<Vec<u8>>,
     /// The unions' booleans, which are a function of the asset bytes alone
     /// and the one CPU-heavy step of resolving a scene — see
@@ -164,7 +164,7 @@ impl Resident {
     pub(crate) fn meshes(
         &mut self,
         references: &[AssetRef],
-    ) -> (HashMap<AssetRef, Arc<rbx_mesh::Mesh>>, Vec<String>) {
+    ) -> (HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>>, Vec<String>) {
         match &self.fetcher {
             Some(fetcher) => (
                 self.meshes.take(references, Want::Mesh, fetcher),

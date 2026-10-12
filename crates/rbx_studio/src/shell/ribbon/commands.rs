@@ -108,6 +108,8 @@ pub(in crate::shell) enum RibbonCommand {
     TerrainEditor,
     /// Avatar › Rig Builder: opens the dialog that inserts a rig.
     RigBuilder,
+    /// Avatar › Animation: opens the Animation Editor document.
+    AnimationEditor,
 }
 
 impl RibbonCommand {
@@ -130,6 +132,9 @@ impl RibbonCommand {
                 shell.toggle_terrain_editor(!showing, cx);
             }
             RibbonCommand::RigBuilder => shell.open_rig_dialog(cx),
+            RibbonCommand::AnimationEditor => {
+                shell.set_document(super::super::chrome::Document::Animation, cx)
+            }
         }
     }
 }
@@ -225,6 +230,12 @@ pub(in crate::shell) fn palette_entries(
         "Rig Builder".to_owned(),
         None,
         RibbonCommand::RigBuilder,
+    ));
+    entries.push((
+        "Avatar",
+        "Animation Editor".to_owned(),
+        None,
+        RibbonCommand::AnimationEditor,
     ));
     entries
 }
