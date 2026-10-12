@@ -29,3 +29,6 @@ docs/redesign/
 
 # The browser build's output (scripts/build-web.sh).
 /crates/rbx_viewer/web/pkg/
+
+# tokenforge plans, cheat sheets and run state.
+/.forge/
