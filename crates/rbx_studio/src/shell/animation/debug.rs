@@ -364,10 +364,7 @@ impl Shell {
                         self.request_animation_publish(cx);
                     }
                     self.anim.debug_rest = Some(steps[i + 1..].to_vec());
-                    cx.spawn(async move |this, cx| {
-                        let _ = this.update(cx, |shell, cx| shell.resume_debug_steps(cx));
-                    })
-                    .detach();
+                    cx.notify();
                     return;
                 }
                 "publish-group" => {

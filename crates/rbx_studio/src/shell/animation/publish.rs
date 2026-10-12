@@ -142,7 +142,14 @@ impl Shell {
         match self.anim.dialog_requested.take() {
             Some(super::AnimDialog::Publish) => self.open_animation_publish(window, cx),
             Some(super::AnimDialog::ImportId) => self.open_animation_id_prompt(window, cx),
-            None => {}
+            None => return,
+        }
+        // A scripted run waiting on the dialog goes on after this frame.
+        if self.anim.debug_rest.is_some() {
+            cx.spawn(async move |this, cx| {
+                let _ = this.update(cx, |shell, cx| shell.resume_debug_steps(cx));
+            })
+            .detach();
         }
     }
 
