@@ -133,8 +133,8 @@ fn cut(mesh: &Mesh, fit: &Fit, smooth: bool) -> Result<Cut, String> {
     // Skinned, the upload carries the R15 armature and every part's
     // weights; rigid, just the 15 meshes.
     let upload = match &skin {
-        Some(skin) => rbx_autorig::gltf_skinned(&body, skin),
-        None => rbx_autorig::gltf(&body),
+        Some(skin) => rbx_autorig::gltf_skinned(&body, skin, &[]),
+        None => rbx_autorig::gltf(&body, &[]),
     };
     let meshes: Vec<Vec<u8>> = body
         .parts

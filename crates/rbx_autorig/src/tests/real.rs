@@ -96,7 +96,7 @@ fn a_big_headed_chibi_keeps_its_head_hands_and_feet() {
 #[test]
 fn a_gltf_requiring_a_material_extension_reads() {
     let (_, _, body) = super::check_split(Pose::A);
-    let bytes = crate::gltf(body);
+    let bytes = crate::gltf(body, &[]);
     let json_len = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
     let mut json: serde_json::Value = serde_json::from_slice(&bytes[20..20 + json_len]).unwrap();
     json["extensionsUsed"] = serde_json::json!(["KHR_materials_unlit", "KHR_texture_transform"]);

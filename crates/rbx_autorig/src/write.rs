@@ -104,7 +104,8 @@ pub(crate) fn file_space(v: Vec3) -> Vec3 {
 /// face +Z ([`file_space`]). Roblox's importer reads glTF units as
 /// studs: on live uploads (rigid model 95056738325785, skinned
 /// 91357319063637) every part's `InitialSize` equalled its glTF bounds.
-pub fn gltf(body: &Body) -> Vec<u8> {
+pub fn gltf(body: &Body, cages: &[Mesh]) -> Vec<u8> {
+    let _ = cages;
     let mut buffer = Buffer::default();
     let (mut meshes, mut nodes) = (Vec::new(), Vec::new());
     for piece in &body.parts {
@@ -391,7 +392,8 @@ pub fn mesh_v4(mesh: &Mesh, skin: Option<&PartSkin>) -> Vec<u8> {
 /// - `JOINTS_0` is unsigned bytes (indices into the skin's joints, never
 ///   `Root` or `HumanoidRootNode` with a non-zero weight), `WEIGHTS_0`
 ///   floats, each [`PartSkin`] byte weight / 255, so every vertex sums to 1.
-pub fn gltf_skinned(body: &Body, skin: &Skin) -> Vec<u8> {
+pub fn gltf_skinned(body: &Body, skin: &Skin, cages: &[Mesh]) -> Vec<u8> {
+    let _ = cages;
     let root = skin.joints[Joint::Root as usize];
     let bone_world = |part: Part| skin.bone_position(part) - root;
     let mut buffer = Buffer::default();

@@ -28,6 +28,7 @@
 //! found) rather than silently, so a person can fix the markers.
 
 mod accessory;
+mod cage;
 mod decimate;
 mod fit;
 mod guard;
@@ -40,6 +41,7 @@ mod split;
 mod voxel;
 mod write;
 
+pub use cage::{fit_cages, CageError, CageTemplate};
 pub use fit::{fit, fit_with, mirror, Extremities, Fit, FitOptions};
 pub use guard::{guard, mesh_bounds};
 pub use mesh::Mesh;

@@ -1,6 +1,8 @@
 use crate::test_humanoid as humanoid;
 
 mod budget;
+mod cage;
+mod cage_write;
 mod real;
 mod skin;
 
@@ -462,7 +464,7 @@ fn scratch(name: &str) -> std::path::PathBuf {
 #[test]
 fn the_glb_holds_fifteen_named_parts_and_reads_back() {
     let (_, _, body) = check_split(Pose::A);
-    let bytes = crate::gltf(body);
+    let bytes = crate::gltf(body, &[]);
     let file = gltf::Gltf::from_slice(&bytes).unwrap();
     let mut names: Vec<String> = file
         .nodes()
@@ -538,7 +540,7 @@ fn a_multi_mesh_gltf_with_node_transforms_fits() {
     let bytes = crate::gltf(&crate::Body {
         parts,
         warnings: Vec::new(),
-    });
+    }, &[]);
     let mesh = crate::read_bytes(&bytes, crate::Format::Gltf).unwrap();
     assert_eq!(mesh.triangles.len(), body.mesh.triangles.len());
     let fit = fit(&mesh, HEIGHT).unwrap();
