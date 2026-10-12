@@ -1,5 +1,6 @@
-//! The dialog that reports the auto-rigger's Publish: where the model went
-//! (or why it did not), in the launcher's dialog chrome. The Output line is
+//! The dialog that reports a Publish to Roblox, the auto-rigger's model or
+//! the Animation Editor's clip: where it went (or why it did not), in the
+//! launcher's dialog chrome. The Output line is
 //! kept too; this is for the user who was looking elsewhere when it landed.
 
 use gpui_kit::component::{h_flex, v_flex};
@@ -21,6 +22,13 @@ pub(crate) enum PublishOutcome {
         swapped: usize,
     },
     Failed(String),
+    /// The Animation Editor's clip, uploaded as Animation `id`; `warning`
+    /// names what may not play (joints the bound rig lacks, no rig at all).
+    AnimationPublished {
+        id: u64,
+        warning: Option<String>,
+    },
+    AnimationFailed(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,6 +45,11 @@ pub(crate) fn asset_url(id: u64) -> String {
 /// How to get the model into a place.
 pub(crate) fn insert_hint(id: u64) -> String {
     format!("Insert it in Studio from Toolbox \u{203a} Inventory, or with InsertService:LoadAsset({id})")
+}
+
+/// How to play a published animation.
+pub(crate) fn animation_hint(id: u64) -> String {
+    format!("Set an Animation instance's AnimationId to rbxassetid://{id}, then load it with Animator:LoadAnimation")
 }
 
 /// The warning for a model whose upload lacked some of the parts.
@@ -64,8 +77,24 @@ impl Shell {
             .into_any_element();
         let inset = |body: Div| body.mt(px(14.)).mx(px(20.)).ml(px(78.));
         Some(match &result.outcome {
-            PublishOutcome::Published { id, swapped } => {
-                let id = *id;
+            PublishOutcome::Published { .. } | PublishOutcome::AnimationPublished { .. } => {
+                let (id, kind, value, hint, warning) = match &result.outcome {
+                    PublishOutcome::Published { id, swapped } => (
+                        *id,
+                        "Model",
+                        id.to_string(),
+                        insert_hint(*id),
+                        partial_warning(*swapped),
+                    ),
+                    PublishOutcome::AnimationPublished { id, warning } => (
+                        *id,
+                        "Animation",
+                        format!("rbxassetid://{id}"),
+                        animation_hint(*id),
+                        warning.clone(),
+                    ),
+                    _ => unreachable!(),
+                };
                 let row = |label: &'static str, value: String| {
                     h_flex()
                         .gap(px(12.))
@@ -91,9 +120,16 @@ impl Shell {
                     .border_1()
                     .border_color(tokens::border())
                     .bg(ui::panel2())
-                    .child(row("Model", result.name.clone()))
-                    .child(row("Asset ID", id.to_string()));
-                let warning = partial_warning(*swapped).map(|text| {
+                    .child(row(kind, result.name.clone()))
+                    .child(row(
+                        if kind == "Animation" {
+                            "Animation ID"
+                        } else {
+                            "Asset ID"
+                        },
+                        value.clone(),
+                    ));
+                let warning = warning.map(|text| {
                     inset(h_flex())
                         .mt(px(10.))
                         .gap(px(8.))
@@ -107,7 +143,7 @@ impl Shell {
                     520.,
                     ui::dialog_glyph("circle-check", ui::green(), ui::green_soft()),
                     "Published to Roblox",
-                    insert_hint(id),
+                    hint,
                     Some(body),
                     vec![
                         ui::icon_button(
@@ -118,7 +154,7 @@ impl Shell {
                             false,
                         )
                         .on_click(cx.listener(move |_, _, _, cx| {
-                            cx.write_to_clipboard(ClipboardItem::new_string(id.to_string()));
+                            cx.write_to_clipboard(ClipboardItem::new_string(value.clone()));
                         }))
                         .into_any_element(),
                         ui::external_button(
@@ -134,7 +170,8 @@ impl Shell {
                 )
                 .into_any_element()
             }
-            PublishOutcome::Failed(message) => {
+            PublishOutcome::Failed(message) | PublishOutcome::AnimationFailed(message) => {
+                let animation = matches!(result.outcome, PublishOutcome::AnimationFailed(_));
                 let body = inset(ui::mono(11.5, 17.))
                     .p(px(10.))
                     .rounded(px(6.))
@@ -148,12 +185,31 @@ impl Shell {
                     520.,
                     ui::dialog_glyph("circle-alert", ui::red(), ui::red_soft()),
                     "Publish failed",
-                    format!(
-                        "{} was not published. The rig in the place is unchanged.",
-                        result.name
-                    ),
+                    if animation {
+                        format!(
+                            "{} was not published. The clip is unchanged; fix the cause and publish again.",
+                            result.name
+                        )
+                    } else {
+                        format!(
+                            "{} was not published. The rig in the place is unchanged.",
+                            result.name
+                        )
+                    },
                     Some(body),
-                    vec![close],
+                    if animation {
+                        vec![
+                            ui::button("publish-result-retry", "Back to Publish", Weight::Ghost, false)
+                                .on_click(cx.listener(|shell, _, window, cx| {
+                                    shell.close_publish_result();
+                                    shell.open_animation_publish(window, cx);
+                                }))
+                                .into_any_element(),
+                            close,
+                        ]
+                    } else {
+                        vec![close]
+                    },
                 )
                 .into_any_element()
             }
@@ -163,7 +219,7 @@ impl Shell {
 
 #[cfg(test)]
 mod tests {
-    use super::{asset_url, insert_hint, partial_warning};
+    use super::{animation_hint, asset_url, insert_hint, partial_warning};
 
     #[test]
     fn the_asset_page_hint_and_partial_warning() {
@@ -173,6 +229,7 @@ mod tests {
             "Insert it in Studio from Toolbox \u{203a} Inventory, or with InsertService:LoadAsset(123)"
         );
 
+        assert!(animation_hint(9).contains("rbxassetid://9"));
         assert_eq!(partial_warning(15), None);
         assert!(partial_warning(9)
             .unwrap()
