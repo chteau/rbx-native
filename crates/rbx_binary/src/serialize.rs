@@ -12,9 +12,9 @@ mod prop;
 mod sstr;
 mod writer;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
-use rbx_dom::{Variant, WeakDom};
+use rbx_dom::{Content, Instance, Ref, Variant, WeakDom};
 use thiserror::Error;
 
 use plan::Plan;
@@ -99,6 +99,8 @@ pub fn serialize_with_defaults(
     dom: &WeakDom,
     default: impl Fn(&str, &str) -> Option<Variant>,
 ) -> Result<Vec<u8>, SerializeError> {
+    let dense = densified(dom);
+    let dom = dense.as_ref().unwrap_or(dom);
     let plan = plan::build(dom);
     // Built in a pass of its own, before any PROP chunk is written: the table is
     // deduplicated across the *whole file*, so every group's content must be seen
@@ -126,6 +128,59 @@ pub fn serialize_with_defaults(
     out.extend(chunk::write_end());
 
     Ok(out)
+}
+
+/// `dom` with its referents renumbered `0..count` in file order, or `None`
+/// when they already are. Studio refuses a file whose referent is not below
+/// the header's instance count ("Invalid id 415/404"), and a DOM that has
+/// had instances removed holds exactly such gaps. A reference to an instance
+/// that is not in the tree is dropped, as it would be written as null anyway.
+fn densified(dom: &WeakDom) -> Option<WeakDom> {
+    let order = plan::build(dom).order;
+    if order
+        .iter()
+        .enumerate()
+        .all(|(index, referent)| referent.value() as usize == index)
+    {
+        return None;
+    }
+    let map: HashMap<Ref, Ref> = order
+        .iter()
+        .enumerate()
+        .map(|(index, &referent)| (referent, Ref::new(index as u32)))
+        .collect();
+    let remap = |value: &Variant| -> Option<Variant> {
+        match value {
+            Variant::Ref(r) => map.get(r).map(|&r| Variant::Ref(r)),
+            Variant::Content(Content::Object(r)) => {
+                map.get(r).map(|&r| Variant::Content(Content::Object(r)))
+            }
+            other => Some(other.clone()),
+        }
+    };
+    let mut out = WeakDom::new();
+    for &old in &order {
+        let source = dom.get(old)?;
+        let mut copy = Instance::new(map[&old], source.class(), source.name());
+        for (key, value) in source.properties() {
+            let value = if key == "AttributesSerialize" {
+                rbx_dom::attributes::remap_refs(value, |r| map.get(&r).copied())
+                    .unwrap_or_else(|| value.clone())
+            } else {
+                match remap(value) {
+                    Some(value) => value,
+                    None => continue,
+                }
+            };
+            copy.properties_mut().insert(key.clone(), value);
+        }
+        out.insert(copy);
+    }
+    for &old in &order {
+        let parent = dom.parent(old).and_then(|parent| map.get(&parent).copied());
+        out.set_parent(map[&old], parent);
+    }
+    Some(out)
 }
 
 fn build_shared_string_table(
@@ -339,7 +394,37 @@ fn neutral_for(sample: &Variant) -> Option<Variant> {
 mod tests {
     use super::*;
     use crate::deserialize;
-    use rbx_dom::Ref;
+
+    #[test]
+    fn referents_are_renumbered_below_the_instance_count_after_a_removal() {
+        let mut dom = WeakDom::new();
+        let root = dom.new_instance("Folder", "Root", None);
+        let gone = dom.new_instance("Part", "Gone", Some(root));
+        let kept = dom.new_instance("Part", "Kept", Some(root));
+        let pointer = dom.new_instance("ObjectValue", "Pointer", Some(root));
+        dom.set_property(pointer, "Value", Variant::Ref(kept))
+            .unwrap();
+        dom.remove(gone);
+
+        let bytes = serialize(&dom).unwrap();
+        let back = deserialize(&bytes).unwrap();
+        let ids: Vec<u32> = back
+            .root_refs()
+            .iter()
+            .flat_map(|&r| {
+                std::iter::once(r).chain(back.get(r).unwrap().children().iter().copied())
+            })
+            .map(|r| r.value())
+            .collect();
+        assert!(ids.iter().all(|&id| (id as usize) < 3), "{ids:?}");
+        let pointer = back
+            .get(back.get(back.root_refs()[0]).unwrap().children()[1])
+            .unwrap();
+        let Some(Variant::Ref(target)) = pointer.properties().get("Value") else {
+            panic!("Value lost");
+        };
+        assert_eq!(back.get(*target).unwrap().name(), "Kept");
+    }
 
     #[test]
     fn a_value_one_instance_lacks_is_filled_with_the_given_default() {
