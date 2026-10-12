@@ -5,6 +5,7 @@
 //! plot both draw with.
 
 pub(crate) mod paint;
+pub(crate) mod scroll;
 
 /// How close (in pixels) the pointer must come to a key to grab it.
 pub(crate) const GRAB_RADIUS: f32 = 6.0;
@@ -17,6 +18,10 @@ const LABEL_GAP: f32 = 56.0;
 
 /// Steps (in frames) a labelled tick may fall on, smallest first.
 const STEPS: [u32; 12] = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
+
+/// Room `fit` leaves before frame 0 (and after the End), in pixels; the
+/// scrollbar's range starts the same distance before frame 0.
+const LEAD: f32 = 24.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Timeline {
@@ -110,7 +115,7 @@ impl Timeline {
     /// Shows `0..length` across `width` with a little room either side.
     pub(crate) fn fit(&mut self, length: f32, width: f32) {
         let length = length.max(1.0 / self.fps());
-        let margin = 24.0;
+        let margin = LEAD;
         self.scale = ((width - margin * 2.0).max(1.0) / length).clamp(SCALE_RANGE.0, SCALE_RANGE.1);
         self.start = -margin / self.scale;
     }
