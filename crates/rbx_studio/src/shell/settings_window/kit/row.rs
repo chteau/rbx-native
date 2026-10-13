@@ -14,41 +14,38 @@ use super::super::super::Shell;
 use super::{card, ghost_icon, key_hint, soon_pill, text};
 
 /// Puts one setting back to its default.
-pub(in crate::shell::settings_window) type Reset = Rc<dyn Fn(&mut Shell, &mut Context<Shell>)>;
+pub(in crate::shell) type Reset = Rc<dyn Fn(&mut Shell, &mut Context<Shell>)>;
 
 /// One setting's row. `reset` is `Some` exactly when the value differs
 /// from its default: that is what draws the dot and the reset icon, and
 /// what "Reset page" runs.
-pub(in crate::shell::settings_window) struct Row {
-    pub(in crate::shell::settings_window) label: &'static str,
-    pub(in crate::shell::settings_window) description: Option<SharedString>,
+pub(in crate::shell) struct Row {
+    pub(in crate::shell) label: &'static str,
+    pub(in crate::shell) description: Option<SharedString>,
     /// The description is a path or a name, set in mono.
-    pub(in crate::shell::settings_window) description_mono: bool,
+    pub(in crate::shell) description_mono: bool,
     /// Key caps after the description: the shortcut that does the same.
-    pub(in crate::shell::settings_window) keys: &'static [&'static str],
+    pub(in crate::shell) keys: &'static [&'static str],
     /// A setting that only means something under the one above it.
-    pub(in crate::shell::settings_window) indent: bool,
+    pub(in crate::shell) indent: bool,
     /// Dimmed and inert: on the roadmap.
-    pub(in crate::shell::settings_window) soon: bool,
+    pub(in crate::shell) soon: bool,
     /// A tag after the label: which Argon level a value is set at.
-    pub(in crate::shell::settings_window) chip: Option<SharedString>,
+    pub(in crate::shell) chip: Option<SharedString>,
     /// Whether the row wears its own `SOON` pill, rather than sharing its
     /// section's.
-    pub(in crate::shell::settings_window) pill: bool,
+    pub(in crate::shell) pill: bool,
     /// A constant's name, set in mono.
-    pub(in crate::shell::settings_window) mono: bool,
-    pub(in crate::shell::settings_window) reset: Option<Reset>,
-    pub(in crate::shell::settings_window) control: AnyElement,
+    pub(in crate::shell) mono: bool,
+    pub(in crate::shell) reset: Option<Reset>,
+    pub(in crate::shell) control: AnyElement,
     /// A block under the label and control, inside the same row: a grid of
     /// checkboxes, a list.
-    pub(in crate::shell::settings_window) below: Option<AnyElement>,
+    pub(in crate::shell) below: Option<AnyElement>,
 }
 
 impl Row {
-    pub(in crate::shell::settings_window) fn new(
-        label: &'static str,
-        control: impl IntoElement,
-    ) -> Self {
+    pub(in crate::shell) fn new(label: &'static str, control: impl IntoElement) -> Self {
         Row {
             label,
             description: None,
@@ -65,56 +62,50 @@ impl Row {
         }
     }
 
-    pub(in crate::shell::settings_window) fn chip(mut self, chip: impl Into<SharedString>) -> Self {
+    pub(in crate::shell) fn chip(mut self, chip: impl Into<SharedString>) -> Self {
         self.chip = Some(chip.into());
         self
     }
 
-    pub(in crate::shell::settings_window) fn describe(
-        mut self,
-        description: impl Into<SharedString>,
-    ) -> Self {
+    pub(in crate::shell) fn describe(mut self, description: impl Into<SharedString>) -> Self {
         self.description = Some(description.into());
         self
     }
 
-    pub(in crate::shell::settings_window) fn keys(mut self, keys: &'static [&'static str]) -> Self {
+    pub(in crate::shell) fn keys(mut self, keys: &'static [&'static str]) -> Self {
         self.keys = keys;
         self
     }
 
-    pub(in crate::shell::settings_window) fn describe_mono(
-        mut self,
-        description: impl Into<SharedString>,
-    ) -> Self {
+    pub(in crate::shell) fn describe_mono(mut self, description: impl Into<SharedString>) -> Self {
         self.description_mono = true;
         self.describe(description)
     }
 
-    pub(in crate::shell::settings_window) fn indent(mut self) -> Self {
+    pub(in crate::shell) fn indent(mut self) -> Self {
         self.indent = true;
         self
     }
 
     /// On the roadmap: dimmed, inert, and marked `SOON`.
-    pub(in crate::shell::settings_window) fn soon(mut self) -> Self {
+    pub(in crate::shell) fn soon(mut self) -> Self {
         self.soon = true;
         self.pill = true;
         self
     }
 
-    pub(in crate::shell::settings_window) fn below(mut self, below: impl IntoElement) -> Self {
+    pub(in crate::shell) fn below(mut self, below: impl IntoElement) -> Self {
         self.below = Some(below.into_any_element());
         self
     }
 
-    pub(in crate::shell::settings_window) fn mono(mut self) -> Self {
+    pub(in crate::shell) fn mono(mut self) -> Self {
         self.mono = true;
         self
     }
 
     /// `reset` when `changed`, so a row only offers it off its default.
-    pub(in crate::shell::settings_window) fn changed(
+    pub(in crate::shell) fn changed(
         mut self,
         changed: bool,
         reset: impl Fn(&mut Shell, &mut Context<Shell>) + 'static,
@@ -128,20 +119,20 @@ impl Row {
 
 /// A section: its title, and the card its rows sit in. `soon` pins one pill
 /// on the title for a block that is on the roadmap as a whole.
-pub(in crate::shell::settings_window) struct Section {
-    pub(in crate::shell::settings_window) title: &'static str,
-    pub(in crate::shell::settings_window) rows: Vec<Row>,
+pub(in crate::shell) struct Section {
+    pub(in crate::shell) title: &'static str,
+    pub(in crate::shell) rows: Vec<Row>,
     /// Anything in the card above the rows: a disclosure, say.
-    pub(in crate::shell::settings_window) head: Option<AnyElement>,
+    pub(in crate::shell) head: Option<AnyElement>,
     /// Resets for what the section shows outside its rows, for Reset page.
-    pub(in crate::shell::settings_window) resets: Vec<Reset>,
+    pub(in crate::shell) resets: Vec<Reset>,
     /// Words a search finds the section's head by, when the head is the
     /// setting (the accent card).
-    pub(in crate::shell::settings_window) keywords: &'static [&'static str],
+    pub(in crate::shell) keywords: &'static [&'static str],
 }
 
 impl Section {
-    pub(in crate::shell::settings_window) fn new(title: &'static str, rows: Vec<Row>) -> Self {
+    pub(in crate::shell) fn new(title: &'static str, rows: Vec<Row>) -> Self {
         Section {
             title,
             rows,
@@ -165,11 +156,7 @@ fn section_title(title: &'static str) -> Div {
 
 /// A section's rows, each after the first under a hairline. `shell` is what
 /// the reset icons act on.
-pub(in crate::shell::settings_window) fn section(
-    index: usize,
-    section: Section,
-    shell: &Entity<Shell>,
-) -> Div {
+pub(in crate::shell) fn section(index: usize, section: Section, shell: &Entity<Shell>) -> Div {
     let title = section.title;
     v_flex()
         .gap(px(8.))
@@ -178,7 +165,7 @@ pub(in crate::shell::settings_window) fn section(
 }
 
 /// A section's card alone; `query` marks where each row matches a search.
-pub(in crate::shell::settings_window) fn section_card(
+pub(in crate::shell) fn section_card(
     index: usize,
     section: Section,
     shell: &Entity<Shell>,

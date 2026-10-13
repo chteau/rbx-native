@@ -14,10 +14,10 @@ use crate::tokens;
 use super::icon;
 
 /// What picking a segment does.
-pub(in crate::shell::settings_window) type OnPick = Rc<dyn Fn(&mut Window, &mut App)>;
+pub(in crate::shell) type OnPick = Rc<dyn Fn(&mut Window, &mut App)>;
 
 /// A 24 px ghost button holding one glyph, in text3.
-pub(in crate::shell::settings_window) fn ghost_icon(
+pub(in crate::shell) fn ghost_icon(
     id: impl Into<ElementId>,
     glyph: &'static str,
     label: &'static str,
@@ -38,7 +38,7 @@ pub(in crate::shell::settings_window) fn ghost_icon(
 
 /// The 32×18 switch: an accent track with a bg knob when on, a 10% white
 /// one with a text2 knob when off.
-pub(in crate::shell::settings_window) fn toggle(
+pub(in crate::shell) fn toggle(
     id: impl Into<ElementId>,
     on: bool,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -70,7 +70,7 @@ pub(in crate::shell::settings_window) fn toggle(
 
 /// A segmented control: `items` as `(label, selected, on_click)`, items
 /// `h` tall (26, or 24 beside a slider).
-pub(in crate::shell::settings_window) fn segmented(
+pub(in crate::shell) fn segmented(
     id: &'static str,
     h: f32,
     items: Vec<(&'static str, bool, OnPick)>,
@@ -114,7 +114,7 @@ pub(in crate::shell::settings_window) fn segmented(
 }
 
 /// The 58×26 mono box beside a slider.
-pub(in crate::shell::settings_window) fn readout(value: impl Into<SharedString>) -> Div {
+pub(in crate::shell) fn readout(value: impl Into<SharedString>) -> Div {
     h_flex()
         .flex_none()
         .w(px(58.))
@@ -173,16 +173,13 @@ fn knob() -> Div {
 }
 
 /// A live slider over `state`, the toolkit's behaviour in this skin.
-pub(in crate::shell::settings_window) fn slider(
-    state: &Entity<SliderState>,
-    cx: &App,
-) -> impl IntoElement {
+pub(in crate::shell) fn slider(state: &Entity<SliderState>, cx: &App) -> impl IntoElement {
     ticked_slider(state, 150., &[], cx)
 }
 
 /// [`slider`], `width` wide, with a tick under the rail at each fraction
 /// in `ticks`.
-pub(in crate::shell::settings_window) fn ticked_slider(
+pub(in crate::shell) fn ticked_slider(
     state: &Entity<SliderState>,
     width: f32,
     ticks: &[f32],
@@ -224,7 +221,7 @@ pub(in crate::shell::settings_window) fn ticked_slider(
 
 /// A small secondary button: 28 tall, border2 over panel2, a 12 px glyph
 /// before its label.
-pub(in crate::shell::settings_window) fn secondary_button(
+pub(in crate::shell) fn secondary_button(
     id: impl Into<ElementId>,
     glyph: &'static str,
     label: &'static str,
@@ -253,7 +250,7 @@ pub(in crate::shell::settings_window) fn secondary_button(
 // The destructive variants: WCAG 2.5.5's 44px rather than the compact
 // design's 24 or 28 (see `tokens::primary_target`).
 
-pub(in crate::shell::settings_window) fn destructive_icon(
+pub(in crate::shell) fn destructive_icon(
     id: impl Into<ElementId>,
     glyph: &'static str,
     label: &'static str,
@@ -265,7 +262,7 @@ pub(in crate::shell::settings_window) fn destructive_icon(
         .size(tokens::primary_target())
 }
 
-pub(in crate::shell::settings_window) fn destructive_button(
+pub(in crate::shell) fn destructive_button(
     id: &'static str,
     glyph: &'static str,
     label: &'static str,
@@ -275,7 +272,7 @@ pub(in crate::shell::settings_window) fn destructive_button(
         .h(tokens::primary_target())
 }
 
-pub(in crate::shell::settings_window) fn destructive_header(
+pub(in crate::shell) fn destructive_header(
     id: &'static str,
     label: &'static str,
     on_click: Option<impl Fn(&ClickEvent, &mut Window, &mut App) + 'static>,

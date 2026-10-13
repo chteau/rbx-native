@@ -92,7 +92,7 @@ fn parse_owner(user: Option<&str>, group: Option<&str>) -> Result<Owner, CloudEr
     ))
 }
 
-fn parse_visibility(raw: &str) -> Visibility {
+pub(crate) fn parse_visibility(raw: &str) -> Visibility {
     match raw {
         "PUBLIC" => Visibility::Public,
         "PRIVATE" => Visibility::Private,
@@ -102,7 +102,7 @@ fn parse_visibility(raw: &str) -> Visibility {
 
 /// `"universes/123/places/456"` -> `456`. Also handles the bare
 /// `"users/925308243"` / `"groups/1"` owner path shape.
-fn trailing_numeric_segment(path: &str) -> Option<u64> {
+pub(crate) fn trailing_numeric_segment(path: &str) -> Option<u64> {
     path.rsplit('/').next()?.parse().ok()
 }
 

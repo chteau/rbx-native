@@ -92,6 +92,7 @@ impl Shell {
                 self.transform_tools(cx),
                 self.insert_tiles(cx),
                 self.terrain_tiles(cx),
+                self.settings_tiles(cx),
                 self.panel_tiles(cx),
             ],
             Tab::Avatar => {
@@ -297,6 +298,26 @@ impl Shell {
             // own engine (see `ROADMAP.md`).
             disabled_tile("ribbon-toolbox", IconName::Package, "Toolbox").into_any_element(),
         ]
+    }
+
+    /// Home's Settings group, Studio's own: Game Settings.
+    fn settings_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        vec![tile(
+            &self.ribbon_nav,
+            "ribbon-game-settings",
+            IconName::Settings,
+            "Game Settings",
+            cx,
+        )
+        .tooltip(|window, cx| {
+            super::tooltip::text(
+                "Game Settings — the experience's settings and this place's own",
+                window,
+                cx,
+            )
+        })
+        .on_click(cx.listener(|shell, _, _, cx| RibbonCommand::GameSettings.run(shell, cx)))
+        .into_any_element()]
     }
 
     /// One toggle per dock, and the reason they exist: a dock closed from

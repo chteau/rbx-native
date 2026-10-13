@@ -26,7 +26,7 @@ mod argon;
 mod beta;
 mod dragger;
 mod files_account;
-mod kit;
+pub(super) mod kit;
 mod nav;
 mod page;
 mod panels;

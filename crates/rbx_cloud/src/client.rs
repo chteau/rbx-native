@@ -109,6 +109,20 @@ impl Client {
         run(req.send_json(body))
     }
 
+    /// A keyed PATCH with a JSON body. Not retried: Open Cloud's update calls
+    /// are not idempotent once a field mask clears a value.
+    pub(crate) fn patch_json_raw<T: serde::Serialize>(
+        &self,
+        url: &str,
+        body: &T,
+    ) -> Result<RawResponse, CloudError> {
+        let req = self
+            .agent
+            .patch(url)
+            .header("x-api-key", self.require_api_key()?.as_str());
+        run(req.send_json(body))
+    }
+
     pub(crate) fn post_bytes_raw(
         &self,
         url: &str,
