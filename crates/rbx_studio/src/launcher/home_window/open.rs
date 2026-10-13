@@ -130,8 +130,7 @@ impl HomeWindow {
         self.open_path_later(place.path.clone(), cx);
     }
 
-    pub(super) fn new_place(&mut self, cx: &mut Context<Self>) {
-        let template = Template::Baseplate;
+    pub(super) fn new_place(&mut self, template: Template, cx: &mut Context<Self>) {
         let created = home::new_place_path(template)
             .ok_or_else(|| "no config directory to create the place in".to_string())
             .and_then(|path| template.create(&path).map(|()| path));

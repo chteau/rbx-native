@@ -228,6 +228,100 @@ pub(super) fn baseplate_thumb(size: f32) -> impl IntoElement {
         )
 }
 
+/// Thumbnail for a New-section template.
+pub(super) fn template_thumb(template: crate::home::Template, size: f32) -> AnyElement {
+    match template {
+        crate::home::Template::Baseplate => baseplate_thumb(size).into_any_element(),
+        crate::home::Template::ClassicBaseplate => classic_baseplate_thumb(size).into_any_element(),
+        crate::home::Template::FlatTerrain => flat_terrain_thumb(size).into_any_element(),
+    }
+}
+
+/// Classic Baseplate thumbnail, drawn: sky over a dark stone floor with studs.
+fn classic_baseplate_thumb(size: f32) -> impl IntoElement {
+    let horizon = size * 0.42;
+    let spacing = 9.;
+    let stud = 3.;
+    let rows = ((size - horizon) / spacing).floor() as usize;
+    let cols = (size / spacing).floor() as usize;
+    div()
+        .relative()
+        .size(px(size))
+        .flex_none()
+        .rounded(px(6.))
+        .overflow_hidden()
+        .bg(rgb(0x8FA6BD))
+        .child(
+            div()
+                .absolute()
+                .left_0()
+                .top(px(horizon * 0.6))
+                .w_full()
+                .h(px(horizon * 0.4))
+                .bg(rgb(0xCDD7E0)),
+        )
+        .child(
+            div()
+                .absolute()
+                .left_0()
+                .top(px(horizon))
+                .w_full()
+                .h(px(size - horizon))
+                .bg(rgb(0x635F62)),
+        )
+        .children((0..rows).flat_map(move |row| {
+            (0..cols).map(move |col| {
+                div()
+                    .absolute()
+                    .left(px(col as f32 * spacing + (spacing - stud) / 2.))
+                    .top(px(horizon + row as f32 * spacing + (spacing - stud) / 2.))
+                    .size(px(stud))
+                    .rounded_full()
+                    .bg(rgb(0x77737A))
+            })
+        }))
+}
+
+/// Flat Terrain thumbnail, drawn: sky over banded grass.
+fn flat_terrain_thumb(size: f32) -> impl IntoElement {
+    let horizon = size * 0.42;
+    let floor = size - horizon;
+    let fractions = [0.10, 0.14, 0.20, 0.26, 0.30];
+    let mut top = horizon;
+    let mut bands = Vec::new();
+    for (i, fraction) in fractions.iter().enumerate() {
+        let height = floor * fraction;
+        let colour = if i % 2 == 0 { 0x5E8A3A } else { 0x6B9A44 };
+        bands.push(
+            div()
+                .absolute()
+                .left_0()
+                .top(px(top))
+                .w_full()
+                .h(px(height + 0.5))
+                .bg(rgb(colour)),
+        );
+        top += height;
+    }
+    div()
+        .relative()
+        .size(px(size))
+        .flex_none()
+        .rounded(px(6.))
+        .overflow_hidden()
+        .bg(rgb(0x8FA6BD))
+        .child(
+            div()
+                .absolute()
+                .left_0()
+                .top(px(horizon * 0.6))
+                .w_full()
+                .h(px(horizon * 0.4))
+                .bg(rgb(0xCDD7E0)),
+        )
+        .children(bands)
+}
+
 pub(super) fn visibility_label(visibility: &Visibility) -> (&'static str, &'static str) {
     match visibility {
         Visibility::Public => ("Public", "globe"),
